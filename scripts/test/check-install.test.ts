@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { workspacePackages } from "../changed-packages.ts";
 
 const root = join(import.meta.dir, "..", "..");
 
@@ -17,6 +18,13 @@ async function run(cmd: string[], cwd: string) {
 
 // A worktree of the checked-in files with a complete install (every link the
 // manifests ask for), then the access-match links removed: a stale install.
+const packageNames = new Map(
+  workspacePackages(root).map((dirName) => [
+    dirName,
+    (JSON.parse(readFileSync(join(root, "packages", dirName, "package.json"), "utf8")) as { name: string }).name,
+  ]),
+);
+
 function worktree(complete = false): string {
   const dir = mkdtempSync(join(tmpdir(), "install-test-"));
   cpSync(join(root, "scripts"), join(dir, "scripts"), { recursive: true });
@@ -24,7 +32,7 @@ function worktree(complete = false): string {
   cpSync(join(root, "package.json"), join(dir, "package.json"));
   writeFileSync(join(dir, "trivial.test.ts"), 'import { test } from "bun:test";\ntest("runs", () => {});\n');
   const manifests = [dir];
-  for (const name of readdirSync(join(root, "packages"))) {
+  for (const name of workspacePackages(root)) {
     cpSync(join(root, "packages", name, "package.json"), join(dir, "packages", name, "package.json"));
     cpSync(join(root, "packages", name, "bunfig.toml"), join(dir, "packages", name, "bunfig.toml"));
     mkdirSync(join(dir, "packages", name, "test"), { recursive: true });
@@ -47,7 +55,8 @@ function worktree(complete = false): string {
       }
       if (!complete && name === "@operad-io/access-match") continue;
       mkdirSync(join(m, "node_modules", "@operad-io"), { recursive: true });
-      symlinkSync(join(root, "packages", name.replace("@operad-io/", "")), join(m, "node_modules", name));
+      const target = workspacePackages(root).find((dirName) => packageNames.get(dirName) === name);
+      symlinkSync(join(root, "packages", target ?? name.replace("@operad-io/", "")), join(m, "node_modules", name));
     }
   }
   return dir;

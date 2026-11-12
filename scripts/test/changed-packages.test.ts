@@ -68,6 +68,14 @@ describe("selectPackages", () => {
     expect(packages(root, ["packages/gone/src/index.ts"])).toBe("all");
   });
 
+  test("a package in a group directory is picked by its path", () => {
+    const root = workspace();
+    write(root, "packages/group/inner/package.json", JSON.stringify({ name: "@operad-io/group-inner" }));
+    write(root, "packages/group/inner/src/index.ts", 'import { core } from "../../../core/src/index.ts";\nexport const inner = core;\n');
+    expect(packages(root, ["packages/group/inner/src/index.ts"])).toEqual(["group/inner"]);
+    expect(packages(root, ["packages/core/src/index.ts"])).toEqual(["app", "core", "group/inner", "lib", "probe"]);
+  });
+
   test("no change picks nothing", () => {
     expect(packages(workspace(), [])).toEqual([]);
   });

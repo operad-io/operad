@@ -18,8 +18,8 @@ function read(path: string): string {
 }
 
 const README = read("../README.md");
-const DOGFOOD = read("../../../docs/dogfood.md");
-const MANUAL = read("../../../docs/manual.md");
+const DOGFOOD = read("../../../../docs/dogfood.md");
+const MANUAL = read("../../../../docs/manual.md");
 
 /** The dogfood section for claude, from its heading to the end. */
 const SECTION = DOGFOOD.slice(DOGFOOD.indexOf("## Using claude as the worker"));

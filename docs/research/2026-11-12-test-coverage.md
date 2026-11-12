@@ -14,8 +14,8 @@ copied to a temporary script outside the repository:
 bun test --timeout 30000 --parallel=2 \
   --coverage --coverage-reporter=lcov --coverage-dir=/tmp/operad-coverage-full \
   ./packages/access-match/ ./packages/chat/ ./packages/cli/ ./packages/dev/ \
-  ./packages/engine/ ./packages/harness-claude/ ./packages/harness-pi/ \
-  ./packages/harness-process/ ./packages/harness-radian/ ./packages/mcp/ \
+  ./packages/engine/ ./packages/harness/claude/ ./packages/harness/pi/ \
+  ./packages/harness/process/ ./packages/harness/radian/ ./packages/mcp/ \
   ./packages/pool/ ./packages/review-grading/ ./packages/shell/ \
   ./packages/source-cron/ ./scripts/
 
@@ -84,9 +84,9 @@ By package:
 | `packages/cli/src/code-reload.ts` | 46 / 148 | 31.1% |
 | `packages/dev/src/editor.ts` | 4 / 33 | 12.1% |
 | `packages/dev/src/stdin.ts` | 2 / 12 | 16.7% |
-| `packages/harness-claude/src/worker.ts` | 34 / 558 | 6.1% |
-| `packages/harness-pi/src/worker.ts` | 31 / 531 | 5.8% |
-| `packages/harness-process/src/ask-call.ts` | 82 / 167 | 49.1% |
+| `packages/harness/claude/src/worker.ts` | 34 / 558 | 6.1% |
+| `packages/harness/pi/src/worker.ts` | 31 / 531 | 5.8% |
+| `packages/harness/process/src/ask-call.ts` | 82 / 167 | 49.1% |
 | `packages/mcp/src/format.ts` | 39 / 144 | 27.1% |
 | `packages/mcp/src/server.ts` | 119 / 383 | 31.1% |
 
@@ -96,7 +96,7 @@ By package:
 
 - `packages/engine/src/runner/step-worker.ts`
 - `packages/engine/src/testing/types.ts`
-- `packages/harness-radian/src/hook.ts`
+- `packages/harness/radian/src/hook.ts`
 - `packages/mcp/src/stdio.ts`
 
 ### Files loaded but with no executable lines
@@ -205,19 +205,19 @@ never loaded are listed above.
 | `packages/engine/src/views/presentation.ts` | 288-290, 334-335, 343-344, 383-396, 479, 693-694, 714, 743, 750, 752-753, 777, 785, 923-928, 1146-1149, 1858, 1972-1978, 1981-2003, 2005-2007, 2031, 2035-2036, 2049-2051, 2062 |
 | `packages/engine/src/views/running.ts` | 136 |
 | `packages/engine/src/views/settings.ts` | 107, 133, 135, 164, 183, 191, 349, 362, 369, 406, 408 |
-| `packages/harness-claude/src/access.ts` | 152 |
-| `packages/harness-claude/src/claude-install.ts` | 104, 106, 128, 143, 169-174 |
-| `packages/harness-claude/src/index.ts` | 77, 159, 170, 178, 186, 211, 225, 247, 249, 327, 338, 353-356, 358, 362-363, 375, 377-380, 384, 396-399, 467, 479, 502, 504, 529, 532, 550, 555, 562, 568, 583, 586-589, 592, 594, 609-610, 613, 616 |
-| `packages/harness-claude/src/protocol.ts` | 191-193, 199, 205, 219, 229, 232, 234, 243, 248-249, 251, 254, 256, 265 |
-| `packages/harness-claude/src/worker.ts` | 110-120, 124, 128-135, 139, 147-491, 503-535, 541-665 |
-| `packages/harness-pi/src/index.ts` | 170, 181, 189, 197, 266, 353, 368-371, 392-395, 406-409, 649, 652, 655 |
-| `packages/harness-pi/src/pi-install.ts` | 83-87, 90, 99, 103-104, 128, 134, 151, 153, 170, 172-173, 191, 194, 197, 204, 207 |
-| `packages/harness-pi/src/protocol.ts` | 147, 153, 157, 162, 165, 173, 175, 181, 185, 193, 198, 201, 203, 206, 212 |
-| `packages/harness-pi/src/worker.ts` | 89-97, 101, 106-109, 121-158, 163, 171-453, 466-498, 504-634 |
-| `packages/harness-process/src/ask-call.ts` | 24-25, 27-41, 44-46, 52, 54, 62-67, 74-76, 79-81, 86-88, 93-94, 109-115, 118-151, 154-155, 159, 162-163 |
-| `packages/harness-process/src/limit.ts` | 64, 69-71, 87 |
-| `packages/harness-radian/src/index.ts` | 102, 128, 236, 243, 250, 258, 387, 389 |
-| `packages/harness-radian/src/refusal.ts` | 38-50, 54-59, 76, 79-85 |
+| `packages/harness/claude/src/access.ts` | 152 |
+| `packages/harness/claude/src/claude-install.ts` | 104, 106, 128, 143, 169-174 |
+| `packages/harness/claude/src/index.ts` | 77, 159, 170, 178, 186, 211, 225, 247, 249, 327, 338, 353-356, 358, 362-363, 375, 377-380, 384, 396-399, 467, 479, 502, 504, 529, 532, 550, 555, 562, 568, 583, 586-589, 592, 594, 609-610, 613, 616 |
+| `packages/harness/claude/src/protocol.ts` | 191-193, 199, 205, 219, 229, 232, 234, 243, 248-249, 251, 254, 256, 265 |
+| `packages/harness/claude/src/worker.ts` | 110-120, 124, 128-135, 139, 147-491, 503-535, 541-665 |
+| `packages/harness/pi/src/index.ts` | 170, 181, 189, 197, 266, 353, 368-371, 392-395, 406-409, 649, 652, 655 |
+| `packages/harness/pi/src/pi-install.ts` | 83-87, 90, 99, 103-104, 128, 134, 151, 153, 170, 172-173, 191, 194, 197, 204, 207 |
+| `packages/harness/pi/src/protocol.ts` | 147, 153, 157, 162, 165, 173, 175, 181, 185, 193, 198, 201, 203, 206, 212 |
+| `packages/harness/pi/src/worker.ts` | 89-97, 101, 106-109, 121-158, 163, 171-453, 466-498, 504-634 |
+| `packages/harness/process/src/ask-call.ts` | 24-25, 27-41, 44-46, 52, 54, 62-67, 74-76, 79-81, 86-88, 93-94, 109-115, 118-151, 154-155, 159, 162-163 |
+| `packages/harness/process/src/limit.ts` | 64, 69-71, 87 |
+| `packages/harness/radian/src/index.ts` | 102, 128, 236, 243, 250, 258, 387, 389 |
+| `packages/harness/radian/src/refusal.ts` | 38-50, 54-59, 76, 79-85 |
 | `packages/mcp/src/arguments.ts` | 27-29, 32-59, 72, 78, 82-84 |
 | `packages/mcp/src/channel.ts` | 288-289, 300, 319-321, 332-333, 339-341, 350-351, 361, 380-382, 392-395, 450, 453-455, 461-462, 465-466, 506-507, 512, 520-522, 526-527, 532, 541, 549, 563, 572-573, 582, 588, 594-595, 609, 619, 625 |
 | `packages/mcp/src/format.ts` | 18-21, 25, 34-40, 42, 44, 49-66, 71-115, 120-122, 127-129, 134, 138-151, 156-162 |
@@ -408,91 +408,91 @@ never loaded are listed above.
 | `packages/engine/src/views/presentation.ts` | `Views.facts` | 927-930 | 1 / 3 | 33.3% |
 | `packages/engine/src/views/presentation.ts` | `Views.recent` | 1985-2005 | 1 / 21 | 4.8% |
 | `packages/engine/src/views/presentation.ts` | `<anonymous@2003>` | 2003-2003 | 0 / 1 | 0.0% |
-| `packages/harness-claude/src/worker.ts` | `failure` | 110-122 | 0 / 11 | 0.0% |
-| `packages/harness-claude/src/worker.ts` | `finite` | 124-126 | 0 / 1 | 0.0% |
-| `packages/harness-claude/src/worker.ts` | `usageOf` | 128-137 | 0 / 8 | 0.0% |
-| `packages/harness-claude/src/worker.ts` | `read` | 130-130 | 0 / 1 | 0.0% |
-| `packages/harness-claude/src/worker.ts` | `runWorker` | 152-493 | 1 / 341 | 0.3% |
-| `packages/harness-claude/src/worker.ts` | `onCancel` | 165-168 | 0 / 4 | 0.0% |
-| `packages/harness-claude/src/worker.ts` | `deniedByProfile` | 182-193 | 0 / 12 | 0.0% |
-| `packages/harness-claude/src/worker.ts` | `startCall` | 194-209 | 0 / 16 | 0.0% |
-| `packages/harness-claude/src/worker.ts` | `endCall` | 210-223 | 0 / 14 | 0.0% |
-| `packages/harness-claude/src/worker.ts` | `<anonymous@226>` | 226-235 | 0 / 10 | 0.0% |
-| `packages/harness-claude/src/worker.ts` | `toolHook` | 226-235 | 0 / 10 | 0.0% |
-| `packages/harness-claude/src/worker.ts` | `canUseTool` | 240-273 | 0 / 34 | 0.0% |
-| `packages/harness-claude/src/worker.ts` | `<anonymous@251>` | 251-258 | 0 / 8 | 0.0% |
-| `packages/harness-claude/src/worker.ts` | `<anonymous@253>` | 253-253 | 0 / 1 | 0.0% |
-| `packages/harness-claude/src/worker.ts` | `<anonymous@263>` | 263-266 | 0 / 4 | 0.0% |
-| `packages/harness-claude/src/worker.ts` | `<anonymous@265>` | 265-265 | 0 / 1 | 0.0% |
-| `packages/harness-claude/src/worker.ts` | `stderr` | 308-312 | 0 / 5 | 0.0% |
-| `packages/harness-claude/src/worker.ts` | `<anonymous@332>` | 332-344 | 0 / 13 | 0.0% |
-| `packages/harness-claude/src/worker.ts` | `<anonymous@333>` | 333-340 | 0 / 8 | 0.0% |
-| `packages/harness-claude/src/worker.ts` | `<anonymous@341>` | 341-343 | 0 / 3 | 0.0% |
-| `packages/harness-claude/src/worker.ts` | `<anonymous@346>` | 346-346 | 0 / 1 | 0.0% |
-| `packages/harness-claude/src/worker.ts` | `<anonymous@347>` | 347-347 | 0 / 1 | 0.0% |
-| `packages/harness-claude/src/worker.ts` | `<anonymous@378>` | 378-378 | 0 / 1 | 0.0% |
-| `packages/harness-claude/src/worker.ts` | `<anonymous@476>` | 476-476 | 0 / 1 | 0.0% |
-| `packages/harness-claude/src/worker.ts` | `StdinLines.#more` | 505-515 | 0 / 11 | 0.0% |
-| `packages/harness-claude/src/worker.ts` | `StdinLines.next` | 518-533 | 0 / 16 | 0.0% |
-| `packages/harness-claude/src/worker.ts` | `main` | 541-667 | 1 / 126 | 0.8% |
-| `packages/harness-claude/src/worker.ts` | `write` | 542-544 | 0 / 3 | 0.0% |
-| `packages/harness-claude/src/worker.ts` | `<anonymous@546>` | 546-548 | 0 / 3 | 0.0% |
-| `packages/harness-claude/src/worker.ts` | `flush` | 546-548 | 0 / 3 | 0.0% |
-| `packages/harness-claude/src/worker.ts` | `<anonymous@547>` | 547-547 | 0 / 1 | 0.0% |
-| `packages/harness-claude/src/worker.ts` | `line` | 558-558 | 0 / 1 | 0.0% |
-| `packages/harness-claude/src/worker.ts` | `onMessage` | 559-562 | 0 / 4 | 0.0% |
-| `packages/harness-claude/src/worker.ts` | `log` | 563-563 | 0 / 1 | 0.0% |
-| `packages/harness-claude/src/worker.ts` | `<anonymous@565>` | 565-574 | 0 / 10 | 0.0% |
-| `packages/harness-claude/src/worker.ts` | `useGrant` | 565-574 | 0 / 10 | 0.0% |
-| `packages/harness-claude/src/worker.ts` | `<anonymous@576>` | 576-589 | 0 / 14 | 0.0% |
-| `packages/harness-claude/src/worker.ts` | `ask` | 576-589 | 0 / 14 | 0.0% |
-| `packages/harness-claude/src/worker.ts` | `<anonymous@583>` | 583-587 | 0 / 5 | 0.0% |
-| `packages/harness-claude/src/worker.ts` | `<anonymous@592>` | 592-594 | 0 / 3 | 0.0% |
-| `packages/harness-claude/src/worker.ts` | `<anonymous@597>` | 597-597 | 0 / 1 | 0.0% |
-| `packages/harness-claude/src/worker.ts` | `<anonymous@615>` | 615-657 | 0 / 43 | 0.0% |
-| `packages/harness-pi/src/worker.ts` | `textOf` | 89-99 | 0 / 9 | 0.0% |
-| `packages/harness-pi/src/worker.ts` | `<anonymous@93>` | 94-96 | 0 / 3 | 0.0% |
-| `packages/harness-pi/src/worker.ts` | `finite` | 101-103 | 0 / 1 | 0.0% |
-| `packages/harness-pi/src/worker.ts` | `priceOf` | 106-111 | 0 / 4 | 0.0% |
-| `packages/harness-pi/src/worker.ts` | `Tally.add` | 121-150 | 0 / 30 | 0.0% |
-| `packages/harness-pi/src/worker.ts` | `Tally.cost` | 156-160 | 1 / 4 | 25.0% |
-| `packages/harness-pi/src/worker.ts` | `runWorker` | 176-456 | 1 / 279 | 0.4% |
-| `packages/harness-pi/src/worker.ts` | `operadExtension` | 228-284 | 0 / 57 | 0.0% |
-| `packages/harness-pi/src/worker.ts` | `<anonymous@229>` | 229-283 | 0 / 55 | 0.0% |
-| `packages/harness-pi/src/worker.ts` | `<anonymous@257>` | 257-257 | 0 / 1 | 0.0% |
-| `packages/harness-pi/src/worker.ts` | `<anonymous@271>` | 271-274 | 0 / 4 | 0.0% |
-| `packages/harness-pi/src/worker.ts` | `<anonymous@273>` | 273-273 | 0 / 1 | 0.0% |
-| `packages/harness-pi/src/worker.ts` | `onLog` | 309-309 | 0 / 1 | 0.0% |
-| `packages/harness-pi/src/worker.ts` | `<anonymous@316>` | 316-328 | 0 / 13 | 0.0% |
-| `packages/harness-pi/src/worker.ts` | `execute` | 322-327 | 0 / 6 | 0.0% |
-| `packages/harness-pi/src/worker.ts` | `<anonymous@324>` | 324-324 | 0 / 1 | 0.0% |
-| `packages/harness-pi/src/worker.ts` | `settle` | 346-346 | 0 / 1 | 0.0% |
-| `packages/harness-pi/src/worker.ts` | `<anonymous@347>` | 347-349 | 0 / 3 | 0.0% |
-| `packages/harness-pi/src/worker.ts` | `<anonymous@350>` | 350-391 | 0 / 42 | 0.0% |
-| `packages/harness-pi/src/worker.ts` | `result` | 393-400 | 0 / 8 | 0.0% |
-| `packages/harness-pi/src/worker.ts` | `<anonymous@404>` | 404-409 | 0 / 6 | 0.0% |
-| `packages/harness-pi/src/worker.ts` | `<anonymous@406>` | 406-408 | 0 / 3 | 0.0% |
-| `packages/harness-pi/src/worker.ts` | `onCancel` | 412-415 | 0 / 4 | 0.0% |
-| `packages/harness-pi/src/worker.ts` | `StdinLines.#more` | 468-478 | 0 / 11 | 0.0% |
-| `packages/harness-pi/src/worker.ts` | `StdinLines.next` | 481-496 | 0 / 16 | 0.0% |
-| `packages/harness-pi/src/worker.ts` | `main` | 504-636 | 1 / 132 | 0.8% |
-| `packages/harness-pi/src/worker.ts` | `write` | 505-507 | 0 / 3 | 0.0% |
-| `packages/harness-pi/src/worker.ts` | `<anonymous@509>` | 509-511 | 0 / 3 | 0.0% |
-| `packages/harness-pi/src/worker.ts` | `flush` | 509-511 | 0 / 3 | 0.0% |
-| `packages/harness-pi/src/worker.ts` | `<anonymous@510>` | 510-510 | 0 / 1 | 0.0% |
-| `packages/harness-pi/src/worker.ts` | `line` | 521-521 | 0 / 1 | 0.0% |
-| `packages/harness-pi/src/worker.ts` | `onMessage` | 522-525 | 0 / 4 | 0.0% |
-| `packages/harness-pi/src/worker.ts` | `log` | 526-526 | 0 / 1 | 0.0% |
-| `packages/harness-pi/src/worker.ts` | `<anonymous@528>` | 528-537 | 0 / 10 | 0.0% |
-| `packages/harness-pi/src/worker.ts` | `useGrant` | 528-537 | 0 / 10 | 0.0% |
-| `packages/harness-pi/src/worker.ts` | `<anonymous@539>` | 539-552 | 0 / 14 | 0.0% |
-| `packages/harness-pi/src/worker.ts` | `ask` | 539-552 | 0 / 14 | 0.0% |
-| `packages/harness-pi/src/worker.ts` | `<anonymous@546>` | 546-550 | 0 / 5 | 0.0% |
-| `packages/harness-pi/src/worker.ts` | `<anonymous@555>` | 555-557 | 0 / 3 | 0.0% |
-| `packages/harness-pi/src/worker.ts` | `<anonymous@566>` | 566-566 | 0 / 1 | 0.0% |
-| `packages/harness-pi/src/worker.ts` | `<anonymous@584>` | 584-626 | 0 / 43 | 0.0% |
-| `packages/harness-radian/src/refusal.ts` | `patchPaths` | 38-52 | 0 / 13 | 0.0% |
-| `packages/harness-radian/src/refusal.ts` | `describe` | 54-61 | 1 / 7 | 14.3% |
+| `packages/harness/claude/src/worker.ts` | `failure` | 110-122 | 0 / 11 | 0.0% |
+| `packages/harness/claude/src/worker.ts` | `finite` | 124-126 | 0 / 1 | 0.0% |
+| `packages/harness/claude/src/worker.ts` | `usageOf` | 128-137 | 0 / 8 | 0.0% |
+| `packages/harness/claude/src/worker.ts` | `read` | 130-130 | 0 / 1 | 0.0% |
+| `packages/harness/claude/src/worker.ts` | `runWorker` | 152-493 | 1 / 341 | 0.3% |
+| `packages/harness/claude/src/worker.ts` | `onCancel` | 165-168 | 0 / 4 | 0.0% |
+| `packages/harness/claude/src/worker.ts` | `deniedByProfile` | 182-193 | 0 / 12 | 0.0% |
+| `packages/harness/claude/src/worker.ts` | `startCall` | 194-209 | 0 / 16 | 0.0% |
+| `packages/harness/claude/src/worker.ts` | `endCall` | 210-223 | 0 / 14 | 0.0% |
+| `packages/harness/claude/src/worker.ts` | `<anonymous@226>` | 226-235 | 0 / 10 | 0.0% |
+| `packages/harness/claude/src/worker.ts` | `toolHook` | 226-235 | 0 / 10 | 0.0% |
+| `packages/harness/claude/src/worker.ts` | `canUseTool` | 240-273 | 0 / 34 | 0.0% |
+| `packages/harness/claude/src/worker.ts` | `<anonymous@251>` | 251-258 | 0 / 8 | 0.0% |
+| `packages/harness/claude/src/worker.ts` | `<anonymous@253>` | 253-253 | 0 / 1 | 0.0% |
+| `packages/harness/claude/src/worker.ts` | `<anonymous@263>` | 263-266 | 0 / 4 | 0.0% |
+| `packages/harness/claude/src/worker.ts` | `<anonymous@265>` | 265-265 | 0 / 1 | 0.0% |
+| `packages/harness/claude/src/worker.ts` | `stderr` | 308-312 | 0 / 5 | 0.0% |
+| `packages/harness/claude/src/worker.ts` | `<anonymous@332>` | 332-344 | 0 / 13 | 0.0% |
+| `packages/harness/claude/src/worker.ts` | `<anonymous@333>` | 333-340 | 0 / 8 | 0.0% |
+| `packages/harness/claude/src/worker.ts` | `<anonymous@341>` | 341-343 | 0 / 3 | 0.0% |
+| `packages/harness/claude/src/worker.ts` | `<anonymous@346>` | 346-346 | 0 / 1 | 0.0% |
+| `packages/harness/claude/src/worker.ts` | `<anonymous@347>` | 347-347 | 0 / 1 | 0.0% |
+| `packages/harness/claude/src/worker.ts` | `<anonymous@378>` | 378-378 | 0 / 1 | 0.0% |
+| `packages/harness/claude/src/worker.ts` | `<anonymous@476>` | 476-476 | 0 / 1 | 0.0% |
+| `packages/harness/claude/src/worker.ts` | `StdinLines.#more` | 505-515 | 0 / 11 | 0.0% |
+| `packages/harness/claude/src/worker.ts` | `StdinLines.next` | 518-533 | 0 / 16 | 0.0% |
+| `packages/harness/claude/src/worker.ts` | `main` | 541-667 | 1 / 126 | 0.8% |
+| `packages/harness/claude/src/worker.ts` | `write` | 542-544 | 0 / 3 | 0.0% |
+| `packages/harness/claude/src/worker.ts` | `<anonymous@546>` | 546-548 | 0 / 3 | 0.0% |
+| `packages/harness/claude/src/worker.ts` | `flush` | 546-548 | 0 / 3 | 0.0% |
+| `packages/harness/claude/src/worker.ts` | `<anonymous@547>` | 547-547 | 0 / 1 | 0.0% |
+| `packages/harness/claude/src/worker.ts` | `line` | 558-558 | 0 / 1 | 0.0% |
+| `packages/harness/claude/src/worker.ts` | `onMessage` | 559-562 | 0 / 4 | 0.0% |
+| `packages/harness/claude/src/worker.ts` | `log` | 563-563 | 0 / 1 | 0.0% |
+| `packages/harness/claude/src/worker.ts` | `<anonymous@565>` | 565-574 | 0 / 10 | 0.0% |
+| `packages/harness/claude/src/worker.ts` | `useGrant` | 565-574 | 0 / 10 | 0.0% |
+| `packages/harness/claude/src/worker.ts` | `<anonymous@576>` | 576-589 | 0 / 14 | 0.0% |
+| `packages/harness/claude/src/worker.ts` | `ask` | 576-589 | 0 / 14 | 0.0% |
+| `packages/harness/claude/src/worker.ts` | `<anonymous@583>` | 583-587 | 0 / 5 | 0.0% |
+| `packages/harness/claude/src/worker.ts` | `<anonymous@592>` | 592-594 | 0 / 3 | 0.0% |
+| `packages/harness/claude/src/worker.ts` | `<anonymous@597>` | 597-597 | 0 / 1 | 0.0% |
+| `packages/harness/claude/src/worker.ts` | `<anonymous@615>` | 615-657 | 0 / 43 | 0.0% |
+| `packages/harness/pi/src/worker.ts` | `textOf` | 89-99 | 0 / 9 | 0.0% |
+| `packages/harness/pi/src/worker.ts` | `<anonymous@93>` | 94-96 | 0 / 3 | 0.0% |
+| `packages/harness/pi/src/worker.ts` | `finite` | 101-103 | 0 / 1 | 0.0% |
+| `packages/harness/pi/src/worker.ts` | `priceOf` | 106-111 | 0 / 4 | 0.0% |
+| `packages/harness/pi/src/worker.ts` | `Tally.add` | 121-150 | 0 / 30 | 0.0% |
+| `packages/harness/pi/src/worker.ts` | `Tally.cost` | 156-160 | 1 / 4 | 25.0% |
+| `packages/harness/pi/src/worker.ts` | `runWorker` | 176-456 | 1 / 279 | 0.4% |
+| `packages/harness/pi/src/worker.ts` | `operadExtension` | 228-284 | 0 / 57 | 0.0% |
+| `packages/harness/pi/src/worker.ts` | `<anonymous@229>` | 229-283 | 0 / 55 | 0.0% |
+| `packages/harness/pi/src/worker.ts` | `<anonymous@257>` | 257-257 | 0 / 1 | 0.0% |
+| `packages/harness/pi/src/worker.ts` | `<anonymous@271>` | 271-274 | 0 / 4 | 0.0% |
+| `packages/harness/pi/src/worker.ts` | `<anonymous@273>` | 273-273 | 0 / 1 | 0.0% |
+| `packages/harness/pi/src/worker.ts` | `onLog` | 309-309 | 0 / 1 | 0.0% |
+| `packages/harness/pi/src/worker.ts` | `<anonymous@316>` | 316-328 | 0 / 13 | 0.0% |
+| `packages/harness/pi/src/worker.ts` | `execute` | 322-327 | 0 / 6 | 0.0% |
+| `packages/harness/pi/src/worker.ts` | `<anonymous@324>` | 324-324 | 0 / 1 | 0.0% |
+| `packages/harness/pi/src/worker.ts` | `settle` | 346-346 | 0 / 1 | 0.0% |
+| `packages/harness/pi/src/worker.ts` | `<anonymous@347>` | 347-349 | 0 / 3 | 0.0% |
+| `packages/harness/pi/src/worker.ts` | `<anonymous@350>` | 350-391 | 0 / 42 | 0.0% |
+| `packages/harness/pi/src/worker.ts` | `result` | 393-400 | 0 / 8 | 0.0% |
+| `packages/harness/pi/src/worker.ts` | `<anonymous@404>` | 404-409 | 0 / 6 | 0.0% |
+| `packages/harness/pi/src/worker.ts` | `<anonymous@406>` | 406-408 | 0 / 3 | 0.0% |
+| `packages/harness/pi/src/worker.ts` | `onCancel` | 412-415 | 0 / 4 | 0.0% |
+| `packages/harness/pi/src/worker.ts` | `StdinLines.#more` | 468-478 | 0 / 11 | 0.0% |
+| `packages/harness/pi/src/worker.ts` | `StdinLines.next` | 481-496 | 0 / 16 | 0.0% |
+| `packages/harness/pi/src/worker.ts` | `main` | 504-636 | 1 / 132 | 0.8% |
+| `packages/harness/pi/src/worker.ts` | `write` | 505-507 | 0 / 3 | 0.0% |
+| `packages/harness/pi/src/worker.ts` | `<anonymous@509>` | 509-511 | 0 / 3 | 0.0% |
+| `packages/harness/pi/src/worker.ts` | `flush` | 509-511 | 0 / 3 | 0.0% |
+| `packages/harness/pi/src/worker.ts` | `<anonymous@510>` | 510-510 | 0 / 1 | 0.0% |
+| `packages/harness/pi/src/worker.ts` | `line` | 521-521 | 0 / 1 | 0.0% |
+| `packages/harness/pi/src/worker.ts` | `onMessage` | 522-525 | 0 / 4 | 0.0% |
+| `packages/harness/pi/src/worker.ts` | `log` | 526-526 | 0 / 1 | 0.0% |
+| `packages/harness/pi/src/worker.ts` | `<anonymous@528>` | 528-537 | 0 / 10 | 0.0% |
+| `packages/harness/pi/src/worker.ts` | `useGrant` | 528-537 | 0 / 10 | 0.0% |
+| `packages/harness/pi/src/worker.ts` | `<anonymous@539>` | 539-552 | 0 / 14 | 0.0% |
+| `packages/harness/pi/src/worker.ts` | `ask` | 539-552 | 0 / 14 | 0.0% |
+| `packages/harness/pi/src/worker.ts` | `<anonymous@546>` | 546-550 | 0 / 5 | 0.0% |
+| `packages/harness/pi/src/worker.ts` | `<anonymous@555>` | 555-557 | 0 / 3 | 0.0% |
+| `packages/harness/pi/src/worker.ts` | `<anonymous@566>` | 566-566 | 0 / 1 | 0.0% |
+| `packages/harness/pi/src/worker.ts` | `<anonymous@584>` | 584-626 | 0 / 43 | 0.0% |
+| `packages/harness/radian/src/refusal.ts` | `patchPaths` | 38-52 | 0 / 13 | 0.0% |
+| `packages/harness/radian/src/refusal.ts` | `describe` | 54-61 | 1 / 7 | 14.3% |
 | `packages/mcp/src/arguments.ts` | `checkOne` | 21-61 | 9 / 40 | 22.5% |
 | `packages/mcp/src/format.ts` | `flags` | 18-23 | 0 / 4 | 0.0% |
 | `packages/mcp/src/format.ts` | `listMarkdown` | 30-47 | 8 / 17 | 47.1% |

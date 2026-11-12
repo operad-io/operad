@@ -31,8 +31,13 @@ function sourceFiles(directory: string): string[] {
 /** Every `src` tree in the workspace: the code that ships. */
 function sourceTrees(): string[] {
   const packages = join(ROOT, "packages");
-  return readdirSync(packages)
-    .map((name) => join(packages, name, "src"))
+  const dirs = readdirSync(packages).flatMap((name) => {
+    const path = join(packages, name);
+    // A group directory (packages/harness/) holds packages one level down.
+    return name === "harness" ? readdirSync(path).map((child) => join(path, child)) : [path];
+  });
+  return dirs
+    .map((dir) => join(dir, "src"))
     .filter((path) => {
       try {
         return statSync(path).isDirectory();

@@ -63,7 +63,7 @@ need more than 10 reruns to show; absence here is weak evidence.
 
 `gate.test.ts` "a radian Result with a model_error ..." (10 of 10), `dogfood-config`
 (20 of 20) and cli `main.test.ts` "init ..." (20 of 20) failed every rerun, with
-`Cannot find module '@operad-io/access-match' from packages/harness-radian/src/index.ts`
+`Cannot find module '@operad-io/access-match' from packages/harness/radian/src/index.ts`
 (seen in the gate and dogfood logs; the cli log was not read, same pattern). This
 worktree's `node_modules/@operad-io` has no `access-match` link (only dev, engine,
 harness-claude, harness-pi, harness-radian, pool, shell, source-cron), dated before
@@ -87,7 +87,7 @@ cannot judge them.
 
 ### Test bug, likely: instant liveness check after a kill (harness-claude, 1 failure; shell, 0 here)
 
-`packages/harness-claude/test/plugin.test.ts:385`, "silence without an open tool call
+`packages/harness/claude/test/plugin.test.ts:385`, "silence without an open tool call
 is a stall": the result was already `failed`/`stall` (lines 383-384 passed), then
 `expect(alive(pid)).toBe(false)` got `true` (1 of 10, 626 ms). `alive` is
 `process.kill(pid, 0)` (`plugin.test.ts:75-82`) checked immediately. A killed process
@@ -133,7 +133,7 @@ Each ends with: the stress command must reach 0 failures of 200 runs.
    other uses, `shell.test.ts:~680`) with a wait on the event "pid is gone" with a
    bounded timeout; on timeout record `ps -o stat,ppid` so a zombie is told from a
    live process. If a live process remains, that is a product race in the stop path
-   (`process-group.ts`) and becomes its own bug. Check: `bash scripts/stress.sh --runs 200 --load 2 packages/harness-claude/test/plugin.test.ts` and `bash scripts/stress.sh --runs 200 --load 2 packages/shell/test/shell.test.ts` must each report 0 failures (whole files, so every test in them runs 200 times).
+   (`process-group.ts`) and becomes its own bug. Check: `bash scripts/stress.sh --runs 200 --load 2 packages/harness/claude/test/plugin.test.ts` and `bash scripts/stress.sh --runs 200 --load 2 packages/shell/test/shell.test.ts` must each report 0 failures (whole files, so every test in them runs 200 times).
 3. **Say why `serve stop` exited 3, then fix it** (area: cli). Make the serve-restart
    test print stop's stderr on failure, reproduce with
    `bash scripts/stress.sh --runs 20 --load 2 packages/cli/test/serve-restart.test.ts`
@@ -166,8 +166,8 @@ repository root links only what the root `package.json` depends on (dev, engine,
 harness-claude, harness-pi, harness-radian, pool, shell, source-cron);
 `@operad-io/access-match` is a dependency of harness-claude, harness-pi and
 harness-radian, so bun links it under each of those packages
-(`packages/harness-radian/node_modules/@operad-io/access-match`), and
-`packages/harness-radian/src/index.ts` resolves it from there, never from the root.
+(`packages/harness/radian/node_modules/@operad-io/access-match`), and
+`packages/harness/radian/src/index.ts` resolves it from there, never from the root.
 So the root link was absent before and after `bun install --frozen-lockfile`, and
 should be. The stale install was the per-package link: the old worktree lacked it,
 and the install, though it printed "no changes" for the lockfile, created it
@@ -338,16 +338,16 @@ Each ends with: the stress command must reach 0 failures of 200 runs.
    fallback. Check, each 0 failures of 200:
    `bash scripts/stress.sh --runs 200 --load 2 packages/tui/test/theme.test.ts`,
    `... packages/engine/test/plugin/object-store.test.ts`,
-   `... packages/harness-claude/test/plugin.test.ts`.
+   `... packages/harness/claude/test/plugin.test.ts`.
 8. **Find why `stopTestProcesses` did not finish in harness-radian** (area:
    harness-radian tests). Failure 4. Print the surviving `ps -o pid,ppid,stat,command`
    when `waitForGone` times out; classify as leak or listing stall before fixing.
-   Check: `bash scripts/stress.sh --runs 200 --load 2 packages/harness-radian/test/plugin.test.ts`.
+   Check: `bash scripts/stress.sh --runs 200 --load 2 packages/harness/radian/test/plugin.test.ts`.
 9. **A cancelled pi worker still alive 10 s later** (area: harness-pi). Failure 5.
    Record `ps -o stat,ppid` for the pid when `gone` gives up; test cancel fired
    immediately after the marker appears; if the process is live, it is a race
    between abort and process-group registration in the plugin. Check:
-   `bash scripts/stress.sh --runs 200 --load 2 packages/harness-pi/test/plugin.test.ts`.
+   `bash scripts/stress.sh --runs 200 --load 2 packages/harness/pi/test/plugin.test.ts`.
 10. **Crash-recovery order record short by one** (area: engine). Failure 6. Make the
     test print `env.order()` source lines and the child exits on failure, then decide
     test bug or replay bug. Check:

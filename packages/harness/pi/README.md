@@ -5,7 +5,7 @@ reads one JSON object from stdin, runs one prompt and writes one JSON object per
 line to stdout. The last line is the `Result`. The hub-side step
 (`src/index.ts`, described under "The plugin" below) spawns it. Decisions: `docs/backlog/operad-harness-pi.md` 2, 3, 5, 6, 7.
 
-Run it as `bun packages/harness-pi/src/worker.ts`. stderr is free text for
+Run it as `bun packages/harness/pi/src/worker.ts`. stderr is free text for
 humans and is never parsed.
 
 pi does no discovery here: the only extension is operad's inline one, settings
@@ -123,7 +123,7 @@ A flow switches harness by changing `use` from `harness-radian/agent` to
 params, the result names (`done`, `failed`, `interrupted`) and the facts
 (`exitCode`, `signal`, `sessionId`, `finalMessage`, `usage`, `log`,
 `durationMs`, `stderr`) are `harness-radian`'s, except `args` (below). `usage`
-is the standard one described in [the manual](../../docs/manual.md#usage-and-end-results):
+is the standard one described in [the manual](../../../docs/manual.md#usage-and-end-results):
 `model` is the step's `--model` or the `model` setting, and the worker's
 `cost.micros` becomes `costMicros`.
 `sessionId` is the path of pi's
@@ -168,7 +168,7 @@ param (`wallTimeSecs`, `stallSecs`) overrides the setting of the same name.
 | `concurrency` | object, model to positive integer | `{}` | how many runs of one model may go at once, such as `{ "opencode-go/deepseek-v4.1-flash": 2 }`; a model not listed has no limit |
 
 How `concurrency` limits runs, what the key is and how a queued step shows
-are in [the manual](../../docs/manual.md#limiting-runs-of-one-model).
+are in [the manual](../../../docs/manual.md#limiting-runs-of-one-model).
 
 A leading `~` in a path is the user's home directory. The step's own timeout is
 eight hours, above every allowed wall time.

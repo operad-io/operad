@@ -990,7 +990,7 @@ test("a write to an askPaths path asks with the path and the tool; allowed, the 
 function operadHome(s: Setup): string {
   const home = join(s.dir, "operad-home");
   mkdirSync(home, { recursive: true });
-  const plugin = join(import.meta.dir, "..", "..", "engine", "test", "fixtures", "plugins", "presentation.ts");
+  const plugin = join(import.meta.dir, "..", "..", "..", "engine", "test", "fixtures", "plugins", "presentation.ts");
   writeFileSync(
     join(home, "config.json"),
     JSON.stringify({ plugins: [plugin], store: { backend: "jsonl", path: join(s.dir, "operad-store") } }),

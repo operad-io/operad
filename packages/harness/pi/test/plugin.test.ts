@@ -147,7 +147,7 @@ describe("harness-pi/agent", () => {
 
     // The same fake data through harness-radian gives the same facts.
     const radianModule = (await import(
-      new URL("../../harness-radian/src/index.ts", import.meta.url).href
+      new URL("../../radian/src/index.ts", import.meta.url).href
     )) as { readonly createRadianHarnessPlugin: (o: object) => unknown };
     const bin = join(env.root, "fake-radian");
     writeFileSync(

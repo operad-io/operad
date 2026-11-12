@@ -5,7 +5,7 @@ through the Agent SDK, which starts your own `claude` command. It reads one
 JSON object from stdin and writes one JSON object per line to stdout. The last
 line is the `Result`. Decisions: `docs/backlog/operad-harness-claude.md` 2 to 8.
 
-Run it as `bun packages/harness-claude/src/worker.ts`. stderr is free text for
+Run it as `bun packages/harness/claude/src/worker.ts`. stderr is free text for
 humans and is never parsed.
 
 operad bundles no claude. The root `package.json` replaces the eight
@@ -119,7 +119,7 @@ line to the step's log with `JsonlLog`, and turns the last `result` line into th
 facts. The params, the result names (`done`, `failed`, `interrupted`) and the
 facts (`exitCode`, `signal`, `sessionId`, `finalMessage`, `usage`, `log`,
 `durationMs`, `stderr`) are `harness-pi`'s. `usage` is the standard one in
-[the manual](../../docs/manual.md#usage-and-end-results): `model` is the step's
+[the manual](../../../docs/manual.md#usage-and-end-results): `model` is the step's
 `--model` or the `model` setting, else the model claude reports; `costMicros` is
 the worker's `cost.micros`, and `costQuality` is `estimated` for a subscription
 login and `exact` for an API key. `sessionId` is claude's session id; pass it back

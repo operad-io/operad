@@ -15,7 +15,7 @@ import {
 import { addRepository } from "../../dev/src/service.ts";
 import { main, type CliIo } from "../src/main.ts";
 import { cleanupTempRoots, tempRoot } from "../../engine/test/plugin/support.ts";
-import { fakeRadian } from "../../harness-radian/test/support.ts";
+import { fakeRadian } from "../../harness/radian/test/support.ts";
 
 afterAll(cleanupTempRoots);
 

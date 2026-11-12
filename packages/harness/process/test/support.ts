@@ -78,7 +78,7 @@ export async function waitForPid(path: string): Promise<number> {
 }
 
 // The pid waits are shared with the engine's plugin tests.
-export { alive, waitForGone } from "../../engine/test/plugin/support.ts";
+export { alive, waitForGone } from "../../../engine/test/plugin/support.ts";
 
 export interface ManualClock extends Clock {
   /** Fires every timeout whose requested delay is at most `maxMs`. */

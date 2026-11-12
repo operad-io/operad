@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "packages/harness/*"
   ],
   "scripts": {
     "typecheck": "tsc -b",

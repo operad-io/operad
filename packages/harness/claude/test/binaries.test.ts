@@ -3,7 +3,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { findClaude, ClaudeNotFoundError } from "../src/claude-install.ts";
 
-const ROOT = join(import.meta.dir, "..", "..", "..");
+const ROOT = join(import.meta.dir, "..", "..", "..", "..");
 
 const PLATFORMS = [
   "darwin-arm64",
@@ -22,7 +22,7 @@ function packageDirs(): string[] {
   const scopes = [
     join(ROOT, "node_modules", "@anthropic-ai"),
     join(ROOT, "node_modules", ".bun", "node_modules", "@anthropic-ai"),
-    join(ROOT, "packages", "harness-claude", "node_modules", "@anthropic-ai"),
+    join(ROOT, "packages", "harness", "claude", "node_modules", "@anthropic-ai"),
   ];
   for (const scope of scopes) {
     if (existsSync(scope)) found.push(...readdirSync(scope).map((name) => join(scope, name)));

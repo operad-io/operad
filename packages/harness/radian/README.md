@@ -38,7 +38,7 @@ The `harness-radian` section of `config.json`.
 | `concurrency` | object, model to positive integer | `{}` | how many runs of one model may go at once, such as `{ "opencode-go/deepseek-v4.1-flash": 2 }`; a model not listed has no limit |
 
 How `concurrency` limits runs, what the key is and how a queued step shows
-are in [the manual](../../docs/manual.md#limiting-runs-of-one-model).
+are in [the manual](../../../docs/manual.md#limiting-runs-of-one-model).
 
 ## The log's tool lines
 

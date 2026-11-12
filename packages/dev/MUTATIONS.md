@@ -883,7 +883,7 @@ the row fields.
 | T-0301-M3 | packages/dev/src/chat.ts | `chatWorktreeOf` accepted a chat whose recorded worktree no longer exists | `task add --chat > a chat whose recorded worktree was removed is refused` |
 | T-0301-M4 | packages/dev/src/integrate.ts | cleanup exported the chat worktree as the task's worktree, so the after-merge hook removed it | `task add --chat > cleanup after the merge leaves the chat's worktree and branch` |
 
-`packages/harness-claude/acceptance/` was removed by T-0266, so the finding about it has no code left to mutate.
+`packages/harness/claude/acceptance/` was removed by T-0266, so the finding about it has no code left to mutate.
 ## T-0293 — a task whose run is gone and flow is missing waits
 
 | id | file | mutation | failing test |
