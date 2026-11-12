@@ -2,6 +2,7 @@
 
 import { join } from "node:path";
 import {
+  LOCK_TIMEOUT_MS,
   LockTimeoutError,
   withLockFile,
   type LockFileOptions,
@@ -27,7 +28,7 @@ export async function withRepositoryLock<T>(
     if (error instanceof LockTimeoutError) {
       throw new DevError(
         "lock",
-        `another dev command holds ${error.lockPath} (${error.holder})`,
+        `another dev command holds ${error.lockPath} (${error.holder}); gave up after ${LOCK_TIMEOUT_MS / 1_000}s`,
       );
     }
     throw error;

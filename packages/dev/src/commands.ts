@@ -11,8 +11,8 @@ import { flakyTasksByName } from "./flaky.ts";
 import { listRerunCounts } from "./reruns.ts";
 import { loadProjectFlows } from "./project-flows.ts";
 import { readDevSettings } from "./settings.ts";
-import { readStdinText } from "./stdin.ts";
-import { editText } from "./editor.ts";
+import { readStdinText, readStdinWithin, type StdinReadOptions } from "./stdin.ts";
+import { editText, editorCommand } from "./editor.ts";
 import {
   addPlan,
   validatePlanConcurrency,
@@ -223,20 +223,43 @@ function editable(task: StoredObject): void {
   }
 }
 
+/** How long `task edit` waits for a piped brief before it uses the editor. */
+const STDIN_WAIT_MS = 1_000;
+
+/** Test-only: what a bounded standard-input read injects. */
+export const commandTestHooks: {
+  stdin?: StdinReadOptions | undefined;
+} = {};
+
 /**
  * The new brief for `task edit`: the text on stdin when stdin is not a
  * terminal and carries some, else what the person saves in `$EDITOR`. A caller
  * that passes its input (the MCP `command` tool) never gets an editor: its
  * stdio is not a terminal.
+ *
+ * A non-terminal stdin can be a pipe nobody closes. The wait is bounded, and
+ * a read that times out falls back to the editor; without an editor it fails
+ * and says what it waited for instead of hanging silently.
  */
 async function newBrief(ctx: CommandContext, body: string): Promise<string> {
-  const piped =
-    ctx.input !== undefined || process.stdin.isTTY !== true
-      ? await readStdinText(ctx.input)
-      : "";
-  if (piped.trim().length > 0) return piped;
   if (ctx.input !== undefined) {
+    const piped = await readStdinText(ctx.input);
+    if (piped.trim().length > 0) return piped;
     throw new DevError("brief", "task edit needs the new brief as input");
+  }
+  if (process.stdin.isTTY === true) {
+    return editText(body, { root: ctx.store.root });
+  }
+  const read = await readStdinWithin(undefined, {
+    timeoutMs: STDIN_WAIT_MS,
+    ...commandTestHooks.stdin,
+  });
+  if (read.text.trim().length > 0) return read.text;
+  if (read.timedOut && editorCommand() === undefined) {
+    throw new DevError(
+      "brief",
+      `task edit waited ${STDIN_WAIT_MS / 1_000}s for the brief on standard input; nothing arrived, and no editor is set; pipe the brief or set $EDITOR`,
+    );
   }
   return editText(body, { root: ctx.store.root });
 }
