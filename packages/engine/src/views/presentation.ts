@@ -53,6 +53,7 @@ import {
 import { readState } from "../runner/service.ts";
 import { recordAnswer } from "../runner/answer.ts";
 import { StateError } from "../runner/errors.ts";
+import { listPending } from "./pending.ts";
 import {
   listSettings,
   setSetting,
@@ -1271,6 +1272,37 @@ export class Views {
         "not-available",
         "this server has no run log, so it cannot answer a question",
       );
+    }
+    const pending = await listPending(this.log, this.registry);
+    const item = pending.find(
+      (candidate) =>
+        candidate.runId === options.runId && candidate.waitId === options.waitId,
+    );
+    // A wait whose choices are the object's actions answers through that
+    // action, so its note, confirmation and object update still happen.
+    const throughAction =
+      item !== undefined &&
+      item.choices.every((name) =>
+        item.actions.some((action) => action.action === name),
+      )
+        ? item.actions.find((action) => action.action === options.choice)
+        : undefined;
+    if (item !== undefined && throughAction !== undefined) {
+      const info = this.resolveActionInfo(
+        `${throughAction.plugin}:${throughAction.action}`,
+      );
+      if (item.object === undefined) {
+        throw new ViewError(
+          "not-found",
+          `the pending item "${options.waitId}" names no object`,
+        );
+      }
+      await this.act(info.name, item.object, {
+        ...(options.note === undefined ? {} : { note: options.note }),
+        yes: false,
+        actor: options.actor,
+      });
+      return;
     }
     try {
       await recordAnswer({

@@ -684,6 +684,60 @@ describe("http server", () => {
     }
   });
 
+  test("answers a wait whose choices are actions through the action, keeping its note", async () => {
+    const h = await makeHarness();
+    try {
+      seed(h, "one", { title: "First", state: "new" });
+      const run = await h.log.startRun("demo-flow", "item:one");
+      await h.log.append(run.runId, 0, [
+        {
+          kind: "waiting_for_person",
+          payload: {
+            waitId: "wait:1",
+            step: "ask",
+            prompt: "Approve?",
+            choices: ["approve"],
+            waitKind: "step",
+            effectId: null,
+          },
+          cause: "test",
+        },
+      ]);
+
+      const noNote = await api(h, "/v1/answer", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          runId: run.runId,
+          waitId: "wait:1",
+          choice: "approve",
+        }),
+      });
+      expect(noNote.status).toBe(400);
+      expect((await json(noNote)).error).toMatchObject({ kind: "note" });
+      expect(h.store.get("item", "one")?.data.approved).not.toBe(true);
+
+      const answered = await api(h, "/v1/answer", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          runId: run.runId,
+          waitId: "wait:1",
+          choice: "approve",
+          note: "looks good",
+        }),
+      });
+      expect(answered.status).toBe(200);
+      expect(h.store.get("item", "one")?.data).toMatchObject({
+        approved: true,
+        state: "approved",
+        approvedNote: "looks good",
+      });
+    } finally {
+      await h.close();
+    }
+  });
+
   test("an action's opens passes through /v1/act when it names an existing object, and is dropped with a log line when not", async () => {
     const h = await makeHarness();
     try {

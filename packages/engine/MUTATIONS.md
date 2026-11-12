@@ -672,3 +672,4 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0336-M1 | packages/engine/src/views/presentation.ts | `Views.answer` returned before recording the answer, so the choice was dropped | `actions against the in-process server > a pending question whose choices are not actions offers them and answers` |
+| T-0336-M2 | packages/engine/src/views/presentation.ts | `Views.answer` skipped the action path for a wait whose choices are actions, so its note was not required and its object update was lost | `http server > answers a wait whose choices are actions through the action, keeping its note` |

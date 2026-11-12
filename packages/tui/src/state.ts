@@ -804,9 +804,10 @@ function rowFromPending(item: PendingItem): TuiRow {
     title: sanitize(item.prompt),
     state: sanitize(item.flow),
     ...(item.step === null ? {} : { note: sanitize(item.step) }),
-    detail: detailOf([item.flow, item.step ?? "", repositoryOf(item.object)]),
+    detail: detailOf([item.flow, item.step ?? "", repositoryOf(item.object), ...answerDetail]),
     waiting: true,
     running: false,
+    ...(answer === undefined ? {} : { answer }),
     ...(item.object === undefined ? { openable: false, unnamed: true } : {}),
   };
 }
