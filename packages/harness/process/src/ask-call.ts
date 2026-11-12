@@ -79,6 +79,8 @@ export function askToolEvent(line: string): "tool-start" | "tool-end" | undefine
 export function canAsk(access: unknown): boolean {
   if (!isRecord(access)) return false;
   if (access.readOnly === true) return true;
+  // MCP tools not on the allowed list ask, so a profile that lists them (even none) can ask.
+  if (Array.isArray(access.allowMcp)) return true;
   return [access.askCommands, access.askPaths].some((rules) => Array.isArray(rules) && rules.length > 0);
 }
 
