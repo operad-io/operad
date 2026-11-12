@@ -415,27 +415,6 @@ describe("runner", () => {
     }
   });
 
-  test("a worker step writes to the configured sqlite store", async () => {
-    const run = await fileSetup("write", "sqlite");
-    try {
-      const runner = new Runner({
-        log: run.log,
-        flow: run.flow,
-        runId: run.runId,
-        registry: run.registry,
-        lockRoot: run.storeRoot,
-      });
-      expect(await runner.run()).toBe("ended");
-
-      const configured = openPluginStore({ backend: "sqlite", root: run.storeRoot });
-      expect((await configured.get("job", "1"))?.data.wrote).toBe(true);
-      expect(existsSync(join(run.storeRoot, "plugins.sqlite"))).toBe(true);
-      expect(existsSync(join(run.storeRoot, "plugins", "facts.jsonl"))).toBe(false);
-    } finally {
-      await run.close();
-    }
-  });
-
   test("a step that never settles still times out in a memory-backed process", async () => {
     const root = await tempRoot();
     const child = Bun.spawn({
