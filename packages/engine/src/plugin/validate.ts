@@ -604,6 +604,9 @@ function normalizeActions(
       ...(typeof entry.rank === "function"
         ? { rank: entry.rank as NonNullable<ActionTypeDefinition["rank"]> }
         : {}),
+      ...(typeof entry.argsFor === "function"
+        ? { argsFor: entry.argsFor as NonNullable<ActionTypeDefinition["argsFor"]> }
+        : {}),
       ...(typeof entry.settled === "function"
         ? { settled: entry.settled as NonNullable<ActionTypeDefinition["settled"]> }
         : {}),
