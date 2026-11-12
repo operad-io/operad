@@ -22,6 +22,14 @@ import {
   resolveBot,
   type ResolvedBot,
 } from "./bot.ts";
+import {
+  PROPOSAL_TYPE,
+  proposalActions,
+  proposalItems,
+  proposalViews,
+  runSettingCommand,
+  runSkillCommand,
+} from "./proposals.ts";
 
 /** The step a chat calls at every reply to read its bot. */
 export const SETTINGS_STEP = "bot/settings";
@@ -228,13 +236,37 @@ export function createBotPlugin() {
         // Every list and get sees the bots the settings name.
         prepare: ({ store, home, settings }) => syncBots(store, home, settings),
       },
+      {
+        name: PROPOSAL_TYPE,
+        index: ["state", "bot"],
+        filters: [
+          { name: "pending", states: ["pending"], default: true },
+          { name: "applied", states: ["applied"] },
+          { name: "rejected", states: ["rejected"] },
+        ],
+      },
     ],
     steps: [{ name: "settings", results: ["done", "failed"], run: runSettings }],
-    actions: [chatAction],
-    views: { [BOT_TYPE]: botViews },
+    actions: [chatAction, ...proposalActions],
+    commands: [
+      {
+        name: "skill",
+        args: "<bot> <name> [--from <dir>]",
+        run: runSkillCommand,
+      },
+      {
+        name: "setting",
+        args: "<bot>",
+        run: runSettingCommand,
+      },
+    ],
+    // A proposal waits for no run; each one is a pending item of its bot.
+    standing: async (ctx) => proposalItems(ctx.store),
+    views: { [BOT_TYPE]: botViews, [PROPOSAL_TYPE]: proposalViews },
   });
 }
 
 export default createBotPlugin();
 
 export * from "./bot.ts";
+export * from "./proposals.ts";
