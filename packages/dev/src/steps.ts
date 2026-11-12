@@ -739,6 +739,8 @@ export async function runWorktree(
     branch: workBranch(context.workName),
     base,
     result: prepared.kind,
+    // The answer of an earlier attempt belongs to that attempt.
+    finalMessage: null,
     workWaits: 0,
     workRetryAt: null,
     // A new attempt starts with no gate results; the branch may have moved.
@@ -929,6 +931,7 @@ interface HarnessReading {
   readonly log: string | null;
   readonly tokens: { readonly input: number; readonly output: number } | null;
   readonly durationMs: number | null;
+  readonly finalMessage: string | null;
 }
 
 function harnessReading(
@@ -952,6 +955,10 @@ function harnessReading(
       usage === undefined || (usage.tokens.input === 0 && usage.tokens.output === 0)
         ? null
         : { input: usage.tokens.input, output: usage.tokens.output },
+    finalMessage:
+      typeof data.finalMessage === "string" && data.finalMessage.trim().length > 0
+        ? data.finalMessage
+        : null,
     durationMs:
       typeof data.durationMs === "number" && Number.isFinite(data.durationMs)
         ? data.durationMs
@@ -1418,6 +1425,7 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
     workLog: reading.log,
     tokens: reading.tokens,
     workMs: reading.durationMs,
+    finalMessage: reading.finalMessage,
     worked: true,
     // The worker the pool ran, so the next attempt can ask for it again.
     worker: typeof outcomeData.worker === "string" ? outcomeData.worker : null,

@@ -925,3 +925,9 @@ the row fields.
 |---|---|---|---|
 | T-0315-M1 | packages/dev/src/rework.ts | a first review moved a non-critical finding in an untouched file out of the failing set again (the per-file rule back) | `dev/review rework rounds > a major finding in a file the change does not touch fails the first review (T-0315)` and four more |
 | T-0315-M2 | packages/dev/src/gate.ts | a flow whose grading sets no fixLevel kept dev.json's level instead of the strictest the repository configures (`strictestElsewhere` removed) | `dev/review > review.json > a flow with no level of its own never reviews with a weaker one (T-0315)` |
+
+## T-0317 — the worker's final message is readable in full
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0317-M1 | packages/dev/src/steps.ts | the work step no longer copied the harness's `finalMessage` onto the attempt | `dev/work > the worker's final message is kept whole on the attempt (T-0317)` |
