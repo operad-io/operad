@@ -118,10 +118,19 @@ function bareId(id: string): string {
   return at < 0 ? id : id.slice(at + 1);
 }
 
+/**
+ * The actions a page lists: those that do not create an object of another type.
+ * A creating action belongs to that type's tab (`c` on the chat tab), not to the
+ * parent's page.
+ */
+export function pageActions(actions: readonly ViewAction[]): readonly ViewAction[] {
+  return actions.filter((action) => action.creates === undefined);
+}
+
 /** The first available action, the one the footer offers. */
 export function mainAction(state: TuiState): ViewAction | undefined {
   // An action that ends the object is never the main one, even when it is alone.
-  return state.object?.actions.find((action) => action.ends !== true);
+  return pageActions(state.object?.actions ?? []).find((action) => action.ends !== true);
 }
 
 /** The key the footer shows for the main action. */
@@ -398,7 +407,7 @@ export function paletteEntries(state: TuiState): readonly TuiPaletteEntry[] {
   const actions: readonly TuiPaletteEntry[] =
     object === undefined
       ? []
-      : object.actions.map((action) => ({
+      : pageActions(object.actions).map((action) => ({
           group: "actions",
           name: action.name,
           title: `${action.name} on ${bareId(object.id)}`,

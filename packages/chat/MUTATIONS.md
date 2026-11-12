@@ -19,3 +19,9 @@ the row fields.
 | T-0303-M4 | packages/chat/src/views.ts | the transcript used the registry's startup speaker and the bot object stored by the first prepare, not the settings in force now | `the chat's views > the chat plugin's speaker setting is read again at every draw` |
 | T-0312-M1 | packages/chat/src/index.ts | `chat:close` did not record the `chat.closed` fact | `chat:close > records a closed fact, makes the row closed, and keeps the transcript readable` |
 | T-0334-M1 | packages/chat/src/index.ts | a message from a client the chat does not know fell back to cli again | `chat:send > a client this plugin does not know is recorded as it is, never as cli, and is still answered` |
+
+## T-0329 — a chat created with a first message
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0329-M1 | packages/chat/src/index.ts | `sendMessage` no longer appended the message fact, so `dev:chat` with a first message created the chat and sent nothing | `dev:chat with a first message > creates the chat and sends the message, so the reply starts, and opens the chat` |

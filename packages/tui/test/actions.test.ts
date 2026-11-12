@@ -404,3 +404,52 @@ describe("a refusal line", () => {
     expect(noticeText(done)).toBe("T-0001-one is already cancelled; nothing to do");
   });
 });
+
+describe("an action that creates another type", () => {
+  const CREATING = action("dev:chat", { on: "repo", creates: "chat", note: "message" });
+
+  test("it is not on its parent's page: not the main action, not in the footer, not in the palette", () => {
+    const state = opened([CREATING, action("tuitest:approve")]);
+    expect(footerText(state).startsWith("a tuitest:approve · j/k")).toBe(true);
+    expect(footerText(state)).not.toContain("dev:chat");
+    const named = (from: TuiState) =>
+      paletteEntries(press(from, ":")).filter((entry) => entry.group === "actions").map((entry) => entry.name);
+    expect(named(state)).toEqual(["tuitest:approve"]);
+    const only = opened([CREATING]);
+    expect(footerText(only)).not.toContain("dev:chat");
+    expect(named(only)).toEqual([]);
+  });
+
+  test("c on a chat row opens its parent and starts the creating action there", () => {
+    let state = initialState({ width: 120 });
+    state = reduce(state, { type: "types", types: [{ type: "chat", title: "Chat" }] });
+    state = reduce(state, {
+      type: "tree",
+      tabId: "plugin:chat",
+      level: "children",
+      entries: [
+        {
+          type: "chat",
+          parent: "repo:ops",
+          row: { id: "C-0001", title: "One", state: "open", waiting: false, running: false },
+        },
+      ],
+    });
+    state = press(state, "3", "c");
+    expect(state.object?.id).toBe("repo:ops");
+    expect(state.objectRequest?.id).toBe("repo:ops");
+    state = reduce(state, {
+      type: "object",
+      object: {
+        id: "repo:ops",
+        type: "repo",
+        link: "x",
+        row: { id: "repo:ops", title: "ops", state: "", waiting: false, running: false },
+        sections: [],
+        actions: [CREATING],
+      },
+    });
+    expect(state.creating).toBeUndefined();
+    expect(state.input?.kind).toBe("note");
+  });
+});

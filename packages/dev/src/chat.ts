@@ -5,7 +5,7 @@
  * changes reach main only through a task, through integrate.
  */
 
-import { CHAT_TYPE, chatData, createChat } from "@operad-io/chat";
+import { CHAT_TYPE, chatData, createChat, sendMessage, titleFromMessage } from "@operad-io/chat";
 import type {
   ActionTypeDefinition,
   JsonValue,
@@ -69,6 +69,7 @@ export async function chatWorktreeOf(
 const chatAction: ActionTypeDefinition = {
   name: "chat",
   on: "repo",
+  creates: "chat",
   args: {
     type: "object",
     description: `Opens a chat about this repository. ${RADIAN_NOTE}`,
@@ -84,12 +85,19 @@ const chatAction: ActionTypeDefinition = {
         maxLength: 120,
         description: "What the chat is called.",
       },
+      message: {
+        type: "string",
+        role: "note",
+        minLength: 1,
+        description:
+          "The first message; the chat is created and the message sent in one step. The title is taken from its start when none is given.",
+      },
     },
     additionalProperties: false,
   },
   when: (state) => repositoryData(state).removed !== true,
   async run(ctx, args) {
-    const input = args as { readonly harness?: string; readonly title?: string };
+    const input = args as { readonly harness?: string; readonly title?: string; readonly message?: string };
     const repository = repositoryData(ctx.object.data);
     const offered = CHAT_HARNESSES.filter((name) => ctx.harnesses.includes(name));
     const harness = input.harness ?? offered[0];
@@ -109,11 +117,15 @@ const chatAction: ActionTypeDefinition = {
         harness,
         cwd: repository.path,
         access: CHAT_ACCESS,
-        title: input.title ?? `Chat about ${repository.name}`,
+        title:
+          input.title ??
+          (input.message === undefined ? undefined : titleFromMessage(input.message)) ??
+          `Chat about ${repository.name}`,
       },
       "action:dev/chat",
     );
-    return { text: `opened chat ${id}`, opens: `chat:${id}` };
+    const sent = input.message === undefined ? undefined : await sendMessage(ctx, id, input.message);
+    return { text: `opened chat ${id}${sent === undefined ? "" : `; ${sent}`}`, opens: `chat:${id}` };
   },
 };
 

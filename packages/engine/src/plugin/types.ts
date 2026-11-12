@@ -775,6 +775,12 @@ export interface ActionTypeDefinition {
    * picks it, even when it is the only action offered.
    */
   readonly ends?: boolean | undefined;
+  /**
+   * The object type the action creates (`"chat"`). A client keeps such an action
+   * out of the parent's page and offers it where that type is created; it is
+   * never an object's main action.
+   */
+  readonly creates?: string | undefined;
   readonly when: (state: ObjectData, env: ActionEnv) => MaybePromise<boolean>;
   /**
    * Where the action stands among the object's available actions: lower comes

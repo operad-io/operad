@@ -594,9 +594,16 @@ function normalizeActions(
     if (confirm !== undefined && typeof confirm !== "boolean") {
       throw new PluginError(`${at}[${index}]: confirm: must be a boolean`);
     }
+    if (
+      entry.creates !== undefined &&
+      (typeof entry.creates !== "string" || entry.creates.length === 0)
+    ) {
+      throw new PluginError(`${at}[${index}]: creates: must be a non-empty string`);
+    }
     actions.push({
       name,
       on,
+      ...(typeof entry.creates === "string" ? { creates: entry.creates } : {}),
       ...(args === undefined ? {} : { args }),
       ...(confirm === undefined ? {} : { confirm }),
       ...(entry.ends === true ? { ends: true } : {}),
