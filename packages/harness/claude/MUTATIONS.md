@@ -143,3 +143,9 @@ setup it depends on, in the order they were recorded. The root
 | T-0359-M9 | packages/harness/claude/src/worker.ts | `includePartialMessages` was not set, so claude sent no increments | `claude asks for partial messages so the increments can be written` |
 | T-0359-M11 | packages/harness/claude/src/worker.ts | an increment line no longer held back a suffix that is a prefix of a secret, so joining the grouped deltas exposed the secret | `a secret split across grouped increments is not exposed by joining the deltas` |
 | T-0359-M12 | packages/harness/claude/src/worker.ts | `flushDelta(true)` dropped a held suffix that only resembled a secret prefix instead of writing it as the last increment | `a block ending in a secret prefix writes that held suffix as its last increment` |
+
+## T-0362 — keep the whole tool output for the chat transcript
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0362-M16 | packages/harness/claude/src/worker.ts | a long tool output was written as its first line only, so the rest was lost | `tool output is written in lines cut at the shared cap, so none of it is lost` |

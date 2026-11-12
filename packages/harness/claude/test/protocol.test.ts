@@ -1139,7 +1139,7 @@ test("increments are grouped to one line per 100 ms for text and for thinking", 
   expect(deltas("thinking_delta")).toEqual(["wx", "yz"]);
 });
 
-test("tool output is written with its call id, cut at the shared cap", async () => {
+test("tool output is written in lines cut at the shared cap, so none of it is lost", async () => {
   const output = `${"x".repeat(TOOL_OUTPUT_CAP_BYTES)}tail`;
   const run = await runFake(setup(), {
     steps: [
@@ -1150,11 +1150,14 @@ test("tool output is written with its call id, cut at the shared cap", async () 
     ],
   });
 
-  const line = run.lines.find((item) => item["type"] === "tool_output");
-  expect(line).toMatchObject({ toolCallId: "b1", truncated: true });
-  const text = String(line?.["text"]);
-  expect(text.endsWith("tail")).toBe(false);
-  expect(new TextEncoder().encode(text).length).toBeLessThanOrEqual(TOOL_OUTPUT_CAP_BYTES);
+  const lines = run.lines.filter((item) => item["type"] === "tool_output");
+  expect(lines.length).toBeGreaterThan(1);
+  expect(lines.every((line) => line["toolCallId"] === "b1")).toBe(true);
+  expect(lines.every((line) => line["truncated"] === undefined)).toBe(true);
+  expect(lines.map((line) => String(line["text"])).join("")).toBe(output);
+  for (const line of lines) {
+    expect(new TextEncoder().encode(String(line["text"])).length).toBeLessThanOrEqual(TOOL_OUTPUT_CAP_BYTES);
+  }
   expect(kinds(run).indexOf("tool_output")).toBeLessThan(kinds(run).indexOf("tool_execution_end"));
 });
 

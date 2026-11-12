@@ -27,6 +27,7 @@ import {
   maskSecrets,
   messageText,
   readImage,
+  toolOutputLines,
   type CallAnswer,
 } from "@operad-io/harness-process";
 import { findPi, loadPi } from "./pi-install.ts";
@@ -550,11 +551,9 @@ export async function runWorker(
         if (!blocked) {
           const output = textOf(content, "");
           if (output.length > 0) {
-            io.line({
-              type: "tool_output",
-              toolCallId: event.toolCallId,
-              ...toolOutputOf(output, input.secretValues ?? []),
-            });
+            for (const part of toolOutputLines(output, input.secretValues ?? [])) {
+              io.line({ type: "tool_output", toolCallId: event.toolCallId, text: part.text });
+            }
           }
         }
         const firstLine = blocked
