@@ -77,10 +77,10 @@ types appear, in the order the run produces them:
 
 Every `text_delta`, `thinking_delta`, `text_end`, `thinking_end` and
 `tool_output` line replaces each value of `secretValues` with `***`, as the
-tool call input does. An increment that would end inside a secret value holds
-the rest of it back for the next increment, so a receiver that joins the
-increments never sees the value whole; when the run stops, what is still held
-is written before the Result.
+tool call input does. An increment that would end inside a secret value, or
+inside its JSON-escaped spelling, holds the rest of it back for the next
+increment, so a receiver that joins the increments never sees the value whole;
+when the run stops, what is still held is written before the Result.
 
 ### Result
 

@@ -175,18 +175,26 @@ class Tally {
 /** How often one stream writes an increment line at most, in milliseconds. */
 const FLUSH_MS = 100;
 
+/** The spellings `maskSecrets` masks for one value: the value and, if it differs, its JSON text. */
+function spellingsOf(secret: string): readonly string[] {
+  if (secret.length === 0) return [];
+  const escaped = JSON.stringify(secret).slice(1, -1);
+  return escaped === secret ? [secret] : [secret, escaped];
+}
+
 /**
  * Splits an increment so that no line ends inside a secret: the longest suffix
  * of `text` that is a proper prefix of a secret value is held back and joined
  * to the next increment, where the completed secret is masked. A secret that
- * is wholly in the emitted part is masked there.
+ * is wholly in the emitted part is masked there. Both the value as written and
+ * its JSON-escaped spelling count, as `maskSecrets` masks both.
  */
 function splitSecretPrefix(
   text: string,
   secrets: readonly string[],
 ): { readonly emit: string; readonly held: string } {
   let held = 0;
-  for (const secret of secrets) {
+  for (const secret of secrets.flatMap(spellingsOf)) {
     const longest = Math.min(secret.length - 1, text.length);
     for (let length = longest; length > held; length -= 1) {
       if (text.endsWith(secret.slice(0, length))) {

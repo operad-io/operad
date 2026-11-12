@@ -108,3 +108,4 @@ the row fields.
 | T-0360-M10 | packages/harness/pi/src/worker.ts | text still buffered when a message stopped was dropped | `a run stopped mid-message writes the text it had not grouped yet` |
 | T-0360-M12 | packages/harness/pi/src/worker.ts | an increment batch was emitted without holding back a partial secret, so each piece of a split secret went out | `a secret split across increment lines is held back, so no line carries a piece of it` |
 | T-0360-M13 | packages/harness/pi/src/worker.ts | a run's Result was written without releasing the held prefix, so a stopped reply lost it | `a cancelled stream releases text held back as a possible secret` |
+| T-0360-M14 | packages/harness/pi/src/worker.ts | the holdback checked only the raw secret, so a split JSON-escaped secret went out in pieces | `a JSON-escaped secret split across increment lines is held back too` |

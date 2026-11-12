@@ -1169,6 +1169,22 @@ test("a secret split across increment lines is held back, so no line carries a p
   expect(thinking.lines.find((line) => line["type"] === "thinking_end")?.["text"]).toBe("AAAA***BBBB");
 });
 
+test("a JSON-escaped secret split across increment lines is held back too", async () => {
+  const s = setup();
+  s.input["secretValues"] = ['a"b'];
+  // The escaped spelling `a\"b`, with a flush between its `a\"` and its `b`.
+  const text = 'AAAAAa\\"bBBBB';
+
+  const run = await runFake(s, [{ text }], s.input, { FAKE_CLOCK_STEP: "110" });
+  const said = run.lines
+    .filter((line) => line["type"] === "text_delta")
+    .map((line) => String(line["text"]))
+    .join("");
+  expect(said).not.toContain('a\\"b');
+  expect(said).toContain("***");
+  expect(run.lines.find((line) => line["type"] === "text_end")?.["text"]).toBe("AAAAA***BBBB");
+});
+
 test("a cancelled stream releases text held back as a possible secret", async () => {
   const s = setup();
   s.input["secretValues"] = ["store-secret-9"];
