@@ -3997,12 +3997,23 @@ describe("prepare", () => {
       expect(rest.join("\n")).toContain("Export named 'fresh' not found");
     });
 
-    test("with no prepare command the checkout still links its own packages", async () => {
-      const state = await spanning({});
+    test("no prepare: the review checkout is a plain checkout with no links of its own", async () => {
+      const state = await spanning({ commands: ["true"] });
       expect((await verify(state)).result).toBe("pass");
       const settings = await readDevSettings(state.remote.repository);
       const gate = gateWorktreePath(state.remote.repository, settings, state.taskId);
-      expect(lstatSync(join(gate, "node_modules", "a")).isSymbolicLink()).toBe(true);
+      expect(existsSync(join(gate, "node_modules"))).toBe(false);
+    });
+
+    test("prepare: it runs in the checkout before the check", async () => {
+      const state = await spanning({
+        prepare: ["mkdir -p node_modules && touch node_modules/.prepared"],
+        commands: ["true"],
+      });
+      expect((await verify(state)).result).toBe("pass");
+      const settings = await readDevSettings(state.remote.repository);
+      const gate = gateWorktreePath(state.remote.repository, settings, state.taskId);
+      expect(existsSync(join(gate, "node_modules", ".prepared"))).toBe(true);
     });
   });
 });

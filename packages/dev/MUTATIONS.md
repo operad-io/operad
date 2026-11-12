@@ -936,3 +936,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0317-M1 | packages/dev/src/steps.ts | the work step no longer copied the harness's `finalMessage` onto the attempt | `dev/work > the worker's final message is kept whole on the attempt (T-0317)` |
+
+## T-0272 — dev links no workspace packages itself
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0272-M1 | packages/dev/src/gate.ts | a checkout made with no `prepare` was given `node_modules` links to its workspace packages again | `a change spanning two packages > no prepare: the review checkout is a plain checkout with no links of its own` |
