@@ -1089,7 +1089,7 @@ function planCost(plan: PlanData): string | undefined {
   return `${symbol}$${(micros / 1_000_000).toFixed(2)}`;
 }
 
-/** `<merged>/<total> · <cost> · <auto> · <priority> // <concurrency>`. */
+/** `<merged>/<total> · <cost> · <priority> // <concurrency>`; the badge carries auto. */
 export function planNote(plan: PlanData): string {
   // Cancelled tasks are not part of the total the owner is working through.
   const progress = `${plan.mergedCount}/${plan.taskCount - plan.cancelledCount}`;
@@ -1103,7 +1103,6 @@ export function planNote(plan: PlanData): string {
     progress,
     ...waiting,
     ...(cost === undefined ? [] : [cost]),
-    plan.auto,
     plan.priority,
     ...(plan.flowHeld === undefined ? [] : [plan.flowHeld]),
   ];

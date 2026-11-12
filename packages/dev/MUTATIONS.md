@@ -907,3 +907,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0306-M1 | packages/dev/src/model.ts | `isIntegrating` no longer read the attempt's integrate mark, so the row state stayed `waiting` and the four wait actions stayed offered | `a task while its integrate step works > shows integrating and offers only cancel, then waits for answer again when the mark clears` |
+
+## T-0311 — a plan's auto level shows once, in the badge
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0311-M1 | packages/dev/src/model.ts | `planNote` put `plan.auto` back in the note, so a plan row showed the level twice | `dev views > the plan note leaves the auto level to the badge, and the total leaves cancelled tasks out` |
