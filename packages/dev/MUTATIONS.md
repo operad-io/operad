@@ -983,3 +983,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0333-M1 | packages/dev/src/chat.ts | `dev:chat` still read its argument under the old `harness` name, so `--agent pi` was ignored and the first loaded agent was used | `dev:chat > the agent is the one given, else the first offered one that is loaded` |
+
+## T-0353 — a task cancelled in the integrate step ends cancelled
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0353-M1 | packages/dev/src/model.ts | `isIntegrating` ignored the task's phase, so a cancelled task whose attempt still carried the integrate mark showed `integrating` | `a task cancelled in the integrate step > cancelled while queued behind another integration ends cancelled and merges nothing` and `... cancelled while its integration check runs ends cancelled and merges nothing` |
