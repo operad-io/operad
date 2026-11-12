@@ -258,10 +258,10 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
   if (pending.length === 0) return { result: "done", data: { answered: 0 } };
 
   const runStep = ctx.runStep;
-  if (runStep === undefined) return failed("host", "the kernel did not offer a way to run the harness");
+  if (runStep === undefined) return failed("host", "the kernel did not offer a way to run the agent");
   const use = `${chat.harness}/agent`;
   if (ctx.stepLoaded !== undefined && !ctx.stepLoaded(use)) {
-    return failed("harness", `the harness "${chat.harness}" is not loaded`);
+    return failed("harness", `the agent "${chat.harness}" is not loaded`);
   }
 
   const settled = await liveSettings(ctx, chat, object, runStep);
@@ -344,12 +344,12 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
       result: "failed",
       data: {
         reason: typeof data.reason === "string" ? data.reason : "harness",
-        message: typeof data.message === "string" ? data.message : `the harness ended "${outcome.result}"`,
+        message: typeof data.message === "string" ? data.message : `the agent ended "${outcome.result}"`,
       },
     };
   }
   const text = typeof data.finalMessage === "string" ? data.finalMessage.trim() : "";
-  if (text.length === 0) return failed("empty", "the harness gave no reply");
+  if (text.length === 0) return failed("empty", "the agent gave no reply");
   const sessionId = typeof data.sessionId === "string" && data.sessionId.length > 0 ? data.sessionId : undefined;
 
   // The reply is a fact before the step counts as done: a rerun reads it and

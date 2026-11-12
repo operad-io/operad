@@ -132,9 +132,9 @@ describe("dev:chat", () => {
     expect(row?.parent).toBe("repo:repository");
   });
 
-  test("the harness is the one given, else the first offered one that is loaded", async () => {
+  test("the agent is the one given, else the first offered one that is loaded", async () => {
     const r = await rig();
-    const given = await openChat(r, { harness: "pi" });
+    const given = await openChat(r, { agent: "pi" });
     expect((await must(r.store, CHAT_TYPE, given)).data.harness).toBe("pi");
     const second = await openChat(r);
     expect((await must(r.store, CHAT_TYPE, second)).data.harness).toBe("claude");
@@ -142,25 +142,25 @@ describe("dev:chat", () => {
 
   test("radian is refused by the choice, and when it is the only one loaded the run says so", async () => {
     const r = await rig();
-    await expect(openChat(r, { harness: "radian" })).rejects.toThrow(
-      'args.harness: "radian" is not one of "claude", "pi"',
+    await expect(openChat(r, { agent: "radian" })).rejects.toThrow(
+      'args.agent: "radian" is not one of "claude", "pi"',
     );
     const alone = await rigWith(["radian"]);
-    await expect(openChat(alone)).rejects.toThrow("no harness for a repository chat is loaded");
+    await expect(openChat(alone)).rejects.toThrow("no agent for a repository chat is loaded");
   });
 
-  test("a harness outside the choice is refused by the schema before the run", async () => {
+  test("an agent outside the choice is refused by the schema before the run", async () => {
     const r = await rig();
-    await expect(openChat(r, { harness: "Claude" })).rejects.toThrow(
-      'action "dev:chat": args.harness: "Claude" is not one of "claude", "pi"',
+    await expect(openChat(r, { agent: "Claude" })).rejects.toThrow(
+      'action "dev:chat": args.agent: "Claude" is not one of "claude", "pi"',
     );
     expect((await r.store.list(CHAT_TYPE)).objects).toEqual([]);
   });
 
-  test("a harness that is not loaded or not offered is refused and the usable ones are named", async () => {
+  test("an agent that is not loaded or not offered is refused and the usable ones are named", async () => {
     const r = await rigWith(["radian", "pi"]);
-    await expect(openChat(r, { harness: "claude" })).rejects.toThrow(
-      'harness "claude" is not offered for a repository chat; the loaded ones that are: pi',
+    await expect(openChat(r, { agent: "claude" })).rejects.toThrow(
+      'agent "claude" is not offered for a repository chat; the loaded ones that are: pi',
     );
     expect((await must(r.store, CHAT_TYPE, await openChat(r))).data.harness).toBe("pi");
   });
@@ -172,15 +172,16 @@ describe("dev:chat", () => {
     expect(access.denyCommands).toContain("operad");
   });
 
-  test("the action lists its harness choices, keeps the field optional and says radian is not offered", () => {
+  test("the action lists its agent choices, keeps the field optional, says radian is not offered and has no harness alias", () => {
     const action = chatActions[0];
     expect(action?.args?.description).toContain(RADIAN_NOTE);
-    expect(action?.args?.description).toContain("radian is not offered here");
-    expect(action?.args?.properties?.harness?.enum).toEqual([...CHAT_HARNESSES]);
-    expect(action?.args?.properties?.harness?.description).toBe(
-      "Which harness runs the chat; the first loaded one when left out. It cannot change later.",
+    expect(action?.args?.description).toContain("radian is not offered as an agent here");
+    expect(action?.args?.properties?.agent?.enum).toEqual([...CHAT_HARNESSES]);
+    expect(action?.args?.properties?.agent?.description).toBe(
+      "Which agent answers in this chat; the first loaded one when left out. It cannot change later.",
     );
-    expect(action?.args?.required ?? []).not.toContain("harness");
+    expect(action?.args?.properties?.harness).toBeUndefined();
+    expect(action?.args?.required ?? []).not.toContain("agent");
   });
 });
 

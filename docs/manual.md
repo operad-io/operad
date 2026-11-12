@@ -1353,18 +1353,18 @@ A chat is a long conversation with an agent. The `chat` plugin comes with
 repository:
 
 ```
-operad dev:chat --repo operad --title "The build" [--harness pi]
+operad dev:chat --repo operad --title "The build" [--agent pi]
 operad chat:send C-0001 --note "why does the gate fail on main?"
 operad show C-0001 --section transcript
 ```
 
-`dev:chat` offers `claude` and `pi` (the first one loaded when `--harness` is left out): they can stop a tool call before it starts, which a read-only chat needs. `radian` is refused there and stays for bot chats.
+`dev:chat` offers `claude` and `pi` as agents (the first one loaded when `--agent` is left out): they can stop a tool call before it starts, which a read-only chat needs. `radian` is refused there as an agent and stays for bot chats.
 
 `chat:send` records the message and sends an event (source `ios`, `telegram` or
 `cli`, key = the message id, about the chat). The plugin's own rule starts
 `chat:reply` for each of the three sources, automatically; a rule of yours in
 `triggers.json` with the same source and type replaces it. The reply reads the
-messages no reply answers yet from the chat's own record, continues the harness
+messages no reply answers yet from the chat's own record, continues the agent
 session, records the reply, and goes round again while new messages came in
 meanwhile (at most 20 rounds). After a restart a reply that was already
 recorded is not given twice.

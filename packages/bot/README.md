@@ -1,7 +1,7 @@
 # `@operad-io/bot`
 
 The `bot` plugin. Its object is a **bot**: a working directory, a default
-harness, skills, a speaker and an access profile. A bot is one row in lists and
+agent, skills, a speaker and an access profile. A bot is one row in lists and
 the parent of its chats. The chat itself belongs to the `chat` plugin.
 
 Optional: `operad plugin enable bot`.
@@ -16,7 +16,8 @@ The `bot` section of `config.json` (`plugins.bot.settings`), checked against
 ```
 
 `default` exists even when it is not written. A bot name is lowercase letters,
-digits, `-` and `_`. Fields: `cwd`, `harness`, `skills`, `speaker`, `access`.
+digits, `-` and `_`. Fields: `cwd`, `harness` (the default agent), `skills`,
+`speaker`, `access`.
 
 - **Working directory**: `~/.operad/bot/` for `default`, `~/.operad/bot/<name>`
   for another bot, created when missing. A `cwd` that is the operad home, holds
@@ -29,15 +30,15 @@ digits, `-` and `_`. Fields: `cwd`, `harness`, `skills`, `speaker`, `access`.
   the fact log, secrets and the token are out of reach. The bot's skill
   directories, and `<cwd>/skills`, are in `denyPaths` too: the agent proposes a
   skill through operad's tools and never writes one itself.
-- **Skills**: directories with a `SKILL.md`, given to the harness as `skills` in
+- **Skills**: directories with a `SKILL.md`, given to the agent as `skills` in
   its step params. A missing `SKILL.md` fails the reply and names the directory.
 - **Speaker**: how a chat of this bot labels the model's messages in its
   transcript; without it, the chat plugin's `speaker` is used.
 
-## `bot:chat <bot> [--harness <name>] [--title <text>]`
+## `bot:chat <bot> [--agent <name>] [--title <text>]`
 
 Creates a `chat` with the bot as parent, titled `Bot (<name>)` unless given a
-title. The harness is the one given, else the bot's, else the first loaded one;
+title. The agent is the one given, else the bot's, else the first loaded one;
 it is fixed once chosen. The chat reaches repositories only through operad's
 tools (`operadTools`) and `dev`'s verbs, never by editing their files: the paths
 of the repositories `dev` knows are in `denyPaths` (read again at every reply, so
@@ -53,7 +54,7 @@ reply; it is never answered from an older copy.
 
 A bot does not write its skills or `config.json`. Its access profile denies
 those paths, so a direct write is refused like any other denied path. It asks
-for the change through operad's own tools instead. A harness with operad's MCP
+for the change through operad's own tools instead. An agent with operad's MCP
 tools calls the `command` tool:
 
 ```json

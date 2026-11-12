@@ -94,6 +94,18 @@ describe("bots", () => {
     expect(schema).toEqual(strip(BOT_SETTINGS) as Record<string, unknown>);
   });
 
+  test("a bot's page calls its default harness an agent, the way people read it", async () => {
+    const r = await rig({ reader: { harness: "pi" } });
+    const views = createViews({ registry: r.registry, store: r.store, onLog: () => undefined });
+    try {
+      const page = await views.section("bot:reader", "bot");
+      expect(page.markdown).toContain("Default agent: pi");
+      expect(page.markdown).not.toContain("Default harness");
+    } finally {
+      views.close();
+    }
+  });
+
   test("each bot is one row in lists, the default one too, and a removed one is marked", async () => {
     const r = await rig({ reader: {} });
     const views = createViews({ registry: r.registry, store: r.store, onLog: () => undefined });
@@ -236,50 +248,51 @@ describe("bot:chat", () => {
     expect((await r.store.get(CHAT_TYPE, id))?.data.title).toBe("Bot (reader)");
   });
 
-  test("the harness is the one given, else the bot's, else the first loaded; an unloaded one is refused", async () => {
+  test("the agent is the one given, else the bot's, else the first loaded; an unloaded one is refused", async () => {
     const r = await rig({ pi: { harness: "pi" } });
     await syncBots(r.store, r.home, r.registry.settingsFor("bot"));
-    const harnessOf = async (id: string) => (await r.store.get(CHAT_TYPE, id))?.data.harness;
-    expect(await harnessOf(await r.open("default"))).toBe("claude");
-    expect(await harnessOf(await r.open("pi"))).toBe("pi");
-    expect(await harnessOf(await r.open("pi", { harness: "claude" }))).toBe("claude");
-    await expect(r.open("default", { harness: "radian" })).rejects.toThrow("claude");
+    const agentOf = async (id: string) => (await r.store.get(CHAT_TYPE, id))?.data.harness;
+    expect(await agentOf(await r.open("default"))).toBe("claude");
+    expect(await agentOf(await r.open("pi"))).toBe("pi");
+    expect(await agentOf(await r.open("pi", { agent: "claude" }))).toBe("claude");
+    await expect(r.open("default", { agent: "radian" })).rejects.toThrow("claude");
   });
 
-  test("the harness argument is a choice of the loaded harnesses, defaulting to the bot's own, else the first", async () => {
+  test("the agent argument is a choice of the loaded harness plugins, defaulting to the bot's own, else the first", async () => {
     const r = await rig({ pi: { harness: "pi" } }, ["claude", "radian", "pi"]);
     await syncBots(r.store, r.home, r.registry.settingsFor("bot"));
     const views = new Views({ registry: r.registry, store: r.store, onLog: () => undefined });
-    const harness = async (bot: string) => {
+    const agent = async (bot: string) => {
       const chat = (await views.get(`bot:${bot}`)).actions.find((a) => a.name === "bot:chat");
-      return chat?.args?.properties?.harness;
+      return chat?.args?.properties?.agent;
     };
-    expect(await harness("default")).toMatchObject({ enum: ["claude", "radian", "pi"], default: "claude" });
-    expect(await harness("pi")).toMatchObject({ enum: ["claude", "radian", "pi"], default: "pi" });
+    expect(await agent("default")).toMatchObject({ enum: ["claude", "radian", "pi"], default: "claude" });
+    expect(await agent("pi")).toMatchObject({ enum: ["claude", "radian", "pi"], default: "pi" });
     const fewer = await rig({}, ["radian"]);
     await syncBots(fewer.store, fewer.home, {});
     const other = new Views({ registry: fewer.registry, store: fewer.store, onLog: () => undefined });
-    const only = (await other.get("bot:default")).actions.find((a) => a.name === "bot:chat")?.args?.properties?.harness;
+    const only = (await other.get("bot:default")).actions.find((a) => a.name === "bot:chat")?.args?.properties?.agent;
     expect(only).toMatchObject({ enum: ["radian"], default: "radian" });
+    expect((await views.get("bot:default")).actions.find((a) => a.name === "bot:chat")?.args?.properties?.harness).toBeUndefined();
   });
 
-  test("with no harness loaded the chat is not offered, and says why", async () => {
+  test("with no agent loaded the chat is not offered, and says why", async () => {
     const r = await rig({}, []);
     await syncBots(r.store, r.home, {});
     const views = new Views({ registry: r.registry, store: r.store, onLog: () => undefined });
     expect((await views.get("bot:default")).actions.map((a) => a.name)).not.toContain("bot:chat");
     await expect(views.act("bot:chat", "bot:default", { surface: "cli", actor: { via: "cli", id: "me" } })).rejects.toThrow(
-      "no harness is loaded",
+      "no agent is loaded",
     );
   });
 
-  test("a harness outside the loaded ones is refused with the list", async () => {
+  test("an agent outside the loaded ones is refused with the list", async () => {
     const r = await rig({}, ["claude", "pi"]);
     await syncBots(r.store, r.home, {});
-    await expect(r.open("default", { harness: "grok" })).rejects.toThrow('"claude", "pi"');
+    await expect(r.open("default", { agent: "grok" })).rejects.toThrow('"claude", "pi"');
   });
 
-  test("the harness stays what it was when the bot's default changes", async () => {
+  test("the agent stays what it was when the bot's default changes", async () => {
     const r = await rig({ reader: { harness: "pi" } });
     await syncBots(r.store, r.home, {});
     const id = await r.open("reader");
