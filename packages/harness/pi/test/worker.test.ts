@@ -13,8 +13,9 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { TOOL_OUTPUT_CAP_BYTES } from "@operad-io/harness-process";
+import { SqlitePluginStore } from "@operad-io/engine";
 import { parseInput, THINKING_LEVELS } from "../src/protocol.ts";
-import { boundedTimeout, serveWorker, toolOutputOf } from "../src/worker.ts";
+import { boundedTimeout, serveWorker } from "../src/worker.ts";
 import { fakeHooks } from "./fake-hooks.ts";
 
 const FAKE_WORKER = join(import.meta.dir, "fake-worker.ts");
@@ -1116,11 +1117,33 @@ test("a tool call's output is written with its call id, and a refused call write
   expect(blocked.lines.some((line) => line["type"] === "tool_output")).toBe(false);
 });
 
-test("tool output is cut to the shared cap and marked truncated", () => {
-  const capped = toolOutputOf("x".repeat(TOOL_OUTPUT_CAP_BYTES + 10), []);
-  expect(capped.text.length).toBe(TOOL_OUTPUT_CAP_BYTES);
-  expect(capped.truncated).toBe(true);
-  expect(toolOutputOf("short", []).truncated).toBeUndefined();
+test("a tool output longer than the cap reaches the receiver in chunks past the cap", async () => {
+  const s = setup();
+  const home = operadHome(s);
+  new SqlitePluginStore({ root: join(s.dir, "operad-store") }).put(
+    "item",
+    "big",
+    { title: "Big", state: "new" },
+    "seed",
+  );
+  const run = await runFake(
+    s,
+    [
+      { text: "", toolCall: { name: "operad_section", arguments: { id: "item:big", section: "big", full: true } } },
+      { text: "done" },
+    ],
+    { ...s.input, operadTools: { home } },
+  );
+  const lines = run.lines.filter((line) => line["type"] === "tool_output");
+  expect(lines.length).toBeGreaterThan(1);
+  expect(lines.every((line) => line["truncated"] === undefined)).toBe(true);
+  const whole = lines.map((line) => String(line["text"])).join("");
+  expect(whole).toBe("x".repeat(300 * 1024));
+  expect(new TextEncoder().encode(whole).length).toBeGreaterThan(TOOL_OUTPUT_CAP_BYTES);
+  for (const line of lines) {
+    expect(new TextEncoder().encode(String(line["text"])).length).toBeLessThanOrEqual(TOOL_OUTPUT_CAP_BYTES);
+  }
+  expect(last(run)).toMatchObject({ result: "done" });
 });
 
 test("secret values are masked in the new text, thinking and tool output lines", async () => {

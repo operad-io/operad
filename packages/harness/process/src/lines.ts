@@ -60,8 +60,9 @@ export type SharedLine =
   /** The full text of a finished thinking block. */
   | { readonly type: "thinking_end"; readonly text: string }
   /**
-   * What a tool call printed, as text cut to `TOOL_OUTPUT_CAP_BYTES`;
-   * `truncated` is true when it was cut.
+   * What a tool call printed. A line carries at most `TOOL_OUTPUT_CAP_BYTES`;
+   * a longer output is written as consecutive lines with the same call id.
+   * `truncated` is only for a line a caller had to cut.
    */
   | {
       readonly type: "tool_output";
@@ -79,6 +80,31 @@ export function capToolOutput(text: string): { readonly text: string; readonly t
   while (end > 0 && ((bytes[end] ?? 0) & 0xc0) === 0x80) end -= 1;
   const cut = new TextDecoder().decode(bytes.subarray(0, end));
   return { text: cut, truncated: true };
+}
+
+/**
+ * The `tool_output` payloads for what a tool printed: the text masked once,
+ * then cut into pieces no longer than the shared cap. Joining the pieces gives
+ * the whole output back; a short output is one piece.
+ */
+export function toolOutputLines(
+  text: string,
+  secrets: readonly string[],
+): readonly { readonly text: string }[] {
+  const masked = maskSecrets(text, secrets);
+  const bytes = new TextEncoder().encode(masked);
+  if (bytes.length <= TOOL_OUTPUT_CAP_BYTES) return [{ text: masked }];
+  const lines: { text: string }[] = [];
+  const decoder = new TextDecoder();
+  let start = 0;
+  while (start < bytes.length) {
+    let end = Math.min(start + TOOL_OUTPUT_CAP_BYTES, bytes.length);
+    // Back off to the start of a character: a continuation byte is 10xxxxxx.
+    while (end > start && ((bytes[end] ?? 0) & 0xc0) === 0x80) end -= 1;
+    lines.push({ text: decoder.decode(bytes.subarray(start, end)) });
+    start = end;
+  }
+  return lines;
 }
 
 /** Replaces every secret value in a log line, also as it is written inside JSON text, with `***`. */

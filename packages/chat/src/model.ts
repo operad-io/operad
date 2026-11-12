@@ -12,6 +12,15 @@ export const CHAT_TYPE = "chat";
 /** The fact type of one message on a chat; a person's and the assistant's alike. */
 export const MESSAGE_FACT = "chat.message";
 
+/** The fact type of one finished part of an answer: text, thinking or a tool call. */
+export const ENTRY_FACT = "chat.entry";
+
+/** How a tool call ended. */
+export type ToolResult = "done" | "failed" | "blocked" | "denied";
+
+/** The kinds of part an answer is recorded as. */
+export type EntryKind = "text" | "thinking" | "tool" | "stopped";
+
 /** The event type a new message is: its source is `ios`, `telegram`, `cli`, `tui` or `other`. */
 export const MESSAGE_EVENT = "message";
 
@@ -249,6 +258,8 @@ export interface MessageData {
   readonly source: { readonly kind: string; readonly ref: string | null };
   /** An assistant message: the ids of the messages it answers. */
   readonly replyTo?: readonly string[] | undefined;
+  /** The run whose answer this message or entry belongs to. */
+  readonly runId?: string | undefined;
   /** An assistant message: the harness session after it. */
   readonly session?: string | undefined;
   /** An assistant message: the model that answered, when the harness reported it. */
@@ -260,6 +271,40 @@ export interface MessageData {
 
 /** One message with when it was recorded. */
 export interface Message extends MessageData {
+  readonly at: number;
+  readonly sequence: number;
+}
+
+/**
+ * What one finished part of an answer holds. Tool calls carry the call's id and
+ * name, what ran, how it ended, when it started, how long it took, the start of
+ * its output and, when the output was long, the file that holds all of it.
+ */
+export interface EntryData {
+  readonly [key: string]: unknown;
+  readonly runId: string;
+  readonly kind: EntryKind;
+  /** Text or thinking; the half-written reply of a stopped run is `stopped`. */
+  readonly text?: string | undefined;
+  readonly callId?: string | undefined;
+  readonly toolName?: string | undefined;
+  /** What ran: the command, path or main argument, as the harness summarized it. */
+  readonly input?: string | null | undefined;
+  readonly result?: ToolResult | undefined;
+  /** Epoch milliseconds; null when the harness gave no start time. */
+  readonly startedAt?: number | null | undefined;
+  readonly durationMs?: number | undefined;
+  /** The first 4 KB of what the call printed; null when it printed nothing. */
+  readonly output?: string | null | undefined;
+  /** The file that holds the whole output, when it was longer than 4 KB. */
+  readonly outputPath?: string | undefined;
+  readonly outputTruncated?: boolean | undefined;
+  /** The first line of the error, when the call failed. */
+  readonly error?: string | null | undefined;
+}
+
+/** One entry with when its fact was recorded. */
+export interface Entry extends EntryData {
   readonly at: number;
   readonly sequence: number;
 }
@@ -453,6 +498,7 @@ function messageOfFact(fact: PluginFact): Message | undefined {
       ref: typeof source.ref === "string" ? source.ref : null,
     },
     ...(Array.isArray(data.replyTo) ? { replyTo: stringList(data.replyTo) } : {}),
+    ...(typeof data.runId === "string" && data.runId.length > 0 ? { runId: data.runId } : {}),
     ...(typeof data.session === "string" ? { session: data.session } : {}),
     ...(typeof data.model === "string" && data.model.length > 0 ? { model: data.model } : {}),
     ...(typeof data.costMicros === "number" && Number.isFinite(data.costMicros) ? { costMicros: data.costMicros } : {}),
@@ -460,6 +506,39 @@ function messageOfFact(fact: PluginFact): Message | undefined {
     at: fact.at,
     sequence: fact.sequence,
   };
+}
+
+function isToolResult(value: unknown): value is ToolResult {
+  return value === "done" || value === "failed" || value === "blocked" || value === "denied";
+}
+
+export function entryOfFact(fact: PluginFact): Entry | undefined {
+  if (fact.type !== ENTRY_FACT) return undefined;
+  const data = fact.data;
+  if (typeof data.runId !== "string" || data.runId.length === 0) return undefined;
+  const kind = data.kind;
+  if (kind !== "text" && kind !== "thinking" && kind !== "tool" && kind !== "stopped") return undefined;
+  const entryKind: EntryKind = kind;
+  const base = { runId: data.runId, kind: entryKind, at: fact.at, sequence: fact.sequence };
+  if (entryKind === "tool") {
+    if (typeof data.callId !== "string" || typeof data.toolName !== "string" || !isToolResult(data.result)) {
+      return undefined;
+    }
+    return {
+      ...base,
+      callId: data.callId,
+      toolName: data.toolName,
+      ...(typeof data.input === "string" || data.input === null ? { input: data.input } : {}),
+      result: data.result,
+      ...(typeof data.startedAt === "number" || data.startedAt === null ? { startedAt: data.startedAt } : {}),
+      ...(typeof data.durationMs === "number" && Number.isFinite(data.durationMs) ? { durationMs: data.durationMs } : {}),
+      ...(typeof data.output === "string" || data.output === null ? { output: data.output } : {}),
+      ...(typeof data.outputPath === "string" ? { outputPath: data.outputPath } : {}),
+      ...(data.outputTruncated === true ? { outputTruncated: true } : {}),
+      ...(typeof data.error === "string" || data.error === null ? { error: data.error } : {}),
+    };
+  }
+  return typeof data.text === "string" ? { ...base, text: data.text } : undefined;
 }
 
 /** One page of a chat's messages from `cursor`, and where the next page starts. */
@@ -494,6 +573,24 @@ export function allMessages(store: ObjectStore, chat: string): readonly Message[
   do {
     const page = messagePage(store, chat, cursor, 500);
     found.push(...page.messages);
+    cursor = page.next;
+  } while (cursor !== undefined);
+  return found;
+}
+
+/** Every entry of a chat, oldest first. */
+export function allEntries(store: ObjectStore, chat: string): readonly Entry[] {
+  const found: Entry[] = [];
+  let cursor: string | undefined;
+  do {
+    const page = store.facts(chatRef(chat), {
+      ...(cursor === undefined ? {} : { cursor }),
+      limit: 500,
+    });
+    for (const fact of page.facts) {
+      const entry = entryOfFact(fact);
+      if (entry !== undefined) found.push(entry);
+    }
     cursor = page.next;
   } while (cursor !== undefined);
   return found;

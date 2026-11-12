@@ -150,3 +150,8 @@ setup it depends on, in the order they were recorded. The root
 |---|---|---|---|
 | T-0367-M1 | packages/harness/claude/src/worker.ts | `finish` wrote the Result without releasing the text held back as a possible secret prefix | `a cancelled stream releases text held back as a possible secret` |
 
+## T-0362 — keep the whole tool output for the chat transcript
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0362-M16 | packages/harness/claude/src/worker.ts | a long tool output was written as its first line only, so the rest was lost | `tool output is written in lines cut at the shared cap, so none of it is lost` |
