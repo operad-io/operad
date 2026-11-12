@@ -4,6 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { withWorkerReports } from "@operad-io/engine/platform";
 import { inboxOf, messageLine, messageText, runAgent, type Clock } from "../src/index.ts";
 
 const roots: string[] = [];
@@ -344,5 +345,45 @@ describe("runAgent with an inbox", () => {
     expect(messageText(messageLine("hi"))).toBe("hi");
     expect(messageText('{"type":"grant_ack","id":1,"used":true}')).toBeUndefined();
     expect(messageText("not json")).toBeUndefined();
+  });
+});
+
+describe("runAgent reports the worker's start (T-0349)", () => {
+  test("the step that asked is told when the program is running, and not before it was started", async () => {
+    const reports: string[] = [];
+    const outcome = await withWorkerReports(
+      { started: () => reports.push("started") },
+      () =>
+        runAgent({
+          command: "sh",
+          args: ["-c", "exit 0"],
+          cwd: tmpdir(),
+          wallMs: 0,
+          stallMs: 0,
+          signal: new AbortController().signal,
+          onLine() {},
+        }),
+    );
+    expect(outcome.exitCode).toBe(0);
+    expect(reports).toEqual(["started"]);
+  });
+
+  test("a command that is not found is never reported as started", async () => {
+    const reports: string[] = [];
+    const outcome = await withWorkerReports(
+      { started: () => reports.push("started") },
+      () =>
+        runAgent({
+          command: "operad-no-such-command-t0349",
+          args: [],
+          cwd: tmpdir(),
+          wallMs: 0,
+          stallMs: 0,
+          signal: new AbortController().signal,
+          onLine() {},
+        }),
+    );
+    expect(outcome.missing).toBe(true);
+    expect(reports).toEqual([]);
   });
 });

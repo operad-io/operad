@@ -707,7 +707,15 @@ A rework asks for the worker that ran the attempt before. When that worker is
 busy with another task, the work step waits for it without a time limit; the
 task's row shows the `blocked` mark and `waiting for worker pi: held by T-0205`
 (in `running` and in `show`), and the step log says it when the wait starts and
-`worker pi is free; the work starts` when it ends.
+`worker pi is free; the work starts` when it ends. Any other attempt that has
+to wait says the same, naming the workers of the pool (`waiting for worker
+claude or pi: held by T-0205`). A worker that has its place and whose program is
+not running two minutes later is said too, in the row and the log (`worker
+claude has had its place for 2 minutes and has not started`), because that
+worker's place is held against every other task that needs it; the line goes
+when the program starts. A harness step tells the work step that its program
+runs through `reportWorkerStarted` of `@operad-io/engine/platform`, which
+`runAgent` of the process harnesses calls.
 
 One integration of a repository runs at a time. A task whose wait was answered
 with `merge` joins the repository's integration queue, in the order the merges

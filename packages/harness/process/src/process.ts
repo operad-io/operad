@@ -21,6 +21,7 @@ import {
   killProcessGroup,
   lastLines,
   markerEnv,
+  reportWorkerStarted,
   trackRoot,
   systemClock,
   type Clock,
@@ -512,6 +513,7 @@ export async function runAgent(
 
   readySeen = true;
   openGate();
+  reportWorkerStarted();
   const stopListening =
     options.inbox === undefined
       ? undefined

@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
+import { withWorkerReports } from "@operad-io/engine/platform";
 import { PluginRegistry, MemoryPluginStore, type PluginStepResult } from "@operad-io/engine";
 import { PlaceBook, createPoolPlugin, modelUnavailable } from "../src/index.ts";
 import { Queue, cleanupTempRoots, done, rig, tempRoot, worker, type HarnessCall } from "./support.ts";
@@ -500,5 +501,24 @@ describe("settings", () => {
     const loaded = await load({ harnesses: 3 });
     expect(loaded.registry.names()).toEqual([]);
     expect(loaded.logs).toContain("settings.harnesses");
+  });
+});
+
+describe("the place is reported (T-0349)", () => {
+  test("the step that asked is told which worker has its place, once it has it and not while it waits", async () => {
+    const r = await rig();
+    const placed: string[] = [];
+    const reports = { placed: (name: string) => placed.push(name) };
+    const one = withWorkerReports(reports, () => r.run(params([a])));
+    const callOne = await r.calls.next();
+    const two = withWorkerReports(reports, () => r.run(params([a])));
+    await r.book.whenWaiting(1);
+    expect(placed).toEqual(["a"]);
+    callOne.finish(done);
+    const callTwo = await r.calls.next();
+    expect(placed).toEqual(["a", "a"]);
+    callTwo.finish(done);
+    await one;
+    await two;
   });
 });

@@ -31,3 +31,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0216-M1 | packages/pool/src/index.ts | never announced that a place was taken after a wait | `waiting > the wait names who holds the place, and the end of the wait is announced` |
+
+## T-0349 — a worker that holds its place and does not start is said
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0349-M1 | packages/pool/src/index.ts | did not tell the step that asked when it gave the worker a place | `a work step that holds a worker's place and does not start it (T-0349) > the task says the worker has not started, and says when it has` (packages/dev/test/wrap-up.test.ts) |
