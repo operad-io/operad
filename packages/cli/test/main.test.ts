@@ -658,7 +658,7 @@ describe("operad command", () => {
     expect(output.text()).toContain("notes: ok");
   });
 
-  test("plugin check passes for the plugin in docs/plugin-authoring.md", async () => {
+  test("plugin check passes for the plugin in docs/plugins/index.md", async () => {
     const { home } = await makeNamedHome({});
     const output = capture();
     expect(

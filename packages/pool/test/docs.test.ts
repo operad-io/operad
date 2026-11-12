@@ -14,7 +14,7 @@ import {
   WORKER_FIELDS,
 } from "../src/index.ts";
 
-const MANUAL = readFileSync(fileURLToPath(new URL("../../../docs/manual.md", import.meta.url)), "utf8");
+const MANUAL = readFileSync(fileURLToPath(new URL("../../../docs/user/dev.md", import.meta.url)), "utf8");
 const START = MANUAL.indexOf("## Sharing agents between flows");
 const SECTION = MANUAL.slice(START, MANUAL.indexOf("## Usage and end results"));
 

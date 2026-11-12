@@ -127,8 +127,8 @@ test("the plan filters cover every state a plan row shows", () => {
   expect(PLAN_STATES).toContain(planState({ ...plan, status: "cancelled" }));
 });
 
-test("docs/manual.md lists the dev filters with the states the code declares", () => {
-  const manual = readFileSync(join(import.meta.dir, "..", "..", "..", "docs", "manual.md"), "utf8");
+test("docs/user/cli.md lists the dev filters with the states the code declares", () => {
+  const manual = readFileSync(join(import.meta.dir, "..", "..", "..", "docs", "user", "cli.md"), "utf8");
   for (const [type, list] of [
     ["task", TASK_FILTERS],
     ["plan", PLAN_FILTERS],
