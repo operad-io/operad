@@ -28,6 +28,7 @@ import {
   findCommand,
   flagValue,
   JsonlLog,
+  deliverLine,
   MAX_LINE_CHARS,
   OPERAD_SERVER,
   operadToolsOf,
@@ -652,7 +653,7 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
             : undefined;
           const command = radianArgs(cwd, args, promptWithNote, resumeSession, mcpConfig, hookConfig);
           const started = Date.now();
-          const jsonl = new JsonlLog(ctx.logger);
+          const jsonl = new JsonlLog(ctx.logger, defaults.clock);
           let result: ParsedResult | undefined;
           const openTools = new Map<string, { at: number; name: string }>();
 
@@ -667,7 +668,9 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
             clock: defaults.clock,
             toolEvent: radianToolEvent,
             onLine(line) {
-              const writing = jsonl.push(radianLogLine(line, defaults.now, openTools, cwd, logProfile, logSecrets));
+              const logged = radianLogLine(line, defaults.now, openTools, cwd, logProfile, logSecrets);
+              const writing = jsonl.push(logged);
+              deliverLine(ctx.receiver, logged, logSecrets);
               const parsed = parseResult(line);
               if (parsed !== undefined) result = parsed;
               return writing;

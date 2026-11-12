@@ -121,3 +121,4 @@ setup it depends on, in the order they were recorded. The root
 | T-0327-M11 | packages/harness/claude/src/access.ts | claude did not judge another server's tool by server and tool | `operad's own tools > another server's tool is judged by server and tool when the profile has allowMcp: a listed one runs, any other asks` |
 | T-0327-M14 | packages/harness/claude/src/worker.ts | claude was not given a bot's MCP servers | `a bot's servers are given to claude beside operad's, by name, as the commands the input names` |
 | T-0339-M18 | packages/harness/claude/src/worker.ts | claude's prompt went as text only, dropping the images | `images are sent with the prompt as image blocks of the one user message` |
+| T-0358-M9 | packages/harness/claude/src/index.ts | the step did not hand its lines to the receiver | `claude/agent > a receiver gets each line the step writes to its log; without one the log is the same` |

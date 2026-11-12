@@ -3,6 +3,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  FileSecretStore,
   MemoryPluginStore,
   PluginRegistry,
   Runner,
@@ -13,7 +14,7 @@ import {
   type PluginStepResult,
   type TriggerView,
 } from "@operad-io/engine";
-import { EVENT_NOTE_TEMPLATE, modelErrorOf } from "@operad-io/harness-process";
+import { EVENT_NOTE_TEMPLATE, FLUSH_MS, modelErrorOf } from "@operad-io/harness-process";
 import { createPiHarnessPlugin, piToolEvent } from "../src/index.ts";
 import {
   cleanupTempRoots,
@@ -123,6 +124,50 @@ function runAgent(
 }
 
 describe("pi/agent", () => {
+  test("a receiver gets each line the step writes to its log; without one the log is the same", async () => {
+    const env = await setup("tools");
+    const got: string[] = [];
+    const withReceiver = await env.registry.runStep("pi/agent", { prompt: "hello", cwd: env.root }, {
+      runId: "run-1",
+      receiver: (line) => got.push(line),
+    });
+    const logged = (await Bun.file(String(dataOf(withReceiver).log)).text()).split("\n").filter((l) => l.length > 0);
+    expect(got).toEqual(logged);
+    expect(got.map((l) => (JSON.parse(l) as { type: string }).type)).toEqual([
+      "tool_execution_start",
+      "tool_execution_end",
+      "message_end",
+      "result",
+    ]);
+    const without = await runAgent(env, { prompt: "hello", cwd: env.root }, { runId: "run-2" });
+    expect(without.result).toBe("done");
+    const again = (await Bun.file(String(dataOf(without).log)).text()).split("\n").filter((l) => l.length > 0);
+    expect(again).toEqual(logged);
+  });
+
+  test("a receiver gets a line with the operad secrets masked", async () => {
+    const env = await setup("secret-line");
+    await new FileSecretStore({ home: env.root, plugin: "pi" }).set("token", "store-secret-9");
+    const got: string[] = [];
+    await env.registry.runStep("pi/agent", { prompt: "hello", cwd: env.root }, {
+      runId: "run-1",
+      receiver: (line) => got.push(line),
+    });
+    expect(got.join("\n")).toContain("the key is ***");
+    expect(got.join("\n")).not.toContain("store-secret-9");
+  });
+
+  test("a receiver that throws does not stop the step", async () => {
+    const env = await setup("tools");
+    const result = await env.registry.runStep("pi/agent", { prompt: "hello", cwd: env.root }, {
+      runId: "run-1",
+      receiver: () => {
+        throw new Error("receiver broke");
+      },
+    });
+    expect(result.result).toBe("done");
+  });
+
   test("a done run has the facts radian records for the same data", async () => {
     const env = await setup("done");
     const result = await runAgent(env, { prompt: "hello", cwd: env.root });
@@ -504,7 +549,8 @@ describe("pi/agent", () => {
     await waitForFile(env.marker);
     await env.clock.when(() => env.clock.clears > 0);
     // Twice the stall limit passes with no line and no stop: the tool is open.
-    expect(env.clock.fireUpTo(2_000)).toBe(0);
+    // A log's flush timer is shorter than any stall limit and may be pending.
+    expect(env.clock.fireBetween(FLUSH_MS, 2_000)).toBe(0);
 
     writeFileSync(env.release, "settle");
     const result = await running;
