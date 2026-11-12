@@ -512,6 +512,25 @@ describe("http server", () => {
       const info = await api(h, "/v1/objects/one/sections/info?full=true");
       expect((await json(info)).markdown).toBe("# Item\n\nSome **text**.");
 
+      const live = await api(h, "/v1/objects/one/sections/live");
+      const liveBody = await json(live);
+      expect(liveBody).toMatchObject({
+        markdown: "line 1",
+        tail: "tail 1",
+      });
+      expect(typeof liveBody.mark).toBe("string");
+      const delta = await api(
+        h,
+        `/v1/objects/one/sections/live?after=${encodeURIComponent(String(liveBody.mark))}`,
+      );
+      expect(await json(delta)).toMatchObject({
+        markdown: "line 2",
+        tail: "tail 2",
+        delta: true,
+      });
+      const badMark = await api(h, "/v1/objects/one/sections/live?after=nope");
+      expect(badMark.status).toBe(400);
+
       const history = await api(h, "/v1/objects/one/sections/history");
       expect(history.status).toBe(200);
       expect(String((await json(history)).markdown)).toContain("No history");

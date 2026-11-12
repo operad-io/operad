@@ -28,13 +28,26 @@ export default definePlugin({
       sections() {
         return [
           { id: "info", title: "Info" },
+          { id: "live", title: "Live", live: true },
           { id: "pages", title: "Pages", live: true },
           { id: "hang", title: "Hang" },
         ];
       },
-      async load(_ctx, object, sectionId, { cursor }) {
+      async load(_ctx, object, sectionId, { cursor, after }) {
         if (sectionId === "info") {
           return { markdown: "# Item\n\nSome **text**." };
+        }
+        if (sectionId === "live") {
+          if (after === undefined) {
+            return { markdown: "line 1", mark: "1", tail: "tail 1" };
+          }
+          const next = Number(after) + 1;
+          return {
+            markdown: `line ${next}`,
+            mark: String(next),
+            tail: `tail ${next}`,
+            delta: true,
+          };
         }
         if (sectionId === "pages") {
           return cursor === undefined

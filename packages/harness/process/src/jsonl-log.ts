@@ -5,18 +5,25 @@
  */
 
 import type { PluginLogger } from "@operad-io/engine";
+import { systemClock, type Clock } from "@operad-io/engine/platform";
 
 /** How much text one write carries before the caller must wait for it. */
 export const FLUSH_CHARS = 16 * 1024;
 
+/** The longest a line waits in the buffer before it is written. */
+export const FLUSH_MS = 250;
+
 export class JsonlLog {
   private buffer = "";
+  private timer: unknown = undefined;
   private chain: Promise<void> = Promise.resolve();
   private wrote = false;
   private readonly logger: PluginLogger;
+  private readonly clock: Clock;
 
-  constructor(logger: PluginLogger) {
+  constructor(logger: PluginLogger, clock: Clock = systemClock) {
     this.logger = logger;
+    this.clock = clock;
   }
 
   /**
@@ -26,8 +33,16 @@ export class JsonlLog {
    */
   push(line: string): Promise<void> | undefined {
     this.buffer += `${line}\n`;
-    if (this.buffer.length < FLUSH_CHARS) return undefined;
-    return this.flush();
+    if (this.buffer.length >= FLUSH_CHARS) return this.flush();
+    // A short buffer is written within FLUSH_MS of its first line.
+    if (this.timer === undefined) {
+      this.timer = this.clock.setTimeout(() => {
+        this.timer = undefined;
+        // A failed write is raised by `end`, which waits for the chain.
+        this.flush().catch(() => undefined);
+      }, FLUSH_MS);
+    }
+    return undefined;
   }
 
   /** Writes the rest and waits for every queued write. */
@@ -40,6 +55,10 @@ export class JsonlLog {
   }
 
   private flush(): Promise<void> {
+    if (this.timer !== undefined) {
+      this.clock.clearTimeout(this.timer);
+      this.timer = undefined;
+    }
     const text = this.buffer;
     this.buffer = "";
     if (text.length === 0) return this.chain;

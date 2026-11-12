@@ -282,6 +282,7 @@ describe("operad presentation commands", () => {
     expect(text).toContain("mermaid");
     expect(text).toContain("flowchart TD");
     expect(text).toContain("A --> B");
+    expect(text).not.toContain("unfinished");
     expect(output.errors()).toBe("");
     assertUserWords(text);
 
@@ -294,6 +295,7 @@ describe("operad presentation commands", () => {
     ).toBe(0);
     expect(raw.text()).toContain("```diff");
     expect(raw.text()).toContain("```mermaid");
+    expect(raw.text()).not.toContain("unfinished");
     assertUserWords(raw.text());
   });
 
@@ -331,7 +333,7 @@ describe("operad presentation commands", () => {
     const output = capture();
     expect(await main(["show", "item:one"], { home, io: output.io })).toBe(0);
     expect(output.text()).toContain("one  new  First");
-    expect(output.text()).toContain("sections: Info, Log (live), Pages, Digits, Hang, Big, History");
+    expect(output.text()).toContain("sections: Info, Log (live), Pages, Digits, Hang, Big, Surge, History");
     expect(output.text()).toContain("demo:approve (m)  needs a note");
     expect(output.text()).toContain("demo:drop  asks to confirm");
     expect(output.text()).toContain("DEMO ITEM");

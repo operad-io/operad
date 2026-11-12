@@ -122,6 +122,50 @@ function within<T>(promise: Promise<T>, ms = 3_000): Promise<T> {
   });
 }
 
+/**
+ * A real log whose subscription the test fires by hand, so a rate-window test
+ * sees exactly the growth it names and no watcher repeats.
+ */
+function manualGrowthLog(inner: LogBackend): {
+  readonly log: LogBackend;
+  grow(object: string): void;
+} {
+  let listener:
+    | Parameters<NonNullable<LogBackend["subscribe"]>>[0]
+    | undefined;
+  const log: LogBackend = {
+    startRun: (flow, object, startInputId, access) =>
+      inner.startRun(flow, object, startInputId, access),
+    endRun: (runId) => inner.endRun(runId),
+    recordInput: (runId, source, sourceKey, payload) =>
+      inner.recordInput(runId, source, sourceKey, payload),
+    append: (runId, expectedSeq, facts) => inner.append(runId, expectedSeq, facts),
+    read: (runId) => inner.read(runId),
+    runs: (options) => inner.runs(options),
+    appendGlobal: (fact, uniqueKey) => inner.appendGlobal(fact, uniqueKey),
+    readGlobal: () => inner.readGlobal(),
+    readInputs: () => inner.readInputs(),
+    readInputsAfter: (position) => inner.readInputsAfter(position),
+    findInput: (inputId) => inner.findInput(inputId),
+    readOutcome: (inputId, kind) => inner.readOutcome(inputId, kind),
+    readOutcomesAfter: (seq) => inner.readOutcomesAfter(seq),
+    recordOutcome: (inputId, kind, payload) =>
+      inner.recordOutcome(inputId, kind, payload),
+    readOutcomes: () => inner.readOutcomes(),
+    close: () => inner.close(),
+    subscribe: (next) => {
+      listener = next;
+      return () => {
+        if (listener === next) listener = undefined;
+      };
+    },
+  };
+  return {
+    log,
+    grow: (object) => listener?.({ runId: "manual", object }),
+  };
+}
+
 describe("presentation views", () => {
   test("lists rows with the kernel's waiting and running flags", async () => {
     const { store, registry, log } = await fixture();
@@ -169,6 +213,7 @@ describe("presentation views", () => {
       "digits",
       "hang",
       "big",
+      "surge",
       "history",
     ]);
     expect(object.sections.at(-1)?.title).toBe("History");
@@ -383,6 +428,200 @@ describe("presentation views", () => {
     expect(rows.find((r) => r.id === "long")?.state).toBe("error");
     expect(rows.find((r) => r.id === "lines")?.state).toBe("error");
     expect(rows.find((r) => r.id === "edge")?.badge).toBe("x".repeat(16));
+    await log.close();
+  });
+
+  test("a read carries mark and tail, and after returns only what follows (T-0361)", async () => {
+    const { store, registry, log } = await fixture();
+    const views = trackedViews({ registry, store, log });
+
+    const info = await views.section("item:one", "info");
+    expect(info.tail).toBe("unfinished");
+    expect(info.mark).toBeString();
+    expect(info.delta).toBeUndefined();
+    expect(info.markdown).toContain("# Demo item");
+
+    const first = await views.section("item:one", "log");
+    expect(first.markdown).toBe("line 1");
+    expect(first.tail).toBe("tail 1");
+    expect(first.mark).toBeString();
+    const second = await views.section("item:one", "log");
+    expect(second.markdown).toBe("line 1\nline 2");
+    expect(second.mark).toBeString();
+    if (first.mark === undefined) throw new Error("the log read carried no mark");
+    if (second.mark === undefined) throw new Error("the log read carried no mark");
+
+    const delta = await views.section("item:one", "log", undefined, {
+      after: first.mark,
+    });
+    expect(delta.markdown).toBe("line 2");
+    expect(delta.tail).toBe("tail 2");
+    expect(delta.mark).toBe(second.mark);
+    expect(delta.delta).toBe(true);
+
+    views.close();
+    await log.close();
+  });
+
+  test("a plugin that ignores after is reported as a whole page (T-0361)", async () => {
+    const { store, registry, log } = await fixture();
+    const views = trackedViews({ registry, store, log });
+    const first = await views.section("item:one", "info");
+    if (first.mark === undefined) throw new Error("the info read carried no mark");
+
+    const again = await views.section("item:one", "info", undefined, {
+      after: first.mark,
+    });
+    expect(again.markdown).toBe(first.markdown);
+    expect(again.tail).toBe("unfinished");
+    expect(again.delta).toBe(false);
+
+    views.close();
+    await log.close();
+  });
+
+  test("a mark from another section or object is refused (T-0361)", async () => {
+    const { store, registry, log } = await fixture();
+    const views = trackedViews({ registry, store, log });
+    const logRead = await views.section("item:one", "log");
+    if (logRead.mark === undefined) throw new Error("the log read carried no mark");
+
+    await expect(
+      views.section("item:one", "info", undefined, { after: logRead.mark }),
+    ).rejects.toThrow(/section "log" of "item:one"; read this section without "after" first/);
+    await expect(
+      views.section("item:two", "log", undefined, { after: logRead.mark }),
+    ).rejects.toThrow(/section "log" of "item:one"; read this section without "after" first/);
+    await expect(
+      views.section("item:one", "log", undefined, { after: "not a mark" }),
+    ).rejects.toThrow(/not a mark this section gave/);
+
+    views.close();
+    await log.close();
+  });
+
+  test("the section cap counts the tail too (T-0361)", async () => {
+    const { store, registry, log } = await fixture();
+    const probe = await trackedViews({ registry, store, log }).section(
+      "item:one",
+      "info",
+    );
+    const combined =
+      Buffer.byteLength(probe.markdown, "utf8") +
+      Buffer.byteLength(probe.tail ?? "", "utf8");
+    const views = trackedViews({
+      registry,
+      store,
+      log,
+      sectionCapBytes: combined - 1,
+    });
+    const capped = await views.section("item:one", "info");
+    const kept =
+      Buffer.byteLength(capped.markdown, "utf8") +
+      Buffer.byteLength(capped.tail ?? "", "utf8");
+    expect(kept).toBeLessThanOrEqual(combined - 1);
+    expect(capped.markdown).toContain("[Truncated.");
+    expect(capped.tail).toBeDefined();
+
+    views.close();
+    await log.close();
+  });
+
+  test("a growing section announces an object at most once per 250 ms (T-0361)", async () => {
+    const { store, registry, log } = await fixture();
+    let now = 0;
+    const views = trackedViews({ registry, store, log, clock: () => now });
+    const stream = views.events()[Symbol.asyncIterator]();
+
+    const run = await log.startRun("demo-flow", "item:one");
+    expect((await stream.next()).value).toEqual({ id: "one" });
+
+    now = 100;
+    await log.append(run.runId, 0, [
+      { kind: "run_started", payload: { flow: "demo-flow" }, cause: "test" },
+    ]);
+    now = 249;
+    await log.append(run.runId, 1, [
+      { kind: "run_started", payload: { flow: "demo-flow" }, cause: "test" },
+    ]);
+
+    // A different object at 249 proves the two changes above announced nothing.
+    await log.startRun("other", "item:two");
+    expect((await stream.next()).value).toEqual({ id: "two" });
+
+    now = 250;
+    await log.append(run.runId, 2, [
+      { kind: "run_started", payload: { flow: "demo-flow" }, cause: "test" },
+    ]);
+    expect((await stream.next()).value).toEqual({ id: "one" });
+
+    await stream.return?.();
+    views.close();
+    await log.close();
+  });
+
+  test("a held-back growth is announced when the window ends (T-0361)", async () => {
+    const { store, registry, log: real } = await fixture();
+    const manual = manualGrowthLog(real);
+    let now = 0;
+    const views = trackedViews({
+      registry,
+      store,
+      log: manual.log,
+      clock: () => now,
+    });
+    const stream = views.events()[Symbol.asyncIterator]();
+
+    manual.grow("item:one");
+    expect((await stream.next()).value).toEqual({ id: "one" });
+
+    now = 100;
+    manual.grow("item:one");
+
+    // Nothing grows again; the window ending is enough to announce the change.
+    now = 250;
+    expect((await within(stream.next())).value).toEqual({ id: "one" });
+
+    await stream.return?.();
+    views.close();
+    await real.close();
+  });
+
+  test("the cap drops the finished page and keeps the tail whole (T-0361)", async () => {
+    const { store, registry, log } = await fixture();
+    const views = trackedViews({
+      registry,
+      store,
+      log,
+      sectionCapBytes: 300,
+    });
+    const content = await views.section("item:one", "surge");
+    expect(content.tail).toBe("t".repeat(120));
+    expect(content.markdown).toContain("[Truncated.");
+    expect(content.markdown).not.toContain("f".repeat(200));
+    expect(
+      Buffer.byteLength(content.markdown, "utf8") +
+        Buffer.byteLength(content.tail ?? "", "utf8"),
+    ).toBeLessThanOrEqual(300);
+
+    views.close();
+    await log.close();
+  });
+
+  test("the cap refuses when even the tail and the note do not fit (T-0361)", async () => {
+    const { store, registry, log } = await fixture();
+    const views = trackedViews({
+      registry,
+      store,
+      log,
+      sectionCapBytes: 128,
+    });
+
+    await expect(views.section("item:one", "surge")).rejects.toThrow(
+      /over the 128-byte size cap;.*--full/,
+    );
+
+    views.close();
     await log.close();
   });
 

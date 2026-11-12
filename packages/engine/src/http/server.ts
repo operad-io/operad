@@ -751,9 +751,11 @@ function createHandler(
         const id = decodeSegment(rawId);
         const section = decodeSegment(rawSection);
         const cursor = url.searchParams.get("cursor") ?? undefined;
+        const after = url.searchParams.get("after") ?? undefined;
         return json(
           await options.views.section(id, section, cursor, {
             full: trueValue(url.searchParams.get("full")),
+            ...(after === undefined ? {} : { after }),
           }),
         );
       }

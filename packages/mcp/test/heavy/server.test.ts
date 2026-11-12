@@ -529,6 +529,23 @@ describe("operad mcp", () => {
         String(content.markdown),
       );
 
+      const live = await child.request(50, "tools/call", {
+        name: "section",
+        arguments: { id: "item:one", section: "log" },
+      });
+      const liveContent = structuredOf(live);
+      expect(liveContent.mark).toBeString();
+      expect(liveContent.tail).toBeString();
+      const liveDelta = await child.request(51, "tools/call", {
+        name: "section",
+        arguments: {
+          id: "item:one",
+          section: "log",
+          after: String(liveContent.mark),
+        },
+      });
+      expect(structuredOf(liveDelta).delta).toBe(true);
+
       const pending = await child.request(6, "tools/call", {
         name: "pending",
         arguments: {},

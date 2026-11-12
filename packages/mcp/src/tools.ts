@@ -165,6 +165,11 @@ export const TOOLS = [
           type: "string",
           description: "The next cursor from an earlier read.",
         },
+        after: {
+          type: "string",
+          description:
+            "A mark from an earlier read: return only the finished content after it. The answer says in `delta` whether it is that part alone or a whole page.",
+        },
         full: {
           type: "boolean",
           description: "Return the whole section without the size cap.",
@@ -404,7 +409,10 @@ export async function runTool(
         String(args.id),
         String(args.section),
         args.cursor === undefined ? undefined : String(args.cursor),
-        { full: args.full === true },
+        {
+          full: args.full === true,
+          ...(args.after === undefined ? {} : { after: String(args.after) }),
+        },
       );
       return {
         content: [text(sectionMarkdown(content))],

@@ -83,6 +83,8 @@ export { alive, waitForGone } from "../../../engine/test/plugin/support.ts";
 export interface ManualClock extends Clock {
   /** Fires every timeout whose requested delay is at most `maxMs`. */
   fireUpTo(maxMs?: number): number;
+  /** Fires every timeout whose requested delay is above `minMs` and at most `maxMs`; a log's flush timer (250 ms) is below a stall limit. */
+  fireBetween(minMs: number, maxMs: number): number;
   /** Resolves once `predicate` holds; every timer change rechecks it. */
   when(predicate: () => boolean): Promise<void>;
   /** How many grace waits were requested. */
@@ -139,6 +141,13 @@ export function manualClock(): ManualClock {
     },
     fireUpTo(maxMs = Number.POSITIVE_INFINITY) {
       const due = [...timers].filter((timer) => timer.ms <= maxMs);
+      for (const timer of due) timers.delete(timer);
+      for (const timer of due) timer.handler();
+      notify();
+      return due.length;
+    },
+    fireBetween(minMs, maxMs) {
+      const due = [...timers].filter((timer) => timer.ms > minMs && timer.ms <= maxMs);
       for (const timer of due) timers.delete(timer);
       for (const timer of due) timer.handler();
       notify();

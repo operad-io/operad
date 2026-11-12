@@ -225,6 +225,12 @@ if (mode === "tool-detail") {
   process.exit(0);
 }
 
+if (mode === "secret-line") {
+  line({ type: "journal", event: "Said", text: "the key is store-secret-9" });
+  line(result());
+  process.exit(0);
+}
+
 if (mode === "done") {
   line({ type: "journal", event: "TurnStarted" });
   line(result());
