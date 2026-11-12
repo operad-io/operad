@@ -217,6 +217,13 @@ function alwaysAllowed(profile: AccessProfile, call: ToolCall): boolean {
     if (entry.cwd !== call.cwd) continue;
     if (entry.kind === "command") {
       if (call.tool === "bash" && call.input["command"] === entry.value) return true;
+      if (call.tool === MCP_TOOL) {
+        const server: unknown = call.input["server"];
+        const tool: unknown = call.input["tool"];
+        if (typeof server === "string" && typeof tool === "string" && mcpCallValue(server, tool) === entry.value) {
+          return true;
+        }
+      }
       continue;
     }
     if (call.tool !== entry.tool) continue;
@@ -600,7 +607,11 @@ export function match(given: AccessProfile, call: ToolCall, options: MatchOption
     }
     return asked;
   }
-  if (call.tool === MCP_TOOL) return matchMcp(profile, call);
+  if (call.tool === MCP_TOOL) {
+    // An allow_always answer to an unlisted tool is its exact command entry.
+    if (alwaysAllowed(profile, call)) return ALLOW;
+    return matchMcp(profile, call);
+  }
   if (PATH_TOOLS.has(call.tool)) {
     const path: unknown = call.input["path"] ?? call.input["file_path"];
     if (typeof path === "string" && path.length > 0) {

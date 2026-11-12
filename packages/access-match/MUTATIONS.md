@@ -112,3 +112,4 @@ and the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0366-M1 | packages/access-match/src/index.ts | `match` ignored the `alwaysAllow` entry for an asked command | `an always-allowed command lets the exact command and cwd through without asking` |
+| T-0366-M14 | packages/access-match/src/index.ts | the early MCP return ignored an `alwaysAllow` command entry, so an unlisted MCP tool asked again | `an always-allowed command entry lets the exact MCP tool in the same cwd through` |

@@ -13,7 +13,7 @@
           "value": {
             "type": "string",
             "minLength": 1,
-            "description": "The command text, exactly as the person allowed it."
+            "description": "The command text, exactly as the person allowed it; for an MCP tool, `mcp <server>.<tool>`."
           },
           "cwd": {
             "type": "string",

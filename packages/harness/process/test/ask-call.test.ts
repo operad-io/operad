@@ -159,6 +159,24 @@ describe("createCallAsker", () => {
     });
   });
 
+  test("allow_always from an asked MCP tool writes its exact command entry", async () => {
+    const home = await tempRoot();
+    const line = JSON.stringify({
+      type: "ask_call",
+      id: 8,
+      kind: "command",
+      value: "mcp notes.wipe",
+      shown: "mcp notes.wipe",
+      session: "s",
+    });
+    const env = setup(async () => ({ choice: ALLOW_ALWAYS }), [], { home, cwd: "/work/project" });
+    await env.asker.handle(line, env.reply);
+    expect(env.sent).toEqual([{ type: "ask_ack", id: 8, decision: "allow" }]);
+    expect(await readAlwaysAllow(home)).toEqual({
+      entries: [{ kind: "command", value: "mcp notes.wipe", cwd: "/work/project" }],
+    });
+  });
+
   test("a later identical call after allow_always is let through without asking again", async () => {
     const home = await tempRoot();
     const env = setup(async () => ({ choice: ALLOW_ALWAYS }), [], { home, cwd: "/work/project" });

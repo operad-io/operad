@@ -683,3 +683,25 @@ test("readProfile reads alwaysAllow entries and names a malformed one", () => {
     expect(readProfile(bad).ok).toBe(false);
   }
 });
+
+test("an always-allowed command entry lets the exact MCP tool in the same cwd through", () => {
+  const profile: AccessProfile = {
+    allowMcp: [],
+    alwaysAllow: [{ kind: "command", value: "mcp notes.wipe", cwd: CWD }],
+  };
+  const call = (server: string, tool: string, cwd = CWD): ReturnType<typeof match> =>
+    match(profile, { tool: "mcp", input: { server, tool }, cwd }, { home: HOME });
+  expect(call("notes", "wipe")).toEqual({ allow: true });
+  expect(call("notes", "wipe", "/work/other")).toMatchObject({
+    allow: false,
+    ask: true,
+    kind: "command",
+    value: "mcp notes.wipe",
+  });
+  expect(call("notes", "echo")).toMatchObject({
+    allow: false,
+    ask: true,
+    kind: "command",
+    value: "mcp notes.echo",
+  });
+});
