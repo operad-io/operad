@@ -560,6 +560,29 @@ test("a glob is judged by its literal prefix: refused when it can reach a denied
   expect(bash(PATHS, "cat /tmp/[[:digit:]]x/id")).toEqual({ allow: true });
 });
 
+test("an MCP tool is under the profile when it has allowMcp: a listed tool runs, any other asks as a write", () => {
+  const profile: AccessProfile = { allowMcp: ["notes.echo", "files.*"] };
+  const call = (server: string, tool: string) => match(profile, { tool: "mcp", input: { server, tool }, cwd: CWD }, { home: HOME });
+  expect(call("notes", "echo")).toEqual({ allow: true });
+  expect(call("files", "anything")).toEqual({ allow: true });
+  expect(call("notes", "wipe")).toMatchObject({ allow: false, ask: true, kind: "command", value: "mcp notes.wipe" });
+  // An empty list is still a list: nothing is known, so everything asks.
+  expect(match({ allowMcp: [] }, { tool: "mcp", input: { server: "notes", tool: "echo" }, cwd: CWD })).toMatchObject({ allow: false, ask: true });
+  // A one-time permission covers that exact tool only.
+  const grants = [{ waitId: "w1", kind: "command" as const, value: "mcp notes.wipe" }];
+  expect(findGrant({ grants }, { tool: "mcp", input: { server: "notes", tool: "wipe" }, cwd: CWD })).toEqual(grants[0]);
+  expect(findGrant({ grants }, { tool: "mcp", input: { server: "notes", tool: "echo" }, cwd: CWD })).toBeUndefined();
+  expect(readProfile({ allowMcp: ["a.b"] })).toEqual({ ok: true, profile: { allowMcp: ["a.b"] } });
+  expect(readProfile({ allowMcp: "a.b" }).ok).toBe(false);
+});
+
+test("an MCP tool is not under the profile when allowMcp is absent", () => {
+  const call = (server: string, tool: string) => match({}, { tool: "mcp", input: { server, tool }, cwd: CWD }, { home: HOME });
+  expect(call("notes", "echo")).toEqual({ allow: true });
+  // A malformed MCP call is not judged either, as for any tool the profile does not know.
+  expect(match({}, { tool: "mcp", input: {}, cwd: CWD }, { home: HOME })).toEqual({ allow: true });
+});
+
 test("readPaths lets a read through a deny of its ancestor and nothing else", () => {
   const profile: AccessProfile = {
     denyPaths: ["/home/u/.operad/attachments", "/home/u/.operad/store"],

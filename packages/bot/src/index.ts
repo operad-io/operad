@@ -10,7 +10,8 @@
  */
 
 import { mkdirSync } from "node:fs";
-import { CHAT_TYPE, chatData, createChat, sendMessage, startingModel, titleFromMessage } from "@operad-io/chat";
+import { fileURLToPath } from "node:url";
+import { CHAT_TYPE, chatData, createChat, sendMessage, startingEffort, startingModel, titleFromMessage } from "@operad-io/chat";
 import { definePlugin, isRecord, type ActionArgsSchema, type ActionTypeDefinition, type JsonValue, type ObjectRow, type ObjectStore, type ObjectViews, type PluginStepResult, type SectionContent, type StepContext, type StoredObject } from "@operad-io/engine";
 import {
   BOT_SETTINGS,
@@ -22,6 +23,7 @@ import {
   resolveBot,
   type ResolvedBot,
 } from "./bot.ts";
+import { ingestReports, runMcpCommand } from "./mcp-proposals.ts";
 import {
   PROPOSAL_TYPE,
   proposalActions,
@@ -43,7 +45,18 @@ function rowOf(bot: ResolvedBot): Record<string, JsonValue> {
     skills: [...bot.skills],
     speaker: bot.speaker,
     access: bot.access,
+    mcpServers: Object.keys(bot.mcpServers),
   };
+}
+
+/** The harnesses that take MCP servers natively; any other does not mount a bot's servers. */
+export const MCP_HARNESSES: readonly string[] = ["claude", "radian"];
+
+const GUARD = fileURLToPath(new URL("./guard.ts", import.meta.url));
+
+/** What a harness starts for one of a bot's servers: the guard, which starts the server itself. */
+export function guardCommand(home: string, bot: string, server: string): { readonly command: string; readonly args: readonly string[] } {
+  return { command: process.execPath, args: [GUARD, "--home", home, "--bot", bot, "--server", server] };
 }
 
 /**
@@ -91,8 +104,10 @@ export interface OpenChat {
   readonly harnesses: readonly string[];
   readonly bot: string;
   readonly models?: Readonly<Record<string, { readonly list: readonly string[]; readonly default: string | null }>> | undefined;
+  readonly efforts?: Readonly<Record<string, { readonly list: readonly string[]; readonly default: string | null }>> | undefined;
   readonly harness?: string | undefined;
   readonly model?: string | undefined;
+  readonly effort?: string | undefined;
   readonly title?: string | undefined;
   readonly cause: string;
 }
@@ -111,13 +126,16 @@ export async function openChat(input: OpenChat): Promise<string> {
       `agent "${harness}" is not loaded; the loaded ones are: ${input.harnesses.join(", ") || "none"}`,
     );
   }
-  // The bot's configured model must be one the agent lists; an unlisted one is refused by name.
+  // The bot's configured model and effort must be ones the agent lists; an unlisted one is refused by name.
   let model: string | undefined;
+  let effort: string | undefined;
   try {
     model = startingModel(harness, input.models?.[harness], input.model, bot.model ?? undefined);
+    effort = startingEffort(harness, input.efforts?.[harness], input.effort, bot.effort ?? undefined);
   } catch (error) {
     throw new BotError(error instanceof Error ? error.message : String(error));
   }
+  const effortDefault = input.efforts?.[harness]?.default ?? undefined;
   mkdirSync(bot.cwd, { recursive: true });
   return createChat(
     input.store,
@@ -125,6 +143,8 @@ export async function openChat(input: OpenChat): Promise<string> {
       parent: `${BOT_TYPE}:${bot.name}`,
       harness,
       ...(model === undefined ? {} : { model }),
+      ...(effort === undefined ? {} : { effort }),
+      ...(effort === undefined || effortDefault === undefined ? {} : { effortDefault }),
       cwd: bot.cwd,
       access: bot.access,
       skills: bot.skills,
@@ -140,6 +160,7 @@ function chatArgs(
   harnesses: readonly string[],
   botHarness: unknown,
   models: readonly string[] = [],
+  efforts: readonly string[] = [],
 ): ActionArgsSchema {
   const first = harnesses[0];
   const fallback = typeof botHarness === "string" && harnesses.includes(botHarness) ? botHarness : first;
@@ -158,6 +179,12 @@ function chatArgs(
         ...(models.length === 0 ? {} : { enum: [...models] }),
         description:
           "The model the agent uses; one from that agent's list. The bot's model, else the agent's default, when left out. It can be changed later.",
+      },
+      effort: {
+        type: "string",
+        ...(efforts.length === 0 ? {} : { enum: [...efforts] }),
+        description:
+          "The effort the agent uses; one from that agent's list. The bot's effort, else the agent's default, when left out. It can be changed later.",
       },
       title: { type: "string", minLength: 1, maxLength: 120, description: "What the chat is called." },
       message: {
@@ -178,9 +205,12 @@ const chatAction: ActionTypeDefinition = {
   creates: "chat",
   args: chatArgs([], undefined),
   argsFor: (object, env) =>
-    chatArgs(env.harnesses ?? [], object.data.harness, [
-      ...new Set((env.harnesses ?? []).flatMap((name) => env.models?.[name]?.list ?? [])),
-    ]),
+    chatArgs(
+      env.harnesses ?? [],
+      object.data.harness,
+      [...new Set((env.harnesses ?? []).flatMap((name) => env.models?.[name]?.list ?? []))],
+      [...new Set((env.harnesses ?? []).flatMap((name) => env.efforts?.[name]?.list ?? []))],
+    ),
   when: (state, env) => state.removed !== true && typeof state.problem !== "string" && (env.harnesses ?? []).length > 0,
   async why(object, env) {
     if (object.data.removed === true) return `bot ${object.id} is no longer in the settings`;
@@ -189,16 +219,24 @@ const chatAction: ActionTypeDefinition = {
     return undefined;
   },
   async run(ctx, args) {
-    const input = args as { readonly agent?: string; readonly model?: string; readonly title?: string; readonly message?: string };
+    const input = args as {
+      readonly agent?: string;
+      readonly model?: string;
+      readonly effort?: string;
+      readonly title?: string;
+      readonly message?: string;
+    };
     const id = await openChat({
       store: ctx.store,
       home: ctx.home,
       settings: ctx.settings,
       harnesses: ctx.harnesses,
       models: ctx.models,
+      efforts: ctx.efforts,
       bot: ctx.object.id,
       harness: input.agent,
       model: input.model,
+      effort: input.effort,
       title: input.title ?? (input.message === undefined ? undefined : titleFromMessage(input.message)),
       cause: "action:bot/chat",
     });
@@ -223,15 +261,22 @@ export async function runSettings(ctx: StepContext, params: unknown): Promise<Pl
   }
   const name = parent.slice(BOT_TYPE.length + 1);
   try {
+    await ingestReports(ctx.store, ctx.home);
     const written = readBots(ctx.home, ctx.settings)[name];
     if (written === undefined) {
       return { result: "failed", data: { message: `bot "${name}" is no longer in the settings` } };
     }
     const bot = resolveBot(ctx.home, name, written, await repositoryPaths(ctx.store));
     mkdirSync(bot.cwd, { recursive: true });
+    // Only the servers the bot lists, and only on a harness that takes MCP servers natively.
+    const mounts = MCP_HARNESSES.includes(chatData(stored.data).harness);
+    const mcpServers: Record<string, JsonValue> = {};
+    for (const [server, entry] of Object.entries(bot.mcpServers)) {
+      if (mounts && entry.digest !== undefined) mcpServers[server] = { ...guardCommand(ctx.home, name, server) } as unknown as JsonValue;
+    }
     return {
       result: "done",
-      data: { cwd: bot.cwd, access: bot.access, skills: [...bot.skills] },
+      data: { cwd: bot.cwd, access: bot.access, skills: [...bot.skills], mcpServers },
     };
   } catch (error) {
     return { result: "failed", data: { message: error instanceof Error ? error.message : String(error) } };
@@ -247,6 +292,13 @@ function botMarkdown(object: StoredObject): string {
   if (typeof data.speaker === "string") lines.push(`Speaker: ${data.speaker}`);
   const skills = Array.isArray(data.skills) ? data.skills : [];
   lines.push(skills.length === 0 ? "No skills." : `Skills: ${skills.join(", ")}`);
+  const servers = Array.isArray(data.mcpServers) ? data.mcpServers : [];
+  if (servers.length > 0) {
+    lines.push(
+      `MCP servers: ${servers.join(", ")}`,
+      `They are mounted in chats on ${MCP_HARNESSES.join(" and ")}. A chat on pi does not mount them: pi takes no MCP servers yet, so it cannot use ${servers.join(", ")}.`,
+    );
+  }
   return lines.join("\n\n");
 }
 
@@ -300,13 +352,21 @@ export function createBotPlugin() {
         run: runSkillCommand,
       },
       {
+        name: "mcp",
+        args: "<bot> <name> [<command> [args...]]",
+        run: runMcpCommand,
+      },
+      {
         name: "setting",
         args: "<bot>",
         run: runSettingCommand,
       },
     ],
     // A proposal waits for no run; each one is a pending item of its bot.
-    standing: async (ctx) => proposalItems(ctx.store),
+    standing: async (ctx) => {
+      await ingestReports(ctx.store, ctx.home);
+      return proposalItems(ctx.store);
+    },
     views: { [BOT_TYPE]: botViews, [PROPOSAL_TYPE]: proposalViews },
   });
 }
@@ -315,3 +375,7 @@ export default createBotPlugin();
 
 export * from "./bot.ts";
 export * from "./proposals.ts";
+export * from "./mcp.ts";
+export * from "./mcp-proposals.ts";
+export { runGuard, markedResult, MATERIAL_NOTE, reportPath } from "./guard.ts";
+export { probeServer, type McpTool } from "./mcp-client.ts";

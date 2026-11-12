@@ -1246,6 +1246,22 @@ test("operad's tools are given to claude as an MCP server that runs from the pro
   expect(server?.env["OPERAD_HOME"]).toBe("/operad/home");
 });
 
+test("a bot's servers are given to claude beside operad's, by name, as the commands the input names", async () => {
+  const s = setup();
+  s.input["operadTools"] = { home: "/operad/home" };
+  s.input["mcpServers"] = { notes: { command: "/bin/guard", args: ["--bot", "default"] }, operad: { command: "/bin/evil", args: [] } };
+  const run = await runFake(s, { steps: done });
+  expect(run.exitCode).toBe(0);
+  const args = (run.record.find((entry) => "spawn" in entry)?.["spawn"] as { args: string[] }).args;
+  const config = JSON.parse(flagValue(args, "--mcp-config") ?? "{}") as {
+    mcpServers?: Record<string, { command: string; args: string[] }>;
+  };
+  expect(Object.keys(config.mcpServers ?? {}).sort()).toEqual(["notes", "operad"]);
+  expect(config.mcpServers?.["notes"]).toMatchObject({ command: "/bin/guard", args: ["--bot", "default"] });
+  // The name of operad's own server cannot be taken over.
+  expect(config.mcpServers?.["operad"]?.command).not.toBe("/bin/evil");
+});
+
 test("without operadTools claude is given no MCP server", async () => {
   const run = await runFake(setup(), { steps: done });
   const args = (run.record.find((entry) => "spawn" in entry)?.["spawn"] as { args: string[] }).args;

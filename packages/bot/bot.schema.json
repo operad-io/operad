@@ -35,10 +35,86 @@
             "minLength": 1,
             "description": "The model a new chat starts with; it must be one the chat's agent lists. Without it the agent's default."
           },
+          "effort": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The effort a new chat starts with; it must be one the chat's agent lists. Without it the agent's default."
+          },
           "speaker": {
             "type": "string",
             "minLength": 1,
             "description": "How a chat of this bot labels the model's messages in its transcript. Without it the chat plugin's speaker is used."
+          },
+          "mcpServers": {
+            "type": "object",
+            "description": "The local MCP servers this bot's chats mount, by name. A server is added only through `bot mcp`, which a person approves; the digest is of its tool names and descriptions, and a chat that finds other tools does not mount the server.",
+            "additionalProperties": {
+              "type": "object",
+              "description": "One local MCP server.",
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "The program that starts the server."
+                },
+                "args": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Its arguments."
+                },
+                "package": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "The package the command runs, when it runs one."
+                },
+                "version": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "The pinned version of that package."
+                },
+                "secrets": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "description": "Environment variables the server needs. Each value is the bot plugin's secret `<server>.<variable>`, given to the server only when it starts."
+                },
+                "tools": {
+                  "type": "array",
+                  "description": "The tools the server offered when a person approved it.",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "description": {
+                        "type": "string"
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "digest": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "The digest of the tool names and descriptions."
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "mcpAllow": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "MCP tools that run without asking, as `<server>.<tool>` or `<server>.*`. A tool not listed counts as a write and asks first."
           },
           "access": {
             "type": "object",

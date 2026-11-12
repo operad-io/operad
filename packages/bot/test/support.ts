@@ -32,6 +32,7 @@ function fakeHarness(name: string, calls: Call[]) {
     kind: "harness",
     version: "0.0.0",
     models: name === "radian" ? { list: [], default: null } : { list: [`${name}-a`, `${name}-b`], default: `${name}-a` },
+    efforts: name === "radian" ? { list: [], default: null } : { list: [`${name}-low`, `${name}-high`], default: `${name}-low`, flag: "--effort" },
     steps: [
       {
         name: "agent",

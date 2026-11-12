@@ -31,6 +31,7 @@ import {
   MAX_LINE_CHARS,
   OPERAD_SERVER,
   operadToolsOf,
+  mountedServersOf,
   optionalText,
   secs,
   serverCommand,
@@ -215,6 +216,9 @@ interface ResolvedSettings {
 
 /** The models a chat may pick with this agent, and the one used when none is set. */
 export const RADIAN_MODELS = { list: [], default: null } as const;
+
+/** radian cannot honour an effort a chat picks, so it declares none. */
+export const RADIAN_EFFORTS = { list: [], default: null } as const;
 
 /** The settings a config.json section may set for this plugin. */
 const PLUGIN_SETTINGS = {
@@ -520,6 +524,7 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
     kind: "harness",
     version: "0.0.0",
     models: RADIAN_MODELS,
+    efforts: RADIAN_EFFORTS,
     settings: PLUGIN_SETTINGS,
     steps: [
       {
@@ -620,23 +625,25 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
 
           // Operad's tools: radian starts the server named in this file.
           const operadTools = operadToolsOf(input.operadTools ?? flow.operadTools);
+          // A bot's servers: each is started behind its guard, which holds the secrets.
+          const mounted = mountedServersOf(input.mcpServers ?? flow.mcpServers);
           let mcpConfig: string | undefined;
-          if (operadTools !== undefined) {
-            const server = serverCommand(operadTools);
+          if (operadTools !== undefined || mounted !== undefined) {
+            const servers: Record<string, unknown> = {};
+            if (operadTools !== undefined) {
+              const server = serverCommand(operadTools);
+              servers[OPERAD_SERVER] = {
+                command: server.command,
+                args: server.args,
+                env: { OPERAD_HOME: operadTools.home },
+              };
+            }
+            for (const [name, server] of Object.entries(mounted ?? {})) {
+              servers[name] = { command: server.command, args: server.args };
+            }
             mcpConfig = `${ctx.logger.path}.mcp.json`;
             await mkdir(dirname(mcpConfig), { recursive: true });
-            await writeFile(
-              mcpConfig,
-              JSON.stringify({
-                mcpServers: {
-                  [OPERAD_SERVER]: {
-                    command: server.command,
-                    args: server.args,
-                    env: { OPERAD_HOME: operadTools.home },
-                  },
-                },
-              }),
-            );
+            await writeFile(mcpConfig, JSON.stringify({ mcpServers: servers }));
           }
           // radian runs its own tools and has no way to ask, so the profile's
           // rules are given to it as a hook it runs before each call.

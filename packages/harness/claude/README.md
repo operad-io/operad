@@ -48,6 +48,7 @@ the table is refused, not ignored.
 | `effort` | `low`, `medium`, `high`, `xhigh` or `max` | no | reasoning effort; absent means claude's default |
 | `bashTimeoutSecs` | positive integer | no | the longest one Bash call may run in the foreground, in seconds; absent means 1800. Sets claude's `BASH_DEFAULT_TIMEOUT_MS` and `BASH_MAX_TIMEOUT_MS` |
 | `operadTools` | object `{ home }` | no | operad's own tools: claude is given an MCP server (`@operad-io/mcp`'s `stdio.ts`, run by Bun with `--home`) named `operad`; its tools are not judged by the access profile, they run under the owner's MCP allow lists. Absent: claude gets no MCP server |
+| `mcpServers` | object, name to `{ command, args }` | no | other MCP servers claude starts, by name (a bot's servers, each behind the bot plugin's guard, which holds their secrets). Their tools are judged by the profile's `allowMcp`: a tool not listed asks first. Absent: none |
 | `secretValues` | array of strings | no | the values of the plugin's operad secrets; a log line shows `***` where one appears. Never written anywhere |
 | `images` | array of `{ path, mediaType }` | no | image files (`image/png`, `image/jpeg`, `image/gif`, `image/webp`) sent with the prompt as image blocks of the one user message. Absent: the prompt goes as text |
 | `access` | object | no | the access profile; `denyPaths` and `denyCommands` are enforced in `canUseTool` by `@operad-io/access-match`, `grants` are one-time permissions, other fields are ignored; absent means nothing is denied |
@@ -143,10 +144,11 @@ it with `worker.use` in `.operad/dev.json`.
 | `--model` | a model name claude takes, such as `opus` | the model for this step |
 | `--effort` | `low`, `medium`, `high`, `xhigh` or `max` | the reasoning effort for this step |
 
-A flag in `args` wins over the setting of the same name. Any other entry fails
-the step at once, before the worker starts, with result `failed`, reason
-`invalid_args` and a message that names the entry: an unknown flag, a flag
-without its value, an effort outside the set, a flag given twice, the `=`
+A flag in `args` wins over the setting of the same name. A chat passes its
+effort as the step param `effort`, which also wins over the setting. Any other
+entry fails the step at once, before the worker starts, with result `failed`,
+reason `invalid_args` and a message that names the entry: an unknown flag, a
+flag without its value, an effort outside the set, a flag given twice, the `=`
 spelling.
 
 ### Settings

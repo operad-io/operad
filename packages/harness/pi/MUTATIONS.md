@@ -81,4 +81,12 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0240-M9 | packages/harness/pi/src/worker.ts | the logged bash command no longer kept its line breaks (`keepLines` removed) | `a multi-line bash command keeps its lines in the log` |
+
+
+## T-0342 — a chat's effort
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0342-M7 | packages/harness/pi/src/index.ts | the plugin stopped declaring its efforts | `the efforts pi declares > its thinking levels under the same setting, a default, and the thinking flag` |
+| T-0342-M8 | packages/harness/pi/src/index.ts | the step ignored the `effort` param a chat passes | `pi/agent > an effort from a chat reaches the worker as pi's thinking level` |
 | T-0339-M19 | packages/harness/pi/src/worker.ts | pi's prompt went without its images | `images are given to pi with the prompt: the model's context holds the image` |

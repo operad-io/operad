@@ -270,6 +270,8 @@ interface Live {
   readonly cwd: string;
   readonly access: Readonly<Record<string, JsonValue>>;
   readonly skills: readonly string[];
+  /** Servers the harness starts for the agent, by name, each as a command. */
+  readonly mcpServers: Readonly<Record<string, JsonValue>>;
 }
 
 /**
@@ -283,7 +285,7 @@ async function liveSettings(
   object: RunObject,
   runStep: NonNullable<StepContext["runStep"]>,
 ): Promise<Live | PluginStepResult> {
-  const own: Live = { cwd: chat.cwd, access: chat.access, skills: chat.skills };
+  const own: Live = { cwd: chat.cwd, access: chat.access, skills: chat.skills, mcpServers: {} };
   if (chat.refresh === undefined) return own;
   if (ctx.stepLoaded !== undefined && !ctx.stepLoaded(chat.refresh)) {
     return failed("settings", `"${chat.refresh}", which gives this chat's settings, is not loaded`);
@@ -305,6 +307,7 @@ async function liveSettings(
     cwd: data.cwd,
     access: data.access as Record<string, JsonValue>,
     skills: data.skills.filter((item): item is string => typeof item === "string"),
+    mcpServers: isRecord(data.mcpServers) ? (data.mcpServers as Record<string, JsonValue>) : {},
   };
 }
 
@@ -349,6 +352,12 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
   if (chat.model !== undefined && ctx.harnessModels?.(chat.harness)?.list.includes(chat.model) !== true) {
     return failed("model", `the agent "${chat.harness}" cannot use the model "${chat.model}"`);
   }
+  // The same for an effort: the agent's list is the only one that can take it.
+  const efforts = ctx.harnessEfforts?.(chat.harness);
+  if (chat.effort !== undefined && efforts?.list.includes(chat.effort) !== true) {
+    return failed("effort", `the agent "${chat.harness}" cannot use the effort "${chat.effort}"`);
+  }
+  const effortFlag = efforts?.flag ?? (chat.harness === "pi" ? "--thinking" : "--effort");
 
   const settled = await liveSettings(ctx, chat, object, runStep);
   if ("result" in settled) return settled;
@@ -406,10 +415,19 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
         prompt: promptFor(pending, new Set(images.map((image) => image.path))),
         ...(images.length === 0 ? {} : { images }),
         cwd: live.cwd,
-        ...(chat.model === undefined ? {} : { args: ["--model", chat.model] }),
+        ...(chat.model === undefined && chat.effort === undefined
+          ? {}
+          : {
+              args: [
+                ...(chat.model === undefined ? [] : ["--model", chat.model]),
+                ...(chat.effort === undefined ? [] : [effortFlag, chat.effort]),
+              ],
+            }),
+        ...(chat.effort === undefined ? {} : { effort: chat.effort }),
         ...(live.skills.length === 0 ? {} : { skills: live.skills }),
         // Operad's own tools, so the agent never runs the `operad` command.
         operadTools: { home: ctx.home },
+        ...(Object.keys(live.mcpServers).length === 0 ? {} : { mcpServers: live.mcpServers }),
         ...(session === undefined ? {} : { resumeSession: session }),
         ...(askAnswer === undefined ? {} : { askAnswer }),
       },

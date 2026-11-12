@@ -40,6 +40,7 @@ import {
   text,
   imageInputsOf,
   operadToolsOf,
+  mountedServersOf,
   JsonlLog,
   modelLimit,
   standardUsage,
@@ -99,6 +100,13 @@ export interface ClaudeHarnessOptions {
 export const CLAUDE_MODELS = {
   list: ["opus", "sonnet", "haiku"],
   default: "sonnet",
+} as const;
+
+/** The efforts a chat may pick with this agent, the default, and the flag that sets it. */
+export const CLAUDE_EFFORTS = {
+  list: EFFORT_LEVELS,
+  default: "medium",
+  flag: "--effort",
 } as const;
 
 /** The settings a config.json section may set for this plugin. */
@@ -207,6 +215,7 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
     kind: "harness",
     version: "0.0.0",
     models: CLAUDE_MODELS,
+    efforts: CLAUDE_EFFORTS,
     settings: PLUGIN_SETTINGS,
     steps: [
       {
@@ -283,7 +292,10 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
             `${at}: params.stallSecs`,
           );
           const model = flags.model ?? optionalText(ctx.settings.model, `${at}: settings.model`);
-          const effort = flags.level ?? optionalText(ctx.settings.effort, `${at}: settings.effort`);
+          const effort =
+            flags.level ??
+            optionalText(input.effort, `${at}: params.effort`) ??
+            optionalText(ctx.settings.effort, `${at}: settings.effort`);
           const maxTurns = optionalNumber(ctx.settings.maxTurns, `${at}: settings.maxTurns`, true);
           const budgetUsd = optionalNumber(ctx.settings.budgetUsd, `${at}: settings.budgetUsd`, false);
           const bashTimeoutSecs = optionalNumber(
@@ -296,6 +308,7 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
           if (cwdProblem !== undefined) return refuse("cwd", cwdProblem);
 
           const operadTools = operadToolsOf(input.operadTools ?? flow.operadTools);
+          const mcpServers = mountedServersOf(input.mcpServers ?? flow.mcpServers);
           const images = imageInputsOf(input.images ?? flow.images);
           const claudeCommand = optionalText(ctx.settings.command, `${at}: settings.command`);
           const storeSecrets = await secretValuesOf(ctx.secrets);
@@ -310,6 +323,7 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
             ...(budgetUsd === undefined ? {} : { budgetUsd }),
             ...(bashTimeoutSecs === undefined ? {} : { bashTimeoutSecs }),
             ...(operadTools === undefined ? {} : { operadTools }),
+            ...(mcpServers === undefined ? {} : { mcpServers }),
             ...(images.length === 0 ? {} : { images }),
             ...(isRecord(ctx.access) ? { access: ctx.access } : {}),
             ...(storeSecrets.length === 0 ? {} : { secretValues: storeSecrets }),

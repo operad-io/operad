@@ -110,6 +110,13 @@ export const PI_MODELS = {
   default: "anthropic/claude-sonnet-5-5",
 } as const;
 
+/** The efforts a chat may pick with this agent, mapped to its thinking levels. */
+export const PI_EFFORTS = {
+  list: THINKING_LEVELS,
+  default: "medium",
+  flag: "--thinking",
+} as const;
+
 /** The settings a config.json section may set for this plugin. */
 const PLUGIN_SETTINGS = {
   type: "object" as const,
@@ -233,6 +240,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
     kind: "harness",
     version: "0.0.0",
     models: PI_MODELS,
+    efforts: PI_EFFORTS,
     settings: PLUGIN_SETTINGS,
     steps: [
       {
@@ -318,6 +326,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
             flags.model ?? optionalText(ctx.settings.model, `${at}: settings.model`);
           const thinkingLevel =
             flags.level ??
+            optionalText(input.effort, `${at}: params.effort`) ??
             optionalText(ctx.settings.thinkingLevel, `${at}: settings.thinkingLevel`);
           const authPath = expandHome(
             text(ctx.settings.authPath ?? DEFAULT_AUTH_PATH, `${at}: settings.authPath`),
