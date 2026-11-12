@@ -2,7 +2,7 @@
  * The host's side of a one-time permission. A harness program that is about to
  * run a call its access profile refuses writes one `grant_use` line and waits
  * for one `grant_ack` line on its stdin; the host records the use and answers.
- * `harness-pi` and `harness-claude` share this.
+ * `pi` and `claude` share this.
  */
 
 /** Whether the run's access profile holds a permission the program may ask to use. */

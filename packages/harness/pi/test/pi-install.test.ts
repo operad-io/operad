@@ -194,20 +194,20 @@ describe("findPi", () => {
   });
 });
 
-describe("harness-pi check", () => {
+describe("pi check", () => {
   async function checkWith(command: string | undefined, path?: string) {
     const root = await fresh();
     const registry = new PluginRegistry([createPiHarnessPlugin()], {
       home: root,
       cwd: root,
       store: new MemoryPluginStore({ root: join(root, "store") }),
-      settings: { "harness-pi": command === undefined ? {} : { command } },
+      settings: { "pi": command === undefined ? {} : { command } },
     });
     const previous = process.env.PATH;
     if (path !== undefined) process.env.PATH = path;
     try {
       const checks = await registry.checks();
-      return checks.find((item) => item.plugin === "harness-pi");
+      return checks.find((item) => item.plugin === "pi");
     } finally {
       process.env.PATH = previous;
     }

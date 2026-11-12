@@ -17,7 +17,7 @@ this manual prints a secret.
 {
   "plugins": {
     "shell": { "module": "@operad-io/shell", "enabled": true },
-    "harness-radian": { "module": "@operad-io/harness-radian", "enabled": true },
+    "radian": { "module": "@operad-io/harness-radian", "enabled": true },
     "dev": { "module": "@operad-io/dev", "enabled": true }
   },
   "store": { "backend": "jsonl", "path": "~/.operad/store" },
@@ -801,8 +801,8 @@ against the profile as usual, and a different call is too.
 
 A step type that cannot run again from where it left (`resumable: false` in its
 definition) cannot be asked with `"waiting"`: its questions are forced to
-`onTimeout: "reject_once"`. `harness-pi`, `harness-claude` and `harness-radian` all resume.
-`harness-radian` cannot enforce a one-time permission (no hook sees its tool
+`onTimeout: "reject_once"`. `pi`, `claude` and `radian` all resume.
+`radian` cannot enforce a one-time permission (no hook sees its tool
 calls); a step type that says `grants: false` has `ctx.ask` refuse a question
 that offers one, before anyone is asked. If a run still reaches radian with one,
 it fails with `grant_unsupported`. A resumed radian run that answers with another
@@ -811,13 +811,13 @@ session than the one it was given fails with `session_missing`.
 ## Limiting runs of one model
 
 A provider may answer HTTP 429 when several runs use one model at once. The
-`harness-radian`, `harness-pi` and `harness-claude` plugins can limit that. Set `concurrency` in
+`radian`, `pi` and `claude` plugins can limit that. Set `concurrency` in
 the plugin's `settings`:
 
 ```json
 {
   "plugins": {
-    "harness-pi": {
+    "pi": {
       "module": "@operad-io/harness-pi",
       "settings": { "concurrency": { "opencode-go/deepseek-v4.1-flash": 2 } }
     }
@@ -837,9 +837,9 @@ The limit is on a key, and the plugin builds it from the step's `args`:
 
 | Plugin | Key | Where the model comes from |
 |---|---|---|
-| `harness-pi` | `harness-pi:<model>` | the `--model` argument, else the plugin's `model` setting; with neither, the step is not limited |
-| `harness-claude` | `harness-claude:<model>` | the `--model` argument, else the plugin's `model` setting; with neither, the step is not limited |
-| `harness-radian` | `harness-radian:<provider>/<model>` | the `--provider` and `--model` arguments only (the model alone when there is no `--provider`); radian has no `model` setting, and a step without `--model` is not limited |
+| `pi` | `pi:<model>` | the `--model` argument, else the plugin's `model` setting; with neither, the step is not limited |
+| `claude` | `claude:<model>` | the `--model` argument, else the plugin's `model` setting; with neither, the step is not limited |
+| `radian` | `radian:<provider>/<model>` | the `--provider` and `--model` arguments only (the model alone when there is no `--provider`); radian has no `model` setting, and a step without `--model` is not limited |
 
 The model is read from the step's own `args`, in either `--model value` or
 `--model=value` form; when a flag is repeated the last one counts. A model that
@@ -856,7 +856,7 @@ as failed with the reason that it was cancelled.
 
 ### Long commands under claude
 
-`harness-claude` runs each step as one foreground turn. Nothing moves to the
+`claude` runs each step as one foreground turn. Nothing moves to the
 background, and the tools that only wait for background work are off, so a long
 command such as the gate runs to its end inside the turn. The setting
 `bashTimeoutSecs` (integer, 1 or more, default `1800`) is the longest one Bash
@@ -865,7 +865,7 @@ gave its result, the step ends `failed` with a message that says so.
 
 ### Long commands under pi
 
-`harness-pi` gives each call of pi's bash tool a time limit, so a command that
+`pi` gives each call of pi's bash tool a time limit, so a command that
 never ends (a read from a FIFO nobody writes to) cannot hold a run until its
 wall time. The setting `bashTimeoutSecs` (integer, 1 or more, default `1800`) is
 the longest one bash call may run, in seconds. It is both the default and the
@@ -877,13 +877,13 @@ not an integer of 1 or more (0, a negative number, a string) is refused when the
 plugin loads, with the field path. The setting is read when a step starts, so a
 change takes effect with the next agent step.
 
-The default is 1800 s (30 minutes), the same as `harness-claude`, because a gate
+The default is 1800 s (30 minutes), the same as `claude`, because a gate
 such as `bash scripts/verify.sh` (install, type-check and the whole test suite)
 runs in the foreground inside one call and must not be cut short. A project whose
 gate is faster can set a lower value to catch a stuck command sooner.
 
 `stallSecs` is unchanged: it measures silence while no tool call is open, and an
-open tool call is not a stall (see the README of `harness-pi`). The time limit
+open tool call is not a stall (see the README of `pi`). The time limit
 above is what bounds a single tool call.
 
 ### The agent's shell and the user's aliases
@@ -891,12 +891,12 @@ above is what bounds a single tool call.
 An alias or function from the user's own shell setup, such as `ls` defined as
 `eza --git --hyperlink`, must not change what a command in an agent run does.
 
-- `harness-pi`: pi runs each command as `bash -c` (a non-interactive shell with
+- `pi`: pi runs each command as `bash -c` (a non-interactive shell with
   no rc files, so no aliases or functions). The worker also removes `BASH_ENV`
   and `ENV` from its environment, the two variables that make a non-interactive
   shell read a file.
-- `harness-radian`: radian runs `/bin/sh -c`, which reads no user setup.
-- `harness-claude`: claude's Bash tool sources a snapshot of the user's
+- `radian`: radian runs `/bin/sh -c`, which reads no user setup.
+- `claude`: claude's Bash tool sources a snapshot of the user's
   `~/.zshrc` or `~/.bashrc` before each command, and claude has no
   supported switch (environment variable or setting) that turns the snapshot
   off. `CLAUDE_CODE_SHELL` only picks which of zsh and bash is used; the
@@ -924,7 +924,7 @@ pool` adds it.
   "plugins": {
     "pool": {
       "module": "@operad-io/pool",
-      "settings": { "harnesses": { "harness-pi": 2, "harness-claude": 1 } }
+      "settings": { "harnesses": { "pi": 2, "claude": 1 } }
     }
   }
 }
@@ -932,7 +932,7 @@ pool` adds it.
 
 | Setting | Type | Default | What it does |
 |---|---|---|---|
-| `harnesses` | object, harness plugin name to integer | `{}` | How many runs through `pool/agent` may go at once in this home for that harness, across all repositories and flows. A run of `harness-claude/agent` counts under `harness-claude`. Each count must be an integer of 1 or more; `0`, a string or a fraction refuses the plugin when `config.json` loads, and the log names `settings.harnesses`. A harness that is not listed has no cap. |
+| `harnesses` | object, harness plugin name to integer | `{}` | How many runs through `pool/agent` may go at once in this home for that harness, across all repositories and flows. A run of `claude/agent` counts under `claude`. Each count must be an integer of 1 or more; `0`, a string or a fraction refuses the plugin when `config.json` loads, and the log names `settings.harnesses`. A harness that is not listed has no cap. |
 
 A change takes effect with the next `pool/agent` step that starts; steps already
 going keep their place. Only runs that go through `pool/agent` count: a flow
@@ -954,7 +954,7 @@ A worker has these fields; any other field is refused.
 
 | Field | Type | Default | What it does |
 |---|---|---|---|
-| `use` | string | required | The harness step to run, as `<plugin>/<step>`, such as `harness-claude/agent`. |
+| `use` | string | required | The harness step to run, as `<plugin>/<step>`, such as `claude/agent`. |
 | `args` | array of strings | `[]` | The arguments given to that step, such as `["--model", "sonnet"]`. |
 | `count` | integer, 1 or more | `1` | How many runs of this worker may go at once for this flow. |
 | `wallTimeSecs` | number, above 0 | unset | The wall-time limit passed to the harness step. |
@@ -1027,8 +1027,8 @@ which carries whatever the task's branch had when it started.
 ```json
 {
   "workers": {
-    "claude": { "use": "harness-claude/agent", "args": ["--model", "sonnet"], "fallback": "pi" },
-    "pi": { "use": "harness-pi/agent", "args": ["--model", "opencode-go/deepseek-v4.1-flash"] }
+    "claude": { "use": "claude/agent", "args": ["--model", "sonnet"], "fallback": "pi" },
+    "pi": { "use": "pi/agent", "args": ["--model", "opencode-go/deepseek-v4.1-flash"] }
   },
   "pools": { "default": ["claude", "pi"] }
 }
@@ -1039,7 +1039,7 @@ Errors in `workers` and `pools` name the field path, such as
 
 **The old `worker` form.** `worker` (`use`, `args`, `wallTimeSecs`,
 `stallSecs`) still works and means one worker named after its harness plugin
-(`harness-radian` for `harness-radian/agent`), with `count` equal to
+(`radian` for `radian/agent`), with `count` equal to
 `concurrency`, alone in the pool `default`. Its runs count under the home cap of
 its harness like any worker's. A file that has both `worker` and `workers`, or
 `pools` without `workers`, is refused when it is read.
@@ -1155,7 +1155,7 @@ this one form, whichever harness ran.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `harness` | string | The harness plugin that ran, such as `harness-pi`. |
+| `harness` | string | The harness plugin that ran, such as `pi`. |
 | `model` | string or `null` | The model as `provider/id` when the step named it; `null` when it did not. |
 | `tokens.input` | integer, 0 or more | Input tokens. |
 | `tokens.output` | integer, 0 or more | Output tokens. |
@@ -1179,7 +1179,7 @@ A plan's row note reads `1/8 · ~$4.20 · merge · P2 // 2`: merged tasks over
 tasks (cancelled ones are not counted), the total cost of the plan's tasks at
 the weakest quality among them (left out while no task has a cost), the auto
 level, the priority, and after `//` how many of the plan's tasks may run at
-once. A task's note reads `$0.31 · harness-claude · area: app-core`: the cost
+once. A task's note reads `$0.31 · claude · area: app-core`: the cost
 (`$0.00` before there is one), the worker, the area (or `waiting for area
 app-core (T-0023-action-numbers)`), and last a refused push's message. A
 repository's note reads `plans: 1 · tasks: 4`, counting open ones.
@@ -1198,7 +1198,7 @@ A step ends with one of these results:
 The end results apply to plugins of the `harness` kind: they run an agent, and
 a flow reads any agent the same way. `operad plugin check` refuses a harness
 step that declares another name and names it. The agent steps of
-`harness-radian`, `harness-pi` and `harness-claude` declare `done`, `failed` and `interrupted`.
+`radian`, `pi` and `claude` declare `done`, `failed` and `interrupted`.
 Plugins of other kinds name their own results. `shell` is a `stage`, not a
 harness: its steps run a command or a check and give a verdict, so they end in
 `pass` and `fail` (and `ready` or `waiting` for a check), and the end results
@@ -1354,12 +1354,12 @@ A chat is a long conversation with an agent. The `chat` plugin comes with
 repository:
 
 ```
-operad dev:chat --repo operad --title "The build" [--harness harness-pi]
+operad dev:chat --repo operad --title "The build" [--harness pi]
 operad chat:send C-0001 --note "why does the gate fail on main?"
 operad show C-0001 --section transcript
 ```
 
-`dev:chat` offers `harness-claude` and `harness-pi` (the first one loaded when `--harness` is left out): they can stop a tool call before it starts, which a read-only chat needs. `harness-radian` is refused there and stays for assistant chats.
+`dev:chat` offers `claude` and `pi` (the first one loaded when `--harness` is left out): they can stop a tool call before it starts, which a read-only chat needs. `radian` is refused there and stays for assistant chats.
 
 `chat:send` records the message and sends an event (source `ios`, `telegram` or
 `cli`, key = the message id, about the chat). The plugin's own rule starts

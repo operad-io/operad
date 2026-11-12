@@ -1,6 +1,6 @@
 {
   "extends": "../../../tsconfig.base.json",
-  "compilerOptions": { "rootDir": ".", "outDir": "../../../.tsbuild/harness-pi" },
+  "compilerOptions": { "rootDir": ".", "outDir": "../../../.tsbuild/pi" },
   "include": ["src", "test"],
   "references": [{ "path": "../../access-match" }, { "path": "../../engine" }, { "path": "../process" }, { "path": "../../mcp" }]
 }

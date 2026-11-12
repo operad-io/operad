@@ -1,8 +1,8 @@
 /**
  * The pi harness, hub side: one `agent` step that starts the child program
  * `worker.ts` under Bun, writes one JSON object to its stdin and reads the last
- * `result` line of its stdout, plus the `harness-pi:prompt` flow. The step has
- * the params, result names and facts of `harness-radian/agent`, so a flow
+ * `result` line of its stdout, plus the `pi:prompt` flow. The step has
+ * the params, result names and facts of `radian/agent`, so a flow
  * changes harness by changing `use`. pi's library is imported only by the child
  * program, never by the hub.
  */
@@ -196,13 +196,13 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
   const commandArgs = options.args ?? [WORKER_PATH];
 
   const promptFlow = defineFlow({
-    name: "harness-pi:prompt",
+    name: "pi:prompt",
     entry: "agent",
     steps: [
       {
         id: "agent",
         kind: "plugin",
-        params: { use: "harness-pi/agent", params: {} },
+        params: { use: "pi/agent", params: {} },
         replay: "unsafe",
         next: { done: "done", failed: "failed", interrupted: "cancelled", waiting: "person" },
       },
@@ -222,7 +222,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
   });
 
   return definePlugin({
-    name: "harness-pi",
+    name: "pi",
     kind: "harness",
     version: "0.0.0",
     settings: PLUGIN_SETTINGS,
@@ -237,7 +237,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
         enforces: ["denyPaths", "denyCommands", "askCommands", "askPaths"],
         timeoutSecs: STEP_TIMEOUT_SECS,
         // The model the step uses: its `--model` argument, else the setting.
-        limit: modelLimit("harness-pi", (params, settings) => {
+        limit: modelLimit("pi", (params, settings) => {
           const fromArgs = isRecord(params)
             ? flagValue(params.args, "--model")
             : undefined;
@@ -245,7 +245,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
           return typeof model === "string" && model.length > 0 ? model : undefined;
         }),
         async run(ctx: StepContext, params: unknown): Promise<PluginStepResult> {
-          const at = "harness-pi/agent";
+          const at = "pi/agent";
           const input = paramsObject(params, at);
           const flow = isRecord(ctx.params) ? ctx.params : {};
 
@@ -267,7 +267,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
                 (typeof ctx.settings.model === "string" ? ctx.settings.model : undefined)
               : (flags.model ??
                 (typeof ctx.settings.model === "string" ? ctx.settings.model : undefined));
-          const early: UsageSource = { harness: "harness-pi", model: knownModel ?? null };
+          const early: UsageSource = { harness: "pi", model: knownModel ?? null };
           if (typeof flags === "string") {
             const message = `${at}: ${flags}`;
             const log = await ctx.logger.write(message);
@@ -405,7 +405,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
           if (unanswered !== undefined && !ctx.signal.aborted) throw unanswered.error;
 
           return resultFor(
-            { harness: "harness-pi", model: model ?? null },
+            { harness: "pi", model: model ?? null },
             outcome,
             result,
             ctx.logger.path,
@@ -418,7 +418,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
     ],
     flows: [promptFlow],
     async check(ctx) {
-      const piCommand = optionalText(ctx.settings.command, "harness-pi: settings.command");
+      const piCommand = optionalText(ctx.settings.command, "pi: settings.command");
       // The user's own pi: found and version-checked, not loaded.
       const pi = findPi(piCommand ?? DEFAULT_PI_COMMAND);
       if (options.command === undefined && !existsSync(process.execPath)) {

@@ -16,7 +16,7 @@ let current: string[] = [];
 export async function tempRoot(): Promise<string> {
   const base = join(process.cwd(), ".radian", "tmp");
   await mkdir(base, { recursive: true });
-  const root = await mkdtemp(join(base, "harness-radian-test-"));
+  const root = await mkdtemp(join(base, "radian-test-"));
   roots.push(root);
   current.push(root);
   return root;

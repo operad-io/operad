@@ -117,7 +117,7 @@ async function setup() {
     store: new MemoryPluginStore({ root: join(root, "store") }),
   });
   const log = openLog({ backend: "jsonl", path: join(root, "log") });
-  const found = registry.flow("harness-claude:prompt");
+  const found = registry.flow("claude:prompt");
   if (found === undefined) throw new Error("the prompt flow is not loaded");
   const info = await log.startRun(found.flow.name, OBJECT);
   const runner = (timer: FakeTimer): Runner =>
@@ -147,7 +147,7 @@ async function setup() {
   };
 }
 
-describe("harness-claude: a call that must ask a person", () => {
+describe("claude: a call that must ask a person", () => {
   test("answered within the grace period: the same step goes on and the call goes through once", async () => {
     const env = await setup();
     try {

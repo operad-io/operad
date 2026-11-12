@@ -17,15 +17,15 @@ function refused(workers: unknown, pools: unknown, prefix = ""): WorkerDefinitio
   throw new Error("expected a refusal");
 }
 
-const claude = { use: "harness-claude/agent" };
-const pi = { use: "harness-pi/agent" };
+const claude = { use: "claude/agent" };
+const pi = { use: "pi/agent" };
 
 describe("parseWorkers", () => {
   test("fills defaults and makes one default pool of every worker in written order", () => {
     const parsed = parseWorkers({ pi, claude }, undefined);
     expect(parsed.workers).toEqual([
-      { name: "pi", use: "harness-pi/agent", args: [], count: 1 },
-      { name: "claude", use: "harness-claude/agent", args: [], count: 1 },
+      { name: "pi", use: "pi/agent", args: [], count: 1 },
+      { name: "claude", use: "claude/agent", args: [], count: 1 },
     ]);
     expect(parsed.pools).toEqual({ [DEFAULT_POOL]: ["pi", "claude"] });
   });
@@ -40,7 +40,7 @@ describe("parseWorkers", () => {
     );
     expect(parsed.workers[0]).toEqual({
       name: "claude",
-      use: "harness-claude/agent",
+      use: "claude/agent",
       args: ["--model", "sonnet"],
       count: 2,
       wallTimeSecs: 60,
@@ -56,7 +56,7 @@ describe("parseWorkers", () => {
     ["worker not an object", { claude: "x" }, undefined, "workers.claude", "must be an object"],
     ["unknown field", { claude: { ...claude, model: "x" } }, undefined, "workers.claude.model", "not a worker field"],
     ["no use", { claude: {} }, undefined, "workers.claude.use", "step name"],
-    ["use without a step", { claude: { use: "harness-claude" } }, undefined, "workers.claude.use", "step name"],
+    ["use without a step", { claude: { use: "claude" } }, undefined, "workers.claude.use", "step name"],
     ["args not a list", { claude: { ...claude, args: "x" } }, undefined, "workers.claude.args", "array of strings"],
     ["args entry not a string", { claude: { ...claude, args: ["a", 1] } }, undefined, "workers.claude.args[1]", "must be a string"],
     ["count 0", { claude: { ...claude, count: 0 } }, undefined, "workers.claude.count", "integer of 1 or more"],

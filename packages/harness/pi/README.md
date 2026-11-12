@@ -106,8 +106,8 @@ variable. It exists because a model cannot travel over the stdin protocol.
 
 ## The plugin
 
-`src/index.ts` is the hub side: the plugin `harness-pi`, its step
-`harness-pi/agent` and its flow `harness-pi:prompt`. It never imports pi (it only reads its version in `check`); it
+`src/index.ts` is the hub side: the plugin `pi`, its step
+`pi/agent` and its flow `pi:prompt`. It never imports pi (it only reads its version in `check`); it
 starts `bun src/worker.ts` through `runAgent` from `@operad-io/harness-process`,
 writes the stdin object above, appends every stdout line to the step's log with
 `JsonlLog`, and turns the last `result` line into the facts.
@@ -115,14 +115,14 @@ writes the stdin object above, appends every stdout line to the step's log with
 The plugin is not installed by `operad init`. Turn it on with:
 
 ```sh
-operad plugin enable harness-pi
+operad plugin enable pi
 ```
 
-A flow switches harness by changing `use` from `harness-radian/agent` to
-`harness-pi/agent`; `dev` does it with `worker.use` in `.operad/dev.json`. The
+A flow switches harness by changing `use` from `radian/agent` to
+`pi/agent`; `dev` does it with `worker.use` in `.operad/dev.json`. The
 params, the result names (`done`, `failed`, `interrupted`) and the facts
 (`exitCode`, `signal`, `sessionId`, `finalMessage`, `usage`, `log`,
-`durationMs`, `stderr`) are `harness-radian`'s, except `args` (below). `usage`
+`durationMs`, `stderr`) are `radian`'s, except `args` (below). `usage`
 is the standard one described in [the manual](../../../docs/manual.md#usage-and-end-results):
 `model` is the step's `--model` or the `model` setting, and the worker's
 `cost.micros` becomes `costMicros`.
@@ -132,7 +132,7 @@ session file; pass it back as `resumeSession` to continue it.
 ### Params: `args`
 
 pi takes no command-line arguments, so the step reads two flags from `args`, in
-the spelling `harness-radian` passes to radian. This lets `dev` run the worker
+the spelling `radian` passes to radian. This lets `dev` run the worker
 and the reviewer on different models through the same plugin.
 
 | flag | value | meaning |
@@ -151,7 +151,7 @@ level, a flag given twice. Ignoring a flag silently would hide a wrong model.
 
 ### Settings
 
-The `harness-pi` section of `config.json`. The kernel fills the defaults. A step
+The `pi` section of `config.json`. The kernel fills the defaults. A step
 param (`wallTimeSecs`, `stallSecs`) overrides the setting of the same name.
 
 | setting | type | default | meaning |
@@ -200,7 +200,7 @@ An open tool call is therefore not a stall by design; `bashTimeoutSecs` is what 
 ### Model errors
 
 A worker failure with reason `model_error` also sets `data.modelError`, the
-shape `harness-radian` gives: `{ kind, status, retry_after_secs, message }`.
+shape `radian` gives: `{ kind, status, retry_after_secs, message }`.
 `kind` is derived from the error text the worker passes on: a usage limit
 (`usage limit`, `quota`, `out of credits`) is `usage_limit`; otherwise a 429, 503
 or 529, `overloaded`, `rate limit` or `too many requests` is `unavailable`; any

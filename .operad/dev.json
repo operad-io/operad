@@ -5,7 +5,7 @@
   "maxAutoRework": 4,
   "workers": {
     "claude": {
-      "use": "harness-claude/agent",
+      "use": "claude/agent",
       "args": [
         "--model",
         "sonnet"
@@ -15,7 +15,7 @@
       "wallTimeSecs": 7200
     },
     "pi": {
-      "use": "harness-pi/agent",
+      "use": "pi/agent",
       "args": [
         "--model",
         "opencode-go/deepseek-v4.1-flash"
@@ -26,7 +26,7 @@
       "fallback": "claude"
     },
     "radian": {
-      "use": "harness-radian/agent",
+      "use": "radian/agent",
       "args": [
         "--provider",
         "opencode-go",
@@ -47,7 +47,7 @@
     ]
   },
   "reviewer": {
-    "use": "harness-pi/agent",
+    "use": "pi/agent",
     "args": [
       "--model",
       "openai-codex/gpt-5.6-terra",
@@ -58,7 +58,7 @@
     "timeoutSecs": 3600,
     "stallSecs": 900,
     "fallback": {
-      "use": "harness-claude/agent",
+      "use": "claude/agent",
       "args": [
         "--model",
         "opus",

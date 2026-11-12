@@ -111,14 +111,14 @@ comes from `FAKE_SCRIPT` and what the fake saw goes to `FAKE_RECORD`.
 
 ## The plugin
 
-`src/index.ts` is the hub side: the plugin `harness-claude`, its step
-`harness-claude/agent` and its flow `harness-claude:prompt`. It never imports the
+`src/index.ts` is the hub side: the plugin `claude`, its step
+`claude/agent` and its flow `claude:prompt`. It never imports the
 SDK; it starts `bun src/worker.ts` through `runAgent` from
 `@operad-io/harness-process`, writes the stdin object above, appends every stdout
 line to the step's log with `JsonlLog`, and turns the last `result` line into the
 facts. The params, the result names (`done`, `failed`, `interrupted`) and the
 facts (`exitCode`, `signal`, `sessionId`, `finalMessage`, `usage`, `log`,
-`durationMs`, `stderr`) are `harness-pi`'s. `usage` is the standard one in
+`durationMs`, `stderr`) are `pi`'s. `usage` is the standard one in
 [the manual](../../../docs/manual.md#usage-and-end-results): `model` is the step's
 `--model` or the `model` setting, else the model claude reports; `costMicros` is
 the worker's `cost.micros`, and `costQuality` is `estimated` for a subscription
@@ -129,10 +129,10 @@ session).
 The plugin is not installed by `operad init`. Turn it on with:
 
 ```sh
-operad plugin enable harness-claude
+operad plugin enable claude
 ```
 
-A flow switches harness by changing `use` to `harness-claude/agent`; `dev` does
+A flow switches harness by changing `use` to `claude/agent`; `dev` does
 it with `worker.use` in `.operad/dev.json`.
 
 ### Params: `args`
@@ -150,7 +150,7 @@ spelling.
 
 ### Settings
 
-The `harness-claude` section of `config.json`. A step param (`wallTimeSecs`,
+The `claude` section of `config.json`. A step param (`wallTimeSecs`,
 `stallSecs`) overrides the setting of the same name.
 
 | setting | type | default | meaning |
@@ -163,13 +163,13 @@ The `harness-claude` section of `config.json`. A step param (`wallTimeSecs`,
 | `bashTimeoutSecs` | integer, 1 or more | `1800` | the longest one Bash call may run, in seconds; nothing runs in the background, so a long gate runs in the foreground within this time |
 | `wallTimeSecs` | number | `3600` | the longest one run may take; at most 28500 |
 | `stallSecs` | number | `600` | how long a run may print nothing while no tool call is open |
-| `concurrency` | object, model to positive integer | `{}` | how many runs of one model may go at once; key `harness-claude:<model>` |
+| `concurrency` | object, model to positive integer | `{}` | how many runs of one model may go at once; key `claude:<model>` |
 
 ### How the step ends
 
-As `harness-pi`'s table. A worker `failed` with reason `model_error` also sets
+As `pi`'s table. A worker `failed` with reason `model_error` also sets
 `data.modelError`: a rate limit the worker saw is `usage_limit`; otherwise the
-kind is derived from the message text as in `harness-pi` (`usage_limit`,
+kind is derived from the message text as in `pi` (`usage_limit`,
 `unavailable` or `protocol`). `retry_after_secs` is `null`.
 
 ### `operad plugin check`
@@ -235,7 +235,7 @@ before it answers `used: true`; only then does the call run. `used: false`, a
 host that is gone (stdin closed) and a host that fails all leave the call
 refused. A second identical call finds the grant used and is judged as usual.
 The host's half (`hasGrants`, `grantUse`, `answerGrant`) is in
-`@operad-io/harness-process`, shared with `harness-pi`.
+`@operad-io/harness-process`, shared with `pi`.
 
 ### Asking about a call
 

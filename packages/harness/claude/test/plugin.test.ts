@@ -62,7 +62,7 @@ async function setup(mode: string, settings?: Readonly<Record<string, unknown>>)
     home: root,
     cwd: root,
     store: new MemoryPluginStore({ root: join(root, "store") }),
-    ...(settings === undefined ? {} : { settings: { "harness-claude": settings } }),
+    ...(settings === undefined ? {} : { settings: { "claude": settings } }),
   });
   return { root, clock, registry, record, marker, release };
 }
@@ -80,14 +80,14 @@ function runAgent(
   params: Record<string, unknown>,
   options: { readonly runId?: string; readonly signal?: AbortSignal } = {},
 ) {
-  return env.registry.runStep("harness-claude/agent", params, {
+  return env.registry.runStep("claude/agent", params, {
     runId: options.runId ?? "run-1",
     ...(options.signal === undefined ? {} : { signal: options.signal }),
   });
 }
 
-describe("harness-claude/agent", () => {
-  test("a done run has the facts of harness-pi/agent: session, final message, usage, log", async () => {
+describe("claude/agent", () => {
+  test("a done run has the facts of pi/agent: session, final message, usage, log", async () => {
     const env = await setup("done");
     const result = await runAgent(env, { prompt: "hello", cwd: env.root });
     expect(result.result).toBe("done");
@@ -97,7 +97,7 @@ describe("harness-claude/agent", () => {
     expect(data.sessionId).toBe(SESSION);
     expect(data.finalMessage).toBe("fake final message");
     expect(data.usage).toEqual({
-      harness: "harness-claude",
+      harness: "claude",
       model: "claude-fake-1",
       tokens: { input: 11, output: 7, cacheread: 3, cachewrite: 5 },
       costMicros: 1234,
@@ -253,7 +253,7 @@ describe("harness-claude/agent", () => {
 
   test("a step declares that it can resume and has a timeout above its wall time", async () => {
     const env = await setup("done");
-    const type = env.registry.stepTypes().find((item) => item.name === "harness-claude/agent");
+    const type = env.registry.stepTypes().find((item) => item.name === "claude/agent");
     expect(type?.resumable).toBe(true);
     expect(type?.results).toEqual(["done", "failed", "interrupted", "waiting"]);
     expect(type?.timeoutSecs).toBeGreaterThan(3600);
@@ -264,7 +264,7 @@ describe("harness-claude/agent", () => {
     const used: string[] = [];
     const grants = [{ waitId: "w1", kind: "command", value: "rm -rf build" }];
     const result = await env.registry.runStep(
-      "harness-claude/agent",
+      "claude/agent",
       { prompt: "hello", cwd: env.root },
       {
         runId: "run-grant",
@@ -300,7 +300,7 @@ describe("harness-claude/agent", () => {
       },
     };
     const running = env.registry.runStep(
-      "harness-claude/agent",
+      "claude/agent",
       { prompt: "hello", cwd: env.root, inbox },
       { runId: "run-message" },
     );
@@ -318,7 +318,7 @@ describe("harness-claude/agent", () => {
   test("the run's access profile is passed to the worker", async () => {
     const env = await setup("done");
     await env.registry.runStep(
-      "harness-claude/agent",
+      "claude/agent",
       { prompt: "hello", cwd: env.root },
       { runId: "run-access", access: { denyCommands: ["rm"] } },
     );
@@ -475,7 +475,7 @@ describe("harness-claude/agent", () => {
       store: new MemoryPluginStore({ root: join(env.root, "store3") }),
     });
     const result = await registry.runStep(
-      "harness-claude/agent",
+      "claude/agent",
       { prompt: "hello", cwd: env.root },
       { runId: "run-missing" },
     );
@@ -484,17 +484,17 @@ describe("harness-claude/agent", () => {
   });
 });
 
-describe("harness-claude access", () => {
+describe("claude access", () => {
   test("the step declares the deny and ask fields it enforces", async () => {
     const env = await setup("done");
-    const type = env.registry.stepTypes().find((item) => item.name === "harness-claude/agent");
+    const type = env.registry.stepTypes().find((item) => item.name === "claude/agent");
     expect(type?.enforces).toEqual(["denyPaths", "denyCommands", "askCommands", "askPaths"]);
   });
 
   test("a profile with askCommands is accepted: the step enforces it", async () => {
     const env = await setup("done");
     expect(() =>
-      env.registry.checkAccess("harness-claude:prompt", { askCommands: ["git push"], denyCommands: ["rm"], denyPaths: ["/etc"] }),
+      env.registry.checkAccess("claude:prompt", { askCommands: ["git push"], denyCommands: ["rm"], denyPaths: ["/etc"] }),
     ).not.toThrow();
   });
 });
@@ -508,9 +508,9 @@ describe("claudeToolEvent", () => {
   });
 });
 
-describe("harness-claude:prompt", () => {
+describe("claude:prompt", () => {
   async function runPrompt(env: TestEnv, params: JsonValue, trigger?: TriggerView) {
-    const found = env.registry.flow("harness-claude:prompt");
+    const found = env.registry.flow("claude:prompt");
     if (found === undefined) throw new Error("the prompt flow is not loaded");
     const log = openLog({ backend: "jsonl", path: join(env.root, "log") });
     const info = await log.startRun(found.flow.name, "prompt:1");
@@ -541,7 +541,7 @@ describe("harness-claude:prompt", () => {
     expect(endedStatus).toBe("failed");
   });
 
-  test("a trigger with a summary file appends the same event note as harness-radian", async () => {
+  test("a trigger with a summary file appends the same event note as radian", async () => {
     const env = await setup("done");
     const { input } = await runPrompt(env, { prompt: "p", cwd: env.root }, {
       summary: "/events/1/summary.md",
@@ -552,33 +552,33 @@ describe("harness-claude:prompt", () => {
   });
 });
 
-describe("harness-claude/agent step limit", () => {
+describe("claude/agent step limit", () => {
   function registryWith(settings: Record<string, unknown>): PluginRegistry {
     return new PluginRegistry([createClaudeHarnessPlugin()], {
       home: ".",
       cwd: ".",
       store: new MemoryPluginStore({ root: "store" }),
-      settings: { "harness-claude": settings },
+      settings: { "claude": settings },
     });
   }
 
-  test("the key is harness-claude:<model> from --model, else the model setting", () => {
+  test("the key is claude:<model> from --model, else the model setting", () => {
     const registry = registryWith({ model: "sonnet", concurrency: { sonnet: 2, opus: 1 } });
-    expect(registry.stepLimit("harness-claude/agent", { args: ["--model", "opus"] })).toEqual({
-      key: "harness-claude:opus",
+    expect(registry.stepLimit("claude/agent", { args: ["--model", "opus"] })).toEqual({
+      key: "claude:opus",
       concurrent: 1,
     });
-    expect(registry.stepLimit("harness-claude/agent", {})).toEqual({
-      key: "harness-claude:sonnet",
+    expect(registry.stepLimit("claude/agent", {})).toEqual({
+      key: "claude:sonnet",
       concurrent: 2,
     });
   });
 
   test("a model not in the map, or no model, has no limit", () => {
     const registry = registryWith({ concurrency: { sonnet: 2 } });
-    expect(registry.stepLimit("harness-claude/agent", { args: ["--model", "opus"] })).toBeUndefined();
-    expect(registry.stepLimit("harness-claude/agent", {})).toBeUndefined();
-    expect(registryWith({}).stepLimit("harness-claude/agent", { args: ["--model", "sonnet"] })).toBeUndefined();
+    expect(registry.stepLimit("claude/agent", { args: ["--model", "opus"] })).toBeUndefined();
+    expect(registry.stepLimit("claude/agent", {})).toBeUndefined();
+    expect(registryWith({}).stepLimit("claude/agent", { args: ["--model", "sonnet"] })).toBeUndefined();
   });
 
   test("a count that is not a positive integer refuses the plugin at load", () => {

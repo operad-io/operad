@@ -1,5 +1,5 @@
 /**
- * The dev flow with `worker.use: "harness-pi/agent"`: a fake pi worker (a script
+ * The dev flow with `worker.use: "pi/agent"`: a fake pi worker (a script
  * that commits a file and prints a Result line) takes a task through the
  * worktree and the work to the gate, which leaves the task in `review`. No
  * model is called; the pi plugin is imported by path so dev has no dependency
@@ -20,11 +20,11 @@ import { cleanupTempRoots, guardLockHandles, storeAt, tempRoot } from "./support
 afterAll(cleanupTempRoots);
 guardLockHandles();
 
-const FAKE = fileURLToPath(new URL("../../harness-pi/test/fake-lines-worker.ts", import.meta.url));
+const FAKE = fileURLToPath(new URL("../../harness/pi/test/fake-lines-worker.ts", import.meta.url));
 
 async function piPlugin(): Promise<unknown> {
   const module = (await import(
-    new URL("../../harness-pi/src/index.ts", import.meta.url).href
+    new URL("../../harness/pi/src/index.ts", import.meta.url).href
   )) as {
     readonly createPiHarnessPlugin: (options: {
       readonly command: string;
@@ -52,7 +52,7 @@ describe("dev with the pi harness", () => {
           remote: "origin",
           mainBranch: "main",
           worktreeRoot: ".operad-worktrees",
-          worker: { use: "harness-pi/agent", args: [] },
+          worker: { use: "pi/agent", args: [] },
           gate: { commands: ["test -f worker.txt"] },
         }),
       );

@@ -161,7 +161,7 @@ export function findPi(command: string = DEFAULT_PI_COMMAND, options: FindPiOpti
   if (located === undefined) {
     throw new PiInstallError(
       `no ${command === DEFAULT_PI_COMMAND ? "pi command" : `"${command}"`} was found on PATH; ` +
-        `harness-pi needs ${PI_PACKAGE} ${floor} or newer installed (bun add -g ${PI_PACKAGE}, or npm i -g ${PI_PACKAGE})`,
+        `pi needs ${PI_PACKAGE} ${floor} or newer installed (bun add -g ${PI_PACKAGE}, or npm i -g ${PI_PACKAGE})`,
     );
   }
   let real: string;
@@ -188,7 +188,7 @@ export function findPi(command: string = DEFAULT_PI_COMMAND, options: FindPiOpti
   if (packageDir === undefined || manifest === undefined) {
     throw new PiInstallError(
       `${command} resolves to ${real}, which is not inside a ${PI_PACKAGE} package ` +
-        `(a shell wrapper cannot be followed); set the harness-pi "command" setting to the package's bin`,
+        `(a shell wrapper cannot be followed); set the pi "command" setting to the package's bin`,
     );
   }
 

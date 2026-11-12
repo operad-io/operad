@@ -11,7 +11,7 @@ import {
 import { def } from "./support.ts";
 
 const standard = {
-  harness: "harness-pi",
+  harness: "pi",
   model: "p/m",
   tokens: { input: 11, output: 7, cacheread: 3, cachewrite: 2 },
   costMicros: 1234,
@@ -66,7 +66,7 @@ describe("readUsage", () => {
   });
 
   test("reads a fact stored before the standard field existed", () => {
-    // Stored as harness-radian and harness-pi wrote it.
+    // Stored as radian and pi wrote it.
     const stored = JSON.parse(
       '{"exitCode":0,"usage":{"input":11,"output":7,"cache_read":3},"cost":{"micros":1234,"incomplete":false,"estimated":false},"log":"x"}',
     );

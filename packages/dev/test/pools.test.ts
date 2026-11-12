@@ -7,8 +7,8 @@ import {
   validateDevSettings,
 } from "../src/settings.ts";
 
-const claude = { use: "harness-claude/agent", args: ["--model", "sonnet"], count: 2 };
-const pi = { use: "harness-pi/agent", wallTimeSecs: 7200 };
+const claude = { use: "claude/agent", args: ["--model", "sonnet"], count: 2 };
+const pi = { use: "pi/agent", wallTimeSecs: 7200 };
 
 function refusal(value: unknown): DevError {
   try {
@@ -28,7 +28,7 @@ describe("dev.json workers and pools", () => {
     });
     expect(poolWorkers(settings, "default").map((worker) => worker.name)).toEqual(["pi", "claude"]);
     expect(settings.workers.workers[1]).toMatchObject({ name: "pi", count: 1, args: [], wallTimeSecs: 7200 });
-    expect(settings.worker.use).toBe("harness-pi/agent");
+    expect(settings.worker.use).toBe("pi/agent");
   });
 
   test("without pools every worker is in default", () => {
@@ -39,12 +39,12 @@ describe("dev.json workers and pools", () => {
   test("the old worker is one worker named after its harness, with count = concurrency", () => {
     const settings = validateDevSettings({
       concurrency: 3,
-      worker: { use: "harness-pi/agent", args: ["--x"], stallSecs: 30 },
+      worker: { use: "pi/agent", args: ["--x"], stallSecs: 30 },
     });
     expect(settings.workers.workers).toEqual([
-      { name: "harness-pi", use: "harness-pi/agent", args: ["--x"], count: 3, stallSecs: 30 },
+      { name: "pi", use: "pi/agent", args: ["--x"], count: 3, stallSecs: 30 },
     ]);
-    expect(settings.workers.pools).toEqual({ default: ["harness-pi"] });
+    expect(settings.workers.pools).toEqual({ default: ["pi"] });
     expect(runningTaskCap(settings)).toBe(3);
   });
 
@@ -55,7 +55,7 @@ describe("dev.json workers and pools", () => {
   });
 
   test("worker and workers together refuse the file", () => {
-    const error = refusal({ worker: { use: "harness-pi/agent" }, workers: { claude } });
+    const error = refusal({ worker: { use: "pi/agent" }, workers: { claude } });
     expect(error.field).toBe("worker");
     expect(error.message).toContain("workers");
   });

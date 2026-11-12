@@ -134,13 +134,13 @@ test("a flow's stage settings are read and unknown fields refused", () => {
         stages: [
           {
             stage: "work",
-            use: "harness-claude/agent",
+            use: "claude/agent",
             args: ["--model", "sonnet"],
             brief: "Keep the diff small.",
             beforeAttempt: "merge-main",
           },
           { stage: "check", commands: ["bun test"], rerun: 0 },
-          { stage: "review", use: "harness-pi/agent", later: ["--fast"] },
+          { stage: "review", use: "pi/agent", later: ["--fast"] },
           { stage: "human" },
         ],
       },
@@ -148,7 +148,7 @@ test("a flow's stage settings are read and unknown fields refused", () => {
   });
   expect(settings.flows.default?.stages[0]).toEqual({
     stage: "work",
-    use: "harness-claude/agent",
+    use: "claude/agent",
     args: ["--model", "sonnet"],
     brief: "Keep the diff small.",
     beforeAttempt: "merge-main",
@@ -174,15 +174,15 @@ test("a flow's stage settings are read and unknown fields refused", () => {
 
 test("stage parameters reach the compiled steps", () => {
   const flow = compileDevFlow("params", [
-    { stage: "work", use: "harness-claude/agent", args: ["--model", "x"], brief: "short" },
+    { stage: "work", use: "claude/agent", args: ["--model", "x"], brief: "short" },
     { stage: "check", commands: ["bun test"], rerun: 0 },
-    { stage: "review", use: "harness-pi/agent", args: ["--fast"], later: ["--slow"], grading: "strict" },
+    { stage: "review", use: "pi/agent", args: ["--fast"], later: ["--slow"], grading: "strict" },
     { stage: "human" },
   ]);
   expect(stepOf(flow.steps, "work").params).toEqual({
     use: "dev/work",
     params: {
-      flowUse: "harness-claude/agent",
+      flowUse: "claude/agent",
       flowArgs: ["--model", "x"],
       flowBrief: "short",
     },
@@ -194,7 +194,7 @@ test("stage parameters reach the compiled steps", () => {
   expect(stepOf(flow.steps, "review").params).toEqual({
     use: "dev/review",
     params: {
-      use: "harness-pi/agent",
+      use: "pi/agent",
       args: ["--fast"],
       later: ["--slow"],
       grading: "strict",

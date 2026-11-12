@@ -112,13 +112,13 @@ function runAgent(
   params: Record<string, unknown>,
   options: { readonly runId?: string; readonly signal?: AbortSignal } = {},
 ) {
-  return env.registry.runStep("harness-radian/agent", params, {
+  return env.registry.runStep("radian/agent", params, {
     runId: options.runId ?? "run-1",
     ...(options.signal === undefined ? {} : { signal: options.signal }),
   });
 }
 
-describe("harness-radian/agent", () => {
+describe("radian/agent", () => {
   test("tool lines carry the command summary, the duration and an error's first line", async () => {
     const times = [1_000, 73_000];
     const env = await setup("tool-detail", { now: () => times.shift() ?? 0 });
@@ -210,7 +210,7 @@ describe("harness-radian/agent", () => {
     expect(data.sessionId).toBe("fake-session");
     expect(data.finalMessage).toBe("fake final message");
     expect(data.usage).toEqual({
-      harness: "harness-radian",
+      harness: "radian",
       model: null,
       tokens: { input: 11, output: 7, cacheread: 0, cachewrite: 0 },
       costMicros: 1234,
@@ -349,7 +349,7 @@ describe("harness-radian/agent", () => {
     expect(record.argv[record.argv.indexOf("-p") + 1]).toBe(
       "hello\n\nYou asked: Run it?. The answer is: yes. Continue.",
     );
-    const type = env.registry.stepTypes().find((item) => item.name === "harness-radian/agent");
+    const type = env.registry.stepTypes().find((item) => item.name === "radian/agent");
     expect(type?.resumable).toBe(true);
   });
 
@@ -368,7 +368,7 @@ describe("harness-radian/agent", () => {
   test("a one-time permission is refused before radian runs, naming radian", async () => {
     const env = await setup("done");
     const result = await env.registry.runStep(
-      "harness-radian/agent",
+      "radian/agent",
       { prompt: "hello", cwd: env.root },
       {
         runId: "run-grant",
@@ -385,7 +385,7 @@ describe("harness-radian/agent", () => {
     async function configOf(access: Record<string, JsonValue> | undefined) {
       const env = await setup("done");
       await env.registry.runStep(
-        "harness-radian/agent",
+        "radian/agent",
         { prompt: "hi", cwd: env.root },
         { runId: "run-ro", ...(access === undefined ? {} : { access }) },
       );
@@ -518,7 +518,7 @@ describe("harness-radian/agent", () => {
 
   test("settings.command is the executable that runs", async () => {
     const env = await setup("done", {}, {
-      "harness-radian": { command: "custom-radian" },
+      "radian": { command: "custom-radian" },
     });
     await fakeRadianNamed(env.root, "custom-radian");
     unlinkSync(join(env.root, "bin", "radian"));
@@ -529,7 +529,7 @@ describe("harness-radian/agent", () => {
 
   test("settings supply the stall limit", async () => {
     const env = await setup("stall", {}, {
-      "harness-radian": { wallTimeSecs: 300, stallSecs: 1 },
+      "radian": { wallTimeSecs: 300, stallSecs: 1 },
     });
     const running = runAgent(env, { prompt: "hello", cwd: env.root });
 
@@ -542,7 +542,7 @@ describe("harness-radian/agent", () => {
 
   test("a step parameter overrides a settings limit", async () => {
     const env = await setup("stall", {}, {
-      "harness-radian": { wallTimeSecs: 300, stallSecs: 1 },
+      "radian": { wallTimeSecs: 300, stallSecs: 1 },
     });
     const controller = new AbortController();
     const running = runAgent(
@@ -724,7 +724,7 @@ describe("harness-radian/agent", () => {
   });
 });
 
-describe("harness-radian:prompt", () => {
+describe("radian:prompt", () => {
   interface PromptRun {
     readonly prompt: string;
     readonly argv: readonly string[];
@@ -737,7 +737,7 @@ describe("harness-radian:prompt", () => {
     params: JsonValue,
     trigger?: TriggerView,
   ): Promise<PromptRun> {
-    const found = env.registry.flow("harness-radian:prompt");
+    const found = env.registry.flow("radian:prompt");
     if (found === undefined) throw new Error("the prompt flow is not loaded");
     const log = openLog({
       backend: "jsonl",
@@ -826,11 +826,11 @@ describe("harness-radian:prompt", () => {
   });
 });
 
-describe("harness-radian check", () => {
+describe("radian check", () => {
   test("passes when radian is on PATH", async () => {
     const env = await setup("done");
     const [check] = await env.registry.checks();
-    expect(check?.plugin).toBe("harness-radian");
+    expect(check?.plugin).toBe("radian");
     expect(check?.ok).toBe(true);
     expect(check?.message).toContain("radian is available");
   });
@@ -852,7 +852,7 @@ describe("harness-radian check", () => {
     });
 
     const [check] = await registry.checks();
-    expect(check?.plugin).toBe("harness-radian");
+    expect(check?.plugin).toBe("radian");
     expect(check?.ok).toBe(false);
     expect(check?.message).toContain("radian was not found on PATH");
   });
@@ -871,7 +871,7 @@ realTest(
       store: new MemoryPluginStore({ root: join(root, "store") }),
     });
     const result = await registry.runStep(
-      "harness-radian/agent",
+      "radian/agent",
       {
         prompt: "Reply with exactly the word pong.",
         cwd: root,
@@ -927,37 +927,37 @@ test("a marker wait survives a directory that appears after it starts", async ()
   expect(existsSync(marker)).toBe(true);
 });
 
-describe("harness-radian/agent step limit", () => {
+describe("radian/agent step limit", () => {
   function registryWith(settings: Record<string, unknown>): PluginRegistry {
     return new PluginRegistry([createRadianHarnessPlugin({})], {
       home: ".",
       cwd: ".",
       store: new MemoryPluginStore({ root: "store" }),
-      settings: { "harness-radian": settings },
+      settings: { "radian": settings },
     });
   }
 
-  test("the key is harness-radian:<provider>/<model> from the step's args", () => {
+  test("the key is radian:<provider>/<model> from the step's args", () => {
     const registry = registryWith({ concurrency: { "opencode-go/deepseek-v4.1-flash": 2 } });
     expect(
-      registry.stepLimit("harness-radian/agent", {
+      registry.stepLimit("radian/agent", {
         args: ["--provider", "opencode-go", "--model", "deepseek-v4.1-flash"],
       }),
-    ).toEqual({ key: "harness-radian:opencode-go/deepseek-v4.1-flash", concurrent: 2 });
+    ).toEqual({ key: "radian:opencode-go/deepseek-v4.1-flash", concurrent: 2 });
   });
 
   test("a model not in the map, or no --model, has no limit", () => {
     const registry = registryWith({ concurrency: { "p/a": 2 } });
     expect(
-      registry.stepLimit("harness-radian/agent", { args: ["--provider", "p", "--model", "b"] }),
+      registry.stepLimit("radian/agent", { args: ["--provider", "p", "--model", "b"] }),
     ).toBeUndefined();
-    expect(registry.stepLimit("harness-radian/agent", { args: ["--provider", "p"] })).toBeUndefined();
-    expect(registry.stepLimit("harness-radian/agent", {})).toBeUndefined();
+    expect(registry.stepLimit("radian/agent", { args: ["--provider", "p"] })).toBeUndefined();
+    expect(registry.stepLimit("radian/agent", {})).toBeUndefined();
   });
 
   test("the setting is declared with the default {}", () => {
     const registry = registryWith({});
-    expect(registry.settingsFor("harness-radian").concurrency).toEqual({});
+    expect(registry.settingsFor("radian").concurrency).toEqual({});
   });
 });
 
@@ -968,9 +968,9 @@ describe("harness-radian/agent step limit", () => {
  * for a late answer. radian itself writes no question today; these tests ask
  * through a probe step that declares what radian's step declares.
  */
-describe("harness-radian: a question is reject_once", () => {
+describe("radian: a question is reject_once", () => {
   const radian = createRadianHarnessPlugin().steps.find((step) => step.name === "agent");
-  if (radian === undefined) throw new Error("harness-radian has no agent step");
+  if (radian === undefined) throw new Error("radian has no agent step");
 
   type Run = (ctx: StepContext, params: unknown) => Promise<PluginStepResult>;
 
@@ -1064,7 +1064,7 @@ describe("harness-radian: a question is reject_once", () => {
     const env = await setup("done");
     let error: unknown;
     try {
-      env.registry.checkAccess("harness-radian:prompt", { askCommands: ["git push"] });
+      env.registry.checkAccess("radian:prompt", { askCommands: ["git push"] });
     } catch (caught) {
       error = caught;
     }

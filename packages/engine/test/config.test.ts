@@ -18,7 +18,7 @@ afterAll(cleanupTempRoots);
 
 describe("operad config", () => {
   test("the default plugins are shell, the radian harness, chat and dev", async () => {
-    expect(DEFAULT_PLUGINS).toEqual(["shell", "harness-radian", "chat", "dev"]);
+    expect(DEFAULT_PLUGINS).toEqual(["shell", "radian", "chat", "dev"]);
     const root = await tempRoot();
     const home = join(root, "home");
     await ensureConfig(home);
@@ -27,7 +27,7 @@ describe("operad config", () => {
     ) as { plugins: Record<string, { module: string; enabled: boolean }> };
     expect(text.plugins).toEqual({
       shell: { module: "@operad-io/shell", enabled: true },
-      "harness-radian": {
+      "radian": {
         module: "@operad-io/harness-radian",
         enabled: true,
       },

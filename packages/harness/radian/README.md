@@ -1,7 +1,7 @@
 # @operad-io/harness-radian
 
-The `harness-radian` plugin: one `agent` step that runs `radian exec` in a
-directory and reads its closing result, and the `harness-radian:prompt` flow
+The `radian` plugin: one `agent` step that runs `radian exec` in a
+directory and reads its closing result, and the `radian:prompt` flow
 that runs one prompt.
 
 ## Asking and resuming
@@ -14,21 +14,21 @@ radian has no hook that sees its tool calls, so this harness cannot let one call
 through and no other. The step says `grants: false`, so `ctx.ask` refuses a
 question that offers a one-time permission before anyone is asked. A run whose
 access profile has one anyway is refused by the step with the reason
-`grant_unsupported`, naming radian; use `harness-pi` for flows that grant.
+`grant_unsupported`, naming radian; use `pi` for flows that grant.
 
 radian is the degraded harness for questions (`operad-contract.md` decision 6):
 its step declares no `enforces`, so a profile with `askCommands` is refused at
 start with the field named, and a question the step asks is `reject_once` with no
 grant (`degradedAskRequest` in `@operad-io/harness-process`): once the grace
 passes it is refused, because a late `allow_once` could not be carried out.
-`harness-claude` and `harness-pi` do the full loop.
+`claude` and `pi` do the full loop.
 
 With `resumeSession`, the `Result` must name that same session; another id fails
 the step with `session_missing`, because radian started afresh.
 
 ## Settings
 
-The `harness-radian` section of `config.json`.
+The `radian` section of `config.json`.
 
 | setting | type | default | meaning |
 |---|---|---|---|
@@ -44,7 +44,7 @@ are in [the manual](../../../docs/manual.md#limiting-runs-of-one-model).
 
 The step rewrites radian's `ToolExecutionStarted` and `ToolExecutionSettled`
 journal lines as `tool_execution_start` and `tool_execution_end`, the lines
-`harness-claude` and `harness-pi` write. The start carries `at` and `input`
+`claude` and `pi` write. The start carries `at` and `input`
 (the command, first 500 characters, or the path or main argument; environment
 assignment values and secret values are masked); the end carries `durationMs` and, for an
 error, its first line as `error`. The tool name, call id and arguments are

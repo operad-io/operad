@@ -12,7 +12,7 @@ The `assistant` section of `config.json` (`plugins.assistant.settings`), checked
 against `assistant.schema.json` and editable through the settings interface:
 
 ```json
-{ "profiles": { "reader": { "harness": "harness-pi", "skills": ["~/skills/brain"], "access": { "readOnly": true } } } }
+{ "profiles": { "reader": { "harness": "pi", "skills": ["~/skills/brain"], "access": { "readOnly": true } } } }
 ```
 
 `default` exists even when it is not written. A profile name is lowercase letters,

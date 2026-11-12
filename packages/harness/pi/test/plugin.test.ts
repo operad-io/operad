@@ -71,7 +71,7 @@ async function setup(
     home: root,
     cwd: root,
     store: new MemoryPluginStore({ root: join(root, "store") }),
-    ...(settings === undefined ? {} : { settings: { "harness-pi": settings } }),
+    ...(settings === undefined ? {} : { settings: { "pi": settings } }),
   });
   return { root, clock, registry, record, marker, release };
 }
@@ -116,14 +116,14 @@ function runAgent(
   params: Record<string, unknown>,
   options: { readonly runId?: string; readonly signal?: AbortSignal } = {},
 ) {
-  return env.registry.runStep("harness-pi/agent", params, {
+  return env.registry.runStep("pi/agent", params, {
     runId: options.runId ?? "run-1",
     ...(options.signal === undefined ? {} : { signal: options.signal }),
   });
 }
 
-describe("harness-pi/agent", () => {
-  test("a done run has the facts harness-radian records for the same data", async () => {
+describe("pi/agent", () => {
+  test("a done run has the facts radian records for the same data", async () => {
     const env = await setup("done");
     const result = await runAgent(env, { prompt: "hello", cwd: env.root });
     expect(result.result).toBe("done");
@@ -133,7 +133,7 @@ describe("harness-pi/agent", () => {
     expect(data.sessionId).toBe("fake-session");
     expect(data.finalMessage).toBe("fake final message");
     expect(data.usage).toEqual({
-      harness: "harness-pi",
+      harness: "pi",
       model: null,
       tokens: { input: 11, output: 7, cacheread: 0, cachewrite: 0 },
       costMicros: 1234,
@@ -145,7 +145,7 @@ describe("harness-pi/agent", () => {
     expect(typeof data.durationMs).toBe("number");
     expect(readFileSync(String(data.log), "utf8")).toContain('"type":"result"');
 
-    // The same fake data through harness-radian gives the same facts.
+    // The same fake data through radian gives the same facts.
     const radianModule = (await import(
       new URL("../../radian/src/index.ts", import.meta.url).href
     )) as { readonly createRadianHarnessPlugin: (o: object) => unknown };
@@ -159,10 +159,10 @@ describe("harness-pi/agent", () => {
       home: env.root,
       cwd: env.root,
       store: new MemoryPluginStore({ root: join(env.root, "store2") }),
-      settings: { "harness-radian": { command: bin } },
+      settings: { "radian": { command: bin } },
     });
     const other = await radian.runStep(
-      "harness-radian/agent",
+      "radian/agent",
       { prompt: "hello", cwd: env.root },
       { runId: "run-radian" },
     );
@@ -173,7 +173,7 @@ describe("harness-pi/agent", () => {
       expect(data[key]).toEqual(otherData[key]);
     }
     // The same usage but for who ran.
-    expect(otherData.usage).toEqual({ ...(data.usage as object), harness: "harness-radian" });
+    expect(otherData.usage).toEqual({ ...(data.usage as object), harness: "radian" });
   });
 
   test("a worker line without a price leaves the cost unknown, not zero", async () => {
@@ -199,7 +199,7 @@ describe("harness-pi/agent", () => {
         home: "/tmp",
         cwd: "/tmp",
         store: new MemoryPluginStore({ root: "/tmp/unused-store" }),
-        settings: { "harness-pi": { bashTimeoutSecs: bad } },
+        settings: { "pi": { bashTimeoutSecs: bad } },
       });
       expect(registry.names()).toEqual([]);
     }
@@ -343,7 +343,7 @@ describe("harness-pi/agent", () => {
 
   test("a step declares that it can resume", async () => {
     const env = await setup("done");
-    const type = env.registry.stepTypes().find((item) => item.name === "harness-pi/agent");
+    const type = env.registry.stepTypes().find((item) => item.name === "pi/agent");
     expect(type?.resumable).toBe(true);
   });
 
@@ -357,7 +357,7 @@ describe("harness-pi/agent", () => {
       },
     };
     const running = env.registry.runStep(
-      "harness-pi/agent",
+      "pi/agent",
       { prompt: "hello", cwd: env.root, inbox },
       { runId: "run-message" },
     );
@@ -376,7 +376,7 @@ describe("harness-pi/agent", () => {
     const used: string[] = [];
     const grants = [{ waitId: "w1", kind: "command", value: "rm -rf build" }];
     const result = await env.registry.runStep(
-      "harness-pi/agent",
+      "pi/agent",
       { prompt: "hello", cwd: env.root },
       {
         runId: "run-grant",
@@ -402,7 +402,7 @@ describe("harness-pi/agent", () => {
   test("the run's access profile is passed to the worker", async () => {
     const env = await setup("done");
     await env.registry.runStep(
-      "harness-pi/agent",
+      "pi/agent",
       { prompt: "hello", cwd: env.root },
       { runId: "run-access", access: { denyCommands: ["rm"] } },
     );
@@ -598,7 +598,7 @@ describe("harness-pi/agent", () => {
       store: new MemoryPluginStore({ root: join(env.root, "store3") }),
     });
     const result = await registry.runStep(
-      "harness-pi/agent",
+      "pi/agent",
       { prompt: "hello", cwd: env.root },
       { runId: "run-missing" },
     );
@@ -608,7 +608,7 @@ describe("harness-pi/agent", () => {
 
   test("the step declares the deny and ask fields it enforces and a timeout above its wall time", async () => {
     const env = await setup("done");
-    const type = env.registry.stepTypes().find((item) => item.name === "harness-pi/agent");
+    const type = env.registry.stepTypes().find((item) => item.name === "pi/agent");
     expect(type?.enforces).toEqual(["denyPaths", "denyCommands", "askCommands", "askPaths"]);
     expect(type?.timeoutSecs).toBeGreaterThan(3600);
   });
@@ -616,7 +616,7 @@ describe("harness-pi/agent", () => {
   test("a profile with askCommands is accepted: the step enforces it", async () => {
     const env = await setup("done");
     expect(() =>
-      env.registry.checkAccess("harness-pi:prompt", { askCommands: ["git push"], denyCommands: ["rm"], denyPaths: ["/etc"] }),
+      env.registry.checkAccess("pi:prompt", { askCommands: ["git push"], denyCommands: ["rm"], denyPaths: ["/etc"] }),
     ).not.toThrow();
   });
 });
@@ -630,9 +630,9 @@ describe("piToolEvent", () => {
   });
 });
 
-describe("harness-pi:prompt", () => {
+describe("pi:prompt", () => {
   async function runPrompt(env: TestEnv, params: JsonValue, trigger?: TriggerView) {
-    const found = env.registry.flow("harness-pi:prompt");
+    const found = env.registry.flow("pi:prompt");
     if (found === undefined) throw new Error("the prompt flow is not loaded");
     const log = openLog({ backend: "jsonl", path: join(env.root, "log") });
     const info = await log.startRun(found.flow.name, "prompt:1");
@@ -673,7 +673,7 @@ describe("harness-pi:prompt", () => {
     expect(endedStatus).toBe("failed");
   });
 
-  test("a trigger with a summary file appends the same event note as harness-radian", async () => {
+  test("a trigger with a summary file appends the same event note as radian", async () => {
     const env = await setup("done");
     const { input } = await runPrompt(env, { prompt: "p", cwd: env.root }, {
       summary: "/events/1/summary.md",
@@ -684,50 +684,50 @@ describe("harness-pi:prompt", () => {
   });
 });
 
-describe("harness-pi check", () => {
+describe("pi check", () => {
   test("passes with the default worker program", async () => {
     const root = await tempRoot();
     const registry = new PluginRegistry([createPiHarnessPlugin()], {
       home: root,
       cwd: root,
       store: new MemoryPluginStore({ root: join(root, "store") }),
-      settings: { "harness-pi": { command: DEV_PI } },
+      settings: { "pi": { command: DEV_PI } },
     });
     const checks = await registry.checks();
-    expect(checks.find((item) => item.plugin === "harness-pi")?.ok).toBe(true);
+    expect(checks.find((item) => item.plugin === "pi")?.ok).toBe(true);
   });
 });
 
-describe("harness-pi/agent step limit", () => {
+describe("pi/agent step limit", () => {
   function registryWith(settings: Record<string, unknown>): PluginRegistry {
     return new PluginRegistry([createPiHarnessPlugin()], {
       home: ".",
       cwd: ".",
       store: new MemoryPluginStore({ root: "store" }),
-      settings: { "harness-pi": settings },
+      settings: { "pi": settings },
     });
   }
 
-  test("the key is harness-pi:<model> from --model, else the model setting", () => {
+  test("the key is pi:<model> from --model, else the model setting", () => {
     const registry = registryWith({
       model: "opencode-go/deepseek-v4.1-flash",
       concurrency: { "opencode-go/deepseek-v4.1-flash": 2, "p/other": 1 },
     });
-    expect(registry.stepLimit("harness-pi/agent", { args: ["--model", "p/other"] })).toEqual({
-      key: "harness-pi:p/other",
+    expect(registry.stepLimit("pi/agent", { args: ["--model", "p/other"] })).toEqual({
+      key: "pi:p/other",
       concurrent: 1,
     });
-    expect(registry.stepLimit("harness-pi/agent", {})).toEqual({
-      key: "harness-pi:opencode-go/deepseek-v4.1-flash",
+    expect(registry.stepLimit("pi/agent", {})).toEqual({
+      key: "pi:opencode-go/deepseek-v4.1-flash",
       concurrent: 2,
     });
   });
 
   test("a model not in the map, or no model, has no limit", () => {
     const registry = registryWith({ concurrency: { "p/a": 2 } });
-    expect(registry.stepLimit("harness-pi/agent", { args: ["--model", "p/b"] })).toBeUndefined();
-    expect(registry.stepLimit("harness-pi/agent", {})).toBeUndefined();
-    expect(registryWith({}).stepLimit("harness-pi/agent", { args: ["--model", "p/a"] })).toBeUndefined();
+    expect(registry.stepLimit("pi/agent", { args: ["--model", "p/b"] })).toBeUndefined();
+    expect(registry.stepLimit("pi/agent", {})).toBeUndefined();
+    expect(registryWith({}).stepLimit("pi/agent", { args: ["--model", "p/a"] })).toBeUndefined();
   });
 
   test("a count that is not a positive integer refuses the plugin at load", () => {

@@ -61,8 +61,8 @@ By package:
 
 | Package | Lines covered | Coverage |
 |---|---:|---:|
-| `harness-claude` | 756 / 1,356 | 55.75% |
-| `harness-pi` | 718 / 1,275 | 56.31% |
+| `claude` | 756 / 1,356 | 55.75% |
+| `pi` | 718 / 1,275 | 56.31% |
 | `mcp` | 862 / 1,485 | 58.05% |
 | `source-cron` | 48 / 63 | 76.19% |
 | `cli` | 2,220 / 2,841 | 78.14% |
@@ -71,7 +71,7 @@ By package:
 | `chat` | 461 / 510 | 90.39% |
 | `dev` | 13,204 / 14,274 | 92.50% |
 | `shell` | 323 / 346 | 93.35% |
-| `harness-radian` | 591 / 626 | 94.41% |
+| `radian` | 591 / 626 | 94.41% |
 | `review-grading` | 124 / 131 | 94.66% |
 | `tui` | 5,568 / 5,782 | 96.30% |
 | `pool` | 653 / 664 | 98.34% |
@@ -697,7 +697,7 @@ list. 33 groups remain after this filter.
 37 / 41 executable lines covered by all of:
 
 - `packages/dev/test/gate.test.ts`
-- `packages/dev/test/harness-pi.test.ts`
+- `packages/dev/test/pi.test.ts`
 - `packages/dev/test/integrate.test.ts`
 - `packages/dev/test/resume-verify.test.ts`
 - `packages/dev/test/wrap-up.test.ts`
@@ -716,7 +716,7 @@ list. 33 groups remain after this filter.
 
 119 / 135 executable lines covered by all of:
 
-- `packages/dev/test/harness-pi.test.ts`
+- `packages/dev/test/pi.test.ts`
 - `packages/dev/test/integrate.test.ts`
 - `packages/dev/test/resume-verify.test.ts`
 - `packages/dev/test/worktree.test.ts`

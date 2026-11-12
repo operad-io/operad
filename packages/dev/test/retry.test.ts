@@ -560,7 +560,7 @@ describe("a real process killed by a signal", () => {
     const root = await tempRoot();
     const marker = join(root, "killed-once");
     const wrapper = join(root, "kill-once.ts");
-    const fake = fileURLToPath(new URL("../../harness-pi/test/fake-lines-worker.ts", import.meta.url));
+    const fake = fileURLToPath(new URL("../../harness/pi/test/fake-lines-worker.ts", import.meta.url));
     writeFileSync(
       wrapper,
       [
@@ -573,7 +573,7 @@ describe("a real process killed by a signal", () => {
       ].join("\n"),
     );
     const module = (await import(
-      new URL("../../harness-pi/src/index.ts", import.meta.url).href
+      new URL("../../harness/pi/src/index.ts", import.meta.url).href
     )) as {
       readonly createPiHarnessPlugin: (options: {
         readonly command: string;
@@ -581,7 +581,7 @@ describe("a real process killed by a signal", () => {
       }) => unknown;
     };
     const pi = module.createPiHarnessPlugin({ command: process.execPath, args: [wrapper] });
-    const w = await world(1, { worker: { use: "harness-pi/agent", args: [] } });
+    const w = await world(1, { worker: { use: "pi/agent", args: [] } });
     const registry = registryOf(w, [createDevPlugin(), createPoolPlugin(), createShellPlugin(), pi]);
     const runs = new Map<string, string>();
     expect(await drive(w, registry, runs)).toEqual(["waiting"]);

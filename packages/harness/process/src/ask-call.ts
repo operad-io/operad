@@ -13,7 +13,7 @@
  *   threw, which the kernel turns into the result `waiting`. The answer comes
  *   later through the flow with the session and a one-time grant for this call.
  *
- * `harness-pi` and `harness-claude` share this. `harness-radian` has no such
+ * `pi` and `claude` share this. `radian` has no such
  * line: no hook sees its calls, so it offers no grant (`degradedAskRequest`).
  */
 
@@ -107,7 +107,7 @@ export function askRequest(call: AskCall): AskRequest {
 
 /**
  * The question of a harness that cannot enforce a one-time permission
- * (`harness-radian`; `operad-contract.md` decision 6): no grant, and a refusal
+ * (`radian`; `operad-contract.md` decision 6): no grant, and a refusal
  * once the grace passes, because a late `allow_once` could not be carried out.
  */
 export function degradedAskRequest(prompt: string): AskRequest {

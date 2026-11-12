@@ -134,16 +134,16 @@ describe("inspectClaude", () => {
   });
 });
 
-describe("harness-claude check", () => {
+describe("claude check", () => {
   async function checks(command: string | undefined) {
     const root = await tempRoot();
     const registry = new PluginRegistry([createClaudeHarnessPlugin()], {
       home: root,
       cwd: root,
       store: new MemoryPluginStore({ root: join(root, "store") }),
-      settings: { "harness-claude": command === undefined ? {} : { command } },
+      settings: { "claude": command === undefined ? {} : { command } },
     });
-    return (await registry.checks()).find((item) => item.plugin === "harness-claude");
+    return (await registry.checks()).find((item) => item.plugin === "claude");
   }
 
   test("passes and reports the Claude Code version, the SDK version and the login kind", async () => {

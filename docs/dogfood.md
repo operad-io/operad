@@ -17,14 +17,14 @@ registers a repository and never writes to a remote. In this repository the
 checks are:
 
 - `shell` is ready.
-- `harness-radian` finds `radian` on `PATH`.
+- `radian` finds `radian` on `PATH`.
 - `dev` finds each registered repository's remote and asks it, read-only, for
   its branches through the remote's name. It passes when the main branch is
   published there and fails when the remote does not exist, cannot be reached
   (with git's own message) or has no main branch. It pushes nothing, so no ref
   can be left behind.
 
-`harness-pi` and `harness-claude` are optional and are not installed by `init`;
+`pi` and `claude` are optional and are not installed by `init`;
 see "Using pi as the worker" and "Using claude as the worker" below.
 
 Then register the checkout:
@@ -196,11 +196,11 @@ still merged; remove the leftover with the command the line names.
 
 ## Using pi as the worker
 
-`harness-pi` runs the pi coding agent instead of radian. It is not in the
+`pi` runs the pi coding agent instead of radian. It is not in the
 default config, so turn it on first. This makes the next command load it:
 
 ```sh
-operad plugin enable harness-pi
+operad plugin enable pi
 ```
 
 **Install pi.** operad does not bring its own pi: it uses the one you installed,
@@ -208,7 +208,7 @@ with bun (`bun add -g @earendil-works/pi-coding-agent`) or npm
 (`npm i -g @earendil-works/pi-coding-agent`), so that `pi` is on `PATH`. The
 oldest pi it accepts is `1.5.0`; `operad plugin check` names both versions when
 yours is older and fails when there is no `pi`. To use another pi, set
-`command` in the `harness-pi` section of `config.json` to its path. A `pi` that
+`command` in the `pi` section of `config.json` to its path. A `pi` that
 is a shell wrapper script is refused; point `command` at the package's bin
 instead (`.../@earendil-works/pi-coding-agent/dist/bundle/cli.js`).
 
@@ -235,8 +235,8 @@ reviewer on another:
 
 ```json
 {
-  "worker":   { "use": "harness-pi/agent", "args": ["--model", "opencode-go/deepseek-v4.1-flash"] },
-  "reviewer": { "use": "harness-pi/agent", "args": ["--model", "openai-codex/gpt-5.6-terra", "--thinking", "medium"] }
+  "worker":   { "use": "pi/agent", "args": ["--model", "opencode-go/deepseek-v4.1-flash"] },
+  "reviewer": { "use": "pi/agent", "args": ["--model", "openai-codex/gpt-5.6-terra", "--thinking", "medium"] }
 }
 ```
 
@@ -244,8 +244,8 @@ reviewer on another:
 their harness is pi.
 
 **Switch back.** Put `worker` in `.operad/dev.json` back to
-`"use": "harness-radian/agent"` with its `args` (`--provider`, `--model`). You do
-not need to disable `harness-pi`; `operad plugin disable harness-pi` removes it
+`"use": "radian/agent"` with its `args` (`--provider`, `--model`). You do
+not need to disable `pi`; `operad plugin disable pi` removes it
 if you want.
 
 The settings, the step's results and the model-error rules are in
@@ -253,12 +253,12 @@ The settings, the step's results and the model-error rules are in
 
 ## Using claude as the worker
 
-`harness-claude` runs `claude`, Anthropic's coding agent, instead of radian. It
+`claude` runs `claude`, Anthropic's coding agent, instead of radian. It
 is not in the default config, so turn it on first. This makes the next command
 load it:
 
 ```sh
-operad plugin enable harness-claude
+operad plugin enable claude
 ```
 
 **Install claude and log in.** operad does not bring its own claude: it uses the
@@ -269,7 +269,7 @@ no credential of its own. `operad plugin check` runs `claude --version` and
 the login kind (such as `claude.ai (max)`). It fails, saying what to do, when
 there is no `claude`, when claude is older than `2.1.319`, or when it is not
 logged in. The SDK version is only reported. To use another claude, set
-`command` in the `harness-claude` section of `config.json` to its path.
+`command` in the `claude` section of `config.json` to its path.
 
 **A machine without a browser.** Run `claude setup-token` on a machine where you
 can sign in; it prints a token that stands for your claude subscription and
@@ -300,7 +300,7 @@ setting or the step's `--model` names one (a name claude takes, such as `opus`
 or `sonnet`).
 
 **Settings, arguments and the environment.** These are the inputs of the
-`harness-claude` section of `config.json`, of the step's `args` and of the
+`claude` section of `config.json`, of the step's `args` and of the
 environment. The full tables are in `packages/harness/claude/README.md`.
 
 | Input | Type | Default | Values |
@@ -337,14 +337,14 @@ and `--effort <level>` from `args`; any other entry fails the step with
 
 ```json
 {
-  "worker":   { "use": "harness-claude/agent", "args": ["--model", "sonnet"] },
-  "reviewer": { "use": "harness-claude/agent", "args": ["--model", "opus", "--effort", "medium"] }
+  "worker":   { "use": "claude/agent", "args": ["--model", "sonnet"] },
+  "reviewer": { "use": "claude/agent", "args": ["--model", "opus", "--effort", "medium"] }
 }
 ```
 
 **Switch back.** Put `worker` in `.operad/dev.json` back to
-`"use": "harness-radian/agent"` with its `args`. You do not need to disable
-`harness-claude`; `operad plugin disable harness-claude` removes it if you want.
+`"use": "radian/agent"` with its `args`. You do not need to disable
+`claude`; `operad plugin disable claude` removes it if you want.
 
 The settings, the step's results and the model-error rules are in
 `packages/harness/claude/README.md`. The hand-run acceptance points are in

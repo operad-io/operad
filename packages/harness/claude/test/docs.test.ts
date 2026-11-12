@@ -143,7 +143,7 @@ describe("the environment and the login", () => {
 });
 
 describe("the manual", () => {
-  test("lists harness-claude where it lists the other harnesses", () => {
-    expect(MANUAL).toContain("`harness-claude` | `harness-claude:<model>`");
+  test("lists claude where it lists the other harnesses", () => {
+    expect(MANUAL).toContain("`claude` | `claude:<model>`");
   });
 });

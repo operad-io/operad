@@ -102,7 +102,7 @@ async function runReal(access: Record<string, unknown>): Promise<{ wrote: boolea
       onLog: () => undefined,
     });
     const outcome = await registry.runStep(
-      "harness-radian/agent",
+      "radian/agent",
       { prompt: "write a.txt", cwd: work, args: ["--provider", "openai-compatible", "--model", "m", "--base-url", `http://127.0.0.1:${server.port}`] },
       { runId: "run-real", access: access as never },
     );

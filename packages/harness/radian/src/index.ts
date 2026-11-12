@@ -1,6 +1,6 @@
 /**
  * The radian harness: one `agent` step that runs `radian exec` in a directory
- * and reads its closing Result record, plus the `harness-radian:prompt` flow
+ * and reads its closing Result record, plus the `radian:prompt` flow
  * that runs one prompt. Only the plugin interface and the process helper are
  * used; the kernel never knows how radian is started.
  */
@@ -491,13 +491,13 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
   };
 
   const promptFlow = defineFlow({
-    name: "harness-radian:prompt",
+    name: "radian:prompt",
     entry: "agent",
     steps: [
       {
         id: "agent",
         kind: "plugin",
-        params: { use: "harness-radian/agent", params: {} },
+        params: { use: "radian/agent", params: {} },
         replay: "unsafe",
         next: { done: "done", failed: "failed", interrupted: "cancelled" },
       },
@@ -513,7 +513,7 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
   });
 
   return definePlugin({
-    name: "harness-radian",
+    name: "radian",
     kind: "harness",
     version: "0.0.0",
     settings: PLUGIN_SETTINGS,
@@ -527,11 +527,11 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
         grants: false,
         results: ["done", "failed", "interrupted"],
         // The model is what the step passes to radian: `<provider>/<model>`.
-        limit: modelLimit("harness-radian", (params) =>
+        limit: modelLimit("radian", (params) =>
           isRecord(params) ? radianModel(params.args) : undefined,
         ),
         async run(ctx: StepContext, params: unknown): Promise<PluginStepResult> {
-          const at = "harness-radian/agent";
+          const at = "radian/agent";
           const input = paramsObject(params, at);
           const flow = isRecord(ctx.params) ? ctx.params : {};
 
@@ -568,14 +568,14 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
           const logProfile: AccessProfile = readAccess.ok ? readAccess.profile : {};
 
           const who: UsageSource = {
-            harness: "harness-radian",
+            harness: "radian",
             model: radianModel(args) ?? null,
           };
 
           // radian has no hook that sees a tool call, so it cannot let one
           // call through and no other: a one-time permission is refused.
           if (isRecord(ctx.access) && Array.isArray(ctx.access.grants) && ctx.access.grants.length > 0) {
-            const message = `${at}: radian cannot enforce a one-time permission (no hook sees its tool calls); ask with harness-pi, or without a grant`;
+            const message = `${at}: radian cannot enforce a one-time permission (no hook sees its tool calls); ask with pi, or without a grant`;
             const log = await ctx.logger.write(message);
             return {
               result: "failed",
@@ -700,7 +700,7 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
       const command =
         ctx.settings.command === undefined
           ? defaults.command
-          : text(ctx.settings.command, "harness-radian: settings.command");
+          : text(ctx.settings.command, "radian: settings.command");
       const found = await findCommand(command);
       if (found === undefined) {
         throw new Error(`${command} was not found on PATH`);

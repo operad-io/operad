@@ -1,6 +1,6 @@
 {
   "extends": "../../../tsconfig.base.json",
-  "compilerOptions": { "rootDir": ".", "outDir": "../../../.tsbuild/harness-claude" },
+  "compilerOptions": { "rootDir": ".", "outDir": "../../../.tsbuild/claude" },
   "include": ["src", "test"],
   "references": [{ "path": "../../access-match" }, { "path": "../../engine" }, { "path": "../process" }]
 }

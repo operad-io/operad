@@ -55,7 +55,7 @@ function fakeHarness(record: string) {
             readonly args?: readonly string[];
             readonly resumeSession?: string;
           };
-          // Mirror harness-radian: an absent args falls back to the flow's.
+          // Mirror radian: an absent args falls back to the flow's.
           const flow =
             typeof ctx.params === "object" &&
             ctx.params !== null &&
@@ -631,17 +631,17 @@ describe("dev/work", () => {
 const realTest = process.env.OPERAD_TEST_RADIAN === "1" ? test : test.skip;
 
 realTest(
-  "runs the real harness-radian (set OPERAD_TEST_RADIAN=1 to enable this test)",
+  "runs the real radian (set OPERAD_TEST_RADIAN=1 to enable this test)",
   async () => {
     const modulePath = new URL(
-      "../../harness-radian/src/index.ts",
+      "../../harness/radian/src/index.ts",
       import.meta.url,
     ).href;
     const module = (await import(modulePath)) as {
       readonly createRadianHarnessPlugin: () => unknown;
     };
     const state = await fixture("nothing", {
-      workerUse: "harness-radian/agent",
+      workerUse: "radian/agent",
       args: [],
       plugins: [module.createRadianHarnessPlugin()],
     });

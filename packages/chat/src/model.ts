@@ -25,7 +25,7 @@ export interface ChatData {
   readonly [key: string]: unknown;
   /** The object one level up (a repository, a profile); a full object id. */
   readonly parent?: string | undefined;
-  /** The harness plugin that answers, such as `harness-claude`; fixed once the chat exists. */
+  /** The harness plugin that answers, such as `claude`; fixed once the chat exists. */
   readonly harness: string;
   /** Where the harness works. */
   readonly cwd: string;

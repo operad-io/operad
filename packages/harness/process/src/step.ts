@@ -150,7 +150,7 @@ const USAGE_LIMIT = /usage[ _-]?limit|quota|exceeded your (?:current )?(?:usage|
 
 /**
  * The `modelError` of a worker failure with reason `model_error`, in the shape
- * `harness-radian` gives. `kind` comes from the message: a usage limit is
+ * `radian` gives. `kind` comes from the message: a usage limit is
  * `usage_limit`, a 429 or an overloaded provider is `unavailable`, anything else
  * is `protocol`. A usage-limit message wins over a 429 in the same text.
  */

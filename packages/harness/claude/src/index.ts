@@ -1,8 +1,8 @@
 /**
  * The claude harness, hub side: one `agent` step that starts the child program
  * `worker.ts` under Bun, writes one JSON object to its stdin and reads the last
- * `result` line of its stdout, plus the `harness-claude:prompt` flow. The step
- * has the params, result names and facts of `harness-pi/agent`, so a flow
+ * `result` line of its stdout, plus the `claude:prompt` flow. The step
+ * has the params, result names and facts of `pi/agent`, so a flow
  * changes harness by changing `use`. The Agent SDK is imported only by the
  * child program, never by the hub.
  */
@@ -66,7 +66,7 @@ export const MAX_WALL_TIME_SECS = STEP_TIMEOUT_SECS - 300;
 const WORKER_PATH = fileURLToPath(new URL("./worker.ts", import.meta.url));
 
 /** The name the plugin goes by in usage and limit keys. */
-const HARNESS = "harness-claude";
+const HARNESS = "claude";
 
 /**
  * Reads one worker line and reports the tool call it starts or settles. The
@@ -170,13 +170,13 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
   const commandArgs = options.args ?? [WORKER_PATH];
 
   const promptFlow = defineFlow({
-    name: "harness-claude:prompt",
+    name: "claude:prompt",
     entry: "agent",
     steps: [
       {
         id: "agent",
         kind: "plugin",
-        params: { use: "harness-claude/agent", params: {} },
+        params: { use: "claude/agent", params: {} },
         replay: "unsafe",
         next: { done: "done", failed: "failed", interrupted: "cancelled", waiting: "person" },
       },
@@ -217,7 +217,7 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
           return typeof model === "string" && model.length > 0 ? model : undefined;
         }),
         async run(ctx: StepContext, params: unknown): Promise<PluginStepResult> {
-          const at = "harness-claude/agent";
+          const at = "claude/agent";
           const input = paramsObject(params, at);
           const flow = isRecord(ctx.params) ? ctx.params : {};
 

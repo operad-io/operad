@@ -1,6 +1,6 @@
 {
   "extends": "../../../tsconfig.base.json",
-  "compilerOptions": { "rootDir": ".", "outDir": "../../../.tsbuild/harness-radian" },
+  "compilerOptions": { "rootDir": ".", "outDir": "../../../.tsbuild/radian" },
   "include": ["src", "test"],
   "references": [{ "path": "../../engine" }, { "path": "../process" }]
 }

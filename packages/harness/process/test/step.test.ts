@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { modelErrorOf, parseResult, parseStepFlags } from "../src/index.ts";
 
-// Moved from harness-claude/test/plugin.test.ts.
+// Moved from packages/harness/claude/test/plugin.test.ts.
 describe("modelErrorOf", () => {
   test("a usage-limit text wins over a 429 in the same text", () => {
     expect(modelErrorOf("429 usage limit reached").kind).toBe("usage_limit");
