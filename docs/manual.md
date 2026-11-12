@@ -24,8 +24,8 @@ this manual prints a secret.
   "http": { "enabled": true, "port": 7480, "listen": ["127.0.0.1"] },
   "notify": { "command": null, "on": ["waiting"] },
   "mcp": {
-    "actions": ["dev:rework", "dev:reverify", "dev:reject", "dev:priority", "dev:concurrency"],
-    "confirmActions": []
+    "actions": ["dev:rework", "dev:reverify", "dev:reject", "dev:priority", "dev:concurrency", "chat:close"],
+    "confirmActions": ["chat:close"]
   },
   "ask": { "graceSecs": 600 }
 }
@@ -51,8 +51,8 @@ this manual prints a secret.
 
 | Key | Type | Default | What it does |
 |---|---|---|---|
-| `actions` | array of `plugin:action` strings | `["dev:rework", "dev:reverify", "dev:reject", "dev:priority", "dev:concurrency"]` | The actions `operad mcp` may run. Every other action is refused with a message naming it and saying the owner runs it. |
-| `confirmActions` | array of `plugin:action` strings | `[]` | The allowed actions that also carry `confirm: true`. Such an action is refused even when `actions` names it unless this list names it too. |
+| `actions` | array of `plugin:action` strings | `["dev:rework", "dev:reverify", "dev:reject", "dev:priority", "dev:concurrency", "chat:close"]` | The actions `operad mcp` may run. Every other action is refused with a message naming it and saying the owner runs it. |
+| `confirmActions` | array of `plugin:action` strings | `["chat:close"]` | The allowed actions that also carry `confirm: true`. Such an action is refused even when `actions` names it unless this list names it too. |
 
 Both lists take effect the next time `operad mcp` starts. They do not change an
 action already running. The MCP server never offers the owner's actions as its
@@ -442,7 +442,7 @@ otherwise. An object id in a path is URL-encoded; `<id>` may be the bare id or
 |---|---|
 | `GET /v1/types` | `{ "types": [{ "type": "task", "title": "Task", "plugin": "dev" }] }`: the object types with views, their display names and the name of the plugin each belongs to (a client groups types by it). A type that declares filters also carries `"filters"`, in display order (`[{ "name": "active", "states": ["proposed", ...] }, { "name": "all" }, ...]`), and `"defaultFilter"`. A type without filters carries neither. |
 | `GET /v1/keys` | `{ "keys": [{ "key": "m", "action": "dev:merge", "source": "plugin" }] }`: the key bindings in force, the plugins' defaults with the person's `keys.json` overrides applied; `source` is `user` for an override. |
-| `GET /v1/objects?type=<type>&filter=<name>&cursor=<c>` (also `root` and `parent=<id>`, see [Levels](#levels)) | `{ "rows": [...], "next": "<c>", "hidden": 3 }`: one page of the list. `rows` carry the plugin's `id`, `title`, `state` and optional `note`, `mark` and `badge` (see [Row marks](#row-marks)), plus `waiting` and `running`; an error row also carries `error`. `filter` keeps the rows the named filter shows, and `hidden` counts the rows of the type it left out (the whole type, not only this page). Without `filter` the type's default filter applies when it has filters; a type without filters lists every row and has no `hidden`. `filter=all` lists every row and has no `hidden`. An unknown name is a `400` that names the allowed ones. `next` pages within the filtered list. |
+| `GET /v1/objects?type=<type>&filter=<name>&cursor=<c>` (also `root` and `parent=<id>`, see [Levels](#levels)) | `{ "rows": [...], "next": "<c>", "hidden": 3 }`: one page of the list. `rows` carry the plugin's `id`, `title`, `state` and optional `note`, `wait`, `mark` and `badge` (see [Row marks](#row-marks)), plus `waiting` and `running`; an error row also carries `error`. `filter` keeps the rows the named filter shows, and `hidden` counts the rows of the type it left out (the whole type, not only this page). Without `filter` the type's default filter applies when it has filters; a type without filters lists every row and has no `hidden`. `filter=all` lists every row and has no `hidden`. An unknown name is a `400` that names the allowed ones. `next` pages within the filtered list. |
 | `GET /v1/pending` | The same list as `operad pending`, with the actions each item offers. A wait that its plugin is about to answer automatically (dev: a passed review of a task in a plan at auto merge) is not listed, so the count does not flicker; it is listed if the automatic answer does not come. An item a plugin raises without a run waiting (`kind` `standing`, no actions, `runId` `<plugin>:<id>`) is in the list too, and goes when the plugin stops reporting it. An item that is about an object also carries `object` (`<type>:<id>`), its `link` and its `row`: the same row `GET /v1/objects?type=…` returns for that object (`id`, `title`, `state`, optional `note`, `mark`, `badge`, `waiting`, `running`), so a client does not read each object. When the row cannot be built (the object is gone, no loaded plugin shows its type, or the plugin's row fails) the item carries the error row the list shows for a bad row, with `state` `error` and an `error` message; the list itself never fails for one object. A candidate has no object and no `row`. `operad pending` prints the row's title under each line that has one. |
 | `GET /v1/running` | The same list as `operad running`. Each item has `runId`, `flow`, `step`, `stepLabel`, `queued`, `startedAt` and `elapsedMs` (the run's age), and: `object`, the object's id as rows and `operad show` name it (for example `operad/T-0048-type-filters`), or `null` for a run with no object; `title`, that object's row title, or `null` when there is no object or the lookup failed (a failed lookup never fails the list); `stepStartedAt` and `stepElapsedMs`, when the current step's current attempt started and how long it has run (`null` before the first step); `mark`, the object's row mark (one of the [row marks](#row-marks)), left out when the row has none or cannot be built. The step time starts again when the step changes and on a new attempt. |
 | `GET /v1/objects/<id>` | `{ "id", "type", "link", "row", "sections", "actions" }`: the link that opens the object, the row, the section directory, and the actions available now with their `args` schema, `note` field and `confirm` flag. |
@@ -459,6 +459,13 @@ It records the action the same way the command line does, and a running
 A plugin's `row` may return a `mark` and a `badge` besides `id`, `title`, `state`
 and `note`. `GET /v1/objects`, `GET /v1/objects/<id>`, the row of a pending
 item and the MCP `list` and `show` results pass them through unchanged.
+
+A row may also carry `wait`: why the object waits, as one text, separate from
+`note` (dev puts the same text in both, so the note reads as before). A client
+that wants the wait on its own line reads `wait` instead of splitting the note
+on ` · `, which fails when the wait text contains ` · ` itself. It is a protocol
+field; a row that waits for nothing has no `wait`. `operad show --json` and
+the HTTP and MCP rows include it.
 
 `mark` says what the object is doing, and the client chooses the icon and the
 colour. It is one of these 17 values, and the kernel turns any other value into

@@ -8,7 +8,7 @@ import {
   type TaskAttempt,
   type TaskData,
 } from "../src/model.ts";
-import { planViews, taskViews } from "../src/views.ts";
+import { planViews, repoViews, taskViews } from "../src/views.ts";
 
 function task(patch: Partial<TaskData> = {}): TaskData {
   return {
@@ -179,5 +179,19 @@ describe("task badge", () => {
     expect(row.badge).toBe("#2");
     const planRow = planViews.row({ type: "plan", id: "P-0001-x", data: plan() as never } as never);
     expect(planRow.mark).toBe("todo");
+  });
+
+  test("every finished row carries the mark that says how it ended", () => {
+    const rows = [
+      ["a merged task", "done", taskViews.row({ type: "task", id: "T-0001-a", data: task({ phase: "merged" }) as never } as never)],
+      ["a cancelled task", "cancelled", taskViews.row({ type: "task", id: "T-0001-a", data: task({ phase: "cancelled" }) as never } as never)],
+      ["a finished plan", "done", planViews.row({ type: "plan", id: "P-0001-x", data: plan({ mergedCount: 1, cancelledCount: 1 }) as never } as never)],
+      ["a cancelled plan", "cancelled", planViews.row({ type: "plan", id: "P-0001-x", data: plan({ status: "cancelled" }) as never } as never)],
+      ["a removed repository", "cancelled", repoViews.row({ type: "repo", id: "r", data: { name: "r", path: "/r", removed: true } as never } as never)],
+    ] as const;
+    for (const [name, mark, row] of rows) {
+      expect(row.final, name).toBe(true);
+      expect(row.mark, name).toBe(mark);
+    }
   });
 });

@@ -128,13 +128,12 @@ describe("the TUI view", () => {
         await setup.dispose();
       }
     };
-    // A plugin tab's column is as wide as its rows need (24 at least), so the
-    // divider is where the narrow column ends at every width; the narrower
-    // plugin share leaves room for the object pane at 99 columns too.
-    expect(new Set(await dividerAt(99))).toEqual(new Set([26]));
-    expect(new Set(await dividerAt(100))).toEqual(new Set([26]));
-    expect(new Set(await dividerAt(120))).toEqual(new Set([26]));
-    expect(new Set(await dividerAt(200))).toEqual(new Set([26]));
+    // Every tab has the same narrower column, so the divider is where that
+    // column ends at every width; it leaves room for the object pane at 99.
+    expect(new Set(await dividerAt(99))).toEqual(new Set([27]));
+    expect(new Set(await dividerAt(100))).toEqual(new Set([28]));
+    expect(new Set(await dividerAt(120))).toEqual(new Set([33]));
+    expect(new Set(await dividerAt(200))).toEqual(new Set([40]));
   });
 
   test("the object pane text starts one padding column and one cell after the divider and a long title never pushes the rule", async () => {
@@ -169,9 +168,9 @@ describe("the TUI view", () => {
       view.render(state);
       await setup.renderOnce();
       const lines = setup.captureCharFrame().split("\n");
-      expect(lines[2]?.indexOf("T-0031-tui-object")).toBe(47);
+      expect(lines[2]?.indexOf("T-0031-tui-object")).toBe(33);
       expect(lines[2]).toContain("running · work 16m");
-      for (const line of lines.slice(2, 22)) expect(line.indexOf("│")).toBe(42);
+      for (const line of lines.slice(2, 22)) expect(line.indexOf("│")).toBe(28);
       // The title wraps inside the frame instead of running into its edge.
       const title = lines.slice(4, 10).join(" ").replace(/│/g, "");
       expect(title).toContain("very long title");
@@ -283,6 +282,8 @@ describe("the TUI view", () => {
       { id: "w2", title: "w", state: "w", mark: "ready_to_merge" as const, waiting: true, running: false },
       { id: "r1", title: "r", state: "r", running: true, waiting: false },
       { id: "r2", title: "r", state: "r", mark: "done" as const, running: true, waiting: false },
+      { id: "s1", title: "s", state: "merged", waiting: false, running: false },
+      { id: "s2", title: "s", state: "merged", mark: "done" as const, waiting: false, running: false },
     ];
     let state = initialState({ width, height: 80, theme: "dark" });
     state = reduce(state, { type: "types", types: [{ type: "item", title: "Item" }] });
@@ -303,6 +304,9 @@ describe("the TUI view", () => {
       expect(glyphOf("w2")).toBe(MARK_GLYPHS.ready_to_merge.char);
       expect(glyphOf("r1")).toBe(MARK_GLYPHS.running.char);
       expect(glyphOf("r2")).toBe(MARK_GLYPHS.done.char);
+      // A state word alone finishes nothing; the mark decides.
+      expect(glyphOf("s1")).toBe("○");
+      expect(glyphOf("s2")).toBe(MARK_GLYPHS.done.char);
       view.destroy();
     } finally {
       await setup.dispose();

@@ -99,11 +99,11 @@ export interface McpConfig {
   readonly confirmActions: readonly string[];
 }
 
-/** The MCP defaults: the dev plugin's lead actions, and no confirm actions. */
+/** The MCP defaults: the dev plugin's lead actions and the chat plugin's close, which also needs its confirmation. */
 export const DEFAULT_MCP: McpConfig = {
   channel: DEFAULT_MCP_CHANNEL,
-  actions: ["dev:rework", "dev:reverify", "dev:reject", "dev:priority", "dev:concurrency"],
-  confirmActions: [],
+  actions: ["dev:rework", "dev:reverify", "dev:reject", "dev:priority", "dev:concurrency", "chat:close"],
+  confirmActions: ["chat:close"],
 };
 
 /** How long `ctx.ask` waits for an answer unless something narrower says. */
