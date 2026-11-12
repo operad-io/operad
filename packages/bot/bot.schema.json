@@ -30,6 +30,11 @@
             },
             "description": "Directories with a SKILL.md, given to the agent at every reply. A relative path is under the working directory."
           },
+          "model": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The model a new chat starts with; it must be one the chat's agent lists. Without it the agent's default."
+          },
           "speaker": {
             "type": "string",
             "minLength": 1,

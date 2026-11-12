@@ -13,6 +13,9 @@ export const MESSAGE_FACT = "chat.message";
 /** The event type a new message is: its source is `ios`, `telegram`, `cli`, `tui` or `other`. */
 export const MESSAGE_EVENT = "message";
 
+/** The fact type of a change of a chat's model: who changed it, from what, to what. */
+export const MODEL_FACT = "chat.model";
+
 /** The fact type of a chat that was closed. */
 export const CLOSED_FACT = "chat.closed";
 
@@ -59,6 +62,8 @@ export interface ChatData {
    * above are then what the chat started with.
    */
   readonly refresh?: string | undefined;
+  /** The model the next reply uses; one the agent's plugin lists. Absent for an agent that lists none. */
+  readonly model?: string | undefined;
   /** The model that gave the last reply, when its harness reported one. */
   readonly lastModel?: string | undefined;
   /** What the replies cost so far, in millionths of a dollar; absent while no reply reported a cost. */
@@ -79,8 +84,42 @@ export interface NewChat {
   readonly skills?: readonly string[] | undefined;
   readonly title: string;
   readonly channels?: readonly string[] | undefined;
+  /** See {@link ChatData.model}. */
+  readonly model?: string | undefined;
   /** See {@link ChatData.refresh}. */
   readonly refresh?: string | undefined;
+}
+
+/** What a model-change fact holds. */
+export interface ModelChangedData {
+  readonly [key: string]: unknown;
+  readonly by: { readonly via: string; readonly id: string };
+  readonly from: string | null;
+  readonly to: string;
+}
+
+/**
+ * The model a new chat starts with: the one asked for, else the preferred one
+ * (a bot's), else the agent's default. A model the agent does not list is refused
+ * by name; an agent that lists none takes none.
+ */
+export function startingModel(
+  harness: string,
+  models: { readonly list: readonly string[]; readonly default: string | null } | undefined,
+  asked: string | undefined,
+  preferred?: string | undefined,
+): string | undefined {
+  const list = models?.list ?? [];
+  const wanted = asked ?? preferred;
+  if (wanted !== undefined) {
+    if (!list.includes(wanted)) {
+      throw new Error(
+        `the agent "${harness}" cannot use the model "${wanted}"; it offers: ${list.join(", ") || "none"}`,
+      );
+    }
+    return wanted;
+  }
+  return models?.default ?? undefined;
 }
 
 /** What a message fact holds. Attachment paths stay empty until attachments exist. */
@@ -128,6 +167,7 @@ export function chatData(data: Readonly<Record<string, unknown>>): ChatData {
     closed: data.closed === true,
     channels: stringList(data.channels),
     ...(typeof data.refresh === "string" && data.refresh.length > 0 ? { refresh: data.refresh } : {}),
+    ...(typeof data.model === "string" && data.model.length > 0 ? { model: data.model } : {}),
     ...(typeof data.lastModel === "string" && data.lastModel.length > 0 ? { lastModel: data.lastModel } : {}),
     ...(typeof data.costMicros === "number" && Number.isFinite(data.costMicros) ? { costMicros: data.costMicros } : {}),
     ...(isCostQuality(data.costQuality) ? { costQuality: data.costQuality } : {}),
@@ -158,7 +198,7 @@ export function modelAndCost(
 
 /** What a chat uses, for its row and its page: `claude · sonnet · $0.12`. */
 export function agentLine(chat: ChatData): string {
-  return [chat.harness, ...modelAndCost(chat.lastModel, chat.costMicros, chat.costQuality)]
+  return [chat.harness, ...modelAndCost(chat.model ?? chat.lastModel, chat.costMicros, chat.costQuality)]
     .filter((part) => part.length > 0)
     .join(" · ");
 }
@@ -251,6 +291,7 @@ export async function createChat(
     closed: false,
     session: null,
     channels: input.channels ?? [],
+    ...(input.model === undefined ? {} : { model: input.model }),
     ...(input.refresh === undefined ? {} : { refresh: input.refresh }),
   };
   // The id counts up; a taken one (two chats made at once) moves on to the next.

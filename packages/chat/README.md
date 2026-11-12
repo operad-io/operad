@@ -22,6 +22,10 @@ client (`ios`, `telegram`, `cli`; any other client counts as `cli`), keyed by th
 message id and about the chat. Three default rules start `chat:reply` with `auto`
 on that event. A closed chat refuses the action and adds no message.
 
+## `chat:model <chat> --model <name>`
+
+Changes the model the chat's next reply uses. The argument is one of the models the chat's agent lists (its plugin declares them); a closed chat, or an agent that lists none, does not offer the action. A `chat.model` fact records who changed it, from what and to what. A chat whose model its agent cannot take fails the reply with a message naming the model; it never falls back to another one.
+
 ## `chat:close <chat>`
 
 Asks for confirmation and records a `chat.closed` fact naming who closed it. A
