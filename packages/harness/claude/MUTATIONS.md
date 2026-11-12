@@ -110,6 +110,14 @@ setup it depends on, in the order they were recorded. The root
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0240-M8 | packages/harness/claude/src/worker.ts | the logged Bash command no longer kept its line breaks (`keepLines` removed) | `a Bash call logs its command, its start time and its duration` |
+
+
+## T-0342 — a chat's effort
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0342-M5 | packages/harness/claude/src/index.ts | the plugin stopped declaring its efforts | `the efforts claude declares > its effort levels, a default among them, and its own flag` |
+| T-0342-M6 | packages/harness/claude/src/index.ts | the step ignored the `effort` param a chat passes | `claude/agent > an effort from a chat reaches the worker as claude's effort` |
 | T-0327-M11 | packages/harness/claude/src/access.ts | claude did not judge another server's tool by server and tool | `operad's own tools > another server's tool is judged by server and tool when the profile has allowMcp: a listed one runs, any other asks` |
 | T-0327-M14 | packages/harness/claude/src/worker.ts | claude was not given a bot's MCP servers | `a bot's servers are given to claude beside operad's, by name, as the commands the input names` |
 | T-0339-M18 | packages/harness/claude/src/worker.ts | claude's prompt went as text only, dropping the images | `images are sent with the prompt as image blocks of the one user message` |

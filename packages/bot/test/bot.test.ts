@@ -247,6 +247,38 @@ describe("bot:chat and the model", () => {
   });
 });
 
+describe("bot:chat and the effort", () => {
+  const effortOf = async (r: Awaited<ReturnType<typeof rig>>, id: string) => (await r.store.get(CHAT_TYPE, id))?.data.effort;
+
+  test("a chat starts with the agent's default effort, the bot's configured one, or the one asked for", async () => {
+    const r = await rig({ tuned: { harness: "pi", effort: "pi-high" } }, ["claude", "pi"]);
+    await syncBots(r.store, r.home, r.registry.settingsFor("bot"));
+    expect(await effortOf(r, await r.open("default"))).toBe("claude-low");
+    expect(await effortOf(r, await r.open("tuned"))).toBe("pi-high");
+    expect(await effortOf(r, await r.open("tuned", { effort: "pi-low" }))).toBe("pi-low");
+  });
+
+  test("an effort the agent does not list is refused by name", async () => {
+    const r = await rig({}, ["claude", "pi"]);
+    await syncBots(r.store, r.home, {});
+    await expect(r.open("default", { agent: "pi", effort: "claude-high" })).rejects.toThrow("claude-high");
+  });
+
+  test("a configured bot effort its agent does not list is refused by name, not replaced by the default", async () => {
+    const r = await rig({ odd: { harness: "pi", effort: "extreme" } }, ["claude", "pi"]);
+    await syncBots(r.store, r.home, r.registry.settingsFor("bot"));
+    await expect(r.open("odd")).rejects.toThrow("extreme");
+  });
+
+  test("the effort argument is an enum of the loaded agents' efforts", async () => {
+    const r = await rig({}, ["claude", "pi"]);
+    await syncBots(r.store, r.home, {});
+    const views = new Views({ registry: r.registry, store: r.store, onLog: () => undefined });
+    const chat = (await views.get("bot:default")).actions.find((a) => a.name === "bot:chat");
+    expect(chat?.args?.properties?.effort?.enum).toEqual(["claude-low", "claude-high", "pi-low", "pi-high"]);
+  });
+});
+
 describe("bot:chat", () => {
   test("says which chat it opened, so a client can open it", async () => {
     const r = await rig();

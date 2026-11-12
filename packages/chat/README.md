@@ -26,6 +26,10 @@ on that event. A closed chat refuses the action and adds no message.
 
 Changes the model the chat's next reply uses. The argument is one of the models the chat's agent lists (its plugin declares them); a closed chat, or an agent that lists none, does not offer the action. A `chat.model` fact records who changed it, from what and to what. A chat whose model its agent cannot take fails the reply with a message naming the model; it never falls back to another one.
 
+## `chat:effort <chat> --effort <level>`
+
+Changes the effort the chat's next reply uses. The argument is one of the levels the chat's agent lists (its plugin declares them; pi's thinking levels are its efforts); a closed chat, or an agent that lists none, does not offer the action. A `chat.effort` fact records who changed it, from what and to what. A chat whose effort its agent cannot take fails the reply with a message naming it; it never falls back to another one. The row shows the effort when it is not the agent's default.
+
 ## `chat:close <chat>`
 
 Asks for confirmation and records a `chat.closed` fact naming who closed it. A

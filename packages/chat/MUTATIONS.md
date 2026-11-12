@@ -51,3 +51,18 @@ the row fields.
 |---|---|---|---|
 | T-0338-M1 | packages/chat/src/reply.ts | the reply no longer passed the chat's model to the harness, so a model change was ignored by the next reply | `chat:model > the next reply uses the changed model, and the history says who changed it and to what` |
 | T-0338-M2 | packages/chat/src/index.ts | `chat:model` dropped the enum of the agent's models from its argument | `chat:model > the argument is an enum of the agent's models` |
+
+
+## T-0342 — a chat's effort
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0342-M10 | packages/chat/src/index.ts | `chat:effort` dropped the enum of the agent's efforts from its argument | `chat:effort > the argument is an enum of the agent's efforts` |
+| T-0342-M11 | packages/chat/src/index.ts | `chat:effort` changed the object without appending its fact | `chat:effort > the next reply uses the changed effort, and the history says who changed it and to what` |
+| T-0342-M12 | packages/chat/src/index.ts | `chat:effort` appended its fact but did not save the effort | `chat:effort > the next reply uses the changed effort, and the history says who changed it and to what` |
+| T-0342-M13 | packages/chat/src/reply.ts | the reply stopped passing the chat's effort to the harness | `chat:effort > the next reply uses the changed effort, and the history says who changed it and to what` |
+| T-0342-M14 | packages/chat/src/reply.ts | the reply no longer refused an effort its agent does not list | `the reply and the effort > a level the agent cannot take fails the reply naming it, and the agent is never called` |
+| T-0342-M15 | packages/chat/src/index.ts | `chat:effort` was offered on a closed chat | `chat:effort > a closed chat does not offer it` |
+| T-0342-M16 | packages/chat/src/model.ts | the row note left a chosen effort out | `chat:effort > the row leaves the default effort out and shows a choice` |
+| T-0342-M17 | packages/chat/src/model.ts | `startingEffort` accepted a level the agent does not list | `startingEffort > asked, else preferred, else the default; an unlisted one is refused` |
+| T-0342-M18 | packages/chat/src/model.ts | `createChat` dropped the effort it was given | `chat:effort > the next reply uses the changed effort, and the history says who changed it and to what` |

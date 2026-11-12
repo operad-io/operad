@@ -19,6 +19,7 @@ import {
   type ProjectSettingsDeclaration,
   type ActionContext,
   type ActionEnv,
+  type HarnessEfforts,
   type HarnessModels,
   type ActionEvent,
   type ActionRun,
@@ -997,6 +998,7 @@ export class PluginRegistry {
             limiter.report({ key, ...(ahead === undefined ? {} : { ahead }) }),
       stepLoaded: (name) => this.stepIndex.has(name),
       harnessModels: (name) => this.loadedModels()[name],
+      harnessEfforts: (name) => this.loadedEfforts()[name],
       runStep: (nestedUse, nestedParams, nestedOptions) => {
         // Declarations must not drift: tests fail on a call the step did not
         // declare; production still runs it.
@@ -1079,9 +1081,23 @@ export class PluginRegistry {
     return found;
   }
 
+  /** The efforts the loaded harness plugins declare, by plugin name. */
+  loadedEfforts(): Readonly<Record<string, HarnessEfforts>> {
+    const found: Record<string, HarnessEfforts> = {};
+    for (const item of this.plugins) {
+      if (item.kind === "harness" && item.efforts !== undefined) found[item.name] = item.efforts;
+    }
+    return found;
+  }
+
   /** What an action's checks may read. */
   actionEnv(): ActionEnv {
-    return { store: this.store, harnesses: this.loadedHarnesses(), models: this.loadedModels() };
+    return {
+      store: this.store,
+      harnesses: this.loadedHarnesses(),
+      models: this.loadedModels(),
+      efforts: this.loadedEfforts(),
+    };
   }
 
   /** Runs an action on an object, by `plugin/action` or a unique plain name. */
@@ -1139,6 +1155,7 @@ export class PluginRegistry {
       answer,
       harnesses: this.loadedHarnesses(),
       models: this.loadedModels(),
+      efforts: this.loadedEfforts(),
       ...(this.onEvent === undefined
         ? {}
         : { emit: this.actionEmitter(found.plugin.name) }),

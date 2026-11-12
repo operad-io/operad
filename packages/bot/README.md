@@ -35,11 +35,13 @@ digits, `-` and `_`. Fields: `cwd`, `harness` (the default agent), `skills`,
 - **Speaker**: how a chat of this bot labels the model's messages in its
   transcript; without it, the chat plugin's `speaker` is used.
 
-## `bot:chat <bot> [--agent <name>] [--title <text>]`
+## `bot:chat <bot> [--agent <name>] [--model <name>] [--effort <level>] [--title <text>]`
 
 Creates a `chat` with the bot as parent, titled `Bot (<name>)` unless given a
 title. The agent is the one given, else the bot's, else the first loaded one;
-it is fixed once chosen. The chat reaches repositories only through operad's
+it is fixed once chosen. The model and effort are the ones given, else the
+bot's own, else the agent's default; each must be one the agent lists and can
+change later. The chat reaches repositories only through operad's
 tools (`operadTools`) and `dev`'s verbs, never by editing their files: the paths
 of the repositories `dev` knows are in `denyPaths` (read again at every reply, so
 a repository added later is covered), its directory is not a repository and

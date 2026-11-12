@@ -35,6 +35,11 @@
             "minLength": 1,
             "description": "The model a new chat starts with; it must be one the chat's agent lists. Without it the agent's default."
           },
+          "effort": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The effort a new chat starts with; it must be one the chat's agent lists. Without it the agent's default."
+          },
           "speaker": {
             "type": "string",
             "minLength": 1,

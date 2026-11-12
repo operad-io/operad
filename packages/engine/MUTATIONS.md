@@ -702,3 +702,13 @@ the row fields.
 |---|---|---|---|
 | T-0354-M1 | packages/engine/src/log/sqlite.ts | `ensureSchema` took the final immediate transaction on every open again (the old code), so a command that only reads waited out the busy timeout while another process held the log's write lock and failed with "database is locked" | `operad list and running while another process holds the log's write lock > both answer with code 0 instead of failing with 'database is locked'` (packages/cli/test/list-json-locked.test.ts, through `main`) |
 | T-0354-M2 | packages/engine/src/log/sqlite.ts | `schemaNeedsWork` stopped checking the base `runs`, `facts` and `inputs` tables and the `runs_one_active` index, so a current-version store missing one of them was opened without repairing it | `a current store missing a base table or index is repaired on open` (packages/engine/test/sqlite.test.ts) |
+
+
+## T-0342 — a chat's effort
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0342-M1 | packages/engine/src/plugin/registry.ts | `actionEnv` left the loaded harness efforts out | `a harness plugin's efforts > are offered to actions by plugin name, with their flag` |
+| T-0342-M2 | packages/engine/src/plugin/validate.ts | an `efforts.default` outside the list was accepted | `a harness plugin's efforts > a default outside the list is refused` |
+| T-0342-M3 | packages/engine/src/plugin/validate.ts | an empty `efforts.flag` was accepted | `a harness plugin's efforts > a flag that is not a non-empty string is refused` |
+| T-0342-M4 | packages/engine/src/plugin/validate.ts | a domain plugin could declare `efforts` | `a harness plugin's efforts > only a harness declares them` |

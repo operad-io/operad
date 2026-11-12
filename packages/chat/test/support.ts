@@ -27,13 +27,22 @@ export interface Call {
 /** What a fake harness does with one call. */
 export type Script = (ctx: StepContext, call: Call) => Promise<PluginStepResult> | PluginStepResult;
 
+type Levels = { readonly list: readonly string[]; readonly default: string | null };
+
 /** A harness plugin whose answers the test writes. */
-export function fakeHarness(name: string, script: Script, calls: Call[], models?: { readonly list: readonly string[]; readonly default: string | null }) {
+export function fakeHarness(
+  name: string,
+  script: Script,
+  calls: Call[],
+  models?: Levels,
+  efforts?: Levels & { readonly flag?: string },
+) {
   return definePlugin({
     name,
     kind: "harness",
     version: "0.0.0",
     ...(models === undefined ? {} : { models }),
+    ...(efforts === undefined ? {} : { efforts }),
     steps: [
       {
         name: "agent",
@@ -61,7 +70,12 @@ export interface Rig {
   readonly calls: Call[];
   readonly events: TriggerEvent[];
   /** A chat that uses the fake harness. */
-  chat(extra?: { readonly access?: Record<string, JsonValue>; readonly model?: string }): Promise<string>;
+  chat(extra?: {
+    readonly access?: Record<string, JsonValue>;
+    readonly model?: string;
+    readonly effort?: string;
+    readonly effortDefault?: string;
+  }): Promise<string>;
   /** A person's message as a fact, without the event. */
   say(chat: string, text: string, attachments?: readonly unknown[]): Promise<string>;
   /** Runs one round of the reply step. */
@@ -73,17 +87,24 @@ export interface Rig {
   ): Promise<PluginStepResult>;
 }
 
+/**
+ * The harness the test uses is either `levelOrHarness` (a name) or `harness`;
+ * the efforts are `efforts`, or `levelOrHarness` when it is an object.
+ */
 export async function rig(
   script: Script,
-  models?: { readonly list: readonly string[]; readonly default: string | null },
+  models?: Levels,
+  levelOrHarness?: (Levels & { readonly flag?: string }) | string,
   harness = "fake",
 ): Promise<Rig> {
+  const efforts = typeof levelOrHarness === "string" ? undefined : levelOrHarness;
+  const name = typeof levelOrHarness === "string" ? levelOrHarness : harness;
   const root = await mkdtemp(join(tmpdir(), "chat-test-"));
   roots.push(root);
   const calls: Call[] = [];
   const events: TriggerEvent[] = [];
   const store = new MemoryPluginStore({ root: join(root, "store") });
-  const registry = new PluginRegistry([createChatPlugin(), fakeHarness(harness, script, calls, models)], {
+  const registry = new PluginRegistry([createChatPlugin(), fakeHarness(name, script, calls, models, efforts)], {
     home: join(root, "home"),
     cwd: root,
     store,
@@ -102,7 +123,15 @@ export async function rig(
     async chat(extra) {
       return createChat(
         store,
-        { harness, cwd: root, title: "Test", ...(extra?.access === undefined ? {} : { access: extra.access }), ...(extra?.model === undefined ? {} : { model: extra.model }) },
+        {
+          harness: name,
+          cwd: root,
+          title: "Test",
+          ...(extra?.access === undefined ? {} : { access: extra.access }),
+          ...(extra?.model === undefined ? {} : { model: extra.model }),
+          ...(extra?.effort === undefined ? {} : { effort: extra.effort }),
+          ...(extra?.effort === undefined || extra?.effortDefault === undefined ? {} : { effortDefault: extra.effortDefault }),
+        },
         "test",
       );
     },

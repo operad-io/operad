@@ -144,10 +144,11 @@ it with `worker.use` in `.operad/dev.json`.
 | `--model` | a model name claude takes, such as `opus` | the model for this step |
 | `--effort` | `low`, `medium`, `high`, `xhigh` or `max` | the reasoning effort for this step |
 
-A flag in `args` wins over the setting of the same name. Any other entry fails
-the step at once, before the worker starts, with result `failed`, reason
-`invalid_args` and a message that names the entry: an unknown flag, a flag
-without its value, an effort outside the set, a flag given twice, the `=`
+A flag in `args` wins over the setting of the same name. A chat passes its
+effort as the step param `effort`, which also wins over the setting. Any other
+entry fails the step at once, before the worker starts, with result `failed`,
+reason `invalid_args` and a message that names the entry: an unknown flag, a
+flag without its value, an effort outside the set, a flag given twice, the `=`
 spelling.
 
 ### Settings

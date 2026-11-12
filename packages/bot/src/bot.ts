@@ -57,6 +57,11 @@ export const BOT_SETTINGS: ActionArgsSchema = {
             minLength: 1,
             description: "The model a new chat starts with; it must be one the chat's agent lists. Without it the agent's default.",
           },
+          effort: {
+            type: "string",
+            minLength: 1,
+            description: "The effort a new chat starts with; it must be one the chat's agent lists. Without it the agent's default.",
+          },
           speaker: {
             type: "string",
             minLength: 1,
@@ -143,6 +148,7 @@ export interface BotSettings {
   readonly cwd?: string;
   readonly harness?: string;
   readonly model?: string;
+  readonly effort?: string;
   readonly skills?: readonly string[];
   readonly speaker?: string;
   readonly access?: Readonly<Record<string, JsonValue>>;
@@ -154,6 +160,7 @@ export interface ResolvedBot {
   readonly cwd: string;
   readonly harness: string | null;
   readonly model: string | null;
+  readonly effort: string | null;
   /** Absolute directories, each with a SKILL.md. */
   readonly skills: readonly string[];
   readonly speaker: string | null;
@@ -368,6 +375,7 @@ export function resolveBot(
     cwd,
     harness: settings.harness ?? null,
     model: settings.model ?? null,
+    effort: settings.effort ?? null,
     skills,
     speaker: settings.speaker ?? null,
     access: accessFor(home, settings, repositories, [...skills, join(cwd, "skills")]),
