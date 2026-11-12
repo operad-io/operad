@@ -20,6 +20,7 @@ import {
   type ActionContext,
   type ActionEvent,
   type ActionRun,
+  isActionOutcome,
   type ActionRunOptions,
   type ActionTypeDefinition,
   type ObjectData,
@@ -1115,6 +1116,14 @@ export class PluginRegistry {
         : { runs: this.runControl() }),
     };
     const value = await found.action.run(ctx, personArgs);
+    if (isActionOutcome(value)) {
+      return {
+        plugin: found.plugin.name,
+        action: found.action.name,
+        value: value.text,
+        opens: value.opens,
+      };
+    }
     return {
       plugin: found.plugin.name,
       action: found.action.name,

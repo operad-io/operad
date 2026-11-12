@@ -114,14 +114,14 @@ async function makeHarness(options: HarnessOptions = {}): Promise<Harness> {
       : new MemoryPluginStore({ root: storeRoot });
   const log = openConfigLog(config);
   const registry = await loadPluginRegistry({ home, store });
+  const logs: string[] = [];
   const views = createViews({
     registry,
     store,
     log,
     loadTimeoutMs: options.loadTimeoutMs ?? 200,
-    onLog: () => undefined,
+    onLog: (message) => logs.push(message),
   });
-  const logs: string[] = [];
   const port = await freePort();
   const server = await startHttpServer({
     home,
@@ -653,6 +653,37 @@ describe("http server", () => {
       });
       expect(drop.status).toBe(200);
       expect(h.store.get("item", "one")?.data.dropped).toBe(true);
+    } finally {
+      await h.close();
+    }
+  });
+
+  test("an action's opens passes through /v1/act when it names an existing object, and is dropped with a log line when not", async () => {
+    const h = await makeHarness();
+    try {
+      seed(h, "one", { title: "First", state: "new" });
+      seed(h, "two", { title: "Second", state: "new" });
+      const make = async (args: Record<string, unknown>): Promise<Record<string, unknown>> => {
+        const response = await api(h, "/v1/act", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "webtest:make", id: "item:one", args }),
+        });
+        expect(response.status).toBe(200);
+        return json(response);
+      };
+      const named = await make({ opens: "item:two" });
+      expect(named.value).toBe("made it");
+      expect(named.opens).toBe("item:two");
+
+      const missing = await make({ opens: "item:nope" });
+      expect(missing.value).toBe("made it");
+      expect("opens" in missing).toBe(false);
+      expect(h.logs.some((line) => line.includes("item:nope") && line.includes("not passed on"))).toBe(true);
+
+      const plain = await make({});
+      expect(plain.value).toBe("made nothing");
+      expect("opens" in plain).toBe(false);
     } finally {
       await h.close();
     }

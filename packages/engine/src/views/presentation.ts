@@ -258,6 +258,8 @@ export interface ViewActionRun {
   readonly action: string;
   readonly name: string;
   readonly value: unknown;
+  /** The object the action created, as `type:id`; only one that exists. */
+  readonly opens?: string | undefined;
   /** The result was already true, so nothing ran; `value` says so. */
   readonly settled?: true | undefined;
 }
@@ -1372,12 +1374,36 @@ export class Views {
         cwd: this.cwd,
       },
     );
+    const opens = await this.existingOpens(target.info.name, result.opens);
     return {
       plugin: target.plugin,
       action: target.action.name,
       name: target.info.name,
       value: result.value,
+      ...(opens === undefined ? {} : { opens }),
     };
+  }
+
+  /** `opens` when it names an object that exists; otherwise the log says why. */
+  private async existingOpens(action: string, opens: string | undefined): Promise<string | undefined> {
+    if (opens === undefined) return undefined;
+    const typed = splitId(opens);
+    if (typed === undefined) {
+      this.onLog(`action "${action}": opens "${opens}" is not <type>:<id>; not passed on`);
+      return undefined;
+    }
+    let found: ResolvedObject | undefined;
+    try {
+      found = await this.resolve(opens);
+    } catch (error) {
+      this.onLog(`action "${action}": opens "${opens}" cannot be resolved (${messageOf(error)}); not passed on`);
+      return undefined;
+    }
+    if (found.object === undefined) {
+      this.onLog(`action "${action}": opens "${opens}" names no existing object; not passed on`);
+      return undefined;
+    }
+    return `${found.type}:${found.id}`;
   }
 
   private finishSection(

@@ -968,6 +968,37 @@ describe("operad mcp", () => {
     expect(invoked?.data.actor).toEqual({ via: "mcp", id: "lead" });
   });
 
+  test("act passes opens through when it names an existing object and drops it when not", async () => {
+    const { home } = await makeHome({
+      plugins: [
+        fileURLToPath(new URL("../../engine/test/fixtures/plugins/opens.ts", import.meta.url)),
+      ],
+      mcp: { actions: ["opener:make", "opener:ghost"], confirmActions: [] },
+    });
+    putObject(home, "thing", "a", {});
+    putObject(home, "thing", "b", {});
+    const child = openSession(home);
+    try {
+      await child.request(1, "initialize", { protocolVersion: PROTOCOL_VERSION });
+      child.notify("notifications/initialized");
+      const made = await child.request(2, "tools/call", {
+        name: "act",
+        arguments: { action: "opener:make", id: "thing:a" },
+      });
+      expect(textOf(made)).toContain("made it");
+      expect(structuredOf(made).opens).toBe("thing:b");
+      const ghost = await child.request(3, "tools/call", {
+        name: "act",
+        arguments: { action: "opener:ghost", id: "thing:a" },
+      });
+      expect(textOf(ghost)).toContain("made a ghost");
+      expect("opens" in structuredOf(ghost)).toBe(false);
+    } finally {
+      const closed = await child.close();
+      expect(closed.code).toBe(0);
+    }
+  });
+
   test("instructions follow the configured allow lists", () => {
     const none = { channel: { notify: [], loopAfter: 3 }, actions: [], confirmActions: [] };
     expect(instructionsFor(none)).toBe(INSTRUCTIONS);

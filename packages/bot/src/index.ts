@@ -152,7 +152,7 @@ const chatAction: ActionTypeDefinition = {
       title: input.title,
       cause: "action:bot/chat",
     });
-    return `opened chat ${id}`;
+    return { text: `opened chat ${id}`, opens: `chat:${id}` };
   },
 };
 

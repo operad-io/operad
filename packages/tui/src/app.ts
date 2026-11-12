@@ -256,12 +256,13 @@ function themeOf(renderer: CliRenderer, fallback: TuiTheme): TuiTheme {
  * renderer; a test wires it to fakes.
  */
 /** A result that was already true says so: its line shows as the notice. */
-function settledNotice(ran: unknown): { readonly notice?: string } {
+function settledNotice(ran: unknown): { readonly notice?: string; readonly opens?: string } {
   if (typeof ran !== "object" || ran === null) return {};
-  const { settled, value } = ran as { settled?: unknown; value?: unknown };
-  return settled === true && typeof value === "string" && value.length > 0
-    ? { notice: value }
-    : {};
+  const { settled, value, opens } = ran as { settled?: unknown; value?: unknown; opens?: unknown };
+  return {
+    ...(settled === true && typeof value === "string" && value.length > 0 ? { notice: value } : {}),
+    ...(typeof opens === "string" && opens.length > 0 ? { opens } : {}),
+  };
 }
 
 export function startShell(deps: TuiShellDeps): TuiShell {

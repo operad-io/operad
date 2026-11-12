@@ -127,6 +127,14 @@ export default definePlugin({
       },
     },
     {
+      name: "make",
+      on: "item",
+      when: () => true,
+      run() {
+        return { text: "made it", opens: "item:two" };
+      },
+    },
+    {
       name: "fail",
       on: "item",
       when: () => true,

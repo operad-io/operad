@@ -56,6 +56,18 @@ async function openChat(r: Awaited<ReturnType<typeof rig>>, args: Record<string,
 }
 
 describe("dev:chat", () => {
+  test("says which chat it opened, so a client can open it", async () => {
+    const r = await rig();
+    const repo = await must(r.store, "repo", "repository");
+    const run = await r.registry.runAction("dev/chat", {}, {
+      object: { type: "repo", id: repo.id, data: repo.data },
+      actor: { via: "cli", id: "me" },
+    });
+    const id = /C-\d+/.exec(String(run.value))?.[0];
+    expect(run.opens).toBe(`chat:${id}`);
+    expect(await r.store.get(CHAT_TYPE, id ?? "")).toBeDefined();
+  });
+
   test("creates a chat under the repository, in the main clone, read-only", async () => {
     const r = await rig();
     const id = await openChat(r, { title: "About the build" });

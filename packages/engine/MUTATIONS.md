@@ -646,3 +646,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0313-M1 | packages/engine/src/views/settings.ts | the prefix always added the file name again, so a plugin-named file was `demo.demo` and no longer met another file's names | `settings > a project file named after its plugin uses the plugin name alone`; `settings > a name two project files would claim is refused instead of picking one` |
+
+## T-0328 — an action says which object it created
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0328-M1 | packages/engine/src/http/server.ts | `/v1/act` dropped `opens` from its response | `http server > an action's opens passes through /v1/act when it names an existing object, and is dropped with a log line when not` |

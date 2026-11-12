@@ -41,6 +41,41 @@ class View implements TuiView {
 }
 
 describe("actions against the in-process server", () => {
+  test("an action that returns opens opens that object's page", async () => {
+    const h = await makeHarness();
+    const client = new TuiClient({ url: h.base, token: h.token });
+    const view = new View();
+    const shell = startShell({
+      client,
+      events: () => new Quiet(),
+      view,
+      width: 120,
+      height: 30,
+      theme: "dark",
+      clock: immediateClock,
+    });
+    try {
+      h.store.put("item", "one", { title: "One", state: "new" }, "seed");
+      h.store.put("item", "two", { title: "Two", state: "new" }, "seed");
+      shell.key({ name: "r" });
+      await view.until((state) => state.tabs.find((tab) => tab.id === "plugin:tuitest")?.list.rows.length === 2);
+      shell.key({ name: "3" });
+      shell.key({ name: "enter" });
+      await view.until((state) => (state.object?.actions.length ?? 0) > 0);
+      shell.key({ name: ":", sequence: ":" });
+      for (const char of "make") {
+        shell.key({ name: char === " " ? "space" : char, sequence: char });
+      }
+      shell.key({ name: "enter" });
+      await view.until((state) => state.object?.row.title === "Two" && state.object.loading === false);
+      expect(view.last?.object?.id).toBe("two");
+    } finally {
+      shell.stop();
+      await shell.done;
+      await h.close();
+    }
+  });
+
   test("a note action and a confirm action reach the plugin with the right body", async () => {
     const h = await makeHarness();
     const bodies: Record<string, unknown>[] = [];

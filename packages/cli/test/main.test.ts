@@ -372,6 +372,26 @@ describe("operad command", () => {
     }
   });
 
+  test("an action that opens an object prints only its line of text", async () => {
+    const { root, home } = await makeHome();
+    await Bun.write(
+      join(home, "config.json"),
+      JSON.stringify({
+        plugins: [fileURLToPath(new URL("../../engine/test/fixtures/plugins/opens.ts", import.meta.url))],
+        store: { backend: "jsonl", path: join(root, "store") },
+      }),
+    );
+    const store = new FilePluginStore({ root: join(root, "store", "plugins") });
+    store.put("thing", "a", {}, "seed");
+    store.put("thing", "b", {}, "seed");
+    const output = capture();
+    expect(await main(["opener:make", "thing:a"], { home, io: output.io })).toBe(0);
+    expect(output.text()).toBe("made it\n");
+    const ghost = capture();
+    expect(await main(["opener:ghost", "thing:a"], { home, io: ghost.io })).toBe(0);
+    expect(ghost.text()).toBe("made a ghost\n");
+  });
+
   test("an action records its actor and history shows it", async () => {
     const { home } = await makeHome();
     const config = await readConfig(home);

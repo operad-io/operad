@@ -684,7 +684,12 @@ export type TuiStateEvent =
   /** The caller saved the chosen child layout; it is saved once. */
   | { readonly type: "layout-launched" }
   /** The action ran, or its result was already true and `notice` says so. */
-  | { readonly type: "action-done"; readonly notice?: string | undefined }
+  | {
+      readonly type: "action-done";
+      readonly notice?: string | undefined;
+      /** The object the action created, as `type:id`; its page opens. */
+      readonly opens?: string | undefined;
+    }
   /** The server refused the action; the message shows as the line, the status does not. */
   | {
       readonly type: "action-error";
@@ -1366,6 +1371,35 @@ function openObject(state: TuiState): TuiState {
     objectVersion: version,
     objectRequest: { id: requestId, version },
     sectionRequest: undefined,
+  };
+}
+
+/** Opens the page of an object an action created, named `type:id`. */
+function openNamed(state: TuiState, id: string): TuiState {
+  const colon = id.indexOf(":");
+  if (colon <= 0 || colon === id.length - 1) return state;
+  const type = id.slice(0, colon);
+  const version = state.objectVersion + 1;
+  const object: TuiObject = {
+    id,
+    source: id,
+    type,
+    link: "",
+    // A placeholder until the page answers; the page's own row replaces it.
+    row: { id, title: id, state: "", waiting: false, running: false, type },
+    sections: [],
+    active: 0,
+    actions: [],
+    loading: true,
+    version,
+  };
+  return {
+    ...state,
+    object,
+    objectVersion: version,
+    objectRequest: { id, version },
+    sectionRequest: undefined,
+    followPending: false,
   };
 }
 
@@ -2693,12 +2727,14 @@ export function reduce(state: TuiState, event: TuiStateEvent): TuiState {
       return { ...state, settingRequest: undefined, settingsRequest: false };
     case "settings":
       return { ...state, settings: event.settings };
-    case "action-done":
-      return {
+    case "action-done": {
+      const done: TuiState = {
         ...(event.notice === undefined ? state : withNotice(state, event.notice)),
         acting: false,
         actionRequest: undefined,
       };
+      return event.opens === undefined ? done : openNamed(done, event.opens);
+    }
     case "action-error":
       return actionFailed(state, event.message);
     case "connection":

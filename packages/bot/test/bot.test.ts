@@ -168,6 +168,18 @@ describe("repositories", () => {
 });
 
 describe("bot:chat", () => {
+  test("says which chat it opened, so a client can open it", async () => {
+    const r = await rig();
+    await syncBots(r.store, r.home, {});
+    const object = await r.store.get("bot", DEFAULT_BOT);
+    const run = await r.registry.runAction("bot/chat", {}, {
+      object: { type: "bot", id: DEFAULT_BOT, data: object?.data ?? {} },
+      actor: { via: "cli", id: "me" },
+    });
+    const id = /C-\d+/.exec(String(run.value))?.[0];
+    expect(run.opens).toBe(`chat:${id}`);
+  });
+
   test("opens a chat of the chat plugin with the bot as its parent", async () => {
     const r = await rig();
     await syncBots(r.store, r.home, {});

@@ -798,7 +798,33 @@ export interface ActionTypeDefinition {
         env: ActionEnv,
       ) => MaybePromise<string | undefined>)
     | undefined;
+  /**
+   * Returns the line to show, or an `ActionOutcome` when the action created an
+   * object a client should open. Any other value is the result as it is.
+   */
   readonly run: (ctx: ActionContext, args: unknown) => MaybePromise<unknown>;
+}
+
+/**
+ * What an action returns when it created an object: the line of text a person
+ * reads, and `opens`, the object as `type:id`. Returning only text still works.
+ * The kernel, the client API and HTTP pass `opens` on unchanged.
+ */
+export interface ActionOutcome {
+  readonly text: string;
+  readonly opens: string;
+}
+
+/** Whether an action's return value is an `ActionOutcome`. */
+export function isActionOutcome(value: unknown): value is ActionOutcome {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const keys = Object.keys(value);
+  const record = value as { readonly text?: unknown; readonly opens?: unknown };
+  return (
+    keys.length === 2 &&
+    typeof record.text === "string" &&
+    typeof record.opens === "string"
+  );
 }
 
 /** An event an action sends: the person's client is the source. */
@@ -880,6 +906,8 @@ export interface ActionRun {
   readonly plugin: string;
   readonly action: string;
   readonly value: unknown;
+  /** The object the action created, as `type:id`, when it said so. */
+  readonly opens?: string | undefined;
 }
 
 /** Asks the kernel to start a run of one of the plugin's flows. */
