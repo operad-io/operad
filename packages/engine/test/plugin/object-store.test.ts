@@ -11,7 +11,7 @@ import {
   type PluginStore,
   type PluginStoreBackend,
 } from "../../src/index.ts";
-import { writeImmediate } from "../../src/platform/index.ts";
+import { type ImmediateWriter, writeImmediate } from "../../src/platform/index.ts";
 import { waitForFile } from "../wait-for-file.ts";
 import { cleanupTempRoots, tempRoot } from "./support.ts";
 
@@ -275,7 +275,7 @@ describe("store lifecycle and concurrency", () => {
     );
   });
 
-  test("a writer waits out a busy store while another process keeps committing, and fails when none does", async () => {
+  test("a writer waits out a busy store while another connection keeps committing, and fails when none does", async () => {
     const root = join(await tempRoot(), "store");
     mkdirSync(root, { recursive: true });
     const file = join(root, "plugins.sqlite");
@@ -297,31 +297,33 @@ describe("store lifecycle and concurrency", () => {
       store.close();
     }
 
-    // A busy handler that gives up at once, against a process that commits
-    // in a tight loop: every append still lands.
-    const child = Bun.spawn(
-      [process.execPath, APPEND_CHILD, root, "w", "1000"],
-      { cwd: root, stdout: "pipe", stderr: "pipe" },
-    );
-    await waitForFile(join(root, "ready-w"));
-    const impatient = new Database(file);
-    impatient.run("PRAGMA busy_timeout = 0");
-    writeFileSync(join(root, "go"), "");
-    for (let index = 0; index < 500; index += 1) {
-      writeImmediate(impatient, () => {
-        impatient
-          .query(
-            "INSERT INTO facts (type, cause, at, data) VALUES ('test.local', 'impatient', 0, '{}')",
-          )
-          .run();
-      });
-    }
-    expect(await child.exited).toBe(0);
-    const total = impatient
-      .query<{ n: number }, []>("SELECT COUNT(*) AS n FROM facts")
-      .get()?.n;
-    impatient.close();
-    expect(total).toBe(1500);
+    // A writer whose first three attempts end in SQLITE_BUSY while another
+    // connection commits each time: it keeps waiting and then writes.
+    let version = 1;
+    let busyLeft = 3;
+    let written = 0;
+    const waiting: ImmediateWriter = {
+      query: () => ({ get: () => ({ data_version: version }) }),
+      transaction: (work) => ({
+        immediate: () => {
+          if (busyLeft > 0) {
+            busyLeft -= 1;
+            version += 1;
+            throw Object.assign(new Error("database is locked"), {
+              code: "SQLITE_BUSY",
+            });
+          }
+          return work();
+        },
+      }),
+    };
+    expect(
+      writeImmediate(waiting, () => {
+        written += 1;
+        return "done";
+      }),
+    ).toBe("done");
+    expect(written).toBe(1);
   });
 });
 

@@ -71,10 +71,17 @@ function currentJournalMode(database: Database): string | undefined {
     .get()?.journal_mode;
 }
 
-function dataVersion(database: Database): number | undefined {
-  return database
-    .query<{ data_version: number }, []>("PRAGMA data_version")
-    .get()?.data_version;
+/** The two calls `writeImmediate` makes; a `Database` has both. */
+export interface ImmediateWriter {
+  transaction<T>(work: () => T): { immediate(): T };
+  query(sql: string): { get(): unknown };
+}
+
+function dataVersion(database: ImmediateWriter): number | undefined {
+  const row = database.query("PRAGMA data_version").get();
+  if (typeof row !== "object" || row === null) return undefined;
+  const version = (row as { data_version?: unknown }).data_version;
+  return typeof version === "number" ? version : undefined;
 }
 
 /**
@@ -85,7 +92,7 @@ function dataVersion(database: Database): number | undefined {
  * SQLITE_BUSY is final only when no other connection committed while this one
  * waited: a holder that never commits is stuck, and the error says so.
  */
-export function writeImmediate<T>(database: Database, work: () => T): T {
+export function writeImmediate<T>(database: ImmediateWriter, work: () => T): T {
   for (;;) {
     const before = dataVersion(database);
     try {
