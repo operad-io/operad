@@ -17,6 +17,7 @@ import {
   PROTOCOL_VERSION,
   TOOLS,
 } from "../src/index.ts";
+import { openSession } from "./session.ts";
 import { cleanupTempRoots, tempRoot } from "../../engine/test/plugin/support.ts";
 
 afterAll(cleanupTempRoots);
@@ -48,6 +49,9 @@ const kernelNamePluginPath = fileURLToPath(
 );
 const channelPluginPath = fileURLToPath(
   new URL("./fixtures/channel.ts", import.meta.url),
+);
+const refusedPluginPath = fileURLToPath(
+  new URL("./fixtures/refused.ts", import.meta.url),
 );
 
 interface Home {
@@ -289,7 +293,11 @@ interface Child {
   close(): Promise<{ readonly out: string; readonly err: string; readonly code: number }>;
 }
 
-function start(
+/**
+ * A real `operad mcp` process. Only the entry-wiring and usage-error tests use
+ * this; every other test opens the server in this process.
+ */
+function startProcess(
   home: string,
   cwd = home,
   extra: readonly string[] = [],
@@ -376,6 +384,22 @@ function errorOf(response: Record<string, unknown>): Record<string, unknown> {
 }
 
 describe("operad mcp", () => {
+  test("the operad mcp command serves initialize and tools/list on stdio", async () => {
+    const { home } = await makeHome();
+    const child = startProcess(home);
+    try {
+      const initialized = await child.request(1, "initialize", {
+        protocolVersion: PROTOCOL_VERSION,
+      });
+      expect(resultOf(initialized).protocolVersion).toBe(PROTOCOL_VERSION);
+      const listed = await child.request(2, "tools/list", {});
+      expect(resultOf(listed).tools).toEqual(TOOLS);
+    } finally {
+      const closed = await child.close();
+      expect(closed.code).toBe(0);
+    }
+  });
+
   test("offers no tool to read or change settings: owner decisions are not offered here", () => {
     expect(TOOLS.map((tool) => tool.name).filter((name) => /set/i.test(name))).toEqual([]);
   });
@@ -391,7 +415,7 @@ describe("operad mcp", () => {
     seed(home, "two", { title: "Second", state: "open", mark: "integrating", badge: "#2" });
     const waitingRun = await addRun(home, "item:one", { prompt: "Approve?" });
     const runningRun = await addRun(home, "item:two", undefined);
-    const child = start(home);
+    const child = openSession(home);
     try {
       const initialized = await child.request(1, "initialize", {
         protocolVersion: PROTOCOL_VERSION,
@@ -566,10 +590,129 @@ describe("operad mcp", () => {
     }
   });
 
+  test("refuses malformed requests with the JSON-RPC codes and answers no notification", async () => {
+    const { home } = await makeHome();
+    const child = openSession(home);
+    try {
+      const next = async () =>
+        JSON.parse(await child.lines.next()) as Record<string, unknown>;
+
+      child.sendText("not json\n");
+      expect(errorOf(await next())).toMatchObject({
+        code: -32700,
+        message: "the line is not JSON",
+      });
+
+      child.send([]);
+      expect(errorOf(await next())).toMatchObject({
+        code: -32600,
+        message: "the message must be an object",
+      });
+
+      child.send({ jsonrpc: "1.0", id: 1, method: "ping" });
+      expect(errorOf(await next())).toMatchObject({
+        code: -32600,
+      });
+
+      child.send({ jsonrpc: "2.0", id: {}, method: "ping" });
+      expect(errorOf(await next())).toMatchObject({
+        code: -32600,
+      });
+
+      child.send({ jsonrpc: "2.0", id: "abc", method: 5 });
+      expect(errorOf(await next())).toMatchObject({
+        code: -32600,
+      });
+
+      child.send({ jsonrpc: "2.0", id: null, method: "nope" });
+      expect(errorOf(await next())).toMatchObject({
+        code: -32601,
+        message: 'no method "nope"',
+      });
+
+      // A notification never gets a response, including an unknown one.
+      child.notify("notifications/other");
+      expect(resultOf(await child.request(2, "ping"))).toEqual({});
+      expect(resultOf(await child.request(3, "ping", null))).toEqual({});
+
+      for (const [id, method, params, message] of [
+        [4, "initialize", [], "initialize needs an object of parameters"],
+        [5, "ping", ["x"], "this method takes no parameters"],
+        [6, "ping", { x: 1 }, "this method takes no parameters"],
+        [7, "tools/list", [], "this method takes no parameters"],
+        [8, "tools/call", [], "tools/call needs an object of parameters"],
+        [9, "tools/call", {}, "tools/call needs a tool name"],
+        [10, "tools/call", { name: "" }, "tools/call needs a tool name"],
+        [11, "tools/call", { name: "nope" }, 'unknown tool "nope"'],
+        [12, "tools/call", { name: "show" }, 'missing required argument "id"'],
+      ] as const) {
+        const response = await child.request(id, method, params);
+        expect(errorOf(response)).toMatchObject({
+          code: -32602,
+          message,
+        });
+      }
+      expect(resultOf(await child.request(13, "ping", {}))).toEqual({});
+      expect(resultOf(await child.request(14, "tools/list", {}))).toHaveProperty(
+        "tools",
+      );
+    } finally {
+      const closed = await child.close();
+      expect(closed.code).toBe(0);
+    }
+  });
+
+  test("reads CRLF lines and a last line without a newline", async () => {
+    const { home } = await makeHome();
+    const child = openSession(home);
+    child.sendText(
+      `${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping", params: {} })}\r\n`,
+    );
+    expect(JSON.parse(await child.lines.next())).toMatchObject({ id: 1 });
+    child.sendText(
+      JSON.stringify({ jsonrpc: "2.0", id: 2, method: "ping", params: {} }),
+    );
+    const closed = await child.close();
+    const lines = closed.out.split("\n");
+    expect(lines).toHaveLength(2);
+    expect(JSON.parse(lines[1] ?? "{}")).toMatchObject({ id: 2 });
+  });
+
+  test("a refused plugin is logged to stderr and the server still serves", async () => {
+    const { home } = await makeHome({ plugins: [refusedPluginPath] });
+    const child = openSession(home);
+    try {
+      const listed = await child.request(1, "tools/list", {});
+      expect(resultOf(listed).tools).toEqual(TOOLS);
+    } finally {
+      const closed = await child.close();
+      expect(closed.err).toContain('plugin "refused"');
+      expect(closed.code).toBe(0);
+    }
+  });
+
+  test("a sent-rows file that cannot be read is logged to stderr", async () => {
+    const { root, home } = await makeHome();
+    const hash = new Bun.CryptoHasher("sha1")
+      .update(join(root, "store"))
+      .digest("hex")
+      .slice(0, 12);
+    writeFileSync(join(home, `mcp-channel-${hash}.json`), "not json");
+    const child = openSession(home, home, ["--claude-channel"]);
+    try {
+      const listed = await child.request(1, "tools/list", {});
+      expect(resultOf(listed).tools).toEqual(TOOLS);
+    } finally {
+      const closed = await child.close();
+      expect(closed.err).toContain("the sent rows could not be read");
+      expect(closed.code).toBe(0);
+    }
+  });
+
   test("writes only JSON-RPC to stdout when a view logs a failure", async () => {
     const { home } = await makeHome();
     seed(home, "async", { title: "Async", state: "new", mode: "async" });
-    const child = start(home);
+    const child = openSession(home);
     try {
       await child.request(1, "initialize", { protocolVersion: PROTOCOL_VERSION });
       const list = await child.request(2, "tools/call", {
@@ -597,7 +740,7 @@ describe("operad mcp", () => {
       },
     });
     seed(home, "one", { title: "First", state: "new" });
-    const child = start(home);
+    const child = openSession(home);
     try {
       await child.request(1, "initialize", { protocolVersion: PROTOCOL_VERSION });
       const shown = await child.request(2, "tools/call", {
@@ -629,7 +772,7 @@ describe("operad mcp", () => {
     });
     seed(home, "one", { title: "First", state: "new" });
     await addRun(home, "item:one", { prompt: "Approve?" });
-    const child = start(home);
+    const child = openSession(home);
     try {
       await child.request(1, "initialize", { protocolVersion: PROTOCOL_VERSION });
       const pending = await child.request(2, "tools/call", {
@@ -654,7 +797,7 @@ describe("operad mcp", () => {
 
   test("command runs plugin verbs with input and refuses a kernel verb", async () => {
     const { home, repository } = await makeDevHome();
-    const child = start(home, repository);
+    const child = openSession(home, repository);
     try {
       await child.request(1, "initialize", { protocolVersion: PROTOCOL_VERSION });
       const added = await child.request(2, "tools/call", {
@@ -716,7 +859,7 @@ describe("operad mcp", () => {
 
   test("command runs a plugin verb whose name is also a kernel verb", async () => {
     const { home } = await makeHome({ plugins: [kernelCommandPluginPath] });
-    const child = start(home);
+    const child = openSession(home);
     try {
       await child.request(1, "initialize", { protocolVersion: PROTOCOL_VERSION });
       const shown = await child.request(2, "tools/call", {
@@ -733,7 +876,7 @@ describe("operad mcp", () => {
 
   test("command refuses a plugin whose name is also a kernel verb", async () => {
     const { home } = await makeHome({ plugins: [kernelNamePluginPath] });
-    const child = start(home);
+    const child = openSession(home);
     try {
       await child.request(1, "initialize", { protocolVersion: PROTOCOL_VERSION });
       const refused = await child.request(2, "tools/call", {
@@ -752,7 +895,7 @@ describe("operad mcp", () => {
 
   test("act runs a lead rework with the mcp lead actor and refuses merge by default", async () => {
     const { home, repository } = await makeDevHome();
-    const child = start(home, repository);
+    const child = openSession(home, repository);
     try {
       await child.request(1, "initialize", { protocolVersion: PROTOCOL_VERSION });
       await child.request(2, "tools/call", {
@@ -849,7 +992,7 @@ describe("operad mcp", () => {
 
   test("task edit takes the new brief as command input and refuses an empty one", async () => {
     const { home, repository } = await makeDevHome();
-    const child = start(home, repository);
+    const child = openSession(home, repository);
     try {
       await child.request(1, "initialize", { protocolVersion: PROTOCOL_VERSION });
       const call = (id: number, verb: string, args: string[], input?: string) =>
@@ -876,7 +1019,7 @@ describe("operad mcp", () => {
 
   test("show of a task lists the tasks after it", async () => {
     const { home, repository } = await makeDevHome();
-    const child = start(home, repository);
+    const child = openSession(home, repository);
     try {
       await child.request(1, "initialize", { protocolVersion: PROTOCOL_VERSION });
       const call = (id: number, verb: string, args: string[], input: string) =>
@@ -922,7 +1065,7 @@ describe("operad mcp", () => {
     const { home, repository } = await makeDevHome({
       mcp: { actions: ["dev:cancel"], confirmActions: ["dev:cancel"] },
     });
-    const child = start(home, repository);
+    const child = openSession(home, repository);
     let runId = "";
     try {
       await child.request(1, "initialize", { protocolVersion: PROTOCOL_VERSION });
@@ -975,7 +1118,7 @@ describe("operad mcp", () => {
     const { home, repository } = await makeDevHome({
       mcp: { actions: ["dev:cancel"], confirmActions: ["dev:cancel"] },
     });
-    const child = start(home, repository);
+    const child = openSession(home, repository);
     let runId = "";
     try {
       await child.request(1, "initialize", { protocolVersion: PROTOCOL_VERSION });
@@ -1046,7 +1189,7 @@ describe("operad mcp", () => {
         confirmActions: ["dev:merge"],
       },
     });
-    const child = start(home, repository);
+    const child = openSession(home, repository);
     try {
       await child.request(1, "initialize", { protocolVersion: PROTOCOL_VERSION });
       await child.request(2, "tools/call", {
@@ -1134,7 +1277,7 @@ describe("operad mcp --claude-channel", () => {
       title: "First",
       phase: "ready",
     });
-    const child = start(home, home, ["--claude-channel"]);
+    const child = openSession(home, home, ["--claude-channel"]);
     try {
       const initialized = await child.request(1, "initialize", {
         protocolVersion: PROTOCOL_VERSION,
@@ -1227,7 +1370,7 @@ describe("operad mcp --claude-channel", () => {
       phase: "ready",
     });
     putObject(home, "note", "n-1", { title: "Note", state: "open" });
-    const child = start(home, home, [
+    const child = openSession(home, home, [
       "--claude-channel",
       "--types",
       "note",
@@ -1279,7 +1422,7 @@ describe("operad mcp --claude-channel", () => {
       title: "First",
       phase: "ready",
     });
-    const child = start(home);
+    const child = openSession(home);
     try {
       const initialized = await child.request(1, "initialize", {
         protocolVersion: PROTOCOL_VERSION,
@@ -1308,7 +1451,7 @@ describe("operad mcp --claude-channel", () => {
       mcp: { channel: { notify: ["changes"] } },
     });
     putObject(home, "task", "T-0001-one", { title: "First", phase: "ready" });
-    const child = start(home, home, ["--claude-channel"]);
+    const child = openSession(home, home, ["--claude-channel"]);
     try {
       await child.request(1, "initialize", { protocolVersion: PROTOCOL_VERSION });
       child.notify("notifications/initialized");
@@ -1337,7 +1480,7 @@ describe("operad mcp --claude-channel", () => {
       mcp: { channel: { notify: ["changes"] } },
     });
     putObject(home, "task", "T-0001-one", { title: "First", phase: "ready" });
-    const child = start(home, home, ["--claude-channel"]);
+    const child = openSession(home, home, ["--claude-channel"]);
     try {
       await child.request(1, "initialize", { protocolVersion: PROTOCOL_VERSION });
       putObject(home, "task", "T-0001-one", { title: "First", phase: "running" });
@@ -1364,7 +1507,7 @@ describe("operad mcp --claude-channel", () => {
       mcp: { channel: { notify: ["changes"] } },
     });
     putObject(home, "task", "T-0001-one", { title: "First", phase: "ready" });
-    const child = start(home, home, [
+    const child = openSession(home, home, [
       "--claude-channel",
       "--types",
       "task,note",
@@ -1400,7 +1543,7 @@ describe("operad mcp --claude-channel", () => {
       [["--claude-channel", "--types", "task,ghost"], '"ghost"'],
       [["--claude-channel", "--types"], "--types needs"],
     ] as const) {
-      const child = start(home, home, args);
+      const child = startProcess(home, home, args);
       const closed = await child.close();
       expect(closed.code).toBe(2);
       expect(closed.err).toContain(message);
@@ -1416,7 +1559,7 @@ describe("operad mcp hierarchy", () => {
     putObject(home, "leaf", "a", { state: "open", parent: "group:g1" });
     putObject(home, "leaf", "b", { state: "merged", parent: "group:g1" });
     putObject(home, "leaf", "d", { state: "open" });
-    const child = start(home);
+    const child = openSession(home);
     try {
       await child.request(1, "initialize", {
         protocolVersion: PROTOCOL_VERSION,
