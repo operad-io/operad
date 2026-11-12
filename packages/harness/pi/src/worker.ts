@@ -23,7 +23,6 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { openMcpTools, type McpTools } from "@operad-io/mcp";
 import {
-  capToolOutput,
   maskSecrets,
   messageText,
   readImage,
@@ -206,18 +205,6 @@ function splitSecretPrefix(
   }
   if (held === 0) return { emit: text, held: "" };
   return { emit: text.slice(0, text.length - held), held: text.slice(text.length - held) };
-}
-
-/**
- * A `tool_output` line's payload: the text secrets masked, cut to the shared
- * cap, and `truncated` when it was cut.
- */
-export function toolOutputOf(
-  text: string,
-  secrets: readonly string[],
-): { readonly text: string; readonly truncated?: true } {
-  const capped = capToolOutput(maskSecrets(text, secrets));
-  return { text: capped.text, ...(capped.truncated ? { truncated: true as const } : {}) };
 }
 
 /**
