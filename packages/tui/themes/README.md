@@ -56,7 +56,7 @@ needs only the token's stated ratio.
 
 ## Contrast
 
-`test/popular-themes.test.ts` computes the WCAG contrast of each token against
+`test/heavy/popular-themes.test.ts` computes the WCAG contrast of each token against
 `background`: `text` must reach 4.5:1; `weak`, `accent`, `run`, `ok`, `error`,
 `add` and `remove` 3:1. `cancelled` is a dark red by design, so it is checked
 apart from `error` and `weak` rather than against a text ratio. A colour that missed is lightened (dark palettes) or

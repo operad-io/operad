@@ -36,14 +36,42 @@ test("is quick", () => { expect(1).toBe(${failing ? 2 : 1}); });
 
 const parallel = "3";
 
-function run(root: string, times: string, args: string[]): { code: number; out: string } {
+function run(
+  root: string,
+  times: string,
+  args: string[],
+  env: Record<string, string> = {},
+): { code: number; out: string } {
+  // The parallel counts are set here, not taken from the caller: a check runs with its own.
+  const inherited = { ...process.env };
+  delete inherited.OPERAD_TEST_PARALLEL;
+  delete inherited.OPERAD_TEST_HEAVY_PARALLEL;
   const result = Bun.spawnSync(["bash", "scripts/run-tests.sh", ...args], {
     cwd: root,
-    // The parallel count is set here, not taken from the caller: a check runs with its own.
-    env: { ...process.env, OPERAD_TEST_TIMES: times, OPERAD_TEST_PARALLEL: parallel },
+    env: {
+      ...inherited,
+      OPERAD_TEST_PARALLEL: parallel,
+      OPERAD_TEST_HEAVY_PARALLEL: "2",
+      OPERAD_TEST_TIMES: times,
+      ...env,
+    },
     stdin: "ignore",
   });
   return { code: result.exitCode, out: `${result.stdout}${result.stderr}` };
+}
+
+/** Adds a heavy test under `test/heavy/` of package `a`. */
+function heavyTest(root: string, failing = false): void {
+  write(
+    root,
+    "packages/a/test/heavy/heavy.test.ts",
+    `import { expect, test } from "bun:test";
+test("heavy takes a while", async () => {
+  await new Promise((r) => setTimeout(r, 80));
+  expect(1).toBe(${failing ? 2 : 1});
+});
+`,
+  );
 }
 
 describe("run-tests.sh", () => {
@@ -67,6 +95,52 @@ describe("run-tests.sh", () => {
     expect(code).toBe(0);
     expect(out).toContain("Slowest tests");
     expect(Bun.file(times).size).toBe(0);
+  });
+
+  test("a full run runs heavy tests in a step of their own, with their own parallelism", () => {
+    const { root, times } = repository();
+    heavyTest(root);
+    const { code, out } = run(root, times, []);
+    expect(code).toBe(0);
+    expect(out).toContain("heavy takes a while");
+    expect(readFileSync(times, "utf8").trim()).toMatch(
+      new RegExp(
+        String.raw`^date=\d{4}-\d\d-\d\dT[\d:]+Z commit=\S+ tests=4 together=\d+ heavy=\d+ total=\d+ parallel=${parallel} heavyParallel=2 result=pass$`,
+      ),
+    );
+  });
+
+  test("the heavy step's parallelism is its own setting", () => {
+    const { root, times } = repository();
+    heavyTest(root);
+    const { code } = run(root, times, [], { OPERAD_TEST_HEAVY_PARALLEL: "3" });
+    expect(code).toBe(0);
+    expect(readFileSync(times, "utf8")).toContain(`parallel=${parallel} heavyParallel=3 result=pass`);
+  });
+
+  test("a named package runs its own heavy tests and leaves another package's alone", () => {
+    const { root } = repository();
+    heavyTest(root);
+    write(root, "packages/b/package.json", JSON.stringify({ name: "@operad-io/b" }));
+    write(
+      root,
+      "packages/b/test/heavy/b.test.ts",
+      'import { expect, test } from "bun:test";\ntest("b is heavy and fails", () => { expect(1).toBe(2); });\n',
+    );
+    const { code, out } = run(root, join(root, "times"), ["a"]);
+    expect(code).toBe(0);
+    expect(out).toContain("heavy takes a while");
+    expect(out).not.toContain("b is heavy and fails");
+  });
+
+  test("a failing heavy test fails the run and records the failure", () => {
+    const { root, times } = repository();
+    heavyTest(root, true);
+    const { code, out } = run(root, times, []);
+    expect(code).not.toBe(0);
+    expect(out).toContain("heavy takes a while");
+    expect(readFileSync(times, "utf8")).toContain("heavy=");
+    expect(readFileSync(times, "utf8")).toContain("result=fail");
   });
 
   test("a failing test fails the run, which still lists the slowest and records the failure", () => {
