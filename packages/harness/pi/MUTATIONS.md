@@ -98,3 +98,32 @@ the row fields.
 |---|---|---|---|
 | T-0366-M6 | packages/harness/pi/src/index.ts | the step did not merge the user layer into the profile it passed to the worker | `pi: a call that must ask a person > answered allow_always writes the user layer, and the next identical call does not ask` |
 | T-0366-M11 | packages/harness/pi/src/index.ts | a late `allow_always` did not write the user layer before the resumed step ran | `pi: a call that must ask a person > a late allow_always writes the user layer and the resumed call does not ask` |
+## T-0365 — pi's models come from pi
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0365-M1 | packages/harness/pi/src/index.ts | a catalogue row was read as provider and a fixed id, not provider/id | `the models pi declares > the list is pi's catalogue` |
+| T-0365-M2 | packages/harness/pi/src/index.ts | the `models` setting was ignored and the whole catalogue offered | `the models pi declares > the models setting narrows the list` |
+| T-0365-M3 | packages/harness/pi/src/index.ts | the default ignored the `model` setting | `the models pi declares > the default is the model setting, else pi's own default, else none` |
+| T-0365-M4 | packages/harness/pi/src/index.ts | a non-zero exit of pi still gave its output as the list | `the models pi declares > a pi that exits non-zero gives an empty list` |
+| T-0365-M5 | packages/harness/pi/src/index.ts | asking pi had no timeout | `the models pi declares > a pi that does not answer in time gives an empty list` |
+| T-0365-M6 | packages/harness/pi/src/index.ts | the catalogue was not kept: pi was asked at every read | `the models pi declares > pi is not asked at load, and the answer is kept until it is old` |
+| T-0365-M7 | packages/harness/pi/src/index.ts | the step did not report a configured model pi does not list | `pi/agent with a configured model pi does not list > the step reports it once in its log; a listed model reports nothing` |
+| T-0365-M9 | packages/harness/pi/src/index.ts | rows were read before any header row, so pi's no-model sentence became a model | `the models pi declares > pi's no-model sentence is not a model` |
+## T-0360 — assistant text, thinking and tool output lines
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0360-M1 | packages/harness/pi/src/worker.ts | every text delta wrote its own line; the 100 ms grouping was gone | `increments are grouped to one line per stream per 100 ms, with an injected clock` |
+| T-0360-M2 | packages/harness/pi/src/worker.ts | thinking deltas were not written | `increments are grouped to one line per stream per 100 ms, with an injected clock` |
+| T-0360-M3 | packages/harness/pi/src/worker.ts | the full text of a finished message was not written (`text_end`) | `a prompt that ends writes the lines in order and a Result with usage, cost and sessionId` |
+| T-0360-M4 | packages/harness/pi/src/worker.ts | the full text of a finished thinking block was not written (`thinking_end`) | `thinking streams as increments and ends with the full block, which message_end leaves out` |
+| T-0360-M5 | packages/harness/pi/src/worker.ts | a tool call's output was never written | `a tool call's output is written with its call id, and a refused call writes none` |
+| T-0360-M6 | packages/harness/pi/src/worker.ts | `toolOutputOf` left the output uncut instead of capping it | `tool output is cut to the shared cap and marked truncated` |
+| T-0360-M7 | packages/harness/pi/src/worker.ts | `text_end` did not mask a secret value | `secret values are masked in the new text, thinking and tool output lines` |
+| T-0360-M8 | packages/harness/pi/src/worker.ts | `toolOutputOf` did not mask a secret value | `secret values are masked in the new text, thinking and tool output lines` |
+| T-0360-M9 | packages/harness/pi/src/worker.ts | a refused call's result was written as `tool_output` | `a tool call's output is written with its call id, and a refused call writes none` |
+| T-0360-M10 | packages/harness/pi/src/worker.ts | text still buffered when a message stopped was dropped | `a run stopped mid-message writes the text it had not grouped yet` |
+| T-0360-M12 | packages/harness/pi/src/worker.ts | an increment batch was emitted without holding back a partial secret, so each piece of a split secret went out | `a secret split across increment lines is held back, so no line carries a piece of it` |
+| T-0360-M13 | packages/harness/pi/src/worker.ts | a run's Result was written without releasing the held prefix, so a stopped reply lost it | `a cancelled stream releases text held back as a possible secret` |
+| T-0360-M14 | packages/harness/pi/src/worker.ts | the holdback checked only the raw secret, so a split JSON-escaped secret went out in pieces | `a JSON-escaped secret split across increment lines is held back too` |

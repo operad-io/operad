@@ -22,7 +22,13 @@ import type {
   ModelRuntime,
 } from "@earendil-works/pi-coding-agent";
 import { openMcpTools, type McpTools } from "@operad-io/mcp";
-import { messageText, readImage, type CallAnswer } from "@operad-io/harness-process";
+import {
+  capToolOutput,
+  maskSecrets,
+  messageText,
+  readImage,
+  type CallAnswer,
+} from "@operad-io/harness-process";
 import { findPi, loadPi } from "./pi-install.ts";
 import {
   DEFAULT_BASH_TIMEOUT_SECS,
@@ -92,7 +98,7 @@ export interface WorkerPorts {
 }
 
 /** The text of an assistant message, thinking and tool calls left out. */
-function textOf(content: unknown): string {
+function textOf(content: unknown, join = " "): string {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
   return content
@@ -101,7 +107,7 @@ function textOf(content: unknown): string {
         ? String(Reflect.get(block, "text") ?? "")
         : "",
     )
-    .join(" ");
+    .join(join);
 }
 
 function finite(value: unknown): number | null {
@@ -163,6 +169,145 @@ class Tally {
     if (this.#priced === 0) return null;
     const micros = Math.round(this.#total * 1e6);
     return this.#unpriced > 0 ? { micros, incomplete: true } : { micros };
+  }
+}
+
+/** How often one stream writes an increment line at most, in milliseconds. */
+const FLUSH_MS = 100;
+
+/** The spellings `maskSecrets` masks for one value: the value and, if it differs, its JSON text. */
+function spellingsOf(secret: string): readonly string[] {
+  if (secret.length === 0) return [];
+  const escaped = JSON.stringify(secret).slice(1, -1);
+  return escaped === secret ? [secret] : [secret, escaped];
+}
+
+/**
+ * Splits an increment so that no line ends inside a secret: the longest suffix
+ * of `text` that is a proper prefix of a secret value is held back and joined
+ * to the next increment, where the completed secret is masked. A secret that
+ * is wholly in the emitted part is masked there. Both the value as written and
+ * its JSON-escaped spelling count, as `maskSecrets` masks both.
+ */
+function splitSecretPrefix(
+  text: string,
+  secrets: readonly string[],
+): { readonly emit: string; readonly held: string } {
+  let held = 0;
+  for (const secret of secrets.flatMap(spellingsOf)) {
+    const longest = Math.min(secret.length - 1, text.length);
+    for (let length = longest; length > held; length -= 1) {
+      if (text.endsWith(secret.slice(0, length))) {
+        held = length;
+        break;
+      }
+    }
+  }
+  if (held === 0) return { emit: text, held: "" };
+  return { emit: text.slice(0, text.length - held), held: text.slice(text.length - held) };
+}
+
+/**
+ * A `tool_output` line's payload: the text secrets masked, cut to the shared
+ * cap, and `truncated` when it was cut.
+ */
+export function toolOutputOf(
+  text: string,
+  secrets: readonly string[],
+): { readonly text: string; readonly truncated?: true } {
+  const capped = capToolOutput(maskSecrets(text, secrets));
+  return { text: capped.text, ...(capped.truncated ? { truncated: true as const } : {}) };
+}
+
+/**
+ * Assistant text and thinking as they stream. A line carries the new text
+ * only, and each stream writes at most one per `FLUSH_MS`: a message that
+ * arrives faster is grouped. The tail that is still buffered when a block or a
+ * message ends is left to the full line that follows (`text_end`,
+ * `thinking_end`), so no increment goes out closer than `FLUSH_MS` to the one
+ * before it. Secret values are masked in every line.
+ */
+class Increments {
+  #text = "";
+  #thinking = "";
+  #textAt: number | undefined;
+  #thinkingAt: number | undefined;
+
+  constructor(
+    private readonly io: WorkerIo,
+    private readonly now: () => number,
+    private readonly secrets: readonly string[],
+  ) {}
+
+  text(delta: string): void {
+    if (delta.length === 0) return;
+    this.#text += delta;
+    const at = this.now();
+    if (this.#textAt === undefined || at - this.#textAt >= FLUSH_MS) this.#writeText(at);
+  }
+
+  thinking(delta: string): void {
+    if (delta.length === 0) return;
+    this.#thinking += delta;
+    const at = this.now();
+    if (this.#thinkingAt === undefined || at - this.#thinkingAt >= FLUSH_MS) this.#writeThinking(at);
+  }
+
+  #writeText(at: number): void {
+    const { emit, held } = splitSecretPrefix(this.#text, this.secrets);
+    if (emit.length > 0) {
+      this.io.line({ type: "text_delta", text: maskSecrets(emit, this.secrets) });
+    }
+    this.#text = held;
+    this.#textAt = at;
+  }
+
+  #writeThinking(at: number): void {
+    const { emit, held } = splitSecretPrefix(this.#thinking, this.secrets);
+    if (emit.length > 0) {
+      this.io.line({ type: "thinking_delta", text: maskSecrets(emit, this.secrets) });
+    }
+    this.#thinking = held;
+    this.#thinkingAt = at;
+  }
+
+  /** A thinking block finished: its full text follows the increments. */
+  endThinking(text: string): void {
+    this.#thinking = "";
+    this.#thinkingAt = undefined;
+    if (text.length > 0) this.io.line({ type: "thinking_end", text: maskSecrets(text, this.secrets) });
+  }
+
+  /** An assistant message finished: its full text follows the increments. */
+  endMessage(text: string): void {
+    if (text.length > 0) {
+      this.#text = "";
+      this.#textAt = undefined;
+      this.io.line({ type: "text_end", text: maskSecrets(text, this.secrets) });
+    } else if (this.#text.length > 0) {
+      this.#writeText(this.now());
+    }
+    // A thinking block that ended wrote its own full text; anything left is
+    // a block the run stopped in, and the increments are all it has.
+    if (this.#thinking.length > 0) this.#writeThinking(this.now());
+  }
+
+  /**
+   * The stream is ending and no later text can complete a held prefix: write
+   * it now, masked when it holds a whole secret. Every end path calls this
+   * before its Result, so a stopped reply keeps what it had reached.
+   */
+  release(): void {
+    if (this.#text.length > 0) {
+      this.io.line({ type: "text_delta", text: maskSecrets(this.#text, this.secrets) });
+      this.#text = "";
+      this.#textAt = undefined;
+    }
+    if (this.#thinking.length > 0) {
+      this.io.line({ type: "thinking_delta", text: maskSecrets(this.#thinking, this.secrets) });
+      this.#thinking = "";
+      this.#thinkingAt = undefined;
+    }
   }
 }
 
@@ -348,6 +493,7 @@ export async function runWorker(
   sessionFile = session.sessionFile ?? null;
   const tally = new Tally();
   const now = hooks.now ?? Date.now;
+  const increments = new Increments(io, now, input.secretValues ?? []);
   const started = new Map<string, number>();
   let settle: () => void = () => {};
   const settled = new Promise<void>((resolve) => {
@@ -355,7 +501,25 @@ export async function runWorker(
   });
   session.subscribe((event) => {
     switch (event.type) {
+      case "message_update": {
+        const update = event.assistantMessageEvent;
+        switch (update.type) {
+          case "text_delta":
+            increments.text(update.delta);
+            break;
+          case "thinking_delta":
+            increments.thinking(update.delta);
+            break;
+          case "thinking_end":
+            increments.endThinking(update.content);
+            break;
+          default:
+            break;
+        }
+        break;
+      }
       case "message_end": {
+        if (event.message.role === "assistant") increments.endMessage(textOf(event.message.content, ""));
         const line = tally.add(event.message);
         if (line !== undefined) io.line(line);
         break;
@@ -376,7 +540,28 @@ export async function runWorker(
       case "tool_execution_end": {
         const begun = started.get(event.toolCallId);
         started.delete(event.toolCallId);
-        const firstLine = blockedCalls.has(event.toolCallId) ? REFUSED_IN_LOG : event.isError ? firstErrorLine(textOf(typeof event.result === "object" && event.result !== null ? Reflect.get(event.result, "content") : event.result), { secrets: input.secretValues }) : undefined;
+        const blocked = blockedCalls.has(event.toolCallId);
+        const content =
+          typeof event.result === "object" && event.result !== null
+            ? Reflect.get(event.result, "content")
+            : event.result;
+        // A refused call printed nothing; its result is the refusal the model
+        // already gets, and only the end line names it.
+        if (!blocked) {
+          const output = textOf(content, "");
+          if (output.length > 0) {
+            io.line({
+              type: "tool_output",
+              toolCallId: event.toolCallId,
+              ...toolOutputOf(output, input.secretValues ?? []),
+            });
+          }
+        }
+        const firstLine = blocked
+          ? REFUSED_IN_LOG
+          : event.isError
+            ? firstErrorLine(textOf(content), { secrets: input.secretValues })
+            : undefined;
         io.line({
           type: "tool_execution_end",
           toolCallId: event.toolCallId,
@@ -404,6 +589,14 @@ export async function runWorker(
     cost: tally.cost,
     finalMessage: session.getLastAssistantText() ?? null,
   });
+
+  // Every way this run ends writes its Result here: text still held back as a
+  // possible secret prefix is released first.
+  const finish = (line: WorkerResult, code: number): number => {
+    increments.release();
+    io.line(line);
+    return code;
+  };
 
   // A message the host sends mid-run steers the agent: pi delivers it after
   // the tool call that is running.
@@ -433,34 +626,36 @@ export async function runWorker(
         );
       } catch (error) {
         if (!cancelled) {
-          io.line({
-            ...failure("model_error", error instanceof Error ? error.message : String(error)),
-            sessionId: session.sessionFile ?? null,
-            usage: tally.usage,
-            cost: tally.cost,
-          });
-          return EXIT_FAILED;
+          return finish(
+            {
+              ...failure("model_error", error instanceof Error ? error.message : String(error)),
+              sessionId: session.sessionFile ?? null,
+              usage: tally.usage,
+              cost: tally.cost,
+            },
+            EXIT_FAILED,
+          );
         }
       }
       if (!cancelled) await settled;
     }
     if (cancelled) {
       await session.abort();
-      io.line(result("cancelled"));
-      return EXIT_CANCELLED;
+      return finish(result("cancelled"), EXIT_CANCELLED);
     }
     if (tally.lastError !== undefined) {
-      io.line({
-        ...failure("model_error", tally.lastError),
-        sessionId: session.sessionFile ?? null,
-        usage: tally.usage,
-        cost: tally.cost,
-        finalMessage: session.getLastAssistantText() ?? null,
-      });
-      return EXIT_FAILED;
+      return finish(
+        {
+          ...failure("model_error", tally.lastError),
+          sessionId: session.sessionFile ?? null,
+          usage: tally.usage,
+          cost: tally.cost,
+          finalMessage: session.getLastAssistantText() ?? null,
+        },
+        EXIT_FAILED,
+      );
     }
-    io.line(result("done"));
-    return 0;
+    return finish(result("done"), 0);
   } finally {
     cancel.removeEventListener("abort", onCancel);
     session.dispose();

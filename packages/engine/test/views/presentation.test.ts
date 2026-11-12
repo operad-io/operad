@@ -378,6 +378,19 @@ describe("presentation views", () => {
     await log.close();
   });
 
+  test("a row slow once only is not an error: it is measured again (T-0368)", async () => {
+    const { store, registry, log } = await fixture();
+    store.put("item", "once", { title: "Once", mode: "slow-once" }, "seed");
+    testClock.current = 0;
+    const views = trackedViews({ registry, store, log, clock: testClock.now });
+    const page = await views.list("item");
+    const row = page.rows.find((r) => r.id === "once");
+    expect(row?.state).toBe("new");
+    expect(row?.error).toBeUndefined();
+    views.close();
+    await log.close();
+  });
+
   test("a valid mark and badge pass through list and get; a plain row is unchanged", async () => {
     const { store, registry, log } = await fixture();
     store.put("item", "marked", { title: "M", mark: "ready_to_merge", badge: "#2" }, "seed");
