@@ -81,3 +81,4 @@ the row fields.
 | T-0210-M14 | packages/mcp/src/channel.ts | a block sent for a waiting object for another reason did not read the wait's pending prompt | `the channel's sources > what the default sends > a block for a state change of a waiting object still carries the wait's prompt` |
 | T-0188-M16 | packages/mcp/src/server.ts | an unknown tool threw instead of giving an error result | `the tools opened in a harness's own process > an unknown tool and a bad argument are error results, not throws` |
 | T-0239-M6 | packages/mcp/src/format.ts | the running list did not show the queued time | `the running list > a step queued for a check place shows queued, and its queued time once it runs` |
+| T-0318-M2 | packages/mcp/src/format.ts | the list table's wait column dropped (the wait only in `show`) | `mcp format > writes one row per object with its scope, flags and escaped cells` |

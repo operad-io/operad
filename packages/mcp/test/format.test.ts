@@ -58,7 +58,7 @@ describe("the list Markdown", () => {
   test("writes one row per object with its scope, flags and escaped cells", () => {
     const page: ViewListPage = {
       rows: [
-        row({ id: "one", title: "First", waiting: true, note: "a | b" }),
+        row({ id: "one", title: "First", waiting: true, note: "a | b", wait: "refused · x" }),
         row({
           id: "two",
           scope: "repo",
@@ -71,8 +71,8 @@ describe("the list Markdown", () => {
       ],
     };
     const text = listMarkdown(page);
-    expect(text).toContain("| one | new |  |  | First | a \\| b | waiting |");
-    expect(text).toContain("| repo/two | open | integrating | #2 | Second line |  | running |");
+    expect(text).toContain("| one | new |  |  | First | a \\| b | refused · x | waiting |");
+    expect(text).toContain("| repo/two | open | integrating | #2 | Second line |  |  | running |");
   });
 });
 
