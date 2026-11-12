@@ -1,21 +1,21 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://operad.io/schemas/assistant.schema.json",
-  "title": "operad assistant settings",
-  "description": "The `assistant` section of config.json, owned by the assistant plugin.",
+  "$id": "https://operad.io/schemas/bot.schema.json",
+  "title": "operad bot settings",
+  "description": "The `bot` section of config.json, owned by the bot plugin.",
   "type": "object",
   "properties": {
-    "profiles": {
+    "bots": {
       "type": "object",
-      "description": "The assistant's profiles, by name. `default` exists even when it is not written here.",
+      "description": "The bots, by name. `default` exists even when it is not written here.",
       "additionalProperties": {
         "type": "object",
-        "description": "One profile.",
+        "description": "One bot.",
         "properties": {
           "cwd": {
             "type": "string",
             "minLength": 1,
-            "description": "The working directory. Without it: ~/.operad/assistant for `default`, ~/.operad/assistant/<name> for any other. It must be inside ~/.operad/assistant or outside the operad home."
+            "description": "The working directory. Without it: ~/.operad/bot for `default`, ~/.operad/bot/<name> for any other. It must be inside ~/.operad/bot or outside the operad home."
           },
           "harness": {
             "type": "string",
@@ -30,9 +30,14 @@
             },
             "description": "Directories with a SKILL.md, given to the agent at every reply. A relative path is under the working directory."
           },
+          "speaker": {
+            "type": "string",
+            "minLength": 1,
+            "description": "How a chat of this bot labels the model's messages in its transcript. Without it the chat plugin's speaker is used."
+          },
           "access": {
             "type": "object",
-            "description": "Added to the default access profile: the lists are appended and readOnly can be turned on. A profile can tighten the default, never loosen it.",
+            "description": "Added to the default access profile: the lists are appended and readOnly can be turned on. A bot can tighten the default, never loosen it.",
             "properties": {
               "denyPaths": {
                 "type": "array",

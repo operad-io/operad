@@ -24,7 +24,7 @@ export type MessageRole = "user" | "assistant";
 /** What a chat stores. The creating plugin gives every field but `session`. */
 export interface ChatData {
   readonly [key: string]: unknown;
-  /** The object one level up (a repository, a profile); a full object id. */
+  /** The object one level up (a repository, a bot); a full object id. */
   readonly parent?: string | undefined;
   /** The harness plugin that answers, such as `claude`; fixed once the chat exists. */
   readonly harness: string;
@@ -41,7 +41,7 @@ export interface ChatData {
   /**
    * A step (`<plugin>/<step>`) that gives the working directory, access profile
    * and skills as they are now; the reply asks it every time, so a chat whose
-   * settings live elsewhere (an assistant profile) follows them. The fields
+   * settings live elsewhere (a bot) follows them. The fields
    * above are then what the chat started with.
    */
   readonly refresh?: string | undefined;

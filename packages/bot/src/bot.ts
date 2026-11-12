@@ -1,8 +1,8 @@
 /**
- * Profiles: the `assistant` section of `config.json`, read at every use, and
- * what a profile means (its working directory, harness, skills and access
- * profile). The kernel validates the section against {@link ASSISTANT_SETTINGS}
- * when it loads; a reply reads the file again, so an edit applies at once.
+ * Bots: the `bot` section of `config.json`, read at every use, and what a bot
+ * means (its working directory, harness, skills, access profile and speaker).
+ * The kernel validates the section against {@link BOT_SETTINGS} when it loads;
+ * a reply reads the file again, so an edit applies at once.
  */
 
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
@@ -10,35 +10,35 @@ import { homedir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { configPath, isRecord, prepareSettings, type ActionArgsSchema, type JsonValue, type ObjectStore } from "@operad-io/engine";
 
-/** The object type of a profile. */
-export const PROFILE_TYPE = "profile";
+/** The object type of a bot. */
+export const BOT_TYPE = "bot";
 
-/** The profile every home has. */
-export const DEFAULT_PROFILE = "default";
+/** The bot every home has. */
+export const DEFAULT_BOT = "default";
 
-/** The directory of the assistant inside the operad home. */
-export const ASSISTANT_DIR = "assistant";
+/** The directory of the bot inside the operad home. */
+export const BOT_DIR = "bot";
 
 const NAME = /^[a-z0-9][a-z0-9_-]*$/;
 
-/** The JSON Schema of the `assistant` section (also shipped as `assistant.schema.json`). */
-export const ASSISTANT_SETTINGS: ActionArgsSchema = {
+/** The JSON Schema of the `bot` section (also shipped as `bot.schema.json`). */
+export const BOT_SETTINGS: ActionArgsSchema = {
   type: "object",
   properties: {
-    profiles: {
+    bots: {
       type: "object",
       editable: true,
       description:
-        "The assistant's profiles, by name. `default` exists even when it is not written here.",
+        "The bots, by name. `default` exists even when it is not written here.",
       additionalProperties: {
         type: "object",
-        description: "One profile.",
+        description: "One bot.",
         properties: {
           cwd: {
             type: "string",
             minLength: 1,
             description:
-              "The working directory. Without it: ~/.operad/assistant for `default`, ~/.operad/assistant/<name> for any other. It must be inside ~/.operad/assistant or outside the operad home.",
+              "The working directory. Without it: ~/.operad/bot for `default`, ~/.operad/bot/<name> for any other. It must be inside ~/.operad/bot or outside the operad home.",
           },
           harness: {
             type: "string",
@@ -51,10 +51,16 @@ export const ASSISTANT_SETTINGS: ActionArgsSchema = {
             description:
               "Directories with a SKILL.md, given to the agent at every reply. A relative path is under the working directory.",
           },
+          speaker: {
+            type: "string",
+            minLength: 1,
+            description:
+              "How a chat of this bot labels the model's messages in its transcript. Without it the chat plugin's speaker is used.",
+          },
           access: {
             type: "object",
             description:
-              "Added to the default access profile: the lists are appended and readOnly can be turned on. A profile can tighten the default, never loosen it.",
+              "Added to the default access profile: the lists are appended and readOnly can be turned on. A bot can tighten the default, never loosen it.",
             properties: {
               denyPaths: { type: "array", items: { type: "string" } },
               denyCommands: { type: "array", items: { type: "string" } },
@@ -72,46 +78,48 @@ export const ASSISTANT_SETTINGS: ActionArgsSchema = {
   additionalProperties: false,
 };
 
-/** One profile as written. */
-export interface ProfileSettings {
+/** One bot as written. */
+export interface BotSettings {
   readonly cwd?: string;
   readonly harness?: string;
   readonly skills?: readonly string[];
+  readonly speaker?: string;
   readonly access?: Readonly<Record<string, JsonValue>>;
 }
 
-/** A profile as a chat uses it. */
-export interface ResolvedProfile {
+/** A bot as a chat uses it. */
+export interface ResolvedBot {
   readonly name: string;
   readonly cwd: string;
   readonly harness: string | null;
   /** Absolute directories, each with a SKILL.md. */
   readonly skills: readonly string[];
+  readonly speaker: string | null;
   readonly access: Readonly<Record<string, JsonValue>>;
 }
 
-/** A profile that cannot be used; the message says why. */
-export class ProfileError extends Error {
+/** A bot that cannot be used; the message says why. */
+export class BotError extends Error {
   constructor(message: string) {
     super(message);
-    this.name = "ProfileError";
+    this.name = "BotError";
   }
 }
 
-/** The `assistant` working directory of a home. */
-export function assistantDir(home: string): string {
-  return join(home, ASSISTANT_DIR);
+/** The `bot` working directory of a home. */
+export function botDir(home: string): string {
+  return join(home, BOT_DIR);
 }
 
 /**
- * The profiles written in the home's `config.json`, with the default one
- * added when absent. The file is read now; `fallback` (the settings the kernel
+ * The bots written in the home's `config.json`, with the default one added
+ * when absent. The file is read now; `fallback` (the settings the kernel
  * loaded) stands in only when the file or its section is missing.
  */
-export function readProfiles(
+export function readBots(
   home: string,
   fallback: Readonly<Record<string, JsonValue>> = {},
-): Readonly<Record<string, ProfileSettings>> {
+): Readonly<Record<string, BotSettings>> {
   let section: unknown = fallback;
   const path = configPath(home);
   if (existsSync(path)) {
@@ -119,24 +127,24 @@ export function readProfiles(
     try {
       parsed = JSON.parse(readFileSync(path, "utf8"));
     } catch (error) {
-      throw new ProfileError(`${path}: cannot read the assistant settings: ${String(error)}`);
+      throw new BotError(`${path}: cannot read the bot settings: ${String(error)}`);
     }
     const plugins = isRecord(parsed) ? parsed.plugins : undefined;
-    const entry = isRecord(plugins) ? plugins.assistant : undefined;
+    const entry = isRecord(plugins) ? plugins.bot : undefined;
     if (isRecord(entry) && entry.settings !== undefined) section = entry.settings;
   }
-  const settings = prepareSettings(ASSISTANT_SETTINGS, section, "assistant");
-  const profiles = isRecord(settings.profiles) ? settings.profiles : {};
-  const found: Record<string, ProfileSettings> = {};
-  for (const [name, value] of Object.entries(profiles)) {
+  const settings = prepareSettings(BOT_SETTINGS, section, "bot");
+  const bots = isRecord(settings.bots) ? settings.bots : {};
+  const found: Record<string, BotSettings> = {};
+  for (const [name, value] of Object.entries(bots)) {
     if (!NAME.test(name)) {
-      throw new ProfileError(
-        `profile "${name}": a name is lowercase letters, digits, "-" and "_", and starts with a letter or digit`,
+      throw new BotError(
+        `bot "${name}": a name is lowercase letters, digits, "-" and "_", and starts with a letter or digit`,
       );
     }
-    found[name] = value as ProfileSettings;
+    found[name] = value as BotSettings;
   }
-  if (found[DEFAULT_PROFILE] === undefined) found[DEFAULT_PROFILE] = {};
+  if (found[DEFAULT_BOT] === undefined) found[DEFAULT_BOT] = {};
   return found;
 }
 
@@ -152,16 +160,16 @@ function within(path: string, directory: string): boolean {
 }
 
 /**
- * The default access profile of the assistant: no credentials, no secrets, no
- * operad command (the agent reaches operad through its tools). Everything in
- * the operad home except the assistant's own directory is denied: the names
- * that are there now, and the ones operad keeps there. Paths are absolute, so
- * a home other than `~/.operad` is covered too.
+ * The default access profile of a bot: no credentials, no secrets, no operad
+ * command (the agent reaches operad through its tools). Everything in the
+ * operad home except the bot's own directory is denied: the names that are
+ * there now, and the ones operad keeps there. Paths are absolute, so a home
+ * other than `~/.operad` is covered too.
  */
 export function defaultAccess(home: string): Record<string, JsonValue> {
   const inHome = new Set(["store", "secrets", "config.json"]);
   if (existsSync(home)) {
-    for (const name of readdirSync(home)) if (name !== ASSISTANT_DIR) inHome.add(name);
+    for (const name of readdirSync(home)) if (name !== BOT_DIR) inHome.add(name);
   }
   return {
     denyPaths: [
@@ -211,10 +219,10 @@ function appended(base: JsonValue | undefined, extra: unknown): JsonValue[] {
   return list;
 }
 
-/** The access profile of a profile: the default, tightened by what the profile adds. */
+/** The access profile of a bot: the default, tightened by what the bot adds. */
 export function accessFor(
   home: string,
-  settings: ProfileSettings,
+  settings: BotSettings,
   repositories: readonly string[] = [],
 ): Record<string, JsonValue> {
   const access = defaultAccess(home);
@@ -229,35 +237,35 @@ export function accessFor(
   return access;
 }
 
-/** The skill directories of a profile, checked now. */
-function skillDirectories(settings: ProfileSettings, cwd: string): string[] {
+/** The skill directories of a bot, checked now. */
+function skillDirectories(settings: BotSettings, cwd: string): string[] {
   return (settings.skills ?? []).map((written) => {
     const path = expand(written, cwd);
     const file = join(path, "SKILL.md");
     if (!existsSync(file) || !statSync(file).isFile()) {
-      throw new ProfileError(`skill "${written}": there is no SKILL.md in ${path}`);
+      throw new BotError(`skill "${written}": there is no SKILL.md in ${path}`);
     }
     return path;
   });
 }
 
-/** The working directory of a profile; refused when it would put the operad home in reach. */
-export function workingDirectory(home: string, name: string, settings: ProfileSettings): string {
-  const root = assistantDir(home);
+/** The working directory of a bot; refused when it would put the operad home in reach. */
+export function workingDirectory(home: string, name: string, settings: BotSettings): string {
+  const root = botDir(home);
   const cwd =
     settings.cwd === undefined
-      ? name === DEFAULT_PROFILE
+      ? name === DEFAULT_BOT
         ? root
         : join(root, name)
       : expand(settings.cwd, root);
   if (within(home, cwd)) {
-    throw new ProfileError(
-      `profile "${name}": the working directory ${cwd} is the operad home or holds it; use a subdirectory of ${root}`,
+    throw new BotError(
+      `bot "${name}": the working directory ${cwd} is the operad home or holds it; use a subdirectory of ${root}`,
     );
   }
   if (within(cwd, home) && !within(cwd, root)) {
-    throw new ProfileError(
-      `profile "${name}": the working directory ${cwd} is inside the operad home but outside ${root}`,
+    throw new BotError(
+      `bot "${name}": the working directory ${cwd} is inside the operad home but outside ${root}`,
     );
   }
   return cwd;
@@ -277,19 +285,20 @@ export async function repositoryPaths(store: ObjectStore): Promise<string[]> {
   return found;
 }
 
-/** One profile as a chat uses it now; the working directory is not created here. */
-export function resolveProfile(
+/** One bot as a chat uses it now; the working directory is not created here. */
+export function resolveBot(
   home: string,
   name: string,
-  settings: ProfileSettings,
+  settings: BotSettings,
   repositories: readonly string[] = [],
-): ResolvedProfile {
+): ResolvedBot {
   const cwd = workingDirectory(home, name, settings);
   return {
     name,
     cwd,
     harness: settings.harness ?? null,
     skills: skillDirectories(settings, cwd),
+    speaker: settings.speaker ?? null,
     access: accessFor(home, settings, repositories),
   };
 }

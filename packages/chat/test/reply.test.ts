@@ -140,7 +140,7 @@ describe("a chat that names a refresh step", () => {
     await r.say(chat, "hello");
     const result = await r.round(chat);
     expect(result.result).toBe("failed");
-    expect(result.data).toMatchObject({ reason: "profile" });
+    expect(result.data).toMatchObject({ reason: "settings" });
     expect(r.calls).toHaveLength(0);
   });
 });

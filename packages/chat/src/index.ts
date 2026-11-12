@@ -114,6 +114,20 @@ export function createChatPlugin() {
     kind: "domain",
     version: "0.0.0",
     objects: [{ name: CHAT_TYPE, index: ["parent"] }],
+    settings: {
+      type: "object",
+      properties: {
+        speaker: {
+          type: "string",
+          minLength: 1,
+          default: "Operad Bot",
+          editable: true,
+          description:
+            "How a transcript labels the model's messages. A bot chat uses its bot's speaker instead.",
+        },
+      },
+      additionalProperties: false,
+    },
     steps: [
       {
         name: "reply",

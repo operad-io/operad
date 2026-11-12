@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import type { StepContext, ViewContext } from "@operad-io/engine";
+import type { JsonValue, StepContext, ViewContext } from "@operad-io/engine";
 import {
   allMessages,
   chatViews,
@@ -68,7 +68,7 @@ describe("chat:send", () => {
   });
 });
 
-function viewContext(r: Awaited<ReturnType<typeof rig>>): ViewContext {
+function viewContext(r: Awaited<ReturnType<typeof rig>>, settings: Readonly<Record<string, JsonValue>> = {}): ViewContext {
   return {
     plugin: "chat",
     home: "",
@@ -77,7 +77,7 @@ function viewContext(r: Awaited<ReturnType<typeof rig>>): ViewContext {
     facts: { append: () => Promise.reject(new Error("read only")) },
     logger: { path: "", write: () => Promise.resolve("") },
     signal: new AbortController().signal,
-    settings: {},
+    settings,
     secrets: {
       get: () => Promise.resolve(undefined),
       set: () => Promise.resolve(),
@@ -85,6 +85,23 @@ function viewContext(r: Awaited<ReturnType<typeof rig>>): ViewContext {
       names: () => Promise.resolve([]),
     },
   };
+}
+
+/** Appends a message the model wrote, as the reply does. */
+async function modelSay(r: Awaited<ReturnType<typeof rig>>, chat: string, text: string): Promise<void> {
+  await r.store.append({
+    type: "chat.message",
+    object: { type: "chat", id: chat },
+    cause: "test",
+    data: {
+      id: `m-${Math.random()}`,
+      role: "assistant",
+      from: { via: "", id: "" },
+      text,
+      attachments: [],
+      source: { kind: "", ref: null },
+    },
+  });
 }
 
 describe("the chat's views", () => {
@@ -125,6 +142,49 @@ describe("the chat's views", () => {
     const object = await r.store.get("chat", chat);
     if (object === undefined) throw new Error("no chat");
     expect((await chatViews.load(viewContext(r), object, "transcript", {})).markdown).toBe("No messages yet.");
+  });
+
+  test("the model's messages are labelled Operad Bot unless a speaker is set", async () => {
+    const r = await rig(() => reply("x"));
+    const chat = await r.chat();
+    await modelSay(r, chat, "hello back");
+    const object = await r.store.get("chat", chat);
+    if (object === undefined) throw new Error("no chat");
+    const markdown = (await chatViews.load(viewContext(r, r.registry.settingsFor("chat")), object, "transcript", {})).markdown;
+    expect(r.registry.settingsFor("chat").speaker).toBe("Operad Bot");
+    expect(markdown).toContain("**Operad Bot**");
+    expect(markdown).not.toContain("**assistant**");
+  });
+
+  test("the chat plugin's speaker setting labels a repo chat", async () => {
+    const r = await rig(() => reply("x"));
+    const chat = await r.chat();
+    await modelSay(r, chat, "hello back");
+    const object = await r.store.get("chat", chat);
+    if (object === undefined) throw new Error("no chat");
+    const markdown = (await chatViews.load(viewContext(r, { speaker: "Ops" }), object, "transcript", {})).markdown;
+    expect(markdown).toContain("**Ops**");
+    expect(markdown).not.toContain("**Operad Bot**");
+  });
+
+  test("a bot's own speaker labels its chats, and a changed name shows on old messages", async () => {
+    const r = await rig(() => reply("x"));
+    const chat = await r.chat();
+    const object = await r.store.get("chat", chat);
+    if (object === undefined) throw new Error("no chat");
+    await r.store.put("chat", chat, { ...object.data, parent: "bot:default" }, "test");
+    await r.store.put("bot", "default", { speaker: "Nova" }, "test");
+    await modelSay(r, chat, "hello back");
+    let stored = await r.store.get("chat", chat);
+    if (stored === undefined) throw new Error("no chat");
+    expect((await chatViews.load(viewContext(r), stored, "transcript", {})).markdown).toContain("**Nova**");
+
+    await r.store.put("bot", "default", { speaker: "Ada" }, "test");
+    stored = await r.store.get("chat", chat);
+    if (stored === undefined) throw new Error("no chat");
+    const markdown = (await chatViews.load(viewContext(r), stored, "transcript", {})).markdown;
+    expect(markdown).toContain("**Ada**");
+    expect(markdown).not.toContain("**Nova**");
   });
 });
 

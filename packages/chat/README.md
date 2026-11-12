@@ -1,7 +1,7 @@
 # `@operad-io/chat`
 
 The `chat` plugin: a long conversation with an agent, and how a message is
-answered. It comes with operad. It knows nothing of repositories or profiles:
+answered. It comes with operad. It knows nothing of repositories or bots:
 the plugin that opens a chat gives every field (`createChat`).
 
 ## The object
@@ -43,3 +43,10 @@ working directory acts on it (`dev` opens `work/chat-<id>`).
 
 A live section that pages over the message facts, so the command line, the TUI
 and the app show a chat with no client change.
+
+## The speaker
+
+The transcript labels the model's messages with a speaker name, read each time
+it is drawn: `plugins.chat.settings.speaker`, `Operad Bot` when not set. A
+chat's parent object may carry a `speaker` of its own (a bot does), and that
+name is used instead. Messages already recorded get a changed name too.
