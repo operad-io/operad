@@ -16,6 +16,8 @@
 # file after another, heavy files included: under --parallel (which implies
 # --isolate) the opentui native library fails to load ("Cannot access 'default'
 # before initialization").
+# OPERAD_TEST_OVERLAP=1 starts the heavy step beside the light and tui steps
+# instead of after them (its output is shown when the others end).
 # All steps run; the exit code is non-zero when any failed.
 #
 # Every run ends its output with the ten slowest tests of the run (file, test,
@@ -27,6 +29,7 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 parallel=${OPERAD_TEST_PARALLEL:-2}
 heavy_parallel=${OPERAD_TEST_HEAVY_PARALLEL:-2}
+overlap=${OPERAD_TEST_OVERLAP:-0}
 if ! [[ "$parallel" =~ ^[1-9][0-9]*$ ]]; then
   echo "run-tests: OPERAD_TEST_PARALLEL must be a whole number of 1 or more, not '$parallel'" >&2
   exit 2
@@ -93,14 +96,31 @@ step() {
   count=$(sed -n 's/^<testsuites [^>]*tests="\([0-9]*\)".*/\1/p' "$reports/$name.xml" 2>/dev/null | head -n 1)
   tests=$((tests + ${count:-0}))
 }
+if [ ${#heavy[@]} -gt 0 ] && [ "$overlap" = 1 ]; then
+  (
+    began=$(date +%s)
+    bun test --timeout 30000 --reporter=junit --reporter-outfile="$reports/heavy.xml" --parallel="$heavy_parallel" "${heavy[@]}" >"$reports/heavy.out" 2>&1
+    echo $? >"$reports/heavy.code"
+    echo $(($(date +%s) - began)) >"$reports/heavy.secs"
+  ) &
+  heavy_pid=$!
+fi
 if [ ${#together[@]} -gt 0 ]; then
   step together --parallel="$parallel" --path-ignore-patterns='**/test/heavy/**' "${together[@]}"
 fi
 if [ ${#alone[@]} -gt 0 ]; then
   step tui "${alone[@]}"
 fi
-if [ ${#heavy[@]} -gt 0 ]; then
+if [ ${#heavy[@]} -gt 0 ] && [ "$overlap" != 1 ]; then
   step heavy --parallel="$heavy_parallel" "${heavy[@]}"
+fi
+if [ ${#heavy[@]} -gt 0 ] && [ "$overlap" = 1 ]; then
+  wait "$heavy_pid"
+  cat "$reports/heavy.out"
+  [ "$(cat "$reports/heavy.code")" -eq 0 ] || code=1
+  steps="$steps heavy=$(cat "$reports/heavy.secs")"
+  count=$(sed -n 's/^<testsuites [^>]*tests="\([0-9]*\)".*/\1/p' "$reports/heavy.xml" 2>/dev/null | head -n 1)
+  tests=$((tests + ${count:-0}))
 fi
 total=$(($(date +%s) - started))
 bun scripts/slowest-tests.ts "$reports"/*.xml || true
