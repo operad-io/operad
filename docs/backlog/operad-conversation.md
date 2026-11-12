@@ -32,6 +32,7 @@ OpenClaw 是聊天优先，operad 到现在是流程优先。第一个要满足�
 14. **仓库 chat 默认在 main clone，只读**。agent 判断要改代码时用 `ctx.ask` 问要不要开 worktree；答应后 `dev` 开一个 `work/chat-<id>` 的 worktree，chat 的工作目录切过去（只切这一次），那里可写，main clone 仍只读。worktree 里的改动只能由这个 chat 开出的、指向这个 worktree 的 task 经 integrate 进 main（`operad-dev-flows.md` 决定 4 的硬约束不变）。
 15. **chat 通过 operad 的 MCP 工具调用插件**，不在 shell 里敲 `operad` 命令：`operad mcp` 的读工具、插件动词和允许列表里的动作挂进 harness（claude 和 radian 用 stdio MCP（`mcpServers`、`--mcp-config`），pi `customTools`，见 `operad-harness.md` 决定 3、4；claude 不用 `createSdkMcpServer` 的原因见那里，2026-11-10）。bot chat 看任务、开 task、问一个 task 为什么卡住，都走它，不自己改仓库文件；仓库 chat 同样。T-0175（lead 用 MCP 能做 shell 里能做的事）是前置。
 16. **第一版不导入 operad 之外开的会话**（终端里的 Claude Code、pi 的会话）。以后做时是 `chat` 插件加一个 `external: true` 的对象类型（`operad-contract.md` 决定 3），内核不动。
+17. **chat 可以关闭**（2026-11-12 owner 定）：chat 上的动作 `chat:close`（先确认）把一条 `chat.closed` 事实记进历史，行显示 `closed`，之后 `chat:send` 被拒并说 chat 已关闭，其他动作也不再出现；transcript 仍可读。chat 的列表过滤器是 `open`（默认）和 `closed`（内核在 `open` 后加 `all`），所以列表默认不显示已关闭的 chat。
 
 ## 顺序
 

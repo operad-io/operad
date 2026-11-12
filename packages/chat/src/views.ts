@@ -22,7 +22,8 @@ function row(object: StoredObject): ObjectRow {
   return {
     id: object.id,
     title: chat.title.length > 0 ? chat.title : object.id,
-    state: "open",
+    state: chat.closed ? "closed" : "open",
+    ...(chat.closed ? { final: true } : {}),
     ...(typeof chat.parent === "string" && chat.parent.length > 0 ? { parent: chat.parent } : {}),
   };
 }

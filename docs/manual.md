@@ -698,6 +698,8 @@ The `dev` plugin declares these filters (`all` follows `active`):
 | repo | `active` (default) | active |
 | repo | `removed` | removed |
 
+The `chat` plugin declares `open` (default) and `closed`; `all` follows `open`.
+
 ## Where `dev` commands run
 
 A `dev` command takes its repository from the directory, from `--repo <name>`
@@ -1369,6 +1371,11 @@ messages no reply answers yet from the chat's own record, continues the harness
 session, records the reply, and goes round again while new messages came in
 meanwhile (at most 20 rounds). After a restart a reply that was already
 recorded is not given twice.
+
+`chat:close C-0001` asks for confirmation and records a `chat.closed` fact. A
+closed chat keeps its transcript, refuses `chat:send` with a short message and
+offers no actions. Chats have the filters `open` (the default) and `closed`; the
+kernel adds `all`, so `operad list chat --filter all` still shows closed chats.
 
 A chat on a repository works in the main clone, read-only: a shell command runs
 there only when it is on a short list of commands that only read (`git status`,
