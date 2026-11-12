@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { attachmentDir, type StepContext } from "@operad-io/engine";
 import {
   allMessages,
@@ -66,16 +66,29 @@ describe("chat:send with attachments", () => {
     const object = await r.store.get("chat", chat);
     if (object === undefined) throw new Error("no chat");
     const shown = await chatViews.load(
-      { store: r.store, settings: {}, plugin: "chat" } as never,
+      { store: r.store, settings: {}, plugin: "chat", home: join(r.root, "home") } as never,
       object,
       "transcript",
       {},
     );
-    expect(shown.markdown).toContain(`![my photo.png](${encodeURI(photo)})`);
-    expect(shown.markdown).toContain(`Attachment: [notes.pdf](${encodeURI(doc)})`);
+    expect(shown.markdown).toContain(`![my photo.png](/v1/attachments/chat/${chat}/up-1/my%20photo.png)`);
+    expect(shown.markdown).toContain(`Attachment: [notes.pdf](/v1/attachments/chat/${chat}/up-1/notes.pdf)`);
     const message = allMessages(r.store, chat)[0];
     if (message === undefined) throw new Error("no message");
     expect(messageMarkdown(message)).toContain("look");
+  });
+});
+
+describe("an upload's own type", () => {
+  test("a file with no extension keeps the type its upload gave, so it is an image to the agent", async () => {
+    const r = await rig(() => reply("seen"), "claude");
+    const chat = await r.chat();
+    const photo = stored(r, chat, "camera", "12345");
+    writeFileSync(join(dirname(photo), ".meta.json"), JSON.stringify({ name: "camera", type: "image/png", size: 5 }));
+    await send(r, chat, { note: "look", attachments: [photo] });
+    expect(allMessages(r.store, chat)[0]?.attachments[0]?.type).toBe("image/png");
+    await r.round(chat);
+    expect(r.calls[0]?.params.images).toEqual([{ path: photo, mediaType: "image/png" }]);
   });
 });
 

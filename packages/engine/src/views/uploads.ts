@@ -6,8 +6,9 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { mkdir, open, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { isRecord } from "../util.ts";
 
 /** The largest file an upload takes, in bytes (20 MB). */
@@ -56,6 +57,8 @@ interface UploadMeta {
 const REF = /^up-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const DATA = "data";
 const META = "meta.json";
+/** Beside a stored file: what its upload said it was. A dot name cannot be an upload's own name. */
+const STORED_META = ".meta.json";
 const PART = ".part";
 
 /** A file name that is safe as one path segment; the extension is kept. */
@@ -68,6 +71,42 @@ export function safeFileName(name: string): string {
 /** The directory an object's attachments are stored in. */
 export function attachmentDir(home: string, type: string, id: string): string {
   return join(home, "attachments", safeFileName(type), safeFileName(id));
+}
+
+/** The type the upload of a stored file gave, when the file was stored from an upload. */
+export function storedType(path: string): string | undefined {
+  try {
+    const raw: unknown = JSON.parse(readFileSync(join(dirname(path), STORED_META), "utf8"));
+    return isRecord(raw) && typeof raw.type === "string" && raw.type.length > 0 ? raw.type : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The path of a stored file as a client asks for it, `/v1/attachments/...`; undefined outside the attachment directories. */
+export function attachmentUrl(home: string, path: string): string | undefined {
+  const rel = relative(join(home, "attachments"), path);
+  if (rel.length === 0 || rel.startsWith("..") || resolve(path) !== path) return undefined;
+  return `/v1/attachments/${rel.split(sep).map(encodeURIComponent).join("/")}`;
+}
+
+/** The stored file a `/v1/attachments/<rel>` request names, with its type; undefined when there is none. */
+export async function findAttachment(
+  home: string,
+  rel: readonly string[],
+): Promise<{ readonly path: string; readonly type: string; readonly name: string } | undefined> {
+  const root = join(home, "attachments");
+  if (rel.length < 4 || rel.some((part) => part === "" || part === "." || part === ".." || part.includes("/") || part.includes("\\"))) {
+    return undefined;
+  }
+  const path = join(root, ...rel);
+  if (!path.startsWith(`${root}${sep}`) || basename(path) === STORED_META) return undefined;
+  try {
+    if (!(await stat(path)).isFile()) return undefined;
+  } catch {
+    return undefined;
+  }
+  return { path, type: storedType(path) ?? "application/octet-stream", name: basename(path) };
 }
 
 export interface UploadsOptions {
@@ -104,7 +143,7 @@ export class Uploads {
     const part = join(this.root, `${ref}${PART}`);
     await mkdir(part, { recursive: true });
     const shown = safeFileName(name);
-    const mediaType = type.trim().length > 0 ? type.trim().toLowerCase() : "application/octet-stream";
+    const mediaType = type.split(";")[0]?.trim().toLowerCase() || "application/octet-stream";
     try {
       // The start time goes first, so a sweep can tell how old an unfinished upload is.
       await writeFile(join(part, META), JSON.stringify({ name: shown, type: mediaType, size: 0, at: this.clock() }));
@@ -154,8 +193,10 @@ export class Uploads {
     const name = isRecord(raw) && typeof raw.name === "string" ? safeFileName(raw.name) : "file";
     const type = isRecord(raw) && typeof raw.type === "string" ? raw.type : "application/octet-stream";
     await rename(join(target, DATA), join(target, name));
-    await rm(join(target, META), { force: true });
     const size = (await stat(join(target, name))).size;
+    // The type the client gave stays beside the file, for whoever shows or reads it later.
+    await rename(join(target, META), join(target, STORED_META));
+    await writeFile(join(target, STORED_META), JSON.stringify({ name, type, size }));
     return { ref, name, type, size, path: join(target, name) };
   }
 

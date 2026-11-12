@@ -1,5 +1,6 @@
 /** How a chat shows in a list and on its page: a row and a transcript. */
 
+import { attachmentUrl } from "@operad-io/engine";
 import type {
   ObjectRow,
   ObjectViews,
@@ -40,23 +41,25 @@ function minute(at: number): string {
 }
 
 /** A path as a Markdown link destination: spaces and parentheses are escaped. */
-function destination(path: string): string {
-  return encodeURI(path).replace(/\(/g, "%28").replace(/\)/g, "%29");
+function destination(path: string, home: string | undefined): string {
+  // A client fetches the file from the server, so the link is the server's attachment address.
+  const url = home === undefined ? undefined : attachmentUrl(home, path);
+  return (url ?? encodeURI(path)).replace(/\(/g, "%28").replace(/\)/g, "%29");
 }
 
 /** One attachment as a line: an image is shown as an image, another file as a link. */
-function attachmentMarkdown(file: Attachment): string {
-  const target = destination(file.path);
+function attachmentMarkdown(file: Attachment, home: string | undefined): string {
+  const target = destination(file.path, home);
   if ((IMAGE_TYPES as readonly string[]).includes(file.type)) return `![${file.name}](${target})`;
   return `Attachment: [${file.name}](${target})`;
 }
 
 /** One message as Markdown: who, when and where from, then the text. */
-export function messageMarkdown(message: Message, speaker: string = DEFAULT_SPEAKER): string {
+export function messageMarkdown(message: Message, speaker: string = DEFAULT_SPEAKER, home?: string): string {
   const who = message.role === "assistant" ? speaker : "you";
   const via = message.role === "user" && message.source.kind.length > 0 ? ` via ${message.source.kind}` : "";
   const head = `**${who}**${via} · ${minute(message.at)}`;
-  const body = [message.text, ...message.attachments.map(attachmentMarkdown)].filter((part) => part.length > 0);
+  const body = [message.text, ...message.attachments.map((file) => attachmentMarkdown(file, home))].filter((part) => part.length > 0);
   return [head, ...body].join("\n\n");
 }
 
@@ -126,7 +129,7 @@ async function load(
   for (const fact of page.facts) {
     if (fact.type !== MESSAGE_FACT) continue;
     const message = messageFrom(fact);
-    if (message !== undefined) blocks.push(messageMarkdown(message, speaker));
+    if (message !== undefined) blocks.push(messageMarkdown(message, speaker, ctx.home));
   }
   const markdown = blocks.length === 0 && options.cursor === undefined ? "No messages yet." : blocks.join("\n\n---\n\n");
 

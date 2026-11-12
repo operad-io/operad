@@ -21,6 +21,8 @@ import {
   readHttpToken,
   rotateHttpToken,
   startHttpServer,
+  attachmentUrl,
+  storedType,
   UploadMissingError,
   Uploads,
   storeRootOf,
@@ -1408,6 +1410,34 @@ describe("http server", () => {
       now += 2;
       expect(await uploads.sweep()).toBe(1);
       await expect(uploads.take(info.ref, await tempRoot())).rejects.toBeInstanceOf(UploadMissingError);
+    });
+
+    test("a stored file is served to a client with the type its upload gave, behind the token", async () => {
+      const h = await makeHarness();
+      try {
+        seed(h, "one", { title: "First", state: "new" });
+        const up = await json(await upload(h, "camera", "PNGDATA", "image/png; charset=binary"));
+        expect(up.type).toBe("image/png");
+        const run = await json(await attach(h, "one", { file: up.ref }));
+        const stored = (run.value as { file: string }).file;
+        expect(storedType(stored)).toBe("image/png");
+        const url = attachmentUrl(h.home, stored) ?? "";
+        expect(url).toBe(`/v1/attachments/item/one/${String(up.ref)}/camera`);
+        const got = await api(h, url);
+        expect(got.status).toBe(200);
+        expect(got.headers.get("content-type")).toBe("image/png");
+        expect(await got.text()).toBe("PNGDATA");
+        expect((await fetch(`${h.base}${url}`)).status).toBe(401);
+        for (const bad of [
+          `/v1/attachments/item/one/${String(up.ref)}/.meta.json`,
+          `/v1/attachments/item/one/%2e%2e/%2e%2e/config.json`,
+          `/v1/attachments/item/one/${String(up.ref)}/nothing`,
+        ]) {
+          expect((await api(h, bad)).status).toBe(404);
+        }
+      } finally {
+        await h.close();
+      }
     });
 
     test("a json body above its limit is refused with a message", async () => {

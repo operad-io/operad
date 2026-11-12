@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { statSync } from "node:fs";
 import { basename, extname } from "node:path";
 import type { JsonValue, ObjectRef, ObjectStore, PluginFact } from "@operad-io/engine";
-import { isRecord, stringList } from "@operad-io/engine";
+import { isRecord, storedType, stringList } from "@operad-io/engine";
 
 /** The object type of a chat. */
 export const CHAT_TYPE = "chat";
@@ -121,7 +121,8 @@ export function attachmentOf(path: string): Attachment {
     throw new Error(`the attachment ${path} is not there`);
   }
   const name = basename(path);
-  return { path, name, type: mediaTypeOf(name), size };
+  // The type the upload came with wins over a guess from the extension.
+  return { path, name, type: storedType(path) ?? mediaTypeOf(name), size };
 }
 
 /** The attachments of a message fact; an older fact that holds bare paths reads as records. */

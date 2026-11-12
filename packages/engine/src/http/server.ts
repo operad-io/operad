@@ -19,7 +19,7 @@ import {
   type Views,
 } from "../views/presentation.ts";
 import { listRunning } from "../views/running.ts";
-import { Uploads, UploadTooLargeError, MAX_UPLOAD_BYTES } from "../views/uploads.ts";
+import { findAttachment, Uploads, UploadTooLargeError, MAX_UPLOAD_BYTES } from "../views/uploads.ts";
 import { listTypes } from "../views/types.ts";
 import { validateListenAddresses } from "./address.ts";
 import {
@@ -579,6 +579,25 @@ function createHandler(
           confirmed: confirmed === true,
         }),
       );
+    }
+
+    if (path.startsWith("/v1/attachments/")) {
+      if (method !== "GET") {
+        return errorResponse(405, "method", "this endpoint takes GET");
+      }
+      const found = await findAttachment(
+        options.home,
+        path.slice("/v1/attachments/".length).split("/").map(decodeSegment),
+      );
+      if (found === undefined) return errorResponse(404, "not-found", "no such attachment");
+      return new Response(Bun.file(found.path), {
+        headers: {
+          "content-type": found.type,
+          "content-disposition": `inline; filename*=UTF-8''${encodeURIComponent(found.name)}`,
+          "cache-control": "private, no-store",
+          "x-content-type-options": "nosniff",
+        },
+      });
     }
 
     if (path === "/v1/uploads") {
