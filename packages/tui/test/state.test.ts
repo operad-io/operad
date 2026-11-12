@@ -211,6 +211,32 @@ describe("the TUI reducer", () => {
     });
   });
 
+  test("a running row that names an object opens it on enter; one without stays closed", () => {
+    let state = withTypes(initialState({ width: 120 }));
+    state = reduce(state, { type: "key", key: "2" });
+    state = reduce(state, { type: "running", items: [{ ...running, object: "dev/T-1", title: "A" }] });
+    expect(activeTab(state)?.list.rows[0]?.openable).not.toBe(false);
+    // the cursor already rests on it: a follow of the cursor is on the way
+    expect(state.followPending).toBe(true);
+    state = reduce(state, { type: "key", key: "enter" });
+    expect(state.objectRequest?.id).toBe("dev/T-1");
+
+    let bare = withTypes(initialState({ width: 120 }));
+    bare = reduce(bare, { type: "key", key: "2" });
+    bare = reduce(bare, { type: "running", items: [running] });
+    expect(activeTab(bare)?.list.rows[0]?.openable).toBe(false);
+    expect(bare.followPending).toBe(false);
+    bare = reduce(bare, { type: "key", key: "enter" });
+    expect(bare.objectRequest).toBeUndefined();
+  });
+
+  test("the palette opens with : on the Running tab", () => {
+    let state = withTypes(initialState({ width: 120 }));
+    state = reduce(state, { type: "key", key: "2" });
+    state = reduce(state, { type: "key", key: ":" });
+    expect(state.input?.kind).toBe("palette");
+  });
+
   test("each list maps its own flags to a row mark", () => {
     let state = withTypes(initialState());
     state = reduce(state, { type: "pending", items: [pending] });
