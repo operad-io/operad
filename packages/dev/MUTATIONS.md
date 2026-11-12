@@ -961,3 +961,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0340-M1 | packages/dev/src/refusals.ts | the plan's second confirm said "nothing more to do", so the in-process confirm check no longer matched | `operad with the dev plugin > the real binary registers, plans, lists, shows and confirms` |
+
+## T-0345 — a git that never exits is killed and named
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0345-M1 | packages/dev/src/git.ts | `runOnce` passed no timeout to `Bun.spawnSync`, so a git that never exits blocked as before | `a git that never exits > is killed at its limit and the error names the command, the directory and the time` |

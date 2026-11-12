@@ -18,6 +18,27 @@ export interface GitOptions {
   readonly input?: string | Uint8Array;
   /** The command's environment; the default is this process's. */
   readonly env?: NodeJS.ProcessEnv;
+  /** How long one run may take before it is killed; the default is `GIT_TIMEOUT_MS`. */
+  readonly timeoutMs?: number;
+}
+
+/**
+ * How long one git run may take. It is well under a test's 30 s limit, so a git
+ * that never exits is reported with its command instead of as a silent timeout.
+ * This is a diagnosis, not a retry: the run is not tried again.
+ */
+export const GIT_TIMEOUT_MS = 20_000;
+
+/** A git run that did not end within its limit and was killed. */
+export class GitTimeoutError extends Error {
+  constructor(
+    readonly cwd: string,
+    readonly args: readonly string[],
+    readonly ranMs: number,
+  ) {
+    super(`git ${args.join(" ")} in ${cwd} did not end after ${ranMs} ms and was killed`);
+    this.name = "GitTimeoutError";
+  }
 }
 
 /** How many times a query that printed nothing is run in all. */
@@ -53,6 +74,7 @@ export function printsOnSuccess(args: readonly string[]): boolean {
 }
 
 function runOnce(cwd: string, args: readonly string[], options: GitOptions): GitResult {
+  const started = Date.now();
   const result = Bun.spawnSync({
     cmd: ["git", "-C", cwd, ...args],
     stdin:
@@ -65,7 +87,12 @@ function runOnce(cwd: string, args: readonly string[], options: GitOptions): Git
     stderr: "pipe",
     // Passed on so the child is found through the current PATH.
     env: options.env ?? { ...process.env },
+    timeout: options.timeoutMs ?? GIT_TIMEOUT_MS,
+    killSignal: "SIGKILL",
   });
+  if (result.exitedDueToTimeout === true) {
+    throw new GitTimeoutError(cwd, args, Date.now() - started);
+  }
   return {
     ok: result.exitCode === 0,
     out: options.raw === true ? result.stdout.toString() : result.stdout.toString().trim(),

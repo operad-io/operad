@@ -1,11 +1,11 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
-import { execFileSync } from "node:child_process";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { listPending, PluginRegistry } from "@operad-io/engine";
 import poolPlugin from "@operad-io/pool";
 import plugin from "../src/index.ts";
+import { git as gitQuery } from "../src/git.ts";
 import { followMain } from "../src/integrate.ts";
 import { schedulerTestHooks } from "../src/schedule.ts";
 import {
@@ -308,7 +308,9 @@ describe("a stopped task when a plugin dev needs is missing", () => {
 
 describe("a followed merge and the code serve has loaded", () => {
   function git(cwd: string, args: readonly string[]): string {
-    return execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8" }).trim();
+    const result = gitQuery(cwd, args, { raw: false });
+    if (!result.ok) throw new Error(`git ${args.join(" ")} in ${cwd}: ${result.err}`);
+    return result.out;
   }
 
   async function mainClone(
