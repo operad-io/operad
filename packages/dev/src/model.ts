@@ -374,6 +374,8 @@ export type TaskAttempt = {
   readonly worked?: boolean;
   /** The file the worker's own log was written to. */
   readonly workLog?: string | null;
+  /** The worker's last message of this attempt's work, in full, as the harness reported it. */
+  readonly finalMessage?: string | null;
   /** Tokens the worker used, when the harness reported them. */
   readonly tokens?: { readonly input: number; readonly output: number } | null;
   /** How long the worker ran, in milliseconds, as the harness measured it. */

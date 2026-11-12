@@ -38,6 +38,7 @@ afterAll(cleanupTempRoots);
 guardLockHandles();
 
 const FAKE_COST_MICROS = 2_500_000;
+const FAKE_FINAL_MESSAGE = `Done.\n\n${"A long closing report. ".repeat(60)}`;
 
 function fakeHarness(record: string) {
   return definePlugin({
@@ -131,6 +132,7 @@ function fakeHarness(record: string) {
               result: "done",
               data: {
                 sessionId: "fake-session",
+                finalMessage: FAKE_FINAL_MESSAGE,
                 usage: {
                   harness: "fake",
                   model: null,
@@ -343,6 +345,12 @@ describe("dev/work", () => {
     expect(task.attempt?.tokens).toEqual({ input: 40, output: 9 });
     expect(task.cost).toBe(2.5);
     expect(task.attempt?.costQuality).toBe("exact");
+  });
+
+  test("the worker's final message is kept whole on the attempt (T-0317)", async () => {
+    const state = await fixture("commit-standard");
+    await runWork(state);
+    expect((await taskDataOf(state)).attempt?.finalMessage).toBe(FAKE_FINAL_MESSAGE);
   });
 
   test("an incomplete cost is recorded as incomplete", async () => {

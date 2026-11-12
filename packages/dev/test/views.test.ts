@@ -369,6 +369,34 @@ describe("dev views", () => {
     expect(text.indexOf("Reviewer, round 1")).toBeLessThan(text.indexOf("**agent:** Looks fine."));
   });
 
+  test("the answer section shows each attempt's final message whole, newest first (T-0317)", async () => {
+    const { store, task } = await setup();
+    const stored = await getTask(store, task.id);
+    const long = `Closing report.\n\n${"Detail line. ".repeat(100)}`;
+    const put = (cause: string, attempt: Record<string, unknown>) =>
+      store.put("task", task.id, { ...stored.data, attempt }, cause);
+    await put("dev:work", { number: 1, finalMessage: "First answer." });
+    await put("dev:worktree", { number: 2, finalMessage: null });
+    const mid = await getTask(store, task.id);
+    expect(taskViews.sections(mid).map((s) => s.id)).toContain("answer");
+    expect(taskViews.sections(mid).find((s) => s.id === "answer")?.title).toBe("Answer");
+    const early = (await taskViews.load({ store } as never, mid, "answer", {})) as { markdown: string };
+    expect(early.markdown).toBe("First answer.");
+    await put("dev:work", { number: 2, finalMessage: long });
+    const latest = await getTask(store, task.id);
+    const first = (await taskViews.load({ store } as never, latest, "answer", {})) as {
+      markdown: string; next?: string; pages?: { label: string; cursor?: string }[];
+    };
+    expect(first.markdown).toBe(long);
+    expect(first.next).toBe("1");
+    expect(first.pages?.map((p) => p.label)).toEqual(["attempt 2", "attempt 1"]);
+    const older = (await taskViews.load({ store } as never, latest, "answer", { cursor: "1" })) as {
+      markdown: string; next?: string;
+    };
+    expect(older.markdown).toBe("First answer.");
+    expect(older.next).toBeUndefined();
+  });
+
   test("the diff section is the stat and the diff, and pages by file when long", async () => {
     const root = await tempRoot();
     const remote = await makeRemote(root);
