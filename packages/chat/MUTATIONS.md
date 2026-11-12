@@ -35,3 +35,5 @@ the row fields.
 | T-0339-M15 | packages/chat/src/model.ts | the prompt left the attached files' paths out | `chat/reply with attachments > a harness that takes no images gets the image as a path only` |
 | T-0339-M16 | packages/chat/src/reply.ts | a harness that takes no image was given image input | `chat/reply with attachments > a harness that takes no images gets the image as a path only` |
 | T-0339-M17 | packages/chat/src/index.ts | a message with neither text nor a file was accepted | `chat:send with attachments > a message may be only a file, but never nothing` |
+| T-0339-M24 | packages/chat/src/model.ts | `attachmentOf` guessed the type from the extension, ignoring the upload's | `an upload's own type > a file with no extension keeps the type its upload gave, so it is an image to the agent` |
+| T-0339-M25 | packages/chat/src/views.ts | the transcript linked the server-local path instead of the attachment address | `chat:send with attachments > the transcript shows an image as an image and another file as a link, each with its name` |

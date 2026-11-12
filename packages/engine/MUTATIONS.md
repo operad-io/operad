@@ -680,3 +680,5 @@ the row fields.
 | T-0339-M4 | packages/engine/src/views/uploads.ts | `sweep` removed no upload however old | `http server > file arguments > an upload no action used is removed once it is old enough` |
 | T-0339-M5 | packages/engine/src/http/server.ts | a JSON body was held to a limit a thousand times larger | `http server > file arguments > a json body above its limit is refused with a message` |
 | T-0339-M6 | packages/engine/src/plugin/action-schema.ts | `fileProperties` ignored a list of files | `an action declares a file argument as a string, or a list of strings, with format file` |
+| T-0339-M23 | packages/engine/src/views/uploads.ts | the attachment route served the type file kept beside a stored file | `http server > file arguments > a stored file is served to a client with the type its upload gave, behind the token` |
+| T-0339-M26 | packages/engine/src/views/uploads.ts | `take` kept no type beside the stored file | `http server > file arguments > a stored file is served to a client with the type its upload gave, behind the token` |
