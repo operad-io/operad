@@ -385,7 +385,13 @@ async function openContext(
       await kernel.receive(event);
     },
     onCancelRun: (runId, graph) =>
-      cancelRun({ log, flow: (name) => loaded?.flow(name)?.flow, runId, graph }),
+      cancelRun({
+        log,
+        flow: (name) => loaded?.flow(name)?.flow,
+        runId,
+        graph,
+        source: "cli",
+      }),
   });
   loaded = registry;
   return {

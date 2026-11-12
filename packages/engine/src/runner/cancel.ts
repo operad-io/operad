@@ -12,6 +12,8 @@ export interface CancelRunOptions {
   readonly runId: string;
   /** The run's own graph, for a flow no loaded plugin declares. */
   readonly graph?: FlowDefinition | undefined;
+  /** Who asked: recorded with the cancel input, as the person's client names itself. */
+  readonly source: string;
   readonly clock?: (() => number) | undefined;
 }
 
@@ -43,7 +45,7 @@ export async function cancelRun(options: CancelRunOptions): Promise<void> {
     state,
     { kind: "cancel" },
     (options.clock ?? Date.now)(),
-    "dev",
+    options.source,
     `cancel:${runId}`,
   );
 }

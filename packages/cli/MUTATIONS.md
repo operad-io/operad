@@ -108,3 +108,9 @@ the row fields.
 | T-0297-M5 | packages/cli/src/http-bind.ts | `takeReplacesFlag` read the replacement flag without deleting it | `takeReplacesFlag > takes the flag from the environment so the replacement does not pass it on` |
 | T-0297-M6 | packages/cli/src/http-bind.ts | a serve started as a replacement did not turn on the bind retry | `serveStartFlags > a supervised serve retries its bind, and a replacement does too` |
 | T-0297-M7 | packages/cli/src/http-bind.ts | the environment of a replacement left out `OPERAD_SERVE_REPLACES` | `serveStartFlags > a replacement's environment carries the flag main starts it with` |
+
+## T-0273 — a run cancelled from the CLI records the CLI as its source
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0273-M1 | packages/cli/src/main.ts | `onCancelRun` recorded the cancel under the plugin's name `dev` again | `cancelling an object ends the run that waits on it > through the command line` |
