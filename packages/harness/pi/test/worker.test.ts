@@ -1146,6 +1146,29 @@ test("secret values are masked in the new text, thinking and tool output lines",
   expect(JSON.stringify(added)).not.toContain("store-secret-9");
 });
 
+test("a secret split across increment lines is held back, so no line carries a piece of it", async () => {
+  const s = setup();
+  s.input["secretValues"] = ["store-secret-9"];
+  const text = "AAAAstore-secret-9BBBB";
+
+  const run = await runFake(s, [{ text }], s.input, { FAKE_CLOCK_STEP: "60" });
+  const deltas = run.lines
+    .filter((line) => line["type"] === "text_delta")
+    .map((line) => String(line["text"]));
+  // The batch that would have ended inside the secret waits for it to finish.
+  expect(deltas).toEqual(["AAAA", "***BB"]);
+  expect(deltas.join("")).not.toContain("store");
+  expect(run.lines.find((line) => line["type"] === "text_end")?.["text"]).toBe("AAAA***BBBB");
+
+  const thinking = await runFake(s, [{ thinking: text, text: "" }], s.input, { FAKE_CLOCK_STEP: "60" });
+  const pieces = thinking.lines
+    .filter((line) => line["type"] === "thinking_delta")
+    .map((line) => String(line["text"]));
+  expect(pieces).toEqual(["AAAA", "***BB"]);
+  expect(pieces.join("")).not.toContain("store");
+  expect(thinking.lines.find((line) => line["type"] === "thinking_end")?.["text"]).toBe("AAAA***BBBB");
+});
+
 test("a secret of the operad store sent as secretValues is masked in the logged command", async () => {
   const s = setup();
   s.input["secretValues"] = ["store-secret-9"];

@@ -106,3 +106,4 @@ the row fields.
 | T-0360-M8 | packages/harness/pi/src/worker.ts | `toolOutputOf` did not mask a secret value | `secret values are masked in the new text, thinking and tool output lines` |
 | T-0360-M9 | packages/harness/pi/src/worker.ts | a refused call's result was written as `tool_output` | `a tool call's output is written with its call id, and a refused call writes none` |
 | T-0360-M10 | packages/harness/pi/src/worker.ts | text still buffered when a message stopped was dropped | `a run stopped mid-message writes the text it had not grouped yet` |
+| T-0360-M12 | packages/harness/pi/src/worker.ts | an increment batch was emitted without holding back a partial secret, so each piece of a split secret went out | `a secret split across increment lines is held back, so no line carries a piece of it` |

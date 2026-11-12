@@ -176,6 +176,30 @@ class Tally {
 const FLUSH_MS = 100;
 
 /**
+ * Splits an increment so that no line ends inside a secret: the longest suffix
+ * of `text` that is a proper prefix of a secret value is held back and joined
+ * to the next increment, where the completed secret is masked. A secret that
+ * is wholly in the emitted part is masked there.
+ */
+function splitSecretPrefix(
+  text: string,
+  secrets: readonly string[],
+): { readonly emit: string; readonly held: string } {
+  let held = 0;
+  for (const secret of secrets) {
+    const longest = Math.min(secret.length - 1, text.length);
+    for (let length = longest; length > held; length -= 1) {
+      if (text.endsWith(secret.slice(0, length))) {
+        held = length;
+        break;
+      }
+    }
+  }
+  if (held === 0) return { emit: text, held: "" };
+  return { emit: text.slice(0, text.length - held), held: text.slice(text.length - held) };
+}
+
+/**
  * A `tool_output` line's payload: the text secrets masked, cut to the shared
  * cap, and `truncated` when it was cut.
  */
@@ -222,18 +246,20 @@ class Increments {
   }
 
   #writeText(at: number): void {
-    if (this.#text.length > 0) {
-      this.io.line({ type: "text_delta", text: maskSecrets(this.#text, this.secrets) });
+    const { emit, held } = splitSecretPrefix(this.#text, this.secrets);
+    if (emit.length > 0) {
+      this.io.line({ type: "text_delta", text: maskSecrets(emit, this.secrets) });
     }
-    this.#text = "";
+    this.#text = held;
     this.#textAt = at;
   }
 
   #writeThinking(at: number): void {
-    if (this.#thinking.length > 0) {
-      this.io.line({ type: "thinking_delta", text: maskSecrets(this.#thinking, this.secrets) });
+    const { emit, held } = splitSecretPrefix(this.#thinking, this.secrets);
+    if (emit.length > 0) {
+      this.io.line({ type: "thinking_delta", text: maskSecrets(emit, this.secrets) });
     }
-    this.#thinking = "";
+    this.#thinking = held;
     this.#thinkingAt = at;
   }
 
