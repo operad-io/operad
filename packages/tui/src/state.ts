@@ -93,6 +93,10 @@ export interface TuiRow {
   readonly group?: TuiRow | undefined;
   /** The row is a top-level object with nothing under it, shown as its own group row. */
   readonly bare?: boolean | undefined;
+  /** A group's heading shown as its own row, so Enter can open the object it names. */
+  readonly heading?: boolean | undefined;
+  /** The row is indented under a heading row, not under a group line. */
+  readonly grouped?: boolean | undefined;
 }
 
 /** The next level under the open object: its rows and where the cursor is in them. */
@@ -2390,6 +2394,8 @@ function replaceListRow(state: TuiState, row: TuiRow): TuiState {
         ...(old.parent === undefined ? {} : { parent: old.parent }),
         ...(old.group === undefined ? {} : { group: old.group }),
         ...(old.bare === true ? { bare: true } : {}),
+        ...(old.heading === true ? { heading: true } : {}),
+        ...(old.grouped === true ? { grouped: true } : {}),
       };
     });
     return rows.some((r, i) => r !== tab.list.rows[i])
@@ -2564,6 +2570,30 @@ function rowOfEntry(entry: TuiTreeEntry): TuiRow {
   };
 }
 
+/**
+ * The rows one entry makes. A group heading that names a settings object is a
+ * row of its own, so Enter on it opens that object; its rows are indented under
+ * it. Other group headings stay metadata on the first row.
+ */
+function rowsOfEntry(state: TuiState, entry: TuiTreeEntry): readonly TuiRow[] {
+  const row = rowOfEntry(entry);
+  const heading = entry.heading;
+  if (
+    heading === undefined ||
+    !(state.settingsTab?.types?.some((info) => info.type === heading.type) === true)
+  ) {
+    return [row];
+  }
+  const named = heading.label ?? heading.row.title;
+  const headingRow: TuiRow = {
+    ...rowFromView(heading.row, heading.type),
+    title: sanitize(named),
+    unnamed: true,
+    heading: true,
+  };
+  return [headingRow, { ...row, group: undefined, grouped: true }];
+}
+
 function applyChildren(
   state: TuiState,
   objectId: string,
@@ -2654,7 +2684,7 @@ export function reduce(state: TuiState, event: TuiStateEvent): TuiState {
       );
     case "tree": {
       if (stale(state, event.generation)) return state;
-      const rows = event.entries.map(rowOfEntry);
+      const rows = event.entries.flatMap((entry) => rowsOfEntry(state, entry));
       const next = appendPage(
         state,
         event.tabId,

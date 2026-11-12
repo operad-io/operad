@@ -65,7 +65,10 @@ export type TuiPaletteGroup = string;
 
 /** One line of the palette. */
 export interface TuiPaletteEntry {
+  /** The grouping key; two types never share one, even with the same title. */
   readonly group: TuiPaletteGroup;
+  /** The group label a person reads, when it differs from the key. */
+  readonly groupTitle?: string | undefined;
   /** `<plugin>:<action>` for an action; the command's words for the TUI. */
   readonly name: string;
   /** One line that says what the entry does; search reads it too. */
@@ -354,7 +357,8 @@ function settingsObjectEntries(state: TuiState): readonly TuiPaletteEntry[] {
     for (const row of tab.list.rows) {
       if (row.type !== info.type) continue;
       entries.push({
-        group,
+        group: `settings-object-${info.type}`,
+        groupTitle: group,
         name: sanitize(row.title === "" ? row.id : row.title),
         title: sanitize(row.id),
         key: undefined,
@@ -371,8 +375,8 @@ function settingsObjectEntries(state: TuiState): readonly TuiPaletteEntry[] {
 function paletteGroups(state: TuiState): readonly string[] {
   const groups: string[] = [...PALETTE_GROUPS];
   for (const info of state.settingsTab?.types ?? []) {
-    const title = typeTitle(info);
-    if (!groups.includes(title)) groups.push(title);
+    const key = `settings-object-${info.type}`;
+    if (!groups.includes(key)) groups.push(key);
   }
   return groups;
 }

@@ -393,3 +393,10 @@ the row fields.
 |---|---|---|---|
 | T-0329-M2 | packages/tui/src/actions.ts | `pageActions` kept actions that declare `creates` | `an action that creates another type > it is not on its parent's page: not the main action, not in the footer, not in the palette` |
 | T-0329-M3 | packages/tui/src/actions.ts | the palette listed `new <type>` entries whatever tab and page was open, so a repository page offered `new chat` | `an action that creates another type > a repository's page and its palette list no creating action, even though the chat tab does` |
+
+## T-0330 — objects under settings
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0330-M2 | packages/tui/src/state.ts | a settings object's group heading stayed metadata on its first row, so Enter could only open that row | `objects under settings > a settings object that heads a group in the chat tab opens from that heading` |
+| T-0330-M3 | packages/tui/src/actions.ts | settings entries used the type title as their group key, so two types with one display title shared a group | `objects under settings > two settings types with one display title keep separate palette groups` |

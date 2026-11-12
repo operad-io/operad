@@ -65,17 +65,19 @@ describe("objects under settings", () => {
       ...state,
       input: { kind: "palette", query: "", cursor: 0 },
     });
-    expect(entries.filter((entry) => entry.group === "Bot").map((entry) => entry.name)).toEqual([
-      "default",
-    ]);
-    expect(entries.filter((entry) => entry.group === "Bot")[0]?.command).toEqual({
+    expect(
+      entries
+        .filter((entry) => entry.groupTitle === "Bot")
+        .map((entry) => entry.name),
+    ).toEqual(["default"]);
+    expect(entries.find((entry) => entry.groupTitle === "Bot")?.command).toEqual({
       kind: "open",
       type: "bot",
       id: "default",
     });
     // A group is drawn for the type, named after it.
-    expect(entries.some((entry) => entry.group === "Bot")).toBe(true);
-    expect(entries.some((entry) => entry.group === "Bot proposal")).toBe(false);
+    expect(entries.some((entry) => entry.groupTitle === "Bot")).toBe(true);
+    expect(entries.some((entry) => entry.groupTitle === "Bot proposal")).toBe(false);
   });
 
   test("Enter opens the bot's page; the chat entry can start a chat on it", () => {
@@ -87,6 +89,62 @@ describe("objects under settings", () => {
     state = reduce(state, { type: "key", key: "enter" });
     expect(state.objectRequest?.id).toBe("bot:default");
     expect(creationParents(state, "chat", ["bot"])).toContain("bot:default");
+  });
+
+  test("a settings object that heads a group in the chat tab opens from that heading", () => {
+    let state = reduce(initialState({ width: 120, height: 24 }), {
+      type: "types",
+      types: [...TYPES, { type: "chat", title: "Chat", plugin: "chat" }],
+    });
+    state = reduce(state, {
+      type: "tree",
+      tabId: "plugin:chat",
+      level: "children",
+      entries: [
+        {
+          row: row("C-0001", "First chat", "open", "bot:default"),
+          type: "chat",
+          parent: "bot:default",
+          heading: {
+            row: row("bot:default", "bot:default"),
+            type: "bot",
+            label: "bot:default",
+          },
+        },
+      ],
+    });
+    const chat = state.tabs.find((tab) => tab.id === "plugin:chat");
+    expect(chat?.list.rows.map((entry) => entry.id)).toEqual(["bot:default", "C-0001"]);
+    expect(chat?.list.rows[0]?.heading).toBe(true);
+    expect(chat?.list.rows[1]?.group).toBeUndefined();
+    expect(chat?.list.rows[1]?.grouped).toBe(true);
+    const at = state.tabs.findIndex((tab) => tab.id === "plugin:chat");
+    state = reduce(state, { type: "key", key: String(at + 1) });
+    state = reduce(state, { type: "key", key: "enter" });
+    expect(state.objectRequest?.id).toBe("bot:default");
+  });
+
+  test("two settings types with one display title keep separate palette groups", () => {
+    let state = reduce(initialState({ width: 100, height: 30 }), {
+      type: "types",
+      types: [
+        { type: "foo-bar", title: "Foo Bar", plugin: "demo", settings: true },
+        { type: "foo_bar", title: "Foo Bar", plugin: "demo", settings: true },
+      ],
+    });
+    state = reduce(state, {
+      type: "settings-objects",
+      entries: [
+        { row: row("one", "one"), type: "foo-bar" },
+        { row: row("two", "two"), type: "foo_bar" },
+      ],
+    });
+    state = reduce(state, { type: "key", key: ":", text: ":" });
+    const entries = paletteEntries(state).filter((entry) => entry.groupTitle === "Foo Bar");
+    expect(entries.map((entry) => entry.name)).toEqual(["one", "two"]);
+    expect(new Set(entries.map((entry) => entry.group)).size).toBe(2);
+    const drawn = drawState(state, "dark").overlay?.chunks.map((chunk) => chunk.text).join("") ?? "";
+    expect(drawn.match(/Foo Bar/g)?.length).toBe(2);
   });
 
   test("opening a bot loads its own page and the next level under it", async () => {
