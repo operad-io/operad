@@ -1010,3 +1010,8 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0360-M11 | packages/dev/src/views.ts | the shared text, thinking and tool output lines were read as agent text again | `dev views > the shared process lines add nothing to the log` |
+## T-0359 — a task's log ignores the chat's live increment lines
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0359-M10 | packages/dev/src/views.ts | the live increment and tool output line types were no longer skipped, so they appeared in a task's Log | `the agent's text, a tool error's first line and a turn's end are shown; tool output is not` |

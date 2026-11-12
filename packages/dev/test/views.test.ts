@@ -305,8 +305,13 @@ describe("dev views", () => {
 
   test("the agent's text, a tool error's first line and a turn's end are shown; tool output is not", () => {
     const lines = [
+      { type: "text_delta", text: "I will " },
+      { type: "thinking_delta", text: "private" },
+      { type: "text_end", text: "I will run the tests." },
+      { type: "thinking_end", text: "private" },
       { type: "message_end", role: "assistant", text: "I will run the tests.", stopReason: "tool_use", usage: { input: 120, output: 30 }, cost: { total: 0.0123 } },
       { type: "tool_execution_start", toolCallId: "a", toolName: "Bash", at: 1, input: "false" },
+      { type: "tool_output", toolCallId: "a", text: "TOOL OUTPUT IS NOT SHOWN" },
       { type: "tool_execution_end", toolCallId: "a", toolName: "Bash", isError: true, durationMs: 2000, error: "exit code 1" },
       { type: "message_end", role: "assistant", stopReason: "end_turn", usage: { input: 1, output: 2 }, cost: null },
       { type: "result", result: "done", usage: { input: 5, output: 6 }, cost: { micros: 12346, quality: "exact" } },
