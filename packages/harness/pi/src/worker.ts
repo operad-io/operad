@@ -22,7 +22,13 @@ import type {
   ModelRuntime,
 } from "@earendil-works/pi-coding-agent";
 import { openMcpTools, type McpTools } from "@operad-io/mcp";
-import { messageText, readImage, type CallAnswer } from "@operad-io/harness-process";
+import {
+  capToolOutput,
+  maskSecrets,
+  messageText,
+  readImage,
+  type CallAnswer,
+} from "@operad-io/harness-process";
 import { findPi, loadPi } from "./pi-install.ts";
 import {
   DEFAULT_BASH_TIMEOUT_SECS,
@@ -92,7 +98,7 @@ export interface WorkerPorts {
 }
 
 /** The text of an assistant message, thinking and tool calls left out. */
-function textOf(content: unknown): string {
+function textOf(content: unknown, join = " "): string {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
   return content
@@ -101,7 +107,7 @@ function textOf(content: unknown): string {
         ? String(Reflect.get(block, "text") ?? "")
         : "",
     )
-    .join(" ");
+    .join(join);
 }
 
 function finite(value: unknown): number | null {
@@ -163,6 +169,93 @@ class Tally {
     if (this.#priced === 0) return null;
     const micros = Math.round(this.#total * 1e6);
     return this.#unpriced > 0 ? { micros, incomplete: true } : { micros };
+  }
+}
+
+/** How often one stream writes an increment line at most, in milliseconds. */
+const FLUSH_MS = 100;
+
+/**
+ * A `tool_output` line's payload: the text secrets masked, cut to the shared
+ * cap, and `truncated` when it was cut.
+ */
+export function toolOutputOf(
+  text: string,
+  secrets: readonly string[],
+): { readonly text: string; readonly truncated?: true } {
+  const capped = capToolOutput(maskSecrets(text, secrets));
+  return { text: capped.text, ...(capped.truncated ? { truncated: true as const } : {}) };
+}
+
+/**
+ * Assistant text and thinking as they stream. A line carries the new text
+ * only, and each stream writes at most one per `FLUSH_MS`: a message that
+ * arrives faster is grouped. The tail that is still buffered when a block or a
+ * message ends is left to the full line that follows (`text_end`,
+ * `thinking_end`), so no increment goes out closer than `FLUSH_MS` to the one
+ * before it. Secret values are masked in every line.
+ */
+class Increments {
+  #text = "";
+  #thinking = "";
+  #textAt: number | undefined;
+  #thinkingAt: number | undefined;
+
+  constructor(
+    private readonly io: WorkerIo,
+    private readonly now: () => number,
+    private readonly secrets: readonly string[],
+  ) {}
+
+  text(delta: string): void {
+    if (delta.length === 0) return;
+    this.#text += delta;
+    const at = this.now();
+    if (this.#textAt === undefined || at - this.#textAt >= FLUSH_MS) this.#writeText(at);
+  }
+
+  thinking(delta: string): void {
+    if (delta.length === 0) return;
+    this.#thinking += delta;
+    const at = this.now();
+    if (this.#thinkingAt === undefined || at - this.#thinkingAt >= FLUSH_MS) this.#writeThinking(at);
+  }
+
+  #writeText(at: number): void {
+    if (this.#text.length > 0) {
+      this.io.line({ type: "text_delta", text: maskSecrets(this.#text, this.secrets) });
+    }
+    this.#text = "";
+    this.#textAt = at;
+  }
+
+  #writeThinking(at: number): void {
+    if (this.#thinking.length > 0) {
+      this.io.line({ type: "thinking_delta", text: maskSecrets(this.#thinking, this.secrets) });
+    }
+    this.#thinking = "";
+    this.#thinkingAt = at;
+  }
+
+  /** A thinking block finished: its full text follows the increments. */
+  endThinking(text: string): void {
+    this.#thinking = "";
+    this.#thinkingAt = undefined;
+    if (text.length > 0) this.io.line({ type: "thinking_end", text: maskSecrets(text, this.secrets) });
+  }
+
+  /** An assistant message finished: its full text follows the increments. */
+  endMessage(text: string): void {
+    if (text.length > 0) {
+      this.#text = "";
+      this.#textAt = undefined;
+      this.io.line({ type: "text_end", text: maskSecrets(text, this.secrets) });
+    } else if (this.#text.length > 0) {
+      this.#writeText(this.now());
+    }
+    // A thinking block that ended wrote its own full text; anything left is
+    // a block the run stopped in, and the increments are all it has.
+    if (this.#thinking.length > 0) this.#writeThinking(this.now());
   }
 }
 
@@ -348,6 +441,7 @@ export async function runWorker(
   sessionFile = session.sessionFile ?? null;
   const tally = new Tally();
   const now = hooks.now ?? Date.now;
+  const increments = new Increments(io, now, input.secretValues ?? []);
   const started = new Map<string, number>();
   let settle: () => void = () => {};
   const settled = new Promise<void>((resolve) => {
@@ -355,7 +449,25 @@ export async function runWorker(
   });
   session.subscribe((event) => {
     switch (event.type) {
+      case "message_update": {
+        const update = event.assistantMessageEvent;
+        switch (update.type) {
+          case "text_delta":
+            increments.text(update.delta);
+            break;
+          case "thinking_delta":
+            increments.thinking(update.delta);
+            break;
+          case "thinking_end":
+            increments.endThinking(update.content);
+            break;
+          default:
+            break;
+        }
+        break;
+      }
       case "message_end": {
+        if (event.message.role === "assistant") increments.endMessage(textOf(event.message.content, ""));
         const line = tally.add(event.message);
         if (line !== undefined) io.line(line);
         break;
@@ -376,7 +488,28 @@ export async function runWorker(
       case "tool_execution_end": {
         const begun = started.get(event.toolCallId);
         started.delete(event.toolCallId);
-        const firstLine = blockedCalls.has(event.toolCallId) ? REFUSED_IN_LOG : event.isError ? firstErrorLine(textOf(typeof event.result === "object" && event.result !== null ? Reflect.get(event.result, "content") : event.result), { secrets: input.secretValues }) : undefined;
+        const blocked = blockedCalls.has(event.toolCallId);
+        const content =
+          typeof event.result === "object" && event.result !== null
+            ? Reflect.get(event.result, "content")
+            : event.result;
+        // A refused call printed nothing; its result is the refusal the model
+        // already gets, and only the end line names it.
+        if (!blocked) {
+          const output = textOf(content, "");
+          if (output.length > 0) {
+            io.line({
+              type: "tool_output",
+              toolCallId: event.toolCallId,
+              ...toolOutputOf(output, input.secretValues ?? []),
+            });
+          }
+        }
+        const firstLine = blocked
+          ? REFUSED_IN_LOG
+          : event.isError
+            ? firstErrorLine(textOf(content), { secrets: input.secretValues })
+            : undefined;
         io.line({
           type: "tool_execution_end",
           toolCallId: event.toolCallId,

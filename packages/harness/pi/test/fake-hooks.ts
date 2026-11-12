@@ -4,8 +4,9 @@
  * fake model does:
  *
  * - `FAKE_SCRIPT`: a JSON array of responses, one per model call; an entry is
- *   `{ text, cost?, noPrice?, hang?, gate?, toolCall? }`. `hang` never finishes
- *   until pi aborts it; `gate` waits for the file named by `FAKE_RELEASE`.
+ *   `{ text, thinking?, cost?, noPrice?, hang?, gate?, endless?, toolCall? }`.
+ *   `hang` never finishes until pi aborts it; `gate` waits for the file named by
+ *   `FAKE_RELEASE`; `endless` streams its content and then never finishes.
  * - `FAKE_CONTEXT_FILE`: each call's messages are appended to it, one JSON
  *   line per call.
  * - `FAKE_CLOCK_STEP`: every reading of the clock moves on by this many milliseconds.
@@ -20,11 +21,14 @@ import { FakeProvider, type FakeResponse, type FakeToolCall } from "./fake-provi
 
 interface ScriptEntry {
   text: string;
+  thinking?: string;
   cost?: number;
   noPrice?: boolean;
   hang?: boolean;
   /** Waits for the file named by `FAKE_RELEASE` to exist before it answers. */
   gate?: boolean;
+  /** Streams its content and then never finishes; an abort ends it. */
+  endless?: boolean;
   toolCall?: FakeToolCall;
 }
 
@@ -36,11 +40,13 @@ export function fakeHooks(
   const script = JSON.parse(env["FAKE_SCRIPT"] ?? "[]") as ScriptEntry[];
   for (const entry of script) {
     const response: FakeResponse = { text: entry.text };
+    if (entry.thinking !== undefined) response.thinking = entry.thinking;
     if (entry.cost !== undefined) response.cost = entry.cost;
     if (entry.noPrice === true) response.noPrice = true;
     if (entry.toolCall !== undefined) response.toolCall = entry.toolCall;
     if (entry.hang === true) response.before = new Promise<void>(() => {});
     if (entry.gate === true) response.before = waitForRelease(env["FAKE_RELEASE"]);
+    if (entry.endless === true) response.endless = true;
     provider.enqueue(response);
   }
 

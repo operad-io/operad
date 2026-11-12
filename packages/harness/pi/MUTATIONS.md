@@ -91,3 +91,18 @@ the row fields.
 | T-0342-M8 | packages/harness/pi/src/index.ts | the step ignored the `effort` param a chat passes | `pi/agent > an effort from a chat reaches the worker as pi's thinking level` |
 | T-0339-M19 | packages/harness/pi/src/worker.ts | pi's prompt went without its images | `images are given to pi with the prompt: the model's context holds the image` |
 | T-0358-M10 | packages/harness/pi/src/index.ts | the step did not hand its lines to the receiver | `pi/agent > a receiver gets each line the step writes to its log; without one the log is the same` |
+
+## T-0360 — assistant text, thinking and tool output lines
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0360-M1 | packages/harness/pi/src/worker.ts | every text delta wrote its own line; the 100 ms grouping was gone | `increments are grouped to one line per stream per 100 ms, with an injected clock` |
+| T-0360-M2 | packages/harness/pi/src/worker.ts | thinking deltas were not written | `increments are grouped to one line per stream per 100 ms, with an injected clock` |
+| T-0360-M3 | packages/harness/pi/src/worker.ts | the full text of a finished message was not written (`text_end`) | `a prompt that ends writes the lines in order and a Result with usage, cost and sessionId` |
+| T-0360-M4 | packages/harness/pi/src/worker.ts | the full text of a finished thinking block was not written (`thinking_end`) | `thinking streams as increments and ends with the full block, which message_end leaves out` |
+| T-0360-M5 | packages/harness/pi/src/worker.ts | a tool call's output was never written | `a tool call's output is written with its call id, and a refused call writes none` |
+| T-0360-M6 | packages/harness/pi/src/worker.ts | `toolOutputOf` left the output uncut instead of capping it | `tool output is cut to the shared cap and marked truncated` |
+| T-0360-M7 | packages/harness/pi/src/worker.ts | `text_end` did not mask a secret value | `secret values are masked in the new text, thinking and tool output lines` |
+| T-0360-M8 | packages/harness/pi/src/worker.ts | `toolOutputOf` did not mask a secret value | `secret values are masked in the new text, thinking and tool output lines` |
+| T-0360-M9 | packages/harness/pi/src/worker.ts | a refused call's result was written as `tool_output` | `a tool call's output is written with its call id, and a refused call writes none` |
+| T-0360-M10 | packages/harness/pi/src/worker.ts | text still buffered when a message stopped was dropped | `a run stopped mid-message writes the text it had not grouped yet` |

@@ -26,6 +26,8 @@ export interface FakeToolCall {
 export interface FakeResponse {
   /** Text in the assistant message. */
   text: string;
+  /** Thinking in the assistant message, before the text and the tool call. */
+  thinking?: string;
   /** One tool call in the assistant message. */
   toolCall?: FakeToolCall;
   /** Cost in USD the message reports; default 0. */
@@ -34,6 +36,8 @@ export interface FakeResponse {
   noPrice?: boolean;
   /** Wait for this before streaming the content; aborting interrupts the wait. */
   before?: Promise<void>;
+  /** Streams its content and then never finishes; an abort ends it. */
+  endless?: boolean;
 }
 
 const CHUNK_SIZE = 4;
@@ -177,6 +181,9 @@ export class FakeProvider {
 
   #message(model: PiModel, response: FakeResponse): AssistantMessage {
     const content: AssistantMessage["content"] = [];
+    if (response.thinking !== undefined && response.thinking.length > 0) {
+      content.push({ type: "thinking", thinking: response.thinking });
+    }
     if (response.toolCall !== undefined) {
       const call: ToolCall = {
         type: "toolCall",
@@ -189,7 +196,7 @@ export class FakeProvider {
     if (response.text.length > 0 || content.length === 0) {
       content.push({ type: "text", text: response.text });
     }
-    const output = response.text.length + (response.toolCall === undefined ? 0 : 8);
+    const output = response.text.length + (response.thinking?.length ?? 0) + (response.toolCall === undefined ? 0 : 8);
     const input = 12;
     const message: AssistantMessage = {
       role: "assistant",
@@ -272,6 +279,22 @@ export class FakeProvider {
     for (let index = 0; index < message.content.length; index++) {
       const block = message.content[index];
       if (block === undefined) continue;
+      if (block.type === "thinking") {
+        partial.content = [{ type: "thinking", thinking: "" }];
+        stream.push({ type: "thinking_start", contentIndex: index, partial: { ...partial } });
+        for (const chunk of chunks(block.thinking)) {
+          const current = partial.content[0];
+          partial.content = [
+            {
+              type: "thinking",
+              thinking: `${current !== undefined && current.type === "thinking" ? current.thinking : ""}${chunk}`,
+            },
+          ];
+          stream.push({ type: "thinking_delta", contentIndex: index, delta: chunk, partial: { ...partial } });
+        }
+        stream.push({ type: "thinking_end", contentIndex: index, content: block.thinking, partial: { ...partial } });
+        continue;
+      }
       if (block.type === "text") {
         partial.content = [{ type: "text", text: "" }];
         stream.push({ type: "text_start", contentIndex: index, partial: { ...partial } });
@@ -302,6 +325,20 @@ export class FakeProvider {
     }
 
     const reason = message.stopReason === "toolUse" ? "toolUse" : "stop";
+    if (response.endless === true) {
+      const outcome = await waitFor(new Promise<void>(() => {}), options?.signal);
+      if (outcome === "aborted") {
+        const aborted: AssistantMessage = {
+          ...message,
+          content: [],
+          stopReason: "aborted",
+          errorMessage: "Request was aborted",
+        };
+        stream.push({ type: "error", reason: "aborted", error: aborted });
+        stream.end();
+      }
+      return;
+    }
     stream.push({ type: "done", reason, message });
     stream.end();
   }
