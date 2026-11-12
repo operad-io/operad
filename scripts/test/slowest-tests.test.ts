@@ -8,7 +8,7 @@ const report = `<?xml version="1.0" encoding="UTF-8"?>
   </testsuite>
   <testsuite name="a.test.ts" file="a.test.ts" tests="3">
     <testsuite name="outer" file="a.test.ts">
-      <testcase name="says &quot;hi&quot; &amp; leaves" classname="outer" time="2.25" file="a.test.ts" assertions="0">
+      <testcase name="says &quot;hi&quot; &amp; leaves" classname="outer&amp;apos;s &amp;amp; co" time="2.25" file="a.test.ts" assertions="0">
         <failure type="AssertionError" />
       </testcase>
       <testcase name="fast" classname="outer" time="0.000035" file="a.test.ts" assertions="0" />
@@ -20,7 +20,7 @@ describe("slowest tests", () => {
   test("a junit report gives each test its file, its groups and its seconds", () => {
     expect(parseJunit(report)).toEqual([
       { file: "b.test.ts", name: "b slow", seconds: 0.5 },
-      { file: "a.test.ts", name: 'outer > says "hi" & leaves', seconds: 2.25 },
+      { file: "a.test.ts", name: 'outer\'s & co > says "hi" & leaves', seconds: 2.25 },
       { file: "a.test.ts", name: "outer > fast", seconds: 0.000035 },
     ]);
   });

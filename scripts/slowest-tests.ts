@@ -34,7 +34,8 @@ export function parseJunit(xml: string): TestTime[] {
     }
     const seconds = Number(attributes.get("time"));
     if (!Number.isFinite(seconds)) continue;
-    const group = attributes.get("classname") ?? "";
+    // bun escapes the groups of a test twice (it&amp;apos;s), its name once.
+    const group = unescape(attributes.get("classname") ?? "");
     const name = attributes.get("name") ?? "";
     found.push({
       file: attributes.get("file") ?? "",
