@@ -62,3 +62,8 @@ Use a scratch `OPERAD_HOME` with the `dev` plugin and some objects in it.
    (from another terminal), then `kill -INT <tui pid>`: each time the shell
    prompt is back with the normal screen, a visible cursor and working echo, and
    the exit code is 0.
+9. **Live tail.** Open an object whose live section has a tail (the chat
+   plugin's answer while it is written). The finished content stays put and the
+   changing part is drawn under it in the dim colour. Leave it at the bottom:
+   both grow and follow. Scroll up: the section stays where it is while the tail
+   changes. When the tail goes away, no line of it stays on screen.
