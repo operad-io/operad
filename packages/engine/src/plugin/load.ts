@@ -165,7 +165,7 @@ export async function loadConfiguredPlugins(
       const declared = definitionName(definition);
       if (declared !== undefined && declared !== entry.name && entry.module !== entry.name) {
         errors.push(
-          `plugin "${entry.name}": the module declares the name "${declared}"`,
+          `plugin "${entry.name}": unknown plugin; the module "${entry.module}" provides "${declared}"`,
         );
         continue;
       }
