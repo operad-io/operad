@@ -224,11 +224,14 @@ export function accessFor(
   home: string,
   settings: BotSettings,
   repositories: readonly string[] = [],
+  skillPaths: readonly string[] = [],
 ): Record<string, JsonValue> {
   const access = defaultAccess(home);
   // A repository is reached through operad's tools (dev's verbs), never by
-  // touching its files, so its path is denied to the agent.
-  access.denyPaths = appended(access.denyPaths, repositories);
+  // touching its files, so its path is denied to the agent. Skill directories
+  // are changed only through a proposal a person confirms, so they are denied
+  // to the agent too (the harness still receives their paths as skills).
+  access.denyPaths = appended(access.denyPaths, [...repositories, ...skillPaths]);
   const own = settings.access ?? {};
   for (const field of ["denyPaths", "denyCommands", "askCommands", "askPaths"] as const) {
     access[field] = appended(access[field], own[field]);
@@ -293,12 +296,13 @@ export function resolveBot(
   repositories: readonly string[] = [],
 ): ResolvedBot {
   const cwd = workingDirectory(home, name, settings);
+  const skills = skillDirectories(settings, cwd);
   return {
     name,
     cwd,
     harness: settings.harness ?? null,
-    skills: skillDirectories(settings, cwd),
+    skills,
     speaker: settings.speaker ?? null,
-    access: accessFor(home, settings, repositories),
+    access: accessFor(home, settings, repositories, [...skills, join(cwd, "skills")]),
   };
 }
