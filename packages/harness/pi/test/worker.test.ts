@@ -13,9 +13,9 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseInput, THINKING_LEVELS } from "../src/protocol.ts";
-import { boundedTimeout } from "../src/worker.ts";
+import { boundedTimeout, serveWorker } from "../src/worker.ts";
+import { fakeHooks } from "./fake-hooks.ts";
 
-const REAL_WORKER = join(import.meta.dir, "..", "src", "worker.ts");
 const FAKE_WORKER = join(import.meta.dir, "fake-worker.ts");
 /** The devDependency copy of pi, reached the way a user's `pi` is: through its bin link. */
 export const DEV_PI = join(import.meta.dir, "..", "node_modules", ".bin", "pi");
@@ -69,7 +69,7 @@ interface Run {
   exitCode: number;
 }
 
-class Child {
+class ProcessChild {
   readonly #process: Bun.Subprocess<"pipe", "pipe", "pipe">;
   readonly #stderrText: Promise<string>;
   readonly #stdoutText: Promise<string>;
@@ -141,13 +141,116 @@ class Child {
   }
 }
 
+/**
+ * The worker run in this process, with the same surface as `ProcessChild`.
+ * `signal` aborts the run the way SIGTERM does; the tests that need a real
+ * signal, a real HOME or a real environment use `ProcessChild`.
+ */
+class Child {
+  readonly #stdin = new TransformStream<Uint8Array, Uint8Array>();
+  readonly #writer = this.#stdin.writable.getWriter();
+  readonly #encoder = new TextEncoder();
+  readonly #waiters = new Set<() => void>();
+  readonly #controller = new AbortController();
+  readonly #listeners: Array<(line: Record<string, unknown>) => void> = [];
+  #stdout = "";
+  #pending = "";
+  #stderr = "";
+  #exit: number | undefined;
+  readonly #exited: Promise<number>;
+
+  constructor(env: Record<string, string>) {
+    const wake = (): void => {
+      for (const resolve of this.#waiters) resolve();
+      this.#waiters.clear();
+    };
+    const log = (text: string): void => {
+      this.#stderr += text;
+      wake();
+    };
+    this.#exited = serveWorker(
+      this.#stdin.readable,
+      {
+        write: (text) => {
+          this.#stdout += text;
+          this.#pending += text;
+          for (;;) {
+            const newline = this.#pending.indexOf("\n");
+            if (newline === -1) break;
+            const line = this.#pending.slice(0, newline);
+            this.#pending = this.#pending.slice(newline + 1);
+            const parsed = JSON.parse(line) as Record<string, unknown>;
+            for (const listener of this.#listeners) listener(parsed);
+          }
+        },
+        log: (text) => log(`${text}\n`),
+      },
+      this.#controller.signal,
+      fakeHooks(env, log),
+    ).then((code) => {
+      this.#exit = code;
+      wake();
+      return code;
+    });
+  }
+
+  /** Calls `listener` with each line the worker writes from now on. */
+  onLine(listener: (line: Record<string, unknown>) => void): void {
+    this.#listeners.push(listener);
+  }
+
+  send(text: string): void {
+    void this.#writer.write(this.#encoder.encode(text));
+    void this.#writer.close();
+  }
+
+  /** Writes one input line and leaves stdin open, so the host can say more later. */
+  sendLine(text: string): void {
+    void this.#writer.write(this.#encoder.encode(`${text}\n`));
+  }
+
+  endInput(): void {
+    void this.#writer.close().catch(() => undefined);
+  }
+
+  /** Waits until stderr holds the text, or the run ends. */
+  async stderrHas(text: string): Promise<void> {
+    while (!this.#stderr.includes(text)) {
+      if (this.#exit !== undefined) throw new Error(`the run ended before "${text}": ${this.#stderr}`);
+      await new Promise<void>((resolve) => this.#waiters.add(resolve));
+    }
+  }
+
+  signal(_name: NodeJS.Signals): void {
+    this.#controller.abort();
+  }
+
+  async finish(): Promise<Run> {
+    const exitCode = await this.#exited;
+    const raw = this.#stdout.split("\n").filter((line) => line.length > 0);
+    return { lines: raw.map((line) => JSON.parse(line) as Record<string, unknown>), raw, stderr: this.#stderr, exitCode };
+  }
+}
+
 async function runFake(
   s: Setup,
   script: unknown[],
   input: Record<string, unknown> = s.input,
   env: Record<string, string> = {},
 ): Promise<Run> {
-  const child = new Child(FAKE_WORKER, s.home, { FAKE_SCRIPT: JSON.stringify(script), ...env });
+  const child = new Child({ FAKE_SCRIPT: JSON.stringify(script), ...env });
+  child.send(JSON.stringify(input));
+  return child.finish();
+}
+
+/** The same run in a real worker process with `s.home` as its HOME. */
+async function runFakeProcess(
+  s: Setup,
+  script: unknown[],
+  input: Record<string, unknown> = s.input,
+  env: Record<string, string> = {},
+): Promise<Run> {
+  const child = new ProcessChild(FAKE_WORKER, s.home, { FAKE_SCRIPT: JSON.stringify(script), ...env });
   child.send(JSON.stringify(input));
   return child.finish();
 }
@@ -286,7 +389,7 @@ test("without a profile nothing is blocked", async () => {
 
 test("an access profile with a bad denyPaths is invalid input naming access.denyPaths", async () => {
   const s = setup();
-  const child = new Child(REAL_WORKER, s.home, {});
+  const child = new Child({});
   child.send(JSON.stringify({ ...s.input, access: { denyPaths: "~/.ssh" } }));
   const run = await child.finish();
   expect(run.exitCode).toBe(2);
@@ -408,7 +511,7 @@ const INVALID: Array<[string, (input: Record<string, unknown>) => unknown]> = [
 for (const [field, break_] of INVALID) {
   test(`invalid stdin: a bad ${field} is one failed Result naming it, exit 2`, async () => {
     const s = setup();
-    const child = new Child(REAL_WORKER, s.home, {});
+    const child = new Child({});
     child.send(JSON.stringify(break_(s.input)));
     const run = await child.finish();
 
@@ -422,7 +525,7 @@ for (const [field, break_] of INVALID) {
 test("invalid stdin: text that is not JSON, and JSON that is not an object", async () => {
   const s = setup();
   for (const text of ["not json", "[1]", "null", ""]) {
-    const child = new Child(REAL_WORKER, s.home, {});
+    const child = new Child({});
     child.send(text);
     const run = await child.finish();
     expect(run.exitCode).toBe(2);
@@ -449,7 +552,7 @@ test("a message line from the host steers the agent: the model's next call sees 
   const s = setup();
   const contexts = join(s.dir, "contexts.jsonl");
   const release = join(s.dir, "release");
-  const child = new Child(FAKE_WORKER, s.home, {
+  const child = new Child({
     FAKE_SCRIPT: JSON.stringify([{ text: "FIRST", gate: true }, { text: "SECOND" }]),
     FAKE_CONTEXT_FILE: contexts,
     FAKE_RELEASE: release,
@@ -472,7 +575,7 @@ test("a message line from the host steers the agent: the model's next call sees 
 
 test("SIGTERM during a slow fake stream writes a cancelled Result and exits 143", async () => {
   const s = setup();
-  const child = new Child(FAKE_WORKER, s.home, { FAKE_SCRIPT: JSON.stringify([{ text: "never", hang: true }]) });
+  const child = new ProcessChild(FAKE_WORKER, s.home, { FAKE_SCRIPT: JSON.stringify([{ text: "never", hang: true }]) });
   child.send(JSON.stringify(s.input));
   await child.stderrHas("fake-stream-started");
   child.signal("SIGTERM");
@@ -485,7 +588,7 @@ test("SIGTERM during a slow fake stream writes a cancelled Result and exits 143"
   expect(kinds(run).at(-1)).toBe("result");
 });
 
-test("nothing under the fake HOME .pi is read or created", async () => {
+test("a real worker process reads and creates nothing under HOME .pi, and its shell does not read BASH_ENV", async () => {
   const s = setup();
   const agent = join(s.home, ".pi", "agent");
   mkdirSync(join(agent, "skills"), { recursive: true });
@@ -501,10 +604,21 @@ test("nothing under the fake HOME .pi is read or created", async () => {
     utimesSync(file, long, recent);
   }
   const before = files.map((file) => statSync(file).atimeMs);
-  const run = await runFake(s, [{ text: "ANSWER" }]);
+  // BASH_ENV is where a user's aliases and functions could come from; the
+  // agent's shell does not read it.
+  const marker = join(s.dir, "bash-env-ran");
+  const rc = join(s.dir, "rc.sh");
+  writeFileSync(rc, `touch ${marker}\n`);
+  const run = await runFakeProcess(
+    s,
+    [{ text: "", toolCall: { name: "bash", arguments: { command: "true" } } }, { text: "ANSWER" }],
+    s.input,
+    { BASH_ENV: rc },
+  );
 
   expect(run.exitCode).toBe(0);
-  expect(last(run)).toMatchObject({ result: "done" });
+  expect(last(run)).toMatchObject({ result: "done", finalMessage: "ANSWER" });
+  expect(existsSync(marker)).toBe(false);
   expect(files.map((file) => statSync(file).atimeMs)).toEqual(before);
   // Bun's own transpiler cache makes Library/ under HOME on macOS and
   // .bun/install/cache on Linux; neither belongs to pi. Importing an unrelated
@@ -528,36 +642,15 @@ async function runGranting(
   input: Record<string, unknown>,
   decide: (waitId: string) => boolean,
 ): Promise<Run> {
-  const child = Bun.spawn(["bun", FAKE_WORKER], {
-    stdin: "pipe",
-    stdout: "pipe",
-    stderr: "pipe",
-    env: { ...process.env, HOME: s.home, FAKE_SCRIPT: JSON.stringify(script) },
-  });
-  child.stdin.write(`${JSON.stringify(input)}\n`);
-  void child.stdin.flush();
-  const raw: string[] = [];
-  const decoder = new TextDecoder();
-  let pending = "";
-  for await (const chunk of child.stdout) {
-    pending += decoder.decode(chunk, { stream: true });
-    for (;;) {
-      const newline = pending.indexOf("\n");
-      if (newline === -1) break;
-      const line = pending.slice(0, newline);
-      pending = pending.slice(newline + 1);
-      raw.push(line);
-      const parsed = JSON.parse(line) as Record<string, unknown>;
-      if (parsed["type"] === "grant_use") {
-        const used = decide(String(parsed["waitId"]));
-        child.stdin.write(`${JSON.stringify({ type: "grant_ack", id: parsed["id"], used })}\n`);
-        void child.stdin.flush();
-      }
+  const child = new Child({ FAKE_SCRIPT: JSON.stringify(script) });
+  child.onLine((line) => {
+    if (line["type"] === "grant_use") {
+      const used = decide(String(line["waitId"]));
+      child.sendLine(JSON.stringify({ type: "grant_ack", id: line["id"], used }));
     }
-  }
-  const exitCode = await child.exited;
-  const stderr = await new Response(child.stderr).text();
-  return { lines: raw.map((line) => JSON.parse(line) as Record<string, unknown>), raw, stderr, exitCode };
+  });
+  child.sendLine(JSON.stringify(input));
+  return child.finish();
 }
 
 test("a granted call runs once after the host used the grant; the same call again and another call are blocked", async () => {
@@ -629,41 +722,19 @@ async function runAsking(
   input: Record<string, unknown>,
   decide: (call: Record<string, unknown>) => "allow" | "deny" | "stop",
 ): Promise<Run> {
-  const child = Bun.spawn(["bun", FAKE_WORKER], {
-    stdin: "pipe",
-    stdout: "pipe",
-    stderr: "pipe",
-    env: { ...process.env, HOME: s.home, FAKE_SCRIPT: JSON.stringify(script) },
-  });
-  child.stdin.write(`${JSON.stringify(input)}\n`);
-  void child.stdin.flush();
-  const raw: string[] = [];
-  const decoder = new TextDecoder();
-  let pending = "";
-  for await (const chunk of child.stdout) {
-    pending += decoder.decode(chunk, { stream: true });
-    for (;;) {
-      const newline = pending.indexOf("\n");
-      if (newline === -1) break;
-      const line = pending.slice(0, newline);
-      pending = pending.slice(newline + 1);
-      raw.push(line);
-      const parsed = JSON.parse(line) as Record<string, unknown>;
-      if (parsed["type"] === "grant_use") {
-        child.stdin.write(`${JSON.stringify({ type: "grant_ack", id: parsed["id"], used: true })}\n`);
-        void child.stdin.flush();
-      }
-      if (parsed["type"] === "ask_call") {
-        const decision = decide(parsed);
-        child.stdin.write(`${JSON.stringify({ type: "ask_ack", id: parsed["id"], decision, reason: "no thanks" })}\n`);
-        void child.stdin.flush();
-        if (decision === "stop") child.kill("SIGTERM");
-      }
+  const child = new Child({ FAKE_SCRIPT: JSON.stringify(script) });
+  child.onLine((line) => {
+    if (line["type"] === "grant_use") {
+      child.sendLine(JSON.stringify({ type: "grant_ack", id: line["id"], used: true }));
     }
-  }
-  const exitCode = await child.exited;
-  const stderr = await new Response(child.stderr).text();
-  return { lines: raw.map((line) => JSON.parse(line) as Record<string, unknown>), raw, stderr, exitCode };
+    if (line["type"] === "ask_call") {
+      const decision = decide(line);
+      child.sendLine(JSON.stringify({ type: "ask_ack", id: line["id"], decision, reason: "no thanks" }));
+      if (decision === "stop") child.signal("SIGTERM");
+    }
+  });
+  child.sendLine(JSON.stringify(input));
+  return child.finish();
 }
 
 test("a command askCommands matches asks a person: allowed, it runs once; the same command again asks again", async () => {
@@ -826,21 +897,6 @@ test("boundedTimeout: absent gets the limit, above gets the limit, within and ba
   expect(boundedTimeout(30, 1800)).toBeUndefined();
   expect(boundedTimeout(1800, 1800)).toBeUndefined();
   expect(boundedTimeout(-1, 1800)).toBeUndefined();
-});
-
-test("the agent's shell does not read BASH_ENV, where a user's aliases and functions could come from", async () => {
-  const s = setup();
-  const marker = join(s.dir, "bash-env-ran");
-  const rc = join(s.dir, "rc.sh");
-  writeFileSync(rc, `touch ${marker}\n`);
-  const run = await runFake(
-    s,
-    [{ text: "", toolCall: { name: "bash", arguments: { command: "true" } } }, { text: "ok" }],
-    s.input,
-    { BASH_ENV: rc },
-  );
-  expect(run.exitCode).toBe(0);
-  expect(existsSync(marker)).toBe(false);
 });
 
 test("parseInput refuses a bashTimeoutSecs that is 0, negative, fractional or not a number, and names the field", () => {

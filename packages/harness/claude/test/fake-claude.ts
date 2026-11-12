@@ -62,6 +62,7 @@ class FakeProcess extends EventEmitter implements SpawnedProcess {
   constructor(
     private readonly script: FakeScript,
     private readonly recordFile: string | undefined,
+    private readonly log: (text: string) => void,
   ) {
     super();
     this.stdin.on("data", (chunk: Buffer) => this.#read(chunk.toString("utf8")));
@@ -163,7 +164,7 @@ class FakeProcess extends EventEmitter implements SpawnedProcess {
     } else if (type === "user") {
       // A message the host sent while the turn runs.
       record(this.recordFile, { userLater: message["message"] });
-      process.stderr.write("fake-claude-user-later\n");
+      this.log("fake-claude-user-later\n");
     }
   }
 
@@ -213,7 +214,7 @@ class FakeProcess extends EventEmitter implements SpawnedProcess {
         record(this.recordFile, { askReply: step.ask.toolName, answer: reply["response"] ?? reply["error"] ?? null });
       } else if ("hang" in step) {
         record(this.recordFile, { hanging: true });
-        process.stderr.write("fake-claude-hanging\n");
+        this.log("fake-claude-hanging\n");
         await new Promise<void>(() => undefined);
       } else {
         this.#end(step.exit, null);
@@ -227,6 +228,7 @@ class FakeProcess extends EventEmitter implements SpawnedProcess {
 export function fakeSpawn(
   script: FakeScript,
   recordFile?: string,
+  log: (text: string) => void = (text) => void process.stderr.write(text),
 ): (options: SpawnOptions) => SpawnedProcess {
   return (options) => {
     record(recordFile, {
@@ -237,7 +239,7 @@ export function fakeSpawn(
         ),
       },
     });
-    return new FakeProcess(script, recordFile);
+    return new FakeProcess(script, recordFile, log);
   };
 }
 

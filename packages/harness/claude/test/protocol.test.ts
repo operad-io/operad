@@ -3,6 +3,8 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, existsSync } from "node:f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { EFFORT_LEVELS, parseInput } from "../src/protocol.ts";
+import { serveWorker } from "../src/worker.ts";
+import { fakeHooks } from "./fake-hooks.ts";
 import { TOOL_TABLE } from "../src/access.ts";
 import {
   MISSING_SESSION,
@@ -41,7 +43,23 @@ interface Run {
   readonly record: Line[];
 }
 
-class Child {
+function toRun(stdout: string, stderr: string, exitCode: number, recordFile: string): Run {
+  const all = stdout
+    .split("\n")
+    .filter((text) => text.length > 0)
+    .map((text) => JSON.parse(text) as Line);
+  const lines = all.filter((line) => line["type"] !== "session");
+  const session = all.filter((line) => line["type"] === "session");
+  const record = existsSync(recordFile)
+    ? readFileSync(recordFile, "utf8")
+        .split("\n")
+        .filter((text) => text.length > 0)
+        .map((text) => JSON.parse(text) as Line)
+    : [];
+  return { lines, session, stdout, stderr, exitCode, record };
+}
+
+class ProcessChild {
   readonly #process: Bun.Subprocess<"pipe", "pipe", "pipe">;
   readonly #waiters = new Set<() => void>();
   #stdout = "";
@@ -141,20 +159,97 @@ class Child {
     const exitCode = await this.#process.exited;
     await this.#stderrDone;
     await this.#stdoutDone;
-    const stdout = this.#stdout;
-    const all = stdout
-      .split("\n")
-      .filter((text) => text.length > 0)
-      .map((text) => JSON.parse(text) as Line);
-    const lines = all.filter((line) => line["type"] !== "session");
-    const session = all.filter((line) => line["type"] === "session");
-    const record = existsSync(this.recordFile)
-      ? readFileSync(this.recordFile, "utf8")
-          .split("\n")
-          .filter((text) => text.length > 0)
-          .map((text) => JSON.parse(text) as Line)
-      : [];
-    return { lines, session, stdout, stderr: this.#stderr, exitCode, record };
+    return toRun(this.#stdout, this.#stderr, exitCode, this.recordFile);
+  }
+}
+
+/**
+ * The worker run in this process, with the same surface as `ProcessChild`.
+ * `signal` aborts the run the way SIGTERM does; the tests that need a real
+ * signal use `ProcessChild`.
+ */
+class Child {
+  readonly #stdin = new TransformStream<Uint8Array, Uint8Array>();
+  readonly #writer = this.#stdin.writable.getWriter();
+  readonly #encoder = new TextEncoder();
+  readonly #waiters = new Set<() => void>();
+  readonly #controller = new AbortController();
+  #stdout = "";
+  #stderr = "";
+  #exit: number | undefined;
+  readonly #exited: Promise<number>;
+
+  constructor(
+    env: Record<string, string | undefined>,
+    private readonly recordFile: string,
+  ) {
+    const wake = (): void => {
+      for (const resolve of this.#waiters) resolve();
+      this.#waiters.clear();
+    };
+    const log = (text: string): void => {
+      this.#stderr += text;
+      wake();
+    };
+    this.#exited = serveWorker(
+      this.#stdin.readable,
+      {
+        write: (text) => {
+          this.#stdout += text;
+          wake();
+        },
+        log: (text) => log(`${text}\n`),
+      },
+      this.#controller.signal,
+      fakeHooks(env, log),
+    ).then((code) => {
+      this.#exit = code;
+      wake();
+      return code;
+    });
+  }
+
+  send(text: string): void {
+    void this.#writer.write(this.#encoder.encode(text));
+    void this.#writer.close();
+  }
+
+  /** Writes one input line and leaves stdin open, so the host can answer later. */
+  sendLine(text: string): void {
+    void this.#writer.write(this.#encoder.encode(`${text}\n`));
+  }
+
+  endInput(): void {
+    void this.#writer.close().catch(() => undefined);
+  }
+
+  /** Waits for the first stdout line of this type, or the end of the run. */
+  async untilLine(type: string): Promise<Line | undefined> {
+    for (;;) {
+      for (const text of this.#stdout.split("\n")) {
+        if (!text.startsWith("{")) continue;
+        const parsed = JSON.parse(text) as Line;
+        if (parsed["type"] === type) return parsed;
+      }
+      if (this.#exit !== undefined) return undefined;
+      await new Promise<void>((resolve) => this.#waiters.add(resolve));
+    }
+  }
+
+  /** Waits until stderr holds the text, or the run ends. */
+  async stderrHas(text: string): Promise<void> {
+    while (!this.#stderr.includes(text) && this.#exit === undefined) {
+      await new Promise<void>((resolve) => this.#waiters.add(resolve));
+    }
+  }
+
+  signal(_name: NodeJS.Signals): void {
+    this.#controller.abort();
+  }
+
+  async finish(): Promise<Run> {
+    const exitCode = await this.#exited;
+    return toRun(this.#stdout, this.#stderr, exitCode, this.recordFile);
   }
 }
 
@@ -185,7 +280,14 @@ function setup(): Setup {
 }
 
 function start(s: Setup, script: FakeScript, extra: Record<string, string> = {}): Child {
-  const child = new Child(FAKE_WORKER, s.env(script, extra), s.recordFile);
+  const child = new Child(s.env(script, extra), s.recordFile);
+  child.send(JSON.stringify(s.input));
+  return child;
+}
+
+/** The real worker process, for what only a process shows: a signal, the entry. */
+function startProcess(s: Setup, script: FakeScript): ProcessChild {
+  const child = new ProcessChild(FAKE_WORKER, s.env(script), s.recordFile);
   child.send(JSON.stringify(s.input));
   return child;
 }
@@ -371,7 +473,7 @@ test("a claude that exits with no result is failed, not done", async () => {
 
 test("SIGTERM mid-turn aborts claude, writes a cancelled Result and exits 143", async () => {
   const s = setup();
-  const child = start(s, { steps: [{ say: systemInit() }, { hang: true }] });
+  const child = startProcess(s, { steps: [{ say: systemInit() }, { hang: true }] });
   await child.stderrHas("fake-claude-hanging");
   child.signal("SIGTERM");
   const run = await child.finish();
@@ -384,7 +486,7 @@ test("SIGTERM mid-turn aborts claude, writes a cancelled Result and exits 143", 
 
 test("a message line from the host reaches claude as a user turn while the run hangs", async () => {
   const s = setup();
-  const child = new Child(FAKE_WORKER, s.env({ steps: [{ say: systemInit() }, { hang: true }] }), s.recordFile);
+  const child = new Child(s.env({ steps: [{ say: systemInit() }, { hang: true }] }), s.recordFile);
   child.sendLine(JSON.stringify(s.input));
   await child.stderrHas("fake-claude-hanging");
   child.sendLine(JSON.stringify({ type: "message", text: "wrap up now" }));
@@ -410,7 +512,7 @@ test("an unknown input field such as args is refused with exit 2", async () => {
 
 test("input that is not JSON is refused with exit 2", async () => {
   const s = setup();
-  const child = new Child(FAKE_WORKER, s.env({ steps: done }), s.recordFile);
+  const child = new Child(s.env({ steps: done }), s.recordFile);
   child.send("not json");
   const run = await child.finish();
 
@@ -460,7 +562,7 @@ test("CLAUDE_CODE_OAUTH_TOKEN passes through unchanged and is written nowhere", 
 
 test("with no claude on PATH the real worker fails and says how to fix it", async () => {
   const s = setup();
-  const child = new Child(REAL_WORKER, { HOME: process.env["HOME"], PATH: "" }, s.recordFile);
+  const child = new ProcessChild(REAL_WORKER, { HOME: process.env["HOME"], PATH: "" }, s.recordFile);
   child.send(JSON.stringify(s.input));
   const run = await child.finish();
 
@@ -688,7 +790,7 @@ const GRANT_ACCESS = {
 async function grantRun(ack: boolean | "none"): Promise<{ run: Run; grantLine: Line | undefined }> {
   const s = setup();
   s.input["access"] = GRANT_ACCESS;
-  const child = new Child(FAKE_WORKER, s.env({ steps: DENY_RM }), s.recordFile);
+  const child = new Child(s.env({ steps: DENY_RM }), s.recordFile);
   child.sendLine(JSON.stringify(s.input));
   if (ack === "none") {
     // The host is gone: stdin ends and no answer will come.
@@ -990,7 +1092,7 @@ const ASKING = { askCommands: ["git push"] };
 async function askRun(decision: "allow" | "deny" | "stop" | "gone"): Promise<{ run: Run; call: Line | undefined }> {
   const s = setup();
   s.input["access"] = ASKING;
-  const child = new Child(FAKE_WORKER, s.env({ steps: ASK_PUSH }), s.recordFile);
+  const child = new Child(s.env({ steps: ASK_PUSH }), s.recordFile);
   child.sendLine(JSON.stringify(s.input));
   if (decision === "gone") {
     child.endInput();
@@ -1072,7 +1174,7 @@ test("a command that holds a secret value is refused and never asked about", asy
     { say: result() },
   ];
   // The host stays and would allow whatever it is asked.
-  const child = new Child(FAKE_WORKER, s.env({ steps }), s.recordFile);
+  const child = new Child(s.env({ steps }), s.recordFile);
   child.sendLine(JSON.stringify(s.input));
   const call = await child.untilLine("ask_call");
   if (call !== undefined) child.sendLine(JSON.stringify({ type: "ask_ack", id: call["id"], decision: "allow" }));
@@ -1092,7 +1194,7 @@ test("after a late answer the one-time grant lets that command through and any o
     { ask: { toolName: "Bash", toolUseId: "tool-2", input: { command: "git push origin other" } } },
     { say: result() },
   ];
-  const child = new Child(FAKE_WORKER, s.env({ steps }), s.recordFile);
+  const child = new Child(s.env({ steps }), s.recordFile);
   child.sendLine(JSON.stringify(s.input));
   const use = await child.untilLine("grant_use");
   child.sendLine(JSON.stringify({ type: "grant_ack", id: use?.["id"], used: true }));
@@ -1110,7 +1212,6 @@ test("a Write to an askPaths path asks with the path and the tool, and runs once
   const s = setup();
   s.input["access"] = { askPaths: ["~/.zshrc"] };
   const child = new Child(
-    FAKE_WORKER,
     s.env({
       steps: [
         { say: systemInit() },
