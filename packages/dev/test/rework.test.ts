@@ -38,7 +38,7 @@ describe("pre-existing by kind of review", () => {
   }[] = [
     { name: "near the change", finding: { severity: "major", file: "a.ts", line: 52 }, moved: { first: false, reverify: false, rework: false } },
     { name: "far, in a touched file", finding: { severity: "major", file: "a.ts", line: 200 }, moved: { first: false, reverify: false, rework: true } },
-    { name: "in an untouched file", finding: { severity: "major", file: "b.ts", line: 3 }, moved: { first: true, reverify: false, rework: true } },
+    { name: "in an untouched file", finding: { severity: "major", file: "b.ts", line: 3 }, moved: { first: false, reverify: false, rework: true } },
     { name: "critical, far", finding: { severity: "critical", file: "b.ts", line: 3 }, moved: { first: false, reverify: false, rework: false } },
     { name: "no line", finding: { severity: "major", file: "b.ts" }, moved: { first: false, reverify: false, rework: false } },
   ];
