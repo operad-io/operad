@@ -9,11 +9,13 @@ import {
   chatData,
   chatRef,
   CLOSED_FACT,
+  EFFORT_FACT,
   MESSAGE_EVENT,
   MESSAGE_FACT,
   MODEL_FACT,
   newMessageId,
   type ClosedData,
+  type EffortChangedData,
   type ModelChangedData,
   type MessageData,
 } from "./model.ts";
@@ -199,6 +201,80 @@ const modelAction: ActionTypeDefinition = {
   },
 };
 
+/** The efforts the chat's agent lists, as the enum of `chat:effort`. */
+function effortArgs(efforts: readonly string[]): ActionArgsSchema {
+  return {
+    type: "object",
+    properties: {
+      effort: {
+        type: "string",
+        ...(efforts.length === 0 ? {} : { enum: [...efforts] }),
+        description: "The effort the next reply uses.",
+      },
+    },
+    required: ["effort"],
+    additionalProperties: false,
+  };
+}
+
+const effortAction: ActionTypeDefinition = {
+  name: "effort",
+  on: CHAT_TYPE,
+  args: effortArgs([]),
+  argsFor: (object, env) => effortArgs(env.efforts?.[chatData(object.data).harness]?.list ?? []),
+  when: (state, env) =>
+    !chatData(state).closed && (env.efforts?.[chatData(state).harness]?.list.length ?? 0) > 0,
+  why: (object, env) => {
+    const chat = chatData(object.data);
+    if (chat.closed) return `${object.id} is closed; its effort cannot change`;
+    if ((env.efforts?.[chat.harness]?.list.length ?? 0) === 0) {
+      return `the agent "${chat.harness}" offers no effort to pick`;
+    }
+    return undefined;
+  },
+  async run(ctx, args) {
+    const stored = await ctx.store.get(CHAT_TYPE, ctx.object.id);
+    if (stored === undefined) throw new Error(`there is no chat ${ctx.object.id}`);
+    const chat = chatData(stored.data);
+    if (chat.closed) throw new Error(`chat ${ctx.object.id} is closed; its effort cannot change`);
+    const effort = (args as { readonly effort: string }).effort;
+    const offered = ctx.efforts[chat.harness];
+    const list = offered?.list ?? [];
+    if (!list.includes(effort)) {
+      throw new Error(
+        `the agent "${chat.harness}" cannot use the effort "${effort}"; it offers: ${list.join(", ") || "none"}`,
+      );
+    }
+    if (chat.effort === effort) return `chat ${ctx.object.id} already uses ${effort}`;
+    const changed: EffortChangedData = {
+      by: { via: ctx.actor.via, id: ctx.actor.id },
+      from: chat.effort ?? offered?.default ?? null,
+      to: effort,
+    };
+    await ctx.facts.append({
+      type: EFFORT_FACT,
+      object: chatRef(ctx.object.id),
+      data: changed,
+    });
+    // Read again: a reply may have moved the session while the fact was written.
+    const fresh = await ctx.store.get(CHAT_TYPE, ctx.object.id);
+    if (fresh !== undefined) {
+      const fallback = offered?.default;
+      await ctx.store.put(
+        CHAT_TYPE,
+        ctx.object.id,
+        {
+          ...fresh.data,
+          effort,
+          ...(fallback === undefined || fallback === null ? {} : { effortDefault: fallback }),
+        },
+        "action:chat/effort",
+      );
+    }
+    return `chat ${ctx.object.id} now uses effort ${effort}; the next reply uses it`;
+  },
+};
+
 const closeAction: ActionTypeDefinition = {
   name: "close",
   on: CHAT_TYPE,
@@ -268,7 +344,7 @@ export function createChatPlugin() {
       object: "$event.object",
       mode: "auto" as const,
     })),
-    actions: [sendAction, modelAction, closeAction],
+    actions: [sendAction, modelAction, effortAction, closeAction],
     views: { [CHAT_TYPE]: chatViews },
   });
 }

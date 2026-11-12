@@ -17,6 +17,7 @@ function fakeHarness(name: string) {
     kind: "harness",
     version: "0.0.0",
     models: name === "radian" ? { list: [], default: null } : { list: [`${name}-a`, `${name}-b`], default: `${name}-a` },
+    efforts: name === "radian" ? { list: [], default: null } : { list: [`${name}-low`, `${name}-high`], default: `${name}-low`, flag: "--effort" },
     steps: [{ name: "agent", results: ["done", "failed", "interrupted"], run: () => ({ result: "failed" }) }],
   });
 }
@@ -119,6 +120,27 @@ describe("dev:chat and the model", () => {
     const views = new Views({ registry: r.registry, store: r.store, onLog: () => undefined });
     const chat = (await views.get("repo:repository")).actions.find((a) => a.name === "dev:chat");
     expect(chat?.args?.properties?.model?.enum).toEqual(["claude-a", "claude-b", "pi-a", "pi-b"]);
+  });
+});
+
+describe("dev:chat and the effort", () => {
+  test("a new chat starts with the agent's default effort, or the one asked for from that agent's list", async () => {
+    const r = await rig();
+    expect((await must(r.store, CHAT_TYPE, await openChat(r))).data.effort).toBe("claude-low");
+    expect((await must(r.store, CHAT_TYPE, await openChat(r, { agent: "pi" }))).data.effort).toBe("pi-low");
+    expect((await must(r.store, CHAT_TYPE, await openChat(r, { agent: "pi", effort: "pi-high" }))).data.effort).toBe("pi-high");
+  });
+
+  test("an effort another agent lists is refused by name", async () => {
+    const r = await rig();
+    await expect(openChat(r, { agent: "pi", effort: "claude-low" })).rejects.toThrow(/claude-low/);
+  });
+
+  test("the effort argument is an enum of the offered agents' efforts", async () => {
+    const r = await rig();
+    const views = new Views({ registry: r.registry, store: r.store, onLog: () => undefined });
+    const chat = (await views.get("repo:repository")).actions.find((a) => a.name === "dev:chat");
+    expect(chat?.args?.properties?.effort?.enum).toEqual(["claude-low", "claude-high", "pi-low", "pi-high"]);
   });
 });
 

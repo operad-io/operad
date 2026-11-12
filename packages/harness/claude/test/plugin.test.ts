@@ -171,6 +171,12 @@ describe("claude/agent", () => {
     expect((dataOf(result).usage as { model: unknown }).model).toBe("opus");
   });
 
+  test("an effort from a chat reaches the worker as claude's effort", async () => {
+    const env = await setup("done", { effort: "low" });
+    await runAgent(env, { prompt: "hello", cwd: env.root, effort: "xhigh" });
+    expect(recorded(env).effort).toBe("xhigh");
+  });
+
   test("a flag given alone leaves the other from the settings", async () => {
     const env = await setup("done", { model: "sonnet", effort: "low" });
     await runAgent(env, { prompt: "hello", cwd: env.root, args: ["--effort", "high"] });

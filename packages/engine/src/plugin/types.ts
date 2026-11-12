@@ -515,6 +515,8 @@ export interface StepContext extends PluginBaseContext {
   readonly stepLoaded?: ((use: string) => boolean) | undefined;
   /** The models a loaded harness plugin declares; undefined when it is not loaded or declares none. */
   readonly harnessModels?: ((harness: string) => HarnessModels | undefined) | undefined;
+  /** The efforts a loaded harness plugin declares; undefined when it is not loaded or declares none. */
+  readonly harnessEfforts?: ((harness: string) => HarnessEfforts | undefined) | undefined;
   /**
    * Runs another loaded step in this run. The kernel offers it when a plugin
    * step delegates to a harness or another plugin; a direct call to a step's
@@ -766,12 +768,24 @@ export interface ActionEnv {
   readonly harnesses?: readonly string[] | undefined;
   /** The models each loaded harness plugin declares, by plugin name. */
   readonly models?: Readonly<Record<string, HarnessModels>> | undefined;
+  /** The efforts each loaded harness plugin declares, by plugin name. */
+  readonly efforts?: Readonly<Record<string, HarnessEfforts>> | undefined;
 }
 
 /** The models a harness plugin declares: those a chat may pick, and the one used when none is set. */
 export interface HarnessModels {
   readonly list: readonly string[];
   readonly default: string | null;
+}
+
+/**
+ * The efforts a harness plugin declares: those a chat may pick, the one used
+ * when none is set, and the step argument that sets it (`--effort` when absent).
+ */
+export interface HarnessEfforts {
+  readonly list: readonly string[];
+  readonly default: string | null;
+  readonly flag?: string | undefined;
 }
 
 /** An action a plugin offers on an object type. */
@@ -875,6 +889,8 @@ export interface ActionContext extends PluginBaseContext {
   readonly harnesses: readonly string[];
   /** The models each loaded harness plugin declares, by plugin name. */
   readonly models: Readonly<Record<string, HarnessModels>>;
+  /** The efforts each loaded harness plugin declares, by plugin name. */
+  readonly efforts: Readonly<Record<string, HarnessEfforts>>;
   /** Sends an event through the kernel's rules; set when the host can route events. */
   readonly emit?: ((event: ActionEvent) => Promise<void>) | undefined;
   readonly runId: string | undefined;
@@ -1090,6 +1106,8 @@ export interface PluginShape {
   readonly projectSettings?: ProjectSettingsDeclaration | undefined;
   /** A harness plugin: the models a chat may pick (empty list: none can be chosen). */
   readonly models?: HarnessModels | undefined;
+  /** A harness plugin: the efforts a chat may pick (empty list: none can be chosen). */
+  readonly efforts?: HarnessEfforts | undefined;
   /** Access profile fields this plugin's steps apply. */
   readonly enforces?: readonly string[] | undefined;
   /** What this plugin needs loaded before it can be used. */

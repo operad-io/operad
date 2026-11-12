@@ -25,3 +25,12 @@ changes for bots, in the order they were recorded. The root
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0338-M3 | packages/bot/src/index.ts | a configured bot model the agent does not list was dropped and the default used | `bot:chat and the model > a configured bot model its agent does not list is refused by name, not replaced by the default` |
+
+
+## T-0342 — a chat's effort
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0342-M21 | packages/bot/src/index.ts | `bot:chat` ignored the effort asked for | `bot:chat and the effort > a chat starts with the agent's default effort, the bot's configured one, or the one asked for` |
+| T-0342-M22 | packages/bot/src/index.ts | `bot:chat` ignored the bot's configured effort | `bot:chat and the effort > a chat starts with the agent's default effort, the bot's configured one, or the one asked for` |
+| T-0342-M23 | packages/bot/src/index.ts | `bot:chat` dropped the effort enum of the loaded agents | `bot:chat and the effort > the effort argument is an enum of the loaded agents' efforts` |

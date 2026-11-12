@@ -10,7 +10,7 @@
  */
 
 import { mkdirSync } from "node:fs";
-import { CHAT_TYPE, chatData, createChat, sendMessage, startingModel, titleFromMessage } from "@operad-io/chat";
+import { CHAT_TYPE, chatData, createChat, sendMessage, startingEffort, startingModel, titleFromMessage } from "@operad-io/chat";
 import { definePlugin, isRecord, type ActionArgsSchema, type ActionTypeDefinition, type JsonValue, type ObjectRow, type ObjectStore, type ObjectViews, type PluginStepResult, type SectionContent, type StepContext, type StoredObject } from "@operad-io/engine";
 import {
   BOT_SETTINGS,
@@ -91,8 +91,10 @@ export interface OpenChat {
   readonly harnesses: readonly string[];
   readonly bot: string;
   readonly models?: Readonly<Record<string, { readonly list: readonly string[]; readonly default: string | null }>> | undefined;
+  readonly efforts?: Readonly<Record<string, { readonly list: readonly string[]; readonly default: string | null }>> | undefined;
   readonly harness?: string | undefined;
   readonly model?: string | undefined;
+  readonly effort?: string | undefined;
   readonly title?: string | undefined;
   readonly cause: string;
 }
@@ -111,13 +113,16 @@ export async function openChat(input: OpenChat): Promise<string> {
       `agent "${harness}" is not loaded; the loaded ones are: ${input.harnesses.join(", ") || "none"}`,
     );
   }
-  // The bot's configured model must be one the agent lists; an unlisted one is refused by name.
+  // The bot's configured model and effort must be ones the agent lists; an unlisted one is refused by name.
   let model: string | undefined;
+  let effort: string | undefined;
   try {
     model = startingModel(harness, input.models?.[harness], input.model, bot.model ?? undefined);
+    effort = startingEffort(harness, input.efforts?.[harness], input.effort, bot.effort ?? undefined);
   } catch (error) {
     throw new BotError(error instanceof Error ? error.message : String(error));
   }
+  const effortDefault = input.efforts?.[harness]?.default ?? undefined;
   mkdirSync(bot.cwd, { recursive: true });
   return createChat(
     input.store,
@@ -125,6 +130,8 @@ export async function openChat(input: OpenChat): Promise<string> {
       parent: `${BOT_TYPE}:${bot.name}`,
       harness,
       ...(model === undefined ? {} : { model }),
+      ...(effort === undefined ? {} : { effort }),
+      ...(effort === undefined || effortDefault === undefined ? {} : { effortDefault }),
       cwd: bot.cwd,
       access: bot.access,
       skills: bot.skills,
@@ -140,6 +147,7 @@ function chatArgs(
   harnesses: readonly string[],
   botHarness: unknown,
   models: readonly string[] = [],
+  efforts: readonly string[] = [],
 ): ActionArgsSchema {
   const first = harnesses[0];
   const fallback = typeof botHarness === "string" && harnesses.includes(botHarness) ? botHarness : first;
@@ -158,6 +166,12 @@ function chatArgs(
         ...(models.length === 0 ? {} : { enum: [...models] }),
         description:
           "The model the agent uses; one from that agent's list. The bot's model, else the agent's default, when left out. It can be changed later.",
+      },
+      effort: {
+        type: "string",
+        ...(efforts.length === 0 ? {} : { enum: [...efforts] }),
+        description:
+          "The effort the agent uses; one from that agent's list. The bot's effort, else the agent's default, when left out. It can be changed later.",
       },
       title: { type: "string", minLength: 1, maxLength: 120, description: "What the chat is called." },
       message: {
@@ -178,9 +192,12 @@ const chatAction: ActionTypeDefinition = {
   creates: "chat",
   args: chatArgs([], undefined),
   argsFor: (object, env) =>
-    chatArgs(env.harnesses ?? [], object.data.harness, [
-      ...new Set((env.harnesses ?? []).flatMap((name) => env.models?.[name]?.list ?? [])),
-    ]),
+    chatArgs(
+      env.harnesses ?? [],
+      object.data.harness,
+      [...new Set((env.harnesses ?? []).flatMap((name) => env.models?.[name]?.list ?? []))],
+      [...new Set((env.harnesses ?? []).flatMap((name) => env.efforts?.[name]?.list ?? []))],
+    ),
   when: (state, env) => state.removed !== true && typeof state.problem !== "string" && (env.harnesses ?? []).length > 0,
   async why(object, env) {
     if (object.data.removed === true) return `bot ${object.id} is no longer in the settings`;
@@ -189,16 +206,24 @@ const chatAction: ActionTypeDefinition = {
     return undefined;
   },
   async run(ctx, args) {
-    const input = args as { readonly agent?: string; readonly model?: string; readonly title?: string; readonly message?: string };
+    const input = args as {
+      readonly agent?: string;
+      readonly model?: string;
+      readonly effort?: string;
+      readonly title?: string;
+      readonly message?: string;
+    };
     const id = await openChat({
       store: ctx.store,
       home: ctx.home,
       settings: ctx.settings,
       harnesses: ctx.harnesses,
       models: ctx.models,
+      efforts: ctx.efforts,
       bot: ctx.object.id,
       harness: input.agent,
       model: input.model,
+      effort: input.effort,
       title: input.title ?? (input.message === undefined ? undefined : titleFromMessage(input.message)),
       cause: "action:bot/chat",
     });

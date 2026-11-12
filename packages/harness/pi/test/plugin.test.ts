@@ -225,6 +225,12 @@ describe("pi/agent", () => {
     expect("access" in input).toBe(false);
   });
 
+  test("an effort from a chat reaches the worker as pi's thinking level", async () => {
+    const env = await setup("done", { thinkingLevel: "low" });
+    await runAgent(env, { prompt: "hello", cwd: env.root, effort: "xhigh" });
+    expect(recorded(env).thinkingLevel).toBe("xhigh");
+  });
+
   test("--model and --thinking in args reach the worker and win over the settings", async () => {
     const env = await setup("done", { model: "fake/setting", thinkingLevel: "low" });
     const result = await runAgent(env, {

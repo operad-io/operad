@@ -983,3 +983,11 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0333-M1 | packages/dev/src/chat.ts | `dev:chat` still read its argument under the old `harness` name, so `--agent pi` was ignored and the first loaded agent was used | `dev:chat > the agent is the one given, else the first offered one that is loaded` |
+
+
+## T-0342 — a chat's effort
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0342-M19 | packages/dev/src/chat.ts | `dev:chat` ignored the effort asked for | `dev:chat and the effort > a new chat starts with the agent's default effort, or the one asked for from that agent's list` |
+| T-0342-M20 | packages/dev/src/chat.ts | `dev:chat` dropped the effort enum of the offered agents | `dev:chat and the effort > the effort argument is an enum of the offered agents' efforts` |

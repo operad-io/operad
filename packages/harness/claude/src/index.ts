@@ -100,6 +100,13 @@ export const CLAUDE_MODELS = {
   default: "sonnet",
 } as const;
 
+/** The efforts a chat may pick with this agent, the default, and the flag that sets it. */
+export const CLAUDE_EFFORTS = {
+  list: EFFORT_LEVELS,
+  default: "medium",
+  flag: "--effort",
+} as const;
+
 /** The settings a config.json section may set for this plugin. */
 export const PLUGIN_SETTINGS = {
   type: "object" as const,
@@ -206,6 +213,7 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
     kind: "harness",
     version: "0.0.0",
     models: CLAUDE_MODELS,
+    efforts: CLAUDE_EFFORTS,
     settings: PLUGIN_SETTINGS,
     steps: [
       {
@@ -282,7 +290,10 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
             `${at}: params.stallSecs`,
           );
           const model = flags.model ?? optionalText(ctx.settings.model, `${at}: settings.model`);
-          const effort = flags.level ?? optionalText(ctx.settings.effort, `${at}: settings.effort`);
+          const effort =
+            flags.level ??
+            optionalText(input.effort, `${at}: params.effort`) ??
+            optionalText(ctx.settings.effort, `${at}: settings.effort`);
           const maxTurns = optionalNumber(ctx.settings.maxTurns, `${at}: settings.maxTurns`, true);
           const budgetUsd = optionalNumber(ctx.settings.budgetUsd, `${at}: settings.budgetUsd`, false);
           const bashTimeoutSecs = optionalNumber(

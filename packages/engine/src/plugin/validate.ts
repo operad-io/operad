@@ -18,6 +18,7 @@ import {
   type ActionTypeDefinition,
   type AskRequest,
   type CommandDefinition,
+  type HarnessEfforts,
   type HarnessModels,
   type KeyBindings,
   type MaybePromise,
@@ -66,6 +67,7 @@ export interface NormalizedPlugin {
   readonly projectSettings: ProjectSettingsDeclaration | undefined;
   readonly enforces: readonly string[];
   readonly models: HarnessModels | undefined;
+  readonly efforts: HarnessEfforts | undefined;
   readonly requires: PluginRequires | undefined;
 }
 
@@ -765,24 +767,54 @@ export function normalizePlugin(raw: unknown, index: number): NormalizedPlugin {
     projectSettings,
     enforces: normalizeEnforces(raw.enforces, `${at}: enforces`) ?? [],
     models: normalizeModels(raw.models, kind, at),
+    efforts: normalizeEfforts(raw.efforts, kind, at),
     requires: normalizeRequires(raw.requires, at),
   };
 }
 
 /** The models a harness plugin declares: a list of names and the default among them, or null. */
 function normalizeModels(value: unknown, kind: string, at: string): HarnessModels | undefined {
+  const levels = normalizeLevels(value, kind, at, "models");
+  return levels === undefined ? undefined : { list: levels.list, default: levels.fallback };
+}
+
+/**
+ * The efforts a harness plugin declares: a list of levels, the default among
+ * them or null, and the step argument that sets one.
+ */
+function normalizeEfforts(value: unknown, kind: string, at: string): HarnessEfforts | undefined {
+  const levels = normalizeLevels(value, kind, at, "efforts");
+  if (levels === undefined) return undefined;
+  const flag = value === undefined ? undefined : (value as Record<string, unknown>).flag;
+  if (flag !== undefined && (typeof flag !== "string" || flag.length === 0)) {
+    throw new PluginError(`${at}: efforts.flag: must be a non-empty string`);
+  }
+  return {
+    list: levels.list,
+    default: levels.fallback,
+    ...(typeof flag === "string" ? { flag } : {}),
+  };
+}
+
+/** The list and fallback of a harness plugin's `models` or `efforts`. */
+function normalizeLevels(
+  value: unknown,
+  kind: string,
+  at: string,
+  field: "models" | "efforts",
+): { readonly list: readonly string[]; readonly fallback: string | null } | undefined {
   if (value === undefined) return undefined;
-  if (kind !== "harness") throw new PluginError(`${at}: models: only a harness plugin declares models`);
-  if (!isRecord(value) || !Array.isArray(value.list)) throw new PluginError(`${at}: models: must be { list, default }`);
+  if (kind !== "harness") throw new PluginError(`${at}: ${field}: only a harness plugin declares ${field}`);
+  if (!isRecord(value) || !Array.isArray(value.list)) throw new PluginError(`${at}: ${field}: must be { list, default }`);
   const list = value.list.map((item, index) => {
-    if (typeof item !== "string" || item.length === 0) throw new PluginError(`${at}: models.list[${index}]: must be a non-empty string`);
+    if (typeof item !== "string" || item.length === 0) throw new PluginError(`${at}: ${field}.list[${index}]: must be a non-empty string`);
     return item;
   });
   const fallback = value.default === undefined ? null : value.default;
   if (fallback !== null && (typeof fallback !== "string" || !list.includes(fallback))) {
-    throw new PluginError(`${at}: models.default: must be null or one of the list`);
+    throw new PluginError(`${at}: ${field}.default: must be null or one of the list`);
   }
-  return { list, default: fallback };
+  return { list, fallback };
 }
 
 /** A harness step type ends only in the standard end results. */

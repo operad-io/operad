@@ -101,7 +101,7 @@ Every action is also a command: `operad dev:<action> <id>`.
 
 | action | object | key | what it does |
 |---|---|---|---|
-| `dev:chat` | repo | | open a chat about the repository in the main clone, read-only; `--agent` chooses which agent answers (`claude` or `pi`, the first loaded one when left out), and it cannot change later |
+| `dev:chat` | repo | | open a chat about the repository in the main clone, read-only; `--agent` chooses which agent answers (`claude` or `pi`, the first loaded one when left out), and it cannot change later; `--model` and `--effort` pick from that agent's lists and can change later |
 | `dev:confirm` | plan, task | `c` | confirm a draft plan (its tasks become ready) or a proposed task |
 | `dev:merge` | task | | answer the task's wait with `merge`; asks first |
 | `dev:reject` | task | | answer the task's wait with `reject` and append `## Rework <n> (owner)` with the note |

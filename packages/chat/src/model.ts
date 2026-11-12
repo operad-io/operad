@@ -16,6 +16,9 @@ export const MESSAGE_EVENT = "message";
 /** The fact type of a change of a chat's model: who changed it, from what, to what. */
 export const MODEL_FACT = "chat.model";
 
+/** The fact type of a change of a chat's effort: who changed it, from what, to what. */
+export const EFFORT_FACT = "chat.effort";
+
 /** The fact type of a chat that was closed. */
 export const CLOSED_FACT = "chat.closed";
 
@@ -64,6 +67,10 @@ export interface ChatData {
   readonly refresh?: string | undefined;
   /** The model the next reply uses; one the agent's plugin lists. Absent for an agent that lists none. */
   readonly model?: string | undefined;
+  /** The effort the next reply uses; one the agent's plugin lists. Absent for an agent that lists none. */
+  readonly effort?: string | undefined;
+  /** The agent's default effort when this chat was made, so the row can tell a choice from the default. */
+  readonly effortDefault?: string | undefined;
   /** The model that gave the last reply, when its harness reported one. */
   readonly lastModel?: string | undefined;
   /** What the replies cost so far, in millionths of a dollar; absent while no reply reported a cost. */
@@ -86,6 +93,10 @@ export interface NewChat {
   readonly channels?: readonly string[] | undefined;
   /** See {@link ChatData.model}. */
   readonly model?: string | undefined;
+  /** See {@link ChatData.effort}. */
+  readonly effort?: string | undefined;
+  /** See {@link ChatData.effortDefault}. */
+  readonly effortDefault?: string | undefined;
   /** See {@link ChatData.refresh}. */
   readonly refresh?: string | undefined;
 }
@@ -96,6 +107,38 @@ export interface ModelChangedData {
   readonly by: { readonly via: string; readonly id: string };
   readonly from: string | null;
   readonly to: string;
+}
+
+/** What an effort-change fact holds. */
+export interface EffortChangedData {
+  readonly [key: string]: unknown;
+  readonly by: { readonly via: string; readonly id: string };
+  readonly from: string | null;
+  readonly to: string;
+}
+
+/**
+ * The effort a new chat starts with: the one asked for, else the preferred one
+ * (a bot's), else the agent's default. An effort the agent does not list is
+ * refused by name; an agent that lists none takes none.
+ */
+export function startingEffort(
+  harness: string,
+  efforts: { readonly list: readonly string[]; readonly default: string | null } | undefined,
+  asked: string | undefined,
+  preferred?: string | undefined,
+): string | undefined {
+  const list = efforts?.list ?? [];
+  const wanted = asked ?? preferred;
+  if (wanted !== undefined) {
+    if (!list.includes(wanted)) {
+      throw new Error(
+        `the agent "${harness}" cannot use the effort "${wanted}"; it offers: ${list.join(", ") || "none"}`,
+      );
+    }
+    return wanted;
+  }
+  return efforts?.default ?? undefined;
 }
 
 /**
@@ -168,6 +211,8 @@ export function chatData(data: Readonly<Record<string, unknown>>): ChatData {
     channels: stringList(data.channels),
     ...(typeof data.refresh === "string" && data.refresh.length > 0 ? { refresh: data.refresh } : {}),
     ...(typeof data.model === "string" && data.model.length > 0 ? { model: data.model } : {}),
+    ...(typeof data.effort === "string" && data.effort.length > 0 ? { effort: data.effort } : {}),
+    ...(typeof data.effortDefault === "string" && data.effortDefault.length > 0 ? { effortDefault: data.effortDefault } : {}),
     ...(typeof data.lastModel === "string" && data.lastModel.length > 0 ? { lastModel: data.lastModel } : {}),
     ...(typeof data.costMicros === "number" && Number.isFinite(data.costMicros) ? { costMicros: data.costMicros } : {}),
     ...(isCostQuality(data.costQuality) ? { costQuality: data.costQuality } : {}),
@@ -196,9 +241,17 @@ export function modelAndCost(
   ];
 }
 
-/** What a chat uses, for its row and its page: `claude · sonnet · $0.12`. */
+/** What a chat uses, for its row and its page: `claude · sonnet · high · $0.12`. */
 export function agentLine(chat: ChatData): string {
-  return [chat.harness, ...modelAndCost(chat.model ?? chat.lastModel, chat.costMicros, chat.costQuality)]
+  const model = chat.model ?? chat.lastModel;
+  const effort =
+    chat.effort !== undefined && chat.effort !== chat.effortDefault ? [chat.effort] : [];
+  return [
+    chat.harness,
+    ...(model === undefined || model.length === 0 ? [] : [model]),
+    ...effort,
+    ...(chat.costMicros === undefined ? [] : [costText(chat.costMicros, chat.costQuality)]),
+  ]
     .filter((part) => part.length > 0)
     .join(" · ");
 }
@@ -292,6 +345,8 @@ export async function createChat(
     session: null,
     channels: input.channels ?? [],
     ...(input.model === undefined ? {} : { model: input.model }),
+    ...(input.effort === undefined ? {} : { effort: input.effort }),
+    ...(input.effort === undefined || input.effortDefault === undefined ? {} : { effortDefault: input.effortDefault }),
     ...(input.refresh === undefined ? {} : { refresh: input.refresh }),
   };
   // The id counts up; a taken one (two chats made at once) moves on to the next.

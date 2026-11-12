@@ -141,8 +141,10 @@ and the reviewer on different models through the same plugin.
 | `--thinking` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max` | the reasoning level for this step |
 
 A flag in `args` wins over the setting of the same meaning (`model`,
-`thinkingLevel`); without the flag the setting applies; without both, pi's own
-default applies and the field is not sent to the worker.
+`thinkingLevel`); a chat passes its effort as the step param `effort`, which is
+its thinking level and also wins over the setting; without either the setting
+applies; without all, pi's own default applies and the field is not sent to the
+worker.
 
 Any other entry fails the step at once, before the worker starts, with result
 `failed`, reason `invalid_args` and a message that names the entry: an unknown

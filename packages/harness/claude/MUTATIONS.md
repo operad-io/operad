@@ -110,3 +110,11 @@ setup it depends on, in the order they were recorded. The root
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0240-M8 | packages/harness/claude/src/worker.ts | the logged Bash command no longer kept its line breaks (`keepLines` removed) | `a Bash call logs its command, its start time and its duration` |
+
+
+## T-0342 — a chat's effort
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0342-M5 | packages/harness/claude/src/index.ts | the plugin stopped declaring its efforts | `the efforts claude declares > its effort levels, a default among them, and its own flag` |
+| T-0342-M6 | packages/harness/claude/src/index.ts | the step ignored the `effort` param a chat passes | `claude/agent > an effort from a chat reaches the worker as claude's effort` |

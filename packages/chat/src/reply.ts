@@ -302,6 +302,12 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
   if (chat.model !== undefined && ctx.harnessModels?.(chat.harness)?.list.includes(chat.model) !== true) {
     return failed("model", `the agent "${chat.harness}" cannot use the model "${chat.model}"`);
   }
+  // The same for an effort: the agent's list is the only one that can take it.
+  const efforts = ctx.harnessEfforts?.(chat.harness);
+  if (chat.effort !== undefined && efforts?.list.includes(chat.effort) !== true) {
+    return failed("effort", `the agent "${chat.harness}" cannot use the effort "${chat.effort}"`);
+  }
+  const effortFlag = efforts?.flag ?? (chat.harness === "pi" ? "--thinking" : "--effort");
 
   const settled = await liveSettings(ctx, chat, object, runStep);
   if ("result" in settled) return settled;
@@ -350,7 +356,15 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
       {
         prompt: promptFor(pending),
         cwd: live.cwd,
-        ...(chat.model === undefined ? {} : { args: ["--model", chat.model] }),
+        ...(chat.model === undefined && chat.effort === undefined
+          ? {}
+          : {
+              args: [
+                ...(chat.model === undefined ? [] : ["--model", chat.model]),
+                ...(chat.effort === undefined ? [] : [effortFlag, chat.effort]),
+              ],
+            }),
+        ...(chat.effort === undefined ? {} : { effort: chat.effort }),
         ...(live.skills.length === 0 ? {} : { skills: live.skills }),
         // Operad's own tools, so the agent never runs the `operad` command.
         operadTools: { home: ctx.home },

@@ -686,3 +686,13 @@ the row fields.
 |---|---|---|---|
 | T-0352-M1 | packages/engine/src/plugin/sqlite-store.ts | `declare` wrote the declaration on every call again (the old code), so a command that only reads waited out the busy timeout while another process held the write lock and failed with "database is locked" | `operad list --json while another process holds the store's write lock > prints the whole page with code 0 instead of failing with 'database is locked'` (packages/cli/test/list-json-locked.test.ts, through `main`; also `declaring an object type > a declaration the store already holds takes no write lock`) |
 | T-0347-M1 | packages/engine/src/plugin/registry.ts | a plugin command named like a kernel verb threw at startup again instead of losing only its short form | `plugin commands named like kernel verbs or each other > the CLI starts, the kernel verb runs and the plugin command runs through its plugin` |
+
+
+## T-0342 — a chat's effort
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0342-M1 | packages/engine/src/plugin/registry.ts | `actionEnv` left the loaded harness efforts out | `a harness plugin's efforts > are offered to actions by plugin name, with their flag` |
+| T-0342-M2 | packages/engine/src/plugin/validate.ts | an `efforts.default` outside the list was accepted | `a harness plugin's efforts > a default outside the list is refused` |
+| T-0342-M3 | packages/engine/src/plugin/validate.ts | an empty `efforts.flag` was accepted | `a harness plugin's efforts > a flag that is not a non-empty string is refused` |
+| T-0342-M4 | packages/engine/src/plugin/validate.ts | a domain plugin could declare `efforts` | `a harness plugin's efforts > only a harness declares them` |

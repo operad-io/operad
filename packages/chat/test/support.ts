@@ -26,13 +26,16 @@ export interface Call {
 /** What a fake harness does with one call. */
 export type Script = (ctx: StepContext, call: Call) => Promise<PluginStepResult> | PluginStepResult;
 
+type Levels = { readonly list: readonly string[]; readonly default: string | null };
+
 /** A harness plugin whose answers the test writes. */
-export function fakeHarness(name: string, script: Script, calls: Call[], models?: { readonly list: readonly string[]; readonly default: string | null }) {
+export function fakeHarness(name: string, script: Script, calls: Call[], models?: Levels, efforts?: Levels & { readonly flag?: string }) {
   return definePlugin({
     name,
     kind: "harness",
     version: "0.0.0",
     ...(models === undefined ? {} : { models }),
+    ...(efforts === undefined ? {} : { efforts }),
     steps: [
       {
         name: "agent",
@@ -60,7 +63,12 @@ export interface Rig {
   readonly calls: Call[];
   readonly events: TriggerEvent[];
   /** A chat that uses the fake harness. */
-  chat(extra?: { readonly access?: Record<string, never> | Record<string, boolean>; readonly model?: string }): Promise<string>;
+  chat(extra?: {
+    readonly access?: Record<string, never> | Record<string, boolean>;
+    readonly model?: string;
+    readonly effort?: string;
+    readonly effortDefault?: string;
+  }): Promise<string>;
   /** A person's message as a fact, without the event. */
   say(chat: string, text: string): Promise<string>;
   /** Runs one round of the reply step. */
@@ -72,13 +80,17 @@ export interface Rig {
   ): Promise<PluginStepResult>;
 }
 
-export async function rig(script: Script, models?: { readonly list: readonly string[]; readonly default: string | null }): Promise<Rig> {
+export async function rig(
+  script: Script,
+  models?: Levels,
+  efforts?: Levels & { readonly flag?: string },
+): Promise<Rig> {
   const root = await mkdtemp(join(tmpdir(), "chat-test-"));
   roots.push(root);
   const calls: Call[] = [];
   const events: TriggerEvent[] = [];
   const store = new MemoryPluginStore({ root: join(root, "store") });
-  const registry = new PluginRegistry([createChatPlugin(), fakeHarness("fake", script, calls, models)], {
+  const registry = new PluginRegistry([createChatPlugin(), fakeHarness("fake", script, calls, models, efforts)], {
     home: join(root, "home"),
     cwd: root,
     store,
@@ -97,7 +109,15 @@ export async function rig(script: Script, models?: { readonly list: readonly str
     async chat(extra) {
       return createChat(
         store,
-        { harness: "fake", cwd: root, title: "Test", ...(extra?.access === undefined ? {} : { access: extra.access }), ...(extra?.model === undefined ? {} : { model: extra.model }) },
+        {
+          harness: "fake",
+          cwd: root,
+          title: "Test",
+          ...(extra?.access === undefined ? {} : { access: extra.access }),
+          ...(extra?.model === undefined ? {} : { model: extra.model }),
+          ...(extra?.effort === undefined ? {} : { effort: extra.effort }),
+          ...(extra?.effort === undefined || extra?.effortDefault === undefined ? {} : { effortDefault: extra.effortDefault }),
+        },
         "test",
       );
     },
