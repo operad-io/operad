@@ -4,6 +4,7 @@
  */
 
 import { readProfile } from "@operad-io/access-match";
+import { isRecord } from "@operad-io/engine";
 
 export const EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"] as const;
 export type WorkerEffort = (typeof EFFORT_LEVELS)[number];
@@ -180,10 +181,6 @@ export const INPUT_FIELDS = [
 ] as const;
 
 const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 /** Validates the decoded stdin object; the message names the field at fault. */
 export function parseInput(value: unknown): ParsedInput {

@@ -4,6 +4,7 @@
  */
 
 import { readProfile } from "@operad-io/access-match";
+import { isRecord } from "@operad-io/engine";
 
 /** The longest one bash call may run when the settings do not say, in seconds. */
 export const DEFAULT_BASH_TIMEOUT_SECS = 1800;
@@ -136,10 +137,6 @@ export type ParsedInput =
   | { readonly ok: false; readonly message: string };
 
 const REQUIRED_STRINGS = ["prompt", "cwd", "authPath", "modelsPath", "agentDir", "sessionDir"] as const;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 /** Validates the decoded stdin object; the message names the field at fault. */
 export function parseInput(value: unknown): ParsedInput {

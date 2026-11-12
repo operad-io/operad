@@ -5,6 +5,7 @@
 
 import type { ActionArgSchema, ActionArgsSchema } from "./types.ts";
 import { canonical } from "./paging.ts";
+import { isRecord } from "../util.ts";
 
 const KEYWORDS = new Set([
   "type",
@@ -53,10 +54,6 @@ export class ActionArgsError extends Error {
     super(message);
     this.name = "ActionArgsError";
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function typeOf(value: unknown): string {

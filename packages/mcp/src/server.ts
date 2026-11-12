@@ -1,27 +1,7 @@
 /** The MCP stdio server: JSON-RPC framing, method dispatch and read tools. */
 
 import { join } from "node:path";
-import {
-  ENGINE_VERSION,
-  Kernel,
-  ViewError,
-  cancelRun,
-  createViews,
-  defaultOperadHome,
-  loadPluginRegistry,
-  listPending,
-  messageOf,
-  openConfigLog,
-  openPluginStore,
-  readConfig,
-  recordAnswer,
-  storeRootOf,
-  type ActionInfo,
-  type LogBackend,
-  type OperadConfig,
-  type PluginRegistry,
-  type Views,
-} from "@operad-io/engine";
+import { ENGINE_VERSION, Kernel, ViewError, cancelRun, createViews, defaultOperadHome, isRecord, listPending, loadPluginRegistry, messageOf, openConfigLog, openPluginStore, readConfig, recordAnswer, storeRootOf, type ActionInfo, type LogBackend, type OperadConfig, type PluginRegistry, type Views } from "@operad-io/engine";
 import { InvalidToolArguments } from "./arguments.ts";
 import { actionInfoNamed, actionMayRun, mcpPolicy } from "./policy.ts";
 import {
@@ -134,10 +114,6 @@ class RpcError extends Error {
     this.name = "RpcError";
     this.code = code;
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function validId(value: unknown): JsonRpcId | undefined {

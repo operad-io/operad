@@ -28,6 +28,7 @@ import {
   type Exit,
   type Startup,
 } from "@operad-io/engine/platform";
+import { messageOf } from "@operad-io/engine";
 
 export { DRAIN_GRACE_MS, KILL_GRACE_MS, lastLines, systemClock, type Clock } from "@operad-io/engine/platform";
 
@@ -265,10 +266,6 @@ async function readTail(path: string): Promise<string> {
   } finally {
     await handle.close();
   }
-}
-
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 /**

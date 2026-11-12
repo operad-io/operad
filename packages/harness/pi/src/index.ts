@@ -14,6 +14,8 @@ import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  isRecord,
+  paramsObject,
   defineFlow,
   definePlugin,
   type PluginStepResult,
@@ -36,14 +38,12 @@ import {
   standardUsage,
   type UsageSource,
   directoryError,
-  isRecord,
   optionalText,
   parseResult,
   parseStepFlags,
-  paramsObject,
   resultFor,
   secs,
-  stringList,
+  stringListParam,
   text,
   type StepFlagSpec,
   runAgent,
@@ -257,7 +257,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
             .join("\n\n");
           const cwd = text(input.cwd ?? flow.cwd, `${at}: params.cwd`);
           const flags = parseStepFlags(
-            stringList(input.args === undefined ? flow.args : input.args, `${at}: params.args`),
+            stringListParam(input.args === undefined ? flow.args : input.args, `${at}: params.args`),
             STEP_FLAGS,
           );
           // The model the step will use, known before anything can fail.

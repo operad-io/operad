@@ -3,6 +3,7 @@
 import type { FlowDefinition, ObjectStore, StoredObject } from "@operad-io/engine";
 import type { ReviewHistoryEntry, ReviewSettingsUsed } from "./rework.ts";
 import type { WaitKind } from "./waits.ts";
+import { isRecord, oneLine } from "@operad-io/engine";
 
 /**
  * Every object of a type, following the store's pages. The store returns one
@@ -586,10 +587,6 @@ export class DevRefusal extends DevError {
   }
 }
 
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 /** Reads a stored plan; the store already validated the object when it wrote it. */
 export function planData(data: Record<string, unknown>): PlanData {
   return data as unknown as PlanData;
@@ -872,12 +869,6 @@ export const changeClock: { now: () => number } = { now: () => Date.now() };
 
 const REASON_LIMIT = 160;
 
-/** One line of at most about 160 characters: whitespace collapsed, cut with an ellipsis. */
-export function oneLine(text: string, limit: number = REASON_LIMIT): string {
-  const flat = text.replace(/\s+/g, " ").trim();
-  return flat.length <= limit ? flat : `${flat.slice(0, limit - 1).trimEnd()}…`;
-}
-
 /**
  * Appends one line to the trailing `## Changes` section, creating it. The
  * entry keeps the time it happened (UTC, ISO) and the reason when there is one.
@@ -889,8 +880,8 @@ export function appendChange(
 ): string {
   const text = brief.replace(/\r\n/g, "\n").trimEnd();
   const { changes } = briefHeadings(text);
-  const why = reason === undefined ? "" : oneLine(reason);
-  const said = oneLine(line, Number.MAX_SAFE_INTEGER);
+  const why = reason === undefined ? "" : oneLine(reason, REASON_LIMIT, true);
+  const said = oneLine(line);
   const at = new Date(changeClock.now()).toISOString();
   const entry = `- [${at}] ${said}${why.length === 0 ? "" : ` — ${why}`}`;
   if (changes < 0) {
@@ -990,7 +981,7 @@ export function appendRework(
   const asked = ASKER[cleanSource] ?? cleanSource;
   const firstLine =
     body.split("\n").find((line) => line.trim().length > 0) ?? "";
-  const why = oneLine(reason ?? firstLine.replace(/^\s*[-*]\s+/, ""));
+  const why = oneLine(reason ?? firstLine.replace(/^\s*[-*]\s+/, ""), REASON_LIMIT, true);
   const next = appendChange(
     withRework,
     `rework ${number} — ${asked}${why.length === 0 ? "" : `: ${why}`}`,

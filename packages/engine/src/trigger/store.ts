@@ -12,6 +12,7 @@ import {
 import { join } from "node:path";
 import type { StartInput } from "../kernel/types.ts";
 import type { TriggerEvent, TriggerView } from "./types.ts";
+import { isRecord } from "../util.ts";
 
 /**
  * A start whose run metadata may not be written yet. It is written before the
@@ -69,10 +70,6 @@ export function readStoredTrigger(
 export interface TriggerStoreOptions {
   readonly root: string;
   readonly clock?: (() => number) | undefined;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /** The paths an event's summary and data files use inside the store. */

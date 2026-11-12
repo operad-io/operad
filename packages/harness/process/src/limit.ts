@@ -6,7 +6,7 @@
  */
 
 import type { StepLimitDefinition } from "@operad-io/engine";
-import { isRecord } from "./step.ts";
+import { isRecord } from "@operad-io/engine";
 
 /** The settings schema property both harnesses declare for `concurrency`. */
 export const CONCURRENCY_SETTING = {

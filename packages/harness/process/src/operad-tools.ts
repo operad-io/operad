@@ -7,7 +7,7 @@
  */
 
 import { fileURLToPath } from "node:url";
-import { isRecord } from "./step.ts";
+import { isRecord } from "@operad-io/engine";
 
 /** The name the tools go by in a harness: the server's name, and the prefix claude gives its tools. */
 export const OPERAD_SERVER = "operad";

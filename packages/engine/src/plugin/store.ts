@@ -19,6 +19,7 @@ import type {
   PluginStore,
   StoredObject,
 } from "./types.ts";
+import { requireName } from "../util.ts";
 
 /** Options for the in-process plugin store: nothing it keeps survives the process. */
 export interface MemoryPluginStoreOptions {
@@ -31,12 +32,6 @@ interface FactSubscription {
   readonly key: string;
   readonly after: number;
   readonly listener: (fact: PluginFact) => void;
-}
-
-function requireName(value: string, field: string): void {
-  if (value.trim().length === 0) {
-    throw new Error(`${field}: must be a non-empty string`);
-  }
 }
 
 /**

@@ -23,6 +23,9 @@
     "packages/access-match": {
       "name": "@operad-io/access-match",
       "version": "0.0.0",
+      "dependencies": {
+        "@operad-io/engine": "workspace:*",
+      },
     },
     "packages/assistant": {
       "name": "@operad-io/assistant",
@@ -135,6 +138,9 @@
     "packages/review-grading": {
       "name": "@operad-io/review-grading",
       "version": "0.0.0",
+      "dependencies": {
+        "@operad-io/engine": "workspace:*",
+      },
     },
     "packages/shell": {
       "name": "@operad-io/shell",

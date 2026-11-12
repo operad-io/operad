@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { messageOf, PluginError } from "./errors.ts";
 import type { KeyBindings } from "./types.ts";
+import { isRecord } from "../util.ts";
 
 function isMissing(error: unknown): boolean {
   return (
@@ -12,10 +13,6 @@ function isMissing(error: unknown): boolean {
     "code" in error &&
     error.code === "ENOENT"
   );
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /** The path of the key overrides for an operad home. */

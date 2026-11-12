@@ -2,12 +2,9 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { FlowDefinition, StepTypeRegistry } from "./types.ts";
 import { FlowError, validateFlow } from "./validate.ts";
+import { messageOf } from "../plugin/errors.ts";
 
 let loadCount = 0;
-
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
 
 /**
  * Imports a TypeScript module whose default export is a `defineFlow` value and

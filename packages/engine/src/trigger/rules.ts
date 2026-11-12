@@ -6,6 +6,7 @@ import type { JsonValue } from "../log/types.ts";
 import type { PluginRegistry } from "../plugin/registry.ts";
 import { CronError, parseCron } from "./cron.ts";
 import type { TriggerMode, TriggerRule } from "./types.ts";
+import { isRecord } from "../util.ts";
 
 /** `triggers.json` is not usable; the message names the rule and field. */
 export class TriggerError extends Error {
@@ -24,10 +25,6 @@ export function triggersPath(home: string): string {
 const RULE_KEYS = new Set(["source", "type", "start", "object", "mode", "schedule"]);
 const START_KEYS = new Set(["flow", "params"]);
 const MODES: readonly TriggerMode[] = ["observe", "candidate", "auto"];
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function requireText(
   value: unknown,

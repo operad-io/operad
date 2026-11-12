@@ -1,3 +1,4 @@
+import { isRecord } from "@operad-io/engine";
 /**
  * The worker definitions of a flow's settings: `workers` and `pools`. The
  * parser here is the one place that knows their fields, defaults and
@@ -63,10 +64,6 @@ export class WorkerDefinitionError extends Error {
     this.name = "WorkerDefinitionError";
     this.field = field;
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function join(prefix: string, name: string): string {
