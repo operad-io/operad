@@ -227,6 +227,16 @@ function hasTable(database: Database, table: string): boolean {
   );
 }
 
+function hasIndex(database: Database, index: string): boolean {
+  return (
+    database
+      .query<{ name: string }, [string]>(
+        "SELECT name FROM sqlite_master WHERE type = 'index' AND name = ?",
+      )
+      .get(index) !== null
+  );
+}
+
 /** True for a store written before trigger inputs could be global. */
 function inputsNeedMigration(database: Database): boolean {
   const column = tableColumns(database, "inputs").find((item) => item.name === "run_id");
@@ -291,6 +301,22 @@ function readSchemaVersion(database: Database): number | undefined {
   }
 }
 
+/**
+ * True when an open would have to change the schema. The checks are read-only,
+ * so opening an up-to-date store takes no write lock while another process is
+ * writing it.
+ */
+function schemaNeedsWork(database: Database): boolean {
+  return (
+    inputsNeedMigration(database) ||
+    !hasTable(database, "global_facts") ||
+    !hasTable(database, "outcomes") ||
+    !tableColumns(database, "runs").some((item) => item.name === "start_input_id") ||
+    !tableColumns(database, "global_facts").some((item) => item.name === "unique_key") ||
+    !hasIndex(database, "global_facts_unique_key")
+  );
+}
+
 function ensureSchema(database: Database, path: string): void {
   let version = readSchemaVersion(database);
   if (version === undefined) {
@@ -326,6 +352,8 @@ function ensureSchema(database: Database, path: string): void {
   // Tables added after a store was created are created here; the same
   // transaction migrates an older inputs table whose run id could not be null
   // and an older runs table that could not name the input that made the run.
+  // A current store needs none of it, so opening it stays read-only.
+  if (!schemaNeedsWork(database)) return;
   database.transaction(() => {
     if (inputsNeedMigration(database)) migrateInputs(database);
     if (!hasTable(database, "global_facts") || !hasTable(database, "outcomes")) {

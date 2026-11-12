@@ -694,3 +694,9 @@ the row fields.
 | T-0339-M23 | packages/engine/src/views/uploads.ts | the attachment route served the type file kept beside a stored file | `http server > file arguments > a stored file is served to a client with the type its upload gave, behind the token` |
 | T-0339-M26 | packages/engine/src/views/uploads.ts | `take` kept no type beside the stored file | `http server > file arguments > a stored file is served to a client with the type its upload gave, behind the token` |
 | T-0347-M1 | packages/engine/src/plugin/registry.ts | a plugin command named like a kernel verb threw at startup again instead of losing only its short form | `plugin commands named like kernel verbs or each other > the CLI starts, the kernel verb runs and the plugin command runs through its plugin` |
+
+## T-0354 — opening a current log takes no write lock
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0354-M1 | packages/engine/src/log/sqlite.ts | `ensureSchema` took the final immediate transaction on every open again (the old code), so a command that only reads waited out the busy timeout while another process held the log's write lock and failed with "database is locked" | `operad list and running while another process holds the log's write lock > both answer with code 0 instead of failing with 'database is locked'` (packages/cli/test/list-json-locked.test.ts, through `main`) |

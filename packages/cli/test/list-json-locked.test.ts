@@ -54,3 +54,43 @@ describe("operad list --json while another process holds the store's write lock"
     }
   });
 });
+
+describe("operad list and running while another process holds the log's write lock", () => {
+  test("both answer with code 0 instead of failing with 'database is locked'", async () => {
+    const root = await tempRoot();
+    const home = join(root, "home");
+    mkdirSync(home, { recursive: true });
+    await Bun.write(
+      join(home, "config.json"),
+      JSON.stringify({
+        plugins: [pluginPath],
+        store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
+      }),
+    );
+    // The first command creates the stores and records the declarations.
+    const first = await run(home, ["list", "item", "--json"]);
+    expect(first.err).toBe("");
+    expect(first.code).toBe(0);
+
+    // A running serve holds the write lock of the log.
+    const holder = new Database(join(root, "store", "log.sqlite"));
+    holder.run("BEGIN IMMEDIATE");
+    try {
+      const started = Date.now();
+      const listed = await run(home, ["list", "item", "--json"]);
+      expect(listed.err).toBe("");
+      expect(listed.code).toBe(0);
+      const page = JSON.parse(listed.out) as { rows: unknown[] };
+      expect(page.rows).toEqual([]);
+
+      const running = await run(home, ["running", "--json"]);
+      expect(running.err).toBe("");
+      expect(running.code).toBe(0);
+      expect(JSON.parse(running.out)).toEqual([]);
+      expect(Date.now() - started).toBeLessThan(1_000);
+    } finally {
+      holder.run("ROLLBACK");
+      holder.close();
+    }
+  });
+});
