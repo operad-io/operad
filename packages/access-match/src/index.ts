@@ -476,12 +476,14 @@ export function mcpCallValue(server: string, tool: string): string {
 }
 
 function matchMcp(profile: AccessProfile, call: ToolCall): Verdict {
+  // Only the field's presence puts MCP tools under the profile.
+  if (profile.allowMcp === undefined) return ALLOW;
   const server: unknown = call.input["server"];
   const tool: unknown = call.input["tool"];
   if (typeof server !== "string" || typeof tool !== "string") {
     return { allow: false, reason: "an MCP call that names no server and tool cannot be checked" };
   }
-  const allowed = profile.allowMcp ?? [];
+  const allowed = profile.allowMcp;
   if (allowed.includes(`${server}.${tool}`) || allowed.includes(`${server}.*`)) return ALLOW;
   return {
     allow: false,

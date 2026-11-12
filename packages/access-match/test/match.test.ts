@@ -576,6 +576,13 @@ test("an MCP tool is under the profile when it has allowMcp: a listed tool runs,
   expect(readProfile({ allowMcp: "a.b" }).ok).toBe(false);
 });
 
+test("an MCP tool is not under the profile when allowMcp is absent", () => {
+  const call = (server: string, tool: string) => match({}, { tool: "mcp", input: { server, tool }, cwd: CWD }, { home: HOME });
+  expect(call("notes", "echo")).toEqual({ allow: true });
+  // A malformed MCP call is not judged either, as for any tool the profile does not know.
+  expect(match({}, { tool: "mcp", input: {}, cwd: CWD }, { home: HOME })).toEqual({ allow: true });
+});
+
 test("readPaths lets a read through a deny of its ancestor and nothing else", () => {
   const profile: AccessProfile = {
     denyPaths: ["/home/u/.operad/attachments", "/home/u/.operad/store"],

@@ -100,3 +100,9 @@ and the row fields.
 | T-0327-M10 | packages/access-match/src/index.ts | an unknown MCP tool was allowed instead of asking as a write | `an MCP tool is under the profile when it has allowMcp: a listed tool runs, any other asks as a write` |
 | T-0339-M8 | packages/access-match/src/index.ts | `readPaths` let no read through a deny | `readPaths lets a read through a deny of its ancestor and nothing else` |
 | T-0339-M9 | packages/access-match/src/index.ts | a write under `readPaths` no longer asked | `a write under readPaths asks, where no deny covers it; a write elsewhere is as before` |
+
+## T-0355 — MCP follow-ups
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0355-M2 | packages/access-match/src/index.ts | an absent `allowMcp` was read as an empty list, so MCP calls were put under the profile and asked | `an MCP tool is not under the profile when allowMcp is absent` |
