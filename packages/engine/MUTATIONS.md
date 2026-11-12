@@ -726,3 +726,4 @@ the row fields.
 | T-0361-M7 | packages/engine/src/http/server.ts | the section call ignored `after=` in the query | `http server > lists types and objects, gets one object, and pages a section` |
 | T-0361-M10 | packages/engine/src/views/presentation.ts | a growth held back by the rate window was dropped instead of announced when the window ended | `presentation views > a held-back growth is announced when the window ends (T-0361)` |
 | T-0361-M11 | packages/engine/src/views/presentation.ts | the size cap cut the tail instead of shortening the finished page | `presentation views > a tail larger than the cap stays whole (T-0361)` |
+| T-0361-M12 | packages/engine/src/views/presentation.ts | the cap counted neither the note nor a tail that no longer fits with it, so the answer went over the cap | `presentation views > the cap refuses when even the tail and the note do not fit (T-0361)` |

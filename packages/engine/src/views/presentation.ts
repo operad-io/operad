@@ -1687,14 +1687,17 @@ export class Views {
     const tailBytes = tail === undefined ? 0 : Buffer.byteLength(tail, "utf8");
     if (markdownBytes + tailBytes <= limit) return result(markdown, tail);
 
-    // The cap covers the finished page and the changing tail together. The
-    // tail is never cut: it is the whole of the part that is still changing,
-    // so it wins over the cap and the finished page takes what is left.
+    // The cap covers the finished page, the changing tail and the note
+    // together. The tail is never cut: if even the tail and the note do not
+    // fit, the section is refused and the client asks for it whole.
     const suffixBytes = Buffer.byteLength(suffix, "utf8");
-    const body = capBytes(
-      markdown,
-      Math.max(0, limit - suffixBytes - tailBytes),
-    );
+    if (tailBytes + suffixBytes > limit) {
+      throw new ViewError(
+        "section",
+        `section "${sectionId}" of "${id}" is over the ${limit}-byte size cap with its tail; ${suffix.trim()}`,
+      );
+    }
+    const body = capBytes(markdown, limit - suffixBytes - tailBytes);
     return result(`${body}${suffix}`, tail);
   }
 

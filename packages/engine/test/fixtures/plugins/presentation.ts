@@ -162,8 +162,12 @@ export default definePlugin({
           return { markdown: "x".repeat(300 * 1024) };
         }
         if (sectionId === "surge") {
-          // A live tail larger than any cap a test gives: it must stay whole.
-          return { markdown: "finished", mark: "surge-1", tail: "t".repeat(2048) };
+          // A live tail that a small cap cannot hold beside the note.
+          return {
+            markdown: "f".repeat(200),
+            mark: "surge-1",
+            tail: "t".repeat(120),
+          };
         }
         return { markdown: String(object.data.title ?? "") };
       },

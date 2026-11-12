@@ -587,7 +587,28 @@ describe("presentation views", () => {
     await real.close();
   });
 
-  test("a tail larger than the cap stays whole (T-0361)", async () => {
+  test("the cap drops the finished page and keeps the tail whole (T-0361)", async () => {
+    const { store, registry, log } = await fixture();
+    const views = trackedViews({
+      registry,
+      store,
+      log,
+      sectionCapBytes: 300,
+    });
+    const content = await views.section("item:one", "surge");
+    expect(content.tail).toBe("t".repeat(120));
+    expect(content.markdown).toContain("[Truncated.");
+    expect(content.markdown).not.toContain("f".repeat(200));
+    expect(
+      Buffer.byteLength(content.markdown, "utf8") +
+        Buffer.byteLength(content.tail ?? "", "utf8"),
+    ).toBeLessThanOrEqual(300);
+
+    views.close();
+    await log.close();
+  });
+
+  test("the cap refuses when even the tail and the note do not fit (T-0361)", async () => {
     const { store, registry, log } = await fixture();
     const views = trackedViews({
       registry,
@@ -595,10 +616,10 @@ describe("presentation views", () => {
       log,
       sectionCapBytes: 128,
     });
-    const content = await views.section("item:one", "surge");
-    expect(content.tail).toBe("t".repeat(2048));
-    expect(content.markdown).toContain("[Truncated.");
-    expect(content.markdown).not.toContain("finished");
+
+    await expect(views.section("item:one", "surge")).rejects.toThrow(
+      /over the 128-byte size cap with its tail.*--full/,
+    );
 
     views.close();
     await log.close();
