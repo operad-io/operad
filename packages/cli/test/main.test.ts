@@ -378,10 +378,10 @@ describe("operad command", () => {
       join(home, "config.json"),
       JSON.stringify({
         plugins: [fileURLToPath(new URL("../../engine/test/fixtures/plugins/opens.ts", import.meta.url))],
-        store: { backend: "jsonl", path: join(root, "store") },
+        store: { backend: "sqlite", path: join(root, "store") },
       }),
     );
-    const store = new FilePluginStore({ root: join(root, "store", "plugins") });
+    const store = new SqlitePluginStore({ root: storeRootOf(await readConfig(home)) });
     store.put("thing", "a", {}, "seed");
     store.put("thing", "b", {}, "seed");
     const output = capture();
