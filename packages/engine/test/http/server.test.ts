@@ -538,6 +538,32 @@ describe("http server", () => {
     }
   });
 
+  test("the actor carries the client named in x-operad-client; a missing or odd value is http", async () => {
+    const h = await makeHarness();
+    try {
+      const via: (string | undefined)[] = ["ios", "tui", undefined, "Not A Word", "x".repeat(40)];
+      const seen: string[] = [];
+      for (const [index, name] of via.entries()) {
+        seed(h, `c${index}`, { title: "C", state: "new" });
+        const res = await api(h, "/v1/act", {
+          method: "POST",
+          headers: authHeaders(h, {
+            "content-type": "application/json",
+            ...(name === undefined ? {} : { "x-operad-client": name }),
+          }),
+          body: JSON.stringify({ action: "webtest:approve", id: `item:c${index}`, note: "n" }),
+        });
+        expect(res.status).toBe(200);
+      }
+      for (const fact of h.store.facts().filter((f) => f.type === "action_invoked")) {
+        seen.push((fact.data.actor as { via: string }).via);
+      }
+      expect(seen).toEqual(["ios", "tui", "http", "http", "http"]);
+    } finally {
+      await h.close();
+    }
+  });
+
   test("acts with a note, refuses without one, and needs confirmed for a confirm action", async () => {
     const h = await makeHarness();
     try {

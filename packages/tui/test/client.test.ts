@@ -414,3 +414,16 @@ describe("TuiClient", () => {
     expect(seen).toHaveLength(3);
   });
 });
+
+describe("the client's name", () => {
+  test("every request says it is the tui", async () => {
+    const names: (string | null)[] = [];
+    const fetchImpl: FetchLike = async (_input, init) => {
+      names.push(new Headers(init?.headers).get("x-operad-client"));
+      return new Response("[]", { status: 200, headers: { "content-type": "application/json" } });
+    };
+    const c = new TuiClient({ url: "http://127.0.0.1:1", token: "t", fetch: fetchImpl });
+    await c.pending().catch(() => undefined);
+    expect(names).toEqual(["tui"]);
+  });
+});
