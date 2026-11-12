@@ -4,7 +4,7 @@ import { readFile, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  FilePluginStore,
+  SqlitePluginStore,
   FileSecretStore,
   formatHistoryEntry,
   historyEntries,
@@ -80,7 +80,7 @@ describe("plugin secrets", () => {
         },
       ],
     };
-    const store = new FilePluginStore({ root: join(storeRoot, "plugins") });
+    const store = new SqlitePluginStore({ root: storeRoot });
     const registry = new PluginRegistry([secretPlugin], {
       home,
       storeRoot,
@@ -88,7 +88,7 @@ describe("plugin secrets", () => {
       sources: [secretPluginPath],
       onLog: () => undefined,
     });
-    const log = openLog({ backend: "jsonl", path: storeRoot });
+    const log = openLog({ backend: "sqlite", path: join(storeRoot, "log.sqlite") });
     try {
       const info = await log.startRun(flow.name, "job:1");
       await new Runner({ log, flow, runId: info.runId, registry }).run();
@@ -97,7 +97,7 @@ describe("plugin secrets", () => {
       for await (const fact of log.read(info.runId)) facts.push(fact);
       const stored = JSON.stringify(facts);
       expect(stored).not.toContain(value);
-      const pluginFacts = JSON.stringify(store.allFacts());
+      const pluginFacts = JSON.stringify(store.facts());
       expect(pluginFacts).toContain('"present":true');
       expect(pluginFacts).toContain('"leakedInEnv":false');
       expect(pluginFacts).not.toContain(value);
@@ -119,7 +119,7 @@ describe("plugin secrets", () => {
 
   test("putting a Secret into the log is refused", async () => {
     const root = await tempRoot();
-    const log = openLog({ backend: "jsonl", path: join(root, "log") });
+    const log = openLog({ backend: "sqlite", path: join(root, "log", "log.sqlite") });
     try {
       const info = await log.startRun("flow", "object");
       await expect(

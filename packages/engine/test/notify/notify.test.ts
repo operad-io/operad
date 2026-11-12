@@ -23,7 +23,7 @@ async function openFixture(): Promise<{
   readonly log: LogBackend;
 }> {
   const root = await tempRoot();
-  return { root, home: root, log: openLog({ backend: "jsonl", path: join(root, "store") }) };
+  return { root, home: root, log: openLog({ backend: "sqlite", path: join(root, "store", "log.sqlite") }) };
 }
 
 async function waitOn(

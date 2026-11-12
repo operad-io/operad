@@ -83,14 +83,10 @@ interface Setup {
 
 async function setup(
   rules: readonly TriggerRule[] = [],
-  backend: "jsonl" | "sqlite" = "jsonl",
 ): Promise<Setup> {
   const root = await tempRoot();
   const storeRoot = join(root, "store");
-  const log = openLog({
-    backend,
-    path: backend === "sqlite" ? join(storeRoot, "log.sqlite") : storeRoot,
-  });
+  const log = openLog({ backend: "sqlite", path: join(storeRoot, "log.sqlite") });
   const registry = new PluginRegistry([plugin], {
     home: root,
     storeRoot,
@@ -1266,30 +1262,23 @@ describe("event receipt recovery", () => {
     });
   }
 
-  for (const backend of ["jsonl", "sqlite"] as const) {
-    test(`two processes delivering the same observe event write one fact (${backend})`, async () => {
-      const env = await setup([rule({ mode: "observe" })], backend);
-      try {
-        const outputs = await Promise.all(
-          ["a", "b"].map(() =>
-            runChild<TriggerResult>(env, [
-              "observe",
-              "shared-key",
-              "receive",
-              backend,
-            ]),
-          ),
-        );
-        for (const output of outputs) {
-          expect(output.ok).toBe(true);
-          expect(output.result?.kind).toBe("observed");
-        }
-        expect(await globalFacts(env.log, "trigger_observed")).toHaveLength(1);
-      } finally {
-        await env.close();
+  test("two processes delivering the same observe event write one fact", async () => {
+    const env = await setup([rule({ mode: "observe" })]);
+    try {
+      const outputs = await Promise.all(
+        ["a", "b"].map(() =>
+          runChild<TriggerResult>(env, ["observe", "shared-key", "receive"]),
+        ),
+      );
+      for (const output of outputs) {
+        expect(output.ok).toBe(true);
+        expect(output.result?.kind).toBe("observed");
       }
-    });
-  }
+      expect(await globalFacts(env.log, "trigger_observed")).toHaveLength(1);
+    } finally {
+      await env.close();
+    }
+  });
 
   test("two receives for an object with an active run append one fact", async () => {
     const env = await setup([rule({})]);

@@ -5,7 +5,7 @@
  */
 
 import { createShellPlugin } from "@operad-io/shell";
-import { FilePluginStore, PluginRegistry } from "@operad-io/engine";
+import { SqlitePluginStore, PluginRegistry } from "@operad-io/engine";
 import { createPoolPlugin } from "@operad-io/pool";
 import { createDevPlugin } from "../../src/index.ts";
 
@@ -14,7 +14,7 @@ if (storeRoot === undefined || repository === undefined) {
   throw new Error("usage: schedule-crash-child <store> <repository>");
 }
 
-const store = new FilePluginStore({ root: storeRoot });
+const store = new SqlitePluginStore({ root: storeRoot });
 const registry = new PluginRegistry([createDevPlugin(), createPoolPlugin(), createShellPlugin()], {
   home: storeRoot,
   cwd: repository,

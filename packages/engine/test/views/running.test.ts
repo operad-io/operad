@@ -59,7 +59,7 @@ async function env(): Promise<{
   const root = await tempRoot();
   const store = new MemoryPluginStore({ root: join(root, "plugins") });
   const registry = new PluginRegistry([plugin], { store });
-  const log = openLog({ backend: "jsonl", path: join(root, "store"), clock: () => now });
+  const log = openLog({ backend: "sqlite", path: join(root, "store", "log.sqlite"), clock: () => now });
   const views = createViews({ registry, store, log });
   opened.push(views);
   counts.rows = 0;

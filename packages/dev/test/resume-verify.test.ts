@@ -149,7 +149,7 @@ async function run(options: {
     [createDevPlugin(), createPoolPlugin(), createShellPlugin(), worker, reviewer] as never,
     { home: root, cwd: remote.repository, store },
   );
-  const log = openLog({ backend: "jsonl", path: join(root, "log") });
+  const log = openLog({ backend: "sqlite", path: join(root, "log", "log.sqlite") });
   const found = registry.flow("dev");
   if (found === undefined) throw new Error("the dev flow is missing");
   const { runId } = await log.startRun("dev", `task:${task.id}`);

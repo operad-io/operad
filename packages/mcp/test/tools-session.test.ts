@@ -18,7 +18,7 @@ async function makeHome(): Promise<string> {
   mkdirSync(home, { recursive: true });
   writeFileSync(
     join(home, "config.json"),
-    JSON.stringify({ plugins: [pluginPath], store: { backend: "jsonl", path: join(root, "store") } }),
+    JSON.stringify({ plugins: [pluginPath], store: { backend: "sqlite", path: join(root, "store", "log.sqlite") } }),
   );
   return home;
 }

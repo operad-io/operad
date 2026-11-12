@@ -168,7 +168,7 @@ async function setup(http?: HttpSetup): Promise<Setup> {
     join(home, "config.json"),
     JSON.stringify({
       plugins: [plugin],
-      store: { backend: "jsonl", path: join(root, "store") },
+      store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
       http: http === undefined ? { enabled: false } : { enabled: true, port: http.port, listen: http.listen },
     }),
   );

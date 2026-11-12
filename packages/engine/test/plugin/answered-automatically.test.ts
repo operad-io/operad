@@ -35,7 +35,7 @@ async function fixture(hook: unknown) {
     onLog: (message) => logs.push(message),
   });
   await store.put("item", "1", { auto: true }, "test");
-  const log = openLog({ backend: "jsonl", path: join(root, "log") });
+  const log = openLog({ backend: "sqlite", path: join(root, "log", "log.sqlite") });
   const run = await log.startRun("demo", "item:1");
   await log.append(run.runId, 0, [
     {

@@ -1,6 +1,6 @@
 import { afterAll, expect, test } from "bun:test";
 import { join } from "node:path";
-import { defineFlow, FilePluginStore, PluginRegistry } from "../../src/index.ts";
+import { defineFlow, SqlitePluginStore, PluginRegistry } from "../../src/index.ts";
 import { cleanupTempRoots, def, tempRoot } from "./support.ts";
 
 afterAll(cleanupTempRoots);
@@ -86,7 +86,7 @@ test("a declaration is found by a later process from the same store", async () =
   const first = new PluginRegistry([make()], {
     home: root,
     storeRoot,
-    store: new FilePluginStore({ root: storeRoot }),
+    store: new SqlitePluginStore({ root: storeRoot }),
   });
   await first.tick();
   expect(first.flow("generated")?.flow.name).toBe("generated");
@@ -95,7 +95,7 @@ test("a declaration is found by a later process from the same store", async () =
   const second = new PluginRegistry([make()], {
     home: root,
     storeRoot,
-    store: new FilePluginStore({ root: storeRoot }),
+    store: new SqlitePluginStore({ root: storeRoot }),
   });
   expect(second.flow("generated")?.flow.name).toBe("generated");
   expect(second.flows().some((item) => item.flow.name === "generated")).toBe(true);

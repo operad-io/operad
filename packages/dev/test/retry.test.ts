@@ -172,7 +172,7 @@ async function world(taskCount: number, devJson: Record<string, unknown> = {}): 
     });
     tasks.push(task.id);
   }
-  const log = openLog({ backend: "jsonl", path: join(root, "log") });
+  const log = openLog({ backend: "sqlite", path: join(root, "log", "log.sqlite") });
   return { root, remote, store, log, tasks, events: [] };
 }
 

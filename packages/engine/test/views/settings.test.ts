@@ -36,7 +36,7 @@ async function setup(
     file,
     configText ??
       `${JSON.stringify(
-        { store: { backend: "jsonl" }, plugins: { demo: { module: "demo", settings: { limit: 3 } } }, http: { port: 1 } },
+        { store: { backend: "sqlite" }, plugins: { demo: { module: "demo", settings: { limit: 3 } } }, http: { port: 1 } },
         null,
         2,
       )}\n`,
@@ -164,7 +164,7 @@ describe("settings", () => {
   });
 
   test("the rest of the file keeps its keys, order and indent", async () => {
-    const text = '{\n\t"store": { "backend": "jsonl" },\n\t"plugins": {\n\t\t"demo": { "module": "demo", "settings": { "limit": 3, "mode": "a" } }\n\t},\n\t"http": { "port": 1 }\n}';
+    const text = '{\n\t"store": { "backend": "sqlite" },\n\t"plugins": {\n\t\t"demo": { "module": "demo", "settings": { "limit": 3, "mode": "a" } }\n\t},\n\t"http": { "port": 1 }\n}';
     const { views, config } = await setup(text);
     await views.set("demo.nested.depth", 4);
     const after = config();

@@ -8,7 +8,7 @@ import {
   getTask,
   setTaskPhase,
 } from "../src/service.ts";
-import { FilePluginStore, type StepContext } from "@operad-io/engine";
+import { SqlitePluginStore, type StepContext } from "@operad-io/engine";
 import { taskPlaceWait } from "../src/place-wait.ts";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -459,7 +459,7 @@ describe("dev views", () => {
     const root = await tempRoot();
     const repositoryPath = await makeGitRepository(root);
     let clock = 0;
-    const store = new FilePluginStore({ root: join(root, "store"), clock: () => clock });
+    const store = new SqlitePluginStore({ root: join(root, "store"), clock: () => clock });
     const repository = await addRepository(store, { path: repositoryPath });
     const plan = await addPlan(store, { repository, slug: "p", title: "P", request: "r" });
     const task = await addTask(store, { plan: plan.id, slug: "one", title: "One", brief: "b" });
@@ -526,7 +526,7 @@ describe("dev views", () => {
     const root = await tempRoot();
     const repositoryPath = await makeGitRepository(root);
     let clock = 0;
-    const store = new FilePluginStore({ root: join(root, "store"), clock: () => clock });
+    const store = new SqlitePluginStore({ root: join(root, "store"), clock: () => clock });
     const repository = await addRepository(store, { path: repositoryPath });
     const plan = await addPlan(store, { repository, slug: "p", title: "P", request: "r" });
     const task = await addTask(store, { plan: plan.id, slug: "one", title: "One", brief: "b" });
@@ -560,7 +560,7 @@ describe("dev views", () => {
     const root = await tempRoot();
     const repositoryPath = await makeGitRepository(root);
     let clock = 0;
-    const store = new FilePluginStore({ root: join(root, "store"), clock: () => clock });
+    const store = new SqlitePluginStore({ root: join(root, "store"), clock: () => clock });
     const repository = await addRepository(store, { path: repositoryPath });
     const plan = await addPlan(store, { repository, slug: "p", title: "P", request: "r" });
     const task = await addTask(store, { plan: plan.id, slug: "one", title: "One", brief: "b" });
@@ -606,7 +606,7 @@ describe("dev views", () => {
     const root = await tempRoot();
     const repositoryPath = await makeGitRepository(root);
     let clock = 0;
-    const store = new FilePluginStore({ root: join(root, "store"), clock: () => clock });
+    const store = new SqlitePluginStore({ root: join(root, "store"), clock: () => clock });
     const repository = await addRepository(store, { path: repositoryPath });
     const plan = await addPlan(store, { repository, slug: "p", title: "P", request: "r" });
     const task = await addTask(store, { plan: plan.id, slug: "one", title: "One", brief: "b" });

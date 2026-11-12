@@ -93,7 +93,7 @@ describe("plugin settings", () => {
       join(home, "config.json"),
       JSON.stringify({
         plugins: { configured: { module: configuredPath, settings: null } },
-        store: { backend: "jsonl", path: join(root, "store") },
+        store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
       }),
     );
     const logs: string[] = [];

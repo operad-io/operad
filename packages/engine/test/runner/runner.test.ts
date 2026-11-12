@@ -9,7 +9,7 @@ import {
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  FilePluginStore,
+  SqlitePluginStore,
   MemoryPluginStore,
   Runner,
   cancelRun,
@@ -55,7 +55,7 @@ interface Setup {
 async function setup(flowName: string): Promise<Setup> {
   const root = await tempRoot();
   const storeRoot = join(root, "store");
-  const log = openLog({ backend: "jsonl", path: storeRoot });
+  const log = openLog({ backend: "sqlite", path: join(storeRoot, "log.sqlite") });
   const registry = new PluginRegistry([plugin], {
     home: root,
     storeRoot,
@@ -96,7 +96,6 @@ interface FileSetup {
 /** A registry loaded from a config file, so steps can run in a worker. */
 async function fileSetup(
   flowName: string,
-  backend: "jsonl" | "sqlite" = "jsonl",
 ): Promise<FileSetup> {
   const root = await tempRoot();
   const home = join(root, "home");
@@ -106,10 +105,7 @@ async function fileSetup(
     join(home, "config.json"),
     JSON.stringify({
       plugins: [pluginPath],
-      store: {
-        backend,
-        path: backend === "sqlite" ? join(storeRoot, "log.sqlite") : storeRoot,
-      },
+      store: { backend: "sqlite", path: join(storeRoot, "log.sqlite") },
     }),
   );
   const config = await readConfig(home);
@@ -117,7 +113,7 @@ async function fileSetup(
   const registry = await loadPluginRegistry({
     home,
     cwd: home,
-    store: openPluginStore({ backend, root: storeRoot }),
+    store: openPluginStore({ backend: "sqlite", root: storeRoot }),
   });
   const found = registry.flow(flowName);
   if (found === undefined) throw new Error(`missing flow ${flowName}`);
@@ -533,7 +529,7 @@ describe("runner", () => {
       join(home, "config.json"),
       JSON.stringify({
         plugins: [pluginPath],
-        store: { backend: "jsonl", path: storeRoot },
+        store: { backend: "sqlite", path: join(storeRoot, "log.sqlite") },
       }),
     );
     const config = await readConfig(home);
@@ -559,7 +555,7 @@ describe("runner", () => {
       const registry = await loadPluginRegistry({
         home,
         cwd: home,
-        store: new FilePluginStore({ root: join(storeRoot, "plugins") }),
+        store: new SqlitePluginStore({ root: storeRoot }),
       });
       const found = registry.flow("simple");
       if (found === undefined) throw new Error("missing simple flow");

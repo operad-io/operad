@@ -42,7 +42,7 @@ async function setup() {
     store,
     storeRoot: store.root,
   });
-  const log = openLog({ backend: "jsonl", path: join(store.root, "log") });
+  const log = openLog({ backend: "sqlite", path: join(store.root, "log", "log.sqlite") });
   const views = createViews({ registry, store, log, cwd: path });
   const items = (): Promise<readonly PendingItem[]> => listPending(log, registry, undefined, views);
   const proposed = async () =>

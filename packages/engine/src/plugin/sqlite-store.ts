@@ -1,9 +1,8 @@
 /** A plugin store backed by one SQLite file, in the same home as the log. */
 
 import { Database } from "bun:sqlite";
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { enableWal, setBusyTimeout } from "../platform/index.ts";
-import { assertStoreNotMoving } from "../runner/lock.ts";
 import { dirname, join } from "node:path";
 import {
   followsChanges,
@@ -105,7 +104,7 @@ const SCHEMA = `
   );
 `;
 
-const SCHEMA_FILE = "plugin.sqlite";
+const SCHEMA_FILE = "plugins.sqlite";
 
 function deepFreeze<T>(value: T): T {
   if (typeof value === "object" && value !== null && !Object.isFrozen(value)) {
@@ -161,7 +160,6 @@ export class SqlitePluginStore implements PluginStore {
   }
 
   declare(type: string, index: readonly string[]): void {
-    assertStoreNotMoving(dirname(this.location.file ?? this.root));
     this.db
       .query("INSERT OR IGNORE INTO declared_types (type) VALUES (?)")
       .run(type);
@@ -186,7 +184,6 @@ export class SqlitePluginStore implements PluginStore {
       at: this.clock(),
     };
     this.db.transaction(() => {
-      assertStoreNotMoving(dirname(this.location.file ?? this.root));
       this.db
         .query(
           `INSERT INTO objects (type, id, data, version, cause, at)
@@ -405,7 +402,6 @@ export class SqlitePluginStore implements PluginStore {
   append(input: StoreFactInput): PluginFact {
     return this.db
       .transaction(() => {
-        assertStoreNotMoving(dirname(this.location.file ?? this.root));
         return this.insertFact(input);
       })
       .immediate();
@@ -476,6 +472,8 @@ export class SqlitePluginStore implements PluginStore {
   }
 
   private pollFacts(): void {
+    // A removed database has nothing left to deliver; its timer outlives it.
+    if (!existsSync(this.location.file ?? this.root)) return;
     const rows = this.db
       .query(
         `SELECT sequence, type, object_type, object_id, cause, at, data

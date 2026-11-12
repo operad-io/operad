@@ -44,7 +44,7 @@ async function makeHome(
     join(home, "config.json"),
     JSON.stringify({
       plugins: [pluginPath],
-      store: { backend: "jsonl", path: join(root, "store") },
+      store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
       http: { enabled: true, port, listen },
     }),
   );
@@ -166,13 +166,13 @@ describe("operad serve http", () => {
       join(home, "config.json"),
       JSON.stringify({
         plugins: [scopedPluginPath],
-        store: { backend: "jsonl", path: storePath },
+        store: { backend: "sqlite", path: join(storePath, "log.sqlite") },
         http: { enabled: true, port, listen: ["127.0.0.1"] },
       }),
     );
     // The task lives in the other namespace; inside repo-a the plugin would
     // scope its bare id to a/T-0017-x, which does not exist.
-    const store = openPluginStore({ backend: "jsonl", root: storePath });
+    const store = openPluginStore({ backend: "sqlite", root: storePath });
     await store.put("task", "b/T-0017-x", { title: "B" }, "seed");
 
     const child = Bun.spawn({

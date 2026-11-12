@@ -4,7 +4,7 @@
  * proposes nothing more.
  */
 
-import { FilePluginStore } from "@operad-io/engine";
+import { SqlitePluginStore } from "@operad-io/engine";
 import { collectFollowups, followupTestHooks } from "../../src/followups.ts";
 import { validateDevSettings } from "../../src/settings.ts";
 
@@ -13,7 +13,7 @@ if (storeRoot === undefined || name === undefined) {
   throw new Error("usage: followups-crash-child <store> <repository>");
 }
 
-const store = new FilePluginStore({ root: storeRoot });
+const store = new SqlitePluginStore({ root: storeRoot });
 followupTestHooks.afterPropose = () => {
   process.kill(process.pid, "SIGKILL");
 };

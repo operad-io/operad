@@ -38,16 +38,15 @@
       }
     },
     "store": {
-      "description": "Where the fact log lives. jsonl uses a directory, sqlite a database file.",
+      "description": "Where the fact log lives: a sqlite database file.",
       "type": "object",
       "properties": {
         "backend": {
           "type": "string",
           "enum": [
-            "jsonl",
             "sqlite"
           ],
-          "default": "jsonl"
+          "default": "sqlite"
         },
         "path": {
           "type": "string",

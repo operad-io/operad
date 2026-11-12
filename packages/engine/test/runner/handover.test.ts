@@ -48,7 +48,7 @@ async function facts(log: LogBackend, runId: string): Promise<Fact[]> {
 async function setup() {
   const root = await tempRoot();
   const storeRoot = join(root, "store");
-  const log = openLog({ backend: "jsonl", path: storeRoot });
+  const log = openLog({ backend: "sqlite", path: join(storeRoot, "log.sqlite") });
   const registry = new PluginRegistry([plugin], {
     home: root,
     storeRoot,

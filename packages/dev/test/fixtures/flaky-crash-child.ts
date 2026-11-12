@@ -4,7 +4,7 @@
  * proposes exactly one.
  */
 
-import { FilePluginStore } from "@operad-io/engine";
+import { SqlitePluginStore } from "@operad-io/engine";
 import { flakyTestHooks, trackFlakyTests } from "../../src/flaky.ts";
 import { repositoryData } from "../../src/model.ts";
 import { findRepository } from "../../src/service.ts";
@@ -14,7 +14,7 @@ if (storeRoot === undefined || name === undefined || test === undefined || log =
   throw new Error("usage: flaky-crash-child <store> <repository> <test> <log>");
 }
 
-const store = new FilePluginStore({ root: storeRoot });
+const store = new SqlitePluginStore({ root: storeRoot });
 const found = await findRepository(store, name);
 if (found === undefined) throw new Error(`no repository ${name}`);
 flakyTestHooks.beforePropose = () => {

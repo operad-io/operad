@@ -7,7 +7,7 @@
 import { appendFileSync, writeFileSync } from "node:fs";
 import {
   definePlugin,
-  FilePluginStore,
+  SqlitePluginStore,
   PluginRegistry,
   type PluginStepResult,
 } from "@operad-io/engine";
@@ -88,7 +88,7 @@ reviewTestHooks.afterRunSaved = (run) => {
   }
 };
 
-const store = new FilePluginStore({ root: storeRoot });
+const store = new SqlitePluginStore({ root: storeRoot });
 const registry = new PluginRegistry([createDevPlugin(), reviewer], {
   home: storeRoot,
   cwd: repository,
