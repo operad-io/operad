@@ -634,3 +634,9 @@ the row fields.
 | T-0298-M7 | packages/engine/src/http/server.ts | a refusal the views make was not logged with its status | `http server > acts with a note, refuses without one, and needs confirmed for a confirm action` |
 | T-0298-M8 | packages/engine/src/views/running.ts | runTimes read the log's runs again although the caller passed them | `the running view names the object and times the step > a run's times: ...` |
 | T-0302-M5 | packages/engine/src/views/presentation.ts | the row after check used `some` on the array itself, which skips holes | `hierarchy over HTTP > /v1/types names the plugin and /v1/objects takes root and parent` |
+
+## T-0310 — a removed facts file is not a refresh error
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0310-M2 | packages/engine/src/plugin/file-store.ts | a missing facts file was rethrown from `refresh` instead of read as nothing | `the file plugin store > a facts file removed while the store refreshes reads nothing` |

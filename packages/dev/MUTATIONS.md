@@ -907,3 +907,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0306-M1 | packages/dev/src/model.ts | `isIntegrating` no longer read the attempt's integrate mark, so the row state stayed `waiting` and the four wait actions stayed offered | `a task while its integrate step works > shows integrating and offers only cancel, then waits for answer again when the mark clears` |
+
+## T-0310 — an integrating task stays in the active task filter
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0310-M1 | packages/dev/src/model.ts | the active filter was built from `TASK_PHASES` again, so an integrating row matched no declared filter | `every state a task row can show is in exactly one declared task filter` |
