@@ -839,6 +839,18 @@ function inputContent(state: TuiState, palette: TuiPalette): StyledText | undefi
     ];
     return styled(chunks);
   }
+  if (input.kind === "answer") {
+    const chunks: TextChunk[] = [
+      chunk(`${input.answer.prompt}\n`, palette.accent, TextAttributes.BOLD),
+    ];
+    input.answer.choices.forEach((choice, at) => {
+      chunks.push(chunk(at === input.cursor ? "❯ " : "  ", palette.accent));
+      chunks.push(chunk(choice, at === input.cursor ? palette.accent : palette.text));
+      chunks.push(chunk("\n"));
+    });
+    chunks.push(chunk("j/k or arrows move · enter answers · esc cancels", palette.weak));
+    return styled(chunks);
+  }
   if (input.kind === "themes") {
     const chunks: TextChunk[] = [chunk("theme\n", palette.accent)];
     const names = state.themeNames;
@@ -977,6 +989,7 @@ function inputLines(state: TuiState): number {
     const entries = paletteEntries(state);
     return entries.length === 0 ? 3 : 2 + paletteDisplayLines(entries).length;
   }
+  if (input?.kind === "answer") return input.answer.choices.length + 2;
   if (input?.kind === "themes") return Math.max(1, state.themeNames.length) + 1;
   if (input?.kind === "pages") return Math.max(1, pageEntries(state).length) + 1;
   return 0;

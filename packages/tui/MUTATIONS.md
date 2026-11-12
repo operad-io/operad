@@ -387,6 +387,11 @@ the row fields.
 |---|---|---|---|
 | T-0320-M1 | packages/tui/src/state.ts | a running row was built with `openable: false` again, named or not | `the TUI reducer > a running row that names an object opens it on enter; one without stays closed` |
 
+## T-0336 — a pending question with no row still answers
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0336-M3 | packages/tui/src/state.ts | the no-row pending return dropped the question's choices, so `a` could not answer it | `the TUI reducer > a pending question without a row still offers its choices and answers` |
 ## T-0329 — a creating action is not on its parent's page
 
 | id | file | mutation | failing test |

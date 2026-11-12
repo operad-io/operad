@@ -246,12 +246,39 @@ Input:
 ```
 
 Result: `{ "items": [...] }`, the same list as `operad pending` and `GET /v1/pending`, with only the
-actions the lead may run now. Each item that is about an object carries its
-`row`, as in `GET /v1/pending`. An action outside `mcp.actions`, or a
-`confirm: true` action that `mcp.confirmActions` does not name, is left out of
-both the structured content and the Markdown. The Markdown lists each pending
-item, its prompt, choices and actions. Call `show` on the item's object to see
-the owner actions.
+actions the lead may run now. A question carries `waitId`. Each item that is
+about an object carries its `row`, as in `GET /v1/pending`. An action outside
+`mcp.actions`, or a `confirm: true` action that `mcp.confirmActions` does not
+name, is left out of both the structured content and the Markdown. The Markdown
+lists each pending item, its prompt, choices and actions. Call `show` on the
+item's object to see the owner actions.
+
+### `answer`
+
+Input:
+
+```json
+{
+  "type": "object",
+  "required": ["runId", "waitId", "choice"],
+  "additionalProperties": false,
+  "properties": {
+    "runId": { "type": "string", "minLength": 1, "description": "The pending item's runId." },
+    "waitId": { "type": "string", "minLength": 1, "description": "The pending item's waitId." },
+    "choice": { "type": "string", "minLength": 1, "description": "One of the item's choices." },
+    "note": { "type": "string", "description": "The note, when the question asks for one." },
+    "confirmed": { "type": "boolean", "description": "Set when the answer is a choice whose action asks to confirm." }
+  }
+}
+```
+
+Result: `{ "runId", "waitId", "choice" }`, plus `note` when one was given. It
+records the actor `{ "via": "mcp", "id": "lead" }`. A question that is already
+closed, or a choice the question does not offer, is a tool error with the
+view's message. When every choice is also an action on the item's object (a
+`dev` wait), the choice runs through that action, so its confirmation and the
+`mcp.actions` allow list still apply, and the result is the action record. A
+confirmed action needs `"confirmed": true`.
 
 ### `running`
 

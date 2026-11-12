@@ -8,7 +8,7 @@ import type { ViewAction, ViewRow } from "@operad-io/engine";
 import { argFields, parseArg, type ArgField } from "./args.ts";
 import type { TuiSetting } from "./client.ts";
 import { sanitize } from "./sanitize.ts";
-import type { TuiBinding, TuiInput, TuiState } from "./state.ts";
+import type { TuiAnswer, TuiBinding, TuiInput, TuiState } from "./state.ts";
 import { graphemes } from "./wrap.ts";
 
 /** The key that runs the main action when the plugin binds none to it. */
@@ -631,6 +631,51 @@ export function startAction(
   return afterArgs(closed, action.name, object.id, {}, note, action.confirm);
 }
 
+/** Opens the choice list of a pending question. */
+export function startAnswer(state: TuiState, answer: TuiAnswer): TuiState {
+  const closed: TuiState = { ...state, input: undefined };
+  if (state.acting) return withNotice(closed, "the last change has not answered yet");
+  return {
+    ...closed,
+    input: { kind: "answer", answer, cursor: 0 },
+  };
+}
+
+/** Sends the chosen answer and closes the choice list. */
+function sendAnswer(state: TuiState, answer: TuiAnswer, choice: string): TuiState {
+  return {
+    ...state,
+    input: undefined,
+    acting: true,
+    answerRequest: {
+      runId: answer.runId,
+      waitId: answer.waitId,
+      choice,
+    },
+  };
+}
+
+/** The keys of a pending question's choice list. */
+function answerKey(
+  state: TuiState,
+  input: Extract<TuiInput, { readonly kind: "answer" }>,
+  key: string,
+  enter: boolean,
+): TuiState {
+  const down = key === "down" || key === "arrowdown" || key === "j";
+  const up = key === "up" || key === "arrowup" || key === "k";
+  if (down || up) {
+    const cursor = Math.min(
+      Math.max(0, input.cursor + (down ? 1 : -1)),
+      input.answer.choices.length - 1,
+    );
+    return { ...state, input: { ...input, cursor } };
+  }
+  if (!enter) return state;
+  const choice = input.answer.choices[input.cursor];
+  return choice === undefined ? state : sendAnswer(state, input.answer, choice);
+}
+
 type ArgsInput = Extract<TuiInput, { readonly kind: "args" }>;
 
 function argsInput(
@@ -761,6 +806,7 @@ export function inputKey(
     });
   }
   if (escape) return { ...state, input: undefined };
+  if (input.kind === "answer") return answerKey(state, input, key, enter);
   if (input.kind === "setting") return settingKey(state, input, event, key, enter);
   if (input.kind === "args") return argsKey(state, input, event, key, enter);
   if (input.kind === "palette") {
@@ -833,6 +879,7 @@ export function actionFailed(state: TuiState, message: string): TuiState {
     ...withNotice(state, refusalLine(message)),
     acting: false,
     actionRequest: undefined,
+    answerRequest: undefined,
   };
 }
 

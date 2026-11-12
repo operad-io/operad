@@ -98,6 +98,17 @@ export interface TuiActInput {
   readonly signal?: AbortSignal | undefined;
 }
 
+/** What `POST /v1/answer` carries. */
+export interface TuiAnswerInput {
+  readonly runId: string;
+  readonly waitId: string;
+  readonly choice: string;
+  readonly note?: string | undefined;
+  readonly confirmed?: boolean | undefined;
+  /** Cancels the request; it then rejects. */
+  readonly signal?: AbortSignal | undefined;
+}
+
 /** Options for a client: where the server is and the token it checks. */
 export interface TuiClientOptions {
   readonly url: string;
@@ -373,6 +384,21 @@ export class TuiClient {
           : { confirmed: input.confirmed }),
       },
     })) as ViewActionRun;
+  }
+
+  /** Answers one open question of a pending item by the wait id it named. */
+  async answer(input: TuiAnswerInput): Promise<unknown> {
+    return this.request("/v1/answer", {
+      method: "POST",
+      signal: input.signal,
+      body: {
+        runId: input.runId,
+        waitId: input.waitId,
+        choice: input.choice,
+        ...(input.note === undefined ? {} : { note: input.note }),
+        ...(input.confirmed === true ? { confirmed: true } : {}),
+      },
+    });
   }
 
   /** The settings of one scope (`global`, or a repository's name). */

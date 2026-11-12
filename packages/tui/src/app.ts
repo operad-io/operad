@@ -50,6 +50,7 @@ import {
   reduce,
   type TuiSection,
   type TuiActionRequest,
+  type TuiAnswerRequest,
   type TuiSettingRequest,
   type TuiObjectRequest,
   type TuiFilterRequest,
@@ -140,6 +141,8 @@ export interface TuiShellClient {
   settings?(scope?: string, signal?: AbortSignal): Promise<readonly TuiSetting[]>;
   /** Optional: changes one setting. */
   setSetting?(input: TuiSetInput): Promise<unknown>;
+  /** Optional: answers one open question of a pending item. */
+  answer?(input: TuiAnswerRequest & { readonly signal?: AbortSignal | undefined }): Promise<unknown>;
   /** Optional so an older test client still fits; the actions need it. */
   act?(input: TuiActInput): Promise<unknown>;
   /** Optional so an older test client still fits; the object pane needs it. */
@@ -1095,6 +1098,31 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     }
   }
 
+  /** Sends one answer; a success refreshes the pending list. */
+  async function sendAnswer(request: TuiAnswerRequest): Promise<void> {
+    const answer = client.answer;
+    if (answer === undefined) {
+      dispatch({ type: "action-error", message: "this client cannot answer questions" });
+      return;
+    }
+    try {
+      await answer.call(client, { ...request, signal: abort.signal });
+      if (abort.signal.aborted) return;
+      dispatch({ type: "action-done" });
+      requestRefresh();
+    } catch (error) {
+      if (abort.signal.aborted) return;
+      if (error instanceof TuiError && error.status !== undefined) {
+        deps.onLog?.(`answer ${request.runId} ${request.waitId}: ${error.status} ${messageOf(error)}`);
+      }
+      dispatch({
+        type: "action-error",
+        message: messageOf(error),
+        status: error instanceof TuiError ? error.status : undefined,
+      });
+    }
+  }
+
   /** Reads the settings of the scopes the palette lists; a scope that cannot be read adds none. */
   async function loadSettings(): Promise<void> {
     const list = client.settings;
@@ -1163,6 +1191,8 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     if (filterRequest !== undefined) state = reduce(state, { type: "filter-launched" });
     const actionRequest = state.actionRequest;
     if (actionRequest !== undefined) state = reduce(state, { type: "action-launched" });
+    const answerRequest = state.answerRequest;
+    if (answerRequest !== undefined) state = reduce(state, { type: "answer-launched" });
     const settingRequest = state.settingRequest;
     const settingsRequested = state.settingsRequest;
     if (settingRequest !== undefined || settingsRequested) {
@@ -1229,6 +1259,7 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     if (objectRequest !== undefined) guard(loadObject(objectRequest));
     if (sectionRequest !== undefined) guard(loadSection(sectionRequest));
     if (actionRequest !== undefined) guard(sendAction(actionRequest));
+    if (answerRequest !== undefined) guard(sendAnswer(answerRequest));
     if (settingRequest !== undefined) guard(sendSetting(settingRequest));
     if (settingsRequested) guard(loadSettings());
     if (refreshing) requestRefresh();
