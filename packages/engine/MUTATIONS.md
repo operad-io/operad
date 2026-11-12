@@ -640,3 +640,4 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0310-M2 | packages/engine/src/plugin/file-store.ts | a missing facts file was rethrown from `refresh` instead of read as nothing | `the file plugin store > a facts file removed while the store refreshes reads nothing` |
+| T-0321-M1 | packages/engine/src/config/config.ts | `DEFAULT_MCP.confirmActions` no longer named `chat:close`, so the default policy refused it | `the default policy lets a lead run the confirmed chat:close, and still refuses an unlisted confirmed action` (packages/mcp/test/entry.test.ts) and `operad config > reads mcp actions and applies their defaults` |

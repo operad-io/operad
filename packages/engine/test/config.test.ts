@@ -314,8 +314,11 @@ describe("operad config", () => {
     expect((await readConfig(home)).mcp).toEqual({
       channel: { notify: ["waiting", "ended", "loop"], loopAfter: 3 },
       actions: [...DEFAULT_MCP.actions],
-      confirmActions: [],
+      confirmActions: ["chat:close"],
     });
+    // The lead may close a chat: allowed, and confirmed, in the shipped defaults.
+    expect(DEFAULT_MCP.actions).toContain("chat:close");
+    expect(DEFAULT_MCP.confirmActions).toContain("chat:close");
   });
 
   test("reads mcp.channel and keeps it when written", async () => {
