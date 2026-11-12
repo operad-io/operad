@@ -28,4 +28,20 @@ describe("a harness plugin's models", () => {
   test("only a harness declares them", () => {
     expect(() => load(harness({ list: [], default: null }, "domain"))).toThrow(/only a harness/);
   });
+
+  test("a function is called with the plugin's settings each time the list is read", () => {
+    let calls = 0;
+    let received: unknown;
+    const registry = load(
+      harness((settings: Record<string, unknown>) => {
+        calls += 1;
+        received = settings;
+        return { list: ["a"], default: null };
+      }),
+    );
+    expect(registry.loadedModels()).toEqual({ h: { list: ["a"], default: null } });
+    expect(received).toBe(registry.settingsFor("h"));
+    registry.loadedModels();
+    expect(calls).toBe(2);
+  });
 });

@@ -728,3 +728,4 @@ the row fields.
 | T-0361-M11 | packages/engine/src/views/presentation.ts | the size cap cut the tail instead of shortening the finished page | `presentation views > a tail larger than the cap stays whole (T-0361)` |
 | T-0361-M12 | packages/engine/src/views/presentation.ts | the cap counted neither the note nor a tail that no longer fits with it, so the answer went over the cap | `presentation views > the cap refuses when even the tail and the note do not fit (T-0361)` |
 | T-0358-M12 | packages/engine/src/plugin/registry.ts | the step context did not carry the caller's receiver | `a step's line receiver > the receiver a caller gives reaches the step, and a call without one has none` |
+| T-0365-M8 | packages/engine/src/plugin/registry.ts | a function `models` was called without the plugin's settings | `a harness plugin's models > a function is called with the plugin's settings each time the list is read` |

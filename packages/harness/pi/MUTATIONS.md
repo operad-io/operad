@@ -91,3 +91,15 @@ the row fields.
 | T-0342-M8 | packages/harness/pi/src/index.ts | the step ignored the `effort` param a chat passes | `pi/agent > an effort from a chat reaches the worker as pi's thinking level` |
 | T-0339-M19 | packages/harness/pi/src/worker.ts | pi's prompt went without its images | `images are given to pi with the prompt: the model's context holds the image` |
 | T-0358-M10 | packages/harness/pi/src/index.ts | the step did not hand its lines to the receiver | `pi/agent > a receiver gets each line the step writes to its log; without one the log is the same` |
+
+## T-0365 — pi's models come from pi
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0365-M1 | packages/harness/pi/src/index.ts | a catalogue row was read as provider and a fixed id, not provider/id | `the models pi declares > the list is pi's catalogue` |
+| T-0365-M2 | packages/harness/pi/src/index.ts | the `models` setting was ignored and the whole catalogue offered | `the models pi declares > the models setting narrows the list` |
+| T-0365-M3 | packages/harness/pi/src/index.ts | the default ignored the `model` setting | `the models pi declares > the default is the model setting, else pi's own default, else none` |
+| T-0365-M4 | packages/harness/pi/src/index.ts | a non-zero exit of pi still gave its output as the list | `the models pi declares > a pi that exits non-zero gives an empty list` |
+| T-0365-M5 | packages/harness/pi/src/index.ts | asking pi had no timeout | `the models pi declares > a pi that does not answer in time gives an empty list` |
+| T-0365-M6 | packages/harness/pi/src/index.ts | the catalogue was not kept: pi was asked at every read | `the models pi declares > pi is not asked at load, and the answer is kept until it is old` |
+| T-0365-M7 | packages/harness/pi/src/index.ts | the step did not report a configured model pi does not list | `pi/agent with a configured model pi does not list > the step reports it once in its log; a listed model reports nothing` |

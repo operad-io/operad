@@ -5,6 +5,7 @@
  */
 import { ALL_FILTER } from "./filters.ts";
 import type { FlowDefinition, StepType } from "../flow/types.ts";
+import type { JsonValue } from "../log/types.ts";
 import { FlowError, validateFlow } from "../flow/validate.ts";
 import { normalizeActionArgs, noteProperty } from "./action-schema.ts";
 import { messageOf, PluginError } from "./errors.ts";
@@ -66,7 +67,10 @@ export interface NormalizedPlugin {
   readonly objectsUnderSettings: boolean;
   readonly projectSettings: ProjectSettingsDeclaration | undefined;
   readonly enforces: readonly string[];
-  readonly models: HarnessModels | undefined;
+  readonly models:
+    | HarnessModels
+    | ((settings: Readonly<Record<string, JsonValue>>) => HarnessModels)
+    | undefined;
   readonly efforts: HarnessEfforts | undefined;
   readonly requires: PluginRequires | undefined;
 }
@@ -773,7 +777,19 @@ export function normalizePlugin(raw: unknown, index: number): NormalizedPlugin {
 }
 
 /** The models a harness plugin declares: a list of names and the default among them, or null. */
-function normalizeModels(value: unknown, kind: string, at: string): HarnessModels | undefined {
+function normalizeModels(
+  value: unknown,
+  kind: string,
+  at: string,
+): HarnessModels | ((settings: Readonly<Record<string, JsonValue>>) => HarnessModels) | undefined {
+  if (typeof value === "function") {
+    if (kind !== "harness") throw new PluginError(`${at}: models: only a harness plugin declares models`);
+    const source = value as (settings: Readonly<Record<string, JsonValue>>) => unknown;
+    return (settings) => {
+      const levels = normalizeLevels(source(settings), kind, at, "models");
+      return levels === undefined ? { list: [], default: null } : { list: levels.list, default: levels.fallback };
+    };
+  }
   const levels = normalizeLevels(value, kind, at, "models");
   return levels === undefined ? undefined : { list: levels.list, default: levels.fallback };
 }
