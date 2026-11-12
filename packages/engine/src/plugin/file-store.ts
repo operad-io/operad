@@ -3,7 +3,6 @@
 import {
   appendFileSync,
   closeSync,
-  existsSync,
   mkdirSync,
   openSync,
   readFileSync,
@@ -52,6 +51,15 @@ function repeatEvery(ms: number, callback: () => void): () => void {
   return () => {
     clearInterval(timer);
   };
+}
+
+/** True when an fs error says the file or its directory is gone. */
+function isMissing(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    (error as { code?: unknown }).code === "ENOENT"
+  );
 }
 
 export interface FilePluginStoreOptions extends FollowOptions {
@@ -502,10 +510,17 @@ export class FilePluginStore implements PluginStore {
    * step writes its facts here, so the run's process has to see them too.
    */
   private refresh(): void {
-    if (!existsSync(this.factsPath)) return;
-    const size = statSync(this.factsPath).size;
-    if (size <= this.offset) return;
-    const bytes = this.readAt(this.factsPath, this.offset, size - this.offset);
+    let bytes: Buffer;
+    try {
+      const size = statSync(this.factsPath).size;
+      if (size <= this.offset) return;
+      bytes = this.readAt(this.factsPath, this.offset, size - this.offset);
+    } catch (error) {
+      // A store whose root is removed while another process still polls it
+      // has nothing new to read; a vanished facts file is not an error here.
+      if (isMissing(error)) return;
+      throw error;
+    }
     const end = bytes.lastIndexOf(0x0a);
     if (end < 0) return;
     const complete = bytes.subarray(0, end + 1);

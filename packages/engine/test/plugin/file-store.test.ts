@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { appendFileSync, readFileSync, statSync } from "node:fs";
+import { appendFileSync, readFileSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { FilePluginStore, openPluginStore } from "../../src/index.ts";
 import { cleanupTempRoots, tempRoot } from "./support.ts";
@@ -158,5 +158,35 @@ describe("the file plugin store", () => {
       stop();
     }
     expect(fire).toBeUndefined();
+  });
+
+  test("a facts file removed while the store refreshes reads nothing", async () => {
+    const root = await tempRoot();
+    const directory = join(root, "plugins");
+    let fire: (() => void) | undefined;
+    const reader = new FilePluginStore({
+      root: directory,
+      watch: () => () => undefined,
+      repeat: (_ms, callback) => {
+        fire = callback;
+        return () => {
+          fire = undefined;
+        };
+      },
+      readAt: (path, position, length) => {
+        // A temp store can be removed while a poll from another process is on its way.
+        rmSync(path, { force: true });
+        return readFileSync(path).subarray(position, position + length);
+      },
+    });
+
+    const stop = reader.subscribe(() => undefined);
+    try {
+      new FilePluginStore({ root: directory }).put("job", "1", { title: "one" }, "seed");
+      expect(fire).toBeDefined();
+      expect(() => fire?.()).not.toThrow();
+    } finally {
+      stop();
+    }
   });
 });
