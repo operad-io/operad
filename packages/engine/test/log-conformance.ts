@@ -60,7 +60,7 @@ function tempDirectory(label: string): string {
   return directory;
 }
 
-function cleanup(directory: string): void {
+function removeDirectory(directory: string): void {
   rmSync(directory, { recursive: true, force: true });
 }
 
@@ -280,7 +280,7 @@ export function runLogConformance(factory: LogConformanceFactory): void {
         expect(restarted.runId).not.toBe(first.runId);
       } finally {
         await backend.close();
-        cleanup(directory);
+        removeDirectory(directory);
       }
     });
 
@@ -302,7 +302,7 @@ export function runLogConformance(factory: LogConformanceFactory): void {
         expect(second.startInputId).toBeNull();
       } finally {
         await backend.close();
-        cleanup(directory);
+        removeDirectory(directory);
       }
     });
 
@@ -324,7 +324,7 @@ export function runLogConformance(factory: LogConformanceFactory): void {
         ).toBeInstanceOf(RunEndedError);
       } finally {
         await backend.close();
-        cleanup(directory);
+        removeDirectory(directory);
       }
     });
 
@@ -361,7 +361,7 @@ export function runLogConformance(factory: LogConformanceFactory): void {
         ).toBeInstanceOf(RunNotFoundError);
       } finally {
         await backend.close();
-        cleanup(directory);
+        removeDirectory(directory);
       }
     });
 
@@ -385,7 +385,7 @@ export function runLogConformance(factory: LogConformanceFactory): void {
       } finally {
         await first.close();
         await second.close();
-        cleanup(directory);
+        removeDirectory(directory);
       }
     });
 
@@ -417,7 +417,7 @@ export function runLogConformance(factory: LogConformanceFactory): void {
         expect(await collectOutcomes(backend.readOutcomes())).toHaveLength(2);
       } finally {
         await backend.close();
-        cleanup(directory);
+        removeDirectory(directory);
       }
     });
 
@@ -437,7 +437,7 @@ export function runLogConformance(factory: LogConformanceFactory): void {
       } finally {
         await first.close();
         await second.close();
-        cleanup(directory);
+        removeDirectory(directory);
       }
     });
 
@@ -467,7 +467,7 @@ export function runLogConformance(factory: LogConformanceFactory): void {
         expect(facts.map((fact) => fact.seq)).toEqual([1, 2]);
       } finally {
         await backend.close();
-        cleanup(directory);
+        removeDirectory(directory);
       }
     });
 
@@ -486,7 +486,7 @@ export function runLogConformance(factory: LogConformanceFactory): void {
         expect("uniqueKey" in (read[1] ?? {})).toBe(false);
       } finally {
         await backend.close();
-        cleanup(directory);
+        removeDirectory(directory);
       }
     });
 
@@ -504,7 +504,7 @@ export function runLogConformance(factory: LogConformanceFactory): void {
         await expect(backend.startRun("flow", "other-object")).rejects.toThrow();
       } finally {
         await backend.close();
-        cleanup(directory);
+        removeDirectory(directory);
       }
     });
 
@@ -537,7 +537,7 @@ export function runLogConformance(factory: LogConformanceFactory): void {
       } finally {
         await first.close();
         await second.close();
-        cleanup(directory);
+        removeDirectory(directory);
       }
     });
 
@@ -581,7 +581,7 @@ export function runLogConformance(factory: LogConformanceFactory): void {
         ).toBeInstanceOf(RunNotFoundError);
       } finally {
         await backend.close();
-        cleanup(directory);
+        removeDirectory(directory);
       }
     });
 
@@ -608,7 +608,7 @@ export function runLogConformance(factory: LogConformanceFactory): void {
         }
       } finally {
         await backend.close();
-        cleanup(directory);
+        removeDirectory(directory);
       }
     });
 
@@ -632,7 +632,7 @@ export function runLogConformance(factory: LogConformanceFactory): void {
         expect(read[9_999]?.payload).toEqual({ index: 9_999, text: "value 9999" });
       } finally {
         await backend.close();
-        cleanup(directory);
+        removeDirectory(directory);
       }
     });
 
@@ -655,7 +655,7 @@ export function runLogConformance(factory: LogConformanceFactory): void {
         expect((await backend.runs()).map((run) => run.runId)).toEqual([kept.runId]);
       } finally {
         await backend.close();
-        cleanup(directory);
+        removeDirectory(directory);
       }
     });
 
@@ -682,7 +682,7 @@ export function runLogConformance(factory: LogConformanceFactory): void {
           expect(rawRun.size(directory, run.runId)).toBe(before);
         } finally {
           await backend.close();
-          cleanup(directory);
+          removeDirectory(directory);
         }
       });
     }
@@ -732,7 +732,7 @@ export function runLogConformance(factory: LogConformanceFactory): void {
         ]);
       } finally {
         await backend.close();
-        cleanup(directory);
+        removeDirectory(directory);
       }
     });
 
@@ -760,7 +760,7 @@ export function runLogConformance(factory: LogConformanceFactory): void {
         expect(await collect(backend.read(run.runId))).toEqual([]);
       } finally {
         await backend.close();
-        cleanup(directory);
+        removeDirectory(directory);
       }
     });
 
@@ -777,7 +777,7 @@ export function runLogConformance(factory: LogConformanceFactory): void {
       const message = (error as Error).message;
       expect(message).toContain("schema_version");
       expect(message).toContain(String(SCHEMA_VERSION + 1));
-      cleanup(directory);
+      removeDirectory(directory);
     });
 
     test("two processes appending to one run: the stale one is refused", async () => {
@@ -812,7 +812,7 @@ export function runLogConformance(factory: LogConformanceFactory): void {
         expect(facts.map((fact) => fact.kind)).toEqual(["seed", "race"]);
       } finally {
         await reopened.close();
-        cleanup(directory);
+        removeDirectory(directory);
       }
     });
 
@@ -839,7 +839,7 @@ export function runLogConformance(factory: LogConformanceFactory): void {
         expect(active[0]?.flow).toBe("race-flow");
       } finally {
         await backend.close();
-        cleanup(directory);
+        removeDirectory(directory);
       }
     });
 
@@ -907,7 +907,7 @@ export function runLogConformance(factory: LogConformanceFactory): void {
           await backend.close();
         }
       } finally {
-        cleanup(directory);
+        removeDirectory(directory);
       }
     }, 180_000);
   });

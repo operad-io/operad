@@ -220,7 +220,7 @@ async function fixture(options: {
   return { root, home, repository, storeRoot: join(root, "store") };
 }
 
-async function runFlow(
+async function runFlowByName(
   prepared: Fixture,
   flow: { readonly name: string; readonly pattern: RegExp },
 ): Promise<void> {
@@ -355,7 +355,7 @@ describe("a flow a plugin declares runs in a real serve", () => {
           default: { stages: [{ stage: "work" }, { stage: "check" }, { stage: "human" }] },
         },
       });
-      await runFlow(prepared, { name: "default", pattern: /^dev\/.*\/default\// });
+      await runFlowByName(prepared, { name: "default", pattern: /^dev\/.*\/default\// });
     },
     60_000,
   );
@@ -364,7 +364,7 @@ describe("a flow a plugin declares runs in a real serve", () => {
     "a TypeScript flow runs its stages end to end",
     async () => {
       const prepared = await fixture({ projectFlow: "mine" });
-      await runFlow(prepared, { name: "mine", pattern: /^dev\/.*\/mine\// });
+      await runFlowByName(prepared, { name: "mine", pattern: /^dev\/.*\/mine\// });
     },
     60_000,
   );

@@ -227,7 +227,7 @@ function integrate(state: Fixture, runId = "integrate-run") {
   });
 }
 
-function cleanup(state: Fixture, runId = "cleanup-run") {
+function cleanupRun(state: Fixture, runId = "cleanup-run") {
   return state.registry.runStep("dev/cleanup", {}, {
     runId,
     object: { type: "task", id: state.taskKey, data: {} },
@@ -1013,7 +1013,7 @@ describe("dev/cleanup", () => {
     expect(existsSync(state.worktree)).toBe(true);
     expect(existsSync(state.gate)).toBe(true);
 
-    const result = await cleanup(state);
+    const result = await cleanupRun(state);
     expect(result.result).toBe("done");
     expect(result.data?.failures).toBe(0);
     expect(existsSync(state.worktree)).toBe(false);
@@ -1040,7 +1040,7 @@ describe("dev/cleanup", () => {
     expect((await integrate(state)).result).toBe("merged");
     rmSync(state.worktree, { recursive: true, force: true });
 
-    const result = await cleanup(state);
+    const result = await cleanupRun(state);
     expect(result.result).toBe("done");
     expect((await taskOf(state)).phase).toBe("merged");
     expect(existsSync(state.worktree)).toBe(false);
@@ -1061,7 +1061,7 @@ describe("dev/cleanup", () => {
     });
     expect((await integrate(state)).result).toBe("merged");
 
-    const result = await cleanup(state);
+    const result = await cleanupRun(state);
     expect(result.result).toBe("done");
     expect(result.data?.failures).toBe(1);
     const failures = result.data?.failed as readonly {
