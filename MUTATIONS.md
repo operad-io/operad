@@ -56,3 +56,4 @@ Each package keeps its mutation checks in `MUTATIONS.md`; a row names the broken
 | T-0322-M1 | scripts/test/steady.fixture.ts | defined `testWorld` again outside `@operad-io/engine/testing` | `test helpers > a test helper named like one of @operad-io/engine/testing is defined only there` |
 | T-0322-M2 | scripts/run-tests.sh | dropped the call that prints the slowest tests | `run-tests.sh > a run ends with the slowest tests and a full run appends one line to the times file` |
 | T-0322-M3 | scripts/test-times.ts | counted failed runs in the median | `test times > a failed run and a line that is not a run are left out` |
+| T-0322-M4 | scripts/test/test-helpers.test.ts | the scan visited only `test` directories again, so `packages/pool/support.ts` defining `testWorld` passed | `test helpers > a test helper named like one of @operad-io/engine/testing is defined only there` |

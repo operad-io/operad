@@ -5,14 +5,19 @@ import * as testing from "@operad-io/engine/testing";
 
 const repo = join(import.meta.dir, "..", "..");
 
-/** Every file under a `test` directory of a package or of scripts/. */
-function testFiles(dir: string, inTest = false): string[] {
+/**
+ * Every TypeScript file of a package or of scripts/ that is not product code: a
+ * helper may sit in a `test` directory or in a support file beside the package
+ * (`support.ts`), so only `src` directories (where `answer` or `emit` are
+ * ordinary names) and installed code are left out.
+ */
+function helperFiles(dir: string): string[] {
   const found: string[] = [];
   for (const entry of readdirSync(dir)) {
-    if (entry === "node_modules" || entry.startsWith(".")) continue;
+    if (entry === "node_modules" || entry === "src" || entry.startsWith(".")) continue;
     const path = join(dir, entry);
-    if (statSync(path).isDirectory()) found.push(...testFiles(path, inTest || entry === "test"));
-    else if (inTest && path.endsWith(".ts")) found.push(path);
+    if (statSync(path).isDirectory()) found.push(...helperFiles(path));
+    else if (path.endsWith(".ts")) found.push(path);
   }
   return found;
 }
@@ -43,7 +48,7 @@ describe("test helpers", () => {
       }
     }
     for (const root of roots) {
-      for (const file of testFiles(root)) {
+      for (const file of helperFiles(root)) {
         if (file === import.meta.path) continue;
         for (const name of topLevelNames(readFileSync(file, "utf8"))) {
           if (shared.has(name)) clashes.push(`${relative(repo, file).split(sep).join("/")}: ${name}`);
