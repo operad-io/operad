@@ -1,5 +1,5 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -784,5 +784,22 @@ describe("pi/agent step limit", () => {
 
   test("a count that is not a positive integer refuses the plugin at load", () => {
     expect(registryWith({ concurrency: { "p/a": 0 } }).names()).toEqual([]);
+  });
+});
+
+describe("pi/agent with a configured model pi does not list", () => {
+  test("the step reports it once in its log; a listed model reports nothing", async () => {
+    const root = await tempRoot();
+    const fake = join(root, "pi");
+    writeFileSync(fake, "#!/bin/sh\necho 'provider model context'\necho 'zai glm-5 200K'\n");
+    chmodSync(fake, 0o755);
+    const settings = { command: fake, models: ["zai/glm-5", "x/unlisted"] };
+    const missing = await setup("done", { ...settings, model: "x/unlisted" });
+    const result = await runAgent(missing, { prompt: "hello", cwd: missing.root });
+    const text = readFileSync(String(dataOf(result).log), "utf8");
+    expect(text.split("x/unlisted\" is in settings.models").length - 1).toBe(1);
+    const listed = await setup("done", { ...settings, model: "zai/glm-5" });
+    const ok = await runAgent(listed, { prompt: "hello", cwd: listed.root });
+    expect(readFileSync(String(dataOf(ok).log), "utf8")).not.toContain("is in settings.models");
   });
 });

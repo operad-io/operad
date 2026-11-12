@@ -159,6 +159,7 @@ param (`wallTimeSecs`, `stallSecs`) overrides the setting of the same name.
 | setting | type | default | meaning |
 |---|---|---|---|
 | `model` | string `provider/id` | unset | the model; unset uses pi's own default model |
+| `models` | list of `provider/id` | unset | the models a chat may pick; unset offers every model `pi --list-models` prints |
 | `thinkingLevel` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max` | unset | the reasoning level; unset uses pi's default |
 | `command` | string | `pi` | the pi command: a name on PATH or a path; it must lead into an installed `@earendil-works/pi-coding-agent` at the floor version or newer |
 | `authPath` | string | `~/.pi/agent/auth.json` | pi's credentials file; the plugin passes the path and never reads the file |
