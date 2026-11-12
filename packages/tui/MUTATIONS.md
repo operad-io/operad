@@ -446,3 +446,4 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0369-M6 | packages/tui/src/actions.ts | the next field was asked with its top-level choices, ignoring the earlier answer's conditional | `arguments of an action > the model list narrows to the chosen agent, with that agent's default preselected` |
+| T-0369-M7 | packages/tui/src/actions.ts | a field the chosen agent's branch lists nothing for was still asked, with the top-level union | `arguments of an action > an agent whose branch lists no model is not asked for one; another agent's list is its own` |

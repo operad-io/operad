@@ -134,6 +134,27 @@ describe("arguments of an action", () => {
     expect(state.input?.kind === "args" && state.input.fields[1]?.options.length).toBe(4);
   });
 
+  test("an agent whose branch lists no model is not asked for one; another agent's list is its own", () => {
+    const chat = action("devtest:chat", {
+      args: {
+        type: "object",
+        properties: {
+          agent: { type: "string", enum: ["radian", "pi"] },
+          model: { type: "string", enum: ["p-a", "p-b"] },
+        },
+        allOf: [
+          { if: { properties: { agent: { const: "radian" } }, required: ["agent"] }, then: { properties: {} } },
+          { if: { properties: { agent: { const: "pi" } }, required: ["agent"] }, then: { properties: { model: { enum: ["p-a", "p-b"], default: "p-a" } } } },
+        ],
+        additionalProperties: false,
+      },
+    });
+    const start = (): TuiState => press(opened("run", undefined, [chat]), ":", ...typeText("devtest:chat"), "enter");
+    expect(press(start(), "j", "enter").actionRequest?.args).toEqual({ agent: "radian" });
+    const pi = press(start(), "j", "j", "enter");
+    expect(pi.input?.kind === "args" && pi.input.fields[1]?.options.map((o) => o.label)).toEqual(["p-a", "p-b"]);
+  });
+
   test("a row's badge marks the current level, so a plugin that badges its level needs no client code", () => {
     const state = press(opened("confirmed", "merge"), ":", ...typeText("auto"), "enter");
     expect(state.input?.kind === "args" && state.input.cursor).toBe(2);

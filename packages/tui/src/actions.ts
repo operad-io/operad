@@ -764,10 +764,13 @@ function answer(state: TuiState, input: ArgsInput, value: unknown): TuiState {
   const values = value === undefined
     ? { ...input.values }
     : { ...input.values, [field.name]: value };
-  if (input.at + 1 < input.fields.length) {
+  let at = input.at + 1;
+  // A field the answered branch gives nothing to pick is not asked.
+  while (at < input.fields.length && narrowField(input.fields[at] as ArgField, values).skipped === true) at += 1;
+  if (at < input.fields.length) {
     return {
       ...state,
-      input: argsInput(input.action, input.id, input.fields, input.at + 1, values, input.note, input.confirm),
+      input: argsInput(input.action, input.id, input.fields, at, values, input.note, input.confirm),
     };
   }
   return afterArgs({ ...state, input: undefined }, input.action, input.id, values, input.note, input.confirm);

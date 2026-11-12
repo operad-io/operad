@@ -35,6 +35,8 @@ export interface ArgField {
    * field takes these choices instead of `options`.
    */
   readonly variants?: readonly ArgVariant[] | undefined;
+  /** Set by `narrowField`: the answered branch gives nothing to pick, so the field is not asked. */
+  readonly skipped?: boolean | undefined;
 }
 
 /** The choices of a field once an earlier field has been answered. */
@@ -43,13 +45,15 @@ export interface ArgVariant {
   readonly is: unknown;
   readonly options: readonly ArgOption[];
   readonly current?: number | undefined;
+  /** The chosen branch lists no choice for this field: it is not asked. */
+  readonly skip?: boolean | undefined;
 }
 
 /** `field` as it is once `values` are answered: the variant that matches, else as it is. */
 export function narrowField(field: ArgField, values: Readonly<Record<string, unknown>>): ArgField {
   const variant = field.variants?.find((one) => values[one.by] === one.is);
   if (variant === undefined) return field;
-  return { ...field, options: variant.options, current: variant.current };
+  return { ...field, options: variant.options, current: variant.current, skipped: variant.skip === true };
 }
 
 function variantsOf(schema: NonNullable<ViewAction["args"]>, name: string, seen: readonly (string | undefined)[]): ArgVariant[] {
@@ -57,7 +61,11 @@ function variantsOf(schema: NonNullable<ViewAction["args"]>, name: string, seen:
   for (const branch of schema.allOf ?? []) {
     const condition = Object.entries(branch.if?.properties ?? {}).find(([, one]) => one.const !== undefined);
     const prop = branch.then?.properties?.[name];
-    if (condition === undefined || prop?.enum === undefined || prop.enum.length === 0) continue;
+    if (condition === undefined) continue;
+    if (prop?.enum === undefined || prop.enum.length === 0) {
+      found.push({ by: condition[0], is: condition[1].const, options: [], skip: true });
+      continue;
+    }
     const options = prop.enum.map((value) => ({ value, label: sanitize(String(value)) }));
     const texts = [...seen.slice(0, 2), prop.default === undefined ? undefined : String(prop.default)];
     const at = texts.map((text) => (text === undefined ? -1 : options.findIndex((o) => o.label === text))).find((i) => i >= 0);
