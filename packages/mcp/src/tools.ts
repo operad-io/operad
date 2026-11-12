@@ -16,9 +16,11 @@ import {
   HISTORY_SECTION,
   listPending,
   listRunning,
+  listTypes,
   messageOf,
   ViewError,
   type Actor,
+  type ViewTypeInfo,
 } from "@operad-io/engine";
 import { machineLoad, type MachineLoad } from "@operad-io/engine/platform";
 import { InvalidToolArguments, validateArguments } from "./arguments.ts";
@@ -29,6 +31,7 @@ import {
   runningMarkdown,
   sectionMarkdown,
   showMarkdown,
+  typesMarkdown,
   valueText,
 } from "./format.ts";
 import {
@@ -84,6 +87,16 @@ const KERNEL_VERBS = new Set([
 
 /** The tools this server offers, in the order it lists them. */
 export const TOOLS = [
+  {
+    name: "types",
+    description:
+      "List the object types with views, their plugin, and whether they belong under settings rather than a tab.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {},
+    },
+  },
   {
     name: "list",
     description: "List one object type, with the kernel's waiting and running flags.",
@@ -313,6 +326,13 @@ export async function runTool(
   context: ToolContext,
 ): Promise<ToolResult> {
   switch (name) {
+    case "types": {
+      const types: readonly ViewTypeInfo[] = listTypes(context.registry);
+      return {
+        content: [text(typesMarkdown(types))],
+        structuredContent: { types },
+      };
+    }
     case "list": {
       const type = args.type === undefined ? undefined : String(args.type);
       const root = args.root === true;

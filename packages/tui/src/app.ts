@@ -817,6 +817,7 @@ export function startShell(deps: TuiShellDeps): TuiShell {
             }
           }),
       );
+      await refreshSettingsObjects(signal, fail, generation);
     }
     await refreshObjectPane(signal, objectAtStart, fail);
     if (signal.aborted || finished) return;
@@ -858,7 +859,10 @@ export function startShell(deps: TuiShellDeps): TuiShell {
       report(error);
     };
     const work: Promise<void>[] = [];
-    if (targets.lists) work.push(refreshPendingRunning(signal, fail));
+    if (targets.lists) {
+      work.push(refreshPendingRunning(signal, fail));
+      work.push(refreshSettingsObjects(signal, fail));
+    }
     for (const id of targets.rows) {
       if (targets.object && state.object !== undefined && sameObject(state.object.id, id)) {
         continue;
@@ -869,6 +873,37 @@ export function startShell(deps: TuiShellDeps): TuiShell {
       work.push(refreshObjectPane(signal, state.object, fail));
     }
     await Promise.all(work);
+  }
+
+  /**
+   * The top-level objects of every type a plugin put under settings. They are
+   * fetched like a tab but never listed in the top bar; the palette shows them.
+   */
+  async function refreshSettingsObjects(
+    signal: AbortSignal,
+    fail?: ((error: unknown) => void) | undefined,
+    generation?: number | undefined,
+  ): Promise<void> {
+    const tab = state.settingsTab;
+    if (tab === undefined) return;
+    try {
+      const per = await Promise.all(
+        (tab.types ?? []).map(async (info) => {
+          const found = await fetchLevel(info.type, { root: true }, signal);
+          return found.rows.map((row): TuiTreeEntry => ({ row, type: info.type }));
+        }),
+      );
+      if (signal.aborted || finished) return;
+      dispatch({
+        type: "settings-objects",
+        entries: per.flat(),
+        ...(generation === undefined ? {} : { generation }),
+      });
+    } catch (error) {
+      if (signal.aborted || finished) return;
+      if (noteConnection(error)) return;
+      fail?.(error);
+    }
   }
 
   async function refreshPendingRunning(
@@ -944,6 +979,10 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     }
     const tab = pluginTabOf(state, result.value.type);
     if (tab === undefined) return;
+    if (tab.kind === "settings") {
+      await refreshSettingsObjects(signal, fail);
+      return;
+    }
     const filter = tab.filter;
     const filterSeq = tab.filterSeq ?? 0;
     const found = await settle(fetchPluginRows(tab, signal, filter));
@@ -1098,7 +1137,10 @@ export function startShell(deps: TuiShellDeps): TuiShell {
   /** Reads the settings of the scopes the palette lists; a scope that cannot be read adds none. */
   async function loadSettings(): Promise<void> {
     const list = client.settings;
-    if (list === undefined) return;
+    if (list === undefined) {
+      await refreshSettingsObjects(abort.signal);
+      return;
+    }
     const scopes = settingScopes(state);
     const found = await Promise.all(
       scopes.map((scope) => settle(list.call(client, scope, abort.signal))),
@@ -1108,6 +1150,7 @@ export function startShell(deps: TuiShellDeps): TuiShell {
       type: "settings",
       settings: found.flatMap((result) => (result.ok ? result.value : [])),
     });
+    await refreshSettingsObjects(abort.signal);
   }
 
   /** Sends one setting change; the server's refusal comes back as the footer notice. */

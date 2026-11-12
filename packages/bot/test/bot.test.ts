@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { match, readProfile, type AccessProfile } from "@operad-io/access-match";
 import { CHAT_TYPE, allMessages, chatData } from "@operad-io/chat";
-import { createViews, Views, type TriggerEvent } from "@operad-io/engine";
+import { createViews, listTypes, Views, type TriggerEvent } from "@operad-io/engine";
 import {
   BOT_SETTINGS,
   DEFAULT_BOT,
@@ -24,6 +24,16 @@ function accessOf(value: unknown): AccessProfile {
 }
 
 describe("bots", () => {
+  test("the plugin puts its objects under settings, so no client gives it a tab", async () => {
+    const r = await rig();
+    expect(r.registry.objectsUnderSettings("bot")).toBe(true);
+    const types = listTypes(r.registry).filter((info) => info.plugin === "bot");
+    expect(types.map((info) => [info.type, info.settings])).toEqual([
+      ["bot", true],
+      ["bot-proposal", true],
+    ]);
+  });
+
   test("the default bot exists without being written, with its own directory", async () => {
     const r = await rig();
     expect(Object.keys(readBots(r.home, {}))).toEqual([DEFAULT_BOT]);

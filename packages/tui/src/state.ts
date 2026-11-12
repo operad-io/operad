@@ -50,7 +50,7 @@ export type TuiTheme = "light" | "dark";
 export type TuiChildLayout = "tree" | "list";
 
 /** What a tab lists. */
-export type TuiTabKind = "pending" | "running" | "plugin";
+export type TuiTabKind = "pending" | "running" | "plugin" | "settings";
 
 /** The marker a row shows: one of the plugin's marks, or nothing. */
 export type TuiMark = RowMark | "none";
@@ -329,6 +329,11 @@ export interface TuiFilterRequest {
 /** Everything the view needs; nothing here is derived from a terminal handle. */
 export interface TuiState {
   readonly tabs: readonly TuiTab[];
+  /**
+   * The objects whose types a plugin put under settings; fetched like a tab but
+   * never in the top bar. The palette lists them by type.
+   */
+  readonly settingsTab?: TuiTab | undefined;
   readonly active: number;
   readonly width: number;
   readonly height: number;
@@ -472,9 +477,14 @@ export function filterFor(tab: TuiTab, info: TuiTypeInfo): string | undefined {
   return info.filters?.some((f) => f.name === name) === true ? name : undefined;
 }
 
-/** The plugin tab that holds `type`, if any. */
+/** The plugin tab or settings list that holds `type`, if any. */
 export function pluginTabOf(state: TuiState, type: string): TuiTab | undefined {
-  return state.tabs.find((tab) => tab.types?.some((info) => info.type === type) === true);
+  return (
+    state.tabs.find((tab) => tab.types?.some((info) => info.type === type) === true) ??
+    (state.settingsTab?.types?.some((info) => info.type === type) === true
+      ? state.settingsTab
+      : undefined)
+  );
 }
 /** The two fixed tabs; `/v1/types` adds the rest. */
 export function initialState(options: TuiStateOptions = {}): TuiState {
@@ -682,6 +692,12 @@ export type TuiStateEvent =
   /** The caller sent the action request; it is sent once. */
   | { readonly type: "action-launched" }
   | { readonly type: "setting-launched" }
+  /** The objects under settings arrived: each settings type's top level. */
+  | {
+      readonly type: "settings-objects";
+      readonly entries: readonly TuiTreeEntry[];
+      readonly generation?: number | undefined;
+    }
   | { readonly type: "settings"; readonly settings: readonly TuiSetting[] }
   /** The installed themes or the theme in force changed. */
   | { readonly type: "theme-names"; readonly names: readonly string[]; readonly current: string }
@@ -2013,6 +2029,10 @@ function runCommand(state: TuiState, command: TuiCommand): TuiState {
     }
     case "go":
       return activate(state, state.tabs.findIndex((tab) => tab.id === command.tabId));
+    case "open": {
+      const id = command.id.includes(":") ? command.id : `${command.type}:${command.id}`;
+      return openNamed({ ...state, followPending: false }, id);
+    }
   }
 }
 
@@ -2218,7 +2238,16 @@ function applyTypes(state: TuiState, types: readonly TuiTypeInfo[]): TuiState {
     byPlugin.set(name, group);
   }
   const pluginTabs: TuiTab[] = [];
+  const settingsTypes: TuiTypeInfo[] = [];
   for (const [name, group] of byPlugin) {
+    // A plugin whose objects belong under settings gets no tab; all its types
+    // are listed in the settings view, one group per type.
+    if (group.some((info) => info.settings === true)) {
+      for (const info of group) {
+        if (!settingsTypes.some((seen) => seen.type === info.type)) settingsTypes.push(info);
+      }
+      continue;
+    }
     const id = `plugin:${name}`;
     // A server that names no plugin gives each type its own tab, titled as the type.
     const first = group[0];
@@ -2238,6 +2267,7 @@ function applyTypes(state: TuiState, types: readonly TuiTypeInfo[]): TuiState {
       filter: kept ? old.filter : fresh.filter,
     });
   }
+  const settingsTab = settingsTabFor(state.settingsTab, settingsTypes);
   const tabs = [...fixed, ...pluginTabs];
   const activeId = state.tabs[state.active]?.id;
   const found = tabs.findIndex((tab) => tab.id === activeId);
@@ -2245,6 +2275,24 @@ function applyTypes(state: TuiState, types: readonly TuiTypeInfo[]): TuiState {
     ...state,
     tabs,
     active: found < 0 ? Math.min(state.active, Math.max(0, tabs.length - 1)) : found,
+    settingsTab,
+  };
+}
+
+/** The settings list for the types under it, keeping its cursor and filter when it can. */
+function settingsTabFor(
+  old: TuiTab | undefined,
+  types: readonly TuiTypeInfo[],
+): TuiTab | undefined {
+  if (types.length === 0) return undefined;
+  const fresh = makeTab("settings-objects", "settings", "Settings", types);
+  if (old === undefined) return fresh;
+  const kept = fresh.filters?.some((f) => f.name === old.filter) === true;
+  return {
+    ...old,
+    types,
+    filters: fresh.filters,
+    filter: kept ? old.filter : fresh.filter,
   };
 }
 
@@ -2310,8 +2358,7 @@ function replacePageRow(state: TuiState, row: TuiRow): TuiState {
 function replaceListRow(state: TuiState, row: TuiRow): TuiState {
   let changed = false;
   let selectedLeft = false;
-  const tabs = state.tabs.map((tab, index) => {
-    if (tab.kind !== "plugin") return tab;
+  const update = (tab: TuiTab, active: boolean): TuiTab => {
     const at = tab.list.rows.findIndex((old) => sameObject(old.id, row.id));
     const shown = at < 0 ? undefined : tab.list.rows[at];
     const info = tab.types?.find((candidate) => candidate.type === shown?.type);
@@ -2325,7 +2372,7 @@ function replaceListRow(state: TuiState, row: TuiRow): TuiState {
       // The object no longer matches the filter: it leaves the list, and the
       // cursor keeps its place, which is now the next row.
       changed = true;
-      if (index === state.active && at === tab.list.cursor) selectedLeft = true;
+      if (active && at === tab.list.cursor) selectedLeft = true;
       const rows = dropRow(tab.list.rows, at);
       const cursor = Math.min(tab.list.cursor, Math.max(0, rows.length - 1));
       return {
@@ -2345,12 +2392,21 @@ function replaceListRow(state: TuiState, row: TuiRow): TuiState {
         ...(old.bare === true ? { bare: true } : {}),
       };
     });
-    return changed && rows.some((r, i) => r !== tab.list.rows[i])
+    return rows.some((r, i) => r !== tab.list.rows[i])
       ? { ...tab, list: { ...tab.list, rows } }
       : tab;
-  });
+  };
+  const tabs = state.tabs.map((tab, index) =>
+    tab.kind === "plugin" ? update(tab, index === state.active) : tab,
+  );
+  const settingsTab =
+    state.settingsTab === undefined ? undefined : update(state.settingsTab, false);
   if (!changed) return state;
-  const next = { ...state, tabs };
+  const next = {
+    ...state,
+    tabs,
+    ...(settingsTab === undefined ? {} : { settingsTab }),
+  };
   return selectedLeft
     ? { ...next, moveSeq: next.moveSeq + 1, followPending: true }
     : next;
@@ -2359,16 +2415,24 @@ function replaceListRow(state: TuiState, row: TuiRow): TuiState {
 /** Drops the row of an object that is gone from the server. */
 function removeRow(state: TuiState, id: string): TuiState {
   let changed = false;
-  const tabs = state.tabs.map((tab) => {
-    if (tab.kind !== "plugin") return tab;
+  const update = (tab: TuiTab): TuiTab => {
     const at = tab.list.rows.findIndex((row) => sameObject(row.id, id));
     if (at < 0) return tab;
     changed = true;
     const rows = dropRow(tab.list.rows, at);
     const cursor = Math.min(tab.list.cursor, Math.max(0, rows.length - 1));
     return { ...tab, list: { ...tab.list, rows, cursor } };
-  });
-  return changed ? { ...state, tabs } : state;
+  };
+  const tabs = state.tabs.map((tab) => (tab.kind === "plugin" ? update(tab) : tab));
+  const settingsTab =
+    state.settingsTab === undefined ? undefined : update(state.settingsTab);
+  return changed
+    ? {
+        ...state,
+        tabs,
+        ...(settingsTab === undefined ? {} : { settingsTab }),
+      }
+    : state;
 }
 
 function replaceRows(
@@ -2725,6 +2789,15 @@ export function reduce(state: TuiState, event: TuiStateEvent): TuiState {
       return { ...state, settingRequest: undefined, settingsRequest: false };
     case "settings":
       return { ...state, settings: event.settings };
+    case "settings-objects": {
+      if (stale(state, event.generation)) return state;
+      const tab = state.settingsTab;
+      if (tab === undefined) return state;
+      return {
+        ...state,
+        settingsTab: replaceRows(tab, event.entries.map(rowOfEntry), undefined),
+      };
+    }
     case "action-done": {
       const done: TuiState = {
         ...(event.notice === undefined ? state : withNotice(state, event.notice)),

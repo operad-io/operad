@@ -155,6 +155,18 @@ that same table. Every result is a normal MCP tool result with
 Markdown. `structuredContent` is always an object: a list is wrapped as
 `{ "items": [...] }`. `next`, when present, is a cursor the caller passes back unchanged.
 
+### `types`
+
+Input: `{ "type": "object", "additionalProperties": false, "properties": {} }`.
+
+Result: `{ "types": [...] }`, the same listing `GET /v1/types` serves: each
+object type with views, its `title`, its `plugin`, its `filters` and
+`defaultFilter` when it has any, and the `parents` an action that creates it
+works on. A plugin that declares `objectsUnderSettings` (a bot) marks every one
+of its types `"settings": true`: clients give it no tab and list its top-level
+objects under settings. The Markdown is a table of type, title, plugin, whether
+it is under settings, filters and parents.
+
 ### `list`
 
 Input:
