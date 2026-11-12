@@ -588,13 +588,23 @@ export function startShell(deps: TuiShellDeps): TuiShell {
         return parent !== undefined && forms.has(parent);
       });
     });
-    // A type with filters can hide every child of a root; the old list then
-    // still grouped under the roots. Keep that for a tab with more than one type.
-    const some =
-      under.some((rows) => rows.length > 0) ||
-      ((tab.types?.length ?? 0) > 1 && roots.length > 0 && all.hidden > 0);
+    // The hidden rows the sidebar counts are the roots' next level only: a
+    // hidden task under a plan is not part of the repository's group row.
+    const childLevels = await Promise.all(
+      roots.map((root) =>
+        fetchTypes(tab, { parent: `${root.type}:${rowFromView(root.row).id}` }, signal, filter),
+      ),
+    );
+    const underHidden = childLevels.reduce((total, one) => total + one.hidden, 0);
+    // A type with filters can hide every child of a root; the list then still
+    // groups under the roots.
+    const some = under.some((rows) => rows.length > 0) || underHidden > 0;
     if (!some && foreign.size === 0) {
-      return { level: "roots", entries: roots, hidden: all.hidden };
+      const hidden =
+        (tab.types?.length ?? 0) > 1 && all.hidden > 0
+          ? (await fetchTypes(tab, { root: true }, signal, filter)).hidden
+          : all.hidden;
+      return { level: "roots", entries: roots, hidden };
     }
     const entries: TuiTreeEntry[] = [];
     roots.forEach((root, index) => {
@@ -621,7 +631,7 @@ export function startShell(deps: TuiShellDeps): TuiShell {
         });
       });
     }
-    return { level: "children", entries, hidden: all.hidden };
+    return { level: "children", entries, hidden: underHidden };
   }
 
   /** The spellings a row's parent may use for this object, with or without its type. */

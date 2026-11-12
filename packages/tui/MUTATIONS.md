@@ -365,3 +365,4 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0314-M1 | packages/tui/src/app.ts | a plugin tab with no child of its own returned its roots and dropped every object whose parent belongs to another plugin | `one tab per plugin > objects whose parent belongs to another plugin are grouped by that parent, newest first` |
+| T-0314-M2 | packages/tui/src/app.ts | the grouped list counted every hidden object of the tab's types, including descendants the sidebar never lists | `an open plan's next level is every one of its tasks > all tasks show under the tab's active filter, the counts match, and f keeps them` |

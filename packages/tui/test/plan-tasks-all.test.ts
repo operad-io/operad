@@ -218,6 +218,8 @@ describe("an open plan's next level is every one of its tasks", () => {
     });
     try {
       await view.until((state) => tabOf(state)?.list.loaded === true);
+      // The sidebar counts hidden plans, not the tasks under a plan.
+      expect(tabOf(shell.state)?.hidden).toBe(0);
       shell.key({ name: "3" });
       await view.until(
         (state) => state.object?.id === "p1" && state.object.children !== undefined,
