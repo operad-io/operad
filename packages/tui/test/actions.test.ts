@@ -420,6 +420,39 @@ describe("an action that creates another type", () => {
     expect(named(only)).toEqual([]);
   });
 
+  test("a repository's page and its palette list no creating action, even though the chat tab does", () => {
+    let state = initialState({ width: 120 });
+    state = reduce(state, {
+      type: "types",
+      types: [
+        { type: "repo", title: "Repository", plugin: "dev" },
+        { type: "chat", title: "Chat", plugin: "chat", parents: ["repo"] },
+      ],
+    });
+    state = reduce(state, {
+      type: "rows",
+      tabId: "plugin:dev",
+      rows: [{ id: "repo:ops", title: "ops", state: "", waiting: false, running: false }],
+    });
+    state = press(state, String(state.tabs.findIndex((tab) => tab.id === "plugin:dev") + 1), "enter");
+    state = reduce(state, {
+      type: "object",
+      object: {
+        id: "repo:ops",
+        type: "repo",
+        link: "x",
+        row: { id: "repo:ops", title: "ops", state: "", waiting: false, running: false },
+        sections: [],
+        actions: [CREATING, action("dev:plan", { on: "repo" })],
+      },
+    });
+    state = press(state, ":");
+    const names = paletteEntries(state).map((entry) => entry.name);
+    expect(names).toContain("dev:plan");
+    expect(names).not.toContain("dev:chat");
+    expect(names).not.toContain("new chat");
+  });
+
   test("c on a chat tab with no chat yet offers every parent, and choosing one starts the creating action", () => {
     let state = initialState({ width: 120 });
     state = reduce(state, {

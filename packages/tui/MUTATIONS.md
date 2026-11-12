@@ -392,3 +392,4 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0329-M2 | packages/tui/src/actions.ts | `pageActions` kept actions that declare `creates` | `an action that creates another type > it is not on its parent's page: not the main action, not in the footer, not in the palette` |
+| T-0329-M3 | packages/tui/src/actions.ts | the palette listed `new <type>` entries whatever tab and page was open, so a repository page offered `new chat` | `an action that creates another type > a repository's page and its palette list no creating action, even though the chat tab does` |

@@ -407,9 +407,10 @@ function commandEntries(state: TuiState): readonly TuiPaletteEntry[] {
         tabId: item.tab.id,
       }),
     );
-  const creating = tabs
-    .filter((item) => item.tab.kind === "plugin")
-    .flatMap((item) => item.tab.types ?? [])
+  // A creating action is offered from its type's own tab only, never on a parent's page.
+  const here = state.tabs[state.active];
+  const creating = (here?.kind === "plugin" ? (here.types ?? []) : [])
+    .filter((info) => state.object === undefined || !(info.parents ?? []).includes(state.object.type))
     .flatMap((info) =>
       creationParents(state, info.type, info.parents ?? []).map((parent) =>
         make(`new ${info.type}`, `start a new ${info.type} in ${parent}`, undefined, {
