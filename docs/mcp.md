@@ -247,7 +247,8 @@ Result: `{ "markdown": "...", "next": "<cursor>", "mark": "<mark>", "tail": "...
 Markdown of the part still changing; a plugin that does not use them sends
 neither. With `after=<mark>` from an earlier read, `markdown` holds only the
 finished content after that mark, and `delta` says whether it is that part alone
-(true) or a whole page the client must replace (false). The text block is the
+(true) or a whole page the client must replace (false). The size cap covers
+`markdown` and `tail` together but never cuts `tail`. The text block is the
 Markdown, with a final line naming `next` when the section is paged. An unknown
 id or section, or a mark from another section or object, is a tool error with
 the view's message.

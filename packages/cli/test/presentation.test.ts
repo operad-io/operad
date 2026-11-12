@@ -333,7 +333,7 @@ describe("operad presentation commands", () => {
     const output = capture();
     expect(await main(["show", "item:one"], { home, io: output.io })).toBe(0);
     expect(output.text()).toContain("one  new  First");
-    expect(output.text()).toContain("sections: Info, Log (live), Pages, Digits, Hang, Big, History");
+    expect(output.text()).toContain("sections: Info, Log (live), Pages, Digits, Hang, Big, Surge, History");
     expect(output.text()).toContain("demo:approve (m)  needs a note");
     expect(output.text()).toContain("demo:drop  asks to confirm");
     expect(output.text()).toContain("DEMO ITEM");

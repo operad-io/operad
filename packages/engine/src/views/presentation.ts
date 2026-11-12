@@ -84,7 +84,8 @@ export const DEFAULT_MAX_EVENT_IDS = 1024;
 
 /**
  * How often the kernel announces one object whose live section grows. A
- * section that grows faster than this is announced at most once per window.
+ * section that grows faster than this is announced at most once per window;
+ * the last growth in the window is announced when the window ends.
  */
 export const GROWTH_EVENT_INTERVAL_MS = 250;
 
@@ -155,7 +156,10 @@ export interface ViewSectionContent {
    * to read only what follows it. The plugin owns its meaning.
    */
   readonly mark?: string | undefined;
-  /** The part that is still changing, always its whole current text. */
+  /**
+   * The part that is still changing, always its whole current text. The size
+   * cap never cuts it; it shortens the finished page instead.
+   */
   readonly tail?: string | undefined;
   /**
    * Present on a read that asked with `after`: true when `markdown` holds only
@@ -443,12 +447,18 @@ class EventStream implements AsyncIterable<ViewEvent> {
   private readonly pending = new Set<string>();
   private readonly max: number;
   private readonly listeners: Set<(id: string) => void>;
+  private readonly flush: () => void;
   private closed = false;
   private resume: (() => void) | undefined;
 
-  constructor(max: number, listeners: Set<(id: string) => void>) {
+  constructor(
+    max: number,
+    listeners: Set<(id: string) => void>,
+    flush: () => void,
+  ) {
     this.max = Math.max(1, max);
     this.listeners = listeners;
+    this.flush = flush;
   }
 
   readonly listener = (id: string): void => {
@@ -472,6 +482,9 @@ class EventStream implements AsyncIterable<ViewEvent> {
   }
 
   private async next(): Promise<IteratorResult<ViewEvent>> {
+    // A growth held back for the rate window becomes due with the clock, not
+    // only when another change arrives.
+    this.flush();
     while (!this.closed && this.pending.size === 0) {
       await new Promise<void>((resolve) => {
         this.resume = resolve;
@@ -560,6 +573,10 @@ export class Views {
   private readonly eventListeners = new Set<(id: string) => void>();
   /** When each object's live growth was last announced, for the rate limit. */
   private readonly growthAnnouncedAt = new Map<string, number>();
+  /** Objects whose growth was held back in the current rate window. */
+  private readonly growthPending = new Set<string>();
+  /** The timer that announces an object when its rate window ends. */
+  private readonly growthTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly unsubscribe: (() => void)[] = [];
   private preparing: Promise<void> | undefined;
 
@@ -672,6 +689,9 @@ export class Views {
   /** Closes the change listeners this view opened. */
   close(): void {
     for (const unsubscribe of this.unsubscribe.splice(0)) unsubscribe();
+    for (const timer of this.growthTimers.values()) clearTimeout(timer);
+    this.growthTimers.clear();
+    this.growthPending.clear();
     this.growthAnnouncedAt.clear();
   }
 
@@ -1344,7 +1364,11 @@ export class Views {
 
   /** An async stream of ids that changed. Repeated ids coalesce. */
   events(): AsyncIterable<ViewEvent> {
-    return new EventStream(this.maxEventIds, this.eventListeners);
+    return new EventStream(
+      this.maxEventIds,
+      this.eventListeners,
+      () => this.flushDueGrowth(),
+    );
   }
 
   /** Every setting in a scope (global and every repository when omitted). */
@@ -1663,21 +1687,15 @@ export class Views {
     const tailBytes = tail === undefined ? 0 : Buffer.byteLength(tail, "utf8");
     if (markdownBytes + tailBytes <= limit) return result(markdown, tail);
 
-    // The cap covers the finished page and the changing tail together. Keep
-    // the tail whole when it fits, and give the finished page what is left.
+    // The cap covers the finished page and the changing tail together. The
+    // tail is never cut: it is the whole of the part that is still changing,
+    // so it wins over the cap and the finished page takes what is left.
     const suffixBytes = Buffer.byteLength(suffix, "utf8");
-    const tailRoom = Math.max(0, limit - suffixBytes);
-    const shownTail =
-      tail === undefined || tailBytes <= tailRoom
-        ? tail
-        : capBytes(tail, tailRoom);
-    const shownTailBytes =
-      shownTail === undefined ? 0 : Buffer.byteLength(shownTail, "utf8");
     const body = capBytes(
       markdown,
-      Math.max(0, limit - suffixBytes - shownTailBytes),
+      Math.max(0, limit - suffixBytes - tailBytes),
     );
-    return result(`${body}${suffix}`, shownTail);
+    return result(`${body}${suffix}`, tail);
   }
 
   private resolveActionInfo(name: string): ActionInfo {
@@ -2448,16 +2466,69 @@ export class Views {
   /**
    * Announces an object. A run's growth can arrive far faster than a client
    * can read it, so growth is announced at most once per object per window;
-   * an object's own stored change is always announced.
+   * the last growth in a window is announced when the window ends. An object's
+   * own stored change is always announced.
    */
   private publish(id: string, growth = false): void {
     if (growth) {
       const now = this.clock();
       const last = this.growthAnnouncedAt.get(id);
-      if (last !== undefined && now - last < GROWTH_EVENT_INTERVAL_MS) return;
+      if (last !== undefined && now - last < GROWTH_EVENT_INTERVAL_MS) {
+        this.growthPending.add(id);
+        this.scheduleGrowth(id, GROWTH_EVENT_INTERVAL_MS - (now - last));
+        return;
+      }
+      this.growthPending.delete(id);
+      this.clearGrowthTimer(id);
       this.growthAnnouncedAt.set(id, now);
     }
+    this.announce(id);
+  }
+
+  private announce(id: string): void {
     for (const listener of this.eventListeners) listener(id);
+  }
+
+  /** Announces a held-back growth once its window has passed, or waits again. */
+  private flushGrowth(id: string): void {
+    if (!this.growthPending.has(id)) return;
+    const now = this.clock();
+    const last = this.growthAnnouncedAt.get(id);
+    if (last !== undefined && now - last < GROWTH_EVENT_INTERVAL_MS) {
+      this.scheduleGrowth(id, GROWTH_EVENT_INTERVAL_MS - (now - last));
+      return;
+    }
+    this.growthPending.delete(id);
+    this.clearGrowthTimer(id);
+    this.growthAnnouncedAt.set(id, now);
+    this.announce(id);
+  }
+
+  /** Announces every held-back growth whose window has passed by the clock. */
+  private flushDueGrowth(): void {
+    for (const id of [...this.growthPending]) {
+      const last = this.growthAnnouncedAt.get(id);
+      if (last === undefined || this.clock() - last >= GROWTH_EVENT_INTERVAL_MS) {
+        this.flushGrowth(id);
+      }
+    }
+  }
+
+  /** The one timer per object that wakes a reader when its window ends. */
+  private scheduleGrowth(id: string, waitMs: number): void {
+    if (this.growthTimers.has(id)) return;
+    const timer = setTimeout(() => {
+      this.growthTimers.delete(id);
+      this.flushGrowth(id);
+    }, Math.max(0, waitMs));
+    this.growthTimers.set(id, timer);
+  }
+
+  private clearGrowthTimer(id: string): void {
+    const timer = this.growthTimers.get(id);
+    if (timer === undefined) return;
+    clearTimeout(timer);
+    this.growthTimers.delete(id);
   }
 }
 

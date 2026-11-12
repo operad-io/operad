@@ -122,6 +122,50 @@ function within<T>(promise: Promise<T>, ms = 3_000): Promise<T> {
   });
 }
 
+/**
+ * A real log whose subscription the test fires by hand, so a rate-window test
+ * sees exactly the growth it names and no watcher repeats.
+ */
+function manualGrowthLog(inner: LogBackend): {
+  readonly log: LogBackend;
+  grow(object: string): void;
+} {
+  let listener:
+    | Parameters<NonNullable<LogBackend["subscribe"]>>[0]
+    | undefined;
+  const log: LogBackend = {
+    startRun: (flow, object, startInputId, access) =>
+      inner.startRun(flow, object, startInputId, access),
+    endRun: (runId) => inner.endRun(runId),
+    recordInput: (runId, source, sourceKey, payload) =>
+      inner.recordInput(runId, source, sourceKey, payload),
+    append: (runId, expectedSeq, facts) => inner.append(runId, expectedSeq, facts),
+    read: (runId) => inner.read(runId),
+    runs: (options) => inner.runs(options),
+    appendGlobal: (fact, uniqueKey) => inner.appendGlobal(fact, uniqueKey),
+    readGlobal: () => inner.readGlobal(),
+    readInputs: () => inner.readInputs(),
+    readInputsAfter: (position) => inner.readInputsAfter(position),
+    findInput: (inputId) => inner.findInput(inputId),
+    readOutcome: (inputId, kind) => inner.readOutcome(inputId, kind),
+    readOutcomesAfter: (seq) => inner.readOutcomesAfter(seq),
+    recordOutcome: (inputId, kind, payload) =>
+      inner.recordOutcome(inputId, kind, payload),
+    readOutcomes: () => inner.readOutcomes(),
+    close: () => inner.close(),
+    subscribe: (next) => {
+      listener = next;
+      return () => {
+        if (listener === next) listener = undefined;
+      };
+    },
+  };
+  return {
+    log,
+    grow: (object) => listener?.({ runId: "manual", object }),
+  };
+}
+
 describe("presentation views", () => {
   test("lists rows with the kernel's waiting and running flags", async () => {
     const { store, registry, log } = await fixture();
@@ -169,6 +213,7 @@ describe("presentation views", () => {
       "digits",
       "hang",
       "big",
+      "surge",
       "history",
     ]);
     expect(object.sections.at(-1)?.title).toBe("History");
@@ -511,6 +556,50 @@ describe("presentation views", () => {
     expect((await stream.next()).value).toEqual({ id: "one" });
 
     await stream.return?.();
+    views.close();
+    await log.close();
+  });
+
+  test("a held-back growth is announced when the window ends (T-0361)", async () => {
+    const { store, registry, log: real } = await fixture();
+    const manual = manualGrowthLog(real);
+    let now = 0;
+    const views = trackedViews({
+      registry,
+      store,
+      log: manual.log,
+      clock: () => now,
+    });
+    const stream = views.events()[Symbol.asyncIterator]();
+
+    manual.grow("item:one");
+    expect((await stream.next()).value).toEqual({ id: "one" });
+
+    now = 100;
+    manual.grow("item:one");
+
+    // Nothing grows again; the window ending is enough to announce the change.
+    now = 250;
+    expect((await within(stream.next())).value).toEqual({ id: "one" });
+
+    await stream.return?.();
+    views.close();
+    await real.close();
+  });
+
+  test("a tail larger than the cap stays whole (T-0361)", async () => {
+    const { store, registry, log } = await fixture();
+    const views = trackedViews({
+      registry,
+      store,
+      log,
+      sectionCapBytes: 128,
+    });
+    const content = await views.section("item:one", "surge");
+    expect(content.tail).toBe("t".repeat(2048));
+    expect(content.markdown).toContain("[Truncated.");
+    expect(content.markdown).not.toContain("finished");
+
     views.close();
     await log.close();
   });

@@ -105,6 +105,7 @@ export default definePlugin({
           { id: "digits", title: "Digits" },
           { id: "hang", title: "Hang" },
           { id: "big", title: "Big" },
+          { id: "surge", title: "Surge" },
         ];
       },
       async load(_ctx, object, sectionId, { cursor, after }) {
@@ -159,6 +160,10 @@ export default definePlugin({
         }
         if (sectionId === "big") {
           return { markdown: "x".repeat(300 * 1024) };
+        }
+        if (sectionId === "surge") {
+          // A live tail larger than any cap a test gives: it must stay whole.
+          return { markdown: "finished", mark: "surge-1", tail: "t".repeat(2048) };
         }
         return { markdown: String(object.data.title ?? "") };
       },
