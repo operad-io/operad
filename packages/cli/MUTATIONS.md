@@ -126,3 +126,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0325-M1 | packages/cli/package.json | removed the `@operad-io/bot` dependency, so a fresh install links no `node_modules/@operad-io/bot` | `plugins the CLI offers > bot (@operad-io/bot) is a dependency of the CLI and resolves from it` |
+
+## T-0351 — the compiled-flow serve test waits through an empty list
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0351-M1 | packages/cli/test/compiled-flow-serve.test.ts | an empty `list` result threw instead of counting as not yet | `a flow a plugin declares runs in a real serve > a TypeScript flow runs its stages end to end` (fails when the first look is empty) |

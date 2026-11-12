@@ -273,10 +273,14 @@ async function runFlow(
     await serve.exited;
   };
 
+  let lastListFailure = "";
   const taskRow = async (): Promise<{ state?: string } | undefined> => {
     const listed = await cli(["list", "task", "--filter", "all", "--json"]);
-    if (listed.code !== 0 || listed.out.length === 0) {
-      throw new Error(`list task failed (code ${listed.code}): ${listed.err}`);
+    // A look that gave nothing says nothing yet: the wait looks again, and a
+    // wait that times out reports the last such look.
+    if (listed.code !== 0 || listed.out.trim().length === 0) {
+      lastListFailure = `list task gave no rows (code ${listed.code}): ${listed.err}`;
+      return undefined;
     }
     const page = JSON.parse(listed.out) as { rows: { id: string; state: string }[] };
     return page.rows.find((row) => row.id === taskId);
@@ -323,7 +327,9 @@ async function runFlow(
     );
   } catch (error) {
     const seen = existsSync(output) ? readFileSync(output, "utf8") : "";
-    throw new Error(`${error instanceof Error ? error.message : String(error)}\n${seen}`);
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)}\n${lastListFailure}\n${seen}`,
+    );
   } finally {
     await stop();
   }
