@@ -10,6 +10,7 @@ import {
   allMessages,
   chatData,
   type ChatData,
+  type CostQuality,
   chatRef,
   currentSession,
   MESSAGE_FACT,
@@ -21,6 +22,33 @@ import {
   CHAT_TYPE,
   type MessageData,
 } from "./model.ts";
+
+/**
+ * Brings the chat object in line with its facts: the session after a reply, and
+ * the model and the cost so far, summed from the replies recorded. Reading the
+ * facts, not adding to the object, makes a rerun after a crash end in the same state.
+ */
+async function syncChat(ctx: StepContext, id: string, session: string | undefined): Promise<void> {
+  const fresh = await ctx.store.get(CHAT_TYPE, id);
+  if (fresh === undefined) return;
+  const next: Record<string, unknown> = { ...fresh.data };
+  if (session !== undefined) next.session = session;
+  let micros: number | undefined;
+  let quality: CostQuality | undefined;
+  for (const message of allMessages(ctx.store, id)) {
+    if (message.role !== "assistant") continue;
+    if (message.model !== undefined) next.lastModel = message.model;
+    if (message.costMicros !== undefined) {
+      micros = (micros ?? 0) + message.costMicros;
+      quality = worseQuality(quality, message.costQuality);
+    }
+  }
+  if (micros !== undefined) next.costMicros = micros;
+  if (quality !== undefined) next.costQuality = quality;
+  if (JSON.stringify(next) !== JSON.stringify(fresh.data)) {
+    await ctx.store.put(CHAT_TYPE, id, next, "step:chat/reply");
+  }
+}
 
 /** The question a read-only chat asks when the call is not known. */
 export const WORKTREE_QUESTION =
@@ -257,7 +285,11 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
   const chat = chatData(stored.data);
   const messages = allMessages(ctx.store, object.id);
   const pending = unanswered(messages);
-  if (pending.length === 0) return { result: "done", data: { answered: 0 } };
+  if (pending.length === 0) {
+    // A run that stopped after recording a reply still owes the chat its model and cost.
+    await syncChat(ctx, object.id, undefined);
+    return { result: "done", data: { answered: 0 } };
+  }
 
   const runStep = ctx.runStep;
   if (runStep === undefined) return failed("host", "the kernel did not offer a way to run the harness");
@@ -372,22 +404,7 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
   await ctx.facts.append({ type: MESSAGE_FACT, object: chatRef(object.id), data: reply });
 
   // The chat's own reference follows; read again, so a change made meanwhile stays.
-  // The model and the cost so far follow too, for the row.
-  const fresh = await ctx.store.get(CHAT_TYPE, object.id);
-  if (fresh !== undefined) {
-    const before = chatData(fresh.data);
-    const next: Record<string, unknown> = { ...fresh.data };
-    if (sessionId !== undefined) next.session = sessionId;
-    if (usage.model !== undefined) next.lastModel = usage.model;
-    if (usage.costMicros !== undefined) {
-      next.costMicros = (before.costMicros ?? 0) + usage.costMicros;
-      const quality = worseQuality(before.costQuality, usage.costQuality);
-      if (quality !== undefined) next.costQuality = quality;
-    }
-    if (JSON.stringify(next) !== JSON.stringify(fresh.data)) {
-      await ctx.store.put(CHAT_TYPE, object.id, next, "step:chat/reply");
-    }
-  }
+  await syncChat(ctx, object.id, sessionId);
 
   const left = unanswered(allMessages(ctx.store, object.id));
   return { result: left.length > 0 ? "more" : "done", data: { answered: pending.length, left: left.length } };

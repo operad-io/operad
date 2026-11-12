@@ -69,3 +69,38 @@ describe("the chat row says the agent", () => {
     expect(allMessages(r.store, chat).find((m) => m.role === "assistant")?.model).toBe("sonnet");
   });
 });
+
+describe("the agent line holds over restarts and pages", () => {
+  test("a reply recorded before the object was updated is counted on the next run", async () => {
+    const r = await rig(usageReply("sonnet", 120000, "exact"));
+    const chat = await r.chat();
+    const id = await r.say(chat, "hello");
+    await r.store.append({
+      type: "chat.message",
+      object: { type: "chat", id: chat },
+      cause: "test",
+      data: {
+        id: "m-a", role: "assistant", from: { via: "", id: "" }, text: "hi", attachments: [],
+        source: { kind: "", ref: null }, replyTo: [id], model: "sonnet", costMicros: 120000, costQuality: "exact",
+      },
+    });
+    expect((await rowOf(r, chat)).row.note).toBe("fake");
+    await r.round(chat);
+    expect((await rowOf(r, chat)).row.note).toBe("fake · sonnet · $0.12");
+    await r.round(chat);
+    expect((await rowOf(r, chat)).row.note).toBe("fake · sonnet · $0.12");
+  });
+
+  test("a later page of the transcript also starts with the agent line", async () => {
+    const r = await rig(usageReply("sonnet", 120000, "exact"));
+    const chat = await r.chat();
+    for (let i = 0; i < 60; i += 1) await r.say(chat, `m${i}`);
+    await r.round(chat);
+    const { object } = await rowOf(r, chat);
+    const ctx = { store: r.store, settings: {}, plugin: "chat" } as unknown as ViewContext;
+    const first = await chatViews.load(ctx, object, "transcript", {});
+    if (first.next === undefined) throw new Error("no second page");
+    const second = await chatViews.load(ctx, object, "transcript", { cursor: first.next });
+    expect(second.markdown.startsWith("Agent: fake · sonnet · $0.12\n")).toBe(true);
+  });
+});

@@ -123,9 +123,9 @@ async function load(
     if (message !== undefined) blocks.push(messageMarkdown(message, speaker));
   }
   const body = blocks.length === 0 && options.cursor === undefined ? "No messages yet." : blocks.join("\n\n---\n\n");
-  // The first page says which agent answers, as the row does.
+  // Every page says which agent answers, as the row does.
   const chat = chatData(object.data);
-  const markdown = options.cursor === undefined && chat.harness.length > 0
+  const markdown = chat.harness.length > 0
     ? `Agent: ${agentLine(chat)}\n\n${body}`
     : body;
 
