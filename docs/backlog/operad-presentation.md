@@ -23,12 +23,12 @@
 8. **插件不碰颜色、布局、导航。** 插件给的是语义（决定 10 的 `mark`），不是颜色或图标名。 主按钮是第一个动作，其余在 `⋯`；需要确认的动作在确认时用红色；导航是待处理、正在跑，再加按层级浏览（决定 9）；插件只写英文，界面上其余的字由客户端翻译；不做批量动作。
 9. **层级由插件用 `parent` 说出来，客户端一层层往下点。**（2026-11-07 owner 定，替换原来决定 8 的“没有层级”。）
    - 第一层是插件：`/v1/types` 的每个类型带上它所属的插件，客户端按插件分组。
-   - 点进一个插件，列出它的顶层对象：这个插件各类型里没有 `parent` 的对象。
+   - 点进一个插件，列出它的顶层对象：这个插件各类型里没有 `parent` 的对象；`parent` 不是这个插件任何对象的对象（如聊天挂在别的插件的仓库下）也列在顶层，按 `parent` 分组，组名是服务器给的 parent id（如 `repo:operad`），组内新的在前（2026-11-12 owner 定）。
    - 对象页在 row 和分段之间列出它的下一层：`parent` 等于这个 id 的对象，每行和列表里的一行一样（等人、在跑的标记，可点进去），再往下同样。
    - API：`list` 接受 `parent=<id>`（下一层）和 `root`（顶层）；类型声明的 filter 和默认 filter 作用在左栏的列表上，隐藏的个数照样给出，并按隐藏行的 `mark` 给 `done`、`cancelled`、`other` 三个数（2026-11-10 owner 定）。打开对象的下一层不受 tab 的 filter 影响，一律用类型的 `all` 取，所以每个孩子都列出来；`f` 只换左栏的 filter，不动打开的对象（2026-11-11 owner 定，改 2026-11-10 的“filter 也作用在下一层列表上”）。
    - `dev` 的层级是 仓库 → plan → task：`dev` 新增 `repo` 对象类型（`operad dev repo add` 登记的仓库），plan 的 `parent` 是它的仓库，task 的 `parent` 是它的 plan。
    - 客户端仍不认识插件：层级、名字都来自 `/v1`。命令行的 `operad list <类型>` 照旧平铺。
-   - TUI（2026-11-08 owner 定，照 arc 的 plans 页）：顶栏是待处理、正在跑，再加每个插件一个 tab（`dev`），不再每个类型一个 tab。插件 tab 左栏列出它的顶层对象；顶层对象都有下一层时，左栏改列下一层，按顶层对象分组，组名是顶层对象那一行（`dev` 左栏就是按仓库分组的 plan）。右栏是选中对象的页面：row、进度条、下一层列表（每行 mark、id、状态、badge、note，回车打开那个对象自己的页面），再往下是分段。下一层已经由客户端画成列表，插件不再另给一个列出下一层的分段（`dev` 去掉 plan 的 Tasks 段）。不在左栏的对象（如 task）只从上一层的页面、待处理、正在跑打开。
+   - TUI（2026-11-08 owner 定，照 arc 的 plans 页）：顶栏是待处理、正在跑，再加每个插件一个 tab（`dev`），不再每个类型一个 tab。插件 tab 左栏列出它的顶层对象；`parent` 属于别的插件的对象也在顶层，按 parent id 分组（2026-11-12 owner 定）；顶层对象都有下一层时，左栏改列下一层，按顶层对象分组，组名是顶层对象那一行（`dev` 左栏就是按仓库分组的 plan）。右栏是选中对象的页面：row、进度条、下一层列表（每行 mark、id、状态、badge、note，回车打开那个对象自己的页面），再往下是分段。下一层已经由客户端画成列表，插件不再另给一个列出下一层的分段（`dev` 去掉 plan 的 Tasks 段）。不在左栏的对象（如 task）只从上一层的页面、待处理、正在跑打开。
 10. **行带一个语义标记 `mark`，客户端照 arc 的图标表画。**（2026-11-08 owner 定：“operad 用回 arc 的 item 标记”，改决定 6 的“只按两个标记上色”；图标表以 operad-ios `docs/design/operad/` 的 component sheet 为准，它和 arc 的表一致。）
    - `row(object)` 可以带 `mark`，取值只能是内核定的这一组（括号里是 iOS 的 SF Symbol 和颜色角色）：
      `todo`（circle，灰）、`blocked`（circle.dashed，灰）、`retry_wait`（clock，灰）、`paused`（pause.circle，灰）、`proposed`（plus.circle，等人色）、`starting`（circle.dotted，在跑色）、`running`（circle.lefthalf.filled，在跑色，呼吸）、`reconciling`（arrow.triangle.2.circlepath，在跑色）、`checking`（magnifyingglass，在跑色）、`rework_pending`（arrow.uturn.backward.circle，等人色）、`waiting`（circle.fill，等人色）、`integrating`（arrow.triangle.merge，在跑色）、`ready_to_merge`（checkmark.circle，成功色）、`done`（checkmark.circle.fill，成功色）、`failed`（xmark.circle.fill，错误色）、`cancelled`（nosign，灰）、`broken`（exclamationmark.triangle.fill，错误色）。

@@ -359,3 +359,11 @@ the row fields.
 | T-0309-M1 | packages/tui/src/state.ts | `replacePageRow` dropped a child whose new state left the tab's filter again | `an open plan's next level is every one of its tasks > a task that becomes merged stays in the open plan's tasks` |
 | T-0309-M2 | packages/tui/src/state.ts | the first page under a new filter followed the selection and moved the open object again | `filters: state > a selection the new filter hides moves to the first row and leaves the object alone` |
 | T-0309-M3 | packages/tui/src/view/index.ts | a merged child's marker and state used the success colour again | `the object page's child list > a merged child's glyph and state are weak while the bar still fills done` |
+
+## T-0314 — a plugin tab shows objects with a foreign parent
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0314-M1 | packages/tui/src/app.ts | a plugin tab with no child of its own returned its roots and dropped every object whose parent belongs to another plugin | `one tab per plugin > objects whose parent belongs to another plugin are grouped by that parent, newest first` |
+| T-0314-M2 | packages/tui/src/app.ts | the grouped list counted every hidden object of the tab's types, including descendants the sidebar never lists | `an open plan's next level is every one of its tasks > all tasks show under the tab's active filter, the counts match, and f keeps them` |
+| T-0314-M3 | packages/tui/src/app.ts | a tab-owned object under another tab-owned object did not follow its ancestor into the ancestor's foreign group | `one tab per plugin > a chat under a chat that is already in a foreign group joins that group` |

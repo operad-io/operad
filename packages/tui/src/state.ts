@@ -512,7 +512,14 @@ export interface TuiTreeEntry {
   /** The top-level object this row is under, when the list is grouped. */
   readonly parent?: string | undefined;
   /** Set on the first row of a group: the top-level object's own row and type. */
-  readonly heading?: { readonly row: ViewRow; readonly type: string } | undefined;
+  readonly heading?:
+    | {
+        readonly row: ViewRow;
+        readonly type: string;
+        /** The heading's text when it names a parent outside the tab's own objects. */
+        readonly label?: string | undefined;
+      }
+    | undefined;
   /** A top-level object with nothing under it: its row is its own group row. */
   readonly bare?: boolean | undefined;
 }
@@ -1110,6 +1117,7 @@ function splitId(id: string): { readonly short: string; readonly slug: string } 
 
 /** The short id and slug of a row, without its type or repository. */
 export function rowName(row: TuiRow): string {
+  if (row.unnamed === true && row.title !== "") return sanitize(row.title);
   const bare = bareId(row.id);
   const { short, slug } = splitId(bare.slice(bare.lastIndexOf("/") + 1));
   if (row.error !== undefined || slug === "") return short;
@@ -2449,7 +2457,14 @@ function rowOfEntry(entry: TuiTreeEntry): TuiRow {
     ...(entry.parent === undefined ? {} : { parent: sanitize(entry.parent) }),
     ...(entry.heading === undefined
       ? {}
-      : { group: rowFromView(entry.heading.row, entry.heading.type) }),
+      : {
+          group: {
+            ...rowFromView(entry.heading.row, entry.heading.type),
+            ...(entry.heading.label === undefined
+              ? {}
+              : { unnamed: true, title: sanitize(entry.heading.label) }),
+          },
+        }),
   };
 }
 

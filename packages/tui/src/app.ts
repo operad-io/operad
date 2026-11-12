@@ -544,9 +544,10 @@ export function startShell(deps: TuiShellDeps): TuiShell {
   }
 
   /**
-   * A plugin tab's list: its top-level objects, or, when at least one of them
-   * has a next level, that level grouped under the top-level objects (one with
-   * nothing under it stays as its own group row).
+   * A plugin tab's list: its top-level objects, the objects whose parent is an
+   * object of another plugin (grouped under that parent), and, when at least
+   * one top-level object has a next level, that level grouped under it (one
+   * with nothing under it stays as its own group row).
    */
   async function fetchPluginRows(
     tab: TuiTab,
@@ -557,17 +558,73 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     readonly entries: readonly TuiTreeEntry[];
     readonly hidden: number;
   }> {
-    const roots = await fetchTypes(tab, { root: true }, signal, filter);
-    const under = await Promise.all(
-      roots.entries.map((root) =>
+    const all = await fetchTypes(tab, {}, signal, filter);
+    const own = new Set<string>();
+    for (const entry of all.entries) {
+      for (const form of parentForms(entry)) own.add(form);
+    }
+    const roots = all.entries.filter(
+      (entry) => entry.row.parent === undefined || entry.row.parent.length === 0,
+    );
+    const ownTypes = new Set((tab.types ?? []).map((info) => info.type));
+    const byForm = new Map<string, TuiTreeEntry>();
+    for (const entry of all.entries) {
+      for (const form of parentForms(entry)) {
+        if (!byForm.has(form)) byForm.set(form, entry);
+      }
+    }
+    // The first ancestor outside the tab names the group. A tab-owned object
+    // under a foreign one belongs to the same group, as do its own children.
+    const foreignGroupOf = (
+      entry: TuiTreeEntry,
+      seen: ReadonlySet<TuiTreeEntry>,
+    ): string | undefined => {
+      const parent = entry.row.parent;
+      if (parent === undefined || parent.length === 0) return undefined;
+      const colon = parent.indexOf(":");
+      const parentType = colon > 0 ? parent.slice(0, colon) : undefined;
+      if (parentType !== undefined && !ownTypes.has(parentType)) return parent;
+      if (parentType === undefined && !own.has(parent)) return parent;
+      const owner = byForm.get(parent);
+      if (owner === undefined || seen.has(owner)) return undefined;
+      return foreignGroupOf(owner, new Set([...seen, owner]));
+    };
+    const foreign = new Map<string, TuiTreeEntry[]>();
+    for (const entry of all.entries) {
+      const parent = foreignGroupOf(entry, new Set([entry]));
+      if (parent === undefined) continue;
+      const group = foreign.get(parent);
+      if (group === undefined) foreign.set(parent, [entry]);
+      else group.push(entry);
+    }
+    const under = roots.map((root) => {
+      const forms = new Set(parentForms(root));
+      return all.entries.filter((entry) => {
+        const parent = entry.row.parent;
+        return parent !== undefined && forms.has(parent);
+      });
+    });
+    // The hidden rows the sidebar counts are the roots' next level only: a
+    // hidden task under a plan is not part of the repository's group row.
+    const childLevels = await Promise.all(
+      roots.map((root) =>
         fetchTypes(tab, { parent: `${root.type}:${rowFromView(root.row).id}` }, signal, filter),
       ),
     );
-    const some = under.some((one) => one.entries.length + one.hidden > 0);
-    if (!some) return { level: "roots", entries: roots.entries, hidden: roots.hidden };
+    const underHidden = childLevels.reduce((total, one) => total + one.hidden, 0);
+    // A type with filters can hide every child of a root; the list then still
+    // groups under the roots.
+    const some = under.some((rows) => rows.length > 0) || underHidden > 0;
+    if (!some && foreign.size === 0) {
+      const hidden =
+        (tab.types?.length ?? 0) > 1 && all.hidden > 0
+          ? (await fetchTypes(tab, { root: true }, signal, filter)).hidden
+          : all.hidden;
+      return { level: "roots", entries: roots, hidden };
+    }
     const entries: TuiTreeEntry[] = [];
-    roots.entries.forEach((root, index) => {
-      const rows = under[index]?.entries ?? [];
+    roots.forEach((root, index) => {
+      const rows = under[index] ?? [];
       if (rows.length === 0) {
         entries.push({ row: root.row, type: root.type, bare: true });
         return;
@@ -581,11 +638,44 @@ export function startShell(deps: TuiShellDeps): TuiShell {
         });
       });
     });
+    for (const [parent, rows] of foreign) {
+      [...rows].sort(newestFirst).forEach((entry, at) => {
+        entries.push({
+          ...entry,
+          parent,
+          ...(at === 0 ? { heading: foreignHeading(parent) } : {}),
+        });
+      });
+    }
+    return { level: "children", entries, hidden: underHidden };
+  }
+
+  /** The spellings a row's parent may use for this object, with or without its type. */
+  function parentForms(entry: TuiTreeEntry): readonly string[] {
+    const id = rowFromView(entry.row).id;
+    const raw = entry.row.id;
+    return [...new Set([id, `${entry.type}:${id}`, raw, `${entry.type}:${raw}`])];
+  }
+
+  /** A heading for objects whose parent belongs to another plugin. */
+  function foreignHeading(parent: string): {
+    readonly row: ViewRow;
+    readonly type: string;
+    readonly label: string;
+  } {
+    const colon = parent.indexOf(":");
     return {
-      level: "children",
-      entries,
-      hidden: under.reduce((total, one) => total + one.hidden, 0),
+      row: { id: parent, title: parent, state: "", waiting: false, running: false },
+      type: colon > 0 ? parent.slice(0, colon) : "",
+      label: parent,
     };
+  }
+
+  /** The newest object first: ids count up as objects are made. */
+  function newestFirst(left: TuiTreeEntry, right: TuiTreeEntry): number {
+    const a = rowFromView(left.row).id;
+    const b = rowFromView(right.row).id;
+    return a < b ? 1 : a > b ? -1 : 0;
   }
 
   /**

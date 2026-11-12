@@ -13,6 +13,7 @@ import {
   type TuiEventSource,
   type TuiShellClient,
   type TuiState,
+  type TuiTypeInfo,
   type TuiView,
 } from "../src/index.ts";
 import {
@@ -33,6 +34,8 @@ const TYPES = [
   { type: "task", title: "Task", plugin: "dev" },
   { type: "note", title: "Note", plugin: "notes" },
 ];
+
+type TestType = TuiTypeInfo;
 
 interface Stored {
   readonly type: string;
@@ -68,11 +71,23 @@ const DATA: readonly Stored[] = [
   entry("note", "n2", "Note two"),
 ];
 
+const CHAT_TYPES: readonly TestType[] = [{ type: "chat", title: "Chat", plugin: "chat" }];
+
+const CHATS: readonly Stored[] = [
+  entry("chat", "C-0001", "First chat", "repo:operad"),
+  entry("chat", "C-0002", "Second chat", "repo:operad"),
+  entry("chat", "C-0003", "Third chat", "repo:anylut"),
+  entry("chat", "C-0004", "Fourth chat", "repo:operad"),
+];
+
 /** A server of two plugins: `dev` is a tree, `notes` is flat. */
 class TreeClient implements TuiShellClient {
-  constructor(private readonly data: readonly Stored[] = DATA) {}
+  constructor(
+    private readonly data: readonly Stored[] = DATA,
+    private readonly infos: readonly TestType[] = TYPES,
+  ) {}
   types() {
-    return Promise.resolve({ types: TYPES });
+    return Promise.resolve({ types: this.infos });
   }
   pending(): Promise<readonly PendingItem[]> {
     return Promise.resolve([]);
@@ -84,15 +99,28 @@ class TreeClient implements TuiShellClient {
     type: string,
     _cursor?: string,
     _signal?: AbortSignal,
-    _filter?: string,
+    filter?: string,
     level?: { readonly root?: boolean | undefined; readonly parent?: string | undefined },
   ): Promise<ViewListPage> {
-    const rows = this.data
+    const info = this.infos.find((one) => one.type === type);
+    const chosen = filter ?? info?.defaultFilter;
+    const states =
+      chosen === undefined || chosen === "all"
+        ? undefined
+        : info?.filters?.find((one) => one.name === chosen)?.states;
+    const under = this.data
       .filter((one) => one.type === type)
       .filter((one) => (level?.root === true ? one.parent === undefined : true))
-      .filter((one) => (level?.parent === undefined ? true : one.parent === level.parent))
-      .map((one) => one.row);
-    return Promise.resolve({ rows });
+      .filter((one) => (level?.parent === undefined ? true : one.parent === level.parent));
+    const shown =
+      states === undefined
+        ? under
+        : under.filter((one) => one.row.state === "error" || states.includes(one.row.state));
+    const hidden = under.length - shown.length;
+    return Promise.resolve({
+      rows: shown.map((one) => one.row),
+      ...(hidden === 0 ? {} : { hidden }),
+    });
   }
   object(id: string): Promise<ViewObject> {
     const colon = id.indexOf(":");
@@ -172,6 +200,113 @@ describe("one tab per plugin", () => {
     expect(text(drawState(state).header)).toContain("Pending 0 │ Running 0 │ dev │ notes");
     // A plugin's types are on its tab, not tabs of their own.
     expect(tabOf(state, "plugin:dev")?.types?.map((t) => t.type)).toEqual(["repo", "plan", "task"]);
+  });
+
+  test("objects whose parent belongs to another plugin are grouped by that parent, newest first", async () => {
+    const { view, shell } = open(new TreeClient(CHATS, CHAT_TYPES));
+    await view.until((state) => tabOf(state, "plugin:chat")?.list.loaded === true);
+    shell.key({ name: "3" });
+    const chat = tabOf(shell.state, "plugin:chat");
+    expect(chat?.level).toBe("children");
+    expect(chat?.list.rows.map((row) => row.id)).toEqual([
+      "C-0004",
+      "C-0002",
+      "C-0001",
+      "C-0003",
+    ]);
+    expect(chat?.list.rows.map((row) => row.group?.id)).toEqual([
+      "repo:operad",
+      undefined,
+      undefined,
+      "repo:anylut",
+    ]);
+    const list = text(drawState(shell.state).list);
+    expect(list).toContain("repo:operad");
+    expect(list).toContain("repo:anylut");
+    // A chat under a foreign parent opens its own page, like any other object.
+    await view.until((state) => state.object?.type === "chat" && !state.object.loading);
+    expect(shell.state.object?.id).toBe("C-0004");
+    shell.stop();
+  });
+
+  test("a chat under a chat that is already in a foreign group joins that group", async () => {
+    const nested: readonly Stored[] = [
+      entry("chat", "C-0001", "First chat", "repo:operad"),
+      entry("chat", "C-0002", "Second chat", "chat:C-0001"),
+    ];
+    const { view, shell } = open(new TreeClient(nested, CHAT_TYPES));
+    await view.until((state) => tabOf(state, "plugin:chat")?.list.loaded === true);
+    const chat = tabOf(shell.state, "plugin:chat");
+    expect(chat?.level).toBe("children");
+    expect(chat?.list.rows.map((row) => row.id)).toEqual(["C-0002", "C-0001"]);
+    expect(chat?.list.rows.map((row) => row.group?.id)).toEqual(["repo:operad", undefined]);
+    shell.key({ name: "3" });
+    const list = text(drawState(shell.state).list);
+    expect(list).toContain("repo:operad");
+    expect(list).toContain("C-0002");
+    expect(list).toContain("C-0001");
+    shell.stop();
+  });
+
+  test("a hidden finished plan still makes its repository a group row", async () => {
+    const types: readonly TestType[] = [
+      { type: "repo", title: "Repository", plugin: "dev" },
+      {
+        type: "plan",
+        title: "Plan",
+        plugin: "dev",
+        filters: [
+          { name: "active", states: ["active"] },
+          { name: "all" },
+        ],
+        defaultFilter: "active",
+      },
+    ];
+    const data: readonly Stored[] = [
+      entry("repo", "ops", "Operations"),
+      {
+        type: "plan",
+        row: {
+          id: "ops/P-0001-done",
+          title: "Done plan",
+          state: "finished",
+          parent: "repo:ops",
+          waiting: false,
+          running: false,
+        },
+        parent: "repo:ops",
+      },
+    ];
+    const { view, shell } = open(new TreeClient(data, types));
+    await view.until((state) => tabOf(state, "plugin:dev")?.list.loaded === true);
+    const dev = tabOf(shell.state, "plugin:dev");
+    expect(dev?.level).toBe("children");
+    expect(dev?.list.rows.map((row) => row.id)).toEqual(["ops"]);
+    expect(dev?.list.rows[0]?.bare).toBe(true);
+    expect(dev?.list.rows[0]?.group).toBeUndefined();
+    shell.stop();
+  });
+
+  test("a dev-shaped tab is unchanged by the foreign-parent rule", async () => {
+    const { view, shell } = open();
+    await view.until((state) => tabOf(state, "plugin:dev")?.list.loaded === true);
+    const dev = tabOf(shell.state, "plugin:dev");
+    expect(dev?.level).toBe("children");
+    expect(dev?.list.rows.map((row) => row.id)).toEqual([
+      "ops/P-0001-alpha",
+      "ops/P-0002-beta",
+      "web/P-0003-gamma",
+    ]);
+    expect(dev?.list.rows.map((row) => row.group?.id)).toEqual(["ops", undefined, "web"]);
+    expect(dev?.list.rows.some((row) => row.group?.id?.includes(":"))).toBe(false);
+    shell.stop();
+  });
+
+  test("the tab count counts the shown objects, not their headings", async () => {
+    const { view, shell } = open(new TreeClient(CHATS, CHAT_TYPES));
+    await view.until((state) => tabOf(state, "plugin:chat")?.list.loaded === true);
+    expect(text(drawState(shell.state).header)).toContain("chat 4");
+    shell.stop();
   });
 
   test("roots that all have children list the children, grouped by root", async () => {
