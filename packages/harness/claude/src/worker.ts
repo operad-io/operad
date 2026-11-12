@@ -106,6 +106,14 @@ export interface WorkerHooks {
   spawnClaudeCodeProcess?: Options["spawnClaudeCodeProcess"];
   /** The clock for tool call times, in epoch milliseconds; the tests inject one. */
   now?: () => number;
+  /** The environment the started `claude` inherits; the process's own when absent. */
+  env?: Readonly<Record<string, string | undefined>>;
+}
+
+/** Where the program talks to the world; the process entry points them at stdout and stderr. */
+export interface WorkerPorts {
+  write(text: string): void;
+  log(text: string): void;
 }
 
 function failure(reason: FailureReason, message: string): WorkerResult {
@@ -295,7 +303,7 @@ export async function runWorker(
     abortController: controller,
     disallowedTools: [...DISALLOWED_TOOLS],
     env: {
-      ...process.env,
+      ...(hooks.env ?? process.env),
       ...ISOLATION_ENV,
       // Both limits, so a gate runs in the foreground instead of being moved on.
       BASH_DEFAULT_TIMEOUT_MS: String((input.bashTimeoutSecs ?? DEFAULT_BASH_TIMEOUT_SECS) * 1000),
@@ -498,14 +506,23 @@ export async function runWorker(
  * input; later lines are the host's answers.
  */
 class StdinLines {
-  readonly #reader = Bun.stdin.stream().getReader();
+  readonly #reader: AsyncIterator<Uint8Array>;
   readonly #decoder = new TextDecoder();
   #buffer = "";
   #done = false;
 
+  constructor(stream: AsyncIterable<Uint8Array>) {
+    this.#reader = stream[Symbol.asyncIterator]();
+  }
+
+  /** Stops reading; a read that waits ends as if stdin had ended. */
+  close(): void {
+    void this.#reader.return?.()?.catch(() => undefined);
+  }
+
   async #more(): Promise<boolean> {
     if (this.#done) return false;
-    const chunk = await this.#reader.read();
+    const chunk = await this.#reader.next();
     if (chunk.done) {
       this.#done = true;
       this.#buffer += this.#decoder.decode();
@@ -538,16 +555,19 @@ class StdinLines {
   }
 }
 
-/** The process entry: stdin in, stdout lines out, exit code out. */
-export async function main(hooks: WorkerHooks = {}): Promise<never> {
-  const write = (text: string): void => {
-    process.stdout.write(text);
-  };
-  const flush = (): Promise<void> =>
-    new Promise((resolve) => {
-      process.stdout.write("", () => resolve());
-    });
-  const stdin = new StdinLines();
+/**
+ * The program without the process around it: reads the input and the host's
+ * answers from `stdin`, writes lines through `ports`, and returns the exit
+ * code. `cancel` is the SIGTERM signal.
+ */
+export async function serveWorker(
+  stdinStream: AsyncIterable<Uint8Array>,
+  ports: WorkerPorts,
+  cancel: AbortSignal,
+  hooks: WorkerHooks = {},
+): Promise<number> {
+  const write = ports.write;
+  const stdin = new StdinLines(stdinStream);
   const waiting = new Map<number, (used: boolean) => void>();
   const questions = new Map<number, (answer: CallAnswer) => void>();
   let nextAsk = 1;
@@ -561,7 +581,7 @@ export async function main(hooks: WorkerHooks = {}): Promise<never> {
       onMessage = handler;
       for (const text of early.splice(0)) handler(text);
     },
-    log: (text) => process.stderr.write(`${text}\n`),
+    log: (text) => ports.log(text),
     useGrant: (waitId) =>
       new Promise<boolean>((resolve) => {
         if (hostGone) {
@@ -589,14 +609,6 @@ export async function main(hooks: WorkerHooks = {}): Promise<never> {
         write(`${JSON.stringify({ type: "ask_call", id, ...call })}\n`);
       }),
   };
-  // Anything that prints to stdout by accident would corrupt the protocol.
-  console.log = (...args: unknown[]): void => {
-    process.stderr.write(`${args.map(String).join(" ")}\n`);
-  };
-
-  const controller = new AbortController();
-  process.on("SIGTERM", () => controller.abort());
-
   let code: number;
   try {
     const text = await stdin.first();
@@ -656,13 +668,40 @@ export async function main(hooks: WorkerHooks = {}): Promise<never> {
         for (const resolve of questions.values()) resolve({ decision: "deny", reason: "the host is gone" });
         questions.clear();
       })();
-      code = await runWorker(parsed.input, io, controller.signal, hooks);
+      code = await runWorker(parsed.input, io, cancel, hooks);
     }
   } catch (error) {
     io.log(error instanceof Error ? (error.stack ?? error.message) : String(error));
     io.line(failure("model_error", error instanceof Error ? error.message : String(error)));
     code = EXIT_FAILED;
   }
+  stdin.close();
+  return code;
+}
+
+/** The process entry: stdin in, stdout lines out, exit code out. */
+export async function main(hooks: WorkerHooks = {}): Promise<never> {
+  const flush = (): Promise<void> =>
+    new Promise((resolve) => {
+      process.stdout.write("", () => resolve());
+    });
+  // Anything that prints to stdout by accident would corrupt the protocol.
+  console.log = (...args: unknown[]): void => {
+    process.stderr.write(`${args.map(String).join(" ")}\n`);
+  };
+  const controller = new AbortController();
+  process.on("SIGTERM", () => controller.abort());
+  const code = await serveWorker(
+    Bun.stdin.stream(),
+    {
+      write: (text) => {
+        process.stdout.write(text);
+      },
+      log: (text) => process.stderr.write(`${text}\n`),
+    },
+    controller.signal,
+    hooks,
+  );
   await flush();
   process.exit(code);
 }
