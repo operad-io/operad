@@ -5,5 +5,5 @@
   "type": "module",
   "repository": { "type": "git", "url": "git+https://github.com/operad-io/operad.git", "directory": "packages/cli" },
   "bin": { "operad": "bin/operad.ts" },
-  "dependencies": { "@operad-io/engine": "workspace:*", "@operad-io/mcp": "workspace:*", "@operad-io/shell": "workspace:*", "@operad-io/chat": "workspace:*", "@operad-io/dev": "workspace:*", "@operad-io/harness-claude": "workspace:*", "@operad-io/harness-pi": "workspace:*", "@operad-io/harness-radian": "workspace:*", "@operad-io/tui": "workspace:*", "@operad-io/pool": "workspace:*" }
+  "dependencies": { "@operad-io/engine": "workspace:*", "@operad-io/mcp": "workspace:*", "@operad-io/shell": "workspace:*", "@operad-io/chat": "workspace:*", "@operad-io/dev": "workspace:*", "@operad-io/harness-claude": "workspace:*", "@operad-io/harness-pi": "workspace:*", "@operad-io/harness-radian": "workspace:*", "@operad-io/tui": "workspace:*", "@operad-io/pool": "workspace:*", "@operad-io/bot": "workspace:*" }
 }
