@@ -170,6 +170,8 @@ export interface ActionInfo {
   readonly confirm: boolean;
   /** The action ends the object, so a main key or button never runs it. */
   readonly ends?: boolean | undefined;
+  /** The object type the action creates; a client lists it where that type is created. */
+  readonly creates?: string | undefined;
 }
 
 /** Where a key binding came from. */
@@ -423,6 +425,7 @@ export class PluginRegistry {
           noteRequired: note.required,
           confirm: action.confirm === true,
           ...(action.ends === true ? { ends: true } : {}),
+          ...(action.creates === undefined ? {} : { creates: action.creates }),
         });
       }
     }

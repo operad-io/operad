@@ -2,8 +2,8 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { match, readProfile, type AccessProfile } from "@operad-io/access-match";
-import { CHAT_TYPE, chatData } from "@operad-io/chat";
-import { createViews, Views } from "@operad-io/engine";
+import { CHAT_TYPE, allMessages, chatData } from "@operad-io/chat";
+import { createViews, Views, type TriggerEvent } from "@operad-io/engine";
 import {
   BOT_SETTINGS,
   DEFAULT_BOT,
@@ -168,6 +168,28 @@ describe("repositories", () => {
     ]) {
       expect(match(access, { ...call, cwd }, { home }).allow).toBe(false);
     }
+  });
+});
+
+describe("bot:chat with a first message", () => {
+  test("creates the chat, sends the message, titles it from the message and opens it", async () => {
+    const events: TriggerEvent[] = [];
+    const r = await rig({}, undefined, (event) => void events.push(event));
+    await syncBots(r.store, r.home, {});
+    const id = await r.open(DEFAULT_BOT, { message: "Remind me what is on today" });
+    expect(allMessages(r.store, id).map((message) => message.text)).toEqual(["Remind me what is on today"]);
+    expect(events.map((event) => `${event.type} ${event.object}`)).toEqual([`message chat:${id}`]);
+    expect(chatData((await r.store.get(CHAT_TYPE, id))?.data ?? {}).title).toBe("Remind me what is on today");
+  });
+
+  test("without a message nothing is sent, and the action declares what it creates", async () => {
+    const events: TriggerEvent[] = [];
+    const r = await rig({}, undefined, (event) => void events.push(event));
+    await syncBots(r.store, r.home, {});
+    const id = await r.open(DEFAULT_BOT);
+    expect(allMessages(r.store, id)).toEqual([]);
+    expect(events).toEqual([]);
+    expect(r.registry.actions().find((info) => info.name === "bot:chat")?.creates).toBe("chat");
   });
 });
 

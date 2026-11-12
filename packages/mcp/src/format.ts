@@ -54,6 +54,7 @@ function actionMarkdown(action: ViewObject["actions"][number]): string[] {
     `  - note: ${action.note === undefined ? "none" : `\`${action.note}\`${action.noteRequired ? " (required)" : ""}`}`,
   );
   lines.push(`  - confirm: ${action.confirm ? "yes" : "no"}`);
+  if (action.creates !== undefined) lines.push(`  - creates: \`${action.creates}\``);
   if (action.args === undefined) {
     lines.push("  - args: none");
   } else {
