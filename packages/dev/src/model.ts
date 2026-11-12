@@ -1127,13 +1127,6 @@ export function higherPriority(priority: Priority): Priority | undefined {
   return index <= 0 ? undefined : PRIORITIES[index - 1];
 }
 
-export function lowerPriority(priority: Priority): Priority | undefined {
-  const index = priorityIndex(priority);
-  return index < 0 || index >= PRIORITIES.length - 1
-    ? undefined
-    : PRIORITIES[index + 1];
-}
-
 /** A task is open until it merged or was cancelled. */
 export function isOpenTask(task: TaskData): boolean {
   return task.phase !== "merged" && task.phase !== "cancelled";
