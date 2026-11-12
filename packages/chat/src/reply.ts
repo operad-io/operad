@@ -414,7 +414,9 @@ async function entryData(
     error: entry.error === null ? null : maskSecrets(entry.error, secrets),
     ...(entry.outputTruncated ? { outputTruncated: true } : {}),
   };
-  if (output === null || new TextEncoder().encode(output).length <= TOOL_OUTPUT_FACT_BYTES) return data;
+  // The harness's output decides whether it needs a file; masking does not
+  // make a long output short enough to leave no file behind.
+  if (output === null || new TextEncoder().encode(entry.output ?? "").length <= TOOL_OUTPUT_FACT_BYTES) return data;
   const path = toolOutputPath(ctx.home, chat, runId, entry.callId);
   await mkdir(dirname(path), { recursive: true });
   await writeFile(path, output, "utf8");
