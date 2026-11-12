@@ -62,7 +62,7 @@ async function open() {
   store.put("lid", "b3", {}, "seed");
   store.put("lid", "l1", {}, "seed");
   const registry = new PluginRegistry([sealing], { store, storeRoot: store.root });
-  const log = openLog({ backend: "jsonl", path: join(root, "store") });
+  const log = openLog({ backend: "sqlite", path: join(root, "store", "log.sqlite") });
   const views = createViews({ registry, store, log });
   return { views, store, log };
 }

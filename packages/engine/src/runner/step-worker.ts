@@ -6,7 +6,6 @@
 
 import { parentPort, workerData } from "node:worker_threads";
 import { messageOf } from "../plugin/errors.ts";
-import { FilePluginStore } from "../plugin/file-store.ts";
 import { loadPlugin } from "../plugin/load.ts";
 import { PluginRegistry } from "../plugin/registry.ts";
 import type {
@@ -89,10 +88,7 @@ function openWorkerStore(request: StepWorkerRequest): PluginStore {
   if (location?.backend === "sqlite") {
     return new SqlitePluginStore({ root: location.root, file: location.file });
   }
-  if (location?.backend === "jsonl") {
-    return new FilePluginStore({ root: location.root });
-  }
-  return new FilePluginStore({ root: request.storeRoot });
+  return new SqlitePluginStore({ root: request.storeRoot });
 }
 
 export async function runStepWorker(

@@ -1,17 +1,17 @@
 /**
- * A writer for the concurrent-append test: it opens a JSONL store, tells the
+ * A writer for the concurrent-append test: it opens the plugin store, tells the
  * test it is ready, waits for the go file, then appends facts as fast as it can.
  */
 
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { FilePluginStore } from "../../src/index.ts";
+import { SqlitePluginStore } from "../../src/index.ts";
 import { waitForFile } from "../wait-for-file.ts";
 
 const root = process.argv[2] ?? "";
 const name = process.argv[3] ?? "a";
 const count = Number(process.argv[4] ?? "20");
-const store = new FilePluginStore({ root });
+const store = new SqlitePluginStore({ root });
 
 writeFileSync(join(root, `ready-${name}`), "");
 await waitForFile(join(root, "go"));

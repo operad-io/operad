@@ -52,7 +52,7 @@ async function makeHome(plugin = settingsPlugin, extra: Record<string, unknown> 
     `${JSON.stringify(
       {
         plugins: { demo: { module: plugin, settings: { limit: 3 } } },
-        store: { backend: "jsonl", path: join(root, "store") },
+        store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
         notes: ["keep", "me"],
         ...extra,
       },
@@ -139,11 +139,11 @@ describe("operad settings", () => {
       join(home, "config.json"),
       JSON.stringify({
         plugins: { webtest: { module: httpPlugin } },
-        store: { backend: "jsonl", path: join(root, "store") },
+        store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
         http: { enabled: true, port, listen: ["127.0.0.1"] },
       }),
     );
-    const store = openPluginStore({ backend: "jsonl", root: join(root, "store") });
+    const store = openPluginStore({ backend: "sqlite", root: join(root, "store") });
     await store.put("item", "one", { title: "One", state: "new" }, "seed");
     const child = Bun.spawn({
       cmd: [process.execPath, CLI_ENTRY, "serve"],

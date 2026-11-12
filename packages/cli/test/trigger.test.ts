@@ -46,7 +46,7 @@ async function makeHome(
     join(home, "config.json"),
     JSON.stringify({
       plugins: [...plugins],
-      store: { backend: "jsonl", path: join(root, "store") },
+      store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
     }),
   );
   if (rules !== undefined) {

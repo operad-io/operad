@@ -22,7 +22,7 @@ import {
   decide,
   definePlugin,
   evolve,
-  FilePluginStore,
+  SqlitePluginStore,
   initialState,
   PluginRegistry,
   type JsonValue,
@@ -2095,7 +2095,7 @@ describe("dev/review crash recovery", () => {
 
     // The parent opens the store again and runs the same round in a new
     // process, as serve would after a crash.
-    const store = new FilePluginStore({ root: state.store.root });
+    const store = new SqlitePluginStore({ root: state.store.root });
     const reviewer = fakeReviewer({ callLog });
     const registry = new PluginRegistry([createDevPlugin(), reviewer.plugin], {
       home: state.root,
@@ -2215,7 +2215,7 @@ describe("dev/review crash before the store copy", () => {
     );
     expect(existsSync(stored)).toBe(false);
 
-    const store = new FilePluginStore({ root: state.store.root });
+    const store = new SqlitePluginStore({ root: state.store.root });
     const reviewer = fakeReviewer({ callLog });
     const registry = new PluginRegistry([createDevPlugin(), reviewer.plugin], {
       home: state.root,
@@ -2530,7 +2530,7 @@ describe("dev/review report in the workspace", () => {
       `${state.taskId}-attempt-1-review-1.json`,
     );
     try {
-      const store = new FilePluginStore({ root: state.store.root });
+      const store = new SqlitePluginStore({ root: state.store.root });
       const reviewer = fakeReviewer({ callLog });
       const registry = new PluginRegistry([createDevPlugin(), reviewer.plugin], {
         home: state.root,
@@ -3584,7 +3584,7 @@ describe("dev/review rework rounds", () => {
     const recorded = readFileSync(promptFile, "utf8");
     expect(recorded).toContain("## Previous review");
     writeFileSync(promptFile, `${recorded}\nRECORDED-MARK\n`);
-    const store = new FilePluginStore({ root: round.state.store.root });
+    const store = new SqlitePluginStore({ root: round.state.store.root });
     const reviewer = fakeReviewer({});
     const registry = new PluginRegistry([createDevPlugin(), reviewer.plugin], {
       home: round.state.root,

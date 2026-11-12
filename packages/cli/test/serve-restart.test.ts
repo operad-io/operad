@@ -2,6 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { openConfigLog, readConfig } from "../../engine/src/index.ts";
 import { waitForChange } from "../../engine/src/platform/index.ts";
 import { cleanupTempRoots, tempRoot } from "../../engine/test/plugin/support.ts";
 import { SUPERVISED_ENV } from "../src/code-reload.ts";
@@ -29,6 +30,21 @@ async function waitForTicks(path: string, count: number): Promise<void> {
     }
     if (turns >= count) return;
     await waitForChange(dirname(path), basename(path), 100);
+  }
+}
+
+/** Resolves once the run has ended: the log says so, not a file's name. */
+async function waitForEnded(home: string, runId: string): Promise<void> {
+  const config = await readConfig(home);
+  for (;;) {
+    const log = openConfigLog(config, { follow: false });
+    try {
+      const run = (await log.runs()).find((info) => info.runId === runId);
+      if (run !== undefined && !run.active) return;
+    } finally {
+      await log.close();
+    }
+    await waitForChange(dirname(config.store.path), basename(config.store.path), 100);
   }
 }
 
@@ -114,7 +130,7 @@ describe("a serve restart while a check runs", () => {
       join(home, "config.json"),
       JSON.stringify({
         plugins: [SHELL, FLOW],
-        store: { backend: "jsonl", path: join(root, "store") },
+        store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
         http: { enabled: false },
       }),
     );
@@ -164,7 +180,7 @@ describe("a serve restart while a check runs", () => {
       join(home, "config.json"),
       JSON.stringify({
         plugins: [SHELL, FLOW],
-        store: { backend: "jsonl", path: join(root, "store") },
+        store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
         http: { enabled: false },
       }),
     );
@@ -219,7 +235,7 @@ describe("a serve restart while a check runs", () => {
       expect(existsSync(signalled)).toBe(false);
 
       // The run ends done: the check passed with exit 0.
-      await waitForFile(join(root, "store", "runs", `${runId}.end`));
+      await waitForEnded(home, runId);
       const history = (await operad(home, env, ["history", runId])).out;
       expect(history).toContain("run done");
       // The log path is not the run's words: a checkout path may contain "fail".

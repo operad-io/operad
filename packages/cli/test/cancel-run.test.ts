@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  FilePluginStore,
+  SqlitePluginStore,
   Runner,
   loadPluginRegistry,
   openConfigLog,
@@ -42,13 +42,13 @@ async function makeWaiting(http: boolean): Promise<{
     join(home, "config.json"),
     JSON.stringify({
       plugins: [pluginPath],
-      store: { backend: "jsonl", path: join(root, "store") },
+      store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
       ...(http ? { http: { enabled: true, port, listen: ["127.0.0.1"] } } : {}),
     }),
   );
   const config = await readConfig(home);
   const storeRoot = storeRootOf(config);
-  const store = new FilePluginStore({ root: join(storeRoot, "plugins") });
+  const store = new SqlitePluginStore({ root: storeRoot });
   const registry = await loadPluginRegistry({ home, store });
   const found = registry.flow("hold");
   if (found === undefined) throw new Error("missing hold flow");

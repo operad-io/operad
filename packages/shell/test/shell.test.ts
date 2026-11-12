@@ -3,7 +3,7 @@ import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { chmod, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import {
-  FilePluginStore,
+  SqlitePluginStore,
   MemoryPluginStore,
   PluginRegistry,
   Runner,
@@ -572,7 +572,7 @@ describe("a flow through the runner", () => {
       registry.stepTypes(),
     ) as FlowDefinition;
 
-    const log = openLog({ backend: "jsonl", path: join(root, "log") });
+    const log = openLog({ backend: "sqlite", path: join(root, "log", "log.sqlite") });
     try {
       const info = await log.startRun("shell-flow", "job:1");
       const outcome = await new Runner({
@@ -616,7 +616,7 @@ describe("a flow through the runner", () => {
       registry.stepTypes(),
     ) as FlowDefinition;
 
-    const log = openLog({ backend: "jsonl", path: join(root, "log") });
+    const log = openLog({ backend: "sqlite", path: join(root, "log", "log.sqlite") });
     try {
       const info = await log.startRun("probe-flow", "job:1");
       const runner = new Runner({
@@ -641,7 +641,7 @@ describe("a flow through the runner", () => {
     const registry = new PluginRegistry([shell], {
       home: root,
       cwd: root,
-      store: new FilePluginStore({ root: join(root, "store") }),
+      store: new SqlitePluginStore({ root: join(root, "store") }),
       sources: [source],
     });
     const marker = join(root, "started");
@@ -672,7 +672,7 @@ describe("a flow through the runner", () => {
       registry.stepTypes(),
     ) as FlowDefinition;
 
-    const log = openLog({ backend: "jsonl", path: join(root, "log") });
+    const log = openLog({ backend: "sqlite", path: join(root, "log", "log.sqlite") });
     try {
       const info = await log.startRun("cancel-flow", "job:1");
       const controller = new AbortController();

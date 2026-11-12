@@ -122,7 +122,7 @@ function waitForStore(
       finish(new Error(`timed out waiting for ${message}`));
     }, timeoutMs);
 
-    for (const directory of [join(storeRoot, "runs"), join(storeRoot, "plugins")]) {
+    for (const directory of [storeRoot]) {
       mkdirSync(directory, { recursive: true });
       const watcher = watch(directory, () => evaluate());
       watcher.on("error", (error) => finish(error));
@@ -210,7 +210,7 @@ async function fixture(options: {
           pool: { module: "@operad-io/pool" },
           "harness-fake": { module: FAKE_HARNESS },
         },
-        store: { backend: "jsonl", path: join(root, "store") },
+        store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
         http: { enabled: false },
       },
       null,

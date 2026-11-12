@@ -5,7 +5,7 @@
  */
 
 import { appendFileSync } from "node:fs";
-import { FilePluginStore, PluginRegistry } from "@operad-io/engine";
+import { SqlitePluginStore, PluginRegistry } from "@operad-io/engine";
 import { createDevPlugin } from "../../src/index.ts";
 
 const [storeRoot, repository, taskKey, action, argsJson, answersPath] =
@@ -23,7 +23,7 @@ if (
   );
 }
 
-const store = new FilePluginStore({ root: storeRoot });
+const store = new SqlitePluginStore({ root: storeRoot });
 const registry = new PluginRegistry([createDevPlugin()], {
   home: storeRoot,
   cwd: repository,

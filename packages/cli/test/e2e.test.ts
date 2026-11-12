@@ -167,10 +167,7 @@ function waitForStore(
       finish(new Error(`timed out waiting for ${message}`));
     }, timeoutMs);
 
-    for (const directory of [
-      join(storeRoot, "runs"),
-      join(storeRoot, "plugins"),
-    ]) {
+    for (const directory of [storeRoot]) {
       mkdirSync(directory, { recursive: true });
       const watcher = watch(directory, () => evaluate());
       watcher.on("error", (error) => finish(error));
@@ -288,7 +285,7 @@ describe("dogfood end to end", () => {
               dev: { module: "@operad-io/dev" },
               "harness-fake": { module: FAKE_HARNESS },
             },
-            store: { backend: "jsonl", path: storeRoot },
+            store: { backend: "sqlite", path: join(storeRoot, "log.sqlite") },
           },
           null,
           2,

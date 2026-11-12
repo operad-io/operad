@@ -3,7 +3,7 @@ import { join } from "node:path";
 import {
   createViews,
   definePlugin,
-  FilePluginStore,
+  SqlitePluginStore,
   MemoryPluginStore,
   PluginRegistry,
 } from "../../src/index.ts";
@@ -101,14 +101,9 @@ describe("object type prepare", () => {
 
   test("a one-shot view adds no change listener", async () => {
     const root = await tempRoot();
-    let watches = 0;
     let repeats = 0;
-    const store = new FilePluginStore({
+    const store = new SqlitePluginStore({
       root: join(root, "plugins"),
-      watch: () => {
-        watches += 1;
-        return () => undefined;
-      },
       repeat: () => {
         repeats += 1;
         return () => undefined;
@@ -131,23 +126,17 @@ describe("object type prepare", () => {
       onLog: () => undefined,
     });
     opened.push(views);
-    expect(watches).toBe(0);
     expect(repeats).toBe(0);
   });
 
   test("a one-shot command opens its store and plugin without a watch or a timer", async () => {
     const root = await tempRoot();
-    let watches = 0;
     let repeats = 0;
     let subscriptions = 0;
     let unsubscribe: (() => void) | undefined;
-    const store = new FilePluginStore({
+    const store = new SqlitePluginStore({
       root: join(root, "plugins"),
       follow: false,
-      watch: () => {
-        watches += 1;
-        return () => undefined;
-      },
       repeat: () => {
         repeats += 1;
         return () => undefined;
@@ -189,7 +178,6 @@ describe("object type prepare", () => {
 
     expect((await views.list("new")).rows.map((row) => row.id)).toEqual(["a"]);
     expect(subscriptions).toBe(1);
-    expect(watches).toBe(0);
     expect(repeats).toBe(0);
     unsubscribe?.();
   });

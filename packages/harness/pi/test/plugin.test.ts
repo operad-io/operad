@@ -634,7 +634,7 @@ describe("pi:prompt", () => {
   async function runPrompt(env: TestEnv, params: JsonValue, trigger?: TriggerView) {
     const found = env.registry.flow("pi:prompt");
     if (found === undefined) throw new Error("the prompt flow is not loaded");
-    const log = openLog({ backend: "jsonl", path: join(env.root, "log") });
+    const log = openLog({ backend: "sqlite", path: join(env.root, "log", "log.sqlite") });
     const info = await log.startRun(found.flow.name, "prompt:1");
     await new Runner({
       log,

@@ -4,7 +4,7 @@ import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  FilePluginStore,
+  SqlitePluginStore,
   loadPluginRegistry,
   openConfigLog,
   openPluginStore,
@@ -60,7 +60,7 @@ async function setup(): Promise<{
     `${JSON.stringify(
       {
         plugins: [PLUGIN, POOL, SHELL],
-        store: { backend: "jsonl", path: join(root, "store") },
+        store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
       },
       null,
       2,
@@ -253,7 +253,7 @@ describe("operad with the dev plugin", () => {
     const repositoryName = repository.split("/").pop() ?? "";
     const otherName = other.split("/").pop() ?? "";
     const store = openPluginStore({
-      backend: "jsonl",
+      backend: "sqlite",
       root: join(root, "store"),
     });
     store.put(
@@ -373,7 +373,7 @@ describe("operad with the dev plugin", () => {
 
     const config = await readConfig(home);
     const storeRoot = storeRootOf(config);
-    const store = new FilePluginStore({ root: join(storeRoot, "plugins") });
+    const store = new SqlitePluginStore({ root: storeRoot });
     const taskObject = (await listAll(store, "task")).find(
       (object) => bareId(object.id) === taskId,
     );
@@ -751,7 +751,7 @@ describe("operad with the dev plugin", () => {
     // Register and seed the two repositories directly: this test is about how
     // the CLI resolves ids, not about adding the objects.
     const store = openPluginStore({
-      backend: "jsonl",
+      backend: "sqlite",
       root: join(root, "store"),
     });
     const registered = await addRepository(store, { path: repository });

@@ -85,14 +85,14 @@ function inputIdOf(source: string, key: string): string {
 const EVENTS = 1500;
 const ANSWERED_RUNS = 400;
 
-for (const backend of ["jsonl", "sqlite"] as const) {
+for (const backend of ["sqlite"] as const) {
   describe(`a tick over a large history (${backend})`, () => {
     test("reads what changed, not every input, answer and outcome ever recorded", async () => {
       const root = await tempRoot();
       const storeRoot = join(root, "store");
       const inner = openLog({
         backend,
-        path: backend === "jsonl" ? storeRoot : join(storeRoot, "log.sqlite"),
+        path: join(storeRoot, "log.sqlite"),
       });
       const { log, reads } = counting(inner);
       const registry = new PluginRegistry([], {
@@ -187,7 +187,7 @@ for (const backend of ["jsonl", "sqlite"] as const) {
       const storeRoot = join(root, "store");
       const inner = openLog({
         backend,
-        path: backend === "jsonl" ? storeRoot : join(storeRoot, "log.sqlite"),
+        path: join(storeRoot, "log.sqlite"),
       });
       let failures = 1;
       const flaky: LogBackend = {
@@ -235,13 +235,13 @@ for (const backend of ["jsonl", "sqlite"] as const) {
   });
 }
 
-for (const backend of ["jsonl", "sqlite"] as const) {
+for (const backend of ["sqlite"] as const) {
   describe(`reading by position and by id (${backend})`, () => {
     test("inputs after a position, one input by id, and outcomes after a sequence", async () => {
       const root = await tempRoot();
       const log = openLog({
         backend,
-        path: backend === "jsonl" ? join(root, "store") : join(root, "store", "log.sqlite"),
+        path: join(root, "store", "log.sqlite"),
       });
       try {
         expect(await log.readInputsAfter(0)).toEqual({ inputs: [], position: 0 });
@@ -263,7 +263,7 @@ for (const backend of ["jsonl", "sqlite"] as const) {
         await log.recordInput(null, "manual", "wide-é-ü", { text: "é".repeat(50) });
         const other = openLog({
           backend,
-          path: backend === "jsonl" ? join(root, "store") : join(root, "store", "log.sqlite"),
+          path: join(root, "store", "log.sqlite"),
         });
         try {
           await other.recordInput(null, "manual", "from-other", { n: 9 });

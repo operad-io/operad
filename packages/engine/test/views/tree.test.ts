@@ -133,7 +133,7 @@ describe("hierarchy over HTTP", () => {
     mkdirSync(home, { recursive: true });
     writeFileSync(
       join(home, "config.json"),
-      JSON.stringify({ store: { backend: "jsonl", path: join(root, "store") } }),
+      JSON.stringify({ store: { backend: "sqlite", path: join(root, "store", "log.sqlite") } }),
     );
     const log = openConfigLog(await readConfig(home));
     const { store, registry, views } = setup();
