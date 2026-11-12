@@ -3,7 +3,7 @@
 import { randomUUID } from "node:crypto";
 import { statSync } from "node:fs";
 import { basename, extname } from "node:path";
-import type { JsonValue, ObjectRef, ObjectStore, PluginFact } from "@operad-io/engine";
+import type { ActionArgSchema, JsonValue, ObjectRef, ObjectStore, PluginFact } from "@operad-io/engine";
 import { isRecord, storedType, stringList } from "@operad-io/engine";
 
 /** The object type of a chat. */
@@ -547,4 +547,48 @@ export function promptFor(pending: readonly Message[], images: ReadonlySet<strin
     [message.text, attachmentLines(message, images)].filter((part) => part.length > 0).join("\n\n"),
   );
   return parts.join("\n\n");
+}
+
+/** One agent's choices for a new chat: what it lists, and what a chat starts with when none is asked for. */
+export interface AgentChoices {
+  readonly name: string;
+  readonly models: { readonly list: readonly string[]; readonly default: string | null } | undefined;
+  readonly efforts: { readonly list: readonly string[]; readonly default: string | null } | undefined;
+  /** A configured model (a bot's); it is the default only for the agent that lists it. */
+  readonly preferredModel?: string | null | undefined;
+  /** A configured effort (a bot's); it is the default only for the agent that lists it. */
+  readonly preferredEffort?: string | null | undefined;
+}
+
+/**
+ * The conditionals of a new-chat form: one `if agent is X then model and effort
+ * are X's` per agent, in standard JSON Schema (`allOf` of `if`/`then`). The
+ * default is the configured value when the agent lists it, else the agent's
+ * default. An agent that lists none gets no property in its `then`: nothing can
+ * be picked for it. The kernel does not evaluate them; the action refuses a
+ * value the agent does not list by name when it runs.
+ */
+export function agentConditionals(agents: readonly AgentChoices[]): ActionArgSchema[] {
+  const pick = (
+    list: readonly string[],
+    preferred: string | null | undefined,
+    fallback: string | null | undefined,
+  ): Record<string, unknown> => {
+    if (list.length === 0) return {};
+    const chosen = preferred !== null && preferred !== undefined && list.includes(preferred) ? preferred : fallback;
+    return { enum: [...list], ...(chosen === null || chosen === undefined ? {} : { default: chosen }) };
+  };
+  return agents.map((agent) => {
+    const model = pick(agent.models?.list ?? [], agent.preferredModel, agent.models?.default);
+    const effort = pick(agent.efforts?.list ?? [], agent.preferredEffort, agent.efforts?.default);
+    return {
+      if: { properties: { agent: { const: agent.name } }, required: ["agent"] },
+      then: {
+        properties: {
+          ...(Object.keys(model).length === 0 ? {} : { model: { type: "string", ...model } }),
+          ...(Object.keys(effort).length === 0 ? {} : { effort: { type: "string", ...effort } }),
+        },
+      },
+    } as ActionArgSchema;
+  });
 }

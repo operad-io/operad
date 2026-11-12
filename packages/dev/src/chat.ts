@@ -5,7 +5,7 @@
  * changes reach main only through a task, through integrate.
  */
 
-import { CHAT_TYPE, chatData, createChat, sendMessage, startingEffort, startingModel, titleFromMessage } from "@operad-io/chat";
+import { CHAT_TYPE, agentConditionals, type AgentChoices, chatData, createChat, sendMessage, startingEffort, startingModel, titleFromMessage } from "@operad-io/chat";
 import type {
   ActionArgsSchema,
   ActionTypeDefinition,
@@ -68,7 +68,11 @@ export async function chatWorktreeOf(
 }
 
 /** The `dev:chat` arguments; `models` and `efforts` are the ones the offered agents list. */
-function chatArgs(models: readonly string[], efforts: readonly string[]): ActionArgsSchema {
+function chatArgs(
+  models: readonly string[],
+  efforts: readonly string[],
+  agents: readonly AgentChoices[] = [],
+): ActionArgsSchema {
   return {
     type: "object",
     description: `Opens a chat about this repository. ${RADIAN_NOTE}`,
@@ -102,6 +106,7 @@ function chatArgs(models: readonly string[], efforts: readonly string[]): Action
           "The first message; the chat is created and the message sent in one step. The title is taken from its start when none is given.",
       },
     },
+    ...(agents.length === 0 ? {} : { allOf: agentConditionals(agents) }),
     additionalProperties: false,
   };
 }
@@ -116,6 +121,7 @@ const chatAction: ActionTypeDefinition = {
     return chatArgs(
       [...new Set(offered.flatMap((name) => env.models?.[name]?.list ?? []))],
       [...new Set(offered.flatMap((name) => env.efforts?.[name]?.list ?? []))],
+      offered.map((name) => ({ name, models: env.models?.[name], efforts: env.efforts?.[name] })),
     );
   },
   when: (state) => repositoryData(state).removed !== true,

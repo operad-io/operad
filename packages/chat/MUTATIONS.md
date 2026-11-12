@@ -73,3 +73,10 @@ the row fields.
 |---|---|---|---|
 | T-0366-M9 | packages/chat/src/index.ts | the question wait no longer offered `allow_always` | `the reply flow > the question wait offers allow_always and sends either allow answer back to the reply` |
 | T-0366-M13 | packages/chat/src/index.ts | the question wait stopped declaring `allow_always` as the late choice a person's question hands over | `the reply flow > the question wait offers allow_always and sends either allow answer back to the reply` |
+
+## T-0369 — the new-chat form narrows model and effort by agent
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0369-M1 | packages/chat/src/model.ts | a configured model was the default of every agent, not only the one that lists it | `bot:chat per-agent conditionals > one if/then per agent carries its lists and defaults; a bot's model is the default only of the agent that lists it` |
+| T-0369-M2 | packages/chat/src/model.ts | an agent that lists nothing still got a `model`/`effort` in its `then` | `bot:chat per-agent conditionals > one if/then per agent carries its lists and defaults; a bot's model is the default only of the agent that lists it` |
