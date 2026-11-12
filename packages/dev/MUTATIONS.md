@@ -967,3 +967,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0345-M1 | packages/dev/src/git.ts | `runOnce` passed no timeout to `Bun.spawnSync`, so a git that never exits blocked as before | `a git that never exits > is killed at its limit and the error names the command, the directory and the time` |
+
+## T-0333 — a chat's choice is called an agent
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0333-M1 | packages/dev/src/chat.ts | `dev:chat` still read its argument under the old `harness` name, so `--agent pi` was ignored and the first loaded agent was used | `dev:chat > the agent is the one given, else the first offered one that is loaded` |
