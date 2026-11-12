@@ -19,3 +19,9 @@ changes for bots, in the order they were recorded. The root
 | T-0326-M5 | packages/bot/src/proposals.ts | the apply action was named `confirm` instead of the approved `approve` | `a bot proposes a skill > it is one pending item, shows SKILL.md and the files with scripts apart, and applies at the next reply` |
 | T-0332-M1 | packages/bot/src/index.ts | the `harness` argument of `bot:chat` lost its `enum` of the loaded harnesses | `bot:chat > the harness argument is a choice of the loaded harnesses, defaulting to the bot's own, else the first` (and `a harness outside the loaded ones is refused with the list`) |
 | T-0330-M1 | packages/bot/src/index.ts | the plugin no longer declared `objectsUnderSettings`, so the bot plugin got a tab of its own again | `bots > the plugin puts its objects under settings, so no client gives it a tab` |
+
+## T-0338 rework 1 — a bot's configured model
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0338-M3 | packages/bot/src/index.ts | a configured bot model the agent does not list was dropped and the default used | `bot:chat and the model > a configured bot model its agent does not list is refused by name, not replaced by the default` |

@@ -215,6 +215,38 @@ describe("bot:chat with a first message", () => {
   });
 });
 
+describe("bot:chat and the model", () => {
+  const modelOf = async (r: Awaited<ReturnType<typeof rig>>, id: string) => (await r.store.get(CHAT_TYPE, id))?.data.model;
+
+  test("a chat starts with the agent's default model, the bot's configured one, or the one asked for", async () => {
+    const r = await rig({ tuned: { harness: "pi", model: "pi-b" } }, ["claude", "pi"]);
+    await syncBots(r.store, r.home, r.registry.settingsFor("bot"));
+    expect(await modelOf(r, await r.open("default"))).toBe("claude-a");
+    expect(await modelOf(r, await r.open("tuned"))).toBe("pi-b");
+    expect(await modelOf(r, await r.open("tuned", { model: "pi-a" }))).toBe("pi-a");
+  });
+
+  test("a model the agent does not list is refused by name", async () => {
+    const r = await rig({}, ["claude", "pi"]);
+    await syncBots(r.store, r.home, {});
+    await expect(r.open("default", { agent: "pi", model: "claude-b" })).rejects.toThrow("claude-b");
+  });
+
+  test("a configured bot model its agent does not list is refused by name, not replaced by the default", async () => {
+    const r = await rig({ odd: { harness: "pi", model: "huge" } }, ["claude", "pi"]);
+    await syncBots(r.store, r.home, r.registry.settingsFor("bot"));
+    await expect(r.open("odd")).rejects.toThrow("huge");
+  });
+
+  test("the model argument is an enum of the loaded agents' models", async () => {
+    const r = await rig({}, ["claude", "pi"]);
+    await syncBots(r.store, r.home, {});
+    const views = new Views({ registry: r.registry, store: r.store, onLog: () => undefined });
+    const chat = (await views.get("bot:default")).actions.find((a) => a.name === "bot:chat");
+    expect(chat?.args?.properties?.model?.enum).toEqual(["claude-a", "claude-b", "pi-a", "pi-b"]);
+  });
+});
+
 describe("bot:chat", () => {
   test("says which chat it opened, so a client can open it", async () => {
     const r = await rig();
