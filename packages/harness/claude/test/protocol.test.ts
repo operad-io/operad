@@ -1228,6 +1228,41 @@ test("a secret split across grouped increments is not exposed by joining the del
   }
 });
 
+test("a block ending in a secret prefix writes that held suffix as its last increment", async () => {
+  const secret = "password";
+  const text = "the pass";
+  const message = assistant("m1", text);
+  const inner = message["message"] as Record<string, unknown>;
+  inner["content"] = [
+    { type: "thinking", thinking: "pass" },
+    { type: "text", text },
+  ];
+  const s = setup();
+  s.input["secretValues"] = [secret];
+  const run = await runFake(
+    s,
+    {
+      steps: [
+        { say: systemInit() },
+        ...streamBlock("text", text, 0),
+        ...streamBlock("thinking", "pass", 1),
+        { say: message },
+        { say: result() },
+      ],
+    },
+    { FAKE_CLOCK_STEP: String(STREAM_GROUP_MS / 2) },
+  );
+
+  for (const [type, expected] of [
+    ["text_delta", text],
+    ["thinking_delta", "pass"],
+  ] as const) {
+    const increments = run.lines.filter((line) => line["type"] === type).map((line) => String(line["text"]));
+    expect(increments.join("")).toBe(expected);
+    expect(increments.at(-1)).toBe("pass");
+  }
+});
+
 test("claude asks for partial messages so the increments can be written", async () => {
   const run = await runFake(setup(), { steps: done });
   const args = (run.record.find((entry) => "spawn" in entry)?.["spawn"] as { args: string[] }).args;

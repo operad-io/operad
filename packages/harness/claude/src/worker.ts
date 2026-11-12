@@ -271,10 +271,10 @@ export async function runWorker(
   let deltaKind: StreamKind | undefined;
   let deltaText = "";
   let deltaAt = 0;
-  // `complete` says this stream has ended: a held secret prefix cannot be
-  // completed, so it is dropped from the increments (the full end line has
-  // the whole text) rather than written as a part that a later stream could
-  // join to the rest of the secret.
+  // `complete` says this stream has ended: a held suffix cannot be completed
+  // by a later group, so it is the last increment (masked if it is a whole
+  // secret). Otherwise a suffix that is a proper secret prefix stays back, so
+  // joining two increment lines can never form a secret.
   const flushDelta = (complete: boolean): void => {
     if (deltaKind === undefined || deltaText.length === 0) {
       deltaKind = undefined;
@@ -282,10 +282,17 @@ export async function runWorker(
       return;
     }
     const kind = deltaKind;
-    const held = secretPrefixLength(deltaText, secrets);
-    const text = held === 0 ? deltaText : deltaText.slice(0, -held);
-    deltaText = complete || held === 0 ? "" : deltaText.slice(-held);
-    deltaKind = deltaText.length === 0 ? undefined : kind;
+    let text: string;
+    if (complete) {
+      text = deltaText;
+      deltaText = "";
+      deltaKind = undefined;
+    } else {
+      const held = secretPrefixLength(deltaText, secrets);
+      text = held === 0 ? deltaText : deltaText.slice(0, -held);
+      deltaText = held === 0 ? "" : deltaText.slice(-held);
+      deltaKind = deltaText.length === 0 ? undefined : kind;
+    }
     if (text.length > 0) {
       io.line({ type: kind === "text" ? "text_delta" : "thinking_delta", text: maskSecrets(text, secrets) });
     }
