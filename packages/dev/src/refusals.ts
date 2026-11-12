@@ -16,6 +16,7 @@
  */
 
 import {
+  isIntegrating,
   planState,
   TASK_PHASES,
   type PlanData,
@@ -47,8 +48,8 @@ export type Line =
   | { readonly kind: "done"; readonly say: (facts: Facts) => string }
   | { readonly kind: "refuse"; readonly say: (facts: Facts) => string };
 
-/** The states of a task: its phases, and the wait for the review model. */
-export const TASK_STATES = [...TASK_PHASES, "waiting-review"] as const;
+/** The states of a task: its phases, the integrate mark, and the wait for the review model. */
+export const TASK_STATES = [...TASK_PHASES, "integrating", "waiting-review"] as const;
 export type TaskState = (typeof TASK_STATES)[number];
 
 export const TASK_ACTIONS = [
@@ -95,6 +96,7 @@ function personWait(
     running: once("running"),
     review: once("running (review)"),
     waiting: ok,
+    integrating: once("integrating"),
     "waiting-review": refuse(
       ({ id }) =>
         `${id} is waiting for the review model to come back; dev:${action} works once it needs you`,
@@ -120,6 +122,7 @@ function resumeLines(): Record<TaskState, Line> {
     running: not("running"),
     review: not("running (review)"),
     waiting: not("waiting"),
+    integrating: not("integrating"),
     "waiting-review": not("waiting"),
     paused: ok,
     merged: refuse(({ id }) => `${id} was merged; nothing can be resumed`),
@@ -145,6 +148,7 @@ export const TASK_LINES: Record<TaskActionName, Record<TaskState, Line>> = {
     running: started("running"),
     review: started("running (review)"),
     waiting: started("waiting"),
+    integrating: started("integrating"),
     "waiting-review": started("waiting"),
     paused: started("paused"),
     merged: refuse(({ id }) => `${id} was merged; nothing to confirm`),
@@ -156,6 +160,7 @@ export const TASK_LINES: Record<TaskActionName, Record<TaskState, Line>> = {
     running: ok,
     review: ok,
     waiting: ok,
+    integrating: ok,
     "waiting-review": ok,
     paused: ok,
     merged: refuse(({ id }) => `${id} was merged; nothing can be cancelled`),
@@ -168,6 +173,9 @@ export const TASK_LINES: Record<TaskActionName, Record<TaskState, Line>> = {
     review: ok,
     waiting: refuse(
       ({ id }) => `${id} is waiting for you; answer it, or dev:cancel it`,
+    ),
+    integrating: refuse(
+      ({ id }) => `${id} is integrating; dev:pause works once it is ready or running`,
     ),
     "waiting-review": refuse(
       ({ id }) => `${id} is waiting for the review model to come back; dev:pause works once it is ready or running`,
@@ -221,8 +229,9 @@ export const PLAN_LINES: Record<PlanActionName, Record<PlanState, Line>> = {
   concurrency: setting("concurrency", true),
 };
 
-/** The state a task row shows, with the review-model wait told apart. */
+/** The state a task row shows, with the integrate mark and the review-model wait told apart. */
 export function taskStateOf(task: TaskData): TaskState {
+  if (isIntegrating(task)) return "integrating";
   if (task.phase === "waiting" && inReviewWait(task)) return "waiting-review";
   return task.phase;
 }

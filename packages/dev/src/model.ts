@@ -1147,3 +1147,9 @@ export function lowerPriority(priority: Priority): Priority | undefined {
 export function isOpenTask(task: TaskData): boolean {
   return task.phase !== "merged" && task.phase !== "cancelled";
 }
+
+/** The integrate step is working: it marks the attempt until it writes a result. */
+export function isIntegrating(task: TaskData): boolean {
+  const run = task.attempt?.integrating;
+  return typeof run === "string" && run.length > 0;
+}

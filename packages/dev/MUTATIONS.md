@@ -901,3 +901,9 @@ the row fields.
 |---|---|---|---|
 | T-0268-M1 | packages/dev/src/retry.ts | a retry that waits for a step to be loaded set the task's phase to waiting, as if a person were asked | `a step that is not loaded, for several tasks > within the bound every task stays running and nothing waits for a person; once loaded each continues` |
 | T-0302-M4 | packages/dev/src/service.ts | a recount kept the stored cost total instead of recomputing it from the tasks | `dev views > a refresh heals a plan total that drifted, and a malformed total shows no cost` |
+
+## T-0306 — a task whose integrate step works shows integrating and offers only cancel
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0306-M1 | packages/dev/src/model.ts | `isIntegrating` no longer read the attempt's integrate mark, so the row state stayed `waiting` and the four wait actions stayed offered | `a task while its integrate step works > shows integrating and offers only cancel, then waits for answer again when the mark clears` |

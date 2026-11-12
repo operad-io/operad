@@ -13,6 +13,7 @@ import plugin from "../src/index.ts";
 import devFlow from "../flows/dev.flow.ts";
 import { compileDevFlow } from "../src/flow-compiler.ts";
 import { addPlan, addRepository, addTask, getTask } from "../src/service.ts";
+import { taskViews } from "../src/views.ts";
 import {
   taskData,
   type ReviewRecord,
@@ -144,14 +145,20 @@ async function offered(
   registry: PluginRegistry,
   taskId: string,
 ): Promise<WaitAction[]> {
+  return (await offeredNames(registry, taskId)).filter((name): name is WaitAction =>
+    (WAIT_ACTIONS as readonly string[]).includes(name),
+  );
+}
+
+async function offeredNames(
+  registry: PluginRegistry,
+  taskId: string,
+): Promise<string[]> {
   const pending = await registry.pending([
     { runId: "run-1", object: { type: "task", id: taskId } },
   ]);
   return (pending[0]?.actions ?? [])
     .map((action) => action.action)
-    .filter((name): name is WaitAction =>
-      (WAIT_ACTIONS as readonly string[]).includes(name),
-    )
     .sort();
 }
 
@@ -344,6 +351,35 @@ describe("an action the current wait does not take", () => {
       "T-0001-one cannot be verified again now; it can be merged, rejected or reworked",
     );
     expect(fixture.answers).toEqual([]);
+  });
+});
+
+describe("a task while its integrate step works", () => {
+  test("shows integrating and offers only cancel, then waits for answer again when the mark clears", async () => {
+    const fixture = await setup(devFlow, { ...GATED, integrating: "run-2" });
+    const working = await getTask(fixture.store, fixture.taskId);
+    expect(taskViews.row(working).state).toBe("integrating");
+    expect(taskViews.row(working).mark).toBe("integrating");
+    expect(await offeredNames(fixture.registry, fixture.taskId)).toEqual([
+      "cancel",
+    ]);
+    expect(await offered(fixture.registry, fixture.taskId)).toEqual([]);
+
+    const data = taskData(working.data);
+    await fixture.store.put(
+      "task",
+      fixture.taskId,
+      { ...data, attempt: { ...data.attempt, integrating: null } },
+      "test:integrating-cleared",
+    );
+    const cleared = await getTask(fixture.store, fixture.taskId);
+    expect(taskViews.row(cleared).state).toBe("waiting");
+    expect(await offeredNames(fixture.registry, fixture.taskId)).toEqual(
+      ["cancel", ...waitChoices("person", true)].sort(),
+    );
+    expect(await offered(fixture.registry, fixture.taskId)).toEqual(
+      [...waitChoices("person", true)].sort(),
+    );
   });
 });
 

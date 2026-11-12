@@ -106,14 +106,17 @@ async function taskIn(
   const plan = await addPlan(store, { repository, slug: `p-${slug}`, title: "Work" });
   const task = await addTask(store, { plan: plan.id, slug, title: "One" });
   const current = taskData((await getTask(store, task.id)).data);
-  const phase = state === "waiting-review" ? "waiting" : state;
+  const phase =
+    state === "waiting-review" || state === "integrating" ? "waiting" : state;
   const extra =
     state === "waiting-review"
       ? {
           retryAt: 1,
           attempt: { number: 1, run: "run-1", review: { decision: "unavailable", reason: "busy" } },
         }
-      : {};
+      : state === "integrating"
+        ? { attempt: { number: 1, run: "run-1", integrating: "run-2" } }
+        : {};
   await store.put("task", task.id, { ...current, phase, ...extra }, "test:phase");
   return getTask(store, task.id);
 }
