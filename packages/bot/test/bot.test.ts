@@ -5,13 +5,13 @@ import { match, readProfile, type AccessProfile } from "@operad-io/access-match"
 import { CHAT_TYPE, chatData } from "@operad-io/chat";
 import { createViews } from "@operad-io/engine";
 import {
-  ASSISTANT_SETTINGS,
-  DEFAULT_PROFILE,
-  ProfileError,
+  BOT_SETTINGS,
+  DEFAULT_BOT,
+  BotError,
   defaultAccess,
-  readProfiles,
-  resolveProfile,
-  syncProfiles,
+  readBots,
+  resolveBot,
+  syncBots,
 } from "../src/index.ts";
 import { cleanupRoots, rig, writeConfig } from "./support.ts";
 
@@ -23,39 +23,48 @@ function accessOf(value: unknown): AccessProfile {
   return read.profile;
 }
 
-describe("profiles", () => {
-  test("the default profile exists without being written, with its own directory", async () => {
+describe("bots", () => {
+  test("the default bot exists without being written, with its own directory", async () => {
     const r = await rig();
-    expect(Object.keys(readProfiles(r.home, {}))).toEqual([DEFAULT_PROFILE]);
-    const profile = resolveProfile(r.home, DEFAULT_PROFILE, {});
-    expect(profile.cwd).toBe(join(r.home, "assistant"));
+    expect(Object.keys(readBots(r.home, {}))).toEqual([DEFAULT_BOT]);
+    const bot = resolveBot(r.home, DEFAULT_BOT, {});
+    expect(bot.cwd).toBe(join(r.home, "bot"));
   });
 
-  test("another profile defaults to a directory of its own, and a written cwd wins", async () => {
+  test("another bot defaults to a directory of its own, and a written cwd wins", async () => {
     const r = await rig();
-    expect(resolveProfile(r.home, "reader", {}).cwd).toBe(join(r.home, "assistant", "reader"));
-    expect(resolveProfile(r.home, "elsewhere", { cwd: join(r.root, "work") }).cwd).toBe(join(r.root, "work"));
+    expect(resolveBot(r.home, "reader", {}).cwd).toBe(join(r.home, "bot", "reader"));
+    expect(resolveBot(r.home, "elsewhere", { cwd: join(r.root, "work") }).cwd).toBe(join(r.root, "work"));
   });
 
-  test("a working directory that is the operad home, holds it, or is inside it outside assistant is refused", async () => {
+  test("a working directory that is the operad home, holds it, or is inside it outside bot is refused", async () => {
     const r = await rig();
     for (const cwd of [r.home, r.root, join(r.home, "store"), join(r.home, "secrets")]) {
-      expect(() => resolveProfile(r.home, "bad", { cwd })).toThrow(ProfileError);
+      expect(() => resolveBot(r.home, "bad", { cwd })).toThrow(BotError);
     }
-    expect(() => resolveProfile(r.home, "ok", { cwd: join(r.home, "assistant", "notes") })).not.toThrow();
+    expect(() => resolveBot(r.home, "ok", { cwd: join(r.home, "bot", "notes") })).not.toThrow();
   });
 
-  test("a profile name that could leave the assistant directory is refused", async () => {
+  test("a bot name that could leave the bot directory is refused", async () => {
     const r = await rig();
     writeConfig(r.home, { "../escape": {} });
-    expect(() => readProfiles(r.home, {})).toThrow("a name is lowercase letters");
+    expect(() => readBots(r.home, {})).toThrow("a name is lowercase letters");
+  });
+
+  test("an `assistant` section is no longer read as the bot's settings", async () => {
+    const r = await rig();
+    writeFileSync(
+      join(r.home, "config.json"),
+      JSON.stringify({ plugins: { assistant: { settings: { bots: { ghost: {} } } } } }, null, 2),
+    );
+    expect(Object.keys(readBots(r.home, {}))).toEqual([DEFAULT_BOT]);
   });
 
   test("the settings are declared with a schema the kernel and the settings view can read", async () => {
     const r = await rig({ reader: { access: { readOnly: true } } });
-    const declared = r.registry.settingsDeclarations().find((entry) => entry.plugin === "assistant");
-    expect(declared?.schema).toEqual(ASSISTANT_SETTINGS);
-    expect(r.registry.settingsFor("assistant").profiles).toEqual({ reader: { access: { readOnly: true } } });
+    const declared = r.registry.settingsDeclarations().find((entry) => entry.plugin === "bot");
+    expect(declared?.schema).toEqual(BOT_SETTINGS);
+    expect(r.registry.settingsFor("bot").bots).toEqual({ reader: { access: { readOnly: true } } });
   });
 
   test("the schema file in the package says what the plugin's settings schema says", () => {
@@ -69,21 +78,21 @@ describe("profiles", () => {
                 .map(([key, item]) => [key, strip(item)]),
             )
           : value;
-    const file = JSON.parse(readFileSync(join(import.meta.dir, "..", "assistant.schema.json"), "utf8")) as Record<string, unknown>;
+    const file = JSON.parse(readFileSync(join(import.meta.dir, "..", "bot.schema.json"), "utf8")) as Record<string, unknown>;
     const { $schema, $id, title, description, ...schema } = file;
     expect([typeof $schema, typeof $id, typeof title, typeof description]).toEqual(["string", "string", "string", "string"]);
-    expect(schema).toEqual(strip(ASSISTANT_SETTINGS) as Record<string, unknown>);
+    expect(schema).toEqual(strip(BOT_SETTINGS) as Record<string, unknown>);
   });
 
-  test("each profile is one row in lists, the default one too, and a removed one is marked", async () => {
+  test("each bot is one row in lists, the default one too, and a removed one is marked", async () => {
     const r = await rig({ reader: {} });
     const views = createViews({ registry: r.registry, store: r.store, onLog: () => undefined });
     try {
-      const listed = await views.list("profile");
+      const listed = await views.list("bot");
       expect(listed.rows.map((row) => row.id).sort()).toEqual(["default", "reader"]);
       writeConfig(r.home, {});
-      await syncProfiles(r.store, r.home, {});
-      expect((await r.store.get("profile", "reader"))?.data.removed).toBe(true);
+      await syncBots(r.store, r.home, {});
+      expect((await r.store.get("bot", "reader"))?.data.removed).toBe(true);
     } finally {
       views.close();
     }
@@ -91,13 +100,13 @@ describe("profiles", () => {
 });
 
 describe("the default access profile", () => {
-  test("a chat of the default profile cannot read the secrets or the token, and can read its own directory", async () => {
+  test("a chat of the default bot cannot read the secrets or the token, and can read its own directory", async () => {
     const r = await rig();
     mkdirSync(join(r.home, "secrets"), { recursive: true });
     writeFileSync(join(r.home, "secrets", "token"), "t");
     writeFileSync(join(r.home, "serve.lock"), "1");
-    const cwd = join(r.home, "assistant");
-    const chat = await r.open(DEFAULT_PROFILE);
+    const cwd = join(r.home, "bot");
+    const chat = await r.open(DEFAULT_BOT);
     await r.say(chat, "hi");
     await r.reply(chat);
     const call = r.calls[0];
@@ -115,25 +124,25 @@ describe("the default access profile", () => {
     expect(match(access, { tool: "bash", input: { command: "operad dev list" }, cwd }, { home }).allow).toBe(false);
   });
 
-  test("anything new that appears in the home is denied too, but not the assistant directory", async () => {
+  test("anything new that appears in the home is denied too, but not the bot directory", async () => {
     const r = await rig();
-    mkdirSync(join(r.home, "assistant"), { recursive: true });
+    mkdirSync(join(r.home, "bot"), { recursive: true });
     writeFileSync(join(r.home, "gate.log"), "x");
     const denied = defaultAccess(r.home).denyPaths;
     expect(denied).toContain(join(r.home, "gate.log"));
-    expect(denied).not.toContain(join(r.home, "assistant"));
+    expect(denied).not.toContain(join(r.home, "bot"));
   });
 
-  test("a profile only adds to the default; it cannot loosen it", async () => {
+  test("a bot only adds to the default; it cannot loosen it", async () => {
     const r = await rig();
-    const tightened = resolveProfile(r.home, "reader", {
+    const tightened = resolveBot(r.home, "reader", {
       access: { denyPaths: ["~/notes"], readOnly: true, denyCommands: [] },
     }).access;
     const base = defaultAccess(r.home);
     expect(tightened.denyPaths).toEqual([...(base.denyPaths as string[]), "~/notes"]);
     expect(tightened.denyCommands).toEqual(base.denyCommands);
     expect(tightened.readOnly).toBe(true);
-    expect(resolveProfile(r.home, "plain", { access: { readOnly: false } }).access.readOnly).toBeUndefined();
+    expect(resolveBot(r.home, "plain", { access: { readOnly: false } }).access.readOnly).toBeUndefined();
   });
 });
 
@@ -146,7 +155,7 @@ describe("repositories", () => {
     await r.say(id, "hi");
     await r.reply(id);
     const access = accessOf(r.calls[0]?.access);
-    const cwd = join(r.home, "assistant");
+    const cwd = join(r.home, "bot");
     const home = join(r.root, "user");
     for (const call of [
       { tool: "write", input: { path: join(repository, "src", "file.ts") } },
@@ -158,23 +167,30 @@ describe("repositories", () => {
   });
 });
 
-describe("assistant:chat", () => {
-  test("opens a chat of the chat plugin with the profile as its parent", async () => {
+describe("bot:chat", () => {
+  test("opens a chat of the chat plugin with the bot as its parent", async () => {
     const r = await rig();
-    await syncProfiles(r.store, r.home, {});
-    const id = await r.open(DEFAULT_PROFILE, { title: "Morning" });
+    await syncBots(r.store, r.home, {});
+    const id = await r.open(DEFAULT_BOT, { title: "Morning" });
     const chat = chatData((await r.store.get(CHAT_TYPE, id))?.data ?? {});
-    expect(chat.parent).toBe("profile:default");
+    expect(chat.parent).toBe("bot:default");
     expect(chat.title).toBe("Morning");
-    expect(chat.cwd).toBe(join(r.home, "assistant"));
+    expect(chat.cwd).toBe(join(r.home, "bot"));
     expect(existsSync(chat.cwd)).toBe(true);
     const row = r.registry.viewsFor("chat")?.views.row((await r.store.get(CHAT_TYPE, id)) as never);
-    expect(row?.parent).toBe("profile:default");
+    expect(row?.parent).toBe("bot:default");
   });
 
-  test("the harness is the one given, else the profile's, else the first loaded; an unloaded one is refused", async () => {
+  test("the title is Bot (<name>) unless one is given", async () => {
+    const r = await rig({ reader: {} });
+    await syncBots(r.store, r.home, {});
+    const id = await r.open("reader");
+    expect((await r.store.get(CHAT_TYPE, id))?.data.title).toBe("Bot (reader)");
+  });
+
+  test("the harness is the one given, else the bot's, else the first loaded; an unloaded one is refused", async () => {
     const r = await rig({ pi: { harness: "pi" } });
-    await syncProfiles(r.store, r.home, r.registry.settingsFor("assistant"));
+    await syncBots(r.store, r.home, r.registry.settingsFor("bot"));
     const harnessOf = async (id: string) => (await r.store.get(CHAT_TYPE, id))?.data.harness;
     expect(await harnessOf(await r.open("default"))).toBe("claude");
     expect(await harnessOf(await r.open("pi"))).toBe("pi");
@@ -182,9 +198,9 @@ describe("assistant:chat", () => {
     await expect(r.open("default", { harness: "radian" })).rejects.toThrow('harness "radian" is not loaded');
   });
 
-  test("the harness stays what it was when the profile's default changes", async () => {
+  test("the harness stays what it was when the bot's default changes", async () => {
     const r = await rig({ reader: { harness: "pi" } });
-    await syncProfiles(r.store, r.home, {});
+    await syncBots(r.store, r.home, {});
     const id = await r.open("reader");
     writeConfig(r.home, { reader: { harness: "claude" } });
     await r.say(id, "hi");
@@ -193,18 +209,18 @@ describe("assistant:chat", () => {
     expect(r.calls).toHaveLength(1);
   });
 
-  test("a profile that was removed or cannot be used offers no chat", async () => {
+  test("a bot that was removed or cannot be used offers no chat", async () => {
     const r = await rig({ bad: { cwd: "/" } });
-    await syncProfiles(r.store, r.home, {});
-    expect((await r.store.get("profile", "bad"))?.data.problem).toContain("operad home");
+    await syncBots(r.store, r.home, {});
+    expect((await r.store.get("bot", "bad"))?.data.problem).toContain("operad home");
     await expect(r.open("bad")).rejects.toThrow();
   });
 });
 
-describe("a reply reads the profile again", () => {
+describe("a reply reads the bot again", () => {
   test("tightening the access profile applies to the next reply of the same chat", async () => {
     const r = await rig({ reader: {} });
-    await syncProfiles(r.store, r.home, {});
+    await syncBots(r.store, r.home, {});
     const id = await r.open("reader");
     await r.say(id, "one");
     await r.reply(id);
@@ -219,9 +235,9 @@ describe("a reply reads the profile again", () => {
     expect(access.denyPaths).toContain("~/private");
   });
 
-  test("a skill added to the profile is given at the next reply; none before", async () => {
+  test("a skill added to the bot is given at the next reply; none before", async () => {
     const r = await rig({ reader: {} });
-    await syncProfiles(r.store, r.home, {});
+    await syncBots(r.store, r.home, {});
     const id = await r.open("reader");
     await r.say(id, "one");
     await r.reply(id);
@@ -238,7 +254,7 @@ describe("a reply reads the profile again", () => {
 
   test("a skill directory without a SKILL.md fails the reply and names it", async () => {
     const r = await rig({ reader: {} });
-    await syncProfiles(r.store, r.home, {});
+    await syncBots(r.store, r.home, {});
     const id = await r.open("reader");
     writeConfig(r.home, { reader: { skills: [join(r.root, "nothing")] } });
     await r.say(id, "hi");
@@ -248,26 +264,44 @@ describe("a reply reads the profile again", () => {
     expect(r.calls).toHaveLength(0);
   });
 
-  test("a profile taken out of the settings stops answering instead of using an older copy", async () => {
+  test("a bot taken out of the settings stops answering instead of using an older copy", async () => {
     const r = await rig({ reader: {} });
-    await syncProfiles(r.store, r.home, {});
+    await syncBots(r.store, r.home, {});
     const id = await r.open("reader");
     writeConfig(r.home, {});
     await r.say(id, "hi");
     const result = await r.reply(id);
     expect(result.result).toBe("failed");
-    expect(result.data).toMatchObject({ message: 'profile "reader" is no longer in the settings' });
+    expect(result.data).toMatchObject({ message: 'bot "reader" is no longer in the settings' });
     expect(r.calls).toHaveLength(0);
   });
 
-  test("the agent gets operad's tools and works in the profile's directory, not a repository", async () => {
+  test("a bot's speaker is read again when a transcript is drawn", async () => {
+    const r = await rig({ reader: {} });
+    await syncBots(r.store, r.home, {});
+    const id = await r.open("reader");
+    await r.say(id, "hi");
+    await r.reply(id);
+    const views = createViews({ registry: r.registry, store: r.store, onLog: () => undefined });
+    try {
+      const first = await views.section(`chat:${id}`, "transcript", undefined, {});
+      expect(first.markdown).toContain("**Operad Bot**");
+      writeConfig(r.home, { reader: { speaker: "Nova" } });
+      const second = await views.section(`chat:${id}`, "transcript", undefined, {});
+      expect(second.markdown).toContain("**Nova**");
+    } finally {
+      views.close();
+    }
+  });
+
+  test("the agent gets operad's tools and works in the bot's directory, not a repository", async () => {
     const r = await rig();
-    await syncProfiles(r.store, r.home, {});
+    await syncBots(r.store, r.home, {});
     const id = await r.open("default");
     await r.say(id, "hi");
     await r.reply(id);
     expect(r.calls[0]?.params.operadTools).toEqual({ home: r.home });
-    expect(r.calls[0]?.params.cwd).toBe(join(r.home, "assistant"));
+    expect(r.calls[0]?.params.cwd).toBe(join(r.home, "bot"));
     expect(defaultAccess(r.home).denyCommands).toContain("operad");
   });
 });

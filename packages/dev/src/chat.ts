@@ -27,7 +27,7 @@ export const CHAT_HARNESSES = ["claude", "pi"] as const;
 
 /** Why radian is not offered; said up front in the action's description. */
 export const RADIAN_NOTE =
-  "radian is not offered here: it cannot stop a tool call before it starts and cannot continue a session in another directory, so it cannot keep the main clone read-only or move to a worktree; use it for an assistant chat.";
+  "radian is not offered here: it cannot stop a tool call before it starts and cannot continue a session in another directory, so it cannot keep the main clone read-only or move to a worktree; use it for a bot chat.";
 
 /** The access profile of a chat in the main clone: read-only, and no secrets. */
 export const CHAT_ACCESS: Readonly<Record<string, JsonValue>> = {

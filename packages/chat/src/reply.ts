@@ -125,20 +125,20 @@ async function liveSettings(
   const own: Live = { cwd: chat.cwd, access: chat.access, skills: chat.skills };
   if (chat.refresh === undefined) return own;
   if (ctx.stepLoaded !== undefined && !ctx.stepLoaded(chat.refresh)) {
-    return failed("profile", `"${chat.refresh}", which gives this chat's settings, is not loaded`);
+    return failed("settings", `"${chat.refresh}", which gives this chat's settings, is not loaded`);
   }
   let outcome: PluginStepResult;
   try {
     outcome = await runStep(chat.refresh, { chat: object.id }, { runId: ctx.runId, object, params: ctx.params, signal: ctx.signal });
   } catch (error) {
-    return failed("profile", messageOf(error));
+    return failed("settings", messageOf(error));
   }
   const data = isRecord(outcome.data) ? outcome.data : {};
   if (outcome.result !== "done") {
-    return failed("profile", typeof data.message === "string" ? data.message : "the chat's settings could not be read");
+    return failed("settings", typeof data.message === "string" ? data.message : "the chat's settings could not be read");
   }
   if (typeof data.cwd !== "string" || data.cwd.length === 0 || !isRecord(data.access) || !Array.isArray(data.skills)) {
-    return failed("profile", "the chat's settings came back in a shape the chat cannot use");
+    return failed("settings", "the chat's settings came back in a shape the chat cannot use");
   }
   return {
     cwd: data.cwd,

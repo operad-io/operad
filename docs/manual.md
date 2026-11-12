@@ -1362,7 +1362,7 @@ operad chat:send C-0001 --note "why does the gate fail on main?"
 operad show C-0001 --section transcript
 ```
 
-`dev:chat` offers `claude` and `pi` (the first one loaded when `--harness` is left out): they can stop a tool call before it starts, which a read-only chat needs. `radian` is refused there and stays for assistant chats.
+`dev:chat` offers `claude` and `pi` (the first one loaded when `--harness` is left out): they can stop a tool call before it starts, which a read-only chat needs. `radian` is refused there and stays for bot chats.
 
 `chat:send` records the message and sends an event (source `ios`, `telegram` or
 `cli`, key = the message id, about the chat). The plugin's own rule starts
