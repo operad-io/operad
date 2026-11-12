@@ -668,23 +668,36 @@ export async function runWorker(
     session.close();
   }
 
+  // Every way this run ends writes its Result here: text still held back as a
+  // possible secret prefix is released first (masked if it is a whole secret),
+  // so a cancelled or failed partial reply does not lose its last characters.
+  const finish = (line: WorkerResult, code: number): number => {
+    flushDelta(true);
+    io.line(line);
+    return code;
+  };
+
   if (cancelled) {
-    writeLine({
-      type: "result",
-      result: "cancelled",
-      sessionId,
-      usage: {},
-      cost: null,
-      finalMessage: null,
-      model: null,
-    });
-    return EXIT_CANCELLED;
+    return finish(
+      {
+        type: "result",
+        result: "cancelled",
+        sessionId,
+        usage: {},
+        cost: null,
+        finalMessage: null,
+        model: null,
+      },
+      EXIT_CANCELLED,
+    );
   }
 
   if (final === undefined) {
     const message = thrown ?? "claude ended without a result";
-    writeLine({ ...failure(isSessionMissing(message) ? "session_missing" : "model_error", message), sessionId });
-    return EXIT_FAILED;
+    return finish(
+      { ...failure(isSessionMissing(message) ? "session_missing" : "model_error", message), sessionId },
+      EXIT_FAILED,
+    );
   }
 
   const info = await account;
@@ -706,18 +719,19 @@ export async function runWorker(
   } as const;
 
   if (continued) {
-    writeLine({
-      ...base,
-      result: "failed",
-      reason: "model_error",
-      message:
-        "claude went on after its result: a second session started by itself (something it ran in the background finished); a run is one turn",
-    });
-    return EXIT_FAILED;
+    return finish(
+      {
+        ...base,
+        result: "failed",
+        reason: "model_error",
+        message:
+          "claude went on after its result: a second session started by itself (something it ran in the background finished); a run is one turn",
+      },
+      EXIT_FAILED,
+    );
   }
   if (final.subtype === "success" && !final.is_error) {
-    writeLine({ ...base, result: "done" });
-    return 0;
+    return finish({ ...base, result: "done" }, 0);
   }
   // An error result carries its text in `errors` (an unknown session says
   // "No conversation found with session ID: ..."); a success-shaped one in `result`.
@@ -730,14 +744,16 @@ export async function runWorker(
         ? text
         : `claude stopped: ${final.subtype}`);
   const reason: FailureReason = isSessionMissing(message) ? "session_missing" : "model_error";
-  writeLine({
-    ...base,
-    result: "failed",
-    reason,
-    message,
-    ...(modelError !== undefined ? { modelError } : {}),
-  });
-  return EXIT_FAILED;
+  return finish(
+    {
+      ...base,
+      result: "failed",
+      reason,
+      message,
+      ...(modelError !== undefined ? { modelError } : {}),
+    },
+    EXIT_FAILED,
+  );
 }
 
 /**
