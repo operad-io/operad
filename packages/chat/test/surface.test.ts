@@ -131,7 +131,7 @@ describe("the chat's views", () => {
     const stored = await r.store.get("chat", chat);
     if (stored === undefined) throw new Error("no chat");
     const row = chatViews.row(stored);
-    expect(row).toEqual({ id: chat, title: "Test", state: "open", parent: "repo:app" });
+    expect(row).toEqual({ id: chat, title: "Test", state: "open", note: "fake", parent: "repo:app" });
     expect(JSON.stringify(row)).not.toContain("secret-session");
     expect(chatViews.sections(stored)).toEqual([{ id: "transcript", title: "Transcript", live: true }]);
   });
@@ -158,7 +158,7 @@ describe("the chat's views", () => {
     const chat = await r.chat();
     const object = await r.store.get("chat", chat);
     if (object === undefined) throw new Error("no chat");
-    expect((await chatViews.load(viewContext(r), object, "transcript", {})).markdown).toBe("No messages yet.");
+    expect((await chatViews.load(viewContext(r), object, "transcript", {})).markdown).toBe("Agent: fake\n\nNo messages yet.");
   });
 
   test("the model's messages are labelled Operad Bot unless a speaker is set", async () => {
