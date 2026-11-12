@@ -679,3 +679,9 @@ the row fields.
 | T-0336-M1 | packages/engine/src/views/presentation.ts | `Views.answer` returned before recording the answer, so the choice was dropped | `actions against the in-process server > a pending question whose choices are not actions offers them and answers` |
 | T-0336-M2 | packages/engine/src/views/presentation.ts | `Views.answer` skipped the action path for a wait whose choices are actions, so its note was not required and its object update was lost | `http server > answers a wait whose choices are actions through the action, keeping its note` |
 | T-0336-M4 | packages/engine/src/views/presentation.ts | `Views.answer` hard-coded `yes: false`, so a confirmed action choice could never be answered | `answering a dev wait through /v1/answer > merge asks for confirmation, then confirmed runs the merge action` |
+
+## T-0352 — `list --json` no longer waits for the write lock
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0352-M1 | packages/engine/src/plugin/sqlite-store.ts | `declare` wrote the declaration on every call again (the old code), so a command that only reads waited out the busy timeout while another process held the write lock and failed with "database is locked" | `declaring an object type > a declaration the store already holds takes no write lock` |

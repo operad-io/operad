@@ -317,6 +317,9 @@ async function runFlow(
       storeRoot,
       async () => {
         const running = await cli(["running", "--json"]);
+        if (running.code !== 0 || running.out.length === 0) {
+          throw new Error(`running failed (code ${running.code}): ${running.err}`);
+        }
         return (JSON.parse(running.out) as unknown[]).length === 0;
       },
       "the run to finish cleanup",
