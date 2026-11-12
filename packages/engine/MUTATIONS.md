@@ -671,7 +671,7 @@ the row fields.
 
 | id | file | mutation | failing test |
 |---|---|---|---|
-| T-0350-M1 | packages/engine/src/platform/sqlite-open.ts | `writeImmediate` rethrew every SQLITE_BUSY instead of retrying while another connection committed | `store lifecycle and concurrency > a writer waits out a busy store while another connection keeps committing, and fails when none does` |
+| T-0350-M1 | packages/engine/src/platform/sqlite-open.ts | `writeImmediate` rethrew every SQLITE_BUSY instead of retrying while another connection committed | `store lifecycle and concurrency > a writer waits out a busy store while another process keeps committing, and fails when none does` |
 ## T-0336 — a pending question is answered by its wait id
 
 | id | file | mutation | failing test |

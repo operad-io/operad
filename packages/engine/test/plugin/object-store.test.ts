@@ -275,7 +275,7 @@ describe("store lifecycle and concurrency", () => {
     );
   });
 
-  test("a writer waits out a busy store while another connection keeps committing, and fails when none does", async () => {
+  test("a writer waits out a busy store while another process keeps committing, and fails when none does", async () => {
     const root = join(await tempRoot(), "store");
     mkdirSync(root, { recursive: true });
     const file = join(root, "plugins.sqlite");
