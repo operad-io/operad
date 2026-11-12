@@ -7,6 +7,7 @@
  * the lock files so separate processes agree on it.
  */
 
+import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { StepContext } from "@operad-io/engine";
 import { taskPlaceWait } from "./place-wait.ts";
@@ -109,6 +110,49 @@ function repositoryKey(repository: RepositoryPlaces): string {
   return `repo-${name}-${hash.slice(0, 8)}`;
 }
 
+/**
+ * Records who last took a place, so a verify can still say it was passed over
+ * after the integration has left the wait order and only its lock is left.
+ */
+function recordGrant(
+  directory: string,
+  prefix: string,
+  index: number,
+  kind: CheckKind,
+  at: number,
+): void {
+  try {
+    writeFileSync(join(directory, `${prefix}-${index}.grant`), `${kind}\n${at}\n`);
+  } catch {
+    // The log line is a courtesy; a check that cannot record it still runs.
+  }
+}
+
+/** Whether an integration took a place of this pool since `since`. */
+function integrationGrantedSince(
+  directory: string,
+  prefix: string,
+  since: number,
+): boolean {
+  let names: string[];
+  try {
+    names = readdirSync(directory);
+  } catch {
+    return false;
+  }
+  for (const name of names) {
+    if (!name.startsWith(`${prefix}-`) || !name.endsWith(".grant")) continue;
+    try {
+      const [kind, at] = readFileSync(join(directory, name), "utf8").split("\n");
+      const when = Number(at);
+      if (kind === "integration" && Number.isFinite(when) && when >= since) return true;
+    } catch {
+      // A marker that cannot be read says nothing.
+    }
+  }
+  return false;
+}
+
 /** Takes one free place of a pool and runs `work`, or throws `PlaceBusy` at once. */
 async function takeOne<T>(
   directory: string,
@@ -117,6 +161,8 @@ async function takeOne<T>(
   pool: "home" | "repository",
   entry: WaitEntry | undefined,
   now: number,
+  kind: CheckKind,
+  at: () => number,
   work: () => Promise<T> | T,
 ): Promise<T> {
   // A place is free for this check only when no earlier check still waits.
@@ -133,6 +179,7 @@ async function takeOne<T>(
           // lock. Give the place back instead of passing that check over.
           const late = entry?.ahead(now) ?? 0;
           if (late > 0) throw new PlaceAhead(pool, late);
+          recordGrant(directory, prefix, index, kind, at());
           return work();
         },
         {
@@ -208,6 +255,8 @@ export async function withCheckPlace<T>(
             "repository",
             repositoryEntry,
             clock(),
+            kind,
+            clock,
             started,
           );
   let said: string | undefined;
@@ -222,7 +271,17 @@ export async function withCheckPlace<T>(
           throw new PlaceBusy("repository", 0, repositoryEntry?.ahead(now) ?? 0);
         }
         homeEntry ??= WaitEntry.join(directory, "home", since, kind);
-        return await takeOne(directory, "place", places.checks, "home", homeEntry, now, inner);
+        return await takeOne(
+          directory,
+          "place",
+          places.checks,
+          "home",
+          homeEntry,
+          now,
+          kind,
+          clock,
+          inner,
+        );
       } catch (error) {
         if (!(error instanceof PlaceBusy)) throw error;
         if (error.pool === "repository") {
@@ -231,14 +290,20 @@ export async function withCheckPlace<T>(
         }
         const waitEntry = error.pool === "repository" ? repositoryEntry : homeEntry;
         const ahead = waitEntry?.ahead(now) ?? error.ahead;
+        const prefix =
+          error.pool === "repository" && repository !== undefined
+            ? repositoryKey(repository)
+            : "place";
         entry =
           error.pool === "repository" && repository !== undefined
-            ? `${repositoryKey(repository)}-1.lock`
+            ? `${prefix}-1.lock`
             : "place-1.lock";
         const of =
           error.pool === "home" || repository === undefined ? "" : ` of ${repository.name}`;
         const passedOver =
-          kind === "verify" && (waitEntry?.integrationsAhead(now) ?? 0) > 0;
+          kind === "verify" &&
+          ((waitEntry?.integrationsAhead(now) ?? 0) > 0 ||
+            integrationGrantedSince(directory, prefix, since));
         const line = passedOver
           ? `waiting for a check place${of}: passed over for an integration check`
           : error.ahead > 0

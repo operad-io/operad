@@ -665,6 +665,38 @@ describe("check places are served in the order checks began to wait", () => {
     expect(waiters(home)).toEqual([]);
   });
 
+  test("a verify says it was passed over when the integration leaves the wait order before the next look", async () => {
+    const home = await osTempRoot();
+    const holder = await holdPlace(home);
+    const started: string[] = [];
+    const verify = waiter(home, "verify", 1, started);
+    await verify.watcher.seen("waiting for a check place");
+    const integration = waiter(home, "integration", 2, started, { kind: "integration" });
+    await integration.watcher.seen("waiting for a check place");
+
+    await holder.release();
+    // The integration takes the place and removes its wait entry.
+    integration.rings.ring();
+    await until(() => started.length === 1);
+    expect(started).toEqual(["integration"]);
+    // Only the integration's lock is left; the verify must still say why it waits.
+    verify.rings.ring();
+    await until(() => verify.orders.length > 1);
+    integration.gate.resolve();
+    await integration.done;
+    verify.rings.ring();
+    await until(() => started.length === 2);
+    expect(started).toEqual(["integration", "verify"]);
+    verify.gate.resolve();
+    await verify.done;
+    expect(
+      verify.watcher.lines.some((line) =>
+        line.includes("passed over for an integration check"),
+      ),
+    ).toBe(true);
+    expect(waiters(home)).toEqual([]);
+  });
+
   test("a verify that has waited longer than the limit takes the next place before an integration", async () => {
     const home = await osTempRoot();
     const now = { value: 1_000_000 };
