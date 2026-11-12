@@ -760,6 +760,8 @@ export interface ActionArgsSchema extends ActionArgSchema {
 /** What an action's checks may read: the object store, never write. */
 export interface ActionEnv {
   readonly store: ObjectStore;
+  /** The harness plugins loaded now; the kernel always sets it. */
+  readonly harnesses?: readonly string[] | undefined;
 }
 
 /** An action a plugin offers on an object type. */
@@ -768,6 +770,12 @@ export interface ActionTypeDefinition {
   readonly on: string;
   /** The person's input, as a JSON Schema object. */
   readonly args?: ActionArgsSchema | undefined;
+  /**
+   * The person's input for this object right now, when it depends on what is
+   * loaded; it is computed each time the action is offered and checked, and
+   * replaces `args` (which stays the static form for help).
+   */
+  readonly argsFor?: ((object: RunObject, env: ActionEnv) => ActionArgsSchema) | undefined;
   /** The action asks for confirmation before it runs. */
   readonly confirm?: boolean | undefined;
   /**

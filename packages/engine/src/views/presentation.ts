@@ -1277,7 +1277,7 @@ export class Views {
         ? resolved.id
         : this.guardedRow(owner.plugin, resolved.type, object).id;
     const target = this.resolveAction(name, resolved.type, subject);
-    const env = { store: this.store };
+    const env = this.registry.actionEnv();
 
     // A result that is already true is not an error: the plugin says so and
     // nothing runs.
@@ -1341,7 +1341,7 @@ export class Views {
     let personArgs: Record<string, unknown>;
     try {
       personArgs = validateActionArgs(
-        target.action.args,
+        target.action.argsFor?.(object, env) ?? target.action.args,
         args,
         `action "${target.info.name}"`,
       );
@@ -1517,6 +1517,7 @@ export class Views {
   ): Promise<readonly ViewAction[]> {
     const keys = new Map(this.registry.keyBindings().map((item) => [item.name, item.key]));
     const actions: (ViewAction & { readonly rank: number })[] = [];
+    const env = this.registry.actionEnv();
     for (const info of this.registry.actions()) {
       if (info.on !== type) continue;
       const action = this.registry.actionDefinition(
@@ -1527,7 +1528,7 @@ export class Views {
       if (action === undefined) continue;
       let holds: unknown;
       try {
-        holds = await action.when(object.data, { store: this.store });
+        holds = await action.when(object.data, env);
       } catch (error) {
         this.onLog(
           `plugin "${info.plugin}": action "${info.action}": when failed: ${messageOf(error)}`,
@@ -1536,8 +1537,10 @@ export class Views {
       }
       if (holds !== true) continue;
       const key = keys.get(info.name);
+      const args = action.argsFor?.(object, env) ?? info.args;
       actions.push({
         ...info,
+        ...(args === undefined ? {} : { args }),
         ...(key === undefined ? {} : { key }),
         rank: rankOf(action, object.data),
       });
@@ -2149,7 +2152,7 @@ export class Views {
     subject: string,
   ): Promise<string> {
     try {
-      const why = await target.action.why?.(object, { store: this.store });
+      const why = await target.action.why?.(object, this.registry.actionEnv());
       if (why !== undefined && why.length > 0) return why;
     } catch (error) {
       this.onLog(`action "${target.info.name}": why failed: ${messageOf(error)}`);
