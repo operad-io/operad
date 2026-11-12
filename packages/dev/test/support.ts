@@ -5,6 +5,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { GIT_TIMEOUT_MS, GitTimeoutError } from "../src/git.ts";
 import { SqlitePluginStore } from "@operad-io/engine";
 import { openWaitHandleCount as openLockHandleCount } from "@operad-io/engine/platform";
 
@@ -46,7 +47,12 @@ function git(cwd: string, args: readonly string[]): void {
     cmd: ["git", "-C", cwd, ...args],
     stdout: "pipe",
     stderr: "pipe",
+    timeout: GIT_TIMEOUT_MS,
+    killSignal: "SIGKILL",
   });
+  if (result.exitedDueToTimeout === true) {
+    throw new GitTimeoutError(cwd, args, GIT_TIMEOUT_MS);
+  }
   if (result.exitCode !== 0) {
     throw new Error(`git ${args.join(" ")}: ${result.stderr.toString()}`);
   }
