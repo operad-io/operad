@@ -17,13 +17,9 @@ import { messageOf } from "../plugin/errors.ts";
 import type { StepEvent, TriggerView } from "../trigger/types.ts";
 import { Worker } from "node:worker_threads";
 import { KILL_GRACE_MS, REAP_ROUNDS, systemClock, type Clock } from "../platform/index.ts";
-import { LockHeldError } from "./errors.ts";
 import {
   acquireLock,
-  pidAlive,
-  readLockPid,
   runLockPath,
-  storeMoveLockPath,
   type LockHandle,
 } from "./lock.ts";
 import { AskHost, type AskTimer } from "./ask.ts";
@@ -361,17 +357,6 @@ export class Runner {
       lock = acquireLock(runLockPath(this.lockRoot, this.runId), {
         clock: this.clock,
       });
-      // The store is being copied or switched: this run would write to a store
-      // the copy has already read. The check comes after the lock, so the copy
-      // sees this lock or this run sees the copy.
-      const moving = readLockPid(storeMoveLockPath(this.lockRoot));
-      if (moving !== undefined && pidAlive(moving)) {
-        lock.release();
-        throw new LockHeldError(
-          storeMoveLockPath(this.lockRoot),
-          "the store is being copied; try again when it is done",
-        );
-      }
     }
     const given = this.signal;
     const watch = this.watchForEnd();

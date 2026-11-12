@@ -3,7 +3,6 @@
 import { Database } from "bun:sqlite";
 import { existsSync, mkdirSync } from "node:fs";
 import { enableWal, setBusyTimeout } from "../platform/index.ts";
-import { assertStoreNotMoving } from "../runner/lock.ts";
 import { dirname, join } from "node:path";
 import {
   followsChanges,
@@ -161,7 +160,6 @@ export class SqlitePluginStore implements PluginStore {
   }
 
   declare(type: string, index: readonly string[]): void {
-    assertStoreNotMoving(dirname(this.location.file ?? this.root));
     this.db
       .query("INSERT OR IGNORE INTO declared_types (type) VALUES (?)")
       .run(type);
@@ -186,7 +184,6 @@ export class SqlitePluginStore implements PluginStore {
       at: this.clock(),
     };
     this.db.transaction(() => {
-      assertStoreNotMoving(dirname(this.location.file ?? this.root));
       this.db
         .query(
           `INSERT INTO objects (type, id, data, version, cause, at)
@@ -405,7 +402,6 @@ export class SqlitePluginStore implements PluginStore {
   append(input: StoreFactInput): PluginFact {
     return this.db
       .transaction(() => {
-        assertStoreNotMoving(dirname(this.location.file ?? this.root));
         return this.insertFact(input);
       })
       .immediate();
