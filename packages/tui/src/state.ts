@@ -687,7 +687,7 @@ export type TuiStateEvent =
   | {
       readonly type: "action-done";
       readonly notice?: string | undefined;
-      /** The object the action created, as `type:id`; its page opens. */
+      /** The object the action created, as "<type>:<id>"; its page opens. */
       readonly opens?: string | undefined;
     }
   /** The server refused the action; the message shows as the line, the status does not. */
@@ -1374,7 +1374,7 @@ function openObject(state: TuiState): TuiState {
   };
 }
 
-/** Opens the page of an object an action created, named `type:id`. */
+/** Opens the page of an object an action created, named "<type>:<id>". */
 function openNamed(state: TuiState, id: string): TuiState {
   const colon = id.indexOf(":");
   if (colon <= 0 || colon === id.length - 1) return state;
