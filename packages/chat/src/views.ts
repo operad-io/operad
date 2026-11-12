@@ -9,7 +9,7 @@ import type {
   ViewContext,
   ViewSection,
 } from "@operad-io/engine";
-import { chatData, chatRef, MESSAGE_FACT, type Message } from "./model.ts";
+import { agentLine, chatData, chatRef, MESSAGE_FACT, modelAndCost, type Message } from "./model.ts";
 
 /** How many facts of a chat one page of the transcript reads. */
 export const TRANSCRIPT_PAGE = 50;
@@ -26,6 +26,7 @@ function row(object: StoredObject): ObjectRow {
     id: object.id,
     title: chat.title.length > 0 ? chat.title : object.id,
     state: chat.closed ? "closed" : "open",
+    ...(chat.harness.length > 0 ? { note: agentLine(chat) } : {}),
     ...(chat.closed ? { final: true } : {}),
     ...(typeof chat.parent === "string" && chat.parent.length > 0 ? { parent: chat.parent } : {}),
   };
@@ -43,7 +44,9 @@ function minute(at: number): string {
 export function messageMarkdown(message: Message, speaker: string = DEFAULT_SPEAKER): string {
   const who = message.role === "assistant" ? speaker : "you";
   const via = message.role === "user" && message.source.kind.length > 0 ? ` via ${message.source.kind}` : "";
-  return `**${who}**${via} · ${minute(message.at)}\n\n${message.text}`;
+  const used = message.role === "assistant" ? modelAndCost(message.model, message.costMicros, message.costQuality) : [];
+  const under = used.length > 0 ? `\n\n*${used.join(" · ")}*` : "";
+  return `**${who}**${via} · ${minute(message.at)}\n\n${message.text}${under}`;
 }
 
 /**
@@ -90,6 +93,11 @@ function messageFrom(fact: {
       kind: typeof source.kind === "string" ? source.kind : "",
       ref: typeof source.ref === "string" ? source.ref : null,
     },
+    ...(typeof data.model === "string" && data.model.length > 0 ? { model: data.model } : {}),
+    ...(typeof data.costMicros === "number" && Number.isFinite(data.costMicros) ? { costMicros: data.costMicros } : {}),
+    ...(data.costQuality === "exact" || data.costQuality === "estimated" || data.costQuality === "incomplete"
+      ? { costQuality: data.costQuality }
+      : {}),
     at: fact.at,
     sequence: fact.sequence,
   };
@@ -114,7 +122,12 @@ async function load(
     const message = messageFrom(fact);
     if (message !== undefined) blocks.push(messageMarkdown(message, speaker));
   }
-  const markdown = blocks.length === 0 && options.cursor === undefined ? "No messages yet." : blocks.join("\n\n---\n\n");
+  const body = blocks.length === 0 && options.cursor === undefined ? "No messages yet." : blocks.join("\n\n---\n\n");
+  // Every page says which agent answers, as the row does.
+  const chat = chatData(object.data);
+  const markdown = chat.harness.length > 0
+    ? `Agent: ${agentLine(chat)}\n\n${body}`
+    : body;
 
   // The table of contents: the cursor each page starts at, the first one without.
   const pages: SectionPage[] = [{ label: "Page 1" }];

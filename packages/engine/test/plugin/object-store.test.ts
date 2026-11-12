@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
+import { Database } from "bun:sqlite";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -10,6 +11,7 @@ import {
   type PluginStore,
   type PluginStoreBackend,
 } from "../../src/index.ts";
+import { type ImmediateWriter, writeImmediate } from "../../src/platform/index.ts";
 import { waitForFile } from "../wait-for-file.ts";
 import { cleanupTempRoots, tempRoot } from "./support.ts";
 
@@ -258,7 +260,10 @@ describe("store lifecycle and concurrency", () => {
     ]);
     writeFileSync(join(root, "go"), "");
     const exits = await Promise.all(children.map((child) => child.exited));
-    expect(exits).toEqual([0, 0]);
+    const errors = await Promise.all(
+      children.map((child) => new Response(child.stderr).text()),
+    );
+    expect({ exits, errors }).toEqual({ exits: [0, 0], errors: ["", ""] });
 
     const store = new SqlitePluginStore({ root });
     const sequences = store
@@ -268,6 +273,57 @@ describe("store lifecycle and concurrency", () => {
     expect(sequences).toEqual(
       Array.from({ length: 200 }, (_value, index) => index + 1),
     );
+  });
+
+  test("a writer waits out a busy store while another process keeps committing, and fails when none does", async () => {
+    const root = join(await tempRoot(), "store");
+    mkdirSync(root, { recursive: true });
+    const file = join(root, "plugins.sqlite");
+    const store = new SqlitePluginStore({ root, follow: false });
+    try {
+      // A holder that never commits: the wait ends in SQLITE_BUSY.
+      const holder = new Database(file);
+      holder.run("PRAGMA busy_timeout = 1");
+      holder.run("BEGIN IMMEDIATE");
+      const quick = new Database(file);
+      quick.run("PRAGMA busy_timeout = 1");
+      expect(() => writeImmediate(quick, () => undefined)).toThrow(
+        /database is locked/,
+      );
+      holder.run("ROLLBACK");
+      holder.close();
+      quick.close();
+    } finally {
+      store.close();
+    }
+
+    // A writer whose first three attempts end in SQLITE_BUSY while another
+    // connection commits each time: it keeps waiting and then writes.
+    let version = 1;
+    let busyLeft = 3;
+    let written = 0;
+    const waiting: ImmediateWriter = {
+      query: () => ({ get: () => ({ data_version: version }) }),
+      transaction: (work) => ({
+        immediate: () => {
+          if (busyLeft > 0) {
+            busyLeft -= 1;
+            version += 1;
+            throw Object.assign(new Error("database is locked"), {
+              code: "SQLITE_BUSY",
+            });
+          }
+          return work();
+        },
+      }),
+    };
+    expect(
+      writeImmediate(waiting, () => {
+        written += 1;
+        return "done";
+      }),
+    ).toBe("done");
+    expect(written).toBe(1);
   });
 });
 

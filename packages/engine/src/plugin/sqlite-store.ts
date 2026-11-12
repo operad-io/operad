@@ -2,7 +2,7 @@
 
 import { Database } from "bun:sqlite";
 import { existsSync, mkdirSync } from "node:fs";
-import { enableWal, setBusyTimeout } from "../platform/index.ts";
+import { enableWal, setBusyTimeout, writeImmediate } from "../platform/index.ts";
 import { dirname, join } from "node:path";
 import {
   followsChanges,
@@ -183,7 +183,7 @@ export class SqlitePluginStore implements PluginStore {
       cause,
       at: this.clock(),
     };
-    this.db.transaction(() => {
+    writeImmediate(this.db, () => {
       this.db
         .query(
           `INSERT INTO objects (type, id, data, version, cause, at)
@@ -203,7 +203,7 @@ export class SqlitePluginStore implements PluginStore {
           object.at,
         );
       this.insertFact({ type, object: { type, id }, data, cause });
-    }).immediate();
+    });
     return object;
   }
 
@@ -400,11 +400,7 @@ export class SqlitePluginStore implements PluginStore {
   }
 
   append(input: StoreFactInput): PluginFact {
-    return this.db
-      .transaction(() => {
-        return this.insertFact(input);
-      })
-      .immediate();
+    return writeImmediate(this.db, () => this.insertFact(input));
   }
 
   private insertFact(input: StoreFactInput): PluginFact {
