@@ -1,6 +1,6 @@
 # operad-conversation：chat，从仓库或 bot 发起的长对话
 
-- 状态：decided（方向与形状；2026-11-09 owner 定了两种 chat、harness 冻结、新建入口、MCP 工具、名词 chat；流式与附件未定）
+- 状态：decided（方向与形状；2026-11-09 owner 定了两种 chat、harness 冻结、新建入口、MCP 工具、名词 chat；流式未定；2026-11-12 定了附件和模型）
 - 涉及 ADR：0024、0018、0022、0049
 - 涉及：`operad.md` 决定 12–17；`operad-presentation.md`；`operad-channels.md` 决定 7–15；`operad-harness.md`；`operad-sandbox.md`；`operad-bot.md`；`operad-dev-flows.md` 决定 4
 - 来源：owner 的使用场景；OpenClaw（聊天优先的个人助理）；2026-11-09 的讨论
@@ -35,6 +35,8 @@ OpenClaw 是聊天优先，operad 到现在是流程优先。第一个要满足�
 17. **chat 可以关闭**（2026-11-11 owner 定）：chat 上的动作 `chat:close`（先确认）把一条 `chat.closed` 事实记进历史，行显示 `closed`，之后 `chat:send` 被拒并说 chat 已关闭，其他动作也不再出现；transcript 仍可读。chat 的列表过滤器是 `open`（默认）和 `closed`（内核在 `open` 后加 `all`），所以列表默认不显示已关闭的 chat。
 18. **第一次发送才建 chat，新建只从 chat 的入口进**（2026-11-12 owner 定，照 iOS 设计稿 2026-11-11）：客户端的新建先选父对象（bot 或 repo）和 harness，进一个还没有 chat 的空聊天页；第一条消息发出时才建 chat，所以只点开不说话不会留下空 chat。新建 chat 的动作（`dev:chat`、`bot:chat`）因此可以带上第一条消息，一个动作里建 chat 并发出这条消息；标题没给时取第一条消息的开头。这类动作声明它新建的是 chat（`operad-presentation.md` 决定 13），客户端只把它放在 chat 的新建入口里，repo 页和 bot 页上不再有 Chat 按钮。命令行照旧可以 `dev:chat` 不带消息。
 19. **用户看到的是 agent，不是 harness**（2026-11-12 owner 定，起因是 iOS 新建 chat 表单上的 HARNESS 一栏）：新建 chat 时选的那一项对用户叫 agent：`dev:chat`、`bot:chat` 的参数名是 `agent`（命令行 `--agent`），说明文字也说 agent；可选值仍是 harness 插件的名字（claude、pi、radian）。harness 留作内部和插件作者的词（插件类型、`.operad/dev.json` 的 worker 配置、代码），不出现在 chat 的界面上。`agent` 是 owner 批准的用户词。
+20. **chat 显示用的是哪个 agent，模型可以随时换**（2026-11-12 owner 定）：chat 的行和页面写明 agent（claude、pi、radian），知道时也写模型和累计费用。模型是 chat 的一个设置：新建时默认用这个 agent 配好的模型，聊天中途可以换，下一次回复生效；agent 选定后不换（决定 13），模型不受这个限制。可选的模型由各 harness 插件列出，客户端不写死。用户看到的词是 model（owner 同日同意这个提议）。
+21. **附件**（2026-11-12 owner 定，回答待决 2）：照片、相机、文件经客户端 API 上传到 operad，存在这个 chat 自己的附件目录里（operad 家目录下，不在仓库或 bot 的工作目录里），单个文件上限 20 MB；消息的事实记下附件的路径（决定 1 本来就有附件路径）。回复时交给 agent：claude 和 pi 能直接看的图片作为图片给，其他文件给路径让 agent 自己读；agent 的访问档只多放开这个 chat 的附件目录，只读。上传是客户端 API 的通用能力（一个动作的参数可以是上传的文件），不是 chat 专用的接口。
 
 ## 顺序
 
@@ -43,7 +45,7 @@ HTTP 接口（决定 10）和 app 换后端（决定 11）已完成。剩下按�
 ## 待决问题（未定）
 
 1. 逐 token 流：harness 的事件流（ACP `session/update`、SDK `includePartialMessages`）由 `operad serve` 转成带游标的 live 段，还是另开一条流。
-2. 附件（图片、文件）怎么进消息、存哪、怎么给 harness。
+2. （已定，见决定 21。）附件（图片、文件）怎么进消息、存哪、怎么给 harness。
 3. chat 的归档和删除；记录保留多久。
 4. 仓库 chat 开出的 worktree 怎么变成 task：task 的第一次尝试直接用这个 worktree，还是 task 新开 worktree 再 cherry-pick；worktree 没变成 task 就被遗忘时谁清理。
 5. 一个 chat 的 harness 会话随天数变大，每轮续接都带全量上下文；压缩是 harness 的事，但 chat 比 task 更早撞到费用，要不要在对象上显示累计费用并给一个"从这里重新开始"的动作。
