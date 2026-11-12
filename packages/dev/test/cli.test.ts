@@ -203,12 +203,12 @@ describe("operad with the dev plugin", () => {
 
     const listed = await runReal(home, repository, ["list", "task"]);
     expect(listed.code).toBe(0);
-    expect(listed.out).toContain(`${taskId}  proposed  First task`);
+    expect(listed.out).toContain(`${taskId}  proposed  #0  First task`);
 
     const planShown = await runReal(home, repository, ["show", planId]);
     expect(planShown.code).toBe(0);
     const planLines = planShown.out.split("\n");
-    const rowAt = planLines.findIndex((line) => line.includes(`${taskId}  proposed  First task`));
+    const rowAt = planLines.findIndex((line) => line.includes(`${taskId}  proposed  #0  First task`));
     const sectionsAt = planLines.findIndex((line) => line.startsWith("sections:"));
     expect(rowAt).toBeGreaterThan(0);
     expect(rowAt).toBeLessThan(sectionsAt);
@@ -227,7 +227,7 @@ describe("operad with the dev plugin", () => {
     const confirmed = await runReal(home, repository, ["dev:confirm", planId]);
     expect(confirmed.code).toBe(0);
     const ready = await runReal(home, repository, ["list", "task"]);
-    expect(ready.out).toContain(`${taskId}  ready  First task`);
+    expect(ready.out).toContain(`${taskId}  ready  #0  First task`);
 
     const second = await runReal(home, repository, ["dev:confirm", planId]);
     expect(second.code).toBe(0);
@@ -323,7 +323,7 @@ describe("operad with the dev plugin", () => {
 
     const shown = await run(home, repository, ["show", "TK0001-old"]);
     expect(shown.code).toBe(0);
-    expect(shown.out).toContain("TK0001-old  proposed  Old task");
+    expect(shown.out).toContain("TK0001-old  proposed  #0  Old task");
     expect(shown.out).not.toContain("Other old task");
 
     const confirmed = await run(home, repository, [
@@ -332,7 +332,7 @@ describe("operad with the dev plugin", () => {
     ]);
     expect(confirmed.code).toBe(0);
     const ready = await run(home, repository, ["show", "TK0001-old"]);
-    expect(ready.out).toContain("TK0001-old  ready  Old task");
+    expect(ready.out).toContain("TK0001-old  ready  #0  Old task");
 
     const fuzzy = await run(home, repository, ["show", "T-0001-old"]);
     // An id is matched exactly: the other form of it is a different id, and
@@ -1085,9 +1085,9 @@ describe("operad with the dev plugin", () => {
     ]);
     expect(confirmed.code).toBe(0);
     const shownA = await run(home, repository, ["show", "T-0001-work"]);
-    expect(shownA.out).toContain("T-0001-work  ready  A task");
+    expect(shownA.out).toContain("T-0001-work  ready  #0  A task");
     const shownB = await run(home, other, ["show", "T-0001-work"]);
-    expect(shownB.out).toContain("T-0001-work  proposed  B task");
+    expect(shownB.out).toContain("T-0001-work  proposed  #0  B task");
 
     const ambiguous = await run(home, home, ["show", "T-0001-work"]);
     expect(ambiguous.code).toBe(2);
@@ -1159,17 +1159,28 @@ describe("operad with the dev plugin", () => {
     ).toBe(0);
 
     const listed = await run(home, repository, ["list", "plan"]);
-    expect(listed.out).toContain("merge · P1");
+    const listLine = listed.out.split("\n")[0] ?? "";
+    // The badge follows the state and the note no longer repeats the level.
+    expect(listLine).toContain("confirmed  merge  Work");
+    expect(listLine.match(/merge/g)).toHaveLength(1);
+    expect(listLine).toContain("P1 //");
     const shown = await run(home, repository, ["show", planId]);
-    expect(shown.out).toContain("merge · P1");
+    const showLine = shown.out.split("\n")[0] ?? "";
+    expect(showLine).toContain(`${planId}  confirmed  merge  Work`);
+    expect(showLine.match(/merge/g)).toHaveLength(1);
+    expect(showLine).toContain("P1 //");
     const json = JSON.parse(
       (await run(home, repository, ["show", planId, "--json"])).out,
-    ) as { row: { note: string } };
-    expect(json.row.note).toContain("merge · P1");
+    ) as { row: { note: string; badge: string } };
+    expect(json.row.note).toContain("P1 //");
+    expect(json.row.note).not.toContain("merge");
+    expect(json.row.badge).toBe("merge");
     const listJson = JSON.parse(
       (await run(home, repository, ["list", "plan", "--json"])).out,
-    ) as { rows: { note: string }[] };
-    expect(listJson.rows[0]?.note).toContain("merge · P1");
+    ) as { rows: { note: string; badge: string }[] };
+    expect(listJson.rows[0]?.note).toContain("P1 //");
+    expect(listJson.rows[0]?.note).not.toContain("merge");
+    expect(listJson.rows[0]?.badge).toBe("merge");
 
     const history = await run(home, repository, [
       "show",

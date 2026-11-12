@@ -74,7 +74,7 @@ describe("dev views", () => {
       id: "P-0001-storage",
       title: "Storage",
       state: "draft",
-      note: "0/1 · off · P3 // 1",
+      note: "0/1 · P3 // 1",
       scope: "repository",
       final: false,
       mark: "proposed",
@@ -83,7 +83,7 @@ describe("dev views", () => {
     });
     await setTaskPhase(store, task.id, "merged");
     expect(planViews.row(await getPlan(store, plan.id)).note).toBe(
-      "1/1 · off · P3 // 1",
+      "1/1 · P3 // 1",
     );
     // A confirmed plan whose tasks are all merged is finished, which is final;
     // a cancelled plan is final too.
@@ -788,7 +788,7 @@ describe("dev views", () => {
     const { store, plan, task } = await setup();
     const second = await addTask(store, { plan: plan.id, slug: "two", title: "Two", brief: "# Brief\n\nx" });
     const note = async () => planViews.row(await getPlan(store, plan.id)).note;
-    expect(await note()).toBe("0/2 · off · P3 // 1");
+    expect(await note()).toBe("0/2 · P3 // 1");
     const { putTaskKeepingPlanCost } = await import("../src/service.ts");
     const put = async (id: string, cost: number, q: "exact" | "estimated" | "incomplete" | undefined) => {
       const current = taskData((await getTask(store, id)).data);
@@ -796,16 +796,16 @@ describe("dev views", () => {
       await putTaskKeepingPlanCost(store, id, { ...rest, cost, ...(q === undefined ? {} : { costQuality: q }) }, "test:cost");
     };
     await put(task.id, 1.1, "exact");
-    expect(await note()).toBe("0/2 · $1.10 · off · P3 // 1");
+    expect(await note()).toBe("0/2 · $1.10 · P3 // 1");
     await put(second.id, 0.2, undefined);
-    expect(await note()).toBe("0/2 · ~$1.30 · off · P3 // 1");
+    expect(await note()).toBe("0/2 · ~$1.30 · P3 // 1");
     await put(second.id, 0.1, "incomplete");
-    expect(await note()).toBe("0/2 · ≥$1.20 · off · P3 // 1");
+    expect(await note()).toBe("0/2 · ≥$1.20 · P3 // 1");
     // A rework round raises the first task's cost: the total moves by the difference.
     await put(task.id, 1.6, "exact");
-    expect(await note()).toBe("0/2 · ≥$1.70 · off · P3 // 1");
+    expect(await note()).toBe("0/2 · ≥$1.70 · P3 // 1");
     await put(second.id, 0.1, "exact");
-    expect(await note()).toBe("0/2 · $1.70 · off · P3 // 1");
+    expect(await note()).toBe("0/2 · $1.70 · P3 // 1");
   });
 
   test("a refresh heals a plan total that drifted, and a malformed total shows no cost", async () => {
@@ -817,10 +817,10 @@ describe("dev views", () => {
     await store.put("plan", plan.id, { ...current, costTotals: { ...current.costTotals, exactMicros: 5 } }, "test:drift");
     const { refreshPlanCounts } = await import("../src/service.ts");
     await refreshPlanCounts(store, await getPlan(store, plan.id));
-    expect(planViews.row(await getPlan(store, plan.id)).note).toBe("0/1 · $2.00 · off · P3 // 1");
+    expect(planViews.row(await getPlan(store, plan.id)).note).toBe("0/1 · $2.00 · P3 // 1");
     const broken = planData((await getPlan(store, plan.id)).data);
     await store.put("plan", plan.id, { ...broken, costTotals: { exactTasks: 1 } }, "test:broken");
-    expect(planViews.row(await getPlan(store, plan.id)).note).toBe("0/1 · off · P3 // 1");
+    expect(planViews.row(await getPlan(store, plan.id)).note).toBe("0/1 · P3 // 1");
   });
 
   test("a plan stored without a total gets one when its tasks are refreshed", async () => {
@@ -829,20 +829,22 @@ describe("dev views", () => {
     await store.put("task", task.id, { ...stored, cost: 2, costQuality: "exact" }, "test:raw");
     const { costTotals: _gone, ...old } = planData((await getPlan(store, plan.id)).data);
     await store.put("plan", plan.id, old, "test:old");
-    expect(planViews.row(await getPlan(store, plan.id)).note).toBe("0/1 · off · P3 // 1");
+    expect(planViews.row(await getPlan(store, plan.id)).note).toBe("0/1 · P3 // 1");
     const { refreshPlanCounts } = await import("../src/service.ts");
     await refreshPlanCounts(store, await getPlan(store, plan.id));
-    expect(planViews.row(await getPlan(store, plan.id)).note).toBe("0/1 · $2.00 · off · P3 // 1");
+    expect(planViews.row(await getPlan(store, plan.id)).note).toBe("0/1 · $2.00 · P3 // 1");
   });
 
-  test("the plan note by auto level, and the total leaves cancelled tasks out", () => {
+  test("the plan note leaves the auto level to the badge, and the total leaves cancelled tasks out", () => {
     const base = planData((({
       repository: "r", title: "t", request: "", status: "confirmed", auto: "off", priority: "P2",
       concurrency: 2, taskCount: 12, mergedCount: 1, cancelledCount: 5,
     }) as unknown) as Record<string, unknown>);
-    expect(planNote(base)).toBe("1/7 · off · P2 // 2");
-    expect(planNote({ ...base, auto: "run" })).toBe("1/7 · run · P2 // 2");
-    expect(planNote({ ...base, auto: "merge" })).toBe("1/7 · merge · P2 // 2");
+    expect(planNote(base)).toBe("1/7 · P2 // 2");
+    // The level lives in the row's badge, so it never changes the note.
+    expect(planNote({ ...base, auto: "run" })).toBe("1/7 · P2 // 2");
+    expect(planNote({ ...base, auto: "merge" })).toBe("1/7 · P2 // 2");
+    expect(planViews.row({ type: "plan", id: "P-0001-x", data: { ...base, auto: "merge" } } as never).badge).toBe("merge");
   });
 
   const WT = "/Users/hai/Code/operad/.operad-worktrees/T-0208-store-migrate";

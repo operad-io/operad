@@ -11,7 +11,7 @@ import {
   type PluginStepResult,
   type StepContext,
 } from "@operad-io/engine";
-import { createAssistantPlugin, syncProfiles } from "../src/index.ts";
+import { createBotPlugin, syncBots } from "../src/index.ts";
 
 const roots: string[] = [];
 
@@ -44,33 +44,33 @@ function fakeHarness(name: string, calls: Call[]) {
   });
 }
 
-/** Writes the `assistant` section the way a person editing config.json would. */
-export function writeConfig(home: string, profiles: Record<string, unknown>): void {
+/** Writes the `bot` section the way a person editing config.json would. */
+export function writeConfig(home: string, bots: Record<string, unknown>): void {
   mkdirSync(home, { recursive: true });
   writeFileSync(
     join(home, "config.json"),
-    JSON.stringify({ plugins: { assistant: { settings: { profiles } } } }, null, 2),
+    JSON.stringify({ plugins: { bot: { settings: { bots } } } }, null, 2),
   );
 }
 
-export async function rig(profiles: Record<string, unknown> = {}, harnesses = ["claude", "pi"]) {
-  const root = await mkdtemp(join(tmpdir(), "assistant-test-"));
+export async function rig(bots: Record<string, unknown> = {}, harnesses = ["claude", "pi"]) {
+  const root = await mkdtemp(join(tmpdir(), "bot-test-"));
   roots.push(root);
   const home = join(root, "home");
-  writeConfig(home, profiles);
+  writeConfig(home, bots);
   const calls: Call[] = [];
   const store = new MemoryPluginStore({ root: join(root, "store") });
   const registry = new PluginRegistry(
-    [createChatPlugin(), createAssistantPlugin(), ...harnesses.map((name) => fakeHarness(name, calls))],
+    [createChatPlugin(), createBotPlugin(), ...harnesses.map((name) => fakeHarness(name, calls))],
     {
       home,
       cwd: root,
       store,
-      settings: { assistant: { profiles } },
+      settings: { bot: { bots } },
       onLog: () => undefined,
     },
   );
-  await syncProfiles(store, home, { profiles: profiles as Record<string, JsonValue> });
+  await syncBots(store, home, { bots: bots as Record<string, JsonValue> });
   let runs = 0;
   return {
     root,
@@ -78,11 +78,11 @@ export async function rig(profiles: Record<string, unknown> = {}, harnesses = ["
     store,
     registry,
     calls,
-    async open(profile: string, args: Record<string, unknown> = {}): Promise<string> {
-      const object = await store.get("profile", profile);
-      if (object === undefined) throw new Error(`no profile ${profile}`);
-      const run = await registry.runAction("assistant/chat", args, {
-        object: { type: "profile", id: profile, data: object.data },
+    async open(bot: string, args: Record<string, unknown> = {}): Promise<string> {
+      const object = await store.get("bot", bot);
+      if (object === undefined) throw new Error(`no bot ${bot}`);
+      const run = await registry.runAction("bot/chat", args, {
+        object: { type: "bot", id: bot, data: object.data },
         actor: { via: "cli", id: "me" },
       });
       const id = /C-\d+/.exec(String(run.value))?.[0];
