@@ -12,6 +12,7 @@ import {
   bareId,
   DevError,
   DevRefusal,
+  isIntegrating,
   planData,
   planState,
   PRIORITIES,
@@ -467,8 +468,12 @@ export const actions: readonly ActionTypeDefinition[] = [
     rank: TASK_RANKS.pause,
     confirm: true,
     when(state) {
-      const phase = taskData(state).phase;
-      return phase === "ready" || phase === "running" || phase === "review";
+      const task = taskData(state);
+      const phase = task.phase;
+      return (
+        !isIntegrating(task) &&
+        (phase === "ready" || phase === "running" || phase === "review")
+      );
     },
     why: taskWhy("pause"),
     settled: taskSettled("pause"),

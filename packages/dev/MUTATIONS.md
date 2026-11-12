@@ -889,3 +889,9 @@ the row fields.
 | T-0298-M3 | packages/dev/src/views.ts | the total row showed `0s` when no attempt's run could be read | `dev views > the total row shows a dash when no attempt's run can be read` |
 | T-0298-M4 | packages/dev/src/refusals.ts | confirming a finished plan was refused instead of already true | `a finished plan > is a confirmed plan: confirming it again is already true, not a refusal` |
 | T-0302-M4 | packages/dev/src/service.ts | a recount kept the stored cost total instead of recomputing it from the tasks | `dev views > a refresh heals a plan total that drifted, and a malformed total shows no cost` |
+
+## T-0306 — a task whose integrate step works shows integrating and offers only cancel
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0306-M1 | packages/dev/src/model.ts | `isIntegrating` no longer read the attempt's integrate mark, so the row state stayed `waiting` and the four wait actions stayed offered | `a task while its integrate step works > shows integrating and offers only cancel, then waits for answer again when the mark clears` |
