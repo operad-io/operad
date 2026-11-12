@@ -41,7 +41,9 @@ import {
   readBots,
   resolveBot,
   type BotSettings,
+  type McpServerSettings,
 } from "./bot.ts";
+import { commandLine, compareTools, differenceLines, secretName, storedTools } from "./mcp.ts";
 
 /** The object type of a proposal. It is internal: a person sees its pending item. */
 export const PROPOSAL_TYPE = "bot-proposal";
@@ -76,7 +78,7 @@ export interface SettingsChange {
 export interface ProposalData {
   readonly [key: string]: unknown;
   readonly bot: string;
-  readonly kind: "skill" | "settings";
+  readonly kind: "skill" | "settings" | "mcp";
   readonly title: string;
   readonly state: ProposalState;
   readonly createdAt: number;
@@ -86,6 +88,16 @@ export interface ProposalData {
     readonly after: SkillSnapshot;
   } | undefined;
   readonly settings?: SettingsChange | undefined;
+  readonly mcp?: McpChange | undefined;
+}
+
+/** A local MCP server a proposal registers, upgrades or lets through after a change of its tools. */
+export interface McpChange {
+  readonly server: string;
+  /** `new`: registered for the first time; `upgrade`: registered again with another command or version; `changed`: the server's own tools changed. */
+  readonly reason: "new" | "upgrade" | "changed";
+  readonly before: McpServerSettings | null;
+  readonly after: McpServerSettings;
 }
 
 const NAME = /^[a-z0-9][a-z0-9_-]*$/;
@@ -94,7 +106,7 @@ function dataOf(object: StoredObject): ProposalData {
   const data = object.data;
   if (
     typeof data.bot !== "string" ||
-    (data.kind !== "skill" && data.kind !== "settings") ||
+    (data.kind !== "skill" && data.kind !== "settings" && data.kind !== "mcp") ||
     typeof data.title !== "string" ||
     (data.state !== "pending" && data.state !== "applied" && data.state !== "rejected") ||
     typeof data.createdAt !== "number"
@@ -406,9 +418,77 @@ function changedSkillMarkdown(
   return out;
 }
 
+function mcpChangeOf(value: unknown): McpChange | undefined {
+  if (!isRecord(value) || typeof value.server !== "string" || !isRecord(value.after)) return undefined;
+  if (value.reason !== "new" && value.reason !== "upgrade" && value.reason !== "changed") return undefined;
+  return {
+    server: value.server,
+    reason: value.reason,
+    before: isRecord(value.before) ? (value.before as unknown as McpServerSettings) : null,
+    after: value.after as unknown as McpServerSettings,
+  };
+}
+
+/** What a person reads before a local MCP server is registered, upgraded or let through. */
+function mcpReview(bot: string, change: McpChange): string {
+  const { after, before } = change;
+  const heading =
+    change.reason === "new"
+      ? `## MCP server ${change.server} for bot ${bot}`
+      : change.reason === "upgrade"
+        ? `## Upgrade of MCP server ${change.server} for bot ${bot}`
+        : `## MCP server ${change.server} of bot ${bot} changed its tools`;
+  const out = [heading, ""];
+  out.push(
+    change.reason === "changed"
+      ? `Its tools are no longer the ones that were approved, so the server is switched off in this bot's chats. Approve to accept the new tools and switch it on again; reject to keep it off.`
+      : `**Approving trusts this package.** The server is a program that runs on this machine as you, starts with every chat of this bot and stays up while it talks. Nothing contains it yet (there is no shell around it), so the access profile does not limit what the program itself does; only calls to its tools are asked about.`,
+    "",
+  );
+  out.push(`Command: \`${commandLine(after.command, after.args ?? [])}\``, "");
+  if (after.package !== undefined) {
+    out.push(
+      `Package: ${after.package}`,
+      `Version: ${after.version ?? "?"}${before?.version !== undefined && before.version !== after.version ? ` (was ${before.version})` : ""}`,
+      "",
+    );
+  } else {
+    out.push("This command is not a package from a registry; it runs a program as written.", "");
+  }
+  out.push("### Secrets", "");
+  const variables = after.secrets ?? [];
+  if (variables.length === 0) out.push("It needs no secrets.");
+  else {
+    for (const variable of variables) {
+      out.push(`- ${variable}: store it with \`operad secret set bot ${secretName(change.server, variable)}\``);
+    }
+    out.push("", "They are given to the server only when it starts, never to the agent or the transcript.");
+  }
+  const tools = storedTools(after);
+  out.push("", `### Tools (${tools.length})`, "");
+  if (tools.length === 0) out.push("It offers no tools.");
+  else {
+    out.push("A tool not on the bot's `mcpAllow` list asks before every call. What the tools return is read as material, not as instructions.", "", "```");
+    for (const tool of tools) out.push(`${tool.name}: ${tool.description}`);
+    out.push("```");
+  }
+  if (before !== null) {
+    out.push("", "### What changed", "");
+    if (before.command !== after.command || (before.args ?? []).join("\0") !== (after.args ?? []).join("\0")) {
+      out.push(`Command was: \`${commandLine(before.command, before.args ?? [])}\``, "");
+    }
+    out.push("```diff", ...differenceLines(compareTools(storedTools(before), tools)), "```");
+  }
+  return out.join("\n");
+}
+
 /** The review a person reads for a proposal. */
 export function proposalReview(object: StoredObject): string {
   const data = dataOf(object);
+  if (data.kind === "mcp") {
+    const change = mcpChangeOf(data.mcp);
+    return change === undefined ? "No MCP server is recorded for this proposal." : mcpReview(data.bot, change);
+  }
   const content = proposalContent(object);
   if (data.kind === "settings") {
     const change = content.settings;
@@ -456,7 +536,7 @@ export function proposalReview(object: StoredObject): string {
   return out.join("\n");
 }
 
-async function readBotsFile(home: string): Promise<Record<string, unknown>> {
+export async function readBotsFile(home: string): Promise<Record<string, unknown>> {
   let parsed: unknown;
   try {
     parsed = JSON.parse(readFileSync(configPath(home), "utf8"));
@@ -504,7 +584,7 @@ async function writeBotsFile(
   });
 }
 
-function validateBots(bots: Readonly<Record<string, unknown>>): void {
+export function validateBots(bots: Readonly<Record<string, unknown>>): void {
   prepareSettings(BOT_SETTINGS, { bots }, "bot");
   for (const name of Object.keys(bots)) validateName(name, "bot");
 }
@@ -565,6 +645,9 @@ export async function proposeSettings(
       after[key] = value as JsonValue;
     }
   }
+  if (change.mcpServers !== undefined) {
+    throw new BotError("MCP servers are registered with `operad bot mcp`, which shows what the server offers; a settings change cannot add or edit one");
+  }
   validateBots({ [bot]: after });
   const data: ProposalData = {
     bot,
@@ -613,6 +696,15 @@ async function applySettings(home: string, bot: string, after: Readonly<Record<s
   await writeBotsFile(home, bots);
 }
 
+async function applyMcp(home: string, bot: string, change: McpChange): Promise<void> {
+  const bots = await readBotsFile(home);
+  const raw = isRecord(bots[bot]) ? bots[bot] : {};
+  const servers = isRecord(raw.mcpServers) ? raw.mcpServers : {};
+  bots[bot] = { ...raw, mcpServers: { ...servers, [change.server]: change.after } };
+  validateBots(bots);
+  await writeBotsFile(home, bots);
+}
+
 async function ensureSkillListed(home: string, bot: string, path: string): Promise<void> {
   const written = readBots(home)[bot];
   if (written === undefined) throw new BotError(`there is no bot "${bot}"`);
@@ -642,7 +734,11 @@ export async function applyProposal(
     return `proposal ${id} is already ${data.state}; nothing to apply`;
   }
   const skill = skillData(data.skill);
-  if (data.kind === "skill") {
+  if (data.kind === "mcp") {
+    const change = mcpChangeOf(data.mcp);
+    if (change === undefined) throw new BotError(`proposal ${id} has no MCP server to apply`);
+    await applyMcp(home, data.bot, change);
+  } else if (data.kind === "skill") {
     if (skill === undefined) throw new BotError(`proposal ${id} has no skill to apply`);
     applySkill(skill);
     await ensureSkillListed(home, data.bot, skill.after.path);
@@ -818,4 +914,4 @@ export const proposalViews: ObjectViews = {
   load,
 };
 
-export { dataOf as proposalData };
+export { dataOf as proposalData, mcpChangeOf };

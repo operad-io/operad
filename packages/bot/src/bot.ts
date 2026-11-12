@@ -8,6 +8,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
+import { MCP_REPORT_DIR } from "./mcp-constants.ts";
 import { configPath, isRecord, prepareSettings, type ActionArgsSchema, type JsonValue, type ObjectStore } from "@operad-io/engine";
 
 /** The object type of a bot. */
@@ -57,6 +58,47 @@ export const BOT_SETTINGS: ActionArgsSchema = {
             description:
               "How a chat of this bot labels the model's messages in its transcript. Without it the chat plugin's speaker is used.",
           },
+          mcpServers: {
+            type: "object",
+            description:
+              "The local MCP servers this bot's chats mount, by name. A server is added only through `bot mcp`, which a person approves; the digest is of its tool names and descriptions, and a chat that finds other tools does not mount the server.",
+            additionalProperties: {
+              type: "object",
+              description: "One local MCP server.",
+              properties: {
+                command: { type: "string", minLength: 1, description: "The program that starts the server." },
+                args: { type: "array", items: { type: "string" }, description: "Its arguments." },
+                package: { type: "string", minLength: 1, description: "The package the command runs, when it runs one." },
+                version: { type: "string", minLength: 1, description: "The pinned version of that package." },
+                secrets: {
+                  type: "array",
+                  items: { type: "string", minLength: 1 },
+                  description:
+                    "Environment variables the server needs. Each value is the bot plugin's secret `<server>.<variable>`, given to the server only when it starts.",
+                },
+                tools: {
+                  type: "array",
+                  description: "The tools the server offered when a person approved it.",
+                  items: {
+                    type: "object",
+                    properties: {
+                      name: { type: "string", minLength: 1 },
+                      description: { type: "string" },
+                    },
+                    additionalProperties: false,
+                  },
+                },
+                digest: { type: "string", minLength: 1, description: "The digest of the tool names and descriptions." },
+              },
+              additionalProperties: false,
+            },
+          },
+          mcpAllow: {
+            type: "array",
+            items: { type: "string", minLength: 1 },
+            description:
+              "MCP tools that run without asking, as `<server>.<tool>` or `<server>.*`. A tool not listed counts as a write and asks first.",
+          },
           access: {
             type: "object",
             description:
@@ -78,8 +120,21 @@ export const BOT_SETTINGS: ActionArgsSchema = {
   additionalProperties: false,
 };
 
+/** One local MCP server of a bot, as written in its settings. */
+export interface McpServerSettings {
+  readonly command: string;
+  readonly args?: readonly string[] | undefined;
+  readonly package?: string | undefined;
+  readonly version?: string | undefined;
+  readonly secrets?: readonly string[] | undefined;
+  readonly tools?: readonly { readonly name: string; readonly description: string }[] | undefined;
+  readonly digest?: string | undefined;
+}
+
 /** One bot as written. */
 export interface BotSettings {
+  readonly mcpServers?: Readonly<Record<string, McpServerSettings>> | undefined;
+  readonly mcpAllow?: readonly string[] | undefined;
   readonly cwd?: string;
   readonly harness?: string;
   readonly skills?: readonly string[];
@@ -96,6 +151,8 @@ export interface ResolvedBot {
   readonly skills: readonly string[];
   readonly speaker: string | null;
   readonly access: Readonly<Record<string, JsonValue>>;
+  /** The local MCP servers the bot lists, by name. */
+  readonly mcpServers: Readonly<Record<string, McpServerSettings>>;
 }
 
 /** A bot that cannot be used; the message says why. */
@@ -167,7 +224,7 @@ function within(path: string, directory: string): boolean {
  * other than `~/.operad` is covered too.
  */
 export function defaultAccess(home: string): Record<string, JsonValue> {
-  const inHome = new Set(["store", "secrets", "config.json"]);
+  const inHome = new Set(["store", "secrets", "config.json", MCP_REPORT_DIR]);
   if (existsSync(home)) {
     for (const name of readdirSync(home)) if (name !== BOT_DIR) inHome.add(name);
   }
@@ -237,6 +294,8 @@ export function accessFor(
     access[field] = appended(access[field], own[field]);
   }
   if (own.readOnly === true) access.readOnly = true;
+  // The field puts MCP tools under the profile: one not listed asks first.
+  access.allowMcp = appended([], settings.mcpAllow);
   return access;
 }
 
@@ -304,5 +363,6 @@ export function resolveBot(
     skills,
     speaker: settings.speaker ?? null,
     access: accessFor(home, settings, repositories, [...skills, join(cwd, "skills")]),
+    mcpServers: settings.mcpServers ?? {},
   };
 }

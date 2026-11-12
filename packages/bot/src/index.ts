@@ -10,6 +10,7 @@
  */
 
 import { mkdirSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { CHAT_TYPE, chatData, createChat, sendMessage, titleFromMessage } from "@operad-io/chat";
 import { definePlugin, isRecord, type ActionArgsSchema, type ActionTypeDefinition, type JsonValue, type ObjectRow, type ObjectStore, type ObjectViews, type PluginStepResult, type SectionContent, type StepContext, type StoredObject } from "@operad-io/engine";
 import {
@@ -22,6 +23,7 @@ import {
   resolveBot,
   type ResolvedBot,
 } from "./bot.ts";
+import { ingestReports, runMcpCommand } from "./mcp-proposals.ts";
 import {
   PROPOSAL_TYPE,
   proposalActions,
@@ -43,7 +45,18 @@ function rowOf(bot: ResolvedBot): Record<string, JsonValue> {
     skills: [...bot.skills],
     speaker: bot.speaker,
     access: bot.access,
+    mcpServers: Object.keys(bot.mcpServers),
   };
+}
+
+/** The harnesses that take MCP servers natively; any other does not mount a bot's servers. */
+export const MCP_HARNESSES: readonly string[] = ["claude", "radian"];
+
+const GUARD = fileURLToPath(new URL("./guard.ts", import.meta.url));
+
+/** What a harness starts for one of a bot's servers: the guard, which starts the server itself. */
+export function guardCommand(home: string, bot: string, server: string): { readonly command: string; readonly args: readonly string[] } {
+  return { command: process.execPath, args: [GUARD, "--home", home, "--bot", bot, "--server", server] };
 }
 
 /**
@@ -198,15 +211,22 @@ export async function runSettings(ctx: StepContext, params: unknown): Promise<Pl
   }
   const name = parent.slice(BOT_TYPE.length + 1);
   try {
+    await ingestReports(ctx.store, ctx.home);
     const written = readBots(ctx.home, ctx.settings)[name];
     if (written === undefined) {
       return { result: "failed", data: { message: `bot "${name}" is no longer in the settings` } };
     }
     const bot = resolveBot(ctx.home, name, written, await repositoryPaths(ctx.store));
     mkdirSync(bot.cwd, { recursive: true });
+    // Only the servers the bot lists, and only on a harness that takes MCP servers natively.
+    const mounts = MCP_HARNESSES.includes(chatData(stored.data).harness);
+    const mcpServers: Record<string, JsonValue> = {};
+    for (const [server, entry] of Object.entries(bot.mcpServers)) {
+      if (mounts && entry.digest !== undefined) mcpServers[server] = { ...guardCommand(ctx.home, name, server) } as unknown as JsonValue;
+    }
     return {
       result: "done",
-      data: { cwd: bot.cwd, access: bot.access, skills: [...bot.skills] },
+      data: { cwd: bot.cwd, access: bot.access, skills: [...bot.skills], mcpServers },
     };
   } catch (error) {
     return { result: "failed", data: { message: error instanceof Error ? error.message : String(error) } };
@@ -222,6 +242,13 @@ function botMarkdown(object: StoredObject): string {
   if (typeof data.speaker === "string") lines.push(`Speaker: ${data.speaker}`);
   const skills = Array.isArray(data.skills) ? data.skills : [];
   lines.push(skills.length === 0 ? "No skills." : `Skills: ${skills.join(", ")}`);
+  const servers = Array.isArray(data.mcpServers) ? data.mcpServers : [];
+  if (servers.length > 0) {
+    lines.push(
+      `MCP servers: ${servers.join(", ")}`,
+      `They are mounted in chats on ${MCP_HARNESSES.join(" and ")}. A chat on pi does not mount them: pi takes no MCP servers yet, so it cannot use ${servers.join(", ")}.`,
+    );
+  }
   return lines.join("\n\n");
 }
 
@@ -275,13 +302,21 @@ export function createBotPlugin() {
         run: runSkillCommand,
       },
       {
+        name: "mcp",
+        args: "<bot> <name> [<command> [args...]]",
+        run: runMcpCommand,
+      },
+      {
         name: "setting",
         args: "<bot>",
         run: runSettingCommand,
       },
     ],
     // A proposal waits for no run; each one is a pending item of its bot.
-    standing: async (ctx) => proposalItems(ctx.store),
+    standing: async (ctx) => {
+      await ingestReports(ctx.store, ctx.home);
+      return proposalItems(ctx.store);
+    },
     views: { [BOT_TYPE]: botViews, [PROPOSAL_TYPE]: proposalViews },
   });
 }
@@ -290,3 +325,7 @@ export default createBotPlugin();
 
 export * from "./bot.ts";
 export * from "./proposals.ts";
+export * from "./mcp.ts";
+export * from "./mcp-proposals.ts";
+export { runGuard, markedResult, MATERIAL_NOTE, reportPath } from "./guard.ts";
+export { probeServer, type McpTool } from "./mcp-client.ts";

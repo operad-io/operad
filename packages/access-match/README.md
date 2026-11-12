@@ -32,6 +32,7 @@ the `home` option). `test/match.test.ts` follows the tables below.
 | `denyCommands` | string[], optional | a `bash` command part that matches one of these is refused |
 | `askPaths` | string[], optional | paths a write asks about (`~/.zshrc`, `~/.*profile`); `*` stays within one path segment and a path under a match counts. Judged for `write` and `edit`, and for a `bash` redirect (`>`, `>>`) to such a path, which asks with the whole command. Deny wins over it |
 | `readOnly` | boolean, optional | the call's working directory is read-only: a write under it (`write`, `edit`, a `bash` redirect) asks, as if the directory were in `askPaths`. Deny wins over it |
+| `allowMcp` | string[], optional | MCP tools that run without asking, as `<server>.<tool>` or `<server>.*`. The field's presence (even empty) puts MCP tools under the profile: a call with `tool: "mcp"` and `input: { server, tool }` that is not listed counts as a write and asks (`kind: "command"`, value `mcp <server>.<tool>`), per `operad-sandbox.md` decision 9 |
 | `askCommands` | string[], optional | rules in the shape of `denyCommands`; a `bash` command part that matches one of these asks a person (`operad-sandbox.md` decisions 1 and 3). Writes to shell profiles are `askPaths` |
 
 | `grants` | `{ waitId, kind: "command" \| "path", value, tool? }[]`, optional | one-time permissions not yet used; see `findGrant` |

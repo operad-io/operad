@@ -31,11 +31,9 @@
       "name": "@operad-io/bot",
       "version": "0.0.0",
       "dependencies": {
+        "@operad-io/access-match": "workspace:*",
         "@operad-io/chat": "workspace:*",
         "@operad-io/engine": "workspace:*",
-      },
-      "devDependencies": {
-        "@operad-io/access-match": "workspace:*",
       },
     },
     "packages/chat": {
