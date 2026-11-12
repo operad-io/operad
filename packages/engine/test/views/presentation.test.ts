@@ -618,7 +618,7 @@ describe("presentation views", () => {
     });
 
     await expect(views.section("item:one", "surge")).rejects.toThrow(
-      /over the 128-byte size cap with its tail.*--full/,
+      /over the 128-byte size cap;.*--full/,
     );
 
     views.close();

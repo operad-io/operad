@@ -1694,7 +1694,7 @@ export class Views {
     if (tailBytes + suffixBytes > limit) {
       throw new ViewError(
         "section",
-        `section "${sectionId}" of "${id}" is over the ${limit}-byte size cap with its tail; ${suffix.trim()}`,
+        `section "${sectionId}" of "${id}" is over the ${limit}-byte size cap; ${suffix.trim()}`,
       );
     }
     const body = capBytes(markdown, limit - suffixBytes - tailBytes);
