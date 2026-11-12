@@ -15,6 +15,9 @@ export const MESSAGE_FACT = "chat.message";
 /** The fact type of one finished part of an answer: text, thinking or a tool call. */
 export const ENTRY_FACT = "chat.entry";
 
+/** The fact type of a reply run that began on a chat: the run id, so a view can find the step's log. */
+export const RUN_FACT = "chat.run";
+
 /** How a tool call ended. */
 export type ToolResult = "done" | "failed" | "blocked" | "denied";
 
@@ -593,6 +596,29 @@ export function allEntries(store: ObjectStore, chat: string): readonly Entry[] {
     }
     cursor = page.next;
   } while (cursor !== undefined);
+  return found;
+}
+
+/** Every fact of a chat, oldest first. */
+export function chatFacts(store: ObjectStore, chat: string): readonly PluginFact[] {
+  const facts: PluginFact[] = [];
+  let cursor: string | undefined;
+  do {
+    const page = store.facts(chatRef(chat), { ...(cursor === undefined ? {} : { cursor }), limit: 500 });
+    facts.push(...page.facts);
+    cursor = page.next;
+  } while (cursor !== undefined);
+  return facts;
+}
+
+/** The run id of the latest reply run recorded on a chat, if any. */
+export function latestRunOf(facts: readonly PluginFact[]): string | undefined {
+  let found: string | undefined;
+  for (const fact of facts) {
+    if (fact.type === RUN_FACT && typeof fact.data.runId === "string" && fact.data.runId.length > 0) {
+      found = fact.data.runId;
+    }
+  }
   return found;
 }
 

@@ -96,3 +96,20 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0362-M14 | packages/chat/src/reply.ts | the final text was compared with the entry before masking it, so a secret-bearing reply stayed as an entry too | `chat entries > secret values are masked before a text, thinking, tool or file fact is written` |
+
+## T-0363 — the transcript's after, mark and tail
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0363-M1 | packages/chat/src/views.ts | `after` was ignored, so every read gave the whole page | `chat transcript: after, mark and tail > a read with after returns only what was recorded later, and says so` |
+| T-0363-M2 | packages/chat/src/views.ts | a read with `after` gave the mark back unchanged | `chat transcript: after, mark and tail > the mark moves with what was recorded and holds when nothing was` |
+| T-0363-M3 | packages/chat/src/views.ts | the thinking being written was left out of the tail | `chat transcript: after, mark and tail > thinking being written is a block quote with no label` |
+| T-0363-M4 | packages/chat/src/views.ts | the text being written was left out of the tail | `chat transcript: after, mark and tail > text being written is in the tail and not in the markdown` |
+| T-0363-M5 | packages/chat/src/views.ts | the running tool calls were left out of the tail | `chat transcript: after, mark and tail > a tool call that started and did not end is one line with its start` |
+| T-0363-M6 | packages/chat/src/views.ts | the tail was read whether or not the run still runs | `chat transcript: after, mark and tail > there is no tail when nothing runs, and none without a log` |
+| T-0363-M7 | packages/chat/src/views.ts | text the facts already hold was repeated in the tail | `chat transcript: after, mark and tail > a finished entry is never in both the markdown and the tail` |
+| T-0363-M8 | packages/chat/src/views.ts | a tool call the facts already hold as finished was repeated in the tail | `chat transcript: after, mark and tail > a finished entry is never in both the markdown and the tail` |
+| T-0363-M9 | packages/chat/src/views.ts | a radian chat's tail showed text and thinking | `chat transcript: after, mark and tail > a radian chat's tail has the tool lines only` |
+| T-0363-M10 | packages/chat/src/views.ts | the tail was not masked | `chat transcript: after, mark and tail > a secret is masked in the tail` |
+| T-0363-M11 | packages/chat/src/tail.ts | the whole log was read, not its end | `chat transcript: after, mark and tail > reading the tail of a log of 50 000 lines reads a bounded number of bytes` |
+| T-0363-M12 | packages/chat/src/reply.ts | the reply step did not record its run, so no log was found | `chat transcript: after, mark and tail > text being written is in the tail and not in the markdown` |

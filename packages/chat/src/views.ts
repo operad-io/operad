@@ -12,7 +12,10 @@ import type {
   ViewContext,
   ViewSection,
 } from "@operad-io/engine";
-import { agentLine, attachmentsOf, chatData, chatRef, ENTRY_FACT, entryOfFact, IMAGE_TYPES, MESSAGE_FACT, modelAndCost, type Attachment, type Entry, type Message } from "./model.ts";
+import { maskSecrets } from "@operad-io/harness-process";
+import { secretValues } from "./reply.ts";
+import { foldLogTail, agentLogPath } from "./tail.ts";
+import { agentLine, attachmentsOf, chatData, chatRef, ENTRY_FACT, entryOfFact, IMAGE_TYPES, latestRunOf, MESSAGE_FACT, modelAndCost, type Attachment, type Entry, type Message } from "./model.ts";
 
 /** How many messages of a chat one page of the transcript holds. */
 export const TRANSCRIPT_PAGE = 50;
@@ -322,17 +325,95 @@ function rendered(chunk: Chunk, speaker: string, home: string | undefined, harne
   return blocks;
 }
 
+/** The position after the last fact a read showed, as the opaque mark. */
+function markOf(sequence: number): string {
+  return String(sequence);
+}
+
+function markAfter(value: string | undefined): number | undefined {
+  return value !== undefined && /^\d{1,15}$/.test(value) ? Number(value) : undefined;
+}
+
+function clock(at: number): string {
+  return new Date(at).toISOString().slice(11, 19);
+}
+
+/**
+ * What the running reply has written and not finished, as Markdown, or
+ * undefined when no reply runs. It is read from the end of the log of the
+ * step that runs the agent. What the facts already hold is not repeated.
+ */
+async function tailOf(
+  ctx: ViewContext,
+  object: StoredObject,
+  facts: readonly PluginFact[],
+  speaker: string,
+): Promise<string | undefined> {
+  const chat = chatData(object.data);
+  const runId = latestRunOf(facts);
+  if (runId === undefined || chat.harness.length === 0 || ctx.runTimes === undefined) return undefined;
+  const times = await ctx.runTimes(runId);
+  if (times === undefined || times.endedAt !== null) return undefined;
+  const read = foldLogTail(agentLogPath(ctx.store.root, chat.harness, runId));
+  if (read === undefined) return undefined;
+  const secrets = await secretValues(ctx);
+  const said = new Set<string>();
+  const called = new Set<string>();
+  for (const fact of facts) {
+    if (fact.data.runId !== runId) continue;
+    if (fact.type === MESSAGE_FACT && fact.data.role === "assistant" && typeof fact.data.text === "string") {
+      said.add(fact.data.text.trim());
+    }
+    const entry = fact.type === ENTRY_FACT ? entryOfFact(fact) : undefined;
+    if (entry?.kind === "tool" && entry.callId !== undefined) called.add(entry.callId);
+    else if (entry?.text !== undefined) said.add(entry.text.trim());
+  }
+  const fresh = (text: string): string | undefined => {
+    const masked = maskSecrets(text, secrets);
+    return masked.trim().length === 0 || said.has(masked.trim()) ? undefined : masked;
+  };
+  const lines: string[] = [];
+  // Radian gives no text or thinking increments; its chats show the tool lines only.
+  if (chat.harness !== "radian") {
+    const thinking = fresh(read.state.thinking);
+    if (thinking !== undefined) lines.push(thinking.split(/\r?\n/).map((line) => `> ${line}`).join("\n"));
+    const text = fresh(read.state.text);
+    if (text !== undefined) lines.push(`**${speaker}:** ${flat(text)}`);
+  }
+  for (const call of read.state.calls) {
+    if (called.has(maskSecrets(call.callId, secrets))) continue;
+    const input = call.input === null ? "" : flat(maskSecrets(call.input, secrets));
+    const what = input.length === 0 ? "" : ` ${inlineCode(input.length <= 160 ? input : `${input.slice(0, 159)}…`)}`;
+    lines.push(`tool ${maskSecrets(call.toolName, secrets)} since ${clock(call.at)}${what}`);
+  }
+  return lines.length === 0 ? undefined : lines.join("\n\n");
+}
+
 async function load(
   ctx: ViewContext,
   object: StoredObject,
   sectionId: string,
-  options: { readonly cursor?: string | undefined },
+  options: { readonly cursor?: string | undefined; readonly after?: string | undefined },
 ): Promise<SectionContent> {
   if (sectionId !== TRANSCRIPT) return { markdown: "" };
   const ref = chatRef(object.id);
   const chat = chatData(object.data);
   const speaker = await speakerOf(ctx, object);
-  const pages = pagesOf(ref, chunksOf(allFacts(ctx, ref)));
+  const facts = allFacts(ctx, ref);
+  const tail = await tailOf(ctx, object, facts, speaker);
+  const since = markAfter(options.after);
+  if (since !== undefined) {
+    // Only what was recorded after the mark, in the same Markdown as a full read.
+    const chunks = chunksOf(facts.filter((fact) => fact.sequence > since));
+    const blocks = chunks.flatMap((chunk) => rendered(chunk, speaker, ctx.home, chat.harness));
+    return {
+      markdown: blocks.join("\n\n---\n\n"),
+      mark: markOf(Math.max(since, chunks.at(-1)?.last ?? 0)),
+      delta: true,
+      ...(tail === undefined ? {} : { tail }),
+    };
+  }
+  const pages = pagesOf(ref, chunksOf(facts));
   const after = options.cursor === undefined ? undefined : cursorAfter(options.cursor);
   const index = pages.findIndex((page) => page.after === after);
   const selected = pages[index < 0 ? 0 : index] ?? pages[0];
@@ -352,8 +433,10 @@ async function load(
   );
   return {
     markdown,
+    mark: markOf(selected?.chunks.at(-1)?.last ?? 0),
     ...(nextPage?.cursor === undefined ? {} : { next: nextPage.cursor }),
     ...(toc.length > 1 ? { pages: toc } : {}),
+    ...(tail === undefined ? {} : { tail }),
   };
 }
 
