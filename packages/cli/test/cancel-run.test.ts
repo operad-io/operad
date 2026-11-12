@@ -75,6 +75,29 @@ async function endedState(home: string, runId: string): Promise<string> {
   }
 }
 
+/** The sources of the cancel inputs recorded for one run. */
+async function cancelSources(home: string, runId: string): Promise<string[]> {
+  const log = openConfigLog(await readConfig(home));
+  const sources: string[] = [];
+  try {
+    for await (const input of log.readInputs()) {
+      if (input.runId !== runId) continue;
+      const payload = input.payload;
+      if (
+        typeof payload === "object" &&
+        payload !== null &&
+        !Array.isArray(payload) &&
+        payload.kind === "cancel"
+      ) {
+        sources.push(input.source);
+      }
+    }
+  } finally {
+    await log.close();
+  }
+  return sources;
+}
+
 describe("cancelling an object ends the run that waits on it", () => {
   test("through the command line", async () => {
     const { home, runId } = await makeWaiting(false);
@@ -86,6 +109,7 @@ describe("cancelling an object ends the run that waits on it", () => {
     };
     expect(await main(["canceltest:stop", "job:1"], { home, io })).toBe(0);
     expect(await endedState(home, runId)).toBe("ended");
+    expect(await cancelSources(home, runId)).toEqual(["cli"]);
   });
 
   test("through serve, as the terminal client and the web act", async () => {

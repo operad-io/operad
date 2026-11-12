@@ -181,7 +181,14 @@ async function openContext(
     cwd,
     store,
     onCancelRun: (runId, graph) =>
-      cancelRun({ log, flow: (name) => loaded?.flow(name)?.flow, runId, graph, clock }),
+      cancelRun({
+        log,
+        flow: (name) => loaded?.flow(name)?.flow,
+        runId,
+        graph,
+        clock,
+        source: "mcp",
+      }),
     onAnswer: async (runId, choice, note, actor) => {
       await recordAnswer({
         log,

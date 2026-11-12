@@ -642,3 +642,8 @@ the row fields.
 | T-0275-M1 | packages/engine/src/config/config.ts | the default config (and a `store` without a path) named `<home>/store` instead of `<home>/store/log.sqlite` | `operad config > a missing config means sqlite at <home>/store/log.sqlite` and `a config with no store gets sqlite at <home>/store/log.sqlite` |
 | T-0275-M2 | packages/engine/src/config/config.ts | `readStore` stopped refusing a `store.backend` other than `"sqlite"` | `operad config > any backend but sqlite is a config error naming the field and the one value` |
 | T-0275-M3 | packages/engine/src/plugin/sqlite-store.ts | `pollFacts` queried a database whose directory was removed | `store lifecycle and concurrency > a poll after the store's directory was removed does nothing` |
+## T-0310 — a removed facts file is not a refresh error
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0310-M2 | packages/engine/src/plugin/file-store.ts | a missing facts file was rethrown from `refresh` instead of read as nothing | `the file plugin store > a facts file removed while the store refreshes reads nothing` |

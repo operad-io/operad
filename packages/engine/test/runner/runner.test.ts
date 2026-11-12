@@ -500,11 +500,13 @@ describe("runner", () => {
         log: run.log,
         flow: (name) => run.registry.flow(name)?.flow,
         runId: run.runId,
+        source: "cli",
       });
       await cancelRun({
         log: run.log,
         flow: (name) => run.registry.flow(name)?.flow,
         runId: missing.runId,
+        source: "cli",
       });
 
       for (const runId of [run.runId, missing.runId]) {

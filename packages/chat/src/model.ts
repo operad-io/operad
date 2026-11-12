@@ -13,6 +13,15 @@ export const MESSAGE_FACT = "chat.message";
 /** The event type a new message is: its source is `ios`, `telegram` or `cli`. */
 export const MESSAGE_EVENT = "message";
 
+/** The fact type of a chat that was closed. */
+export const CLOSED_FACT = "chat.closed";
+
+/** The list filters of chats: closed ones are hidden unless asked for. */
+export const CHAT_FILTERS = [
+  { name: "open", default: true, states: ["open"] },
+  { name: "closed", states: ["closed"] },
+] as const;
+
 /** Where a message can come from. */
 export const CHAT_SOURCES = ["ios", "telegram", "cli"] as const;
 
@@ -34,6 +43,8 @@ export interface ChatData {
   readonly access: Readonly<Record<string, JsonValue>>;
   readonly skills: readonly string[];
   readonly title: string;
+  /** Whether the chat was closed; a closed chat takes no messages. */
+  readonly closed: boolean;
   /** The harness's own reference to its conversation; never shown. */
   readonly session?: string | null | undefined;
   /** The channels (`telegram:<chat>`) whose messages land here. */
@@ -82,6 +93,12 @@ export interface Message extends MessageData {
   readonly sequence: number;
 }
 
+/** What a close fact holds: who closed the chat. */
+export interface ClosedData {
+  readonly [key: string]: unknown;
+  readonly by: { readonly via: string; readonly id: string };
+}
+
 /** The chat fields of a stored object, with the lists defaulted. */
 export function chatData(data: Readonly<Record<string, unknown>>): ChatData {
   return {
@@ -91,6 +108,7 @@ export function chatData(data: Readonly<Record<string, unknown>>): ChatData {
     access: isRecord(data.access) ? (data.access as Record<string, JsonValue>) : {},
     skills: stringList(data.skills),
     title: typeof data.title === "string" ? data.title : "",
+    closed: data.closed === true,
     channels: stringList(data.channels),
     ...(typeof data.refresh === "string" && data.refresh.length > 0 ? { refresh: data.refresh } : {}),
   };
@@ -137,6 +155,7 @@ export async function createChat(
     access: input.access ?? {},
     skills: input.skills ?? [],
     title: input.title.trim(),
+    closed: false,
     session: null,
     channels: input.channels ?? [],
     ...(input.refresh === undefined ? {} : { refresh: input.refresh }),

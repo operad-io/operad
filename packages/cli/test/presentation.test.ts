@@ -146,6 +146,21 @@ describe("operad presentation commands", () => {
     expect(page.next).toBeUndefined();
   });
 
+  test("a row's badge prints after its state, and a row without one keeps its line", async () => {
+    const { home } = await makeHome();
+    seed(home, { title: "First", state: "new", note: "$1", badge: "#2" }, "one");
+    seed(home, { title: "Second", state: "open" }, "two");
+
+    const listed = capture();
+    expect(await main(["list", "item"], { home, io: listed.io })).toBe(0);
+    expect(listed.text()).toContain("one  new  #2  First  $1");
+    expect(listed.text()).toContain("two  open  Second\n");
+
+    const shown = capture();
+    expect(await main(["show", "item:one"], { home, io: shown.io })).toBe(0);
+    expect(shown.text().split("\n")[0]).toBe("one  new  #2  First  $1");
+  });
+
   test("list filters on indexed fields and pages with --limit and --cursor", async () => {
     const { home } = await makeHome();
     seed(home, { title: "One", state: "new", plan: "P1" }, "one");
