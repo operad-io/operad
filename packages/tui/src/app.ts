@@ -567,16 +567,32 @@ export function startShell(deps: TuiShellDeps): TuiShell {
       (entry) => entry.row.parent === undefined || entry.row.parent.length === 0,
     );
     const ownTypes = new Set((tab.types ?? []).map((info) => info.type));
-    const foreign = new Map<string, TuiTreeEntry[]>();
+    const byForm = new Map<string, TuiTreeEntry>();
     for (const entry of all.entries) {
+      for (const form of parentForms(entry)) {
+        if (!byForm.has(form)) byForm.set(form, entry);
+      }
+    }
+    // The first ancestor outside the tab names the group. A tab-owned object
+    // under a foreign one belongs to the same group, as do its own children.
+    const foreignGroupOf = (
+      entry: TuiTreeEntry,
+      seen: ReadonlySet<TuiTreeEntry>,
+    ): string | undefined => {
       const parent = entry.row.parent;
-      if (parent === undefined || parent.length === 0) continue;
-      // A typed parent names its type: the parent belongs to this tab whenever
-      // that type does, even if the parent row itself is hidden by a filter.
+      if (parent === undefined || parent.length === 0) return undefined;
       const colon = parent.indexOf(":");
       const parentType = colon > 0 ? parent.slice(0, colon) : undefined;
-      const belongs = parentType === undefined ? own.has(parent) : ownTypes.has(parentType);
-      if (belongs) continue;
+      if (parentType !== undefined && !ownTypes.has(parentType)) return parent;
+      if (parentType === undefined && !own.has(parent)) return parent;
+      const owner = byForm.get(parent);
+      if (owner === undefined || seen.has(owner)) return undefined;
+      return foreignGroupOf(owner, new Set([...seen, owner]));
+    };
+    const foreign = new Map<string, TuiTreeEntry[]>();
+    for (const entry of all.entries) {
+      const parent = foreignGroupOf(entry, new Set([entry]));
+      if (parent === undefined) continue;
       const group = foreign.get(parent);
       if (group === undefined) foreign.set(parent, [entry]);
       else group.push(entry);

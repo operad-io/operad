@@ -229,6 +229,25 @@ describe("one tab per plugin", () => {
     shell.stop();
   });
 
+  test("a chat under a chat that is already in a foreign group joins that group", async () => {
+    const nested: readonly Stored[] = [
+      entry("chat", "C-0001", "First chat", "repo:operad"),
+      entry("chat", "C-0002", "Second chat", "chat:C-0001"),
+    ];
+    const { view, shell } = open(new TreeClient(nested, CHAT_TYPES));
+    await view.until((state) => tabOf(state, "plugin:chat")?.list.loaded === true);
+    const chat = tabOf(shell.state, "plugin:chat");
+    expect(chat?.level).toBe("children");
+    expect(chat?.list.rows.map((row) => row.id)).toEqual(["C-0002", "C-0001"]);
+    expect(chat?.list.rows.map((row) => row.group?.id)).toEqual(["repo:operad", undefined]);
+    shell.key({ name: "3" });
+    const list = text(drawState(shell.state).list);
+    expect(list).toContain("repo:operad");
+    expect(list).toContain("C-0002");
+    expect(list).toContain("C-0001");
+    shell.stop();
+  });
+
   test("a hidden finished plan still makes its repository a group row", async () => {
     const types: readonly TestType[] = [
       { type: "repo", title: "Repository", plugin: "dev" },
