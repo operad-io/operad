@@ -237,7 +237,7 @@ integrate step, when there is no check, review or human step, or when
 | `dev/reverify` | `ready`, `conflict`, `failed` | the first step of a reverify: fetches and merges the current main into the task branch in the existing worktree, keeping the attempt; `ready` goes to verify, `conflict` to the worker |
 | `dev/work` | `done`, `nothing`, `failed` | builds the worker prompt, runs the configured harness step in the worktree, then requires new commits, a clean tree and a pushed branch |
 | `dev/verify` | `pass`, `fail`, `not_code` | recreates `<worktreeRoot>/<task id>-gate` detached at the branch head, runs `gate.commands` through `shell/check`, and records the verified commit. A check result that says nothing about the code (see Checks that are not the code) does not go to the worker: verify waits for a quiet machine, runs the check once more, and a second such result ends `not_code`, which waits for a person |
-| `dev/review` | `pass`, `fail`, `failed`, `unavailable`, `timed_out` | runs the reviewer harness step in the gate worktree on the diff from the merge base to the verified commit; the previous review is the newest report for another commit (see Rework rounds); in every review a finding far from the task's own change and from the previous review's findings is moved out of the failing set as pre-existing, while a critical one or one without a place still fails |
+| `dev/review` | `pass`, `fail`, `failed`, `unavailable`, `timed_out` | runs the reviewer harness step in the gate worktree on the diff from the merge base to the verified commit; the previous review is the newest report for another commit (see Rework rounds); in a rework round a finding far from the task's own change and from the previous review's findings is moved out of the failing set as pre-existing, while a critical one or one without a place still fails |
 | `dev/review_due` | `ready`, `interrupted` | the wait a review enters after a model was unavailable; it lets the flow run the same review round again at the recorded time |
 | `dev/retry` | `again`, `hold`, `ask`, `give_up`, `cancelled` | runs in front of the announcement of a work, worktree or reverify step that stopped. A stop that is not the task's own work (the run stopped, a process killed by a signal nobody sent, a step that is not loaded, settings that cannot be read) runs the step once more in the same attempt, without a person and without counting toward `maxAutoRework`; a work step that ended on a dropped connection to the harness or the model (the socket closed, a reset) is the same kind of stop, with the cause `model connection dropped during work`. A second stop, or a wait that ran out, goes to a person and the waiting line names the cause (for example `pool/agent is not loaded`) |
 | `dev/retry_due` | `ready`, `waiting`, `interrupted` | the wait a retry enters while a step is not loaded or the settings cannot be read; it ends when they are there, or after `retry.environmentWaitMinutes` (default 60) |
@@ -576,10 +576,9 @@ One rule says which review is which:
   commit, skips it and follows the one before it, if any. A reverify after main
   moved is a review of a new commit and follows the newest report.
 - Which findings move as pre-existing depends on the review. A **first review**
-  keeps only the per-file rule: a finding in a file the task's change does not
-  touch is moved (the prompt is the whole diff, and a reviewer can still wander
-  into untouched files). A **reverify of the same commit** gets the first
-  prompt and moves nothing. A **rework round** applies the line rules below.
+  moves nothing: a finding in a file the task's change does not touch may be a
+  defect the change causes, so it fails the review like any other. A **reverify
+  of the same commit** gets the first prompt and moves nothing. A **rework round** applies the line rules below.
   In every review a critical finding, and one without a file or a line, stays.
 
 The **increment** is built like `git range-diff`: take the task's own diff at the

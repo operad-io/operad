@@ -3,7 +3,7 @@
 Each package keeps its mutation checks in `MUTATIONS.md`; a row names the broken file, what was broken and the failing test, with an id like `TK0001-M1`.
 
 - [access-match](packages/access-match/MUTATIONS.md)
-- [assistant](packages/assistant/MUTATIONS.md)
+- [bot](packages/bot/MUTATIONS.md)
 - [chat](packages/chat/MUTATIONS.md)
 - [cli](packages/cli/MUTATIONS.md)
 - [dev](packages/dev/MUTATIONS.md)

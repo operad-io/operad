@@ -144,7 +144,7 @@ export const DEFAULT_PLUGINS: readonly string[] = [
  * Plugins shipped with operad that `operad init` does not install. They are
  * not in the default config; `plugin enable <name>` adds them.
  */
-export const OPTIONAL_PLUGINS: readonly string[] = ["pi", "claude", "pool", "assistant"];
+export const OPTIONAL_PLUGINS: readonly string[] = ["pi", "claude", "pool", "bot"];
 
 /** Harness plugins are named after their agent; their npm packages are `harness-<agent>`. */
 const HARNESS_PLUGINS: readonly string[] = ["claude", "pi", "radian"];

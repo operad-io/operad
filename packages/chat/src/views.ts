@@ -14,6 +14,9 @@ import { chatData, chatRef, MESSAGE_FACT, type Message } from "./model.ts";
 /** How many facts of a chat one page of the transcript reads. */
 export const TRANSCRIPT_PAGE = 50;
 
+/** How a transcript labels the model's messages when nothing sets a speaker. */
+export const DEFAULT_SPEAKER = "Operad Bot";
+
 /** The one section of a chat. */
 export const TRANSCRIPT = "transcript";
 
@@ -37,10 +40,35 @@ function minute(at: number): string {
 }
 
 /** One message as Markdown: who, when and where from, then the text. */
-export function messageMarkdown(message: Message): string {
-  const who = message.role === "assistant" ? "assistant" : "you";
+export function messageMarkdown(message: Message, speaker: string = DEFAULT_SPEAKER): string {
+  const who = message.role === "assistant" ? speaker : "you";
   const via = message.role === "user" && message.source.kind.length > 0 ? ` via ${message.source.kind}` : "";
   return `**${who}**${via} · ${minute(message.at)}\n\n${message.text}`;
+}
+
+/**
+ * How the transcript labels the model's messages now. The chat's own setting
+ * applies; a parent object that names a speaker (a bot) speaks for its chats.
+ * It is read at every draw, so a changed name shows on the messages already
+ * recorded too.
+ */
+async function speakerOf(ctx: ViewContext, object: StoredObject): Promise<string> {
+  const parent = chatData(object.data).parent;
+  if (parent !== undefined) {
+    const at = parent.indexOf(":");
+    if (at > 0 && at < parent.length - 1) {
+      const owner = ctx.refreshedObject === undefined
+        ? await ctx.store.get(parent.slice(0, at), parent.slice(at + 1))
+        : await ctx.refreshedObject(parent.slice(0, at), parent.slice(at + 1));
+      const speaker = owner?.data.speaker;
+      if (typeof speaker === "string" && speaker.length > 0) return speaker;
+    }
+  }
+  const settings = ctx.settingsInForce === undefined
+    ? ctx.settings
+    : ctx.settingsInForce(ctx.plugin);
+  const speaker = settings.speaker;
+  return typeof speaker === "string" && speaker.length > 0 ? speaker : DEFAULT_SPEAKER;
 }
 
 function messageFrom(fact: {
@@ -67,23 +95,24 @@ function messageFrom(fact: {
   };
 }
 
-function load(
+async function load(
   ctx: ViewContext,
   object: StoredObject,
   sectionId: string,
   options: { readonly cursor?: string | undefined },
-): SectionContent {
+): Promise<SectionContent> {
   if (sectionId !== TRANSCRIPT) return { markdown: "" };
   const ref = chatRef(object.id);
   const page = ctx.store.facts(ref, {
     ...(options.cursor === undefined ? {} : { cursor: options.cursor }),
     limit: TRANSCRIPT_PAGE,
   });
+  const speaker = await speakerOf(ctx, object);
   const blocks: string[] = [];
   for (const fact of page.facts) {
     if (fact.type !== MESSAGE_FACT) continue;
     const message = messageFrom(fact);
-    if (message !== undefined) blocks.push(messageMarkdown(message));
+    if (message !== undefined) blocks.push(messageMarkdown(message, speaker));
   }
   const markdown = blocks.length === 0 && options.cursor === undefined ? "No messages yet." : blocks.join("\n\n---\n\n");
 

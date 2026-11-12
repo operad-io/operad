@@ -4,6 +4,7 @@
  * flags and the history section the kernel itself owns.
  */
 
+import { readFileSync } from "node:fs";
 import { objectLink } from "../http/link.ts";
 import type { LogBackend } from "../log/types.ts";
 import {
@@ -58,6 +59,9 @@ import {
   type SettingsOptions,
 } from "./settings.ts";
 import { isRecord } from "../util.ts";
+import { configPath } from "../config/config.ts";
+import { prepareSettings } from "../plugin/settings.ts";
+import type { JsonValue } from "../log/types.ts";
 
 /** The final section the kernel adds to every object. */
 export const HISTORY_SECTION = "history";
@@ -502,6 +506,55 @@ export class Views {
       });
     }
     return this.preparing;
+  }
+
+  /**
+   * One plugin's settings from the file now, validated and with defaults. The
+   * registry's copy stands in when the file or the section is unusable.
+   */
+  private settingsInForce(plugin: string): Readonly<Record<string, JsonValue>> {
+    const fallback = this.registry.settingsFor(plugin);
+    const schema = this.registry
+      .settingsDeclarations()
+      .find((entry) => entry.plugin === plugin)?.schema;
+    if (schema === undefined) return fallback;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(readFileSync(configPath(this.registry.home), "utf8"));
+    } catch {
+      return fallback;
+    }
+    const plugins = isRecord(parsed) ? parsed.plugins : undefined;
+    const entry = isRecord(plugins) ? plugins[plugin] : undefined;
+    const section = isRecord(entry) ? entry.settings : undefined;
+    try {
+      return prepareSettings(schema, section, plugin);
+    } catch {
+      return fallback;
+    }
+  }
+
+  /** An object after its type's `prepare` runs with the settings in force now. */
+  private async refreshedObject(
+    type: string,
+    id: string,
+  ): Promise<StoredObject | undefined> {
+    const entry = this.registry.objectTypes().find((item) => item.type === type);
+    const prepare = entry?.definition.prepare;
+    if (entry !== undefined && prepare !== undefined) {
+      try {
+        await prepare({
+          store: this.store,
+          home: this.registry.home,
+          settings: this.settingsInForce(entry.plugin),
+        });
+      } catch (error) {
+        this.onLog(
+          `plugin "${entry.plugin}": prepare failed: ${messageOf(error)}`,
+        );
+      }
+    }
+    return this.store.get(type, id);
   }
 
   /** Closes the change listeners this view opened. */
@@ -1875,6 +1928,9 @@ export class Views {
       logger: createPluginLogger(this.store.root, plugin, "views"),
       signal,
       settings: this.registry.settingsFor(plugin),
+      settingsInForce: (name: string) => this.settingsInForce(name),
+      refreshedObject: (type: string, id: string) =>
+        this.refreshedObject(type, id),
       secrets: new FileSecretStore({ home: this.registry.home, plugin }),
       ...(log === undefined
         ? {}

@@ -3,7 +3,7 @@
 - 状态：decided（方向；各项设计见五个子项）
 - 涉及 ADR：0032、0043、0048、0049、0024、0045、0034
 - 来源：`research/2026-11-04-agent-autoloop.md`；`research/2026-11-05-noop.md`；`research/2026-10-20-arc-competitors.md`
-- 子项：`operad-engine.md`、`operad-plugins.md`、`operad-harness.md`、`operad-channels.md`、`operad-contract.md`、`operad-presentation.md`、`operad-conversation.md`、`operad-sandbox.md`、`operad-bot.md`、`operad-harness-pi.md`、`operad-harness-claude.md`、`operad-telegram.md`；`hub-event-inlet.md` 归入 `operad-channels.md`
+- 子项：`operad-engine.md`、`operad-plugins.md`、`operad-harness.md`、`operad-channels.md`、`operad-contract.md`、`operad-presentation.md`、`operad-conversation.md`、`operad-sandbox.md`、`operad-bot.md`、`operad-bot-mcp.md`、`operad-harness-pi.md`、`operad-harness-claude.md`、`operad-telegram.md`；`hub-event-inlet.md` 归入 `operad-channels.md`
 
 ## 背景
 

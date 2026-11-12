@@ -27,8 +27,8 @@
         "@operad-io/engine": "workspace:*",
       },
     },
-    "packages/assistant": {
-      "name": "@operad-io/assistant",
+    "packages/bot": {
+      "name": "@operad-io/bot",
       "version": "0.0.0",
       "dependencies": {
         "@operad-io/chat": "workspace:*",
@@ -280,7 +280,7 @@
 
     "@operad-io/access-match": ["@operad-io/access-match@workspace:packages/access-match"],
 
-    "@operad-io/assistant": ["@operad-io/assistant@workspace:packages/assistant"],
+    "@operad-io/bot": ["@operad-io/bot@workspace:packages/bot"],
 
     "@operad-io/chat": ["@operad-io/chat@workspace:packages/chat"],
 
