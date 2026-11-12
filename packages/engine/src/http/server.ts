@@ -466,13 +466,24 @@ function createHandler(
         plugin: string;
         filters?: readonly { name: string; states?: readonly string[] | undefined }[];
         defaultFilter?: string;
+        parents?: readonly string[];
       }[] = [];
       for (const entry of options.registry.objectTypes()) {
         if (seen.has(entry.type)) continue;
         if (options.registry.viewsFor(entry.type) === undefined) continue;
         seen.add(entry.type);
         const filters = typeFilters(entry.definition);
+        // The types an action that creates this one works on: where a client offers a new one.
+        const parents = [
+          ...new Set(
+            options.registry
+              .actions()
+              .filter((action) => action.creates === entry.type)
+              .map((action) => action.on),
+          ),
+        ];
         types.push({
+          ...(parents.length === 0 ? {} : { parents }),
           type: entry.type,
           title: displayNameOf(entry.type),
           plugin: entry.plugin,
@@ -572,6 +583,53 @@ function createHandler(
           confirmed: confirmed === true,
         }),
       );
+    }
+
+    if (method === "POST" && path === "/v1/answer") {
+      const body = await readBody(request);
+      if (!isRecord(body)) {
+        return errorResponse(400, "args", "the body must be an object");
+      }
+      const { runId, waitId, choice } = body;
+      if (typeof runId !== "string" || runId.length === 0) {
+        return errorResponse(400, "args", "the body needs a runId");
+      }
+      if (typeof waitId !== "string" || waitId.length === 0) {
+        return errorResponse(400, "args", "the body needs a waitId");
+      }
+      if (typeof choice !== "string" || choice.length === 0) {
+        return errorResponse(400, "args", "the body needs a choice");
+      }
+      const note = body.note;
+      if (note !== undefined && typeof note !== "string") {
+        return errorResponse(400, "args", "note must be a string");
+      }
+      const confirmed = body.confirmed;
+      if (confirmed !== undefined && typeof confirmed !== "boolean") {
+        return errorResponse(400, "args", "confirmed must be a boolean");
+      }
+      const actor: Actor = { via: clientName(request.headers.get(CLIENT_HEADER)), id: token.label };
+      try {
+        await options.views.answer({
+          runId,
+          waitId,
+          choice,
+          ...(note === undefined ? {} : { note }),
+          ...(confirmed === true ? { confirmed: true } : {}),
+          surface: "http",
+          actor,
+        });
+        return json({ runId, waitId, choice });
+      } catch (error) {
+        if (error instanceof ViewError) {
+          onLog(
+            `http: answer "${waitId}" refused (${viewErrorStatus(error.kind)}): ${error.message}`,
+          );
+          throw error;
+        }
+        onLog(`http: answer "${waitId}" refused (422): ${messageOf(error)}`);
+        return errorResponse(422, "refused", messageOf(error));
+      }
     }
 
     if (method === "POST" && path === "/v1/act") {

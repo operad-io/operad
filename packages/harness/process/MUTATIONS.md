@@ -59,3 +59,4 @@ and the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0297-M1 | packages/harness/process/test/support.ts | `pidValue` accepted 0 and 1 as pids | `test support > a pid must be a finite integer above 1` |
+| T-0335-M2 | packages/harness/process/src/ask-call.ts | a refusal's note was dropped, so the program got the generic reason | `createCallAsker > a refusal's note is the reason the program gets` |

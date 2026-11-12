@@ -681,6 +681,16 @@ time limit; its `gate.commandTimeoutSecs` starts when it runs. Places are lock
 files under `<home>/dev/check-places/`, so a check whose process dies gives its
 place back. A rerun of a failed check takes a place again.
 
+An integration check, with its key-command reruns, goes before a waiting verify
+check when a place frees, across every repository, so a verified task is not
+held behind the machine's task checks. Among integrations and among verifies the
+order stays first come, first served. A verify that has waited more than 30
+minutes goes before the integrations: that is longer than one integration check
+usually takes, so a queue of integrations still drains first, and short enough
+that a steady stream of them cannot starve a verify for ever. A verify passed
+over this way says so in its step log:
+`waiting for a check place: passed over for an integration check`.
+
 A repository can also limit itself: `gate.places` in its `dev.json` (an integer
 of 1 or more, unset by default) is the most checks of that repository that run
 at once. It is for checks that cannot share a machine, such as full UI test

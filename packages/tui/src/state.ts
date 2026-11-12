@@ -32,14 +32,17 @@ import {
   keyLabel,
   mainAction,
   mainKey,
+  MAIN_KEY,
   runKey,
   startAction,
   typed,
   isReserved,
   resolveBindings,
   remember,
+  startAnswer,
   withNotice,
   type TuiCommand,
+  pageActions,
 } from "./actions.ts";
 
 /** The two terminal themes the view knows. */
@@ -62,6 +65,14 @@ const WAITING_KEEPS: readonly RowMark[] = [
   "ready_to_merge",
 ];
 
+/** One pending question a person answers with one of its choices. */
+export interface TuiAnswer {
+  readonly runId: string;
+  readonly waitId: string;
+  readonly prompt: string;
+  readonly choices: readonly string[];
+}
+
 /** One line of a list, in the words the view renders. */
 export interface TuiRow {
   readonly id: string;
@@ -82,6 +93,8 @@ export interface TuiRow {
   readonly openable?: boolean | undefined;
   /** The parts of the dim second line; unset means state, badge and note. */
   readonly detail?: readonly string[] | undefined;
+  /** A pending question whose choices are not the object's actions. */
+  readonly answer?: TuiAnswer | undefined;
   /** The row names no object: its first line is the title alone. */
   readonly unnamed?: boolean | undefined;
   /** The object type, for a row of a plugin tab or of a page's next level. */
@@ -186,6 +199,12 @@ export type TuiInput =
       readonly args?: Readonly<Record<string, unknown>> | undefined;
     }
   | {
+      /** One choice of a pending question is being chosen. */
+      readonly kind: "answer";
+      readonly answer: TuiAnswer;
+      readonly cursor: number;
+    }
+  | {
       /** One argument of an action is being asked: a list, a number or a text. */
       readonly kind: "args";
       readonly action: string;
@@ -233,6 +252,15 @@ export interface TuiActionRequest {
   readonly id: string;
   readonly note?: string | undefined;
   readonly args?: Readonly<Record<string, unknown>> | undefined;
+  readonly confirmed?: boolean | undefined;
+}
+
+/** An answer the reducer wants the caller to send with `POST /v1/answer`. */
+export interface TuiAnswerRequest {
+  readonly runId: string;
+  readonly waitId: string;
+  readonly choice: string;
+  readonly note?: string | undefined;
   readonly confirmed?: boolean | undefined;
 }
 
@@ -351,6 +379,11 @@ export interface TuiState {
   readonly objectVersion: number;
   /** Set when a row is opened and the caller must fetch the object. */
   readonly objectRequest?: TuiObjectRequest | undefined;
+  /**
+   * `c` on a tab: the parent page is opening so the action that creates `type`
+   * can start on it; the page's answer starts it.
+   */
+  readonly creating?: { readonly parent: string; readonly type: string } | undefined;
   /** Set when a section must be fetched. */
   readonly sectionRequest?: TuiSectionRequest | undefined;
   /** Grows each time a list cursor moves; the shell opens what it lands on. */
@@ -381,6 +414,8 @@ export interface TuiState {
   readonly notice?: string | undefined;
   /** Set when an action must be sent; the caller clears it as it sends. */
   readonly actionRequest?: TuiActionRequest | undefined;
+  /** Set when an answer must be sent; the caller clears it as it sends. */
+  readonly answerRequest?: TuiAnswerRequest | undefined;
   /** The settings the palette lists, global and the open object's repository. */
   readonly settings: readonly TuiSetting[];
   /** Set when the palette opened and the settings must be fetched again. */
@@ -675,6 +710,8 @@ export type TuiStateEvent =
     }
   /** The caller sent the action request; it is sent once. */
   | { readonly type: "action-launched" }
+  /** The caller sent the answer request; it is sent once. */
+  | { readonly type: "answer-launched" }
   | { readonly type: "setting-launched" }
   | { readonly type: "settings"; readonly settings: readonly TuiSetting[] }
   /** The installed themes or the theme in force changed. */
@@ -733,7 +770,23 @@ export function rowFromView(row: ViewRow, type?: string): TuiRow {
   };
 }
 
+/** The item's answer, when its choices are not the object's actions. */
+function answerOfPending(item: PendingItem): TuiAnswer | undefined {
+  if (item.waitId === undefined || item.choices.length === 0) return undefined;
+  const names = new Set(item.actions.map((action) => action.action));
+  // A choice that is also an action stays with the actions, as it works today.
+  if (item.choices.every((choice) => names.has(choice))) return undefined;
+  return {
+    runId: item.runId,
+    waitId: item.waitId,
+    prompt: item.prompt,
+    choices: item.choices,
+  };
+}
+
 function rowFromPending(item: PendingItem): TuiRow {
+  const answer = answerOfPending(item);
+  const answerDetail = answer === undefined ? [] : [`choices: ${answer.choices.join(", ")}`];
   // A server that sends the object's row saves a read per item: the row names
   // the object, and the question stays visible as the note. An older server
   // sends no row, and the item shows its question and flow as before.
@@ -743,9 +796,10 @@ function rowFromPending(item: PendingItem): TuiRow {
       title: sanitize(item.row.title),
       state: sanitize(item.row.state),
       note: sanitize(item.prompt),
-      detail: detailOf([item.prompt, repositoryOf(item.object)]),
+      detail: detailOf([item.prompt, repositoryOf(item.object), ...answerDetail]),
       waiting: true,
       running: false,
+      ...(answer === undefined ? {} : { answer }),
       ...(item.row.mark === undefined ? {} : { mark: item.row.mark }),
       ...(item.row.badge === undefined ? {} : { badge: sanitize(item.row.badge) }),
       ...(item.row.error === undefined ? {} : { error: sanitize(item.row.error) }),
@@ -757,9 +811,10 @@ function rowFromPending(item: PendingItem): TuiRow {
     title: sanitize(item.prompt),
     state: sanitize(item.flow),
     ...(item.step === null ? {} : { note: sanitize(item.step) }),
-    detail: detailOf([item.flow, item.step ?? "", repositoryOf(item.object)]),
+    detail: detailOf([item.flow, item.step ?? "", repositoryOf(item.object), ...answerDetail]),
     waiting: true,
     running: false,
+    ...(answer === undefined ? {} : { answer }),
     ...(item.object === undefined ? { openable: false, unnamed: true } : {}),
   };
 }
@@ -1442,7 +1497,26 @@ function applyObject(
   if (section !== undefined && !section.loaded) {
     updated = requestSection(updated, active);
   }
+  const creating = updated.creating;
+  if (creating !== undefined && previous.id === creating.parent) {
+    updated = { ...updated, creating: undefined };
+    const make = view.actions.find((action) => action.creates === creating.type);
+    return make === undefined
+      ? withNotice(updated, `${creating.parent} has no way to create a ${creating.type}`)
+      : startAction(updated, make.name);
+  }
   return updated;
+}
+
+/** `c` on a tab of one object type: the palette, listing where a new one can be made. */
+function createHere(state: TuiState): TuiState {
+  const info = state.tabs[state.active]?.types?.find((one) => one.parents !== undefined);
+  if (info === undefined) return withNotice(state, "nothing is made from this tab");
+  return {
+    ...state,
+    input: { kind: "palette", query: `new ${info.type}`, cursor: 0 },
+    settingsRequest: true,
+  };
 }
 
 function applyObjectError(
@@ -1980,6 +2054,12 @@ function runCommand(state: TuiState, command: TuiCommand): TuiState {
         themePreview: state.themeNames[cursor],
       };
     }
+    case "create": {
+      const opened = openNamed({ ...state, followPending: false }, command.parent);
+      return opened === state
+        ? state
+        : { ...opened, creating: { parent: command.parent, type: command.type } };
+    }
     case "go":
       return activate(state, state.tabs.findIndex((tab) => tab.id === command.tabId));
   }
@@ -2094,6 +2174,7 @@ function handleKey(
       if (isKey(key, "g")) return jumpSection(state, "top");
     }
   }
+  if (isKey(key, "c") && !shift) return createHere(state);
   if (isKey(key, "f")) return cycleFilter(state);
   // A rotated token is not retried: the person runs the TUI again.
   if (isKey(key, "r") && state.connection === "unauthorized") return state;
@@ -2112,6 +2193,8 @@ function handleKey(
   if (key === "G" || (isKey(key, "g") && shift)) return jump(state, "bottom");
   if (isKey(key, "g")) return jump(state, "top");
   if (/^[1-9]$/.test(key)) return activate(state, Number(key) - 1);
+  const answer = selectedAnswer(state);
+  if (answer !== undefined && label === MAIN_KEY) return startAnswer(state, answer);
   return runKey(state, label) ?? state;
 }
 
@@ -2382,6 +2465,13 @@ function followLoaded(state: TuiState, tabId: string): TuiState {
   // A follow already waiting keeps its debounce: restarting it on every refresh could starve it.
   if (state.followPending) return state;
   return { ...state, moveSeq: state.moveSeq + 1, followPending: true };
+}
+
+/** The answerable question on the selected pending row, if any. */
+function selectedAnswer(state: TuiState): TuiAnswer | undefined {
+  const tab = activeTabOf(state);
+  if (tab?.kind !== "pending") return undefined;
+  return tab.list.rows[tab.list.cursor]?.answer;
 }
 
 function applyPending(state: TuiState, items: readonly PendingItem[]): TuiState {
@@ -2689,6 +2779,10 @@ export function reduce(state: TuiState, event: TuiStateEvent): TuiState {
       return state.actionRequest === undefined
         ? state
         : { ...state, actionRequest: undefined };
+    case "answer-launched":
+      return state.answerRequest === undefined
+        ? state
+        : { ...state, answerRequest: undefined };
     case "setting-launched":
       return { ...state, settingRequest: undefined, settingsRequest: false };
     case "settings":
@@ -2698,6 +2792,7 @@ export function reduce(state: TuiState, event: TuiStateEvent): TuiState {
         ...(event.notice === undefined ? state : withNotice(state, event.notice)),
         acting: false,
         actionRequest: undefined,
+        answerRequest: undefined,
       };
       return event.opens === undefined ? done : openNamed(done, event.opens);
     }
@@ -2774,7 +2869,7 @@ export function footerSegments(state: TuiState): readonly TuiFooterSegment[] {
   const main = mainAction(state);
   if (object !== undefined && main !== undefined) {
     add(mainKey(state), main.name);
-    if (object.actions.length > 1) add(":", "more");
+    if (pageActions(object.actions).length > 1) add(":", "more");
   }
   const filtering = filterKeyApplies(state);
   if (object === undefined) {
@@ -2850,6 +2945,7 @@ export const KEY_GROUPS: readonly (readonly (readonly [string, string])[])[] = [
     ["t", "switch the child list between tree and list"],
   ],
   [
+    ["c", "on a tab of chats: start a new one; the palette lists where (a repository or a bot)"],
     ["r", "fetch the lists again"],
     ["escape / backspace", "close the key list, leave a list inside the open object, return from a row opened there, or close the object"],
     ["?", "show or hide this key list"],

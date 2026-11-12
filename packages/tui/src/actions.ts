@@ -8,7 +8,7 @@ import type { ViewAction, ViewRow } from "@operad-io/engine";
 import { argFields, parseArg, type ArgField } from "./args.ts";
 import type { TuiSetting } from "./client.ts";
 import { sanitize } from "./sanitize.ts";
-import type { TuiBinding, TuiInput, TuiState } from "./state.ts";
+import type { TuiAnswer, TuiBinding, TuiInput, TuiState } from "./state.ts";
 import { graphemes } from "./wrap.ts";
 
 /** The key that runs the main action when the plugin binds none to it. */
@@ -118,10 +118,19 @@ function bareId(id: string): string {
   return at < 0 ? id : id.slice(at + 1);
 }
 
+/**
+ * The actions a page lists: those that do not create an object of another type.
+ * A creating action belongs to that type's tab (`c` on the chat tab), not to the
+ * parent's page.
+ */
+export function pageActions(actions: readonly ViewAction[]): readonly ViewAction[] {
+  return actions.filter((action) => action.creates === undefined);
+}
+
 /** The first available action, the one the footer offers. */
 export function mainAction(state: TuiState): ViewAction | undefined {
   // An action that ends the object is never the main one, even when it is alone.
-  return state.object?.actions.find((action) => action.ends !== true);
+  return pageActions(state.object?.actions ?? []).find((action) => action.ends !== true);
 }
 
 /** The key the footer shows for the main action. */
@@ -273,7 +282,26 @@ export function matchPositions(query: string, entry: TuiPaletteEntry): readonly 
 /** What a TUI command does; each is what a key does. */
 export type TuiCommand =
   | { readonly kind: "help" | "refresh" | "back" | "quit" | "themes" }
-  | { readonly kind: "go"; readonly tabId: string };
+  | { readonly kind: "go"; readonly tabId: string }
+  | { readonly kind: "create"; readonly parent: string; readonly type: string };
+
+/** The objects a new `type` can be made under: every loaded row, or group, of a type that creating it works on. */
+export function creationParents(
+  state: TuiState,
+  type: string,
+  parents: readonly string[],
+): readonly string[] {
+  const ids = new Set<string>();
+  for (const tab of state.tabs) {
+    for (const row of tab.list.rows) {
+      for (const candidate of [row, row.group]) {
+        if (candidate?.type === undefined || !parents.includes(candidate.type)) continue;
+        ids.add(candidate.id.includes(":") ? candidate.id : `${candidate.type}:${candidate.id}`);
+      }
+    }
+  }
+  return [...ids];
+}
 
 /** The scopes the palette lists settings of: global, and the open object's repository. */
 export function settingScopes(state: TuiState): readonly string[] {
@@ -379,8 +407,22 @@ function commandEntries(state: TuiState): readonly TuiPaletteEntry[] {
         tabId: item.tab.id,
       }),
     );
+  // A creating action is offered from its type's own tab only, never on a parent's page.
+  const here = state.tabs[state.active];
+  const creating = (here?.kind === "plugin" ? (here.types ?? []) : [])
+    .filter((info) => state.object === undefined || !(info.parents ?? []).includes(state.object.type))
+    .flatMap((info) =>
+      creationParents(state, info.type, info.parents ?? []).map((parent) =>
+        make(`new ${info.type}`, `start a new ${info.type} in ${parent}`, undefined, {
+          kind: "create",
+          parent,
+          type: info.type,
+        }),
+      ),
+    );
   return [
     make("help", "show or hide the key list", "?", { kind: "help" }),
+    ...creating,
     make("refresh", "load the lists again", "r", { kind: "refresh" }),
     ...[go("pending"), go("running")].filter((entry): entry is TuiPaletteEntry => entry !== undefined),
     ...types,
@@ -398,7 +440,7 @@ export function paletteEntries(state: TuiState): readonly TuiPaletteEntry[] {
   const actions: readonly TuiPaletteEntry[] =
     object === undefined
       ? []
-      : object.actions.map((action) => ({
+      : pageActions(object.actions).map((action) => ({
           group: "actions",
           name: action.name,
           title: `${action.name} on ${bareId(object.id)}`,
@@ -589,6 +631,51 @@ export function startAction(
   return afterArgs(closed, action.name, object.id, {}, note, action.confirm);
 }
 
+/** Opens the choice list of a pending question. */
+export function startAnswer(state: TuiState, answer: TuiAnswer): TuiState {
+  const closed: TuiState = { ...state, input: undefined };
+  if (state.acting) return withNotice(closed, "the last change has not answered yet");
+  return {
+    ...closed,
+    input: { kind: "answer", answer, cursor: 0 },
+  };
+}
+
+/** Sends the chosen answer and closes the choice list. */
+function sendAnswer(state: TuiState, answer: TuiAnswer, choice: string): TuiState {
+  return {
+    ...state,
+    input: undefined,
+    acting: true,
+    answerRequest: {
+      runId: answer.runId,
+      waitId: answer.waitId,
+      choice,
+    },
+  };
+}
+
+/** The keys of a pending question's choice list. */
+function answerKey(
+  state: TuiState,
+  input: Extract<TuiInput, { readonly kind: "answer" }>,
+  key: string,
+  enter: boolean,
+): TuiState {
+  const down = key === "down" || key === "arrowdown" || key === "j";
+  const up = key === "up" || key === "arrowup" || key === "k";
+  if (down || up) {
+    const cursor = Math.min(
+      Math.max(0, input.cursor + (down ? 1 : -1)),
+      input.answer.choices.length - 1,
+    );
+    return { ...state, input: { ...input, cursor } };
+  }
+  if (!enter) return state;
+  const choice = input.answer.choices[input.cursor];
+  return choice === undefined ? state : sendAnswer(state, input.answer, choice);
+}
+
 type ArgsInput = Extract<TuiInput, { readonly kind: "args" }>;
 
 function argsInput(
@@ -719,6 +806,7 @@ export function inputKey(
     });
   }
   if (escape) return { ...state, input: undefined };
+  if (input.kind === "answer") return answerKey(state, input, key, enter);
   if (input.kind === "setting") return settingKey(state, input, event, key, enter);
   if (input.kind === "args") return argsKey(state, input, event, key, enter);
   if (input.kind === "palette") {
@@ -791,6 +879,7 @@ export function actionFailed(state: TuiState, message: string): TuiState {
     ...withNotice(state, refusalLine(message)),
     acting: false,
     actionRequest: undefined,
+    answerRequest: undefined,
   };
 }
 

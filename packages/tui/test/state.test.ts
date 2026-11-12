@@ -211,6 +211,38 @@ describe("the TUI reducer", () => {
     });
   });
 
+  test("a pending question without a row still offers its choices and answers", () => {
+    let state = withTypes(initialState({ width: 120 }));
+    const item: PendingItem = {
+      runId: pending.runId,
+      flow: pending.flow,
+      step: pending.step,
+      prompt: pending.prompt,
+      choices: ["yes", "no"],
+      waitId: "wait:1",
+      actions: pending.actions,
+    };
+    state = reduce(state, { type: "pending", items: [item] });
+    const row = state.tabs.find((tab) => tab.id === "pending")?.list.rows[0];
+    expect(row).toMatchObject({
+      id: "run-1",
+      openable: false,
+      answer: {
+        runId: "run-1",
+        waitId: "wait:1",
+        prompt: "Approve?",
+        choices: ["yes", "no"],
+      },
+    });
+
+    state = reduce(state, { type: "key", key: "a", text: "a" });
+    expect(state.input).toMatchObject({
+      kind: "answer",
+      cursor: 0,
+      answer: { waitId: "wait:1", choices: ["yes", "no"] },
+    });
+  });
+
   test("a running row that names an object opens it on enter; one without stays closed", () => {
     let state = withTypes(initialState({ width: 120 }));
     state = reduce(state, { type: "key", key: "2" });

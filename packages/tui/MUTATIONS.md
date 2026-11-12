@@ -386,3 +386,15 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0320-M1 | packages/tui/src/state.ts | a running row was built with `openable: false` again, named or not | `the TUI reducer > a running row that names an object opens it on enter; one without stays closed` |
+
+## T-0336 — a pending question with no row still answers
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0336-M3 | packages/tui/src/state.ts | the no-row pending return dropped the question's choices, so `a` could not answer it | `the TUI reducer > a pending question without a row still offers its choices and answers` |
+## T-0329 — a creating action is not on its parent's page
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0329-M2 | packages/tui/src/actions.ts | `pageActions` kept actions that declare `creates` | `an action that creates another type > it is not on its parent's page: not the main action, not in the footer, not in the palette` |
+| T-0329-M3 | packages/tui/src/actions.ts | the palette listed `new <type>` entries whatever tab and page was open, so a repository page offered `new chat` | `an action that creates another type > a repository's page and its palette list no creating action, even though the chat tab does` |

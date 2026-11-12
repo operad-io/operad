@@ -39,6 +39,8 @@ export interface TuiTypeInfo {
   readonly filters?: readonly { readonly name: string; readonly states?: readonly string[] }[] | undefined;
   /** The filter a list opens on; present with `filters`. */
   readonly defaultFilter?: string | undefined;
+  /** The object types an action that creates this type works on; absent when none does. */
+  readonly parents?: readonly string[] | undefined;
 }
 
 /** One entry of `GET /v1/keys`. */
@@ -90,6 +92,17 @@ export interface TuiActInput {
   readonly action: string;
   readonly id?: string | undefined;
   readonly args?: Readonly<Record<string, unknown>> | undefined;
+  readonly note?: string | undefined;
+  readonly confirmed?: boolean | undefined;
+  /** Cancels the request; it then rejects. */
+  readonly signal?: AbortSignal | undefined;
+}
+
+/** What `POST /v1/answer` carries. */
+export interface TuiAnswerInput {
+  readonly runId: string;
+  readonly waitId: string;
+  readonly choice: string;
   readonly note?: string | undefined;
   readonly confirmed?: boolean | undefined;
   /** Cancels the request; it then rejects. */
@@ -371,6 +384,21 @@ export class TuiClient {
           : { confirmed: input.confirmed }),
       },
     })) as ViewActionRun;
+  }
+
+  /** Answers one open question of a pending item by the wait id it named. */
+  async answer(input: TuiAnswerInput): Promise<unknown> {
+    return this.request("/v1/answer", {
+      method: "POST",
+      signal: input.signal,
+      body: {
+        runId: input.runId,
+        waitId: input.waitId,
+        choice: input.choice,
+        ...(input.note === undefined ? {} : { note: input.note }),
+        ...(input.confirmed === true ? { confirmed: true } : {}),
+      },
+    });
   }
 
   /** The settings of one scope (`global`, or a repository's name). */

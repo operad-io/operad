@@ -961,3 +961,20 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0340-M1 | packages/dev/src/refusals.ts | the plan's second confirm said "nothing more to do", so the in-process confirm check no longer matched | `operad with the dev plugin > the real binary registers, plans, lists, shows and confirms` |
+
+## T-0343 — integration checks take a freed place before verify checks
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0343-M1 | packages/dev/src/place-order.ts | the kind was ignored in the wait order, so an integration queued behind a verify again | `check places are served in the order checks began to wait > integration checks take a freed place before verify checks, each first come first served` |
+## T-0345 — a git that never exits is killed and named
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0345-M1 | packages/dev/src/git.ts | `runOnce` passed no timeout to `Bun.spawnSync`, so a git that never exits blocked as before | `a git that never exits > is killed at its limit and the error names the command, the directory and the time` |
+
+## T-0343 — rework 1: the passed-over line survives the integration leaving the queue
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0343-M2 | packages/dev/src/places.ts | a verify no longer read the integration's last place grant, so it missed the passed-over line when the integration left the wait order first | `check places are served in the order checks began to wait > a verify says it was passed over when the integration leaves the wait order before the next look` |

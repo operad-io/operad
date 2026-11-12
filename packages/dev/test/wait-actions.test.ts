@@ -1,9 +1,15 @@
 import { afterAll, describe, expect, test } from "bun:test";
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
 import {
+  createViews,
   decide,
   evolve,
   initialState,
+  openLog,
   PluginRegistry,
+  readHttpToken,
+  startHttpServer,
   type FlowDefinition,
   type Input,
   type KernelState,
@@ -218,6 +224,91 @@ describe("the actions a waiting task offers", () => {
       }
     });
   }
+});
+
+describe("answering a dev wait through /v1/answer", () => {
+  test("merge asks for confirmation, then confirmed runs the merge action", async () => {
+    const fixture = await setup(devFlow, GATED);
+    const home = join(fixture.root, "home");
+    mkdirSync(home, { recursive: true });
+    const log = openLog({
+      backend: "sqlite",
+      path: join(fixture.root, "log", "log.sqlite"),
+    });
+    const views = createViews({
+      registry: fixture.registry,
+      store: fixture.store,
+      log,
+      home,
+      onLog: () => undefined,
+    });
+    const server = await startHttpServer({
+      home,
+      config: { enabled: true, port: 0, listen: ["127.0.0.1"] },
+      views,
+      log,
+      registry: fixture.registry,
+      onLog: () => undefined,
+    });
+    const token = await readHttpToken(home);
+    if (token === undefined) throw new Error("the server created no token");
+    const base = server.urls[0];
+    if (base === undefined) throw new Error("the server bound no address");
+    const run = await log.startRun("dev:task", `task:${fixture.taskId}`);
+    const waitId = "wait:1";
+    await log.append(run.runId, 0, [
+      {
+        kind: "waiting_for_person",
+        payload: {
+          waitId,
+          step: WAIT_STEPS.person,
+          prompt: "Merge?",
+          choices: [...waitChoices("person", true)],
+          waitKind: "step",
+          effectId: null,
+        },
+        cause: "test",
+      },
+    ]);
+    const headers = {
+      authorization: `Bearer ${token.token}`,
+      "content-type": "application/json",
+    };
+    try {
+      const noConfirm = await fetch(`${base}/v1/answer`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          runId: run.runId,
+          waitId,
+          choice: "merge",
+        }),
+      });
+      expect(noConfirm.status).toBe(409);
+      const refused = (await noConfirm.json()) as { error?: { message?: string } };
+      expect(refused.error?.message).toContain("needs confirmation");
+      expect(fixture.answers).toEqual([]);
+
+      const confirmed = await fetch(`${base}/v1/answer`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          runId: run.runId,
+          waitId,
+          choice: "merge",
+          confirmed: true,
+        }),
+      });
+      expect(confirmed.status).toBe(200);
+      expect(fixture.answers).toEqual(["merge"]);
+      const task = taskData((await getTask(fixture.store, fixture.taskId)).data);
+      expect(task.brief).toContain("merge requested");
+    } finally {
+      await server.stop();
+      views.close();
+      await log.close();
+    }
+  }, 30_000);
 });
 
 describe("the wait a review leaves", () => {

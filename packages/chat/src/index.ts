@@ -1,6 +1,6 @@
 /** The chat plugin: a long conversation with an agent, and how a message is answered. */
 
-import { defineFlow, definePlugin, type ActionTypeDefinition } from "@operad-io/engine";
+import { defineFlow, definePlugin, type ActionContext, type ActionTypeDefinition } from "@operad-io/engine";
 import {
   CHAT_FILTERS,
   CHAT_SOURCES,
@@ -64,6 +64,41 @@ export const replyFlow = defineFlow({
   ],
 });
 
+/** What {@link sendMessage} needs of an action's context. */
+export type SendContext = Pick<ActionContext, "facts" | "emit" | "actor">;
+
+/**
+ * Records a user message on chat `chatId` and, when events can be routed, starts
+ * the reply: what `chat:send` does. An action that creates a chat with a first
+ * message calls it for the new chat. Returns the line to show.
+ */
+export async function sendMessage(
+  ctx: SendContext,
+  chatId: string,
+  note: string,
+  ref?: string,
+): Promise<string> {
+  const via = ctx.actor.via;
+  // The message records who sent it as it is; the event uses a known source, or
+  // `other` for a client this plugin does not know, so it is still answered.
+  const known = CHAT_SOURCES.find((name) => name === via);
+  const source = known ?? OTHER_SOURCE;
+  const id = newMessageId();
+  const message: MessageData = {
+    id,
+    role: "user",
+    from: { via: ctx.actor.via, id: ctx.actor.id },
+    text: note,
+    attachments: [],
+    source: { kind: via, ref: ref ?? null },
+  };
+  // The message is a fact first; the event is what starts the answer.
+  await ctx.facts.append({ type: MESSAGE_FACT, object: chatRef(chatId), data: message });
+  if (ctx.emit === undefined) return `recorded ${id}; it is answered when operad serve runs`;
+  await ctx.emit({ source, type: MESSAGE_EVENT, key: id, object: `${CHAT_TYPE}:${chatId}` });
+  return `sent ${id}`;
+}
+
 const sendAction: ActionTypeDefinition = {
   name: "send",
   on: CHAT_TYPE,
@@ -95,30 +130,7 @@ const sendAction: ActionTypeDefinition = {
       throw new Error(`chat ${ctx.object.id} is closed; it takes no messages`);
     }
     const input = args as { readonly note: string; readonly ref?: string };
-    const via = ctx.actor.via;
-    // The message records who sent it as it is; the event uses a known source, or
-    // `other` for a client this plugin does not know, so it is still answered.
-    const known = CHAT_SOURCES.find((name) => name === via);
-    const source = known ?? OTHER_SOURCE;
-    const id = newMessageId();
-    const message: MessageData = {
-      id,
-      role: "user",
-      from: { via: ctx.actor.via, id: ctx.actor.id },
-      text: input.note,
-      attachments: [],
-      source: { kind: via, ref: input.ref ?? null },
-    };
-    // The message is a fact first; the event is what starts the answer.
-    await ctx.facts.append({ type: MESSAGE_FACT, object: chatRef(ctx.object.id), data: message });
-    if (ctx.emit === undefined) return `recorded ${id}; it is answered when operad serve runs`;
-    await ctx.emit({
-      source,
-      type: MESSAGE_EVENT,
-      key: id,
-      object: `${CHAT_TYPE}:${ctx.object.id}`,
-    });
-    return `sent ${id}`;
+    return sendMessage(ctx, ctx.object.id, input.note, input.ref);
   },
 };
 

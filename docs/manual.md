@@ -400,7 +400,7 @@ loads the section. Every key the app reads is below.
 | `g` | key | none | The first row; under 100 columns with an object open, the top of the section. |
 | `G` | key | none | The last row; under 100 columns with an object open, the end of the section (it resumes following a live section). |
 | `r` | key | none | Fetch every list again, and the open object with its live sections. When the open section failed to load, it asks for that section again too. |
-| `a` | key | none | Run the open object's main action, the first one the object offers now (the footer names it with its key). A key bound to an action (below) wins over `a`. With no action, one footer line says so. |
+| `a` | key | none | Run the open object's main action, the first one the object offers now (the footer names it with its key). A key bound to an action (below) wins over `a`. On Pending, when the selected item's choices are not actions on its object, `a` opens those choices and answers the question. With no action, one footer line says so. |
 | a bound key | key | `GET /v1/keys` | Run that action on the open object. A user binding in `keys.json` beats a plugin default on the same key. Reserved keys cannot be bound: `enter`, `return`, `escape`, `esc`, `tab`, the arrows (`up`, `down`, `left`, `right`), `pageup`, `pagedown`, `home`, `end`, `space`, `[`, `]`, `:`, `?`, `/`, `b`, `f`, `g`, `j`, `k`, `q`, `r` (letters in either case) and `1`–`9`, as well as Ctrl-C and any Ctrl or Meta chord. A plugin default or `keys.json` entry on a reserved key is dropped; at start one footer line names each dropped key with its action and source. The action stays reachable from the `:` palette, with no key shown. If the object does not offer the action now, one footer line says it is not available. |
 | `:` | key | none | Open the palette: type to fuzzy match the `plugin:action` names the open object offers, each with its key and "needs a note" or "asks to confirm". `↑` / `↓` (or Ctrl-P / Ctrl-N) move, `enter` runs, `escape` closes. With no object open it lists nothing but "no object is selected". |
 | note input | key | none | An action with a note field opens a text input. Typing adds text, `backspace` deletes, `shift-enter` or `Ctrl-J` adds a line, `enter` sends and `escape` cancels. A required note cannot be sent empty. |
@@ -448,16 +448,19 @@ otherwise. An object id in a path is URL-encoded; `<id>` may be the bare id or
 | `GET /v1/types` | `{ "types": [{ "type": "task", "title": "Task", "plugin": "dev" }] }`: the object types with views, their display names and the name of the plugin each belongs to (a client groups types by it). A type that declares filters also carries `"filters"`, in display order (`[{ "name": "active", "states": ["proposed", ...] }, { "name": "all" }, ...]`), and `"defaultFilter"`. A type without filters carries neither. |
 | `GET /v1/keys` | `{ "keys": [{ "key": "m", "action": "dev:merge", "source": "plugin" }] }`: the key bindings in force, the plugins' defaults with the person's `keys.json` overrides applied; `source` is `user` for an override. |
 | `GET /v1/objects?type=<type>&filter=<name>&cursor=<c>` (also `root` and `parent=<id>`, see [Levels](#levels)) | `{ "rows": [...], "next": "<c>", "hidden": 3 }`: one page of the list. `rows` carry the plugin's `id`, `title`, `state` and optional `note`, `wait`, `mark` and `badge` (see [Row marks](#row-marks)), plus `waiting` and `running`; an error row also carries `error`. `filter` keeps the rows the named filter shows, and `hidden` counts the rows of the type it left out (the whole type, not only this page). Without `filter` the type's default filter applies when it has filters; a type without filters lists every row and has no `hidden`. `filter=all` lists every row and has no `hidden`. An unknown name is a `400` that names the allowed ones. `next` pages within the filtered list. |
-| `GET /v1/pending` | The same list as `operad pending`, with the actions each item offers. A wait that its plugin is about to answer automatically (dev: a passed review of a task in a plan at auto merge) is not listed, so the count does not flicker; it is listed if the automatic answer does not come. An item a plugin raises without a run waiting (`kind` `standing`, no actions, `runId` `<plugin>:<id>`) is in the list too, and goes when the plugin stops reporting it. An item that is about an object also carries `object` (`<type>:<id>`), its `link` and its `row`: the same row `GET /v1/objects?type=…` returns for that object (`id`, `title`, `state`, optional `note`, `mark`, `badge`, `waiting`, `running`), so a client does not read each object. When the row cannot be built (the object is gone, no loaded plugin shows its type, or the plugin's row fails) the item carries the error row the list shows for a bad row, with `state` `error` and an `error` message; the list itself never fails for one object. A candidate has no object and no `row`. `operad pending` prints the row's title under each line that has one. |
+| `GET /v1/pending` | The same list as `operad pending`, with the actions each item offers. A question carries `waitId`, the id an answer quotes. A wait that its plugin is about to answer automatically (dev: a passed review of a task in a plan at auto merge) is not listed, so the count does not flicker; it is listed if the automatic answer does not come. An item a plugin raises without a run waiting (`kind` `standing`, no actions, `runId` `<plugin>:<id>`) is in the list too, and goes when the plugin stops reporting it. An item that is about an object also carries `object` (`<type>:<id>`), its `link` and its `row`: the same row `GET /v1/objects?type=…` returns for that object (`id`, `title`, `state`, optional `note`, `mark`, `badge`, `waiting`, `running`), so a client does not read each object. When the row cannot be built (the object is gone, no loaded plugin shows its type, or the plugin's row fails) the item carries the error row the list shows for a bad row, with `state` `error` and an `error` message; the list itself never fails for one object. A candidate has no object and no `row`. `operad pending` prints the row's title under each line that has one. |
 | `GET /v1/running` | The same list as `operad running`. Each item has `runId`, `flow`, `step`, `stepLabel`, `queued`, `startedAt` and `elapsedMs` (the run's age), and: `object`, the object's id as rows and `operad show` name it (for example `operad/T-0048-type-filters`), or `null` for a run with no object; `title`, that object's row title, or `null` when there is no object or the lookup failed (a failed lookup never fails the list); `stepStartedAt` and `stepElapsedMs`, when the current step's current attempt started and how long it has run (`null` before the first step); `mark`, the object's row mark (one of the [row marks](#row-marks)), left out when the row has none or cannot be built. The step time starts again when the step changes and on a new attempt. |
 | `GET /v1/objects/<id>` | `{ "id", "type", "link", "row", "sections", "actions" }`: the link that opens the object, the row, the section directory, and the actions available now with their `args` schema, `note` field and `confirm` flag. |
 | `GET /v1/objects/<id>/sections/<section>?cursor=<c>&full=<bool>` | `{ "markdown": "...", "next": "<c>" }`. `full=true` skips the size cap. |
 | `POST /v1/act` | Runs one action. The body is `{ "action": "plugin:action", "id": "<id>", "args": {...}, "note": "...", "confirmed": true }`; only `action` is always required, and an action that targets an object also needs `id`. An action with `confirm: true` needs `"confirmed": true`. The body is at most 1 MiB; a larger one gets `413`. |
+| `POST /v1/answer` | Answers an open question of a pending item. The body is `{ "runId": "<item runId>", "waitId": "<item waitId>", "choice": "<one of the item's choices>", "note": "...", "confirmed": true }`; `runId`, `waitId` and `choice` are required, and `note` and `confirmed` are optional. When every choice is also an action on the item's object (a `dev` wait), it runs that action, so the action's note and confirmation apply; a confirmed action needs `"confirmed": true` just as it does for `/v1/act`. An answer to a question that is already closed gets `409` and is not applied. |
 | `GET /v1/events` | An SSE stream of changes. |
 
 `POST /v1/act` records the caller as `{ "via": "http", "id": "operad app" }`.
 It records the action the same way the command line does, and a running
-`operad serve` carries on the steps a waiting run asks for.
+`operad serve` carries on the steps a waiting run asks for. `POST /v1/answer`
+records its caller the same way and answers with the same rules as the command
+line and a plugin action.
 
 ### Row marks
 
@@ -713,8 +716,9 @@ const answer = await ctx.ask({
 ```
 
 `ctx.ask` returns `{ choice, note, actor }`. The question shows up in
-`operad pending` and `GET /v1/pending` as one item, with the run's object, like
-any other wait.
+`operad pending` and `GET /v1/pending` as one item, with the run's object and
+its `waitId`, like any other wait. `POST /v1/answer` and the MCP `answer` tool
+take that `runId`, `waitId` and one of the choices.
 
 **The grace.** While the step's process is alive the answer goes straight to the
 waiting call and the step goes on. The wait lasts the narrowest of: the
@@ -1370,14 +1374,16 @@ kernel adds `all`, so `operad list chat --filter all` still shows closed chats.
 A chat on a repository works in the main clone, read-only: a shell command runs
 there only when it is on a short list of commands that only read (`git status`,
 `ls`, `cat`, `grep`, `sed -n`, `bun test`, ...); every other command, and every
-write, becomes the worktree question. When the agent wants
-to change code it asks whether to open a worktree. On yes, `dev` opens
+write or edit, becomes the worktree question, which names the command or the
+path. When the agent wants to change code it asks whether to open a worktree.
+A no tells the agent the call was refused because the chat is read-only, and
+that it should answer in the chat or use read-only commands. On yes, `dev` opens
 `work/chat-<id>` and the chat works there from then on, once; the main clone
 stays read-only. The worktree's changes reach main only through a task that
 points at it, through the normal gate and integrate.
 
 The agent reaches operad through its tools (`list`, `show`, `section`, `pending`,
-`running`, `history`, `command`, `act`, under the same allow lists as
+`answer`, `running`, `history`, `command`, `act`, under the same allow lists as
 `operad mcp`), never by running `operad` in a shell.
 
 ## MCP server
