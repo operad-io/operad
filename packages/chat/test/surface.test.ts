@@ -329,28 +329,38 @@ describe("a read-only chat", () => {
     expect(asked[0]?.resume).toMatchObject({ session: "s", call: { kind: "command", value: command } });
   });
 
-  test("a call question with no session to continue is named from its own words", async () => {
+  test("a call with no session to continue is named from its own words and still refuses once", async () => {
     const asked: AskRequest[] = [];
+    let seen: { readonly choice: string | undefined; readonly note?: string | undefined } | undefined;
     const r = await rig(async (ctx: StepContext) => {
-      await ctx.ask({ prompt: "Run this command? rm -r src", choices: ["allow_once", "reject_once"], onTimeout: "reject_once" });
-      return reply("done");
+      seen = await ctx.ask({
+        prompt: "Run this command? rm -r src",
+        choices: ["allow_once", "reject_once"],
+        onTimeout: "reject_once",
+      });
+      return reply("continued");
     });
     const chat = await r.chat({ access: { readOnly: true } });
     await r.say(chat, "go");
     const asker = {
       async ask(request: AskRequest) {
         asked.push(request);
-        return { kind: "answered" as const, answer: { choice: "no" } };
+        // The grace passes with nobody answering.
+        return { kind: "timeout" as const, waitId: "w1", prompt: request.prompt, choices: request.choices ?? [] };
       },
       async useGrant() {
         return false;
       },
     };
-    await r.round(chat, {}, asker, () => undefined);
+    const result = await r.round(chat, {}, asker, () => undefined);
+    expect(result.result).toBe("done");
     expect(asked[0]?.prompt).toBe(
       "The agent wants to run `rm -r src` in this read-only chat. Open a worktree for it?",
     );
-    expect(asked[0]?.resume).toMatchObject({ call: { kind: "command", value: "rm -r src" } });
+    // No session means no later answer: the live agent gets the refusal and goes on.
+    expect(asked[0]?.onTimeout).toBe("reject_once");
+    expect(asked[0]?.resume).toBeUndefined();
+    expect(seen).toEqual({ choice: "reject_once", note: READ_ONLY_REFUSAL });
   });
 
   test("a no tells the agent why the call was refused and what it can do instead", async () => {

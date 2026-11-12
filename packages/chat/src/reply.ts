@@ -149,7 +149,8 @@ function readOnlyAsker(ctx: StepContext, onYes: () => Promise<void>): StepAsker 
         ? {
             prompt: call === undefined ? WORKTREE_QUESTION : worktreeQuestion(call),
             choices: [...WORKTREE_CHOICES],
-            resume: worktreeResume(request, call),
+            ...(request.resume === undefined ? {} : { resume: worktreeResume(request, call) }),
+            ...(request.onTimeout === undefined ? {} : { onTimeout: request.onTimeout }),
             ...(request.graceSecs === undefined ? {} : { graceSecs: request.graceSecs }),
           }
         : request;
