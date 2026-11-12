@@ -1406,11 +1406,17 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
   let startTimer: unknown;
   let started = false;
   let notStarted: string | undefined;
+  // The notes are written one after another, and none after the step is over:
+  // the step's own final save must be the last write to the task.
+  let sayClosed = false;
+  let sayChain: Promise<void> = Promise.resolve();
   const say = (line: string, wait: string | null): void => {
-    void (async () => {
+    sayChain = sayChain.then(async () => {
+      if (sayClosed) return;
       await ctx.logger.write(line);
+      if (sayClosed) return;
       await setWorkerWait(wait);
-    })().catch(() => undefined);
+    }).catch(() => undefined);
   };
   const workerPlaced = (name: string): void => {
     if (started) return;
@@ -1455,6 +1461,8 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
     notLoaded = notLoadedStep(error);
   } finally {
     if (startTimer !== undefined) startClock.clearTimeout(startTimer);
+    sayClosed = true;
+    await sayChain;
     if (waitingFor !== undefined) {
       waitingFor = undefined;
       await ctx.logger.write(`stopped waiting for ${asked === undefined ? "a worker" : `worker ${asked}`}`).catch(() => undefined);

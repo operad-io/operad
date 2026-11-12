@@ -28,6 +28,7 @@ afterEach(() => {
   stepTestHooks.workClock = undefined;
   stepTestHooks.workerStartClock = undefined;
   stepTestHooks.afterWorkerWait = undefined;
+  stepTestHooks.beforeGuardedWrite = undefined;
 });
 
 const LIMIT_MS = STEP_TIMEOUT_SECS * 1000;
@@ -56,7 +57,7 @@ class ManualClock {
   }
 }
 
-type Mode = "wrap-up" | "ignore" | "deaf" | "plain" | "wall" | "commits-note" | "never-starts";
+type Mode = "wrap-up" | "ignore" | "deaf" | "plain" | "wall" | "commits-note" | "never-starts" | "late";
 
 interface Seen {
   prompts: string[];
@@ -110,6 +111,13 @@ function fakeHarness(modes: Mode[], seen: Seen[], runMs?: number) {
             record.start();
             await aborted;
             return { result: "interrupted", data: { reason: "cancelled" } };
+          }
+          if (mode === "late") {
+            // Slow to start; when stopped it still hands in work, so the claim stays.
+            record.start();
+            await aborted;
+            commitFile(input.cwd, "late.txt", "late work");
+            return { result: "done", data: {} };
           }
           if (mode === "plain") {
             commitFile(input.cwd, "plain.txt", "plain work");
@@ -464,6 +472,53 @@ describe("a work step that holds a worker's place and does not start it (T-0349)
     limit.advanceTo(HARD_MS);
     await running;
     expect((await state.attempt()).attempt?.workerWait ?? null).toBeNull();
+  });
+
+  test("a note still being written when the step ends does not overwrite the step's result", async () => {
+    const limit = new ManualClock();
+    const start = new ManualClock();
+    stepTestHooks.workClock = limit;
+    stepTestHooks.workerStartClock = start;
+    const state = await fixture(["late"]);
+    const running = state.work();
+    const seen = await waitFor(state.seen, 0);
+    await seen.started;
+    // The note's save is held at the door while the step ends.
+    let reached: () => void = () => undefined;
+    const atDoor = new Promise<void>((resolve) => {
+      reached = resolve;
+    });
+    let open: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    let first = true;
+    stepTestHooks.beforeGuardedWrite = async () => {
+      if (!first) return;
+      first = false;
+      reached();
+      await gate;
+    };
+    const wrote = new Promise<void>((resolve) => {
+      stepTestHooks.afterWorkerWait = () => resolve();
+    });
+    start.advanceTo(WORKER_START_GRACE_MS);
+    await atDoor;
+    limit.advanceTo(HARD_MS);
+    // Release the note's save only after the step's own result is saved, if the
+    // step lets that happen; a step that waits for the note gets it released
+    // after a bounded number of turns (the loop is long enough for the step's git work).
+    for (let turn = 0; turn < 200_000; turn += 1) {
+      if ((await state.attempt()).attempt?.worked === true) break;
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+    open();
+    await running;
+    // Wherever the note's save lands, it has landed before the task is read.
+    await wrote;
+    const attempt = (await state.attempt()).attempt;
+    expect(attempt?.worked).toBe(true);
+    expect(attempt?.workerWait ?? null).toBeNull();
   });
 
   test("a worker that starts in time says nothing", async () => {
