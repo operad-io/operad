@@ -414,3 +414,9 @@ the row fields.
 |---|---|---|---|
 | T-0330-M2 | packages/tui/src/state.ts | a settings object's group heading stayed metadata on its first row, so Enter could only open that row | `objects under settings > a settings object that heads a group in the chat tab opens from that heading` |
 | T-0330-M3 | packages/tui/src/actions.ts | settings entries used the type title as their group key, so two types with one display title shared a group | `objects under settings > two settings types with one display title keep separate palette groups` |
+
+## T-0356 — a settings object is searched by the group title it shows
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0356-M1 | packages/tui/src/actions.ts | an entry's group search read the internal type key instead of the group title it shows | `objects under settings > a settings object is found by the group title a person sees, not its type` |

@@ -258,7 +258,7 @@ function matchEntry(
 ): { readonly score: number; readonly name: readonly number[] } | undefined {
   const fields = [
     { units: unitsOf(entry.name), bonus: 2000, name: true },
-    { units: unitsOf(entry.group), bonus: 1000, name: false },
+    { units: unitsOf(entry.groupTitle ?? entry.group), bonus: 1000, name: false },
     { units: unitsOf(entry.title), bonus: 0, name: false },
   ];
   let score = 0;
