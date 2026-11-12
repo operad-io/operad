@@ -199,6 +199,7 @@ are not kept in the repository.
 | access-match | summary.test.ts | 300 | 0 |
 | pi | pi-install.test.ts | 140 | 0 |
 | pi | plugin.test.ts | 540 | 0 |
+| pi | spike.test.ts | 60 | 0 |
 | pi | worker.test.ts | 440 | 0 |
 | harness-process | ask-note.test.ts | 50 | 0 |
 | harness-process | descriptor-owner.test.ts | 10 | 0 |
