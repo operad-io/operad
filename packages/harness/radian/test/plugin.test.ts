@@ -34,9 +34,10 @@ import {
   stopTestProcesses,
   tempRoot,
   tempRoots,
+  waitForJson,
   waitUntil,
 } from "./support.ts";
-import { alive, manualClock, waitForFile, type ManualClock } from "@operad-io/harness-process/test-support";
+import { alive, manualClock, waitForFile, waitForPid, type ManualClock } from "@operad-io/harness-process/test-support";
 
 afterAll(cleanupTempRoots);
 
@@ -465,7 +466,7 @@ describe("radian/agent", () => {
 
     await waitForFile(env.marker);
     await env.clock.when(() => env.clock.clears > 0);
-    const pid = Number(readFileSync(env.marker, "utf8"));
+    const pid = await waitForPid(env.marker);
     env.clock.fireUpTo(1000);
 
     const result = await running;
@@ -506,7 +507,7 @@ describe("radian/agent", () => {
     });
 
     await waitForFile(env.marker);
-    const pid = Number(readFileSync(env.marker, "utf8"));
+    const pid = await waitForPid(env.marker);
     env.clock.fireUpTo(1_000);
 
     const result = await running;
@@ -567,7 +568,7 @@ describe("radian/agent", () => {
     });
 
     await waitForFile(env.marker);
-    const pid = Number(readFileSync(env.marker, "utf8"));
+    const pid = await waitForPid(env.marker);
     env.clock.fireUpTo(1000);
 
     const result = await running;
@@ -587,7 +588,7 @@ describe("radian/agent", () => {
     );
 
     await waitForFile(env.marker);
-    const pids = JSON.parse(readFileSync(env.marker, "utf8")) as {
+    const pids = (await waitForJson(env.marker)) as {
       readonly pid: number;
       readonly child: number;
     };
@@ -925,6 +926,19 @@ test("a marker wait survives a directory that appears after it starts", async ()
   await waiting;
 
   expect(existsSync(marker)).toBe(true);
+});
+
+test("a marker wait reads JSON only once the file holds it", async () => {
+  // The file exists, empty, between its creation and its write. A read that
+  // took it then would see `JSON.parse("")` throw; the wait must look again.
+  const root = await tempRoot();
+  const marker = join(root, "marker.json");
+  writeFileSync(marker, "");
+  const waiting = waitForJson(marker);
+
+  writeFileSync(marker, JSON.stringify({ pid: 4242, child: 7 }));
+
+  expect(await waiting).toEqual({ pid: 4242, child: 7 });
 });
 
 describe("radian/agent step limit", () => {

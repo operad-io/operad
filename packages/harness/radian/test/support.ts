@@ -1,4 +1,4 @@
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import {
   chmod,
   mkdir,
@@ -7,7 +7,8 @@ import {
   rm,
   writeFile,
 } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
+import { waitForChange } from "@operad-io/engine/platform";
 
 const roots: string[] = [];
 let current: string[] = [];
@@ -143,6 +144,23 @@ export async function waitUntil(
       throw new Error("timed out waiting for a condition");
     }
     await new Promise((resolve) => globalThis.setTimeout(resolve, stepMs));
+  }
+}
+
+/**
+ * Resolves with the JSON a fake worker wrote to `path`, once the file holds it.
+ * The file exists, empty, between its creation and its write, so existence is
+ * not enough: a read can see "" and `JSON.parse` rejects it. A watch can miss
+ * an event, so a look every 100 ms backs it.
+ */
+export async function waitForJson(path: string): Promise<unknown> {
+  for (;;) {
+    try {
+      return JSON.parse(readFileSync(path, "utf8"));
+    } catch {
+      // Not there yet, or not written in full.
+    }
+    await waitForChange(dirname(path), basename(path), 100);
   }
 }
 
