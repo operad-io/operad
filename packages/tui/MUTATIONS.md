@@ -420,3 +420,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0356-M1 | packages/tui/src/actions.ts | an entry's group search read the internal type key instead of the group title it shows | `objects under settings > a settings object is found by the group title a person sees, not its type` |
+
+## T-0361 — a live section reads what follows a mark, with a tail
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0361-M9 | packages/tui/src/client.ts | a section read left `after` out of the query | `TuiClient > a section read passes after and keeps mark, tail and delta` |
