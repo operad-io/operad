@@ -136,7 +136,7 @@ async function setup(options: { readonly check: boolean }) {
   const flow: FlowDefinition = found.flow;
   const control = {
     cancel: async (runId: string, graph?: FlowDefinition): Promise<void> => {
-      await cancelRun({ log, flow: () => flow, runId, graph });
+      await cancelRun({ log, flow: () => flow, runId, graph, source: "cli" });
     },
   };
   /** Starts a run of the task as the scheduler does: the task is running and names it. */
