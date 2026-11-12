@@ -104,12 +104,31 @@ class TailClient implements TuiShellClient {
   honoursAfter = true;
   failure: Error | undefined;
   sectionFailure: Error | undefined;
+  /** Hold an after read or a whole read until the test releases it. */
+  holdAfter = false;
+  holdWhole = false;
   readonly sectionCalls: SectionCall[] = [];
   private readonly sectionWaiters: (() => void)[] = [];
+  private heldAfter: ((content: ViewSectionContent) => void) | undefined;
+  private heldWhole: ((content: ViewSectionContent) => void) | undefined;
 
   /** Resolves when the next section read is asked for. */
   nextSection(): Promise<void> {
     return new Promise((resolve) => this.sectionWaiters.push(resolve));
+  }
+
+  /** Answers a held after read. */
+  releaseAfter(content: ViewSectionContent): void {
+    const resolve = this.heldAfter;
+    this.heldAfter = undefined;
+    resolve?.(content);
+  }
+
+  /** Answers a held whole read. */
+  releaseWhole(content: ViewSectionContent): void {
+    const resolve = this.heldWhole;
+    this.heldWhole = undefined;
+    resolve?.(content);
   }
 
   types(): Promise<{ readonly types: readonly { type: string; title: string }[] }> {
@@ -150,27 +169,29 @@ class TailClient implements TuiShellClient {
     if (this.sectionFailure !== undefined) return Promise.reject(this.sectionFailure);
     if (this.failure !== undefined) return Promise.reject(this.failure);
     if (options?.after !== undefined) {
-      return Promise.resolve(
-        this.honoursAfter
-          ? {
-              markdown: this.delta,
-              ...(this.mark === undefined ? {} : { mark: this.mark }),
-              ...(this.tail === undefined ? {} : { tail: this.tail }),
-              delta: true,
-            }
-          : {
-              markdown: this.whole,
-              ...(this.mark === undefined ? {} : { mark: this.mark }),
-              ...(this.tail === undefined ? {} : { tail: this.tail }),
-              delta: false,
-            },
-      );
+      const content = this.honoursAfter
+        ? {
+            markdown: this.delta,
+            ...(this.mark === undefined ? {} : { mark: this.mark }),
+            ...(this.tail === undefined ? {} : { tail: this.tail }),
+            delta: true,
+          }
+        : {
+            markdown: this.whole,
+            ...(this.mark === undefined ? {} : { mark: this.mark }),
+            ...(this.tail === undefined ? {} : { tail: this.tail }),
+            delta: false,
+          };
+      if (this.holdAfter) return new Promise((resolve) => (this.heldAfter = resolve));
+      return Promise.resolve(content);
     }
-    return Promise.resolve({
+    const content = {
       markdown: this.markdown,
       ...(this.mark === undefined ? {} : { mark: this.mark }),
       ...(this.tail === undefined ? {} : { tail: this.tail }),
-    });
+    };
+    if (this.holdWhole) return new Promise((resolve) => (this.heldWhole = resolve));
+    return Promise.resolve(content);
   }
 }
 
@@ -286,6 +307,57 @@ describe("a live section reads after its mark", () => {
       expect(s.shell.state.object?.sections[0]?.markdown).toBe("one and more");
       expect(s.client.sectionCalls.some((call) => call.after !== undefined)).toBe(false);
       expect(s.shell.state.object?.sections[0]?.mark).toBeUndefined();
+    } finally {
+      s.shell.stop();
+      await s.shell.done;
+    }
+  });
+
+  test("a whole read after r is not dropped behind an older after read", async () => {
+    const s = start(new TailClient());
+    try {
+      await openLog(s);
+      s.client.holdAfter = true;
+      s.client.holdWhole = true;
+      s.client.sectionCalls.length = 0;
+
+      // A change starts an after read that has not answered yet.
+      const afterCalled = s.client.nextSection();
+      s.events.push({ kind: "change", id: "a" });
+      await settled();
+      s.clock.advance(LIVE_DEBOUNCE_MS);
+      await afterCalled;
+      expect(s.client.sectionCalls).toEqual([{ after: "m1", cursor: undefined }]);
+
+      // r reads the section whole; by then the server is further along.
+      const wholeCalled = s.client.nextSection();
+      s.shell.key({ name: "r" });
+      await wholeCalled;
+      expect(s.client.sectionCalls.at(-1)).toEqual({
+        after: undefined,
+        cursor: undefined,
+      });
+
+      // The older delta lands first, then the whole answer: the whole read
+      // must still win, with its newer mark and tail.
+      s.client.releaseAfter({
+        markdown: "two",
+        mark: "m2",
+        tail: "tail two",
+        delta: true,
+      });
+      await settled();
+      s.client.releaseWhole({
+        markdown: "one recovered",
+        mark: "m3",
+        tail: "tail three",
+      });
+      await settled();
+
+      const section = s.shell.state.object?.sections[0];
+      expect(section?.markdown).toBe("one recovered");
+      expect(section?.mark).toBe("m3");
+      expect(section?.tail).toBe("tail three");
     } finally {
       s.shell.stop();
       await s.shell.done;

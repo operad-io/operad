@@ -291,6 +291,9 @@ export function startShell(deps: TuiShellDeps): TuiShell {
   // when the object closes or another one opens, and at no other time, so
   // switching sections never cancels a page another section is waiting for.
   const objectRequests = new Set<AbortController>();
+  // The live-section reads that asked after a mark. A whole read supersedes
+  // them, so an older delta can never land after it and hide its content.
+  const afterReads = new Set<AbortController>();
   let seenObject: number | undefined;
   let seenMove = 0;
   const clock = deps.clock ?? systemClock;
@@ -1050,6 +1053,12 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     !signal.aborted &&
     !finished
   ) {
+    // A whole read (after `r` or a reconnect) is authoritative: the deltas in
+    // flight were asked from the content it is about to replace.
+    if (whole) {
+      for (const request of afterReads) request.abort();
+      afterReads.clear();
+    }
     const id = open.id;
     const version = open.version;
     // The object's own requests end with it (Esc, another open), not only
@@ -1058,6 +1067,7 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     const stop = (): void => scoped.abort();
     signal.addEventListener("abort", stop, { once: true });
     objectRequests.add(scoped);
+    if (!whole) afterReads.add(scoped);
     try {
       const result = await settle(client.object(wire(id), scoped.signal));
       if (!scoped.signal.aborted && !finished) {
@@ -1169,6 +1179,7 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     } finally {
       signal.removeEventListener("abort", stop);
       objectRequests.delete(scoped);
+      afterReads.delete(scoped);
     }
   }
   }
