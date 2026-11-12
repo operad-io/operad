@@ -930,3 +930,4 @@ the row fields.
 |---|---|---|---|
 | T-0315-M1 | packages/dev/src/rework.ts | a first review moved a non-critical finding in an untouched file out of the failing set again (the per-file rule back) | `dev/review rework rounds > a major finding in a file the change does not touch fails the first review (T-0315)` and four more |
 | T-0315-M2 | packages/dev/src/gate.ts | a flow whose grading sets no fixLevel kept dev.json's level instead of the strictest the repository configures (`strictestElsewhere` removed) | `dev/review > review.json > a flow with no level of its own never reviews with a weaker one (T-0315)` |
+| T-0318-M1 | packages/dev/src/views.ts | the task row's `wait` field left out (the wait text only in the note) | `dev views > the wait reason is its own field, whole, and a row that waits for nothing has none (T-0318)` and the integrate wait test |

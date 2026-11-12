@@ -82,6 +82,7 @@ export function showMarkdown(object: ViewObject | McpViewObject): string {
   }
   lines.push(`- flags: ${flags(row)}`);
   if (row.note !== undefined) lines.push(`- note: ${row.note}`);
+  if (row.wait !== undefined) lines.push(`- wait: ${row.wait}`);
   if (row.error !== undefined) lines.push(`- error: ${row.error}`);
   lines.push(`- link: ${object.link}`);
   if (object.unavailable !== undefined) {

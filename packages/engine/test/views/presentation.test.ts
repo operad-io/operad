@@ -353,6 +353,18 @@ describe("presentation views", () => {
     await log.close();
   });
 
+  test("a row's wait text passes through list and get whole, and is absent otherwise (T-0318)", async () => {
+    const { store, registry, log } = await fixture();
+    store.put("item", "waits", { title: "W", wait: "held by a · b" }, "seed");
+    const views = trackedViews({ registry, store, log });
+    const page = await views.list("item");
+    expect(page.rows.find((row) => row.id === "waits")?.wait).toBe("held by a · b");
+    const plain = page.rows.find((row) => row.id === "one");
+    expect(plain !== undefined && "wait" in plain).toBe(false);
+    expect((await views.get("item:waits")).row.wait).toBe("held by a · b");
+    await log.close();
+  });
+
   test("an unknown mark is an error row naming the allowed marks", async () => {
     const { store, registry, log } = await fixture();
     store.put("item", "bad", { title: "B", mark: "sparkly" }, "seed");

@@ -746,6 +746,31 @@ describe("dev views", () => {
     expect(await row()).toBe("$1.50 · claude · area: app-core · push refused");
   });
 
+  test("the wait reason is its own field, whole, and a row that waits for nothing has none (T-0318)", async () => {
+    const { store, task } = await setup();
+    const stored = taskData((await getTask(store, task.id)).data);
+    expect("wait" in taskViews.row(await getTask(store, task.id))).toBe(false);
+    const message = "push refused · remote: rejected (non-fast-forward)";
+    await store.put(
+      "task",
+      task.id,
+      { ...stored, phase: "waiting", attempt: { number: 1, integration: { result: "failed", message } } },
+      "test:a",
+    );
+    const row = taskViews.row(await getTask(store, task.id));
+    expect(row.wait).toBe(message);
+    expect(row.note).toBe(`$0.00 · ${message}`);
+    await store.put(
+      "task",
+      task.id,
+      { ...stored, phase: "ready", area: "app-core", areaHeldBy: "T-0023-x", areaAhead: 1 },
+      "test:a",
+    );
+    expect(taskViews.row(await getTask(store, task.id)).wait).toBe(
+      "waiting for area app-core (T-0023-x), 1 ahead",
+    );
+  });
+
   test("a task whose check waits for a place says so, with how many are ahead, until it takes the place", async () => {
     const { store, plan, task } = await setup();
     const other = await addTask(store, { plan: plan.id, slug: "two", title: "Two", brief: "# Brief\n\nx" });

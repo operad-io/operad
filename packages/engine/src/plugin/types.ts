@@ -75,6 +75,11 @@ export interface ObjectRow {
   /** A short tail for the row, such as a cost or a duration. */
   readonly note?: string | undefined;
   /**
+   * Why the object waits, as one text, separate from `note` so a client need
+   * not split the note. A protocol field; absent when nothing is waited for.
+   */
+  readonly wait?: string | undefined;
+  /**
    * The namespace the id is unique in, such as a repository. A list shows it
    * only when the type's `showScope` says so.
    */

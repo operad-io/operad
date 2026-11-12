@@ -84,6 +84,8 @@ export interface ViewRow {
   readonly title: string;
   readonly state: string;
   readonly note?: string | undefined;
+  /** Why the object waits, whole and separate from `note`; absent when it does not. */
+  readonly wait?: string | undefined;
   /** The namespace the id lives in; set only when the list shows it. */
   readonly scope?: string | undefined;
   /** The row's state is final for its type; absent when the plugin did not say. */
@@ -1789,6 +1791,7 @@ export class Views {
       );
     }
     const note = textOf(outcome.note);
+    const wait = textOf(outcome.wait);
     const scope = textOf(outcome.scope);
     let mark: RowMark | undefined;
     if (outcome.mark !== undefined) {
@@ -1845,6 +1848,7 @@ export class Views {
       title,
       state,
       ...(note === undefined ? {} : { note }),
+      ...(wait === undefined ? {} : { wait }),
       ...(typeof parent === "string" ? { parent } : {}),
       ...(Array.isArray(after) ? { after: Array.from(after) } : {}),
       ...(scope === undefined ? {} : { scope }),
