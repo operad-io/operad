@@ -81,8 +81,14 @@ export async function proposeMcp(
     input: { command: commandLine(registration.command, registration.args) },
     cwd: resolved.cwd,
   });
-  if (!verdict.allow && verdict.ask !== true) {
-    throw new BotError(`the access profile of bot ${bot} refuses this command: ${verdict.reason}`);
+  // The server is started before any person has approved it, so a command the
+  // profile asks about cannot be run here either.
+  if (!verdict.allow) {
+    throw new BotError(
+      verdict.ask === true
+        ? `the access profile of bot ${bot} asks before running this command, and nobody can be asked before the server is proposed: ${verdict.reason}`
+        : `the access profile of bot ${bot} refuses this command: ${verdict.reason}`,
+    );
   }
 
   const before = written.mcpServers?.[name] ?? null;
@@ -184,6 +190,17 @@ export async function ingestReports(store: ObjectStore, home: string): Promise<v
   }
 }
 
+/** The pasted entry: the text the caller supplied, else what is piped to the command. */
+async function pastedText(input: string | undefined): Promise<string> {
+  if (input !== undefined) return input;
+  if (process.stdin.isTTY === true) return "";
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin as AsyncIterable<Buffer | string>) {
+    chunks.push(typeof chunk === "string" ? Buffer.from(chunk, "utf8") : chunk);
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
 /**
  * Parses `<bot> <name> [<command> [args...]]` for the `bot mcp` command. With no
  * command, stdin is a pasted `mcpServers` entry.
@@ -200,7 +217,7 @@ export async function runMcpCommand(ctx: CommandContext, argv: readonly string[]
     const command = words[0] ?? "";
     registration = { command, args: words.slice(1), variables: [], given: {} };
   } else {
-    const text = (ctx.input ?? "").trim();
+    const text = (await pastedText(ctx.input)).trim();
     if (text.length === 0) throw new BotError("give the server as a command with arguments, or paste its mcpServers entry on stdin");
     registration = parsePasted(text, name);
   }

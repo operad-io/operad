@@ -7,7 +7,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { createInterface } from "node:readline";
 import { isRecord, messageOf } from "@operad-io/engine";
-import { killProcessGroup } from "@operad-io/engine/platform";
+import { KILL_GRACE_MS, killProcessGroup } from "@operad-io/engine/platform";
 
 /** The protocol version this client offers. */
 export const MCP_PROTOCOL_VERSION = "2025-06-18";
@@ -173,6 +173,13 @@ export class StdioServer {
       this.#child.stdin?.end();
       const pid = this.#child.pid;
       if (pid !== undefined && !killProcessGroup(pid, "SIGTERM")) this.#child.kill("SIGTERM");
+      // A server that ignores the first signal is killed after a short grace.
+      const timer = setTimeout(() => {
+        if (pid !== undefined && !killProcessGroup(pid, "SIGKILL")) this.#child.kill("SIGKILL");
+      }, KILL_GRACE_MS);
+      await this.exited;
+      clearTimeout(timer);
+      return;
     }
     await this.exited;
   }

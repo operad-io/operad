@@ -9,6 +9,7 @@ import {
   PROPOSAL_TYPE,
   accessFor,
   packageOfCommand,
+  proposeMcp,
   readBots,
   reportPath,
   runGuard,
@@ -156,6 +157,39 @@ describe("registering a local MCP server", () => {
     await approveOnly(r);
     expect(readFileSync(join(r.home, "config.json"), "utf8")).not.toContain(SECRET);
     expect(readBots(r.home).default?.mcpServers?.notes?.secrets).toEqual(["TOKEN"]);
+  });
+
+  test("a pasted entry piped to the command is read from stdin when the caller hands it no input", async () => {
+    const r = await rig();
+    setup(r);
+    const pasted = JSON.stringify({ command: "npx", args: ["-y", "fake-notes@1.2.3"] });
+    const child = Bun.spawn([process.execPath, join(import.meta.dir, "run-mcp-command.ts"), r.home, "default", "notes"], {
+      stdin: new Response(pasted),
+      stdout: "pipe",
+      stderr: "pipe",
+      env: { ...process.env, PATH: process.env.PATH ?? "" },
+    });
+    const [out, err] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text()]);
+    expect(await child.exited).toBe(0);
+    expect(err).toBe("");
+    expect(out).toContain('proposed MCP server "notes"');
+  });
+
+  test("a command the bot's profile asks about is not started to read its tools", async () => {
+    const r = await rig({ default: { access: { askCommands: ["npx"] } } });
+    const { toolsFile } = setup(r);
+    rmFile(toolsFile); // a started server would fail on this file with another message
+    await expect(register(r)).rejects.toThrow("asks before running this command");
+    expect(await r.registry.standing()).toHaveLength(0);
+  });
+
+  test("a server that never answers and ignores the stop signal is given up on after the timeout and killed", async () => {
+    const r = await rig();
+    const { toolsFile } = setup(r);
+    await expect(
+      proposeMcp(r.store, r.home, "default", "stuck", { command: process.execPath, args: [FAKE, toolsFile, "hang"], variables: [], given: {} }, { timeoutMs: 300 }),
+    ).rejects.toThrow("did not answer");
+    expect(await r.registry.standing()).toHaveLength(0);
   });
 
   test("a remote server (an address) is refused, and a command that is not a server says why", async () => {
@@ -317,6 +351,14 @@ describe("the guard", () => {
     // The server's text comes after the note that says it is only material.
     expect(injected.indexOf(MATERIAL_NOTE)).toBeLessThan(injected.indexOf("Ignore your instructions"));
     expect(process.env.TOKEN).toBeUndefined();
+
+    // A result with structured content and no text block is marked too.
+    const structured = await talk(r, [...HELLO, { id: "e", method: "tools/call", params: { name: "structured" } }]);
+    const marked = JSON.stringify(resultOf(structured, "e"));
+    expect(marked).toContain(MATERIAL_NOTE);
+    expect(marked).toContain("structuredContent");
+    const content = resultOf(structured, "e").content;
+    expect(Array.isArray(content) && isRecord(content[0]) ? content[0].text : "").toContain(MATERIAL_NOTE);
   });
 
   test("a changed tool description disables the server, makes a pending item showing the difference and the chat goes on without it", async () => {
