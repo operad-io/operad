@@ -66,7 +66,7 @@ function opened(withPages = true): TuiState {
 }
 
 /** Answers the pending section request with the page it asked for. */
-function answer(state: TuiState, markdown: string): TuiState {
+function answerPage(state: TuiState, markdown: string): TuiState {
   const request = state.sectionRequest;
   expect(request).toBeDefined();
   const next = reduce(state, { type: "section-launched" });
@@ -86,7 +86,7 @@ describe("a section with pages", () => {
   test("the position line names the page and its label", () => {
     let state = opened();
     expect(pagePosition(activeSection(state))).toBe("page 1/4 · overview");
-    state = answer(key(state, "n"), "manual");
+    state = answerPage(key(state, "n"), "manual");
     expect(pagePosition(activeSection(state))).toBe("page 2/4 · docs/manual.md");
   });
 
@@ -100,7 +100,7 @@ describe("a section with pages", () => {
     state = key(state, "enter");
     expect(state.input).toBeUndefined();
     expect(state.sectionRequest).toMatchObject({ sectionId: "diff", cursor: "1", jump: 1 });
-    state = answer(state, "manual page");
+    state = answerPage(state, "manual page");
     const section = activeSection(state);
     expect(section?.markdown).toBe("manual page");
     expect(section?.scroll).toBe(0);
@@ -118,12 +118,12 @@ describe("a section with pages", () => {
   });
 
   test("a jump to the first page asks without a cursor", () => {
-    let state = answer(key(opened(), "n"), "manual");
+    let state = answerPage(key(opened(), "n"), "manual");
     // The picker opens on the page shown (the second); one up is the first.
     state = key(key(key(state, "p"), "up"), "enter");
     expect(state.sectionRequest?.jump).toBe(0);
     expect(state.sectionRequest?.cursor).toBeUndefined();
-    state = answer(state, "first again");
+    state = answerPage(state, "first again");
     expect(activeSection(state)?.markdown).toBe("first again");
     expect(pagePosition(activeSection(state))).toBe("page 1/4 · overview");
   });
@@ -133,16 +133,16 @@ describe("a section with pages", () => {
     state = key(state, "n", true);
     expect(state.sectionRequest).toBeUndefined();
     expect(state.notice).toBe("first page");
-    state = answer(key(state, "n"), "two");
+    state = answerPage(key(state, "n"), "two");
     expect(state.sectionRequest).toBeUndefined();
     expect(pagePosition(activeSection(state))).toBe("page 2/4 · docs/manual.md");
-    state = answer(key(state, "n"), "three");
-    state = answer(key(state, "n"), "four");
+    state = answerPage(key(state, "n"), "three");
+    state = answerPage(key(state, "n"), "four");
     expect(pagePosition(activeSection(state))).toBe("page 4/4 · README.md");
     const end = key(state, "n");
     expect(end.sectionRequest).toBeUndefined();
     expect(end.notice).toBe("last page");
-    state = answer(key(state, "n", true), "three again");
+    state = answerPage(key(state, "n", true), "three again");
     expect(pagePosition(activeSection(state))).toBe("page 3/4 · src/main.ts");
   });
 
@@ -159,7 +159,7 @@ describe("a section with pages", () => {
       objectVersion: state.object?.version,
     });
     state = key(state, "end");
-    state = answer(state, long("second"));
+    state = answerPage(state, long("second"));
     const section = activeSection(state);
     expect(section?.pages).toBe(2);
     // The scroll has not moved: the top of the pane is still the first page.
@@ -175,13 +175,13 @@ describe("a section with pages", () => {
   });
 
   test("the picker opens with its cursor on the page shown", () => {
-    let state = answer(key(opened(), "n"), "manual");
+    let state = answerPage(key(opened(), "n"), "manual");
     state = key(state, "p");
     expect(state.input).toMatchObject({ kind: "pages", cursor: 1 });
   });
 
   test("a refresh that keeps the page the text starts at keeps the position", () => {
-    let state = answer(key(opened(), "n"), "manual");
+    let state = answerPage(key(opened(), "n"), "manual");
     const request = { version: activeSection(state)?.version, objectVersion: state.object?.version };
     state = reduce(state, {
       type: "section",

@@ -10,6 +10,12 @@
 # under --parallel (which implies --isolate) the opentui native library fails
 # to load ("Cannot access 'default' before initialization").
 # Both steps run; the exit code is non-zero when either failed.
+#
+# Every run ends its output with the ten slowest tests of the run (file, test,
+# seconds; scripts/slowest-tests.ts). That only lists: it never fails the check.
+# Every full run (no package name) also appends one line to the times file
+# (OPERAD_TEST_TIMES, default ~/.operad-test-times; see scripts/test-times.ts,
+# which prints the median, the fastest and the number of runs).
 set -uo pipefail
 cd "$(dirname "$0")/.."
 parallel=${OPERAD_TEST_PARALLEL:-2}
@@ -34,11 +40,37 @@ for name in "${names[@]}"; do
   if [ "$name" = tui ]; then alone+=("./packages/tui/"); else together+=("./packages/${name}/"); fi
 done
 together+=("${extra[@]+"${extra[@]}"}")
+reports=$(mktemp -d)
+trap 'rm -rf "$reports"' EXIT
 code=0
+steps=""
+tests=0
+started=$(date +%s)
+# step <name> <test args...>: runs one bun test step, times it, keeps its junit report.
+step() {
+  local name=$1 began count
+  shift
+  began=$(date +%s)
+  bun test --timeout 30000 --reporter=junit --reporter-outfile="$reports/$name.xml" "$@" || code=1
+  steps="$steps $name=$(($(date +%s) - began))"
+  count=$(sed -n 's/^<testsuites [^>]*tests="\([0-9]*\)".*/\1/p' "$reports/$name.xml" 2>/dev/null | head -n 1)
+  tests=$((tests + ${count:-0}))
+}
 if [ ${#together[@]} -gt 0 ]; then
-  bun test --timeout 30000 --parallel="$parallel" "${together[@]}" || code=1
+  step together --parallel="$parallel" "${together[@]}"
 fi
 if [ ${#alone[@]} -gt 0 ]; then
-  bun test --timeout 30000 "${alone[@]}" || code=1
+  step tui "${alone[@]}"
+fi
+total=$(($(date +%s) - started))
+bun scripts/slowest-tests.ts "$reports"/*.xml || true
+if [ $# -eq 0 ]; then
+  commit=$(git rev-parse --short HEAD 2>/dev/null || echo unknown)
+  result=pass
+  [ "$code" -eq 0 ] || result=fail
+  times=${OPERAD_TEST_TIMES:-$HOME/.operad-test-times}
+  printf 'date=%s commit=%s tests=%s%s total=%s parallel=%s result=%s\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$commit" "$tests" "$steps" "$total" "$parallel" "$result" \
+    >>"$times" 2>/dev/null || echo "run-tests: cannot append to $times" >&2
 fi
 exit "$code"
