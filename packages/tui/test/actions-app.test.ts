@@ -41,6 +41,41 @@ class View implements TuiView {
 }
 
 describe("actions against the in-process server", () => {
+  test("an action that returns opens opens that object's page", async () => {
+    const h = await makeHarness();
+    const client = new TuiClient({ url: h.base, token: h.token });
+    const view = new View();
+    const shell = startShell({
+      client,
+      events: () => new Quiet(),
+      view,
+      width: 120,
+      height: 30,
+      theme: "dark",
+      clock: immediateClock,
+    });
+    try {
+      h.store.put("item", "one", { title: "One", state: "new" }, "seed");
+      h.store.put("item", "two", { title: "Two", state: "new" }, "seed");
+      shell.key({ name: "r" });
+      await view.until((state) => state.tabs.find((tab) => tab.id === "plugin:tuitest")?.list.rows.length === 2);
+      shell.key({ name: "3" });
+      shell.key({ name: "enter" });
+      await view.until((state) => (state.object?.actions.length ?? 0) > 0);
+      shell.key({ name: ":", sequence: ":" });
+      for (const char of "make") {
+        shell.key({ name: char === " " ? "space" : char, sequence: char });
+      }
+      shell.key({ name: "enter" });
+      await view.until((state) => state.object?.row.title === "Two" && state.object.loading === false);
+      expect(view.last?.object?.id).toBe("two");
+    } finally {
+      shell.stop();
+      await shell.done;
+      await h.close();
+    }
+  });
+
   test("a note action and a confirm action reach the plugin with the right body", async () => {
     const h = await makeHarness();
     const bodies: Record<string, unknown>[] = [];
@@ -123,4 +158,83 @@ describe("actions against the in-process server", () => {
       await h.close();
     }
   });
+
+  test("a pending question whose choices are not actions offers them and answers", async () => {
+    const h = await makeHarness();
+    const bodies: Record<string, unknown>[] = [];
+    const client = new TuiClient({
+      url: h.base,
+      token: h.token,
+      fetch: (input, init) => {
+        const url = String(input);
+        if (url.endsWith("/v1/answer") && typeof init?.body === "string") {
+          bodies.push(JSON.parse(init.body) as Record<string, unknown>);
+        }
+        return fetch(input, init);
+      },
+    });
+    const view = new View();
+    const shell = startShell({
+      client,
+      events: () => new Quiet(),
+      view,
+      width: 120,
+      height: 30,
+      theme: "dark",
+      clock: immediateClock,
+    });
+    try {
+      h.store.put("item", "one", { title: "One", state: "waiting" }, "seed");
+      const run = await h.log.startRun("demo-flow", "item:one");
+      await h.log.append(run.runId, 0, [
+        {
+          kind: "waiting_for_person",
+          payload: {
+            waitId: "wait:1",
+            step: "ask",
+            prompt: "Open a worktree?",
+            choices: ["yes", "no"],
+            waitKind: "step",
+            effectId: null,
+          },
+          cause: "test",
+        },
+      ]);
+      shell.key({ name: "r" });
+      await view.until(
+        (state) =>
+          state.tabs.find((tab) => tab.id === "pending")?.list.rows.length === 1,
+      );
+      const row = view.last?.tabs.find((tab) => tab.id === "pending")?.list.rows[0];
+      expect(row?.answer).toEqual({
+        runId: run.runId,
+        waitId: "wait:1",
+        prompt: "Open a worktree?",
+        choices: ["yes", "no"],
+      });
+      expect(row?.detail).toContain("choices: yes, no");
+
+      shell.key({ name: "a" });
+      expect(view.last?.input?.kind).toBe("answer");
+      shell.key({ name: "down" });
+      shell.key({ name: "enter" });
+      await view.until((state) => !state.acting && state.answerRequest === undefined);
+      expect(bodies).toEqual([
+        { runId: run.runId, waitId: "wait:1", choice: "no" },
+      ]);
+      const inputs = [];
+      for await (const input of h.log.readInputs()) inputs.push(input);
+      expect(inputs.find((input) => input.runId === run.runId)?.payload).toMatchObject({
+        kind: "person_answer",
+        waitId: "wait:1",
+        choice: "no",
+        actor: { via: "tui" },
+      });
+    } finally {
+      shell.stop();
+      await shell.done;
+      await h.close();
+    }
+  });
+
 });

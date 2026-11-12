@@ -760,6 +760,8 @@ export interface ActionArgsSchema extends ActionArgSchema {
 /** What an action's checks may read: the object store, never write. */
 export interface ActionEnv {
   readonly store: ObjectStore;
+  /** The harness plugins loaded now; the kernel always sets it. */
+  readonly harnesses?: readonly string[] | undefined;
 }
 
 /** An action a plugin offers on an object type. */
@@ -768,6 +770,12 @@ export interface ActionTypeDefinition {
   readonly on: string;
   /** The person's input, as a JSON Schema object. */
   readonly args?: ActionArgsSchema | undefined;
+  /**
+   * The person's input for this object right now, when it depends on what is
+   * loaded; it is computed each time the action is offered and checked, and
+   * replaces `args` (which stays the static form for help).
+   */
+  readonly argsFor?: ((object: RunObject, env: ActionEnv) => ActionArgsSchema) | undefined;
   /** The action asks for confirmation before it runs. */
   readonly confirm?: boolean | undefined;
   /**
@@ -775,6 +783,12 @@ export interface ActionTypeDefinition {
    * picks it, even when it is the only action offered.
    */
   readonly ends?: boolean | undefined;
+  /**
+   * The object type the action creates (`"chat"`). A client keeps such an action
+   * out of the parent's page and offers it where that type is created; it is
+   * never an object's main action.
+   */
+  readonly creates?: string | undefined;
   readonly when: (state: ObjectData, env: ActionEnv) => MaybePromise<boolean>;
   /**
    * Where the action stands among the object's available actions: lower comes
@@ -803,7 +817,33 @@ export interface ActionTypeDefinition {
         env: ActionEnv,
       ) => MaybePromise<string | undefined>)
     | undefined;
+  /**
+   * Returns the line to show, or an `ActionOutcome` when the action created an
+   * object a client should open. Any other value is the result as it is.
+   */
   readonly run: (ctx: ActionContext, args: unknown) => MaybePromise<unknown>;
+}
+
+/**
+ * What an action returns when it created an object: the line of text a person
+ * reads, and `opens`, the object as `type:id`. Returning only text still works.
+ * The kernel, the client API and HTTP pass `opens` on unchanged.
+ */
+export interface ActionOutcome {
+  readonly text: string;
+  readonly opens: string;
+}
+
+/** Whether an action's return value is an `ActionOutcome`. */
+export function isActionOutcome(value: unknown): value is ActionOutcome {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const keys = Object.keys(value);
+  const record = value as { readonly text?: unknown; readonly opens?: unknown };
+  return (
+    keys.length === 2 &&
+    typeof record.text === "string" &&
+    typeof record.opens === "string"
+  );
 }
 
 /** An event an action sends: the person's client is the source. */
@@ -885,6 +925,8 @@ export interface ActionRun {
   readonly plugin: string;
   readonly action: string;
   readonly value: unknown;
+  /** The object the action created, as `type:id`, when it said so. */
+  readonly opens?: string | undefined;
 }
 
 /** Asks the kernel to start a run of one of the plugin's flows. */
@@ -1025,6 +1067,13 @@ export interface PluginShape {
     | undefined;
   /** The JSON Schema of this plugin's `config.json` settings section. */
   readonly settings?: ActionArgsSchema | undefined;
+  /**
+   * True when the plugin's objects belong under a client's settings view
+   * instead of a tab of their own (a bot: its page is a bot's settings). A
+   * client gives such a plugin no tab; the types listing marks each of its
+   * types `settings: true`.
+   */
+  readonly objectsUnderSettings?: boolean | undefined;
   /** Settings files this plugin keeps under a registered repository's `.operad/`. */
   readonly projectSettings?: ProjectSettingsDeclaration | undefined;
   /** Access profile fields this plugin's steps apply. */

@@ -653,9 +653,24 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0313-M1 | packages/engine/src/views/settings.ts | the prefix always added the file name again, so a plugin-named file was `demo.demo` and no longer met another file's names | `settings > a project file named after its plugin uses the plugin name alone`; `settings > a name two project files would claim is refused instead of picking one` |
+
+## T-0328 — an action says which object it created
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0328-M1 | packages/engine/src/http/server.ts | `/v1/act` dropped `opens` from its response | `http server > an action's opens passes through /v1/act when it names an existing object, and is dropped with a log line when not` |
+| T-0328-M2 | packages/engine/src/views/presentation.ts | `existingOpens` returned the resolved stored id (`item:repo/scoped`) instead of the `opens` the action gave (`item:scoped`) | `http server > an action's opens passes through /v1/act when it names an existing object, and is dropped with a log line when not` |
 | T-0321-M1 | packages/engine/src/config/config.ts | `DEFAULT_MCP.confirmActions` no longer named `chat:close`, so the default policy refused it | `the default policy lets a lead run the confirmed chat:close, and still refuses an unlisted confirmed action` (packages/mcp/test/entry.test.ts) and `operad config > reads mcp actions and applies their defaults` |
 ## T-0331 — code slimming follow-ups
 
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0331-M1 | packages/engine/src/plugin/load.ts | the error for a key the module does not provide went back to "the module declares the name" | `a plugin key the module does not provide > is an unknown-plugin error, not a name mismatch` |
+
+## T-0336 — a pending question is answered by its wait id
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0336-M1 | packages/engine/src/views/presentation.ts | `Views.answer` returned before recording the answer, so the choice was dropped | `actions against the in-process server > a pending question whose choices are not actions offers them and answers` |
+| T-0336-M2 | packages/engine/src/views/presentation.ts | `Views.answer` skipped the action path for a wait whose choices are actions, so its note was not required and its object update was lost | `http server > answers a wait whose choices are actions through the action, keeping its note` |
+| T-0336-M4 | packages/engine/src/views/presentation.ts | `Views.answer` hard-coded `yes: false`, so a confirmed action choice could never be answered | `answering a dev wait through /v1/answer > merge asks for confirmation, then confirmed runs the merge action` |

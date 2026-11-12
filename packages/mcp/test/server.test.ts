@@ -50,6 +50,9 @@ const kernelNamePluginPath = fileURLToPath(
 const channelPluginPath = fileURLToPath(
   new URL("./fixtures/channel.ts", import.meta.url),
 );
+const settingsPluginPath = fileURLToPath(
+  new URL("./fixtures/settings.ts", import.meta.url),
+);
 const refusedPluginPath = fileURLToPath(
   new URL("./fixtures/refused.ts", import.meta.url),
 );
@@ -404,6 +407,31 @@ describe("operad mcp", () => {
     expect(TOOLS.map((tool) => tool.name).filter((name) => /set/i.test(name))).toEqual([]);
   });
 
+  test("the types tool lists every type and marks the ones a plugin puts under settings", async () => {
+    const { home } = await makeHome({ plugins: [settingsPluginPath] });
+    const child = openSession(home);
+    try {
+      const listed = await child.request(1, "tools/call", {
+        name: "types",
+        arguments: {},
+      });
+      const types = structuredOf(listed).types as {
+        type: string;
+        title: string;
+        plugin: string;
+        settings?: boolean;
+      }[];
+      expect(types).toEqual([
+        { type: "book", title: "Book", plugin: "shelf", settings: true },
+      ]);
+      const textBlock = (resultOf(listed).content as { text: string }[])[0]?.text ?? "";
+      expect(textBlock).toContain("| book | Book | shelf | yes |");
+    } finally {
+      const closed = await child.close();
+      expect(closed.code).toBe(0);
+    }
+  });
+
   test("initializes, lists the table and reads every tool on fixture objects", async () => {
     const { home } = await makeHome({
       mcp: {
@@ -518,6 +546,38 @@ describe("operad mcp", () => {
       expect(pendingItems[0]?.actions.map((action) => `${action.plugin}:${action.action}`)).toContain(
         "demo:approve",
       );
+
+      const answered = await child.request(60, "tools/call", {
+        name: "answer",
+        arguments: {
+          runId: waitingRun,
+          waitId: "wait:1",
+          choice: "yes",
+          note: "go ahead",
+        },
+      });
+      expect(structuredOf(answered)).toMatchObject({
+        runId: waitingRun,
+        waitId: "wait:1",
+        choice: "yes",
+        note: "go ahead",
+      });
+      const answeredLog = openConfigLog(await readConfig(home));
+      const inputs = [];
+      try {
+        for await (const input of answeredLog.readInputs()) inputs.push(input);
+      } finally {
+        await answeredLog.close();
+      }
+      expect(
+        inputs.find((input) => input.runId === waitingRun)?.payload,
+      ).toMatchObject({
+        kind: "person_answer",
+        waitId: "wait:1",
+        choice: "yes",
+        note: "go ahead",
+        actor: { via: "mcp", id: "lead" },
+      });
 
       const running = await child.request(7, "tools/call", {
         name: "running",
@@ -966,6 +1026,37 @@ describe("operad mcp", () => {
     const store = new SqlitePluginStore({ root: pluginStoreRoot(home) });
     const invoked = store.facts().find((fact) => fact.type === "action_invoked");
     expect(invoked?.data.actor).toEqual({ via: "mcp", id: "lead" });
+  });
+
+  test("act passes opens through when it names an existing object and drops it when not", async () => {
+    const { home } = await makeHome({
+      plugins: [
+        fileURLToPath(new URL("../../engine/test/fixtures/plugins/opens.ts", import.meta.url)),
+      ],
+      mcp: { actions: ["opener:make", "opener:ghost"], confirmActions: [] },
+    });
+    putObject(home, "thing", "a", {});
+    putObject(home, "thing", "b", {});
+    const child = openSession(home);
+    try {
+      await child.request(1, "initialize", { protocolVersion: PROTOCOL_VERSION });
+      child.notify("notifications/initialized");
+      const made = await child.request(2, "tools/call", {
+        name: "act",
+        arguments: { action: "opener:make", id: "thing:a" },
+      });
+      expect(textOf(made)).toContain("made it");
+      expect(structuredOf(made).opens).toBe("thing:b");
+      const ghost = await child.request(3, "tools/call", {
+        name: "act",
+        arguments: { action: "opener:ghost", id: "thing:a" },
+      });
+      expect(textOf(ghost)).toContain("made a ghost");
+      expect("opens" in structuredOf(ghost)).toBe(false);
+    } finally {
+      const closed = await child.close();
+      expect(closed.code).toBe(0);
+    }
   });
 
   test("instructions follow the configured allow lists", () => {

@@ -1,8 +1,8 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { PluginRegistry, definePlugin, type CommandContext, type StoredObject } from "@operad-io/engine";
-import { createChatPlugin, createChat, CHAT_TYPE } from "@operad-io/chat";
+import { PluginRegistry, definePlugin, type CommandContext, type StoredObject, type TriggerEvent } from "@operad-io/engine";
+import { createChatPlugin, createChat, allMessages, CHAT_TYPE, titleFromMessage } from "@operad-io/chat";
 import { createShellPlugin } from "@operad-io/shell";
 import { addPlan, addRepository, CHAT_HARNESSES, chatActions, commands, createDevPlugin, RADIAN_NOTE, taskData } from "../src/index.ts";
 import { git, makeRemote } from "./git-support.ts";
@@ -20,7 +20,7 @@ function fakeHarness(name: string) {
   });
 }
 
-async function rig(harnesses: readonly string[] = ['radian', 'pi', 'claude']) {
+async function rig(harnesses: readonly string[] = ['radian', 'pi', 'claude'], onEvent?: (event: TriggerEvent) => void) {
   const root = await tempRoot();
   const remote = await makeRemote(root);
   const store = storeAt(root);
@@ -30,6 +30,7 @@ async function rig(harnesses: readonly string[] = ['radian', 'pi', 'claude']) {
     cwd: remote.repository,
     store,
     onLog: () => undefined,
+    ...(onEvent === undefined ? {} : { onEvent }),
   });
   return { root, remote, repository, store, registry };
 }
@@ -55,7 +56,63 @@ async function openChat(r: Awaited<ReturnType<typeof rig>>, args: Record<string,
   return id;
 }
 
+describe("dev:chat with a first message", () => {
+  test("creates the chat and sends the message, so the reply starts, and opens the chat", async () => {
+    const events: TriggerEvent[] = [];
+    const r = await rig(undefined, (event) => void events.push(event));
+    const repo = await must(r.store, "repo", "repository");
+    const run = await r.registry.runAction("dev/chat", { message: "What does the build do?" }, {
+      object: { type: "repo", id: repo.id, data: repo.data },
+      actor: { via: "cli", id: "me" },
+    });
+    const id = /C-\d+/.exec(String(run.value))?.[0] ?? "";
+    expect(run.opens).toBe(`chat:${id}`);
+    expect(allMessages(r.store, id).map((message) => message.text)).toEqual(["What does the build do?"]);
+    expect(events.map((event) => `${event.type} ${event.object}`)).toEqual([`message chat:${id}`]);
+    expect((await must(r.store, CHAT_TYPE, id)).data.title).toBe("What does the build do?");
+  });
+
+  test("a given title wins; without a message nothing is sent and the title is as before", async () => {
+    const events: TriggerEvent[] = [];
+    const r = await rig(undefined, (event) => void events.push(event));
+    const titled = await openChat(r, { title: "Mine", message: "hello" });
+    expect((await must(r.store, CHAT_TYPE, titled)).data.title).toBe("Mine");
+    events.length = 0;
+    const bare = await openChat(r);
+    expect((await must(r.store, CHAT_TYPE, bare)).data.title).toBe("Chat about repository");
+    expect(allMessages(r.store, bare)).toEqual([]);
+    expect(events).toEqual([]);
+  });
+
+  test("the title is one line, cut at a sensible length", () => {
+    expect(titleFromMessage("\n  first line\nsecond")).toBe("first line");
+    const long = `${"word ".repeat(30)}end`;
+    const title = titleFromMessage(long) ?? "";
+    expect(title.length).toBeLessThanOrEqual(61);
+    expect(title.endsWith("word…")).toBe(true);
+    expect(titleFromMessage("   \n ")).toBeUndefined();
+  });
+
+  test("the action declares the type it creates, and the registry passes it on", async () => {
+    const r = await rig();
+    expect(chatActions[0]?.creates).toBe("chat");
+    expect(r.registry.actions().find((info) => info.name === "dev:chat")?.creates).toBe("chat");
+  });
+});
+
 describe("dev:chat", () => {
+  test("says which chat it opened, so a client can open it", async () => {
+    const r = await rig();
+    const repo = await must(r.store, "repo", "repository");
+    const run = await r.registry.runAction("dev/chat", {}, {
+      object: { type: "repo", id: repo.id, data: repo.data },
+      actor: { via: "cli", id: "me" },
+    });
+    const id = /C-\d+/.exec(String(run.value))?.[0];
+    expect(run.opens).toBe(`chat:${id}`);
+    expect(await r.store.get(CHAT_TYPE, id ?? "")).toBeDefined();
+  });
+
   test("creates a chat under the repository, in the main clone, read-only", async () => {
     const r = await rig();
     const id = await openChat(r, { title: "About the build" });
@@ -75,9 +132,9 @@ describe("dev:chat", () => {
     expect(row?.parent).toBe("repo:repository");
   });
 
-  test("the harness is the one given, else the first offered one that is loaded", async () => {
+  test("the agent is the one given, else the first offered one that is loaded", async () => {
     const r = await rig();
-    const given = await openChat(r, { harness: "pi" });
+    const given = await openChat(r, { agent: "pi" });
     expect((await must(r.store, CHAT_TYPE, given)).data.harness).toBe("pi");
     const second = await openChat(r);
     expect((await must(r.store, CHAT_TYPE, second)).data.harness).toBe("claude");
@@ -85,25 +142,25 @@ describe("dev:chat", () => {
 
   test("radian is refused by the choice, and when it is the only one loaded the run says so", async () => {
     const r = await rig();
-    await expect(openChat(r, { harness: "radian" })).rejects.toThrow(
-      'args.harness: "radian" is not one of "claude", "pi"',
+    await expect(openChat(r, { agent: "radian" })).rejects.toThrow(
+      'args.agent: "radian" is not one of "claude", "pi"',
     );
     const alone = await rigWith(["radian"]);
-    await expect(openChat(alone)).rejects.toThrow("no harness for a repository chat is loaded");
+    await expect(openChat(alone)).rejects.toThrow("no agent for a repository chat is loaded");
   });
 
-  test("a harness outside the choice is refused by the schema before the run", async () => {
+  test("an agent outside the choice is refused by the schema before the run", async () => {
     const r = await rig();
-    await expect(openChat(r, { harness: "Claude" })).rejects.toThrow(
-      'action "dev:chat": args.harness: "Claude" is not one of "claude", "pi"',
+    await expect(openChat(r, { agent: "Claude" })).rejects.toThrow(
+      'action "dev:chat": args.agent: "Claude" is not one of "claude", "pi"',
     );
     expect((await r.store.list(CHAT_TYPE)).objects).toEqual([]);
   });
 
-  test("a harness that is not loaded or not offered is refused and the usable ones are named", async () => {
+  test("an agent that is not loaded or not offered is refused and the usable ones are named", async () => {
     const r = await rigWith(["radian", "pi"]);
-    await expect(openChat(r, { harness: "claude" })).rejects.toThrow(
-      'harness "claude" is not offered for a repository chat; the loaded ones that are: pi',
+    await expect(openChat(r, { agent: "claude" })).rejects.toThrow(
+      'agent "claude" is not offered for a repository chat; the loaded ones that are: pi',
     );
     expect((await must(r.store, CHAT_TYPE, await openChat(r))).data.harness).toBe("pi");
   });
@@ -115,15 +172,16 @@ describe("dev:chat", () => {
     expect(access.denyCommands).toContain("operad");
   });
 
-  test("the action lists its harness choices, keeps the field optional and says radian is not offered", () => {
+  test("the action lists its agent choices, keeps the field optional, says radian is not offered and has no harness alias", () => {
     const action = chatActions[0];
     expect(action?.args?.description).toContain(RADIAN_NOTE);
-    expect(action?.args?.description).toContain("radian is not offered here");
-    expect(action?.args?.properties?.harness?.enum).toEqual([...CHAT_HARNESSES]);
-    expect(action?.args?.properties?.harness?.description).toBe(
-      "Which harness runs the chat; the first loaded one when left out. It cannot change later.",
+    expect(action?.args?.description).toContain("radian is not offered as an agent here");
+    expect(action?.args?.properties?.agent?.enum).toEqual([...CHAT_HARNESSES]);
+    expect(action?.args?.properties?.agent?.description).toBe(
+      "Which agent answers in this chat; the first loaded one when left out. It cannot change later.",
     );
-    expect(action?.args?.required ?? []).not.toContain("harness");
+    expect(action?.args?.properties?.harness).toBeUndefined();
+    expect(action?.args?.required ?? []).not.toContain("agent");
   });
 });
 

@@ -51,6 +51,9 @@ import {
   type HistoryFact,
 } from "./history.ts";
 import { readState } from "../runner/service.ts";
+import { recordAnswer } from "../runner/answer.ts";
+import { StateError } from "../runner/errors.ts";
+import { listPending } from "./pending.ts";
 import {
   listSettings,
   setSetting,
@@ -216,6 +219,21 @@ export interface ActOptions {
   readonly actor: Actor;
 }
 
+/** What answers one open question of a pending item. */
+export interface AnswerViewOptions {
+  readonly runId: string;
+  /** The wait id the pending item named. */
+  readonly waitId: string;
+  readonly choice: string;
+  readonly note?: string | undefined;
+  /** Confirms an action-backed choice whose action asks to confirm. */
+  readonly confirmed?: boolean | undefined;
+  /** Where the person asked: the command line or the HTTP interface. */
+  readonly surface?: "cli" | "http" | undefined;
+  /** Who answered. */
+  readonly actor: Actor;
+}
+
 /** How many hidden rows would draw each mark role. */
 export interface ViewHiddenCounts {
   readonly done: number;
@@ -260,6 +278,8 @@ export interface ViewActionRun {
   readonly action: string;
   readonly name: string;
   readonly value: unknown;
+  /** The object the action created, as `type:id`; only one that exists. */
+  readonly opens?: string | undefined;
   /** The result was already true, so nothing ran; `value` says so. */
   readonly settled?: true | undefined;
 }
@@ -1246,6 +1266,66 @@ export class Views {
     return { registry: this.registry, store: this.store, home: this.home };
   }
 
+  /**
+   * Answers one question of a pending item by the wait id it named. A closed
+   * question is refused, as it is for the command line and a plugin action.
+   */
+  async answer(options: AnswerViewOptions): Promise<void> {
+    if (this.log === undefined) {
+      throw new ViewError(
+        "not-available",
+        "this server has no run log, so it cannot answer a question",
+      );
+    }
+    const pending = await listPending(this.log, this.registry);
+    const item = pending.find(
+      (candidate) =>
+        candidate.runId === options.runId && candidate.waitId === options.waitId,
+    );
+    // A wait whose choices are the object's actions answers through that
+    // action, so its note, confirmation and object update still happen.
+    const throughAction =
+      item !== undefined &&
+      item.choices.every((name) =>
+        item.actions.some((action) => action.action === name),
+      )
+        ? item.actions.find((action) => action.action === options.choice)
+        : undefined;
+    if (item !== undefined && throughAction !== undefined) {
+      const info = this.resolveActionInfo(
+        `${throughAction.plugin}:${throughAction.action}`,
+      );
+      if (item.object === undefined) {
+        throw new ViewError(
+          "not-found",
+          `the pending item "${options.waitId}" names no object`,
+        );
+      }
+      await this.act(info.name, item.object, {
+        ...(options.note === undefined ? {} : { note: options.note }),
+        ...(options.surface === undefined ? {} : { surface: options.surface }),
+        yes: options.confirmed === true,
+        actor: options.actor,
+      });
+      return;
+    }
+    try {
+      await recordAnswer({
+        log: this.log,
+        runId: options.runId,
+        waitId: options.waitId,
+        choice: options.choice,
+        ...(options.note === undefined ? {} : { note: options.note }),
+        actor: options.actor,
+      });
+    } catch (error) {
+      if (error instanceof StateError) {
+        throw new ViewError("not-available", error.message, { cause: error });
+      }
+      throw error;
+    }
+  }
+
   /** Runs one action by `<plugin>:<action>`, honouring note and confirm. */
   async act(
     name: string,
@@ -1277,7 +1357,7 @@ export class Views {
         ? resolved.id
         : this.guardedRow(owner.plugin, resolved.type, object).id;
     const target = this.resolveAction(name, resolved.type, subject);
-    const env = { store: this.store };
+    const env = this.registry.actionEnv();
 
     // A result that is already true is not an error: the plugin says so and
     // nothing runs.
@@ -1341,7 +1421,7 @@ export class Views {
     let personArgs: Record<string, unknown>;
     try {
       personArgs = validateActionArgs(
-        target.action.args,
+        target.action.argsFor?.(object, env) ?? target.action.args,
         args,
         `action "${target.info.name}"`,
       );
@@ -1374,12 +1454,36 @@ export class Views {
         cwd: this.cwd,
       },
     );
+    const opens = await this.existingOpens(target.info.name, result.opens);
     return {
       plugin: target.plugin,
       action: target.action.name,
       name: target.info.name,
       value: result.value,
+      ...(opens === undefined ? {} : { opens }),
     };
+  }
+
+  /** `opens` when it names an object that exists; otherwise the log says why. */
+  private async existingOpens(action: string, opens: string | undefined): Promise<string | undefined> {
+    if (opens === undefined) return undefined;
+    const typed = splitId(opens);
+    if (typed === undefined) {
+      this.onLog(`action "${action}": opens "${opens}" is not <type>:<id>; not passed on`);
+      return undefined;
+    }
+    let found: ResolvedObject | undefined;
+    try {
+      found = await this.resolve(opens);
+    } catch (error) {
+      this.onLog(`action "${action}": opens "${opens}" cannot be resolved (${messageOf(error)}); not passed on`);
+      return undefined;
+    }
+    if (found.object === undefined) {
+      this.onLog(`action "${action}": opens "${opens}" names no existing object; not passed on`);
+      return undefined;
+    }
+    return opens;
   }
 
   private finishSection(
@@ -1517,6 +1621,7 @@ export class Views {
   ): Promise<readonly ViewAction[]> {
     const keys = new Map(this.registry.keyBindings().map((item) => [item.name, item.key]));
     const actions: (ViewAction & { readonly rank: number })[] = [];
+    const env = this.registry.actionEnv();
     for (const info of this.registry.actions()) {
       if (info.on !== type) continue;
       const action = this.registry.actionDefinition(
@@ -1527,7 +1632,7 @@ export class Views {
       if (action === undefined) continue;
       let holds: unknown;
       try {
-        holds = await action.when(object.data, { store: this.store });
+        holds = await action.when(object.data, env);
       } catch (error) {
         this.onLog(
           `plugin "${info.plugin}": action "${info.action}": when failed: ${messageOf(error)}`,
@@ -1536,8 +1641,10 @@ export class Views {
       }
       if (holds !== true) continue;
       const key = keys.get(info.name);
+      const args = action.argsFor?.(object, env) ?? info.args;
       actions.push({
         ...info,
+        ...(args === undefined ? {} : { args }),
         ...(key === undefined ? {} : { key }),
         rank: rankOf(action, object.data),
       });
@@ -2149,7 +2256,7 @@ export class Views {
     subject: string,
   ): Promise<string> {
     try {
-      const why = await target.action.why?.(object, { store: this.store });
+      const why = await target.action.why?.(object, this.registry.actionEnv());
       if (why !== undefined && why.length > 0) return why;
     } catch (error) {
       this.onLog(`action "${target.info.name}": why failed: ${messageOf(error)}`);

@@ -18,8 +18,10 @@ import {
   type ActionArgsSchema,
   type ProjectSettingsDeclaration,
   type ActionContext,
+  type ActionEnv,
   type ActionEvent,
   type ActionRun,
+  isActionOutcome,
   type ActionRunOptions,
   type ActionTypeDefinition,
   type ObjectData,
@@ -168,6 +170,8 @@ export interface ActionInfo {
   readonly confirm: boolean;
   /** The action ends the object, so a main key or button never runs it. */
   readonly ends?: boolean | undefined;
+  /** The object type the action creates; a client lists it where that type is created. */
+  readonly creates?: string | undefined;
 }
 
 /** Where a key binding came from. */
@@ -421,6 +425,7 @@ export class PluginRegistry {
           noteRequired: note.required,
           confirm: action.confirm === true,
           ...(action.ends === true ? { ends: true } : {}),
+          ...(action.creates === undefined ? {} : { creates: action.creates }),
         });
       }
     }
@@ -496,6 +501,11 @@ export class PluginRegistry {
   /** The plugin names in load order. */
   names(): readonly string[] {
     return this.plugins.map((plugin) => plugin.name);
+  }
+
+  /** True when the plugin's objects belong under a client's settings view. */
+  objectsUnderSettings(plugin: string): boolean {
+    return this.byName.get(plugin)?.objectsUnderSettings === true;
   }
 
   /** The trigger rules plugins ship, in load order, with their plugin. */
@@ -737,7 +747,7 @@ export class PluginRegistry {
     try {
       const stored = await this.store.get(object.type, object.id);
       if (stored === undefined) return false;
-      return (await hook(stored.data, { store: this.store })) === true;
+      return (await hook(stored.data, this.actionEnv())) === true;
     } catch (error) {
       this.log(
         `answeredAutomatically failed for ${object.type} "${object.id}": ${messageOf(error)}`,
@@ -1057,6 +1067,16 @@ export class PluginRegistry {
     return { result: outcome.result, data };
   }
 
+  /** The names of the harness plugins loaded now. */
+  loadedHarnesses(): readonly string[] {
+    return this.plugins.filter((item) => item.kind === "harness").map((item) => item.name);
+  }
+
+  /** What an action's checks may read. */
+  actionEnv(): ActionEnv {
+    return { store: this.store, harnesses: this.loadedHarnesses() };
+  }
+
   /** Runs an action on an object, by `plugin/action` or a unique plain name. */
   async runAction(
     name: string,
@@ -1065,7 +1085,11 @@ export class PluginRegistry {
   ): Promise<ActionRun> {
     const found = this.findAction(name, options.object.type);
     const label = `action "${found.plugin.name}:${found.action.name}"`;
-    const personArgs = validateActionArgs(found.action.args, args, label);
+    const personArgs = validateActionArgs(
+      found.action.argsFor?.(options.object, this.actionEnv()) ?? found.action.args,
+      args,
+      label,
+    );
     const cause = `action:${found.plugin.name}/${found.action.name}`;
     const runId = options.runId;
     const onAnswer = this.onAnswer;
@@ -1106,7 +1130,7 @@ export class PluginRegistry {
       object: options.object,
       actor,
       answer,
-      harnesses: this.plugins.filter((item) => item.kind === "harness").map((item) => item.name),
+      harnesses: this.loadedHarnesses(),
       ...(this.onEvent === undefined
         ? {}
         : { emit: this.actionEmitter(found.plugin.name) }),
@@ -1115,6 +1139,14 @@ export class PluginRegistry {
         : { runs: this.runControl() }),
     };
     const value = await found.action.run(ctx, personArgs);
+    if (isActionOutcome(value)) {
+      return {
+        plugin: found.plugin.name,
+        action: found.action.name,
+        value: value.text,
+        opens: value.opens,
+      };
+    }
     return {
       plugin: found.plugin.name,
       action: found.action.name,
@@ -1320,7 +1352,7 @@ export class PluginRegistry {
     for (const { plugin, action } of this.actionsFor(object.type)) {
       let holds: unknown;
       try {
-        holds = await action.when(object.data, { store: this.store });
+        holds = await action.when(object.data, this.actionEnv());
       } catch (error) {
         this.log(
           `plugin "${plugin.name}": action "${action.name}": when failed: ${messageOf(error)}`,

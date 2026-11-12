@@ -16,9 +16,11 @@ import {
   HISTORY_SECTION,
   listPending,
   listRunning,
+  listTypes,
   messageOf,
   ViewError,
   type Actor,
+  type ViewTypeInfo,
 } from "@operad-io/engine";
 import { machineLoad, type MachineLoad } from "@operad-io/engine/platform";
 import { InvalidToolArguments, validateArguments } from "./arguments.ts";
@@ -29,6 +31,7 @@ import {
   runningMarkdown,
   sectionMarkdown,
   showMarkdown,
+  typesMarkdown,
   valueText,
 } from "./format.ts";
 import {
@@ -84,6 +87,16 @@ const KERNEL_VERBS = new Set([
 
 /** The tools this server offers, in the order it lists them. */
 export const TOOLS = [
+  {
+    name: "types",
+    description:
+      "List the object types with views, their plugin, and whether they belong under settings rather than a tab.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {},
+    },
+  },
   {
     name: "list",
     description: "List one object type, with the kernel's waiting and running flags.",
@@ -165,6 +178,41 @@ export const TOOLS = [
       type: "object",
       additionalProperties: false,
       properties: {},
+    },
+  },
+  {
+    name: "answer",
+    description: "Answer one open question of a pending item by its wait id.",
+    inputSchema: {
+      type: "object",
+      required: ["runId", "waitId", "choice"],
+      additionalProperties: false,
+      properties: {
+        runId: {
+          type: "string",
+          minLength: 1,
+          description: "The pending item's runId.",
+        },
+        waitId: {
+          type: "string",
+          minLength: 1,
+          description: "The pending item's waitId.",
+        },
+        choice: {
+          type: "string",
+          minLength: 1,
+          description: "One of the item's choices.",
+        },
+        note: {
+          type: "string",
+          description: "The note, when the question asks for one.",
+        },
+        confirmed: {
+          type: "boolean",
+          description:
+            "Set when the answer is a choice whose action asks to confirm.",
+        },
+      },
     },
   },
   {
@@ -313,6 +361,13 @@ export async function runTool(
   context: ToolContext,
 ): Promise<ToolResult> {
   switch (name) {
+    case "types": {
+      const types: readonly ViewTypeInfo[] = listTypes(context.registry);
+      return {
+        content: [text(typesMarkdown(types))],
+        structuredContent: { types },
+      };
+    }
     case "list": {
       const type = args.type === undefined ? undefined : String(args.type);
       const root = args.root === true;
@@ -370,6 +425,82 @@ export async function runTool(
         content: [text(pendingMarkdown(shown))],
         structuredContent: { items: shown },
       };
+    }
+    case "answer": {
+      const runId = String(args.runId);
+      const waitId = String(args.waitId);
+      const choice = String(args.choice);
+      const note = args.note === undefined ? undefined : String(args.note);
+      const actor: Actor = { via: "mcp", id: "lead" };
+      const pending = await listPending(
+        context.log,
+        context.registry,
+        context.kernel,
+        context.views,
+      );
+      const item = pending.find(
+        (candidate) => candidate.runId === runId && candidate.waitId === waitId,
+      );
+      // A wait whose choices are the object's actions answers through that
+      // action, so its confirmation and the owner's allow list still apply.
+      const throughAction =
+        item !== undefined &&
+        item.choices.every((name) =>
+          item.actions.some((action) => action.action === name),
+        )
+          ? item.actions.find((action) => action.action === choice)
+          : undefined;
+      if (item !== undefined && throughAction !== undefined) {
+        const info = actionInfoNamed(
+          context.registry.actions(),
+          `${throughAction.plugin}:${throughAction.action}`,
+        );
+        if (info === undefined) {
+          return toolError(`there is no action "${throughAction.action}"`);
+        }
+        if (!actionMayRun(mcpPolicy(context.mcp), info)) {
+          return toolError(ownerRefusal(info.name));
+        }
+        if (item.object === undefined) {
+          return toolError(`the pending item "${waitId}" names no object`);
+        }
+        try {
+          const run = await context.views.act(info.name, item.object, {
+            args: {},
+            ...(note === undefined ? {} : { note }),
+            yes: args.confirmed === true,
+            actor,
+          });
+          return {
+            content: [text(valueText(run.value) || `ran "${run.name}"\n`)],
+            structuredContent: run,
+          };
+        } catch (error) {
+          return toolError(messageOf(error));
+        }
+      }
+      const result = {
+        runId,
+        waitId,
+        choice,
+        ...(note === undefined ? {} : { note }),
+      };
+      try {
+        await context.views.answer({
+          runId,
+          waitId,
+          choice,
+          ...(note === undefined ? {} : { note }),
+          ...(args.confirmed === true ? { confirmed: true } : {}),
+          actor,
+        });
+        return {
+          content: [text(`answered ${waitId}\n`)],
+          structuredContent: result,
+        };
+      } catch (error) {
+        return toolError(messageOf(error));
+      }
     }
     case "running": {
       const running: readonly RunningItem[] = await listRunning(

@@ -96,7 +96,7 @@ export function linkExclusive(source: string, target: string): boolean {
 }
 
 /** How long a waiter accepts a live holder before it gives up. */
-const LOCK_TIMEOUT_MS = 10_000;
+export const LOCK_TIMEOUT_MS = 10_000;
 
 /** The fallback check interval when no watch event arrives. */
 const LOCK_POLL_MS = 200;

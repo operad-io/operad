@@ -19,7 +19,7 @@ import {
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { checkPlaces } from "./places.ts";
-import { linkWorkspacePackages, runPrepare, stepOptions } from "./prepare.ts";
+import { runPrepare, stepOptions } from "./prepare.ts";
 import { runCheckCommands } from "./rerun.ts";
 import { runCheckSteadily } from "./notcode.ts";
 import { reportFlakyTests } from "./flaky.ts";
@@ -154,11 +154,7 @@ export function recreateGateWorktree(
     path,
     sha,
   ]);
-  if (add.ok) {
-    // Without a prepare command the checkout still resolves its own packages.
-    if (settings.prepare.length === 0) linkWorkspacePackages(path);
-    return undefined;
-  }
+  if (add.ok) return undefined;
   return `cannot check out ${sha} at ${path}: ${add.err || add.out}`;
 }
 

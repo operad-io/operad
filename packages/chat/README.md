@@ -6,12 +6,12 @@ the plugin that opens a chat gives every field (`createChat`).
 
 ## The object
 
-A chat has a parent (a full object id), a harness (a harness plugin name, fixed
-once the chat exists), a working directory, an access profile, skills, a title,
-the harness's own session reference (never shown), bound channels, and whether
-it is closed. Its ids are `C-0001` upward. Messages are not fields: each is a
-`chat.message` fact on the chat (who, when, text, attachment paths, the source
-and its reference). An assistant message also names the messages it answers
+A chat has a parent (a full object id), an agent (the name of a harness plugin,
+fixed once the chat exists), a working directory, an access profile, skills, a
+title, the agent's own session reference (never shown), bound channels, and
+whether it is closed. Its ids are `C-0001` upward. Messages are not fields: each
+is a `chat.message` fact on the chat (who, when, text, attachment paths, the
+source and its reference). An assistant message also names the messages it answers
 (`replyTo`) and the session after it. Closing a chat appends a `chat.closed`
 fact and marks the object closed; the messages stay in its transcript.
 
@@ -40,13 +40,17 @@ are some its result is `more` and the flow runs it again. The flow's `maxVisits`
 (20) ends a loop that never catches up. A question that ran out of grace ends the
 step `waiting`; the answer comes back with the session.
 
-The harness gets `operadTools: { home }`, so the agent calls operad through MCP
-tools and never through a shell.
+The agent gets `operadTools: { home }`, so it calls operad through MCP tools and
+never through a shell.
 
-In a chat whose access profile is `readOnly`, a harness question about writing a
-file becomes the worktree question (`yes`/`no`) and never a one-time
-permission. A `yes` sends the event `chat.worktree`; the plugin that owns the
-working directory acts on it (`dev` opens `work/chat-<id>`).
+In a chat whose access profile is `readOnly`, an agent question about a
+command, a write or an edit becomes the worktree question (`yes`/`no`) and
+never a one-time permission. The question names the call: the command, or the
+path and whether it is a write or an edit; a long command is cut, and the ask
+keeps the whole call. A `yes` sends the event `chat.worktree`; the plugin that
+owns the working directory acts on it (`dev` opens `work/chat-<id>`). A `no`
+tells the agent the call was refused because the chat is read-only, and that it
+should answer in the chat or use read-only commands.
 
 ## The `transcript` section
 

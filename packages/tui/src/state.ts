@@ -32,14 +32,17 @@ import {
   keyLabel,
   mainAction,
   mainKey,
+  MAIN_KEY,
   runKey,
   startAction,
   typed,
   isReserved,
   resolveBindings,
   remember,
+  startAnswer,
   withNotice,
   type TuiCommand,
+  pageActions,
 } from "./actions.ts";
 
 /** The two terminal themes the view knows. */
@@ -49,7 +52,7 @@ export type TuiTheme = "light" | "dark";
 export type TuiChildLayout = "tree" | "list";
 
 /** What a tab lists. */
-export type TuiTabKind = "pending" | "running" | "plugin";
+export type TuiTabKind = "pending" | "running" | "plugin" | "settings";
 
 /** The marker a row shows: one of the plugin's marks, or nothing. */
 export type TuiMark = RowMark | "none";
@@ -61,6 +64,14 @@ const WAITING_KEEPS: readonly RowMark[] = [
   "rework_pending",
   "ready_to_merge",
 ];
+
+/** One pending question a person answers with one of its choices. */
+export interface TuiAnswer {
+  readonly runId: string;
+  readonly waitId: string;
+  readonly prompt: string;
+  readonly choices: readonly string[];
+}
 
 /** One line of a list, in the words the view renders. */
 export interface TuiRow {
@@ -82,6 +93,8 @@ export interface TuiRow {
   readonly openable?: boolean | undefined;
   /** The parts of the dim second line; unset means state, badge and note. */
   readonly detail?: readonly string[] | undefined;
+  /** A pending question whose choices are not the object's actions. */
+  readonly answer?: TuiAnswer | undefined;
   /** The row names no object: its first line is the title alone. */
   readonly unnamed?: boolean | undefined;
   /** The object type, for a row of a plugin tab or of a page's next level. */
@@ -92,6 +105,10 @@ export interface TuiRow {
   readonly group?: TuiRow | undefined;
   /** The row is a top-level object with nothing under it, shown as its own group row. */
   readonly bare?: boolean | undefined;
+  /** A group's heading shown as its own row, so Enter can open the object it names. */
+  readonly heading?: boolean | undefined;
+  /** The row is indented under a heading row, not under a group line. */
+  readonly grouped?: boolean | undefined;
 }
 
 /** The next level under the open object: its rows and where the cursor is in them. */
@@ -186,6 +203,12 @@ export type TuiInput =
       readonly args?: Readonly<Record<string, unknown>> | undefined;
     }
   | {
+      /** One choice of a pending question is being chosen. */
+      readonly kind: "answer";
+      readonly answer: TuiAnswer;
+      readonly cursor: number;
+    }
+  | {
       /** One argument of an action is being asked: a list, a number or a text. */
       readonly kind: "args";
       readonly action: string;
@@ -233,6 +256,15 @@ export interface TuiActionRequest {
   readonly id: string;
   readonly note?: string | undefined;
   readonly args?: Readonly<Record<string, unknown>> | undefined;
+  readonly confirmed?: boolean | undefined;
+}
+
+/** An answer the reducer wants the caller to send with `POST /v1/answer`. */
+export interface TuiAnswerRequest {
+  readonly runId: string;
+  readonly waitId: string;
+  readonly choice: string;
+  readonly note?: string | undefined;
   readonly confirmed?: boolean | undefined;
 }
 
@@ -328,6 +360,11 @@ export interface TuiFilterRequest {
 /** Everything the view needs; nothing here is derived from a terminal handle. */
 export interface TuiState {
   readonly tabs: readonly TuiTab[];
+  /**
+   * The objects whose types a plugin put under settings; fetched like a tab but
+   * never in the top bar. The palette lists them by type.
+   */
+  readonly settingsTab?: TuiTab | undefined;
   readonly active: number;
   readonly width: number;
   readonly height: number;
@@ -351,6 +388,11 @@ export interface TuiState {
   readonly objectVersion: number;
   /** Set when a row is opened and the caller must fetch the object. */
   readonly objectRequest?: TuiObjectRequest | undefined;
+  /**
+   * `c` on a tab: the parent page is opening so the action that creates `type`
+   * can start on it; the page's answer starts it.
+   */
+  readonly creating?: { readonly parent: string; readonly type: string } | undefined;
   /** Set when a section must be fetched. */
   readonly sectionRequest?: TuiSectionRequest | undefined;
   /** Grows each time a list cursor moves; the shell opens what it lands on. */
@@ -381,6 +423,8 @@ export interface TuiState {
   readonly notice?: string | undefined;
   /** Set when an action must be sent; the caller clears it as it sends. */
   readonly actionRequest?: TuiActionRequest | undefined;
+  /** Set when an answer must be sent; the caller clears it as it sends. */
+  readonly answerRequest?: TuiAnswerRequest | undefined;
   /** The settings the palette lists, global and the open object's repository. */
   readonly settings: readonly TuiSetting[];
   /** Set when the palette opened and the settings must be fetched again. */
@@ -466,9 +510,14 @@ export function filterFor(tab: TuiTab, info: TuiTypeInfo): string | undefined {
   return info.filters?.some((f) => f.name === name) === true ? name : undefined;
 }
 
-/** The plugin tab that holds `type`, if any. */
+/** The plugin tab or settings list that holds `type`, if any. */
 export function pluginTabOf(state: TuiState, type: string): TuiTab | undefined {
-  return state.tabs.find((tab) => tab.types?.some((info) => info.type === type) === true);
+  return (
+    state.tabs.find((tab) => tab.types?.some((info) => info.type === type) === true) ??
+    (state.settingsTab?.types?.some((info) => info.type === type) === true
+      ? state.settingsTab
+      : undefined)
+  );
 }
 /** The two fixed tabs; `/v1/types` adds the rest. */
 export function initialState(options: TuiStateOptions = {}): TuiState {
@@ -679,7 +728,15 @@ export type TuiStateEvent =
     }
   /** The caller sent the action request; it is sent once. */
   | { readonly type: "action-launched" }
+  /** The caller sent the answer request; it is sent once. */
+  | { readonly type: "answer-launched" }
   | { readonly type: "setting-launched" }
+  /** The objects under settings arrived: each settings type's top level. */
+  | {
+      readonly type: "settings-objects";
+      readonly entries: readonly TuiTreeEntry[];
+      readonly generation?: number | undefined;
+    }
   | { readonly type: "settings"; readonly settings: readonly TuiSetting[] }
   /** The installed themes or the theme in force changed. */
   | { readonly type: "theme-names"; readonly names: readonly string[]; readonly current: string }
@@ -688,7 +745,12 @@ export type TuiStateEvent =
   /** The caller saved the chosen child layout; it is saved once. */
   | { readonly type: "layout-launched" }
   /** The action ran, or its result was already true and `notice` says so. */
-  | { readonly type: "action-done"; readonly notice?: string | undefined }
+  | {
+      readonly type: "action-done";
+      readonly notice?: string | undefined;
+      /** The object the action created, as "<type>:<id>"; its page opens. */
+      readonly opens?: string | undefined;
+    }
   /** The server refused the action; the message shows as the line, the status does not. */
   | {
       readonly type: "action-error";
@@ -732,7 +794,23 @@ export function rowFromView(row: ViewRow, type?: string): TuiRow {
   };
 }
 
+/** The item's answer, when its choices are not the object's actions. */
+function answerOfPending(item: PendingItem): TuiAnswer | undefined {
+  if (item.waitId === undefined || item.choices.length === 0) return undefined;
+  const names = new Set(item.actions.map((action) => action.action));
+  // A choice that is also an action stays with the actions, as it works today.
+  if (item.choices.every((choice) => names.has(choice))) return undefined;
+  return {
+    runId: item.runId,
+    waitId: item.waitId,
+    prompt: item.prompt,
+    choices: item.choices,
+  };
+}
+
 function rowFromPending(item: PendingItem): TuiRow {
+  const answer = answerOfPending(item);
+  const answerDetail = answer === undefined ? [] : [`choices: ${answer.choices.join(", ")}`];
   // A server that sends the object's row saves a read per item: the row names
   // the object, and the question stays visible as the note. An older server
   // sends no row, and the item shows its question and flow as before.
@@ -742,9 +820,10 @@ function rowFromPending(item: PendingItem): TuiRow {
       title: sanitize(item.row.title),
       state: sanitize(item.row.state),
       note: sanitize(item.prompt),
-      detail: detailOf([item.prompt, repositoryOf(item.object)]),
+      detail: detailOf([item.prompt, repositoryOf(item.object), ...answerDetail]),
       waiting: true,
       running: false,
+      ...(answer === undefined ? {} : { answer }),
       ...(item.row.mark === undefined ? {} : { mark: item.row.mark }),
       ...(item.row.badge === undefined ? {} : { badge: sanitize(item.row.badge) }),
       ...(item.row.error === undefined ? {} : { error: sanitize(item.row.error) }),
@@ -756,9 +835,10 @@ function rowFromPending(item: PendingItem): TuiRow {
     title: sanitize(item.prompt),
     state: sanitize(item.flow),
     ...(item.step === null ? {} : { note: sanitize(item.step) }),
-    detail: detailOf([item.flow, item.step ?? "", repositoryOf(item.object)]),
+    detail: detailOf([item.flow, item.step ?? "", repositoryOf(item.object), ...answerDetail]),
     waiting: true,
     running: false,
+    ...(answer === undefined ? {} : { answer }),
     ...(item.object === undefined ? { openable: false, unnamed: true } : {}),
   };
 }
@@ -1330,6 +1410,35 @@ function openObject(state: TuiState): TuiState {
   };
 }
 
+/** Opens the page of an object an action created, named "<type>:<id>". */
+function openNamed(state: TuiState, id: string): TuiState {
+  const colon = id.indexOf(":");
+  if (colon <= 0 || colon === id.length - 1) return state;
+  const type = id.slice(0, colon);
+  const version = state.objectVersion + 1;
+  const object: TuiObject = {
+    id,
+    source: id,
+    type,
+    link: "",
+    // A placeholder until the page answers; the page's own row replaces it.
+    row: { id, title: id, state: "", waiting: false, running: false, type },
+    sections: [],
+    active: 0,
+    actions: [],
+    loading: true,
+    version,
+  };
+  return {
+    ...state,
+    object,
+    objectVersion: version,
+    objectRequest: { id, version },
+    sectionRequest: undefined,
+    followPending: false,
+  };
+}
+
 function closeObject(state: TuiState): TuiState {
   if (state.object === undefined) return state;
   return {
@@ -1403,7 +1512,26 @@ function applyObject(
   if (section !== undefined && !section.loaded) {
     updated = requestSection(updated, active);
   }
+  const creating = updated.creating;
+  if (creating !== undefined && previous.id === creating.parent) {
+    updated = { ...updated, creating: undefined };
+    const make = view.actions.find((action) => action.creates === creating.type);
+    return make === undefined
+      ? withNotice(updated, `${creating.parent} has no way to create a ${creating.type}`)
+      : startAction(updated, make.name);
+  }
   return updated;
+}
+
+/** `c` on a tab of one object type: the palette, listing where a new one can be made. */
+function createHere(state: TuiState): TuiState {
+  const info = state.tabs[state.active]?.types?.find((one) => one.parents !== undefined);
+  if (info === undefined) return withNotice(state, "nothing is made from this tab");
+  return {
+    ...state,
+    input: { kind: "palette", query: `new ${info.type}`, cursor: 0 },
+    settingsRequest: true,
+  };
 }
 
 function applyObjectError(
@@ -1941,8 +2069,18 @@ function runCommand(state: TuiState, command: TuiCommand): TuiState {
         themePreview: state.themeNames[cursor],
       };
     }
+    case "create": {
+      const opened = openNamed({ ...state, followPending: false }, command.parent);
+      return opened === state
+        ? state
+        : { ...opened, creating: { parent: command.parent, type: command.type } };
+    }
     case "go":
       return activate(state, state.tabs.findIndex((tab) => tab.id === command.tabId));
+    case "open": {
+      const id = command.id.includes(":") ? command.id : `${command.type}:${command.id}`;
+      return openNamed({ ...state, followPending: false }, id);
+    }
   }
 }
 
@@ -2055,6 +2193,7 @@ function handleKey(
       if (isKey(key, "g")) return jumpSection(state, "top");
     }
   }
+  if (isKey(key, "c") && !shift) return createHere(state);
   if (isKey(key, "f")) return cycleFilter(state);
   // A rotated token is not retried: the person runs the TUI again.
   if (isKey(key, "r") && state.connection === "unauthorized") return state;
@@ -2073,6 +2212,8 @@ function handleKey(
   if (key === "G" || (isKey(key, "g") && shift)) return jump(state, "bottom");
   if (isKey(key, "g")) return jump(state, "top");
   if (/^[1-9]$/.test(key)) return activate(state, Number(key) - 1);
+  const answer = selectedAnswer(state);
+  if (answer !== undefined && label === MAIN_KEY) return startAnswer(state, answer);
   return runKey(state, label) ?? state;
 }
 
@@ -2147,7 +2288,16 @@ function applyTypes(state: TuiState, types: readonly TuiTypeInfo[]): TuiState {
     byPlugin.set(name, group);
   }
   const pluginTabs: TuiTab[] = [];
+  const settingsTypes: TuiTypeInfo[] = [];
   for (const [name, group] of byPlugin) {
+    // A plugin whose objects belong under settings gets no tab; all its types
+    // are listed in the settings view, one group per type.
+    if (group.some((info) => info.settings === true)) {
+      for (const info of group) {
+        if (!settingsTypes.some((seen) => seen.type === info.type)) settingsTypes.push(info);
+      }
+      continue;
+    }
     const id = `plugin:${name}`;
     // A server that names no plugin gives each type its own tab, titled as the type.
     const first = group[0];
@@ -2167,6 +2317,7 @@ function applyTypes(state: TuiState, types: readonly TuiTypeInfo[]): TuiState {
       filter: kept ? old.filter : fresh.filter,
     });
   }
+  const settingsTab = settingsTabFor(state.settingsTab, settingsTypes);
   const tabs = [...fixed, ...pluginTabs];
   const activeId = state.tabs[state.active]?.id;
   const found = tabs.findIndex((tab) => tab.id === activeId);
@@ -2174,6 +2325,24 @@ function applyTypes(state: TuiState, types: readonly TuiTypeInfo[]): TuiState {
     ...state,
     tabs,
     active: found < 0 ? Math.min(state.active, Math.max(0, tabs.length - 1)) : found,
+    settingsTab,
+  };
+}
+
+/** The settings list for the types under it, keeping its cursor and filter when it can. */
+function settingsTabFor(
+  old: TuiTab | undefined,
+  types: readonly TuiTypeInfo[],
+): TuiTab | undefined {
+  if (types.length === 0) return undefined;
+  const fresh = makeTab("settings-objects", "settings", "Settings", types);
+  if (old === undefined) return fresh;
+  const kept = fresh.filters?.some((f) => f.name === old.filter) === true;
+  return {
+    ...old,
+    types,
+    filters: fresh.filters,
+    filter: kept ? old.filter : fresh.filter,
   };
 }
 
@@ -2272,8 +2441,7 @@ function replacePageRow(state: TuiState, row: TuiRow): TuiState {
 function replaceListRow(state: TuiState, row: TuiRow): TuiState {
   let changed = false;
   let selectedLeft = false;
-  const tabs = state.tabs.map((tab, index) => {
-    if (tab.kind !== "plugin") return tab;
+  const update = (tab: TuiTab, active: boolean): TuiTab => {
     const at = tab.list.rows.findIndex((old) => sameObject(old.id, row.id));
     const shown = at < 0 ? undefined : tab.list.rows[at];
     const info = tab.types?.find((candidate) => candidate.type === shown?.type);
@@ -2287,7 +2455,7 @@ function replaceListRow(state: TuiState, row: TuiRow): TuiState {
       // The object no longer matches the filter: it leaves the list, and the
       // cursor keeps its place, which is now the next row.
       changed = true;
-      if (index === state.active && at === tab.list.cursor) selectedLeft = true;
+      if (active && at === tab.list.cursor) selectedLeft = true;
       const rows = dropRow(tab.list.rows, at);
       const cursor = Math.min(tab.list.cursor, Math.max(0, rows.length - 1));
       return {
@@ -2305,14 +2473,25 @@ function replaceListRow(state: TuiState, row: TuiRow): TuiState {
         ...(old.parent === undefined ? {} : { parent: old.parent }),
         ...(old.group === undefined ? {} : { group: old.group }),
         ...(old.bare === true ? { bare: true } : {}),
+        ...(old.heading === true ? { heading: true } : {}),
+        ...(old.grouped === true ? { grouped: true } : {}),
       };
     });
-    return changed && rows.some((r, i) => r !== tab.list.rows[i])
+    return rows.some((r, i) => r !== tab.list.rows[i])
       ? { ...tab, list: { ...tab.list, rows } }
       : tab;
-  });
+  };
+  const tabs = state.tabs.map((tab, index) =>
+    tab.kind === "plugin" ? update(tab, index === state.active) : tab,
+  );
+  const settingsTab =
+    state.settingsTab === undefined ? undefined : update(state.settingsTab, false);
   if (!changed) return state;
-  const next = { ...state, tabs };
+  const next = {
+    ...state,
+    tabs,
+    ...(settingsTab === undefined ? {} : { settingsTab }),
+  };
   return selectedLeft
     ? { ...next, moveSeq: next.moveSeq + 1, followPending: true }
     : next;
@@ -2321,16 +2500,24 @@ function replaceListRow(state: TuiState, row: TuiRow): TuiState {
 /** Drops the row of an object that is gone from the server. */
 function removeRow(state: TuiState, id: string): TuiState {
   let changed = false;
-  const tabs = state.tabs.map((tab) => {
-    if (tab.kind !== "plugin") return tab;
+  const update = (tab: TuiTab): TuiTab => {
     const at = tab.list.rows.findIndex((row) => sameObject(row.id, id));
     if (at < 0) return tab;
     changed = true;
     const rows = dropRow(tab.list.rows, at);
     const cursor = Math.min(tab.list.cursor, Math.max(0, rows.length - 1));
     return { ...tab, list: { ...tab.list, rows, cursor } };
-  });
-  return changed ? { ...state, tabs } : state;
+  };
+  const tabs = state.tabs.map((tab) => (tab.kind === "plugin" ? update(tab) : tab));
+  const settingsTab =
+    state.settingsTab === undefined ? undefined : update(state.settingsTab);
+  return changed
+    ? {
+        ...state,
+        tabs,
+        ...(settingsTab === undefined ? {} : { settingsTab }),
+      }
+    : state;
 }
 
 function replaceRows(
@@ -2376,6 +2563,13 @@ function followLoaded(state: TuiState, tabId: string): TuiState {
   // A follow already waiting keeps its debounce: restarting it on every refresh could starve it.
   if (state.followPending) return state;
   return { ...state, moveSeq: state.moveSeq + 1, followPending: true };
+}
+
+/** The answerable question on the selected pending row, if any. */
+function selectedAnswer(state: TuiState): TuiAnswer | undefined {
+  const tab = activeTabOf(state);
+  if (tab?.kind !== "pending") return undefined;
+  return tab.list.rows[tab.list.cursor]?.answer;
 }
 
 function applyPending(state: TuiState, items: readonly PendingItem[]): TuiState {
@@ -2460,6 +2654,30 @@ function rowOfEntry(entry: TuiTreeEntry): TuiRow {
           },
         }),
   };
+}
+
+/**
+ * The rows one entry makes. A group heading that names a settings object is a
+ * row of its own, so Enter on it opens that object; its rows are indented under
+ * it. Other group headings stay metadata on the first row.
+ */
+function rowsOfEntry(state: TuiState, entry: TuiTreeEntry): readonly TuiRow[] {
+  const row = rowOfEntry(entry);
+  const heading = entry.heading;
+  if (
+    heading === undefined ||
+    !(state.settingsTab?.types?.some((info) => info.type === heading.type) === true)
+  ) {
+    return [row];
+  }
+  const named = heading.label ?? heading.row.title;
+  const headingRow: TuiRow = {
+    ...rowFromView(heading.row, heading.type),
+    title: sanitize(named),
+    unnamed: true,
+    heading: true,
+  };
+  return [headingRow, { ...row, group: undefined, grouped: true }];
 }
 
 function applyChildren(
@@ -2557,7 +2775,7 @@ export function reduce(state: TuiState, event: TuiStateEvent): TuiState {
       );
     case "tree": {
       if (stale(state, event.generation)) return state;
-      const rows = event.entries.map(rowOfEntry);
+      const rows = event.entries.flatMap((entry) => rowsOfEntry(state, entry));
       const next = appendPage(
         state,
         event.tabId,
@@ -2690,16 +2908,32 @@ export function reduce(state: TuiState, event: TuiStateEvent): TuiState {
       return state.actionRequest === undefined
         ? state
         : { ...state, actionRequest: undefined };
+    case "answer-launched":
+      return state.answerRequest === undefined
+        ? state
+        : { ...state, answerRequest: undefined };
     case "setting-launched":
       return { ...state, settingRequest: undefined, settingsRequest: false };
     case "settings":
       return { ...state, settings: event.settings };
-    case "action-done":
+    case "settings-objects": {
+      if (stale(state, event.generation)) return state;
+      const tab = state.settingsTab;
+      if (tab === undefined) return state;
       return {
+        ...state,
+        settingsTab: replaceRows(tab, event.entries.map(rowOfEntry), undefined),
+      };
+    }
+    case "action-done": {
+      const done: TuiState = {
         ...(event.notice === undefined ? state : withNotice(state, event.notice)),
         acting: false,
         actionRequest: undefined,
+        answerRequest: undefined,
       };
+      return event.opens === undefined ? done : openNamed(done, event.opens);
+    }
     case "action-error":
       return actionFailed(state, event.message);
     case "connection":
@@ -2773,7 +3007,7 @@ export function footerSegments(state: TuiState): readonly TuiFooterSegment[] {
   const main = mainAction(state);
   if (object !== undefined && main !== undefined) {
     add(mainKey(state), main.name);
-    if (object.actions.length > 1) add(":", "more");
+    if (pageActions(object.actions).length > 1) add(":", "more");
   }
   const filtering = filterKeyApplies(state);
   if (object === undefined) {
@@ -2849,6 +3083,7 @@ export const KEY_GROUPS: readonly (readonly (readonly [string, string])[])[] = [
     ["t", "switch the child list between tree and list"],
   ],
   [
+    ["c", "on a tab of chats: start a new one; the palette lists where (a repository or a bot)"],
     ["r", "fetch the lists again"],
     ["escape / backspace", "close the key list, leave a list inside the open object, return from a row opened there, or close the object"],
     ["?", "show or hide this key list"],

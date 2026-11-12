@@ -8,7 +8,6 @@ import { randomBytes } from "node:crypto";
 import type { HttpConfig } from "../config/config.ts";
 import type { LogBackend } from "../log/types.ts";
 import { messageOf } from "../plugin/errors.ts";
-import { typeFilters } from "../plugin/filters.ts";
 import type { PluginRegistry } from "../plugin/registry.ts";
 import type { Actor } from "../plugin/types.ts";
 import type { Kernel } from "../trigger/kernel.ts";
@@ -20,6 +19,7 @@ import {
   type Views,
 } from "../views/presentation.ts";
 import { listRunning } from "../views/running.ts";
+import { listTypes } from "../views/types.ts";
 import { validateListenAddresses } from "./address.ts";
 import {
   ensureHttpToken,
@@ -279,13 +279,7 @@ function viewErrorResponse(error: ViewError): Response {
 }
 
 /** The name a type shows in a client: `task` becomes `Task`. */
-export function displayNameOf(type: string): string {
-  const words = type
-    .split(/[-_\s]+/)
-    .filter((word) => word.length > 0)
-    .map((word) => `${word[0]?.toUpperCase() ?? ""}${word.slice(1)}`);
-  return words.length === 0 ? type : words.join(" ");
-}
+export { displayNameOf } from "../views/types.ts";
 
 function decodeSegment(value: string): string {
   try {
@@ -459,29 +453,7 @@ function createHandler(
     }
 
     if (method === "GET" && path === "/v1/types") {
-      const seen = new Set<string>();
-      const types: {
-        type: string;
-        title: string;
-        plugin: string;
-        filters?: readonly { name: string; states?: readonly string[] | undefined }[];
-        defaultFilter?: string;
-      }[] = [];
-      for (const entry of options.registry.objectTypes()) {
-        if (seen.has(entry.type)) continue;
-        if (options.registry.viewsFor(entry.type) === undefined) continue;
-        seen.add(entry.type);
-        const filters = typeFilters(entry.definition);
-        types.push({
-          type: entry.type,
-          title: displayNameOf(entry.type),
-          plugin: entry.plugin,
-          ...(filters === undefined
-            ? {}
-            : { filters: filters.filters, defaultFilter: filters.default }),
-        });
-      }
-      return json({ types });
+      return json({ types: listTypes(options.registry) });
     }
 
     if (method === "GET" && path === "/v1/keys") {
@@ -572,6 +544,53 @@ function createHandler(
           confirmed: confirmed === true,
         }),
       );
+    }
+
+    if (method === "POST" && path === "/v1/answer") {
+      const body = await readBody(request);
+      if (!isRecord(body)) {
+        return errorResponse(400, "args", "the body must be an object");
+      }
+      const { runId, waitId, choice } = body;
+      if (typeof runId !== "string" || runId.length === 0) {
+        return errorResponse(400, "args", "the body needs a runId");
+      }
+      if (typeof waitId !== "string" || waitId.length === 0) {
+        return errorResponse(400, "args", "the body needs a waitId");
+      }
+      if (typeof choice !== "string" || choice.length === 0) {
+        return errorResponse(400, "args", "the body needs a choice");
+      }
+      const note = body.note;
+      if (note !== undefined && typeof note !== "string") {
+        return errorResponse(400, "args", "note must be a string");
+      }
+      const confirmed = body.confirmed;
+      if (confirmed !== undefined && typeof confirmed !== "boolean") {
+        return errorResponse(400, "args", "confirmed must be a boolean");
+      }
+      const actor: Actor = { via: clientName(request.headers.get(CLIENT_HEADER)), id: token.label };
+      try {
+        await options.views.answer({
+          runId,
+          waitId,
+          choice,
+          ...(note === undefined ? {} : { note }),
+          ...(confirmed === true ? { confirmed: true } : {}),
+          surface: "http",
+          actor,
+        });
+        return json({ runId, waitId, choice });
+      } catch (error) {
+        if (error instanceof ViewError) {
+          onLog(
+            `http: answer "${waitId}" refused (${viewErrorStatus(error.kind)}): ${error.message}`,
+          );
+          throw error;
+        }
+        onLog(`http: answer "${waitId}" refused (422): ${messageOf(error)}`);
+        return errorResponse(422, "refused", messageOf(error));
+      }
     }
 
     if (method === "POST" && path === "/v1/act") {

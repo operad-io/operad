@@ -60,6 +60,8 @@ export interface NormalizedPlugin {
     | ((ctx: PluginBaseContext) => MaybePromise<string | void>)
     | undefined;
   readonly settingsSchema: ActionArgsSchema | undefined;
+  /** The plugin's objects belong under a client's settings view. */
+  readonly objectsUnderSettings: boolean;
   readonly projectSettings: ProjectSettingsDeclaration | undefined;
   readonly enforces: readonly string[];
   readonly requires: PluginRequires | undefined;
@@ -594,15 +596,25 @@ function normalizeActions(
     if (confirm !== undefined && typeof confirm !== "boolean") {
       throw new PluginError(`${at}[${index}]: confirm: must be a boolean`);
     }
+    if (
+      entry.creates !== undefined &&
+      (typeof entry.creates !== "string" || entry.creates.length === 0)
+    ) {
+      throw new PluginError(`${at}[${index}]: creates: must be a non-empty string`);
+    }
     actions.push({
       name,
       on,
+      ...(typeof entry.creates === "string" ? { creates: entry.creates } : {}),
       ...(args === undefined ? {} : { args }),
       ...(confirm === undefined ? {} : { confirm }),
       ...(entry.ends === true ? { ends: true } : {}),
       when: entry.when as ActionTypeDefinition["when"],
       ...(typeof entry.rank === "function"
         ? { rank: entry.rank as NonNullable<ActionTypeDefinition["rank"]> }
+        : {}),
+      ...(typeof entry.argsFor === "function"
+        ? { argsFor: entry.argsFor as NonNullable<ActionTypeDefinition["argsFor"]> }
         : {}),
       ...(typeof entry.settled === "function"
         ? { settled: entry.settled as NonNullable<ActionTypeDefinition["settled"]> }
@@ -714,6 +726,13 @@ export function normalizePlugin(raw: unknown, index: number): NormalizedPlugin {
     throw new PluginError(messageOf(error), { cause: error });
   }
 
+  if (
+    raw.objectsUnderSettings !== undefined &&
+    typeof raw.objectsUnderSettings !== "boolean"
+  ) {
+    throw new PluginError(`${at}: objectsUnderSettings: must be a boolean`);
+  }
+
   const projectSettings = normalizeProjectSettings(
     raw.projectSettings,
     `${at}: projectSettings`,
@@ -740,6 +759,7 @@ export function normalizePlugin(raw: unknown, index: number): NormalizedPlugin {
     start,
     check,
     settingsSchema,
+    objectsUnderSettings: raw.objectsUnderSettings === true,
     projectSettings,
     enforces: normalizeEnforces(raw.enforces, `${at}: enforces`) ?? [],
     requires: normalizeRequires(raw.requires, at),

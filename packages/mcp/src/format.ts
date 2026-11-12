@@ -7,6 +7,7 @@ import type {
   ViewObject,
   ViewRow,
   ViewSectionContent,
+  ViewTypeInfo,
 } from "@operad-io/engine";
 import type { MachineLoad } from "@operad-io/engine/platform";
 import type { McpViewObject } from "./policy.ts";
@@ -46,6 +47,22 @@ export function listMarkdown(page: ViewListPage): string {
   return `${lines.join("\n")}\n`;
 }
 
+/** Every object type with views, its plugin and where a client puts it. */
+export function typesMarkdown(types: readonly ViewTypeInfo[]): string {
+  if (types.length === 0) return "No object types.\n";
+  const lines = [
+    "| type | title | plugin | settings | filters | parents |",
+    "| --- | --- | --- | --- | --- | --- |",
+  ];
+  for (const info of types) {
+    const filters = (info.filters ?? []).map((filter) => filter.name).join(", ");
+    lines.push(
+      `| ${cell(info.type)} | ${cell(info.title)} | ${cell(info.plugin)} | ${info.settings === true ? "yes" : "no"} | ${cell(filters)} | ${cell((info.parents ?? []).join(", "))} |`,
+    );
+  }
+  return `${lines.join("\n")}\n`;
+}
+
 function actionMarkdown(action: ViewObject["actions"][number]): string[] {
   const key = action.key === undefined ? "" : ` (${action.key})`;
   const lines = [`- \`${action.name}\`${key}`];
@@ -54,6 +71,7 @@ function actionMarkdown(action: ViewObject["actions"][number]): string[] {
     `  - note: ${action.note === undefined ? "none" : `\`${action.note}\`${action.noteRequired ? " (required)" : ""}`}`,
   );
   lines.push(`  - confirm: ${action.confirm ? "yes" : "no"}`);
+  if (action.creates !== undefined) lines.push(`  - creates: \`${action.creates}\``);
   if (action.args === undefined) {
     lines.push("  - args: none");
   } else {

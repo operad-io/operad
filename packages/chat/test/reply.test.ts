@@ -81,7 +81,7 @@ describe("chat/reply", () => {
     expect(currentSession({ ...stored.data, session: "stale" } as never, messages)).toBe("fresh");
   });
 
-  test("a harness that fails leaves the messages unanswered", async () => {
+  test("an agent that fails leaves the messages unanswered", async () => {
     const r = await rig(() => ({ result: "failed", data: { message: "boom" } }));
     const chat = await r.chat();
     await r.say(chat, "hi");
@@ -90,7 +90,7 @@ describe("chat/reply", () => {
     expect(unanswered(allMessages(r.store, chat))).toHaveLength(1);
   });
 
-  test("a harness that is not loaded fails the round and says which", async () => {
+  test("an agent that is not loaded fails the round and says which", async () => {
     const r = await rig(() => reply("x"));
     const chat = await r.chat();
     const stored = await r.store.get("chat", chat);
@@ -99,7 +99,8 @@ describe("chat/reply", () => {
     await r.say(chat, "hi");
     const result = await r.round(chat);
     expect(result.result).toBe("failed");
-    expect(JSON.stringify(result.data)).toContain("absent");
+    expect(result.data).toMatchObject({ message: 'the agent "absent" is not loaded' });
+    expect(JSON.stringify(result.data)).not.toContain("the harness");
   });
 
   test("a question that ran out of grace ends the round as waiting and the answer resumes it", async () => {

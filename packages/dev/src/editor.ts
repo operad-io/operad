@@ -14,13 +14,20 @@ function quote(path: string): string {
   return `"${path.replace(/"/g, '\\"')}"`;
 }
 
+/** The editor command `$EDITOR` or `$VISUAL` names, when it names one. */
+export function editorCommand(): string | undefined {
+  const editor = process.env.EDITOR ?? process.env.VISUAL;
+  if (editor === undefined || editor.trim().length === 0) return undefined;
+  return editor;
+}
+
 /** Runs the editor on `text` and returns what the person saved. */
 export async function editText(
   text: string,
   options: EditorOptions,
 ): Promise<string> {
-  const editor = options.editor ?? process.env.EDITOR ?? process.env.VISUAL;
-  if (editor === undefined || editor.trim().length === 0) {
+  const editor = options.editor ?? editorCommand();
+  if (editor === undefined) {
     throw new DevError("EDITOR", "no editor is set; set $EDITOR");
   }
 

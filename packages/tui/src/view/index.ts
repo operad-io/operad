@@ -313,7 +313,7 @@ function listContent(
   const chunks: TextChunk[] = [chunk("\n"), ...listTitle(tab, palette, width)];
   const window = listWindow(tab.list, Math.max(1, bodyHeight(state) - LIST_HEAD));
   const titles = tab.kind !== "plugin";
-  const grouped = tab.list.rows.some((row) => row.group !== undefined);
+  const grouped = tab.list.rows.some((row) => row.group !== undefined || row.heading === true);
   tab.list.rows.slice(window.start, window.end).forEach((row, offset) => {
     if (offset > 0) chunks.push(chunk("\n"));
     if (row.group !== undefined) {
@@ -322,8 +322,13 @@ function listContent(
     }
     chunks.push(
       ...drawRow(row, window.start + offset === tab.list.cursor, palette, width, titles, {
-        indent: grouped && row.bare !== true ? GROUP_INDENT : 0,
-        ...(row.bare === true ? { folder: true } : {}),
+        indent:
+          row.heading === true
+            ? 0
+            : grouped && row.bare !== true
+              ? GROUP_INDENT
+              : 0,
+        ...(row.heading === true || row.bare === true ? { folder: true } : {}),
       }),
     );
   });
@@ -665,7 +670,7 @@ function paletteDisplayLines(entries: readonly TuiPaletteEntry[]): readonly Pale
   entries.forEach((entry, at) => {
     if (entry.group !== last) {
       if (last !== undefined) lines.push({ kind: "blank" });
-      lines.push({ kind: "group", group: entry.group });
+      lines.push({ kind: "group", group: entry.groupTitle ?? entry.group });
       last = entry.group;
     }
     lines.push({ kind: "entry", entry, at });
@@ -831,6 +836,18 @@ function inputContent(state: TuiState, palette: TuiPalette): StyledText | undefi
     ];
     return styled(chunks);
   }
+  if (input.kind === "answer") {
+    const chunks: TextChunk[] = [
+      chunk(`${input.answer.prompt}\n`, palette.accent, TextAttributes.BOLD),
+    ];
+    input.answer.choices.forEach((choice, at) => {
+      chunks.push(chunk(at === input.cursor ? "❯ " : "  ", palette.accent));
+      chunks.push(chunk(choice, at === input.cursor ? palette.accent : palette.text));
+      chunks.push(chunk("\n"));
+    });
+    chunks.push(chunk("j/k or arrows move · enter answers · esc cancels", palette.weak));
+    return styled(chunks);
+  }
   if (input.kind === "themes") {
     const chunks: TextChunk[] = [chunk("theme\n", palette.accent)];
     const names = state.themeNames;
@@ -969,6 +986,7 @@ function inputLines(state: TuiState): number {
     const entries = paletteEntries(state);
     return entries.length === 0 ? 3 : 2 + paletteDisplayLines(entries).length;
   }
+  if (input?.kind === "answer") return input.answer.choices.length + 2;
   if (input?.kind === "themes") return Math.max(1, state.themeNames.length) + 1;
   if (input?.kind === "pages") return Math.max(1, pageEntries(state).length) + 1;
   return 0;

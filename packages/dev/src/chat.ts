@@ -5,7 +5,7 @@
  * changes reach main only through a task, through integrate.
  */
 
-import { CHAT_TYPE, chatData, createChat } from "@operad-io/chat";
+import { CHAT_TYPE, chatData, createChat, sendMessage, titleFromMessage } from "@operad-io/chat";
 import type {
   ActionTypeDefinition,
   JsonValue,
@@ -27,7 +27,7 @@ export const CHAT_HARNESSES = ["claude", "pi"] as const;
 
 /** Why radian is not offered; said up front in the action's description. */
 export const RADIAN_NOTE =
-  "radian is not offered here: it cannot stop a tool call before it starts and cannot continue a session in another directory, so it cannot keep the main clone read-only or move to a worktree; use it for a bot chat.";
+  "radian is not offered as an agent here: it cannot stop a tool call before it starts and cannot continue a session in another directory, so it cannot keep the main clone read-only or move to a worktree; use it for a bot chat.";
 
 /** The access profile of a chat in the main clone: read-only, and no secrets. */
 export const CHAT_ACCESS: Readonly<Record<string, JsonValue>> = {
@@ -69,14 +69,15 @@ export async function chatWorktreeOf(
 const chatAction: ActionTypeDefinition = {
   name: "chat",
   on: "repo",
+  creates: "chat",
   args: {
     type: "object",
     description: `Opens a chat about this repository. ${RADIAN_NOTE}`,
     properties: {
-      harness: {
+      agent: {
         type: "string",
         enum: [...CHAT_HARNESSES],
-        description: "Which harness runs the chat; the first loaded one when left out. It cannot change later.",
+        description: "Which agent answers in this chat; the first loaded one when left out. It cannot change later.",
       },
       title: {
         type: "string",
@@ -84,22 +85,29 @@ const chatAction: ActionTypeDefinition = {
         maxLength: 120,
         description: "What the chat is called.",
       },
+      message: {
+        type: "string",
+        role: "note",
+        minLength: 1,
+        description:
+          "The first message; the chat is created and the message sent in one step. The title is taken from its start when none is given.",
+      },
     },
     additionalProperties: false,
   },
   when: (state) => repositoryData(state).removed !== true,
   async run(ctx, args) {
-    const input = args as { readonly harness?: string; readonly title?: string };
+    const input = args as { readonly agent?: string; readonly title?: string; readonly message?: string };
     const repository = repositoryData(ctx.object.data);
     const offered = CHAT_HARNESSES.filter((name) => ctx.harnesses.includes(name));
-    const harness = input.harness ?? offered[0];
+    const harness = input.agent ?? offered[0];
     if (harness === undefined) {
-      throw new DevRefusal(`no harness for a repository chat is loaded; load one of ${CHAT_HARNESSES.join(", ")}`);
+      throw new DevRefusal(`no agent for a repository chat is loaded; load one of ${CHAT_HARNESSES.join(", ")}`);
     }
     if (harness === "radian") throw new DevRefusal(RADIAN_NOTE);
     if (!offered.includes(harness as (typeof CHAT_HARNESSES)[number])) {
       throw new DevRefusal(
-        `harness "${harness}" is not offered for a repository chat; the loaded ones that are: ${offered.join(", ") || "none"}`,
+        `agent "${harness}" is not offered for a repository chat; the loaded ones that are: ${offered.join(", ") || "none"}`,
       );
     }
     const id = await createChat(
@@ -109,11 +117,15 @@ const chatAction: ActionTypeDefinition = {
         harness,
         cwd: repository.path,
         access: CHAT_ACCESS,
-        title: input.title ?? `Chat about ${repository.name}`,
+        title:
+          input.title ??
+          (input.message === undefined ? undefined : titleFromMessage(input.message)) ??
+          `Chat about ${repository.name}`,
       },
       "action:dev/chat",
     );
-    return `opened chat ${id}`;
+    const sent = input.message === undefined ? undefined : await sendMessage(ctx, id, input.message);
+    return { text: `opened chat ${id}${sent === undefined ? "" : `; ${sent}`}`, opens: `chat:${id}` };
   },
 };
 

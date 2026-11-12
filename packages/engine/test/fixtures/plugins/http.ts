@@ -116,6 +116,21 @@ export default definePlugin({
       },
     },
     {
+      name: "make",
+      on: "item",
+      creates: "item",
+      args: {
+        type: "object",
+        properties: { opens: { type: "string" } },
+        additionalProperties: false,
+      },
+      when: () => true,
+      run(_ctx, args) {
+        const opens = (args as { readonly opens?: string }).opens;
+        return opens === undefined ? "made nothing" : { text: "made it", opens };
+      },
+    },
+    {
       name: "fail",
       on: "item",
       when: () => true,

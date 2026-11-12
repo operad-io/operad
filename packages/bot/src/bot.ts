@@ -43,7 +43,7 @@ export const BOT_SETTINGS: ActionArgsSchema = {
           harness: {
             type: "string",
             minLength: 1,
-            description: "The harness a new chat uses when it names none.",
+            description: "The agent a new chat uses when it names none.",
           },
           skills: {
             type: "array",

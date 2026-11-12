@@ -114,14 +114,14 @@ async function makeHarness(options: HarnessOptions = {}): Promise<Harness> {
       : new MemoryPluginStore({ root: storeRoot });
   const log = openConfigLog(config);
   const registry = await loadPluginRegistry({ home, store });
+  const logs: string[] = [];
   const views = createViews({
     registry,
     store,
     log,
     loadTimeoutMs: options.loadTimeoutMs ?? 200,
-    onLog: () => undefined,
+    onLog: (message) => logs.push(message),
   });
-  const logs: string[] = [];
   const port = await freePort();
   const server = await startHttpServer({
     home,
@@ -456,7 +456,7 @@ describe("http server", () => {
       const types = await api(h, "/v1/types");
       expect(types.status).toBe(200);
       expect(await json(types)).toEqual({
-        types: [{ type: "item", title: "Item", plugin: "webtest" }],
+        types: [{ type: "item", title: "Item", plugin: "webtest", parents: ["item"] }],
       });
 
       const list = await api(h, "/v1/objects?type=item");
@@ -679,6 +679,97 @@ describe("http server", () => {
       });
       expect(drop.status).toBe(200);
       expect(h.store.get("item", "one")?.data.dropped).toBe(true);
+    } finally {
+      await h.close();
+    }
+  });
+
+  test("answers a wait whose choices are actions through the action, keeping its note", async () => {
+    const h = await makeHarness();
+    try {
+      seed(h, "one", { title: "First", state: "new" });
+      const run = await h.log.startRun("demo-flow", "item:one");
+      await h.log.append(run.runId, 0, [
+        {
+          kind: "waiting_for_person",
+          payload: {
+            waitId: "wait:1",
+            step: "ask",
+            prompt: "Approve?",
+            choices: ["approve"],
+            waitKind: "step",
+            effectId: null,
+          },
+          cause: "test",
+        },
+      ]);
+
+      const noNote = await api(h, "/v1/answer", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          runId: run.runId,
+          waitId: "wait:1",
+          choice: "approve",
+        }),
+      });
+      expect(noNote.status).toBe(400);
+      expect((await json(noNote)).error).toMatchObject({ kind: "note" });
+      expect(h.store.get("item", "one")?.data.approved).not.toBe(true);
+
+      const answered = await api(h, "/v1/answer", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          runId: run.runId,
+          waitId: "wait:1",
+          choice: "approve",
+          note: "looks good",
+        }),
+      });
+      expect(answered.status).toBe(200);
+      expect(h.store.get("item", "one")?.data).toMatchObject({
+        approved: true,
+        state: "approved",
+        approvedNote: "looks good",
+      });
+    } finally {
+      await h.close();
+    }
+  });
+
+  test("an action's opens passes through /v1/act when it names an existing object, and is dropped with a log line when not", async () => {
+    const h = await makeHarness();
+    try {
+      seed(h, "one", { title: "First", state: "new" });
+      seed(h, "two", { title: "Second", state: "new" });
+      const make = async (args: Record<string, unknown>): Promise<Record<string, unknown>> => {
+        const response = await api(h, "/v1/act", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "webtest:make", id: "item:one", args }),
+        });
+        expect(response.status).toBe(200);
+        return json(response);
+      };
+      const named = await make({ opens: "item:two" });
+      expect(named.value).toBe("made it");
+      expect(named.opens).toBe("item:two");
+
+      // A short id that resolves to a scoped object (`item:repo/scoped`) is passed
+      // on as the plugin wrote it, not rewritten to the stored id.
+      seed(h, "repo/scoped", { title: "Scoped", state: "new" });
+      const bare = await make({ opens: "item:scoped" });
+      expect(bare.opens).toBe("item:scoped");
+
+      const missing = await make({ opens: "item:nope" });
+      expect(missing.value).toBe("made it");
+      expect("opens" in missing).toBe(false);
+      expect(h.logs.some((line) => line.includes("item:nope") && line.includes("not passed on"))).toBe(true);
+
+      const plain = await make({});
+      expect(plain.value).toBe("made nothing");
+      expect("opens" in plain).toBe(false);
     } finally {
       await h.close();
     }
@@ -1100,6 +1191,7 @@ describe("http server", () => {
       expect(pending.status).toBe(200);
       const pendingItems = (await pending.json()) as {
         runId: string;
+        waitId?: string;
         prompt: string;
         choices: string[];
         actions: { plugin: string; action: string }[];
@@ -1110,6 +1202,7 @@ describe("http server", () => {
         object: "item:one",
         link: "operad://objects/item%3Aone",
       });
+      expect(pendingItems[0]?.waitId).toBe("wait:1");
       expect(pendingItems[0]?.prompt).toBe("Approve?");
       expect(pendingItems[0]?.choices).toEqual(["yes"]);
       expect(pendingItems[0]?.actions).toContainEqual({

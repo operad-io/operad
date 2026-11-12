@@ -64,6 +64,8 @@ operad reruns              # how often each test passed only on its own rerun, m
 
 `--chat <id>` opens the task on the worktree of a repository chat that already has one: the task works on `work/chat-<id>` instead of making its own worktree and branch.
 
+`task edit` takes the new brief from standard input when it is piped and not empty; otherwise it opens `$EDITOR` (or `$VISUAL`) on the brief body. For the non-interactive form, set `$EDITOR` to a command that writes the file it is given, for example `EDITOR="cp /path/brief.md" operad task edit T-0001-example`: the command receives that file as `$1`. When standard input is not a terminal, `task edit` waits one second for a piped brief before it uses the editor, so an open stdin that never delivers one cannot hang the command. A repository lock another dev command holds is named, and the command gives up after 10 seconds.
+
 ### Where a command runs, and ids
 
 A command that looks up a plan or a task (`start`, `task edit`, `task update`,
@@ -99,6 +101,7 @@ Every action is also a command: `operad dev:<action> <id>`.
 
 | action | object | key | what it does |
 |---|---|---|---|
+| `dev:chat` | repo | | open a chat about the repository in the main clone, read-only; `--agent` chooses which agent answers (`claude` or `pi`, the first loaded one when left out), and it cannot change later |
 | `dev:confirm` | plan, task | `c` | confirm a draft plan (its tasks become ready) or a proposed task |
 | `dev:merge` | task | | answer the task's wait with `merge`; asks first |
 | `dev:reject` | task | | answer the task's wait with `reject` and append `## Rework <n> (owner)` with the note |
@@ -639,7 +642,7 @@ The file holds the repository's work settings:
 | `worker.wallTimeSecs`, `worker.stallSecs` | harness defaults | the worker's time limits |
 | `work.wrapUpAt` | `0.85` | the share (above 0, below 1) of a work step's time limit at which the worker is asked, through its harness, to stop starting new things, commit and write a progress note (`.operad-progress.md` in the worktree, never committed). The limit is the wall time of the run the harness reports when it starts (the worker's `wallTimeSecs`, or the harness's own default), counted from when the pool gave the worker its place. The harnesses that take a message mid-run (`claude`, `pi`) pass it on; the others get nothing. A step that runs out of time anyway is stopped a little before that limit (a harness that reports none is stopped by the step's own three hours), what is in the worktree is committed (`work in progress: the work step ran out of time`), and the task waits with the reason `work timed out`. The note and the commits are in the step's history, and the next attempt's prompt starts with them |
 | `workerBrief` | `.operad/worker-brief.md` | the brief a worker reads first; a missing file means the built-in text |
-| `prepare` | `[]` | shell lines run in every checkout dev makes (the worker's worktree, the gate checkout verify and review use, the integration checkout) after it is created or moved to a new commit and before a step uses it, e.g. `bun install --frozen-lockfile`. Output goes to the step's log; a failing line fails the step with reason `prepare failed` and the log path. The review prompt says the checkout is prepared. When `prepare` is empty, the gate and integration checkouts of a workspace repository link each workspace package into their own `node_modules`, so a change spanning packages resolves its own code instead of the main clone's |
+| `prepare` | `[]` | shell lines run in every checkout dev makes (the worker's worktree, the gate checkout verify and review use, the integration checkout) after it is created or moved to a new commit and before a step uses it, e.g. `bun install --frozen-lockfile`. Output goes to the step's log; a failing line fails the step with reason `prepare failed` and the log path. The review prompt says the checkout is prepared. When `prepare` is empty the checkout stays a plain checkout: dev installs and links nothing itself, so a repository whose checks need installed packages (a Bun workspace, for one) names the install in `prepare` |
 | `gate.commands` | `[]` | the commands the verify step runs on the task commit. A command is a string, or `{ "run": "…", "failed": { "match": "<regex, one capture group: the failed test's name>", "rerun": "<command with {name} (shell-quoted name) or {pattern} (shell-quoted anchored regex, \" > \" turned into a space as `bun test -t` matches)>", "max": 10 } }`: when `run` exits non-zero, the names found in its log are run again one by one (each taking a check place); the check passes when every rerun passes. No name, more than `max`, or a failing rerun fails it as before; a timeout is never rerun; `check.rerun` is not used for that command. The task's Changes say `passed on rerun: <test names>`, the check log holds each rerun under a heading, and `operad reruns` lists how often each test passed on a rerun, most frequent first |
 | `gate.commandTimeoutSecs` | `1800` | the longest one gate command may run |
 | `check.rerun` | `1` | how many times a failed gate or integration check runs again before it counts as failed; `0` turns it off; a timeout is never rerun. A pass on the rerun is a pass, noted in the task's Changes and the check log holds both runs |
@@ -678,6 +681,16 @@ log says `waiting for a check place: 2 in use` and the check waits without a
 time limit; its `gate.commandTimeoutSecs` starts when it runs. Places are lock
 files under `<home>/dev/check-places/`, so a check whose process dies gives its
 place back. A rerun of a failed check takes a place again.
+
+An integration check, with its key-command reruns, goes before a waiting verify
+check when a place frees, across every repository, so a verified task is not
+held behind the machine's task checks. Among integrations and among verifies the
+order stays first come, first served. A verify that has waited more than 30
+minutes goes before the integrations: that is longer than one integration check
+usually takes, so a queue of integrations still drains first, and short enough
+that a steady stream of them cannot starve a verify for ever. A verify passed
+over this way says so in its step log:
+`waiting for a check place: passed over for an integration check`.
 
 A repository can also limit itself: `gate.places` in its `dev.json` (an integer
 of 1 or more, unset by default) is the most checks of that repository that run

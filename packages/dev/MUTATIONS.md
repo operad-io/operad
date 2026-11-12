@@ -936,9 +936,50 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0317-M1 | packages/dev/src/steps.ts | the work step no longer copied the harness's `finalMessage` onto the attempt | `dev/work > the worker's final message is kept whole on the attempt (T-0317)` |
+
+## T-0272 — dev links no workspace packages itself
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0272-M1 | packages/dev/src/gate.ts | a checkout made with no `prepare` was given `node_modules` links to its workspace packages again | `a change spanning two packages > no prepare: the review checkout is a plain checkout with no links of its own` |
 | T-0318-M1 | packages/dev/src/views.ts | the task row's `wait` field left out (the wait text only in the note) | `dev views > the wait reason is its own field, whole, and a row that waits for nothing has none (T-0318)` and the integrate wait test |
 ## T-0274 — dev's finished rows carry a mark
 
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0274-M5 | packages/dev/src/marks.ts | a removed repository returned `todo` instead of `cancelled`, so a finished row had no finished mark | `task badge > every finished row carries the mark that says how it ended` |
+
+## T-0341 — task edit waits for standard input only as long as it says
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0341-M1 | packages/dev/src/commands.ts | `task edit` read an open standard input without its deadline, as before | `operad with the dev plugin > task edit uses $EDITOR when stdin stays open past its wait` (the test timed out after 30 s on the old code) |
+| T-0341-M2 | packages/dev/src/commands.ts | a bounded read that timed out and had no editor fell through to the editor error instead of naming the standard-input wait | `operad with the dev plugin > task edit with an open stdin and no editor fails naming the wait` |
+| T-0341-M3 | packages/dev/src/lock.ts | the repository lock error no longer said how long it waited before giving up | `the repository lock > a live holder past the deadline is a dev lock error naming its pid` |
+## T-0340 — the real-binary CLI test stays under its timeout
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0340-M1 | packages/dev/src/refusals.ts | the plan's second confirm said "nothing more to do", so the in-process confirm check no longer matched | `operad with the dev plugin > the real binary registers, plans, lists, shows and confirms` |
+
+## T-0343 — integration checks take a freed place before verify checks
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0343-M1 | packages/dev/src/place-order.ts | the kind was ignored in the wait order, so an integration queued behind a verify again | `check places are served in the order checks began to wait > integration checks take a freed place before verify checks, each first come first served` |
+## T-0345 — a git that never exits is killed and named
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0345-M1 | packages/dev/src/git.ts | `runOnce` passed no timeout to `Bun.spawnSync`, so a git that never exits blocked as before | `a git that never exits > is killed at its limit and the error names the command, the directory and the time` |
+
+## T-0343 — rework 1: the passed-over line survives the integration leaving the queue
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0343-M2 | packages/dev/src/places.ts | a verify no longer read the integration's last place grant, so it missed the passed-over line when the integration left the wait order first | `check places are served in the order checks began to wait > a verify says it was passed over when the integration leaves the wait order before the next look` |
+## T-0333 — a chat's choice is called an agent
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0333-M1 | packages/dev/src/chat.ts | `dev:chat` still read its argument under the old `harness` name, so `--agent pi` was ignored and the first loaded agent was used | `dev:chat > the agent is the one given, else the first offered one that is loaded` |

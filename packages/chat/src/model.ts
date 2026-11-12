@@ -117,6 +117,25 @@ export function chatData(data: Readonly<Record<string, unknown>>): ChatData {
   };
 }
 
+/** The longest title taken from a first message. */
+export const TITLE_FROM_MESSAGE_MAX = 60;
+
+/**
+ * A chat title from the start of its first message: its first non-empty line,
+ * cut at a word boundary when it is longer than {@link TITLE_FROM_MESSAGE_MAX},
+ * with an ellipsis. Undefined when the message has no text.
+ */
+export function titleFromMessage(message: string): string | undefined {
+  const line = message.split(/\r?\n/).map((part) => part.trim()).find((part) => part.length > 0);
+  if (line === undefined) return undefined;
+  const flat = line.replace(/\s+/g, " ");
+  if (flat.length <= TITLE_FROM_MESSAGE_MAX) return flat;
+  const cut = flat.slice(0, TITLE_FROM_MESSAGE_MAX);
+  const space = cut.lastIndexOf(" ");
+  const base = space >= TITLE_FROM_MESSAGE_MAX / 2 ? cut.slice(0, space) : cut;
+  return `${base.replace(/[\s.,;:!?]+$/, "")}…`;
+}
+
 /** A new message id; the event's key. */
 export function newMessageId(): string {
   return `m-${randomUUID()}`;
@@ -148,7 +167,7 @@ export async function createChat(
   input: NewChat,
   cause: string,
 ): Promise<string> {
-  if (input.harness.trim().length === 0) throw new Error("a chat needs a harness");
+  if (input.harness.trim().length === 0) throw new Error("a chat needs an agent");
   if (input.cwd.trim().length === 0) throw new Error("a chat needs a working directory");
   if (input.title.trim().length === 0) throw new Error("a chat needs a title");
   const data: ChatData = {

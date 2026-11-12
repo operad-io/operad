@@ -50,6 +50,7 @@ import {
   reduce,
   type TuiSection,
   type TuiActionRequest,
+  type TuiAnswerRequest,
   type TuiSettingRequest,
   type TuiObjectRequest,
   type TuiFilterRequest,
@@ -140,6 +141,8 @@ export interface TuiShellClient {
   settings?(scope?: string, signal?: AbortSignal): Promise<readonly TuiSetting[]>;
   /** Optional: changes one setting. */
   setSetting?(input: TuiSetInput): Promise<unknown>;
+  /** Optional: answers one open question of a pending item. */
+  answer?(input: TuiAnswerRequest & { readonly signal?: AbortSignal | undefined }): Promise<unknown>;
   /** Optional so an older test client still fits; the actions need it. */
   act?(input: TuiActInput): Promise<unknown>;
   /** Optional so an older test client still fits; the object pane needs it. */
@@ -256,12 +259,13 @@ function themeOf(renderer: CliRenderer, fallback: TuiTheme): TuiTheme {
  * renderer; a test wires it to fakes.
  */
 /** A result that was already true says so: its line shows as the notice. */
-function settledNotice(ran: unknown): { readonly notice?: string } {
+function settledNotice(ran: unknown): { readonly notice?: string; readonly opens?: string } {
   if (typeof ran !== "object" || ran === null) return {};
-  const { settled, value } = ran as { settled?: unknown; value?: unknown };
-  return settled === true && typeof value === "string" && value.length > 0
-    ? { notice: value }
-    : {};
+  const { settled, value, opens } = ran as { settled?: unknown; value?: unknown; opens?: unknown };
+  return {
+    ...(settled === true && typeof value === "string" && value.length > 0 ? { notice: value } : {}),
+    ...(typeof opens === "string" && opens.length > 0 ? { opens } : {}),
+  };
 }
 
 export function startShell(deps: TuiShellDeps): TuiShell {
@@ -833,6 +837,7 @@ export function startShell(deps: TuiShellDeps): TuiShell {
             }
           }),
       );
+      await refreshSettingsObjects(signal, fail, generation);
     }
     await refreshObjectPane(signal, objectAtStart, fail);
     if (signal.aborted || finished) return;
@@ -874,7 +879,10 @@ export function startShell(deps: TuiShellDeps): TuiShell {
       report(error);
     };
     const work: Promise<void>[] = [];
-    if (targets.lists) work.push(refreshPendingRunning(signal, fail));
+    if (targets.lists) {
+      work.push(refreshPendingRunning(signal, fail));
+      work.push(refreshSettingsObjects(signal, fail));
+    }
     for (const id of targets.rows) {
       if (targets.object && state.object !== undefined && sameObject(state.object.id, id)) {
         continue;
@@ -885,6 +893,37 @@ export function startShell(deps: TuiShellDeps): TuiShell {
       work.push(refreshObjectPane(signal, state.object, fail));
     }
     await Promise.all(work);
+  }
+
+  /**
+   * The top-level objects of every type a plugin put under settings. They are
+   * fetched like a tab but never listed in the top bar; the palette shows them.
+   */
+  async function refreshSettingsObjects(
+    signal: AbortSignal,
+    fail?: ((error: unknown) => void) | undefined,
+    generation?: number | undefined,
+  ): Promise<void> {
+    const tab = state.settingsTab;
+    if (tab === undefined) return;
+    try {
+      const per = await Promise.all(
+        (tab.types ?? []).map(async (info) => {
+          const found = await fetchLevel(info.type, { root: true }, signal);
+          return found.rows.map((row): TuiTreeEntry => ({ row, type: info.type }));
+        }),
+      );
+      if (signal.aborted || finished) return;
+      dispatch({
+        type: "settings-objects",
+        entries: per.flat(),
+        ...(generation === undefined ? {} : { generation }),
+      });
+    } catch (error) {
+      if (signal.aborted || finished) return;
+      if (noteConnection(error)) return;
+      fail?.(error);
+    }
   }
 
   async function refreshPendingRunning(
@@ -960,6 +999,10 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     }
     const tab = pluginTabOf(state, result.value.type);
     if (tab === undefined) return;
+    if (tab.kind === "settings") {
+      await refreshSettingsObjects(signal, fail);
+      return;
+    }
     const filter = tab.filter;
     const filterSeq = tab.filterSeq ?? 0;
     const found = await settle(fetchPluginRows(tab, signal, filter));
@@ -1111,10 +1154,38 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     }
   }
 
+  /** Sends one answer; a success refreshes the pending list. */
+  async function sendAnswer(request: TuiAnswerRequest): Promise<void> {
+    const answer = client.answer;
+    if (answer === undefined) {
+      dispatch({ type: "action-error", message: "this client cannot answer questions" });
+      return;
+    }
+    try {
+      await answer.call(client, { ...request, signal: abort.signal });
+      if (abort.signal.aborted) return;
+      dispatch({ type: "action-done" });
+      requestRefresh();
+    } catch (error) {
+      if (abort.signal.aborted) return;
+      if (error instanceof TuiError && error.status !== undefined) {
+        deps.onLog?.(`answer ${request.runId} ${request.waitId}: ${error.status} ${messageOf(error)}`);
+      }
+      dispatch({
+        type: "action-error",
+        message: messageOf(error),
+        status: error instanceof TuiError ? error.status : undefined,
+      });
+    }
+  }
+
   /** Reads the settings of the scopes the palette lists; a scope that cannot be read adds none. */
   async function loadSettings(): Promise<void> {
     const list = client.settings;
-    if (list === undefined) return;
+    if (list === undefined) {
+      await refreshSettingsObjects(abort.signal);
+      return;
+    }
     const scopes = settingScopes(state);
     const found = await Promise.all(
       scopes.map((scope) => settle(list.call(client, scope, abort.signal))),
@@ -1124,6 +1195,7 @@ export function startShell(deps: TuiShellDeps): TuiShell {
       type: "settings",
       settings: found.flatMap((result) => (result.ok ? result.value : [])),
     });
+    await refreshSettingsObjects(abort.signal);
   }
 
   /** Sends one setting change; the server's refusal comes back as the footer notice. */
@@ -1179,6 +1251,8 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     if (filterRequest !== undefined) state = reduce(state, { type: "filter-launched" });
     const actionRequest = state.actionRequest;
     if (actionRequest !== undefined) state = reduce(state, { type: "action-launched" });
+    const answerRequest = state.answerRequest;
+    if (answerRequest !== undefined) state = reduce(state, { type: "answer-launched" });
     const settingRequest = state.settingRequest;
     const settingsRequested = state.settingsRequest;
     if (settingRequest !== undefined || settingsRequested) {
@@ -1245,6 +1319,7 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     if (objectRequest !== undefined) guard(loadObject(objectRequest));
     if (sectionRequest !== undefined) guard(loadSection(sectionRequest));
     if (actionRequest !== undefined) guard(sendAction(actionRequest));
+    if (answerRequest !== undefined) guard(sendAnswer(answerRequest));
     if (settingRequest !== undefined) guard(sendSetting(settingRequest));
     if (settingsRequested) guard(loadSettings());
     if (refreshing) requestRefresh();

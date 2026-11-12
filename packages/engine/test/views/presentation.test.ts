@@ -487,6 +487,37 @@ describe("presentation views", () => {
     views.close();
   });
 
+  test("an action that declares what it creates reaches get with that type; a bad declaration is refused", async () => {
+    const store = new MemoryPluginStore({ root: ".radian/tmp/creates-store" });
+    const make = (creates: unknown) =>
+      definePlugin({
+        name: "maker",
+        kind: "domain",
+        version: "0.0.1",
+        objects: [{ name: "box" }],
+        actions: [
+          { name: "open", on: "box", creates: creates as string, when: () => true, run: () => "ok" },
+          { name: "plain", on: "box", when: () => true, run: () => "ok" },
+        ],
+        views: {
+          box: {
+            row: (object) => ({ id: object.id, title: object.id, state: "" }),
+            sections: () => [],
+            load: () => ({ markdown: "" }),
+          },
+        },
+      });
+    const registry = new PluginRegistry([make("thing")], { store });
+    store.put("box", "one", {}, "seed");
+    const views = trackedViews({ registry, store });
+    const object = await views.get("box:one");
+    expect(object.actions.map((action) => [action.name, action.creates])).toEqual([
+      ["maker:open", "thing"],
+      ["maker:plain", undefined],
+    ]);
+    expect(() => new PluginRegistry([make("")], { store })).toThrow(/creates/);
+  });
+
   test("a user's keys.json override wins", () => {
     const store = new MemoryPluginStore({ root: ".radian/tmp/keys-store" });
     const registry = new PluginRegistry([demo], {
