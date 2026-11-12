@@ -1004,3 +1004,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0356-M1 | packages/dev/src/stdin.ts | a read that finished before its deadline left the wait running instead of stopping it | `a standard-input read with a deadline > a read that finishes first stops the deadline's wait` |
+
+## T-0360 — the shared process lines leave dev's log alone
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0360-M11 | packages/dev/src/views.ts | the shared text, thinking and tool output lines were read as agent text again | `dev views > the shared process lines add nothing to the log` |

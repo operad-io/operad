@@ -520,7 +520,20 @@ export function readableLog(lines: readonly string[], options: { readonly worktr
         continue;
       }
     }
-    if (record !== undefined && ["session", "rate_limit", "agent_settled", "grant_use"].includes(kind ?? "")) {
+    if (
+      record !== undefined &&
+      [
+        "session",
+        "rate_limit",
+        "agent_settled",
+        "grant_use",
+        "text_delta",
+        "thinking_delta",
+        "text_end",
+        "thinking_end",
+        "tool_output",
+      ].includes(kind ?? "")
+    ) {
       continue;
     }
     const readable = readableLogLine(line);

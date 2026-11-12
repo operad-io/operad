@@ -282,6 +282,18 @@ describe("dev views", () => {
     ]);
   });
 
+  test("the shared process lines add nothing to the log", () => {
+    const lines = [
+      { type: "text_delta", text: "half" },
+      { type: "thinking_delta", text: "hmm" },
+      { type: "text_end", text: "half a sentence" },
+      { type: "thinking_end", text: "hmm" },
+      { type: "tool_output", toolCallId: "a", text: "output" },
+      { type: "message_end", role: "assistant", text: "half a sentence", stopReason: "stop" },
+    ].map((line) => JSON.stringify(line));
+    expect(readableLog(lines)).toEqual(["**agent:** half a sentence", "turn ended: stop"]);
+  });
+
   test("a call without an end line is marked running, with its start time", () => {
     const start = { type: "tool_execution_start", toolCallId: "a", toolName: "Bash", at: Date.UTC(2026, 10, 7, 14, 3, 22), input: "sleep 9999" };
     expect(readableLog([JSON.stringify(start)])).toEqual(["tool Bash running since 14:03:22Z `sleep 9999`"]);
