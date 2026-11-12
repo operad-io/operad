@@ -998,3 +998,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0353-M1 | packages/dev/src/model.ts | `isIntegrating` ignored the task's phase, so a cancelled task whose attempt still carried the integrate mark showed `integrating` | `a task cancelled in the integrate step > cancelled while queued behind another integration ends cancelled and merges nothing` and `... cancelled while its integration check runs ends cancelled and merges nothing` |
+
+## T-0356 — a finished standard-input read drops its deadline
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0356-M1 | packages/dev/src/stdin.ts | a read that finished before its deadline left the wait running instead of stopping it | `a standard-input read with a deadline > a read that finishes first stops the deadline's wait` |
