@@ -258,7 +258,10 @@ describe("store lifecycle and concurrency", () => {
     ]);
     writeFileSync(join(root, "go"), "");
     const exits = await Promise.all(children.map((child) => child.exited));
-    expect(exits).toEqual([0, 0]);
+    const errors = await Promise.all(
+      children.map((child) => new Response(child.stderr).text()),
+    );
+    expect({ exits, errors }).toEqual({ exits: [0, 0], errors: ["", ""] });
 
     const store = new SqlitePluginStore({ root });
     const sequences = store
