@@ -1,8 +1,8 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { PluginRegistry, definePlugin, type CommandContext, type StoredObject } from "@operad-io/engine";
-import { createChatPlugin, createChat, CHAT_TYPE } from "@operad-io/chat";
+import { PluginRegistry, definePlugin, type CommandContext, type StoredObject, type TriggerEvent } from "@operad-io/engine";
+import { createChatPlugin, createChat, allMessages, CHAT_TYPE, titleFromMessage } from "@operad-io/chat";
 import { createShellPlugin } from "@operad-io/shell";
 import { addPlan, addRepository, CHAT_HARNESSES, chatActions, commands, createDevPlugin, RADIAN_NOTE, taskData } from "../src/index.ts";
 import { git, makeRemote } from "./git-support.ts";
@@ -20,7 +20,7 @@ function fakeHarness(name: string) {
   });
 }
 
-async function rig(harnesses: readonly string[] = ['radian', 'pi', 'claude']) {
+async function rig(harnesses: readonly string[] = ['radian', 'pi', 'claude'], onEvent?: (event: TriggerEvent) => void) {
   const root = await tempRoot();
   const remote = await makeRemote(root);
   const store = storeAt(root);
@@ -30,6 +30,7 @@ async function rig(harnesses: readonly string[] = ['radian', 'pi', 'claude']) {
     cwd: remote.repository,
     store,
     onLog: () => undefined,
+    ...(onEvent === undefined ? {} : { onEvent }),
   });
   return { root, remote, repository, store, registry };
 }
@@ -54,6 +55,50 @@ async function openChat(r: Awaited<ReturnType<typeof rig>>, args: Record<string,
   if (id === undefined) throw new Error(`no chat id in ${String(run.value)}`);
   return id;
 }
+
+describe("dev:chat with a first message", () => {
+  test("creates the chat and sends the message, so the reply starts, and opens the chat", async () => {
+    const events: TriggerEvent[] = [];
+    const r = await rig(undefined, (event) => void events.push(event));
+    const repo = await must(r.store, "repo", "repository");
+    const run = await r.registry.runAction("dev/chat", { message: "What does the build do?" }, {
+      object: { type: "repo", id: repo.id, data: repo.data },
+      actor: { via: "cli", id: "me" },
+    });
+    const id = /C-\d+/.exec(String(run.value))?.[0] ?? "";
+    expect(run.opens).toBe(`chat:${id}`);
+    expect(allMessages(r.store, id).map((message) => message.text)).toEqual(["What does the build do?"]);
+    expect(events.map((event) => `${event.type} ${event.object}`)).toEqual([`message chat:${id}`]);
+    expect((await must(r.store, CHAT_TYPE, id)).data.title).toBe("What does the build do?");
+  });
+
+  test("a given title wins; without a message nothing is sent and the title is as before", async () => {
+    const events: TriggerEvent[] = [];
+    const r = await rig(undefined, (event) => void events.push(event));
+    const titled = await openChat(r, { title: "Mine", message: "hello" });
+    expect((await must(r.store, CHAT_TYPE, titled)).data.title).toBe("Mine");
+    events.length = 0;
+    const bare = await openChat(r);
+    expect((await must(r.store, CHAT_TYPE, bare)).data.title).toBe("Chat about repository");
+    expect(allMessages(r.store, bare)).toEqual([]);
+    expect(events).toEqual([]);
+  });
+
+  test("the title is one line, cut at a sensible length", () => {
+    expect(titleFromMessage("\n  first line\nsecond")).toBe("first line");
+    const long = `${"word ".repeat(30)}end`;
+    const title = titleFromMessage(long) ?? "";
+    expect(title.length).toBeLessThanOrEqual(61);
+    expect(title.endsWith("word…")).toBe(true);
+    expect(titleFromMessage("   \n ")).toBeUndefined();
+  });
+
+  test("the action declares the type it creates, and the registry passes it on", async () => {
+    const r = await rig();
+    expect(chatActions[0]?.creates).toBe("chat");
+    expect(r.registry.actions().find((info) => info.name === "dev:chat")?.creates).toBe("chat");
+  });
+});
 
 describe("dev:chat", () => {
   test("says which chat it opened, so a client can open it", async () => {

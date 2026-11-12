@@ -118,10 +118,19 @@ function bareId(id: string): string {
   return at < 0 ? id : id.slice(at + 1);
 }
 
+/**
+ * The actions a page lists: those that do not create an object of another type.
+ * A creating action belongs to that type's tab (`c` on the chat tab), not to the
+ * parent's page.
+ */
+export function pageActions(actions: readonly ViewAction[]): readonly ViewAction[] {
+  return actions.filter((action) => action.creates === undefined);
+}
+
 /** The first available action, the one the footer offers. */
 export function mainAction(state: TuiState): ViewAction | undefined {
   // An action that ends the object is never the main one, even when it is alone.
-  return state.object?.actions.find((action) => action.ends !== true);
+  return pageActions(state.object?.actions ?? []).find((action) => action.ends !== true);
 }
 
 /** The key the footer shows for the main action. */
@@ -273,7 +282,26 @@ export function matchPositions(query: string, entry: TuiPaletteEntry): readonly 
 /** What a TUI command does; each is what a key does. */
 export type TuiCommand =
   | { readonly kind: "help" | "refresh" | "back" | "quit" | "themes" }
-  | { readonly kind: "go"; readonly tabId: string };
+  | { readonly kind: "go"; readonly tabId: string }
+  | { readonly kind: "create"; readonly parent: string; readonly type: string };
+
+/** The objects a new `type` can be made under: every loaded row, or group, of a type that creating it works on. */
+export function creationParents(
+  state: TuiState,
+  type: string,
+  parents: readonly string[],
+): readonly string[] {
+  const ids = new Set<string>();
+  for (const tab of state.tabs) {
+    for (const row of tab.list.rows) {
+      for (const candidate of [row, row.group]) {
+        if (candidate?.type === undefined || !parents.includes(candidate.type)) continue;
+        ids.add(candidate.id.includes(":") ? candidate.id : `${candidate.type}:${candidate.id}`);
+      }
+    }
+  }
+  return [...ids];
+}
 
 /** The scopes the palette lists settings of: global, and the open object's repository. */
 export function settingScopes(state: TuiState): readonly string[] {
@@ -379,8 +407,22 @@ function commandEntries(state: TuiState): readonly TuiPaletteEntry[] {
         tabId: item.tab.id,
       }),
     );
+  // A creating action is offered from its type's own tab only, never on a parent's page.
+  const here = state.tabs[state.active];
+  const creating = (here?.kind === "plugin" ? (here.types ?? []) : [])
+    .filter((info) => state.object === undefined || !(info.parents ?? []).includes(state.object.type))
+    .flatMap((info) =>
+      creationParents(state, info.type, info.parents ?? []).map((parent) =>
+        make(`new ${info.type}`, `start a new ${info.type} in ${parent}`, undefined, {
+          kind: "create",
+          parent,
+          type: info.type,
+        }),
+      ),
+    );
   return [
     make("help", "show or hide the key list", "?", { kind: "help" }),
+    ...creating,
     make("refresh", "load the lists again", "r", { kind: "refresh" }),
     ...[go("pending"), go("running")].filter((entry): entry is TuiPaletteEntry => entry !== undefined),
     ...types,
@@ -398,7 +440,7 @@ export function paletteEntries(state: TuiState): readonly TuiPaletteEntry[] {
   const actions: readonly TuiPaletteEntry[] =
     object === undefined
       ? []
-      : object.actions.map((action) => ({
+      : pageActions(object.actions).map((action) => ({
           group: "actions",
           name: action.name,
           title: `${action.name} on ${bareId(object.id)}`,

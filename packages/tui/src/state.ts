@@ -42,6 +42,7 @@ import {
   startAnswer,
   withNotice,
   type TuiCommand,
+  pageActions,
 } from "./actions.ts";
 
 /** The two terminal themes the view knows. */
@@ -377,6 +378,11 @@ export interface TuiState {
   readonly objectVersion: number;
   /** Set when a row is opened and the caller must fetch the object. */
   readonly objectRequest?: TuiObjectRequest | undefined;
+  /**
+   * `c` on a tab: the parent page is opening so the action that creates `type`
+   * can start on it; the page's answer starts it.
+   */
+  readonly creating?: { readonly parent: string; readonly type: string } | undefined;
   /** Set when a section must be fetched. */
   readonly sectionRequest?: TuiSectionRequest | undefined;
   /** Grows each time a list cursor moves; the shell opens what it lands on. */
@@ -1490,7 +1496,26 @@ function applyObject(
   if (section !== undefined && !section.loaded) {
     updated = requestSection(updated, active);
   }
+  const creating = updated.creating;
+  if (creating !== undefined && previous.id === creating.parent) {
+    updated = { ...updated, creating: undefined };
+    const make = view.actions.find((action) => action.creates === creating.type);
+    return make === undefined
+      ? withNotice(updated, `${creating.parent} has no way to create a ${creating.type}`)
+      : startAction(updated, make.name);
+  }
   return updated;
+}
+
+/** `c` on a tab of one object type: the palette, listing where a new one can be made. */
+function createHere(state: TuiState): TuiState {
+  const info = state.tabs[state.active]?.types?.find((one) => one.parents !== undefined);
+  if (info === undefined) return withNotice(state, "nothing is made from this tab");
+  return {
+    ...state,
+    input: { kind: "palette", query: `new ${info.type}`, cursor: 0 },
+    settingsRequest: true,
+  };
 }
 
 function applyObjectError(
@@ -2028,6 +2053,12 @@ function runCommand(state: TuiState, command: TuiCommand): TuiState {
         themePreview: state.themeNames[cursor],
       };
     }
+    case "create": {
+      const opened = openNamed({ ...state, followPending: false }, command.parent);
+      return opened === state
+        ? state
+        : { ...opened, creating: { parent: command.parent, type: command.type } };
+    }
     case "go":
       return activate(state, state.tabs.findIndex((tab) => tab.id === command.tabId));
   }
@@ -2142,6 +2173,7 @@ function handleKey(
       if (isKey(key, "g")) return jumpSection(state, "top");
     }
   }
+  if (isKey(key, "c") && !shift) return createHere(state);
   if (isKey(key, "f")) return cycleFilter(state);
   // A rotated token is not retried: the person runs the TUI again.
   if (isKey(key, "r") && state.connection === "unauthorized") return state;
@@ -2836,7 +2868,7 @@ export function footerSegments(state: TuiState): readonly TuiFooterSegment[] {
   const main = mainAction(state);
   if (object !== undefined && main !== undefined) {
     add(mainKey(state), main.name);
-    if (object.actions.length > 1) add(":", "more");
+    if (pageActions(object.actions).length > 1) add(":", "more");
   }
   const filtering = filterKeyApplies(state);
   if (object === undefined) {
@@ -2912,6 +2944,7 @@ export const KEY_GROUPS: readonly (readonly (readonly [string, string])[])[] = [
     ["t", "switch the child list between tree and list"],
   ],
   [
+    ["c", "on a tab of chats: start a new one; the palette lists where (a repository or a bot)"],
     ["r", "fetch the lists again"],
     ["escape / backspace", "close the key list, leave a list inside the open object, return from a row opened there, or close the object"],
     ["?", "show or hide this key list"],
