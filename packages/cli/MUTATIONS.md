@@ -114,3 +114,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0273-M1 | packages/cli/src/main.ts | `onCancelRun` recorded the cancel under the plugin's name `dev` again | `cancelling an object ends the run that waits on it > through the command line` |
+
+## T-0311 — a row's badge prints after its state
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0311-M1 | packages/cli/src/main.ts | `rowLine` dropped every row's badge, so a plan list lost its auto level | `operad presentation commands > a row's badge prints after its state, and a row without one keeps its line` |

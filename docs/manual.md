@@ -508,7 +508,8 @@ names the flow at the start of each run.
 at most 16 characters, or the row is an error row. The `dev` plugin sets a
 task's badge to `#<attempt>` (`#0` before the first attempt) and marks its tasks
 and plans from their phase, the step the attempt has reached and the holds the
-scheduler records; `operad list` keeps its columns and does not show them.
+scheduler records. `operad list` and the first lines of `operad show` print a
+row's badge after its state; a row without one prints as it did without badges.
 
 ### Links
 
@@ -1177,11 +1178,11 @@ field.
 `$0.31` is exact, `~$0.31` is estimated and `≥$0.31` is incomplete (at least
 that much).
 
-A plan's row note reads `1/8 · ~$4.20 · merge · P2 // 2`: merged tasks over
-tasks (cancelled ones are not counted), the total cost of the plan's tasks at
-the weakest quality among them (left out while no task has a cost), the auto
-level, the priority, and after `//` how many of the plan's tasks may run at
-once. A task's note reads `$0.31 · claude · area: app-core`: the cost
+A plan's row note reads `1/8 · ~$4.20 · P2 // 2`: merged tasks over tasks
+(cancelled ones are not counted), the total cost of the plan's tasks at the
+weakest quality among them (left out while no task has a cost), the priority,
+and after `//` how many of the plan's tasks may run at once. The plan's badge
+carries its auto level. A task's note reads `$0.31 · claude · area: app-core`: the cost
 (`$0.00` before there is one), the worker, the area (or `waiting for area
 app-core (T-0023-action-numbers)`), and last a refused push's message. A
 repository's note reads `plans: 1 · tasks: 4`, counting open ones.

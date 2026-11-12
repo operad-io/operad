@@ -913,3 +913,8 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0310-M1 | packages/dev/src/model.ts | the active filter was built from `TASK_PHASES` again, so an integrating row matched no declared filter | `every state a task row can show is in exactly one declared task filter` |
+## T-0311 — a plan's auto level shows once, in the badge
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0311-M1 | packages/dev/src/model.ts | `planNote` put `plan.auto` back in the note, so a plan row showed the level twice | `dev views > the plan note leaves the auto level to the badge, and the total leaves cancelled tasks out` |
