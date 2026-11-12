@@ -1373,8 +1373,10 @@ kernel adds `all`, so `operad list chat --filter all` still shows closed chats.
 A chat on a repository works in the main clone, read-only: a shell command runs
 there only when it is on a short list of commands that only read (`git status`,
 `ls`, `cat`, `grep`, `sed -n`, `bun test`, ...); every other command, and every
-write, becomes the worktree question. When the agent wants
-to change code it asks whether to open a worktree. On yes, `dev` opens
+write or edit, becomes the worktree question, which names the command or the
+path. When the agent wants to change code it asks whether to open a worktree.
+A no tells the agent the call was refused because the chat is read-only, and
+that it should answer in the chat or use read-only commands. On yes, `dev` opens
 `work/chat-<id>` and the chat works there from then on, once; the main clone
 stays read-only. The worktree's changes reach main only through a task that
 points at it, through the normal gate and integrate.

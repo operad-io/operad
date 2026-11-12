@@ -133,3 +133,32 @@ export function silentGit(
     },
   };
 }
+
+/**
+ * A `git` first on PATH that never exits for a call whose arguments contain
+ * `match`; every other call runs the real git.
+ */
+export function hangingGit(root: string, match: string): { restore(): void } {
+  const real = Bun.which("git");
+  if (real === undefined) throw new Error("git is not on PATH");
+  const bin = join(root, `hanging-git-${Math.random().toString(36).slice(2)}`);
+  mkdirSync(bin, { recursive: true });
+  writeFileSync(
+    join(bin, "git"),
+    [
+      "#!/bin/sh",
+      `case "$*" in *'${match}'*) exec sleep 600;; esac`,
+      `exec '${real}' "$@"`,
+      "",
+    ].join("\n"),
+  );
+  chmodSync(join(bin, "git"), 0o755);
+  const previous = process.env.PATH;
+  process.env.PATH = `${bin}${delimiter}${previous ?? ""}`;
+  return {
+    restore() {
+      if (previous === undefined) delete process.env.PATH;
+      else process.env.PATH = previous;
+    },
+  };
+}

@@ -171,7 +171,11 @@ export function createCallAsker(options: CallAskerOptions): CallAsker {
       const got = await options.ask(askRequest(call));
       if (got.rejected === true) answer(reply, call.id, "deny", "nobody answered in time");
       else if (got.choice === ALLOW_ONCE) answer(reply, call.id, "allow");
-      else answer(reply, call.id, "deny", "a person refused it");
+      else {
+        // A refusal may say why; a harness whose question had no note gets the generic reason.
+        const note = typeof got.note === "string" && got.note.trim().length > 0 ? got.note.trim() : undefined;
+        answer(reply, call.id, "deny", note ?? "a person refused it");
+      }
     } catch (error) {
       stop = { error };
       answer(reply, call.id, "stop");
