@@ -264,6 +264,24 @@
   "--type": "not documented yet; the P-0036 task that fills docs/user/cli.md adds it",
   "--types": "not documented yet; the P-0036 task that fills docs/user/cli.md adds it",
   "--url": "not documented yet; the P-0036 task that fills docs/user/cli.md adds it",
-  "--yes": "not documented yet; the P-0036 task that fills docs/user/cli.md adds it"
+  "--yes": "not documented yet; the P-0036 task that fills docs/user/cli.md adds it",
+  "bot mcp": "not documented yet; the P-0036 task that fills docs/user/cli.md adds it",
+  "bot setting": "not documented yet; the P-0036 task that fills docs/user/cli.md adds it",
+  "bot skill": "not documented yet; the P-0036 task that fills docs/user/cli.md adds it",
+  "dev plan": "not documented yet; the P-0036 task that fills docs/user/cli.md adds it",
+  "dev repo": "not documented yet; the P-0036 task that fills docs/user/cli.md adds it",
+  "dev reruns": "not documented yet; the P-0036 task that fills docs/user/cli.md adds it",
+  "dev start": "not documented yet; the P-0036 task that fills docs/user/cli.md adds it",
+  "dev task": "not documented yet; the P-0036 task that fills docs/user/cli.md adds it",
+  "--after": "not documented yet; the P-0036 task that fills docs/user/cli.md adds it",
+  "--area": "not documented yet; the P-0036 task that fills docs/user/cli.md adds it",
+  "--chat": "not documented yet; the P-0036 task that fills docs/user/cli.md adds it",
+  "--concurrency": "not documented yet; the P-0036 task that fills docs/user/cli.md adds it",
+  "--flow": "not documented yet; the P-0036 task that fills docs/user/cli.md adds it",
+  "--from": "not documented yet; the P-0036 task that fills docs/user/cli.md adds it",
+  "--name": "not documented yet; the P-0036 task that fills docs/user/cli.md adds it",
+  "--plan": "not documented yet; the P-0036 task that fills docs/user/cli.md adds it",
+  "--slug": "not documented yet; the P-0036 task that fills docs/user/cli.md adds it",
+  "--title": "not documented yet; the P-0036 task that fills docs/user/cli.md adds it"
  }
 }

@@ -47,10 +47,10 @@ const page = (name: string): string => join(userDir, name);
 
 // ── table rows ─────────────────────────────────────────────────────────────
 
-/** The first cell of every table row on the pages under docs/user. */
-function firstCells(): string[] {
+/** The first cell of every table row on one page under docs/user. */
+function firstCells(name: string): string[] {
   const cells: string[] = [];
-  for (const path of userPages()) {
+  for (const path of [page(name)]) {
     let fence = false;
     for (const line of read(path).split("\n")) {
       if (line.startsWith("```")) fence = !fence;
@@ -126,6 +126,12 @@ interface SchemaItem {
   readonly page: string;
 }
 
+/** Keys of config.json whose section has a page of its own. */
+const CONFIG_SECTION_PAGES: Readonly<Record<string, string>> = {
+  http: "http.md",
+  notify: "notifications.md",
+};
+
 const FILE_PAGES: Readonly<Record<string, string>> = {
   "config.schema.json": "config.md",
   "triggers.schema.json": "config.md",
@@ -167,7 +173,7 @@ async function schemaItems(): Promise<SchemaItem[]> {
     const stem = name.replace(/\.schema\.json$/, "");
     for (const path of schemaPaths(JSON.parse(read(file)) as Json)) {
       const id = `${name} ${path}`;
-      items.set(id, { id, spellings: [path, `${stem}.${path}`], page: FILE_PAGES[name] ?? "config.md" });
+      items.set(id, { id, spellings: [path, `${stem}.${path}`], page: (name === "config.schema.json" ? CONFIG_SECTION_PAGES[path.split(".")[0] ?? ""] : undefined) ?? FILE_PAGES[name] ?? "config.md" });
     }
   }
   for (const entry of packageEntries()) {
@@ -192,7 +198,7 @@ async function schemaItems(): Promise<SchemaItem[]> {
 export function envVariables(): string[] {
   const files = [
     ...walk(join(root, "packages"), (path) => /\/src\/.*\.(ts|sh)$/.test(path)),
-    ...walk(join(root, "scripts"), (path) => /\.(ts|sh)$/.test(path) && !path.startsWith(join(root, "scripts", "test"))),
+    ...walk(join(root, "scripts"), (path) => /\.(ts|sh)$/.test(path)),
   ];
   const name = "(OPERAD_[A-Z0-9]+(?:_[A-Z0-9]+)*)";
   const patterns = [
@@ -237,6 +243,18 @@ async function cliEntries(): Promise<{ commands: string[]; options: string[] }> 
     // follows a gap of two spaces, or an argument.
     const command = words.join(" ");
     if (command !== "") commands.add(command);
+  }
+  // A loaded plugin adds `<plugin> <verb>` commands and the options their usage text names.
+  for (const entry of packageEntries()) {
+    const loaded = (await import(pathToFileURL(entry).href)) as { default?: unknown };
+    const plugin = loaded.default;
+    if (!isJson(plugin) || typeof plugin.name !== "string" || !Array.isArray(plugin.commands)) continue;
+    for (const command of plugin.commands) {
+      if (!isJson(command) || typeof command.name !== "string") continue;
+      commands.add(`${plugin.name} ${command.name}`);
+      const usage = typeof command.args === "string" ? command.args : "";
+      for (const match of usage.matchAll(/(?<![\w-])--[a-z][a-z-]*/g)) options.add(match[0]);
+    }
   }
   return { commands: [...commands].sort(), options: [...options].sort() };
 }
@@ -342,21 +360,20 @@ describe("the user docs", () => {
   });
 
   test("every schema property has a table row on its page", async () => {
-    const cells = firstCells();
     const items = await schemaItems();
     const missing = new Map<string, string>();
     for (const item of items) {
-      if (!hasRow(cells, item.spellings)) missing.set(item.id, `docs/user/${item.page}`);
+      if (!hasRow(firstCells(item.page), item.spellings)) missing.set(item.id, `docs/user/${item.page}`);
     }
     check("schema key", missing, allow.schemaKeys, new Set(items.map((item) => item.id)));
   });
 
   test("every OPERAD_ variable the code reads has a row on the environment page", () => {
-    const cells = firstCells();
+    const cells = firstCells("environment.md");
     const variables = envVariables();
     const missing = new Map<string, string>();
     for (const variable of variables) {
-      if (!hasRow(cells, [variable]) || !read(page("environment.md")).includes(`| \`${variable}\` |`)) {
+      if (!hasRow(cells, [variable])) {
         missing.set(variable, "docs/user/environment.md");
       }
     }
