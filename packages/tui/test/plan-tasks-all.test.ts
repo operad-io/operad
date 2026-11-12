@@ -56,7 +56,15 @@ interface Stored {
 function entry(type: string, id: string, state: string, parent?: string, extra: Partial<ViewRow> = {}): Stored {
   return {
     type,
-    row: { id, title: `Title ${id}`, state, waiting: false, running: false, ...extra },
+    row: {
+      id,
+      title: `Title ${id}`,
+      state,
+      waiting: false,
+      running: false,
+      ...(parent === undefined ? {} : { parent }),
+      ...extra,
+    },
     ...(parent === undefined ? {} : { parent }),
   };
 }
@@ -240,7 +248,7 @@ describe("an open plan's next level is every one of its tasks", () => {
       const version = tabOf(shell.state)?.list.version ?? 0;
       const before = client.asked.filter((one) => one.parent === "plan:p1").length;
       shell.key({ name: "f" });
-      await client.when((one) => one.parent === "repo:r1" && one.filter === "all");
+      await client.when((one) => one.type === "repo" && one.filter === "all" && one.parent === undefined);
       await view.until((state) => {
         const tab = tabOf(state);
         return (
@@ -250,7 +258,11 @@ describe("an open plan's next level is every one of its tasks", () => {
         );
       });
       expect(tabOf(shell.state)?.filter).toBe("all");
-      expect(client.asked.some((one) => one.parent === "repo:r1" && one.filter === "all")).toBe(true);
+      expect(
+        client.asked.some(
+          (one) => one.type === "repo" && one.filter === "all" && one.parent === undefined,
+        ),
+      ).toBe(true);
       expect(shell.state.object?.id).toBe("p1");
       expect(childIds(shell.state)).toEqual(["t-active", "t-merged", "t-cancelled"]);
       expect(client.asked.filter((one) => one.parent === "plan:p1").length).toBe(before);

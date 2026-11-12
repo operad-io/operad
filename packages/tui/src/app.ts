@@ -544,9 +544,10 @@ export function startShell(deps: TuiShellDeps): TuiShell {
   }
 
   /**
-   * A plugin tab's list: its top-level objects, or, when at least one of them
-   * has a next level, that level grouped under the top-level objects (one with
-   * nothing under it stays as its own group row).
+   * A plugin tab's list: its top-level objects, the objects whose parent is an
+   * object of another plugin (grouped under that parent), and, when at least
+   * one top-level object has a next level, that level grouped under it (one
+   * with nothing under it stays as its own group row).
    */
   async function fetchPluginRows(
     tab: TuiTab,
@@ -557,17 +558,47 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     readonly entries: readonly TuiTreeEntry[];
     readonly hidden: number;
   }> {
-    const roots = await fetchTypes(tab, { root: true }, signal, filter);
-    const under = await Promise.all(
-      roots.entries.map((root) =>
-        fetchTypes(tab, { parent: `${root.type}:${rowFromView(root.row).id}` }, signal, filter),
-      ),
+    const all = await fetchTypes(tab, {}, signal, filter);
+    const own = new Set<string>();
+    for (const entry of all.entries) {
+      for (const form of parentForms(entry)) own.add(form);
+    }
+    const roots = all.entries.filter(
+      (entry) => entry.row.parent === undefined || entry.row.parent.length === 0,
     );
-    const some = under.some((one) => one.entries.length + one.hidden > 0);
-    if (!some) return { level: "roots", entries: roots.entries, hidden: roots.hidden };
+    const ownTypes = new Set((tab.types ?? []).map((info) => info.type));
+    const foreign = new Map<string, TuiTreeEntry[]>();
+    for (const entry of all.entries) {
+      const parent = entry.row.parent;
+      if (parent === undefined || parent.length === 0) continue;
+      // A typed parent names its type: the parent belongs to this tab whenever
+      // that type does, even if the parent row itself is hidden by a filter.
+      const colon = parent.indexOf(":");
+      const parentType = colon > 0 ? parent.slice(0, colon) : undefined;
+      const belongs = parentType === undefined ? own.has(parent) : ownTypes.has(parentType);
+      if (belongs) continue;
+      const group = foreign.get(parent);
+      if (group === undefined) foreign.set(parent, [entry]);
+      else group.push(entry);
+    }
+    const under = roots.map((root) => {
+      const forms = new Set(parentForms(root));
+      return all.entries.filter((entry) => {
+        const parent = entry.row.parent;
+        return parent !== undefined && forms.has(parent);
+      });
+    });
+    // A type with filters can hide every child of a root; the old list then
+    // still grouped under the roots. Keep that for a tab with more than one type.
+    const some =
+      under.some((rows) => rows.length > 0) ||
+      ((tab.types?.length ?? 0) > 1 && roots.length > 0 && all.hidden > 0);
+    if (!some && foreign.size === 0) {
+      return { level: "roots", entries: roots, hidden: all.hidden };
+    }
     const entries: TuiTreeEntry[] = [];
-    roots.entries.forEach((root, index) => {
-      const rows = under[index]?.entries ?? [];
+    roots.forEach((root, index) => {
+      const rows = under[index] ?? [];
       if (rows.length === 0) {
         entries.push({ row: root.row, type: root.type, bare: true });
         return;
@@ -581,11 +612,44 @@ export function startShell(deps: TuiShellDeps): TuiShell {
         });
       });
     });
+    for (const [parent, rows] of foreign) {
+      [...rows].sort(newestFirst).forEach((entry, at) => {
+        entries.push({
+          ...entry,
+          parent,
+          ...(at === 0 ? { heading: foreignHeading(parent) } : {}),
+        });
+      });
+    }
+    return { level: "children", entries, hidden: all.hidden };
+  }
+
+  /** The spellings a row's parent may use for this object, with or without its type. */
+  function parentForms(entry: TuiTreeEntry): readonly string[] {
+    const id = rowFromView(entry.row).id;
+    const raw = entry.row.id;
+    return [...new Set([id, `${entry.type}:${id}`, raw, `${entry.type}:${raw}`])];
+  }
+
+  /** A heading for objects whose parent belongs to another plugin. */
+  function foreignHeading(parent: string): {
+    readonly row: ViewRow;
+    readonly type: string;
+    readonly label: string;
+  } {
+    const colon = parent.indexOf(":");
     return {
-      level: "children",
-      entries,
-      hidden: under.reduce((total, one) => total + one.hidden, 0),
+      row: { id: parent, title: parent, state: "", waiting: false, running: false },
+      type: colon > 0 ? parent.slice(0, colon) : "",
+      label: parent,
     };
+  }
+
+  /** The newest object first: ids count up as objects are made. */
+  function newestFirst(left: TuiTreeEntry, right: TuiTreeEntry): number {
+    const a = rowFromView(left.row).id;
+    const b = rowFromView(right.row).id;
+    return a < b ? 1 : a > b ? -1 : 0;
   }
 
   /**
