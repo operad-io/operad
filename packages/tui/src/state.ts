@@ -816,10 +816,9 @@ export function cancelledRow(row: TuiRow): boolean {
   return rowMark(row) === "cancelled" || /(^|\.)cancelled$/i.test(row.state);
 }
 
-/** A child that is done: its mark says so, or a row without a mark says merged. */
+/** A child that is done: its mark says so, and no state word can. */
 function doneRow(row: TuiRow): boolean {
-  const mark = rowMark(row);
-  return mark === "done" || (mark === "none" && /^(done|merged)$/i.test(row.state));
+  return rowMark(row) === "done";
 }
 
 interface ChildParent {
@@ -2264,7 +2263,7 @@ function replacePageRow(state: TuiState, row: TuiRow): TuiState {
     return state;
   }
   // The page's next level is fetched under `all`, so it never follows the tab's
-  // filter: a child that becomes merged or cancelled stays where it is (T-0305).
+  // filter: a child that becomes finished or cancelled stays where it is (T-0305).
   return withChildren(state, (c) => ({
     ...c,
     rows: c.rows.map((candidate) =>
