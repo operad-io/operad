@@ -52,6 +52,11 @@ export const BOT_SETTINGS: ActionArgsSchema = {
             description:
               "Directories with a SKILL.md, given to the agent at every reply. A relative path is under the working directory.",
           },
+          model: {
+            type: "string",
+            minLength: 1,
+            description: "The model a new chat starts with; it must be one the chat's agent lists. Without it the agent's default.",
+          },
           speaker: {
             type: "string",
             minLength: 1,
@@ -137,6 +142,7 @@ export interface BotSettings {
   readonly mcpAllow?: readonly string[] | undefined;
   readonly cwd?: string;
   readonly harness?: string;
+  readonly model?: string;
   readonly skills?: readonly string[];
   readonly speaker?: string;
   readonly access?: Readonly<Record<string, JsonValue>>;
@@ -147,6 +153,7 @@ export interface ResolvedBot {
   readonly name: string;
   readonly cwd: string;
   readonly harness: string | null;
+  readonly model: string | null;
   /** Absolute directories, each with a SKILL.md. */
   readonly skills: readonly string[];
   readonly speaker: string | null;
@@ -360,6 +367,7 @@ export function resolveBot(
     name,
     cwd,
     harness: settings.harness ?? null,
+    model: settings.model ?? null,
     skills,
     speaker: settings.speaker ?? null,
     access: accessFor(home, settings, repositories, [...skills, join(cwd, "skills")]),

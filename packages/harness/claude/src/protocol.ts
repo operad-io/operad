@@ -4,6 +4,7 @@
  */
 
 import { readProfile } from "@operad-io/access-match";
+import { parseImageInputs, type ImageInput } from "@operad-io/harness-process";
 import { isRecord } from "@operad-io/engine";
 import { mountedServersOf } from "@operad-io/harness-process";
 
@@ -31,6 +32,8 @@ export interface WorkerInput {
   readonly mcpServers?: Readonly<Record<string, { readonly command: string; readonly args: readonly string[] }>> | undefined;
   /** Secret values of the operad secret store; a log line shows `***` where one appears. */
   readonly secretValues?: readonly string[] | undefined;
+  /** Images sent with the prompt, read from these files. */
+  readonly images?: readonly ImageInput[] | undefined;
 }
 
 /** A gate such as a full test run must finish in the foreground; claude's own default is 120 s. */
@@ -182,6 +185,7 @@ export const INPUT_FIELDS = [
   "operadTools",
   "mcpServers",
   "secretValues",
+  "images",
 ] as const;
 
 const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -232,6 +236,9 @@ export function parseInput(value: unknown): ParsedInput {
   if (secretValues !== undefined && (!Array.isArray(secretValues) || !secretValues.every((v): v is string => typeof v === "string"))) {
     return { ok: false, message: "secretValues must be an array of strings" };
   }
+
+  const images = parseImageInputs(value["images"]);
+  if (typeof images === "string") return { ok: false, message: images };
 
   const maxTurns = value["maxTurns"];
   if (maxTurns !== undefined && (typeof maxTurns !== "number" || !Number.isInteger(maxTurns) || maxTurns < 1)) {
@@ -285,6 +292,7 @@ export function parseInput(value: unknown): ParsedInput {
       operadTools: operadTools === undefined ? undefined : { home: String(operadTools["home"]) },
       mcpServers,
       secretValues,
+      images: images.length === 0 ? undefined : images,
     },
   };
 }

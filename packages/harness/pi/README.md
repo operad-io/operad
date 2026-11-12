@@ -165,6 +165,7 @@ param (`wallTimeSecs`, `stallSecs`) overrides the setting of the same name.
 | `stallSecs` | number | `600` | how long a run may print nothing while no tool call is open |
 | `bashTimeoutSecs` | integer, 1 or more | `1800` | the longest one bash call may run, in seconds; it is the default and the maximum for a call. A call that reaches it is stopped and the model gets a tool error; the run goes on |
 | `operadTools` | object `{ home }` | absent | operad's own tools: the worker opens the home with `@operad-io/mcp` and registers each tool as a pi custom tool named `operad_<tool>` (`operad_list`, `operad_act`, …), with the server's own JSON Schema. A refusal is a tool error and the run goes on. The access profile does not judge them; the owner's MCP allow lists do |
+| `images` | array of `{ path, mediaType }` | absent | image files (`image/png`, `image/jpeg`, `image/gif`, `image/webp`) given to `session.prompt` as image input beside the prompt text |
 | `concurrency` | object, model to positive integer | `{}` | how many runs of one model may go at once, such as `{ "opencode-go/deepseek-v4.1-flash": 2 }`; a model not listed has no limit |
 
 How `concurrency` limits runs, what the key is and how a queued step shows

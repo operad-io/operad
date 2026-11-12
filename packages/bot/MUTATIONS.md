@@ -32,3 +32,9 @@ changes for bots, in the order they were recorded. The root
 | T-0327-M16 | packages/bot/src/mcp-proposals.ts | a command the bot's profile asks about was started to read its tools | `registering a local MCP server > a command the bot's profile asks about is not started to read its tools` |
 | T-0327-M17 | packages/bot/src/guard.ts | a tool result with structured content and no text block was passed on unmarked | `the guard > it starts the server with its secrets in the server's environment only, and marks what a tool returns as material` |
 | T-0327-M18 | packages/bot/src/mcp-client.ts | a server that ignores the stop signal was never killed, so registering it hung | `a server that never answers and ignores the stop signal is given up on after the timeout and killed` (the run never ends; it was stopped after 40 s` |
+
+## T-0338 rework 1 — a bot's configured model
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0338-M3 | packages/bot/src/index.ts | a configured bot model the agent does not list was dropped and the default used | `bot:chat and the model > a configured bot model its agent does not list is refused by name, not replaced by the default` |

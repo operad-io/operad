@@ -35,6 +35,7 @@ const KEYWORDS = new Set([
   "default",
   "description",
   "role",
+  "format",
   "editable",
   "confirm",
 ]);
@@ -125,6 +126,12 @@ function normalizeSchema(
   }
   if (role === "note" && type !== "string") {
     throw new Error(`${at}.role: a note property must have type "string"`);
+  }
+
+  const format = value.format;
+  if (format !== undefined) {
+    if (format !== "file") throw new Error(`${at}.format: must be "file"`);
+    if (type !== "string") throw new Error(`${at}.format: a file property must have type "string"`);
   }
 
   for (const key of ["editable", "confirm"] as const) {
@@ -257,6 +264,7 @@ function normalizeSchema(
     ...(value.default === undefined ? {} : { default: value.default }),
     ...(description === undefined ? {} : { description }),
     ...(role === "note" ? { role } : {}),
+    ...(format === "file" ? { format } : {}),
     ...(value.editable === undefined ? {} : { editable: value.editable as boolean }),
     ...(value.confirm === undefined ? {} : { confirm: value.confirm as boolean }),
   };
@@ -294,6 +302,23 @@ export function noteProperty(
     }
   }
   return undefined;
+}
+
+/**
+ * The properties of an action's arguments that take a file: a string with
+ * `format: "file"`, or a list of them. The value is the upload's reference.
+ */
+export function fileProperties(
+  schema: ActionArgsSchema | undefined,
+): readonly { readonly name: string; readonly many: boolean }[] {
+  const found: { name: string; many: boolean }[] = [];
+  for (const [name, property] of Object.entries(schema?.properties ?? {})) {
+    if (property.format === "file") found.push({ name, many: false });
+    else if (property.type === "array" && property.items?.format === "file") {
+      found.push({ name, many: true });
+    }
+  }
+  return found;
 }
 
 function fail(label: string, field: string, detail: string): never {

@@ -214,6 +214,9 @@ interface ResolvedSettings {
   readonly now: () => number;
 }
 
+/** The models a chat may pick with this agent, and the one used when none is set. */
+export const RADIAN_MODELS = { list: [], default: null } as const;
+
 /** The settings a config.json section may set for this plugin. */
 const PLUGIN_SETTINGS = {
   type: "object" as const,
@@ -517,6 +520,7 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
     name: "radian",
     kind: "harness",
     version: "0.0.0",
+    models: RADIAN_MODELS,
     settings: PLUGIN_SETTINGS,
     steps: [
       {

@@ -24,7 +24,7 @@ import {
   type AccessProfile,
 } from "@operad-io/access-match";
 import { decideAccess, hasRules, translate, type CallAnswer } from "./access.ts";
-import { messageText, OPERAD_SERVER, serverCommand } from "@operad-io/harness-process";
+import { messageText, OPERAD_SERVER, readImage, serverCommand } from "@operad-io/harness-process";
 import { findClaude } from "./claude-install.ts";
 import {
   DEFAULT_BASH_TIMEOUT_SECS,
@@ -348,7 +348,26 @@ export async function runWorker(
   let thrown: string | undefined;
   let continued = false;
 
-  const session = query({ prompt: input.prompt, options });
+  // Images go with the prompt as one user message of text and image blocks.
+  const images = input.images ?? [];
+  const first = (async function* () {
+    const blocks = await Promise.all(images.map((image) => readImage(image)));
+    yield {
+      type: "user" as const,
+      message: {
+        role: "user" as const,
+        content: [
+          { type: "text" as const, text: input.prompt },
+          ...blocks.map((block) => ({
+            type: "image" as const,
+            source: { type: "base64" as const, media_type: block.mediaType, data: block.data },
+          })),
+        ],
+      },
+      parent_tool_use_id: null,
+    };
+  })();
+  const session = query({ prompt: images.length === 0 ? input.prompt : first, options });
   // A message the host sends mid-run goes to claude as one more user turn,
   // queued behind the tool call that is running.
   io.onMessage?.((text) => {

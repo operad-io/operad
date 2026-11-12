@@ -18,6 +18,7 @@ import {
   type ActionTypeDefinition,
   type AskRequest,
   type CommandDefinition,
+  type HarnessModels,
   type KeyBindings,
   type MaybePromise,
   type ObjectFilterDefinition,
@@ -64,6 +65,7 @@ export interface NormalizedPlugin {
   readonly objectsUnderSettings: boolean;
   readonly projectSettings: ProjectSettingsDeclaration | undefined;
   readonly enforces: readonly string[];
+  readonly models: HarnessModels | undefined;
   readonly requires: PluginRequires | undefined;
 }
 
@@ -762,8 +764,25 @@ export function normalizePlugin(raw: unknown, index: number): NormalizedPlugin {
     objectsUnderSettings: raw.objectsUnderSettings === true,
     projectSettings,
     enforces: normalizeEnforces(raw.enforces, `${at}: enforces`) ?? [],
+    models: normalizeModels(raw.models, kind, at),
     requires: normalizeRequires(raw.requires, at),
   };
+}
+
+/** The models a harness plugin declares: a list of names and the default among them, or null. */
+function normalizeModels(value: unknown, kind: string, at: string): HarnessModels | undefined {
+  if (value === undefined) return undefined;
+  if (kind !== "harness") throw new PluginError(`${at}: models: only a harness plugin declares models`);
+  if (!isRecord(value) || !Array.isArray(value.list)) throw new PluginError(`${at}: models: must be { list, default }`);
+  const list = value.list.map((item, index) => {
+    if (typeof item !== "string" || item.length === 0) throw new PluginError(`${at}: models.list[${index}]: must be a non-empty string`);
+    return item;
+  });
+  const fallback = value.default === undefined ? null : value.default;
+  if (fallback !== null && (typeof fallback !== "string" || !list.includes(fallback))) {
+    throw new PluginError(`${at}: models.default: must be null or one of the list`);
+  }
+  return { list, default: fallback };
 }
 
 /** A harness step type ends only in the standard end results. */

@@ -50,6 +50,7 @@ the table is refused, not ignored.
 | `operadTools` | object `{ home }` | no | operad's own tools: claude is given an MCP server (`@operad-io/mcp`'s `stdio.ts`, run by Bun with `--home`) named `operad`; its tools are not judged by the access profile, they run under the owner's MCP allow lists. Absent: claude gets no MCP server |
 | `mcpServers` | object, name to `{ command, args }` | no | other MCP servers claude starts, by name (a bot's servers, each behind the bot plugin's guard, which holds their secrets). Their tools are judged by the profile's `allowMcp`: a tool not listed asks first. Absent: none |
 | `secretValues` | array of strings | no | the values of the plugin's operad secrets; a log line shows `***` where one appears. Never written anywhere |
+| `images` | array of `{ path, mediaType }` | no | image files (`image/png`, `image/jpeg`, `image/gif`, `image/webp`) sent with the prompt as image blocks of the one user message. Absent: the prompt goes as text |
 | `access` | object | no | the access profile; `denyPaths` and `denyCommands` are enforced in `canUseTool` by `@operad-io/access-match`, `grants` are one-time permissions, other fields are ignored; absent means nothing is denied |
 | `maxTurns` | positive integer | no | SDK `maxTurns`; absent means no limit |
 | `budgetUsd` | positive number | no | SDK `maxBudgetUsd`; absent means none |

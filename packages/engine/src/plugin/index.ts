@@ -32,6 +32,7 @@ export type {
 } from "./open-store.ts";
 export {
   ActionArgsError,
+  fileProperties,
   normalizeActionArgs,
   noteProperty,
   validateActionArgs,

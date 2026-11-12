@@ -5,8 +5,9 @@
  * changes reach main only through a task, through integrate.
  */
 
-import { CHAT_TYPE, chatData, createChat, sendMessage, titleFromMessage } from "@operad-io/chat";
+import { CHAT_TYPE, chatData, createChat, sendMessage, startingModel, titleFromMessage } from "@operad-io/chat";
 import type {
+  ActionArgsSchema,
   ActionTypeDefinition,
   JsonValue,
   ObjectStore,
@@ -66,11 +67,9 @@ export async function chatWorktreeOf(
   return chatWorktreeName(chatId);
 }
 
-const chatAction: ActionTypeDefinition = {
-  name: "chat",
-  on: "repo",
-  creates: "chat",
-  args: {
+/** The `dev:chat` arguments; `models` are the ones the offered agents list. */
+function chatArgs(models: readonly string[]): ActionArgsSchema {
+  return {
     type: "object",
     description: `Opens a chat about this repository. ${RADIAN_NOTE}`,
     properties: {
@@ -78,6 +77,11 @@ const chatAction: ActionTypeDefinition = {
         type: "string",
         enum: [...CHAT_HARNESSES],
         description: "Which agent answers in this chat; the first loaded one when left out. It cannot change later.",
+      },
+      model: {
+        type: "string",
+        ...(models.length === 0 ? {} : { enum: [...models] }),
+        description: "The model the agent uses; one from that agent's list. The agent's default when left out. It can be changed later.",
       },
       title: {
         type: "string",
@@ -94,10 +98,21 @@ const chatAction: ActionTypeDefinition = {
       },
     },
     additionalProperties: false,
-  },
+  };
+}
+
+const chatAction: ActionTypeDefinition = {
+  name: "chat",
+  on: "repo",
+  creates: "chat",
+  args: chatArgs([]),
+  argsFor: (_object, env) =>
+    chatArgs(
+      [...new Set(CHAT_HARNESSES.filter((name) => (env.harnesses ?? []).includes(name)).flatMap((name) => env.models?.[name]?.list ?? []))],
+    ),
   when: (state) => repositoryData(state).removed !== true,
   async run(ctx, args) {
-    const input = args as { readonly agent?: string; readonly title?: string; readonly message?: string };
+    const input = args as { readonly agent?: string; readonly model?: string; readonly title?: string; readonly message?: string };
     const repository = repositoryData(ctx.object.data);
     const offered = CHAT_HARNESSES.filter((name) => ctx.harnesses.includes(name));
     const harness = input.agent ?? offered[0];
@@ -110,11 +125,18 @@ const chatAction: ActionTypeDefinition = {
         `agent "${harness}" is not offered for a repository chat; the loaded ones that are: ${offered.join(", ") || "none"}`,
       );
     }
+    let model: string | undefined;
+    try {
+      model = startingModel(harness, ctx.models[harness], input.model);
+    } catch (error) {
+      throw new DevRefusal(error instanceof Error ? error.message : String(error));
+    }
     const id = await createChat(
       ctx.store,
       {
         parent: `repo:${ctx.object.id}`,
         harness,
+        ...(model === undefined ? {} : { model }),
         cwd: repository.path,
         access: CHAT_ACCESS,
         title:

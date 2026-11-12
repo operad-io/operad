@@ -11,7 +11,7 @@
 
 import { mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { CHAT_TYPE, chatData, createChat, sendMessage, titleFromMessage } from "@operad-io/chat";
+import { CHAT_TYPE, chatData, createChat, sendMessage, startingModel, titleFromMessage } from "@operad-io/chat";
 import { definePlugin, isRecord, type ActionArgsSchema, type ActionTypeDefinition, type JsonValue, type ObjectRow, type ObjectStore, type ObjectViews, type PluginStepResult, type SectionContent, type StepContext, type StoredObject } from "@operad-io/engine";
 import {
   BOT_SETTINGS,
@@ -103,7 +103,9 @@ export interface OpenChat {
   readonly settings: Readonly<Record<string, JsonValue>>;
   readonly harnesses: readonly string[];
   readonly bot: string;
+  readonly models?: Readonly<Record<string, { readonly list: readonly string[]; readonly default: string | null }>> | undefined;
   readonly harness?: string | undefined;
+  readonly model?: string | undefined;
   readonly title?: string | undefined;
   readonly cause: string;
 }
@@ -122,12 +124,20 @@ export async function openChat(input: OpenChat): Promise<string> {
       `agent "${harness}" is not loaded; the loaded ones are: ${input.harnesses.join(", ") || "none"}`,
     );
   }
+  // The bot's configured model must be one the agent lists; an unlisted one is refused by name.
+  let model: string | undefined;
+  try {
+    model = startingModel(harness, input.models?.[harness], input.model, bot.model ?? undefined);
+  } catch (error) {
+    throw new BotError(error instanceof Error ? error.message : String(error));
+  }
   mkdirSync(bot.cwd, { recursive: true });
   return createChat(
     input.store,
     {
       parent: `${BOT_TYPE}:${bot.name}`,
       harness,
+      ...(model === undefined ? {} : { model }),
       cwd: bot.cwd,
       access: bot.access,
       skills: bot.skills,
@@ -139,7 +149,11 @@ export async function openChat(input: OpenChat): Promise<string> {
 }
 
 /** The `chat` arguments with the harness plugins loaded now as the choice. */
-function chatArgs(harnesses: readonly string[], botHarness: unknown): ActionArgsSchema {
+function chatArgs(
+  harnesses: readonly string[],
+  botHarness: unknown,
+  models: readonly string[] = [],
+): ActionArgsSchema {
   const first = harnesses[0];
   const fallback = typeof botHarness === "string" && harnesses.includes(botHarness) ? botHarness : first;
   return {
@@ -151,6 +165,12 @@ function chatArgs(harnesses: readonly string[], botHarness: unknown): ActionArgs
         ...(harnesses.length === 0 ? {} : { enum: [...harnesses] }),
         ...(fallback === undefined ? {} : { default: fallback }),
         description: "Which agent answers in this chat; it cannot change later.",
+      },
+      model: {
+        type: "string",
+        ...(models.length === 0 ? {} : { enum: [...models] }),
+        description:
+          "The model the agent uses; one from that agent's list. The bot's model, else the agent's default, when left out. It can be changed later.",
       },
       title: { type: "string", minLength: 1, maxLength: 120, description: "What the chat is called." },
       message: {
@@ -170,7 +190,10 @@ const chatAction: ActionTypeDefinition = {
   on: BOT_TYPE,
   creates: "chat",
   args: chatArgs([], undefined),
-  argsFor: (object, env) => chatArgs(env.harnesses ?? [], object.data.harness),
+  argsFor: (object, env) =>
+    chatArgs(env.harnesses ?? [], object.data.harness, [
+      ...new Set((env.harnesses ?? []).flatMap((name) => env.models?.[name]?.list ?? [])),
+    ]),
   when: (state, env) => state.removed !== true && typeof state.problem !== "string" && (env.harnesses ?? []).length > 0,
   async why(object, env) {
     if (object.data.removed === true) return `bot ${object.id} is no longer in the settings`;
@@ -179,14 +202,16 @@ const chatAction: ActionTypeDefinition = {
     return undefined;
   },
   async run(ctx, args) {
-    const input = args as { readonly agent?: string; readonly title?: string; readonly message?: string };
+    const input = args as { readonly agent?: string; readonly model?: string; readonly title?: string; readonly message?: string };
     const id = await openChat({
       store: ctx.store,
       home: ctx.home,
       settings: ctx.settings,
       harnesses: ctx.harnesses,
+      models: ctx.models,
       bot: ctx.object.id,
       harness: input.agent,
+      model: input.model,
       title: input.title ?? (input.message === undefined ? undefined : titleFromMessage(input.message)),
       cause: "action:bot/chat",
     });

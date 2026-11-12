@@ -38,6 +38,7 @@ import {
   secs,
   stringListParam,
   text,
+  imageInputsOf,
   operadToolsOf,
   mountedServersOf,
   JsonlLog,
@@ -94,6 +95,12 @@ export interface ClaudeHarnessOptions {
   /** The arguments before the worker input; defaults to `worker.ts`. */
   readonly args?: readonly string[] | undefined;
 }
+
+/** The models a chat may pick with this agent, and the one used when none is set. */
+export const CLAUDE_MODELS = {
+  list: ["opus", "sonnet", "haiku"],
+  default: "sonnet",
+} as const;
 
 /** The settings a config.json section may set for this plugin. */
 export const PLUGIN_SETTINGS = {
@@ -200,6 +207,7 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
     name: HARNESS,
     kind: "harness",
     version: "0.0.0",
+    models: CLAUDE_MODELS,
     settings: PLUGIN_SETTINGS,
     steps: [
       {
@@ -209,7 +217,7 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
         // `waiting`: a question about a call was not answered within the grace.
         results: ["done", "failed", "interrupted", "waiting"],
         // The deny and ask fields are applied in the worker's canUseTool.
-        enforces: ["denyPaths", "denyCommands", "askCommands", "askPaths"],
+        enforces: ["denyPaths", "denyCommands", "askCommands", "askPaths", "readPaths"],
         timeoutSecs: STEP_TIMEOUT_SECS,
         // The model the step uses: its `--model` argument, else the setting.
         limit: modelLimit(HARNESS, (params, settings) => {
@@ -290,6 +298,7 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
 
           const operadTools = operadToolsOf(input.operadTools ?? flow.operadTools);
           const mcpServers = mountedServersOf(input.mcpServers ?? flow.mcpServers);
+          const images = imageInputsOf(input.images ?? flow.images);
           const claudeCommand = optionalText(ctx.settings.command, `${at}: settings.command`);
           const storeSecrets = await secretValuesOf(ctx.secrets);
           const stdin: Record<string, unknown> = {
@@ -304,6 +313,7 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
             ...(bashTimeoutSecs === undefined ? {} : { bashTimeoutSecs }),
             ...(operadTools === undefined ? {} : { operadTools }),
             ...(mcpServers === undefined ? {} : { mcpServers }),
+            ...(images.length === 0 ? {} : { images }),
             ...(isRecord(ctx.access) ? { access: ctx.access } : {}),
             ...(storeSecrets.length === 0 ? {} : { secretValues: storeSecrets }),
           };

@@ -575,3 +575,37 @@ test("an MCP tool is under the profile when it has allowMcp: a listed tool runs,
   expect(readProfile({ allowMcp: ["a.b"] })).toEqual({ ok: true, profile: { allowMcp: ["a.b"] } });
   expect(readProfile({ allowMcp: "a.b" }).ok).toBe(false);
 });
+
+test("readPaths lets a read through a deny of its ancestor and nothing else", () => {
+  const profile: AccessProfile = {
+    denyPaths: ["/home/u/.operad/attachments", "/home/u/.operad/store"],
+    readPaths: ["/home/u/.operad/attachments/chat/C-0001"],
+  };
+  const read = (path: string, tool = "read"): ReturnType<typeof match> =>
+    match(profile, { tool, input: { path }, cwd: CWD }, { home: HOME });
+  expect(read("/home/u/.operad/attachments/chat/C-0001/m/a.png")).toEqual({ allow: true });
+  expect(read("/home/u/.operad/attachments/chat/C-0001", "ls")).toEqual({ allow: true });
+  // Another chat's directory, a path that climbs out, and the rest of the home stay denied.
+  expect(read("/home/u/.operad/attachments/chat/C-0002/m/a.png").allow).toBe(false);
+  expect(read("/home/u/.operad/attachments/chat/C-0001/../C-0002/a.png").allow).toBe(false);
+  expect(read("/home/u/.operad/store/log.sqlite").allow).toBe(false);
+  // A write there asks; it does not go through.
+  const write = read("/home/u/.operad/attachments/chat/C-0001/m/a.png", "write");
+  expect(write.allow).toBe(false);
+  // A command that only reads may use it; one that writes or reads elsewhere may not.
+  expect(bash(profile, "cat /home/u/.operad/attachments/chat/C-0001/m/a.txt")).toEqual({ allow: true });
+  expect(bash(profile, "cat /home/u/.operad/attachments/chat/C-0002/m/a.txt").allow).toBe(false);
+  expect(bash(profile, "cat /home/u/.operad/attachments/chat/C-0001/m/a.txt /home/u/.operad/store/x").allow).toBe(false);
+  expect(bash(profile, "rm /home/u/.operad/attachments/chat/C-0001/m/a.txt").allow).toBe(false);
+  expect(readProfile({ readPaths: ["/x"] })).toEqual({ ok: true, profile: { readPaths: ["/x"] } });
+  expect(readProfile({ readPaths: "/x" }).ok).toBe(false);
+});
+
+test("a write under readPaths asks, where no deny covers it; a write elsewhere is as before", () => {
+  const profile: AccessProfile = { readPaths: ["/home/u/.operad/attachments/chat/C-0001"] };
+  const write = (path: string): ReturnType<typeof match> =>
+    match(profile, { tool: "write", input: { path }, cwd: CWD }, { home: HOME });
+  expect(write("/home/u/.operad/attachments/chat/C-0001/m/a.txt")).toMatchObject({ allow: false, ask: true });
+  expect(write("/work/project/a.txt")).toEqual({ allow: true });
+  expect(bash(profile, "echo x > /home/u/.operad/attachments/chat/C-0001/m/a.txt")).toMatchObject({ allow: false, ask: true });
+});

@@ -32,6 +32,7 @@ import {
   flagValue,
   hasGrants,
   inboxOf,
+  imageInputsOf,
   operadToolsOf,
   JsonlLog,
   modelLimit,
@@ -102,6 +103,12 @@ export interface PiHarnessOptions {
   /** The arguments before the worker input; defaults to `worker.ts`. */
   readonly args?: readonly string[] | undefined;
 }
+
+/** The models a chat may pick with this agent, and the one used when none is set. */
+export const PI_MODELS = {
+  list: ["anthropic/claude-sonnet-5-5", "anthropic/claude-opus-5-5", "anthropic/claude-haiku-5-5"],
+  default: "anthropic/claude-sonnet-5-5",
+} as const;
 
 /** The settings a config.json section may set for this plugin. */
 const PLUGIN_SETTINGS = {
@@ -225,6 +232,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
     name: "pi",
     kind: "harness",
     version: "0.0.0",
+    models: PI_MODELS,
     settings: PLUGIN_SETTINGS,
     steps: [
       {
@@ -234,7 +242,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
         // `waiting`: a question about a call was not answered within the grace.
         results: ["done", "failed", "interrupted", "waiting"],
         // The deny and ask fields are applied in the worker's tool_call hook.
-        enforces: ["denyPaths", "denyCommands", "askCommands", "askPaths"],
+        enforces: ["denyPaths", "denyCommands", "askCommands", "askPaths", "readPaths"],
         timeoutSecs: STEP_TIMEOUT_SECS,
         // The model the step uses: its `--model` argument, else the setting.
         limit: modelLimit("pi", (params, settings) => {
@@ -358,6 +366,9 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
             ...(thinkingLevel === undefined ? {} : { thinkingLevel }),
             ...(bashTimeoutSecs === undefined ? {} : { bashTimeoutSecs }),
             ...(operadTools === undefined ? {} : { operadTools }),
+            ...(imageInputsOf(input.images ?? flow.images).length === 0
+              ? {}
+              : { images: imageInputsOf(input.images ?? flow.images) }),
             ...(isRecord(ctx.access) ? { access: ctx.access } : {}),
             ...(storeSecrets.length === 0 ? {} : { secretValues: storeSecrets }),
           };
