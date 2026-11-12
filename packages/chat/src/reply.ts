@@ -16,6 +16,8 @@ import {
   newMessageId,
   promptFor,
   unanswered,
+  usageOf,
+  worseQuality,
   CHAT_TYPE,
   type MessageData,
 } from "./model.ts";
@@ -352,6 +354,8 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
   if (text.length === 0) return failed("empty", "the harness gave no reply");
   const sessionId = typeof data.sessionId === "string" && data.sessionId.length > 0 ? data.sessionId : undefined;
 
+  const usage = usageOf(data.usage);
+
   // The reply is a fact before the step counts as done: a rerun reads it and
   // does not answer the same messages twice.
   const reply: MessageData = {
@@ -363,14 +367,25 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
     source: { kind: chat.harness, ref: null },
     replyTo: pending.map((message) => message.id),
     ...(sessionId === undefined ? {} : { session: sessionId }),
+    ...usage,
   };
   await ctx.facts.append({ type: MESSAGE_FACT, object: chatRef(object.id), data: reply });
 
   // The chat's own reference follows; read again, so a change made meanwhile stays.
-  if (sessionId !== undefined) {
-    const fresh = await ctx.store.get(CHAT_TYPE, object.id);
-    if (fresh !== undefined && fresh.data.session !== sessionId) {
-      await ctx.store.put(CHAT_TYPE, object.id, { ...fresh.data, session: sessionId }, "step:chat/reply");
+  // The model and the cost so far follow too, for the row.
+  const fresh = await ctx.store.get(CHAT_TYPE, object.id);
+  if (fresh !== undefined) {
+    const before = chatData(fresh.data);
+    const next: Record<string, unknown> = { ...fresh.data };
+    if (sessionId !== undefined) next.session = sessionId;
+    if (usage.model !== undefined) next.lastModel = usage.model;
+    if (usage.costMicros !== undefined) {
+      next.costMicros = (before.costMicros ?? 0) + usage.costMicros;
+      const quality = worseQuality(before.costQuality, usage.costQuality);
+      if (quality !== undefined) next.costQuality = quality;
+    }
+    if (JSON.stringify(next) !== JSON.stringify(fresh.data)) {
+      await ctx.store.put(CHAT_TYPE, object.id, next, "step:chat/reply");
     }
   }
 
