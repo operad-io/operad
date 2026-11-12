@@ -1,6 +1,6 @@
 # operad-bot：个人助理，替掉自己的 OpenClaw 场景
 
-- 状态：decided（场景与形状；2026-11-09 owner 定了插件、profile 和主工作目录；2026-11-11 owner 把插件和用户可见的词从 assistant（助理）改名为 bot；2026-11-11 owner 去掉 profile 这个词，对象直接叫 bot；第三方来源的接入细节未定）
+- 状态：decided（场景与形状；2026-11-09 owner 定了插件、profile 和主工作目录；2026-11-11 owner 把插件和用户可见的词从 assistant（助理）改名为 bot；2026-11-11 owner 去掉 profile 这个词，对象直接叫 bot；2026-11-11 owner 批了 chat 和 bot 的一批用户词（决定 20）；第三方来源的接入细节未定）
 - 涉及 ADR：0021、0025
 - 涉及：`operad-conversation.md`；`operad-sandbox.md`；`operad-channels.md`；`operad-plugins.md`；`operad-bot-mcp.md`
 - 来源：`operad.md`；owner 的使用场景；`research/2026-11-04-agent-autoloop.md`「拿来即用的场景模板」；`research/2026-11-05-noop.md`「决定、门禁、自治」
@@ -33,6 +33,7 @@
 17. **bot 自己写的技能先是待处理项**：bot 写或改一个技能（包括"把刚才的做法存成技能"），人确认后才生效。Rakazo 和 OpenBot 是这样；Hermes 默认直接生效，Grok Bot 的个人 bot 不设卡。
 18. **bot 扩展自己一律先问**：加一个 MCP 服务、改自己的设置（称呼、harness、访问档、技能列表）都是待处理项，没人答就不做。照 NanoClaw，不学 Grok Bot（bot 能自己装应用、加 MCP 服务，基本不设卡）。
 19. **一个 bot 挂哪些 MCP 服务写在它的设置里**，只有列出的才挂进它的 chat；工具调用的许可按 `operad-sandbox.md` 决定 9，密钥按决定 10。先不做工具的按需加载，装多了再说。登记一个服务时人看到什么、怎么钉版本、浏览器怎么接，见 `operad-bot-mcp.md`。
+20. **chat 和 bot 的用户词**（2026-11-11 owner 批，来自 iOS 设计稿 `radian-ios/docs/design/operad/operad-ios-2026-11-11.html`）：`Allow once`、`Always allow`、`Deny`（工具调用和命令的许可，`operad-sandbox.md` 决定 9；`Always allow` 的范围是发起它的 bot 或 repo）；`Continue`（费用上限到了以后继续，决定 12）、`Stop`（停下当前运行）；`I logged in`、`Log in again`（站点登录，`operad-bot-mcp.md` 决定 13、14；`I logged in` 只是提醒 bot 去看，不代替登录）；`Review`（技能和 MCP 服务的导入或更新，决定 15、17、18，在列表上不能直接加，都要先 Review）；`repo`（chat 父对象类型的标签，和 `bot` 并列）；`period`（费用上限的周期）。说话人不是新词：harness 名（claude、pi、radian）只决定用哪个 agent，对话里显示的是决定 14 的称呼。
 
 ## 顺序
 
