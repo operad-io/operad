@@ -6,7 +6,7 @@
 
 import type { ViewAction, ViewRow } from "@operad-io/engine";
 import { argFields, parseArg, type ArgField } from "./args.ts";
-import type { TuiSetting } from "./client.ts";
+import type { TuiSetting, TuiTypeInfo } from "./client.ts";
 import { sanitize } from "./sanitize.ts";
 import type { TuiAnswer, TuiBinding, TuiInput, TuiState } from "./state.ts";
 import { graphemes } from "./wrap.ts";
@@ -58,13 +58,17 @@ export function resolveBindings(bindings: readonly TuiBinding[]): {
   };
 }
 
-/** The palette's groups, in the order they are shown. */
+/** The palette's fixed groups, in the order they are shown before a type's own group. */
 export const PALETTE_GROUPS = ["actions", "tui", "settings"] as const;
-export type TuiPaletteGroup = (typeof PALETTE_GROUPS)[number];
+/** A group label: one of the fixed ones, or a type's title for an object under settings. */
+export type TuiPaletteGroup = string;
 
 /** One line of the palette. */
 export interface TuiPaletteEntry {
+  /** The grouping key; two types never share one, even with the same title. */
   readonly group: TuiPaletteGroup;
+  /** The group label a person reads, when it differs from the key. */
+  readonly groupTitle?: string | undefined;
   /** `<plugin>:<action>` for an action; the command's words for the TUI. */
   readonly name: string;
   /** One line that says what the entry does; search reads it too. */
@@ -283,6 +287,7 @@ export function matchPositions(query: string, entry: TuiPaletteEntry): readonly 
 export type TuiCommand =
   | { readonly kind: "help" | "refresh" | "back" | "quit" | "themes" }
   | { readonly kind: "go"; readonly tabId: string }
+  | { readonly kind: "open"; readonly type: string; readonly id: string }
   | { readonly kind: "create"; readonly parent: string; readonly type: string };
 
 /** The objects a new `type` can be made under: every loaded row, or group, of a type that creating it works on. */
@@ -292,12 +297,14 @@ export function creationParents(
   parents: readonly string[],
 ): readonly string[] {
   const ids = new Set<string>();
-  for (const tab of state.tabs) {
-    for (const row of tab.list.rows) {
-      for (const candidate of [row, row.group]) {
-        if (candidate?.type === undefined || !parents.includes(candidate.type)) continue;
-        ids.add(candidate.id.includes(":") ? candidate.id : `${candidate.type}:${candidate.id}`);
-      }
+  const rows = [
+    ...state.tabs.flatMap((tab) => tab.list.rows),
+    ...(state.settingsTab?.list.rows ?? []),
+  ];
+  for (const row of rows) {
+    for (const candidate of [row, row.group]) {
+      if (candidate?.type === undefined || !parents.includes(candidate.type)) continue;
+      ids.add(candidate.id.includes(":") ? candidate.id : `${candidate.type}:${candidate.id}`);
     }
   }
   return [...ids];
@@ -320,6 +327,11 @@ export function settingText(value: unknown): string {
   return sanitize(typeof value === "string" ? value : (JSON.stringify(value) ?? "none"));
 }
 
+/** The name a type shows in a client: its title, or the type name when it has none. */
+function typeTitle(info: TuiTypeInfo): string {
+  return info.title.length === 0 ? info.type : info.title;
+}
+
 function settingEntries(state: TuiState): readonly TuiPaletteEntry[] {
   return state.settings.map((setting) => ({
     group: "settings",
@@ -330,6 +342,43 @@ function settingEntries(state: TuiState): readonly TuiPaletteEntry[] {
     confirm: setting.confirm,
     setting,
   }));
+}
+
+/**
+ * The objects a plugin put under settings, one palette group per type, named
+ * after the type. Enter opens the object's page.
+ */
+function settingsObjectEntries(state: TuiState): readonly TuiPaletteEntry[] {
+  const tab = state.settingsTab;
+  if (tab === undefined) return [];
+  const entries: TuiPaletteEntry[] = [];
+  for (const info of tab.types ?? []) {
+    const group = typeTitle(info);
+    for (const row of tab.list.rows) {
+      if (row.type !== info.type) continue;
+      entries.push({
+        group: `settings-object-${info.type}`,
+        groupTitle: group,
+        name: sanitize(row.title === "" ? row.id : row.title),
+        title: sanitize(row.id),
+        key: undefined,
+        needsNote: false,
+        confirm: false,
+        command: { kind: "open", type: info.type, id: row.id },
+      });
+    }
+  }
+  return entries;
+}
+
+/** The group labels in drawing order: the fixed ones, then each settings type. */
+function paletteGroups(state: TuiState): readonly string[] {
+  const groups: string[] = [...PALETTE_GROUPS];
+  for (const info of state.settingsTab?.types ?? []) {
+    const key = `settings-object-${info.type}`;
+    if (!groups.includes(key)) groups.push(key);
+  }
+  return groups;
 }
 
 /** The field a setting's value prompt asks: a list for an enum or a boolean, else text. */
@@ -462,7 +511,12 @@ export function paletteEntries(state: TuiState): readonly TuiPaletteEntry[] {
       // Equal scores keep the order the entries were listed in.
       .sort((a, b) => (b.found?.score ?? 0) - (a.found?.score ?? 0) || a.order - b.order)
       .map((item) => item.entry);
-  const all = [...rank(actions), ...rank(commandEntries(state)), ...rank(settingEntries(state))];
+  const all = [
+    ...rank(actions),
+    ...rank(commandEntries(state)),
+    ...rank(settingEntries(state)),
+    ...rank(settingsObjectEntries(state)),
+  ];
   const ordered =
     words.length > 0
       ? all
@@ -475,7 +529,7 @@ export function paletteEntries(state: TuiState): readonly TuiPaletteEntry[] {
           return [...used, ...all.filter((entry) => !used.includes(entry))];
         })();
   // The palette shows one group at a time, so a group label can separate them.
-  return PALETTE_GROUPS.flatMap((group) => ordered.filter((entry) => entry.group === group));
+  return paletteGroups(state).flatMap((group) => ordered.filter((entry) => entry.group === group));
 }
 
 /** The state after an entry ran: it is now the latest of the recent ones. */

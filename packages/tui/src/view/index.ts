@@ -313,7 +313,7 @@ function listContent(
   const chunks: TextChunk[] = [chunk("\n"), ...listTitle(tab, palette, width)];
   const window = listWindow(tab.list, Math.max(1, bodyHeight(state) - LIST_HEAD));
   const titles = tab.kind !== "plugin";
-  const grouped = tab.list.rows.some((row) => row.group !== undefined);
+  const grouped = tab.list.rows.some((row) => row.group !== undefined || row.heading === true);
   tab.list.rows.slice(window.start, window.end).forEach((row, offset) => {
     if (offset > 0) chunks.push(chunk("\n"));
     if (row.group !== undefined) {
@@ -322,8 +322,13 @@ function listContent(
     }
     chunks.push(
       ...drawRow(row, window.start + offset === tab.list.cursor, palette, width, titles, {
-        indent: grouped && row.bare !== true ? GROUP_INDENT : 0,
-        ...(row.bare === true ? { folder: true } : {}),
+        indent:
+          row.heading === true
+            ? 0
+            : grouped && row.bare !== true
+              ? GROUP_INDENT
+              : 0,
+        ...(row.heading === true || row.bare === true ? { folder: true } : {}),
       }),
     );
   });
@@ -673,7 +678,7 @@ function paletteDisplayLines(entries: readonly TuiPaletteEntry[]): readonly Pale
   entries.forEach((entry, at) => {
     if (entry.group !== last) {
       if (last !== undefined) lines.push({ kind: "blank" });
-      lines.push({ kind: "group", group: entry.group });
+      lines.push({ kind: "group", group: entry.groupTitle ?? entry.group });
       last = entry.group;
     }
     lines.push({ kind: "entry", entry, at });

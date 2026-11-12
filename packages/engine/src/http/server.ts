@@ -8,7 +8,6 @@ import { randomBytes } from "node:crypto";
 import type { HttpConfig } from "../config/config.ts";
 import type { LogBackend } from "../log/types.ts";
 import { messageOf } from "../plugin/errors.ts";
-import { typeFilters } from "../plugin/filters.ts";
 import type { PluginRegistry } from "../plugin/registry.ts";
 import type { Actor } from "../plugin/types.ts";
 import type { Kernel } from "../trigger/kernel.ts";
@@ -20,6 +19,7 @@ import {
   type Views,
 } from "../views/presentation.ts";
 import { listRunning } from "../views/running.ts";
+import { listTypes } from "../views/types.ts";
 import { validateListenAddresses } from "./address.ts";
 import {
   ensureHttpToken,
@@ -279,13 +279,7 @@ function viewErrorResponse(error: ViewError): Response {
 }
 
 /** The name a type shows in a client: `task` becomes `Task`. */
-export function displayNameOf(type: string): string {
-  const words = type
-    .split(/[-_\s]+/)
-    .filter((word) => word.length > 0)
-    .map((word) => `${word[0]?.toUpperCase() ?? ""}${word.slice(1)}`);
-  return words.length === 0 ? type : words.join(" ");
-}
+export { displayNameOf } from "../views/types.ts";
 
 function decodeSegment(value: string): string {
   try {
@@ -459,40 +453,7 @@ function createHandler(
     }
 
     if (method === "GET" && path === "/v1/types") {
-      const seen = new Set<string>();
-      const types: {
-        type: string;
-        title: string;
-        plugin: string;
-        filters?: readonly { name: string; states?: readonly string[] | undefined }[];
-        defaultFilter?: string;
-        parents?: readonly string[];
-      }[] = [];
-      for (const entry of options.registry.objectTypes()) {
-        if (seen.has(entry.type)) continue;
-        if (options.registry.viewsFor(entry.type) === undefined) continue;
-        seen.add(entry.type);
-        const filters = typeFilters(entry.definition);
-        // The types an action that creates this one works on: where a client offers a new one.
-        const parents = [
-          ...new Set(
-            options.registry
-              .actions()
-              .filter((action) => action.creates === entry.type)
-              .map((action) => action.on),
-          ),
-        ];
-        types.push({
-          ...(parents.length === 0 ? {} : { parents }),
-          type: entry.type,
-          title: displayNameOf(entry.type),
-          plugin: entry.plugin,
-          ...(filters === undefined
-            ? {}
-            : { filters: filters.filters, defaultFilter: filters.default }),
-        });
-      }
-      return json({ types });
+      return json({ types: listTypes(options.registry) });
     }
 
     if (method === "GET" && path === "/v1/keys") {
