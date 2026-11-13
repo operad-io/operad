@@ -75,7 +75,7 @@ matches the same single-dash letters in any order, and `…` adds no condition.
 (such as `bash -c`, `python -c`, `bun -e`, `osascript -e`, `find -exec`, `xargs`,
 `eval`, a backtick or `$()`) is refused while `denyCommands` is set, and asks
 while only `askCommands` is set, because the matcher cannot see what it runs.
-The full rule tables are in `packages/access-match/README.md`.
+The full rule tables are in `packages/access-match/REFERENCE.md`.
 
 ## `access-user.json`
 

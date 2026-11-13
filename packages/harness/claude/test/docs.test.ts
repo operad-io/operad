@@ -17,7 +17,7 @@ function read(path: string): string {
   return readFileSync(fileURLToPath(new URL(path, import.meta.url)), "utf8");
 }
 
-const README = read("../README.md");
+const README = read("../REFERENCE.md");
 const DOGFOOD = read("../../../../docs/dogfood.md");
 const MANUAL = read("../../../../docs/user/dev.md");
 

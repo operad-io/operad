@@ -151,7 +151,7 @@ while no `serve` runs; `operad serve` or `operad tui` resumes it.
 A step cleans up after itself: when it ends, every process it started that is
 still running (a loop a worker left in the background, for example) is stopped,
 and the step's log lists them. At start, `serve` does the same for the steps of
-runs that are no longer active. See "What a step cleans up" in the `dev` README
+runs that are no longer active. See "What a step cleans up" in `packages/dev/REFERENCE.md`
 for how processes are found and what it cannot find.
 
 A restart does not disturb a check or command that is running. Each run is a

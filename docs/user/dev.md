@@ -233,7 +233,7 @@ When the worker adds no commit, the task waits with `work did nothing` if the br
 A `dev` command takes its repository from the directory, from `--repo <name>`
 or from a qualified id such as `operad/T-0045-shell-hang-guards`; a bare id
 outside a repository works when only one repository has it. The rules are in
-[packages/dev/README.md](../../packages/dev/README.md#where-a-command-runs-and-ids).
+[packages/dev/REFERENCE.md](../../packages/dev/REFERENCE.md#where-a-command-runs-and-ids).
 
 ## Where the reviewer writes its report
 
@@ -342,7 +342,7 @@ runs in the foreground inside one call and must not be cut short. A project whos
 gate is faster can set a lower value to catch a stuck command sooner.
 
 `stallSecs` is unchanged: it measures silence while no tool call is open, and an
-open tool call is not a stall (see the README of `pi`). The time limit
+open tool call is not a stall (see `packages/harness/pi/REFERENCE.md`). The time limit
 above is what bounds a single tool call.
 
 ### The agent's shell and the user's aliases

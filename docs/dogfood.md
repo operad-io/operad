@@ -260,7 +260,7 @@ not need to disable `pi`; `operad plugin disable pi` removes it
 if you want.
 
 The settings, the step's results and the model-error rules are in
-`packages/harness/pi/README.md`.
+`packages/harness/pi/REFERENCE.md`.
 
 ## Using claude as the worker
 
@@ -318,7 +318,7 @@ or `sonnet`).
 
 **Settings, arguments and the environment.** These are the inputs of the
 `claude` section of `config.json`, of the step's `args` and of the
-environment. The full tables are in `packages/harness/claude/README.md`.
+environment. The full tables are in `packages/harness/claude/REFERENCE.md`.
 
 | Input | Type | Default | Values |
 |---|---|---|---|
@@ -364,7 +364,7 @@ and `--effort <level>` from `args`; any other entry fails the step with
 `claude`; `operad plugin disable claude` removes it if you want.
 
 The settings, the step's results and the model-error rules are in
-`packages/harness/claude/README.md`. The hand-run acceptance points are in
+`packages/harness/claude/REFERENCE.md`. The hand-run acceptance points are in
 the claude harness item under `docs/backlog/`.
 
 ## Using codex as the worker
