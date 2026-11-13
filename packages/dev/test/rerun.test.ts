@@ -75,7 +75,7 @@ describe("a failed test that fails again when run alone", () => {
       });
       expect(lines).toEqual(["bun test", "bun test -t '^a slow$'"]);
       expect(steady.checked.outcome?.result).toBe("pass");
-      expect(steady.checked.passedOnRerun).toEqual(["a slow"]);
+      expect(steady.checked.passedOnRerun).toEqual(["a > slow"]);
       expect(steady.runs).toBe(1);
       expect(steady.notCode).toBeUndefined();
     } finally {
