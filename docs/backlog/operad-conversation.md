@@ -43,7 +43,7 @@ OpenClaw 是聊天优先，operad 到现在是流程优先。第一个要满足�
     - 大的工具输出放文件，事实里只留开头一段和路径，和附件的做法一致。
     - 逐字的增量不落盘，只走 live 通道；断线重连时，当前这一轮已经写出的文本由 serve 一并给出。
     - 模型的上下文仍归 agent：续接照旧用 `resumeSession`，operad 不拿自己的记录去重建上下文。
-24. **过程第一版用 Markdown 行显示，thinking 也显示**（2026-11-12 owner 定）：`transcript` 段把工具调用渲染成 Markdown 行（照 `dev` 的 worker 活动），客户端不用改；可折叠的工具卡片需要显示接口有一种结构化的块，以后另议。agent 的 thinking 记成条目并显示，harness 不给的（radian）就没有。它在界面上的标签是一个新的用户词，待 owner 批（提议 `Thinking`；决定 22 说的是 effort 这个设置不叫 thinking，和这里的标签是两件事）。
+24. **过程第一版用 Markdown 行显示，thinking 也显示**（2026-11-12 owner 定）：`transcript` 段把工具调用渲染成 Markdown 行（照 `dev` 的 worker 活动），客户端不用改；可折叠的工具卡片需要显示接口有一种结构化的块，以后另议。agent 的 thinking 记成条目并显示，harness 不给的（radian）就没有。它在界面上的标签是 `Thinking`，2026-11-12 owner 批准的用户词（决定 22 说的是 effort 这个设置不叫 thinking，和这里的标签是两件事）。
 
 25. **逐字显示走段的增量读法，不另开一条流**（2026-11-12 owner 定；显示接口的改动是 `operad-presentation.md` 决定 15）。以后觉得不够顺再加一条推送的流，存的东西不用变。同日按提议定下的细节：
     - **条目四种**：中间文本、thinking、工具调用、被停下的半截回复。工具调用的字段：调用 id、工具名、输入摘要、结果（`done`、`failed`、`blocked`、`denied`）、开始时间、耗时、输出开头一段、全文路径、错误首行。每条带运行 id，和最终回复的 `chat.message` 归到同一轮。计划、可用命令、模式变更不做。
