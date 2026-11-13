@@ -61,6 +61,11 @@ changes for bots, in the order they were recorded. The root
 |---|---|---|---|
 | T-0410-M1 | packages/bot/src/index.ts | bot required chat `^0.0.0`, which refuses chat 0.0.1 | `plugin versions > every plugin's requirements are met by the versions in this workspace` (packages/cli/test/plugin-versions.test.ts) |
 
+## T-0406 — a channel opens its chat in the same action
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0406-M9 | packages/bot/src/index.ts | `bot:chat` dropped the channels it was given instead of passing them to `openChat` | `bot:chat > bot:chat puts the channels it is given on the new chat, and refuses another form` |
 ## T-0411 — bot's chat requirement has an upper bound
 
 | id | file | mutation | failing test |

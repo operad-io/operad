@@ -26,7 +26,8 @@
     "@operad-io/harness-claude": "workspace:*",
     "@operad-io/harness-codex": "workspace:*",
     "@operad-io/pool": "workspace:*",
-    "@operad-io/bot": "workspace:*"
+    "@operad-io/bot": "workspace:*",
+    "@operad-io/telegram": "workspace:*"
   },
   "overrides": {
     "@anthropic-ai/claude-agent-sdk-darwin-arm64": "npm:empty-npm-package@1.0.0",

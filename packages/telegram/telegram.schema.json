@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://operad.io/schemas/telegram.schema.json",
+  "title": "telegram",
+  "description": "The telegram plugin's settings: who may write, which bot opens a chat, and which plugins' pending items are also sent.",
+  "type": "object",
+  "properties": {
+    "users": {
+      "type": "array",
+      "items": { "type": "integer", "minimum": 1 },
+      "default": [],
+      "description": "The Telegram user ids whose private messages become chat messages. A message from anyone else is recorded and answered with nothing."
+    },
+    "bot": {
+      "type": "string",
+      "minLength": 1,
+      "default": "default",
+      "description": "The bot a chat is opened on when a listed user writes first."
+    },
+    "pending": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "default": [],
+      "description": "The plugins whose pending items are also sent to Telegram, such as [\"dev\"]. Items of a chat bound to Telegram are always sent."
+    }
+  },
+  "additionalProperties": false
+}
