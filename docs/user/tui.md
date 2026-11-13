@@ -246,8 +246,8 @@ JSON object whose key is a key name and whose value is an action name,
 `<plugin>:<action>`. A user binding beats a plugin default on the same key. A
 binding on a reserved key is dropped; at start one footer line names each
 dropped key with its action and source, and the action stays in the `:` palette
-with no key shown. A binding that names no loaded action is ignored with one
-logged line.
+with no key shown. A value that is not a loaded action is ignored with one
+logged line, however it is spelled.
 
 <!-- schema: keys.schema.json -->
 ```json
@@ -256,7 +256,7 @@ logged line.
 
 | Key | Type | Default | Allowed values | When it takes effect | Wrong value |
 |---|---|---|---|---|---|
-| `keys.<name>` | string | no override | `<plugin>:<action>` for a loaded action | When the plugins load; a running `serve` reloads when the file changes, and the TUI reads the bindings from it | Refused: `key bindings "<path>": <reason>`; an unknown action is ignored with `key "<key>": "<action>" is not a loaded action; the key is ignored` |
+| `keys.<name>` | string | no override | any non-empty string; an action that is loaded is normally written `<plugin>:<action>` | When the plugins load; a running `serve` reloads when the file changes, and the TUI reads the bindings from it | Refused only when the value is empty or not a string, or the file is not a JSON object: `key bindings "<path>": <reason>`. A non-empty value that names no loaded action is ignored with `key "<key>": "<action>" is not a loaded action; the key is ignored` |
 
 The reserved keys are `enter`, `return`, `escape`, `esc`, `tab`, the arrows
 (`up`, `down`, `left`, `right`, and their `arrow` names), `pageup`,

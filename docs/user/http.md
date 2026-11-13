@@ -8,14 +8,15 @@ description: The /v1 HTTP interface: the http section, the token, endpoints, eve
 
 ## The `http` section
 
-| Key | Type | Default | What it does |
-|---|---|---|---|
-| `http` | object | `{ "enabled": true, "port": 7480, "listen": ["127.0.0.1"] }` | The HTTP interface section. A missing section uses the defaults; a command that writes it without `enabled` leaves the interface on. |
-| `http.enabled` | boolean | `true` | Start the HTTP interface with `operad serve`. Set `false` to turn it off; `operad tui` then cannot reach a `serve`. |
-| `http.port` | integer | `7480` | The port to listen on; `0` asks the system for one. |
-| `http.listen` | array of strings | `["127.0.0.1"]` | The IP addresses to listen on. |
+| Key | Type | Default | Allowed values | When it takes effect | Wrong value |
+|---|---|---|---|---|---|
+| `http` | object | `{ "enabled": true, "port": 7480, "listen": ["127.0.0.1"] }` | an object with the keys below; a missing section means these defaults | At every command start; `serve` binds when it starts and after a reload | Refused: `http: must be an object` |
+| `http.enabled` | boolean | `true` | `true` or `false` | When `serve` starts; a reload opens or closes the interface with the new value | Refused: `http.enabled: must be a boolean` |
+| `http.port` | integer | `7480` | `0` to `65535`; `0` asks the system for a port | When `serve` binds; after a reload it binds the new port | Refused: `http.port: must be an integer from 0 to 65535` |
+| `http.listen` | array of strings | `["127.0.0.1"]` | at least one non-empty IP literal: loopback, RFC 1918, link-local or Tailscale; a wildcard and every other address are refused | When `serve` binds; after a reload it binds the new addresses | Refused: `http.listen: must be an array of IP addresses`, `http.listen: needs at least one address`, `http.listen: "<address>" is not an IP address`, `http.listen: "<address>" is a wildcard address; name each address to listen on`, or `http.listen: "<address>" is not a loopback, private, link-local or Tailscale address` |
 
-Each `listen` entry is an IP literal. `serve` accepts a loopback address, an
+An unknown key inside `http` is ignored; only the keys above are read. Each
+`listen` entry is an IP literal. `serve` accepts a loopback address, an
 RFC 1918 address (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), a link-local
 address (`169.254.0.0/16`, `fe80::/10`) or a Tailscale address
 (`100.64.0.0/10`, `fd7a:115c:a1e0::/48`). It refuses a wildcard (`0.0.0.0` or

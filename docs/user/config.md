@@ -98,9 +98,12 @@ and `dev` installed, the store at `store/log.sqlite`, `http` on at
 `127.0.0.1:7480`, notifications off, the MCP lists above and the ask grace of
 600 seconds. `operad init` writes that file when the home has none.
 
-Every top-level section is optional. A key that the file writes outside these
-sections is ignored by the kernel; a key inside a section that the section's
-schema does not name is refused with the section and the key in the message.
+Every top-level section is optional. The kernel reads only the keys it names:
+an unknown key at the top level, inside an engine section (`store`, `http`,
+`notify`, `mcp`, `ask`) or inside a `plugins` entry is ignored. The one place a
+typo is refused is `plugins.<name>.settings`, which is checked by that plugin's
+own schema; an unknown key there refuses the plugin with one line naming the
+plugin and the field.
 
 ## The sections
 
