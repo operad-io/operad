@@ -77,6 +77,6 @@ Differences from ADR 0021 (the model follows the code):
 - D9 "waits as `retry_wait` does": the work step retries after `retrySecs`, at
   most `MAX_WORK_WAITS` times, then waits for a person. Modelled as `retry`.
 
-Run it: `bash scripts/tla.sh pool` takes about two minutes on ten cores
+Run it: `bash scripts/tla.sh pool` (TLC 2.19, release v1.7.4) takes about three minutes on ten cores
 (326,670 distinct states, 1,578,576 generated, depth 32). A fourth task did not
 finish in twenty minutes.

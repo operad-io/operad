@@ -4,8 +4,8 @@
 set -euo pipefail
 
 # The pinned TLC release and the sha256 its jar must have.
-TLA_URL="https://github.com/tlaplus/tlaplus/releases/download/v1.8.0/tla2tools.jar"
-TLA_SHA256="e1f11b75c4b5bc4478ba0ac5cb6ae28e40a01b0016bc33e0aa97da22dfdbcd7f"
+TLA_URL="https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar"
+TLA_SHA256="936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88"
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 if [ $# -lt 1 ]; then
