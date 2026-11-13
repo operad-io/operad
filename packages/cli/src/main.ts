@@ -2062,7 +2062,8 @@ async function commandPluginAdmin(
         io.write(`${asked}: not installed; run \`operad plugin enable ${asked}\` to install it\n`);
         return 1;
       }
-      const definition = await loadPlugin(module, context.home, installed);
+      const source = installed !== undefined && !runningFromWorkspace() ? installed : module;
+      const definition = await loadPlugin(source, context.home, installed);
       return await checkLoadedDefinition(context, io, definitionName(definition) ?? module, definition);
     }
     const definition = await loadPlugin(asked, context.home);

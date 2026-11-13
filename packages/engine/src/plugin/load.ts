@@ -179,9 +179,12 @@ export async function loadConfiguredPlugins(
       continue;
     }
     const installed = installedPackageFile(home, entry.module);
+    // Outside a workspace checkout the home project is the copy to run, even
+    // when another install of the same package happens to resolve.
+    const source = installed !== undefined && !runningFromWorkspace() ? installed : entry.module;
     let definition: unknown;
     try {
-      definition = await loadPlugin(entry.module, home, installed);
+      definition = await loadPlugin(source, home, installed);
     } catch (error) {
       if (
         entry.name !== undefined &&
