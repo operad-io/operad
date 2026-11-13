@@ -1612,6 +1612,9 @@ export class PluginRegistry {
         secrets: this.secretsFor(plugin.name),
         emit,
         client: options.client,
+        harnesses: this.loadedHarnesses(),
+        models: this.loadedModels(),
+        efforts: this.loadedEfforts(),
       };
       try {
         const handle = await plugin.start(ctx);

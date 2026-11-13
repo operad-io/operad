@@ -1115,9 +1115,16 @@ export interface SourceContext extends PluginBaseContext {
   emit(event: SourceEvent): Promise<void>;
   /**
    * The client API HTTP and the TUI use, the same object: `list`, `get`,
-   * `section`, `events`, `act` and `pending`. `act` needs an actor.
+   * `section`, `events`, `act`, `pending` and `answer`. `act` and `answer`
+   * need an actor.
    */
   readonly client: ClientApi;
+  /** The names of the loaded plugins of kind `harness`. */
+  readonly harnesses: readonly string[];
+  /** The models each loaded harness plugin declares, by plugin name. */
+  readonly models: Readonly<Record<string, HarnessModels>>;
+  /** The efforts each loaded harness plugin declares, by plugin name. */
+  readonly efforts: Readonly<Record<string, HarnessEfforts>>;
 }
 
 /** The shape `definePlugin` accepts. The version is added by the helper. */

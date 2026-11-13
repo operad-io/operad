@@ -39,6 +39,9 @@ function context(
     clock,
     settings: {},
     secrets: {} as unknown as SourceContext["secrets"],
+    harnesses: [],
+    models: {},
+    efforts: {},
     client: {} as unknown as SourceContext["client"],
     emit: async (event) => {
       emitted.push(event);
