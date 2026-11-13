@@ -422,27 +422,51 @@
           "additionalProperties": false
         },
         "fallback": {
-          "description": "A second harness step and arguments used when the primary reviewer is unavailable.",
-          "type": "object",
-          "properties": {
-            "use": {
-              "description": "The harness step that reviews when the primary is unavailable.",
-              "type": "string",
-              "minLength": 1
-            },
-            "args": {
-              "description": "Arguments the fallback harness step passes to its command.",
-              "type": "array",
-              "items": {
-                "type": "string"
+          "description": "A second harness step and arguments used when the primary reviewer is unavailable or does not write the report, or a list of them tried in order until one writes the report.",
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "use": {
+                  "description": "The harness step that reviews when the primary is unavailable.",
+                  "type": "string",
+                  "minLength": 1
+                },
+                "args": {
+                  "description": "Arguments the fallback harness step passes to its command.",
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "default": []
+                }
               },
-              "default": []
+              "required": ["use"],
+              "additionalProperties": false
+            },
+            {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "properties": {
+                  "use": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "args": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "default": []
+                  }
+                },
+                "required": ["use"],
+                "additionalProperties": false
+              }
             }
-          },
-          "required": [
-            "use"
-          ],
-          "additionalProperties": false
+          ]
         },
         "timeoutSecs": {
           "description": "The longest a review may run, in seconds.",

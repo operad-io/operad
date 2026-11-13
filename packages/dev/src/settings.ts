@@ -204,8 +204,11 @@ export interface ReviewerSettings {
    * reviewer's own for that review. Every later review uses the reviewer's.
    */
   readonly first?: ReviewerFirst | undefined;
-  /** The step used when the primary reviewer is unavailable. */
-  readonly fallback?: ReviewerFallback | undefined;
+  /**
+   * The step, or the steps in order, used when the primary reviewer is
+   * unavailable or does not write the report.
+   */
+  readonly fallback?: ReviewerFallback | readonly ReviewerFallback[] | undefined;
   readonly timeoutSecs: number;
   /** How long a review may print nothing; unset uses the harness default. */
   readonly stallSecs?: number | undefined;
@@ -718,6 +721,25 @@ function fixLevelOf(value: unknown, field: string): FixLevel {
   return value;
 }
 
+/** The fallbacks of a reviewer in the order they are tried. */
+export function reviewerFallbacks(
+  fallback: ReviewerFallback | readonly ReviewerFallback[] | undefined,
+): readonly ReviewerFallback[] {
+  if (fallback === undefined) return [];
+  return Array.isArray(fallback) ? fallback : [fallback as ReviewerFallback];
+}
+
+function reviewerFallbackSetting(
+  value: unknown,
+  field: string,
+): ReviewerFallback | readonly ReviewerFallback[] {
+  if (!Array.isArray(value)) return reviewerFallback(value, field);
+  if (value.length === 0) throw new DevError(field, "must not be an empty list");
+  return value.map((entry, index) =>
+    reviewerFallback(entry, `${field}[${index}]`),
+  );
+}
+
 function reviewerFallback(value: unknown, field: string): ReviewerFallback {
   if (!isRecord(value)) {
     throw new DevError(field, "must be an object");
@@ -800,7 +822,7 @@ function reviewerSettings(value: unknown, field: string): ReviewerSettings {
   const fallback =
     value.fallback === undefined
       ? undefined
-      : reviewerFallback(value.fallback, `${field}.fallback`);
+      : reviewerFallbackSetting(value.fallback, `${field}.fallback`);
   return {
     use:
       value.use === undefined

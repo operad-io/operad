@@ -1123,8 +1123,15 @@ the row fields.
 | T-0400-M1 | packages/dev/src/service.ts | `isActiveTask` leaves out `isIntegrating(task)`, so the plan and the repository do not count an integrating task as active | `an integrating task counts as running, not as waiting for a person > integrating: running marks and no waiting note` |
 | T-0400-M2 | packages/dev/src/refusals.ts | `needsPerson` no longer returns false for an integrating task, so the plan note says "1 waiting" and its mark is waiting | `an integrating task counts as running, not as waiting for a person > integrating: running marks and no waiting note` |
 
+## T-0403-review-fallback-list — reviewer.fallback may be a list
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0403-M1 | packages/dev/src/gate.ts | `nextFallback` returns `undefined` after the first fallback (index `+ 1` becomes `+ 99`), so a list stops at its first entry | `dev/review fallback and retry > a list of fallbacks is tried in order until one writes the report` |
 ## T-0401-timeout-alone-is-code — rework 1
 
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0401-M3 | packages/dev/src/rerun.ts | `runCheckCommands` passed `false` for `aloneRerun` when the failed test failed again alone | `a failed test that fails again when run alone > the result says it was the test's own rerun, and a quiet machine makes it the code` |
+| T-0403-M2 | packages/dev/src/gate.ts | a fallback's second timeout returns `wait-timed-out` instead of passing to the next fallback | `dev/review fallback and retry > a fallback that times out twice passes to the next one` |
+| T-0403-M3 | packages/dev/src/gate.ts | `sameRunner` compares only the role, so the first run of the next fallback counts as a repeat of the previous fallback's failure and gets no retry | `dev/review fallback and retry > every fallback of a list failing without a report ends the review, naming each reason` |
