@@ -77,7 +77,7 @@ export interface FailedTest {
 
 const FAIL_LINE = /^\(fail\) (.+?) \[(\d+(?:\.\d+)?)(ms|s)\]\s*$/;
 
-/** The failed tests a bun log lists, each once, with how long it ran. */
+/** The failed tests a log lists as `(fail) name [time]` lines, each once, with how long it ran. */
 export function failedTests(log: string): FailedTest[] {
   const seen = new Map<string, number>();
   for (const line of log.replace(/\r\n/g, "\n").split("\n")) {
