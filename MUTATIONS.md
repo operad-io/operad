@@ -78,6 +78,7 @@ Each package keeps its mutation checks in `MUTATIONS.md`; a row names the broken
 | T-0402-M3 | scripts/run-tests.sh | the heartbeat's growth comparison was reversed, so a step whose output grew never printed one | `run-tests.sh > a step whose output grows still prints a heartbeat` (expected `run-tests: still running`) |
 | T-0414-M4 | scripts/run-tests.sh | the heartbeat no longer counts the heavy step's captured output (`*.out`) as growth | `run-tests.sh > heavy output growing alone prints a heartbeat while the heavy step is still open` |
 | T-0414-M7 | scripts/run-tests.sh | the heartbeat no longer exits when the script's process is gone (the `kill -0` line is deleted) | `run-tests.sh > the heartbeat ends by itself when the script is killed without a chance to stop it` |
+| T-0424-M1 | scripts/tla.sh | the sha256 comparison of the downloaded jar was replaced by `false`, so a jar with the wrong hash was kept and run | `scripts/tla.sh > a download whose sha256 differs is refused and not kept` |
 
 ## T-0417 — the ADR snapshot test
 
