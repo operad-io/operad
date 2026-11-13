@@ -40,6 +40,7 @@ import {
   openConfigLog,
   Notifier,
   CodeWatch,
+  olderCodeNotice,
   ensureHttpToken,
   listenAddressKind,
   pairLink,
@@ -1698,6 +1699,8 @@ async function commandServe(
   let outcome = "stopped" as "stopped" | "reload";
   let unreleased: HttpStopError | undefined;
   let watch: CodeWatch | undefined;
+  const olderNotice = olderCodeNotice(context.home);
+  olderNotice.clear();
   try {
     if (context.config.http.enabled) {
       const startHttp = (): Promise<HttpServerHandle> =>
@@ -1741,6 +1744,7 @@ async function commandServe(
         baseline: context.code.baseline,
         quietMs: envNumber("OPERAD_RELOAD_QUIET_MS", 1_000),
         pollMs: envNumber("OPERAD_RELOAD_POLL_MS", 5_000),
+        onOlder: olderNotice.report,
         onChange: async () => {
           const what = await check();
           // A stop that came while the new code was tried is not started again.
@@ -1777,6 +1781,7 @@ async function commandServe(
     });
   } finally {
     watch?.stop();
+    olderNotice.clear();
     await notifier.stop();
     if (http !== undefined) {
       try {

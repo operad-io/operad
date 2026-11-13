@@ -1,5 +1,6 @@
 /** The pending view: every run waiting for a person, with what can be done. */
 
+import { OLDER_CODE_ITEM_ID, OLDER_CODE_PROMPT, servesOlderCode } from "../loop/older-code.ts";
 import { objectLink } from "../http/link.ts";
 import type { LogBackend, RunInfo } from "../log/types.ts";
 import type { PluginRegistry } from "../plugin/registry.ts";
@@ -151,6 +152,18 @@ export async function listPending(
       ...(item.object === undefined
         ? {}
         : objectFields(`${item.object.type}:${item.object.id}`)),
+    });
+  }
+
+  if (servesOlderCode(registry.home)) {
+    items.push({
+      runId: `operad:${OLDER_CODE_ITEM_ID}`,
+      flow: "operad",
+      step: null,
+      prompt: OLDER_CODE_PROMPT,
+      choices: [],
+      actions: [],
+      kind: "standing",
     });
   }
 
