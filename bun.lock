@@ -172,7 +172,6 @@
       "name": "@operad-io/telegram",
       "version": "0.0.1",
       "dependencies": {
-        "@operad-io/bot": "workspace:*",
         "@operad-io/chat": "workspace:*",
         "@operad-io/engine": "workspace:*",
       },

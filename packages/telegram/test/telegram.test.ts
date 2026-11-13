@@ -212,6 +212,64 @@ describe("the telegram source", () => {
     await w.close();
   });
 
+  test("an update that cannot be handled does not stop the later ones, and is retried", async () => {
+    const w = await world({ users: [42] });
+    const api = new FakeApi();
+    api.updates = [update(100, 42, 555, "first")];
+    await source(w, api).poll();
+
+    const missing = prepareSettings(
+      TELEGRAM_SETTINGS,
+      { users: [42, 43], bot: "missing" },
+      "telegram",
+    );
+    api.updates = [
+      update(101, 43, 666, "first from 43"),
+      update(102, 42, 555, "second"),
+    ];
+    await new TelegramSource(
+      { ...w.ctx, settings: missing },
+      { api, clock: () => 1_700_000_000_000 },
+    ).poll();
+
+    // The bad update is logged; the chat of user 42 still takes its message.
+    expect(readFileSync(w.ctx.logger.path, "utf8")).toContain("update 101");
+    const chats = (await w.store.list(CHAT_TYPE)).objects;
+    expect(chats).toHaveLength(1);
+    const chat = chats[0];
+    if (chat === undefined) throw new Error("no chat was opened");
+    expect(allMessages(w.store, chat.id).map((message) => message.source.ref)).toEqual([
+      "100",
+      "102",
+    ]);
+    // Only the update before the failure is confirmed, so the failed one is read again.
+    expect(readOffset(w.home)).toBe(101);
+
+    // Once the bot is usable, the same update is handled and nothing is duplicated.
+    const fixed = prepareSettings(
+      TELEGRAM_SETTINGS,
+      { users: [42, 43], bot: "default" },
+      "telegram",
+    );
+    api.updates = [
+      update(101, 43, 666, "first from 43"),
+      update(102, 42, 555, "second"),
+    ];
+    await new TelegramSource(
+      { ...w.ctx, settings: fixed },
+      { api, clock: () => 1_700_000_000_000 },
+    ).poll();
+
+    const after = (await w.store.list(CHAT_TYPE)).objects;
+    expect(after).toHaveLength(2);
+    const other = after.find((item) => chatData(item.data).channels.includes(telegramChannel(666)));
+    if (other === undefined) throw new Error("no chat was opened for the second user");
+    expect(allMessages(w.store, other.id).map((message) => message.source.ref)).toEqual(["101"]);
+    expect(allMessages(w.store, chat.id)).toHaveLength(2);
+    expect(readOffset(w.home)).toBe(103);
+    await w.close();
+  });
+
   test("the token reaches no fact, log line or error", async () => {
     const token = "super-secret-token-0406";
     const w = await world({ users: [42], token });

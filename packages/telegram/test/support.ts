@@ -173,9 +173,6 @@ export async function createTelegramWorld(options: WorldOptions): Promise<Telegr
       await kernel?.receive(trigger);
     },
     client: views,
-    harnesses: registry.loadedHarnesses(),
-    models: registry.loadedModels(),
-    efforts: registry.loadedEfforts(),
   };
 
   return {

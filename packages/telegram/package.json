@@ -6,7 +6,6 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@operad-io/bot": "workspace:*",
     "@operad-io/chat": "workspace:*",
     "@operad-io/engine": "workspace:*"
   },

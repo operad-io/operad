@@ -1119,12 +1119,6 @@ export interface SourceContext extends PluginBaseContext {
    * need an actor.
    */
   readonly client: ClientApi;
-  /** The names of the loaded plugins of kind `harness`. */
-  readonly harnesses: readonly string[];
-  /** The models each loaded harness plugin declares, by plugin name. */
-  readonly models: Readonly<Record<string, HarnessModels>>;
-  /** The efforts each loaded harness plugin declares, by plugin name. */
-  readonly efforts: Readonly<Record<string, HarnessEfforts>>;
 }
 
 /** The shape `definePlugin` accepts. The version is added by the helper. */

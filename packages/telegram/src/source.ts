@@ -9,7 +9,6 @@
  * resent update writes no second message.
  */
 
-import { openChat } from "@operad-io/bot";
 import {
   CHAT_TYPE,
   MESSAGE_EVENT,
@@ -117,10 +116,21 @@ export class TelegramSource {
       timeoutSecs: this.longPollSecs,
       signal: this.controller.signal,
     });
+    // One update that cannot be handled is logged and does not stop the ones
+    // after it. The offset confirms only the updates before the first failure,
+    // so the failed one is read again; the event key keeps the rest one.
+    let confirmed = offset;
+    let blocked = false;
     for (const update of updates) {
-      await this.handle(update);
-      writeOffset(this.ctx.home, update.update_id + 1, this.clock());
+      try {
+        await this.handle(update);
+        if (!blocked) confirmed = update.update_id + 1;
+      } catch (error) {
+        blocked = true;
+        await this.ctx.logger.write(`update ${update.update_id}: ${messageOf(error)}`);
+      }
     }
+    if (confirmed > offset) writeOffset(this.ctx.home, confirmed, this.clock());
     return updates;
   }
 
@@ -186,7 +196,7 @@ export class TelegramSource {
     }
 
     const open = bound.find((chat) => !chat.closed);
-    const chatId = open?.id ?? (await this.openBoundChat(channel, text));
+    const chatId = open?.id ?? (await this.openBoundChat(channel, text, from));
     await this.ctx.client.act("chat:send", chatId, {
       args: { note: text, ref: key },
       actor: { via: TELEGRAM_SOURCE, id: String(from) },
@@ -233,18 +243,22 @@ export class TelegramSource {
     return found === undefined ? undefined : { id: found.id, chatId };
   }
 
-  private async openBoundChat(channel: string, text: string): Promise<string> {
-    return openChat({
-      store: this.ctx.store,
-      home: this.ctx.home,
-      settings: {},
-      harnesses: this.ctx.harnesses,
-      models: this.ctx.models,
-      efforts: this.ctx.efforts,
-      bot: this.bot,
-      title: titleFromMessage(text) ?? "Telegram",
-      channels: [channel],
-      cause: TELEGRAM_SOURCE,
+  private async openBoundChat(channel: string, text: string, userId: number): Promise<string> {
+    const opened = await this.ctx.client.act("bot:chat", this.bot, {
+      args: { title: titleFromMessage(text) ?? "Telegram" },
+      actor: { via: TELEGRAM_SOURCE, id: String(userId) },
     });
+    if (opened.opens === undefined || !opened.opens.startsWith("chat:")) {
+      throw new Error("bot:chat opened no chat");
+    }
+    const chatId = opened.opens.slice("chat:".length);
+    const stored = await this.ctx.store.get(CHAT_TYPE, chatId);
+    if (stored === undefined) throw new Error(`the chat ${chatId} is not there`);
+    const data = chatData(stored.data);
+    const channels = data.channels.includes(channel)
+      ? [...data.channels]
+      : [...data.channels, channel];
+    await this.ctx.store.put(CHAT_TYPE, chatId, { ...stored.data, channels }, TELEGRAM_SOURCE);
+    return chatId;
   }
 }
