@@ -119,3 +119,10 @@ the row fields.
 |---|---|---|---|
 | T-0369-M1 | packages/chat/src/model.ts | a configured model was the default of every agent, not only the one that lists it | `bot:chat per-agent conditionals > one if/then per agent carries its lists and defaults; a bot's model is the default only of the agent that lists it` |
 | T-0369-M2 | packages/chat/src/model.ts | an agent that lists nothing still got a `model`/`effort` in its `then` | `bot:chat per-agent conditionals > one if/then per agent carries its lists and defaults; a bot's model is the default only of the agent that lists it` |
+
+## T-0363 — rework 1: a window that starts inside unfinished content
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0363-M13 | packages/chat/src/tail.ts | a window was never widened, so text or thinking that began before it lost its start | `chat transcript: after, mark and tail > a text, thinking or tool call that began before the window is still whole` |
+| T-0363-M14 | packages/chat/src/tail.ts | output of a call with no start or end in the window did not widen it, so the running call was dropped | `chat transcript: after, mark and tail > a text, thinking or tool call that began before the window is still whole` |

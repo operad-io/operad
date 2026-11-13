@@ -29,12 +29,8 @@ export interface TailRead {
   readonly bytesRead: number;
 }
 
-/**
- * Folds the last `limit` bytes of a log file; undefined when there is no file.
- * A line cut by the start of the window is dropped, and so is one still being
- * written at the end (it does not parse yet).
- */
-export function foldLogTail(path: string, limit: number = TAIL_LOG_BYTES): TailRead | undefined {
+/** Reads the last `limit` bytes of a file as parsed lines, and whether the window starts at the file's start. */
+function readWindow(path: string, limit: number): { readonly values: unknown[]; readonly whole: boolean; readonly bytes: number } | undefined {
   let fd: number;
   try {
     fd = openSync(path, "r");
@@ -52,6 +48,7 @@ export function foldLogTail(path: string, limit: number = TAIL_LOG_BYTES): TailR
       read += count;
     }
     const lines = buffer.subarray(0, read).toString("utf8").split("\n");
+    // A line cut by the start of the window is dropped; so is one still being written.
     if (start > 0) lines.shift();
     const values: unknown[] = [];
     for (const line of lines) {
@@ -59,11 +56,61 @@ export function foldLogTail(path: string, limit: number = TAIL_LOG_BYTES): TailR
       try {
         values.push(JSON.parse(line));
       } catch {
-        // A line that is not complete, or not one of ours.
+        // Not complete, or not one of ours.
       }
     }
-    return { state: foldLines(values, emptyFold), bytesRead: read };
+    return { values, whole: start === 0, bytes: read };
   } finally {
     closeSync(fd);
+  }
+}
+
+function typeOf(value: unknown): string | undefined {
+  return typeof value === "object" && value !== null && typeof (value as { type?: unknown }).type === "string"
+    ? (value as { type: string }).type
+    : undefined;
+}
+
+function callOf(value: unknown): string | undefined {
+  const id = typeof value === "object" && value !== null ? (value as { toolCallId?: unknown }).toolCallId : undefined;
+  return typeof id === "string" ? id : undefined;
+}
+
+/**
+ * Whether a window holds all that the unfinished state depends on: a line that
+ * ends the text and thinking before it, and no output of a call whose start
+ * and end are both outside the window (that call may still run).
+ */
+function enough(values: readonly unknown[]): boolean {
+  const types = new Set(values.map(typeOf));
+  const reset = types.has("message_end") || types.has("tool_execution_start") || types.has("tool_execution_end") ||
+    (types.has("text_end") && types.has("thinking_end"));
+  if (!reset) return false;
+  const known = new Set<string>();
+  for (const value of values) {
+    const type = typeOf(value);
+    const id = callOf(value);
+    if (id !== undefined && (type === "tool_execution_start" || type === "tool_execution_end")) known.add(id);
+  }
+  return values.every((value) => {
+    const id = callOf(value);
+    return typeOf(value) !== "tool_output" || id === undefined || known.has(id);
+  });
+}
+
+/**
+ * Folds the end of a log file; undefined when there is no file. It reads the
+ * last `limit` bytes and reads further back (doubling) only while the unfinished
+ * text, thinking or a running call could begin before the window.
+ */
+export function foldLogTail(path: string, limit: number = TAIL_LOG_BYTES): TailRead | undefined {
+  let size = limit;
+  for (;;) {
+    const window = readWindow(path, size);
+    if (window === undefined) return undefined;
+    if (window.whole || enough(window.values)) {
+      return { state: foldLines(window.values, emptyFold), bytesRead: window.bytes };
+    }
+    size *= 2;
   }
 }

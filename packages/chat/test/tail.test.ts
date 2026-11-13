@@ -189,6 +189,32 @@ describe("chat transcript: after, mark and tail", () => {
     expect(during.tail).not.toContain("quiet");
   });
 
+  test("a text, thinking or tool call that began before the window is still whole", async () => {
+    const r = await rig(() => reply("x"));
+    const path = agentLogPath(r.store.root, "fake", "run-long");
+    mkdirSync(join(path, ".."), { recursive: true });
+    const big = "y".repeat(1024);
+    const lines = [
+      JSON.stringify({ type: "text_end", text: "old" }),
+      JSON.stringify({ type: "thinking_delta", text: "T-start " }),
+      ...Array.from({ length: 400 }, () => JSON.stringify({ type: "thinking_delta", text: big })),
+    ];
+    writeFileSync(path, `${lines.join("\n")}\n`);
+    const thinking = foldLogTail(path)?.state.thinking ?? "";
+    expect(thinking.startsWith("T-start ")).toBe(true);
+    expect(thinking.length).toBe(8 + 400 * 1024);
+
+    const tool = [
+      JSON.stringify({ type: "text_end", text: "old" }),
+      JSON.stringify(start("long", "Bash", "make", 1_000)),
+      ...Array.from({ length: 400 }, () => JSON.stringify({ type: "tool_output", toolCallId: "long", text: big })),
+      JSON.stringify(start("other", "Read", "a", 2_000)),
+      JSON.stringify({ type: "tool_execution_end", toolCallId: "other", toolName: "Read", isError: false, durationMs: 1 }),
+    ];
+    writeFileSync(path, `${tool.join("\n")}\n`);
+    expect(foldLogTail(path)?.state.calls.map((call) => call.callId)).toEqual(["long"]);
+  });
+
   test("reading the tail of a log of 50 000 lines reads a bounded number of bytes", async () => {
     const r = await rig(() => reply("x"));
     const path = agentLogPath(r.store.root, "fake", "run-big");
