@@ -18,6 +18,8 @@ export interface WorkStage {
   readonly use?: string | undefined;
   /** Arguments for the harness step; unset uses the worker's own. */
   readonly args?: readonly string[] | undefined;
+  /** The pool the stage takes workers from; unset is `default`. */
+  readonly pool?: string | undefined;
   /** Extra instructions appended to the worker's prompt. */
   readonly brief?: string | undefined;
   /** Work done before the attempt, such as `merge-main`; dev merges main today. */
@@ -222,6 +224,7 @@ function workParams(stage: WorkStage): Readonly<Record<string, unknown>> {
   return {
     ...(stage.use === undefined ? {} : { flowUse: stage.use }),
     ...(stage.args === undefined ? {} : { flowArgs: stage.args }),
+    ...(stage.pool === undefined ? {} : { flowPool: stage.pool }),
     ...(stage.brief === undefined ? {} : { flowBrief: stage.brief }),
     ...(stage.beforeAttempt === undefined ? {} : { beforeAttempt: stage.beforeAttempt }),
   };

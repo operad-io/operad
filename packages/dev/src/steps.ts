@@ -994,8 +994,8 @@ function resultData(
 }
 
 /**
- * The params of the `pool/agent` call: the `default` pool's definitions, the
- * key prefix `<repository>/default`, and the worker a rework goes back to.
+ * The params of the `pool/agent` call: the stage's pool's definitions (`default`
+ * when the stage names none), the key prefix `<repository>/<pool>`, and the worker a rework goes back to.
  */
 function poolParams(
   prompt: string,
@@ -1006,9 +1006,14 @@ function poolParams(
   resumeSession: string | undefined,
   inbox: unknown,
   holder: string,
-  stage?: { readonly use?: string | undefined; readonly args?: readonly string[] | undefined },
+  stage?: {
+    readonly use?: string | undefined;
+    readonly args?: readonly string[] | undefined;
+    readonly pool?: string | undefined;
+  },
 ): Record<string, unknown> {
-  const resolved = resolvePool(settings.workers, DEFAULT_POOL);
+  const pool = stage?.pool ?? DEFAULT_POOL;
+  const resolved = resolvePool(settings.workers, pool);
   // A stage may name its own harness step or arguments. A named step runs as
   // one worker; arguments alone replace the pool's.
   const workers: readonly WorkerDefinition[] =
@@ -1027,7 +1032,9 @@ function poolParams(
     prompt,
     cwd: worktree,
     inbox,
-    prefix: `${repository.name}/${DEFAULT_POOL}`,
+    prefix: `${repository.name}/${pool}`,
+    // A worker shared by two pools has one count: the claim ignores the pool.
+    countPrefix: repository.name,
     holder,
     workers: fallback === undefined ? workers : [...workers, fallback],
     fallbacks: resolved.fallbacks,
@@ -1040,8 +1047,14 @@ function poolParams(
 function stageParamsOf(params: unknown): {
   readonly use?: string | undefined;
   readonly args?: readonly string[] | undefined;
+  readonly pool?: string | undefined;
 } {
-  const given = (params ?? {}) as { readonly flowUse?: unknown; readonly flowArgs?: unknown };
+  const given = (params ?? {}) as {
+    readonly flowUse?: unknown;
+    readonly flowArgs?: unknown;
+    readonly flowPool?: unknown;
+  };
+  const pool = typeof given.flowPool === "string" ? given.flowPool : undefined;
   const use = typeof given.flowUse === "string" ? given.flowUse : undefined;
   const args =
     Array.isArray(given.flowArgs) &&
@@ -1051,6 +1064,7 @@ function stageParamsOf(params: unknown): {
   return {
     ...(use === undefined ? {} : { use }),
     ...(args === undefined ? {} : { args }),
+    ...(pool === undefined ? {} : { pool }),
   };
 }
 
@@ -1300,6 +1314,7 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
   // A rework or reject goes back to the worker that ran the attempt before,
   // and resumes its session when the harness can. When that worker is no
   // longer in the pool, any free worker takes it and the change is recorded.
+  const stagePool = stageParamsOf(ctx.params).pool ?? DEFAULT_POOL;
   const before =
     typeof attempt.previousWorker === "string" && attempt.previousWorker.length > 0
       ? attempt.previousWorker
@@ -1307,10 +1322,14 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
   const stillThere =
     before !== undefined &&
     (() => {
-      const resolved = resolvePool(context.settings.workers, DEFAULT_POOL);
-      return [...resolved.workers, ...resolved.fallbacks].some(
-        (worker) => worker.name === before,
-      );
+      try {
+        const resolved = resolvePool(context.settings.workers, stagePool);
+        return [...resolved.workers, ...resolved.fallbacks].some(
+          (worker) => worker.name === before,
+        );
+      } catch {
+        return false;
+      }
     })();
   const asked = stillThere ? before : undefined;
   const workerChangedFrom = before !== undefined && !stillThere ? before : undefined;
@@ -1384,6 +1403,8 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
         ),
       ];
       const line = `waiting for worker ${asked ?? names.join(" or ")}${
+        stagePool === DEFAULT_POOL ? "" : ` in pool ${stagePool}`
+      }${
         holders.length === 0 ? "" : `: held by ${holders.join(", ")}`
       }`;
       waitingFor = line;

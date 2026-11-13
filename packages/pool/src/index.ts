@@ -72,7 +72,7 @@ function failed(reason: string, message: string, extra: Record<string, unknown> 
 }
 
 /** The params `pool/agent` reads itself; the harness step does not get them. */
-const OWN_PARAMS = ["worker", "workers", "fallbacks", "prefix", "holder"];
+const OWN_PARAMS = ["worker", "workers", "fallbacks", "prefix", "countPrefix", "holder"];
 
 interface Place {
   readonly worker: WorkerDefinition;
@@ -105,6 +105,7 @@ export function createPoolPlugin(options: PoolPluginOptions = {}) {
     prefix: string,
     candidates: readonly WorkerDefinition[],
     holder: string | undefined,
+    countPrefix: string = prefix,
   ): Promise<Place | undefined> {
     const book = places(ctx);
     let announced: string | undefined;
@@ -114,7 +115,7 @@ export function createPoolPlugin(options: PoolPluginOptions = {}) {
       const claims: Claim[] = candidates.map((worker) => {
         const harness = harnessOf(worker.use);
         return {
-          own: `count:${prefix}/${worker.name}`,
+          own: `count:${countPrefix}/${worker.name}`,
           ownLimit: worker.count,
           home: `harness:${harness}`,
           homeLimit: capOf(ctx.settings, harness),
@@ -172,7 +173,9 @@ export function createPoolPlugin(options: PoolPluginOptions = {}) {
     | (Attempt & { readonly worker: WorkerDefinition })
   > {
     const holder = typeof input.holder === "string" ? input.holder : undefined;
-    const place = await acquire(ctx, prefix, candidates, holder);
+    // A worker's count is its own, whichever pool asks for it.
+    const countPrefix = typeof input.countPrefix === "string" ? input.countPrefix : prefix;
+    const place = await acquire(ctx, prefix, candidates, holder, countPrefix);
     if (place === undefined) return { kind: "aborted" };
     const { worker } = place;
     reportWorkerPlaced(worker.name);

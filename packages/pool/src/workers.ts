@@ -154,6 +154,8 @@ export interface ParsedWorkers {
   readonly workers: readonly WorkerDefinition[];
   /** Pool name to its worker names, in order. */
   readonly pools: Readonly<Record<string, readonly string[]>>;
+  /** Pool name to the `concurrency` its object form wrote; absent when none did. */
+  readonly poolConcurrency?: Readonly<Record<string, number>> | undefined;
 }
 
 /**
@@ -202,6 +204,7 @@ export function parseWorkers(
   }
 
   const poolMap: Record<string, readonly string[]> = {};
+  const limits: Record<string, number> = {};
   if (pools === undefined) {
     poolMap[DEFAULT_POOL] = list.map((worker) => worker.name);
   } else {
@@ -210,18 +213,35 @@ export function parseWorkers(
     if (entries.length === 0) {
       throw new WorkerDefinitionError(poolsAt, "must define at least one pool");
     }
-    for (const [pool, names] of entries) {
+    for (const [pool, written] of entries) {
       const at = `${poolsAt}.${pool}`;
+      let names: unknown = written;
+      if (isRecord(written)) {
+        for (const key of Object.keys(written)) {
+          if (key !== "workers" && key !== "concurrency") {
+            throw new WorkerDefinitionError(`${at}.${key}`, "is not a pool setting");
+          }
+        }
+        names = written.workers;
+        if (written.concurrency !== undefined) {
+          const limit = written.concurrency;
+          if (typeof limit !== "number" || !Number.isInteger(limit) || limit < 1) {
+            throw new WorkerDefinitionError(`${at}.concurrency`, "must be an integer of at least 1");
+          }
+          limits[pool] = limit;
+        }
+      }
+      const listAt = isRecord(written) ? `${at}.workers` : at;
       if (!Array.isArray(names) || names.length === 0) {
-        throw new WorkerDefinitionError(at, "must be a non-empty list of worker names");
+        throw new WorkerDefinitionError(listAt, "must be a non-empty list of worker names");
       }
       poolMap[pool] = names.map((name: unknown, index: number) => {
         if (typeof name !== "string") {
-          throw new WorkerDefinitionError(`${at}[${index}]`, "must be a worker name");
+          throw new WorkerDefinitionError(`${listAt}[${index}]`, "must be a worker name");
         }
         if (!byName.has(name)) {
           throw new WorkerDefinitionError(
-            `${at}[${index}]`,
+            `${listAt}[${index}]`,
             `"${name}" is not a worker in ${workersAt}`,
           );
         }
@@ -229,7 +249,11 @@ export function parseWorkers(
       });
     }
   }
-  return { workers: list, pools: poolMap };
+  return {
+    workers: list,
+    pools: poolMap,
+    ...(Object.keys(limits).length === 0 ? {} : { poolConcurrency: limits }),
+  };
 }
 
 /** What a caller passes to `pool/agent` for one pool. */

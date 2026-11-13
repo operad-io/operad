@@ -17,7 +17,7 @@ import {
   updateTask,
 } from "../../src/service.ts";
 import { taskViews, planViews } from "../../src/views.ts";
-import { planData, taskData, type RepositoryData } from "../../src/model.ts";
+import { bareId, planData, storeKey, taskData, type RepositoryData } from "../../src/model.ts";
 import { schedulerTestHooks } from "../../src/schedule.ts";
 import { cleanupTempRoots, guardLockHandles, makeGitRepository, storeAt, tempRoot } from "../support.ts";
 
@@ -119,6 +119,29 @@ describe("choosing a flow", () => {
       /first attempt/,
     );
     expect(taskData((await getTask(fixture.store, task.id)).data).flow).toBe("quick");
+  });
+
+  test("task add --flow and task update --flow, as the MCP command tool runs them (T-0379)", async () => {
+    const fixture = await setup(FLOWS);
+    const cwd = fixture.repository.path;
+    const plan = await addPlan(fixture.store, { repository: fixture.repository, slug: "p", title: "p" });
+    // The `command` tool resolves the verb and runs it with the arguments it was given.
+    const argv = ["dev", "task", "add", "--plan", bareId(plan.id), "--slug", "a", "--title", "A", "--flow", "quick"];
+    expect(fixture.registry.resolveCommand(argv)?.command).toBe("task");
+    const made = await fixture.registry.runCommand(argv, { cwd, input: "brief\n" });
+    const id = String(made?.value);
+    const key = storeKey(fixture.repository.name, id);
+    expect(taskData((await getTask(fixture.store, key)).data).flow).toBe("quick");
+    await fixture.registry.runCommand(["dev", "task", "update", id, "--flow", "default"], { cwd, input: "" });
+    expect(taskData((await getTask(fixture.store, key)).data).flow).toBe("default");
+    await setAuto(fixture.store, plan.id, "run");
+    await confirmPlan(fixture.store, plan.id);
+    await started(fixture);
+    await setTaskPhase(fixture.store, key, "ready");
+    await expect(
+      fixture.registry.runCommand(["dev", "task", "update", id, "--flow", "quick"], { cwd, input: "" }),
+    ).rejects.toThrow(/already started an attempt.*keeps its flow after its first attempt/);
+    expect(taskData((await getTask(fixture.store, key)).data).flow).toBe("default");
   });
 
   test("an undefined flow does not start, and the rows say why", async () => {

@@ -50,6 +50,15 @@ describe("parseWorkers", () => {
     expect(parsed.pools).toEqual({ design: ["pi"], default: ["claude", "pi"] });
   });
 
+  test("a pool may be an object with workers and concurrency", () => {
+    const parsed = parseWorkers(
+      { claude, pi },
+      { default: ["claude"], design: { workers: ["pi"], concurrency: 2 } },
+    );
+    expect(parsed.pools).toEqual({ default: ["claude"], design: ["pi"] });
+    expect(parsed.poolConcurrency).toEqual({ design: 2 });
+  });
+
   const cases: [string, unknown, unknown, string, string][] = [
     ["workers not an object", [], undefined, "workers", "must be an object"],
     ["no workers", {}, undefined, "workers", "at least one worker"],

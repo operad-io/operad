@@ -172,6 +172,11 @@ test("a flow's stage settings are read and unknown fields refused", () => {
   ).toThrow(/flows\.default\.stages\[0\]\.beforeAttempt: must be "merge-main" or "none"/);
 });
 
+test("a work stage's pool reaches the compiled work step (T-0379)", () => {
+  const flow = compileDevFlow("pooled", [{ stage: "work", pool: "image" }, { stage: "human" }]);
+  expect(stepOf(flow.steps, "work").params).toEqual({ use: "dev/work", params: { flowPool: "image" } });
+});
+
 test("stage parameters reach the compiled steps", () => {
   const flow = compileDevFlow("params", [
     { stage: "work", use: "claude/agent", args: ["--model", "x"], brief: "short" },
