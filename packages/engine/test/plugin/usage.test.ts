@@ -100,7 +100,7 @@ describe("readUsage", () => {
 
 describe("end results", () => {
   test("the manual's table lists exactly the exported results", () => {
-    const manual = readFileSync(new URL("../../../../docs/manual.md", import.meta.url), "utf8");
+    const manual = readFileSync(new URL("../../../../docs/user/dev.md", import.meta.url), "utf8");
     const section = manual.slice(manual.indexOf("A step ends with one of these results:"));
     const table = section.split("\n").slice(2);
     const end = table.findIndex((line) => !line.startsWith("|"));

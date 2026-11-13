@@ -130,7 +130,7 @@ line to the step's log with `JsonlLog`, and turns the last `result` line into th
 facts. The params, the result names (`done`, `failed`, `interrupted`) and the
 facts (`exitCode`, `signal`, `sessionId`, `finalMessage`, `usage`, `log`,
 `durationMs`, `stderr`) are `pi`'s. `usage` is the standard one in
-[the manual](../../../docs/manual.md#usage-and-end-results): `model` is the step's
+[the manual](../../../docs/user/dev.md#usage-and-end-results): `model` is the step's
 `--model` or the `model` setting, else the model claude reports; `costMicros` is
 the worker's `cost.micros`, and `costQuality` is `estimated` for a subscription
 login and `exact` for an API key. `sessionId` is claude's session id; pass it back
