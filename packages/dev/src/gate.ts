@@ -1526,6 +1526,14 @@ type ReviewNext =
   | "out-of-time"
   | "failed";
 
+/** Whether two runs used the same reviewer: the primary, or the same fallback. */
+function sameRunner(a: ReviewRunRecord, b: ReviewRunRecord): boolean {
+  return (
+    a.role === b.role &&
+    (a.role === "primary" || (a.fallbackIndex ?? 0) === (b.fallbackIndex ?? 0))
+  );
+}
+
 /** The same run again: same role and, for a fallback, the same list entry. */
 function retryOf(last: ReviewRunRecord): ReviewAction {
   return last.role === "fallback"
@@ -1570,9 +1578,9 @@ function nextReviewAction(
       if (
         before !== undefined &&
         before.outcome === "timed_out" &&
-        before.role === last.role
+        sameRunner(before, last)
       ) {
-        return "wait-timed-out";
+        return (last.role === "fallback" ? nextFallback() : undefined) ?? "wait-timed-out";
       }
       return retryOf(last);
     }
@@ -1582,7 +1590,7 @@ function nextReviewAction(
       if (
         before !== undefined &&
         (before.outcome === "invalid" || before.outcome === "no_report") &&
-        before.role === last.role
+        sameRunner(before, last)
       ) {
         return (last.role === "fallback" ? nextFallback() : undefined) ?? "failed";
       }

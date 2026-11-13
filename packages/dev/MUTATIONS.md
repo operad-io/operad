@@ -1133,3 +1133,5 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0401-M3 | packages/dev/src/rerun.ts | `runCheckCommands` passed `false` for `aloneRerun` when the failed test failed again alone | `a failed test that fails again when run alone > the result says it was the test's own rerun, and a quiet machine makes it the code` |
+| T-0403-M2 | packages/dev/src/gate.ts | a fallback's second timeout returns `wait-timed-out` instead of passing to the next fallback | `dev/review fallback and retry > a fallback that times out twice passes to the next one` |
+| T-0403-M3 | packages/dev/src/gate.ts | `sameRunner` compares only the role, so the first run of the next fallback counts as a repeat of the previous fallback's failure and gets no retry | `dev/review fallback and retry > every fallback of a list failing without a report ends the review, naming each reason` |

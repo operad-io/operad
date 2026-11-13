@@ -1590,6 +1590,51 @@ describe("dev/review fallback and retry", () => {
     expect(String(result.data?.message)).toContain("fallback second reviewed");
   }, 30_000);
 
+  test("a fallback that times out twice passes to the next one", async () => {
+    const state = await fixture({
+      reviewerArgs: ["unavailable", "--model", "primary"],
+      fallback: [
+        { use: "fake-reviewer/agent", args: ["timeout", "--model", "first"] },
+        { use: "fake-reviewer/agent", args: ["none", "--model", "second"] },
+      ],
+    });
+    await verify(state);
+    const result = await review(state, "review-fallback-list-timeout");
+    expect(result.result).toBe("pass");
+    expect(String(result.data?.message)).toContain("fallback first timed out");
+    expect(String(result.data?.message)).toContain("fallback second reviewed");
+    expect(state.reviewer.calls.map((call) => call.args[2])).toEqual([
+      "primary",
+      "first",
+      "first",
+      "second",
+    ]);
+  }, 30_000);
+
+  test("every fallback of a list failing without a report ends the review, naming each reason", async () => {
+    const state = await fixture({
+      reviewerArgs: ["unavailable", "--model", "primary"],
+      fallback: [
+        { use: "fake-reviewer/agent", args: ["not-429", "--model", "first"] },
+        { use: "fake-reviewer/agent", args: ["not-429", "--model", "second"] },
+      ],
+    });
+    await verify(state);
+    const result = await review(state, "review-fallback-list-all-failed");
+    expect(result.result).toBe("failed");
+    const message = String(result.data?.message);
+    expect(message).toContain("primary was unavailable");
+    expect(message).toContain("fallback first");
+    expect(message).toContain("fallback second");
+    expect(state.reviewer.calls.map((call) => call.args[2])).toEqual([
+      "primary",
+      "first",
+      "first",
+      "second",
+      "second",
+    ]);
+  }, 30_000);
+
   test("every fallback of a list failing waits, naming each reason", async () => {
     const state = await fixture({
       reviewerArgs: ["unavailable", "--model", "primary"],
