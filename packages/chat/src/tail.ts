@@ -88,17 +88,15 @@ function callOf(value: unknown): string | undefined {
  * mention began after it. A running call whose start is before the window then
  * cannot hide: its start would be before an earlier quiet point, and such a
  * point is not accepted unless the call also ended before it. A log with no
- * text or thinking at all (radian) has no message ends; there a finished call
- * is the quiet point.
+ * message ends (radian writes only tool lines) has no point the window can
+ * prove, since a finished call says nothing about another call that is still
+ * open; its whole log is read. Such a log holds tool lines and the harness's
+ * own journal, not text or output increments, so it stays small.
  */
 function quietPoint(values: readonly unknown[]): number {
-  const words = values.some((value) => {
-    const type = typeOf(value);
-    return type === "text_delta" || type === "thinking_delta" || type === "text_end" || type === "thinking_end" || type === "message_end";
-  });
   for (let at = values.length - 1; at >= 0; at -= 1) {
     const type = typeOf(values[at]);
-    if (type !== "message_end" && !(!words && type === "tool_execution_end")) continue;
+    if (type !== "message_end") continue;
     const started = new Set<string>();
     const ended = new Set<string>();
     const seen = new Set<string>();

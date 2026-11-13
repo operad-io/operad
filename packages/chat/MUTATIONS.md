@@ -132,3 +132,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0363-M15 | packages/chat/src/tail.ts | the earlier acceptance rule came back (a reset line and no unpaired output), so a silent call whose start is before the window was dropped | `chat transcript: after, mark and tail > a silent call stays in the tail while a parallel call fills the window` |
+
+## T-0363 — rework 4: no quiet point in a log without message ends
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0363-M16 | packages/chat/src/tail.ts | in a log with no text, thinking or message end, a finished call was taken as the quiet point | `chat transcript: after, mark and tail > in a log with no message ends a finished call does not hide a running one` |

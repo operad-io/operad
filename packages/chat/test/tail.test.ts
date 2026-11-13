@@ -236,6 +236,20 @@ describe("chat transcript: after, mark and tail", () => {
     expect(statSync(path).size).toBeGreaterThan(TAIL_LOG_BYTES);
   });
 
+  test("in a log with no message ends a finished call does not hide a running one", async () => {
+    const r = await rig(() => reply("x"));
+    const path = agentLogPath(r.store.root, "fake", "run-radian");
+    mkdirSync(join(path, ".."), { recursive: true });
+    const lines = [
+      JSON.stringify(start("A", "Bash", "sleep 999", 1_000)),
+      JSON.stringify(start("B", "Bash", "make", 1_001)),
+      ...Array.from({ length: 400 }, () => JSON.stringify({ type: "journal", note: "z".repeat(1024) })),
+      JSON.stringify({ type: "tool_execution_end", toolCallId: "B", toolName: "Bash", isError: false, durationMs: 9 }),
+    ];
+    writeFileSync(path, `${lines.join("\n")}\n`);
+    expect(foldLogTail(path)?.state.calls.map((call) => call.callId)).toEqual(["A"]);
+  });
+
   test("reading the tail of a log of 50 000 lines reads a bounded number of bytes", async () => {
     const r = await rig(() => reply("x"));
     const path = agentLogPath(r.store.root, "fake", "run-big");
