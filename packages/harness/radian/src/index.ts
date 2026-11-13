@@ -5,6 +5,7 @@
  * used; the kernel never knows how radian is started.
  */
 
+import pkg from "../package.json" with { type: "json" };
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -523,7 +524,7 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
   return definePlugin({
     name: "radian",
     kind: "harness",
-    version: "0.0.0",
+    version: pkg.version,
     models: RADIAN_MODELS,
     efforts: RADIAN_EFFORTS,
     settings: PLUGIN_SETTINGS,

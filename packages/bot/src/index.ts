@@ -9,6 +9,7 @@
  * built yet, and this is the one place it goes.
  */
 
+import pkg from "../package.json" with { type: "json" };
 import { mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { CHAT_TYPE, agentConditionals, type AgentChoices, chatData, createChat, sendMessage, startingEffort, startingModel, titleFromMessage } from "@operad-io/chat";
@@ -329,8 +330,8 @@ export function createBotPlugin() {
   return definePlugin({
     name: "bot",
     kind: "domain",
-    version: "0.0.0",
-    requires: { plugins: { chat: "^0.0.0" } },
+    version: pkg.version,
+    requires: { plugins: { chat: ">=0.0.1" } },
     settings: BOT_SETTINGS,
     // A bot page is that bot's settings page; bots live under settings, not in a tab.
     objectsUnderSettings: true,

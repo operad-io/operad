@@ -50,4 +50,4 @@ exist as options or settings keys in 0.3.319.
 opencode's own list was not available here, so a variable that opencode sets and
 is not in the table above was not looked up. The worker's current set, and the
 reason auto compaction and tool search are left on, are in
-`packages/harness/claude/README.md`.
+`packages/harness/claude/REFERENCE.md`.

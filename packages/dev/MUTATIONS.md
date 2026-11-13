@@ -1117,3 +1117,21 @@ the row fields.
 | T-0402-M1 | packages/dev/src/gate.ts | verify left the check's `reason` out of its record, so a stall reached the worker without saying it was one | `dev/verify > a gate command that stops writing fails as a stall and its last lines go to the worker` (expected `stall`, received `undefined`) |
 | T-0402-M2 | packages/dev/src/integrate.ts | integration key commands did not pass `gate.stallSecs`, so a silent command ran to its own end instead of being stopped | `dev/integrate > a key command that stops writing fails as a stall, is not rerun, and sends the task back` (expected `fail`, received `merged`) |
 | T-0402-M3 | packages/dev/src/rerun.ts | a stall was rerun like an ordinary failure, doubling the wait before the worker saw it | `dev/integrate > a key command that stops writing fails as a stall, is not rerun, and sends the task back` (the command ran 2 times instead of 1) |
+## T-0401-timeout-alone-is-code — a test timeout alone under a quiet machine is the code
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0401-M1 | packages/dev/src/notcode.ts | `timeoutAlone` ignored the load and treated every alone-rerun timeout as code | `a test that timed out when run alone > under a load above the flaky limit it waits and runs again, as before` |
+| T-0401-M2 | packages/dev/src/notcode.ts | `timeoutAlone` was never called, so an alone-rerun timeout under low load waited as not code | `a test that timed out when run alone > under a load below the flaky limit it is the code: one run, a rework note, no wait` |
+## T-0400-integrating-counts-as-running — an integrating task is active, not waiting for a person
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0400-M1 | packages/dev/src/service.ts | `isActiveTask` leaves out `isIntegrating(task)`, so the plan and the repository do not count an integrating task as active | `an integrating task counts as running, not as waiting for a person > integrating: running marks and no waiting note` |
+| T-0400-M2 | packages/dev/src/refusals.ts | `needsPerson` no longer returns false for an integrating task, so the plan note says "1 waiting" and its mark is waiting | `an integrating task counts as running, not as waiting for a person > integrating: running marks and no waiting note` |
+
+## T-0401-timeout-alone-is-code — rework 1
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0401-M3 | packages/dev/src/rerun.ts | `runCheckCommands` passed `false` for `aloneRerun` when the failed test failed again alone | `a failed test that fails again when run alone > the result says it was the test's own rerun, and a quiet machine makes it the code` |

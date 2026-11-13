@@ -4,7 +4,30 @@ description: dev.json and the dev plugin: its commands, the reviewer, workers an
 
 # dev.json and the dev plugin
 
-The `dev` plugin runs plans and tasks on a repository. Its project settings are in `.operad/dev.json`; its commands and what they do are in the sections below. A complete workflow is in [Running operad on operad](../dogfood.md); the settings a client may change are in [config.json](config.md#settings-from-a-client).
+The `dev` plugin runs plans and tasks on a repository. Its project settings are in `.operad/dev.json`; its commands and what they do are in the sections below. The settings a client may change are in [config.json](config.md#settings-from-a-client).
+
+## How a task goes from request to merge
+
+A request becomes a plan, a plan holds tasks, and each task runs through the same path. You are in the loop at two points: when you confirm the plan, and at the merge.
+
+```text
+plan -> tasks (draft) -> confirm -> ready -> work -> check -> review -> you merge -> main
+                                               ^       |        |
+                                               +-------+--------+  rework
+```
+
+1. **Plan and tasks.** A plan is one request (`operad plan add`). Each task in it has a brief, the instructions for the worker (`operad task add`). A task may wait for another with `--after`. `operad dev:confirm <plan>` moves the plan's draft tasks to ready; a confirmed plan is what `operad serve` schedules.
+2. **Start.** `serve` starts ready tasks, up to the repository's `concurrency` and each pool's cap. Each task gets its own git worktree and branch, so tasks never touch each other or your checkout.
+3. **Work.** A worker, chosen from `workers` through a pool, runs in the task's worktree with the brief and commits there. A worker whose model is unavailable can hand the work to its `fallback`.
+4. **Check.** The commands in `gate.commands` run against the commit. A failing test is run again on its own first, so a flaky test is told apart from a real failure.
+5. **Review.** The reviewer reads the change and writes a report. Findings that reach `reviewer.fixLevel` (default `major`) fail the review.
+6. **Rework.** A failed check or a failed review sends the task back to the worker, up to `maxAutoRework` times (default `2`). After that the task waits for you.
+7. **Waiting for you.** A task that passed check and review waits in `operad pending` as `ready to merge`, with the actions `dev:merge`, `dev:reject`, `dev:rework`, `dev:reverify` and `dev:cancel`. A task also waits when something needs a person: review findings, a failed gate, the rework limit, a worker that added no commit.
+8. **Merge and clean up.** `dev:merge` puts the verified commit on main (`integration.style`), runs `integration.keyCommands`, and pushes to the remote. Then cleanup removes the task's worktrees and branches. Tasks of one repository integrate one at a time. If the remote refuses the push, nothing is written and the task waits with a note.
+
+Every step is recorded: `operad history <task>` shows what ran, what a check or review found, and what you chose. A run whose process died starts again from its last recorded step. A plan can go further without you: `operad dev:auto <plan> --level merge` merges reviewed work after the check passes, `--level run` starts the plan's tasks without you and still stops each one for you at the merge, and `--level off` waits for you at every start and merge. `autoDefault` sets the level for new plans.
+
+The keys for each part are in the sections below: [the repository and its workers](#the-repository-and-its-workers), [the gate and its checks](#the-gate-and-its-checks), [work, review, integration and cleanup](#work-review-integration-and-cleanup) and [flows and their stages](#flows-and-their-stages).
 
 ## Every `.operad/dev.json` key
 
@@ -95,6 +118,16 @@ or empty, the brief says: "A test that failed and then passed on rerun is a bug
 until shown otherwise. Do not raise a timeout or add a retry inside a test to
 make it pass." The task has no area. See [Checking a change](checks.md).
 
+A check that failed only because tests ran to their timeout normally waits for a
+quiet machine, runs again, and waits for a person if it happens twice. There is
+one exception: when the failed test was run alone (its `failed.rerun` command),
+timed out again, and the load during that run was below `check.flakyLoadLimit`
+(by default twice the number of cores), the machine is not to blame. The change
+goes back to the worker as a failure whose note names the test, says it "timed
+out at 30 s when run alone under load 3 on 10 cores", and gives the log path. A
+timeout seen only under a load above the limit, or a test that passes when run
+alone, is handled as before.
+
 ### Work, review, integration and cleanup
 
 | Key | Type | Default | Allowed values | When it takes effect | Wrong value |
@@ -177,6 +210,21 @@ fields besides `stage`.
 
 ## `review.json`
 
+### Why `review.json` exists
+
+A reviewer reports findings, and each finding has a severity: `critical`, `major` or `minor`. A review fails when a finding reaches a chosen level. `review.json` is where a repository writes down what the three levels mean, which extra rules the reviewer grades by, and the lowest level that fails a review, for one flow or for all of them. It does not change what the reviewer is asked to look at, and it does not start a review; the `dev` plugin reads it when a review needs it. A repository without the file gets no grading text, and `dev.reviewer.fixLevel` (default `major`) sets the level.
+
+### How `review.json` grading works
+
+1. A review stage names its entry with `grading`; when it names none, the entry is the flow's own name. The entry is merged over `default` field by field: `levels` per level, `rules` as a whole.
+2. `dev` reads `.operad/review.json` in the repository and checks it. A file that is not valid fails the review step with the file named; no grading is guessed.
+3. The review prompt gets a "Grading" section with the `levels` texts and the `rules`, word for word, so the reviewer grades in the repository's own terms.
+4. The reviewer writes its report to a new file under `.operad/review/` in the gate worktree (see [where the reviewer writes its report](#where-the-reviewer-writes-its-report)). `dev` checks the report and keeps its own copy in the store.
+5. Each finding in the report has a severity. The fix level is `fixLevel` of the flow's entry, else of `default`. When neither sets one, it is the strictest of `dev.reviewer.fixLevel` and every `fixLevel` that `review.json` sets for any flow, so a review never grades more leniently than the repository asks anywhere.
+6. A finding counts when its severity is the fix level or above, in the order `critical`, `major`, `minor`.
+7. A review with no counted finding passes. One with a counted finding fails, and the failure lists each of them as `<file>:<line> <severity>: <summary>`; the task goes back to the worker or waits, as in [the path from request to merge](#how-a-task-goes-from-request-to-merge).
+8. A finding below the fix level does not fail the review; it is kept as a note on the task.
+
 `.operad/review.json` holds the grading a reviewer reads and the lowest finding
 that fails a review. It falls back field by field to `default`. The file is
 read when a review step needs it; [the review section](#reviewjson)
@@ -234,7 +282,7 @@ When the worker adds no commit, the task waits with `work did nothing` if the br
 A `dev` command takes its repository from the directory, from `--repo <name>`
 or from a qualified id such as `operad/T-0045-shell-hang-guards`; a bare id
 outside a repository works when only one repository has it. The rules are in
-[packages/dev/README.md](../../packages/dev/README.md#where-a-command-runs-and-ids).
+[packages/dev/REFERENCE.md](../../packages/dev/REFERENCE.md#where-a-command-runs-and-ids).
 
 ## Where the reviewer writes its report
 
@@ -251,6 +299,33 @@ worktree is disposable and is replaced by the next gate step, which removes the
 reports with it. A reviewer that finishes without writing a report is shown as
 `could not write the report` with its last message; a file that fails the check
 is shown as `wrote an invalid report`.
+
+## The harness plugins: claude, codex, pi and radian
+
+### Why they exist
+
+operad does not bring its own agents. It drives the ones you have installed: your `claude`, `codex`, `pi` and `radian`. The login, the updates and the quota of each stay with your installation: operad downloads no agent and signs in to none. A harness plugin lets a flow start any of them the same way, with a step named `<plugin>/agent`, and read one kind of result, whichever agent ran. Which agent a task gets is not the harness's choice; the flow's workers and pools make it.
+
+### How they work
+
+A `<plugin>/agent` step, in order:
+
+1. Starts your agent in the step's working directory (for a `dev` task, its worktree), through the route described below.
+2. Passes it the prompt, with the model from the step's `--model` argument (or the plugin's `model` setting, where it has one).
+3. Watches the run: it ends when the wall time (`wallTimeSecs`) or the silence limit (`stallSecs`) is reached or the step is stopped.
+4. Judges each tool call against the access profile the run was given, where the agent lets the harness see the call (see [access](access.md)).
+5. Writes the tool calls and messages to the step log.
+6. Reads the agent's closing result and ends `done`, `failed` or `interrupted`.
+7. Records what the run used in `usage` (see [Usage and end results](#usage-and-end-results)).
+
+The four differ in these ways:
+
+- `claude`: runs your own `claude` through the Claude Agent SDK, with the login `claude` already has. A step is one foreground turn.
+- `pi`: finds the pi library you installed from the `pi` on `PATH` and loads it in a child process. It needs a pi of version 1.5.0 or newer.
+- `radian`: runs `radian exec` in the directory. radian cannot let through a one-time permission, so a profile that carries one is refused for it. It is the default `dev.reviewer.use`.
+- `codex`: starts your `codex-acp` and talks to it over ACP, with your Codex login. It is off until `operad plugin enable codex`. Codex's own sandbox stays on and limits writes to the worktree, and the access profile is asked only about what leaves the sandbox. A subscription login gives no cost, so `costMicros` is `null`.
+
+The time limits and the per-model limit are in the sections that follow.
 
 ## Limiting runs of one model
 
@@ -301,8 +376,13 @@ as failed with the reason that it was cancelled.
 
 ### The `codex` settings
 
-`codex` runs the user's own Codex through `codex-acp`; how to set it up is in
-`docs/dogfood.md`. Its settings are in the `codex` section of `config.json`:
+`codex` runs the user's own Codex through `codex-acp`. It is not in the default
+config: turn it on with `operad plugin enable codex`. operad brings no
+`codex-acp` of its own: put `codex-acp` (`bun add -g @agentclientprotocol/codex-acp`)
+and `bun` on `PATH`, and run `codex login` once; operad uses your own Codex login.
+`operad plugin check codex` reports the versions and the login kind, and says what
+to do when `codex-acp` cannot start or Codex is not logged in. Its settings are in
+the `codex` section of `config.json`:
 
 | Setting | Type | Default | What it does |
 |---|---|---|---|
@@ -343,7 +423,7 @@ runs in the foreground inside one call and must not be cut short. A project whos
 gate is faster can set a lower value to catch a stuck command sooner.
 
 `stallSecs` is unchanged: it measures silence while no tool call is open, and an
-open tool call is not a stall (see the README of `pi`). The time limit
+open tool call is not a stall (see `packages/harness/pi/REFERENCE.md`). The time limit
 above is what bounds a single tool call.
 
 ### The agent's shell and the user's aliases
@@ -367,6 +447,24 @@ An alias or function from the user's own shell setup, such as `ls` defined as
   `bashTimeoutSecs` limit above still stops a hung command after its time.
 
 ## Sharing agents between flows: the `pool` plugin
+
+### Why the pool plugin exists
+
+Agent runs cost an account, not a repository: one Claude or Codex login serves every repository on the machine. Two repositories that each allow three Claude runs at once leave nothing that limits the total, and the per-model `concurrency` of a harness (see [Limiting runs of one model](#limiting-runs-of-one-model)) limits a model, not how many runs of one harness the machine has. The `pool` plugin gives each repository and flow a set of named workers and gives the home one cap for each harness. It does not count runs that call a harness step directly, and it is not installed by `operad init`.
+
+### How the pool plugin works
+
+1. The home sets `settings.harnesses`, the most runs one harness may have at once across all repositories and flows.
+2. A flow's settings define `workers` (a harness step, its `args` and a `count`) and may group them into `pools`; a flow that uses `pool/agent` (the `dev` flow does) calls it for each agent run.
+3. The caller passes the pool's workers in order and a key, `<repository>/<pool>`, under which the flow's counts are kept.
+4. `pool/agent` takes the first worker whose own `count` under that key and whose harness cap in the home both have room.
+5. The places are kept in one file under the home, `pool/places.json`, changed under a lock file, so every thread and process of the home sees the same counts.
+6. When no worker has room, the step waits and sends `pool.waiting` once for each reason: the flow's counts are full, or a harness's home cap is full.
+7. It runs the worker's harness step with the params and the worker's `args`, `wallTimeSecs` and `stallSecs`.
+8. It returns the harness result unchanged, with `worker` and `harness` added to `data`.
+9. When the model is unavailable or its usage limit is reached, or the harness cannot start, and the worker has a `fallback`, it runs that worker once. A timeout never falls back.
+
+The reference for each part follows.
 
 Agent runs cost an account, not a repository: one Claude or Codex login serves
 every repository on the machine. The `pool` plugin has one step, `pool/agent`,

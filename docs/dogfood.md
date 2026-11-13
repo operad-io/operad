@@ -120,9 +120,10 @@ For a task that passed verify and review, the actions are `dev:merge`,
 The action needs `--yes` because it is the person's decision; in a terminal
 without `--yes` it asks first.
 
-A plan can run further without a person: `operad dev:auto <plan> --level run`
-merges reviewed work after the gate passes, and `--level off` returns to a
-person at every merge.
+A plan can run further without a person: `operad dev:auto <plan> --level merge`
+merges reviewed work after the gate passes, `--level run` starts the tasks
+without a person and still stops each one at the merge, and `--level off`
+returns to a person at every merge.
 
 ## History and what each step did
 
@@ -260,7 +261,7 @@ not need to disable `pi`; `operad plugin disable pi` removes it
 if you want.
 
 The settings, the step's results and the model-error rules are in
-`packages/harness/pi/README.md`.
+`packages/harness/pi/REFERENCE.md`.
 
 ## Using claude as the worker
 
@@ -318,7 +319,7 @@ or `sonnet`).
 
 **Settings, arguments and the environment.** These are the inputs of the
 `claude` section of `config.json`, of the step's `args` and of the
-environment. The full tables are in `packages/harness/claude/README.md`.
+environment. The full tables are in `packages/harness/claude/REFERENCE.md`.
 
 | Input | Type | Default | Values |
 |---|---|---|---|
@@ -364,7 +365,7 @@ and `--effort <level>` from `args`; any other entry fails the step with
 `claude`; `operad plugin disable claude` removes it if you want.
 
 The settings, the step's results and the model-error rules are in
-`packages/harness/claude/README.md`. The hand-run acceptance points are in
+`packages/harness/claude/REFERENCE.md`. The hand-run acceptance points are in
 the claude harness item under `docs/backlog/`.
 
 ## Using codex as the worker

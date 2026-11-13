@@ -7,6 +7,7 @@
  * owns the process, the wall time and the stall limit.
  */
 
+import pkg from "../package.json" with { type: "json" };
 import { readProfile, secretValuesOf, summarizeCall, type AccessProfile } from "@operad-io/access-match";
 import {
   isRecord,
@@ -263,7 +264,7 @@ export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
   return definePlugin({
     name: HARNESS,
     kind: "harness",
-    version: "0.0.0",
+    version: pkg.version,
     models: CODEX_MODELS,
     efforts: CODEX_EFFORTS,
     settings: PLUGIN_SETTINGS,

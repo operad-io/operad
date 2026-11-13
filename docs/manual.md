@@ -1,7 +1,7 @@
 # operad manual
 
 The user manual starts at [docs/user/index.md](user/index.md): the commands, the
-home and `config.json`. A complete workflow is in [docs/dogfood.md](dogfood.md).
+home and `config.json`.
 
 ## Install
 

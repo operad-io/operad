@@ -1,5 +1,6 @@
 /** The one entry point that starts runs, and the rules that point events at it. */
 
+import type { ClientApi } from "../views/presentation.ts";
 import { readFileSync } from "node:fs";
 import type { KernelState, StartInput } from "../kernel/types.ts";
 import { inputIdFor } from "../log/facts.ts";
@@ -44,6 +45,8 @@ export interface KernelOptions {
   readonly rules?: readonly TriggerRule[] | undefined;
   readonly clock?: (() => number) | undefined;
   readonly onLog?: ((message: string) => void) | undefined;
+  /** The client API source plugins get; needed to start sources. */
+  readonly client?: ClientApi | undefined;
 }
 
 function objectOf(event: TriggerEvent): string | undefined {
@@ -163,6 +166,7 @@ export class Kernel {
   readonly store: TriggerStore;
   readonly rules: readonly TriggerRule[];
   readonly clock: () => number;
+  private readonly client: ClientApi | undefined;
   private readonly onLog: (message: string) => void;
   private readonly runningSources: {
     readonly plugin: string;
@@ -184,6 +188,7 @@ export class Kernel {
     this.storeRoot = options.storeRoot;
     this.rules = options.rules ?? [];
     this.clock = options.clock ?? (() => Date.now());
+    this.client = options.client;
     this.onLog = options.onLog ?? ((message) => console.error(message));
     this.store = new TriggerStore({
       root: `${options.storeRoot}/triggers`,
@@ -833,9 +838,13 @@ export class Kernel {
 
   /** Starts every loaded source; a broken one is logged and skipped. */
   async startSources(): Promise<void> {
+    if (this.client === undefined) {
+      throw new Error("the kernel has no client API to give its sources");
+    }
     const running = await this.registry.startSources({
       rules: this.rules,
       clock: this.clock,
+      client: this.client,
       emit: async (event) => {
         await this.receive(event);
       },

@@ -604,6 +604,7 @@ export async function runIntegrate(
               ),
             ),
           limit: settings.check.loadLimit,
+          flakyLimit: settings.check.flakyLoadLimit,
           signal: ctx.signal,
           log: (text) => ctx.logger.write(text),
         });
@@ -943,6 +944,7 @@ export async function runIntegrate(
               ),
             ),
           limit: settings.check.loadLimit,
+          flakyLimit: settings.check.flakyLoadLimit,
           signal: ctx.signal,
           log: (text) => ctx.logger.write(text),
         });

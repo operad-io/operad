@@ -10,6 +10,19 @@ also on [its page](dev.md); the terminal client is on [its page](tui.md),
 `pair` on [the app page](app.md), `mcp` on [the MCP page](mcp.md), and the
 environment variables on [the environment page](environment.md).
 
+## Why it exists
+
+`operad` is the one way to reach a home from a terminal, a script or an agent: set it up, start `serve`, see what is pending, answer it, and run the commands the plugins declare. The CLI does not hard-code what a plugin can do. A plugin declares its object types, actions and verbs, and the CLI builds `operad <plugin>:<action>` and its flags from that declaration, so a new plugin is usable from the command line without a change to the CLI. Most commands read and write the home directly, so they work whether or not `serve` is running; `serve` is the process that carries runs forward, and the CLI never does that work itself.
+
+## How it works
+
+1. The command finds the home: `$OPERAD_HOME`, otherwise `~/.operad`. It opens the store and loads the plugins that `config.json` enables. Nothing needs to be running for this.
+2. It routes the words. A kernel command (`pending`, `list`, `show`, `history`, `settings`, `plugin`, `secret`, `trigger` and the rest of the [Commands](#commands) table) is handled by the CLI. `<plugin>:<action> <id>` runs an action on an object; `<plugin> <verb>` runs a verb that plugin declares, and the bare `<verb>` works when only one plugin declares it. See [Actions](#actions).
+3. A read command prints rows and sections that the plugins produced. Output is text for a terminal, or JSON with `--json`; see [Filtering a list](#filtering-a-list) and [The History section](#the-history-section).
+4. A command that changes something, such as an action or an answer to a pending item, records it in the home. A running `serve` picks the record up and continues the steps the run asks for. With no `serve`, an answer prints `recorded; it runs when `operad serve` is running`.
+5. `operad serve` takes the home lock (`serve.lock`) before it opens the store or the port, so a second `serve` for the same home exits with code `4` and changes nothing. `operad serve stop` signals the process named in that lock; see [Stopping serve](#stopping-serve).
+6. Every command ends with one of the [exit codes](#exit-codes), so a script can tell an error (`1`) from a usage mistake (`2`) and from a state that does not allow the command (`3`).
+
 ## Exit codes
 
 | Code | Meaning |
@@ -151,7 +164,7 @@ while no `serve` runs; `operad serve` or `operad tui` resumes it.
 A step cleans up after itself: when it ends, every process it started that is
 still running (a loop a worker left in the background, for example) is stopped,
 and the step's log lists them. At start, `serve` does the same for the steps of
-runs that are no longer active. See "What a step cleans up" in the `dev` README
+runs that are no longer active. See "What a step cleans up" in `packages/dev/REFERENCE.md`
 for how processes are found and what it cannot find.
 
 A restart does not disturb a check or command that is running. Each run is a

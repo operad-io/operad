@@ -807,3 +807,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0402-M1 | packages/engine/src/platform/process-group.ts | a new output line armed another stall timer without clearing the previous one, so a line that kept printing was still stopped by the old timer | `shell/check > a check that keeps printing is not stopped by the stall limit` (the second `advance` fired 2 timers instead of 0) |
+## T-0405 — the client API in a source plugin's `start`
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0405-M1 | packages/engine/src/views/presentation.ts | `act` skipped the check that the call names an actor (`{ via, id }`), so a call without one ran | `a source plugin's start gets the client API > act without an actor is refused and answers nothing` |
+| T-0405-M2 | packages/engine/src/views/presentation.ts | `pending` passed no candidate source to `listPending`, so trigger candidates were missing | `a source plugin's start gets the client API > pending shows the trigger candidates HTTP shows` |

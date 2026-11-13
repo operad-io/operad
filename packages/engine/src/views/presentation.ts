@@ -54,7 +54,7 @@ import {
 import { readState } from "../runner/service.ts";
 import { recordAnswer } from "../runner/answer.ts";
 import { StateError } from "../runner/errors.ts";
-import { listPending } from "./pending.ts";
+import { listPending, type CandidateSource, type PendingItem } from "./pending.ts";
 import {
   listSettings,
   setSetting,
@@ -242,6 +242,15 @@ export interface ActOptions {
   /** Who asked; the CLI passes `{ via: "cli", id: <user> }`. */
   readonly actor: Actor;
 }
+
+/**
+ * The in-process client API: the calls HTTP and the TUI make. A source plugin's
+ * `start` receives the same `Views` object that serves them, narrowed to these.
+ */
+export type ClientApi = Pick<
+  Views,
+  "list" | "get" | "section" | "events" | "act" | "pending"
+>;
 
 /** What answers one open question of a pending item. */
 export interface AnswerViewOptions {
@@ -578,6 +587,7 @@ export class Views {
   /** The timer that announces an object when its rate window ends. */
   private readonly growthTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly unsubscribe: (() => void)[] = [];
+  private candidateSource: CandidateSource | undefined;
   private preparing: Promise<void> | undefined;
 
   constructor(options: ViewsOptions) {
@@ -1457,12 +1467,46 @@ export class Views {
     }
   }
 
+  /**
+   * Where `pending` gets the trigger candidates and refused starts, the same
+   * source HTTP passes `listPending`. The host that owns the kernel sets it.
+   */
+  useCandidates(source: CandidateSource | undefined): void {
+    this.candidateSource = source;
+  }
+
+  /** What waits for a person: the pending view, as HTTP serves it. */
+  async pending(): Promise<readonly PendingItem[]> {
+    if (this.log === undefined) {
+      throw new ViewError(
+        "not-available",
+        "this server has no run log, so it cannot list what is pending",
+      );
+    }
+    return listPending(this.log, this.registry, this.candidateSource, this);
+  }
+
   /** Runs one action by `<plugin>:<action>`, honouring note and confirm. */
   async act(
     name: string,
     id: string | undefined,
     options: ActOptions,
   ): Promise<ViewActionRun> {
+    // The type asks for an actor; a caller outside the type checker (a plugin
+    // in plain JavaScript) is refused here, before anything runs.
+    const who: unknown = (options as { actor?: unknown } | undefined)?.actor;
+    if (
+      !isRecord(who) ||
+      typeof who.via !== "string" ||
+      who.via.length === 0 ||
+      typeof who.id !== "string" ||
+      who.id.length === 0
+    ) {
+      throw new ViewError(
+        "args",
+        `action "${name}" needs an actor: { via, id } says who asked`,
+      );
+    }
     // An action that targets no object names no id. The kernel has no such
     // action today, but the HTTP body allows it, so the views say why it
     // cannot run instead of refusing the request before looking it up.

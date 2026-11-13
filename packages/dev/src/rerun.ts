@@ -34,6 +34,8 @@ export interface CheckRun {
   readonly passedOnRerun: readonly string[];
   /** The `failed` settings of the command whose match found each of those tests. */
   readonly failedBy?: ReadonlyMap<string, FailedRerun> | undefined;
+  /** Set when the result is the failed test's own rerun, run alone, failing again. */
+  readonly aloneRerun?: boolean | undefined;
 }
 
 /** The line drawn between the two runs in the check log. */
@@ -285,8 +287,10 @@ export async function runCheckCommands(
   };
   const finish = (
     result: Pick<CheckRun, "outcome" | "hostError">,
+    aloneRerun = false,
   ): CheckRun => ({
     ...result,
+    ...(aloneRerun ? { aloneRerun: true } : {}),
     rerun: reran,
     passedOnRerun: passed,
     failedBy,
@@ -376,7 +380,7 @@ export async function runCheckCommands(
           `the failed test "${name}" failed again when run alone`,
         ),
         hostError: again.hostError,
-      });
+      }, again.hostError === undefined);
     }
     const note = describePass(passed);
     if (note !== undefined) notes.push(note);

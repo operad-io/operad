@@ -54,3 +54,9 @@ changes for bots, in the order they were recorded. The root
 |---|---|---|---|
 | T-0369-M3 | packages/bot/src/index.ts | `bot:chat` left the `allOf` conditionals out of its schema | `bot:chat per-agent conditionals > one if/then per agent carries its lists and defaults; a bot's model is the default only of the agent that lists it` |
 | T-0369-M4 | packages/bot/src/index.ts | the bot's configured model and effort were not passed as the agents' preferred ones | `bot:chat per-agent conditionals > one if/then per agent carries its lists and defaults; a bot's model is the default only of the agent that lists it` |
+
+## T-0410 — plugin versions come from package.json
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0410-M1 | packages/bot/src/index.ts | bot required chat `^0.0.0`, which refuses chat 0.0.1 | `plugin versions > every plugin's requirements are met by the versions in this workspace` (packages/cli/test/plugin-versions.test.ts) |
