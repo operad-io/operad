@@ -59,6 +59,8 @@ operad pending                  # 有什么在等你
 operad dev:merge T-0001-switch --yes
 ```
 
+不确定 `.operad/dev.json` 怎么写？把[这段 prompt](docs/user/setup-prompt.md)（英文）贴给你的 coding agent，它会替你写好并检查。agent 会用你写的语言回复。
+
 [Running operad on operad](docs/dogfood.md)（英文）把同一套流程完整走了一遍。
 
 ## 工作方式

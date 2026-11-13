@@ -59,6 +59,8 @@ operad pending                  # what waits for you
 operad dev:merge T-0001-switch --yes
 ```
 
+Not sure what goes in `.operad/dev.json`? [Paste this prompt](docs/user/setup-prompt.md) into your coding agent and it will write and check the file for you.
+
 [Running operad on operad](docs/dogfood.md) walks through the same workflow in full.
 
 ## How it works
