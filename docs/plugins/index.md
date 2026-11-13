@@ -2,6 +2,9 @@
 
 This page is for plugin authors; a person who uses operad starts at [the user manual](../user/index.md). A step that asks a person a question is in [Asking a person from a step](asking.md).
 
+This page builds a small plugin end to end and tests it. The reference pages
+below it cover every field; read them in the order of the table at the end.
+
 A plugin is a TypeScript module that declares what it adds: object types,
 steps, flows, and optionally commands, views, actions and trigger rules. This
 page builds the smallest useful one and tests it without starting `operad
@@ -361,3 +364,24 @@ on unchanged through the client API, `POST /v1/act` and the MCP `act` tool, and
 a client may open that object's page; the command line prints only `text`. A
 value of `opens` that names no existing object is not passed on, and the log
 says why. Returning only text still works.
+
+## Reference
+
+| Page | What it covers |
+|---|---|
+| [definePlugin and its fields](define-plugin.md) | Every field `definePlugin` takes, the kinds, commands, `onTick`, `standing`, `requires`, and what a refused declaration says |
+| [Steps](steps.md) | Step types: results, timeouts, limits, the step context, what happens when a step throws or runs too long |
+| [Flows](flows.md) | `defineFlow`, the four basic steps, `replay`, `maxVisits` and the errors a flow is refused with |
+| [Actions](actions.md) | Action fields, the args schema (every keyword), the per-agent `if`/`then` shape, the order of the checks |
+| [Object types and views](views.md) | Object types, rows, sections (`live`, `mark`, `tail`, `after`, the size cap, the timeout), filters |
+| [Pending items and person waits](pending.md) | `wait_person`, choices, answers, confirmation, standing items, automatic answers |
+| [Asking a person from a step](asking.md) | `ctx.ask`, the grace, `waiting`, one-time permissions |
+| [Events](events.md) | Rules, the event, events from steps, actions and sources, notifications |
+| [Settings, secrets and keys](settings.md) | The settings schema, defaults, editing, project settings, secrets, key bindings |
+| [Storage](storage.md) | The object store, versions, `where` and `index`, paging and cursors, the logger |
+| [The platform module](platform.md) | Process groups, file locks, directory watches, sqlite open settings, step markers |
+| [The rules plugins follow](rules.md) | No output at load, stdio entries, platform-only calls, facts, tests |
+| [Testing a plugin](testing.md) | Every export, option and field of `@operad-io/engine/testing` |
+| [Harness plugins and pool workers](harness.md) | The harness contract (claude, codex, pi, radian) and `pool/agent` |
+| [Exports](exports.md) | Every value a plugin imports, with its page |
+| [Types](types.md) | Every type a plugin imports, with its page |
