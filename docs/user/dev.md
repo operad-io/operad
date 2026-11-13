@@ -6,6 +6,186 @@ description: dev.json and the dev plugin: its commands, the reviewer, workers an
 
 The `dev` plugin runs plans and tasks on a repository. Its project settings are in `.operad/dev.json`; its commands and what they do are in the sections below. A complete workflow is in [Running operad on operad](../dogfood.md); the settings a client may change are in [config.json](config.md#settings-from-a-client).
 
+## Every `.operad/dev.json` key
+
+A repository's `dev.json` is JSON; the schema is `packages/dev/dev.schema.json`.
+A missing file means the defaults below. The file is read again by every step
+and every scheduler pass; when it stops being valid, the last valid settings
+stay in force and `operad pending` shows one item for the repository (see
+[When `dev.json` is not valid](#when-devjson-is-not-valid)). A wrong value is
+refused with the field path in front, such as `workers.claude.fallback: ...`.
+
+### The repository and its workers
+
+| Key | Type | Default | Allowed values | When it takes effect | Wrong value |
+|---|---|---|---|---|---|
+| `dev.$schema` | string | absent | `https://operad.io/schemas/dev.schema.json` or another schema URL | Only editors read it | Ignored |
+| `dev.name` | string | unset | non-empty text | When the file is read; it is kept with the settings but does not rename a registered repository | Refused: `name: must be a non-empty string` |
+| `dev.remote` | string | `"origin"` | a git remote name | When a task branch is fetched, pushed or cleaned up | Refused: `remote: must be a non-empty string` |
+| `dev.mainBranch` | string | `"main"` | a branch name | When a task branch starts and merges main | Refused: `mainBranch: must be a non-empty string` |
+| `dev.worktreeRoot` | string | `".operad-worktrees"` | a relative path inside the repository | When a worktree is created or read | Refused: `worktreeRoot: must be relative to the repository` or `worktreeRoot: must stay inside the repository` |
+| `dev.worktrees` | string | unset | the old name of `worktreeRoot`; read when `worktreeRoot` is absent | When the file is read | Refused with the same two messages, naming `worktrees` |
+| `dev.concurrency` | integer | unset: the `default` pool's counts alone set it | `1` or more | On the next scheduler pass; running tasks are not stopped | Refused: `concurrency: must be a positive integer` |
+| `dev.sandbox` | string | unset | any string; kept so older files still validate | Never; the value is ignored | Ignored |
+| `dev.worker` | object | `{ "use": "radian/agent", "args": [] }` when neither `worker` nor `workers` is written | the keys below; not allowed together with `workers` | When the file is read | Refused: `worker: cannot be set together with workers; use one or the other` |
+| `dev.worker.use` | string | `"radian/agent"` | a step name `<plugin>/<step>` | When the worker step starts | Refused: `worker.use: must be a non-empty string` |
+| `dev.worker.args` | array of strings | `[]` | arguments for that step | When the worker step starts | Refused: `worker.args: must be an array of strings` |
+| `dev.worker.wallTimeSecs` | number | unset | above `0` | When the worker step starts | Refused: `worker.wallTimeSecs: must be a positive number of seconds` |
+| `dev.worker.stallSecs` | number | unset | above `0` | When the worker step starts | Refused: `worker.stallSecs: must be a positive number of seconds` |
+| `dev.workers` | object | absent: the one `worker` above | worker name to a worker object; at least one | When the file is read | Refused: `workers: must be an object`, `workers: must define at least one worker`, or the worker's own field error |
+| `dev.workers.<name>` | object | none | the keys below; `use` is required | When the worker step starts | Refused: `workers.<name>: must be an object` or `workers.<name>: is not a worker field` |
+| `dev.workers.<name>.use` | string | required | `<plugin>/<step>`, such as `claude/agent` | When the worker step starts | Refused: `workers.<name>.use: must be a step name such as claude/agent` |
+| `dev.workers.<name>.args` | array of strings | `[]` | arguments for that step | When the worker step starts | Refused: `workers.<name>.args: must be an array of strings` |
+| `dev.workers.<name>.count` | integer | `1` | `1` or more | On the next scheduler pass; running tasks keep their place | Refused: `workers.<name>.count: must be an integer of 1 or more` |
+| `dev.workers.<name>.wallTimeSecs` | number | unset: the harness's own limit | above `0` | When the worker step starts | Refused: `workers.<name>.wallTimeSecs: must be a positive number of seconds` |
+| `dev.workers.<name>.stallSecs` | number | unset: the harness's own limit | above `0` | When the worker step starts | Refused: `workers.<name>.stallSecs: must be a positive number of seconds` |
+| `dev.workers.<name>.fallback` | string | unset | another worker of `workers`; not itself and not a worker with its own fallback | When a worker's model is unavailable | Refused: `workers.<name>.fallback: "<name>" cannot fall back to itself`, `... is not a worker in workers`, or `... already has a fallback` |
+| `dev.pools` | object | one pool named `default` holding every worker in the order written | pool name to a non-empty list of worker names | When the file is read; `dev` needs the pool named `default` | Refused: `pools: must be an object`, `pools: must define at least one pool`, `pools.<name>: must be a non-empty list of worker names`, or `pools: needs a pool named "default", the one the dev flow uses` |
+| `dev.pools.<name>` | array of strings | one `default` pool when `pools` is absent | worker names; each must exist in `workers` | On the next scheduler pass for the `default` pool | Refused: `pools.<name>[<i>]: "<worker>" is not a worker in workers` |
+| `dev.workerBrief` | string | `".operad/worker-brief.md"` | a path to a Markdown file; a missing file uses the built-in four-line brief | When the work step builds the worker prompt | Refused: `workerBrief: must be a non-empty string` |
+| `dev.prepare` | array of strings | `[]` | shell lines run in every checkout after it is created or moved to a new commit, before a step uses it | When a checkout is made or moved | Refused: `prepare: must be an array of command lines` or `prepare[<i>]: must be a non-empty string`; a failing line fails the step with `prepare failed` |
+
+### The gate and its checks
+
+| Key | Type | Default | Allowed values | When it takes effect | Wrong value |
+|---|---|---|---|---|---|
+| `dev.gate` | object | `{ "commands": [], "commandTimeoutSecs": 1800 }` | the keys below | When a check starts | Refused: `gate: must be an object` or `gate.<key>: is not a gate setting` |
+| `dev.gate.commands` | array | `[]`: no check runs | a shell line, or a check command object | When the check step starts | Refused: `gate.commands: must be an array of commands` or the command's own error |
+| `dev.gate.commandTimeoutSecs` | number | `1800` | above `0` seconds | When a gate command starts | Refused: `gate.commandTimeoutSecs: must be a positive number of seconds` |
+| `dev.gate.places` | integer | unset: no limit for this repository | `1` or more | When a check looks for a place | Refused: `gate.places: must be an integer of 1 or more` |
+| `dev.check` | object | `{ "rerun": 1, "flakyTask": 2 }` | the keys below | When a failed check is judged | Refused: `check: must be an object` or `check.<key>: is not a check setting` |
+| `dev.check.rerun` | integer | `1` | `0` or more; `0` turns a rerun off | When a check line list fails; a timeout is never rerun | Refused: `check.rerun: must be zero or a positive integer` |
+| `dev.check.flakyTask` | integer | `2` | `0` or more; `0` turns the proposal off | When a test passes only on its rerun | Refused: `check.flakyTask: must be zero or a positive integer` |
+| `dev.check.flakyPlan` | string | unset: dev uses a plan `flaky-tests` (title `Flaky tests`) | a plan id | When a flaky-test task is proposed | Refused: `check.flakyPlan: must be a plan id`; a finished or cancelled plan makes dev use `flaky-tests` |
+| `dev.check.loadLimit` | number | unset: the number of cores | above `0`, a 1-minute load average | When a check timed out or was killed from outside | Refused: `check.loadLimit: must be a positive number` |
+| `dev.check.flakyLoadLimit` | number | unset: twice the number of cores | above `0`, a 1-minute load average | When a test failed and then passed on rerun | Refused: `check.flakyLoadLimit: must be a positive number` |
+
+### A check command
+
+The same object may appear in `gate.commands`, `integration.keyCommands` and a
+flow's `check` stage.
+
+| Key | Type | Default | Allowed values | When it takes effect | Wrong value |
+|---|---|---|---|---|---|
+| `gate.commands`, `integration.keyCommands`, `flows.<name>.stages.commands` | string or object | required where written | a shell line, or an object with `run` and optional `failed` | When that check runs | Refused: `<path>[<i>]: must be a string or an object` or `<path>[<i>].<key>: is not a command setting` |
+| `gate.commands.run`, `integration.keyCommands.run`, `flows.<name>.stages.commands.run` | string | required | a non-empty shell line | When that check runs | Refused: `<path>[<i>].run: must be a non-empty string` |
+| `gate.commands.failed`, `integration.keyCommands.failed`, `flows.<name>.stages.commands.failed` | object | absent: the top-level `check.rerun` applies | the keys below | Only when the line exits non-zero | Refused: `<path>[<i>].failed: must be an object` |
+| `gate.commands.failed.match`, `integration.keyCommands.failed.match`, `flows.<name>.stages.commands.failed.match` | string | required in `failed` | a regular expression with exactly one capture group, matched per log line | When the check line fails | Refused: `<path>[<i>].failed.match: must be a valid regular expression` or `... must have exactly one capture group` |
+| `gate.commands.failed.rerun`, `integration.keyCommands.failed.rerun`, `flows.<name>.stages.commands.failed.rerun` | string | required in `failed` | a command with `{name}` or `{pattern}` | When the check line fails | Refused: `<path>[<i>].failed.rerun: must contain {name} or {pattern}` |
+| `gate.commands.failed.max`, `integration.keyCommands.failed.max`, `flows.<name>.stages.commands.failed.max` | integer | `10` | `1` or more | When the check line fails | Refused: `<path>[<i>].failed.max: must be a positive integer`; more failures than `max` fails the check without a rerun |
+
+`{name}` is replaced by the shell-quoted test name and `{pattern}` by the
+shell-quoted anchored regular expression of it. A check that uses `failed` does
+not use `check.rerun` for that line. See [Checking a change](checks.md).
+
+### Work, review, integration and cleanup
+
+| Key | Type | Default | Allowed values | When it takes effect | Wrong value |
+|---|---|---|---|---|---|
+| `dev.work` | object | `{ "wrapUpAt": 0.85 }` | the key below | When a work step starts | Refused: `work: must be an object` or `work.<key>: is not a work setting` |
+| `dev.work.wrapUpAt` | number | `0.85` | above `0` and below `1` | When the work step reaches that share of its time limit | Refused: `work.wrapUpAt: must be a number above 0 and below 1` |
+| `dev.reviewer` | object | the reviewer defaults below | the keys below | When a review step starts | Refused: `reviewer: must be an object` or `reviewer.<key>: is not a reviewer setting` |
+| `dev.reviewer.use` | string | `"radian/agent"` | a step name `<plugin>/<step>` | When a review starts | Refused: `reviewer.use: must be a non-empty string` |
+| `dev.reviewer.args` | array of strings | `[]` | arguments for that step | When a review starts | Refused: `reviewer.args: must be an array of strings` |
+| `dev.reviewer.firstArgs` | array of strings | unset | arguments for the first review of an attempt | When the first review of an attempt starts | Refused: `reviewer.firstArgs: must be an array of strings` |
+| `dev.reviewer.first` | object | unset | the keys below; a set value replaces the reviewer's own for the first review | When the first review of an attempt starts | Refused: `reviewer.first: must be an object` or `reviewer.first.<key>: is not a first review setting` |
+| `dev.reviewer.first.use` | string | `reviewer.use` | a step name | When the first review starts | Refused: `reviewer.first.use: must be a non-empty string` |
+| `dev.reviewer.first.args` | array of strings | `reviewer.args` | arguments for that step | When the first review starts | Refused: `reviewer.first.args: must be an array of strings` |
+| `dev.reviewer.first.timeoutSecs` | number | `reviewer.timeoutSecs` | above `0` seconds | When the first review starts | Refused: `reviewer.first.timeoutSecs: must be a positive number of seconds` |
+| `dev.reviewer.first.stallSecs` | number | `reviewer.stallSecs` | above `0` seconds | When the first review starts | Refused: `reviewer.first.stallSecs: must be a positive number of seconds` |
+| `dev.reviewer.fallback` | object | unset | `use` and optional `args`; used when the primary reviewer is unavailable | When a review finds the primary unavailable | Refused: `reviewer.fallback: must be an object`, `reviewer.fallback.use: must be a non-empty string`, or `reviewer.fallback.<key>: is not a fallback setting` |
+| `dev.reviewer.fallback.use` | string | required | a step name | When the fallback review starts | Refused: `reviewer.fallback.use: must be a non-empty string` |
+| `dev.reviewer.fallback.args` | array of strings | `[]` | arguments for that step | When the fallback review starts | Refused: `reviewer.fallback.args: must be an array of strings` |
+| `dev.reviewer.timeoutSecs` | number | `600` | above `0` seconds | When a review starts | Refused: `reviewer.timeoutSecs: must be a positive number of seconds` |
+| `dev.reviewer.stallSecs` | number | unset: the harness's own limit | above `0` seconds | When a review starts | Refused: `reviewer.stallSecs: must be a positive number of seconds` |
+| `dev.reviewer.fixLevel` | string | `"major"` | `critical`, `major`, `minor` | When a review is graded | Refused: `reviewer.fixLevel: must be "critical", "major" or "minor"`; a value in `review.json` wins |
+| `dev.reviewer.followups` | boolean | `true` | `true` or `false` | When a review passed with findings that did not fail it | Refused: `reviewer.followups: must be true or false` |
+| `dev.reviewer.retrySecs` | number | `120` | above `0` seconds | When a review waits to run again after a model was unavailable | Refused: `reviewer.retrySecs: must be a positive number of seconds` |
+| `dev.reviewer.maxFileDiffBytes` | integer | `200000` | `1` or more | When the review prompt is built | Refused: `reviewer.maxFileDiffBytes: must be a positive integer`; a larger file is left out and listed |
+| `dev.reviewer.maxDiffBytes` | integer | `1000000` | `1` or more | When the review prompt is built | Refused: `reviewer.maxDiffBytes: must be a positive integer`; a larger change fails the review before a reviewer starts |
+| `dev.integration` | object | `{ "style": "merge", "keyCommands": [], "batch": 1 }` | the keys below | When the integrate step starts | Refused: `integration: must be an object` or `integration.<key>: is not an integration setting` |
+| `dev.integration.style` | string | `"merge"` | `merge`, `squash` | When a verified commit is put on main | Refused: `integration.style: must be "merge" or "squash"` |
+| `dev.integration.keyCommands` | array | `[]` | check commands | When an integration candidate is built | Refused: `integration.keyCommands: must be an array of commands` or the command's own error; a failure sends the task back to the worker |
+| `dev.integration.batch` | integer | `1`: one task at a time | `1` or more | When the next integration turn starts | Refused: `integration.batch: must be a positive integer` |
+| `dev.hooks` | object | the cleanup commands below | the key below | When cleanup runs | Refused: `hooks: must be an object` or `hooks.<key>: is not a hook setting` |
+| `dev.hooks.afterMerge` | array of strings | the five commands that remove the worktrees, prune, delete the local branch and delete the remote branch | shell lines run in the repository root with `OPERAD_TASK` and `OPERAD_WORKTREE` set | When cleanup runs after a merge | Refused: `hooks.afterMerge: must be an array of strings` or `hooks.afterMerge[<i>]: must be a non-empty string`; a failure is recorded and does not fail the task |
+| `dev.maxAutoRework` | integer | `2` | `0` or more | When an automatic rework would start | Refused: `maxAutoRework: must be zero or a positive integer`; more waits for a person |
+| `dev.autoDefault` | string | `"off"` | `off`, `run`, `merge` | When a new plan is made | Refused: `autoDefault: must be "off", "run" or "merge"` |
+| `dev.retry` | object | `{ "environmentWaitMinutes": 60 }` | the key below | When a step fails for a reason outside the task's own work | Refused: `retry: must be an object` or `retry.<key>: is not a retry setting` |
+| `dev.retry.environmentWaitMinutes` | integer | `60` | `1` or more minutes | When a step waits for what was missing | Refused: `retry.environmentWaitMinutes: must be a positive integer` |
+
+### Flows and their stages
+
+A repository's own flows are explained in [Flows and their stages](#flows-and-their-stages). The built-in
+`default` flow is used when `flows` is absent.
+
+| Key | Type | Default | Allowed values | When it takes effect | Wrong value |
+|---|---|---|---|---|---|
+| `dev.flows` | object | absent: the built-in `default` flow | flow name to a flow object | When a plan or task starts a run of that flow | Refused: `flows: must be a JSON object`, `flows: a flow needs a non-empty name`, or the flow's own error |
+| `dev.flows.<name>` | object | none | `stages` only | When a task of that flow starts | Refused: `flows.<name>: must be a JSON object` or `flows.<name>.<key>: is not a flow setting` |
+| `dev.flows.<name>.stages` | array | required | at least one stage; at least one must be `check`, `review` or `human` | When a task of that flow starts | Refused: `flows.<name>.stages: must be an array of stages` or `flows.<name>.stages: needs at least one check, review or human stage` |
+| `dev.flows.<name>.stages.stage` | string | required | `work`, `check`, `review`, `human` | When the stage is reached | Refused: `flows.<name>.stages[<i>].stage: must be "work", "check", "review" or "human"` |
+| `dev.flows.<name>.stages.use` | string | the repository worker for `work`, `reviewer.use` for `review` | a step name | When that stage starts | Refused: `flows.<name>.stages[<i>].use: must be a non-empty string` |
+| `dev.flows.<name>.stages.args` | array of strings | the worker's or reviewer's own arguments | arguments for that step | When that stage starts | Refused: `flows.<name>.stages[<i>].args: must be an array of strings` |
+| `dev.flows.<name>.stages.brief` | string | unset | extra instructions appended to the worker prompt | When the work stage starts | Refused: `flows.<name>.stages[<i>].brief: must be a non-empty string` |
+| `dev.flows.<name>.stages.beforeAttempt` | string | unset: the worktree step's merge stays in force | `merge-main`, `none` | Before the work stage runs | Refused: `flows.<name>.stages[<i>].beforeAttempt: must be "merge-main" or "none"` |
+| `dev.flows.<name>.stages.commands` | array | `gate.commands` | check commands | When the check stage starts | Refused: `flows.<name>.stages[<i>].commands: must be an array of commands` or the command's own error |
+| `dev.flows.<name>.stages.rerun` | integer | `check.rerun` | `0` or more | When a check line list fails | Refused: `flows.<name>.stages[<i>].rerun: must be zero or a positive integer` |
+| `dev.flows.<name>.stages.later` | array of strings | unset: `reviewer` arguments | arguments for every review after the first in an attempt | When a later review starts | Refused: `flows.<name>.stages[<i>].later: must be an array of strings` |
+| `dev.flows.<name>.stages.grading` | string | unset: the flow's own name | an entry in `.operad/review.json` | When the review is graded | Refused: `flows.<name>.stages[<i>].grading: must be a non-empty string`; a missing entry falls back to `default` |
+
+A field that a stage kind does not allow is refused with
+`flows.<name>.stages[<i>].<key>: is not a stage setting`. A `human` stage has no
+fields besides `stage`.
+
+## `review.json`
+
+`.operad/review.json` holds the grading a reviewer reads and the lowest finding
+that fails a review. It falls back field by field to `default`. The file is
+read when a review step needs it; [the review section](#reviewjson)
+explains what a reviewer does with it.
+
+<!-- schema: review.schema.json -->
+```json
+{
+  "default": {
+    "levels": {
+      "critical": "A wrong result, data loss, a security hole or a broken build.",
+      "major": "A defect a person would notice, or a missed requirement.",
+      "minor": "A style or naming problem."
+    },
+    "rules": ["Do not ask for changes the task did not ask for."],
+    "fixLevel": "major"
+  },
+  "flows": {
+    "quick": { "fixLevel": "critical" }
+  }
+}
+```
+
+| Key | Type | Default | Allowed values | When it takes effect | Wrong value |
+|---|---|---|---|---|---|
+| `review.$schema` | string | absent | a schema URL | Only editors read it | Refused if it is not a string: `review.json: invalid <path>: $schema must be a string` |
+| `review.default` | object | `{}` | the keys below | When a review has no flow entry | Refused: `review.json: invalid <path>: default must be a JSON object` |
+| `review.default.levels` | object | `{}` | `critical`, `major`, `minor` to text given to the reviewer | When a review prompt is built | Refused: `review.json: invalid <path>: default.levels must be a JSON object` or `default.levels.<level> must be a string` |
+| `review.default.levels.critical` | string | unset | what a critical finding means | When a review prompt is built | Refused: `... default.levels.critical must be a string` |
+| `review.default.levels.major` | string | unset | what a major finding means | When a review prompt is built | Refused: `... default.levels.major must be a string` |
+| `review.default.levels.minor` | string | unset | what a minor finding means | When a review prompt is built | Refused: `... default.levels.minor must be a string` |
+| `review.default.rules` | array of strings | unset | extra grading rules | When a review prompt is built | Refused: `... default.rules must be an array of strings` or `default.rules[<i>] must be a string` |
+| `review.default.fixLevel` | string | unset: `dev.reviewer.fixLevel` | `critical`, `major`, `minor` | When a review is graded | Refused: `... default.fixLevel must be "critical", "major" or "minor"` |
+| `review.flows` | object | `{}` | flow name to a grading object | When a review of that flow is graded | Refused: `... flows must be a JSON object` |
+| `review.flows.<name>` | object | unset: `default` | the keys below | When a review of that flow is graded | Refused: `... flows.<name> must be a JSON object` or `flows.<name>.<key> is not a known field` |
+| `review.flows.<name>.levels` | object | `review.default.levels` | `critical`, `major`, `minor` to text | When a review of that flow is graded; it merges per level | Refused: `... flows.<name>.levels must be a JSON object` |
+| `review.flows.<name>.levels.critical` | string | `review.default.levels.critical` | what a critical finding means for this flow | When a review of that flow is graded | Refused: `... flows.<name>.levels.critical must be a string` |
+| `review.flows.<name>.levels.major` | string | `review.default.levels.major` | what a major finding means for this flow | When a review of that flow is graded | Refused: `... flows.<name>.levels.major must be a string` |
+| `review.flows.<name>.levels.minor` | string | `review.default.levels.minor` | what a minor finding means for this flow | When a review of that flow is graded | Refused: `... flows.<name>.levels.minor must be a string` |
+| `review.flows.<name>.rules` | array of strings | `review.default.rules` | extra grading rules for this flow | When a review of that flow is graded | Refused: `... flows.<name>.rules must be an array of strings` |
+| `review.flows.<name>.fixLevel` | string | `review.default.fixLevel`, else `dev.reviewer.fixLevel` | `critical`, `major`, `minor` | When a review of that flow is graded; wins over `dev.reviewer.fixLevel` | Refused: `... flows.<name>.fixLevel must be "critical", "major" or "minor"` |
+
+A field the schema does not name is refused with `... <path> is not a known
+field`. A file that is not valid is refused whole, with the file named; the
+review step then fails rather than guessing a grading.
+
 ## Reverify and an attempt that adds no commit
 
 `dev:reverify` merges the current main into the task branch first, then runs verify and review again with no worker. A clean merge goes straight to verify; a conflicting main sends the task to the worker.
@@ -251,13 +431,24 @@ which carries whatever the task's branch had when it started.
 | `pools` | object | Pool groups. `dev` uses the pool named `default`, so a `pools` setting must define it. Without `pools`, `default` holds every worker in the order written. |
 | `concurrency` | integer, 1 or more | An extra cap on running tasks; see below. |
 
+<!-- schema: dev.schema.json -->
 ```json
 {
+  "name": "operad",
+  "remote": "origin",
+  "mainBranch": "main",
+  "concurrency": 2,
   "workers": {
     "claude": { "use": "claude/agent", "args": ["--model", "sonnet"], "fallback": "pi" },
     "pi": { "use": "pi/agent", "args": ["--model", "opencode-go/deepseek-v4.1-flash"] }
   },
-  "pools": { "default": ["claude", "pi"] }
+  "pools": { "default": ["claude", "pi"] },
+  "gate": { "commands": ["bash scripts/verify.sh"], "commandTimeoutSecs": 1800 },
+  "check": { "rerun": 1, "flakyTask": 2 },
+  "reviewer": { "use": "radian/agent", "fixLevel": "major" },
+  "integration": { "style": "merge", "batch": 1 },
+  "maxAutoRework": 2,
+  "autoDefault": "off"
 }
 ```
 
