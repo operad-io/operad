@@ -63,6 +63,17 @@ describe("task marks", () => {
       "retry_wait",
     ],
     ["review, check waits for a place", task({ phase: "review", attempt: attempt({ placeWait: { key: "check place", since: 1, ahead: 0 } }) }), "retry_wait"],
+    [
+      "waiting, check waits for a place",
+      task({
+        phase: "waiting",
+        attempt: attempt({
+          review: { result: "pass", decision: "passed" },
+          placeWait: { key: "check place", since: 1, ahead: 0 },
+        }),
+      }),
+      "retry_wait",
+    ],
     ["running, no worktree yet", task({ phase: "running" }), "starting"],
     [
       "running, attempt without worktree",
