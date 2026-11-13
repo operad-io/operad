@@ -744,3 +744,13 @@ the row fields.
 |---|---|---|---|
 | T-0381-M1 | packages/engine/src/views/presentation.ts | the undeclared-type lookup in `resolve` read the whole fact list again | `presentation views > resolving an id never reads the whole fact list (T-0381) > memory: scoped, typed, undeclared, ambiguous and unknown ids` |
 | T-0381-M2 | packages/engine/src/plugin/store.ts | the memory store did not record an object's type by id when a fact was tracked, so `objectTypesOf` was empty | `presentation views > resolving an id never reads the whole fact list (T-0381) > memory: scoped, typed, undeclared, ambiguous and unknown ids` |
+
+## T-0384 — indexed run reads
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0384-M1 | packages/engine/src/log/sqlite.ts | `runs()` reported 0 as the last sequence of every run | `runs can be listed by object, each with its last sequence` |
+| T-0384-M2 | packages/engine/src/log/sqlite.ts | `runs()` ignored the `object` option | `runs can be listed by object, each with its last sequence` |
+| T-0384-M3 | packages/engine/src/log/sqlite.ts | the directory watch took a snapshot without comparing the data version | `a watch event with an unchanged data version takes no snapshot` |
+| T-0384-M4 | packages/engine/src/log/sqlite.ts | `schemaNeedsWork` did not look for `runs_object`, so an older store never gained the index | `a store without the object index gains it on open` |
+| T-0384-M5 | packages/engine/src/views/presentation.ts | history asked for every run instead of one object's | `presentation views > history and the object lookup ask the log for one object's runs` |
