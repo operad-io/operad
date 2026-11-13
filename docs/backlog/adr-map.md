@@ -212,6 +212,7 @@
 | operad-test-slimming.md | 决定 4 | 0036 | D1 |
 | operad-test-slimming.md | 决定 5、8 | 0036 | D2 |
 | operad-test-slimming.md | 决定 2（不留事故回归用例；覆盖说明留在 backlog） | 0036 | D3 |
-| operad-test-slimming.md | 决定 3（辅助函数只定义一次；最慢列表见决定 7） | 0036 | D4 |
-| operad-test-slimming.md | 决定 7 | 0036 | D5 |
+| operad-test-slimming.md | 决定 3（最慢列表那一半，见决定 7） | 0036 | D4 |
+| operad-test-slimming.md | 决定 3（辅助函数只定义一次）：已定未做 | 留在 backlog | |
+| operad-test-slimming.md | 决定 7 | 0036 | D4 |
 | operad-test-slimming.md | 决定 1、6、9、待决 2–4 | 留在 backlog | |

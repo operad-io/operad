@@ -51,4 +51,4 @@ An ADR states a decision that is in force, as if it had always been the decision
 | [0033](0033-telegram.md) | The Telegram Plugin | In-process channel and source, automatic binding, buttons and replies |
 | [0034](0034-open-framework-boundary.md) | The Boundary Between operad and a Project's Way of Working | Flaky rule and command from `failed`, `prepare` in the main clone, defaults in the CLI, the engine names no plugin |
 | [0035](0035-sqlite-only-storage.md) | Storage Is `sqlite` Only | One implementation, `store.backend` accepts only `sqlite` |
-| [0036](0036-test-rules.md) | How Tests Are Kept Fast and Few | Simulation first, `test/heavy/`, no incident replays, helpers defined once, slowest listed |
+| [0036](0036-test-rules.md) | How Tests Are Kept Fast and Few | Simulation first, `test/heavy/`, no incident replays, slowest listed |

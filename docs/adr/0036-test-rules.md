@@ -19,10 +19,6 @@ A case that starts a real process, builds a real git repository, opens a port or
 
 A test does not replay a whole incident as one scenario. The behaviours it showed are covered by small cases.
 
-### D4: A helper is defined once
-
-A test helper that more than one package needs (a temporary root, waiting for a file, a manual clock, a free port, and the like) is defined once in the testing package of the engine, and a test fails when the same helper is defined again outside it. A package's own `setup` holds only what is particular to that package.
-
-### D5: The slowest cases are listed, never enforced
+### D4: The slowest cases are listed, never enforced
 
 The log of a check lists the ten slowest cases for a person to read. No duration limit fails a check.
