@@ -1058,7 +1058,8 @@ function noteField(args: ActionArgsSchema | undefined): string | undefined {
 }
 
 function actorOfCli(): Actor {
-  return { via: "cli", id: userInfo().username };
+  // An empty user name would be refused as an actor.
+  return { via: "cli", id: userInfo().username || "cli" };
 }
 
 function actionCandidates(

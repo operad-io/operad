@@ -360,10 +360,17 @@ export class PendingSender implements PendingResponder {
 
   async handleCallback(callback: TelegramCallback): Promise<boolean> {
     const message = callback.message;
-    if (message === undefined) return false;
+    if (message === undefined) {
+      // Telegram shows a spinner on the button until the tap is answered.
+      await this.tell(callback.id, undefined);
+      return false;
+    }
     return this.exclusive(async () => {
       const found = this.find(message.chat.id, message.message_id);
-      if (found === undefined) return false;
+      if (found === undefined) {
+        await this.tell(callback.id, undefined);
+        return false;
+      }
       // Only a listed user's tap counts; nobody else is told anything.
       if (!this.listed(callback.from.id)) {
         await this.tell(callback.id, undefined);

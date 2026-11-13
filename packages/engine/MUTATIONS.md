@@ -819,3 +819,4 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0406-M6 | packages/engine/src/views/presentation.ts | `answer` skipped the check that the call names an actor (`{ via, id }`), so a call without one was recorded | `a source plugin's start gets the client API > answer without an actor is refused and answers nothing` |
+| T-0423-M8 | packages/engine/src/http/token.ts | an empty token label was used as the actor id, so every action over HTTP was refused | `a source plugin's start gets the client API > an empty token label acts under the default label, so its actions are not refused` |

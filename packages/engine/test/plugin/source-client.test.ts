@@ -15,6 +15,8 @@ import {
   type ClientApi,
   type PendingItem,
 } from "../../src/index.ts";
+import { FileSecretStore } from "../../src/plugin/secrets.ts";
+import { DEFAULT_HTTP_TOKEN_LABEL, ensureHttpToken, readHttpToken } from "../../src/http/token.ts";
 import { recordAnswer } from "../../src/runner/answer.ts";
 import { parseObjectKey } from "../../src/runner/service.ts";
 import { cleanupTempRoots, tempRoot } from "./support.ts";
@@ -198,10 +200,16 @@ describe("a source plugin's start gets the client API", () => {
       expect(history.markdown).toContain("via chat-channel");
       expect(history.markdown).toContain("as person-7");
 
-      // A second answer to the same item is refused.
-      await expect(
-        channel.client?.act("gate:approve", "item:1", { actor: ACTOR }),
-      ).rejects.toBeInstanceOf(ViewError);
+      // A second answer to the same item is refused, and the action is not
+      // offered on it any more; the refusal runs nothing.
+      const ref = { type: "item", id: "1" };
+      const before = store.facts(ref).facts.length;
+      const second = await channel.client?.act("gate:approve", "item:1", { actor: ACTOR }).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      expect(second).toBeInstanceOf(ViewError);
+      expect(store.facts(ref).facts.length).toBe(before);
     } finally {
       await kernel.stopSources();
       views.close();
@@ -218,10 +226,15 @@ describe("a source plugin's start gets the client API", () => {
     const views = createViews({ registry, store, log });
     try {
       store.put("item", "1", {}, "test");
+      const ref = { type: "item", id: "1" };
+      const before = store.facts(ref).facts.length;
       const noActor = views.act("gate:approve", "item:1", {} as never);
       await expect(noActor).rejects.toThrow(/needs an actor/);
       const empty = views.act("gate:approve", "item:1", { actor: { via: "x", id: "" } });
       await expect(empty).rejects.toThrow(/needs an actor/);
+      // Nothing ran: the item has no new fact and was not answered.
+      expect(store.facts(ref).facts.length).toBe(before);
+      expect(store.get("item", "1")?.data.answered).toBeUndefined();
     } finally {
       views.close();
       await log.close();
@@ -249,6 +262,14 @@ describe("a source plugin's start gets the client API", () => {
       views.close();
       await log.close();
     }
+  });
+
+  test("an empty token label acts under the default label, so its actions are not refused", async () => {
+    const home = await tempRoot();
+    await ensureHttpToken(home);
+    await new FileSecretStore({ home, plugin: "http" }).set("label", "");
+    expect((await readHttpToken(home))?.label).toBe(DEFAULT_HTTP_TOKEN_LABEL);
+    expect((await ensureHttpToken(home)).label).toBe(DEFAULT_HTTP_TOKEN_LABEL);
   });
 
   test("pending shows the trigger candidates HTTP shows", async () => {

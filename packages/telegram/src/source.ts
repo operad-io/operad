@@ -3,10 +3,12 @@
  * private message from a listed user into one user message on that user's bound
  * chat. A message from anyone else is recorded and starts nothing.
  *
- * Dedupe is the event key, never the offset. Every update is recorded once as
- * `telegram/update` keyed by its `update_id`; a message is written only when the
- * bound chat does not already hold one whose source ref is that update id, so a
- * resent update writes no second message.
+ * Dedupe is never the offset. Every update is recorded once as
+ * `telegram/update` keyed by its `update_id`, but what keeps a resent update
+ * from writing a second message is the bound chat itself: a message is written
+ * only when no message of a chat bound to this Telegram chat has a source ref
+ * equal to the update id. The settings (`users`, `bot`) are read once, when
+ * the source starts.
  */
 
 import {
@@ -19,6 +21,7 @@ import {
 import { messageOf, type SourceContext, type SourceHandle } from "@operad-io/engine";
 import type { BotApi, TelegramMessage, TelegramUpdate } from "./api.ts";
 import type { PendingResponder } from "./pending.ts";
+import { telegramSettings } from "./settings.ts";
 import { readOffset, writeOffset } from "./state.ts";
 
 /** The event type the source records an incoming update as. */
@@ -104,11 +107,9 @@ export class TelegramSource {
     this.pollIntervalMs = options.pollIntervalMs ?? 1_000;
     this.wait = options.wait ?? delay;
     this.pending = options.pending;
-    const settings = ctx.settings;
-    this.users = Array.isArray(settings.users)
-      ? settings.users.filter((value): value is number => typeof value === "number" && Number.isInteger(value))
-      : [];
-    this.bot = typeof settings.bot === "string" && settings.bot.length > 0 ? settings.bot : "default";
+    const settings = telegramSettings(ctx.settings);
+    this.users = settings.users;
+    this.bot = settings.bot;
     if (ctx.signal.aborted) this.controller.abort();
     else ctx.signal.addEventListener("abort", () => this.controller.abort(), { once: true });
   }

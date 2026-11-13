@@ -10,8 +10,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CHAT_TYPE, allMessages, chatData } from "@operad-io/chat";
-import { Runner, defineFlow, definePlugin, type SourceContext } from "@operad-io/engine";
-import { serveOnce } from "../../engine/src/loop/serve.ts";
+import { Runner, defineFlow, definePlugin, serveOnce, type SourceContext } from "@operad-io/engine";
 import devPlugin, { addPlan, addRepository, addTask, confirmPlan, getTask, setTaskPhase, taskData } from "@operad-io/dev";
 import {
   PendingSender,
@@ -203,6 +202,8 @@ test("from the first Telegram message to an answered pending item", async () => 
   if (chat === undefined) throw new Error("no chat");
   expect(chatData(chat.data).channels).toEqual([telegramChannel(555)]);
   expect(chatData(chat.data).harness).toBe("test-agent");
+  // The chat was opened on the bot the settings name, `default` here.
+  expect(chatData(chat.data).parent).toBe("bot:default");
 
   // ...and the same exchange is the chat's transcript, which is what the phone shows.
   await Promise.all(runners);
@@ -344,6 +345,9 @@ test("a proposed task and a task waiting for a merge are answered from Telegram 
   api.deliver(tap(200, 42, 42, proposedCard.messageId, confirm.data));
   await api.until(() => api.edits.some((edit) => edit.messageId === proposedCard.messageId && edit.text.includes("answered: confirm")));
   expect(taskData((await getTask(w.store, proposed.id)).data).phase).toBe("ready");
+  const proposedHistory = (await w.views.section(`task:${proposed.id}`, "history")).markdown;
+  expect(proposedHistory).toContain("via telegram");
+  expect(proposedHistory).toContain("as 42");
 
   // A tap from a user who is not listed changes nothing.
   api.deliver(tap(201, 7, 42, mergeCard.messageId, "o:0"));
@@ -357,6 +361,9 @@ test("a proposed task and a task waiting for a merge are answered from Telegram 
   await api.until(() => api.edits.some((edit) => edit.messageId === mergeCard.messageId && edit.text.includes("answered: merge")));
   await pass();
   expect(taskData((await getTask(w.store, waiting.id)).data).brief).toContain("merge requested");
+  const mergeHistory = (await w.views.section(`task:${waiting.id}`, "history")).markdown;
+  expect(mergeHistory).toContain("via telegram");
+  expect(mergeHistory).toContain("as 42");
   // Only dev's note about its missing worker pool is left; it has nothing to answer.
   expect((await w.views.pending()).map((item) => item.runId)).toEqual(["dev:plugin:pool"]);
   await plugin.stop();

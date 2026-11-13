@@ -54,6 +54,17 @@ export function telegramChatsOf(channels: readonly string[]): readonly number[] 
   return found;
 }
 
+/** A chunk that was tried and not taken: how many sends it took, and the last refusal. */
+class SendGaveUp extends Error {
+  constructor(
+    readonly tries: number,
+    readonly last: unknown,
+  ) {
+    super(messageOf(last));
+    this.name = "SendGaveUp";
+  }
+}
+
 export class ReplySender {
   private readonly ctx: SourceContext;
   private readonly api: BotApi;
@@ -170,7 +181,8 @@ export class ReplySender {
         id = await this.sendChunk(target, chunk);
       } catch (error) {
         if (this.stopped) return;
-        await this.giveUp(chatId, message, sent, chunks.length, error);
+        const tries = error instanceof SendGaveUp ? error.tries : 1;
+        await this.giveUp(chatId, message, sent, chunks.length, tries, error instanceof SendGaveUp ? error.last : error);
         this.remember(key, { chunks: sent, ...(telegramId === undefined ? {} : { telegramId }), done: true, failed: true });
         return;
       }
@@ -199,7 +211,7 @@ export class ReplySender {
           continue;
         }
         const retryable = error instanceof BotApiError ? error.retryable : true;
-        if (!retryable || attempt >= this.retry.attempts) throw error;
+        if (!retryable || attempt >= this.retry.attempts) throw new SendGaveUp(attempt, error);
         const backoff = Math.min(this.retry.maxMs, this.retry.baseMs * 2 ** (attempt - 1));
         const asked = error instanceof BotApiError && error.retryAfterSecs !== undefined ? error.retryAfterSecs * 1_000 : 0;
         await this.wait(Math.max(backoff, asked), this.controller.signal);
@@ -214,9 +226,9 @@ export class ReplySender {
    * after a crash records it once. It is the plugin's own record; nothing is
    * written into the chat's messages or entries, which are the chat plugin's.
    */
-  private async giveUp(chatId: string, message: Message, sent: number, total: number, error: unknown): Promise<void> {
+  private async giveUp(chatId: string, message: Message, sent: number, total: number, tries: number, error: unknown): Promise<void> {
     const part = total > 1 ? ` (part ${sent + 1} of ${total})` : "";
-    const text = `could not send the reply${part}; gave up after ${this.retry.attempts} tries: ${messageOf(error)}`;
+    const text = `could not send the reply${part}; gave up after ${tries} ${tries === 1 ? "try" : "tries"}: ${messageOf(error)}`;
     await this.ctx.logger.write(`reply ${message.id} of chat ${chatId}: ${text}`);
     await this.ctx.emit({
       source: TELEGRAM_SOURCE,

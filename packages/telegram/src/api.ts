@@ -126,6 +126,10 @@ export interface BotApiOptions {
   readonly baseUrl?: string | undefined;
   /** The request function; a test gives a fake that never reaches the network. */
   readonly fetch?: ((url: string, init?: RequestInit) => Promise<Response>) | undefined;
+  /** How long a send, edit or answer may take before it counts as failed; 30 seconds by default. */
+  readonly sendTimeoutMs?: number | undefined;
+  /** Makes the signal that ends a send after its time; a test gives one it aborts itself. */
+  readonly timeoutSignal?: ((ms: number) => AbortSignal) | undefined;
 }
 
 /** Hides the token from anything a caller may log or throw. */
@@ -209,6 +213,12 @@ export function createBotApi(options: BotApiOptions): BotApi {
   const token = options.token.reveal();
   const origin = options.baseUrl ?? "https://api.telegram.org";
   const request = options.fetch ?? fetch;
+  const sendTimeoutMs = options.sendTimeoutMs ?? 30_000;
+  /** The caller's signal joined with the send's own time limit. */
+  const limited = (signal: AbortSignal | undefined): AbortSignal => {
+    const timeout = (options.timeoutSignal ?? AbortSignal.timeout.bind(AbortSignal))(sendTimeoutMs);
+    return signal === undefined ? timeout : AbortSignal.any([signal, timeout]);
+  };
   /** One Bot API call whose result nobody reads. */
   const post = async (method: string, payload: Record<string, unknown>, signal?: AbortSignal): Promise<void> => {
     let response: Response;
@@ -217,7 +227,7 @@ export function createBotApi(options: BotApiOptions): BotApi {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(payload),
-        ...(signal === undefined ? {} : { signal }),
+        signal: limited(signal),
       });
     } catch (error) {
       throw sendFailure(messageOf(error), token, { retryable: true });
@@ -318,7 +328,7 @@ export function createBotApi(options: BotApiOptions): BotApi {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify(payload),
-          ...(input.signal === undefined ? {} : { signal: input.signal }),
+          signal: limited(input.signal),
         });
       } catch (error) {
         throw sendFailure(messageOf(error), token, { retryable: true });
