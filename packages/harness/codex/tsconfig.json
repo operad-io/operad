@@ -1,6 +1,6 @@
 {
   "extends": "../../../tsconfig.base.json",
   "compilerOptions": { "rootDir": ".", "outDir": "../../../.tsbuild/codex" },
-  "include": ["src", "test"],
+  "include": ["package.json", "src", "test"],
   "references": [{ "path": "../../access-match" }, { "path": "../../engine" }, { "path": "../process" }]
 }

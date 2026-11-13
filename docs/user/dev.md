@@ -4,7 +4,30 @@ description: dev.json and the dev plugin: its commands, the reviewer, workers an
 
 # dev.json and the dev plugin
 
-The `dev` plugin runs plans and tasks on a repository. Its project settings are in `.operad/dev.json`; its commands and what they do are in the sections below. A complete workflow is in [Running operad on operad](../dogfood.md); the settings a client may change are in [config.json](config.md#settings-from-a-client).
+The `dev` plugin runs plans and tasks on a repository. Its project settings are in `.operad/dev.json`; its commands and what they do are in the sections below. The settings a client may change are in [config.json](config.md#settings-from-a-client).
+
+## How a task goes from request to merge
+
+A request becomes a plan, a plan holds tasks, and each task runs through the same path. You are in the loop at two points: when you confirm the plan, and at the merge.
+
+```text
+plan -> tasks (draft) -> confirm -> ready -> work -> check -> review -> you merge -> main
+                                               ^       |        |
+                                               +-------+--------+  rework
+```
+
+1. **Plan and tasks.** A plan is one request (`operad plan add`). Each task in it has a brief, the instructions for the worker (`operad task add`). A task may wait for another with `--after`. `operad dev:confirm <plan>` moves the plan's draft tasks to ready; a confirmed plan is what `operad serve` schedules.
+2. **Start.** `serve` starts ready tasks, up to the repository's `concurrency` and each pool's cap. Each task gets its own git worktree and branch, so tasks never touch each other or your checkout.
+3. **Work.** A worker, chosen from `workers` through a pool, runs in the task's worktree with the brief and commits there. A worker whose model is unavailable can hand the work to its `fallback`.
+4. **Check.** The commands in `gate.commands` run against the commit. A failing test is run again on its own first, so a flaky test is told apart from a real failure.
+5. **Review.** The reviewer reads the change and writes a report. Findings that reach `reviewer.fixLevel` (default `major`) fail the review.
+6. **Rework.** A failed check or a failed review sends the task back to the worker, up to `maxAutoRework` times (default `2`). After that the task waits for you.
+7. **Waiting for you.** A task that passed check and review waits in `operad pending` as `ready to merge`, with the actions `dev:merge`, `dev:reject`, `dev:rework`, `dev:reverify` and `dev:cancel`. A task also waits when something needs a person: review findings, a failed gate, the rework limit, a worker that added no commit.
+8. **Merge and clean up.** `dev:merge` puts the verified commit on main (`integration.style`), runs `integration.keyCommands`, and pushes to the remote. Then cleanup removes the task's worktrees and branches. Tasks of one repository integrate one at a time. If the remote refuses the push, nothing is written and the task waits with a note.
+
+Every step is recorded: `operad history <task>` shows what ran, what a check or review found, and what you chose. A run whose process died starts again from its last recorded step. A plan can go further without you: `operad dev:auto <plan> --level merge` merges reviewed work after the check passes, `--level run` starts the plan's tasks without you and still stops each one for you at the merge, and `--level off` waits for you at every start and merge. `autoDefault` sets the level for new plans.
+
+The keys for each part are in the sections below: [the repository and its workers](#the-repository-and-its-workers), [the gate and its checks](#the-gate-and-its-checks), [work, review, integration and cleanup](#work-review-integration-and-cleanup) and [flows and their stages](#flows-and-their-stages).
 
 ## Every `.operad/dev.json` key
 
@@ -310,8 +333,13 @@ as failed with the reason that it was cancelled.
 
 ### The `codex` settings
 
-`codex` runs the user's own Codex through `codex-acp`; how to set it up is in
-`docs/dogfood.md`. Its settings are in the `codex` section of `config.json`:
+`codex` runs the user's own Codex through `codex-acp`. It is not in the default
+config: turn it on with `operad plugin enable codex`. operad brings no
+`codex-acp` of its own: put `codex-acp` (`bun add -g @agentclientprotocol/codex-acp`)
+and `bun` on `PATH`, and run `codex login` once; operad uses your own Codex login.
+`operad plugin check codex` reports the versions and the login kind, and says what
+to do when `codex-acp` cannot start or Codex is not logged in. Its settings are in
+the `codex` section of `config.json`:
 
 | Setting | Type | Default | What it does |
 |---|---|---|---|

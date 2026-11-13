@@ -1,3 +1,4 @@
+import pkg from "../package.json" with { type: "json" };
 import { definePlugin } from "@operad-io/engine";
 import { latestCronMinute, parseCron } from "@operad-io/engine";
 import type {
@@ -86,7 +87,7 @@ export class CronSource {
 export default definePlugin({
   name: "cron",
   kind: "source",
-  version: "0.0.1",
+  version: pkg.version,
   start(ctx) {
     const source = new CronSource(ctx);
     void source.poll();

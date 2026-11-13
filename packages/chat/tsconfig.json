@@ -1,6 +1,6 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": { "rootDir": ".", "outDir": "../../.tsbuild/chat" },
-  "include": ["src", "test"],
+  "include": ["package.json", "src", "test"],
   "references": [{ "path": "../engine" }, { "path": "../harness/process" }]
 }

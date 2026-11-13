@@ -120,9 +120,10 @@ For a task that passed verify and review, the actions are `dev:merge`,
 The action needs `--yes` because it is the person's decision; in a terminal
 without `--yes` it asks first.
 
-A plan can run further without a person: `operad dev:auto <plan> --level run`
-merges reviewed work after the gate passes, and `--level off` returns to a
-person at every merge.
+A plan can run further without a person: `operad dev:auto <plan> --level merge`
+merges reviewed work after the gate passes, `--level run` starts the tasks
+without a person and still stops each one at the merge, and `--level off`
+returns to a person at every merge.
 
 ## History and what each step did
 

@@ -50,16 +50,16 @@ You also need `git`, a repository with a remote, and one of `claude`, `pi` or `r
 ```sh
 operad init                     # create the home and check the plugins
 operad repo add .               # register this repository
-operad plan add --slug dogfood --title "Run operad on operad" < request.md
-operad task add --plan P-0001-dogfood --slug switch --title "Switch" < task.md
-operad dev:confirm P-0001-dogfood
+operad plan add --slug hello --title "Add a greeting" < request.md
+operad task add --plan P-0001-hello --slug greet --title "Print the greeting" < task.md
+operad dev:confirm P-0001-hello
 operad serve                    # run the loop
 
 operad pending                  # what waits for you
-operad dev:merge T-0001-switch --yes
+operad dev:merge T-0001-greet --yes
 ```
 
-[Running operad on operad](docs/dogfood.md) walks through the same workflow in full.
+Not sure what goes in `.operad/dev.json`? [Paste this prompt](docs/user/setup-prompt.md) into your coding agent and it will write and check the file for you.
 
 ## How it works
 
@@ -92,7 +92,6 @@ The kernel knows three words. The rest is plugins: `dev` (plans, tasks, review, 
 ## Documentation
 
 - [User manual](docs/user/index.md): quickstart, `config.json`, the `dev` plugin, access profiles, every command, troubleshooting.
-- [Running operad on operad](docs/dogfood.md): a complete workflow.
 - [Writing a plugin](docs/plugins/index.md): for plugin authors.
 - [docs/backlog/](docs/backlog/): the direction and the open questions.
 

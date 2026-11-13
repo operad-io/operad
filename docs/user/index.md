@@ -9,6 +9,7 @@ operad is an open orchestration layer for coding agents. It runs an agent (radia
 ## Pages
 
 - [quickstart](quickstart.md): create the home, start `serve`, open the client.
+- [setup-prompt](setup-prompt.md): a prompt that has your agent write `.operad/dev.json`.
 - [config](config.md): the home and every section of `config.json`.
 - [dev](dev.md): `dev.json` and the `dev` plugin's commands, the reviewer, workers and pools.
 - [access](access.md): access profiles, `access-user.json` and always allow.
@@ -23,4 +24,4 @@ operad is an open orchestration layer for coding agents. It runs an agent (radia
 - [environment](environment.md): every environment variable.
 - [troubleshooting](troubleshooting.md): when something does not work.
 
-A complete workflow is in [Running operad on operad](../dogfood.md). Plugin authors start at [Writing a plugin](../plugins/index.md).
+Plugin authors start at [Writing a plugin](../plugins/index.md).

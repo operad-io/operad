@@ -324,8 +324,8 @@ including the ones `dev` starts; a change does not stop runs already going.
 ### `codex`
 
 The `codex` plugin runs the user's own Codex through `codex-acp`. Its step is
-`codex/agent`; set-up is in `docs/dogfood.md` and the settings are also listed
-on [the dev page](dev.md#the-codex-settings).
+`codex/agent`; how to set it up and the settings are on
+[the dev page](dev.md#the-codex-settings).
 
 | Key | Type | Default | Allowed values | When it takes effect | Wrong value |
 |---|---|---|---|---|---|
