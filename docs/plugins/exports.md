@@ -21,7 +21,7 @@ Types (`StepContext`, `ActionTypeDefinition`, `ObjectRow`, ...) are exported too
 | `definePlugin` | Declares a plugin and adds `operadPlugin: 1` | [definePlugin](define-plugin.md) |
 | `OPERAD_PLUGIN_VERSION` | `1`: the plugin API version a module declares | [definePlugin](define-plugin.md#the-fields) |
 | `PLUGIN_API_VERSION` | `"1.0.0"`: the API version as a semver version, for `requires.api` | [`requires`](define-plugin.md#requires) |
-| `ENGINE_VERSION` | The engine's version, `"0.0.0"` | [definePlugin](define-plugin.md) |
+| `ENGINE_VERSION` | The engine's version: the `version` of the engine package | [definePlugin](define-plugin.md) |
 | `defineFlow` | Declares a flow and checks its result names at compile time | [Flows](flows.md) |
 | `validateFlow` | Checks a flow against the step types; throws `FlowError` | [Flows](flows.md) |
 | `loadFlow` | Imports a module whose default export is a flow and validates it | [Flows](flows.md#declared-by-a-plugin-loaded-from-a-file) |
