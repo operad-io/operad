@@ -1,12 +1,24 @@
 {
   "name": "@operad-io/review-grading",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.0.1",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
   },
   "dependencies": {
     "@operad-io/engine": "workspace:*"
-  }
+  },
+  "description": "operad: review report grading (in development)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/operad-io/operad.git",
+    "directory": "packages/review-grading"
+  },
+  "license": "MIT",
+  "files": [
+    "src",
+    "review.schema.json",
+    "README.md",
+    "LICENSE"
+  ]
 }

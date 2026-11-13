@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { pidValue } from "./support.ts";
+import { pidValue } from "../src/test-support.ts";
 
 describe("test support", () => {
   test("a pid must be a finite integer above 1", () => {

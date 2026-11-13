@@ -1,15 +1,26 @@
 {
   "name": "@operad-io/harness-process",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.0.1",
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./test-support": "./test/support.ts",
-    "./test-fake-lines": "./test/fake-lines.ts"
+    "./test-support": "./src/test-support.ts",
+    "./test-fake-lines": "./src/test-fake-lines.ts"
   },
   "dependencies": {
     "@operad-io/engine": "workspace:*",
     "@operad-io/mcp": "workspace:*"
-  }
+  },
+  "description": "operad: the shared process and log helpers of the harness plugins (in development)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/operad-io/operad.git",
+    "directory": "packages/harness/process"
+  },
+  "license": "MIT",
+  "files": [
+    "src",
+    "access-user.schema.json",
+    "LICENSE"
+  ]
 }

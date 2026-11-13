@@ -6,6 +6,8 @@ channels to reach a human and plugins an agent can write on the spot.
 
 In development. The direction and the open questions are in `docs/backlog/`.
 
+MIT licensed; see [LICENSE](LICENSE).
+
 The user manual (the commands and `config.json` keys) starts at
 `docs/user/index.md`; plugin authors start at `docs/plugins/index.md`; a complete
 workflow is in `docs/dogfood.md`.

@@ -5,6 +5,17 @@ one registered repository, a plan, tasks, and a person at the merge.
 
 The examples use this repository and the settings in `.operad/dev.json`.
 
+## Install
+
+operad runs on [Bun](https://bun.com); install Bun first. Then install the
+command from npm:
+
+```sh
+bun add -g @operad-io/cli
+```
+
+`operad --help` shows the commands. The next section creates the home.
+
 ## One time: create the home and register the repository
 
 ```sh
@@ -260,6 +271,12 @@ load it:
 ```sh
 operad plugin enable claude
 ```
+
+Outside a workspace checkout, enabling installs `@operad-io/harness-claude` and
+the Agent SDK client it needs into a Bun project under `~/.operad/plugins`,
+skipping the SDK's optional platform packages. It does not install Claude Code.
+The first enable needs network access to the npm registry. When the package is
+not installed, `operad plugin check claude` names the command that installs it.
 
 **Install claude and log in.** operad does not bring its own claude: it uses the
 one you installed (see https://code.claude.com), so a `claude` command must be

@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import type { AskAnswer, AskRequest } from "@operad-io/engine";
 import { readAlwaysAllow } from "../src/always-allow.ts";
-import { cleanupTempRoots, tempRoot } from "./support.ts";
+import { cleanupTempRoots, tempRoot } from "../src/test-support.ts";
 import {
   ALLOW_ALWAYS,
   ALLOW_ONCE,

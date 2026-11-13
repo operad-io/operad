@@ -10,7 +10,7 @@ import {
   personStarted,
   readAlwaysAllow,
 } from "../src/always-allow.ts";
-import { cleanupTempRoots, tempRoot } from "./support.ts";
+import { cleanupTempRoots, tempRoot } from "../src/test-support.ts";
 
 afterAll(cleanupTempRoots);
 

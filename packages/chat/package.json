@@ -1,7 +1,6 @@
 {
   "name": "@operad-io/chat",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.0.1",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
@@ -9,5 +8,17 @@
   "dependencies": {
     "@operad-io/engine": "workspace:*",
     "@operad-io/harness-process": "workspace:*"
-  }
+  },
+  "description": "operad: the chat plugin (in development)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/operad-io/operad.git",
+    "directory": "packages/chat"
+  },
+  "license": "MIT",
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ]
 }
