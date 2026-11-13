@@ -1,5 +1,6 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { mkdir, readdir, readFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import {
   ConfigError,
@@ -304,6 +305,10 @@ describe("operad config", () => {
     expect(schema.properties?.http).toBeDefined();
     expect(schema.properties?.notify).toBeDefined();
     expect(schema.properties?.mcp).toBeDefined();
+  });
+
+  test("the schema package ships has no second copy that can differ", () => {
+    expect(existsSync(new URL("../schemas", import.meta.url))).toBe(false);
   });
 
   test("reads http options and applies their defaults", async () => {

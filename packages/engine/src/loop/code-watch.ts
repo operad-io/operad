@@ -457,13 +457,16 @@ export class CodeWatch {
     const settings = this.settings();
     this.sync(current, settings);
     const change = diffFingerprints(this.baseline, current);
-    this.setOlder(change !== undefined);
-    if (change === undefined) return;
+    if (change === undefined) {
+      this.setOlder(false);
+      return;
+    }
     if (
       this.declined !== undefined &&
       diffFingerprints(this.declined.code, current) === undefined &&
       diffFingerprints(this.declined.settings, settings) === undefined
     ) {
+      this.setOlder(true);
       return;
     }
     this.busy = true;
@@ -476,6 +479,7 @@ export class CodeWatch {
       } else {
         this.declined = { code: current, settings };
         this.busy = false;
+        this.setOlder(true);
       }
     }
   }

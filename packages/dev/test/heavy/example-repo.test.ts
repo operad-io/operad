@@ -14,7 +14,6 @@ import { definePlugin, PluginRegistry, type PluginStepResult } from "@operad-io/
 import { createShellPlugin } from "@operad-io/shell";
 import { notCodeTestHooks } from "../../src/notcode.ts";
 import { addPlan, addRepository, addTask, confirmPlan, createDevPlugin, listAll, taskData, validateDevSettings } from "../../src/index.ts";
-import { appendFileSync } from "node:fs";
 import { gitOrThrow, makeRemote, type RemoteSetup } from "../git-support.ts";
 import { cleanupTempRoots, guardLockHandles, osTempRoot, storeAt } from "../support.ts";
 
@@ -87,28 +86,25 @@ function stubs(prompts: Prompts) {
   return [worker, reviewer];
 }
 
-/** The example repository as a git clone with an origin, its dev.json plus the two stubs. */
+/** The example repository as a git clone with an origin, its dev.json (with the two stubs) committed. */
 async function exampleFixture() {
   const root = await osTempRoot();
   const remote: RemoteSetup = await makeRemote(root);
-  cpSync(EXAMPLE, remote.seed, { recursive: true, filter: (path) => !path.endsWith(`${"example-repo"}/.operad`) && !path.includes("/.operad/") });
-  gitOrThrow(remote.seed, ["add", "."]);
-  gitOrThrow(remote.seed, ["-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-qm", "the example"]);
-  gitOrThrow(remote.seed, ["push", "origin", "main"]);
-  gitOrThrow(remote.repository, ["pull", "--ff-only", "origin", "main"]);
-
-  // The settings stay local to the clone; the stubs are the only keys added to the example's own.
+  cpSync(EXAMPLE, remote.seed, { recursive: true });
+  // The example's own dev.json plus the two stubs, committed in the repository.
   const given = JSON.parse(readFileSync(join(EXAMPLE, ".operad", "dev.json"), "utf8")) as Record<string, unknown>;
-  mkdirSync(join(remote.repository, ".operad"), { recursive: true });
   writeFileSync(
-    join(remote.repository, ".operad", "dev.json"),
+    join(remote.seed, ".operad", "dev.json"),
     JSON.stringify({
       ...given,
       worker: { use: "stub-worker/agent", args: [] },
       reviewer: { use: "stub-reviewer/agent", args: [] },
     }),
   );
-  appendFileSync(join(remote.repository, ".git", "info", "exclude"), ".operad/\n");
+  gitOrThrow(remote.seed, ["add", "."]);
+  gitOrThrow(remote.seed, ["-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-qm", "the example"]);
+  gitOrThrow(remote.seed, ["push", "origin", "main"]);
+  gitOrThrow(remote.repository, ["pull", "--ff-only", "origin", "main"]);
 
   const store = storeAt(root);
   const repository = await addRepository(store, { path: remote.repository, name: "greeter" });

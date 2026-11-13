@@ -1,10 +1,11 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   acquireLock,
   CodeWatch,
   describeChange,
+  diffFingerprints,
   fingerprintCode,
   listPending,
   MemoryPluginStore,
@@ -168,8 +169,8 @@ describe("a serve restored after a restart could not listen", () => {
    */
   async function scenario(changed: "engine" | "plugin") {
     const home = await tempRoot();
-    const roots = ["engine", "plugin"].map((name) => {
-      const path = join(home, name);
+    const roots = ["engine", "plugin x"].map((name) => {
+      const path = join(home, name.replace(" ", "-"));
       mkdirSync(path, { recursive: true });
       writeFileSync(join(path, "index.ts"), "export const v = 1;\n");
       return { label: name, path };
@@ -177,11 +178,12 @@ describe("a serve restored after a restart could not listen", () => {
     const snapshotOf = serveSnapshots();
     const take = (): CodeSnapshot => {
       const cache = newHashCache();
-      return { roots, baseline: fingerprintCode(roots, cache), cache };
+      // The plugin is a path plugin: its entry file is imported again.
+      return { roots, baseline: fingerprintCode(roots, cache), cache, entries: new Set([join(home, "plugin-x", "index.ts")]) };
     };
     // The first serve loads the code, then a file changes and its restart fails to listen.
     snapshotOf(take(), false);
-    writeFileSync(join(home, changed, "index.ts"), "export const v = 2;\n");
+    writeFileSync(join(home, changed === "plugin" ? "plugin-x" : changed, "index.ts"), "export const v = 2;\n");
 
     const storeRoot = join(home, "store");
     const log = openLog({ backend: "sqlite", path: join(storeRoot, "log.sqlite") });
@@ -225,17 +227,84 @@ describe("a serve restored after a restart could not listen", () => {
     };
   }
 
-  for (const changed of ["engine", "plugin"] as const) {
-    test(`a changed ${changed} file shows the item; a serve that restarted on the new code shows none`, async () => {
-      const s = await scenario(changed);
-      const restored = await s.serve(true);
-      expect(restored).toHaveLength(1);
-      expect(restored[0]).toContain("serve runs older code than the files on disk");
-      // A successful restart takes a fresh snapshot of what is on disk.
-      expect(await s.serve(false)).toEqual([]);
-      await s.done();
-    });
+  test("a changed engine file shows the item; a serve that restarted on the new code shows none", async () => {
+    const s = await scenario("engine");
+    const restored = await s.serve(true);
+    expect(restored).toHaveLength(1);
+    expect(restored[0]).toContain("serve runs older code than the files on disk");
+    // A successful restart takes a fresh snapshot of what is on disk.
+    expect(await s.serve(false)).toEqual([]);
+    await s.done();
+  });
+
+  test("a changed plugin file shows nothing: the restored serve imported the plugin again", async () => {
+    const s = await scenario("plugin");
+    expect(await s.serve(true)).toEqual([]);
+    await s.done();
+  });
+});
+
+describe("what a restored serve counts as loaded again", () => {
+  /** A snapshot of an engine root, a path plugin (entry and a helper) and a plugin given by package name. */
+  function snapshot(home: string, withLate: boolean): CodeSnapshot {
+    const roots = [
+      { label: "engine", path: join(home, "engine") },
+      { label: "plugin path", path: join(home, "path") },
+      { label: "plugin named", path: join(home, "named") },
+      ...(withLate ? [{ label: "plugin late", path: join(home, "late") }] : []),
+    ];
+    const cache = newHashCache();
+    return {
+      roots,
+      baseline: fingerprintCode(roots, cache),
+      cache,
+      entries: new Set([join(home, "path", "entry.ts")]),
+    };
   }
+
+  async function changed(edit: (home: string) => void, withLateAtRestore: boolean): Promise<readonly string[] | undefined> {
+    const home = await tempRoot();
+    for (const [dir, file] of [
+      ["engine", "index.ts"],
+      ["path", "entry.ts"],
+      ["path", "helper.ts"],
+      ["named", "index.ts"],
+      ["late", "index.ts"],
+    ] as const) {
+      mkdirSync(join(home, dir), { recursive: true });
+      writeFileSync(join(home, dir, file), "export const v = 1;\n");
+    }
+    const snapshotOf = serveSnapshots();
+    snapshotOf(snapshot(home, false), false);
+    edit(home);
+    const restored = snapshotOf(snapshot(home, withLateAtRestore), true);
+    return diffFingerprints(restored.baseline, fingerprintCode(restored.roots))?.files.map((file) => file.slice(home.length + 1));
+  }
+  const edit = (home: string, path: string): void => writeFileSync(join(home, path), "export const v = 2;\n");
+
+  test("the entry file of a path plugin is loaded again; its other files are not", async () => {
+    expect(await changed((home) => edit(home, "path/entry.ts"), false)).toBeUndefined();
+    expect(await changed((home) => edit(home, "path/helper.ts"), false)).toEqual(["path/helper.ts"]);
+  });
+
+  test("a plugin given by package name stays as the first start loaded it", async () => {
+    expect(await changed((home) => edit(home, "named/index.ts"), false)).toEqual(["named/index.ts"]);
+  });
+
+  test("a plugin enabled since the first start counts as loaded from the disk", async () => {
+    expect(await changed((home) => edit(home, "late/index.ts"), true)).toBeUndefined();
+  });
+});
+
+describe("the serve command's code watch", () => {
+  test("is given the change a restart already tried and reports into the notice", () => {
+    // Whether the restored serve reloads on the same change again is a matter of a poll that
+    // finds nothing to do, which no event marks: the wiring is checked where the watch is built.
+    const source = readFileSync(new URL("../src/main.ts", import.meta.url), "utf8");
+    const build = /watch = new CodeWatch\(\{[\s\S]*?\n      \}\);/.exec(source)?.[0] ?? "";
+    expect(build).toContain("declined: context.code.tried");
+    expect(build).toContain("onOlder: olderNotice.report");
+  });
 });
 
 describe("the stop signal handlers of a serve", () => {

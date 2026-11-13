@@ -13,6 +13,7 @@ import {
   fingerprintCode,
   newHashCache,
   codeRoots,
+  pluginFile,
   waitForCodeChange,
 } from "@operad-io/engine";
 import type { CodeFingerprint, CodeRoot } from "@operad-io/engine";
@@ -41,6 +42,12 @@ export interface CodeSnapshot {
   readonly baseline: CodeFingerprint;
   readonly cache: ReturnType<typeof newHashCache>;
   /**
+   * The entry files of the plugins given as a path: the loader imports each with
+   * a fresh instance, so a restored serve runs the disk's copy of these files.
+   * Every other plugin file comes from the module cache once it was loaded.
+   */
+  readonly entries?: ReadonlySet<string> | undefined;
+  /**
    * The files on disk when a restart was already tried and fell back: the
    * restored serve does not try that same change again.
    */
@@ -63,23 +70,69 @@ export function takeCodeSnapshot(
   // way changed code is.
   roots.push({ label: "settings", path: join(home, "config.json") });
   const cache = newHashCache();
-  return { roots, baseline: fingerprintCode(roots, cache), cache };
+  const entries = new Set<string>();
+  for (const plugin of plugins) {
+    if (!plugin.enabled || !/^(file:|~|\.|\/)/.test(plugin.module)) continue;
+    const file = pluginFile(plugin.module, home);
+    if (file !== undefined) entries.add(file);
+  }
+  return { roots, baseline: fingerprintCode(roots, cache), cache, entries };
 }
 
 /**
  * Keeps the snapshot a process took when it first served. A serve restored in
- * the same process after a restart could not listen runs every module that
- * process loaded at its first start (engine, cli and the plugins: Bun keeps
- * them in its module cache), so its baseline is that first snapshot, not the
- * files on disk now. The watch then sees the change that caused the failed
- * restart and the older-code item shows; the files on disk now count as
- * already tried, so the same change is not tried again in a loop.
+ * the same process after a restart could not listen runs the engine and cli
+ * modules that process loaded at its first start (Bun keeps them in its
+ * module cache) and the plugin files that were cached; it imports again only
+ * what `restoredBaseline` names. The watch then sees a change to a cached
+ * file that caused the failed restart and the older-code item shows; the
+ * files on disk now count as already tried, so the same change is not tried again in a loop. The next
+ * different change goes through the normal load check.
  */
 export function serveSnapshots(): (fresh: CodeSnapshot, restored: boolean) => CodeSnapshot {
   let first: CodeSnapshot | undefined;
   return (fresh, restored) => {
     first ??= fresh;
-    return restored ? { ...fresh, baseline: first.baseline, tried: fresh.baseline } : fresh;
+    return restored
+      ? { ...fresh, baseline: restoredBaseline(first, fresh), tried: fresh.baseline }
+      : fresh;
+  };
+}
+
+/**
+ * What a restored serve runs: the modules of the first start (the module cache
+ * keeps them) except what is loaded again: the settings, the entry file of a
+ * plugin given as a path, and every file of a plugin that was not loaded at
+ * the first start. A plugin given by package name, and the other files of a
+ * path plugin, stay as the first start had them.
+ */
+function restoredBaseline(first: CodeSnapshot, fresh: CodeSnapshot): CodeFingerprint {
+  const firstLabels = new Set(first.baseline.labels.values());
+  const freshLabels = new Set(fresh.baseline.labels.values());
+  const again = (file: string, label: string | undefined, fromFirst: boolean): boolean =>
+    label === "settings" ||
+    (first.entries?.has(file) ?? false) ||
+    (fresh.entries?.has(file) ?? false) ||
+    (!fromFirst && label !== undefined && !firstLabels.has(label));
+  const hashes = new Map<string, string>();
+  const labels = new Map<string, string>();
+  for (const [source, fromFirst] of [
+    [first.baseline, true],
+    [fresh.baseline, false],
+  ] as const) {
+    for (const [file, hash] of source.hashes) {
+      const label = source.labels.get(file);
+      // A plugin the restored serve no longer loads has no files in its baseline.
+      if (fromFirst && label !== undefined && !freshLabels.has(label)) continue;
+      if (again(file, label, fromFirst) === fromFirst) continue;
+      hashes.set(file, hash);
+      if (label !== undefined) labels.set(file, label);
+    }
+  }
+  return {
+    hashes,
+    labels,
+    directories: new Set([...first.baseline.directories, ...fresh.baseline.directories]),
   };
 }
 

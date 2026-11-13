@@ -104,6 +104,8 @@ export interface McpServerOptions {
   readonly claudeChannel?: boolean | undefined;
   /** The object types the channel reports; the default is every type with views. */
   readonly types?: readonly string[] | undefined;
+  /** Plugins whose missing package is reported as "not installed; run `operad plugin enable`". */
+  readonly installOnEnable?: readonly string[] | undefined;
 }
 
 interface OpenContext {
@@ -177,6 +179,7 @@ async function openContext(
   cwd: string,
   clock: () => number,
   onLog: (message: string) => void | Promise<void>,
+  installOnEnable: readonly string[] | undefined,
 ): Promise<OpenContext> {
   const config: OperadConfig = await readConfig(home);
   const storeRoot = storeRootOf(config);
@@ -190,6 +193,7 @@ async function openContext(
     home,
     cwd,
     store,
+    ...(installOnEnable === undefined ? {} : { installOnEnable }),
     onCancelRun: (runId, graph) =>
       cancelRun({
         log,
@@ -445,7 +449,7 @@ export async function runMcpServer(
   const send = lineWriter(write);
   const input = options.input ?? Bun.stdin.stream();
 
-  const opened = await openContext(home, cwd, clock, log);
+  const opened = await openContext(home, cwd, clock, log, options.installOnEnable);
   let channel: ChannelHandle | undefined;
   try {
     if (options.claudeChannel === true) {
@@ -510,6 +514,8 @@ export interface OpenMcpToolsOptions {
   readonly cwd?: string | undefined;
   readonly clock?: (() => number) | undefined;
   readonly onLog?: ((message: string) => void) | undefined;
+  /** Plugins whose missing package is reported as "not installed; run `operad plugin enable`". */
+  readonly installOnEnable?: readonly string[] | undefined;
 }
 
 /**
@@ -519,9 +525,15 @@ export interface OpenMcpToolsOptions {
 export async function openMcpTools(options: OpenMcpToolsOptions = {}): Promise<McpTools> {
   const home = options.home ?? defaultOperadHome();
   const clock = options.clock ?? (() => Date.now());
-  const opened = await openContext(home, options.cwd ?? process.cwd(), clock, (message) => {
-    options.onLog?.(message);
-  });
+  const opened = await openContext(
+    home,
+    options.cwd ?? process.cwd(),
+    clock,
+    (message) => {
+      options.onLog?.(message);
+    },
+    options.installOnEnable,
+  );
   const context = toolContext(opened, clock);
   return {
     tools: TOOLS,

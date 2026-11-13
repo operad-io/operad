@@ -194,6 +194,14 @@ old code serves again. It has no actions, and it leaves when `serve` runs the
 code on disk again: after the files load and `serve` reloads, or after you
 restart it, or when the files go back to what `serve` loaded.
 
+When the restart could not listen and the old code serves again, that serve does
+not try the same change again. What it still runs from before is `operad` itself
+and the plugins given by package name (and the files a path plugin imports), so a
+change to those leaves the item above showing. A plugin given as a path, and a
+plugin enabled since `serve` first started, are loaded again from the files on
+disk, so a change to those alone shows nothing. The next different change goes
+through the load check and reloads as usual.
+
 ## The History section
 
 Every object has a History section (`operad show <id> --section history`, the

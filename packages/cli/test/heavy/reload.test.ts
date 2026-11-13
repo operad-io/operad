@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { SUPERVISED_ENV } from "../../src/code-reload.ts";
@@ -357,6 +357,26 @@ describe("a serve picks up changed code", () => {
     }
   }, 60_000);
 
+  test("the older-code notice is cleared when serve starts and when it stops", async () => {
+    const s = await setup();
+    const notice = join(s.home, "serve-older.json");
+    // A notice a serve that crashed left behind.
+    writeFileSync(notice, `${JSON.stringify({ pid: 1 })}\n`);
+    const serve = spawnOperad(s, ["serve"]);
+    const output = new Output(serve.stdout, serve.stderr);
+    try {
+      await output.until(/serving /);
+      expect(existsSync(notice)).toBe(false);
+      writeFileSync(s.plugin, "export default {{ not typescript\n");
+      await output.until(/does not load; the old code keeps running/);
+      await waitForFileNamed(notice);
+    } finally {
+      await stopServe(s);
+      expect(await serve.exited).toBe(0);
+    }
+    expect(existsSync(notice)).toBe(false);
+  }, 60_000);
+
   test("a settings file that does not read during a change is read again when it is fixed", async () => {
     const s = await setup();
     const configPath = join(s.home, "config.json");
@@ -580,47 +600,68 @@ describe("a reload with two listen addresses", () => {
     }
   }, 60_000);
 
-  test("a bind that keeps failing leaves the old code serving both addresses, with one line in the log", async () => {
-    const port = await freePort();
-    const second = secondAddress();
-    const s = await setup({ port, listen: ["127.0.0.1", second] });
-    s.env.OPERAD_BIND_RETRY_MS = "800";
-    s.env.OPERAD_BIND_RETRY_STEP_MS = "50";
-    const serve = spawnOperad(s, ["serve"]);
-    const output = new Output(serve.stdout, serve.stderr);
-    let blocker: ReturnType<typeof Bun.serve> | undefined;
-    try {
-      await output.until(/serving /);
-      const supervisorPid = serve.pid;
-      writeFileSync(s.plugin, pluginSource("v2", s.work));
-      await output.until(/reloading: /);
-      // Take the second address the moment the old code lets it go, and keep it.
-      while (blocker === undefined) {
-        try {
-          blocker = Bun.serve({ hostname: second, port, fetch: () => new Response("") });
-        } catch {
-          await new Promise<void>((resolve) => setImmediate(resolve));
+  for (const changed of ["plugin", "engine"] as const) {
+    test(`a bind that keeps failing after a ${changed} change leaves the old code serving both addresses; the next real change reloads`, async () => {
+      const port = await freePort();
+      const second = secondAddress();
+      const s = await setup({ port, listen: ["127.0.0.1", second] });
+      s.env.OPERAD_BIND_RETRY_MS = "800";
+      s.env.OPERAD_BIND_RETRY_STEP_MS = "50";
+      const serve = spawnOperad(s, ["serve"]);
+      const output = new Output(serve.stdout, serve.stderr);
+      let blocker: ReturnType<typeof Bun.serve> | undefined;
+      // A file of the engine package that no module imports: it counts as engine code.
+      const marker = fileURLToPath(new URL("../../../engine/zz-reload-test-marker.txt", import.meta.url));
+      try {
+        await output.until(/serving /);
+        const supervisorPid = serve.pid;
+        if (changed === "plugin") writeFileSync(s.plugin, pluginSource("v2", s.work));
+        else writeFileSync(marker, "changed\n");
+        await output.until(/reloading: /);
+        // Take the second address the moment the old code lets it go, and keep it.
+        while (blocker === undefined) {
+          try {
+            blocker = Bun.serve({ hostname: second, port, fetch: () => new Response("") });
+          } catch {
+            await new Promise<void>((resolve) => setImmediate(resolve));
+          }
         }
+        await output.until(/the old code tries every address again/);
+        // The new code is gone; free the address for the old code to take back.
+        await blocker.stop(true);
+        blocker = undefined;
+        await output.until(/serving /, 2);
+        // The restored serve imported the plugin again, so only an engine change
+        // leaves it on older code; it does not try that change again.
+        if (changed === "engine") {
+          await waitForFileNamed(join(s.home, "serve-older.json"));
+          expect(await operad(s, ["pending", "--json"])).toContain("serve runs older code than the files on disk");
+        } else {
+          expect(await operad(s, ["pending", "--json"])).not.toContain("serve runs older code");
+        }
+        expect(output.text.match(/reloading: /g)).toHaveLength(1);
+        expect(await answers(urlOf("127.0.0.1", port))).toBe(true);
+        expect(await answers(urlOf(second, port))).toBe(true);
+        expect(output.text.match(/the old code tries every address again/g)).toHaveLength(1);
+        expect(serve.pid).toBe(supervisorPid);
+        expect(serve.exitCode).toBeNull();
+
+        // The next real change goes through the load check and reloads.
+        writeFileSync(s.plugin, pluginSource("v3", s.work));
+        await output.until(/reloading: /, 2);
+        await output.until(/serving /, 3);
+        // The second line is the plugin change.
+        const lines = output.text.split("\n").filter((line) => line.startsWith("reloading: "));
+        expect(lines).toHaveLength(2);
+        expect(lines[1]).toContain("plugin reloadflow");
+        expect(serve.exitCode).toBeNull();
+        expect(await answers(urlOf("127.0.0.1", port))).toBe(true);
+      } finally {
+        rmSync(marker, { force: true });
+        await blocker?.stop(true);
+        await stopServe(s);
+        expect(await serve.exited).toBe(0);
       }
-      await output.until(/the old code tries every address again/);
-      // The new code is gone; free the address for the old code to take back.
-      await blocker.stop(true);
-      blocker = undefined;
-      await output.until(/serving /, 2);
-      // The old code serves again while the changed plugin is on disk: pending says so,
-      // and the restored serve does not try that change again.
-      await waitForFileNamed(join(s.home, "serve-older.json"));
-      expect(await operad(s, ["pending", "--json"])).toContain("serve runs older code than the files on disk");
-      expect(output.text.match(/reloading: /g)).toHaveLength(1);
-      expect(await answers(urlOf("127.0.0.1", port))).toBe(true);
-      expect(await answers(urlOf(second, port))).toBe(true);
-      expect(output.text.match(/the old code tries every address again/g)).toHaveLength(1);
-      expect(serve.pid).toBe(supervisorPid);
-      expect(serve.exitCode).toBeNull();
-    } finally {
-      await blocker?.stop(true);
-      await stopServe(s);
-      expect(await serve.exited).toBe(0);
-    }
-  }, 60_000);
+    }, 60_000);
+  }
 });
