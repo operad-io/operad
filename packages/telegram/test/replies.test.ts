@@ -6,9 +6,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   CHAT_TYPE,
-  ENTRY_FACT,
   MESSAGE_FACT,
-  allEntries,
   chatRef,
 } from "@operad-io/chat";
 import { Secret } from "@operad-io/engine";
@@ -58,6 +56,28 @@ async function reply(w: TelegramWorld, chat: string, text: string, role: "assist
       source: { kind: "agent", ref: null },
     },
   });
+}
+
+/** The `send_failed` events the plugin recorded, with the summary each carries. */
+async function failedEvents(w: TelegramWorld): Promise<{ key: string; object: string | undefined; summary: string }[]> {
+  const found: { key: string; object: string | undefined; summary: string }[] = [];
+  for await (const input of w.log.readInputs()) {
+    if (input.source !== "telegram" || !input.sourceKey.startsWith("send_failed:")) continue;
+    const payload = input.payload;
+    if (typeof payload !== "object" || payload === null || Array.isArray(payload)) continue;
+    const file = payload.summaryFile;
+    found.push({
+      key: input.sourceKey,
+      object: typeof payload.object === "string" ? payload.object : undefined,
+      summary: typeof file === "string" ? readFileSync(file, "utf8") : "",
+    });
+  }
+  return found;
+}
+
+/** The type of every fact of a chat, in order. */
+function chatFactTypes(w: TelegramWorld, chat: string): string[] {
+  return w.store.facts(chatRef(chat), { limit: 500 }).facts.map((fact) => fact.type);
 }
 
 const never = (): Promise<void> => new Promise(() => undefined);
@@ -249,7 +269,7 @@ describe("a send that fails", () => {
     await w.close();
   });
 
-  test("that gives up says so in the chat's history, is not dropped silently and is not tried again", async () => {
+  test("that gives up is recorded as the plugin's own event, adds nothing to the chat and is not tried again", async () => {
     const { w, chat } = await bound();
     const token = "123456:SECRET-TOKEN";
     const api = createBotApi({
@@ -267,6 +287,7 @@ describe("a send that fails", () => {
       },
     };
     await reply(w, chat, "never arrives");
+    const before = chatFactTypes(w, chat);
     const waits: number[] = [];
     const wait = async (ms: number): Promise<void> => {
       waits.push(ms);
@@ -276,17 +297,21 @@ describe("a send that fails", () => {
     expect(tries).toBe(3);
     expect(waits).toEqual([10, 20]);
 
-    const entries = allEntries(w.store, chat);
-    expect(entries).toHaveLength(1);
-    expect(entries[0]?.text).toContain("could not send the reply");
-    expect(entries[0]?.text).toContain("gave up after 3 tries");
-    const everything = JSON.stringify([entries, w.logs, readSent(w.home)]);
-    expect(everything).not.toContain("SECRET-TOKEN");
-    expect(w.store.facts(chatRef(chat), { limit: 500 }).facts.filter((fact) => fact.type === ENTRY_FACT)).toHaveLength(1);
+    const failed = await failedEvents(w);
+    expect(failed).toHaveLength(1);
+    expect(failed[0]?.object).toBe(`chat:${chat}`);
+    expect(failed[0]?.summary).toContain("could not send the reply");
+    expect(failed[0]?.summary).toContain("gave up after 3 tries");
+    expect(JSON.stringify([failed, w.logs, readSent(w.home)])).not.toContain("SECRET-TOKEN");
+
+    // The event is the plugin's own record: the chat gains no message and no entry,
+    // and its history does not pass the notice off as anything the agent did.
+    expect(chatFactTypes(w, chat)).toEqual(before);
+    expect((await w.views.section(`chat:${chat}`, "history")).markdown).not.toContain("gave up");
 
     await new ReplySender(w.ctx, { api: counting, wait, retry: policy }).sweepAll();
     expect(tries).toBe(3);
-    expect(allEntries(w.store, chat)).toHaveLength(1);
+    expect(await failedEvents(w)).toHaveLength(1);
     await w.close();
   });
 
@@ -302,7 +327,7 @@ describe("a send that fails", () => {
       waits.push(ms);
     }).sweepAll();
     expect(waits).toEqual([]);
-    expect(allEntries(w.store, chat)[0]?.text).toContain("bot was blocked");
+    expect((await failedEvents(w))[0]?.summary).toContain("bot was blocked");
     await w.close();
   });
 

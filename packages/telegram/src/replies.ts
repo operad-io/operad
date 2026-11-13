@@ -2,16 +2,19 @@
  * The reply side of the Telegram plugin: every new assistant message of a chat
  * bound to a Telegram chat is sent to that chat, once.
  *
- * It reads the chat's messages through the plugin's store and wakes on the
- * client API's `events()`, which names a chat whenever it changes. What was sent
+ * It wakes on the client API's `events()`, which names a chat whenever it
+ * changes. What it then reads, the chat's bindings and its messages with their
+ * ids and roles, the client API does not give (a row has no channels; the
+ * transcript section is rendered Markdown with no message ids), so those two
+ * reads stay on the plugin's store. What was sent
  * is recorded in the plugin's own file, per message and per chunk, so a restart
  * sends neither a sent message again nor skips one written while the process was
  * down. A send that fails is retried on the injected wait; a send that gives up
- * says so in the chat's history and is not tried again. Only replies are sent,
+ * is recorded as a `send_failed` event of the plugin and is not tried again. Only replies are sent,
  * never the tool calls (decision 7).
  */
 
-import { CHAT_TYPE, ENTRY_FACT, allMessages, chatData, chatRef, type Message } from "@operad-io/chat";
+import { CHAT_TYPE, allMessages, chatData, type Message } from "@operad-io/chat";
 import { messageOf, type SourceContext } from "@operad-io/engine";
 import { BotApiError, type BotApi } from "./api.ts";
 import { telegramChunks, type TelegramChunk } from "./format.ts";
@@ -27,6 +30,9 @@ export interface RetryPolicy {
   /** The longest wait. */
   readonly maxMs: number;
 }
+
+/** The event type that records a reply Telegram never took. */
+export const SEND_FAILED_EVENT = "send_failed";
 
 export const DEFAULT_RETRY: RetryPolicy = { attempts: 5, baseMs: 1_000, maxMs: 60_000 };
 
@@ -202,15 +208,22 @@ export class ReplySender {
     }
   }
 
-  /** Says in the chat's history that a reply did not reach Telegram. */
+  /**
+   * Says that a reply did not reach Telegram: a line in the plugin's log and a
+   * `telegram/send_failed` event on the chat, keyed by the message so a retry
+   * after a crash records it once. It is the plugin's own record; nothing is
+   * written into the chat's messages or entries, which are the chat plugin's.
+   */
   private async giveUp(chatId: string, message: Message, sent: number, total: number, error: unknown): Promise<void> {
     const part = total > 1 ? ` (part ${sent + 1} of ${total})` : "";
-    const text = `Telegram: could not send the reply${part}; gave up after ${this.retry.attempts} tries: ${messageOf(error)}`;
+    const text = `could not send the reply${part}; gave up after ${this.retry.attempts} tries: ${messageOf(error)}`;
     await this.ctx.logger.write(`reply ${message.id} of chat ${chatId}: ${text}`);
-    await this.ctx.facts.append({
-      type: ENTRY_FACT,
-      object: chatRef(chatId),
-      data: { runId: message.runId ?? message.id, kind: "text", text },
+    await this.ctx.emit({
+      source: TELEGRAM_SOURCE,
+      type: SEND_FAILED_EVENT,
+      key: `${SEND_FAILED_EVENT}:${chatId}/${message.id}`,
+      object: `chat:${chatId}`,
+      summary: text,
     });
   }
 
