@@ -151,6 +151,14 @@ export class MemoryPluginStore implements PluginStore {
     };
   }
 
+  objectTypesOf(id: string): readonly string[] {
+    const types = new Set<string>();
+    for (const fact of this.entries) {
+      if (fact.object?.id === id) types.add(fact.object.type);
+    }
+    return [...types].sort();
+  }
+
   facts(): readonly PluginFact[];
   facts(object: ObjectRef, options?: FactsOptions): FactsPage;
   facts(
