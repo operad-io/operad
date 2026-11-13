@@ -6,6 +6,20 @@ description: The /v1 HTTP interface: the http section, the token, endpoints, eve
 
 `operad serve` exposes the `/v1` interface to clients such as the app and the terminal client. This page has the `http` keys and the token, then every endpoint, the row marks and links, the events and the errors. Pairing a phone is on [the app page](app.md); the terminal client is on [its page](tui.md).
 
+## Why it exists
+
+The app and the terminal client run on a different device or in a different process from `operad serve`, and they need the same things the command line has: lists, an object's sections, pending items, actions and settings. This interface gives them that over HTTP. It carries no knowledge of any plugin: a client asks which object types exist, reads each object's row, sections and available actions, and draws them, so a new plugin shows up in a client without a change to the client. Because it can be reached from other machines, it listens on the local machine by default, accepts only loopback, private, link-local and Tailscale addresses, and requires a bearer token on every request.
+
+## How it works
+
+1. `operad serve` binds the addresses in [`http.listen`](#the-http-section) on `http.port` when `http.enabled` is true, and prints `http <url>` for each. The first start creates the bearer token in `secrets/http.json`.
+2. A client sends `Authorization: Bearer <token>` with every request, and may name itself in `X-Operad-Client`. A wrong or missing token gets `401`.
+3. It learns the shape of the home from `GET /v1/types`, then lists rows with `GET /v1/objects?type=…`. Each row carries a state and optional [marks](#row-marks) the client renders.
+4. It opens one object with `GET /v1/objects/<id>`, which returns the row, the section directory, the actions available now and a [link](#links). Each section is read with `GET /v1/objects/<id>/sections/<section>`; see [Reading a section](#reading-a-section).
+5. What waits for a person is `GET /v1/pending`. An answer goes to `POST /v1/answer`, and any other action to `POST /v1/act`. Both are recorded the same way a command-line action is, and `serve` carries the run on. An action that asks for confirmation needs `"confirmed": true`.
+6. The client does not poll. It keeps `GET /v1/events` open, and each [event](#events) names an object that changed, which the client refetches. After a reconnect with `Last-Event-ID`, the server replays what it still holds or sends `reset`, and the client refetches its lists and open sections.
+7. Settings go through `GET /v1/settings` and `POST /v1/settings` ([Settings](#settings)), and files for an action through `POST /v1/uploads`. A failure is a JSON `error` body with a status from the [errors](#errors) table.
+
 ## The `http` section
 
 | Key | Type | Default | Allowed values | When it takes effect | Wrong value |

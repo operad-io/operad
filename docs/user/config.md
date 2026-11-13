@@ -6,6 +6,21 @@ description: The config.json file: where the home is, every section and key, and
 
 `config.json` configures `operad`. This page says where the home is, every key of the file, and every plugin's settings section. The `http` keys are also on [the HTTP page](http.md#the-http-section), the `notify` keys on [notifications](notifications.md), the `mcp` keys on [the MCP page](mcp.md), and the repository settings of `dev` on [the dev page](dev.md).
 
+## Why it exists
+
+Operad needs one place to keep what a person has set up: which plugins are installed, where the store is and which interfaces are on. That place is the home directory and its `config.json`. The file is written by `operad init` when the home has none, and changed afterwards by hand or with `operad plugin enable` and `operad plugin disable`. Operad does not rewrite a home that already has a `config.json`, and it keeps no hidden defaults for the file that `operad init` writes.
+
+## How it works
+
+1. A command finds the home: `$OPERAD_HOME` when it is set and not blank, otherwise `~/.operad`. It reads `config.json` there; with no file, there are no plugins.
+2. The kernel reads only the keys it names: `plugins`, `store`, `http`, `notify`, `mcp` and `ask`. A wrong value in one of them refuses the file with one line; an unknown key is ignored.
+3. For every entry in `plugins` that is not disabled with `"enabled": false`, the kernel imports its `module` (the key's name when `module` is not given) and checks the entry's `settings` with that plugin's own schema.
+4. A plugin that does not import, has invalid settings or declares another name does not load. The rest still load, and `serve` and `operad plugin check` print the line that says why.
+5. A disabled plugin is not imported; its stored objects stay.
+6. A one-shot command reads the file again on its next run. A running `serve` watches the file and reloads when the new file loads; when it does not load, the old configuration keeps running and the problem is logged. A step that has already started keeps the settings it started with.
+
+The keys are in [The sections](#the-sections) and each plugin's settings in [Plugin settings](#plugin-settings).
+
 ## The home
 
 `operad` keeps its state in one directory: `$OPERAD_HOME` when it is set, and
