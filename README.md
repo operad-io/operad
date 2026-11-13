@@ -98,6 +98,7 @@ The kernel knows three words. The rest is plugins: `dev` (plans, tasks, review, 
 - [User manual](docs/user/index.md): quickstart, `config.json`, the `dev` plugin, access profiles, every command, troubleshooting.
 - [Writing a plugin](docs/plugins/index.md): for plugin authors.
 - [docs/backlog/](docs/backlog/): the direction and the open questions.
+- [CONTRIBUTING.md](CONTRIBUTING.md) to help; [SECURITY.md](SECURITY.md) to report a vulnerability privately.
 
 ## Status
 
