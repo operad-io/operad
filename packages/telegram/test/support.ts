@@ -105,6 +105,8 @@ export interface WorldOptions {
   readonly bot?: string;
   readonly token?: string;
   readonly clock?: (() => number) | undefined;
+  /** Views announce changes through `events()`; off unless a test needs it. */
+  readonly follow?: boolean | undefined;
 }
 
 /** Builds the world a source runs in; the caller owns and removes `root`. */
@@ -143,7 +145,7 @@ export async function createTelegramWorld(options: WorldOptions): Promise<Telegr
     cwd: options.root,
     clock,
     onLog,
-    follow: false,
+    follow: options.follow ?? false,
   });
   kernel = new Kernel({ log, registry, home, storeRoot, rules, clock, client: views, onLog });
 

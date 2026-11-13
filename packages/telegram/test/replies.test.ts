@@ -31,10 +31,10 @@ afterAll(async () => {
 });
 
 /** A world with one chat bound to Telegram chat 555 by a message from user 42. */
-async function bound(): Promise<{ w: TelegramWorld; chat: string }> {
+async function bound(follow = false): Promise<{ w: TelegramWorld; chat: string }> {
   const root = await mkdtemp(join(tmpdir(), "telegram-replies-"));
   roots.push(root);
-  const w = await createTelegramWorld({ root, users: [42] });
+  const w = await createTelegramWorld({ root, users: [42], follow });
   const api = new FakeApi();
   api.updates = [update(100, 42, 555, "hello")];
   await new TelegramSource(w.ctx, { api }).poll();
@@ -102,6 +102,15 @@ describe("the markdown a reply is reduced to", () => {
     expect(joined.trimEnd().endsWith("after")).toBe(true);
   });
 
+  test("every piece of a split reply has its code fences closed", () => {
+    const body = Array.from({ length: 400 }, (_, index) => `line ${index}`).join("\n");
+    const pieces = splitMarkdown(`\`\`\`ts\n${body}\n\`\`\``, 1000);
+    expect(pieces.length).toBeGreaterThan(1);
+    for (const piece of pieces) {
+      expect(piece.split("\n").filter((line) => line.startsWith("```")).length % 2).toBe(0);
+    }
+  });
+
   test("a single line longer than the limit and text that grows when escaped still fit", () => {
     expect(splitMarkdown("x".repeat(10_000), 3500).every((piece) => piece.length <= 3500)).toBe(true);
     const chunks = telegramChunks("&".repeat(9_000));
@@ -132,7 +141,7 @@ describe("sending a reply", () => {
   });
 
   test("a reply is sent when the client's events name the chat, and stop ends the watch", async () => {
-    const { w, chat } = await bound();
+    const { w, chat } = await bound(true);
     const api = new FakeApi();
     let arrived: (() => void) | undefined;
     const got = new Promise<void>((resolve) => {
@@ -140,6 +149,8 @@ describe("sending a reply", () => {
     });
     api.beforeSend = () => arrived?.();
     const handle = sender(w, api).start();
+    // The startup sweep is over, so only the event can bring this reply.
+    await handle.ready;
     await reply(w, chat, "from the event");
     await got;
     expect(api.sent.map((request) => request.text)).toEqual(["from the event"]);
@@ -382,4 +393,24 @@ describe("restart", () => {
     expect(lines).toHaveLength(1);
     expect(JSON.parse(lines[0] ?? "")).toMatchObject({ chatId: 555, text: "the answer" });
   }, 60_000);
+});
+
+describe("how the Bot API's answer is sorted", () => {
+  async function failure(status: number, description: string): Promise<BotApiError> {
+    const api = createBotApi({
+      token: new Secret("1:T"),
+      fetch: async () => new Response(JSON.stringify({ ok: false, description }), { status }),
+    });
+    const error = await api.sendMessage({ chatId: 1, text: "x" }).catch((caught: unknown) => caught);
+    if (!(error instanceof BotApiError)) throw new Error("not a BotApiError");
+    return error;
+  }
+
+  test("a server error can be retried, a bad request cannot, and unreadable markup is named", async () => {
+    expect((await failure(502, "bad gateway")).retryable).toBe(true);
+    const bad = await failure(400, "Bad Request: can't parse entities: x");
+    expect([bad.retryable, bad.badMarkup]).toEqual([false, true]);
+    const other = await failure(400, "Bad Request: chat not found");
+    expect([other.retryable, other.badMarkup]).toEqual([false, false]);
+  });
 });

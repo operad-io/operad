@@ -74,7 +74,7 @@ export class ReplySender {
   }
 
   /** Sends what is waiting on every bound chat, then follows the client's events. */
-  start(): { readonly stop: () => Promise<void> } {
+  start(): { readonly stop: () => Promise<void>; readonly ready: Promise<void> } {
     const iterator = this.ctx.client.events()[Symbol.asyncIterator]();
     // Wake-ups are pulled before the sweep so a change during it is not missed.
     const initial = this.sweepAll().catch((error: unknown) => this.log(`could not send replies: ${messageOf(error)}`));
@@ -88,6 +88,7 @@ export class ReplySender {
       }
     })();
     return {
+      ready: initial,
       stop: async () => {
         this.stopped = true;
         this.controller.abort();
