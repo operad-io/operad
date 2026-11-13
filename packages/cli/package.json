@@ -1,7 +1,7 @@
 {
   "name": "@operad-io/cli",
-  "version": "0.0.1",
-  "description": "operad: an open orchestration layer for coding agents (in development)",
+  "version": "0.1.0",
+  "description": "operad: an open orchestration layer for coding agents",
   "type": "module",
   "repository": {
     "type": "git",

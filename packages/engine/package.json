@@ -1,13 +1,13 @@
 {
   "name": "@operad-io/engine",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
     "./platform": "./src/platform/index.ts",
     "./testing": "./src/testing/index.ts"
   },
-  "description": "operad: the graph engine for flows, facts and plugins (in development)",
+  "description": "operad: the graph engine for flows, facts and plugins",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/operad-io/operad.git",
