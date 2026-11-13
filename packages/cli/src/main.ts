@@ -87,8 +87,10 @@ import {
   superviseServe,
   settingsRoots,
   takeCodeSnapshot,
+  keepKernelBaseline,
 } from "./code-reload.ts";
 import type { CodeSnapshot } from "./code-reload.ts";
+import type { CodeFingerprint } from "@operad-io/engine";
 import {
   BindFailed,
   HandOverStuck,
@@ -1652,6 +1654,7 @@ async function commandServe(
   lock: LockHandle,
   supervised: boolean,
   retryBind: boolean,
+  restored: boolean,
 ): Promise<"stopped" | "reload"> {
   const interval = process.env.OPERAD_SERVE_INTERVAL_MS;
   const parsed = interval === undefined ? Number.NaN : Number(interval);
@@ -1699,6 +1702,7 @@ async function commandServe(
   let outcome = "stopped" as "stopped" | "reload";
   let unreleased: HttpStopError | undefined;
   let watch: CodeWatch | undefined;
+  let keepFirst = restored;
   const olderNotice = olderCodeNotice(context.home);
   olderNotice.clear();
   try {
@@ -1746,6 +1750,13 @@ async function commandServe(
         pollMs: envNumber("OPERAD_RELOAD_POLL_MS", 5_000),
         onOlder: olderNotice.report,
         onChange: async () => {
+          // A serve restored after a restart could not listen already tried
+          // the code on disk once: it keeps its code, shows the notice, and
+          // takes up the next change.
+          if (keepFirst) {
+            keepFirst = false;
+            return "keep";
+          }
           const what = await check();
           // A stop that came while the new code was tried is not started again.
           if (what === undefined || controller.signal.aborted) return "keep";
@@ -2610,19 +2621,30 @@ export async function main(
       // a second serve fails here, with exit 4, and touches nothing. The lock
       // is handed to `serve`, so there is no check and then act.
       const { supervised, replaces, retryBind } = serveStartFlags();
-      const runChecked = async (isSupervised: boolean, retryBind: boolean): Promise<"stopped" | "reload"> => {
+      // The kernel code this process loaded when it first served.
+      let firstBaseline: CodeFingerprint | undefined;
+      const runChecked = async (
+        isSupervised: boolean,
+        retryBind: boolean,
+        restored: boolean,
+      ): Promise<"stopped" | "reload"> => {
         const lock = acquireLock(serveLockPath(home));
         try {
           // serve answers clients that are in no directory: a bare id must not
           // be scoped to the repository serve happened to start in, so its
           // views resolve ids from the home, outside every repository.
-          const context = await openContext(home, io, {
+          const opened = await openContext(home, io, {
             viewsCwd: home,
             trackCode: true,
             follow: true,
           });
+          if (opened.code !== undefined) firstBaseline ??= opened.code.baseline;
+          const context =
+            restored && opened.code !== undefined && firstBaseline !== undefined
+              ? { ...opened, code: keepKernelBaseline(opened.code, firstBaseline) }
+              : opened;
           try {
-            return await commandServe(context, io, args.slice(1), lock, isSupervised, retryBind);
+            return await commandServe(context, io, args.slice(1), lock, isSupervised, retryBind, restored);
           } finally {
             context.views.close();
             await context.log.close();
@@ -2644,9 +2666,10 @@ export async function main(
       const runOnce = async (
         isSupervised: boolean,
         retryBind: boolean,
+        restored = false,
       ): Promise<"stopped" | "reload"> => {
         try {
-          return await runChecked(isSupervised, retryBind);
+          return await runChecked(isSupervised, retryBind, restored);
         } catch (error) {
           // The lock is released by now; see leaveStuck.
           if (!(error instanceof HandOverStuck)) throw error;
@@ -2689,7 +2712,7 @@ export async function main(
         return supervised
           ? RELOAD_EXIT
           : await superviseServe(
-              () => runOnce(false, true),
+              () => runOnce(false, true, true),
               (message) => io.error(message),
             );
       }

@@ -1,10 +1,12 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { CodeWatch, describeChange, type CodeChange } from "../../engine/src/index.ts";
+import { CodeWatch, describeChange, diffFingerprints, ENGINE_CODE_ROOT, type CodeChange } from "../../engine/src/index.ts";
 import { fakeClock } from "../../engine/src/testing/index.ts";
 import { cleanupTempRoots, tempRoot } from "../../engine/test/plugin/support.ts";
 import {
+  CLI_CODE_ROOT,
+  keepKernelBaseline,
   loadsAsWellAs,
   problemKey,
   takeCodeSnapshot,
@@ -141,5 +143,31 @@ describe("plugin code in a serve snapshot", () => {
     } finally {
       w.watch.stop();
     }
+  });
+});
+
+describe("a serve restored after a restart could not listen", () => {
+  test("the kernel files keep the hashes the process loaded; plugin files take the current ones", () => {
+    const kernelFile = join(ENGINE_CODE_ROOT.path, "src", "index.ts");
+    const pluginFile = "/elsewhere/plugin.ts";
+    const earlier = {
+      hashes: new Map([[kernelFile, "old"], [pluginFile, "old"]]),
+      labels: new Map([[kernelFile, "engine"], [pluginFile, "plugin x"]]),
+      directories: new Set<string>(),
+    };
+    const roots = [ENGINE_CODE_ROOT, CLI_CODE_ROOT];
+    const now = {
+      roots,
+      cache: takeCodeSnapshot(".", []).cache,
+      baseline: {
+        hashes: new Map([[kernelFile, "new"], [pluginFile, "new"]]),
+        labels: new Map([[kernelFile, "engine"], [pluginFile, "plugin x"]]),
+        directories: new Set<string>(),
+      },
+    };
+    const kept = keepKernelBaseline(now, earlier);
+    expect(kept.baseline.hashes.get(kernelFile)).toBe("old");
+    expect(kept.baseline.hashes.get(pluginFile)).toBe("new");
+    expect(diffFingerprints(kept.baseline, now.baseline)?.files).toEqual([kernelFile]);
   });
 });

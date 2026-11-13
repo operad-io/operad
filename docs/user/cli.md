@@ -186,6 +186,14 @@ the same line into the run's log (`<store>/logs/runs/<run id>.out`) and waits fo
 the files to load. Settings files are read again at their next use; a change to
 them alone does not restart `serve`.
 
+While `serve` runs older code than the files on disk, `operad pending` shows one
+item: `serve runs older code than the files on disk: restart serve to load them
+(operad serve stop, then operad serve)`. It appears when the new code does not
+load (see above), or when the restart could not listen on its addresses and the
+old code serves again. It has no actions, and it leaves when `serve` runs the
+code on disk again: after the files load and `serve` reloads, or after you
+restart it, or when the files go back to what `serve` loaded.
+
 ## The History section
 
 Every object has a History section (`operad show <id> --section history`, the

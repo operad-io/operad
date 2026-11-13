@@ -13,10 +13,11 @@ import {
   fingerprintCode,
   newHashCache,
   codeRoots,
+  ENGINE_CODE_ROOT,
   waitForCodeChange,
 } from "@operad-io/engine";
 import type { CodeFingerprint, CodeRoot } from "@operad-io/engine";
-import { basename, extname, join } from "node:path";
+import { basename, extname, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const CLI_ENTRY = fileURLToPath(new URL("../bin/operad.ts", import.meta.url));
@@ -59,6 +60,32 @@ export function takeCodeSnapshot(
   roots.push({ label: "settings", path: join(home, "config.json") });
   const cache = newHashCache();
   return { roots, baseline: fingerprintCode(roots, cache), cache };
+}
+
+/**
+ * The snapshot of a serve that runs again in a process that loaded its kernel
+ * code earlier (the supervisor restoring the old code after a restart could not
+ * listen). The plugins were loaded from disk just now, but the engine and cli
+ * modules are the ones `earlier` saw: their files take the earlier hashes, so
+ * the watch sees a change when they differ on disk.
+ */
+export function keepKernelBaseline(now: CodeSnapshot, earlier: CodeFingerprint): CodeSnapshot {
+  const kernel = [ENGINE_CODE_ROOT.path, CLI_CODE_ROOT.path].map((path) =>
+    path.endsWith(sep) ? path : path + sep,
+  );
+  const inKernel = (file: string): boolean => kernel.some((root) => file.startsWith(root));
+  const hashes = new Map([...now.baseline.hashes].filter(([file]) => !inKernel(file)));
+  const labels = new Map([...now.baseline.labels].filter(([file]) => !inKernel(file)));
+  for (const [file, hash] of earlier.hashes) {
+    if (!inKernel(file)) continue;
+    hashes.set(file, hash);
+    const label = earlier.labels.get(file);
+    if (label !== undefined) labels.set(file, label);
+  }
+  return {
+    ...now,
+    baseline: { hashes, labels, directories: now.baseline.directories },
+  };
 }
 
 /**
