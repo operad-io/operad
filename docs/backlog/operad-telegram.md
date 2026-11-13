@@ -25,7 +25,7 @@ Telegram 在 operad 眼里是两件事：往外送卡和回复（通道），把
 ## 决定（已定，2026-11-13 owner）
 
 1. **通道一侧第一版不建卡片对象。** `telegram` 是进程内插件，直接看待处理项的变化，用已有的动作接口回答。`operad-channels.md` 决定 1、2 的卡片协议（持久的卡片对象、版本、领卡和报送达）留到第二个通道时再做；幂等照旧成立，因为一个待处理项只能被回答一次，第二次回答被动作接口拒绝。
-2. **插件拿到的接口**（合约的增量，lead 建议，owner 未逐条确认）：`serve` 启动的插件（`start(ctx)`）除了 `emit`，还拿到客户端 API（`operad-presentation.md` 决定 7 的 `list`、`get`、`section`、`events`、`act`），和 HTTP、TUI 用的是同一份；`act` 必须带 `actor`（`{ via: "telegram", id: <Telegram 用户 id> }`）。内核不为通道另开接口。
+2. **插件拿到的接口**（合约的增量；2026-11-13 owner 加上 `answer`）：`serve` 启动的插件（`start(ctx)`）除了 `emit`，还拿到客户端 API（`operad-presentation.md` 决定 7 的 `list`、`get`、`section`、`events`、`act`，加 `pending` 和 `answer`），和 HTTP、TUI 用的是同一份；`act` 和 `answer` 都必须带 `actor`（`{ via: "telegram", id: <Telegram 用户 id> }`）。`answer` 用来回答没有对象动作的等待（agent 在 chat 里问的话、自由回答）；有动作的待处理项仍走 `act`。内核不为通道另开接口。
 3. **绑定是自动建的。** 名单里的用户第一次私聊 Telegram bot 时，插件用设置里的 bot（默认 `default`）建一个 chat 并绑定这个 Telegram 私聊，之后那里的消息都进同一个 chat；这个 chat 关闭后，下一句话建一个新的。每个名单内用户各自一个 chat。第一版只做私聊，不做群，也不做“把已有的 chat 绑过来”或“换 bot”的动作（不加新的动作名）。
 4. **名单内用户在 Telegram 发的话算人当场发起**（`operad-sandbox.md` 决定 8 的意义上）：发信人在名单里，输入带 `actor`。名单外的消息只记录，不回，不建 chat，不启动任何东西。
 5. **设置和密钥**（键名 owner 已批）：插件名 `telegram`；密钥 `token`（`operad secret set telegram token`），不进事实和日志；设置 `users`（可以用的 Telegram 用户 id 列表）、`bot`（自动建 chat 用哪个 bot，默认 `default`）、`pending`（除了绑定的 chat 之外，还把哪些插件的待处理项送到 Telegram，默认空；写 `["dev"]` 就能在 Telegram 里答 merge、confirm）。
