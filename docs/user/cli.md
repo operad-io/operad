@@ -23,8 +23,9 @@ environment variables on [the environment page](environment.md).
 
 ## Commands
 
-Every command takes `--help` after the command name where it is noted below;
-`operad --help` and `operad help` print the whole table.
+The commands the CLI owns accept `--help` after the command name where it is
+noted below; a plugin verb receives its arguments unchanged. `operad --help`
+and `operad help` print the whole table.
 
 | Command | Arguments | What it does and prints |
 |---|---|---|
@@ -73,7 +74,7 @@ Every command takes `--help` after the command name where it is noted below;
 
 | Option | Commands | Meaning |
 |---|---|---|
-| `--help` | every command | Prints the usage. `operad --help` prints the whole table. |
+| `--help` | the commands the CLI owns | Prints the usage of that command. A plugin verb gets its arguments as they are, so `--help` is passed to the plugin and may be refused as an unknown option; use `operad help` for the command table. `operad --help` prints the whole table. |
 | `--version`, `-V` | `operad` | Prints `operad <version>`. |
 | `--timeout <secs>` | `serve stop` | How long to wait for the stopped `serve`: a whole number from 1, default 30. `0`, a missing value or a non-number is a usage error. |
 | `--json` | `pending`, `history`, `running`, `flows`, `list`, `show`, `settings` | Prints JSON instead of lines. `settings set` does not take it. |
@@ -336,8 +337,9 @@ asked for.
 
 `operad dev task edit <id> [--repo <name>]` replaces the brief of a proposed or
 ready task. The new brief is the text on stdin when it is not a terminal and
-carries some, otherwise what you save in `$EDITOR` (or `$VISUAL`). With no
-editor and no input the command fails and says so. It prints the task id.
+carries some, otherwise what you save in `$EDITOR` (or `$VISUAL` when `EDITOR`
+is unset). With no editor and no input the command fails and says so. It prints
+the task id.
 
 `operad dev task update <id> [--title <title>] [--after <task>]… [--area
 <area>] [--flow <name>] [--repo <name>]` changes a task and prints its id.

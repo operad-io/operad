@@ -32,6 +32,8 @@ message named in the row.
 | `OPERAD_CHECK_SSH` | command | `ssh -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=4` | An ssh command line | When a check connects to its host. |
 | `OPERAD_CHECK_SCP` | command | `scp -q -o BatchMode=yes` | An scp command line | When a check copies the bundle to its host. |
 | `OPERAD_TEST_PARALLEL` | integer | `2` | whole number, 1 or more | When `run-tests.sh` starts: how many worker processes run test files. Any other value stops the script with `run-tests: OPERAD_TEST_PARALLEL must be a whole number of 1 or more, not '<value>'`. |
+| `OPERAD_TEST_HEAVY_PARALLEL` | integer | `8` | whole number, 1 or more | When `run-tests.sh` starts: how many worker processes run the heavy test files (under `test/heavy/`). Any other value stops the script with a message that names the variable. |
+| `OPERAD_TEST_OVERLAP` | integer | `1` | `1` runs the heavy step beside the light step; `0` runs it after the light step | When `run-tests.sh` starts. |
 | `OPERAD_TEST_TIMES` | path | `~/.operad-test-times` | A file path | Where each full test run appends one line of timings (`run-tests.sh` and `test-times.ts`). |
 
 ## What operad sets
@@ -58,7 +60,7 @@ set is replaced or removed.
 | Variable | Type | Default | Allowed values | When it takes effect |
 |---|---|---|---|---|
 | `EDITOR` | command | unset | An editor command line | `operad dev task edit`, when stdin is a terminal or carries no brief: the editor opens the current brief. It is run through `/bin/sh -c '<editor> "$1"'`. A non-zero exit fails the command with `"<editor>" exited with code <n>`. |
-| `VISUAL` | command | unset | An editor command line | Used only when `EDITOR` is unset or empty. |
+| `VISUAL` | command | unset | An editor command line | Used only when `EDITOR` is unset. `EDITOR` set to an empty or blank value does not fall back to `VISUAL`; the command reports that no editor is set. |
 | `HOME` | path | the account's home | A directory path | The default home (`~/.operad`), `~` expansion, and the radian config path. |
 | `PATH` | list of directories | the account's `PATH` | Directories separated by `:` | Finding `radian`, `pi`, `claude`, git and the other programs a command starts. A command named without a `/` must be on `PATH`. |
 | `RADIAN_CONFIG` | path | `$HOME/.radian/config/config.toml` | A file path | The radian harness reads its own provider settings from this file. |

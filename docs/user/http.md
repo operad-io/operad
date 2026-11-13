@@ -8,14 +8,15 @@ description: The /v1 HTTP interface: the http section, the token, endpoints, eve
 
 ## The `http` section
 
-| Key | Type | Default | What it does |
-|---|---|---|---|
-| `http` | object | `{ "enabled": true, "port": 7480, "listen": ["127.0.0.1"] }` | The interface `serve` exposes; only `serve` opens it. |
-| `http.enabled` | boolean | `true` | Start the HTTP interface with `operad serve`. Set `false` to turn it off; `operad tui` then cannot reach a `serve`. |
-| `http.port` | integer | `7480` | The port to listen on; `0` asks the system for one. |
-| `http.listen` | array of strings | `["127.0.0.1"]` | The IP addresses to listen on. |
+| Key | Type | Default | Allowed values | When it takes effect | Wrong value |
+|---|---|---|---|---|---|
+| `http` | object | `{ "enabled": true, "port": 7480, "listen": ["127.0.0.1"] }` | an object with the keys below; a missing section means these defaults | At every command start; `serve` binds when it starts and after a reload | Refused: `http: must be an object` |
+| `http.enabled` | boolean | `true` | `true` or `false` | When `serve` starts; a reload opens or closes the interface with the new value | Refused: `http.enabled: must be a boolean` |
+| `http.port` | integer | `7480` | `0` to `65535`; `0` asks the system for a port | When `serve` binds; after a reload it binds the new port | Refused: `http.port: must be an integer from 0 to 65535` |
+| `http.listen` | array of strings | `["127.0.0.1"]` | at least one non-empty IP literal: loopback, RFC 1918, link-local or Tailscale; a wildcard and every other address are refused | When `serve` binds; after a reload it binds the new addresses | Refused: `http.listen: must be an array of IP addresses`, `http.listen: needs at least one address`, `http.listen: "<address>" is not an IP address`, `http.listen: "<address>" is a wildcard address; name each address to listen on`, or `http.listen: "<address>" is not a loopback, private, link-local or Tailscale address` |
 
-Each `listen` entry is an IP literal. `serve` accepts a loopback address, an
+An unknown key inside `http` is ignored; only the keys above are read. Each
+`listen` entry is an IP literal. `serve` accepts a loopback address, an
 RFC 1918 address (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), a link-local
 address (`169.254.0.0/16`, `fe80::/10`) or a Tailscale address
 (`100.64.0.0/10`, `fd7a:115c:a1e0::/48`). It refuses a wildcard (`0.0.0.0` or
@@ -61,8 +62,8 @@ otherwise. An object id in a path is URL-encoded; `<id>` may be the bare id or
 | `GET /v1/objects/<id>` | `{ "id", "type", "link", "row", "sections", "actions" }`: the link that opens the object, the row, the section directory, and the actions available now with their `args` schema, `note` field and `confirm` flag. |
 | `GET /v1/objects/<id>/sections/<section>?cursor=<c>&full=<bool>&after=<mark>` | `{ "markdown": "...", "next": "<c>", "mark": "<m>", "tail": "..." }`. `full=true` skips the size cap. `mark` is an opaque position the finished content goes to and `tail` is the Markdown of the part still changing; a plugin that does not use them sends neither. With `after=<mark>` from an earlier read, `markdown` holds only the finished content after that mark; the answer then also carries `delta`: true when it is that part alone, false when the plugin answered with a whole page and a client must replace instead of append. The size cap covers `markdown` and `tail` together but never cuts `tail`: when both do not fit, `markdown` is shortened first; when even the tail and the truncation note do not fit, the call is refused with an over-cap message naming `--full`. A mark from another section or object is refused with `400`. |
 | `POST /v1/act` | Runs one action. The body is `{ "action": "plugin:action", "id": "<id>", "args": {...}, "note": "...", "confirmed": true }`; only `action` is always required, and an action that targets an object also needs `id`. An action with `confirm: true` needs `"confirmed": true`. The body is at most 1 MiB; a larger one gets `413` with `the request body is larger than the 1 MB limit`. An argument the action's schema declares with `"format": "file"` (a string, or a list of strings) takes the `ref` of an upload; the action runs with the path the file is stored at. |
-| `GET /v1/settings?scope=<scope>` | Lists the settings a person may tune: `{ "settings": [{ "name", "scope", "value", "default", "description", "type", "enum", "editable", "confirm" }] }`. Without `scope` it lists the global settings; a scope names a repository. A setting that cannot be read in that scope is left out. |
-| `POST /v1/settings` | Changes one setting. The body is `{ "name": "<plugin>.<path>", "value": <any>, "scope"?: "<repo>", "confirmed"?: true }`; `name` and `value` are required, and `value` may be `null`. The answer is the changed setting, the same shape as one entry above. A bad name or value is `400` or `422` with the reason; a setting that is not editable, or asks to confirm without `confirmed`, is `409`. |
+| `GET /v1/settings?scope=<scope>` | Lists the settings a person may tune: `{ "settings": [{ "name", "scope", "value", "default", "description", "type", "enum", "editable", "confirm" }] }`. Without `scope` it lists the global settings and every repository scope; a scope names one repository. A setting that cannot be read in a scope is left out. |
+| `POST /v1/settings` | Changes one setting. The body is `{ "name": "<plugin>.<path>", "value": <any>, "scope"?: "<repo>", "confirmed"?: true }`; `name` and `value` are required, and `value` may be `null`. The answer is the changed setting, the same shape as one entry above. An unknown setting name is `404`; a value the schema refuses is `422` with the reason; a setting that is not editable, or asks to confirm without `confirmed`, is `409`. |
 | `POST /v1/uploads?name=<file name>` | Uploads a file for an action's file argument. The body is the file itself, streamed; its `content-type` header is kept as the file's type. The answer is `201` and `{ "ref", "name", "type", "size" }`. A file larger than 20 MB gets `413` and a message naming the limit. The `ref` works once: the action that takes it moves the file into the target object's attachment directory under the operad home (`attachments/<type>/<id>/`), and a second use is refused with `400`. An upload no action took within an hour is removed. |
 | `GET /v1/attachments/<type>/<id>/<ref>/<name>` | Serves a stored file of an action's file argument, with the type its upload gave. The transcript of a chat links its attachments here. | 
 | `POST /v1/answer` | Answers an open question of a pending item. The body is `{ "runId": "<item runId>", "waitId": "<item waitId>", "choice": "<one of the item's choices>", "note": "...", "confirmed": true }`; `runId`, `waitId` and `choice` are required, and `note` and `confirmed` are optional. When every choice is also an action on the item's object (a `dev` wait), it runs that action, so the action's note and confirmation apply; a confirmed action needs `"confirmed": true` just as it does for `/v1/act`. An answer to a question that is already closed gets `409` and is not applied. |
@@ -99,9 +100,10 @@ fit, the call is a `400` naming `--full`.
 ## Settings
 
 `GET /v1/settings?scope=<scope>` reads the settings the same way `operad
-settings` does. Each entry has `name`, `scope`, `value`, `default`,
-`description`, `type`, `enum` when it has one, `editable` and `confirm`. An
-absent `value` means the setting is not set.
+settings` does. Without `scope` it returns the global settings and every
+repository scope; with it, one repository's settings. Each entry has `name`,
+`scope`, `value`, `default`, `description`, `type`, `enum` when it has one,
+`editable` and `confirm`. An absent `value` means the setting is not set.
 
 `POST /v1/settings` changes one. The body is `{ "name": "<plugin>.<path>",
 "value": <any>, "scope"?: "<repo>", "confirmed"?: true }`. `name` and `value`

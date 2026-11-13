@@ -91,7 +91,7 @@ applies to the next reply without a restart.
 |---|---|---|---|---|
 | `bot.bots` | object | `{ "default": {} }` | One entry per bot name | Read when a bot is resolved, every reply. A bot removed from the map is marked removed and its chats stop answering. |
 | `bot.bots.<name>` | object | `{}` | The keys below | One bot. A name is lowercase letters, digits, `-` and `_`, and starts with a letter or digit; any other name is `bot "<name>": a name is lowercase letters, digits, "-" and "_", and starts with a letter or digit`. |
-| `bot.bots.<name>.cwd` | string | `~/.operad/bot` for `default`, `~/.operad/bot/<name>` otherwise | A path | The working directory of the bot's chats. It must be inside `~/.operad/bot` or outside the operad home; another path is refused when the bot is resolved. |
+| `bot.bots.<name>.cwd` | string | `$OPERAD_HOME/bot` for `default`, `$OPERAD_HOME/bot/<name>` otherwise | A path | The working directory of the bot's chats. It must be inside `$OPERAD_HOME/bot` or outside the operad home; another path is refused when the bot is resolved. |
 | `bot.bots.<name>.harness` | string | the first loaded agent | A loaded agent name | The agent a new chat uses when it names none. An unloaded name is refused when a chat opens: `agent "<name>" is not loaded; the loaded ones are: …`. |
 | `bot.bots.<name>.skills` | array of strings | `[]` | Directories with a `SKILL.md`; a relative path is under the working directory | Every reply; the directories are given to the agent. A missing or unreadable skill is reported at the reply. |
 | `bot.bots.<name>.model` | string | the agent's default | A model the chat's agent lists | When a new chat starts; an unlisted model is refused by name. The chat can change it later with `chat:model`. |

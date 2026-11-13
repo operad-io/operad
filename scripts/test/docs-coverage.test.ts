@@ -141,14 +141,12 @@ const FILE_PAGES: Readonly<Record<string, string>> = {
   "tui.schema.json": "tui.md",
   "dev.schema.json": "dev.md",
   "review.schema.json": "dev.md",
-  "bot.schema.json": "chats-and-bots.md",
+  "bot.schema.json": "config.md",
   "access-user.schema.json": "access.md",
 };
-const PLUGIN_PAGES: Readonly<Record<string, string>> = {
-  chat: "chats-and-bots.md",
-  bot: "chats-and-bots.md",
-  pool: "dev.md",
-};
+
+/** Plugin settings are sections of config.json, so their keys are on config.md. */
+const PLUGIN_PAGES: Readonly<Record<string, string>> = {};
 
 function schemaFiles(): string[] {
   return [
@@ -186,7 +184,7 @@ async function schemaItems(): Promise<SchemaItem[]> {
       items.set(id, {
         id,
         spellings: [`${plugin.name}.${path}`, `plugins.${plugin.name}.settings.${path}`],
-        page: PLUGIN_PAGES[plugin.name] ?? "dev.md",
+        page: PLUGIN_PAGES[plugin.name] ?? "config.md",
       });
     }
   }
@@ -328,6 +326,125 @@ function docsPages(): string[] {
   ].sort();
 }
 
+// ── examples ───────────────────────────────────────────────────────────────
+
+/** Each `<!-- schema: <file> -->` comment and the JSON block under it, by schema file. */
+function schemaExamples(): Map<string, string[]> {
+  const found = new Map<string, string[]>();
+  const pattern = /<!-- schema: ([^\s]+) -->\s*\n```json\n([\s\S]*?)\n```/g;
+  for (const path of userPages()) {
+    for (const match of read(path).matchAll(pattern)) {
+      const name = match[1] ?? "";
+      const text = match[2] ?? "";
+      found.set(name, [...(found.get(name) ?? []), text]);
+    }
+  }
+  return found;
+}
+
+function resolveRef(root: Json, ref: string): Json | undefined {
+  let at: unknown = root;
+  for (const part of ref.replace(/^#\/?/, "").split("/").filter((p) => p.length > 0)) {
+    at = isJson(at) ? at[part.replace(/~1/g, "/").replace(/~0/g, "~")] : undefined;
+  }
+  return isJson(at) ? at : undefined;
+}
+
+function fitsType(type: string, value: unknown): boolean {
+  switch (type) {
+    case "string":
+      return typeof value === "string";
+    case "number":
+      return typeof value === "number" && Number.isFinite(value);
+    case "integer":
+      return typeof value === "number" && Number.isInteger(value);
+    case "boolean":
+      return typeof value === "boolean";
+    case "array":
+      return Array.isArray(value);
+    case "object":
+      return isJson(value);
+    case "null":
+      return value === null;
+    default:
+      return false;
+  }
+}
+
+/** The JSON Schema subset the config schemas use; an empty list means the value fits. */
+function schemaErrors(schema: Json, value: unknown, at = "value", root: Json = schema): string[] {
+  const errors: string[] = [];
+  if (typeof schema.$ref === "string") {
+    const target = resolveRef(root, schema.$ref);
+    if (target !== undefined) errors.push(...schemaErrors(target, value, at, root));
+    return errors;
+  }
+  if (Array.isArray(schema.oneOf)) {
+    const branches = schema.oneOf.filter(isJson);
+    const fitting = branches.filter((branch) => schemaErrors(branch, value, at, root).length === 0);
+    if (fitting.length !== 1) errors.push(`${at}: must fit exactly one of the allowed forms, ${fitting.length} fit`);
+    return errors;
+  }
+  const type = schema.type;
+  const types = typeof type === "string" ? [type] : Array.isArray(type) ? type.filter((item): item is string => typeof item === "string") : [];
+  if (types.length > 0 && !types.some((item) => fitsType(item, value))) {
+    errors.push(`${at}: must be ${types.join(" or ")}`);
+    return errors;
+  }
+  if (schema.const !== undefined && JSON.stringify(schema.const) !== JSON.stringify(value)) {
+    errors.push(`${at}: must be ${JSON.stringify(schema.const)}`);
+  }
+  if (Array.isArray(schema.enum) && !schema.enum.some((item) => JSON.stringify(item) === JSON.stringify(value))) {
+    errors.push(`${at}: must be one of ${schema.enum.map((item) => JSON.stringify(item)).join(", ")}`);
+  }
+  if (typeof value === "number") {
+    if (typeof schema.minimum === "number" && value < schema.minimum) errors.push(`${at}: must be at least ${schema.minimum}`);
+    if (typeof schema.maximum === "number" && value > schema.maximum) errors.push(`${at}: must be at most ${schema.maximum}`);
+    if (typeof schema.exclusiveMinimum === "number" && value <= schema.exclusiveMinimum) errors.push(`${at}: must be more than ${schema.exclusiveMinimum}`);
+    if (typeof schema.exclusiveMaximum === "number" && value >= schema.exclusiveMaximum) errors.push(`${at}: must be less than ${schema.exclusiveMaximum}`);
+  }
+  if (typeof value === "string") {
+    if (typeof schema.minLength === "number" && value.length < schema.minLength) errors.push(`${at}: must be at least ${schema.minLength} characters`);
+    if (typeof schema.maxLength === "number" && value.length > schema.maxLength) errors.push(`${at}: must be at most ${schema.maxLength} characters`);
+    if (typeof schema.pattern === "string" && !new RegExp(schema.pattern).test(value)) errors.push(`${at}: must match ${schema.pattern}`);
+  }
+  if (Array.isArray(value)) {
+    if (typeof schema.minItems === "number" && value.length < schema.minItems) errors.push(`${at}: must have at least ${schema.minItems} items`);
+    if (isJson(schema.items)) value.forEach((item, index) => errors.push(...schemaErrors(schema.items as Json, item, `${at}[${index}]`, root)));
+  }
+  if (isJson(value)) {
+    if (typeof schema.minProperties === "number" && Object.keys(value).length < schema.minProperties) {
+      errors.push(`${at}: must have at least ${schema.minProperties} fields`);
+    }
+    const properties = isJson(schema.properties) ? schema.properties : {};
+    for (const name of Array.isArray(schema.required) ? schema.required : []) {
+      if (typeof name === "string" && value[name] === undefined) errors.push(`${at}.${name}: is required`);
+    }
+    for (const [name, item] of Object.entries(value)) {
+      const property = isJson(properties[name]) ? properties[name] : undefined;
+      if (property !== undefined) {
+        errors.push(...schemaErrors(property, item, `${at}.${name}`, root));
+        continue;
+      }
+      if (isJson(schema.patternProperties)) {
+        const match = Object.entries(schema.patternProperties).find(([pattern]) => new RegExp(pattern).test(name));
+        if (match !== undefined && isJson(match[1])) {
+          errors.push(...schemaErrors(match[1], item, `${at}.${name}`, root));
+          continue;
+        }
+      }
+      if (schema.additionalProperties === false) errors.push(`${at}.${name}: is not a field`);
+      else if (isJson(schema.additionalProperties)) {
+        errors.push(...schemaErrors(schema.additionalProperties, item, `${at}.${name}`, root));
+      }
+    }
+    if (isJson(schema.propertyNames)) {
+      for (const name of Object.keys(value)) errors.push(...schemaErrors(schema.propertyNames, name, `${at} key "${name}"`, root));
+    }
+  }
+  return errors;
+}
+
 // ── the tests ──────────────────────────────────────────────────────────────
 
 /** The items of one kind that lack a row and are not allowed, and the allowed ones that now have one. */
@@ -411,12 +528,38 @@ describe("the user docs", () => {
     }
   });
 
+  test("every config file's example on the pages fits its schema", () => {
+    const examples = schemaExamples();
+    const expected = [
+      "access-user.schema.json",
+      "config.schema.json",
+      "dev.schema.json",
+      "keys.schema.json",
+      "review.schema.json",
+      "theme.schema.json",
+      "triggers.schema.json",
+      "tui.schema.json",
+    ];
+    expect([...examples.keys()].filter((name) => !expected.includes(name))).toEqual([]);
+    for (const name of expected) {
+      const found = examples.get(name) ?? [];
+      expect({ name, count: found.length }).toEqual({ name, count: 1 });
+      const file = schemaFiles().find((path) => basename(path) === name);
+      if (file === undefined) throw new Error(`no schema file named ${name}`);
+      const schema = JSON.parse(read(file)) as Json;
+      for (const text of found) {
+        const value: unknown = JSON.parse(text);
+        expect({ name, errors: schemaErrors(schema, value) }).toEqual({ name, errors: [] });
+      }
+    }
+  });
+
   test("a page under docs/user uses only the user's words", () => {
     // A user sees flow, pending and history; these are the kernel's internal names.
     const internal = /\b(graph|node|fact|effect|decide|evolve|runner|backend)(s|d)?\b/gi;
     // `store.backend` is a key the user writes in config.json, and "takes effect"
     // is the plain English of the column that says when a setting applies.
-    const keys = /\bstore\.backend\b|`backend`|"backend"|\b(takes?|taking|in|into|no) effect\b/gi;
+    const keys = /`backend`|"backend"|store\.backend|\b(takes?|taking|in|into|no) effect\b/gi;
     const found: string[] = [];
     for (const path of userPages()) {
       read(path).split("\n").forEach((line, index) => {

@@ -1,6 +1,6 @@
 /**
  * The wire shapes of the claude child program. `README.md` holds the same
- * tables; `test/protocol.test.ts` checks the program against them.
+ * tables; `test/heavy/protocol.test.ts` checks the program against them.
  */
 
 import { readProfile } from "@operad-io/access-match";
