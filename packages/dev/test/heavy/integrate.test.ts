@@ -1692,7 +1692,7 @@ describe("a task cancelled in the integrate step", () => {
       if (made.exitCode !== 0) throw new Error("mkfifo failed");
     }
     const state = await fixture({
-      keyCommands: [`echo go > '${started}'; cat '${release}' > /dev/null`],
+      keyCommands: [`echo go > '${started}'; exec 3<>'${release}'; until read -r -t 1 -u 3 _; do kill -0 ${process.pid} 2>/dev/null || exit 0; done`],
     });
     const before = remoteMain(state);
     const running = integrate(state);
