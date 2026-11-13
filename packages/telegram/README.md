@@ -44,3 +44,11 @@ on it: each update is recorded once as a `telegram` event keyed by its
 whose source ref is that update id. A killed `operad serve` that starts again
 reads the same update without writing a second message or starting a second
 reply.
+
+Each new assistant reply of a chat bound to Telegram is sent to that Telegram
+chat once. Markdown is reduced to what Telegram accepts (bold, italic, code,
+links; headings and lists become plain lines) and a long reply goes out as
+several messages. A failed send is retried with growing waits; when it gives up,
+the chat's history says so. What was sent is kept in `<home>/telegram/sent.json`,
+so a restart neither resends a reply nor skips one written while it was down.
+Replies from before the plugin first ran are not sent. Tool calls are not sent.

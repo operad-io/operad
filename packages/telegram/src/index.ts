@@ -11,7 +11,8 @@ import pkg from "../package.json" with { type: "json" };
 import { definePlugin, type SourceHandle } from "@operad-io/engine";
 import { createBotApi } from "./api.ts";
 import { TELEGRAM_SETTINGS, TOKEN_SECRET } from "./settings.ts";
-import { TelegramSource } from "./source.ts";
+import { ReplySender } from "./replies.ts";
+import { TelegramSource, delay } from "./source.ts";
 
 /** Builds the Telegram source plugin. */
 export function createTelegramPlugin() {
@@ -27,7 +28,15 @@ export function createTelegramPlugin() {
           "the telegram plugin has no token; set it with `operad secret set telegram token`",
         );
       }
-      return new TelegramSource(ctx, { api: createBotApi({ token }) }).start();
+      const api = createBotApi({ token });
+      const source = new TelegramSource(ctx, { api }).start();
+      const replies = new ReplySender(ctx, { api, wait: delay }).start();
+      return {
+        stop: async () => {
+          await source.stop();
+          await replies.stop();
+        },
+      };
     },
   });
 }
@@ -35,6 +44,8 @@ export function createTelegramPlugin() {
 export default createTelegramPlugin();
 
 export * from "./api.ts";
+export * from "./format.ts";
+export * from "./replies.ts";
 export * from "./settings.ts";
 export * from "./source.ts";
 export * from "./state.ts";

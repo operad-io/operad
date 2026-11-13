@@ -24,7 +24,7 @@ import {
   type TriggerEvent,
 } from "@operad-io/engine";
 import { SQLITE_FILE_NAME } from "../../engine/src/log/sqlite.ts";
-import type { BotApi, GetUpdatesRequest, TelegramUpdate } from "../src/api.ts";
+import type { BotApi, GetUpdatesRequest, SendMessageRequest, TelegramUpdate } from "../src/api.ts";
 import { TELEGRAM_SETTINGS } from "../src/settings.ts";
 
 /** A fake Bot API: a list of updates, and every request it was given. */
@@ -33,6 +33,19 @@ export class FakeApi implements BotApi {
   readonly calls: GetUpdatesRequest[] = [];
   /** Return every update whatever the offset, as a resent update does. */
   ignoreOffset = true;
+
+  /** Every message sent, in order. */
+  readonly sent: SendMessageRequest[] = [];
+  /** Called before each send; throw to fail it. */
+  beforeSend: ((request: SendMessageRequest, count: number) => void) | undefined;
+  private attempts = 0;
+
+  async sendMessage(request: SendMessageRequest): Promise<number> {
+    this.attempts += 1;
+    this.beforeSend?.(request, this.attempts);
+    this.sent.push(request);
+    return 9_000 + this.sent.length;
+  }
 
   async getUpdates(request: GetUpdatesRequest): Promise<readonly TelegramUpdate[]> {
     this.calls.push(request);

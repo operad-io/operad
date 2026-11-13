@@ -43,9 +43,41 @@ export interface GetUpdatesRequest {
   readonly signal?: AbortSignal | undefined;
 }
 
-/** What the source needs of Telegram. */
+/** One message to send. */
+export interface SendMessageRequest {
+  readonly chatId: number;
+  readonly text: string;
+  /** `HTML` when the text is already Telegram HTML; absent for plain text. */
+  readonly parseMode?: "HTML" | undefined;
+  readonly signal?: AbortSignal | undefined;
+}
+
+/** Why a Bot API call failed, and whether trying again can help. */
+export class BotApiError extends Error {
+  /** False for a refusal that will not change (a bad request, a blocked bot). */
+  readonly retryable: boolean;
+  /** How long Telegram asked to wait, in seconds, when it said. */
+  readonly retryAfterSecs?: number | undefined;
+  /** Telegram could not read the markup of the text. */
+  readonly badMarkup: boolean;
+
+  constructor(
+    message: string,
+    options: { retryable: boolean; retryAfterSecs?: number | undefined; badMarkup?: boolean },
+  ) {
+    super(message);
+    this.name = "BotApiError";
+    this.retryable = options.retryable;
+    this.retryAfterSecs = options.retryAfterSecs;
+    this.badMarkup = options.badMarkup === true;
+  }
+}
+
+/** What the plugin needs of Telegram. */
 export interface BotApi {
   getUpdates(request: GetUpdatesRequest): Promise<readonly TelegramUpdate[]>;
+  /** Sends one text message; returns its Telegram `message_id`. */
+  sendMessage(request: SendMessageRequest): Promise<number>;
 }
 
 export interface BotApiOptions {
@@ -64,6 +96,17 @@ export function redactToken(text: string, token: string): string {
 function failure(detail: string | undefined, token: string): Error {
   const suffix = detail === undefined || detail.length === 0 ? "" : `: ${redactToken(detail, token)}`;
   return new Error(`the Telegram Bot API did not answer the update request${suffix}`);
+}
+
+function sendFailure(
+  detail: string,
+  token: string,
+  options: { retryable: boolean; retryAfterSecs?: number | undefined; badMarkup?: boolean },
+): BotApiError {
+  return new BotApiError(
+    `the Telegram Bot API did not send the message: ${redactToken(detail, token)}`,
+    options,
+  );
 }
 
 function updateOf(value: unknown): TelegramUpdate | undefined {
@@ -137,6 +180,47 @@ export function createBotApi(options: BotApiOptions): BotApi {
         if (update !== undefined) updates.push(update);
       }
       return updates;
+    },
+    async sendMessage(input) {
+      const url = `${origin}/bot${token}/sendMessage`;
+      const payload = {
+        chat_id: input.chatId,
+        text: input.text,
+        ...(input.parseMode === undefined ? {} : { parse_mode: input.parseMode }),
+        link_preview_options: { is_disabled: true },
+      };
+      let response: Response;
+      try {
+        response = await request(url, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(payload),
+          ...(input.signal === undefined ? {} : { signal: input.signal }),
+        });
+      } catch (error) {
+        throw sendFailure(messageOf(error), token, { retryable: true });
+      }
+      let body: unknown;
+      try {
+        body = await response.json();
+      } catch {
+        throw sendFailure(`HTTP ${response.status} with no JSON`, token, {
+          retryable: response.status >= 500 || response.status === 429,
+        });
+      }
+      if (isRecord(body) && body.ok === true && isRecord(body.result) && typeof body.result.message_id === "number") {
+        return body.result.message_id;
+      }
+      const description =
+        isRecord(body) && typeof body.description === "string" ? body.description : `HTTP ${response.status}`;
+      const parameters = isRecord(body) && isRecord(body.parameters) ? body.parameters : undefined;
+      const retryAfter =
+        parameters !== undefined && typeof parameters.retry_after === "number" ? parameters.retry_after : undefined;
+      throw sendFailure(description, token, {
+        retryable: response.status === 429 || response.status >= 500,
+        retryAfterSecs: retryAfter,
+        badMarkup: response.status === 400 && /can't parse entities/i.test(description),
+      });
     },
   };
 }
