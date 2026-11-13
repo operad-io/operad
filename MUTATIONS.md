@@ -18,6 +18,7 @@ Each package keeps its mutation checks in `MUTATIONS.md`; a row names the broken
 - [review-grading](packages/review-grading/MUTATIONS.md)
 - [shell](packages/shell/MUTATIONS.md)
 - [source-cron](packages/source-cron/MUTATIONS.md)
+- [telegram](packages/telegram/MUTATIONS.md)
 - [tui](packages/tui/MUTATIONS.md)
 
 ## Outside packages

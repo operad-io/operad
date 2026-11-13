@@ -6,6 +6,7 @@
     { "path": "packages/shell" },
     { "path": "packages/chat" },
     { "path": "packages/bot" },
+    { "path": "packages/telegram" },
     { "path": "packages/dev" },
     { "path": "packages/harness/radian" },
     { "path": "packages/harness/process" },

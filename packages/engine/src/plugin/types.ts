@@ -1115,7 +1115,8 @@ export interface SourceContext extends PluginBaseContext {
   emit(event: SourceEvent): Promise<void>;
   /**
    * The client API HTTP and the TUI use, the same object: `list`, `get`,
-   * `section`, `events`, `act` and `pending`. `act` needs an actor.
+   * `section`, `events`, `act`, `pending` and `answer`. `act` and `answer`
+   * need an actor.
    */
   readonly client: ClientApi;
 }

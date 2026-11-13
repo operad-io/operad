@@ -813,3 +813,9 @@ the row fields.
 |---|---|---|---|
 | T-0405-M1 | packages/engine/src/views/presentation.ts | `act` skipped the check that the call names an actor (`{ via, id }`), so a call without one ran | `a source plugin's start gets the client API > act without an actor is refused and answers nothing` |
 | T-0405-M2 | packages/engine/src/views/presentation.ts | `pending` passed no candidate source to `listPending`, so trigger candidates were missing | `a source plugin's start gets the client API > pending shows the trigger candidates HTTP shows` |
+
+## T-0406 — the source's `answer` needs its actor
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0406-M6 | packages/engine/src/views/presentation.ts | `answer` skipped the check that the call names an actor (`{ via, id }`), so a call without one was recorded | `a source plugin's start gets the client API > answer without an actor is refused and answers nothing` |

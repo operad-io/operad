@@ -246,10 +246,11 @@ export interface ActOptions {
 /**
  * The in-process client API: the calls HTTP and the TUI make. A source plugin's
  * `start` receives the same `Views` object that serves them, narrowed to these.
+ * `act` and `answer` both take an actor naming the person who acted.
  */
 export type ClientApi = Pick<
   Views,
-  "list" | "get" | "section" | "events" | "act" | "pending"
+  "list" | "get" | "section" | "events" | "act" | "pending" | "answer"
 >;
 
 /** What answers one open question of a pending item. */
@@ -1412,6 +1413,19 @@ export class Views {
    * question is refused, as it is for the command line and a plugin action.
    */
   async answer(options: AnswerViewOptions): Promise<void> {
+    const who: unknown = (options as { actor?: unknown } | undefined)?.actor;
+    if (
+      !isRecord(who) ||
+      typeof who.via !== "string" ||
+      who.via.length === 0 ||
+      typeof who.id !== "string" ||
+      who.id.length === 0
+    ) {
+      throw new ViewError(
+        "args",
+        "answer needs an actor: { via, id } says who answered",
+      );
+    }
     if (this.log === undefined) {
       throw new ViewError(
         "not-available",

@@ -330,6 +330,14 @@ describe("bot:chat", () => {
     expect(row?.parent).toBe("bot:default");
   });
 
+  test("bot:chat puts the channels it is given on the new chat, and refuses another form", async () => {
+    const r = await rig();
+    await syncBots(r.store, r.home, {});
+    const id = await r.open(DEFAULT_BOT, { channels: ["telegram:555"] });
+    expect(chatData((await r.store.get(CHAT_TYPE, id))?.data ?? {}).channels).toEqual(["telegram:555"]);
+    await expect(r.open(DEFAULT_BOT, { channels: ["slack:1"] })).rejects.toThrow(/channels/);
+  });
+
   test("the title is Bot (<name>) unless one is given", async () => {
     const r = await rig({ reader: {} });
     await syncBots(r.store, r.home, {});

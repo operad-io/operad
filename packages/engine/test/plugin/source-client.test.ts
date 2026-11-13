@@ -145,6 +145,8 @@ describe("a source plugin's start gets the client API", () => {
       await kernel.startSources();
       // The channel is handed the very object HTTP and the TUI use.
       expect(channel.client).toBe(views);
+      expect(typeof channel.client?.answer).toBe("function");
+      expect(typeof channel.client?.pending).toBe("function");
 
       const started = await kernel.start({ flow: "gated", object: "item:1" });
       if (started.kind !== "started") throw new Error(`not started: ${started.kind}`);
@@ -220,6 +222,29 @@ describe("a source plugin's start gets the client API", () => {
       await expect(noActor).rejects.toThrow(/needs an actor/);
       const empty = views.act("gate:approve", "item:1", { actor: { via: "x", id: "" } });
       await expect(empty).rejects.toThrow(/needs an actor/);
+    } finally {
+      views.close();
+      await log.close();
+    }
+  });
+
+  test("answer without an actor is refused and answers nothing", async () => {
+    const root = await tempRoot();
+    const storeRoot = join(root, "store");
+    const store = new MemoryPluginStore({ root: storeRoot });
+    const registry = new PluginRegistry([gate], { home: root, storeRoot, store });
+    const log = openLog({ backend: "sqlite", path: join(storeRoot, "log.sqlite") });
+    const views = createViews({ registry, store, log });
+    try {
+      const answerWithout = views.answer({ runId: "r", waitId: "w", choice: "x" } as never);
+      await expect(answerWithout).rejects.toThrow(/answer needs an actor/);
+      const answerEmpty = views.answer({
+        runId: "r",
+        waitId: "w",
+        choice: "x",
+        actor: { via: "x", id: "" },
+      });
+      await expect(answerEmpty).rejects.toThrow(/answer needs an actor/);
     } finally {
       views.close();
       await log.close();

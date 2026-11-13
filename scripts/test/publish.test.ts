@@ -24,6 +24,7 @@ const packages = [
   "harness/claude",
   "harness/codex",
   "bot",
+  "telegram",
   "tui",
   "cli",
 ];
