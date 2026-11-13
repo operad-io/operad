@@ -24,9 +24,9 @@ body:
     validations:
       required: true
   - type: input
-    id: harness
+    id: agent
     attributes:
-      label: Agent harness
+      label: Agent
       description: Which agent operad was running, for example claude, codex, pi or radian.
     validations:
       required: true
