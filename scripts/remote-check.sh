@@ -147,6 +147,10 @@ shutdown() {
 }
 trap shutdown HUP TERM INT
 exec 3<&0
+set -m
+bash -c "$command" < /dev/null &
+child=$!
+set +m
 (
   while IFS= read -r _ <&3; do :; done
   if [ -n "$child" ]; then
@@ -156,10 +160,6 @@ exec 3<&0
   fi
 ) &
 watcher=$!
-set -m
-bash -c "$command" < /dev/null &
-child=$!
-set +m
 wait "$child"
 status=$?
 trap - HUP TERM INT
