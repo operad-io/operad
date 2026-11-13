@@ -184,7 +184,7 @@
 | operad-channels.md | 15 | 0032 | D4 |
 | operad-channels.md | 16 | 0032 | D9 |
 | operad-channels.md | 17 | 0032 | D10 |
-| operad-channels.md | 18 | 留在 backlog（`login` 和 `fetch` 未做） | |
+| operad-channels.md | 18 | 留在 backlog（`login` 和 `fetch` 未做）；现为该文件「已定但还没做」第 7 条 | |
 | operad-telegram.md | 1 | 0033 | D1 |
 | operad-telegram.md | 2 | 0033 | D2 |
 | operad-telegram.md | 3 | 0033 | D5 |
@@ -196,3 +196,5 @@
 | operad-telegram.md | 9 | 0033 | D7 |
 | operad-telegram.md | 10 | 0033（背景） | |
 | operad-telegram.md | 当初的建议 1–9 | 以决定为准；建议 8（表单链接对 Telegram 不做）、9（digest 反应用按钮）见 backlog 待决 | |
+| operad-bot.md | 重编号：原 8 → 现第 6 条；原 12 → 第 7 条；原 13 → 第 8 条；原 15 → 第 9 条；原 16（未移入 ADR 的部分）→ 第 10 条；原 20（其余用户词）→ 第 11 条；原 21 → 第 12 条（原 1–5 编号不变） | 留在 backlog，旧编号的引用改成新编号 | |
+| operad-channels.md | 重编号：原 1–5 编号不变（现在是「已定但还没做」第 1–5 条）；原 6 的 HTTP 来源 → 第 6 条；原 18 → 第 7 条 | 留在 backlog | |

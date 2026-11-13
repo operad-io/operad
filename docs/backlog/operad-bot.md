@@ -17,7 +17,7 @@
    - `brain:capture`：来自 iOS、Telegram 或命令行的一条"记下"事件（文字、链接、转发），agent 按 skill 归档：选目录、写 frontmatter、补 `[[链接]]`、链接的页面抓正文存成附件；写完回一行"存到哪了"。
    - `brain:review`：每天一次 cron，整理 `inbox/`，合并重复，提出三条值得回看的，送一张卡；卡上的动作只有"看过了"和"打开"。
    - 对话里读写：`brain` skill 随 `chat` 的默认访问档一起给 bot，告诉它知识库在哪、怎么写、什么不能删（删除走 ask）。
-4. **每日资料搜集是按主题配置的 cron flow** `digest:run`：配置 JSON `{ topic, schedule, sources: [...], deliver: [channel, …] }`，`sources` 的每一项指向一个来源插件（`operad-channels.md` 决定 18）：怎么登录、怎么读都归插件，operad 只拿到统一形状的条目。候选插件：`hn`（免费 API）、`rss`（任意 feed）、`reddit`（要注册 OAuth 应用，每个 client 100 次/分，匿名 `.json` 已经关了）、`x`（只剩按量付费，每读一条 $0.005，默认不开，用不用按费用定）、`web`（给定查询词的搜索）。步骤顺序：来源插件的 `fetch` 步骤取条目 → agent 按 skill 去重、排序、写摘要 → 交给知识库插件归档 → 送一张卡（前 N 条，各带链接）。卡上的反应（有用、没用）记成事实，下一天的 prompt 里把最近的反应当资料带上；没有模型替用户改规则。
+4. **每日资料搜集是按主题配置的 cron flow** `digest:run`：配置 JSON `{ topic, schedule, sources: [...], deliver: [channel, …] }`，`sources` 的每一项指向一个来源插件（`operad-channels.md` 第 7 条，即原决定 18）：怎么登录、怎么读都归插件，operad 只拿到统一形状的条目。候选插件：`hn`（免费 API）、`rss`（任意 feed）、`reddit`（要注册 OAuth 应用，每个 client 100 次/分，匿名 `.json` 已经关了）、`x`（只剩按量付费，每读一条 $0.005，默认不开，用不用按费用定）、`web`（给定查询词的搜索）。步骤顺序：来源插件的 `fetch` 步骤取条目 → agent 按 skill 去重、排序、写摘要 → 交给知识库插件归档 → 送一张卡（前 N 条，各带链接）。卡上的反应（有用、没用）记成事实，下一天的 prompt 里把最近的反应当资料带上；没有模型替用户改规则。
 5. **来源插件不让 agent 碰密钥，也不让来源内容进指令**：条目作为资料给 agent 读（`operad-contract.md` 决定 7），登录态只在插件自己的 `secrets` 里（决定 11）。
 6. **不做**：语音、Canvas、摄像头和屏幕一类设备动作、暴露在公网的网关、影子 judge 之外任何"模型替人决定"。按页面结构操作的自动化浏览器不在此列，见 `operad-bot-mcp.md` 决定 10。
 7. **费用只做软提示，不硬停**（费用多是估算，订阅登录时尤其如此，按估算硬停不合适）。bot 页显示这个 bot 本期（`period`）的花费，注明是估算；bot 的设置里可以写一个提示线，可不写。本期花费过了提示线，bot 页和这个 bot 的 chat 页显示一行提示，运行照常继续，不成为待处理项，不停下。以后有了准确的费用再议硬停（原来的理由见 `research/2026-11-11-grok-bot.md`）。
