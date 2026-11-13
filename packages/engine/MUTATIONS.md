@@ -787,3 +787,11 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0390-M2 | packages/engine/src/util.ts | a string literal `"@operad-io/shell"` was put back in the engine | `the kernel boundary > the engine's source has no shipped plugin's name or action name` |
+
+## T-0397 — bare-id fast follow-ups
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0397-M1 | packages/engine/src/plugin/sqlite-store.ts | the poll loop told object listeners only of facts with `fact.type === fact.object.type`, not of `object.changed` | `a sqlite object listener wakes for a put made by another connection` |
+| T-0397-M2 | packages/engine/src/plugin/sqlite-store.ts | the check that refuses a newer `schema_version` was removed | `a store with a newer schema_version is refused` |
+| T-0397-M3 | packages/engine/src/plugin/sqlite-store.ts | the migration ran only while `schema_version` was below the current one | `a full snapshot an older process appends after the migration is rewritten on the next open` |

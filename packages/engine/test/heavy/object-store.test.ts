@@ -248,6 +248,78 @@ describe("store lifecycle and concurrency", () => {
     }
   });
 
+  test("a sqlite object listener wakes for a put made by another connection", async () => {
+    const root = join(await tempRoot(), "sqlite");
+    const first = new SqlitePluginStore({ root });
+    const second = new SqlitePluginStore({ root });
+    try {
+      let resolve = (): void => undefined;
+      const got = new Promise<void>((done) => {
+        resolve = done;
+      });
+      const seen: string[] = [];
+      const stop = first.subscribe((object) => {
+        seen.push(`${object.type}/${object.id}`);
+        resolve();
+      });
+      second.put("note", "n1", { text: "one" }, "edit");
+      await Promise.race([
+        got,
+        new Promise<never>((_done, reject) => {
+          setTimeout(() => reject(new Error("no object change arrived")), 1_000);
+        }),
+      ]);
+      expect(seen).toEqual(["note/n1"]);
+      stop();
+    } finally {
+      first.close();
+      second.close();
+    }
+  });
+
+  test("a store with a newer schema_version is refused", async () => {
+    const root = join(await tempRoot(), "sqlite");
+    new SqlitePluginStore({ root, follow: false }).close();
+    const database = new Database(join(root, "plugins.sqlite"));
+    try {
+      database.run("UPDATE schema_version SET version = ? WHERE id = 1", [
+        PLUGIN_STORE_SCHEMA_VERSION + 1,
+      ]);
+    } finally {
+      database.close();
+    }
+    expect(() => new SqlitePluginStore({ root, follow: false })).toThrow(/upgrade operad/);
+  });
+
+  test("a full snapshot an older process appends after the migration is rewritten on the next open", async () => {
+    const root = join(await tempRoot(), "sqlite");
+    const first = new SqlitePluginStore({ root, follow: false });
+    first.put("note", "n1", { title: "One", brief: "long" }, "seed");
+    first.close();
+    const database = new Database(join(root, "plugins.sqlite"));
+    try {
+      database
+        .query(
+          "INSERT INTO facts (type, object_type, object_id, cause, at, data) VALUES (?, ?, ?, ?, ?, ?)",
+        )
+        .run("note", "note", "n1", "old-writer", 99, JSON.stringify({ title: "Two" }));
+    } finally {
+      database.close();
+    }
+    const store = new SqlitePluginStore({ root, follow: false });
+    try {
+      const facts = store.facts({ type: "note", id: "n1" }, { limit: 100 }).facts;
+      expect(facts.map((fact) => fact.type)).toEqual([OBJECT_CHANGE_FACT, OBJECT_CHANGE_FACT]);
+      expect(facts[1]?.data).toEqual({ changed: { title: "Two" }, removed: ["brief"] });
+      expect([...foldObjectFacts(facts)].map((version) => version.data)).toEqual([
+        { title: "One", brief: "long" },
+        { title: "Two" },
+      ]);
+    } finally {
+      store.close();
+    }
+  });
+
   test("two writer processes assign unique, contiguous sequences", async () => {
     const root = join(await tempRoot(), "store");
     mkdirSync(root, { recursive: true });

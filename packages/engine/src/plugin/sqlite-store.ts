@@ -33,10 +33,12 @@ import type {
 import { isRecord, requireName } from "../util.ts";
 import { repeatEvery } from "../util.ts";
 import {
+  applyObjectChange,
   diffObject,
   isObjectFact,
   OBJECT_CHANGE_FACT,
   type ObjectChange,
+  objectChangeOf,
 } from "./object-facts.ts";
 
 export interface SqlitePluginStoreOptions extends FollowOptions {
@@ -104,6 +106,8 @@ const SCHEMA = `
   );
   CREATE INDEX IF NOT EXISTS facts_by_object
     ON facts (object_type, object_id, sequence);
+  CREATE INDEX IF NOT EXISTS facts_old_shape
+    ON facts (object_type, object_id) WHERE type = object_type;
   CREATE INDEX IF NOT EXISTS facts_by_object_id
     ON facts (object_id, object_type);
   CREATE TABLE IF NOT EXISTS declared_index (
@@ -133,8 +137,9 @@ interface ObjectKeyRow {
   readonly id: string;
 }
 
-interface SnapshotRow {
+interface HistoryRow {
   readonly sequence: number;
+  readonly type: string;
   readonly data: string;
 }
 
@@ -161,8 +166,10 @@ function hasTable(database: Database, name: string): boolean {
 
 /**
  * Rewrites every old full-snapshot put fact as a change, one transaction per
- * object, keeping its sequence, cause and time. A run that finds an object
- * already rewritten leaves it alone, so the migration is safe to repeat.
+ * object, keeping its sequence, cause and time. It runs on every open: an
+ * older process still writing to the same file keeps appending snapshots. The
+ * partial index `facts_old_shape` finds them without a scan, and an object
+ * already rewritten is not listed, so a repeat changes nothing.
  */
 function migrateObjectFacts(database: Database): void {
   const objects = database
@@ -174,25 +181,29 @@ function migrateObjectFacts(database: Database): void {
        ORDER BY object_type, object_id`,
     )
     .all();
-  const snapshots = database.prepare(
-    `SELECT sequence, data FROM facts
-     WHERE object_type = ? AND object_id = ? AND type = ?
+  const history = database.prepare(
+    `SELECT sequence, type, data FROM facts
+     WHERE object_type = ? AND object_id = ?
      ORDER BY sequence`,
   );
   const update = database.prepare("UPDATE facts SET type = ?, data = ? WHERE sequence = ?");
   for (const object of objects) {
     writeImmediate(database, () => {
-      const rows = snapshots.all(object.type, object.id, object.type) as SnapshotRow[];
-      if (rows.length === 0) return;
+      const rows = history.all(object.type, object.id) as HistoryRow[];
       let previous: ObjectData | undefined;
       for (const row of rows) {
         const data = parseData(row.data);
-        const change: ObjectChange =
-          previous === undefined
-            ? { changed: data, removed: [] }
-            : (diffObject(previous, data) ?? { changed: {}, removed: [] });
-        update.run(OBJECT_CHANGE_FACT, JSON.stringify(change), row.sequence);
-        previous = data;
+        if (row.type === OBJECT_CHANGE_FACT) {
+          const change = objectChangeOf(data);
+          if (change !== undefined) previous = applyObjectChange(previous ?? {}, change);
+        } else if (row.type === object.type) {
+          const change: ObjectChange =
+            previous === undefined
+              ? { changed: data, removed: [] }
+              : (diffObject(previous, data) ?? { changed: {}, removed: [] });
+          update.run(OBJECT_CHANGE_FACT, JSON.stringify(change), row.sequence);
+          previous = data;
+        }
       }
     });
   }
@@ -227,8 +238,8 @@ function ensureSchema(database: Database, file: string): void {
   }
   // Repair a base table or index a store lost; every statement is IF NOT EXISTS.
   database.exec(SCHEMA);
+  migrateObjectFacts(database);
   if (version < PLUGIN_STORE_SCHEMA_VERSION) {
-    migrateObjectFacts(database);
     writeImmediate(database, () => {
       database.run("UPDATE schema_version SET version = ? WHERE id = 1", [
         PLUGIN_STORE_SCHEMA_VERSION,
