@@ -75,10 +75,24 @@ flow's `check` stage.
 | `gate.commands.failed.match`, `integration.keyCommands.failed.match`, `flows.<name>.stages.commands.failed.match` | string | required in `failed` | a regular expression with exactly one capture group, matched per log line | When the check line fails | Refused: `<path>[<i>].failed.match: must be a valid regular expression` or `... must have exactly one capture group` |
 | `gate.commands.failed.rerun`, `integration.keyCommands.failed.rerun`, `flows.<name>.stages.commands.failed.rerun` | string | required in `failed` | a command with `{name}` or `{pattern}` | When the check line fails | Refused: `<path>[<i>].failed.rerun: must contain {name} or {pattern}` |
 | `gate.commands.failed.max`, `integration.keyCommands.failed.max`, `flows.<name>.stages.commands.failed.max` | integer | `10` | `1` or more | When the check line fails | Refused: `<path>[<i>].failed.max: must be a positive integer`; more failures than `max` fails the check without a rerun |
+| `gate.commands.failed.stress`, `integration.keyCommands.failed.stress`, `flows.<name>.stages.commands.failed.stress` | string | absent: the brief of a flaky-test task has no command | a command; `{name}`, `{pattern}` and `{file}` are replaced | When dev proposes a task for a test that passed only on its rerun | Refused: `<path>[<i>].failed.stress: must be a non-empty string` |
+| `gate.commands.failed.rule`, `integration.keyCommands.failed.rule`, `flows.<name>.stages.commands.failed.rule` | string | absent: dev's own sentence | a path inside the repository to a text file | When dev proposes a task for a test that passed only on its rerun | Refused: `<path>[<i>].failed.rule: must be a path inside the repository` |
 
 `{name}` is replaced by the shell-quoted test name and `{pattern}` by the
-shell-quoted anchored regular expression of it. A check that uses `failed` does
-not use `check.rerun` for that line. See [Checking a change](checks.md).
+shell-quoted anchored regular expression of it. In `stress`, `{file}` is the
+shell-quoted test file, or nothing when dev does not know it. A check that uses
+`failed` does not use `check.rerun` for that line.
+
+When a test passes only on its rerun often enough (`check.flakyTask`), the
+brief of the task dev proposes uses the `failed` settings of the line whose
+`match` found the failure: the excerpt is the line `match` found and the lines
+before it (the first match in the log); `stress` gives the "Reproduce it"
+command, and with it the brief asks for the number of runs in place of `<N>`;
+`rule` names a file whose text is the repository's rule for flaky tests. Without
+`stress` the brief has no command. Without `rule`, or when the file is missing
+or empty, the brief says: "A test that failed and then passed on rerun is a bug
+until shown otherwise. Do not raise a timeout or add a retry inside a test to
+make it pass." The task has no area. See [Checking a change](checks.md).
 
 ### Work, review, integration and cleanup
 
