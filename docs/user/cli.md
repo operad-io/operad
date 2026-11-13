@@ -42,7 +42,7 @@ and `operad help` print the whole table.
 
 | Command | Arguments | What it does and prints |
 |---|---|---|
-| `operad init` | none | Creates `config.json` when it is missing and checks each loaded plugin. Prints `created <file>` or `using <file>`, then one `<plugin>: <result>` line per check. The checks: `shell` is ready, `radian` finds `radian` on `PATH`, and `dev` reaches each registered repository's remote (see [dev commands](#dev-commands)). `pi` and `claude` are optional and `init` does not check them. Exit `1` when a check fails. |
+| `operad init` | none | Creates `config.json` when it is missing and checks each loaded plugin. Prints `created <file>` or `using <file>`, then one `<plugin>: <result>` line per check. The checks: `shell` is ready, `radian` finds `radian` on `PATH`, and `dev` reaches each registered repository's remote (see [dev commands](#dev-commands)). `pi` and `claude` are optional and `init` does not install them; once you enable one, `init` checks it too, and a failed check exits `1`. Exit `1` when a check fails. |
 | `operad serve` | none | Runs the loop for this home: starts waits, runs steps, serves HTTP and runs notify. Prints `http <url>` for each listen address and `serving <home>`. Exit `4` when another `serve` holds the home. |
 | `operad serve stop` | `--timeout <secs>` | Stops this home's `serve` with SIGTERM; see [Stopping serve](#stopping-serve). |
 | `operad pending` | `--json` | Lists what waits for a person: the run, the step, the object's title, the prompt, the choices and the actions. Prints `nothing is waiting` when empty. |
