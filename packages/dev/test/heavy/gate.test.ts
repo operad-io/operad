@@ -84,19 +84,21 @@ interface ManualClock {
   clearTimeout(handle: unknown): void;
   sleep(ms: number): Promise<void>;
   fireTimeouts(): number;
+  /** Fires only the timeouts set for `ms`; the others stay armed. */
+  fireTimeoutsOf(ms: number): number;
 }
 
 /** A clock a test drives: a timeout runs only when the test fires it. */
 function manualClock(): ManualClock {
-  const timers = new Set<{ readonly handler: () => void }>();
+  const timers = new Set<{ readonly handler: () => void; readonly ms: number }>();
   return {
-    setTimeout(handler) {
-      const timer = { handler };
+    setTimeout(handler, ms) {
+      const timer = { handler, ms };
       timers.add(timer);
       return timer;
     },
     clearTimeout(handle) {
-      timers.delete(handle as { readonly handler: () => void });
+      timers.delete(handle as { readonly handler: () => void; readonly ms: number });
     },
     sleep() {
       return Promise.resolve();
@@ -104,6 +106,12 @@ function manualClock(): ManualClock {
     fireTimeouts() {
       const due = [...timers];
       timers.clear();
+      for (const timer of due) timer.handler();
+      return due.length;
+    },
+    fireTimeoutsOf(ms) {
+      const due = [...timers].filter((timer) => timer.ms === ms);
+      for (const timer of due) timers.delete(timer);
       for (const timer of due) timer.handler();
       return due.length;
     },
@@ -927,7 +935,8 @@ describe("dev/verify", () => {
     });
     const running = verify(state);
     await waitForFile(marker);
-    expect(clock.fireTimeouts()).toBeGreaterThan(0);
+    // Only the stall timer fires; the 3600 s wall timer stays armed.
+    expect(clock.fireTimeoutsOf(5_000)).toBeGreaterThan(0);
 
     const result = await running;
     expect(result.result).toBe("fail");
