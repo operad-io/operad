@@ -78,12 +78,13 @@ A choice that is also an action on the object runs the action, so its note and
 confirmation apply. A closed question is `409` and is not applied; the app
 shows the reason and refreshes.
 
-The app receives a push when something starts waiting for a person, the same
-moment the `notify` command runs. Tapping it opens `OPERAD_LINK`, which is
-`operad://objects/<id>` and opens that object's page. The app does not receive a
-push for every state change; open the object or pull to refresh for those. A
-wait that a plugin answers automatically is not announced, so the phone does not
-buzz for a question that is about to answer itself.
+The app receives a push when something starts waiting for a person; the
+`notify` command is the command-line equivalent of that moment. Tapping it opens
+`OPERAD_LINK`, which is `operad://objects/<id>` and opens that object's page.
+The app does not receive a push for every state change; open the object or pull
+to refresh for those. A wait that a plugin answers automatically is not
+announced, so the phone does not buzz for a question that is about to answer
+itself.
 
 ## Running
 

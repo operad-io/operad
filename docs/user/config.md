@@ -42,8 +42,7 @@ this manual prints a secret.
   only one; `path` is the database file, `store/log.sqlite` in the home when
   absent. A relative path resolves against the home. Any other `backend` is a
   config error.
-- `http`: the interface `operad serve` exposes to clients. It is off unless
-  `enabled` is true; no other command opens the port.
+- `http`: the interface `operad serve` exposes to clients. It is on by default; set `http.enabled` to `false` to turn it off. No other command opens the port.
 - `ask`: how long `ctx.ask` waits for an answer by default; see
   [Asking a person from a step](../plugins/asking.md).
 - `notify`: a command `serve` runs when something waits for a person; see

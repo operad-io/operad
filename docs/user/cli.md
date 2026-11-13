@@ -103,7 +103,7 @@ Every command takes `--help` after the command name where it is noted below;
 | `--name <name>` | `dev repo add` | The name to register the repository under. |
 | `--slug <slug>` | `dev plan add`, `dev task add` | The short name in the new id. |
 | `--title <title>` | `dev plan add`, `dev task add`, `dev task update` | The title. |
-| `--concurrency <n>` | `dev plan add` | How many of the plan's tasks run at once. |
+| `--concurrency <n>` | `dev plan add` | How many of the plan's tasks run at once, a whole number from 1 to 16 (default 1). |
 | `--flow <name>` | `dev plan add`, `dev task add`, `dev task update` | The flow of the plan or task. |
 | `--plan <plan>` | `dev task add` | The plan the task belongs to. |
 | `--after <task>` | `dev task add`, `dev task update` | A task to wait for; may be repeated. `--after ""` clears them. |
@@ -323,8 +323,8 @@ prints the reason. `operad dev repo list` prints `no repositories` or one
 
 `operad dev plan add --slug <slug> --title <title> [--concurrency <n>]
 [--flow <name>] [--repo <name>]` creates a plan and prints its id. The request
-is read from stdin when there is any. `--concurrency` must be a whole number of
-1 or more, or `0` for the plan to take the repository's value.
+is read from stdin when there is any. `--concurrency` is a whole number from 1
+to 16 and defaults to 1 when it is left out.
 
 `operad dev task add --plan <plan> --slug <slug> --title <title> [--after
 <task>]… [--area <area>] [--flow <name>] [--repo <name>] [--chat <id>]` creates

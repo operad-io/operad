@@ -93,7 +93,8 @@ Schema is `packages/engine/schemas/keys.schema.json`.
 
 | Key | Type | Default | Allowed values | When it takes effect |
 |---|---|---|---|---|
-| `<name>` | object | `{}` | One entry per key, each a string `<plugin>:<action>` | When the TUI starts: it reads `/v1/keys`, and a user binding beats a plugin default on the same key. A value that is not `<plugin>:<action>` is refused when the file is read. |
+| `keys` | object | `{}` | One entry per key | When the TUI starts: the whole override map. |
+| `<name>` | string | none | `"<plugin>:<action>"` | When the TUI starts: the action bound to that key. It beats a plugin default on the same key; a value that is not `<plugin>:<action>` is refused when the file is read. |
 
 The file is a JSON object whose property names are keys and whose values are
 action names:
