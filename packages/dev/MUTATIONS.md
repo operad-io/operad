@@ -1075,3 +1075,11 @@ the row fields.
 | T-0385-M7 | packages/dev/src/views.ts | the attempts table read a change fact as if it were a whole snapshot | `dev views > the metrics summary has at most four columns, a row per attempt and a total` |
 | T-0385-M8 | packages/dev/src/throughput.ts | a task's history in Metrics was read as whole snapshots instead of folded changes | `repository metrics > counts per hour and per day, cost per merge, and step times` |
 | T-0385-M9 | packages/dev/src/service.ts | `rebuildObjects` kept only facts whose type equaled the object type, dropping every change | `2 000 random operations rebuild from history every time` |
+## T-0387-main-clone-prepare — the main clone runs `prepare`
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0387-M1 | packages/dev/src/mainclone.ts | a failing prepare line no longer stopped the lines after it | `a failing line gives the note, stops the rest and keeps the fast-forward` |
+| T-0387-M2 | packages/dev/src/mainclone.ts | a fast-forwarded clone ran no prepare line | `a fast-forwarded clone runs each prepare line in order in the clone` |
+| T-0387-M3 | packages/dev/src/mainclone.ts | removed the empty-`prepare` early return, so a repository without `prepare` still ran a command | `no prepare lines run no command` |
+| T-0387-M4 | packages/dev/src/mainclone.ts | a clone already at the target ran the prepare lines too | `a clone that did not move runs nothing` |

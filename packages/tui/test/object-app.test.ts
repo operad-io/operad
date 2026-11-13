@@ -420,4 +420,112 @@ describe("the TUI object app", () => {
       await shell.done;
     }
   });
+
+  for (const kind of ["pending", "running"] as const) {
+    test(`a ${kind} row opens by its typed id on the first request and every section request`, async () => {
+      class Typed extends Client {
+        override pending(): Promise<readonly PendingItem[]> {
+          if (kind !== "pending") return Promise.resolve([]);
+          return Promise.resolve([
+            {
+              runId: "run-1",
+              waitId: "w1",
+              flow: "f",
+              step: "s",
+              prompt: "ok?",
+              choices: [],
+              actions: [],
+              object: "item:one",
+            } as unknown as PendingItem,
+          ]);
+        }
+        override running(): Promise<readonly RunningItem[]> {
+          if (kind !== "running") return Promise.resolve([]);
+          return Promise.resolve([
+            {
+              runId: "run-1",
+              flow: "f",
+              elapsedMs: 1,
+              object: "item:one",
+              title: "One",
+            } as unknown as RunningItem,
+          ]);
+        }
+        override object(id: string): Promise<ViewObject> {
+          return super.object(id).then((object) => ({ ...object, id: id.replace(/^item:/, "") }));
+        }
+      }
+      const client = new Typed();
+      const events = new Events();
+      const view = new View();
+      const shell = startShell({
+        client,
+        events: () => events,
+        view,
+        width: 80,
+        height: 20,
+        theme: "dark",
+        clock: immediateClock,
+      });
+      try {
+        await view.until((state) =>
+          state.tabs.find((tab) => tab.id === kind)?.list.rows.length === 1,
+        );
+        if (kind === "running") shell.key({ name: "2" });
+        shell.key({ name: "enter" });
+        await view.until((state) => state.object?.sections[0]?.markdown === "info one");
+        events.push({ kind: "change", id: "one" });
+        await view.until(() => client.objectCalls.length >= 2);
+        expect(client.objectCalls.every((id) => id === "item:one")).toBe(true);
+        expect(client.sectionCalls.length).toBeGreaterThan(0);
+        expect(client.sectionCalls.every((call) => call.id === "item:one")).toBe(true);
+      } finally {
+        shell.stop();
+        await shell.done;
+      }
+    });
+  }
+
+  test("a change of an object only a pending row holds refetches it by its typed id", async () => {
+    class Held extends Client {
+      override objects(): Promise<ViewListPage> {
+        return Promise.resolve({ rows: [] });
+      }
+      override pending(): Promise<readonly PendingItem[]> {
+        return Promise.resolve([
+          {
+            runId: "run-1",
+            waitId: "w1",
+            flow: "f",
+            step: "s",
+            prompt: "ok?",
+            choices: [],
+            actions: [],
+            object: "item:one",
+          } as unknown as PendingItem,
+        ]);
+      }
+    }
+    const client = new Held();
+    const events = new Events();
+    const view = new View();
+    const shell = startShell({
+      client,
+      events: () => events,
+      view,
+      width: 80,
+      height: 20,
+      theme: "dark",
+      clock: immediateClock,
+    });
+    try {
+      await view.until((state) => state.tabs.find((tab) => tab.id === "pending")?.list.rows.length === 1);
+      events.push({ kind: "change", id: "one" });
+      await view.until(() => client.objectCalls.length >= 1);
+      expect(client.objectCalls.every((id) => id === "item:one")).toBe(true);
+    } finally {
+      shell.stop();
+      await shell.done;
+    }
+  });
 });

@@ -12,7 +12,7 @@ import {
   gateWorktreePath,
   recreateGateWorktree,
 } from "./gate.ts";
-import { runPrepare, stepOptions } from "./prepare.ts";
+import { mainCloneRunner, runPrepare, stepOptions } from "./prepare.ts";
 import { checkPlaces } from "./places.ts";
 import {
   IntegrationQueue,
@@ -23,7 +23,6 @@ import {
 } from "./integration-queue.ts";
 import {
   mainCloneChange,
-  runCommand,
   updateMainClone,
   type CommandRunner,
   type MainCloneOutcome,
@@ -89,18 +88,23 @@ function ownCodeRoot(): string {
   return result.ok ? result.out : "";
 }
 
-export function followMain(
+export async function followMain(
   repository: { readonly name: string; readonly path: string },
   home: string,
   branch: string,
   sha: string,
-): MainCloneOutcome {
+  prepare: { readonly lines: readonly string[]; readonly run: CommandRunner } = {
+    lines: [],
+    run: async () => ({ ok: true, out: "" }),
+  },
+): Promise<MainCloneOutcome> {
   const before = git(repository.path, ["rev-parse", "HEAD"]);
-  const outcome = updateMainClone(
+  const outcome = await updateMainClone(
     repository.path,
     branch,
     sha,
-    integrateTestHooks.runCommand ?? runCommand,
+    prepare.lines,
+    integrateTestHooks.runCommand ?? prepare.run,
   );
   const after = git(repository.path, ["rev-parse", "HEAD"]);
   if (outcome.updated && before.ok && after.ok && before.out !== after.out) {
@@ -395,7 +399,13 @@ export async function runIntegrate(
     mergedLine: string = `merged as ${shortSha(sha)}`,
   ): Promise<PluginStepResult> => {
     const note = record.checkNote;
-    const clone = followMain(context.repository, ctx.home, settings.mainBranch, cloneSha);
+    const clone = await followMain(
+      context.repository,
+      ctx.home,
+      settings.mainBranch,
+      cloneSha,
+      { lines: settings.prepare, run: mainCloneRunner(ctx, settings) },
+    );
     integrateTestHooks.at?.("clone-followed");
     const cloneChange = mainCloneChange(clone);
     const withClone: IntegrationRecord = { ...record, mainClone: { ...clone } };
@@ -465,11 +475,12 @@ export async function runIntegrate(
       const previousBatch = Array.isArray(previous.batch)
         ? previous.batch.filter((name): name is string => typeof name === "string")
         : [];
-      const clone = followMain(
+      const clone = await followMain(
         context.repository,
         ctx.home,
         settings.mainBranch,
         typeof previous.batchHead === "string" ? previous.batchHead : previous.candidate,
+        { lines: settings.prepare, run: mainCloneRunner(ctx, settings) },
       );
       const cloneChange = mainCloneChange(clone);
       const withClone: IntegrationRecord = {

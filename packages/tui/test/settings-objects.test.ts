@@ -184,6 +184,50 @@ describe("objects under settings", () => {
     expect(shell.state.object?.children?.rows.map((row) => row.id)).toEqual(["p-1"]);
     shell.stop();
   });
+  test("a change event for a closed settings object refetches it by its typed id", async () => {
+    const asked: string[] = [];
+    class Recording extends SettingsClient {
+      override object(id: string): Promise<ViewObject> {
+        asked.push(id);
+        return super.object(id);
+      }
+    }
+    let push: (event: TuiEvent) => void = () => undefined;
+    const events: TuiEventSource = {
+      stop() {},
+      [Symbol.asyncIterator](): AsyncIterator<TuiEvent> {
+        const queue: TuiEvent[] = [];
+        let wake: (() => void) | undefined;
+        push = (event) => {
+          queue.push(event);
+          wake?.();
+        };
+        return {
+          async next() {
+            while (queue.length === 0) await new Promise<void>((resolve) => (wake = resolve));
+            const value = queue.shift();
+            return value === undefined ? { done: true, value: undefined } : { done: false, value };
+          },
+        };
+      },
+    };
+    const view = new View();
+    const shell = startShell({
+      client: new Recording(),
+      events: () => events,
+      view,
+      width: 120,
+      height: 30,
+      theme: "dark",
+      clock: immediateClock,
+    });
+    await view.until((state) => state.settingsTab?.list.loaded === true);
+    push({ kind: "change", id: "default" });
+    await view.until(() => asked.length >= 1);
+    expect(asked.every((id) => id === "bot:default")).toBe(true);
+    shell.stop();
+  });
+
 });
 
 class SettingsClient implements TuiShellClient {
