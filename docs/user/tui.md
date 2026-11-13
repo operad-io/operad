@@ -6,8 +6,46 @@ description: The terminal client: themes, live updates, states and leaving.
 
 `operad tui` is the terminal client for the same `/v1` interface. With a fresh
 `~/.operad` it needs nothing else: no config edit, no `operad serve` in another
-terminal, no token. It never opens the store and never loads a plugin. It finds
-or starts the server like this:
+terminal, no token. It never opens the store and never loads a plugin.
+
+## Why it exists
+
+Work that waits for you, and runs that are going, are held by `operad serve`.
+The terminal client lets you see them and act on them without leaving the
+terminal: what is pending, what is running, an object's sections and history,
+and the actions an object offers. It talks to `serve` only over the `/v1`
+interface, the same one the phone app uses, so it shows what the app shows and
+knows nothing about any plugin. It starts `serve` for you when none is running,
+so a first look needs no setup. It never opens the store itself, and it
+changes things only by running the actions an object offers.
+
+## How it works
+
+1. `operad tui` finds the address and the token: `--url` and `--token` if
+   given, otherwise `http.listen` and `http.port` in `config.json` and the
+   token in `$OPERAD_HOME/secrets/http.json`.
+2. It asks that address for `/v1/types`. If no `serve` answers and none holds
+   this home, it starts `operad serve` (unless `--no-start`) and waits up to 15
+   seconds. The details are in the list below.
+3. It reads the theme and layout from `--theme` or `$OPERAD_HOME/tui.json`
+   (see [the tui.json file](#the-tuijson-file) and [Themes](#themes)), and the
+   key bindings from `GET /v1/keys`, which include your
+   [`keys.json`](#keysjson).
+4. It draws the lists, Pending and Running first and then one tab for each
+   plugin's top-level object type, from `GET /v1/pending`, `GET /v1/running`
+   and `GET /v1/objects`. `enter` opens a row with `GET /v1/objects/<id>`:
+   the row, the section tabs, and the section's Markdown.
+5. It reads `GET /v1/events`. An event for an object fetches that object again
+   in every open list; a `reset` fetches everything that is open. When the
+   server is unreachable it keeps the last lists on screen and retries (see
+   [Live updates, states and leaving](#live-updates-states-and-leaving)).
+6. A key or a `:` palette entry runs an action with `POST /v1/act`, asking for
+   a note or a confirmation first when the action needs one. A refused action
+   shows the server's message in the footer.
+7. `q` or Ctrl-C restores the terminal and exits. A `serve` that the TUI
+   started keeps running; stop it with `operad serve stop`.
+
+It finds or starts the server like this:
 
 - `--url` and `--token` win over the home when they are given. With `--url`
   nothing is ever started.

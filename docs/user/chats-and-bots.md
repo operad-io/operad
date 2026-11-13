@@ -10,6 +10,25 @@ them, and a chat on a repository does the repository's work. Both are objects
 from plugins: `chat` owns every chat, `dev` opens one on a repository, and
 `bot` opens one on a bot.
 
+## Why it exists
+
+Working with an agent is usually a long exchange, not one command. A chat keeps that exchange in operad: you send messages from the command line, the terminal UI, iOS or Telegram, and every one lands in the same transcript. operad keeps its own record of the messages, so the history of a chat does not depend on the agent's session files; a cleaned or compacted session does not erase it.
+
+A bot exists for chats that are not about a repository. It fixes, in one place, the working directory, default agent, skills, speaker and access profile that such a chat uses, so you can keep several bots with different permissions, for example a read-only one. Because a chat reads its bot at every reply, tightening a bot or adding a skill does not need a new chat.
+
+The plugins are deliberately cautious. A chat on a repository is read-only until you agree to open a worktree. A bot cannot change its own skills, settings or MCP servers; it can only propose a change, and nothing on disk changes until a person approves.
+
+## How it works
+
+1. A chat is opened by a plugin: `dev:chat` on a repository, `bot:chat` on a bot. The agent is chosen then and does not change; the model and effort can be changed later with `chat:model` and `chat:effort`.
+2. `chat:send` records a message. A message is an event whose source is `ios`, `telegram`, `cli`, `tui` or `other`, and the `chat` plugin's own rule starts `chat:reply` for it (see [Chats](#chats)).
+3. `chat:reply` takes the messages that no reply answers yet from the chat's own record, continues the agent's session, and records the reply. If messages arrived meanwhile it goes round again, at most 20 rounds. Without `operad serve` the message is only recorded and is answered when `serve` runs.
+4. While the agent works, the `transcript` section shows the messages, tool calls and the unfinished text of the current reply.
+5. Each tool call is checked against the chat's access profile (see [Access](access.md)). For a bot chat the profile is the default profile plus the bot's own `access` settings; the bot's settings are read again at every reply (see [Bots](#bots)).
+6. A chat on a repository starts in the main clone as read-only. A write, or a command that is not known to only read, becomes the worktree question; on yes, `dev` opens `work/chat-<id>` and the chat works there.
+7. When a bot proposes a skill, a settings change or an MCP server (`operad bot skill`, `bot setting`, `bot mcp`), a `bot-proposal` object waits in Pending. `bot:approve` applies it and `bot:reject` drops it (see [Bot objects and proposals](#bot-objects-and-proposals)).
+8. `chat:close` records `chat.closed`; the transcript stays readable and `chat:send` is refused.
+
 ## Chats
 
 A chat belongs to the plugin that opened it. `dev` opens one on a repository:

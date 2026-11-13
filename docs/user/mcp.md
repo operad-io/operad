@@ -15,6 +15,28 @@ app.
 The server implements the MCP JSON-RPC 2.0 transport, protocol version
 `2025-06-18`. It has no runtime dependency except `@operad-io/engine`.
 
+## Why it exists
+
+A lead agent such as Claude Code needs to see what operad holds (objects, pending items, running items, history) and sometimes to act on it. Without this server it would have to run `operad` commands and parse their output, or call the `/v1` interface itself. The server gives it typed tools over the same data, and the same lead actions, so what it reads and does matches the command line and the app.
+
+It is deliberately limited. It never starts a step and never takes an owner decision: only `operad serve` runs steps, and an action runs from here only if you list it in `mcp.actions`. The optional channel exists so the lead hears when something changes, such as a wait that opens, instead of polling; it is one-way and relays no permission prompts.
+
+## How it works
+
+1. The client starts `operad mcp` from an entry in `.mcp.json` ([Setting it up](#setting-it-up)). The server reads the home named by `$OPERAD_HOME`, or `~/.operad`, and speaks JSON-RPC on stdio ([Transport](#transport)).
+2. The client sends `initialize`, then calls tools. The read tools (`types`, `list`, `show`, `section`, `pending`, `running`, `history`) return the same data as the matching commands and `/v1` calls ([Tools](#tools)).
+3. `command` runs a plugin verb as `operad <plugin> <verb>` would, with `input` standing in for stdin. `act` runs an action through the same path as `POST /v1/act`, recorded with the actor `{ "via": "mcp", "id": "lead" }`.
+4. Before `act` runs anything, the server checks [`mcp.actions`](#lead-permissions) from `config.json`. An action not listed is refused with a message that says the owner runs it. An action that asks to confirm also needs `mcp.confirmActions`. `show` lists the refused actions under `ownerActions`, so the lead can tell you what to run.
+5. `answer` replies to a pending item for a run that waits. When every choice is also an action on the object, the answer runs through that action, so the same allow list and confirmation apply.
+6. A malformed request gets a JSON-RPC error; a refusal from the data itself comes back as a normal result with `"isError": true` ([Errors](#errors)).
+
+With `operad mcp --claude-channel` the server also sends `notifications/claude/channel`:
+
+1. At start it reads the current rows of the object types it covers and sends nothing for them.
+2. It then watches the objects and the flows, because a wait that opens or a step that starts changes no object. A change another process makes is found by polling.
+3. After the client sends `notifications/initialized`, it sends one line for each wait that opens, each object that reaches a final state, and each object that reaches the same state `loopAfter` times with no wait or end between. Which of these are sent is set by `mcp.channel.notify` ([Claude Code channel](#claude-code-channel)).
+4. The client then reads the details with `show`, `section`, `pending` or `history`.
+
 ## Setting it up
 
 `operad mcp` runs an MCP server on stdio for a lead agent. It reads the same

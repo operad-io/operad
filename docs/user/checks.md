@@ -6,6 +6,20 @@ description: Checking a change and reproducing a flaky test.
 
 How a change is checked before it merges, and how a flaky test is reproduced. The same checks gate a task of the `dev` plugin (see [its page](dev.md)).
 
+## Why it exists
+
+A change should be checked the same way whether a person or a `dev` task makes it, and the check should not cost more than the change needs. Running the whole suite for every small change is slow, so `check-changed.sh` tests only the packages a change can affect, and the full `verify.sh` runs once more at integration, before merge. `remote-check.sh` can run a check on another machine, in one of several slots, so that checks run at the same time do not share one working tree. A test that fails once and passes on a rerun is not ignored: the page treats it as a bug and gives a way to reproduce it, `stress.sh`. The rule is not to raise its timeout and not to add a retry inside the test.
+
+## How it works
+
+1. A check is a shell line. `bash scripts/verify.sh` installs with the lockfile, type-checks and runs every package's tests with `scripts/run-tests.sh`. `bash scripts/check-changed.sh` does the same installation and type-check, then picks the packages a change touches and the packages that load them, prints the choice (`all`, `none` or names) and tests only those.
+2. `remote-check.sh` runs the line here, or when `OPERAD_CHECK_HOST` is set, copies `HEAD` to that host as a git bundle, takes a slot, checks out the commit and runs the line there. The output and the exit code come back as the line's own.
+3. A `dev` task runs the lines in `gate.commands` against its commit. When a line fails, `dev` finds the failing test names with `failed.match` and runs each again alone with `failed.rerun`, which uses the `--` form of `remote-check.sh`. See [the gate and its settings](dev.md).
+4. A test that passes only on its rerun is recorded. After `check.flakyTask` such passes (default 2), `dev` proposes a task to fix it, with the rule from `failed.rule` and the command from `failed.stress`.
+5. That task runs `bash scripts/stress.sh` before the fix and after it, as described in [Reproducing a flaky test](#reproducing-a-flaky-test): `--rerun-each N` runs, optionally with `--load K` busy processes, and a summary of passes and failures.
+
+Failures before the line runs, and what to do about them, are in [When a check fails](#when-a-check-fails). The host variables are in the table in [Checking a change](#checking-a-change).
+
 ## Checking a change
 
 ```sh
