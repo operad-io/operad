@@ -1,12 +1,22 @@
 {
   "name": "@operad-io/pool",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.0.1",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
   },
   "dependencies": {
     "@operad-io/engine": "workspace:*"
-  }
+  },
+  "description": "operad: the pool plugin, workers shared by runs (in development)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/operad-io/operad.git",
+    "directory": "packages/pool"
+  },
+  "license": "MIT",
+  "files": [
+    "src",
+    "LICENSE"
+  ]
 }

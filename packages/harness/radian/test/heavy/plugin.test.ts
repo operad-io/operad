@@ -39,7 +39,7 @@ import {
   waitUntil,
 } from "../support.ts";
 import { FLUSH_MS } from "@operad-io/harness-process";
-import { alive, manualClock, waitForFile, waitForPid, type ManualClock } from "@operad-io/harness-process/test-support";
+import { alive, manualClock, waitForFile, waitForPid, type ManualClock } from "../../../process/test/support.ts";
 
 afterAll(cleanupTempRoots);
 

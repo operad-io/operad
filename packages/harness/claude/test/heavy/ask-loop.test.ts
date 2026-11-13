@@ -16,7 +16,7 @@ import {
   type LogBackend,
 } from "@operad-io/engine";
 import { createClaudeHarnessPlugin } from "../../src/index.ts";
-import { alive, cleanupTempRoots, manualClock, tempRoot, waitForGone, waitForPid } from "@operad-io/harness-process/test-support";
+import { alive, cleanupTempRoots, manualClock, tempRoot, waitForGone, waitForPid } from "../../../process/test/support.ts";
 
 afterAll(cleanupTempRoots);
 

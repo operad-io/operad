@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 import { readConfig, type PluginConfigEntry } from "../config/config.ts";
 import { messageOf, PluginError } from "./errors.ts";
 import { defaultOperadHome } from "./home.ts";
+import { INSTALL_ON_ENABLE, installedPackageFile, runningFromWorkspace } from "./install.ts";
 import { keysPathFor, readKeysFile } from "./keys.ts";
 import { PluginRegistry } from "./registry.ts";
 import type { PluginRegistryOptions } from "./registry.ts";
@@ -38,14 +39,27 @@ function resolvePluginSpecifier(specifier: string, baseDir: string): string {
   return specifier;
 }
 
+/** Imports a module file with a fresh instance, as a reload expects. */
+async function importPluginFile(file: string): Promise<Record<string, unknown>> {
+  loadCount += 1;
+  const url = new URL(pathToFileURL(file).href);
+  url.searchParams.set("operad-plugin-load", String(loadCount));
+  return (await import(url.href)) as Record<string, unknown>;
+}
+
 /**
  * Imports a plugin module and returns its default export. The module name is
  * named in every import error. A path gets a fresh module instance so a later
  * reload does not reuse the old value.
+ *
+ * `installed` is the package's file in the home's Bun project (decision 11).
+ * The workspace link is tried first, so a checkout keeps loading its own code;
+ * when there is no such link, the home package is imported by path.
  */
 export async function loadPlugin(
   specifier: string,
   baseDir: string,
+  installed?: string | undefined,
 ): Promise<unknown> {
   const resolved = resolvePluginSpecifier(specifier, baseDir);
   const isFile = resolved.startsWith("file:");
@@ -61,10 +75,20 @@ export async function loadPlugin(
   try {
     module = (await import(url)) as Record<string, unknown>;
   } catch (error) {
-    throw new PluginError(
-      `plugin "${specifier}": import failed: ${messageOf(error)}`,
-      { cause: error },
-    );
+    if (installed === undefined) {
+      throw new PluginError(
+        `plugin "${specifier}": import failed: ${messageOf(error)}`,
+        { cause: error },
+      );
+    }
+    try {
+      module = await importPluginFile(installed);
+    } catch (installedError) {
+      throw new PluginError(
+        `plugin "${specifier}": import failed: ${messageOf(error)}; the package in the home also failed: ${messageOf(installedError)}`,
+        { cause: installedError },
+      );
+    }
   }
 
   if (module.default === undefined) {
@@ -154,11 +178,26 @@ export async function loadConfiguredPlugins(
       if (entry.name !== undefined) disabled.push(entry.name);
       continue;
     }
+    const installed = installedPackageFile(home, entry.module);
+    // Outside a workspace checkout the home project is the copy to run, even
+    // when another install of the same package happens to resolve.
+    const source = installed !== undefined && !runningFromWorkspace() ? installed : entry.module;
     let definition: unknown;
     try {
-      definition = await loadPlugin(entry.module, home);
+      definition = await loadPlugin(source, home, installed);
     } catch (error) {
-      errors.push(messageOf(error));
+      if (
+        entry.name !== undefined &&
+        INSTALL_ON_ENABLE.includes(entry.name) &&
+        installed === undefined &&
+        !runningFromWorkspace()
+      ) {
+        errors.push(
+          `plugin "${entry.name}": not installed; run \`operad plugin enable ${entry.name}\` to install it`,
+        );
+      } else {
+        errors.push(messageOf(error));
+      }
       continue;
     }
     if (entry.name !== undefined) {

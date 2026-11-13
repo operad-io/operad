@@ -1,11 +1,25 @@
 {
   "name": "@operad-io/engine",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.0.1",
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
     "./platform": "./src/platform/index.ts",
     "./testing": "./src/testing/index.ts"
-  }
+  },
+  "description": "operad: the graph engine for flows, facts and plugins (in development)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/operad-io/operad.git",
+    "directory": "packages/engine"
+  },
+  "license": "MIT",
+  "files": [
+    "src",
+    "schemas",
+    "config.schema.json",
+    "keys.schema.json",
+    "triggers.schema.json",
+    "LICENSE"
+  ]
 }

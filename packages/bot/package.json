@@ -1,7 +1,6 @@
 {
   "name": "@operad-io/bot",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.0.1",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
@@ -10,5 +9,18 @@
     "@operad-io/chat": "workspace:*",
     "@operad-io/engine": "workspace:*",
     "@operad-io/access-match": "workspace:*"
-  }
+  },
+  "description": "operad: the bot plugin (in development)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/operad-io/operad.git",
+    "directory": "packages/bot"
+  },
+  "license": "MIT",
+  "files": [
+    "src",
+    "bot.schema.json",
+    "README.md",
+    "LICENSE"
+  ]
 }

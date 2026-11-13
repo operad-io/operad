@@ -3,7 +3,30 @@
   "version": "0.0.1",
   "description": "operad: an open orchestration layer for coding agents (in development)",
   "type": "module",
-  "repository": { "type": "git", "url": "git+https://github.com/operad-io/operad.git", "directory": "packages/cli" },
-  "bin": { "operad": "bin/operad.ts" },
-  "dependencies": { "@operad-io/engine": "workspace:*", "@operad-io/mcp": "workspace:*", "@operad-io/shell": "workspace:*", "@operad-io/chat": "workspace:*", "@operad-io/dev": "workspace:*", "@operad-io/harness-claude": "workspace:*", "@operad-io/harness-codex": "workspace:*", "@operad-io/harness-pi": "workspace:*", "@operad-io/harness-radian": "workspace:*", "@operad-io/tui": "workspace:*", "@operad-io/pool": "workspace:*", "@operad-io/bot": "workspace:*" }
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/operad-io/operad.git",
+    "directory": "packages/cli"
+  },
+  "bin": {
+    "operad": "bin/operad.ts"
+  },
+  "dependencies": {
+    "@operad-io/engine": "workspace:*",
+    "@operad-io/mcp": "workspace:*",
+    "@operad-io/shell": "workspace:*",
+    "@operad-io/chat": "workspace:*",
+    "@operad-io/dev": "workspace:*",
+    "@operad-io/harness-codex": "workspace:*",
+    "@operad-io/harness-pi": "workspace:*",
+    "@operad-io/harness-radian": "workspace:*",
+    "@operad-io/pool": "workspace:*",
+    "@operad-io/bot": "workspace:*"
+  },
+  "license": "MIT",
+  "files": [
+    "bin",
+    "src",
+    "LICENSE"
+  ]
 }

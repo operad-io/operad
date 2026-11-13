@@ -10,8 +10,9 @@
  * the program waits for).
  */
 
-import { existsSync, watch, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { existsSync, writeFileSync } from "node:fs";
+import { basename, dirname } from "node:path";
+import { waitForChange } from "@operad-io/engine/platform";
 
 export interface FakeLinesProgram {
   readonly mode: string;
@@ -30,19 +31,9 @@ export interface FakeLinesProgram {
 }
 
 /** Resolves when `path` exists; a look every 100 ms backs the directory watch. */
-export function waitForRelease(path: string | undefined): Promise<void> {
-  if (path === undefined || existsSync(path)) return Promise.resolve();
-  return new Promise((resolve) => {
-    const check = (): void => {
-      if (!existsSync(path)) return;
-      watcher.close();
-      clearInterval(timer);
-      resolve();
-    };
-    const watcher = watch(dirname(path), check);
-    const timer = setInterval(check, 100);
-    check();
-  });
+export async function waitForRelease(path: string | undefined): Promise<void> {
+  if (path === undefined || existsSync(path)) return;
+  await waitForChange(dirname(path), basename(path), 100);
 }
 
 export async function startFakeLines(prefix: string): Promise<FakeLinesProgram> {

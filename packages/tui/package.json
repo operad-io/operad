@@ -1,7 +1,6 @@
 {
   "name": "@operad-io/tui",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.0.1",
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
@@ -11,5 +10,20 @@
   "dependencies": {
     "@opentui/core": "0.6.8",
     "@operad-io/engine": "workspace:*"
-  }
+  },
+  "description": "operad: the terminal client (in development)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/operad-io/operad.git",
+    "directory": "packages/tui"
+  },
+  "license": "MIT",
+  "files": [
+    "src",
+    "themes",
+    "theme.schema.json",
+    "tui.schema.json",
+    "README.md",
+    "LICENSE"
+  ]
 }
