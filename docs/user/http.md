@@ -61,7 +61,9 @@ otherwise. An object id in a path is URL-encoded; `<id>` may be the bare id or
 | `GET /v1/running` | The same list as `operad running`. Each item has `runId`, `flow`, `step`, `stepLabel`, `queued`, `startedAt` and `elapsedMs` (the run's age), and: `object`, the object's id as rows and `operad show` name it (for example `operad/T-0048-type-filters`), or `null` for a run with no object; `title`, that object's row title, or `null` when there is no object or the lookup failed (a failed lookup never fails the list); `stepStartedAt` and `stepElapsedMs`, when the current step's current attempt started and how long it has run (`null` before the first step); `mark`, the object's row mark (one of the [row marks](#row-marks)), left out when the row has none or cannot be built. The step time starts again when the step changes and on a new attempt. |
 | `GET /v1/objects/<id>` | `{ "id", "type", "link", "row", "sections", "actions" }`: the link that opens the object, the row, the section directory, and the actions available now with their `args` schema, `note` field and `confirm` flag. |
 | `GET /v1/objects/<id>/sections/<section>?cursor=<c>&full=<bool>&after=<mark>` | `{ "markdown": "...", "next": "<c>", "mark": "<m>", "tail": "..." }`. `full=true` skips the size cap. `mark` is an opaque position the finished content goes to and `tail` is the Markdown of the part still changing; a plugin that does not use them sends neither. With `after=<mark>` from an earlier read, `markdown` holds only the finished content after that mark; the answer then also carries `delta`: true when it is that part alone, false when the plugin answered with a whole page and a client must replace instead of append. The size cap covers `markdown` and `tail` together but never cuts `tail`: when both do not fit, `markdown` is shortened first; when even the tail and the truncation note do not fit, the call is refused with an over-cap message naming `--full`. A mark from another section or object is refused with `400`. |
-| `POST /v1/act` | Runs one action. The body is `{ "action": "plugin:action", "id": "<id>", "args": {...}, "note": "...", "confirmed": true }`; only `action` is always required, and an action that targets an object also needs `id`. An action with `confirm: true` needs `"confirmed": true`. The body is at most 1 MiB; a larger one gets `413`. An argument the action's schema declares with `"format": "file"` (a string, or a list of strings) takes the `ref` of an upload; the action runs with the path the file is stored at. |
+| `POST /v1/act` | Runs one action. The body is `{ "action": "plugin:action", "id": "<id>", "args": {...}, "note": "...", "confirmed": true }`; only `action` is always required, and an action that targets an object also needs `id`. An action with `confirm: true` needs `"confirmed": true`. The body is at most 1 MiB; a larger one gets `413` with `the request body is larger than the 1 MB limit`. An argument the action's schema declares with `"format": "file"` (a string, or a list of strings) takes the `ref` of an upload; the action runs with the path the file is stored at. |
+| `GET /v1/settings?scope=<scope>` | Lists the settings a person may tune: `{ "settings": [{ "name", "scope", "value", "default", "description", "type", "enum", "editable", "confirm" }] }`. Without `scope` it lists the global settings and every repository scope; a scope names one repository. A setting that cannot be read in a scope is left out. |
+| `POST /v1/settings` | Changes one setting. The body is `{ "name": "<plugin>.<path>", "value": <any>, "scope"?: "<repo>", "confirmed"?: true }`; `name` and `value` are required, and `value` may be `null`. The answer is the changed setting, the same shape as one entry above. An unknown setting name is `404`; a value the schema refuses is `422` with the reason; a setting that is not editable, or asks to confirm without `confirmed`, is `409`. |
 | `POST /v1/uploads?name=<file name>` | Uploads a file for an action's file argument. The body is the file itself, streamed; its `content-type` header is kept as the file's type. The answer is `201` and `{ "ref", "name", "type", "size" }`. A file larger than 20 MB gets `413` and a message naming the limit. The `ref` works once: the action that takes it moves the file into the target object's attachment directory under the operad home (`attachments/<type>/<id>/`), and a second use is refused with `400`. An upload no action took within an hour is removed. |
 | `GET /v1/attachments/<type>/<id>/<ref>/<name>` | Serves a stored file of an action's file argument, with the type its upload gave. The transcript of a chat links its attachments here. | 
 | `POST /v1/answer` | Answers an open question of a pending item. The body is `{ "runId": "<item runId>", "waitId": "<item waitId>", "choice": "<one of the item's choices>", "note": "...", "confirmed": true }`; `runId`, `waitId` and `choice` are required, and `note` and `confirmed` are optional. When every choice is also an action on the item's object (a `dev` wait), it runs that action, so the action's note and confirmation apply; a confirmed action needs `"confirmed": true` just as it does for `/v1/act`. An answer to a question that is already closed gets `409` and is not applied. |
@@ -74,6 +76,44 @@ It records the action the same way the command line does, and a running
 `operad serve` carries on the steps a waiting run asks for. `POST /v1/answer`
 records its caller the same way and answers with the same rules as the command
 line and a plugin action.
+
+## Reading a section
+
+`GET /v1/objects/<id>/sections/<section>` reads one section. `cursor` takes the
+`next` of an earlier read; `full=true` (or `1`) skips the size cap. A section
+that has `pages` also answers with the table of contents, so a client can jump:
+the first page has no cursor, every other page carries its own.
+
+A live section also carries `mark` and `tail`. `mark` is an opaque position of
+the finished content; `tail` is the Markdown of the part still changing (a chat's
+unfinished reply and thinking, a running tool call), the whole tail on each
+read. To append instead of replacing, pass `after=<mark>` from the last read:
+the answer's `markdown` then holds only the finished content after that mark,
+and `delta` is `true` when that is all it holds. A plugin that cannot answer
+with a delta answers a whole page and `delta` is `false`; the client replaces
+its content then. A mark from another section or object is a `400`.
+
+The size cap covers `markdown` and `tail` together, but never cuts `tail`: it
+shortens `markdown` first. When even the tail and the truncation note do not
+fit, the call is a `400` naming `--full`.
+
+## Settings
+
+`GET /v1/settings?scope=<scope>` reads the settings the same way `operad
+settings` does. Without `scope` it returns the global settings and every
+repository scope; with it, one repository's settings. Each entry has `name`,
+`scope`, `value`, `default`, `description`, `type`, `enum` when it has one,
+`editable` and `confirm`. An absent `value` means the setting is not set.
+
+`POST /v1/settings` changes one. The body is `{ "name": "<plugin>.<path>",
+"value": <any>, "scope"?: "<repo>", "confirmed"?: true }`. `name` and `value`
+are required; `value` may be `null`. The answer is the changed entry. A name
+that is not a setting is `404`; a value the schema refuses is `422` with the
+schema's reason; a setting that is read-only, or asks to confirm and does not
+receive `confirmed`, is `409`. A successful change writes the file atomically
+and keeps every other key. `POST /v1/act` also records the caller as `{ "via":
+"<client>", "id": "<token label>" }`; the token label is `operad app` unless the
+secret store names another.
 
 ## Row marks
 
@@ -196,7 +236,8 @@ Every error body is:
 | `401` | A missing or wrong bearer token. |
 | `404` | No such object, section or action, or no endpoint. |
 | `409` | The action is not available now, it needs confirmation, or its plugin is not loaded. |
-| `413` | The request body is larger than 1 MiB. |
+| `405` | The endpoint exists but not for that method; the body says `this endpoint takes GET` or `this endpoint takes POST`. |
+| `413` | The request body is larger than 1 MiB, or an upload is larger than 20 MB. |
 | `422` | The action's plugin refused it; `message` is the plugin's own message. |
 | `504` | A section did not load in time. |
 | `500` | Anything else; the body carries no stack trace. |
