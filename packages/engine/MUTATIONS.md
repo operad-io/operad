@@ -758,6 +758,7 @@ the row fields.
 |---|---|---|---|
 | T-0388-M1 | packages/engine/src/loop/code-watch.ts | `check` reported "not older" even when the files differed from the baseline | `serve runs older code than the files on disk > a loaded file that changed while the restart is deferred shows one item, gone after the restart` |
 | T-0388-M2 | packages/engine/src/loop/older-code.ts | `servesOlderCode` ignored who holds the serve lock, so a notice of another process counted | `serve runs older code than the files on disk > a notice left by a serve that is no longer the lock holder shows nothing` |
+| T-0388-M7 | packages/engine/src/loop/code-watch.ts | `start` ignored the `declined` option, so a watch started on already-tried files offered them again | `a code watch > a watch that starts on files already tried is older at once and offers only a later change` |
 ## T-0384 — indexed run reads
 
 | id | file | mutation | failing test |
@@ -778,4 +779,3 @@ the row fields.
 | T-0385-M4 | packages/engine/src/plugin/object-facts.ts | folding no longer read a fact written as an old full snapshot | `dev views > the answer section gives the same output from old full snapshots as from changes` |
 | T-0385-M5 | packages/engine/src/plugin/sqlite-store.ts | the migration returned without rewriting any full snapshot | `object facts hold changes > an old full-snapshot store is migrated once, keeping facts and appended data` |
 | T-0385-M10 | packages/engine/src/plugin/sqlite-store.ts | a put read the previous version before taking the write lock, so a concurrent commit was missing from its change | `object facts hold changes > a put diffs against the version committed while it waited for the lock` |
-| T-0388-M3 | packages/engine/src/loop/code-watch.ts | `start` ignored the `declined` option, so a watch started on already-tried files offered them again | `a code watch > a watch that starts on files already tried is older at once and offers only a later change` |
