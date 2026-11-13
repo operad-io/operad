@@ -21,6 +21,7 @@ const packages = [
   "harness/radian",
   "harness/pi",
   "harness/claude",
+  "harness/codex",
   "bot",
   "tui",
   "cli",
