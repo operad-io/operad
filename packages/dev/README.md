@@ -263,9 +263,10 @@ run execute) to the merged commit, but only when that checkout is on
 `<mainBranch>` and has no uncommitted changes to tracked files. Otherwise it
 leaves the checkout alone and says why in the step data (`mainClone`) and in
 the task's Changes ("main clone not updated: uncommitted changes"). It only
-fast-forwards through git: no reset, rebase or stash. When `bun.lock` changed
-in the merge it then runs `bun install --frozen-lockfile` there and reports the
-result the same way. A running serve keeps the code it loaded until it is
+fast-forwards through git: no reset, rebase or stash. When the
+clone moved it then runs the `prepare` lines there, in order, the way it runs
+them in a checkout it makes, and reports a failing line (its text and the last
+line of its output) the same way; the fast-forward stays. A running serve keeps the code it loaded until it is
 restarted; new runs use the new code.
 
 A conflict leaves the worktree mid-merge. The next `dev/work` prompt starts by

@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { updateMainClone } from "../../src/mainclone.ts";
+import { updateMainClone, type CommandRunner } from "../../src/mainclone.ts";
 
 function sh(cwd: string, ...args: string[]): string {
   const r = Bun.spawnSync({ cmd: ["git", ...args], cwd, stdout: "pipe", stderr: "pipe" });
@@ -10,42 +10,80 @@ function sh(cwd: string, ...args: string[]): string {
   return r.stdout.toString().trim();
 }
 
-test("a kill between the fast-forward and the install is repaired by the rerun", () => {
+/** A clone on main with a commit `target` on branch next, one ahead. */
+function scratch(): { dir: string; target: string } {
   const dir = mkdtempSync(join(tmpdir(), "mainclone-"));
   sh(dir, "init", "-q", "-b", "main");
   sh(dir, "config", "user.email", "t@example.com");
   sh(dir, "config", "user.name", "t");
-  writeFileSync(join(dir, "bun.lock"), "one\n");
+  writeFileSync(join(dir, "a"), "one\n");
   sh(dir, "add", ".");
   sh(dir, "commit", "-q", "-m", "one");
-  mkdirSync(join(dir, "node_modules"));
-  writeFileSync(join(dir, ".gitignore"), "node_modules\n");
-  sh(dir, "add", ".");
-  sh(dir, "commit", "-q", "-m", "ignore");
   sh(dir, "checkout", "-q", "-b", "next");
-  writeFileSync(join(dir, "bun.lock"), "two\n");
+  writeFileSync(join(dir, "a"), "two\n");
   sh(dir, "commit", "-q", "-am", "two");
   const target = sh(dir, "rev-parse", "HEAD");
   sh(dir, "checkout", "-q", "main");
+  return { dir, target };
+}
 
-  expect(() =>
-    updateMainClone(dir, "main", target, () => {
-      throw new Error("killed");
-    }),
-  ).toThrow("killed");
+function recorder(ok: (line: string) => boolean = () => true) {
+  const calls: { cwd: string; line: string }[] = [];
+  const run: CommandRunner = async (cwd, line) => {
+    calls.push({ cwd, line });
+    return ok(line) ? { ok: true, out: "" } : { ok: false, out: "x\nlast words\n" };
+  };
+  return { calls, run };
+}
+
+test("a fast-forwarded clone runs each prepare line in order in the clone", async () => {
+  const { dir, target } = scratch();
+  const { calls, run } = recorder();
+  const outcome = await updateMainClone(dir, "main", target, ["one", "two"], run);
   expect(sh(dir, "rev-parse", "HEAD")).toBe(target);
+  expect(calls).toEqual([
+    { cwd: dir, line: "one" },
+    { cwd: dir, line: "two" },
+  ]);
+  expect(outcome).toMatchObject({ updated: true, prepared: true });
+});
 
-  const calls: string[][] = [];
-  const outcome = updateMainClone(dir, "main", target, (_cwd, cmd) => {
-    calls.push([...cmd]);
-    return { ok: true, out: "" };
-  });
-  expect(calls).toEqual([["bun", "install", "--frozen-lockfile"]]);
-  expect(outcome).toMatchObject({ updated: true, installed: true });
+test("no prepare lines run no command", async () => {
+  const { dir, target } = scratch();
+  const { calls, run } = recorder();
+  expect(await updateMainClone(dir, "main", target, [], run)).toEqual({ updated: true });
+  expect(calls).toEqual([]);
+});
 
-  // Installed now: a further rerun installs nothing.
-  const again = updateMainClone(dir, "main", target, () => {
-    throw new Error("no install expected");
+test("a clone that did not move runs nothing", async () => {
+  const { dir, target } = scratch();
+  const { calls, run } = recorder();
+  await updateMainClone(dir, "main", target, ["one"], run);
+  calls.length = 0;
+  expect(await updateMainClone(dir, "main", target, ["one"], run)).toEqual({ updated: true });
+  expect(calls).toEqual([]);
+});
+
+test("a failing line gives the note, stops the rest and keeps the fast-forward", async () => {
+  const { dir, target } = scratch();
+  const { calls, run } = recorder((line) => line !== "bad");
+  const outcome = await updateMainClone(dir, "main", target, ["bad", "after"], run);
+  expect(sh(dir, "rev-parse", "HEAD")).toBe(target);
+  expect(calls.map((call) => call.line)).toEqual(["bad"]);
+  expect(outcome).toEqual({
+    updated: true,
+    prepared: false,
+    note: "prepare failed: bad: last words",
   });
-  expect(again).toEqual({ updated: true });
+});
+
+test("a dirty clone is left alone and runs nothing", async () => {
+  const { dir, target } = scratch();
+  const before = sh(dir, "rev-parse", "HEAD");
+  writeFileSync(join(dir, "a"), "dirty\n");
+  const { calls, run } = recorder();
+  const outcome = await updateMainClone(dir, "main", target, ["one"], run);
+  expect(outcome.updated).toBe(false);
+  expect(sh(dir, "rev-parse", "HEAD")).toBe(before);
+  expect(calls).toEqual([]);
 });

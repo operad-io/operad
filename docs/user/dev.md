@@ -45,7 +45,7 @@ refused with the field path in front, such as `workers.claude.fallback: ...`.
 | `dev.pools.<name>.workers` | array of strings | required in the object form | worker names, in the order a free worker is chosen | On the next scheduler pass | Refused: `pools.<name>.workers: must be a non-empty list of worker names` |
 | `dev.pools.<name>.concurrency` | integer | unset: the sum of the workers' `count` | `1` or more; caps the pool's running tasks below that sum | On the next scheduler pass | Refused: `pools.<name>.concurrency: must be an integer of at least 1` |
 | `dev.workerBrief` | string | `".operad/worker-brief.md"` | a path to a Markdown file; a missing file uses the built-in four-line brief | When the work step builds the worker prompt | Refused: `workerBrief: must be a non-empty string` |
-| `dev.prepare` | array of strings | `[]` | shell lines run in every checkout after it is created or moved to a new commit, before a step uses it | When a checkout is made or moved | Refused: `prepare: must be an array of command lines` or `prepare[<i>]: must be a non-empty string`; a failing line fails the step with `prepare failed` |
+| `dev.prepare` | array of strings | `[]` | shell lines run in every checkout after it is created or moved to a new commit, before a step uses it, and in the main clone after a merge moved it | When a checkout is made or moved | Refused: `prepare: must be an array of command lines` or `prepare[<i>]: must be a non-empty string`; a failing line fails the step with `prepare failed` (in the main clone it is noted in the task's Changes and the merge stays) |
 
 ### The gate and its checks
 

@@ -277,7 +277,7 @@
       "default": ".operad/worker-brief.md"
     },
     "prepare": {
-      "description": "Shell lines run in every checkout dev makes (the worker's worktree, the gate checkout for verify and review, the integration checkout) after it is created or moved to a new commit and before any step uses it, for example installing dependencies. Output goes to the step's log; a failing line fails the step with reason \"prepare failed\".",
+      "description": "Shell lines run in every checkout dev makes (the worker's worktree, the gate checkout for verify and review, the integration checkout) after it is created or moved to a new commit and before any step uses it, for example installing dependencies. They also run, in order, in the repository's main clone after a merge fast-forwarded it. Output goes to the step's log; a failing line fails the step with reason \"prepare failed\"; in the main clone a failing line is reported in the task's Changes and the fast-forward stays.",
       "type": "array",
       "items": { "type": "string", "minLength": 1 },
       "default": []

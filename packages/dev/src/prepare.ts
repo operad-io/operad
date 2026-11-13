@@ -6,6 +6,7 @@
 
 import { isRecord, messageOf, type StepContext, type StepRunOptions } from "@operad-io/engine";
 
+import type { CommandRunner } from "./mainclone.ts";
 import type { DevSettings } from "./settings.ts";
 
 /** The reason a step reports when a prepare command failed. */
@@ -72,4 +73,34 @@ export async function runPrepare(
       message: `${PREPARE_FAILED}: ${messageOf(error)}`,
     };
   }
+}
+
+/**
+ * Runs one prepare line in the main clone through the same step a checkout's
+ * prepare lines use, so the shell, the environment and the time limit are the
+ * same.
+ */
+export function mainCloneRunner(ctx: StepContext, settings: DevSettings): CommandRunner {
+  return async (cwd, line) => {
+    const runStep = ctx.runStep;
+    if (runStep === undefined) {
+      return { ok: false, out: "the kernel did not offer a way to run the line" };
+    }
+    try {
+      const outcome = await runStep(
+        "shell/check",
+        { cwd, timeoutSecs: settings.gate.commandTimeoutSecs, lines: [line] },
+        stepOptions(ctx, cwd),
+      );
+      if (outcome.result === "pass") return { ok: true, out: "" };
+      const data = isRecord(outcome.data) ? outcome.data : {};
+      const tail = Array.isArray(data.tail)
+        ? data.tail.filter((row): row is string => typeof row === "string")
+        : [];
+      const message = typeof data.message === "string" ? data.message : outcome.result;
+      return { ok: false, out: tail.join("\n").trim() || message };
+    } catch (error) {
+      return { ok: false, out: messageOf(error) };
+    }
+  };
 }
