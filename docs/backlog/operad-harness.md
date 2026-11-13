@@ -24,6 +24,10 @@ hub 的会话路由只认 radian 的 journal 和 control port，worker 只有 `r
 7. **radian 在 operad 里只当 agent 用。** `harness-radian` 只调用 `radian exec` 和 `radian acp`；operad 不调用、不启动、不依赖 `radian hub` 和 `radian arc`，`dev` 插件不读也不写仓库里的 `.radian/arc/`。编排（计划、任务、门禁、合并、推送）只在 operad 里。目前这是 operad 一侧的约定，radian 二进制里仍带着这两个子命令；以后 radian 会去掉编排功能，operad 不需要为此改动。
 8. **harness 本体不随 operad 装，用用户装的那份。** radian 本来就是 PATH 上的命令；pi 从 PATH 上的 `pi` 找到它的库再 `import()`；Claude 从 PATH 上的 `claude` 起进程，operad 只带 Agent SDK 的客户端代码，八个平台二进制包用 `overrides` 换成空包。理由：登录态、自动更新、配额都属于用户装的那份，operad 不替用户再下一份几百 MB 的二进制，也不替用户登录。`sdk` 接法的版本耦合由此定形：operad 带的客户端库不钉版本，`package.json` 写范围，lock 记当下测过的那一版，`bun update` 往前挪；本体有版本下限；`operad plugin check` 报两边版本，只有本体太旧或没登录才拒绝。落实见 `operad-harness-pi.md` 决定 9 和 `operad-harness-claude.md` 决定 2、10。
 9. **harness 的名字就是它接的 agent 的名字（2026-11-11 owner 定）。** 插件名是 `claude`、`pi`、`radian`：`config.json` 的 `plugins.<名字>`、步骤 `claude/agent`、流程 `claude:prompt`、`dev.json` 的 `worker.use`、chat 存的 harness 都用这个名字，界面上也只显示它；`harness-claude` 一类的写法只是 npm 包名（`@operad-io/harness-claude`，不变），用户看不到。包放在 `packages/harness/` 下：`claude`、`pi`、`radian`、`process`。旧名字不再认，不留别名：用过它们的只有 owner 的家目录和三个仓库，改名时一次迁好。下面各项和 `operad-harness-pi.md`、`operad-harness-claude.md`、`operad-plugins.md` 里写的 `harness-*` 插件名、步骤名按此读。
+10. **codex harness**（2026-11-12 owner 定，来自 tkrs 出图的需求）：插件名 `codex`，包 `@operad-io/harness-codex`，步骤 `codex/agent`，接法 `acp`（决定 3）：启动用户装的 `codex-acp`（arc 用的是 codex-acp 2.2.2），默认命令用 PATH 上的 `bun` 运行 PATH 上的 `codex-acp`，因为它的 `#!/usr/bin/env node` 只在 fnm 的 shell 里找得到 node；设置 `command` 可改。凭据是用户本机 Codex 的 ChatGPT 登录，operad 不碰（决定 8）。模型能直接用 Codex 自带的 image_gen。
+    - 用量：订阅登录算不出钱，费用记为未知，不挡预算检查；每次 attempt 记 image_gen 调用次数（额度按出图次数算）；每次工具调用照 `session/update` 流记进步骤日志，返工时能查。
+    - 时间：一次 image_gen 几分钟没有输出，是正常的；按 worker 的 `stallSecs`、`wallTimeSecs` 设（tkrs 的出图 worker 设 stall 够长，wall 约 2 小时），harness 不另算卡住。
+    - 沙箱：codex 自己的沙箱写不了 `.git`，所以出图 flow 的 work stage 用 `commit`（`operad-dev-flows.md` 决定 9）；它要能联网、能写任务的工作目录。
 
 ## 待决问题（未定）
 

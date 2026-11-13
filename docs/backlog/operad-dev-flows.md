@@ -12,7 +12,7 @@
 
 1. **流程写在项目的 `.operad/dev.json` 里，是 JSON**，带 JSON Schema。`flows.<名字>` 是一个 flow，`default` 是不指定时用的那个。dev 把它编译成引擎的 graph（`defineFlow` 的值），用户不写图和边。
 2. **一个 flow 是一串有序的 stage**，`work` 也是 stage。第一版有四种：
-   - `work`：worker 改代码；参数 `use`、`args`、`brief`（附加给 worker 的说明）、`beforeAttempt`（如 `merge-main`）。
+   - `work`：worker 改代码；参数 `use`、`args`、`brief`（附加给 worker 的说明）、`beforeAttempt`（如 `merge-main`）；2026-11-12 owner 定加三个（决定 9）：`pool`、`workerBrief`、`commit`。
    - `check`：跑命令；参数 `commands`、`rerun`。
    - `review`：模型 review；参数 `use`、`args`、`later`（之后几轮的参数）、定级名（对应 `.operad/review.json` 的 flow 条目）。
    - `human`：等人决定。
@@ -23,10 +23,15 @@
 6. **复杂的流程可以写 TS**：项目可以在 `.operad/flows/<名字>.flow.ts` 里直接用 `defineFlow` 写任意的图，dev 的 stage 步骤都是有文档的积木（每一步写明结果和参数）。大多数项目用不到。
 7. **今天的流程成为 dev 自带的默认配置**：一个仓库没写 `flows` 时，行为和今天一样。`dev.json` 里现有的 `worker`、`reviewer`、`gate` 等设置继续有效，作为 `default` flow 的参数；同时写了两边时以 `flows` 为准，并在加载时提示一行。
 8. **定级按 flow 分**（`.operad/review.json`，见 T-0059），和这里的 flow 名一一对应。
+9. **work stage 的 `pool`、`workerBrief`、`commit`**（2026-11-12 owner 定，来自 tkrs 出图的需求：出图任务用另一组 worker，规矩和写代码的相反）。
+   - `pool`：这个 stage 从 `dev.json` 的哪个 pool 取 worker，不写是 `default`（`operad-worker-pool.md` 决定 6 定了 flow 指定 pool，这里是写法）。任务用 `--flow` 选 flow，也就选了 pool；`task add` 和 MCP 的建任务都能给，第一次开工前能改（决定 5）。占的是这个 pool 的名额（`operad-worker-pool.md` 决定 4）。
+   - `workerBrief`：一个文件路径，换掉仓库的 `workerBrief`，不是附加；`brief` 仍是附加的一段。出图 worker 的须知和写代码的相反（用自己的 image_gen、不调 codex 命令、不用代码画、不用自己提交）。
+   - `commit`：为真时，work 结束后由 dev 把工作区里没提交的改动提交掉，提交信息带任务号（arc 的 `commit_dirty`）；给沙箱写不了 `.git` 的 worker（codex）。不写为假，worker 自己提交。
+   - 不要 AI review 的 flow 不写 `review` stage 就行（决定 4 只要求有 `check`、`review` 或 `human` 之一）：出图 flow 是 work、check、human，按 plan 的 `auto` 合并或等人看。
 
 ## 待决问题（未定）
 
-1. 每个 flow 是否各有并发上限（arc 有），还是只用 plan 和仓库两层。
+1. 每个 flow 是否各有并发上限（arc 有），还是只用 plan 和仓库两层。（2026-11-12：按 pool 分，见 `operad-worker-pool.md` 决定 4；flow 用哪个 pool 就占哪个 pool 的名额。）
 2. 一个 task 的 flow 在列表里怎么显示；只有一个 flow 的仓库是否不显示。
 3. 检查要独占的资源（iOS 模拟器、固定端口、设备）怎么声明：今天靠 `gate.places` 把整个仓库的检查限成一份（radian-ios 设成 1）。候选：`dev.json` 里每条检查写它占用哪些资源、各几份，`pool` 按资源排队；检查之外的步骤是否也用同一套。来源：2026-11-08 三个 xcodebuild 共用一个模拟器导致 UI 测试崩溃。
 
