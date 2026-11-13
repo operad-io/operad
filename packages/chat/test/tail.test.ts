@@ -194,8 +194,10 @@ describe("chat transcript: after, mark and tail", () => {
     const path = agentLogPath(r.store.root, "fake", "run-long");
     mkdirSync(join(path, ".."), { recursive: true });
     const big = "y".repeat(1024);
+    const ended = JSON.stringify({ type: "message_end", role: "assistant" });
     const lines = [
       JSON.stringify({ type: "text_end", text: "old" }),
+      ended,
       JSON.stringify({ type: "thinking_delta", text: "T-start " }),
       ...Array.from({ length: 400 }, () => JSON.stringify({ type: "thinking_delta", text: big })),
     ];
@@ -206,6 +208,7 @@ describe("chat transcript: after, mark and tail", () => {
 
     const tool = [
       JSON.stringify({ type: "text_end", text: "old" }),
+      ended,
       JSON.stringify(start("long", "Bash", "make", 1_000)),
       ...Array.from({ length: 400 }, () => JSON.stringify({ type: "tool_output", toolCallId: "long", text: big })),
       JSON.stringify(start("other", "Read", "a", 2_000)),
@@ -215,12 +218,30 @@ describe("chat transcript: after, mark and tail", () => {
     expect(foldLogTail(path)?.state.calls.map((call) => call.callId)).toEqual(["long"]);
   });
 
+  test("a silent call stays in the tail while a parallel call fills the window", async () => {
+    const r = await rig(() => reply("x"));
+    const path = agentLogPath(r.store.root, "fake", "run-parallel");
+    mkdirSync(join(path, ".."), { recursive: true });
+    const big = "y".repeat(1024);
+    const lines = [
+      JSON.stringify({ type: "message_end", role: "assistant" }),
+      JSON.stringify(start("A", "Bash", "sleep 999", 1_000)),
+      JSON.stringify(start("B", "Bash", "make", 1_001)),
+      ...Array.from({ length: 400 }, () => JSON.stringify({ type: "tool_output", toolCallId: "B", text: big })),
+      JSON.stringify({ type: "tool_execution_end", toolCallId: "B", toolName: "Bash", isError: false, durationMs: 9 }),
+    ];
+    writeFileSync(path, `${lines.join("\n")}\n`);
+    const read = foldLogTail(path);
+    expect(read?.state.calls.map((call) => call.callId)).toEqual(["A"]);
+    expect(statSync(path).size).toBeGreaterThan(TAIL_LOG_BYTES);
+  });
+
   test("reading the tail of a log of 50 000 lines reads a bounded number of bytes", async () => {
     const r = await rig(() => reply("x"));
     const path = agentLogPath(r.store.root, "fake", "run-big");
     mkdirSync(join(path, ".."), { recursive: true });
     const done = Array.from({ length: 50_000 }, (_, index) =>
-      JSON.stringify({ type: "text_end", text: `line number ${index} ${"x".repeat(40)}` }),
+      JSON.stringify(index % 10 === 9 ? { type: "message_end", role: "assistant" } : { type: "text_end", text: `line number ${index} ${"x".repeat(40)}` }),
     );
     const last = [JSON.stringify(start("tail-call", "Bash", "sleep 9", 5_000)), JSON.stringify({ type: "text_delta", text: "now writing" })];
     writeFileSync(path, `${[...done, ...last].join("\n")}\n`);

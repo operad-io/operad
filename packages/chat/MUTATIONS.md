@@ -126,3 +126,9 @@ the row fields.
 |---|---|---|---|
 | T-0363-M13 | packages/chat/src/tail.ts | a window was never widened, so text or thinking that began before it lost its start | `chat transcript: after, mark and tail > a text, thinking or tool call that began before the window is still whole` |
 | T-0363-M14 | packages/chat/src/tail.ts | output of a call with no start or end in the window did not widen it, so the running call was dropped | `chat transcript: after, mark and tail > a text, thinking or tool call that began before the window is still whole` |
+
+## T-0363 — rework 3: a quiet point instead of a shape check
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0363-M15 | packages/chat/src/tail.ts | the earlier acceptance rule came back (a reset line and no unpaired output), so a silent call whose start is before the window was dropped | `chat transcript: after, mark and tail > a silent call stays in the tail while a parallel call fills the window` |

@@ -77,39 +77,69 @@ function callOf(value: unknown): string | undefined {
 }
 
 /**
- * Whether a window holds all that the unfinished state depends on: a line that
- * ends the text and thinking before it, and no output of a call whose start
- * and end are both outside the window (that call may still run).
+ * Where the fold of a window can start so that it misses nothing that is still
+ * unfinished: the index after a quiet point, or -1 when the window has none.
+ *
+ * A quiet point is a `message_end` line. The harnesses write the next message's
+ * end only after every call of the batch before it has ended, so no call is
+ * open there. A call's start line is not always before its message's end line,
+ * so the point is trusted only when the window shows it: every call the lines
+ * before it mention began and ended before it, and every call the lines after it
+ * mention began after it. A running call whose start is before the window then
+ * cannot hide: its start would be before an earlier quiet point, and such a
+ * point is not accepted unless the call also ended before it. A log with no
+ * text or thinking at all (radian) has no message ends; there a finished call
+ * is the quiet point.
  */
-function enough(values: readonly unknown[]): boolean {
-  const types = new Set(values.map(typeOf));
-  const reset = types.has("message_end") || types.has("tool_execution_start") || types.has("tool_execution_end") ||
-    (types.has("text_end") && types.has("thinking_end"));
-  if (!reset) return false;
-  const known = new Set<string>();
-  for (const value of values) {
+function quietPoint(values: readonly unknown[]): number {
+  const words = values.some((value) => {
     const type = typeOf(value);
-    const id = callOf(value);
-    if (id !== undefined && (type === "tool_execution_start" || type === "tool_execution_end")) known.add(id);
-  }
-  return values.every((value) => {
-    const id = callOf(value);
-    return typeOf(value) !== "tool_output" || id === undefined || known.has(id);
+    return type === "text_delta" || type === "thinking_delta" || type === "text_end" || type === "thinking_end" || type === "message_end";
   });
+  for (let at = values.length - 1; at >= 0; at -= 1) {
+    const type = typeOf(values[at]);
+    if (type !== "message_end" && !(!words && type === "tool_execution_end")) continue;
+    const started = new Set<string>();
+    const ended = new Set<string>();
+    const seen = new Set<string>();
+    let good = true;
+    for (let index = 0; index < values.length && good; index += 1) {
+      const value = values[index];
+      const id = callOf(value);
+      const kind = typeOf(value);
+      if (id === undefined || index === at) continue;
+      if (index < at) {
+        seen.add(id);
+        if (kind === "tool_execution_start") started.add(id);
+        if (kind === "tool_execution_end") ended.add(id);
+      } else if (kind === "tool_execution_start") {
+        // A call that begins after the point; its id must not be one from before.
+        if (seen.has(id)) good = false;
+        started.add(`after:${id}`);
+      } else if (!started.has(`after:${id}`)) {
+        good = false;
+      }
+    }
+    if (!good) continue;
+    for (const id of seen) if (!started.has(id) || !ended.has(id)) good = false;
+    if (good) return at + 1;
+  }
+  return -1;
 }
 
 /**
  * Folds the end of a log file; undefined when there is no file. It reads the
- * last `limit` bytes and reads further back (doubling) only while the unfinished
- * text, thinking or a running call could begin before the window.
+ * last `limit` bytes and reads further back (doubling) until the window holds a
+ * quiet point (see `quietPoint`), from which the fold cannot miss anything.
  */
 export function foldLogTail(path: string, limit: number = TAIL_LOG_BYTES): TailRead | undefined {
   let size = limit;
   for (;;) {
     const window = readWindow(path, size);
     if (window === undefined) return undefined;
-    if (window.whole || enough(window.values)) {
-      return { state: foldLines(window.values, emptyFold), bytesRead: window.bytes };
+    const from = quietPoint(window.values);
+    if (window.whole || from >= 0) {
+      return { state: foldLines(window.values.slice(Math.max(0, from)), emptyFold), bytesRead: window.bytes };
     }
     size *= 2;
   }
