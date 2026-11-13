@@ -93,15 +93,21 @@ if ! [[ "$heartbeat" =~ ^[0-9]+$ ]]; then
 fi
 reports=$(mktemp -d)
 heartbeat_pid=
+parent=$$
 started=$(date +%s)
 # The heartbeat runs in a process group of its own, so stopping it also stops
-# the sleep it waits in. It prints only when the report or output of a step
-# grew, so a worker spinning without writing anything is still a stall.
+# the sleep it waits in. It also stops by itself within a second of this script
+# going away (a SIGKILL of the command's group does not reach it), so it does
+# not hold the output pipe open. It prints only when the captured output of a
+# step grew (the junit reports are written once, at the end of a step, and are
+# no sign of progress), so a worker spinning without writing anything is still
+# a stall. While an overlapped heavy step keeps writing, a hang in the light
+# step shows only after the heavy step ends.
 report_bytes() {
   local total=0 file size
   for file in "$reports"/*; do
     case "$file" in
-      *.xml|*.out) ;;
+      *.out) ;;
       *) continue ;;
     esac
     [ -f "$file" ] || continue
@@ -127,7 +133,12 @@ if [ "$heartbeat" != 0 ]; then
   (
     seen=$(report_bytes)
     while :; do
-      sleep "$heartbeat"
+      waited=0
+      while [ "$waited" -lt "$heartbeat" ]; do
+        kill -0 "$parent" 2>/dev/null || exit 0
+        sleep 1 </dev/null >/dev/null 2>&1
+        waited=$((waited + 1))
+      done
       now=$(report_bytes)
       [ "$now" -gt "$seen" ] || continue
       seen=$now
