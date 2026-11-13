@@ -24,7 +24,7 @@ The kernel defines a log interface and one conformance test, and ships exactly o
 
 ### D3: Few user nouns
 
-The kernel shows a user exactly three words: **flow**, **pending**, **history**. Every other noun belongs to some plugin, and a user who does not use that plugin need not know it. A new user-visible noun needs the owner's agreement. The nouns agreed so far: the `chat` plugin's chat (not "conversation" or "session"); the `bot` plugin's bot (the object is just called bot; there is no separate profile word).
+The kernel shows a user exactly three words: **flow**, **pending**, **history**. Every other noun belongs to some plugin, and a user who does not use that plugin need not know it. A new user-visible noun needs the owner's agreement. The nouns agreed so far: the `chat` plugin's chat (not "conversation" or "session"); the `bot` plugin's bot and profile (the access profile a bot sets).
 
 ### D4: Development is a plugin, `dev`
 

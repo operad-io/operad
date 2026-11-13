@@ -10,8 +10,8 @@ The kernel's storage is a replaceable backend (ADR 0002). Plugin objects live in
 
 ### D1: One log interface, one conformance test, one backend
 
-The storage is a log interface plus one conformance test. The only backend shipped is `sqlite` (`bun:sqlite`, WAL), and it passes the conformance test. A run is not stored as a separate JSONL file.
+The storage is a log interface plus one conformance test. The only backend shipped is `sqlite` (`bun:sqlite`, WAL), and it passes the conformance test. Storage stays `sqlite` only: a run is not stored as a separate JSONL file.
 
 ### D2: Object facts record changes only
 
-The object store's `put` does not write the whole object into the fact each time. It writes only the top-level fields that changed (those whose values differ by deep comparison) and the names of removed fields. The current value of an object is still stored whole in the object table. A plugin that reads facts (`dev`'s Answer section and throughput, `chat`'s transcript) reads them as changes.
+Every status change of a `dev` task used to write a full snapshot of the object with its brief, so `plugins.sqlite` grew about 19 MB a day; recording changes only removes that. The object store's `put` does not write the whole object into the fact each time. It writes only the top-level fields that changed (those whose values differ by deep comparison) and the names of removed fields. The current value of an object is still stored whole in the object table. A plugin that reads facts (`dev`'s Answer section and throughput, `chat`'s transcript) reads them as changes.

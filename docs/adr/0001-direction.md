@@ -30,7 +30,7 @@ radian keeps sessions, journal, TUI, `radian exec`, `radian acp`, permissions an
 The name comes from the operad in mathematics: an operation with n inputs and one output, and the algebra of how such operations nest and compose, which is what the graph engine does. The word contains "rad", the same family as radian.
 
 - The CLI command is `operad`. The npm package `@operad-io/cli` installs the command `operad`; the other packages are `@operad-io/*`. The npm org is `operad-io`. (Unscoped `operad` is rejected by npm as too similar to `openai`, and `@operad` is taken by operadhq.) Package names such as `@operad-io/harness-claude` keep this form.
-- The domains are `operad.io` and `operad.run`. The GitHub org is `operad-io` and the repository is `operad-io/operad`, public, licensed MIT.
+- The domain is `operad.io`. The GitHub org is `operad-io` and the repository is `operad-io/operad`, public, licensed MIT.
 - The runtime is Bun.
 - There is one reason for TypeScript: the extension surface must be text that hot-loads without a build, that an agent can write in seconds, in the same language as the kernel, so that `operad plugin check` can type-check it.
 - A trusted plugin loads in process; this is the fast path. An untrusted or generated step runs across a process boundary and inside a sandbox, with the same contract. No runtime gives a real isolation boundary in process, so "the same process" is not a reason for the language.
