@@ -200,7 +200,9 @@ function timeoutAlone(
   const facts = factsOf(checked);
   if (classifyCheck(facts)?.kind !== "test-timeout") return undefined;
   const limit = flakyLoadLimitOf(flakyLimit, load.end);
-  if (load.start.load1 >= limit || load.end.load1 >= limit) return undefined;
+  // Busy means above the limit, as `flaky.ts` reads it. The reading spans the whole
+  // check run (full suite and alone rerun), so a quiet reading is a strict test.
+  if (load.start.load1 > limit || load.end.load1 > limit) return undefined;
   const outcome = checked.outcome;
   if (outcome === undefined) return undefined;
   const data = isRecord(outcome.data) ? outcome.data : {};
@@ -208,7 +210,7 @@ function timeoutAlone(
   const seconds = testTimeoutOf(facts.line) / 1000;
   const peak = Math.max(load.start.load1, load.end.load1);
   const log = typeof data.log === "string" ? `; log: ${data.log}` : "";
-  const message = `the failed test "${names}" timed out at ${seconds} s when run alone under load ${Math.round(peak)} on ${load.end.cores} cores${log}`;
+  const message = `the failed test "${names}" timed out at ${seconds} s when run alone under load ${Number(peak.toFixed(1))} on ${load.end.cores} cores${log}`;
   return { ...checked, outcome: { ...outcome, data: { ...data, message } } };
 }
 

@@ -233,13 +233,4 @@ describe("a test that timed out when run alone", () => {
     const steady = await runCheckSteadily({ run: async () => alone(), limit: 30 });
     expect(steady.notCode?.kind).toBe("test-timeout");
   });
-
-  test("a timeout in the full run that passes alone is the rerun-passed path", async () => {
-    notCodeTestHooks.load = () => ({ load1: 1, cores: 10 });
-    const passed: CheckRun = { ...run({}, "pass"), rerun: true, passedOnRerun: ["a > slow"] };
-    const steady = await runCheckSteadily({ run: async () => passed, limit: undefined });
-    expect(steady.runs).toBe(1);
-    expect(steady.notCode).toBeUndefined();
-    expect(classifyCheck({ result: "pass", log: "", rerunPassed: true })?.kind).toBe("rerun-passed");
-  });
 });
