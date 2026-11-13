@@ -100,6 +100,10 @@ started=$(date +%s)
 report_bytes() {
   local total=0 file size
   for file in "$reports"/*; do
+    case "$file" in
+      *.xml|*.out) ;;
+      *) continue ;;
+    esac
     [ -f "$file" ] || continue
     size=$(wc -c <"$file" 2>/dev/null | tr -d ' ')
     total=$((total + ${size:-0}))
@@ -126,9 +130,11 @@ if [ "$heartbeat" != 0 ]; then
       sleep "$heartbeat"
       now=$(report_bytes)
       [ "$now" -gt "$seen" ] || continue
+      seen=$now
+      # A report written just as its step ends is not progress into silence.
+      ls "$reports"/active-* >/dev/null 2>&1 || continue
       printf 'run-tests: still running (%ss, %s bytes of output)\n' \
         "$(($(date +%s) - started))" "$now"
-      seen=$now
     done
   ) &
   heartbeat_pid=$!
@@ -142,7 +148,9 @@ step() {
   local name=$1 began count
   shift
   began=$(date +%s)
+  : >"$reports/active-$name"
   bun test --timeout 30000 --reporter=junit --reporter-outfile="$reports/$name.xml" "$@" || code=1
+  rm -f "$reports/active-$name"
   steps="$steps $name=$(($(date +%s) - began))"
   count=$(sed -n 's/^<testsuites [^>]*tests="\([0-9]*\)".*/\1/p' "$reports/$name.xml" 2>/dev/null | head -n 1)
   tests=$((tests + ${count:-0}))
@@ -150,8 +158,11 @@ step() {
 if [ ${#heavy[@]} -gt 0 ] && [ "$overlap" = 1 ]; then
   (
     began=$(date +%s)
+    : >"$reports/active-heavy"
     bun test --timeout 30000 --reporter=junit --reporter-outfile="$reports/heavy.xml" --parallel="$heavy_parallel" "${heavy[@]}" >"$reports/heavy.out" 2>&1
-    echo $? >"$reports/heavy.code"
+    status=$?
+    rm -f "$reports/active-heavy"
+    echo "$status" >"$reports/heavy.code"
     echo $(($(date +%s) - began)) >"$reports/heavy.secs"
   ) &
   heavy_pid=$!
