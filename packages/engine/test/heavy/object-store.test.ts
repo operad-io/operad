@@ -478,6 +478,43 @@ describe("object facts hold changes", () => {
     });
   }
 
+  test("a put diffs against the version committed while it waited for the lock", async () => {
+    const root = await tempRoot();
+    const writer = new SqlitePluginStore({ root: join(root, "store"), follow: false });
+    const other = new SqlitePluginStore({ root: join(root, "store"), follow: false });
+    try {
+      writer.put("note", "n1", { x: "old", y: 1 }, "seed");
+      let wrote = false;
+      const racing = new SqlitePluginStore({
+        root: join(root, "store"),
+        follow: false,
+        clock: () => {
+          if (!wrote) {
+            wrote = true;
+            other.put("note", "n1", { x: "new", y: 1 }, "other");
+          }
+          return 1_000;
+        },
+      });
+      try {
+        const written = racing.put("note", "n1", { x: "old", z: 2 }, "race");
+        const facts = racing.facts({ type: "note", id: "n1" }, { limit: 100 }).facts;
+        expect(facts.at(-1)?.data).toEqual({
+          changed: { x: "old", z: 2 },
+          removed: ["y"],
+        });
+        expect([...foldObjectFacts(facts)].at(-1)?.data).toEqual(written.data);
+        expect(written.data).toEqual({ x: "old", z: 2 });
+        expect(writer.get("note", "n1")?.data).toEqual(written.data);
+      } finally {
+        racing.close();
+      }
+    } finally {
+      writer.close();
+      other.close();
+    }
+  });
+
   test("folding gives every version and matches the object table after random puts", () => {
     const store = new MemoryPluginStore({ root: "unused" });
     let state = 0x5eed;

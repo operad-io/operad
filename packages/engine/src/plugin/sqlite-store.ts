@@ -331,24 +331,27 @@ export class SqlitePluginStore implements PluginStore {
     requireName(type, "object type");
     requireName(id, "object id");
     requireName(cause, "cause");
-    const previous = this.get(type, id);
-    let change: ObjectChange;
-    if (previous === undefined) {
-      change = { changed: { ...data }, removed: [] };
-    } else {
-      // An unchanged put still records its cause: dev's attempts table reads
-      // the cause of a step's put even when the step changed no field.
-      change = diffObject(previous.data, data) ?? { changed: {}, removed: [] };
-    }
-    const object: StoredObject = {
-      type,
-      id,
-      data: { ...data },
-      version: (previous?.version ?? 0) + 1,
-      cause,
-      at: this.clock(),
-    };
-    writeImmediate(this.db, () => {
+    const at = this.clock();
+    return writeImmediate(this.db, () => {
+      // Read the previous version under the write lock, so a put another
+      // process committed since this call began is the base of this change.
+      const previous = this.get(type, id);
+      let change: ObjectChange;
+      if (previous === undefined) {
+        change = { changed: { ...data }, removed: [] };
+      } else {
+        // An unchanged put still records its cause: dev's attempts table reads
+        // the cause of a step's put even when the step changed no field.
+        change = diffObject(previous.data, data) ?? { changed: {}, removed: [] };
+      }
+      const object: StoredObject = {
+        type,
+        id,
+        data: { ...data },
+        version: (previous?.version ?? 0) + 1,
+        cause,
+        at,
+      };
       this.db
         .query(
           `INSERT INTO objects (type, id, data, version, cause, at)
@@ -368,8 +371,8 @@ export class SqlitePluginStore implements PluginStore {
           object.at,
         );
       this.insertFact({ type: OBJECT_CHANGE_FACT, object: { type, id }, data: change, cause });
+      return object;
     });
-    return object;
   }
 
   get(type: string, id: string): StoredObject | undefined {
