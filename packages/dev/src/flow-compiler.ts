@@ -20,6 +20,10 @@ export interface WorkStage {
   readonly args?: readonly string[] | undefined;
   /** The pool the stage takes workers from; unset is `default`. */
   readonly pool?: string | undefined;
+  /** A file (relative to the repository) that replaces the repository's worker brief for this stage. */
+  readonly workerBrief?: string | undefined;
+  /** When true, dev commits what the worker left in the worktree after a done; default false. */
+  readonly commit?: boolean | undefined;
   /** Extra instructions appended to the worker's prompt. */
   readonly brief?: string | undefined;
   /** Work done before the attempt, such as `merge-main`; dev merges main today. */
@@ -226,6 +230,8 @@ function workParams(stage: WorkStage): Readonly<Record<string, unknown>> {
     ...(stage.args === undefined ? {} : { flowArgs: stage.args }),
     ...(stage.pool === undefined ? {} : { flowPool: stage.pool }),
     ...(stage.brief === undefined ? {} : { flowBrief: stage.brief }),
+    ...(stage.workerBrief === undefined ? {} : { flowWorkerBrief: stage.workerBrief }),
+    ...(stage.commit === true ? { flowCommit: true } : {}),
     ...(stage.beforeAttempt === undefined ? {} : { beforeAttempt: stage.beforeAttempt }),
   };
 }

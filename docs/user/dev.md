@@ -144,12 +144,31 @@ A repository's own flows are explained in [Flows and their stages](#flows-and-th
 | `dev.flows.<name>.stages.use` | string | the repository worker for `work`, `reviewer.use` for `review` | a step name | When that stage starts | Refused: `flows.<name>.stages[<i>].use: must be a non-empty string` |
 | `dev.flows.<name>.stages.args` | array of strings | the worker's or reviewer's own arguments | arguments for that step | When that stage starts | Refused: `flows.<name>.stages[<i>].args: must be an array of strings` |
 | `dev.flows.<name>.stages.pool` | string | `default` | a pool name from `pools` (a `work` stage only) | When the work stage starts, and for the running-task cap | Refused: `flows.<name>.stages[<i>].pool: no pool named "<pool>" in pools` |
+| `dev.flows.<name>.stages.workerBrief` | string | unset: the repository's `workerBrief` | a file path relative to the repository (an absolute path or one outside it is refused), read from the main clone; its text replaces the repository's worker brief for this stage (`brief` is still appended) | When the work stage starts | Refused when the file is missing: `flows.<name>.stages[<i>].workerBrief: <path> does not exist` |
+| `dev.flows.<name>.stages.commit` | boolean | `false`: the worker commits itself | `true`: after the worker ends done, dev commits every change left in the worktree (tracked and untracked, honouring `.gitignore`) on the task branch as `<task id>: <task title>`; nothing to commit is fine. It runs before the check. For workers whose sandbox cannot write `.git` | When the work stage ends | Refused: `flows.<name>.stages[<i>].commit: must be true or false` |
 | `dev.flows.<name>.stages.brief` | string | unset | extra instructions appended to the worker prompt | When the work stage starts | Refused: `flows.<name>.stages[<i>].brief: must be a non-empty string` |
 | `dev.flows.<name>.stages.beforeAttempt` | string | unset: the worktree step's merge stays in force | `merge-main`, `none` | Before the work stage runs | Refused: `flows.<name>.stages[<i>].beforeAttempt: must be "merge-main" or "none"` |
 | `dev.flows.<name>.stages.commands` | array | `gate.commands` | check commands | When the check stage starts | Refused: `flows.<name>.stages[<i>].commands: must be an array of commands` or the command's own error |
 | `dev.flows.<name>.stages.rerun` | integer | `check.rerun` | `0` or more | When a check line list fails | Refused: `flows.<name>.stages[<i>].rerun: must be zero or a positive integer` |
 | `dev.flows.<name>.stages.later` | array of strings | unset: `reviewer` arguments | arguments for every review after the first in an attempt | When a later review starts | Refused: `flows.<name>.stages[<i>].later: must be an array of strings` |
 | `dev.flows.<name>.stages.grading` | string | unset: the flow's own name | an entry in `.operad/review.json` | When the review is graded | Refused: `flows.<name>.stages[<i>].grading: must be a non-empty string`; a missing entry falls back to `default` |
+
+An image flow: a different pool of workers, their own brief, dev commits for
+them, a check, and no review stage.
+
+```json
+{
+  "flows": {
+    "image": {
+      "stages": [
+        { "stage": "work", "pool": "image", "workerBrief": ".operad/image-brief.md", "commit": true },
+        { "stage": "check" },
+        { "stage": "human" }
+      ]
+    }
+  }
+}
+```
 
 A field that a stage kind does not allow is refused with
 `flows.<name>.stages[<i>].<key>: is not a stage setting`. A `human` stage has no

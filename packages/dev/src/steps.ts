@@ -614,6 +614,18 @@ function commitWip(worktree: string): boolean {
   return git(worktree, ["commit", "-q", "--no-verify", "-m", WIP_MESSAGE]).ok;
 }
 
+/** Commits everything left in the worktree (honouring .gitignore) with the given message. */
+function commitLeft(worktree: string, message: string): boolean {
+  if (conflictedFiles(worktree).length > 0) return false;
+  const added = git(worktree, ["add", "-A", "--", "."]);
+  if (!added.ok) return false;
+  const committed = git(worktree, ["commit", "-q", "--no-verify", "-m", message]).ok;
+  // The note is the worker's report, not part of the change: take it out of the
+  // branch again, leaving the file for the step to read.
+  untrackNote(worktree);
+  return committed;
+}
+
 /**
  * Writes the task only while the step still owns its claim. The check reads the
  * task again under the repository lock, so a `cancel` that landed after the
@@ -1244,9 +1256,14 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
     }
   }
 
+  const stageParams = (ctx.params ?? {}) as {
+    readonly flowWorkerBrief?: unknown;
+    readonly flowCommit?: unknown;
+  };
   const workerBrief = await readWorkerBrief(
     context.repository.path,
     context.settings,
+    typeof stageParams.flowWorkerBrief === "string" ? stageParams.flowWorkerBrief : undefined,
   );
   const prompt = buildWorkerPrompt(
     path,
@@ -1639,7 +1656,19 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
 
   // Inspect the tree before deciding: a harness failure must still name what
   // it left uncommitted, and a success must still fail on a dirty tree.
-  const dirty = changedFiles(path);
+  let dirty = changedFiles(path);
+
+  // A worker whose sandbox cannot write .git leaves its work uncommitted; the
+  // stage asks dev to commit it, before verify so the check sees the commit.
+  if (
+    stageParams.flowCommit === true &&
+    hostError === undefined &&
+    outcome?.result === "done" &&
+    dirty.length > 0
+  ) {
+    commitLeft(path, `${context.taskId}: ${task.title}`);
+    dirty = changedFiles(path);
+  }
 
   if (hostError !== undefined) {
     return finish("failed", {
