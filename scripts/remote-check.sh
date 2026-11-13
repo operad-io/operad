@@ -77,24 +77,46 @@ quoted=$(printf '%q ' "$sha" "$bundle" "$tree" "$path_dirs" "$command" "$slots" 
 "${ssh_cmd[@]}" "$host" "bash -s -- $quoted" <<'REMOTE'
 sha=$1; bundle=$2; tree=$3; path_dirs=$4; command=$5; slots=$6; lane=$7
 watch=
+child=
+session=${TMPDIR:-/tmp}/operad-check-session-$$
+: >"$session"
 cleanup() {
-  [ -z "$watch" ] || kill "$watch" 2>/dev/null || true
+  [ -z "$watch" ] || kill -KILL "$watch" 2>/dev/null || true
+  rm -f "$session"
   [ "$bundle" = none ] || rm -f "$HOME/$bundle"
 }
 trap cleanup EXIT
 # A local stop closes the connection, and sshd ends this session's parent. The
-# watcher then ends this whole process group, so neither a command nor a check
-# still waiting for a slot is left running on the host. It ignores a HUP, which
-# the host may also send, until it has done that.
+# watcher then ends the command's group (or this whole group while the check is
+# still waiting for a slot), so nothing is left running on the host. It ignores
+# a HUP, which the host may also send, until it has done that.
 parent=$PPID
 (
   trap '' HUP TERM INT
   while kill -0 "$parent" 2>/dev/null; do sleep 1; done
-  kill -TERM -$$ 2>/dev/null || kill -TERM $$ 2>/dev/null || true
-  sleep 1
-  kill -KILL -$$ 2>/dev/null || true
+  running=$(cat "$session" 2>/dev/null)
+  if [ -n "$running" ]; then
+    kill -TERM -"$running" 2>/dev/null || kill -TERM "$running" 2>/dev/null || true
+    sleep 1
+    kill -KILL -"$running" 2>/dev/null || true
+  else
+    kill -TERM -$$ 2>/dev/null || kill -TERM $$ 2>/dev/null || true
+    sleep 1
+    kill -KILL -$$ 2>/dev/null || true
+  fi
 ) &
 watch=$!
+shutdown() {
+  trap '' HUP TERM INT
+  if [ -n "$child" ]; then
+    kill -TERM -"$child" 2>/dev/null || kill -TERM "$child" 2>/dev/null || true
+    sleep 1
+    kill -KILL -"$child" 2>/dev/null || true
+    wait "$child" 2>/dev/null || true
+  fi
+  exit 143
+}
+trap shutdown HUP TERM INT
 export OPERAD_CHECK_SLOTS=$slots
 if [ -n "$lane" ]; then export OPERAD_CHECK_LANE=$lane; else unset OPERAD_CHECK_LANE; fi
 # Names the slots this check may take: the integration slot, or task slots 1..N.
@@ -146,8 +168,16 @@ git checkout -q --detach --force "$sha" || { echo "remote-check: checkout of $sh
 # node_modules, and tests that list packages/ would find it.
 git clean -q -ffdx -e /node_modules >/dev/null 2>&1 || true
 export PATH="$(eval echo "$path_dirs"):$PATH"
-# The session watcher above ends this group if the local check stops.
-bash -c "$command"
+# The session watcher above ends this command's group if the local check stops.
+set -m
+bash -c "$command" &
+child=$!
+set +m
+printf '%s\n' "$child" >"$session"
+wait "$child"
+status=$?
+trap - HUP TERM INT
+exit "$status"
 REMOTE
 code=$?
 if [ "$code" -eq 255 ]; then
