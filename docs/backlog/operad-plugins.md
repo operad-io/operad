@@ -1,7 +1,7 @@
 # operad-plugins：插件运行时、SDK、热加载、安全模型
 
-- 状态：idea（方向已定：做；SDK 形状与回退机制未定）
-- 涉及 ADR：0031、0012、0016、0020
+- 状态：种类、启停、热加载、第三方依赖已进 ADR；下面留 SDK 的其余部分
+- 涉及 ADR：0011、0012、0010
 - 来源：`operad.md`；`research/2026-11-04-agent-autoloop.md`「协议要点」「插件体系」；`research/2026-11-05-noop.md`「决定、门禁、自治」
 
 ## 背景
@@ -10,27 +10,19 @@
 
 危险也在这里：用户或 agent 现写的 TS 步骤，处理的是 Telegram、webhook、邮件里别人写的字。注入和任意代码在同一个地方相遇。
 
-## 决定（已定）
+## 决定（已定，还没做，所以留在这里）
 
-1. 六种插件：`domain`（一个领域的对象、动作和 flow，如 `dev`）、`harness`（谁干活）、`source`（活从哪来）、`stage`（检查，给 verdict）、`channel`（找人去哪找、答案怎么回来）、`action`（对外做事，落地代码的 forge 是其中一类）。核心只认种类，不认名字。种类名只出现在开发文档里，用户看不到。跑命令和检查的 `shell` 是随 operad 安装的基础插件。
-2. 插件是 TS 模块，放在固定路径：项目级 `.operad/plugins/` → 用户级 `~/.operad/plugins/` → 内置。项目级只在已信任的项目装载（同 ADR 0031 的规矩）。`operad plugin add <git 地址>` 只 clone，不跑安装脚本。
-3. SDK 带版本号（`operadPlugin: 1`），每种插件一个一致性检查 `operad plugin check <路径>`，起一个临时引擎跑该种类的契约。
+2. 插件是 TS 模块，放在固定路径：项目级 `.operad/plugins/` → 用户级 `~/.operad/plugins/` → 内置。项目级只在已信任的项目装载。`operad plugin add <git 地址>` 只 clone，不跑安装脚本。
+3'. 每种插件一个一致性检查：`operad plugin check <路径>` 起一个临时引擎跑该种类的契约。
 4. SDK 文档以 skill 的形式随 operad 安装，给写插件的 agent 读；插件由 agent 替用户写是预期的主路径。
 5. **生成的步骤默认跑在沙箱里**：只读工作目录以外的文件系统、无网络，除非 graph 明确给。沙箱由 radian 剥出来的壳提供（`operad.md` 待决问题 2）。
-6. 插件不能做的事：source 决定不了路由（事件带 `cwd`、harness、access 直接拒收）；harness 决定不了权限；stage 只给 verdict；channel 只能回答自己送出的卡片，回答要带送达时的 `ref`；每种插件一把作用域密钥。
+6. 插件不能做的事：source 决定不了路由（事件带 `cwd`、harness、access 直接拒收）；harness 决定不了权限；stage 只给 verdict；channel 只能回答自己送出的卡片，回答要带送达时的 `ref`；每种插件一把作用域密钥（插件的密钥作用域已进 ADR 0010）。
 7. 插件文件有历史，可回退到任一版本；引擎记录每个运行用的是哪个版本。
-8. **技能是 `SKILL.md`**：bot 和 flow 用的 skill 采用 Agent Skills 的 `SKILL.md` 格式，和 pi、Claude Code 互通；operad 只把技能的文本给 agent 读，不执行技能目录里的代码；不做技能市场。
-
-9. **插件可以启用和禁用**：`config.json` 的 `plugins.<名字>.enabled`（布尔，默认 `true`）。`operad init` 默认装 `shell`、`harness-radian` 和 `dev`（`dev` 的 worker 要用 `harness-radian`；2026-11-11 起插件名是 `radian`，见 `operad-harness.md` 决定 9）。禁用的插件不加载：它的命令、动作、视图、默认规则都不出现，已存的对象和历史留着不动，重新启用后照常可见；依赖它的插件（`requires`）一并不加载并说明原因；它的步骤还在跑的运行不能被禁用，命令说出是哪些运行。命令行 `operad plugin list`（名字、版本、启用与否）、`operad plugin enable <名字>`、`operad plugin disable <名字>`，在下一次 `operad` 命令或 `serve` 重载时生效。
-
-10. **热加载的边界**：正在跑的步骤用它启动时的代码，跑完为止；一次运行的下一个步骤用磁盘上的代码；`serve` 在自己的代码、已加载插件的代码或设置文件的 schema 改变时重载（安静一小段时间后，像 `operad serve stop` 那样停下，再原地重启）。运行进程在两个步骤之间比较代码，变了就干净地退出，由 `serve` 起一个新进程从下一步接着跑，历史里留一行交接。改成加载不了的代码（语法错、schema 不合法）不会弄垮 `serve` 或运行进程：`serve` 继续用旧代码；运行进程不再开始新的步骤（下一步要读磁盘上的代码），原地等到文件能加载或改回原样。问题显示在用户今天看加载问题的地方，文件重新能加载时再重载。设置文件改了，下一次使用时重新读取。
-
-11. **带第三方 npm 依赖的插件不进基础安装，启用时装进 operad 家目录**（2026-11-12 owner 定，起因是第一次发布 npm：`@operad-io/harness-claude` 依赖的 Agent SDK 在 `optionalDependencies` 里带一份按平台的 Claude Code 二进制，本机 317 MB，根 `package.json` 的 `overrides` 只在本仓库生效，别人安装时管不到）。`@operad-io/cli` 只依赖没有第三方依赖的包；`claude` 这类插件不是它的依赖。用户启用这样的插件时，operad 把插件包和它的依赖装进 operad 家目录下的一处（一个 Bun 项目），装时跳过 `optionalDependencies`，插件从那里加载。没装时 `operad plugin check` 和用到它的命令说出怎么装。仓库内开发照旧用 workspace，不经这一步。
 
 ## 待决问题（未定）
 
 1. SDK 的函数形状：每种插件导出一个对象（`channel({ deliver, listen })`），还是类。
-2. 插件自带 npm 依赖怎么隔离（怎么装已定，见决定 11）。
+2. 插件自带 npm 依赖怎么隔离（怎么装已定，见 ADR 0012）。
 3. 回退用 git 还是引擎自己存版本。
 4. 沙箱内放行的最小集合（哪些网络地址、哪些目录）由谁声明：插件、graph 还是用户。
 
