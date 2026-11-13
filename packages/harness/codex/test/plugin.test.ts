@@ -18,7 +18,7 @@ import {
   waitForGone,
   waitForPid,
   type ManualClock,
-} from "@operad-io/harness-process/test-support";
+} from "../../process/test/support.ts";
 import { CANCEL_GRACE_MS, SESSION_MODE, createCodexHarnessPlugin, failureOf } from "../src/index.ts";
 
 afterAll(cleanupTempRoots);

@@ -127,3 +127,12 @@ the row fields.
 |---|---|---|---|
 | T-0325-M1 | packages/cli/package.json | removed the `@operad-io/bot` dependency, so a fresh install links no `node_modules/@operad-io/bot` | `plugins the CLI offers > bot (@operad-io/bot) is a dependency of the CLI and resolves from it` |
 | T-0389-M1 | packages/cli/src/main.ts | `operad init` called `ensureConfig(home)` without the distribution's config, so a fresh file had no plugins and no `mcp.actions` | `operad command > init creates the home and prints each plugin check` and `operad command > init reports a missing radian and leaves a complete config` |
+
+## T-0377 — npm packages and the claude install on enable
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0377-M3 | packages/cli/src/main.ts | `plugin enable claude` wrote the config without installing the package into the home's Bun project | `publishing and installing the packages > enabling claude from the packed tarballs installs the SDK without a platform package` |
+| T-0377-M4 | packages/cli/src/main.ts | `plugin check claude` treated the optional plugin name as a path instead of naming the command that installs it | `publishing and installing the packages > the packed CLI installs into a prefix and runs help and init` |
+| T-0377-M6 | packages/cli/package.json | removed `"license": "MIT"` from the CLI manifest | `the packages a publish needs > every publishable package has one version, the repository fields and the licence` |
+| T-0377-M8 | packages/cli/src/main.ts | `loadTui` skipped `ensureInstalledPackage` and imported the package directly, so a published CLI never installed the terminal client into the home | `operad tui > installs the terminal client into the home when the CLI has no copy` |

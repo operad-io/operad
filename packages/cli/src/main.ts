@@ -1,11 +1,12 @@
-import { OPTIONAL_PLUGINS, distributionConfig, pluginOffer } from "./defaults.ts";
+import { OPTIONAL_PLUGINS, defaultPluginModule, distributionConfig, pluginOffer } from "./defaults.ts";
 import { closeSync, mkdirSync, openSync, readFileSync, writeSync } from "node:fs";
 import { userInfo } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   ConfigError,
   FileSecretStore,
+  INSTALL_ON_ENABLE,
   Kernel,
   LockHeldError,
   acquireLock,
@@ -21,9 +22,11 @@ import {
   createViews,
   defaultOperadHome,
   ensureConfig,
+  ensureInstalledPackage,
   formatHistoryEntry,
   historyEntry,
   historyEntries,
+  installedPackageFile,
   listPending,
   listRunning,
   type RunningItem,
@@ -45,6 +48,7 @@ import {
   readConfig,
   readState,
   readStoredStart,
+  runningFromWorkspace,
   readStoredTrigger,
   recordAnswer,
   rotateHttpToken,
@@ -63,6 +67,7 @@ import {
   type GlobalFact,
   HttpStopError,
   type HttpServerHandle,
+  type InstallRunner,
   type OperadConfig,
   type RunInfo,
   type TriggerEvent,
@@ -1951,6 +1956,50 @@ async function activeRunsUsingPlugin(
   return affected;
 }
 
+/** True when `specifier` resolves from the package at `from`. */
+function resolvableFrom(specifier: string, from: string): boolean {
+  try {
+    Bun.resolveSync(specifier, join(from, "package.json"));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Validates one loaded plugin with the configured plugins, without starting a run. */
+async function checkLoadedDefinition(
+  context: Context,
+  io: CliIo,
+  name: string,
+  definition: unknown,
+): Promise<number> {
+  const configured = await loadConfiguredPlugins({ home: context.home });
+  const others = configured.loaded
+    .map((loaded) => loaded.definition)
+    .filter((item) => definitionName(item) !== name);
+  let registry: PluginRegistry;
+  try {
+    registry = new PluginRegistry([...others, definition], {
+      home: context.home,
+      cwd: context.home,
+      store: new MemoryPluginStore({ root: join(context.storeRoot, "plugin-check") }),
+      settings: {},
+      validateSettings: false,
+      onLog: () => undefined,
+    });
+  } catch (error) {
+    io.write(`${name}: ${messageOf(error)}\n`);
+    return 1;
+  }
+  if (!registry.names().includes(name)) {
+    const refusal = registry.refusals().find((item) => item.plugin === name);
+    io.write(`${refusal?.message ?? `${name}: not loaded`}\n`);
+    return 1;
+  }
+  io.write(`${name}: ok\n`);
+  return 0;
+}
+
 async function commandPluginAdmin(
   context: Context,
   io: CliIo,
@@ -1978,41 +2027,47 @@ async function commandPluginAdmin(
         throw new StateError(`cannot disable "${name}": run ${named} is active`);
       }
     }
+    if (sub === "enable" && INSTALL_ON_ENABLE.includes(name)) {
+      const module = entry?.module ?? defaultPluginModule(name);
+      if (module === defaultPluginModule(name)) {
+        // The package is not a CLI dependency: put it in the home's Bun project
+        // first, with optional dependencies skipped (operad-plugins 11).
+        await ensureInstalledPackage({
+          home: context.home,
+          specifier: module,
+          version: ENGINE_VERSION,
+          from: import.meta.dir,
+          omitOptional: true,
+        });
+      }
+    }
     await setPluginEnabled(context.home, name, sub === "enable", pluginOffer(context.home));
     io.write(`${name}: ${sub === "enable" ? "enabled" : "disabled"}\n`);
     return 0;
   }
   if (sub === "check") {
-    const path = argv[1];
-    if (path === undefined) throw new UsageError("plugin check needs a path");
+    const asked = argv[1];
+    if (asked === undefined) throw new UsageError("plugin check needs a path");
     if (argv.length > 2) throw new UsageError("plugin check takes one path");
-    const definition = await loadPlugin(path, context.home);
-    const name = definitionName(definition) ?? path;
-    const configured = await loadConfiguredPlugins({ home: context.home });
-    const others = configured.loaded
-      .map((loaded) => loaded.definition)
-      .filter((item) => definitionName(item) !== name);
-    let registry: PluginRegistry;
-    try {
-      registry = new PluginRegistry([...others, definition], {
-        home: context.home,
-        cwd: context.home,
-        store: new MemoryPluginStore({ root: join(context.storeRoot, "plugin-check") }),
-        settings: {},
-        validateSettings: false,
-        onLog: () => undefined,
-      });
-    } catch (error) {
-      io.write(`${name}: ${messageOf(error)}\n`);
-      return 1;
+    const configured = context.config.plugins.find((item) => item.name === asked);
+    const module =
+      configured?.module ??
+      (OPTIONAL_PLUGINS.includes(asked) ? defaultPluginModule(asked) : undefined);
+    if (module !== undefined) {
+      const installed = installedPackageFile(context.home, module);
+      if (
+        installed === undefined &&
+        !(runningFromWorkspace() && resolvableFrom(module, import.meta.dir))
+      ) {
+        io.write(`${asked}: not installed; run \`operad plugin enable ${asked}\` to install it\n`);
+        return 1;
+      }
+      const source = installed !== undefined && !runningFromWorkspace() ? installed : module;
+      const definition = await loadPlugin(source, context.home, installed);
+      return await checkLoadedDefinition(context, io, definitionName(definition) ?? module, definition);
     }
-    if (!registry.names().includes(name)) {
-      const refusal = registry.refusals().find((item) => item.plugin === name);
-      io.write(`${refusal?.message ?? `${name}: not loaded`}\n`);
-      return 1;
-    }
-    io.write(`${name}: ok\n`);
-    return 0;
+    const definition = await loadPlugin(asked, context.home);
+    return await checkLoadedDefinition(context, io, definitionName(definition) ?? asked, definition);
   }
   throw new UsageError("plugin needs list, enable, disable or check");
 }
@@ -2270,6 +2325,39 @@ async function commandPair(
   return 0;
 }
 
+/** Where `loadTui` installs from and how a test replaces the install. */
+export interface LoadTuiOptions {
+  /** A package directory to resolve the workspace copy from; defaults to the CLI. */
+  readonly from?: string | undefined;
+  /** A test replaces the install command. */
+  readonly run?: InstallRunner | undefined;
+}
+
+/**
+ * The terminal client: the workspace's own copy in a checkout, otherwise the
+ * copy installed into the home's Bun project. The client's UI library is a
+ * third-party package, so the CLI does not depend on it; its install keeps the
+ * optional packages the UI library needs.
+ */
+export async function loadTui(home: string, options: LoadTuiOptions = {}): Promise<TuiRunner> {
+  const installed = await ensureInstalledPackage({
+    home,
+    specifier: "@operad-io/tui",
+    version: ENGINE_VERSION,
+    from: options.from ?? import.meta.dir,
+    ...(options.run === undefined ? {} : { run: options.run }),
+  });
+  // A string variable keeps the type checker from requiring the package,
+  // which the CLI deliberately does not depend on.
+  const entry: string = "@operad-io/tui/app";
+  const loaded = (
+    installed === undefined
+      ? await import(entry)
+      : await import(pathToFileURL(installed).href)
+  ) as { readonly runTui: TuiRunner };
+  return loaded.runTui;
+}
+
 /** `operad tui [--url <url>] [--token <token>] [--no-start] [--theme <name>]`. */
 async function commandTui(
   home: string,
@@ -2309,7 +2397,7 @@ async function commandTui(
   const runner: TuiRunner =
     injected ??
     (async (command) => {
-      const { runTui } = await import("@operad-io/tui/app");
+      const runTui = await loadTui(home);
       return await runTui(command);
     });
   return await runner({

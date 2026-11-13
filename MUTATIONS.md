@@ -45,6 +45,8 @@ Each package keeps its mutation checks in `MUTATIONS.md`; a row names the broken
 | T-0234-M1 | scripts/remote-check.sh | the `--` form joined its words with a plain space instead of quoting each, so a word with a quote or `$` was split or run by the host shell | `remote-check.sh > the -- form > a word with quotes, backquotes, $ and a regex arrives byte for byte and is not run` |
 | T-0259-M1 | .operad/dev.json | the rerun no longer ran `bun install --frozen-lockfile` before the test | `remote-check.sh > the -- form > a rerun after a checkout that changes the workspace packages installs first and reaches the test` |
 | T-0255-M1 | scripts/test/remote-check.test.ts | the tests passed the surrounding check's `OPERAD_CHECK_*` settings on to the script again | `remote-check.sh > slots and the integration lane > a task check never takes the integration slot, and a second integration waits for the first` (run with `OPERAD_CHECK_LANE=integration OPERAD_CHECK_SLOTS=2` in the environment) |
+| T-0377-M5 | scripts/publish.sh | removed the registry check, so `--publish` packed and published a version that was already on the registry | `publish.sh > --publish skips a version the registry already has` (also the ordering test) |
+| T-0377-M9 | scripts/publish.sh | put `harness/process` before its `@operad-io/mcp` dependency again | `publish.sh > the real order puts every package after its @operad-io dependencies` |
 
 ## T-0297 — follow-ups from the flaky-test work
 
@@ -64,3 +66,4 @@ Each package keeps its mutation checks in `MUTATIONS.md`; a row names the broken
 | T-0373-M1 | docs/plugins/exports.md | the `GROWTH_EVENT_INTERVAL_MS` table row was removed (no other page has a row for it) | `scripts/test/plugin-docs.test.ts > the plugin docs > every export a plugin can import has an entry under docs/plugins` |
 | T-0373-M2 | scripts/test/plugin-docs.allow.json | `definePlugin`, which `packages/pool/src/index.ts` imports, was added to the allow list | `scripts/test/plugin-docs.test.ts > the plugin docs > a name a plugin package imports is never on the allow list` |
 | T-0373-M3 | docs/plugins/types.md | the `PluginStepResult` table row (a type `packages/pool/src/index.ts` imports) was removed | `scripts/test/plugin-docs.test.ts > the plugin docs > every export a plugin can import has an entry under docs/plugins` |
+| T-0375-M1 | scripts/test/fixtures/hold.ts | the hold no longer checked that its owner was alive (the loop only retried the read) | `remote-check.sh > a blocked fixture ends when the test that started it is killed` |

@@ -1,12 +1,23 @@
 {
   "name": "@operad-io/shell",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.0.1",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
   },
   "dependencies": {
     "@operad-io/engine": "workspace:*"
-  }
+  },
+  "description": "operad: the shell plugin's command and check steps (in development)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/operad-io/operad.git",
+    "directory": "packages/shell"
+  },
+  "license": "MIT",
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ]
 }

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { INSTALL_ON_ENABLE } from "@operad-io/engine";
 import { DEFAULT_LEAD_ACTIONS, DEFAULT_PLUGINS, OPTIONAL_PLUGINS, defaultPluginModule, distributionConfig } from "../src/defaults.ts";
 
 const cliDir = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -16,6 +17,12 @@ const offered = [...DEFAULT_PLUGINS, ...OPTIONAL_PLUGINS];
 describe("plugins the CLI offers", () => {
   for (const name of offered) {
     const module = defaultPluginModule(name);
+    if (INSTALL_ON_ENABLE.includes(name)) {
+      test(`${name} (${module}) is installed into the home instead of being a CLI dependency`, () => {
+        expect(manifest.dependencies[module]).toBeUndefined();
+      });
+      continue;
+    }
     test(`${name} (${module}) is a dependency of the CLI and resolves from it`, () => {
       expect(manifest.dependencies[module]).toBe("workspace:*");
       expect(() => Bun.resolveSync(module, cliDir)).not.toThrow();

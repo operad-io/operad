@@ -254,6 +254,16 @@
   "@operad-io/engine:triggersPath": "reads or writes config.json or triggers.json for the host; a plugin receives its own section as ctx.settings and its rules as `rules`",
   "@operad-io/engine:validateListenAddresses": "the HTTP server, its token or the app's links: host code, not used by a plugin",
   "@operad-io/engine:waitForCodeChange": "`serve`'s code watch: fingerprints the plugin files so a change is taken up; a plugin does not call it",
+  "@operad-io/engine:EnsureInstalledOptions": "installs a plugin package into the operad home: the CLI host uses it, a plugin never calls it",
+  "@operad-io/engine:INSTALL_ON_ENABLE": "installs a plugin package into the operad home: the CLI host uses it, a plugin never calls it",
+  "@operad-io/engine:InstallRun": "installs a plugin package into the operad home: the CLI host uses it, a plugin never calls it",
+  "@operad-io/engine:InstallRunner": "installs a plugin package into the operad home: the CLI host uses it, a plugin never calls it",
+  "@operad-io/engine:PLUGIN_PROJECT_DIRECTORY": "installs a plugin package into the operad home: the CLI host uses it, a plugin never calls it",
+  "@operad-io/engine:ensureInstalledPackage": "installs a plugin package into the operad home: the CLI host uses it, a plugin never calls it",
+  "@operad-io/engine:installedPackageFile": "installs a plugin package into the operad home: the CLI host uses it, a plugin never calls it",
+  "@operad-io/engine:pluginProjectManifestPath": "installs a plugin package into the operad home: the CLI host uses it, a plugin never calls it",
+  "@operad-io/engine:pluginProjectPath": "installs a plugin package into the operad home: the CLI host uses it, a plugin never calls it",
+  "@operad-io/engine:runningFromWorkspace": "installs a plugin package into the operad home: the CLI host uses it, a plugin never calls it",
   "@operad-io/engine:writeConfig": "reads or writes config.json or triggers.json for the host; a plugin receives its own section as ctx.settings and its rules as `rules`"
  }
 }

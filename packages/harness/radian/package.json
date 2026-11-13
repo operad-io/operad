@@ -1,7 +1,6 @@
 {
   "name": "@operad-io/harness-radian",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.0.1",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
@@ -10,5 +9,17 @@
     "@operad-io/access-match": "workspace:*",
     "@operad-io/engine": "workspace:*",
     "@operad-io/harness-process": "workspace:*"
-  }
+  },
+  "description": "operad: the radian harness (in development)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/operad-io/operad.git",
+    "directory": "packages/harness/radian"
+  },
+  "license": "MIT",
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ]
 }

@@ -1,6 +1,7 @@
 export {
   INSTRUCTIONS,
   instructionsFor,
+  MCP_VERSION,
   PROTOCOL_VERSION,
   RPC_ERRORS,
   openMcpTools,
