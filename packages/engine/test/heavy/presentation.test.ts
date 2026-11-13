@@ -166,6 +166,35 @@ function manualGrowthLog(inner: LogBackend): {
   };
 }
 
+function countingLog(
+  log: LogBackend,
+): { readonly counting: LogBackend; readonly asked: (string | undefined)[] } {
+  const asked: (string | undefined)[] = [];
+  const counting: LogBackend = {
+    ...log,
+    startRun: (flow, object, input, access) => log.startRun(flow, object, input, access),
+    endRun: (runId) => log.endRun(runId),
+    recordInput: (runId, source, key, payload) => log.recordInput(runId, source, key, payload),
+    append: (runId, seq, facts) => log.append(runId, seq, facts),
+    read: (runId) => log.read(runId),
+    appendGlobal: (fact, key) => log.appendGlobal(fact, key),
+    readGlobal: () => log.readGlobal(),
+    readInputs: () => log.readInputs(),
+    readInputsAfter: (position) => log.readInputsAfter(position),
+    findInput: (inputId) => log.findInput(inputId),
+    readOutcome: (inputId, kind) => log.readOutcome(inputId, kind),
+    readOutcomesAfter: (seq) => log.readOutcomesAfter(seq),
+    recordOutcome: (inputId, kind, payload) => log.recordOutcome(inputId, kind, payload),
+    readOutcomes: () => log.readOutcomes(),
+    close: () => log.close(),
+    runs: (options) => {
+      if (options?.active !== true) asked.push(options?.object);
+      return log.runs(options);
+    },
+  };
+  return { counting, asked };
+}
+
 describe("presentation views", () => {
   test("lists rows with the kernel's waiting and running flags", async () => {
     const { store, registry, log } = await fixture();
@@ -239,38 +268,28 @@ describe("presentation views", () => {
     await log.close();
   });
 
-  test("history and the object lookup ask the log for one object's runs", async () => {
+  test("history asks the log for one object's runs", async () => {
     const { store, registry, log } = await fixture();
     await waitFact(log, "item:one", "run_started", { flow: "demo-flow" });
     await waitFact(log, "item:two", "run_started", { flow: "demo-flow" });
-    const asked: (string | undefined)[] = [];
-    const counting: LogBackend = {
-      ...log,
-      startRun: (flow, object, input, access) => log.startRun(flow, object, input, access),
-      endRun: (runId) => log.endRun(runId),
-      recordInput: (runId, source, key, payload) => log.recordInput(runId, source, key, payload),
-      append: (runId, seq, facts) => log.append(runId, seq, facts),
-      read: (runId) => log.read(runId),
-      appendGlobal: (fact, key) => log.appendGlobal(fact, key),
-      readGlobal: () => log.readGlobal(),
-      readInputs: () => log.readInputs(),
-      readInputsAfter: (position) => log.readInputsAfter(position),
-      findInput: (inputId) => log.findInput(inputId),
-      readOutcome: (inputId, kind) => log.readOutcome(inputId, kind),
-      readOutcomesAfter: (seq) => log.readOutcomesAfter(seq),
-      recordOutcome: (inputId, kind, payload) => log.recordOutcome(inputId, kind, payload),
-      readOutcomes: () => log.readOutcomes(),
-      close: () => log.close(),
-      runs: (options) => {
-        asked.push(options?.object);
-        return log.runs(options);
-      },
-    };
+    const { counting, asked } = countingLog(log);
     const views = trackedViews({ registry, store, log: counting });
     const { markdown } = await views.section("item:one", "history");
     expect(markdown.match(/^## demo-flow run/gm)).toHaveLength(1);
     expect(asked.length).toBeGreaterThan(0);
     expect(asked.every((object) => object === "item:one")).toBe(true);
+  });
+
+  test("naming an object that only has a run asks the log for that object's runs", async () => {
+    const { store, registry, log } = await fixture();
+    await waitFact(log, "item:ghost", "run_started", { flow: "demo-flow" });
+    await waitFact(log, "item:two", "run_started", { flow: "demo-flow" });
+    const { counting, asked } = countingLog(log);
+    const views = trackedViews({ registry, store, log: counting });
+    const object = await views.get("item:ghost");
+    expect(object.row.id).toBe("ghost");
+    expect(asked.length).toBeGreaterThan(0);
+    expect(asked.every((object) => object === "item:ghost")).toBe(true);
   });
 
   test("the history of an object with two runs shows no tag and no run id", async () => {
