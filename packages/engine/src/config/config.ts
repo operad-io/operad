@@ -99,11 +99,11 @@ export interface McpConfig {
   readonly confirmActions: readonly string[];
 }
 
-/** The MCP defaults: the dev plugin's lead actions and the chat plugin's close, which also needs its confirmation. */
+/** The MCP defaults: the channel defaults and no allowed action. A distribution writes the actions it allows into the config. */
 export const DEFAULT_MCP: McpConfig = {
   channel: DEFAULT_MCP_CHANNEL,
-  actions: ["dev:rework", "dev:reverify", "dev:reject", "dev:priority", "dev:concurrency", "chat:close"],
-  confirmActions: ["chat:close"],
+  actions: [],
+  confirmActions: [],
 };
 
 /** How long `ctx.ask` waits for an answer unless something narrower says. */
@@ -132,41 +132,14 @@ export class ConfigError extends Error {
   }
 }
 
-/** The plugins `operad init` installs, in load order. */
-export const DEFAULT_PLUGINS: readonly string[] = [
-  "shell",
-  "radian",
-  "chat",
-  "dev",
-];
-
-/**
- * Plugins shipped with operad that `operad init` does not install. They are
- * not in the default config; `plugin enable <name>` adds them.
- */
-export const OPTIONAL_PLUGINS: readonly string[] = ["pi", "claude", "codex", "pool", "bot"];
-
-/** Harness plugins are named after their agent; their npm packages are `harness-<agent>`. */
-const HARNESS_PLUGINS: readonly string[] = ["claude", "codex", "pi", "radian"];
-
-/** The package name of a plugin shipped with operad. */
-export function defaultPluginModule(name: string): string {
-  return HARNESS_PLUGINS.includes(name) ? `@operad-io/harness-${name}` : `@operad-io/${name}`;
-}
-
 export function configPath(home: string): string {
   return join(home, "config.json");
 }
 
-/** The default config for a home: sqlite at `<home>/store/log.sqlite` and the base plugins. */
+/** The default config for a home: sqlite at `<home>/store/log.sqlite`, no plugin and no allowed action. */
 export function defaultConfig(home: string): OperadConfig {
   return {
-    plugins: DEFAULT_PLUGINS.map((name) => ({
-      name,
-      module: defaultPluginModule(name),
-      enabled: true,
-      settings: {},
-    })),
+    plugins: [],
     store: { backend: "sqlite", path: join(home, "store", SQLITE_FILE_NAME) },
     http: DEFAULT_HTTP,
     notify: DEFAULT_NOTIFY,
@@ -527,9 +500,9 @@ export async function writeConfig(
 
 /**
  * A config that does not mention `plugins` is a config someone wrote for the
- * store only; `init` installs the default plugins into it and leaves the rest.
+ * store only; `init` installs the given plugins into it and leaves the rest.
  */
-async function addDefaultPlugins(home: string, file: string): Promise<void> {
+async function addDefaultPlugins(defaults: OperadConfig, file: string): Promise<void> {
   let raw: unknown;
   try {
     raw = JSON.parse(await readFile(file, "utf8"));
@@ -537,7 +510,7 @@ async function addDefaultPlugins(home: string, file: string): Promise<void> {
     return; // readConfig reports an unreadable file with its own message
   }
   if (!isRecord(raw) || raw.plugins !== undefined) return;
-  const plugins = configJson(defaultConfig(home)).plugins;
+  const plugins = configJson(defaults).plugins;
   // Write beside the config and rename over it, so a crash or a full disk
   // leaves the old file whole instead of a truncated one.
   const temp = `${file}.tmp`;
@@ -550,15 +523,22 @@ async function addDefaultPlugins(home: string, file: string): Promise<void> {
   }
 }
 
-/** Writes the default config when the home has none. Idempotent. */
-export async function ensureConfig(home: string): Promise<{
+/**
+ * Writes `defaults` (the distribution's config for a new home) when the home
+ * has none. An existing file is kept; only a missing `plugins` section is
+ * filled in from `defaults`. Idempotent.
+ */
+export async function ensureConfig(
+  home: string,
+  defaults: OperadConfig = defaultConfig(home),
+): Promise<{
   readonly created: boolean;
   readonly path: string;
   readonly config: OperadConfig;
 }> {
   await mkdir(home, { recursive: true });
   const file = configPath(home);
-  const config = defaultConfig(home);
+  const config = defaults;
   try {
     await writeFile(file, `${JSON.stringify(configJson(config), null, 2)}\n`, {
       flag: "wx",
@@ -571,21 +551,31 @@ export async function ensureConfig(home: string): Promise<{
       "code" in error &&
       error.code === "EEXIST"
     ) {
-      await addDefaultPlugins(home, file);
+      await addDefaultPlugins(defaults, file);
       return { created: false, path: file, config: await readConfig(home) };
     }
     throw error;
   }
 }
 
+/** What `setPluginEnabled` needs from the distribution. */
+export interface PluginOffer {
+  /** Plugins the distribution ships but does not install, by name to module. */
+  readonly optional: Readonly<Record<string, string>>;
+  /** The config to start from when the home has no file. */
+  readonly defaults?: OperadConfig | undefined;
+}
+
 /**
  * Turns one configured plugin on or off, preserving the rest of the file.
+ * A plugin in `offer.optional` that the file does not list is added.
  * The change takes effect at the next command or `serve` reload.
  */
 export async function setPluginEnabled(
   home: string,
   name: string,
   enabled: boolean,
+  offer: PluginOffer = { optional: {} },
 ): Promise<void> {
   const file = configPath(home);
   let raw: Record<string, unknown> = {};
@@ -606,7 +596,7 @@ export async function setPluginEnabled(
         cause: error,
       });
     }
-    raw = configJson(defaultConfig(home));
+    raw = configJson(offer.defaults ?? defaultConfig(home));
   }
 
   const plugins = raw.plugins;
@@ -615,12 +605,13 @@ export async function setPluginEnabled(
       `${file}: plugins: must be an object keyed by plugin name to change it`,
     );
   }
-  const entry = plugins[name];
+  const entry = Object.hasOwn(plugins, name) ? plugins[name] : undefined;
   if (entry === undefined) {
-    if (!enabled || !OPTIONAL_PLUGINS.includes(name)) {
+    const module = Object.hasOwn(offer.optional, name) ? offer.optional[name] : undefined;
+    if (!enabled || module === undefined) {
       throw new ConfigError(`${file}: plugins.${name}: no such plugin`);
     }
-    plugins[name] = { module: defaultPluginModule(name), enabled: true };
+    plugins[name] = { module, enabled: true };
   } else if (typeof entry === "string") {
     plugins[name] = { module: entry, enabled };
   } else if (isRecord(entry)) {

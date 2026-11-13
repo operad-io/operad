@@ -744,3 +744,5 @@ the row fields.
 |---|---|---|---|
 | T-0381-M1 | packages/engine/src/views/presentation.ts | the undeclared-type lookup in `resolve` read the whole fact list again | `presentation views > resolving an id never reads the whole fact list (T-0381) > memory: scoped, typed, undeclared, ambiguous and unknown ids` |
 | T-0381-M2 | packages/engine/src/plugin/store.ts | the memory store did not record an object's type by id when a fact was tracked, so `objectTypesOf` was empty | `presentation views > resolving an id never reads the whole fact list (T-0381) > memory: scoped, typed, undeclared, ambiguous and unknown ids` |
+| T-0389-M1 | packages/engine/src/config/config.ts | `DEFAULT_MCP.actions` named `chat:close` again, so a config without `mcp.actions` allowed an action | `operad config > a config without mcp allows no action` and `the engine's defaults name no plugin and allow no action` |
+| T-0389-M2 | packages/engine/src/config/config.ts | `setPluginEnabled` read the offered module without an own-property check, so `constructor` counted as offered | `operad config > plugin enable adds an offered plugin and refuses one that is not offered` |

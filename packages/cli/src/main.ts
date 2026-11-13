@@ -1,3 +1,4 @@
+import { OPTIONAL_PLUGINS, distributionConfig, pluginOffer } from "./defaults.ts";
 import { closeSync, mkdirSync, openSync, readFileSync, writeSync } from "node:fs";
 import { userInfo } from "node:os";
 import { join } from "node:path";
@@ -39,7 +40,6 @@ import {
   ensureHttpToken,
   listenAddressKind,
   pairLink,
-  OPTIONAL_PLUGINS,
   openPluginStore,
   parseObjectKey,
   readConfig,
@@ -459,7 +459,7 @@ function printValue(io: CliIo, value: unknown): void {
 }
 
 async function commandInit(home: string, io: CliIo): Promise<number> {
-  const ensured = await ensureConfig(home);
+  const ensured = await ensureConfig(home, distributionConfig(home));
   io.write(
     `${ensured.created ? "created" : "using"} ${ensured.path}\n`,
   );
@@ -1978,7 +1978,7 @@ async function commandPluginAdmin(
         throw new StateError(`cannot disable "${name}": run ${named} is active`);
       }
     }
-    await setPluginEnabled(context.home, name, sub === "enable");
+    await setPluginEnabled(context.home, name, sub === "enable", pluginOffer(context.home));
     io.write(`${name}: ${sub === "enable" ? "enabled" : "disabled"}\n`);
     return 0;
   }

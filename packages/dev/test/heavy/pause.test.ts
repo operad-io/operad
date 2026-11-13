@@ -2,7 +2,6 @@ import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { PluginRegistry } from "@operad-io/engine";
-import { DEFAULT_MCP } from "@operad-io/engine";
 import poolPlugin from "@operad-io/pool";
 import { createShellPlugin } from "@operad-io/shell";
 import plugin from "../../src/index.ts";
@@ -207,7 +206,8 @@ describe("dev:pause and dev:resume", () => {
     expect(names).toContain("dev:resume");
     for (const name of ["dev:pause", "dev:resume"]) {
       expect(s.registry.actions().find((action) => action.name === name)?.confirm).toBe(true);
-      expect(DEFAULT_MCP.actions).not.toContain(name);
+      // The actions `operad init` writes into mcp.actions never include the owner's pause and resume.
+      expect(["dev:rework", "dev:reverify", "dev:reject", "dev:priority", "dev:concurrency", "chat:close"]).not.toContain(name);
     }
   });
 

@@ -118,6 +118,10 @@ async function makeDevHome(
     JSON.stringify({
       plugins: [devPluginPath],
       store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
+      mcp: {
+        actions: ["dev:rework", "dev:reverify", "dev:reject", "dev:priority", "dev:concurrency", "chat:close"],
+        confirmActions: ["chat:close"],
+      },
       ...extra,
     }),
   );

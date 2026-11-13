@@ -126,3 +126,4 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0325-M1 | packages/cli/package.json | removed the `@operad-io/bot` dependency, so a fresh install links no `node_modules/@operad-io/bot` | `plugins the CLI offers > bot (@operad-io/bot) is a dependency of the CLI and resolves from it` |
+| T-0389-M1 | packages/cli/src/main.ts | `operad init` called `ensureConfig(home)` without the distribution's config, so a fresh file had no plugins and no `mcp.actions` | `operad command > init creates the home and prints each plugin check` and `operad command > init reports a missing radian and leaves a complete config` |
