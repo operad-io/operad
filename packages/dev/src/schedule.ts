@@ -324,16 +324,20 @@ function dependencyState(
   };
 }
 
-/** The pool of the first work step of the graph a task started with. */
+/** The pool of the first `dev/work` step of the graph a task started with, whatever the step is named. */
 function storedGraphPool(graph: FlowDefinition | undefined): string | undefined {
-  const work = graph?.steps.find((step) => /^work(_\d+)?$/.test(step.id));
-  if (work === undefined) return undefined;
-  const outer: unknown = work.params;
-  const inner: unknown =
-    typeof outer === "object" && outer !== null ? (outer as { params?: unknown }).params : undefined;
-  const pool: unknown =
-    typeof inner === "object" && inner !== null ? (inner as { flowPool?: unknown }).flowPool : undefined;
-  return typeof pool === "string" ? pool : DEFAULT_POOL;
+  for (const step of graph?.steps ?? []) {
+    const outer: unknown = step.params;
+    if (typeof outer !== "object" || outer === null) continue;
+    const { use, params } = outer as { use?: unknown; params?: unknown };
+    if (use !== "dev/work") continue;
+    const pool: unknown =
+      typeof params === "object" && params !== null
+        ? (params as { flowPool?: unknown }).flowPool
+        : undefined;
+    return typeof pool === "string" ? pool : DEFAULT_POOL;
+  }
+  return undefined;
 }
 
 function planConcurrency(plan: PlanData): number {

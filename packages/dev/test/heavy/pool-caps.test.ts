@@ -180,4 +180,35 @@ describe("each pool counts its own running tasks (T-0379)", () => {
     // The default pool is empty, so the code task starts: image1 is not counted there.
     expect(ids).toContain(code.id);
   });
+
+  test("a renamed work step still gives the task its pool (T-0379)", async () => {
+    const fixture = await setup();
+    const keys = await tasks(fixture, [{ slug: "image1", flow: "image" }]);
+    await startedSlugs(fixture, keys);
+    const image1 = keys.get("image1") ?? "";
+    const started = await getTask(fixture.store, image1);
+    const graph = taskData(started.data).flowGraph;
+    if (graph === undefined) throw new Error("no stored graph");
+    // A project flow may name its dev/work step anything.
+    const renamed = {
+      ...graph,
+      name: `${graph.name}-renamed`,
+      steps: JSON.parse(
+        JSON.stringify(graph.steps).replaceAll('"id":"work"', '"id":"image_work"').replaceAll(':"work"', ':"image_work"'),
+      ) as typeof graph.steps,
+    };
+    await fixture.store.put(
+      "task",
+      image1,
+      { ...started.data, flowName: renamed.name, flowGraph: renamed, phase: "running", run: "run-image1" },
+      "test",
+    );
+    fixture.rewrite({ flows: { ...FLOWS, image: { stages: [{ stage: "work" }, { stage: "human" }] } } });
+    const plan = await addPlan(fixture.store, { repository: fixture.repository, slug: "q", title: "q", concurrency: 10 });
+    await setAuto(fixture.store, plan.id, "run");
+    const code = await addTask(fixture.store, { plan: plan.id, slug: "code", title: "code", flow: "default" });
+    await confirmPlan(fixture.store, plan.id);
+    await fixture.registry.tick();
+    expect(fixture.registry.takeStartedRuns().map((request) => request.object?.id)).toContain(code.id);
+  });
 });

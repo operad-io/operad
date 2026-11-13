@@ -1041,3 +1041,4 @@ the row fields.
 | T-0379-M6 | packages/dev/src/flow-compiler.ts | `workParams` left the stage's pool out of the work step's params | `a work stage's pool reaches the compiled work step` |
 | T-0379-M7 | packages/dev/src/schedule.ts | `poolOf` read the pool from current dev.json instead of the task's stored graph | `each pool counts its own running tasks > a running task keeps the pool of the graph it started with when dev.json changes` |
 | T-0379-M8 | packages/dev/src/steps.ts | `poolParams` left out `countPrefix`, so each pool counted a shared worker separately | `dev/work with workers > a worker shared by two pools has one count, whichever pool asks` |
+| T-0379-M9 | packages/dev/src/schedule.ts | `storedGraphPool` looked for step ids `work`, `work_<n>` again instead of the step's `dev/work` call | `each pool counts its own running tasks > a renamed work step still gives the task its pool` |
