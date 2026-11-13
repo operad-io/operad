@@ -317,6 +317,9 @@ describe("the telegram source", () => {
         announce?.();
         return [];
       },
+      async sendMessage(): Promise<number> {
+        return 1;
+      },
     };
     const telegram = new TelegramSource(w.ctx, {
       api,

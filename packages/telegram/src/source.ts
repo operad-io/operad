@@ -30,7 +30,7 @@ export const TELEGRAM_SOURCE = "telegram";
 const SUMMARY_MAX = 300;
 
 /** A delay that ends early when the signal is aborted. */
-function delay(ms: number, signal: AbortSignal): Promise<void> {
+export function delay(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
     if (signal.aborted) {
       resolve();
