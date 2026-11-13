@@ -1,6 +1,6 @@
 {
   "name": "@operad-io/dev",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
@@ -14,7 +14,7 @@
   "devDependencies": {
     "@operad-io/shell": "workspace:*"
   },
-  "description": "operad: the dev plugin, plans and tasks on a repository (in development)",
+  "description": "operad: the dev plugin, plans and tasks on a repository",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/operad-io/operad.git",

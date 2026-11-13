@@ -562,14 +562,14 @@ describe("the user docs", () => {
     expect(read(join(root, ".operad", "flaky.md"))).toBe(`${claude.slice(start, end).trimEnd()}\n`);
   });
 
-  test("a page under docs/user uses only the user's words", () => {
+  test("a page under docs/user and the changelog use only the user's words", () => {
     // A user sees flow, pending and history; these are the kernel's internal names.
     const internal = /\b(graph|node|fact|effect|decide|evolve|runner|backend)(s|d)?\b/gi;
     // `store.backend` is a key the user writes in config.json, and "takes effect"
     // is the plain English of the column that says when a setting applies.
     const keys = /`backend`|"backend"|store\.backend|\b(takes?|taking|in|into|no) effect\b/gi;
     const found: string[] = [];
-    for (const path of userPages()) {
+    for (const path of [...userPages(), join(root, "CHANGELOG.md")]) {
       read(path).split("\n").forEach((line, index) => {
         const words = line.replace(keys, "").match(internal);
         if (words !== null) found.push(`${relative(root, path)}:${index + 1}: ${words.join(", ")}`);

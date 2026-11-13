@@ -1,5 +1,7 @@
+import pkg from "../package.json" with { type: "json" };
+
 /** The operad graph engine. */
-export const ENGINE_VERSION = "0.0.1";
+export const ENGINE_VERSION: string = pkg.version;
 
 export * from "./flow/index.ts";
 export * from "./kernel/index.ts";
