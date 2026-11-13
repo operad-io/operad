@@ -1,10 +1,8 @@
 <p align="center"><b>English</b> · <a href="README.zh-CN.md">中文</a></p>
 
 <p align="center">
-<picture>
-<source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-dark.png">
-<img alt="operad" src="docs/assets/logo-light.png" width="320">
-</picture>
+<img alt="operad" src="docs/assets/logo-light.png#gh-light-mode-only" width="320">
+<img alt="operad" src="docs/assets/logo-dark.png#gh-dark-mode-only" width="320">
 </p>
 
 <p align="center"><b>An open orchestration layer for coding agents.</b><br>
