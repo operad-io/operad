@@ -1109,3 +1109,10 @@ the row fields.
 | T-0398-M10 | packages/dev/src/standing.ts | void: T-0094-M11 names dev code and a test that T-0388 deleted | none (void) |
 | T-0398-M11 | packages/dev/src/standing.ts | void: T-0094-M12 names dev code and a test that T-0388 deleted | none (void) |
 | T-0398-M12 | packages/dev/src/standing.ts | void: T-0094-M14 names dev code and a test that T-0388 deleted | none (void) |
+
+## T-0400-integrating-counts-as-running — an integrating task is active, not waiting for a person
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0400-M1 | packages/dev/src/service.ts | `isActiveTask` leaves out `isIntegrating(task)`, so the plan and the repository do not count an integrating task as active | `an integrating task counts as running, not as waiting for a person > integrating: running marks and no waiting note` |
+| T-0400-M2 | packages/dev/src/refusals.ts | `needsPerson` no longer returns false for an integrating task, so the plan note says "1 waiting" and its mark is waiting | `an integrating task counts as running, not as waiting for a person > integrating: running marks and no waiting note` |

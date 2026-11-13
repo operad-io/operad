@@ -10,7 +10,8 @@ import {
 } from "@operad-io/engine";
 import plugin from "../../src/index.ts";
 import { trackFlakyTests } from "../../src/flaky.ts";
-import { bareId, listAll, planData, taskData } from "../../src/model.ts";
+import { repositoryMark } from "../../src/marks.ts";
+import { bareId, listAll, planData, repositoryData, taskData } from "../../src/model.ts";
 import {
   addPlan,
   addRepository,
@@ -18,6 +19,8 @@ import {
   cancelTask,
   confirmPlan,
   confirmTask,
+  refreshPlanCounts,
+  refreshRepositoryCounts,
   setTaskPhase,
 } from "../../src/service.ts";
 import { cleanupTempRoots, guardLockHandles, makeGitRepository, storeAt, tempRoot } from "../support.ts";
@@ -156,5 +159,58 @@ describe("a proposed task is pending", () => {
     await confirmPlan(s.store, draft.id);
     expect((await s.items()).filter((item) => item.object === `plan:${draft.id}`)).toEqual([]);
     expect(bareId(draft.id)).toBeTruthy();
+  });
+});
+
+describe("an integrating task counts as running, not as waiting for a person", () => {
+  async function rows(s: Setup) {
+    const plan = await s.store.get("plan", s.plan.id);
+    if (plan === undefined) throw new Error("no plan");
+    await refreshPlanCounts(s.store, plan);
+    await refreshRepositoryCounts(s.store, "demo");
+    return {
+      plan: (await s.views.get(`plan:${s.plan.id}`)).row,
+      repository: {
+        mark: repositoryMark(repositoryData((await s.store.get("repo", "demo"))?.data ?? {})),
+      },
+    };
+  }
+
+  async function waitingTask(s: Setup, integrating: boolean): Promise<void> {
+    const task = (await listAll(s.store, "task"))[0];
+    if (task === undefined) throw new Error("no task");
+    const data = taskData(task.data);
+    await s.store.put(
+      "task",
+      task.id,
+      {
+        ...data,
+        phase: "waiting",
+        run: integrating ? "run-1" : null,
+        attempt: {
+          number: 1,
+          review: { result: "passed" },
+          ...(integrating ? { integrating: "run-1" } : {}),
+        },
+      },
+      "test:waiting",
+    );
+  }
+
+  test("integrating: running marks and no waiting note", async () => {
+    const s = await setup();
+    await waitingTask(s, true);
+    const { plan, repository } = await rows(s);
+    expect(plan.mark).toBe("running");
+    expect(plan.note ?? "").not.toContain("waiting");
+    expect(repository.mark).toBe("running");
+  });
+
+  test("ready to merge with auto off: the plan waits", async () => {
+    const s = await setup();
+    await waitingTask(s, false);
+    const { plan } = await rows(s);
+    expect(plan.mark).toBe("waiting");
+    expect(plan.note).toContain("1 waiting");
   });
 });
