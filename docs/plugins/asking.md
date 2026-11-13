@@ -100,7 +100,7 @@ against the profile as usual, and a different call is too.
 
 A step type that cannot run again from where it left (`resumable: false` in its
 definition) cannot be asked with `"waiting"`: its questions are forced to
-`onTimeout: "reject_once"`. `pi`, `claude` and `radian` all resume.
+`onTimeout: "reject_once"`. `pi`, `claude`, `codex` and `radian` all resume.
 `radian` cannot enforce a one-time permission (no hook sees its tool
 calls); a step type that says `grants: false` has `ctx.ask` refuse a question
 that offers one, before anyone is asked. If a run still reaches radian with one,
