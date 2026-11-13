@@ -20,6 +20,7 @@ import type {
   StoredObject,
 } from "./types.ts";
 import { requireName } from "../util.ts";
+import { diffObject, OBJECT_CHANGE_FACT, type ObjectChange } from "./object-facts.ts";
 
 /** Options for the in-process plugin store: nothing it keeps survives the process. */
 export interface MemoryPluginStoreOptions {
@@ -73,6 +74,14 @@ export class MemoryPluginStore implements PluginStore {
     requireName(cause, "cause");
 
     const previous = this.get(type, id);
+    let change: ObjectChange;
+    if (previous === undefined) {
+      change = { changed: { ...data }, removed: [] };
+    } else {
+      // An unchanged put still records its cause: dev's attempts table reads
+      // the cause of a step's put even when the step changed no field.
+      change = diffObject(previous.data, data) ?? { changed: {}, removed: [] };
+    }
     const object: StoredObject = {
       type,
       id,
@@ -87,7 +96,7 @@ export class MemoryPluginStore implements PluginStore {
       this.objects.set(type, byId);
     }
     byId.set(id, object);
-    this.append({ type, object: { type, id }, data, cause });
+    this.append({ type: OBJECT_CHANGE_FACT, object: { type, id }, data: change, cause });
     return object;
   }
 

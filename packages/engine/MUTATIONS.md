@@ -753,3 +753,24 @@ the row fields.
 | T-0381-M2 | packages/engine/src/plugin/store.ts | the memory store did not record an object's type by id when a fact was tracked, so `objectTypesOf` was empty | `presentation views > resolving an id never reads the whole fact list (T-0381) > memory: scoped, typed, undeclared, ambiguous and unknown ids` |
 | T-0389-M1 | packages/engine/src/config/config.ts | `DEFAULT_MCP.actions` named `chat:close` again, so a config without `mcp.actions` allowed an action | `operad config > a config without mcp allows no action` and `the engine's defaults name no plugin and allow no action` |
 | T-0389-M2 | packages/engine/src/config/config.ts | `setPluginEnabled` read the offered module without an own-property check, so `constructor` counted as offered | `operad config > plugin enable adds an offered plugin and refuses one that is not offered` |
+
+## T-0384 — indexed run reads
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0384-M1 | packages/engine/src/log/sqlite.ts | `runs()` reported 0 as the last sequence of every run | `runs can be listed by object, each with its last sequence` |
+| T-0384-M2 | packages/engine/src/log/sqlite.ts | `runs()` ignored the `object` option | `runs can be listed by object, each with its last sequence` |
+| T-0384-M3 | packages/engine/src/log/sqlite.ts | the directory watch took a snapshot without comparing the data version | `a watch event with an unchanged data version takes no snapshot` |
+| T-0384-M4 | packages/engine/src/log/sqlite.ts | `schemaNeedsWork` did not look for `runs_object`, so an older store never gained the index | `a store without the object index gains it on open` |
+| T-0384-M5 | packages/engine/src/views/presentation.ts | history asked for every run instead of one object's | `presentation views > history asks the log for one object's runs` |
+| T-0384-M6 | packages/engine/src/views/presentation.ts | `hasRun` read every run and filtered by object in JS | `presentation views > naming an object that only has a run asks the log for that object's runs` |
+## T-0385 — object facts hold only changes
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0385-M1 | packages/engine/src/plugin/sqlite-store.ts | a put wrote the whole object as `changed` on every change again | `object facts hold changes > put records only changed and removed fields (sqlite)` |
+| T-0385-M2 | packages/engine/src/plugin/sqlite-store.ts | an unchanged put returned the old object and wrote no fact, losing the cause dev reads | `object facts hold changes > a put that changes nothing keeps an empty change fact (sqlite)` |
+| T-0385-M3 | packages/engine/src/plugin/object-facts.ts | folding ignored the removed field names | `object facts hold changes > folding gives every version and matches the object table after random puts` |
+| T-0385-M4 | packages/engine/src/plugin/object-facts.ts | folding no longer read a fact written as an old full snapshot | `dev views > the answer section gives the same output from old full snapshots as from changes` |
+| T-0385-M5 | packages/engine/src/plugin/sqlite-store.ts | the migration returned without rewriting any full snapshot | `object facts hold changes > an old full-snapshot store is migrated once, keeping facts and appended data` |
+| T-0385-M10 | packages/engine/src/plugin/sqlite-store.ts | a put read the previous version before taking the write lock, so a concurrent commit was missing from its change | `object facts hold changes > a put diffs against the version committed while it waited for the lock` |

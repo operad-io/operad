@@ -99,6 +99,8 @@ export interface AppendResult {
 
 export interface RunsOptions {
   readonly active?: boolean;
+  /** Only the runs of this object key, such as `task:42`. */
+  readonly object?: string;
 }
 
 export interface LogBackendOptions extends FollowOptions {
@@ -115,6 +117,8 @@ export interface LogBackendOptions extends FollowOptions {
    * check is the one that cannot miss a write the watch does not report.
    */
   readonly pollMs?: number;
+  /** Called each time a subscription reads every run's last sequence. A test counts it. */
+  readonly onSnapshot?: () => void;
   /**
    * Starts a repeating timer that calls `callback` every `ms` and returns a
    * stop function. Defaults to `setInterval`. A test passes a stub it fires by

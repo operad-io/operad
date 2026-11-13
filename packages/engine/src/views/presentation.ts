@@ -1969,8 +1969,7 @@ export class Views {
     if (orphan !== undefined) return orphan;
 
     if (this.log !== undefined) {
-      const runs = await this.log.runs();
-      const found = runs.find((run) => run.object === id);
+      const found = (await this.log.runs({ object: id }))[0];
       const parsed = found === undefined ? undefined : splitId(found.object);
       if (parsed !== undefined) {
         const object = await this.store.get(parsed.type, parsed.id);
@@ -2034,8 +2033,8 @@ export class Views {
 
   private async hasRun(type: string, id: string): Promise<boolean> {
     if (this.log === undefined) return false;
-    const runs = await this.log.runs();
-    return runs.some((run) => run.object === objectKey(type, id));
+    const runs = await this.log.runs({ object: objectKey(type, id) });
+    return runs.length > 0;
   }
 
   private guardedRow(
@@ -2316,8 +2315,7 @@ export class Views {
     const runs =
       this.log === undefined
         ? []
-        : (await this.log.runs())
-            .filter((run) => run.object === objectKey(type, id))
+        : (await this.log.runs({ object: objectKey(type, id) }))
             .sort((left, right) => left.startedAt - right.startedAt);
     if (runs.length === 0 && actions.length === 0) return "No history yet.\n";
 

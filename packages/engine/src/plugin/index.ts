@@ -32,7 +32,7 @@ export { prepareSettings } from "./settings.ts";
 export { isRangeSyntax, satisfiesRange } from "./semver.ts";
 export { MemoryPluginStore } from "./store.ts";
 export type { MemoryPluginStoreOptions } from "./store.ts";
-export { SqlitePluginStore } from "./sqlite-store.ts";
+export { PLUGIN_STORE_SCHEMA_VERSION, SqlitePluginStore } from "./sqlite-store.ts";
 export type { SqlitePluginStoreOptions } from "./sqlite-store.ts";
 export { openPluginStore } from "./open-store.ts";
 export type {
@@ -59,6 +59,7 @@ export {
   whereFingerprint,
 } from "./paging.ts";
 export * from "./types.ts";
+export * from "./object-facts.ts";
 export * from "./harness.ts";
 export * from "./usage.ts";
 export * from "./filters.ts";

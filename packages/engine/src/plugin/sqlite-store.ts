@@ -32,6 +32,12 @@ import type {
 } from "./types.ts";
 import { isRecord, requireName } from "../util.ts";
 import { repeatEvery } from "../util.ts";
+import {
+  diffObject,
+  isObjectFact,
+  OBJECT_CHANGE_FACT,
+  type ObjectChange,
+} from "./object-facts.ts";
 
 export interface SqlitePluginStoreOptions extends FollowOptions {
   readonly root: string;
@@ -74,6 +80,10 @@ interface Subscription {
 }
 
 const SCHEMA = `
+  CREATE TABLE IF NOT EXISTS schema_version (
+    id      INTEGER PRIMARY KEY CHECK (id = 1),
+    version INTEGER NOT NULL
+  );
   CREATE TABLE IF NOT EXISTS objects (
     type    TEXT NOT NULL,
     id      TEXT NOT NULL,
@@ -107,6 +117,132 @@ const SCHEMA = `
 `;
 
 const SCHEMA_FILE = "plugins.sqlite";
+
+/**
+ * The plugin store's schema version. Version 1 wrote a whole object snapshot
+ * on every put; version 2 writes the changed fields and the removed names.
+ */
+export const PLUGIN_STORE_SCHEMA_VERSION = 2;
+
+interface VersionRow {
+  readonly version: number;
+}
+
+interface ObjectKeyRow {
+  readonly type: string;
+  readonly id: string;
+}
+
+interface SnapshotRow {
+  readonly sequence: number;
+  readonly data: string;
+}
+
+function readSchemaVersion(database: Database): number | undefined {
+  try {
+    const row = database
+      .query<VersionRow, []>("SELECT version FROM schema_version WHERE id = 1")
+      .get();
+    return row !== null && Number.isInteger(row.version) ? row.version : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function hasTable(database: Database, name: string): boolean {
+  return (
+    database
+      .query<{ name: string }, [string]>(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+      )
+      .get(name) !== null
+  );
+}
+
+/**
+ * Rewrites every old full-snapshot put fact as a change, one transaction per
+ * object, keeping its sequence, cause and time. A run that finds an object
+ * already rewritten leaves it alone, so the migration is safe to repeat.
+ */
+function migrateObjectFacts(database: Database): void {
+  const objects = database
+    .query<ObjectKeyRow, []>(
+      `SELECT DISTINCT object_type AS type, object_id AS id
+       FROM facts
+       WHERE object_type IS NOT NULL AND object_id IS NOT NULL
+         AND type = object_type
+       ORDER BY object_type, object_id`,
+    )
+    .all();
+  const snapshots = database.prepare(
+    `SELECT sequence, data FROM facts
+     WHERE object_type = ? AND object_id = ? AND type = ?
+     ORDER BY sequence`,
+  );
+  const update = database.prepare("UPDATE facts SET type = ?, data = ? WHERE sequence = ?");
+  for (const object of objects) {
+    writeImmediate(database, () => {
+      const rows = snapshots.all(object.type, object.id, object.type) as SnapshotRow[];
+      if (rows.length === 0) return;
+      let previous: ObjectData | undefined;
+      for (const row of rows) {
+        const data = parseData(row.data);
+        const change: ObjectChange =
+          previous === undefined
+            ? { changed: data, removed: [] }
+            : (diffObject(previous, data) ?? { changed: {}, removed: [] });
+        update.run(OBJECT_CHANGE_FACT, JSON.stringify(change), row.sequence);
+        previous = data;
+      }
+    });
+  }
+}
+
+function ensureSchema(database: Database, file: string): void {
+  let version = readSchemaVersion(database);
+  if (version === undefined) {
+    // A store with tables but no version was written before this version
+    // existed: its full-snapshot facts are version 1. A fresh store starts at
+    // the current version. The immediate transaction makes two processes
+    // opening the file at once wait, then find it done.
+    const old = hasTable(database, "facts") || hasTable(database, "objects");
+    database
+      .transaction(() => {
+        database.exec(SCHEMA);
+        database.run("INSERT OR IGNORE INTO schema_version (id, version) VALUES (1, ?)", [
+          old ? 1 : PLUGIN_STORE_SCHEMA_VERSION,
+        ]);
+      })
+      .immediate();
+    version = readSchemaVersion(database);
+  }
+  if (version === undefined) {
+    throw new Error(`plugin store ${file} has no valid schema_version`);
+  }
+  if (version > PLUGIN_STORE_SCHEMA_VERSION) {
+    throw new Error(
+      `plugin store ${file} uses schema_version ${version}, but this build supports ` +
+        `${PLUGIN_STORE_SCHEMA_VERSION}; upgrade operad to open it`,
+    );
+  }
+  // Repair a base table or index a store lost; every statement is IF NOT EXISTS.
+  database.exec(SCHEMA);
+  if (version < PLUGIN_STORE_SCHEMA_VERSION) {
+    migrateObjectFacts(database);
+    writeImmediate(database, () => {
+      database.run("UPDATE schema_version SET version = ? WHERE id = 1", [
+        PLUGIN_STORE_SCHEMA_VERSION,
+      ]);
+    });
+    version = readSchemaVersion(database);
+  }
+  if (version !== PLUGIN_STORE_SCHEMA_VERSION) {
+    throw new Error(
+      `plugin store ${file} uses schema_version ${String(version)}, but this build ` +
+        `requires ${PLUGIN_STORE_SCHEMA_VERSION}`,
+    );
+  }
+}
 
 function deepFreeze<T>(value: T): T {
   if (typeof value === "object" && value !== null && !Object.isFrozen(value)) {
@@ -154,7 +290,7 @@ export class SqlitePluginStore implements PluginStore {
     try {
       setBusyTimeout(this.db);
       enableWal(this.db);
-      this.db.exec(SCHEMA);
+      ensureSchema(this.db, file);
     } catch (error) {
       this.db.close();
       throw error;
@@ -195,16 +331,27 @@ export class SqlitePluginStore implements PluginStore {
     requireName(type, "object type");
     requireName(id, "object id");
     requireName(cause, "cause");
-    const previous = this.get(type, id);
-    const object: StoredObject = {
-      type,
-      id,
-      data: { ...data },
-      version: (previous?.version ?? 0) + 1,
-      cause,
-      at: this.clock(),
-    };
-    writeImmediate(this.db, () => {
+    const at = this.clock();
+    return writeImmediate(this.db, () => {
+      // Read the previous version under the write lock, so a put another
+      // process committed since this call began is the base of this change.
+      const previous = this.get(type, id);
+      let change: ObjectChange;
+      if (previous === undefined) {
+        change = { changed: { ...data }, removed: [] };
+      } else {
+        // An unchanged put still records its cause: dev's attempts table reads
+        // the cause of a step's put even when the step changed no field.
+        change = diffObject(previous.data, data) ?? { changed: {}, removed: [] };
+      }
+      const object: StoredObject = {
+        type,
+        id,
+        data: { ...data },
+        version: (previous?.version ?? 0) + 1,
+        cause,
+        at,
+      };
       this.db
         .query(
           `INSERT INTO objects (type, id, data, version, cause, at)
@@ -223,9 +370,9 @@ export class SqlitePluginStore implements PluginStore {
           cause,
           object.at,
         );
-      this.insertFact({ type, object: { type, id }, data, cause });
+      this.insertFact({ type: OBJECT_CHANGE_FACT, object: { type, id }, data: change, cause });
+      return object;
     });
-    return object;
   }
 
   get(type: string, id: string): StoredObject | undefined {
@@ -511,7 +658,7 @@ export class SqlitePluginStore implements PluginStore {
     for (const row of rows) {
       const fact = this.factOf(row);
       this.polledSequence = Math.max(this.polledSequence, fact.sequence);
-      if (fact.object !== undefined && fact.type === fact.object.type) {
+      if (isObjectFact(fact)) {
         for (const listener of this.listeners) listener(fact.object);
       }
       this.notifyFacts(fact);

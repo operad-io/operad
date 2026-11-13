@@ -146,6 +146,9 @@ The types a plugin imports, by the page that explains them. The values these ent
 | `ListPage` | One page of objects, ordered by id, and where to continue. | [storage](storage.md) |
 | `MemoryPluginStoreOptions` | Options for the in-process plugin store: nothing it keeps survives the process. | [storage](storage.md) |
 | `ObjectStore` | The object side of the store. A plugin reads and writes objects here and never touches the storage backend. | [storage](storage.md) |
+| `ObjectChange` | The changed top-level fields and removed field names a `put` fact holds. | [storage](storage.md#reading-changes) |
+| `ObjectFact` | A fact that records a version of its object. | [storage](storage.md#reading-changes) |
+| `ObjectFactVersion` | One object version fact and the whole object value after it. | [storage](storage.md#reading-changes) |
 | `OpenPluginStoreOptions` | A type of the plugin API; its fields are described on the page. | [storage](storage.md) |
 | `PluginFact` | One fact a plugin sees. Facts hold data and paths, never process output. The name stays apart from the storage backend's `Fact`, which is run-scoped. | [storage](storage.md) |
 | `PluginLogger` | Writes text to a file under the store and returns its path. | [storage](storage.md) |
