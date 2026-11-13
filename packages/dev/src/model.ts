@@ -241,6 +241,8 @@ export interface ReviewRunRecord {
   readonly verified?: readonly string[] | null;
   /** How many of the findings are at or above the fix level. */
   readonly counted?: number | null;
+  /** Which entry of the fallback list a fallback run used; 0 when unset. */
+  readonly fallbackIndex?: number | null;
 }
 
 /**
@@ -257,6 +259,8 @@ export interface PendingReviewRun {
   readonly args: readonly string[];
   readonly model: string;
   readonly reason: ReviewRunReason;
+  /** Which entry of the fallback list a fallback run uses; 0 when unset. */
+  readonly fallbackIndex?: number | null;
   readonly run?: string | null;
   /** The report path inside the gate worktree this call was given. */
   readonly report?: string | null;

@@ -1116,3 +1116,9 @@ the row fields.
 |---|---|---|---|
 | T-0400-M1 | packages/dev/src/service.ts | `isActiveTask` leaves out `isIntegrating(task)`, so the plan and the repository do not count an integrating task as active | `an integrating task counts as running, not as waiting for a person > integrating: running marks and no waiting note` |
 | T-0400-M2 | packages/dev/src/refusals.ts | `needsPerson` no longer returns false for an integrating task, so the plan note says "1 waiting" and its mark is waiting | `an integrating task counts as running, not as waiting for a person > integrating: running marks and no waiting note` |
+
+## T-0403-review-fallback-list — reviewer.fallback may be a list
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0403-M1 | packages/dev/src/gate.ts | `nextFallback` returns `undefined` after the first fallback (index `+ 1` becomes `+ 99`), so a list stops at its first entry | `dev/review fallback and retry > a list of fallbacks is tried in order until one writes the report` |

@@ -511,10 +511,7 @@ interface FixtureOptions {
   /** Make the fake reviewer write an invalid report on every round's first call. */
   readonly retryInvalid?: boolean;
   /** The optional second reviewer the fallback setting names. */
-  readonly fallback?: {
-    readonly use: string;
-    readonly args: readonly string[];
-  };
+  readonly fallback?: FallbackOption | readonly FallbackOption[];
   /** How long an unavailable review waits before it runs again. */
   readonly retrySecs?: number;
   /** A file the fake reviewer appends one line to per call. */
@@ -528,6 +525,11 @@ interface FixtureOptions {
   readonly home?: string;
   /** The dev plugin's settings section, as `config.json` holds it. */
   readonly settings?: Readonly<Record<string, unknown>>;
+}
+
+interface FallbackOption {
+  readonly use: string;
+  readonly args: readonly string[];
 }
 
 interface Fixture {
@@ -1547,6 +1549,72 @@ describe("dev/review fallback and retry", () => {
     } finally {
       restoreHooks();
     }
+  });
+
+  test("a list of fallbacks is tried in order until one writes the report", async () => {
+    const state = await fixture({
+      reviewerArgs: ["unavailable", "--model", "primary"],
+      fallback: [
+        { use: "fake-reviewer/agent", args: ["unavailable", "--model", "first"] },
+        { use: "fake-reviewer/agent", args: ["none", "--model", "second"] },
+      ],
+    });
+    await verify(state);
+    const result = await review(state, "review-fallback-list");
+    expect(result.result).toBe("pass");
+    expect(result.data?.model).toBe("second");
+    const message = String(result.data?.message);
+    expect(message).toContain("primary was unavailable");
+    expect(message).toContain("fallback first was unavailable");
+    expect(message).toContain("fallback second reviewed");
+    expect(state.reviewer.calls.map((call) => call.args)).toEqual([
+      ["unavailable", "--model", "primary"],
+      ["unavailable", "--model", "first"],
+      ["none", "--model", "second"],
+    ]);
+    const used = result.data?.reviewSettings as ReviewSettingsUsed;
+    expect(used.args).toEqual(["none", "--model", "second"]);
+  });
+
+  test("a fallback that fails without a report passes to the next one", async () => {
+    const state = await fixture({
+      reviewerArgs: ["unavailable", "--model", "primary"],
+      fallback: [
+        { use: "fake-reviewer/agent", args: ["not-429", "--model", "first"] },
+        { use: "fake-reviewer/agent", args: ["none", "--model", "second"] },
+      ],
+    });
+    await verify(state);
+    const result = await review(state, "review-fallback-list-failed");
+    expect(result.result).toBe("pass");
+    expect(String(result.data?.message)).toContain("fallback second reviewed");
+  }, 30_000);
+
+  test("every fallback of a list failing waits, naming each reason", async () => {
+    const state = await fixture({
+      reviewerArgs: ["unavailable", "--model", "primary"],
+      fallback: [
+        { use: "fake-reviewer/agent", args: ["unavailable", "--model", "first"] },
+        { use: "fake-reviewer/agent", args: ["unavailable", "--model", "second"] },
+      ],
+      retrySecs: 30,
+    });
+    await verify(state);
+    const restoreHooks = useHooks({ now: () => 5_000 });
+    let result: PluginStepResult;
+    try {
+      result = await review(state, "review-fallback-list-all");
+    } finally {
+      restoreHooks();
+    }
+    expect(result.result).toBe("unavailable");
+    expect(state.reviewer.calls).toHaveLength(3);
+    const message = String(result.data?.message);
+    expect(message).toContain("primary was unavailable");
+    expect(message).toContain("fallback first was unavailable");
+    expect(message).toContain("fallback second was unavailable");
+    const task = await taskOf(state);
+    expect(task.attempt?.review?.decision).toBe("unavailable");
   });
 
   test("a fallback that is also unavailable waits without a rework", async () => {
@@ -2804,6 +2872,20 @@ describe("gate settings", () => {
       validateDevSettings({ reviewer: { fallback: { use: "x/agent" } } })
         .reviewer.fallback,
     ).toEqual({ use: "x/agent", args: [] });
+    expect(
+      validateDevSettings({
+        reviewer: { fallback: [{ use: "x/agent" }, { use: "y/agent", args: ["a"] }] },
+      }).reviewer.fallback,
+    ).toEqual([
+      { use: "x/agent", args: [] },
+      { use: "y/agent", args: ["a"] },
+    ]);
+    expect(() => validateDevSettings({ reviewer: { fallback: [] } })).toThrow(
+      /reviewer\.fallback/,
+    );
+    expect(() =>
+      validateDevSettings({ reviewer: { fallback: [{ use: "x/agent" }, {}] } }),
+    ).toThrow(/reviewer\.fallback\[1\]\.use/);
     expect(() => validateDevSettings({ maxAutoRework: -1 })).toThrow(
       /maxAutoRework/,
     );

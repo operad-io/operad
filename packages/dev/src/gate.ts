@@ -38,6 +38,7 @@ import {
   type DevSettings,
   type FixLevel,
   type ReviewerFallback,
+  reviewerFallbacks,
   type ReviewerSettings,
 } from "./settings.ts";
 import { reviewWaitKind } from "./waits.ts";
@@ -1511,6 +1512,8 @@ function replayReview(
 interface ReviewAction {
   readonly role: ReviewRunRole;
   readonly reason: ReviewRunReason;
+  /** The entry of the fallback list a fallback run uses. */
+  readonly fallbackIndex?: number;
 }
 
 type ReviewNext =
@@ -1522,6 +1525,13 @@ type ReviewNext =
   | "out-of-time"
   | "failed";
 
+/** The same run again: same role and, for a fallback, the same list entry. */
+function retryOf(last: ReviewRunRecord): ReviewAction {
+  return last.role === "fallback"
+    ? { role: "fallback", reason: "retry", fallbackIndex: last.fallbackIndex ?? 0 }
+    : { role: "primary", reason: "retry" };
+}
+
 /**
  * What the next run of a review round is. A report ends the round; an
  * unavailable primary goes to the fallback once; a timeout is retried once on
@@ -1530,24 +1540,30 @@ type ReviewNext =
  */
 function nextReviewAction(
   runs: readonly ReviewRunRecord[],
-  fallback: ReviewerFallback | undefined,
+  fallback: ReviewerFallback | readonly ReviewerFallback[] | undefined,
 ): ReviewNext {
   const last = runs[runs.length - 1];
   if (last === undefined) return { role: "primary", reason: "initial" };
+  const list = reviewerFallbacks(fallback);
+  // The fallback after the last run: the first one when the primary ran last
+  // and no fallback has run in this round (a later primary failure waits
+  // instead of trying them again), the next one after a fallback's failure.
+  const nextFallback = (): ReviewAction | undefined => {
+    const index =
+      last.role === "primary"
+        ? runs.some((run) => run.role === "fallback")
+          ? list.length
+          : 0
+        : (last.fallbackIndex ?? 0) + 1;
+    return index < list.length
+      ? { role: "fallback", reason: "fallback", fallbackIndex: index }
+      : undefined;
+  };
   switch (last.outcome) {
     case "report":
       return "done";
     case "unavailable":
-      // A round uses its fallback exactly once, even when it runs again after
-      // `retryAt`: a later primary failure waits instead of trying it again.
-      if (
-        last.role === "primary" &&
-        fallback !== undefined &&
-        !runs.some((run) => run.role === "fallback")
-      ) {
-        return { role: "fallback", reason: "fallback" };
-      }
-      return "wait-unavailable";
+      return nextFallback() ?? "wait-unavailable";
     case "timed_out": {
       const before = runs[runs.length - 2];
       if (
@@ -1557,7 +1573,7 @@ function nextReviewAction(
       ) {
         return "wait-timed-out";
       }
-      return { role: last.role, reason: "retry" };
+      return retryOf(last);
     }
     case "invalid":
     case "no_report": {
@@ -1567,12 +1583,12 @@ function nextReviewAction(
         (before.outcome === "invalid" || before.outcome === "no_report") &&
         before.role === last.role
       ) {
-        return "failed";
+        return (last.role === "fallback" ? nextFallback() : undefined) ?? "failed";
       }
-      return { role: last.role, reason: "retry" };
+      return retryOf(last);
     }
     case "failed":
-      return "failed";
+      return (last.role === "fallback" ? nextFallback() : undefined) ?? "failed";
   }
 }
 
@@ -1851,7 +1867,9 @@ export async function runReview(
     // A report from the fallback harness ran with the fallback's harness and
     // arguments; only the limits carried over from the round.
     const lastRun = recorded.runs?.[recorded.runs.length - 1];
-    const fallback = context.settings.reviewer.fallback;
+    const fallback = reviewerFallbacks(context.settings.reviewer.fallback)[
+      lastRun?.fallbackIndex ?? 0
+    ];
     if (used !== undefined && lastRun?.role === "fallback" && fallback !== undefined) {
       used = {
         ...used,
@@ -2268,18 +2286,22 @@ export async function runReview(
     const resume =
       pendingReview !== undefined &&
       pendingReview.role === action.role &&
-      pendingReview.reason === action.reason
+      pendingReview.reason === action.reason &&
+      (pendingReview.fallbackIndex ?? 0) === (action.fallbackIndex ?? 0)
         ? pendingReview
         : undefined;
     pendingReview = undefined;
-    const use =
-      resume?.use ??
-      (action.role === "fallback"
-        ? settings.fallback?.use ?? roundSettings.use
-        : roundSettings.use);
+    const chosen =
+      action.role === "fallback"
+        ? reviewerFallbacks(settings.fallback)[action.fallbackIndex ?? 0]
+        : undefined;
+    const use = resume?.use ?? chosen?.use ?? roundSettings.use;
     const args =
-      resume?.args ??
-      (action.role === "fallback" ? settings.fallback?.args ?? [] : roundArgs);
+      resume?.args ?? (action.role === "fallback" ? chosen?.args ?? [] : roundArgs);
+    const fallbackFields =
+      action.fallbackIndex === undefined
+        ? {}
+        : { fallbackIndex: action.fallbackIndex };
     const model = resume?.model ?? modelOf(use, args);
     // One path per call: the calls before it in this round are the try number,
     // so a stale report of an earlier call is never read and never removed.
@@ -2338,6 +2360,7 @@ export async function runReview(
           args,
           model,
           reason: action.reason,
+          ...fallbackFields,
           run: ctx.runId,
           report: reportPath,
         },
@@ -2418,6 +2441,7 @@ export async function runReview(
         args,
         model,
         reason: action.reason,
+        ...fallbackFields,
         outcome: "report",
         run: ctx.runId,
         findings,
@@ -2433,6 +2457,7 @@ export async function runReview(
         args,
         model,
         reason: action.reason,
+        ...fallbackFields,
         outcome: call.outcome,
         run: ctx.runId,
         ...(call.message.length === 0 ? {} : { message: call.message }),

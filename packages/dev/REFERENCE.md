@@ -447,8 +447,9 @@ The reviewer is unavailable when the harness reports a model error of kind
 `model_error` through as `modelError`). When a harness reports none, the last
 lines of its error output count only if one reads `HTTP 429`, `status 429` or
 `too many requests`; a `429` elsewhere in the data (a line number, a duration)
-does not. The same round runs once on `reviewer.fallback` at once. If the
-repository sets no fallback, or the fallback is unavailable too, the task waits
+does not. The same round runs once on `reviewer.fallback` at once; a list runs its
+entries in order, the next one after a fallback that is unavailable or does not
+write the report. If the repository sets no fallback, or every fallback failed, the task waits
 with `retryAt` set to `now + reviewer.retrySecs` and does not rework. When the
 time comes, `dev/review_due` lets the flow run the review again, with no new
 attempt and no other step. A round uses its fallback at most once: a retry that
