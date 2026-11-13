@@ -1,5 +1,6 @@
 /** The dev plugin: repositories, plans, tasks and their commands and views. */
 
+import pkg from "../package.json" with { type: "json" };
 import { definePlugin } from "@operad-io/engine";
 import { PLAN_FILTERS, REPO_FILTERS, TASK_FILTERS } from "./model.ts";
 import devFlow from "../flows/dev.flow.ts";
@@ -25,7 +26,7 @@ export function createDevPlugin() {
   return definePlugin({
     name: "dev",
     kind: "domain",
-    version: "0.0.0",
+    version: pkg.version,
     objects: [
       {
         name: "repo",

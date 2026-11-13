@@ -1,5 +1,6 @@
 /** The chat plugin: a long conversation with an agent, and how a message is answered. */
 
+import pkg from "../package.json" with { type: "json" };
 import { defineFlow, definePlugin, type ActionArgsSchema, type ActionContext, type ActionTypeDefinition } from "@operad-io/engine";
 import {
   CHAT_FILTERS,
@@ -320,7 +321,7 @@ export function createChatPlugin() {
   return definePlugin({
     name: "chat",
     kind: "domain",
-    version: "0.0.0",
+    version: pkg.version,
     objects: [{ name: CHAT_TYPE, index: ["parent"], filters: CHAT_FILTERS }],
     settings: {
       type: "object",

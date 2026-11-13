@@ -7,6 +7,7 @@
  * child program, never by the hub.
  */
 
+import pkg from "../package.json" with { type: "json" };
 import { secretValuesOf } from "@operad-io/access-match";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -229,7 +230,7 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
   return definePlugin({
     name: HARNESS,
     kind: "harness",
-    version: "0.0.0",
+    version: pkg.version,
     models: CLAUDE_MODELS,
     efforts: CLAUDE_EFFORTS,
     settings: PLUGIN_SETTINGS,

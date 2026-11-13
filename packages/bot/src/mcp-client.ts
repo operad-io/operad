@@ -4,6 +4,7 @@
  * mounts. It speaks newline-delimited JSON-RPC and nothing else of MCP.
  */
 
+import pkg from "../package.json" with { type: "json" };
 import { spawn, type ChildProcess } from "node:child_process";
 import { createInterface } from "node:readline";
 import { isRecord, messageOf } from "@operad-io/engine";
@@ -147,7 +148,7 @@ export class StdioServer {
     const reply = await this.request("initialize", {
       protocolVersion: MCP_PROTOCOL_VERSION,
       capabilities: {},
-      clientInfo: { name: client, version: "0.0.0" },
+      clientInfo: { name: client, version: pkg.version },
     });
     if ("result" in reply) this.send({ jsonrpc: "2.0", method: "notifications/initialized" });
     return reply;

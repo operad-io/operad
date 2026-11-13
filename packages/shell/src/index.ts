@@ -4,6 +4,7 @@
  * a command itself.
  */
 
+import pkg from "../package.json" with { type: "json" };
 import { createHash } from "node:crypto";
 import { stat } from "node:fs/promises";
 import { definePlugin, paramsObject, type PluginLogger, type PluginStepResult, type StepContext } from "@operad-io/engine";
@@ -161,7 +162,7 @@ export function createShellPlugin(options: ShellPluginOptions = {}) {
   return definePlugin({
     name: "shell",
     kind: "stage",
-    version: "0.0.0",
+    version: pkg.version,
     steps: [
       {
         name: "command",
