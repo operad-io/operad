@@ -13,6 +13,7 @@
         "@operad-io/harness-radian": "workspace:*",
         "@operad-io/pool": "workspace:*",
         "@operad-io/source-cron": "workspace:*",
+        "@operad-io/telegram": "workspace:*",
       },
       "devDependencies": {
         "@operad-io/chat": "workspace:*",
@@ -63,6 +64,7 @@
         "@operad-io/mcp": "workspace:*",
         "@operad-io/pool": "workspace:*",
         "@operad-io/shell": "workspace:*",
+        "@operad-io/telegram": "workspace:*",
       },
     },
     "packages/dev": {
@@ -163,6 +165,15 @@
       "name": "@operad-io/source-cron",
       "version": "0.0.0",
       "dependencies": {
+        "@operad-io/engine": "workspace:*",
+      },
+    },
+    "packages/telegram": {
+      "name": "@operad-io/telegram",
+      "version": "0.0.1",
+      "dependencies": {
+        "@operad-io/bot": "workspace:*",
+        "@operad-io/chat": "workspace:*",
         "@operad-io/engine": "workspace:*",
       },
     },
@@ -319,6 +330,8 @@
     "@operad-io/shell": ["@operad-io/shell@workspace:packages/shell"],
 
     "@operad-io/source-cron": ["@operad-io/source-cron@workspace:packages/source-cron"],
+
+    "@operad-io/telegram": ["@operad-io/telegram@workspace:packages/telegram"],
 
     "@operad-io/tui": ["@operad-io/tui@workspace:packages/tui"],
 

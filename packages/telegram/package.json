@@ -1,0 +1,26 @@
+{
+  "name": "@operad-io/telegram",
+  "version": "0.0.1",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@operad-io/bot": "workspace:*",
+    "@operad-io/chat": "workspace:*",
+    "@operad-io/engine": "workspace:*"
+  },
+  "description": "operad: the Telegram plugin, a channel and an outside source (in development)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/operad-io/operad.git",
+    "directory": "packages/telegram"
+  },
+  "license": "MIT",
+  "files": [
+    "src",
+    "telegram.schema.json",
+    "README.md",
+    "LICENSE"
+  ]
+}

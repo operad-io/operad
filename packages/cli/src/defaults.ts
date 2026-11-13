@@ -14,7 +14,7 @@ export const DEFAULT_PLUGINS: readonly string[] = ["shell", "radian", "chat", "d
  * Plugins shipped with operad that `operad init` does not install. They are
  * not in the default config; `plugin enable <name>` adds them.
  */
-export const OPTIONAL_PLUGINS: readonly string[] = ["pi", "claude", "codex", "pool", "bot"];
+export const OPTIONAL_PLUGINS: readonly string[] = ["pi", "claude", "codex", "pool", "bot", "telegram"];
 
 /** The plugins whose package is installed into the home rather than shipped with the CLI. */
 export const INSTALL_ON_ENABLE: readonly string[] = ["claude"];

@@ -158,7 +158,7 @@ still loads, and `serve` and `operad plugin check` print the line that says why.
 `operad plugin check` are on [the CLI page](cli.md).
 
 `operad init` installs `shell`, `radian`, `chat` and `dev`. `pi`, `claude`, `codex`,
-`pool` and `bot` are shipped but not installed; enable one with
+`pool`, `bot` and `telegram` are shipped but not installed; enable one with
 `operad plugin enable <name>`.
 
 ### `store`
@@ -261,6 +261,20 @@ The default profile and the meaning of each access field are on
 | `chat.speaker` | string | `"Operad Bot"` | non-empty text | When a chat transcript is rendered | Refused by the schema |
 
 A bot chat uses its bot's `speaker` instead. See [Chats and bots](chats-and-bots.md).
+
+### `telegram`
+
+The Telegram plugin is optional; enable it with `operad plugin enable telegram`.
+Its Bot API token is the plugin's secret `token`, set with
+`operad secret set telegram token`; the token never reaches history, a log line
+or an error. The plugin records a message from anyone else, and every group
+message, and starts nothing.
+
+| Key | Type | Default | Allowed values | When it takes effect | Wrong value |
+|---|---|---|---|---|---|
+| `telegram.users` | array of integers | `[]` | Telegram user ids | At the next message | Refused by the schema; an unlisted user is recorded and starts nothing |
+| `telegram.bot` | string | `"default"` | a bot name from the `bot` section | When a listed user writes first | Refused by the schema; a bot that is not written is refused when the first message opens the chat |
+| `telegram.pending` | array of strings | `[]` | plugin names, such as `dev` | When a pending item appears | Refused by the schema |
 
 ### `dev`
 
