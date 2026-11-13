@@ -1080,3 +1080,9 @@ the row fields.
 | T-0387-M2 | packages/dev/src/mainclone.ts | a fast-forwarded clone ran no prepare line | `a fast-forwarded clone runs each prepare line in order in the clone` |
 | T-0387-M3 | packages/dev/src/mainclone.ts | removed the empty-`prepare` early return, so a repository without `prepare` still ran a command | `no prepare lines run no command` |
 | T-0387-M4 | packages/dev/src/mainclone.ts | a clone already at the target ran the prepare lines too | `a clone that did not move runs nothing` |
+
+## T-0390-boundary-and-example — the boundary test and the non-JavaScript example
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0390-M1 | packages/dev/src/gate.ts | a comment naming `bun test` and `packages/dev` was put back | `the kernel boundary > the dev plugin's source has no bun, bun.lock, scripts/, CLAUDE.md or packages/` |

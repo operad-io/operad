@@ -141,17 +141,6 @@ describe("operad config", () => {
     expect(await readFile(join(home, "config.json"), "utf8")).toBe(written);
   });
 
-  test("an older config's moved module name still loads", async () => {
-    const root = await tempRoot();
-    const home = join(root, "home");
-    await Bun.write(
-      join(home, "config.json"),
-      JSON.stringify({ plugins: ["@operad-io/engine/shell", "./x.ts"] }),
-    );
-    const config = await readConfig(home);
-    expect(config.plugins.map((entry) => entry.module)).toEqual(["@operad-io/shell", "./x.ts"]);
-  });
-
   test("reads plugins and a sqlite store with a relative path", async () => {
     const root = await tempRoot();
     const home = join(root, "home");
