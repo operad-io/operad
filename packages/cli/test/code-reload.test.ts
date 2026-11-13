@@ -19,6 +19,7 @@ import { fakeClock } from "../../engine/src/testing/index.ts";
 import { cleanupTempRoots, tempRoot } from "../../engine/test/plugin/support.ts";
 import {
   serveSnapshots,
+  listenForStop,
   loadsAsWellAs,
   problemKey,
   takeCodeSnapshot,
@@ -235,4 +236,25 @@ describe("a serve restored after a restart could not listen", () => {
       await s.done();
     });
   }
+});
+
+describe("the stop signal handlers of a serve", () => {
+  test("a supervised serve keeps them after its stop is done; another serve does not", () => {
+    const stop = (): void => undefined;
+    const intBefore = process.listenerCount("SIGINT");
+    const termBefore = process.listenerCount("SIGTERM");
+
+    const supervised = listenForStop(true, stop);
+    supervised();
+    expect(process.listenerCount("SIGINT")).toBe(intBefore + 1);
+    expect(process.listenerCount("SIGTERM")).toBe(termBefore + 1);
+    process.removeListener("SIGINT", stop);
+    process.removeListener("SIGTERM", stop);
+
+    const alone = listenForStop(false, stop);
+    expect(process.listenerCount("SIGINT")).toBe(intBefore + 1);
+    alone();
+    expect(process.listenerCount("SIGINT")).toBe(intBefore);
+    expect(process.listenerCount("SIGTERM")).toBe(termBefore);
+  });
 });
