@@ -422,6 +422,85 @@ test("a subscription learns of a write when the watch never fires", async () => 
   }
 });
 
+test("runs can be listed by object, each with its last sequence", async () => {
+  const directory = tracked("runs-by-object");
+  const backend = await openSqliteLogBackend(dbPath(directory), { clock: () => 1_000 });
+  try {
+    const empty = await backend.startRun("flow", "task:1");
+    await backend.endRun(empty.runId);
+    const busy = await backend.startRun("flow", "task:1");
+    await backend.append(busy.runId, 0, [
+      { kind: "a", payload: {}, cause: "test" },
+      { kind: "b", payload: {}, cause: "test" },
+    ]);
+    const other = await backend.startRun("flow", "task:2");
+    await backend.append(other.runId, 0, [{ kind: "a", payload: {}, cause: "test" }]);
+
+    const mine = (await backend.runs({ object: "task:1" })).sort((a, b) => a.lastSeq - b.lastSeq);
+    expect(mine.map((run) => [run.runId, run.lastSeq])).toEqual([
+      [empty.runId, 0],
+      [busy.runId, 2],
+    ]);
+    expect(mine[0]?.endedAt).not.toBeNull();
+    expect((await backend.runs({ object: "task:1", active: true })).map((run) => run.runId)).toEqual([
+      busy.runId,
+    ]);
+    expect(await backend.runs({ object: "task:none" })).toEqual([]);
+    expect((await backend.runs()).map((run) => run.lastSeq).sort()).toEqual([0, 1, 2]);
+  } finally {
+    await backend.close();
+  }
+  expect(hasObject(directory, "index", "runs_object")).toBe(true);
+});
+
+test("a store without the object index gains it on open", async () => {
+  const directory = tracked("runs-object-index");
+  await (await openSqliteLogBackend(dbPath(directory))).close();
+  withDatabase(directory, (database) => database.exec("DROP INDEX runs_object"));
+  expect(hasObject(directory, "index", "runs_object")).toBe(false);
+  await (await openSqliteLogBackend(dbPath(directory))).close();
+  expect(hasObject(directory, "index", "runs_object")).toBe(true);
+});
+
+test("a watch event with an unchanged data version takes no snapshot", async () => {
+  const directory = tracked("watch-data-version");
+  let fire: (() => void) | undefined;
+  let snapshots = 0;
+  const reader = await openSqliteLogBackend(dbPath(directory), {
+    watch: (_directory, onChange) => {
+      fire = () => onChange(null);
+      return () => undefined;
+    },
+    repeat: () => () => undefined,
+    onSnapshot: () => {
+      snapshots += 1;
+    },
+  });
+  const writer = await openSqliteLogBackend(dbPath(directory));
+  try {
+    const changes: LogChange[] = [];
+    const subscribe = reader.subscribe;
+    if (subscribe === undefined) throw new Error("the sqlite log does not subscribe");
+    subscribe.call(reader, (change) => changes.push(change));
+    if (fire === undefined) throw new Error("the watch did not start");
+    expect(snapshots).toBe(1);
+
+    fire();
+    fire();
+    expect(snapshots).toBe(1);
+
+    const run = await writer.startRun("flow", "object");
+    fire();
+    expect(snapshots).toBe(2);
+    expect(changes).toEqual([{ runId: run.runId, object: "object" }]);
+    fire();
+    expect(snapshots).toBe(2);
+  } finally {
+    await reader.close();
+    await writer.close();
+  }
+});
+
 test.skipIf(process.getuid?.() === 0)(
   "opening a store in a read-only directory fails with a clear error",
   async () => {
