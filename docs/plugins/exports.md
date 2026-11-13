@@ -12,7 +12,7 @@ A plugin imports from three entry points:
 | `@operad-io/engine/platform` | Process groups, file locks, directory watches, sqlite open settings: see [the platform module](platform.md) |
 | `@operad-io/engine/testing` | `runFlow` and the other test helpers: see [Testing a plugin](testing.md) |
 
-Types (`StepContext`, `ActionTypeDefinition`, `ObjectRow`, ...) are exported from `@operad-io/engine` too and are explained where they are used. A test (`scripts/test/plugin-docs.test.ts`) compares the values these entry points export with the first column of the tables under `docs/plugins`: a name with no entry fails, unless `scripts/test/plugin-docs.allow.json` lists it with the reason it is internal to the host (the command line, `serve`, the HTTP server, the log backends). Names a plugin package imports can never be listed there.
+Types (`StepContext`, `ActionTypeDefinition`, `ObjectRow`, ...) are exported too and listed on [Types](types.md). A test (`scripts/test/plugin-docs.test.ts`) compares the values and types these entry points export with the first column of the tables under `docs/plugins`: a name with no entry fails, unless `scripts/test/plugin-docs.allow.json` lists it with the reason it is internal to the host (the command line, `serve`, the HTTP server, the log backends). Names a plugin package imports can never be listed there.
 
 ## Declaring a plugin
 

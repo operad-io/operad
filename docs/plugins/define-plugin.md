@@ -67,7 +67,7 @@ A plugin that is well formed but cannot be used is *refused* instead: the other 
 | `models` | `{ list, default }` or a function of the settings | not set | `harness` plugins only | At load; a function on each read | `models: only a harness plugin declares models` |
 | `efforts` | `{ list, default, flag? }` | not set | `harness` plugins only; `default` is `null` or in `list`; `flag` a non-empty string | At load | `efforts: only a harness plugin declares efforts`; `efforts.default: must be null or one of the list` |
 | `enforces` | list of strings | `[]` | Names of access-profile fields the plugin's steps apply, each unique and non-empty | At load | `enforces: duplicate field "<f>"` |
-| `requires` | `{ plugins?, api? }` | not set | Ranges `^1.2.0`, `~1.2.0`, `>=1.2.0` or an exact version | At load | `requires.api: must be a supported version range (^, ~, >= or exact)` |
+| `requires` | `{ plugins?, api? }` | not set | A range: `^1.2.0`, `~1.2.0`, `>=1.2.0`, `=1.2.0` or an exact version, or several of these joined by `\|\|` (`^1.0.0 \|\| ^2.0.0`); the version needs no patch or minor part (`^1`) | At load | `requires.api: must be a supported version range (^, ~, >= or exact)` |
 | `start` | function | not set | `(ctx: SourceContext) => SourceHandle`; called only for a `source` plugin | When `serve` starts; stopped when it exits | `start: must be a function`; a throw is logged as `start failed: <message>` and the other sources start |
 | `check` | function | not set | `() => string | void`; the string is the check's note | When `operad init` checks the plugin | `check: must be a function` |
 
@@ -159,7 +159,7 @@ requires: { api: "^1.0.0", plugins: { shell: "^0.0.0" } },
 
 `api` is checked against `PLUGIN_API_VERSION` (`1.0.0`), each entry of `plugins` against the loaded plugin's `version`.
 `satisfiesRange(version, range)` and `isRangeSyntax(range)` are exported for the same check.
-A range is `^x.y.z` (up to the next major; `^0.y.z` up to the next minor; `^0.0.z` only that patch), `~x.y.z` (up to the next minor; `~x` up to the next major), `>=x.y.z` or an exact version.
+A range is one or more alternatives joined by `||`, and a version satisfies it when it satisfies any one; an empty alternative is refused. An alternative is `^x.y.z` (up to the next major; `^0.y.z` up to the next minor; `^0.0.z` only that patch), `~x.y.z` (up to the next minor; `~x` up to the next major), `>=x.y.z`, `=x.y.z` or an exact version.
 A plugin whose requirement is not met is refused (see [Refused declarations](#refused-declarations)).
 
 ## What the engine exports

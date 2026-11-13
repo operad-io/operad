@@ -383,4 +383,5 @@ says why. Returning only text still works.
 | [The rules plugins follow](rules.md) | No output at load, stdio entries, platform-only calls, facts, tests |
 | [Testing a plugin](testing.md) | Every export, option and field of `@operad-io/engine/testing` |
 | [Harness plugins and pool workers](harness.md) | The harness contract (claude, codex, pi, radian) and `pool/agent` |
-| [Exports](exports.md) | Every export a plugin uses, with its page |
+| [Exports](exports.md) | Every value a plugin imports, with its page |
+| [Types](types.md) | Every type a plugin imports, with its page |

@@ -1,7 +1,7 @@
 /**
- * The plugin docs cover what a plugin can import. Every value that
+ * The plugin docs cover what a plugin can import. Every value and type that
  * `@operad-io/engine`, `@operad-io/engine/platform` and `@operad-io/engine/testing`
- * export has an entry (a code span in the first cell of a table row) under
+ * export (values and types) has an entry (a code span in the first cell of a table row) under
  * docs/plugins, unless `plugin-docs.allow.json` lists it with the reason it is
  * internal to the host. An allowed name that is documented now, that no longer
  * exists, or that a plugin package imports fails too, so the list only shrinks.
@@ -10,6 +10,7 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
+import ts from "typescript";
 import * as main from "@operad-io/engine";
 import * as platform from "@operad-io/engine/platform";
 import * as testing from "@operad-io/engine/testing";
@@ -17,10 +18,40 @@ import * as testing from "@operad-io/engine/testing";
 const root = resolve(import.meta.dir, "..", "..");
 const pluginDocs = join(root, "docs", "plugins");
 
+const engineSrc = join(root, "packages", "engine", "src");
+const ENTRY_FILES: Readonly<Record<string, string>> = {
+  "@operad-io/engine": join(engineSrc, "index.ts"),
+  "@operad-io/engine/platform": join(engineSrc, "platform", "index.ts"),
+  "@operad-io/engine/testing": join(engineSrc, "testing", "index.ts"),
+};
+
+/** The names an entry point exports that exist only as types, read with the compiler. */
+function typeExports(): Record<string, string[]> {
+  const config = ts.readConfigFile(join(root, "tsconfig.base.json"), ts.sys.readFile);
+  const options = ts.parseJsonConfigFileContent(config.config, ts.sys, root).options;
+  const program = ts.createProgram(Object.values(ENTRY_FILES), { ...options, noEmit: true });
+  const checker = program.getTypeChecker();
+  const found: Record<string, string[]> = {};
+  for (const [entry, file] of Object.entries(ENTRY_FILES)) {
+    const source = program.getSourceFile(file);
+    const module = source === undefined ? undefined : checker.getSymbolAtLocation(source);
+    const names: string[] = [];
+    for (const symbol of module === undefined ? [] : checker.getExportsOfModule(module)) {
+      const target = symbol.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol;
+      if ((target.flags & ts.SymbolFlags.Value) === 0) names.push(symbol.name);
+    }
+    found[entry] = names;
+  }
+  return found;
+}
+
+const TYPES = typeExports();
+
+/** Every name an entry point exports: its values and its types. */
 const ENTRIES: Readonly<Record<string, readonly string[]>> = {
-  "@operad-io/engine": Object.keys(main),
-  "@operad-io/engine/platform": Object.keys(platform),
-  "@operad-io/engine/testing": Object.keys(testing),
+  "@operad-io/engine": [...Object.keys(main), ...(TYPES["@operad-io/engine"] ?? [])],
+  "@operad-io/engine/platform": [...Object.keys(platform), ...(TYPES["@operad-io/engine/platform"] ?? [])],
+  "@operad-io/engine/testing": [...Object.keys(testing), ...(TYPES["@operad-io/engine/testing"] ?? [])],
 };
 
 /** Packages that are hosts of plugins, not plugins: they may use what a plugin does not. */
@@ -87,8 +118,9 @@ export function importedByPlugins(): Map<string, string> {
       for (const match of text.matchAll(/import\s+(?:type\s+)?\{([^}]*)\}\s+from\s+"(@operad-io\/engine(?:\/platform|\/testing)?)"/g)) {
         for (const raw of (match[1] ?? "").split(",")) {
           const name = raw.trim().split(/\s+as\s+/)[0]?.trim() ?? "";
-          if (/^type\s/.test(name) || name === "" || /^[A-Z][A-Za-z]*$/.test(name) && !(name in main) && !(name in platform)) continue;
-          found.set(`${match[2] ?? ""}:${name}`, relative(root, file));
+          const bare = name.replace(/^type\s+/, "");
+          if (bare === "") continue;
+          found.set(`${match[2] ?? ""}:${bare}`, relative(root, file));
         }
       }
     }
