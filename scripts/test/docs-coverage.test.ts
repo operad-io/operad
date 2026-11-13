@@ -129,6 +129,7 @@ interface SchemaItem {
 /** Keys of config.json whose section has a page of its own. */
 const CONFIG_SECTION_PAGES: Readonly<Record<string, string>> = {
   http: "http.md",
+  mcp: "mcp.md",
   notify: "notifications.md",
 };
 

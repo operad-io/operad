@@ -225,7 +225,11 @@ reads is below.
 | `Home` / `End` | key | none | The top of the open section, or its end; `End` resumes following a live section. |
 | `[` / `]` | key | none | Switch to the previous or next section tab. |
 | `←` / `→` | key | none | The same as `[` / `]`. |
-| `f` | key | none | Load a capped section with `full=true`. |
+| `p` | key | none | Pick a page of the open section, when it has pages. |
+| `n` / `N` | key | none | The next or previous page of the open section, when it has pages. |
+| `t` | key | none | Switch the child list between `tree` and `list`; the choice is saved in `tui.json`. Only when the open object has children. |
+| `c` | key | none | On a chat tab, start a new chat; the palette lists the parent (a repository or a bot). |
+| `f` | key | none | Load a capped section with `full=true`; otherwise, on a tab with filters, the next filter. |
 | `g` | key | none | The first row; under 100 columns with an object open, the top of the section. |
 | `G` | key | none | The last row; under 100 columns with an object open, the end of the section (it resumes following a live section). |
 | `r` | key | none | Fetch every list again, and the open object with its live sections. When the open section failed to load, it asks for that section again too. |
@@ -280,7 +284,7 @@ Events that arrive together are served in one batch, at most one batch every
 | Server unreachable | One footer line, `no server at <url>: is `operad serve` running? retrying`. The last lists stay on screen, dimmed. The screen asks again after 250 ms, then 500 ms, 1 s, 2 s, 4 s and every 5 s, and returns to normal when the server answers. |
 | 401 | `the token was rotated: run the TUI again or pass --token`. Nothing is retried; `q` quits. |
 | Empty Pending | `nothing waits for you` |
-| Empty list of an object type | `no <type title> yet` |
+| Empty list of an object type | `nothing in <type>`, or `nothing <filter> in <type>` when a filter is on |
 | A section that failed to load | The server's message and `r retries` in place of the section; `r` asks for that section again (and fetches the lists again). |
 
 `q`, Ctrl-C, SIGINT and SIGTERM all end the screen the same way: the event
