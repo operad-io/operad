@@ -854,7 +854,7 @@ describe("dev/work with workers", () => {
     const object = await state.store.get("task", state.taskKey);
     if (object === undefined) throw new Error("task disappeared");
     const row = taskViews.row(object);
-    expect(row.mark).toBe("blocked");
+    expect(row.mark).toBe("retry_wait");
     expect(row.note).toContain("waiting for worker second: held by T-0205");
     const logPath = join(state.store.root, "logs", "dev", "runs", "run-2", "work.log");
     expect(readFileSync(logPath, "utf8")).toContain("waiting for worker second: held by T-0205");

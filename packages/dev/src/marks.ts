@@ -49,8 +49,8 @@ function runningMark(task: TaskData): RowMark {
   // record stays, but the step is no longer integrate.
   if (isIntegrating(task)) return "integrating";
   if (typeof attempt?.workRetryAt === "number") return "retry_wait";
-  // The work step waits for a worker another task holds.
-  if (typeof attempt?.workerWait === "string" && attempt.workerWait.length > 0) return "blocked";
+  // The work step waits for a worker another task holds: a started task in a queue.
+  if (typeof attempt?.workerWait === "string" && attempt.workerWait.length > 0) return "retry_wait";
   if (attempt === undefined || typeof attempt.worktree !== "string") {
     return "starting";
   }
@@ -85,7 +85,7 @@ export function taskMark(task: TaskData): RowMark {
     placeWait !== null &&
     (task.phase === "running" || task.phase === "review" || task.phase === "waiting")
   ) {
-    return "blocked";
+    return "retry_wait";
   }
   return TASK_MARKS[task.phase](task);
 }

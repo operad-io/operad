@@ -839,9 +839,9 @@ describe("dev views", () => {
     await taskPlaceWait(ctx, other.id, null);
     await taskPlaceWait(ctx, task.id, "check place", { since: 1, ahead: 0 });
     await taskPlaceWait(ctx, other.id, "check place", { since: 2, ahead: 1 });
-    expect(await row(task.id)).toMatchObject({ mark: "blocked", note: "$0.00 · waiting for a check place" });
+    expect(await row(task.id)).toMatchObject({ mark: "retry_wait", note: "$0.00 · waiting for a check place" });
     expect(await row(other.id)).toMatchObject({
-      mark: "blocked",
+      mark: "retry_wait",
       note: "$0.00 · waiting for a check place, 1 ahead",
     });
 
