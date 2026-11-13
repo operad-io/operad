@@ -5,7 +5,7 @@
  */
 
 import type { ViewAction, ViewRow } from "@operad-io/engine";
-import { argFields, parseArg, type ArgField } from "./args.ts";
+import { argFields, narrowField, parseArg, type ArgField } from "./args.ts";
 import type { TuiSetting, TuiTypeInfo } from "./client.ts";
 import { sanitize } from "./sanitize.ts";
 import type { TuiAnswer, TuiBinding, TuiInput, TuiState } from "./state.ts";
@@ -741,12 +741,13 @@ function argsInput(
   note: ArgsInput["note"],
   confirm: boolean,
 ): ArgsInput {
-  const field = fields[at];
+  const asked = fields[at];
+  const field = asked === undefined ? undefined : narrowField(asked, values);
   return {
     kind: "args",
     action,
     id,
-    fields,
+    fields: field === undefined ? fields : fields.map((one, index) => (index === at ? field : one)),
     at,
     values,
     cursor: field?.optional === true && field.current === undefined ? -1 : (field?.current ?? 0),
@@ -763,10 +764,13 @@ function answer(state: TuiState, input: ArgsInput, value: unknown): TuiState {
   const values = value === undefined
     ? { ...input.values }
     : { ...input.values, [field.name]: value };
-  if (input.at + 1 < input.fields.length) {
+  let at = input.at + 1;
+  // A field the answered branch gives nothing to pick is not asked.
+  while (at < input.fields.length && narrowField(input.fields[at] as ArgField, values).skipped === true) at += 1;
+  if (at < input.fields.length) {
     return {
       ...state,
-      input: argsInput(input.action, input.id, input.fields, input.at + 1, values, input.note, input.confirm),
+      input: argsInput(input.action, input.id, input.fields, at, values, input.note, input.confirm),
     };
   }
   return afterArgs({ ...state, input: undefined }, input.action, input.id, values, input.note, input.confirm);

@@ -113,3 +113,9 @@ the row fields.
 | T-0363-M10 | packages/chat/src/views.ts | the tail was not masked | `chat transcript: after, mark and tail > a secret is masked in the tail` |
 | T-0363-M11 | packages/chat/src/tail.ts | the whole log was read, not its end | `chat transcript: after, mark and tail > reading the tail of a log of 50 000 lines reads a bounded number of bytes` |
 | T-0363-M12 | packages/chat/src/reply.ts | the reply step did not record its run, so no log was found | `chat transcript: after, mark and tail > text being written is in the tail and not in the markdown` |
+## T-0369 — the new-chat form narrows model and effort by agent
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0369-M1 | packages/chat/src/model.ts | a configured model was the default of every agent, not only the one that lists it | `bot:chat per-agent conditionals > one if/then per agent carries its lists and defaults; a bot's model is the default only of the agent that lists it` |
+| T-0369-M2 | packages/chat/src/model.ts | an agent that lists nothing still got a `model`/`effort` in its `then` | `bot:chat per-agent conditionals > one if/then per agent carries its lists and defaults; a bot's model is the default only of the agent that lists it` |

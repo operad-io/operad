@@ -123,6 +123,24 @@ describe("dev:chat and the model", () => {
   });
 });
 
+describe("dev:chat per-agent conditionals", () => {
+  test("one if/then per offered agent carries its lists and defaults", async () => {
+    const r = await rig();
+    const views = new Views({ registry: r.registry, store: r.store, onLog: () => undefined });
+    const chat = (await views.get("repo:repository")).actions.find((a) => a.name === "dev:chat");
+    const all = chat?.args?.allOf ?? [];
+    expect(all.map((c) => c.if?.properties?.agent?.const)).toEqual(["claude", "pi"]);
+    expect(all[1]?.then?.properties?.model).toEqual({ type: "string", enum: ["pi-a", "pi-b"], default: "pi-a" });
+    expect(all[1]?.then?.properties?.effort).toEqual({ type: "string", enum: ["pi-low", "pi-high"], default: "pi-low" });
+    expect(all[0]?.then?.properties?.model?.enum).toEqual(["claude-a", "claude-b"]);
+  });
+
+  test("claude with a pi model is refused by name", async () => {
+    const r = await rig();
+    await expect(openChat(r, { agent: "claude", model: "pi-a" })).rejects.toThrow(/pi-a/);
+  });
+});
+
 describe("dev:chat and the effort", () => {
   test("a new chat starts with the agent's default effort, or the one asked for from that agent's list", async () => {
     const r = await rig();
