@@ -45,6 +45,9 @@ const PLUGINS = "shell|radian|pi|claude|codex|chat|dev|pool|bot";
 const ENGINE_FORBIDDEN: readonly RegExp[] = [
   new RegExp(`(["'\`])(?:${PLUGINS})\\1`),
   new RegExp(`["'\`](?:${PLUGINS}):[A-Za-z]`),
+  // A plugin's package name, or one of its steps (`dev/verify`), inside a string.
+  new RegExp(`["'\`][^"'\`\\n]*@operad-io/(?:${PLUGINS})\\b`),
+  new RegExp(`["'\`](?:${PLUGINS})/[a-z_]+["'\`]`),
 ];
 
 /** Comments explain; only code can depend. Line comments start at a space or the line start, so `https://` stays. */
@@ -91,6 +94,10 @@ describe("the kernel boundary", () => {
     for (const text of ['const a = "shell";', "const a = 'dev';", 'run("dev:plan")', "x = `pool`"]) {
       expect(engineViolations(sample(text))).toHaveLength(1);
     }
+    for (const text of ['m = "@operad-io/shell";', 'step("dev/verify")']) {
+      expect(engineViolations(sample(text))).toHaveLength(1);
+    }
+    expect(engineViolations(sample('x = "@operad-io/engine"; y = "a/b"; z = "pi/2"'))).toEqual([]);
     expect(engineViolations(sample('// the type is "chat"\n/* "dev" */ const a = "device";'))).toEqual([]);
     expect(engineViolations(sample('const url = "https://pi.example";'))).toEqual([]);
   });

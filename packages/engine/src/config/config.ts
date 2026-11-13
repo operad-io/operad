@@ -153,15 +153,6 @@ export function storeRootOf(config: OperadConfig): string {
   return dirname(config.store.path);
 }
 
-/** Module names an older version wrote that moved; a config keeps working. */
-const MOVED_MODULES: Readonly<Record<string, string>> = {
-  "@operad-io/engine/shell": "@operad-io/shell",
-};
-
-function currentModule(module: string): string {
-  return MOVED_MODULES[module] ?? module;
-}
-
 function readPlugins(value: unknown, file: string): readonly PluginConfigEntry[] {
   if (value === undefined) return [];
   if (Array.isArray(value)) {
@@ -176,7 +167,7 @@ function readPlugins(value: unknown, file: string): readonly PluginConfigEntry[]
     }
     return value.map((module) => ({
       name: undefined,
-      module: currentModule(module),
+      module: module,
       enabled: true,
       settings: {},
     }));
@@ -193,7 +184,7 @@ function readPlugins(value: unknown, file: string): readonly PluginConfigEntry[]
       if (raw.trim().length === 0) {
         throw new ConfigError(`${file}: plugins.${name}: must be a non-empty module name or path`);
       }
-      entries.push({ name, module: currentModule(raw), enabled: true, settings: {} });
+      entries.push({ name, module: raw, enabled: true, settings: {} });
       continue;
     }
     if (!isRecord(raw)) {
@@ -214,7 +205,7 @@ function readPlugins(value: unknown, file: string): readonly PluginConfigEntry[]
     }
     entries.push({
       name,
-      module: currentModule(module ?? name),
+      module: module ?? name,
       enabled: enabled !== false,
       settings: raw.settings === undefined ? {} : raw.settings,
     });
