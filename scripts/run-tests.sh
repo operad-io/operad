@@ -25,9 +25,9 @@
 #
 # Every run ends its output with the ten slowest tests of the run (file, test,
 # seconds; scripts/slowest-tests.ts). That only lists: it never fails the check.
-# While a step writes nothing, a heartbeat line prints every
-# OPERAD_TEST_HEARTBEAT_SECS seconds (default 60, 0 turns it off), so the
-# light step's report at the end cannot trip a gate's stall limit.
+# A heartbeat line prints every OPERAD_TEST_HEARTBEAT_SECS seconds (default
+# 60, 0 turns it off) only while a step's report or output file grows, so a
+# silent hang still trips a gate's stall limit.
 # Every full run (no package name) also appends one line to the times file
 # (OPERAD_TEST_TIMES, default ~/.operad-test-times; see scripts/test-times.ts,
 # which prints the median, the fastest and the number of runs).
@@ -94,10 +94,18 @@ fi
 reports=$(mktemp -d)
 heartbeat_pid=
 started=$(date +%s)
-# A step that writes only at its end (the light step's junit report, for one)
-# must not look stalled to a gate command. The heartbeat runs in a process
-# group of its own, so stopping it also stops the sleep it waits in. 0 turns
-# it off.
+# The heartbeat runs in a process group of its own, so stopping it also stops
+# the sleep it waits in. It prints only when the report or output of a step
+# grew, so a worker spinning without writing anything is still a stall.
+report_bytes() {
+  local total=0 file size
+  for file in "$reports"/*; do
+    [ -f "$file" ] || continue
+    size=$(wc -c <"$file" 2>/dev/null | tr -d ' ')
+    total=$((total + ${size:-0}))
+  done
+  echo "$total"
+}
 stop_heartbeat() {
   if [ -n "$heartbeat_pid" ]; then
     kill -TERM -"$heartbeat_pid" 2>/dev/null || kill -TERM "$heartbeat_pid" 2>/dev/null || true
@@ -113,9 +121,14 @@ trap cleanup EXIT
 if [ "$heartbeat" != 0 ]; then
   set -m
   (
+    seen=$(report_bytes)
     while :; do
       sleep "$heartbeat"
-      printf 'run-tests: still running (%ss)\n' "$(($(date +%s) - started))"
+      now=$(report_bytes)
+      [ "$now" -gt "$seen" ] || continue
+      printf 'run-tests: still running (%ss, %s bytes of output)\n' \
+        "$(($(date +%s) - started))" "$now"
+      seen=$now
     done
   ) &
   heartbeat_pid=$!

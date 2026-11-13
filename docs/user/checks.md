@@ -103,8 +103,8 @@ records the failing line, its exit code and the last output; see
 to do. A check command that writes nothing for the repository's
 `gate.stallSecs` is stopped, its process group included; a stop of the local
 `remote-check.sh` ends the remote command too. `run-tests.sh` prints a heartbeat
-line every `OPERAD_TEST_HEARTBEAT_SECS` seconds so its light step, which writes
-its report only at the end, does not trip that limit.
+line every `OPERAD_TEST_HEARTBEAT_SECS` seconds only while a step's report or
+output grows, so a silent hang still trips that limit.
 
 A test that failed and then passed on a rerun is a bug until shown otherwise.
 Do not raise its timeout and do not add a retry inside the test. A task whose
