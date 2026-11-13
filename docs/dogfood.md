@@ -366,3 +366,50 @@ and `--effort <level>` from `args`; any other entry fails the step with
 The settings, the step's results and the model-error rules are in
 `packages/harness/claude/README.md`. The hand-run acceptance points are in
 the claude harness item under `docs/backlog/`.
+
+## Using codex as the worker
+
+`codex` runs the user's own Codex through `codex-acp`, the ACP adapter. It is
+not in the default config, so turn it on first:
+
+```sh
+operad plugin enable codex
+```
+
+**Install codex-acp and log in.** operad does not bring its own: put
+`codex-acp` (`bun add -g @agentclientprotocol/codex-acp`) and `bun` on `PATH`,
+and run `codex login` once. operad uses your own Codex (ChatGPT) login and
+passes no credential of its own. codex-acp's shebang needs a `node` that only
+your own shell finds, so the plugin runs the real path of `codex-acp` with the
+`bun` of `PATH`. To start it another way, set `command` in the `codex` section
+of `config.json` to the program and its arguments, such as
+`["/opt/homebrew/bin/bun", "/Users/me/.bun/bin/codex-acp"]`. `operad plugin
+check codex` reports the codex-acp and Codex versions and the login kind, and
+fails, saying what to do, when codex-acp cannot start or Codex is not logged in.
+
+| Setting | Type | Default | What it does |
+|---|---|---|---|
+| `model` | string | Codex's own | The model; the step's `--model` wins. |
+| `effort` | `minimal`, `low`, `medium`, `high`, `xhigh` | Codex's own | The reasoning effort; the step's `--effort` wins. |
+| `command` | array of strings | the `bun` and the `codex-acp` of `PATH` | The program and arguments that start codex-acp. |
+| `wallTimeSecs` | number | `3600` | The longest one run may take, at most 28500. |
+| `stallSecs` | number | `600` | How long a run may be silent while no tool call is open. |
+| `concurrency` | object | `{}` | How many runs of one model may go at once. |
+
+**The sandbox.** Codex's own sandbox stays on: the run may write the task's
+worktree and nothing else, and it cannot write `.git`, so a flow that needs a
+commit uses the work stage's `commit`. A command that needs the network is
+asked about, and the access profile answers it. Codex asks only about what
+leaves its sandbox; a command that runs inside it is not judged by the
+profile's deny rules.
+
+**Cost and quota.** A ChatGPT login has no price per token, so the cost is
+unknown: it is recorded as unknown, never as 0, and nothing stops or blocks on it. An image generation counts
+against your plan by the picture, so the step records how many it made in
+`imageGenCalls`. When the plan's quota is used up, the step ends with a usage
+limit and the task waits for the quota, as for any harness with no fallback.
+
+**Long silences.** An image generation can print nothing for several minutes.
+While a tool call is open only `wallTimeSecs` applies, so set it to what the
+longest run needs (about 2 hours for a picture task); `stallSecs` only watches
+the silence between tool calls.

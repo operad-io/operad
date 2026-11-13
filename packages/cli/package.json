@@ -17,6 +17,7 @@
     "@operad-io/shell": "workspace:*",
     "@operad-io/chat": "workspace:*",
     "@operad-io/dev": "workspace:*",
+    "@operad-io/harness-codex": "workspace:*",
     "@operad-io/harness-pi": "workspace:*",
     "@operad-io/harness-radian": "workspace:*",
     "@operad-io/pool": "workspace:*",

@@ -1,0 +1,25 @@
+{
+  "name": "@operad-io/harness-codex",
+  "version": "0.0.1",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@operad-io/access-match": "workspace:*",
+    "@operad-io/engine": "workspace:*",
+    "@operad-io/harness-process": "workspace:*"
+  },
+  "description": "operad: the codex harness, a client of the codex-acp adapter (in development)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/operad-io/operad.git",
+    "directory": "packages/harness/codex"
+  },
+  "license": "MIT",
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ]
+}

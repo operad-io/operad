@@ -93,3 +93,6 @@ and the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0362-M15 | packages/harness/process/src/lines.ts | `toolOutputLines` cut a long output to its first line instead of splitting it | `toolOutputLines > a long output is split at the cap, joins back whole and masks secrets first` |
+| T-0378-M5 | packages/harness/process/src/acp.ts | the updates `session/load` replays were handed over as the prompt's | `codex/agent: resume > a resumed run loads the session instead of opening one, and what it replays is not this run's` |
+| T-0378-M8 | packages/harness/process/src/acp.ts | an allowed call was answered with the `allow_always` option | `codex/agent: permissions > without a rule the call is allowed once, never always` |
+| T-0378-M15 | packages/harness/process/src/acp.ts | a new session's id was read only on a resume | `AcpClient > initialize, session/new, the settings, then the prompt, in that order` |

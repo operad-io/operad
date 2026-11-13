@@ -8,6 +8,7 @@
         "@operad-io/bot": "workspace:*",
         "@operad-io/engine": "workspace:*",
         "@operad-io/harness-claude": "workspace:*",
+        "@operad-io/harness-codex": "workspace:*",
         "@operad-io/harness-pi": "workspace:*",
         "@operad-io/harness-radian": "workspace:*",
         "@operad-io/pool": "workspace:*",
@@ -56,6 +57,7 @@
         "@operad-io/chat": "workspace:*",
         "@operad-io/dev": "workspace:*",
         "@operad-io/engine": "workspace:*",
+        "@operad-io/harness-codex": "workspace:*",
         "@operad-io/harness-pi": "workspace:*",
         "@operad-io/harness-radian": "workspace:*",
         "@operad-io/mcp": "workspace:*",
@@ -85,6 +87,15 @@
       "version": "0.0.1",
       "dependencies": {
         "@anthropic-ai/claude-agent-sdk": "^0.3.319",
+        "@operad-io/access-match": "workspace:*",
+        "@operad-io/engine": "workspace:*",
+        "@operad-io/harness-process": "workspace:*",
+      },
+    },
+    "packages/harness/codex": {
+      "name": "@operad-io/harness-codex",
+      "version": "0.0.1",
+      "dependencies": {
         "@operad-io/access-match": "workspace:*",
         "@operad-io/engine": "workspace:*",
         "@operad-io/harness-process": "workspace:*",
@@ -290,6 +301,8 @@
     "@operad-io/engine": ["@operad-io/engine@workspace:packages/engine"],
 
     "@operad-io/harness-claude": ["@operad-io/harness-claude@workspace:packages/harness/claude"],
+
+    "@operad-io/harness-codex": ["@operad-io/harness-codex@workspace:packages/harness/codex"],
 
     "@operad-io/harness-pi": ["@operad-io/harness-pi@workspace:packages/harness/pi"],
 
