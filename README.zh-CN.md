@@ -11,7 +11,8 @@
 <p align="center">
 <a href="https://www.npmjs.com/package/@operad-io/cli"><img alt="npm" src="https://img.shields.io/npm/v/@operad-io/cli?label=%40operad-io%2Fcli"></a>
 <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-blue"></a>
-<a href="https://operad.io/zh/">operad.io</a>
+<a href="https://operad.io/zh/"><img alt="website: operad.io" src="https://img.shields.io/badge/website-operad.io-5672b3"></a>
+<a href="https://x.com/zyinghai"><img alt="X: @zyinghai" src="https://img.shields.io/badge/%40zyinghai-000000?logo=x&logoColor=white"></a>
 </p>
 
 ---
