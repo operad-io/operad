@@ -104,7 +104,7 @@ import { afterAll, expect, test } from "bun:test";
 import { join } from "node:path";
 import { answer, cleanup, runFlow } from "@operad-io/engine/testing";
 
-const notes = join(import.meta.dir, "index.ts");
+const notes = join(import.meta.dir, "..", "..", "fixtures", "example-plugin", "index.ts");
 
 afterAll(cleanup);
 
@@ -163,7 +163,7 @@ import { afterAll, expect, test } from "bun:test";
 import { join } from "node:path";
 import { cleanup, runFlow } from "@operad-io/engine/testing";
 
-const notes = join(import.meta.dir, "index.ts");
+const notes = join(import.meta.dir, "..", "..", "fixtures", "example-plugin", "index.ts");
 
 afterAll(cleanup);
 
@@ -220,7 +220,7 @@ import { afterAll, expect, test } from "bun:test";
 import { join } from "node:path";
 import { cleanup, fakeClock, runFlow } from "@operad-io/engine/testing";
 
-const slow = join(import.meta.dir, "slow.ts");
+const slow = join(import.meta.dir, "..", "..", "fixtures", "example-plugin", "slow.ts");
 
 afterAll(cleanup);
 
@@ -284,7 +284,7 @@ import { afterAll, expect, test } from "bun:test";
 import { join } from "node:path";
 import { cleanup, emit, testWorld } from "@operad-io/engine/testing";
 
-const mailbox = join(import.meta.dir, "mailbox.ts");
+const mailbox = join(import.meta.dir, "..", "..", "fixtures", "example-plugin", "mailbox.ts");
 
 afterAll(cleanup);
 

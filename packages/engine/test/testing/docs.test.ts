@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 const root = join(import.meta.dir, "..", "..", "..", "..");
 const exampleDir = join(root, "packages", "engine", "test", "fixtures", "example-plugin");
+const heavyDir = join(root, "packages", "engine", "test", "heavy", "example-plugin");
 
 /** Every TypeScript block of the page: its file name and its text. */
 function blocks(): { readonly file: string; readonly text: string }[] {
@@ -20,13 +21,19 @@ test("every TypeScript block of docs/plugins/index.md names a file of the exampl
   expect(all).toBeGreaterThan(4);
 });
 
+/** Where the example's file lives: its heavy test files are under test/heavy/. */
+function exampleFile(file: string): string {
+  return join(file.endsWith(".test.ts") ? heavyDir : exampleDir, file);
+}
+
 test("each block is the file the suite checks or runs, word for word", () => {
   for (const block of blocks()) {
-    expect(readFileSync(join(exampleDir, block.file), "utf8")).toBe(block.text);
+    expect(readFileSync(exampleFile(block.file), "utf8")).toBe(block.text);
   }
 });
 
-test("the example directory holds the blocks and nothing the page leaves out", () => {
+test("the example directories hold the blocks and nothing the page leaves out", () => {
   const named = blocks().map((block) => block.file).sort();
-  expect(readdirSync(exampleDir).sort()).toEqual(named);
+  expect(readdirSync(exampleDir).sort()).toEqual(named.filter((file) => !file.endsWith(".test.ts")));
+  expect(readdirSync(heavyDir).sort()).toEqual(named.filter((file) => file.endsWith(".test.ts")));
 });

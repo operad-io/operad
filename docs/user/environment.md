@@ -25,6 +25,8 @@ Every `OPERAD_*` variable that `operad` or its scripts read, or that a command i
 | `OPERAD_CHECK_SSH` | command | `ssh -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=4` | An ssh command line | When a check connects to its host. |
 | `OPERAD_CHECK_SCP` | command | `scp -q -o BatchMode=yes` | An scp command line | When a check copies to its host. |
 | `OPERAD_TEST_PARALLEL` | integer | `2` | whole number, `1` or more | When the test script starts: how many worker processes run test files. |
+| `OPERAD_TEST_HEAVY_PARALLEL` | integer | `8` | whole number, `1` or more | When the test script starts: how many worker processes run the heavy test files (under `test/heavy/`). |
+| `OPERAD_TEST_OVERLAP` | integer | `1` | `1` runs the heavy step beside the light step, `0` after it | When the test script starts. |
 | `OPERAD_TEST_TIMES` | path | `~/.operad-test-times` | A file path | Where each full test run appends one line of timings. |
 
 ## What operad sets
