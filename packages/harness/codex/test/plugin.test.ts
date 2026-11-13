@@ -231,9 +231,17 @@ describe("codex/agent: image generations", () => {
 
   test("silence while an image generation is open is not a stall", async () => {
     const env = await setup("silent-image");
-    const running = runAgent(env, { prompt: "draw", cwd: env.root, wallTimeSecs: 300, stallSecs: 1 });
-    await waitForFile(env.marker);
-    await env.clock.when(() => env.clock.clears > 0);
+    // The step logs a tool call's start after the stall timer was paused for it.
+    let opened: () => void = () => undefined;
+    const toolOpen = new Promise<void>((resolve) => {
+      opened = resolve;
+    });
+    const running = env.registry.runStep(
+      "codex/agent",
+      { prompt: "draw", cwd: env.root, wallTimeSecs: 300, stallSecs: 1 },
+      { runId: "run-1", receiver: (line) => (line.includes("tool_execution_start") ? opened() : undefined) },
+    );
+    await toolOpen;
     // Twice the stall limit passes with no line and no stop: the generation is open.
     expect(env.clock.fireBetween(FLUSH_MS, 2_000)).toBe(0);
     writeFileSync(env.release, "settle");
