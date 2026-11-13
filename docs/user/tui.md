@@ -67,7 +67,7 @@ the problem; at start the TUI does not open.
 | Key | Type | Default | Allowed values | When it takes effect | Wrong value |
 |---|---|---|---|---|---|
 | `theme` | string | `"auto"` | `auto`, `light`, `dark`, `terminal`, a family or a shipped theme, or the name of a theme file in `$OPERAD_HOME/themes` | At start and whenever `tui.json` changes; `--theme` beats it for one session | Refused: the TUI does not start and the message names the file and the unknown theme |
-| `layout` | string | `"tree"` | `tree`, `list` | At start and whenever `tui.json` changes; `t` switches it for the session | Refused: the TUI does not start and the message names the file and the key |
+| `layout` | string | `"tree"` | `tree`, `list` | At start and whenever `tui.json` changes; `t` switches it and saves the choice to `tui.json` | Refused: the TUI does not start and the message names the file and the key |
 
 `layout` says how an object page draws its next level: `tree` nests children
 under the first sibling in their `after` order, and `list` shows one flat list.
