@@ -68,6 +68,7 @@ import {
   type GlobalFact,
   HttpStopError,
   type HttpServerHandle,
+  type InstallRunner,
   type OperadConfig,
   type RunInfo,
   type TriggerEvent,
@@ -2325,18 +2326,27 @@ async function commandPair(
   return 0;
 }
 
+/** Where `loadTui` installs from and how a test replaces the install. */
+export interface LoadTuiOptions {
+  /** A package directory to resolve the workspace copy from; defaults to the CLI. */
+  readonly from?: string | undefined;
+  /** A test replaces the install command. */
+  readonly run?: InstallRunner | undefined;
+}
+
 /**
  * The terminal client: the workspace's own copy in a checkout, otherwise the
  * copy installed into the home's Bun project. The client's UI library is a
  * third-party package, so the CLI does not depend on it; its install keeps the
  * optional packages the UI library needs.
  */
-async function loadTui(home: string): Promise<TuiRunner> {
+export async function loadTui(home: string, options: LoadTuiOptions = {}): Promise<TuiRunner> {
   const installed = await ensureInstalledPackage({
     home,
     specifier: "@operad-io/tui",
     version: ENGINE_VERSION,
-    from: import.meta.dir,
+    from: options.from ?? import.meta.dir,
+    ...(options.run === undefined ? {} : { run: options.run }),
   });
   // A string variable keeps the type checker from requiring the package,
   // which the CLI deliberately does not depend on.
