@@ -743,3 +743,4 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0381-M1 | packages/engine/src/views/presentation.ts | the undeclared-type lookup in `resolve` read the whole fact list again | `presentation views > resolving an id never reads the whole fact list (T-0381) > memory: scoped, typed, undeclared, ambiguous and unknown ids` |
+| T-0381-M2 | packages/engine/src/plugin/store.ts | the memory store did not record an object's type by id when a fact was tracked, so `objectTypesOf` was empty | `presentation views > resolving an id never reads the whole fact list (T-0381) > memory: scoped, typed, undeclared, ambiguous and unknown ids` |

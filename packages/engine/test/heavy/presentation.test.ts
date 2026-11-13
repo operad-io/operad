@@ -942,10 +942,8 @@ describe("presentation views", () => {
         await expect(views.get("missing")).rejects.toMatchObject({ kind: "not-found" });
         await views.section("TK1-work", "history");
         expect(full()).toBe(0);
-        if (inner instanceof SqlitePluginStore) {
-          expect(inner.objectTypesOf("twice")).toEqual(["legacy", "legacy2"]);
-          expect(inner.objectTypesOf("nobody")).toEqual([]);
-        }
+        expect(inner.objectTypesOf("twice")).toEqual(["legacy", "legacy2"]);
+        expect(inner.objectTypesOf("nobody")).toEqual([]);
       });
     }
   });
