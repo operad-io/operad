@@ -280,7 +280,7 @@ describe("a send that fails", () => {
     });
     let tries = 0;
     const counting = {
-      getUpdates: api.getUpdates,
+      ...api,
       sendMessage: async (request: Parameters<typeof api.sendMessage>[0]) => {
         tries += 1;
         return api.sendMessage(request);

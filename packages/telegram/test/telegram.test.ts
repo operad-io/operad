@@ -320,6 +320,8 @@ describe("the telegram source", () => {
       async sendMessage(): Promise<number> {
         return 1;
       },
+      async editMessage(): Promise<void> {},
+      async answerCallback(): Promise<void> {},
     };
     const telegram = new TelegramSource(w.ctx, {
       api,

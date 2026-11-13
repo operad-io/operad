@@ -24,7 +24,14 @@ import {
   type TriggerEvent,
 } from "@operad-io/engine";
 import { SQLITE_FILE_NAME } from "../../engine/src/log/sqlite.ts";
-import type { BotApi, GetUpdatesRequest, SendMessageRequest, TelegramUpdate } from "../src/api.ts";
+import type {
+  AnswerCallbackRequest,
+  BotApi,
+  EditMessageRequest,
+  GetUpdatesRequest,
+  SendMessageRequest,
+  TelegramUpdate,
+} from "../src/api.ts";
 import { TELEGRAM_SETTINGS } from "../src/settings.ts";
 
 /** A fake Bot API: a list of updates, and every request it was given. */
@@ -39,12 +46,35 @@ export class FakeApi implements BotApi {
   /** Called before each send; throw to fail it. */
   beforeSend: ((request: SendMessageRequest, count: number) => void) | undefined;
   private attempts = 0;
+  private sentNow: (() => void) | undefined;
+
+  /** Resolves when a message is sent that was not sent yet (at once when one already was). */
+  nextSend(): Promise<void> {
+    if (this.sent.length > 0) return Promise.resolve();
+    return new Promise((resolve) => {
+      this.sentNow = resolve;
+    });
+  }
 
   async sendMessage(request: SendMessageRequest): Promise<number> {
     this.attempts += 1;
     this.beforeSend?.(request, this.attempts);
     this.sent.push(request);
+    this.sentNow?.();
     return 9_000 + this.sent.length;
+  }
+
+  /** Every edit of a message, in order. */
+  readonly edits: EditMessageRequest[] = [];
+  /** Every answer to a button tap, in order. */
+  readonly callbacks: AnswerCallbackRequest[] = [];
+
+  async editMessage(request: EditMessageRequest): Promise<void> {
+    this.edits.push(request);
+  }
+
+  async answerCallback(request: AnswerCallbackRequest): Promise<void> {
+    this.callbacks.push(request);
   }
 
   async getUpdates(request: GetUpdatesRequest): Promise<readonly TelegramUpdate[]> {
@@ -72,6 +102,26 @@ export function update(
       text,
     },
   };
+}
+
+/** One tap on a button of the message `messageId` in the private chat `chatId`. */
+export function tap(updateId: number, userId: number, chatId: number, messageId: number, data: string): TelegramUpdate {
+  return {
+    update_id: updateId,
+    callback_query: {
+      id: `cb-${updateId}`,
+      from: { id: userId },
+      message: { message_id: messageId, chat: { id: chatId, type: "private" } },
+      data,
+    },
+  };
+}
+
+/** A reply from a person to the message `replyTo`. */
+export function replyUpdate(updateId: number, userId: number, chatId: number, text: string, replyTo: number): TelegramUpdate {
+  const base = update(updateId, userId, chatId, text);
+  if (base.message === undefined) return base;
+  return { ...base, message: { ...base.message, reply_to_message: { message_id: replyTo } } };
 }
 
 /** The harness a chat opens with; it answers nothing (no runner runs in these tests). */
@@ -103,6 +153,7 @@ export interface WorldOptions {
   readonly root: string;
   readonly users?: readonly number[];
   readonly bot?: string;
+  readonly pending?: readonly string[];
   readonly token?: string;
   readonly clock?: (() => number) | undefined;
   /** Views announce changes through `events()`; off unless a test needs it. */
@@ -156,6 +207,7 @@ export async function createTelegramWorld(options: WorldOptions): Promise<Telegr
     {
       users: [...(options.users ?? [42])],
       ...(options.bot === undefined ? {} : { bot: options.bot }),
+      ...(options.pending === undefined ? {} : { pending: [...options.pending] }),
     },
     "telegram",
   );

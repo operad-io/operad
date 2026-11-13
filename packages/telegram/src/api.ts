@@ -26,12 +26,24 @@ export interface TelegramMessage {
   readonly from?: TelegramUser | undefined;
   readonly text?: string | undefined;
   readonly caption?: string | undefined;
+  /** The message this one replies to, when it is a reply. */
+  readonly reply_to_message?: { readonly message_id: number } | undefined;
+}
+
+/** A tap on an inline-keyboard button. */
+export interface TelegramCallback {
+  readonly id: string;
+  readonly from: TelegramUser;
+  /** The message the button was on; absent for a message too old to carry it. */
+  readonly message?: { readonly message_id: number; readonly chat: TelegramChat } | undefined;
+  readonly data?: string | undefined;
 }
 
 /** One update from `getUpdates`. */
 export interface TelegramUpdate {
   readonly update_id: number;
   readonly message?: TelegramMessage | undefined;
+  readonly callback_query?: TelegramCallback | undefined;
 }
 
 /** One long-poll request. */
@@ -49,6 +61,30 @@ export interface SendMessageRequest {
   readonly text: string;
   /** `HTML` when the text is already Telegram HTML; absent for plain text. */
   readonly parseMode?: "HTML" | undefined;
+  /** An inline keyboard: rows of buttons, each carrying the data a tap returns. */
+  readonly keyboard?: readonly (readonly InlineButton[])[] | undefined;
+  readonly signal?: AbortSignal | undefined;
+}
+
+/** One inline-keyboard button. */
+export interface InlineButton {
+  readonly text: string;
+  /** What `callback_query.data` carries when the button is tapped; at most 64 bytes. */
+  readonly data: string;
+}
+
+/** A message's new text; its inline keyboard goes. */
+export interface EditMessageRequest {
+  readonly chatId: number;
+  readonly messageId: number;
+  readonly text: string;
+  readonly signal?: AbortSignal | undefined;
+}
+
+/** The answer to a button tap, shown to the person who tapped. */
+export interface AnswerCallbackRequest {
+  readonly callbackId: string;
+  readonly text?: string | undefined;
   readonly signal?: AbortSignal | undefined;
 }
 
@@ -78,6 +114,10 @@ export interface BotApi {
   getUpdates(request: GetUpdatesRequest): Promise<readonly TelegramUpdate[]>;
   /** Sends one text message; returns its Telegram `message_id`. */
   sendMessage(request: SendMessageRequest): Promise<number>;
+  /** Replaces a message's text and removes its inline keyboard. */
+  editMessage(request: EditMessageRequest): Promise<void>;
+  /** Tells Telegram the tap was seen, with a short note for the person. */
+  answerCallback(request: AnswerCallbackRequest): Promise<void>;
 }
 
 export interface BotApiOptions {
@@ -109,10 +149,32 @@ function sendFailure(
   );
 }
 
+function callbackOf(value: unknown): TelegramCallback | undefined {
+  if (!isRecord(value) || typeof value.id !== "string" || !isRecord(value.from) || typeof value.from.id !== "number") {
+    return undefined;
+  }
+  const message = value.message;
+  const chat = isRecord(message) ? message.chat : undefined;
+  return {
+    id: value.id,
+    from: { id: value.from.id },
+    ...(isRecord(message) &&
+    typeof message.message_id === "number" &&
+    isRecord(chat) &&
+    typeof chat.id === "number" &&
+    typeof chat.type === "string"
+      ? { message: { message_id: message.message_id, chat: { id: chat.id, type: chat.type } } }
+      : {}),
+    ...(typeof value.data === "string" ? { data: value.data } : {}),
+  };
+}
+
 function updateOf(value: unknown): TelegramUpdate | undefined {
   if (!isRecord(value) || typeof value.update_id !== "number" || !Number.isInteger(value.update_id)) {
     return undefined;
   }
+  const callback = callbackOf(value.callback_query);
+  if (callback !== undefined) return { update_id: value.update_id, callback_query: callback };
   const message = value.message;
   if (!isRecord(message)) return { update_id: value.update_id };
   const chat = message.chat;
@@ -135,6 +197,9 @@ function updateOf(value: unknown): TelegramUpdate | undefined {
       ...(isRecord(from) && typeof from.id === "number" ? { from: { id: from.id } } : {}),
       ...(typeof message.text === "string" ? { text: message.text } : {}),
       ...(typeof message.caption === "string" ? { caption: message.caption } : {}),
+      ...(isRecord(message.reply_to_message) && typeof message.reply_to_message.message_id === "number"
+        ? { reply_to_message: { message_id: message.reply_to_message.message_id } }
+        : {}),
     },
   };
 }
@@ -144,12 +209,61 @@ export function createBotApi(options: BotApiOptions): BotApi {
   const token = options.token.reveal();
   const origin = options.baseUrl ?? "https://api.telegram.org";
   const request = options.fetch ?? fetch;
+  /** One Bot API call whose result nobody reads. */
+  const post = async (method: string, payload: Record<string, unknown>, signal?: AbortSignal): Promise<void> => {
+    let response: Response;
+    try {
+      response = await request(`${origin}/bot${token}/${method}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+        ...(signal === undefined ? {} : { signal }),
+      });
+    } catch (error) {
+      throw sendFailure(messageOf(error), token, { retryable: true });
+    }
+    let body: unknown;
+    try {
+      body = await response.json();
+    } catch {
+      throw sendFailure(`HTTP ${response.status} with no JSON`, token, {
+        retryable: response.status >= 500 || response.status === 429,
+      });
+    }
+    if (isRecord(body) && body.ok === true) return;
+    const description =
+      isRecord(body) && typeof body.description === "string" ? body.description : `HTTP ${response.status}`;
+    throw sendFailure(description, token, { retryable: response.status === 429 || response.status >= 500 });
+  };
   return {
+    async editMessage(input) {
+      await post(
+        "editMessageText",
+        {
+          chat_id: input.chatId,
+          message_id: input.messageId,
+          text: input.text,
+          reply_markup: { inline_keyboard: [] },
+          link_preview_options: { is_disabled: true },
+        },
+        input.signal,
+      );
+    },
+    async answerCallback(input) {
+      await post(
+        "answerCallbackQuery",
+        {
+          callback_query_id: input.callbackId,
+          ...(input.text === undefined ? {} : { text: input.text }),
+        },
+        input.signal,
+      );
+    },
     async getUpdates(input) {
       const query = new URLSearchParams({
         offset: String(input.offset),
         timeout: String(input.timeoutSecs),
-        allowed_updates: JSON.stringify(["message"]),
+        allowed_updates: JSON.stringify(["message", "callback_query"]),
       });
       const url = `${origin}/bot${token}/getUpdates?${query.toString()}`;
       let response: Response;
@@ -187,6 +301,15 @@ export function createBotApi(options: BotApiOptions): BotApi {
         chat_id: input.chatId,
         text: input.text,
         ...(input.parseMode === undefined ? {} : { parse_mode: input.parseMode }),
+        ...(input.keyboard === undefined
+          ? {}
+          : {
+              reply_markup: {
+                inline_keyboard: input.keyboard.map((row) =>
+                  row.map((button) => ({ text: button.text, callback_data: button.data })),
+                ),
+              },
+            }),
         link_preview_options: { is_disabled: true },
       };
       let response: Response;

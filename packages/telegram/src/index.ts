@@ -11,6 +11,7 @@ import pkg from "../package.json" with { type: "json" };
 import { definePlugin, type SourceHandle } from "@operad-io/engine";
 import { createBotApi } from "./api.ts";
 import { TELEGRAM_SETTINGS, TOKEN_SECRET } from "./settings.ts";
+import { PendingSender } from "./pending.ts";
 import { ReplySender } from "./replies.ts";
 import { TelegramSource, delay } from "./source.ts";
 
@@ -29,12 +30,15 @@ export function createTelegramPlugin() {
         );
       }
       const api = createBotApi({ token });
-      const source = new TelegramSource(ctx, { api }).start();
+      const pending = new PendingSender(ctx, { api });
+      const source = new TelegramSource(ctx, { api, pending }).start();
       const replies = new ReplySender(ctx, { api, wait: delay }).start();
+      const sent = pending.start();
       return {
         stop: async () => {
           await source.stop();
           await replies.stop();
+          await sent.stop();
         },
       };
     },
@@ -45,6 +49,7 @@ export default createTelegramPlugin();
 
 export * from "./api.ts";
 export * from "./format.ts";
+export * from "./pending.ts";
 export * from "./replies.ts";
 export * from "./settings.ts";
 export * from "./source.ts";

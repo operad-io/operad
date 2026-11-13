@@ -44,7 +44,7 @@ export interface ReplySenderOptions {
 }
 
 /** The Telegram chat ids a chat is bound to. */
-function telegramChatsOf(channels: readonly string[]): readonly number[] {
+export function telegramChatsOf(channels: readonly string[]): readonly number[] {
   const found: number[] = [];
   for (const channel of channels) {
     if (!channel.startsWith(`${TELEGRAM_SOURCE}:`)) continue;

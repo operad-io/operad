@@ -44,7 +44,7 @@ The types a plugin imports, by the page that explains them. The values these ent
 | `PluginRegistryOptions` | Options for building a registry from plugin definitions. | [define-plugin](define-plugin.md) |
 | `PluginRequires` | A plugin's declared dependencies: plugins and the plugin API version. | [define-plugin](define-plugin.md) |
 | `PluginShape` | The shape `definePlugin` accepts. The version is added by the helper. | [define-plugin](define-plugin.md) |
-| `ClientApi` | The in-process client API a source plugin's `start` receives: `list`, `get`, `section`, `events`, `act` and `pending`, the same object HTTP and the TUI use. | [events](events.md) |
+| `ClientApi` | The in-process client API a source plugin's `start` receives: `list`, `get`, `section`, `events`, `act`, `pending` and `answer`, the same object HTTP and the TUI use. | [events](events.md) |
 | `CronField` | A five-field cron expression, evaluated in the machine's local time zone. | [events](events.md) |
 | `CronSchedule` | A type of the plugin API; its fields are described on the page. | [events](events.md) |
 | `EventFilePaths` | The paths an event's summary and data files use inside the store. | [events](events.md) |
