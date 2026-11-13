@@ -52,6 +52,17 @@ describe("task marks", () => {
     ["ready", task(), "todo"],
     ["ready behind a prior task", task({ dependencyHeld: true }), "blocked"],
     ["ready behind its area", task({ areaHeldBy: "T-0002-y" }), "blocked"],
+    [
+      "running, work step waits for a worker another task holds",
+      task({ phase: "running", attempt: attempt({ workerWait: "waiting for worker claude: held by T-0002-y" }) }),
+      "retry_wait",
+    ],
+    [
+      "running, check waits for a place",
+      task({ phase: "running", attempt: attempt({ worked: true, placeWait: { key: "check place", since: 1, ahead: 0 } }) }),
+      "retry_wait",
+    ],
+    ["review, check waits for a place", task({ phase: "review", attempt: attempt({ placeWait: { key: "check place", since: 1, ahead: 0 } }) }), "retry_wait"],
     ["running, no worktree yet", task({ phase: "running" }), "starting"],
     [
       "running, attempt without worktree",
