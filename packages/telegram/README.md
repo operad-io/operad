@@ -49,7 +49,10 @@ Each new assistant reply of a chat bound to Telegram is sent to that Telegram
 chat once. Markdown is reduced to what Telegram accepts (bold, italic, code,
 links; headings and lists become plain lines) and a long reply goes out as
 several messages. A failed send is retried with growing waits; when it gives up,
-the plugin records a `send_failed` event on the chat and writes a log line (the chat's
-own messages are not touched). What was sent is kept in `<home>/telegram/sent.json`,
+the plugin records a `telegram/send_failed` event for the chat (in the run log's
+inputs) and writes a line in its own log; the chat's messages are not touched.
+The event does **not** show in `operad history` of the chat or in the chat's History
+section: those list only the chat's runs and the actions people ran on it, and read
+no source event. Showing it there needs a kernel change. What was sent is kept in `<home>/telegram/sent.json`,
 so a restart neither resends a reply nor skips one written while it was down.
 Replies from before the plugin first ran are not sent. Tool calls are not sent.

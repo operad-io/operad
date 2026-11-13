@@ -304,9 +304,13 @@ describe("a send that fails", () => {
     expect(failed[0]?.summary).toContain("gave up after 3 tries");
     expect(JSON.stringify([failed, w.logs, readSent(w.home)])).not.toContain("SECRET-TOKEN");
 
-    // The event is the plugin's own record: the chat gains no message and no entry,
-    // and its history does not pass the notice off as anything the agent did.
+    // The event is the plugin's own record: the chat gains no message and no entry.
     expect(chatFactTypes(w, chat)).toEqual(before);
+    // Known gap: the chat's history lists only its runs and the actions people
+    // ran on it, and reads no source event, so the notice is not there. It is in
+    // the plugin's log and in the run log's inputs (`telegram/send_failed`). Showing
+    // it under the chat's history would need the kernel to list a source's events
+    // for an object, which this task does not add. If that lands, change this line.
     expect((await w.views.section(`chat:${chat}`, "history")).markdown).not.toContain("gave up");
 
     await new ReplySender(w.ctx, { api: counting, wait, retry: policy }).sweepAll();
