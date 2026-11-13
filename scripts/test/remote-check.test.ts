@@ -4,6 +4,7 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, 
 import { tmpdir } from "node:os";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { holdUntilReleased } from "./fixtures/hold.ts";
 import { anchoredPattern, rerunCommand } from "../../packages/dev/src/rerun.ts";
 
 const script = join(import.meta.dir, "..", "remote-check.sh");
@@ -151,7 +152,7 @@ describe("remote-check.sh", () => {
     const first = run(
       local,
       env,
-      `echo started > '${started}'; read -r _ < '${release}'; touch '${ended}'`,
+      `echo started > '${started}'; ${holdUntilReleased(release)}; touch '${ended}'`,
     );
     try {
       await readFifo(started);
@@ -169,13 +170,39 @@ describe("remote-check.sh", () => {
     }
   });
 
+  test("a blocked fixture ends when the test that started it is killed", async () => {
+    const { root, local, env } = setup();
+    const release = join(root, "orphan-release");
+    spawnSync("mkfifo", [release]);
+    const child = Bun.spawn(["bun", join(import.meta.dir, "fixtures", "remote-check-orphan.ts"), local, release], {
+      env: { ...cleanEnv(), ...env },
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "inherit",
+    });
+    const reader = child.stdout.getReader();
+    let seen = "";
+    while (!seen.includes("started")) {
+      const chunk = await reader.read();
+      if (chunk.done) throw new Error("the child ended before the fixture started");
+      seen += new TextDecoder().decode(chunk.value);
+    }
+    child.kill("SIGKILL");
+    // The pipe closes only when the child and every shell of the check that
+    // inherited it are gone; a fixture left waiting would keep it open.
+    while (!(await reader.read()).done) {
+      // drain
+    }
+    await child.exited;
+  }, 30_000);
+
   describe("slots and the integration lane", () => {
     /** Starts a check that reports its tree, then blocks until `release` is written. */
     function blocker(local: string, env: Record<string, string>, root: string, name: string) {
       const started = join(root, `${name}-started`);
       const release = join(root, `${name}-release`);
       spawnSync("mkfifo", [started, release]);
-      const done = run(local, env, `pwd -P > '${started}'; read -r _ < '${release}'; touch '${join(root, `${name}-ended`)}'`);
+      const done = run(local, env, `pwd -P > '${started}'; ${holdUntilReleased(release)}; touch '${join(root, `${name}-ended`)}'`);
       return {
         done,
         started: async () => {
@@ -261,7 +288,7 @@ describe("remote-check.sh", () => {
       const ended = join(root, "i1-ended");
       const seen = join(root, "i2-saw");
       spawnSync("mkfifo", [started, release]);
-      const first = run(local, lane, `echo s > '${started}'; read -r _ < '${release}'; touch '${ended}'`);
+      const first = run(local, lane, `echo s > '${started}'; ${holdUntilReleased(release)}; touch '${ended}'`);
       try {
         await readFifo(started);
         const second = run(local, lane, `if [ -f '${ended}' ]; then echo after > '${seen}'; else echo during > '${seen}'; fi`);
