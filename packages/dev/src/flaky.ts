@@ -10,14 +10,15 @@
  * exactly one.
  */
 
-import { appendFileSync, existsSync, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { appendFileSync, readdirSync, readFileSync, realpathSync } from "node:fs";
+import { isAbsolute, join, relative } from "node:path";
 import type { ObjectStore, StoredObject } from "@operad-io/engine";
 import { isRecord, messageOf, type SecretStore } from "@operad-io/engine";
 import type { MachineLoad } from "@operad-io/engine/platform";
 import type { CheckLoad } from "./notcode.ts";
 import { bareId, changeClock, isOpenTask, keyRepository, listAll, parseId, planData, planState, splitBrief, taskData, type PlanData, type RepositoryData } from "./model.ts";
 import { anchoredPattern, shellQuote } from "./rerun.ts";
+import type { FailedRerun } from "./settings.ts";
 import { addConfirmedPlanLocked, addTaskLocked, withRepoLock } from "./service.ts";
 
 const MASK = "***";
@@ -58,8 +59,12 @@ export interface FlakyOccurrence {
   readonly task: string;
   readonly at: number;
   readonly file: string | undefined;
-  /** The "(fail)" line and the lines before it; empty when the log was gone. */
+  /** The line the command's `failed.match` found and the lines before it; empty when the log was gone. */
   readonly excerpt: string;
+  /** `failed.stress` of the command that found the failure. */
+  readonly stress?: string | undefined;
+  /** `failed.rule` of the command that found the failure. */
+  readonly rule?: string | undefined;
   /**
    * Set when the machine was busy when the test failed. Such a failure is
    * recorded and never counts toward a task: a rerun on a busy machine says
@@ -134,7 +139,7 @@ function recordKey(repository: string, name: string): string {
 
 function occurrenceOf(value: unknown): FlakyOccurrence | undefined {
   if (!isRecord(value)) return undefined;
-  const { task, at, file, excerpt, load } = value;
+  const { task, at, file, excerpt, load, stress, rule } = value;
   if (typeof task !== "string" || typeof at !== "number") return undefined;
   return {
     ...(isRecord(load) && typeof load.load1 === "number" && typeof load.cores === "number"
@@ -144,6 +149,8 @@ function occurrenceOf(value: unknown): FlakyOccurrence | undefined {
     at,
     file: typeof file === "string" ? file : undefined,
     excerpt: typeof excerpt === "string" ? excerpt : "",
+    ...(typeof stress === "string" ? { stress } : {}),
+    ...(typeof rule === "string" ? { rule } : {}),
   };
 }
 
@@ -173,48 +180,43 @@ function writableOf(record: FlakyRecord): Record<string, unknown> {
       excerpt: entry.excerpt,
       ...(entry.load === undefined ? {} : { load: { load1: entry.load.load1, cores: entry.load.cores } }),
       ...(entry.file === undefined ? {} : { file: entry.file }),
+      ...(entry.stress === undefined ? {} : { stress: entry.stress }),
+      ...(entry.rule === undefined ? {} : { rule: entry.rule }),
     })),
     ...(record.task === undefined ? {} : { task: record.task }),
     ...(record.noticed === undefined ? {} : { noticed: record.noticed }),
   };
 }
 
-const SUMMARY_START = /^\s*\d+ tests? failed:\s*$/;
 const FILE_HEADER = /^(\S+\.(?:test|spec)\.[cm]?[jt]sx?):$/;
 
 /**
- * The "(fail)" line of a test with up to 30 lines before it, and the file whose
- * section holds it. bun repeats every failure in a summary after the last
- * file's section; that repeat names no file, so the first "(fail)" line of the
- * test before the summary is the test's own. A test seen only in the summary
- * has an excerpt and no file.
+ * The line `match` (the command's own `failed.match`) finds for the test, with
+ * up to 30 lines before it, and the test file whose header line (`<file>:`)
+ * precedes it. A runner may repeat every failure in a summary; the first match
+ * wins, which is the one in the file's own section, since a summary comes
+ * after the sections. A test whose log has no match has an empty excerpt.
  */
 export function failureExcerpt(
   log: string,
   name: string,
+  match: string,
 ): { readonly excerpt: string; readonly file: string | undefined } {
   const lines = log.replace(/\r\n/g, "\n").split("\n");
-  const wanted = `(fail) ${name} [`;
-  let found = -1;
-  let inSummary = false;
+  const pattern = new RegExp(match);
   let file: string | undefined;
-  let current: string | undefined;
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index] ?? "";
-    if (SUMMARY_START.test(line)) inSummary = true;
     const header = FILE_HEADER.exec(line);
-    if (header !== null && !inSummary) current = header[1];
-    if (!line.startsWith(wanted)) continue;
-    if (!inSummary) {
-      found = index;
-      file = current;
-      break;
-    }
-    if (found < 0) found = index;
+    if (header !== null) file = header[1];
+    const found = pattern.exec(line);
+    if (found === null || found[1] !== name) continue;
+    return {
+      excerpt: lines.slice(Math.max(0, index - EXCERPT_LINES), index + 1).join("\n"),
+      file,
+    };
   }
-  if (found < 0) return { excerpt: "", file: undefined };
-  const excerpt = lines.slice(Math.max(0, found - EXCERPT_LINES), found + 1).join("\n");
-  return { excerpt, file };
+  return { excerpt: "", file: undefined };
 }
 
 const SEARCH_SKIP_DIRS = new Set([
@@ -276,35 +278,31 @@ function slugOf(name: string): string {
   return kept;
 }
 
-function packageOf(file: string | undefined): string {
-  const match = file === undefined ? null : /(?:^|\/)packages\/([^/]+)\//.exec(file);
-  return match?.[1] ?? "tests";
+const BUILT_IN_RULE =
+  "A test that failed and then passed on rerun is a bug until shown otherwise. Do not raise a timeout or add a retry inside a test to make it pass.";
+
+/** The text of the rule file `rule` names inside the repository, else dev's own sentence. */
+function flakyRule(repositoryPath: string, rule: string | undefined): string {
+  if (rule === undefined) return BUILT_IN_RULE;
+  try {
+    const root = realpathSync(repositoryPath);
+    const path = realpathSync(join(root, rule));
+    const inside = relative(root, path);
+    if (inside === "" || inside.startsWith("..") || isAbsolute(inside)) return BUILT_IN_RULE;
+    const text = readFileSync(path, "utf8").replace(/\r\n/g, "\n").trim();
+    return text === "" ? BUILT_IN_RULE : text;
+  } catch {
+    return BUILT_IN_RULE;
+  }
 }
 
-const FLAKY_RULE =
-  "A test that failed and then passed on rerun is a bug until shown otherwise. A task that fixes one states the stress command and its result before and after the fix in its final answer, and is done when `bash scripts/stress.sh --runs <N> --load 2 <file>` passes, N sized so the run takes about ten minutes (at least 20, at most 200). A stress run takes a lock shared by every stress run on the machine and may wait for another to end; the wait is not part of its result. Never raise a timeout or add a retry inside a test to make it pass.";
-
-/** The "Flaky tests" section of the repository's CLAUDE.md, else the rule as written here. */
-function flakyRule(repositoryPath: string): string {
-  try {
-    const text = readFileSync(join(repositoryPath, "CLAUDE.md"), "utf8");
-    const lines = text.replace(/\r\n/g, "\n").split("\n");
-    const start = lines.findIndex((line) => /^##\s+Flaky tests\s*$/.test(line));
-    if (start >= 0) {
-      let end = lines.length;
-      for (let index = start + 1; index < lines.length; index += 1) {
-        if (/^##\s/.test(lines[index] ?? "")) {
-          end = index;
-          break;
-        }
-      }
-      const body = lines.slice(start + 1, end).join("\n").trim();
-      if (body !== "") return body;
-    }
-  } catch {
-    // No CLAUDE.md: the rule below stands.
-  }
-  return FLAKY_RULE;
+/** `stress` with {name}, {pattern} and {file} filled in; {file} is left out when the file is not known. */
+function stressCommand(template: string, name: string, file: string | undefined): string {
+  return template
+    .replace(/\{(name|pattern)\}/g, (_, kind: string) => shellQuote(kind === "name" ? name : anchoredPattern(name)))
+    // An unknown file leaves nothing behind.
+    .replace(/\{file\}/g, file === undefined ? "" : shellQuote(file))
+    .replace(/[ \t]+$/gm, "");
 }
 
 function stamp(at: number): string {
@@ -337,11 +335,13 @@ export function flakyBrief(
     const fence = entry.excerpt.includes("```") ? "~~~~" : "```";
     lines.push("", `${entry.task} at ${stamp(entry.at)}:`, fence, entry.excerpt, fence);
   }
-  const pattern = record.name.replace(/ > /g, " ");
-  const command = existsSync(join(repositoryPath, "scripts", "stress.sh"))
-    ? `bash scripts/stress.sh --runs <N> --load 2 -t ${shellQuote(pattern)}${file === undefined ? "" : ` ${shellQuote(file)}`}`
-    : `bun test --rerun-each <N> -t ${shellQuote(anchoredPattern(record.name))}${file === undefined ? "" : ` ${shellQuote(file)}`}`;
-  lines.push("", "Reproduce it:", "```sh", command, "```", "", "Write the number of runs in place of `<N>`: it follows the rule quoted below.", "", "The rule for flaky tests:", "", flakyRule(repositoryPath));
+  const latest = [...record.occurrences].reverse();
+  // The newest pass is the one that reached the threshold: only its command's settings count.
+  const stress = latest[0]?.stress;
+  if (stress !== undefined) {
+    lines.push("", "Reproduce it:", "```sh", stressCommand(stress, record.name, file), "```", "", "Write the number of runs in place of `<N>`: it follows the rule quoted below.");
+  }
+  lines.push("", "The rule for flaky tests:", "", flakyRule(repositoryPath, latest[0]?.rule));
   return lines.join("\n");
 }
 
@@ -464,6 +464,8 @@ export interface FlakyInput {
   /** The task whose check passed the tests on rerun. */
   readonly taskId: string;
   readonly names: readonly string[];
+  /** The `failed` settings of the command that found each test. */
+  readonly failedBy?: ReadonlyMap<string, FailedRerun> | undefined;
   /** The check log, which still holds the first run's output. */
   readonly log: string | undefined;
   /** One load reading for the check, when the caller has only that. */
@@ -535,14 +537,15 @@ export async function trackFlakyTests(input: FlakyInput): Promise<string | undef
         if (busy !== undefined) notices.push(skippedNotice(name, busy));
         continue;
       }
-      const found = failureExcerpt(log, name);
+      const failed = input.failedBy?.get(name);
+      const found = failed === undefined ? { excerpt: "", file: undefined } : failureExcerpt(log, name, failed.match);
       const file = found.file ?? searchTestFile(fresh.path, name);
       const excerpt = maskSecrets(found.excerpt, input.secrets ?? [], input.env);
       record = {
         ...record,
         occurrences: [
           ...record.occurrences,
-          { task: input.taskId, at, file, excerpt, ...(busy === undefined ? {} : { load: busy }) },
+          { task: input.taskId, at, file, excerpt, ...(failed?.stress === undefined ? {} : { stress: failed.stress }), ...(failed?.rule === undefined ? {} : { rule: failed.rule }), ...(busy === undefined ? {} : { load: busy }) },
         ],
       };
       await store.put(FLAKY_TYPE, key, writableOf(record), "dev:flaky-count");
@@ -583,7 +586,6 @@ async function propose(
   }
   const { plan, missing } = await flakyPlanFor(store, repository, input.flakyPlan);
   await flakyTestHooks.beforePropose?.(record.name);
-  const file = [...record.occurrences].reverse().find((entry) => entry.file !== undefined)?.file;
   const fallback =
     missing === undefined
       ? undefined
@@ -596,7 +598,6 @@ async function propose(
         slug: slugOf(record.name),
         title: titleFor(record.name),
         brief: flakyBrief(repository.path, record),
-        area: packageOf(file),
         openedBy: "dev",
       },
       repository,
@@ -658,6 +659,7 @@ export interface FlakyReport {
   readonly loadLimit?: number | undefined;
   readonly check: {
     readonly passedOnRerun: readonly string[];
+    readonly failedBy?: ReadonlyMap<string, FailedRerun> | undefined;
     readonly outcome: { readonly data?: Record<string, unknown> | undefined } | undefined;
   };
 }
@@ -691,6 +693,7 @@ export async function reportFlakyTests(report: FlakyReport): Promise<string | un
       repository: report.repository,
       taskId: report.taskId,
       names: report.check.passedOnRerun,
+      failedBy: report.check.failedBy,
       log: typeof log === "string" ? log : undefined,
       threshold: report.threshold,
       flakyPlan: report.flakyPlan,

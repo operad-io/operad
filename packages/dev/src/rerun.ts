@@ -32,6 +32,8 @@ export interface CheckRun {
   readonly note: string | undefined;
   /** The tests that failed in a first run and passed when run alone. */
   readonly passedOnRerun: readonly string[];
+  /** The `failed` settings of the command whose match found each of those tests. */
+  readonly failedBy?: ReadonlyMap<string, FailedRerun> | undefined;
 }
 
 /** The line drawn between the two runs in the check log. */
@@ -267,6 +269,7 @@ export async function runCheckCommands(
 
   const notes: string[] = [];
   const passed: string[] = [];
+  const failedBy = new Map<string, FailedRerun>();
   let reran = false;
   let last: Pick<CheckRun, "outcome" | "hostError"> = {
     outcome: { result: "pass", data: { lines: 0, tail: [] } },
@@ -278,6 +281,7 @@ export async function runCheckCommands(
     ...result,
     rerun: reran,
     passedOnRerun: passed,
+    failedBy,
     note: notes.length === 0 ? undefined : notes.join("; "),
   });
 
@@ -353,6 +357,7 @@ export async function runCheckCommands(
       };
       if (again.hostError === undefined && again.outcome?.result === "pass") {
         passed.push(name);
+        failedBy.set(name, failed);
         last = result;
         continue;
       }

@@ -92,7 +92,9 @@ A test that failed and then passed on a rerun is a bug until shown otherwise.
 Do not raise its timeout and do not add a retry inside the test. A task whose
 brief is to fix a flaky test runs `scripts/stress.sh` twice: once to reproduce
 before the fix and once to confirm after it, and states the command, the number
-of runs and the result in its final answer. Every other task's check is
+of runs and the result in its final answer. This repository gives that rule and
+command to `dev` as `failed.rule` (`.operad/flaky.md`) and `failed.stress` in
+`.operad/dev.json`; see [dev settings](dev.md). Every other task's check is
 `bash scripts/check-changed.sh`; the full `bash scripts/verify.sh` runs once
 more at integration, before merge.
 
