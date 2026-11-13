@@ -104,6 +104,24 @@ test("shows nothing until it ends", async () => { await new Promise((r) => setTi
     expect(out).not.toContain("run-tests: still running");
   });
 
+  test("a step whose output grows still prints a heartbeat", () => {
+    const { root, times } = repository();
+    write(
+      root,
+      "packages/a/test/heavy/heavy.test.ts",
+      `import { test } from "bun:test";
+test("keeps the heavy step open past a heartbeat", async () => { await new Promise((r) => setTimeout(r, 1500)); });
+`,
+    );
+    const { code, out } = run(root, times, [], {
+      OPERAD_TEST_HEARTBEAT_SECS: "1",
+      OPERAD_TEST_HEAVY_PARALLEL: "1",
+      OPERAD_TEST_OVERLAP: "1",
+    });
+    expect(code).toBe(0);
+    expect(out).toContain("run-tests: still running");
+  });
+
   test("a run of named packages lists the slowest tests and keeps no line", () => {
     const { root, times } = repository();
     const { code, out } = run(root, times, ["a"]);
