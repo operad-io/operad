@@ -1,4 +1,4 @@
-import { OPTIONAL_PLUGINS, defaultPluginModule, distributionConfig, pluginOffer } from "./defaults.ts";
+import { INSTALL_ON_ENABLE, OPTIONAL_PLUGINS, defaultPluginModule, distributionConfig, pluginOffer } from "./defaults.ts";
 import { closeSync, mkdirSync, openSync, readFileSync, writeSync } from "node:fs";
 import { userInfo } from "node:os";
 import { join } from "node:path";
@@ -6,7 +6,6 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   ConfigError,
   FileSecretStore,
-  INSTALL_ON_ENABLE,
   Kernel,
   LockHeldError,
   acquireLock,
@@ -351,6 +350,7 @@ async function openContext(
   const log = openConfigLog(config, { follow });
   let loaded: PluginRegistry | undefined;
   const registry = await loadPluginRegistry({
+    installOnEnable: INSTALL_ON_ENABLE,
     home,
     cwd,
     store,
@@ -471,6 +471,7 @@ async function commandInit(home: string, io: CliIo): Promise<number> {
   const config = await readConfig(home);
   const storeRoot = storeRootOf(config);
   const registry = await loadPluginRegistry({
+    installOnEnable: INSTALL_ON_ENABLE,
     home,
     cwd: home,
     store: openPluginStore({
@@ -1973,7 +1974,7 @@ async function checkLoadedDefinition(
   name: string,
   definition: unknown,
 ): Promise<number> {
-  const configured = await loadConfiguredPlugins({ home: context.home });
+  const configured = await loadConfiguredPlugins({ home: context.home, installOnEnable: INSTALL_ON_ENABLE });
   const others = configured.loaded
     .map((loaded) => loaded.definition)
     .filter((item) => definitionName(item) !== name);

@@ -2,8 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { INSTALL_ON_ENABLE } from "@operad-io/engine";
-import { DEFAULT_LEAD_ACTIONS, DEFAULT_PLUGINS, OPTIONAL_PLUGINS, defaultPluginModule, distributionConfig } from "../src/defaults.ts";
+import { DEFAULT_LEAD_ACTIONS, INSTALL_ON_ENABLE, DEFAULT_PLUGINS, OPTIONAL_PLUGINS, defaultPluginModule, distributionConfig } from "../src/defaults.ts";
 
 const cliDir = dirname(dirname(fileURLToPath(import.meta.url)));
 const manifest = JSON.parse(readFileSync(`${cliDir}/package.json`, "utf8")) as {

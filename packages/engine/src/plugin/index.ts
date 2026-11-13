@@ -4,7 +4,6 @@ export { defaultOperadHome } from "./home.ts";
 export {
   ensureInstalledPackage,
   installedPackageFile,
-  INSTALL_ON_ENABLE,
   pluginProjectManifestPath,
   pluginProjectPath,
   PLUGIN_PROJECT_DIRECTORY,

@@ -16,6 +16,9 @@ export const DEFAULT_PLUGINS: readonly string[] = ["shell", "radian", "chat", "d
  */
 export const OPTIONAL_PLUGINS: readonly string[] = ["pi", "claude", "codex", "pool", "bot"];
 
+/** The plugins whose package is installed into the home rather than shipped with the CLI. */
+export const INSTALL_ON_ENABLE: readonly string[] = ["claude"];
+
 /** Harness plugins are named after their agent; their npm packages are `harness-<agent>`. */
 const HARNESS_PLUGINS: readonly string[] = ["claude", "codex", "pi", "radian"];
 
