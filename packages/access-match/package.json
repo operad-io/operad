@@ -1,12 +1,23 @@
 {
   "name": "@operad-io/access-match",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.0.1",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
   },
   "dependencies": {
     "@operad-io/engine": "workspace:*"
-  }
+  },
+  "description": "operad: access profiles matched against agent tool calls (in development)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/operad-io/operad.git",
+    "directory": "packages/access-match"
+  },
+  "license": "MIT",
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ]
 }

@@ -1,7 +1,6 @@
 {
   "name": "@operad-io/harness-claude",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.0.1",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
@@ -11,5 +10,17 @@
     "@operad-io/access-match": "workspace:*",
     "@operad-io/engine": "workspace:*",
     "@operad-io/harness-process": "workspace:*"
-  }
+  },
+  "description": "operad: the claude harness, a client of the Claude Agent SDK (in development)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/operad-io/operad.git",
+    "directory": "packages/harness/claude"
+  },
+  "license": "MIT",
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ]
 }

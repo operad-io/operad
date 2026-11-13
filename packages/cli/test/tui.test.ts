@@ -1,5 +1,13 @@
-import { describe, expect, test } from "bun:test";
-import { main, type CliIo, type TuiCommand } from "../src/main.ts";
+import { afterAll, describe, expect, test } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { loadTui, main, type CliIo, type TuiCommand, type TuiRunner } from "../src/main.ts";
+
+const roots: string[] = [];
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
 
 function capture(): {
   readonly io: CliIo;
@@ -23,6 +31,34 @@ function capture(): {
 }
 
 describe("operad tui", () => {
+  test("installs the terminal client into the home when the CLI has no copy", async () => {
+    const root = mkdtempSync(join(tmpdir(), "operad-tui-install-"));
+    roots.push(root);
+    const home = join(root, "home");
+    const empty = join(root, "empty");
+    mkdirSync(empty, { recursive: true });
+    const calls: (readonly string[])[] = [];
+    const runner = await loadTui(home, {
+      from: empty,
+      run: (_cwd, args) => {
+        calls.push(args);
+        const directory = join(home, "plugins", "node_modules", "@operad-io", "tui");
+        mkdirSync(directory, { recursive: true });
+        writeFileSync(
+          join(directory, "package.json"),
+          JSON.stringify({ name: "@operad-io/tui", version: "0.0.1", exports: { ".": "./index.ts" } }),
+        );
+        writeFileSync(
+          join(directory, "index.ts"),
+          'export function runTui() { return Promise.resolve(0); }\nrunTui.testMarker = "home-tui";\n',
+        );
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    });
+    expect(calls).toEqual([["install", "--no-summary"]]);
+    expect((runner as TuiRunner & { readonly testMarker?: string }).testMarker).toBe("home-tui");
+  });
+
   test("passes the url and token to the terminal app", async () => {
     const output = capture();
     let seen: TuiCommand | undefined;

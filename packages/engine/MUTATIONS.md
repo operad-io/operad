@@ -738,6 +738,13 @@ the row fields.
 | T-0368-M1 | packages/engine/src/views/presentation.ts | a row over the limit was an error on its first measure, with no second measure | `presentation views > a row slow once only is not an error: it is measured again (T-0368)` |
 | T-0365-M8 | packages/engine/src/plugin/registry.ts | a function `models` was called without the plugin's settings | `a harness plugin's models > a function is called with the plugin's settings each time the list is read` |
 
+## T-0377 — a plugin package installed into the operad home
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0377-M1 | packages/engine/src/plugin/install.ts | `ensureInstalledPackage` no longer passed `--omit=optional` to `bun install`, so the claude SDK's platform packages would be installed | `ensuring a package is installed in the home > writes the project, skips optional dependencies and returns the package file` (also the failed-install message test) |
+| T-0377-M2 | packages/engine/src/plugin/load.ts | `loadPlugin` no longer fell back to the package file in the home when the module name did not resolve | `ensuring a package is installed in the home > the loader falls back to the package in the home` |
+| T-0377-M7 | packages/engine/src/plugin/install.ts | `ensureInstalledPackage` always passed `--omit=optional`, so the terminal client's native optional packages would be skipped too | `ensuring a package is installed in the home > an install that needs its optional packages keeps them on` |
 ## T-0381 — resolving an id never reads the whole fact list
 
 | id | file | mutation | failing test |

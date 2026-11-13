@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -14,6 +14,7 @@ import {
   CHANNEL_METHOD,
   INSTRUCTIONS,
   instructionsFor,
+  MCP_VERSION,
   PROTOCOL_VERSION,
   TOOLS,
 } from "../../src/index.ts";
@@ -451,9 +452,15 @@ describe("operad mcp", () => {
         clientInfo: { name: "test", version: "0.0.0" },
       });
       const init = resultOf(initialized);
+      const packageVersion = (
+        JSON.parse(
+          readFileSync(fileURLToPath(new URL("../../package.json", import.meta.url)), "utf8"),
+        ) as { version: string }
+      ).version;
       expect(init.protocolVersion).toBe(PROTOCOL_VERSION);
       expect(init.capabilities).toEqual({ tools: {} });
-      expect(init.serverInfo).toEqual({ name: "operad", version: "0.0.0" });
+      expect(MCP_VERSION).toBe(packageVersion);
+      expect(init.serverInfo).toEqual({ name: "operad", version: packageVersion });
       expect(init.instructions).toBe(
         instructionsFor({
           channel: { notify: [], loopAfter: 3 },

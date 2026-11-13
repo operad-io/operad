@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { chmodSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { cleanupTempRoots, tempRoot } from "@operad-io/harness-process/test-support";
+import { cleanupTempRoots, tempRoot } from "../../process/test/support.ts";
 import { CODEX_EFFORTS, CODEX_MODELS, createCodexHarnessPlugin } from "../src/index.ts";
 import { codexCommand, commandOf, defaultCommand } from "../src/install.ts";
 

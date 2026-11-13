@@ -17,7 +17,7 @@ import {
 import { EVENT_NOTE_TEMPLATE } from "@operad-io/harness-process";
 import { claudeToolEvent, createClaudeHarnessPlugin } from "../../src/index.ts";
 import { FLUSH_MS } from "@operad-io/harness-process";
-import { alive, cleanupTempRoots, manualClock, tempRoot, waitForFile, waitForGone, waitForPid, type ManualClock } from "@operad-io/harness-process/test-support";
+import { alive, cleanupTempRoots, manualClock, tempRoot, waitForFile, waitForGone, waitForPid, type ManualClock } from "../../../process/test/support.ts";
 
 afterAll(cleanupTempRoots);
 

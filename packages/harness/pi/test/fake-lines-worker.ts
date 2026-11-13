@@ -11,7 +11,7 @@
 import { spawnSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { startFakeLines } from "@operad-io/harness-process/test-fake-lines";
+import { startFakeLines } from "../../process/test/fake-lines.ts";
 
 const { mode, recordPath, input, stdinLine, line, mark, released, hang } = await startFakeLines("FAKE_PI");
 
