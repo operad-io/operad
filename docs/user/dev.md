@@ -94,6 +94,16 @@ or empty, the brief says: "A test that failed and then passed on rerun is a bug
 until shown otherwise. Do not raise a timeout or add a retry inside a test to
 make it pass." The task has no area. See [Checking a change](checks.md).
 
+A check that failed only because tests ran to their timeout normally waits for a
+quiet machine, runs again, and waits for a person if it happens twice. There is
+one exception: when the failed test was run alone (its `failed.rerun` command),
+timed out again, and the load during that run was below `check.flakyLoadLimit`
+(by default twice the number of cores), the machine is not to blame. The change
+goes back to the worker as a failure whose note names the test, says it "timed
+out at 30 s when run alone under load 3 on 10 cores", and gives the log path. A
+timeout seen only under a load above the limit, or a test that passes when run
+alone, is handled as before.
+
 ### Work, review, integration and cleanup
 
 | Key | Type | Default | Allowed values | When it takes effect | Wrong value |

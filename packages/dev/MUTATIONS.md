@@ -1109,3 +1109,10 @@ the row fields.
 | T-0398-M10 | packages/dev/src/standing.ts | void: T-0094-M11 names dev code and a test that T-0388 deleted | none (void) |
 | T-0398-M11 | packages/dev/src/standing.ts | void: T-0094-M12 names dev code and a test that T-0388 deleted | none (void) |
 | T-0398-M12 | packages/dev/src/standing.ts | void: T-0094-M14 names dev code and a test that T-0388 deleted | none (void) |
+
+## T-0401-timeout-alone-is-code — a test timeout alone under a quiet machine is the code
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0401-M1 | packages/dev/src/notcode.ts | `timeoutAlone` ignored the load and treated every alone-rerun timeout as code | `a test that timed out when run alone > under a load above the flaky limit it waits and runs again, as before` |
+| T-0401-M2 | packages/dev/src/notcode.ts | `timeoutAlone` was never called, so an alone-rerun timeout under low load waited as not code | `a test that timed out when run alone > under a load below the flaky limit it is the code: one run, a rework note, no wait` |

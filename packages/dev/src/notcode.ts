@@ -20,6 +20,11 @@
  *    rerun. The check then passes; the kind tells the flaky-test count whether
  *    the machine was to blame (see `isLoaded`).
  *
+ * A `test-timeout` is code, not the machine, when the failed test was rerun
+ * alone, timed out again, and the load during that rerun stayed below the
+ * flaky load limit (`check.flakyLoadLimit`, default twice the cores): the
+ * result goes to the worker as a failure with a rework note.
+ *
  * For a result of kind 1 to 3, `runCheckSteadily` waits until the machine's
  * 1-minute load average is below the limit (`check.loadLimit`, default the
  * number of cores), runs the check once more by itself, and reports a second
@@ -29,6 +34,7 @@
 
 import { machineLoad, type MachineLoad } from "@operad-io/engine/platform";
 import { waitFor } from "./gate.ts";
+import { flakyLoadLimitOf } from "./flaky.ts";
 import { readSince, type CheckRun } from "./rerun.ts";
 import { isRecord } from "@operad-io/engine";
 
@@ -181,6 +187,31 @@ export interface CheckLoad {
   readonly end: MachineLoad;
 }
 
+/**
+ * The checked result with a note when it is a test that timed out when run
+ * alone under a load below the flaky limit; otherwise undefined.
+ */
+function timeoutAlone(
+  checked: CheckRun,
+  load: CheckLoad,
+  flakyLimit: number | undefined,
+): CheckRun | undefined {
+  if (checked.aloneRerun !== true) return undefined;
+  const facts = factsOf(checked);
+  if (classifyCheck(facts)?.kind !== "test-timeout") return undefined;
+  const limit = flakyLoadLimitOf(flakyLimit, load.end);
+  if (load.start.load1 >= limit || load.end.load1 >= limit) return undefined;
+  const outcome = checked.outcome;
+  if (outcome === undefined) return undefined;
+  const data = isRecord(outcome.data) ? outcome.data : {};
+  const names = failedTests(facts.log).map((test) => test.name).join("; ");
+  const seconds = testTimeoutOf(facts.line) / 1000;
+  const peak = Math.max(load.start.load1, load.end.load1);
+  const log = typeof data.log === "string" ? `; log: ${data.log}` : "";
+  const message = `the failed test "${names}" timed out at ${seconds} s when run alone under load ${Math.round(peak)} on ${load.end.cores} cores${log}`;
+  return { ...checked, outcome: { ...outcome, data: { ...data, message } } };
+}
+
 export interface SteadyCheck {
   readonly checked: CheckRun;
   /** Set when the check ended "not the code" twice: a person decides. */
@@ -229,6 +260,8 @@ async function waitForQuiet(
 export async function runCheckSteadily(input: {
   readonly run: () => Promise<CheckRun>;
   readonly limit: number | undefined;
+  /** `check.flakyLoadLimit`: a timeout alone below it is the code's. */
+  readonly flakyLimit?: number | undefined;
   readonly signal?: AbortSignal | undefined;
   readonly log?: ((text: string) => Promise<unknown> | unknown) | undefined;
 }): Promise<SteadyCheck> {
@@ -242,6 +275,8 @@ export async function runCheckSteadily(input: {
   const first = await input.run();
   const firstEnd = sample();
   const loads: CheckLoad[] = [{ start: firstStart, end: firstEnd }];
+  const firstCode = timeoutAlone(first, { start: firstStart, end: firstEnd }, input.flakyLimit);
+  if (firstCode !== undefined) return { checked: firstCode, runs: 1, load: peak, loads };
   if (!worthAnotherRun(classifyRun(first))) {
     return { checked: first, runs: 1, load: peak, loads };
   }
@@ -252,6 +287,8 @@ export async function runCheckSteadily(input: {
   const second = await input.run();
   const after = sample();
   loads.push({ start: secondStart, end: after });
+  const secondCode = timeoutAlone(second, { start: secondStart, end: after }, input.flakyLimit);
+  if (secondCode !== undefined) return { checked: secondCode, runs: 2, load: peak, loads };
   const found = classifyRun(second);
   if (!worthAnotherRun(found)) {
     return { checked: second, runs: 2, load: peak, loads };

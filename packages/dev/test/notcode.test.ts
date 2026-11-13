@@ -1,3 +1,6 @@
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 import {
   classifyCheck,
@@ -173,5 +176,70 @@ describe("check.loadLimit", () => {
     expect(validateDevSettings({ name: "x" }).check.loadLimit).toBeUndefined();
     expect(validateDevSettings({ name: "x", check: { loadLimit: 6.5 } }).check.loadLimit).toBe(6.5);
     expect(() => validateDevSettings({ name: "x", check: { loadLimit: 0 } })).toThrow(/loadLimit/);
+  });
+});
+
+describe("a test that timed out when run alone", () => {
+  const dir = mkdtempSync(join(tmpdir(), "alone-"));
+  const logPath = join(dir, "check.log");
+  writeFileSync(logPath, "(fail) a > slow [30001.20ms]\n");
+  const alone = (result = "fail"): CheckRun => ({
+    ...run({ reason: "exit", exitCode: 1, log: logPath, logStart: 0, line: "bun test -t x" }, result),
+    rerun: true,
+    aloneRerun: result === "fail",
+  });
+
+  test("under a load below the flaky limit it is the code: one run, a rework note, no wait", async () => {
+    notCodeTestHooks.load = () => ({ load1: 3, cores: 10 });
+    let waited = false;
+    notCodeTestHooks.wait = async () => {
+      waited = true;
+      return true;
+    };
+    let runs = 0;
+    const steady = await runCheckSteadily({
+      run: async () => {
+        runs += 1;
+        return alone();
+      },
+      limit: undefined,
+    });
+    expect(runs).toBe(1);
+    expect(waited).toBe(false);
+    expect(steady.notCode).toBeUndefined();
+    const data = steady.checked.outcome?.data as { message: string };
+    expect(data.message).toBe(
+      `the failed test "a > slow" timed out at 30 s when run alone under load 3 on 10 cores; log: ${logPath}`,
+    );
+  });
+
+  test("under a load above the flaky limit it waits and runs again, as before", async () => {
+    let load = 25;
+    notCodeTestHooks.load = () => ({ load1: load, cores: 10 });
+    notCodeTestHooks.wait = async () => {
+      load = 4;
+      return true;
+    };
+    const results = [alone(), run({}, "pass")];
+    const steady = await runCheckSteadily({ run: async () => results.shift() ?? run({}, "pass"), limit: undefined });
+    expect(steady.runs).toBe(2);
+    expect(steady.notCode).toBeUndefined();
+    expect(steady.checked.outcome?.result).toBe("pass");
+  });
+
+  test("a second timeout alone under high load still goes to a person", async () => {
+    notCodeTestHooks.load = () => ({ load1: 25, cores: 10 });
+    notCodeTestHooks.wait = async () => true;
+    const steady = await runCheckSteadily({ run: async () => alone(), limit: 30 });
+    expect(steady.notCode?.kind).toBe("test-timeout");
+  });
+
+  test("a timeout in the full run that passes alone is the rerun-passed path", async () => {
+    notCodeTestHooks.load = () => ({ load1: 1, cores: 10 });
+    const passed: CheckRun = { ...run({}, "pass"), rerun: true, passedOnRerun: ["a > slow"] };
+    const steady = await runCheckSteadily({ run: async () => passed, limit: undefined });
+    expect(steady.runs).toBe(1);
+    expect(steady.notCode).toBeUndefined();
+    expect(classifyCheck({ result: "pass", log: "", rerunPassed: true })?.kind).toBe("rerun-passed");
   });
 });
