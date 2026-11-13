@@ -1,7 +1,7 @@
 /**
  * This repository's committed `.operad/dev.json` with `worker.use` switched to
- * `pi/agent`, as `docs/dogfood.md` describes. The committed file is not
- * changed. No model is called and no pi login is read.
+ * `pi/agent` (or `claude/agent`), as the worker sections of `docs/user/dev.md`
+ * describe. The committed file is not changed. No model is called and no pi login is read.
  */
 
 import { describe, expect, test } from "bun:test";

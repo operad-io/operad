@@ -341,8 +341,10 @@ export function createBotPlugin() {
   return definePlugin({
     name: "bot",
     kind: "domain",
+    // The version comes from package.json so the two cannot drift apart.
     version: pkg.version,
-    requires: { plugins: { chat: ">=0.0.1" } },
+    // Patch releases of chat only: a new minor may change what bot relies on.
+    requires: { plugins: { chat: "~0.0.1" } },
     settings: BOT_SETTINGS,
     // A bot page is that bot's settings page; bots live under settings, not in a tab.
     objectsUnderSettings: true,
