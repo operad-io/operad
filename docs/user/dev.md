@@ -4,7 +4,7 @@ description: dev.json and the dev plugin: its commands, the reviewer, workers an
 
 # dev.json and the dev plugin
 
-The `dev` plugin runs plans and tasks on a repository. Its project settings are in `.operad/dev.json`; its commands and what they do are in the sections below. A complete workflow is in [Running operad on operad](../dogfood.md); the settings a client may change are in [config.json](config.md#settings-from-a-client).
+The `dev` plugin runs plans and tasks on a repository. Its project settings are in `.operad/dev.json`; its commands and what they do are in the sections below. The settings a client may change are in [config.json](config.md#settings-from-a-client).
 
 ## How a task goes from request to merge
 
@@ -333,8 +333,13 @@ as failed with the reason that it was cancelled.
 
 ### The `codex` settings
 
-`codex` runs the user's own Codex through `codex-acp`; how to set it up is in
-`docs/dogfood.md`. Its settings are in the `codex` section of `config.json`:
+`codex` runs the user's own Codex through `codex-acp`. It is not in the default
+config: turn it on with `operad plugin enable codex`. operad brings no
+`codex-acp` of its own: put `codex-acp` (`bun add -g @agentclientprotocol/codex-acp`)
+and `bun` on `PATH`, and run `codex login` once; operad uses your own Codex login.
+`operad plugin check codex` reports the versions and the login kind, and says what
+to do when `codex-acp` cannot start or Codex is not logged in. Its settings are in
+the `codex` section of `config.json`:
 
 | Setting | Type | Default | What it does |
 |---|---|---|---|

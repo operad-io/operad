@@ -50,18 +50,16 @@ operad --help
 ```sh
 operad init                     # 创建 home，检查插件
 operad repo add .               # 注册当前仓库
-operad plan add --slug dogfood --title "Run operad on operad" < request.md
-operad task add --plan P-0001-dogfood --slug switch --title "Switch" < task.md
-operad dev:confirm P-0001-dogfood
+operad plan add --slug hello --title "Add a greeting" < request.md
+operad task add --plan P-0001-hello --slug greet --title "Print the greeting" < task.md
+operad dev:confirm P-0001-hello
 operad serve                    # 跑起循环
 
 operad pending                  # 有什么在等你
-operad dev:merge T-0001-switch --yes
+operad dev:merge T-0001-greet --yes
 ```
 
 不确定 `.operad/dev.json` 怎么写？把[这段 prompt](docs/user/setup-prompt.md)（英文）贴给你的 coding agent，它会替你写好并检查。agent 会用你写的语言回复。
-
-[Running operad on operad](docs/dogfood.md)（英文）把同一套流程完整走了一遍。
 
 ## 工作方式
 
@@ -96,7 +94,6 @@ operad dev:merge T-0001-switch --yes
 文档目前是英文。
 
 - [User manual](docs/user/index.md)：quickstart、`config.json`、`dev` 插件、access profile、所有命令、排错。
-- [Running operad on operad](docs/dogfood.md)：一套完整的流程。
 - [Writing a plugin](docs/plugins/index.md)：给插件作者。
 - [docs/backlog/](docs/backlog/)：方向和还没定的问题。
 

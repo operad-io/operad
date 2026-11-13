@@ -24,4 +24,4 @@ operad is an open orchestration layer for coding agents. It runs an agent (radia
 - [environment](environment.md): every environment variable.
 - [troubleshooting](troubleshooting.md): when something does not work.
 
-A complete workflow is in [Running operad on operad](../dogfood.md). Plugin authors start at [Writing a plugin](../plugins/index.md).
+Plugin authors start at [Writing a plugin](../plugins/index.md).

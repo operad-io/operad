@@ -28,8 +28,11 @@ command runs once per item and wait, with these in its environment:
 | `OPERAD_LINK` | The object link, `operad://objects/<id>`. |
 
 For a task of the `dev` plugin the prompt names the step it stopped at; the
-specific reason (`ready to merge`, `review findings`, ...) is in the task's
-`dev.waiting` notice, which [Running operad on operad](../dogfood.md) lists.
+specific reason is in the task's `dev.waiting` notice: `ready to merge`,
+`review findings`, `gate failed`, `rework limit`, `review timed out twice`,
+`review did not finish`, `work did nothing`, `work failed`,
+`run stopped during <step>`, `conflict`, `no verified commit`, `merge refused`
+or `dependency cancelled`.
 
 The token is never in the environment. A command runs for at most 30 seconds,
 then it is stopped. Any exit other than 0, a timeout, or a command that cannot
