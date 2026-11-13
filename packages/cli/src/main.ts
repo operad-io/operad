@@ -131,16 +131,37 @@ function isClosedPipe(error: unknown): boolean {
   );
 }
 
+const hookedStreams = new WeakSet<NodeJS.WriteStream>();
+
+function hookStream(stream: NodeJS.WriteStream): void {
+  if (hookedStreams.has(stream)) return;
+  hookedStreams.add(stream);
+  // A write that fails later arrives as an error event; EPIPE ends output the
+  // same way, anything else stays an unhandled error as it was.
+  stream.on("error", (error) => {
+    if (isClosedPipe(error)) {
+      outputClosed = true;
+      return;
+    }
+    throw error;
+  });
+}
+
 /**
  * Writes to a process stream. A closed pipe (EPIPE) stops all output without a
  * message; any other write error is thrown as before. The write is synchronous
  * on the descriptor: Bun reports a write queued behind a full pipe as done and
  * drops it at exit, so a reader that closes meanwhile went unseen and the
  * status was 0.
+ *
+ * The stream is read only here, not when the module loads: under
+ * `bun test --isolate`, Bun can leave a stale epoll registration for a stdio
+ * stream of an earlier file, so merely reading process.stdout fails with
+ * EEXIST before this command writes anything (oven-sh/bun#37968).
  */
-function writeStream(stream: NodeJS.WriteStream, text: string): void {
+function writeStream(fd: 1 | 2, text: string): void {
   if (outputClosed) return;
-  const fd = stream === process.stderr ? 2 : 1;
+  hookStream(fd === 2 ? process.stderr : process.stdout);
   try {
     const bytes = Buffer.from(text);
     let offset = 0;
@@ -159,21 +180,9 @@ function writeStream(stream: NodeJS.WriteStream, text: string): void {
   }
 }
 
-// A write that fails later arrives as an error event; EPIPE ends output the
-// same way, anything else stays an unhandled error as it was.
-for (const stream of [process.stdout, process.stderr]) {
-  stream.on("error", (error) => {
-    if (isClosedPipe(error)) {
-      outputClosed = true;
-      return;
-    }
-    throw error;
-  });
-}
-
 const STDIO: CliIo = {
-  write: (text) => writeStream(process.stdout, text),
-  error: (text) => writeStream(process.stderr, text),
+  write: (text) => writeStream(1, text),
+  error: (text) => writeStream(2, text),
 };
 
 /** A command line mistake; exit code 2. */
@@ -2101,12 +2110,12 @@ async function readSecretValue(io: CliIo): Promise<string> {
   });
   const muted = rl as unknown as { _writeToOutput?: (text: string) => void };
   muted._writeToOutput = () => undefined;
-  writeStream(process.stderr, "secret value: ");
+  writeStream(2, "secret value: ");
   try {
     return (await rl.question("")).replace(/\r?\n$/, "");
   } finally {
     rl.close();
-    writeStream(process.stderr, "\n");
+    writeStream(2, "\n");
   }
 }
 
