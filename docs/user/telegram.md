@@ -23,7 +23,9 @@ in Telegram is answered everywhere.
    a bot some other program already uses: Telegram lets only one client pull
    updates for a token, so two programs on one token take messages from each other
    and one of them stops working.
-2. Find your own numeric Telegram user id (a bot such as `userinfobot` tells you).
+2. Find your own numeric Telegram user id. A bot that reports it (such as
+   `userinfobot`) is run by a third party, who sees what you send it; the id is
+   also in the `from` field of any update the Bot API gives your own bot.
 3. Enable the plugin and store the token as the plugin's secret:
 
    ```sh
@@ -34,8 +36,8 @@ in Telegram is answered everywhere.
    The token never reaches history, a log line or an error.
 4. Write your user id in `config.json` (see [Settings](#settings)) and start
    `operad serve`.
-5. Send the bot a message in a private chat. A chat opens on the `default` bot and
-   the reply arrives in the same Telegram chat.
+5. Send the bot a message in a private chat. A chat opens on the bot named by `telegram.bot`
+   (`default` unless you change it) and the reply arrives in the same Telegram chat.
 
 ```json
 {
@@ -55,9 +57,9 @@ in Telegram is answered everywhere.
 
 | Key | Type | Default | Allowed values | When it takes effect | Wrong value |
 |---|---|---|---|---|---|
-| `telegram.users` | array of integers | `[]` | Telegram user ids | At the next message | Refused by the schema; an unlisted user is recorded and starts nothing |
-| `telegram.bot` | string | `"default"` | a bot name from the `bot` section | When a listed user writes first, and again after their chat is closed | Refused by the schema; a bot that is not written is refused when the message opens the chat |
-| `telegram.pending` | array of strings | `[]` | plugin names, such as `dev` | When a pending item appears | Refused by the schema |
+| `telegram.users` | array of integers | `[]` | Telegram user ids | When `operad serve` starts | Refused by the schema; an unlisted user is recorded and starts nothing |
+| `telegram.bot` | string | `"default"` | a bot name from the `bot` section | When `operad serve` starts; used when a listed user writes first, and again after their chat is closed | Refused by the schema; a bot that is not written is refused when the message opens the chat |
+| `telegram.pending` | array of strings | `[]` | plugin names, such as `dev` | When `operad serve` starts | Refused by the schema |
 
 The secret is `token`, set with `operad secret set telegram token`.
 

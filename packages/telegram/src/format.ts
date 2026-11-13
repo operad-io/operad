@@ -33,7 +33,9 @@ function inline(text: string): string {
       : hold(escapeHtml(label.length === 0 ? url : label)),
   );
   work = escapeHtml(work);
-  work = work.replace(/\*\*([^*\n]+)\*\*|__([^_\n]+)__/g, (_m, a: string | undefined, b: string | undefined) => `<b>${a ?? b ?? ""}</b>`);
+  // `__x__` is bold only as a whole word, so `__init__` and `a__b__c` keep their underscores.
+  work = work.replace(/\*\*([^*\n]+)\*\*/g, (_m, body: string) => `<b>${body}</b>`);
+  work = work.replace(/(^|[^\w])__([^_\n]+)__(?!\w|\.\w)/g, (_m, lead: string, body: string) => `${lead}<b>${body}</b>`);
   work = work.replace(/(^|[\s(])\*([^*\s][^*\n]*)\*(?=$|[\s).,;:!?])/g, (_m, lead: string, body: string) => `${lead}<i>${body}</i>`);
   work = work.replace(/(^|[\s(])_([^_\s][^_\n]*)_(?=$|[\s).,;:!?])/g, (_m, lead: string, body: string) => `${lead}<i>${body}</i>`);
   work = work.replace(/~~([^~\n]+)~~/g, "$1");
@@ -42,6 +44,16 @@ function inline(text: string): string {
 
 const FENCE = /^\s{0,3}(```+|~~~+)\s*([^`\s]*)\s*$/;
 
+function isHighSurrogate(code: number): boolean {
+  return code >= 0xd800 && code <= 0xdbff;
+}
+
+/** Whether a fence line closes the fence opened with `marker`. */
+function closesFence(match: RegExpExecArray, marker: string | undefined): boolean {
+  const open = marker ?? "```";
+  return match[1]?.[0] === open[0] && (match[1]?.length ?? 0) >= open.length && (match[2] ?? "") === "";
+}
+
 /** Telegram HTML for one chunk of Markdown. */
 export function markdownToTelegramHtml(markdown: string): string {
   const out: string[] = [];
@@ -49,7 +61,7 @@ export function markdownToTelegramHtml(markdown: string): string {
   for (const line of markdown.split(/\r?\n/)) {
     const match = FENCE.exec(line);
     if (fence !== undefined) {
-      if (match !== null && line.trim().startsWith(fence.marker[0] ?? "`") && (match[1]?.length ?? 0) >= fence.marker.length && (match[2] ?? "") === "") {
+      if (match !== null && closesFence(match, fence.marker)) {
         out.push(`<pre><code>${escapeHtml(fence.lines.join("\n"))}</code></pre>`);
         fence = undefined;
       } else {
@@ -92,6 +104,7 @@ export function splitMarkdown(markdown: string, limit: number): string[] {
   let current: string[] = [];
   let size = 0;
   let fence: string | undefined;
+  let marker: string | undefined;
   const flush = (): void => {
     if (current.length === 0) return;
     const body = current.join("\n");
@@ -102,13 +115,30 @@ export function splitMarkdown(markdown: string, limit: number): string[] {
   for (const original of markdown.split(/\r?\n/)) {
     // A line longer than the limit is cut; the cut ignores word boundaries.
     const pieces: string[] = [];
-    for (let at = 0; at < Math.max(original.length, 1); at += limit - 8) pieces.push(original.slice(at, at + limit - 8));
+    const width = limit - 8;
+    for (let at = 0; at < Math.max(original.length, 1); ) {
+      let end = Math.min(at + width, original.length);
+      // Never cut between the two halves of a surrogate pair.
+      if (end < original.length && isHighSurrogate(original.charCodeAt(end - 1)) && end - 1 > at) end -= 1;
+      pieces.push(original.slice(at, end));
+      at = Math.max(end, at + 1);
+    }
     for (const line of pieces) {
       if (size + line.length + 1 > limit - 4 && current.length > 0 && !(current.length === 1 && fence !== undefined)) flush();
       current.push(line);
       size += line.length + 1;
       const match = FENCE.exec(line);
-      if (match !== null) fence = fence === undefined ? line : undefined;
+      if (match !== null) {
+        // The same rule as `markdownToTelegramHtml`: any fence line opens one,
+        // only a bare marker of at least the opening's length closes it.
+        if (fence === undefined) {
+          fence = line;
+          marker = match[1];
+        } else if (closesFence(match, marker)) {
+          fence = undefined;
+          marker = undefined;
+        }
+      }
     }
   }
   if (current.length > 0 && !(current.length === 1 && fence !== undefined && chunks.length > 0)) {

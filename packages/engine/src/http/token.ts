@@ -13,6 +13,11 @@ const LABEL = "label";
 /** The actor id used when a token has no label of its own. */
 export const DEFAULT_HTTP_TOKEN_LABEL = "operad app";
 
+/** The label a token acts as: an empty one would be refused as an actor, so it falls back. */
+function labelOf(label: string | undefined): string {
+  return label === undefined || label.length === 0 ? DEFAULT_HTTP_TOKEN_LABEL : label;
+}
+
 /** The token and the name an action records it by. */
 export interface HttpToken {
   readonly token: string;
@@ -38,7 +43,7 @@ export async function readHttpToken(
   const label = await store.get(LABEL);
   return {
     token: token.reveal(),
-    label: label?.reveal() ?? DEFAULT_HTTP_TOKEN_LABEL,
+    label: labelOf(label?.reveal()),
   };
 }
 
@@ -58,7 +63,7 @@ export async function ensureHttpToken(home: string): Promise<HttpToken> {
     await store.set(LABEL, DEFAULT_HTTP_TOKEN_LABEL);
     label = await store.get(LABEL);
   }
-  return { token, label: label?.reveal() ?? DEFAULT_HTTP_TOKEN_LABEL };
+  return { token, label: labelOf(label?.reveal()) };
 }
 
 /**
@@ -74,7 +79,7 @@ export async function rotateHttpToken(home: string): Promise<HttpToken> {
     await store.set(LABEL, DEFAULT_HTTP_TOKEN_LABEL);
     label = await store.get(LABEL);
   }
-  return { token, label: label?.reveal() ?? DEFAULT_HTTP_TOKEN_LABEL };
+  return { token, label: labelOf(label?.reveal()) };
 }
 
 /** Compares two tokens without an early exit. */

@@ -131,6 +131,30 @@ describe("the markdown a reply is reduced to", () => {
     }
   });
 
+  test("__x__ is bold only as a whole word, so a dunder name keeps its underscores", () => {
+    expect(markdownToTelegramHtml("see __init__.py and __really__ now")).toBe("see __init__.py and <b>really</b> now");
+    expect(markdownToTelegramHtml("a__b__c")).toBe("a__b__c");
+  });
+
+  test("a fence line with an info string inside a fence does not close it when a reply is split", () => {
+    const body = Array.from({ length: 300 }, (_, index) => (index === 150 ? "```py" : `line ${index}`)).join("\n");
+    const pieces = splitMarkdown(`\`\`\`\n${body}\n\`\`\``, 1000);
+    expect(pieces.length).toBeGreaterThan(1);
+    for (const piece of pieces) {
+      expect(piece.startsWith("```")).toBe(true);
+      expect(piece.trimEnd().endsWith("```")).toBe(true);
+    }
+  });
+
+  test("a long line is never cut inside a surrogate pair", () => {
+    const pieces = splitMarkdown("😀".repeat(3_000), 101);
+    for (const piece of pieces) {
+      expect(piece.length % 2).toBe(0);
+      expect(piece).toBe(piece.toWellFormed());
+    }
+    expect(pieces.join("")).toBe("😀".repeat(3_000));
+  });
+
   test("a single line longer than the limit and text that grows when escaped still fit", () => {
     expect(splitMarkdown("x".repeat(10_000), 3500).every((piece) => piece.length <= 3500)).toBe(true);
     const chunks = telegramChunks("&".repeat(9_000));
@@ -332,7 +356,24 @@ describe("a send that fails", () => {
     }).sweepAll();
     expect(waits).toEqual([]);
     expect((await failedEvents(w))[0]?.summary).toContain("bot was blocked");
+    expect((await failedEvents(w))[0]?.summary).toContain("gave up after 1 try:");
     await w.close();
+  });
+
+  test("a send that stalls is ended by its time limit and counts as a failure that can be retried", async () => {
+    const limit = new AbortController();
+    const api = createBotApi({
+      token: new Secret("1:T"),
+      timeoutSignal: () => limit.signal,
+      fetch: (_url, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+          limit.abort();
+        }),
+    });
+    const error = await api.sendMessage({ chatId: 1, text: "hi" }).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(BotApiError);
+    expect(error instanceof BotApiError && error.retryable).toBe(true);
   });
 
   test("the Bot API's own errors never carry the token", async () => {

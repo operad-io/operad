@@ -66,6 +66,7 @@ changes for bots, in the order they were recorded. The root
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0406-M9 | packages/bot/src/index.ts | `bot:chat` dropped the channels it was given instead of passing them to `openChat` | `bot:chat > bot:chat puts the channels it is given on the new chat, and refuses another form` |
+
 ## T-0411 — bot's chat requirement has an upper bound
 
 | id | file | mutation | failing test |

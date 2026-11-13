@@ -186,6 +186,28 @@ describe("pending items go to Telegram", () => {
     await w.close();
   });
 
+  test("a tap on a message the plugin does not know is still answered, so no spinner stays", async () => {
+    const { w, api, source } = await setup({ pending: ["dev"], bind: false });
+    api.updates = [tap(200, 42, 42, 4_444, "o:0")];
+    await source.poll();
+    expect(api.callbacks.map((callback) => callback.callbackId)).toEqual(["cb-200"]);
+    await w.close();
+  });
+
+  test("a reply from an unlisted user to an item's message answers nothing", async () => {
+    const { w, api, client, sender, source } = await setup({ pending: ["dev"], bind: false });
+    client.items = [item({ runId: "d1", object: "task:t1", actions: [ACT_MERGE, ACT_REJECT] })];
+    await sender.sync();
+    api.updates = [replyUpdate(300, 77, 42, "not ready", 9_001)];
+    await source.poll();
+    // The pending side refuses it on its own, whatever the source lets through.
+    const second = replyUpdate(301, 77, 42, "not ready", 9_001).message;
+    expect(second === undefined ? true : await sender.handleReply(second)).toBe(false);
+    expect(client.acts).toHaveLength(0);
+    expect(api.edits).toHaveLength(0);
+    await w.close();
+  });
+
   test("a tap the client refuses reports it and does not claim an answer", async () => {
     const { w, api, client, sender, source } = await setup({ pending: ["dev"], bind: false });
     client.items = [item({ runId: "d1", object: "task:t1", actions: [ACT_MERGE] })];

@@ -45,8 +45,8 @@ The types a plugin imports, by the page that explains them. The values these ent
 | `PluginRequires` | A plugin's declared dependencies: plugins and the plugin API version. | [define-plugin](define-plugin.md) |
 | `PluginShape` | The shape `definePlugin` accepts. The version is added by the helper. | [define-plugin](define-plugin.md) |
 | `ClientApi` | The in-process client API a source plugin's `start` receives: `list`, `get`, `section`, `events`, `act`, `pending` and `answer`, the same object HTTP and the TUI use. | [events](events.md) |
-| `PendingItem` | One item `pending` returns: a thing waiting for a person, with its prompt, choices, wait id, object and the actions that answer it. | [events](events.md) |
-| `ViewAction` | One action a client may offer for an object, as `get` lists it: its name, whether it needs a note or a confirmation. | [events](events.md) |
+| `PendingItem` | One item `pending` returns: a thing waiting for a person, with its prompt, choices, wait id, object and the actions that answer it. | [pending](pending.md) |
+| `ViewAction` | One action a client may offer for an object, as `get` lists it: its name, whether it needs a note or a confirmation. | [actions](actions.md) |
 | `CronField` | A five-field cron expression, evaluated in the machine's local time zone. | [events](events.md) |
 | `CronSchedule` | A type of the plugin API; its fields are described on the page. | [events](events.md) |
 | `EventFilePaths` | The paths an event's summary and data files use inside the store. | [events](events.md) |
