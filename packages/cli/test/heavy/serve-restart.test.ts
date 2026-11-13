@@ -200,11 +200,13 @@ describe("a serve restart while a check runs", () => {
     const release = join(work, "release");
     const signalled = join(work, "signalled");
     const ticks = join(work, "ticks");
+    const made = Bun.spawnSync(["mkfifo", release]);
+    if (made.exitCode !== 0) throw new Error("mkfifo failed");
     // The command records any TERM or INT it receives, then waits for the
-    // release file and exits 0, leaving a mark that it ended by itself.
+    // release line and exits 0, leaving a mark that it ended by itself.
     const line =
       `sh -c 'trap "echo term > ${signalled}" TERM INT HUP; ` +
-      `echo $$ >> ${started}; while [ ! -e ${release} ]; do sleep 0.05; done; ` +
+      `echo $$ >> ${started}; exec 3<>"${release}"; read -r _ <&3; ` +
       `echo $$ > ${join(work, "finished")}'`;
     const env = { CHECK_LINE: line, CHECK_TICKS: ticks };
 

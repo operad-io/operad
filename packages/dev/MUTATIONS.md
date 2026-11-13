@@ -1086,3 +1086,10 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0390-M1 | packages/dev/src/gate.ts | a comment naming `bun test` and `packages/dev` was put back | `the kernel boundary > the dev plugin's source has no bun, bun.lock, scripts/, CLAUDE.md or packages/` |
+## T-0394 — test slimming follow-ups
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0394-M1 | packages/dev/test/fixtures/hold.ts | the watcher no longer checked that its owner was alive, so a hold whose owner was killed ran to its lifetime | `a task cancelled in the integrate step > its check's hold ends when the process that owns it is killed` |
+| T-0394-M2 | packages/dev/test/fixtures/hold.ts | the lifetime backstop reported itself as the owner check | `the hold fixture > ends at its lifetime even when its owner lives` |
+| T-0394-M3 | packages/dev/test/fixtures/hold.ts | the wait used bash's `read -t`/`read -u` again, which dash rejects, so it spun instead of reading the fifo | `the hold fixture > blocks under POSIX sh until the release line arrives` |

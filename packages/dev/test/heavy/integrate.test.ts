@@ -10,6 +10,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { holdUntilReleased } from "../fixtures/hold.ts";
 import { notCodeTestHooks } from "../../src/notcode.ts";
 import { IntegrationQueue } from "../../src/integration-queue.ts";
 import { validateDevSettings } from "../../src/settings.ts";
@@ -1684,7 +1685,7 @@ describe("a task cancelled in the integrate step", () => {
       if (made.exitCode !== 0) throw new Error("mkfifo failed");
     }
     const state = await fixture({
-      keyCommands: [`echo go > '${started}'; cat '${release}' > /dev/null & reader=$!; while kill -0 $reader 2>/dev/null; do kill -0 ${process.pid} 2>/dev/null || { kill $reader; exit 0; }; sleep 1; done`],
+      keyCommands: [`echo go > '${started}'; ${holdUntilReleased(release)}`],
     });
     const before = remoteMain(state);
     const running = integrate(state);
@@ -1701,5 +1702,41 @@ describe("a task cancelled in the integrate step", () => {
     expect(taskRowState(await taskOf(state))).toBe("cancelled");
     expect(await planCounts(state)).toEqual({ merged: 0, cancelled: 1 });
     expect(remoteMain(state)).toBe(before);
+  });
+
+  test("its check's hold ends when the process that owns it is killed", async () => {
+    const dir = await osTempRoot();
+    const started = join(dir, "started");
+    const release = join(dir, "release");
+    for (const fifo of [started, release]) {
+      const made = Bun.spawnSync(["mkfifo", fifo]);
+      if (made.exitCode !== 0) throw new Error("mkfifo failed");
+    }
+    const owner = Bun.spawn(["sleep", "300"], {
+      stdin: "ignore",
+      stdout: "ignore",
+      stderr: "ignore",
+    });
+    const state = await fixture({
+      keyCommands: [`echo go > '${started}'; ${holdUntilReleased(release, owner.pid)}`],
+    });
+    const running = integrate(state);
+    try {
+      // The check says it started by writing the first pipe, then holds.
+      await Bun.spawn(["cat", started], { stdout: "ignore" }).exited;
+      expect(taskRowState(await taskOf(state))).toBe("integrating");
+
+      // The owner is gone; the hold notices within its one-second check and
+      // ends by itself, so the check exits 0 and the integration lands the task.
+      owner.kill("SIGKILL");
+      await owner.exited;
+      expect((await running).result).toBe("merged");
+      expect(taskRowState(await taskOf(state))).toBe("merged");
+    } finally {
+      owner.kill("SIGKILL");
+      await owner.exited;
+      await Bun.spawn(["sh", "-c", `exec 3<>'${release}'; echo go >&3`]).exited;
+      await running;
+    }
   });
 });
