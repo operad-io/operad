@@ -62,4 +62,17 @@ describe("plugin versions", () => {
       }
     }
   });
+
+  test("no requirement accepts a future incompatible version of the plugin it names", () => {
+    const versions = new Map(shipped.map((plugin) => [plugin.name, plugin.packageVersion]));
+    for (const plugin of shipped) {
+      for (const [dependency, range] of Object.entries(plugin.requires?.plugins ?? {})) {
+        const version = versions.get(dependency);
+        if (version === undefined) continue;
+        const [major = 0, minor = 0] = version.split(".").map(Number);
+        const next = major === 0 ? `0.${minor + 1}.0` : `${major + 1}.0.0`;
+        expect(satisfiesRange(next, range), `${plugin.name} requires ${dependency} ${range}, which accepts ${next}`).toBe(false);
+      }
+    }
+  });
 });

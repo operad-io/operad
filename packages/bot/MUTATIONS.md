@@ -60,3 +60,9 @@ changes for bots, in the order they were recorded. The root
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0410-M1 | packages/bot/src/index.ts | bot required chat `^0.0.0`, which refuses chat 0.0.1 | `plugin versions > every plugin's requirements are met by the versions in this workspace` (packages/cli/test/plugin-versions.test.ts) |
+
+## T-0411 — bot's chat requirement has an upper bound
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0411-M1 | packages/bot/src/index.ts | bot required chat `>=0.0.1`, which also accepts a future chat 0.1.0 | `plugin versions > no requirement accepts a future incompatible version of the plugin it names` (packages/cli/test/plugin-versions.test.ts) |
