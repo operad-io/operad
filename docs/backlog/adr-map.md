@@ -66,3 +66,61 @@
 | operad-presentation.md | 14 | 0018 | D3 |
 | operad-presentation.md | 15 | 0019 | D1–D3 |
 | operad-presentation.md | 「样子」里的 iOS 一段 | 留在 backlog | |
+| operad-dev-flows.md | 1 | 0020 | D1 |
+| operad-dev-flows.md | 2 | 0020 | D2 |
+| operad-dev-flows.md | 3 | 0020 | D3 |
+| operad-dev-flows.md | 4 | 0020 | D4 |
+| operad-dev-flows.md | 5 | 0020 | D5 |
+| operad-dev-flows.md | 6 | 0020 | D6 |
+| operad-dev-flows.md | 7（不写 flows 时行为同今天；flows 优先并提示一行留在 backlog） | 0020 | D7 |
+| operad-dev-flows.md | 8 | 0020 | D8 |
+| operad-dev-flows.md | 9 | 0020 | D9 |
+| operad-worker-pool.md | 1 | 0021 | D1 |
+| operad-worker-pool.md | 2 | 0021 | D2 |
+| operad-worker-pool.md | 3 | 0021 | D3 |
+| operad-worker-pool.md | 4 | 0021 | D4 |
+| operad-worker-pool.md | 5 | 0021 | D5 |
+| operad-worker-pool.md | 6 | 0021 | D6 |
+| operad-worker-pool.md | 7 | 0021 | D7 |
+| operad-worker-pool.md | 8 | 0021 | D8 |
+| operad-worker-pool.md | 10（第一个，reviewer 不进 pool） | 0021 | D11 |
+| operad-worker-pool.md | 9（记录 worker 和按 worker 的 metrics） | 0021 | D10 |
+| operad-worker-pool.md | 10（第二个，无 fallback 就等） | 0021 | D9 |
+| operad-harness.md | 1 | 0022 | D1 |
+| operad-harness.md | 2 | 0022 | D2 |
+| operad-harness.md | 3（各家接法；Claude 对应关系细节留在 backlog） | 0022 | D3 |
+| operad-harness.md | 4 | 留在 backlog（未核实） |  |
+| operad-harness.md | 5 | 0022 | D3 |
+| operad-harness.md | 6（一般规则；每家禁用表留在 backlog） | 0022 | D4 |
+| operad-harness.md | 7 | 0022 | D5 |
+| operad-harness.md | 8 | 0022 | D6 |
+| operad-harness.md | 9 | 0022 | D7 |
+| operad-harness.md | 10 | 0022 | D8 |
+| operad-harness-pi.md | 1 | 0023 | D1 |
+| operad-harness-pi.md | 2 | 0023 | D2 |
+| operad-harness-pi.md | 3 | 0023 | D3 |
+| operad-harness-pi.md | 4（API key 一路留在 backlog） | 0023 | D4 |
+| operad-harness-pi.md | 5 | 0023 | D5 |
+| operad-harness-pi.md | 6（steer 等留在 backlog） | 0023 | D6 |
+| operad-harness-pi.md | 7 | 0023 | D7 |
+| operad-harness-pi.md | 8 | 0023 | D8 |
+| operad-harness-pi.md | 9 | 0023 | D9 |
+| operad-harness-claude.md | 1 | 0024 | D1 |
+| operad-harness-claude.md | 2 | 0024 | D2 |
+| operad-harness-claude.md | 3（API key 一路留在 backlog） | 0024 | D3 |
+| operad-harness-claude.md | 4（环境变量核对留在 backlog） | 0024 | D4 |
+| operad-harness-claude.md | 5 | 0024 | D5 |
+| operad-harness-claude.md | 6 | 0024 | D6 |
+| operad-harness-claude.md | 7 | 0024 | D7 |
+| operad-harness-claude.md | 8 | 0024 | D8 |
+| operad-harness-claude.md | 9 | 0024 | D9 |
+| operad-harness-claude.md | 10 | 0024 | D10 |
+| operad-sandbox.md | 1（字段 cwd、outside、network 留在 backlog） | 0025 | D1 |
+| operad-sandbox.md | 2 | 0025 | D2 |
+| operad-sandbox.md | 3（默认访问档） | 留在 backlog（全局默认档未做） |  |
+| operad-sandbox.md | 4 | 0025 | D3 |
+| operad-sandbox.md | 5（三种回答；超时留在 backlog） | 0025 | D4 |
+| operad-sandbox.md | 6 | 0025 | D5 |
+| operad-sandbox.md | 7 | 0025 | D6 |
+| operad-sandbox.md | 8、9、10 | 留在 backlog（未做） |  |
+| operad-sandbox.md | 11 | 0025 | D7 |
