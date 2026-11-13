@@ -124,3 +124,77 @@
 | operad-sandbox.md | 7 | 0025 | D6 |
 | operad-sandbox.md | 8、9、10 | 留在 backlog（未做） |  |
 | operad-sandbox.md | 11 | 0025 | D7 |
+| operad-conversation.md | 1 | 0026 | D1 |
+| operad-conversation.md | 2 | 0026 | D2 |
+| operad-conversation.md | 3 | 0026 | D3 |
+| operad-conversation.md | 4（附件那句见 21） | 0026 | D4 |
+| operad-conversation.md | 5 | 0026 | D5 |
+| operad-conversation.md | 6 | 0026 | D6 |
+| operad-conversation.md | 7 | 0028 | D6 |
+| operad-conversation.md | 8（知识库本身留在 operad-bot.md） | 0026 | D7 |
+| operad-conversation.md | 9 | 0026 | D8 |
+| operad-conversation.md | 10（HTTP 部分；推送和 hub 退役留在 backlog） | 0029 | D1 |
+| operad-conversation.md | 11 | 0029 | D2 |
+| operad-conversation.md | 12 | 0028 | D1 |
+| operad-conversation.md | 13（harness 不换、能力照实显示） | 0026 | D9 |
+| operad-conversation.md | 13（仓库 chat 只提供能事先拦下调用的 harness） | 0028 | D2 |
+| operad-conversation.md | 14 | 0028 | D3 |
+| operad-conversation.md | 15 | 0028 | D4 |
+| operad-conversation.md | 16 | 留在 backlog（`external: true` 未做）；ADR 0026「不在此决定」记不导入这一边界 | |
+| operad-conversation.md | 17 | 0026 | D11 |
+| operad-conversation.md | 18 | 0028 | D5 |
+| operad-conversation.md | 19、20、22 | 0026 | D10 |
+| operad-conversation.md | 21 | 0027 | D1 |
+| operad-conversation.md | 23 | 0027 | D2 |
+| operad-conversation.md | 24（Markdown 行、thinking 显示；`Thinking` 标签留在 backlog） | 0027 | D3 |
+| operad-conversation.md | 25（逐字显示、归并、重跑） | 0027 | D4–D6 |
+| operad-bot.md | 1、2、3、4、5 | 留在 backlog（场景、知识库、digest 未做） | |
+| operad-bot.md | 6 | 0032 | D10 |
+| operad-bot.md | 7 | 0011 | D2（已有） |
+| operad-bot.md | 8 | 留在 backlog（含浏览器例外，未核实为已落地的边界） | |
+| operad-bot.md | 9 | 0030 | D1 |
+| operad-bot.md | 10 | 0030 | D2 |
+| operad-bot.md | 11 | 0030 | D3 |
+| operad-bot.md | 12、13 | 留在 backlog（未做） | |
+| operad-bot.md | 14 | 0026 | D12；0030 D6 |
+| operad-bot.md | 15 | 留在 backlog（git 地址导入未做） | |
+| operad-bot.md | 16（operad 不执行脚本；首次询问等留在 backlog） | 0030 | D7 |
+| operad-bot.md | 17、18 | 0030 | D4 |
+| operad-bot.md | 19 | 0030 | D5 |
+| operad-bot.md | 20（`Review`、`approve`、`reject`；其余词留在 backlog） | 0030 | D4 |
+| operad-bot.md | 21 | 留在 backlog（bot 页未核实） | |
+| operad-bot-mcp.md | 1（命令和粘贴；HTTPS 地址留在 backlog） | 0031 | D1 |
+| operad-bot-mcp.md | 2 | 0031 | D2 |
+| operad-bot-mcp.md | 3 | 0031 | D3 |
+| operad-bot-mcp.md | 4 | 0031 | D4 |
+| operad-bot-mcp.md | 5、6、7 | 留在 backlog（远程服务未做；7 与实现不一致，见 backlog） | |
+| operad-bot-mcp.md | 8 | 0031 | D5 |
+| operad-bot-mcp.md | 9–20 | 留在 backlog（浏览器未做） | |
+| operad-bot-mcp.md | （实现已有：密钥只在启动时给服务） | 0031 | D6 |
+| operad-channels.md | 1、2、3、4（后半）、5 | 留在 backlog（卡片协议、HTTP 来源未做；4 的“不进提示词”在 0032 D4） | |
+| operad-channels.md | 6 | 0033 | D1（首个通道）；cron 见 0032 D5 |
+| operad-channels.md | 7 | 0032 | D1 |
+| operad-channels.md | 8 | 0032 | D2 |
+| operad-channels.md | 9 | 0032 | D3 |
+| operad-channels.md | 10 | 0032 | D4 |
+| operad-channels.md | 11（cron 和 `operad trigger`；HTTP、webhook 留在 backlog） | 0032 | D5 |
+| operad-channels.md | 12 | 0032 | D6 |
+| operad-channels.md | 13 | 0032 | D7 |
+| operad-channels.md | 14 | 0032 | D8 |
+| operad-channels.md | 15 | 0032 | D4 |
+| operad-channels.md | 16 | 0032 | D9 |
+| operad-channels.md | 17 | 0032 | D10 |
+| operad-channels.md | 18 | 留在 backlog（`login` 和 `fetch` 未做）；现为该文件「已定但还没做」第 7 条 | |
+| operad-telegram.md | 1 | 0033 | D1 |
+| operad-telegram.md | 2 | 0033 | D2 |
+| operad-telegram.md | 3 | 0033 | D5 |
+| operad-telegram.md | 4 | 0033 | D6 |
+| operad-telegram.md | 5 | 0033 | D4 |
+| operad-telegram.md | 6 | 0033 | D8 |
+| operad-telegram.md | 7 | 0033 | D7 |
+| operad-telegram.md | 8 | 0033 | D3 |
+| operad-telegram.md | 9 | 0033 | D7 |
+| operad-telegram.md | 10 | 0033（背景） | |
+| operad-telegram.md | 当初的建议 1–9 | 以决定为准；建议 8（表单链接对 Telegram 不做）、9（digest 反应用按钮）见 backlog 待决 | |
+| operad-bot.md | 重编号：原 8 → 现第 6 条；原 12 → 第 7 条；原 13 → 第 8 条；原 15 → 第 9 条；原 16（未移入 ADR 的部分）→ 第 10 条；原 20（其余用户词）→ 第 11 条；原 21 → 第 12 条（原 1–5 编号不变） | 留在 backlog，旧编号的引用改成新编号 | |
+| operad-channels.md | 重编号：原 1–5 编号不变（现在是「已定但还没做」第 1–5 条）；原 6 的 HTTP 来源 → 第 6 条；原 18 → 第 7 条 | 留在 backlog | |
