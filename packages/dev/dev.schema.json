@@ -156,7 +156,7 @@
       "deprecated": true
     },
     "concurrency": {
-      "description": "An extra cap on running tasks. The repository runs at most as many tasks as the sum of the counts of the default pool's workers, and this caps that sum further. With the single worker setting it is that worker's count.",
+      "description": "A cap on running tasks across every pool together. Each pool has its own cap: the sum of the counts of its workers, or the pool's own concurrency when that is smaller. This cap never raises a pool's cap; when the file does not set it, the pools' caps alone decide.",
       "type": "integer",
       "minimum": 1
     },
