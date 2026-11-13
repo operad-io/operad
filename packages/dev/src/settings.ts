@@ -123,6 +123,8 @@ export interface WorkSettings {
 export interface GateSettings {
   readonly commands: readonly CheckCommand[];
   readonly commandTimeoutSecs: number;
+  /** How long a gate command may write nothing; unset turns the limit off. */
+  readonly stallSecs?: number;
   /** The most checks of this repository that run at once; unset means no limit of its own. */
   readonly places?: number;
 }
@@ -610,7 +612,12 @@ function gateSettings(value: unknown, field: string): GateSettings {
     throw new DevError(field, "must be an object");
   }
   for (const key of Object.keys(value)) {
-    if (key !== "commands" && key !== "commandTimeoutSecs" && key !== "places") {
+    if (
+      key !== "commands" &&
+      key !== "commandTimeoutSecs" &&
+      key !== "stallSecs" &&
+      key !== "places"
+    ) {
       throw new DevError(`${field}.${key}`, "is not a gate setting");
     }
   }
@@ -623,6 +630,9 @@ function gateSettings(value: unknown, field: string): GateSettings {
       value.commandTimeoutSecs === undefined
         ? DEFAULT_DEV_SETTINGS.gate.commandTimeoutSecs
         : positiveSeconds(value.commandTimeoutSecs, `${field}.commandTimeoutSecs`),
+    ...(value.stallSecs === undefined
+      ? {}
+      : { stallSecs: positiveSeconds(value.stallSecs, `${field}.stallSecs`) }),
     ...(value.places === undefined
       ? {}
       : { places: positiveCount(value.places, `${field}.places`) }),

@@ -82,6 +82,13 @@ export const DEV_PROJECT_SETTINGS: ProjectSettingsDeclaration = {
                 description:
                   "The longest one check may run, in seconds, before it counts as failed.",
               },
+              stallSecs: {
+                type: "number",
+                minimum: 1,
+                editable: true,
+                description:
+                  "How long a check may write nothing, in seconds, before it is stopped and fails as a stall. Unset turns the limit off.",
+              },
             },
           },
           reviewer: {

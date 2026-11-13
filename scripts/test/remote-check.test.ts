@@ -1,11 +1,12 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { holdUntilReleased } from "./fixtures/hold.ts";
 import { anchoredPattern, rerunCommand } from "../../packages/dev/src/rerun.ts";
+import { alive, waitForGone } from "../../packages/engine/test/plugin/support.ts";
 
 const script = join(import.meta.dir, "..", "remote-check.sh");
 const roots: string[] = [];
@@ -194,6 +195,56 @@ describe("remote-check.sh", () => {
       // drain
     }
     await child.exited;
+  }, 30_000);
+
+  test("a stop of the local check ends the command on the host", async () => {
+    const { root, local, home, env } = setup();
+    const started = join(root, "remote-started");
+    const release = join(root, "remote-release");
+    const pidFile = join(root, "remote.pid");
+    spawnSync("mkfifo", [started, release]);
+    const fakeHost = join(import.meta.dir, "fixtures", "remote-check-fake-host.ts");
+    // The command ignores TERM, so only the remote side's last SIGKILL ends it.
+    const command =
+      `trap '' TERM; echo $$ > '${pidFile}'; echo started > '${started}'; ${holdUntilReleased(release)}`;
+    const child = spawn("bash", [join(local, "scripts", "remote-check.sh"), command], {
+      cwd: local,
+      env: {
+        ...cleanEnv(),
+        ...env,
+        OPERAD_CHECK_SSH: `bun ${fakeHost}`,
+        FAKE_HOST_HOME: home,
+      },
+      detached: true,
+      stdio: "ignore",
+    });
+    let pid = 0;
+    try {
+      await readFifo(started);
+      pid = Number(readFileSync(pidFile, "utf8").trim());
+      expect(pid).toBeGreaterThan(1);
+      // The gate stops the local group: remote-check.sh, ssh and the check.
+      if (child.pid !== undefined) process.kill(-child.pid, "SIGTERM");
+      await waitForGone(pid, 5000);
+    } finally {
+      await Bun.spawn(["sh", "-c", `exec 3<>'${release}'; echo go >&3`], {
+        stdin: "ignore",
+        stdout: "ignore",
+        stderr: "ignore",
+      }).exited;
+      if (pid > 1 && alive(pid)) process.kill(pid, "SIGKILL");
+      if (child.pid !== undefined) {
+        try {
+          process.kill(-child.pid, "SIGKILL");
+        } catch {
+          // It already ended.
+        }
+      }
+      await new Promise<void>((resolve) => {
+        if (child.exitCode !== null || child.signalCode !== null) resolve();
+        else child.once("exit", () => resolve());
+      });
+    }
   }, 30_000);
 
   describe("slots and the integration lane", () => {

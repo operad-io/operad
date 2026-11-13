@@ -497,6 +497,7 @@ interface FixtureOptions {
   readonly commands?: readonly CheckCommand[];
   readonly prepare?: readonly string[];
   readonly commandTimeoutSecs?: number;
+  readonly stallSecs?: number;
   readonly rerun?: number;
   readonly reviewerArgs?: readonly string[];
   readonly firstArgs?: readonly string[];
@@ -562,6 +563,7 @@ async function fixture(options: FixtureOptions = {}): Promise<Fixture> {
         gate: {
           commands: options.commands ?? ["true"],
           commandTimeoutSecs: options.commandTimeoutSecs ?? 60,
+          ...(options.stallSecs === undefined ? {} : { stallSecs: options.stallSecs }),
         },
         ...(options.rerun === undefined ? {} : { check: { rerun: options.rerun } }),
         reviewer: {
@@ -907,6 +909,33 @@ describe("dev/verify", () => {
     } finally {
       notCodeTestHooks.load = undefined;
     }
+  });
+
+  test("a gate command that stops writing fails as a stall and its last lines go to the worker", async () => {
+    const clock = manualClock();
+    const root = await tempRoot();
+    const marker = join(root, "stall-started");
+    const state = await fixture({
+      clock,
+      stallSecs: 5,
+      commandTimeoutSecs: 3600,
+      commands: [
+        `echo 'packages/a/test/a.test.ts:'; echo 'the last test line'; trap '' TERM; echo $$ > '${marker}'; sleep 30`,
+      ],
+    });
+    const running = verify(state);
+    await waitForFile(marker);
+    expect(clock.fireTimeouts()).toBeGreaterThan(0);
+
+    const result = await running;
+    expect(result.result).toBe("fail");
+    expect(result.data?.reason).toBe("stall");
+    expect(String(result.data?.message)).toContain("check wrote nothing for 5s");
+    expect(String(result.data?.message)).toContain("the last test line");
+    const task = await taskOf(state);
+    expect(task.phase).toBe("review");
+    expect(task.attempt?.verify?.reason).toBe("stall");
+    expect(task.attempt?.verify?.message).toContain("the last test line");
   });
 
   test("a replay of the same run reads back the result while the branch is where it was", async () => {
@@ -2788,6 +2817,14 @@ describe("gate settings", () => {
     expect(() =>
       validateDevSettings({ gate: { commands: [""], commandTimeoutSecs: 1 } }),
     ).toThrow(/gate\.commands\[0\]/);
+    expect(validateDevSettings({ gate: { stallSecs: 900 } }).gate.stallSecs).toBe(900);
+    expect(validateDevSettings({}).gate.stallSecs).toBeUndefined();
+    expect(() => validateDevSettings({ gate: { stallSecs: 0 } })).toThrow(
+      /gate\.stallSecs/,
+    );
+    expect(() => validateDevSettings({ gate: { other: 1 } })).toThrow(
+      /gate\.other/,
+    );
     expect(() => validateDevSettings({ reviewer: { fixLevel: "high" } })).toThrow(
       /reviewer\.fixLevel/,
     );

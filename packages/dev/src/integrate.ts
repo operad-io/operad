@@ -586,7 +586,12 @@ export async function runIntegrate(
           run: () =>
             runCheckCommands(
               runStep,
-              { cwd: gate },
+              {
+                cwd: gate,
+                ...(settings.gate.stallSecs === undefined
+                  ? {}
+                  : { stallSecs: settings.gate.stallSecs }),
+              },
               keyCommands,
               stepOptions(ctx, gate),
               settings.check.rerun,
@@ -920,7 +925,12 @@ export async function runIntegrate(
           run: () =>
             runCheckCommands(
               runStep,
-              { cwd: gate },
+              {
+                cwd: gate,
+                ...(settings.gate.stallSecs === undefined
+                  ? {}
+                  : { stallSecs: settings.gate.stallSecs }),
+              },
               keyCommands,
               stepOptions(ctx, gate),
               settings.check.rerun,

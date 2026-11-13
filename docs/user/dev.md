@@ -54,6 +54,7 @@ refused with the field path in front, such as `workers.claude.fallback: ...`.
 | `dev.gate` | object | `{ "commands": [], "commandTimeoutSecs": 1800 }` | the keys below | When a check starts | Refused: `gate: must be an object` or `gate.<key>: is not a gate setting` |
 | `dev.gate.commands` | array | `[]`: no check runs | a shell line, or a check command object | When the check step starts | Refused: `gate.commands: must be an array of commands` or the command's own error |
 | `dev.gate.commandTimeoutSecs` | number | `1800` | above `0` seconds | When a gate command starts | Refused: `gate.commandTimeoutSecs: must be a positive number of seconds` |
+| `dev.gate.stallSecs` | number | unset: no stall limit | above `0` seconds | While a gate or integration key command runs | Refused: `gate.stallSecs: must be a positive number of seconds`; a command that writes nothing for that long is stopped and fails with reason `stall`, and its last lines go to the worker |
 | `dev.gate.places` | integer | unset: no limit for this repository | `1` or more | When a check looks for a place | Refused: `gate.places: must be an integer of 1 or more` |
 | `dev.check` | object | `{ "rerun": 1, "flakyTask": 2 }` | the keys below | When a failed check is judged | Refused: `check: must be an object` or `check.<key>: is not a check setting` |
 | `dev.check.rerun` | integer | `1` | `0` or more; `0` turns a rerun off | When a check line list fails; a timeout is never rerun | Refused: `check.rerun: must be zero or a positive integer` |

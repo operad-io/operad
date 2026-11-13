@@ -42,6 +42,18 @@ function timeoutParam(
   return { ms: secs * 1000, secs };
 }
 
+function stallParam(
+  params: Record<string, unknown>,
+  at: string,
+): { readonly ms: number | undefined; readonly secs: number | undefined } {
+  const secs = params.stallSecs;
+  if (secs === undefined) return { ms: undefined, secs: undefined };
+  if (typeof secs !== "number" || !Number.isFinite(secs) || secs <= 0) {
+    throw new Error(`${at}: params.stallSecs: must be a positive number of seconds`);
+  }
+  return { ms: secs * 1000, secs };
+}
+
 function envParam(
   params: Record<string, unknown>,
   at: string,
@@ -100,9 +112,40 @@ function failureData(
   };
 }
 
+function stallDuration(secs: number): string {
+  const minutes = secs / 60;
+  return Number.isInteger(minutes) && minutes >= 1 ? `${minutes} min` : `${secs}s`;
+}
+
+/** The last test file header, then the last lines, for a stall's reason. */
+function stallLines(outcome: LineOutcome): readonly string[] {
+  const all = outcome.stallTail;
+  const header = [...all]
+    .reverse()
+    .find((line) => /\.(?:test|spec)\.[cm]?[jt]sx?:\s*$/.test(line));
+  const tail = outcome.tail.slice(-8);
+  return header === undefined || tail.includes(header) ? tail : [header, ...tail];
+}
+
+function stallData(
+  outcome: LineOutcome,
+  secs: number | undefined,
+  extra: Readonly<Record<string, unknown>> = {},
+): Record<string, unknown> {
+  const duration = secs === undefined ? "too long" : stallDuration(secs);
+  const lines = stallLines(outcome).join("\n");
+  return failureData(outcome, {
+    reason: "stall",
+    message: `check wrote nothing for ${duration}; last lines: ${lines}`,
+    ...(secs === undefined ? {} : { stallSecs: secs }),
+    ...extra,
+  });
+}
+
 function commandResult(
   outcome: LineOutcome,
   timeoutSecs: number | undefined,
+  stallSecs?: number | undefined,
 ): PluginStepResult {
   if (outcome.spawnError !== undefined) {
     return {
@@ -118,6 +161,9 @@ function commandResult(
       result: "interrupted",
       data: failureData(outcome, { reason: "cancelled" }),
     };
+  }
+  if (outcome.stalled) {
+    return { result: "fail", data: stallData(outcome, stallSecs) };
   }
   if (outcome.timedOut) {
     const limit = timeoutSecs === undefined ? "" : ` after ${timeoutSecs}s`;
@@ -173,6 +219,7 @@ export function createShellPlugin(options: ShellPluginOptions = {}) {
           const cwd = cwdParam(ctx, input, at);
           const env = envParam(input, at);
           const timeout = timeoutParam(input, at);
+          const stall = stallParam(input, at);
 
           const cwdProblem = await directoryError(cwd);
           if (cwdProblem !== undefined) {
@@ -194,11 +241,12 @@ export function createShellPlugin(options: ShellPluginOptions = {}) {
             cwd,
             env,
             timeoutMs: timeout.ms,
+            stallMs: stall.ms,
             signal: ctx.signal,
             logger: ctx.logger,
             clock,
           });
-          return commandResult(outcome, timeout.secs);
+          return commandResult(outcome, timeout.secs, stall.secs);
         },
       },
       {
@@ -221,6 +269,7 @@ export function createShellPlugin(options: ShellPluginOptions = {}) {
           }
           const cwd = cwdParam(ctx, input, at);
           const timeout = timeoutParam(input, at);
+          const stall = stallParam(input, at);
           const start = await logStart(ctx.logger);
 
           const cwdProblem = await directoryError(cwd);
@@ -266,6 +315,7 @@ export function createShellPlugin(options: ShellPluginOptions = {}) {
               line,
               cwd,
               timeoutMs: timeout.ms,
+              stallMs: stall.ms,
               signal: ctx.signal,
               logger: ctx.logger,
               clock,
@@ -276,6 +326,17 @@ export function createShellPlugin(options: ShellPluginOptions = {}) {
                 result: "interrupted",
                 data: failureData(outcome, {
                   reason: "cancelled",
+                  line,
+                  lineNumber: index + 1,
+                  logStart: start,
+                }),
+              };
+            }
+
+            if (outcome.stalled) {
+              return {
+                result: "fail",
+                data: stallData(outcome, stall.secs, {
                   line,
                   lineNumber: index + 1,
                   logStart: start,

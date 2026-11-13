@@ -1109,3 +1109,11 @@ the row fields.
 | T-0398-M10 | packages/dev/src/standing.ts | void: T-0094-M11 names dev code and a test that T-0388 deleted | none (void) |
 | T-0398-M11 | packages/dev/src/standing.ts | void: T-0094-M12 names dev code and a test that T-0388 deleted | none (void) |
 | T-0398-M12 | packages/dev/src/standing.ts | void: T-0094-M14 names dev code and a test that T-0388 deleted | none (void) |
+
+## T-0402-check-stall-limit — the gate and integration stall settings
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0402-M1 | packages/dev/src/gate.ts | verify left the check's `reason` out of its record, so a stall reached the worker without saying it was one | `dev/verify > a gate command that stops writing fails as a stall and its last lines go to the worker` (expected `stall`, received `undefined`) |
+| T-0402-M2 | packages/dev/src/integrate.ts | integration key commands did not pass `gate.stallSecs`, so a silent command ran to its own end instead of being stopped | `dev/integrate > a key command that stops writing fails as a stall, is not rerun, and sends the task back` (expected `fail`, received `merged`) |
+| T-0402-M3 | packages/dev/src/rerun.ts | a stall was rerun like an ordinary failure, doubling the wait before the worker saw it | `dev/integrate > a key command that stops writing fails as a stall, is not rerun, and sends the task back` (the command ran 2 times instead of 1) |

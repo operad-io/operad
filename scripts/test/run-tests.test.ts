@@ -90,6 +90,20 @@ describe("run-tests.sh", () => {
     );
   });
 
+  test("a step that writes only at its end still shows a heartbeat line", () => {
+    const { root, times } = repository();
+    write(
+      root,
+      "packages/a/test/slow.test.ts",
+      `import { test } from "bun:test";
+test("shows nothing until it ends", async () => { await new Promise((r) => setTimeout(r, 1500)); });
+`,
+    );
+    const { code, out } = run(root, times, [], { OPERAD_TEST_HEARTBEAT_SECS: "1" });
+    expect(code).toBe(0);
+    expect(out).toContain("run-tests: still running");
+  });
+
   test("a run of named packages lists the slowest tests and keeps no line", () => {
     const { root, times } = repository();
     const { code, out } = run(root, times, ["a"]);

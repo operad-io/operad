@@ -129,7 +129,28 @@ git checkout -q --detach --force "$sha" || { echo "remote-check: checkout of $sh
 # node_modules, and tests that list packages/ would find it.
 git clean -q -ffdx -e /node_modules >/dev/null 2>&1 || true
 export PATH="$(eval echo "$path_dirs"):$PATH"
-bash -c "$command"
+# Run the command in a process group of its own. When the connection drops,
+# sshd sends this shell a HUP; the trap then ends the command's whole group, so
+# a stop of the local remote-check.sh does not leave the remote check running.
+child=
+shutdown() {
+  trap '' HUP TERM INT
+  if [ -n "$child" ]; then
+    kill -TERM -"$child" 2>/dev/null || kill -TERM "$child" 2>/dev/null
+    sleep 1
+    kill -KILL -"$child" 2>/dev/null || true
+  fi
+  exit 143
+}
+trap shutdown HUP TERM INT
+set -m
+bash -c "$command" &
+child=$!
+set +m
+wait "$child"
+status=$?
+trap - HUP TERM INT
+exit "$status"
 REMOTE
 code=$?
 if [ "$code" -eq 255 ]; then

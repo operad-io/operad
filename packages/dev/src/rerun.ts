@@ -119,7 +119,13 @@ export async function runCheckWithRerun(
   const firstData = dataOf(first.outcome);
   const failed = first.hostError !== undefined || first.outcome?.result === "fail";
   // Only a plain failure is rerun: not a cancel, not a hang.
-  if (!failed || rerun <= 0 || firstData.reason === "timeout" || first.hostError !== undefined) {
+  if (
+    !failed ||
+    rerun <= 0 ||
+    firstData.reason === "timeout" ||
+    firstData.reason === "stall" ||
+    first.hostError !== undefined
+  ) {
     return { ...first, rerun: false, note: undefined, passedOnRerun: [] };
   }
   const label =
@@ -144,10 +150,12 @@ export async function runCheckWithRerun(
         note: `${label} failed, passed on rerun${attempts > 1 ? ` ${attempts}` : ""}`,
       };
     }
+    const reason = dataOf(last.outcome).reason;
     if (
       last.hostError !== undefined ||
       last.outcome?.result !== "fail" ||
-      dataOf(last.outcome).reason === "timeout"
+      reason === "timeout" ||
+      reason === "stall"
     ) {
       break;
     }

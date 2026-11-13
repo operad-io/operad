@@ -82,7 +82,8 @@
         }
       }
     ],
-    "commandTimeoutSecs": 2700
+    "commandTimeoutSecs": 2700,
+    "stallSecs": 900
   },
   "integration": {
     "batch": 3,

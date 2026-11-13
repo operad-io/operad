@@ -25,6 +25,9 @@
 #
 # Every run ends its output with the ten slowest tests of the run (file, test,
 # seconds; scripts/slowest-tests.ts). That only lists: it never fails the check.
+# While a step writes nothing, a heartbeat line prints every
+# OPERAD_TEST_HEARTBEAT_SECS seconds (default 60, 0 turns it off), so the
+# light step's report at the end cannot trip a gate's stall limit.
 # Every full run (no package name) also appends one line to the times file
 # (OPERAD_TEST_TIMES, default ~/.operad-test-times; see scripts/test-times.ts,
 # which prints the median, the fastest and the number of runs).
@@ -83,12 +86,44 @@ done
 for dir in "${extra[@]+"${extra[@]}"}"; do
   if has_light "$dir"; then together+=("$dir"); fi
 done
+heartbeat=${OPERAD_TEST_HEARTBEAT_SECS:-60}
+if ! [[ "$heartbeat" =~ ^[0-9]+$ ]]; then
+  echo "run-tests: OPERAD_TEST_HEARTBEAT_SECS must be a whole number of seconds, not '$heartbeat'" >&2
+  exit 2
+fi
 reports=$(mktemp -d)
-trap 'rm -rf "$reports"' EXIT
+heartbeat_pid=
+started=$(date +%s)
+# A step that writes only at its end (the light step's junit report, for one)
+# must not look stalled to a gate command. The heartbeat runs in a process
+# group of its own, so stopping it also stops the sleep it waits in. 0 turns
+# it off.
+stop_heartbeat() {
+  if [ -n "$heartbeat_pid" ]; then
+    kill -TERM -"$heartbeat_pid" 2>/dev/null || kill -TERM "$heartbeat_pid" 2>/dev/null || true
+    wait "$heartbeat_pid" 2>/dev/null || true
+    heartbeat_pid=
+  fi
+}
+cleanup() {
+  stop_heartbeat
+  rm -rf "$reports"
+}
+trap cleanup EXIT
+if [ "$heartbeat" != 0 ]; then
+  set -m
+  (
+    while :; do
+      sleep "$heartbeat"
+      printf 'run-tests: still running (%ss)\n' "$(($(date +%s) - started))"
+    done
+  ) &
+  heartbeat_pid=$!
+  set +m
+fi
 code=0
 steps=""
 tests=0
-started=$(date +%s)
 # step <name> <test args...>: runs one bun test step, times it, keeps its junit report.
 step() {
   local name=$1 began count

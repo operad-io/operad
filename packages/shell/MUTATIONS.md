@@ -22,3 +22,9 @@ the row fields.
 | TK0017-M18 | packages/shell/src/index.ts | stopped passing the step's `env` to the line runner | `shell/command > env is added to the command's environment` |
 | TK0009-M6 | packages/shell/src/index.ts | the aborted-before-first-line branch named a log that was never written | `shell/check > an abort before the first line is interrupted and leaves a log` |
 | T-0107-M2 | packages/shell/test/support.ts | `alive` always reported the pid present, so `waitForGone` never saw it go | `shell/command > cancel stops the process group and reports interrupted`, `shell/command > a child that outlives the line is in the group and is stopped`, `a flow through the runner > a run cancel stops the command's process group in a worker` |
+
+## T-0402-check-stall-limit — a stopped command reports a stall
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0402-M1 | packages/shell/src/index.ts | `shell/check` ignored the runner's `stalled` outcome, so a stopped command reported a signal instead of `stall` | `shell/check > a check that writes nothing for stallSecs is stopped and names its last lines` (expected `stall`, received `signal`) |
