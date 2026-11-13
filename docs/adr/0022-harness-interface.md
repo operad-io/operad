@@ -38,7 +38,7 @@ The version coupling follows. The client library operad carries is not pinned: `
 
 ### D7: A harness is named after the agent it connects
 
-The plugin name is `claude`, `pi`, `radian` or `codex`: the `plugins.<name>` of `config.json`, the step `claude/agent`, the flow `claude:prompt`, `worker.use` of `dev.json` and the harness a chat stores all use that name, and it is what the interface shows. A form such as `harness-claude` is only the npm package name (`@operad-io/harness-claude`), which a user never sees. The packages live under `packages/harness/`: `claude`, `codex`, `pi`, `radian`, `process`.
+The plugin name is `claude`, `pi`, `radian` or `codex`: the `plugins.<name>` of `config.json`, the step `claude/agent`, the flow `claude:prompt`, `worker.use` of `dev.json` and the harness a chat stores all use that name, and it is what the interface shows. A form such as `harness-claude` is only the npm package name (`@operad-io/harness-claude`), which a user never sees. The earlier `harness-*` plugin, step and flow names are not recognised, and there are no aliases. The packages live under `packages/harness/`: `claude`, `codex`, `pi`, `radian`, `process`.
 
 ### D8: The `codex` harness
 

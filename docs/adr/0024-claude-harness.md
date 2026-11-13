@@ -24,7 +24,7 @@ operad passes nothing. A subscription login sits in the Keychain, which the proc
 
 ### D4: The Claude in the child does no discovery
 
-`settingSources: []`; `permissionMode: 'default'` given explicitly (the default `auto` classifier is not accepted); `permissionPrompts: 'host'`; `canUseTool` is the only permission surface. The system prompt is the SDK's `claude_code` preset without additions. No plugins, skills or hook files are loaded.
+`settingSources: []`; `permissionMode: 'default'` given explicitly (the default `auto` classifier is not accepted); `permissionPrompts: 'host'`; `canUseTool` is the only permission surface. The system prompt is the SDK's `claude_code` preset without additions. The tool set is the SDK's default set; operad's own tools are not connected. No plugins, skills or hook files are loaded.
 
 ### D5: Session files stay in the user's `~/.claude/projects/`
 

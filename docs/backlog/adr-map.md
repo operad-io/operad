@@ -108,7 +108,7 @@
 | operad-harness-claude.md | 1 | 0024 | D1 |
 | operad-harness-claude.md | 2 | 0024 | D2 |
 | operad-harness-claude.md | 3（API key 一路留在 backlog） | 0024 | D3 |
-| operad-harness-claude.md | 4（环境变量核对、operad 工具那句留在 backlog） | 0024 | D4 |
+| operad-harness-claude.md | 4（环境变量核对留在 backlog） | 0024 | D4 |
 | operad-harness-claude.md | 5 | 0024 | D5 |
 | operad-harness-claude.md | 6 | 0024 | D6 |
 | operad-harness-claude.md | 7 | 0024 | D7 |
