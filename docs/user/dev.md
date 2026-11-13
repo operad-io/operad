@@ -268,6 +268,65 @@ or from a qualified id such as `operad/T-0045-shell-hang-guards`; a bare id
 outside a repository works when only one repository has it. The rules are in
 [packages/dev/REFERENCE.md](../../packages/dev/REFERENCE.md#where-a-command-runs-and-ids).
 
+## When the reviewer is unavailable
+
+A review whose harness reports a model error (`unavailable` or `usage_limit`), or
+whose error output says `HTTP 429`, does not lose the attempt. The same review
+round runs once on `reviewer.fallback` when `.operad/dev.json` sets one. Without a
+fallback, or when the fallback is unavailable too, the task waits
+`reviewer.retrySecs` (default 120 seconds; each further wait doubles, up to 30
+minutes) and then runs the review again. It does not start a worker and does not
+count a rework. A round uses its fallback at most once, so a retry that finds the
+primary unavailable again waits rather than calling the fallback a second time.
+
+A round waits at most 6 times (about 90 minutes at the default). Then the task
+waits for a person with the note `review did not finish (model unavailable)`. A
+review that cannot fit another run in its three-hour step time does the same with
+`review did not finish (out of time)`. During the wait, merge, reject, rework and
+reverify are not offered. A review that times out is retried once with the same
+arguments; a second timeout waits for a person with the note
+`review timed out twice`. A crash during a review resumes the same round and
+reuses the answer the reviewer already gave, so a fallback is not called twice.
+`operad history <task>` names the model that reviewed each round and why a
+fallback or a retry happened.
+
+## When a task waits or is stuck
+
+1. `operad pending`: is it waiting for you? A task that needs a person stays there
+   until you merge, reject or cancel it.
+2. `operad running`: is a run still moving? A run with no live process is started
+   again by `serve` on its next pass.
+3. `operad show <task>`: read its sections, especially `changes` and the attempts,
+   for the phase and the last recorded failure. `operad show <task> --section
+   brief` shows the brief.
+4. `operad history <task>` (or `operad history <run id>` for one run): read the
+   last lines for the step and the reason. A failed check or review names the
+   command, the log file and the finding.
+5. If `serve` is not running, start it again with `operad serve`. Do not kill a
+   run process: an interrupted run is recovered on the next pass, and a run that
+   was not interrupted is left alone.
+6. If `operad init` reported a failed check, fix what it names and run it again.
+7. A task that keeps failing the same step stops for a person after repeated
+   attempts. `operad dev:cancel <task> --yes` stops it for good;
+   `operad dev:reject <task> --note "what to change"` sends it back to its worker.
+8. A task that waits after a failed check, or after the worker returned nothing or
+   failed (a model 429, a check killed from outside):
+   - `operad dev:reverify <task>` merges the current main into the branch, then
+     runs the check and review again with no worker. Use it when the failure was
+     flaky.
+   - `operad dev:rework <task> --note "what to do"` writes your own
+     `## Rework <n> (lead)` into the brief and runs the worker again. Neither
+     counts toward `maxAutoRework`.
+9. `operad dev:pause <task> --yes` stops a task for a while: it keeps its branch,
+   commits and attempts, holds no place and is not started. `operad dev:resume
+   <task> --yes` makes it ready; the next start continues on its branch.
+
+An action needs `--yes` because it is your decision; in a terminal without
+`--yes` it asks first. Delete nothing by hand under `.operad-worktrees`: cleanup
+removes the task's worktrees and branches after a merge. If cleanup reports a
+failure, the task is still merged; remove the leftover with the command the line
+names.
+
 ## Where the reviewer writes its report
 
 The reviewer runs in the task's gate worktree, and some agents (radian, for one)
@@ -350,6 +409,162 @@ the `codex` section of `config.json`:
 | `codex.stallSecs` | number, 1 or more | `600` | How long a run may be silent while no tool call is open. An image generation counts as an open tool call. |
 | `codex.concurrency` | object, model name to integer | `{}` | The limit described above. |
 | `codex.concurrency.<name>` | integer, 1 or more | none | How many runs of the model `<name>` may go at once. |
+
+### The `pi` settings
+
+`pi` runs the pi coding agent instead of radian. It is not in the default
+config: turn it on with `operad plugin enable pi`.
+
+**Install pi.** operad does not bring its own pi: it uses the one you installed,
+with bun (`bun add -g @earendil-works/pi-coding-agent`) or npm
+(`npm i -g @earendil-works/pi-coding-agent`), so that `pi` is on `PATH`. The
+oldest pi it accepts is `1.5.0`; `operad plugin check` names both versions when
+yours is older and fails when there is no `pi`. To use another pi, set `command`
+in the `pi` section of `config.json` to its path. A `pi` that is a shell wrapper
+script is refused with its path; point `command` at the package's bin instead
+(`.../@earendil-works/pi-coding-agent/dist/bundle/cli.js`).
+
+**Log in to pi.** Run `pi` and type `/login`, then pick the provider. operad uses
+your own pi login, the credentials file `~/.pi/agent/auth.json` (`authPath` names
+another file). operad never reads the file; it hands the path to pi. pi and operad
+may refresh the same login at once; pi locks the file for that.
+
+**Which model.** The model is pi's own default, the one `pi` starts with for you,
+unless the `model` setting (`provider/id`) names one. `thinkingLevel` works the
+same way. pi's custom models are in `~/.pi/agent/models.json` (`modelsPath`).
+
+**Where the sessions are.** Session files are in `~/.operad/harness/pi/sessions`,
+apart from your own pi sessions, so `pi --continue` does not see them.
+
+| Setting | Type | Default | What it does |
+|---|---|---|---|
+| `pi.model` | string `provider/id` | pi's own default | The model; the step's `--model` wins. |
+| `pi.models` | list of `provider/id` | every model `pi --list-models` prints | The models a chat may pick. |
+| `pi.thinkingLevel` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` | pi's own default | The reasoning level; the step's `--thinking` wins. |
+| `pi.command` | string | `pi` | A command name on `PATH` or a path; it must lead into an installed `@earendil-works/pi-coding-agent` of `1.5.0` or newer. |
+| `pi.authPath` | string | `~/.pi/agent/auth.json` | pi's credentials file. |
+| `pi.modelsPath` | string | `~/.pi/agent/models.json` | pi's custom models file. |
+| `pi.wallTimeSecs` | number, 1 to 28500 | `3600` | The longest one run may take. |
+| `pi.stallSecs` | number, 1 or more | `600` | How long a run may print nothing while no tool call is open. |
+| `pi.bashTimeoutSecs` | integer, 1 or more | `1800` | The longest one bash call may run; see [Long commands under pi](#long-commands-under-pi). |
+| `pi.concurrency` | object, model name to integer | `{}` | The limit described above. |
+
+**Switch the worker and the reviewer.** In `.operad/dev.json` set `use` of a
+worker (or of `reviewer`) to `pi/agent`. pi reads only `--model <provider/id>` and
+`--thinking <level>` from `args`, and a flag there wins over the setting of the
+same meaning. Any other entry fails the step with `invalid_args`. For example,
+the worker on one model and the reviewer on another:
+
+```json
+{
+  "worker":   { "use": "pi/agent", "args": ["--model", "opencode-go/deepseek-v4.1-flash"] },
+  "reviewer": { "use": "pi/agent", "args": ["--model", "openai-codex/gpt-5.6-terra", "--thinking", "medium"] }
+}
+```
+
+`reviewer.fallback.args` and `reviewer.firstArgs` follow the same rules when their
+harness is pi.
+
+**Switch back.** Put `use` back to `"radian/agent"` with its `args` (`--provider`,
+`--model`). You do not need to disable `pi`; `operad plugin disable pi` removes it.
+
+The step's results and the model-error rules are in
+[the pi reference](../../packages/harness/pi/REFERENCE.md).
+
+### The `claude` settings
+
+`claude` runs `claude`, Anthropic's coding agent, instead of radian. It is not in
+the default config: turn it on with `operad plugin enable claude`.
+
+Outside a workspace checkout, enabling installs `@operad-io/harness-claude` and
+the Agent SDK client it needs into a Bun project under `~/.operad/plugins`,
+skipping the SDK's optional platform packages. It does not install `claude`
+itself. The first enable needs network access to the npm registry. When the
+package is not installed, `operad plugin check claude` names the command that
+installs it.
+
+**Install claude and log in.** operad does not bring its own claude: it uses the
+one you installed (see https://code.claude.com), so a `claude` command must be on
+`PATH`. Run `claude` once and log in. operad uses your own login and passes no
+credential of its own. `operad plugin check` runs `claude --version` and
+`claude auth status` and reports the claude version, the Agent SDK version and
+the login kind (such as `claude.ai (max)`). It fails, saying what to do, when
+there is no `claude`, when claude is older than `2.1.319`, or when it is not
+logged in. The SDK version is only reported. To use another claude, set `command`
+in the `claude` section of `config.json` to its path.
+
+**A machine without a browser.** Run `claude setup-token` on a machine where you
+can sign in; it prints a token that stands for your claude subscription and lasts
+a year. On the machine without a browser, put it in the environment of
+`operad serve` as `CLAUDE_CODE_OAUTH_TOKEN`. operad hands the whole environment to
+claude unchanged and never reads, logs or stores the token. Treat it like a
+password and keep it out of `config.json`.
+
+**Whose subscription.** operad runs your own tools on your own machine with your
+own claude login. Anthropic does not let a product offer claude.ai login or its
+rate limits to other people unless it has approved that, so a copy of operad that
+is shipped to others would not offer claude.ai login; it would use an API key.
+
+**Which credential is billed.** claude uses an `ANTHROPIC_API_KEY` found in the
+environment before it uses your subscription login. Because operad hands the whole
+environment to claude, an `ANTHROPIC_API_KEY` set in the environment of
+`operad serve` makes claude bill that key and not the subscription. To check which
+one a run used, read the `session` line at the start of the step's log:
+`apiKeySource` is `none` for the subscription login and `ANTHROPIC_API_KEY` when
+that variable is set (the other values name other key sources). `operad plugin
+check` reports the login kind too; run it in the same environment as
+`operad serve`. The cost a step records is `estimated` for a subscription login
+(the price of the tokens at API rates, not what you are charged) and `exact` for a
+key.
+
+**Which model.** The model is claude's own default unless the `model` setting or
+the step's `--model` names one (a name claude takes, such as `opus` or `sonnet`).
+
+**Settings, arguments and the environment.** These are the inputs of the `claude`
+section of `config.json`, of the step's `args` and of the environment. The full
+tables are in [the claude reference](../../packages/harness/claude/REFERENCE.md).
+
+| Input | Type | Default | Values |
+|---|---|---|---|
+| `command` (setting) | string | `claude` | a command name on `PATH` or a path |
+| `model` (setting) | string | unset: claude's default | a model name claude takes |
+| `effort` (setting) | string | unset: claude's default | `low`, `medium`, `high`, `xhigh`, `max` |
+| `maxTurns` (setting) | integer | unset: no limit | 1 or more |
+| `budgetUsd` (setting) | number | unset: no limit | 0.01 or more, in US dollars; for API-key logins |
+| `bashTimeoutSecs` (setting) | integer | `1800` | 1 or more; the longest one Bash call may run, in seconds; nothing runs in the background |
+| `wallTimeSecs` (setting) | number | `3600` | 1 to 28500; the longest one run may take |
+| `stallSecs` (setting) | number | `600` | 1 or more; how long a run may print nothing while no tool call is open |
+| `concurrency` (setting) | object | `{}` | model name to a count of 1 or more |
+| `--model <name>` (arg) | string | the `model` setting | wins over the setting |
+| `--effort <level>` (arg) | string | the `effort` setting | `low`, `medium`, `high`, `xhigh`, `max`; wins over the setting |
+| `CLAUDE_CODE_OAUTH_TOKEN` (environment) | string | unset | the token `claude setup-token` prints |
+| `ANTHROPIC_API_KEY` (environment) | string | unset | an API key; when set, claude bills it |
+
+**Where the sessions are.** claude keeps its session files in
+`~/.claude/projects/`, under a folder named for the working directory, so they are
+the same files your own `claude` uses. The `sessionId` a step records is the
+session's id; `claude --resume <id>`, run in the same working directory, continues
+that session by hand.
+
+**What claude is told.** claude runs without your settings, hooks, plugins, skills
+or `CLAUDE.md` files and without its automatic memory. The access profile
+(`denyPaths`, `denyCommands` and one-time permissions) is applied to its tool
+calls, and a call that `askCommands` matches asks a person first.
+
+**Switch the worker and the reviewer.** In `.operad/dev.json` set `use` of a
+worker (or of `reviewer`) to `claude/agent`. claude reads only `--model <name>` and
+`--effort <level>` from `args`; any other entry fails the step with
+`invalid_args`. For example:
+
+```json
+{
+  "worker":   { "use": "claude/agent", "args": ["--model", "sonnet"] },
+  "reviewer": { "use": "claude/agent", "args": ["--model", "opus", "--effort", "medium"] }
+}
+```
+
+**Switch back.** Put `use` back to `"radian/agent"` with its `args`. You do not
+need to disable `claude`; `operad plugin disable claude` removes it.
 
 ### Long commands under claude
 
