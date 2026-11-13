@@ -10,6 +10,21 @@ the call so the question does not come again. The profile is a guard rail, not
 a boundary: it matches the text of a call, and a program that builds a path or
 command another way is outside what it can see.
 
+## Why it exists
+
+An agent can run shell commands and edit files, and you will not read every call before it runs. An access profile lets you write down in advance which paths and commands are refused, which ask a person first, and which run freely. The default profile covers the common cases: credentials, the operad home, destructive commands, and a few commands that change the machine.
+
+The profile is a guard rail, not a boundary. It matches the text of a call and cannot see what a program does once it runs, so it makes no claim to stop everything. For commands that hide what they run, such as `bash -c`, it asks or refuses instead of guessing.
+
+## How it works
+
+1. Before an agent runs a tool, the harness gives the call to the matcher in `packages/access-match` together with the profile. A call is a tool name, its input and the working directory.
+2. The matcher applies the order **deny, then ask, then allow**. A match in `denyPaths` or `denyCommands` refuses the call. A match in `askPaths` or `askCommands`, or a write in a `readOnly` working directory, asks a person. Anything else runs. See [The profile](#the-profile).
+3. A path is normalised first: `~` is the user's home and a relative path is joined to the call's working directory. A command is split into its pipeline parts and each part is matched. Inline code is refused or asked about, because its content cannot be seen.
+4. For an MCP call the matcher looks at `allowMcp` when the field is present: a listed tool runs, an unlisted one counts as a write and asks (see [MCP tool entries](#mcp-tool-entries)).
+5. A question goes to a person, who answers `allow_once`, `allow_always` or `reject_once`. `allow_always` appends the exact command or path and the working directory to `access-user.json`, and the next identical call in that directory is allowed without a question (see [`allow_always`](#allow_always)). It never lifts a deny.
+6. In a [background run](#background-runs), no person started the run, so `alwaysAllow` entries are ignored and every question is asked again.
+
 ## The profile
 
 A profile is a JSON object. A bot's profile is its [bot settings](config.md#bot)

@@ -9,6 +9,39 @@ same objects, pending items and history as the command line. It does not know
 any plugin: a plugin's type gives a tab, an object page and actions, and the app
 renders them.
 
+## Why it exists
+
+Work in operad often waits for a person: a question from a run, a review to
+approve, a chat reply. The app lets you see that and answer it from a phone
+instead of at the machine that runs `operad serve`. It shows the same objects,
+pending items and history as the command line, and it can answer, run actions,
+change settings, and hold chats with an agent. It does not know any plugin, so a
+plugin you add shows up in the app without a new version of it. This repository
+holds only the server side; the app itself is not part of it, and this page
+describes what the app does through the interface.
+
+## How it works
+
+1. `operad serve` listens on the addresses in `http.listen`, and every request
+   to it needs the bearer token kept in `$OPERAD_HOME/secrets/http.json`.
+2. `operad pair` prints that address and token as a QR code that encodes
+   `operad://pair?url=<url>&token=<token>`. You scan it in the app, which
+   then reaches this `serve` with them. See [Pairing the app](#pairing-the-app).
+3. The app reads `GET /v1/types` to learn which tabs exist, then fills them
+   from `GET /v1/pending`, `GET /v1/running` and `GET /v1/objects`. See
+   [Tabs](#tabs).
+4. Opening a row calls `GET /v1/objects/<id>`: the row, its sections and the
+   actions it offers now. The app draws what the plugin returned.
+5. `GET /v1/events` keeps the screens current. When something starts waiting for
+   a person the app receives a push; tapping it opens `OPERAD_LINK`, an
+   `operad://objects/<id>` link. See
+   [Pending and notifications](#pending-and-notifications).
+6. Answers and actions go back as `POST /v1/answer` and `POST /v1/act`, files as
+   `POST /v1/uploads`, and settings as `POST /v1/settings`; the server judges
+   whether each is applied, and the app shows the reason when it is not.
+7. If you rotate the token with `operad http token rotate`, the next request
+   gets `401` and the app says the token was rotated.
+
 ## Pairing the app
 
 `operad pair` shows what the app needs to reach this `serve`:

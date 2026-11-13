@@ -209,6 +209,21 @@ fields besides `stage`.
 
 ## `review.json`
 
+### Why `review.json` exists
+
+A reviewer reports findings, and each finding has a severity: `critical`, `major` or `minor`. A review fails when a finding reaches a chosen level. `review.json` is where a repository writes down what the three levels mean, which extra rules the reviewer grades by, and the lowest level that fails a review, for one flow or for all of them. It does not change what the reviewer is asked to look at, and it does not start a review; the `dev` plugin reads it when a review needs it. A repository without the file gets no grading text, and `dev.reviewer.fixLevel` (default `major`) sets the level.
+
+### How `review.json` grading works
+
+1. A review stage names its entry with `grading`; when it names none, the entry is the flow's own name. The entry is merged over `default` field by field: `levels` per level, `rules` as a whole.
+2. `dev` reads `.operad/review.json` in the repository and checks it. A file that is not valid fails the review step with the file named; no grading is guessed.
+3. The review prompt gets a "Grading" section with the `levels` texts and the `rules`, word for word, so the reviewer grades in the repository's own terms.
+4. The reviewer writes its report to a new file under `.operad/review/` in the gate worktree (see [where the reviewer writes its report](#where-the-reviewer-writes-its-report)). `dev` checks the report and keeps its own copy in the store.
+5. Each finding in the report has a severity. The fix level is `fixLevel` of the flow's entry, else of `default`. When neither sets one, it is the strictest of `dev.reviewer.fixLevel` and every `fixLevel` that `review.json` sets for any flow, so a review never grades more leniently than the repository asks anywhere.
+6. A finding counts when its severity is the fix level or above, in the order `critical`, `major`, `minor`.
+7. A review with no counted finding passes. One with a counted finding fails, and the failure lists each of them as `<file>:<line> <severity>: <summary>`; the task goes back to the worker or waits, as in [the path from request to merge](#how-a-task-goes-from-request-to-merge).
+8. A finding below the fix level does not fail the review; it is kept as a note on the task.
+
 `.operad/review.json` holds the grading a reviewer reads and the lowest finding
 that fails a review. It falls back field by field to `default`. The file is
 read when a review step needs it; [the review section](#reviewjson)
@@ -342,6 +357,33 @@ worktree is disposable and is replaced by the next gate step, which removes the
 reports with it. A reviewer that finishes without writing a report is shown as
 `could not write the report` with its last message; a file that fails the check
 is shown as `wrote an invalid report`.
+
+## The harness plugins: claude, codex, pi and radian
+
+### Why they exist
+
+operad does not bring its own agents. It drives the ones you have installed: your `claude`, `codex`, `pi` and `radian`. The login, the updates and the quota of each stay with your installation: operad downloads no agent and signs in to none. A harness plugin lets a flow start any of them the same way, with a step named `<plugin>/agent`, and read one kind of result, whichever agent ran. Which agent a task gets is not the harness's choice; the flow's workers and pools make it.
+
+### How they work
+
+A `<plugin>/agent` step, in order:
+
+1. Starts your agent in the step's working directory (for a `dev` task, its worktree), through the route described below.
+2. Passes it the prompt, with the model from the step's `--model` argument (or the plugin's `model` setting, where it has one).
+3. Watches the run: it ends when the wall time (`wallTimeSecs`) or the silence limit (`stallSecs`) is reached or the step is stopped.
+4. Judges each tool call against the access profile the run was given, where the agent lets the harness see the call (see [access](access.md)).
+5. Writes the tool calls and messages to the step log.
+6. Reads the agent's closing result and ends `done`, `failed` or `interrupted`.
+7. Records what the run used in `usage` (see [Usage and end results](#usage-and-end-results)).
+
+The four differ in these ways:
+
+- `claude`: runs your own `claude` through the Claude Agent SDK, with the login `claude` already has. A step is one foreground turn.
+- `pi`: finds the pi library you installed from the `pi` on `PATH` and loads it in a child process. It needs a pi of version 1.5.0 or newer.
+- `radian`: runs `radian exec` in the directory. radian cannot let through a one-time permission, so a profile that carries one is refused for it. It is the default `dev.reviewer.use`.
+- `codex`: starts your `codex-acp` and talks to it over ACP, with your Codex login. It is off until `operad plugin enable codex`. Codex's own sandbox stays on and limits writes to the worktree, and the access profile is asked only about what leaves the sandbox. A subscription login gives no cost, so `costMicros` is `null`.
+
+The time limits and the per-model limit are in the sections that follow.
 
 ## Limiting runs of one model
 
@@ -619,6 +661,24 @@ An alias or function from the user's own shell setup, such as `ls` defined as
   `bashTimeoutSecs` limit above still stops a hung command after its time.
 
 ## Sharing agents between flows: the `pool` plugin
+
+### Why the pool plugin exists
+
+Agent runs cost an account, not a repository: one Claude or Codex login serves every repository on the machine. Two repositories that each allow three Claude runs at once leave nothing that limits the total, and the per-model `concurrency` of a harness (see [Limiting runs of one model](#limiting-runs-of-one-model)) limits a model, not how many runs of one harness the machine has. The `pool` plugin gives each repository and flow a set of named workers and gives the home one cap for each harness. It does not count runs that call a harness step directly, and it is not installed by `operad init`.
+
+### How the pool plugin works
+
+1. The home sets `settings.harnesses`, the most runs one harness may have at once across all repositories and flows.
+2. A flow's settings define `workers` (a harness step, its `args` and a `count`) and may group them into `pools`; a flow that uses `pool/agent` (the `dev` flow does) calls it for each agent run.
+3. The caller passes the pool's workers in order and a key, `<repository>/<pool>`, under which the flow's counts are kept.
+4. `pool/agent` takes the first worker whose own `count` under that key and whose harness cap in the home both have room.
+5. The places are kept in one file under the home, `pool/places.json`, changed under a lock file, so every thread and process of the home sees the same counts.
+6. When no worker has room, the step waits and sends `pool.waiting` once for each reason: the flow's counts are full, or a harness's home cap is full.
+7. It runs the worker's harness step with the params and the worker's `args`, `wallTimeSecs` and `stallSecs`.
+8. It returns the harness result unchanged, with `worker` and `harness` added to `data`.
+9. When the model is unavailable or its usage limit is reached, or the harness cannot start, and the worker has a `fallback`, it runs that worker once. A timeout never falls back.
+
+The reference for each part follows.
 
 Agent runs cost an account, not a repository: one Claude or Codex login serves
 every repository on the machine. The `pool` plugin has one step, `pool/agent`,
