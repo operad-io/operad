@@ -1554,13 +1554,22 @@ function retryOf(last: ReviewRunRecord): ReviewAction {
  * the same model; an invalid report is retried once. Every other state ends
  * the round for a person or for a wait.
  */
-function nextReviewAction(
+export function nextReviewAction(
   runs: readonly ReviewRunRecord[],
   fallback: ReviewerFallback | readonly ReviewerFallback[] | undefined,
 ): ReviewNext {
   const last = runs[runs.length - 1];
   if (last === undefined) return { role: "primary", reason: "initial" };
   const list = reviewerFallbacks(fallback);
+  // The list got shorter after this run (dev.json changed): there is no entry
+  // to retry or follow, so the round ends for a person.
+  if (
+    last.outcome !== "report" &&
+    last.role === "fallback" &&
+    (last.fallbackIndex ?? 0) >= list.length
+  ) {
+    return "failed";
+  }
   // The fallback after the last run: the first one when the primary ran last
   // and no fallback has run in this round (a later primary failure waits
   // instead of trying them again), the next one after a fallback's failure.
@@ -1610,7 +1619,10 @@ function nextReviewAction(
 
 /** One run in words a person can read. */
 function runPhrase(run: ReviewRunRecord): string {
-  const who = run.role === "fallback" ? `fallback ${run.model}` : run.model;
+  // A later list entry is named by its place, as the settings name it, so two
+  // entries with one model and different arguments read apart.
+  const place = (run.fallbackIndex ?? 0) > 0 ? `[${run.fallbackIndex}]` : "";
+  const who = run.role === "fallback" ? `fallback${place} ${run.model}` : run.model;
   switch (run.outcome) {
     case "report":
       return `${who} reviewed`;

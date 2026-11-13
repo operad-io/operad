@@ -104,23 +104,97 @@ test("shows nothing until it ends", async () => { await new Promise((r) => setTi
     expect(out).not.toContain("run-tests: still running");
   });
 
-  test("a step whose output grows still prints a heartbeat", () => {
+  test("heavy output growing alone prints a heartbeat while the heavy step is still open", async () => {
     const { root, times } = repository();
+    const release = join(root, "release");
     write(
       root,
       "packages/a/test/heavy/heavy.test.ts",
-      `import { test } from "bun:test";
-test("keeps the heavy step open past a heartbeat", async () => { await new Promise((r) => setTimeout(r, 1500)); });
+      `import { existsSync } from "node:fs";
+import { test } from "bun:test";
+test("stays open until released", async () => {
+  while (!existsSync(${JSON.stringify(release)})) await new Promise((r) => setTimeout(r, 20));
+});
 `,
     );
-    const { code, out } = run(root, times, [], {
-      OPERAD_TEST_HEARTBEAT_SECS: "1",
-      OPERAD_TEST_HEAVY_PARALLEL: "1",
-      OPERAD_TEST_OVERLAP: "1",
+    const inherited = { ...process.env };
+    const child = Bun.spawn(["bash", "scripts/run-tests.sh"], {
+      cwd: root,
+      env: {
+        ...inherited,
+        OPERAD_TEST_PARALLEL: parallel,
+        OPERAD_TEST_HEAVY_PARALLEL: "1",
+        OPERAD_TEST_OVERLAP: "1",
+        OPERAD_TEST_TIMES: times,
+        OPERAD_TEST_HEARTBEAT_SECS: "1",
+      },
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "ignore",
     });
-    expect(code).toBe(0);
-    expect(out).toContain("run-tests: still running");
-  });
+    // The light step's report ends early; the heavy step is held open, so only
+    // its output can make the heartbeat print. Release it when the line appears.
+    const decoder = new TextDecoder();
+    let seen = "";
+    for await (const chunk of child.stdout) {
+      seen += decoder.decode(chunk);
+      if (seen.includes("run-tests: still running")) writeFileSync(release, "");
+    }
+    expect(await child.exited).toBe(0);
+    expect(seen).toContain("run-tests: still running");
+  }, 60_000);
+
+  test("the heartbeat ends by itself when the script is killed without a chance to stop it", async () => {
+    const { root, times } = repository();
+    const release = join(root, "release");
+    write(
+      root,
+      "packages/a/test/hang.test.ts",
+      `import { existsSync } from "node:fs";
+import { test } from "bun:test";
+test("stays open until released", async () => {
+  while (!existsSync(${JSON.stringify(release)})) await new Promise((r) => setTimeout(r, 20));
+});
+`,
+    );
+    const child = Bun.spawn(["bash", "scripts/run-tests.sh"], {
+      cwd: root,
+      env: {
+        ...process.env,
+        OPERAD_TEST_PARALLEL: parallel,
+        OPERAD_TEST_OVERLAP: "0",
+        OPERAD_TEST_TIMES: times,
+        OPERAD_TEST_HEARTBEAT_SECS: "1",
+      },
+      stdin: "ignore",
+      stdout: "ignore",
+      stderr: "ignore",
+    });
+    const until = async (done: () => boolean): Promise<void> => {
+      const end = Date.now() + 20_000;
+      while (!done()) {
+        if (Date.now() > end) throw new Error("timed out waiting");
+        await new Promise((r) => setTimeout(r, 25));
+      }
+    };
+    // The heartbeat is the script's own child that runs the script's command line.
+    const heartbeats = (): number[] => {
+      const kids = Bun.spawnSync(["pgrep", "-P", String(child.pid)]).stdout.toString().split("\n").filter(Boolean);
+      return kids
+        .filter((pid) => Bun.spawnSync(["ps", "-o", "command=", "-p", pid]).stdout.toString().includes("run-tests.sh"))
+        .map(Number);
+    };
+    try {
+      await until(() => heartbeats().length > 0);
+      const [heartbeat] = heartbeats();
+      expect(heartbeat).toBeDefined();
+      process.kill(child.pid, "SIGKILL");
+      await child.exited;
+      await until(() => Bun.spawnSync(["kill", "-0", String(heartbeat)], { stderr: "ignore" }).exitCode !== 0);
+    } finally {
+      writeFileSync(release, "");
+    }
+  }, 60_000);
 
   test("a run of named packages lists the slowest tests and keeps no line", () => {
     const { root, times } = repository();
