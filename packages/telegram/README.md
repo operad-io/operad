@@ -56,3 +56,21 @@ section: those list only the chat's runs and the actions people ran on it, and r
 no source event. Showing it there needs a kernel change. What was sent is kept in `<home>/telegram/sent.json`,
 so a restart neither resends a reply nor skips one written while it was down.
 Replies from before the plugin first ran are not sent. Tool calls are not sent.
+
+## What waits for a person
+
+An item waiting in a chat bound to Telegram goes to that Telegram chat. An item
+of a plugin listed in the `pending` setting goes to every user in `users`.
+Nothing else is sent, so `dev`'s items stay out until `pending` lists `dev`.
+Each item is one message with one button per option. An action that needs a
+note (such as reject) has no button: reply to the item's message and the reply
+is the note (with several such actions, begin the reply with `reject:`). A
+question with no choices is answered the same way, by replying; text that is not
+a reply stays an ordinary chat message. Only a listed user's tap or reply
+counts, and it is given through the client API with the actor
+`{ via: "telegram", id }`. A tap on a button whose action asks to confirm counts
+as the confirmation. After an answer from anywhere the buttons go and the
+message ends "answered: X", X being the action or choice; a tap on an item
+already answered says so and changes nothing. Where an item was answered
+somewhere else and no action shows what it was, the message ends "answered".
+What was sent is kept in `<home>/telegram/pending.json`.

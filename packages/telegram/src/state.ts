@@ -100,3 +100,106 @@ export function writeSent(home: string, state: SentState): void {
   writeFileSync(temporary, `${JSON.stringify(state)}\n`, "utf8");
   renameSync(temporary, path);
 }
+
+/** One thing a message of the pending side offers. */
+export interface SentOption {
+  /** The words on the button, and in "answered: X". */
+  readonly label: string;
+  /** `act` runs an action, `choice` answers one of the question's choices, `free` takes any text. */
+  readonly how: "act" | "choice" | "free";
+  /** The action's `<plugin>:<action>` for `act`. */
+  readonly action?: string | undefined;
+  /** The action needs a note, so it is answered by replying. */
+  readonly note?: true | undefined;
+}
+
+/** One pending item as it was sent to one Telegram chat. */
+export interface SentItem {
+  readonly runId: string;
+  readonly waitId?: string | undefined;
+  /** The object the item is about, as `type:id`. */
+  readonly object?: string | undefined;
+  readonly chatId: number;
+  readonly messageId: number;
+  /** The text as sent; "answered: X" is added to it. */
+  readonly text: string;
+  readonly options: readonly SentOption[];
+  /** When it was sent, epoch milliseconds. */
+  readonly at: number;
+  /** The words the item was answered with; set once the message was changed. */
+  readonly answered?: string | undefined;
+}
+
+/** What the pending side remembers, by the item and Telegram chat it was sent to. */
+export type PendingState = Readonly<Record<string, SentItem>>;
+
+/** The file the sent pending items are recorded in. */
+export function telegramPendingPath(home: string): string {
+  return join(telegramStateDirectory(home), "pending.json");
+}
+
+function optionOf(value: unknown): SentOption | undefined {
+  if (!isRecord(value) || typeof value.label !== "string") return undefined;
+  if (value.how !== "act" && value.how !== "choice" && value.how !== "free") return undefined;
+  return {
+    label: value.label,
+    how: value.how,
+    ...(typeof value.action === "string" ? { action: value.action } : {}),
+    ...(value.note === true ? { note: true as const } : {}),
+  };
+}
+
+function itemOf(value: unknown): SentItem | undefined {
+  if (
+    !isRecord(value) ||
+    typeof value.runId !== "string" ||
+    typeof value.chatId !== "number" ||
+    typeof value.messageId !== "number" ||
+    typeof value.text !== "string" ||
+    typeof value.at !== "number" ||
+    !Array.isArray(value.options)
+  ) {
+    return undefined;
+  }
+  const options = value.options.flatMap((entry: unknown) => {
+    const option = optionOf(entry);
+    return option === undefined ? [] : [option];
+  });
+  return {
+    runId: value.runId,
+    chatId: value.chatId,
+    messageId: value.messageId,
+    text: value.text,
+    at: value.at,
+    options,
+    ...(typeof value.waitId === "string" ? { waitId: value.waitId } : {}),
+    ...(typeof value.object === "string" ? { object: value.object } : {}),
+    ...(typeof value.answered === "string" ? { answered: value.answered } : {}),
+  };
+}
+
+/** The recorded pending sends; empty when the file is missing or unusable. */
+export function readPending(home: string): PendingState {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(telegramPendingPath(home), "utf8"));
+  } catch {
+    return {};
+  }
+  if (!isRecord(parsed)) return {};
+  const items: Record<string, SentItem> = {};
+  for (const [key, value] of Object.entries(parsed)) {
+    const item = itemOf(value);
+    if (item !== undefined) items[key] = item;
+  }
+  return items;
+}
+
+/** Records the pending sends, replacing the file whole. */
+export function writePending(home: string, state: PendingState): void {
+  const path = telegramPendingPath(home);
+  mkdirSync(dirname(path), { recursive: true });
+  const temporary = `${path}.${process.pid}.tmp`;
+  writeFileSync(temporary, `${JSON.stringify(state)}\n`, "utf8");
+  renameSync(temporary, path);
+}

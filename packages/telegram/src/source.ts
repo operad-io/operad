@@ -18,6 +18,7 @@ import {
 } from "@operad-io/chat";
 import { messageOf, type SourceContext, type SourceHandle } from "@operad-io/engine";
 import type { BotApi, TelegramMessage, TelegramUpdate } from "./api.ts";
+import type { PendingResponder } from "./pending.ts";
 import { readOffset, writeOffset } from "./state.ts";
 
 /** The event type the source records an incoming update as. */
@@ -54,6 +55,8 @@ export interface TelegramSourceOptions {
   /** The pause between two polls once one returns. */
   readonly pollIntervalMs?: number | undefined;
   readonly wait?: ((ms: number, signal: AbortSignal) => Promise<void>) | undefined;
+  /** Takes the taps on pending items' buttons and the replies to their messages. */
+  readonly pending?: PendingResponder | undefined;
 }
 
 /** One bound chat and whether it still takes messages. */
@@ -89,6 +92,7 @@ export class TelegramSource {
   private readonly pollIntervalMs: number;
   private readonly wait: (ms: number, signal: AbortSignal) => Promise<void>;
   private readonly controller = new AbortController();
+  private readonly pending: PendingResponder | undefined;
   private readonly users: readonly number[];
   private readonly bot: string;
 
@@ -99,6 +103,7 @@ export class TelegramSource {
     this.longPollSecs = options.longPollSecs ?? 30;
     this.pollIntervalMs = options.pollIntervalMs ?? 1_000;
     this.wait = options.wait ?? delay;
+    this.pending = options.pending;
     const settings = ctx.settings;
     this.users = Array.isArray(settings.users)
       ? settings.users.filter((value): value is number => typeof value === "number" && Number.isInteger(value))
@@ -160,6 +165,12 @@ export class TelegramSource {
 
   private async handle(update: TelegramUpdate): Promise<void> {
     const key = String(update.update_id);
+    if (update.callback_query !== undefined) {
+      // A tap is handled by the pending side; either way it is recorded once.
+      await this.pending?.handleCallback(update.callback_query);
+      await this.record(key);
+      return;
+    }
     const message = update.message;
     if (message === undefined) {
       await this.record(key);
@@ -172,6 +183,13 @@ export class TelegramSource {
     // A group, a channel, an unlisted sender or a message with no text is
     // recorded and stops there: no chat, no reply, nothing started.
     if (message.chat.type !== "private" || !listed || text === undefined) {
+      await this.record(key, undefined, summary);
+      return;
+    }
+
+    // A reply to an item's message that takes a note is that item's answer;
+    // a message that is not one is an ordinary message to the chat.
+    if (this.pending !== undefined && message.reply_to_message !== undefined && (await this.pending.handleReply(message))) {
       await this.record(key, undefined, summary);
       return;
     }
