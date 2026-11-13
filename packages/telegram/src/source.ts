@@ -245,20 +245,12 @@ export class TelegramSource {
 
   private async openBoundChat(channel: string, text: string, userId: number): Promise<string> {
     const opened = await this.ctx.client.act("bot:chat", this.bot, {
-      args: { title: titleFromMessage(text) ?? "Telegram" },
+      args: { title: titleFromMessage(text) ?? "Telegram", channels: [channel] },
       actor: { via: TELEGRAM_SOURCE, id: String(userId) },
     });
     if (opened.opens === undefined || !opened.opens.startsWith("chat:")) {
       throw new Error("bot:chat opened no chat");
     }
-    const chatId = opened.opens.slice("chat:".length);
-    const stored = await this.ctx.store.get(CHAT_TYPE, chatId);
-    if (stored === undefined) throw new Error(`the chat ${chatId} is not there`);
-    const data = chatData(stored.data);
-    const channels = data.channels.includes(channel)
-      ? [...data.channels]
-      : [...data.channels, channel];
-    await this.ctx.store.put(CHAT_TYPE, chatId, { ...stored.data, channels }, TELEGRAM_SOURCE);
-    return chatId;
+    return opened.opens.slice("chat:".length);
   }
 }

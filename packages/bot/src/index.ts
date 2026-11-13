@@ -194,6 +194,12 @@ function chatArgs(
           "The effort the agent uses; one from that agent's list. The bot's effort, else the agent's default, when left out. It can be changed later.",
       },
       title: { type: "string", minLength: 1, maxLength: 120, description: "What the chat is called." },
+      channels: {
+        type: "array",
+        items: { type: "string", pattern: "^telegram:[^\\s]+$" },
+        description:
+          "The channels whose messages land in this chat, as telegram:<Telegram chat id>. A channel opens a chat with its own id here.",
+      },
       message: {
         type: "string",
         role: "note",
@@ -239,6 +245,7 @@ const chatAction: ActionTypeDefinition = {
       readonly model?: string;
       readonly effort?: string;
       readonly title?: string;
+      readonly channels?: readonly string[];
       readonly message?: string;
     };
     const id = await openChat({
@@ -253,6 +260,7 @@ const chatAction: ActionTypeDefinition = {
       model: input.model,
       effort: input.effort,
       title: input.title ?? (input.message === undefined ? undefined : titleFromMessage(input.message)),
+      channels: input.channels,
       cause: "action:bot/chat",
     });
     const sent = input.message === undefined ? undefined : await sendMessage(ctx, id, input.message);
