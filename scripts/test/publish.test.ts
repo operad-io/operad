@@ -39,7 +39,7 @@ function repository(): { root: string; calls: string; bin: string } {
     mkdirSync(join(root, "packages", directory), { recursive: true });
     writeFileSync(
       join(root, "packages", directory, "package.json"),
-      JSON.stringify({ name: `@operad-io/${directory.replace("/", "-")}`, version: "0.0.1" }),
+      JSON.stringify({ name: `@operad-io/${directory.replace("/", "-")}`, version: "0.1.0" }),
     );
   }
   const bin = join(root, "bin");
@@ -89,7 +89,7 @@ describe("publish.sh", () => {
     const { root, calls, bin } = repository();
     const ran = run(root, calls, bin, []);
     expect(ran.code).toBe(0);
-    expect(ran.out).toContain("@operad-io/engine@0.0.1");
+    expect(ran.out).toContain("@operad-io/engine@0.1.0");
     const lines = readFileSync(calls, "utf8").trim().split("\n");
     expect(lines.filter((line) => line === "pm pack --dry-run")).toHaveLength(packages.length);
     expect(lines.some((line) => line.startsWith("publish "))).toBe(false);
@@ -111,9 +111,9 @@ describe("publish.sh", () => {
 
   test("--publish skips a version the registry already has", () => {
     const { root, calls, bin } = repository();
-    const ran = run(root, calls, bin, ["--publish"], "@operad-io/engine@0.0.1");
+    const ran = run(root, calls, bin, ["--publish"], "@operad-io/engine@0.1.0");
     expect(ran.code).toBe(0);
-    expect(ran.out).toContain("@operad-io/engine@0.0.1 is already on the registry; skipped");
+    expect(ran.out).toContain("@operad-io/engine@0.1.0 is already on the registry; skipped");
     const lines = readFileSync(calls, "utf8").trim().split("\n");
     expect(lines.some((line) => line.startsWith("publish ") && line.includes("/engine.tgz"))).toBe(false);
     expect(lines.filter((line) => line.startsWith("publish "))).toHaveLength(packages.length - 1);

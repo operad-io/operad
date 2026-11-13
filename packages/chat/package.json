@@ -1,6 +1,6 @@
 {
   "name": "@operad-io/chat",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
@@ -9,7 +9,7 @@
     "@operad-io/engine": "workspace:*",
     "@operad-io/harness-process": "workspace:*"
   },
-  "description": "operad: the chat plugin (in development)",
+  "description": "operad: the chat plugin",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/operad-io/operad.git",

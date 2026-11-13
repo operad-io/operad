@@ -1,6 +1,6 @@
 {
   "name": "@operad-io/mcp",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
@@ -9,7 +9,7 @@
   "dependencies": {
     "@operad-io/engine": "workspace:*"
   },
-  "description": "operad: the MCP server and channel (in development)",
+  "description": "operad: the MCP server and channel",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/operad-io/operad.git",
