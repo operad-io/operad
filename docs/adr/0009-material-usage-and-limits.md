@@ -10,7 +10,7 @@ Text from outside (events, messages, fetched items, web pages) is something a st
 
 ### D1: External text enters only as material
 
-Events, messages, fetched items and web page text are always files with provenance (source, time, reference), delivered to a step by `ctx.material`. They do not appear as strings in params, and the kernel never puts them into any prompt. This is the rule for every entrance.
+Events, messages, fetched items and web page text are always files with provenance (source, time, reference), delivered to a step through `ctx.trigger`, which is read-only and holds file paths only. They do not appear as strings in params, and the kernel never puts them into any prompt. This is the rule for every entrance.
 
 ### D2: Standard fact shapes
 
