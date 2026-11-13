@@ -108,7 +108,7 @@ function fakeHarness(record: string) {
               },
             };
           }
-          if (mode === "commit" || mode === "commit-standard" || mode === "commit-incomplete" || mode === "commit-broken") {
+          if (mode === "commit" || mode === "commit-standard" || mode === "commit-incomplete" || mode === "commit-broken" || mode === "commit-unknown-cost") {
             writeFileSync(join(input.cwd, "worker.txt"), "done\n");
             gitOrThrow(input.cwd, ["add", "worker.txt"]);
             gitOrThrow(input.cwd, [
@@ -139,6 +139,23 @@ function fakeHarness(record: string) {
                   tokens: { input: 40, output: 9, cacheread: 0, cachewrite: 0 },
                   costMicros: FAKE_COST_MICROS,
                   costQuality: mode === "commit-incomplete" ? "incomplete" : "exact",
+                },
+              },
+            };
+          }
+          if (mode === "commit-unknown-cost") {
+            // A subscription login: tokens are known, the cost is not.
+            return {
+              result: "done",
+              data: {
+                sessionId: "fake-session",
+                finalMessage: FAKE_FINAL_MESSAGE,
+                usage: {
+                  harness: "codex",
+                  model: null,
+                  tokens: { input: 40, output: 9, cacheread: 0, cachewrite: 0 },
+                  costMicros: null,
+                  costQuality: null,
                 },
               },
             };
@@ -351,6 +368,17 @@ describe("dev/work", () => {
     const state = await fixture("commit-standard");
     await runWork(state);
     expect((await taskDataOf(state)).attempt?.finalMessage).toBe(FAKE_FINAL_MESSAGE);
+  });
+
+  test("an unknown cost (a subscription login) does not stop or block the work, and is not recorded as 0", async () => {
+    const state = await fixture("commit-unknown-cost");
+    const result = await runWork(state);
+    expect(result.result).toBe("done");
+    const task = await taskDataOf(state);
+    expect(task.attempt?.costMicros).toBeNull();
+    expect(task.attempt?.cost).toBeNull();
+    expect(task.attempt?.tokens).toEqual({ input: 40, output: 9 });
+    expect(task.cost).toBeUndefined();
   });
 
   test("an incomplete cost is recorded as incomplete", async () => {
