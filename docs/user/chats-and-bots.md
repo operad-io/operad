@@ -12,7 +12,7 @@ from plugins: `chat` owns every chat, `dev` opens one on a repository, and
 
 ## Why it exists
 
-Working with an agent is usually a long exchange, not one command. A chat keeps that exchange in operad: you send messages from the command line, the terminal UI, iOS or Telegram, and every one lands in the same transcript. operad keeps its own record of the messages, so the history of a chat does not depend on the agent's session files; a cleaned or compacted session does not erase it.
+Working with an agent is usually a long exchange, not one command. A chat keeps that exchange in operad: you send messages from the command line, the terminal UI, iOS or Telegram (see [Telegram](telegram.md)), and every one lands in the same transcript. operad keeps its own record of the messages, so the history of a chat does not depend on the agent's session files; a cleaned or compacted session does not erase it.
 
 A bot exists for chats that are not about a repository. It fixes, in one place, the working directory, default agent, skills, speaker and access profile that such a chat uses, so you can keep several bots with different permissions, for example a read-only one. Because a chat reads its bot at every reply, tightening a bot or adding a skill does not need a new chat.
 

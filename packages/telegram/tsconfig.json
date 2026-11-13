@@ -4,6 +4,7 @@
   "include": ["package.json", "src", "test"],
   "references": [
     { "path": "../chat" },
+    { "path": "../dev" },
     { "path": "../engine" }
   ]
 }

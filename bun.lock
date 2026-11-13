@@ -175,6 +175,9 @@
         "@operad-io/chat": "workspace:*",
         "@operad-io/engine": "workspace:*",
       },
+      "devDependencies": {
+        "@operad-io/dev": "workspace:*",
+      },
     },
     "packages/tui": {
       "name": "@operad-io/tui",
