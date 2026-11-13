@@ -1,7 +1,7 @@
 import { closeSync, mkdirSync, openSync, readFileSync, writeSync } from "node:fs";
 import { userInfo } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   ConfigError,
   FileSecretStore,
@@ -2325,6 +2325,27 @@ async function commandPair(
   return 0;
 }
 
+/**
+ * The terminal client: the workspace's own copy in a checkout, otherwise the
+ * copy installed into the home's Bun project. The client's UI library is a
+ * third-party package, so the CLI does not depend on it; its install keeps the
+ * optional packages the UI library needs.
+ */
+async function loadTui(home: string): Promise<TuiRunner> {
+  const installed = await ensureInstalledPackage({
+    home,
+    specifier: "@operad-io/tui",
+    version: ENGINE_VERSION,
+    from: import.meta.dir,
+  });
+  const loaded = (
+    installed === undefined
+      ? await import("@operad-io/tui/app")
+      : await import(pathToFileURL(installed).href)
+  ) as { readonly runTui: TuiRunner };
+  return loaded.runTui;
+}
+
 /** `operad tui [--url <url>] [--token <token>] [--no-start] [--theme <name>]`. */
 async function commandTui(
   home: string,
@@ -2364,7 +2385,7 @@ async function commandTui(
   const runner: TuiRunner =
     injected ??
     (async (command) => {
-      const { runTui } = await import("@operad-io/tui/app");
+      const runTui = await loadTui(home);
       return await runTui(command);
     });
   return await runner({

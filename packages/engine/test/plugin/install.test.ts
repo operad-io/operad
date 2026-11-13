@@ -66,6 +66,22 @@ describe("ensuring a package is installed in the home", () => {
     expect(manifest.private).toBe(true);
   });
 
+  test("an install that needs its optional packages keeps them on", async () => {
+    const root = await tempRoot();
+    const fixture = installFixture(root, "@operad-io/plugin-fixture");
+    const calls: (readonly string[])[] = [];
+    await ensureInstalledPackage({
+      home: fixture.home,
+      specifier: fixture.specifier,
+      version: fixture.version,
+      run: (_cwd, args) => {
+        calls.push(args);
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    });
+    expect(calls).toEqual([["install", "--no-summary"]]);
+  });
+
   test("an installed package at the wanted version is not installed again", async () => {
     const root = await tempRoot();
     const fixture = installFixture(root, "@operad-io/plugin-fixture");
