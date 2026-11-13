@@ -346,10 +346,15 @@ is running` when no `serve` holds the home.
 ## dev commands
 
 `operad dev repo add <path> [--name <name>]` registers a directory that is a git
-work tree with a remote. It writes nothing when the directory has no remote and
-prints the reason. `operad dev repo list` prints `no repositories` or one
+work tree with a remote. It refuses, and writes nothing, a directory that is not
+the root of a git work tree, that has no remote, or that is already registered,
+and prints the reason. It writes `.operad/dev.json` when the repository has none.
+`operad init` checks, for each registered repository, that its remote can be
+reached and has the main branch published; it asks the remote read-only and
+pushes nothing. `operad dev repo list` prints `no repositories` or one
 `<name>  <path>` line per repository. `operad dev repo remove <name>` prints
-`removed <name>`.
+`removed <name>`. It refuses a repository that has an open task
+(`repository "<name>" has <n> open task(s)`); merge or cancel those tasks first.
 
 `operad dev plan add --slug <slug> --title <title> [--concurrency <n>]
 [--flow <name>] [--repo <name>]` creates a plan and prints its id. The request

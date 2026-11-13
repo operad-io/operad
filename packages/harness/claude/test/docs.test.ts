@@ -18,11 +18,14 @@ function read(path: string): string {
 }
 
 const README = read("../REFERENCE.md");
-const DOGFOOD = read("../../../../docs/dogfood.md");
 const MANUAL = read("../../../../docs/user/dev.md");
 
-/** The dogfood section for claude, from its heading to the end. */
-const SECTION = DOGFOOD.slice(DOGFOOD.indexOf("## Using claude as the worker"));
+/** The manual's section for claude, from its heading to the next section. */
+const SECTION = ((): string => {
+  const start = MANUAL.indexOf("### The `claude` settings");
+  const end = MANUAL.indexOf("\n### ", start + 1);
+  return MANUAL.slice(start, end === -1 ? undefined : end);
+})();
 
 /** The README's settings tables only: some setting names are stdin fields too. */
 const SETTINGS = README.slice(README.indexOf("### Settings"), README.indexOf("### How the step ends"));
@@ -36,7 +39,7 @@ describe("the settings", () => {
   const properties = PLUGIN_SETTINGS.properties as Record<string, Record<string, unknown>>;
 
   for (const [name, schema] of Object.entries(properties)) {
-    test(`${name}: the README row and the dogfood table document it`, () => {
+    test(`${name}: the README row and the manual's table document it`, () => {
       const readme = row(SETTINGS, name);
       expect(readme).toBeDefined();
       // An enum names its values in the type column; any other type names the type.
@@ -48,15 +51,15 @@ describe("the settings", () => {
       const plainDefault = typeof schema["default"] === "string" || typeof schema["default"] === "number";
       if (plainDefault) expect(readme).toContain(`\`${String(schema["default"])}\``);
       expect(SECTION).toContain(`\`${name}\``);
-      const dogfood = SECTION.split("\n").find((line) => line.startsWith(`| \`${name}\``));
-      expect(dogfood).toBeDefined();
-      if (plainDefault) expect(dogfood).toContain(String(schema["default"]));
-      if (schema["maximum"] !== undefined) expect(dogfood).toContain(String(schema["maximum"]));
-      if (schema["minimum"] !== undefined) expect(dogfood).toContain(String(schema["minimum"]));
+      const manual = SECTION.split("\n").find((line) => line.startsWith(`| \`${name}\``));
+      expect(manual).toBeDefined();
+      if (plainDefault) expect(manual).toContain(String(schema["default"]));
+      if (schema["maximum"] !== undefined) expect(manual).toContain(String(schema["maximum"]));
+      if (schema["minimum"] !== undefined) expect(manual).toContain(String(schema["minimum"]));
     });
   }
 
-  test("every effort level is in the README and the dogfood section", () => {
+  test("every effort level is in the README and the manual's section", () => {
     for (const level of EFFORT_LEVELS) {
       expect(README).toContain(`\`${level}\``);
       expect(SECTION).toContain(`\`${level}\``);
@@ -66,7 +69,7 @@ describe("the settings", () => {
 
 describe("the step arguments", () => {
   for (const flag of ["--model", "--effort"]) {
-    test(`${flag} is in the README args table and the dogfood table`, () => {
+    test(`${flag} is in the README args table and the manual's table`, () => {
       expect(README).toContain(`| \`${flag}\``);
       expect(SECTION).toContain(`\`${flag} `);
     });
@@ -133,7 +136,7 @@ describe("the environment and the login", () => {
     expect(README).toContain("CLAUDE_CODE_OAUTH_TOKEN");
   });
 
-  test("the dogfood section says how to tell which credential a run used", () => {
+  test("the manual's section says how to tell which credential a run used", () => {
     expect(SECTION).toContain("`apiKeySource`");
     expect(SECTION).toContain("`session` line");
     expect(README).toContain("`apiKeySource`");
