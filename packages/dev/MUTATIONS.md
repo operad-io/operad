@@ -160,7 +160,7 @@ the row fields.
 | dirty-names-M3 | packages/dev/src/steps.ts | a rename's old path was listed as a file | `changedFiles > a rename reports the new path only, whole` |
 | dirty-names-M4 | packages/dev/src/steps.ts | the name was cut at column 2 instead of 3 | `changedFiles > a modified tracked file that comes first keeps its whole name` |
 | dirty-names-M5 | packages/dev/src/steps.ts | `-z` left out of the status call | `changedFiles > a modified tracked file that comes first keeps its whole name` |
-| T-0048-M6 | packages/dev/src/model.ts | the task `done` filter also listed cancelled | `the task filters come from the phase list`, `docs/manual.md lists the dev filters with the states the code declares` |
+| T-0048-M6 | packages/dev/src/model.ts | the task `done` filter also listed cancelled | `the task filters come from the phase list`, `docs/user/dev.md lists the dev filters with the states the code declares` |
 
 ## T-0047 — repository hints and qualified ids
 

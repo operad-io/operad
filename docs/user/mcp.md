@@ -1,4 +1,8 @@
-# operad MCP server
+---
+description: The MCP server for a lead agent: setup, transport, the Claude Code channel, tools and errors.
+---
+
+# MCP server
 
 `operad mcp` is a Model Context Protocol server on stdio. It gives a lead agent
 typed access to the same objects, lists, sections, pending items, running items
@@ -10,6 +14,67 @@ app.
 
 The server implements the MCP JSON-RPC 2.0 transport, protocol version
 `2025-06-18`. It has no runtime dependency except `@operad-io/engine`.
+
+## Setting it up
+
+`operad mcp` runs an MCP server on stdio for a lead agent. It reads the same
+objects, pending items, running items, sections and history as the commands,
+and it runs the plugin verbs and lead actions `config.json` allows. It never
+starts a step or takes an owner decision; only `operad serve` runs steps, and
+the actions left out of `mcp.actions` stay in the command line or the app. The
+protocol, tools and error mapping are below; stdout carries only
+JSON-RPC and logs go to stderr.
+
+Claude Code finds the server in a project `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "operad": {
+      "command": "operad",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+The server uses `$OPERAD_HOME`, or `~/.operad` when it is unset. Set
+`OPERAD_HOME` in the entry's `env` when the agent should read another home.
+
+### Turning the channel on
+
+`operad mcp --claude-channel` turns the server into a one-way channel: it
+declares the experimental `claude/channel` capability and sends
+`notifications/claude/channel` when an object's state, waiting flag or running
+flag changes. It never declares `claude/channel/permission` and never relays a
+permission prompt. Without the flag the server sends no notification and
+declares no experimental capability.
+
+The server watches both the objects and the flows, so a wait that opens or a
+step that starts is reported even when no object is written (a change another
+process makes is found by a poll, 500 ms by default). It sends nothing until the
+client has sent `notifications/initialized`, then sends what changed since the
+start. At start the server reads the current rows and sends nothing for them. Every
+later notification has a one-line `content`, `<id> <old state> -> <new state>`
+with `: <note>` when the row has one, and string `meta` with `id`, `type`,
+`state`, `previous`, `waiting` and `running`. An object seen for the first time
+after the starting read has `previous` set to `new`. The channel is one-way;
+use `show`, `section`, `pending` and `history` for the details.
+
+`--types <t,…>` limits the channel to some object types, separated by commas.
+The default is every type with views; a name that is not one is a usage error.
+For example:
+
+```json
+"args": ["mcp", "--claude-channel", "--types", "task"]
+```
+
+Claude Code enables the extension with its development-channel flag, naming the
+server from `.mcp.json`:
+
+```sh
+claude --dangerously-load-development-channels server:operad
+```
 
 ## Transport
 
@@ -190,7 +255,7 @@ object type, with the plugin's `id`, `title`, `state` and optional `note` and
 `error`. The Markdown is a table of id, state, title, note and flags. An
 unknown type is a tool error with the view's message.
 
-`root` and `parent` list one level, as the manual's "Levels" section describes:
+`root` and `parent` list one level, as [Levels](cli.md#levels) describes:
 with a `type` the rows of that type, without one the rows of all types in the
 types' order. The type's default filter applies in the level and `hidden` counts
 the rows it left out. A parent that names no object gives an empty list. A call
@@ -335,7 +400,6 @@ Input:
 Result: `{ "id": "<the id as given>", "markdown": "...", "next": "<cursor>" }`.
 The Markdown is the kernel's History section for the object. An unknown id is a
 tool error with the view's message.
-
 
 ### `command`
 
