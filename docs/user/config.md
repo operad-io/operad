@@ -137,7 +137,7 @@ still loads, and `serve` and `operad plugin check` print the line that says why.
 `operad plugin list`, `operad plugin enable`, `operad plugin disable` and
 `operad plugin check` are on [the CLI page](cli.md).
 
-`operad init` installs `shell`, `radian`, `chat` and `dev`. `pi`, `claude`,
+`operad init` installs `shell`, `radian`, `chat` and `dev`. `pi`, `claude`, `codex`,
 `pool` and `bot` are shipped but not installed; enable one with
 `operad plugin enable <name>`.
 
@@ -286,6 +286,22 @@ The `claude` plugin runs Claude Code. Its step is `claude/agent`; see
 `budgetUsd` is for API-key logins. `bashTimeoutSecs` is the longest one Bash
 call may run, in the foreground. `concurrency` counts every run in the home,
 including the ones `dev` starts; a change does not stop runs already going.
+
+### `codex`
+
+The `codex` plugin runs the user's own Codex through `codex-acp`. Its step is
+`codex/agent`; set-up is in `docs/dogfood.md` and the settings are also listed
+on [the dev page](dev.md#the-codex-settings).
+
+| Key | Type | Default | Allowed values | When it takes effect | Wrong value |
+|---|---|---|---|---|---|
+| `codex.model` | string | Codex's default | a model name codex-acp offers | When an agent step starts | Refused by the schema; a model codex-acp does not offer fails the step |
+| `codex.effort` | string | Codex's default | `minimal`, `low`, `medium`, `high`, `xhigh` | When an agent step starts | Refused by the schema |
+| `codex.command` | array of strings | the `bun` and the `codex-acp` of `PATH` | the program and its arguments | When an agent step starts | Refused by the schema; a command that cannot start fails the plugin check |
+| `codex.wallTimeSecs` | number | `3600` | `1` to `28500` seconds | When an agent step starts | Refused by the schema |
+| `codex.stallSecs` | number | `600` | `1` or more seconds | When an agent step starts | Refused by the schema |
+| `codex.concurrency` | object | `{}` | model name to a count of `1` or more | With the next agent step that starts | Refused by the schema; the count's key is named |
+| `codex.concurrency.<name>` | integer | no limit for that model | `1` or more | With the next agent step for that model | Refused by the schema |
 
 ### `pi`
 
