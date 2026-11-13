@@ -24,6 +24,7 @@
     "@operad-io/harness-radian": "workspace:*",
     "@operad-io/source-cron": "workspace:*",
     "@operad-io/harness-claude": "workspace:*",
+    "@operad-io/harness-codex": "workspace:*",
     "@operad-io/pool": "workspace:*",
     "@operad-io/bot": "workspace:*"
   },

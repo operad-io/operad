@@ -14,6 +14,7 @@
     { "path": "packages/access-match" },
     { "path": "packages/harness/pi" },
     { "path": "packages/harness/claude" },
+    { "path": "packages/harness/codex" },
     { "path": "packages/tui" },
     { "path": "packages/pool" },
     { "path": "packages/review-grading" }
