@@ -302,4 +302,19 @@ describe("chat transcript: after, mark and tail", () => {
     expect(foldLogTail(path)?.state.text).toBe("wholewhole");
     expect(foldLogTail(path)?.state.text).toBe("wholewhole");
   });
+
+  test("a large unfinished line is read once, not at every poll", async () => {
+    const r = await rig(() => reply("x"));
+    const path = logIn(r, "run-partial");
+    const line = `${JSON.stringify({ type: "text_delta", text: "z".repeat(200_000) })}\n`;
+    writeFileSync(path, line.slice(0, 150_000));
+    expect(foldLogTail(path)?.bytesRead).toBe(150_000);
+    expect(foldLogTail(path)?.bytesRead).toBe(0);
+    appendFileSync(path, line.slice(150_000, 150_010));
+    expect(foldLogTail(path)?.bytesRead).toBe(10);
+    appendFileSync(path, line.slice(150_010));
+    const done = foldLogTail(path);
+    expect(done?.bytesRead).toBe(line.length - 150_010);
+    expect(done?.state.text.length).toBe(200_000);
+  });
 });

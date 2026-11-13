@@ -148,3 +148,9 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 | T-0363-M17 | packages/chat/src/tail.ts | every read started again from byte 0 | `chat transcript: after, mark and tail > reading the tail of a log of 50 000 lines reads a bounded number of bytes` |
 | T-0363-M18 | packages/chat/src/tail.ts | a log shorter than the saved offset kept its old state | `chat transcript: after, mark and tail > a log that was cut short or replaced is read again from its start` |
 | T-0363-M19 | packages/chat/src/tail.ts | the partial last line was counted as read, so its second half was lost | `chat transcript: after, mark and tail > a line split across two appends is folded once, whole` |
+
+## T-0363 — rework 7: the partial last line is kept
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0363-M20 | packages/chat/src/tail.ts | the saved offset stopped after the last complete line, so a partial line was read again at every poll | `chat transcript: after, mark and tail > a large unfinished line is read once, not at every poll` |

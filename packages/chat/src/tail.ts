@@ -36,8 +36,10 @@ export interface TailRead {
 interface Saved {
   readonly dev: number;
   readonly ino: number;
-  /** The bytes of the log folded so far: up to and including the last complete line. */
+  /** How many bytes of the log were read: the folded lines and the partial line after them. */
   readonly offset: number;
+  /** The partial last line read so far, kept so it is not read again. */
+  readonly pending: Buffer;
   readonly state: FoldState;
 }
 
@@ -53,7 +55,7 @@ const saved = new Map<string, Saved>();
  * The fold of a whole log file, reading only what was appended since the last
  * call for the path; undefined when there is no file. A file that is shorter
  * than what was read, or is another file, is read again from its start. A line
- * still being written is left for the next call. Finished entries are not kept:
+ * still being written is kept as it is and completed by the next call. Finished entries are not kept:
  * only the unfinished text, thinking and calls matter here.
  */
 export function foldLogTail(path: string): TailRead | undefined {
@@ -67,11 +69,10 @@ export function foldLogTail(path: string): TailRead | undefined {
     const stat = fstatSync(fd);
     const before = saved.get(path);
     const keep = before !== undefined && before.dev === stat.dev && before.ino === stat.ino && before.offset <= stat.size;
-    let offset = keep ? before.offset : 0;
     let state = keep ? before.state : emptyFold;
-    let pending = Buffer.alloc(0);
+    let pending = keep ? before.pending : Buffer.alloc(0);
     let bytesRead = 0;
-    let position = offset;
+    let position = keep ? before.offset : 0;
     while (position < stat.size) {
       const chunk = Buffer.allocUnsafe(Math.min(TAIL_READ_CHUNK, stat.size - position));
       const count = readSync(fd, chunk, 0, chunk.length, position);
@@ -91,11 +92,10 @@ export function foldLogTail(path: string): TailRead | undefined {
         }
       }
       state = { ...foldLines(values, state), entries: [] };
-      offset += end + 1;
       pending = pending.subarray(end + 1);
     }
     saved.delete(path);
-    saved.set(path, { dev: stat.dev, ino: stat.ino, offset, state });
+    saved.set(path, { dev: stat.dev, ino: stat.ino, offset: position, pending, state });
     for (const old of saved.keys()) {
       if (saved.size <= TAIL_CACHE_LOGS) break;
       saved.delete(old);
