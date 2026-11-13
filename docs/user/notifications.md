@@ -11,12 +11,14 @@ starts waiting for a person:
 { "notify": { "command": "sh ~/.operad/notify.sh", "on": ["waiting"] } }
 ```
 
-| Key | Type | Default | What it does |
-|---|---|---|---|
-| `command` | string or `null` | `null` | A shell line, run with `sh -c` in the operad home. `null` turns notifications off. |
-| `on` | array | `["waiting"]` | What starts the command. `waiting` is the only value: an object now waits for a person. |
+| Key | Type | Default | Allowed values | When it takes effect | Wrong value |
+|---|---|---|---|---|---|
+| `notify` | object | `{ "command": null, "on": ["waiting"] }` | an object with the keys below; a missing section means notifications are off | When `operad serve` starts; a reload when the new config loads | Refused: `notify: must be an object` |
+| `notify.command` | string or `null` | `null` | a non-empty shell line, run with `sh -c` in the operad home; `null` turns notifications off | When `serve` starts or reloads; the command runs for each new wait | Refused: `notify.command: must be a non-empty string or null` |
+| `notify.on` | array of strings | `["waiting"]` | `waiting` only: an object now waits for a person | When `serve` starts or reloads; it sets which new waits notify | Refused: `notify.on: must be an array of "waiting"`; a repeated `waiting` is kept once |
 
-The command runs once per item and wait, with these in its environment:
+An unknown key inside `notify` is ignored; only the keys above are read. The
+command runs once per item and wait, with these in its environment:
 
 | Variable | Value |
 |---|---|

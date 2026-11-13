@@ -1022,3 +1022,9 @@ the row fields.
 |---|---|---|---|
 | T-0369-M5 | packages/dev/src/chat.ts | `dev:chat` left the `allOf` conditionals out of its schema | `dev:chat per-agent conditionals > one if/then per offered agent carries its lists and defaults` |
 | T-0378-M17 | packages/dev/src/steps.ts | an unknown harness cost was read as 0 | `dev/work > an unknown cost (a subscription login) does not stop or block the work, and is not recorded as 0` |
+
+## T-0376 — a started task waiting in a queue shows retry_wait
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0376-M1 | packages/dev/src/marks.ts | `runningMark` returned `blocked` again for `workerWait` | `task marks > running, work step waits for a worker another task holds` |
