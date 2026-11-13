@@ -223,6 +223,36 @@ describe("a code watch", () => {
     w.watch.stop();
   });
 
+  test("older code is reported only when serve keeps it, never while a reload is decided or after it succeeds", async () => {
+    for (const answer of ["reload", "keep"] as const) {
+      const { root, file } = await project();
+      const clock = fakeClock();
+      const events = fakeWatch();
+      const older: boolean[] = [];
+      let seenDuring: boolean[] | undefined;
+      const watch = new CodeWatch({
+        roots: [{ label: "pkg", path: root }],
+        quietMs: 100,
+        pollMs: 10_000,
+        clock,
+        watch: events.watch,
+        onOlder: (value) => older.push(value),
+        onChange: async () => {
+          seenDuring = [...older];
+          return answer;
+        },
+      });
+      watch.start();
+      writeFileSync(file, "export const a = 2;\n");
+      events.fire();
+      clock.advance(100);
+      await settle();
+      expect(seenDuring).toEqual([]);
+      expect(older).toEqual(answer === "keep" ? [true] : []);
+      watch.stop();
+    }
+  });
+
   test("a watch that starts on files already tried is older at once and offers only a later change", async () => {
     const { root, file } = await project();
     const roots = [{ label: "pkg", path: root }];

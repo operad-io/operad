@@ -543,8 +543,9 @@ describe("the user docs", () => {
     expect([...examples.keys()].filter((name) => !expected.includes(name))).toEqual([]);
     for (const name of expected) {
       const found = examples.get(name) ?? [];
-      // At least one example; dev.json has a second, for a repository that is not JavaScript.
-      expect({ name, some: found.length > 0 }).toEqual({ name, some: true });
+      // Exactly one example; dev.json has a second, for a repository that is not JavaScript.
+      const countFits = name === "dev.schema.json" ? found.length >= 1 : found.length === 1;
+      expect({ name, countFits, count: found.length }).toEqual({ name, countFits: true, count: found.length });
       const file = schemaFiles().find((path) => basename(path) === name);
       if (file === undefined) throw new Error(`no schema file named ${name}`);
       const schema = JSON.parse(read(file)) as Json;
@@ -553,6 +554,13 @@ describe("the user docs", () => {
         expect({ name, errors: schemaErrors(schema, value) }).toEqual({ name, errors: [] });
       }
     }
+  });
+
+  test(".operad/flaky.md is the text of CLAUDE.md's Flaky tests section", () => {
+    const claude = read(join(root, "CLAUDE.md"));
+    const start = claude.indexOf("## Flaky tests\n\n") + "## Flaky tests\n\n".length;
+    const end = claude.indexOf("\n## ", start);
+    expect(read(join(root, ".operad", "flaky.md"))).toBe(`${claude.slice(start, end).trimEnd()}\n`);
   });
 
   test("a page under docs/user uses only the user's words", () => {

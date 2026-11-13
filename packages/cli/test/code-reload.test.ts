@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   acquireLock,
@@ -168,8 +168,8 @@ describe("a serve restored after a restart could not listen", () => {
    */
   async function scenario(changed: "engine" | "plugin") {
     const home = await tempRoot();
-    const roots = ["engine", "plugin"].map((name) => {
-      const path = join(home, name);
+    const roots = ["engine", "plugin x"].map((name) => {
+      const path = join(home, name.replace(" ", "-"));
       mkdirSync(path, { recursive: true });
       writeFileSync(join(path, "index.ts"), "export const v = 1;\n");
       return { label: name, path };
@@ -181,7 +181,7 @@ describe("a serve restored after a restart could not listen", () => {
     };
     // The first serve loads the code, then a file changes and its restart fails to listen.
     snapshotOf(take(), false);
-    writeFileSync(join(home, changed, "index.ts"), "export const v = 2;\n");
+    writeFileSync(join(home, changed === "plugin" ? "plugin-x" : changed, "index.ts"), "export const v = 2;\n");
 
     const storeRoot = join(home, "store");
     const log = openLog({ backend: "sqlite", path: join(storeRoot, "log.sqlite") });
@@ -225,17 +225,32 @@ describe("a serve restored after a restart could not listen", () => {
     };
   }
 
-  for (const changed of ["engine", "plugin"] as const) {
-    test(`a changed ${changed} file shows the item; a serve that restarted on the new code shows none`, async () => {
-      const s = await scenario(changed);
-      const restored = await s.serve(true);
-      expect(restored).toHaveLength(1);
-      expect(restored[0]).toContain("serve runs older code than the files on disk");
-      // A successful restart takes a fresh snapshot of what is on disk.
-      expect(await s.serve(false)).toEqual([]);
-      await s.done();
-    });
-  }
+  test("a changed engine file shows the item; a serve that restarted on the new code shows none", async () => {
+    const s = await scenario("engine");
+    const restored = await s.serve(true);
+    expect(restored).toHaveLength(1);
+    expect(restored[0]).toContain("serve runs older code than the files on disk");
+    // A successful restart takes a fresh snapshot of what is on disk.
+    expect(await s.serve(false)).toEqual([]);
+    await s.done();
+  });
+
+  test("a changed plugin file shows nothing: the restored serve imported the plugin again", async () => {
+    const s = await scenario("plugin");
+    expect(await s.serve(true)).toEqual([]);
+    await s.done();
+  });
+});
+
+describe("the serve command's code watch", () => {
+  test("is given the change a restart already tried and reports into the notice", () => {
+    // Whether the restored serve reloads on the same change again is a matter of a poll that
+    // finds nothing to do, which no event marks: the wiring is checked where the watch is built.
+    const source = readFileSync(new URL("../src/main.ts", import.meta.url), "utf8");
+    const build = /watch = new CodeWatch\(\{[\s\S]*?\n      \}\);/.exec(source)?.[0] ?? "";
+    expect(build).toContain("declined: context.code.tried");
+    expect(build).toContain("onOlder: olderNotice.report");
+  });
 });
 
 describe("the stop signal handlers of a serve", () => {

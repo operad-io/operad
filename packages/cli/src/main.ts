@@ -2495,6 +2495,7 @@ export async function main(
           cwd: process.cwd(),
           write: (text) => io.write(text),
           error: (text) => io.error(text),
+          installOnEnable: INSTALL_ON_ENABLE,
           ...(claudeChannel ? { claudeChannel: true } : {}),
           ...(types === undefined ? {} : { types }),
         });

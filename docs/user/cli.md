@@ -194,6 +194,12 @@ old code serves again. It has no actions, and it leaves when `serve` runs the
 code on disk again: after the files load and `serve` reloads, or after you
 restart it, or when the files go back to what `serve` loaded.
 
+When the restart could not listen and the old code serves again, that serve does
+not try the same change again. A change to a plugin does not leave it on older
+code, because the restored serve loads the plugins again; only a change to
+`operad` itself does (the item above). The next different change goes through
+the load check and reloads as usual.
+
 ## The History section
 
 Every object has a History section (`operad show <id> --section history`, the

@@ -16,7 +16,6 @@
   "license": "MIT",
   "files": [
     "src",
-    "schemas",
     "config.schema.json",
     "keys.schema.json",
     "triggers.schema.json",

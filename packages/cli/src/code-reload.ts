@@ -68,19 +68,47 @@ export function takeCodeSnapshot(
 
 /**
  * Keeps the snapshot a process took when it first served. A serve restored in
- * the same process after a restart could not listen runs every module that
- * process loaded at its first start (engine, cli and the plugins: Bun keeps
- * them in its module cache), so its baseline is that first snapshot, not the
- * files on disk now. The watch then sees the change that caused the failed
- * restart and the older-code item shows; the files on disk now count as
- * already tried, so the same change is not tried again in a loop.
+ * the same process after a restart could not listen runs the engine and cli
+ * modules that process loaded at its first start (Bun keeps them in its
+ * module cache) but imports the plugins and settings again. Its baseline is
+ * the first snapshot for the engine and cli and the files on disk for plugins
+ * and settings. The watch then sees an engine or cli change that caused the
+ * failed restart and the older-code item shows; the files on disk now count as
+ * already tried, so the same change is not tried again in a loop. The next
+ * different change goes through the normal load check.
  */
 export function serveSnapshots(): (fresh: CodeSnapshot, restored: boolean) => CodeSnapshot {
   let first: CodeSnapshot | undefined;
   return (fresh, restored) => {
     first ??= fresh;
-    return restored ? { ...fresh, baseline: first.baseline, tried: fresh.baseline } : fresh;
+    return restored
+      ? { ...fresh, baseline: restoredBaseline(first.baseline, fresh.baseline), tried: fresh.baseline }
+      : fresh;
   };
+}
+
+/**
+ * What a restored serve runs: the engine and cli files of the first start (the
+ * module cache keeps them), but the plugins and settings it loaded again from
+ * the disk, a plugin enabled since the first start included.
+ */
+function restoredBaseline(first: CodeFingerprint, fresh: CodeFingerprint): CodeFingerprint {
+  const loadedAgain = (label: string | undefined): boolean =>
+    label === "settings" || (label?.startsWith("plugin ") ?? false);
+  const hashes = new Map<string, string>();
+  const labels = new Map<string, string>();
+  for (const [source, again] of [
+    [first, false],
+    [fresh, true],
+  ] as const) {
+    for (const [file, hash] of source.hashes) {
+      const label = source.labels.get(file);
+      if (loadedAgain(label) !== again) continue;
+      hashes.set(file, hash);
+      if (label !== undefined) labels.set(file, label);
+    }
+  }
+  return { hashes, labels, directories: new Set([...first.directories, ...fresh.directories]) };
 }
 
 /**

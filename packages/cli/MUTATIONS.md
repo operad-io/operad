@@ -146,3 +146,14 @@ the row fields.
 | T-0388-M5 | packages/cli/src/main.ts | the serve's code watch was not given `declined: context.code.tried`, so the restored serve reloaded on the same change again | same test (a second `reloading:` line, and the item is gone) |
 | T-0388-M6 | packages/cli/src/main.ts | the serve's code watch did not report `onOlder` to the notice | same test (no `serve-older.json`) |
 | T-0392-M1 | packages/cli/src/code-reload.ts | `listenForStop`'s release removed the handlers of a supervised serve too, so a late passed-on signal ended it with 130 | `the stop signal handlers of a serve > a supervised serve keeps them after its stop is done; another serve does not` |
+
+## T-0398-open-framework-b-followups — a restored serve, the mcp install list, the older-code notice
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0398-M2 | packages/cli/src/code-reload.ts | `restoredBaseline` took the plugin files from the first snapshot too, so a plugin the restored serve imported again counted as changed | `a serve restored after a restart could not listen > a changed plugin file shows nothing: the restored serve imported the plugin again` |
+| T-0398-M3 | packages/cli/src/main.ts | the `mcp` command did not pass `installOnEnable: INSTALL_ON_ENABLE` to `runMcpServer` | `the mcp command gets the same install-on-enable list as the other commands` |
+| T-0398-M4 | packages/cli/src/defaults.ts | `dev:pause` was added to `DEFAULT_LEAD_ACTIONS` | `the actions \`operad init\` writes never include the owner's pause and resume` |
+| T-0398-M5 | packages/cli/src/main.ts | `commandServe` did not clear the older-code notice at its start | `a serve picks up changed code > the older-code notice is cleared when serve starts and when it stops` |
+| T-0398-M6 | packages/cli/src/main.ts | `commandServe` did not clear the older-code notice when it ended | same test |
+| T-0398-M7 | packages/cli/src/main.ts | (re-check of T-0388-M5) the code watch was not given `declined: context.code.tried`; the end-to-end test could pass before the poll that finds the change ran, so a test now checks the wiring where the watch is built | `the serve command's code watch > is given the change a restart already tried and reports into the notice` |

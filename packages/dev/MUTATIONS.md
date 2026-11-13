@@ -1099,3 +1099,13 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0395-M1 | packages/dev/test/heavy/gate.test.ts | the load injected for `dev/verify reruns only the failed tests` was the busy one the failing checks saw (33.92 on 16 cores) instead of a quiet one | `dev/verify reruns only the failed tests > a failed test that passes alone passes the check, is reported and counted` and `... an earlier attempt's names in the run log do not stop this attempt's rerun` |
+
+## T-0398-open-framework-b-followups — corrections
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0398-M8 | packages/dev/src/mainclone.ts | correction of T-0387-M3: without the empty-`prepare` early return no command runs either; the outcome becomes `{ updated: true, prepared: true, note: "prepare done" }` instead of `{ updated: true }` | `no prepare lines run no command` (its `toEqual({ updated: true })`) |
+| T-0398-M9 | packages/dev/src/standing.ts | void: T-0094-M4 names dev code and a test that T-0388 deleted | none (void) |
+| T-0398-M10 | packages/dev/src/standing.ts | void: T-0094-M11 names dev code and a test that T-0388 deleted | none (void) |
+| T-0398-M11 | packages/dev/src/standing.ts | void: T-0094-M12 names dev code and a test that T-0388 deleted | none (void) |
+| T-0398-M12 | packages/dev/src/standing.ts | void: T-0094-M14 names dev code and a test that T-0388 deleted | none (void) |

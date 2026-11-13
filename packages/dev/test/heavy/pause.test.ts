@@ -206,8 +206,8 @@ describe("dev:pause and dev:resume", () => {
     expect(names).toContain("dev:resume");
     for (const name of ["dev:pause", "dev:resume"]) {
       expect(s.registry.actions().find((action) => action.name === name)?.confirm).toBe(true);
-      // The actions `operad init` writes into mcp.actions never include the owner's pause and resume.
-      expect(["dev:rework", "dev:reverify", "dev:reject", "dev:priority", "dev:concurrency", "chat:close"]).not.toContain(name);
+      // `operad init` writes DEFAULT_LEAD_ACTIONS into mcp.actions; packages/cli/test/mcp-install.test.ts
+      // checks that list (dev cannot import the cli, which depends on dev).
     }
   });
 

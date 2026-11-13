@@ -795,3 +795,9 @@ the row fields.
 | T-0397-M1 | packages/engine/src/plugin/sqlite-store.ts | the poll loop told object listeners only of facts with `fact.type === fact.object.type`, not of `object.changed` | `a sqlite object listener wakes for a put made by another connection` |
 | T-0397-M2 | packages/engine/src/plugin/sqlite-store.ts | the check that refuses a newer `schema_version` was removed | `a store with a newer schema_version is refused` |
 | T-0397-M3 | packages/engine/src/plugin/sqlite-store.ts | the migration ran only while `schema_version` was below the current one | `a full snapshot an older process appends after the migration is rewritten on the next open` |
+
+## T-0398-open-framework-b-followups — the older-code item only when serve keeps the old code
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0398-M1 | packages/engine/src/loop/code-watch.ts | `setOlder(true)` ran before `onChange` decided, so the item also showed during a reload that succeeds | `a code watch > older code is reported only when serve keeps it, never while a reload is decided or after it succeeds` |
