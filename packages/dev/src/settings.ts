@@ -1284,15 +1284,15 @@ function settingsFromText(
   for (const [name, flow] of Object.entries(settings.flows ?? {})) {
     flow.stages.forEach((stage, index) => {
       if (stage.stage !== "work" || stage.workerBrief === undefined) return;
-      const file = isAbsolute(stage.workerBrief)
-        ? stage.workerBrief
-        : resolve(repositoryPath, stage.workerBrief);
-      if (!existsSync(file)) {
-        throw new DevError(
-          `flows.${name}.stages[${index}].workerBrief`,
-          `${file} does not exist`,
-        );
+      const field = `flows.${name}.stages[${index}].workerBrief`;
+      if (isAbsolute(stage.workerBrief)) {
+        throw new DevError(field, "must be a path relative to the repository");
       }
+      const file = resolve(repositoryPath, stage.workerBrief);
+      if (!existsSync(file)) {
+        throw new DevError(field, `${file} does not exist`);
+      }
+      assertInsideRepository(repositoryPath, file, field);
     });
   }
   return { settings, text };
@@ -1446,7 +1446,7 @@ export async function readWorkerBrief(
 ): Promise<string> {
   if (stageFile !== undefined) {
     // A stage's own file replaces the repository's; it must exist.
-    const file = isAbsolute(stageFile) ? stageFile : resolve(repositoryPath, stageFile);
+    const file = resolve(repositoryPath, stageFile);
     try {
       return readFileSync(file, "utf8");
     } catch (error) {

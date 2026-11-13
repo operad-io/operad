@@ -667,6 +667,23 @@ describe("dev/work", () => {
     expect(message).toContain("flows.image.stages[0].workerBrief");
     writeFileSync(join(dir, ".operad", "missing.md"), "here now");
     await readDevSettings(dir);
+    const other = mkdtempSync(join(tmpdir(), "operad-wb-"));
+    mkdirSync(join(other, ".operad"));
+    writeFileSync(join(other, ".operad", "brief.md"), "here");
+    writeFileSync(
+      join(other, ".operad", "dev.json"),
+      JSON.stringify({
+        flows: { image: { stages: [{ stage: "work", workerBrief: join(other, ".operad", "brief.md") }, { stage: "human" }] } },
+      }),
+    );
+    let absolute = "";
+    try {
+      await readDevSettings(other);
+    } catch (error) {
+      absolute = String(error);
+    }
+    expect(absolute).toContain("flows.image.stages[0].workerBrief");
+    expect(absolute).toContain("relative");
   });
 
   test("a work stage with commit true commits what the worker wrote (T-0380)", async () => {

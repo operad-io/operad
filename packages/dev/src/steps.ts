@@ -617,9 +617,13 @@ function commitWip(worktree: string): boolean {
 /** Commits everything left in the worktree (honouring .gitignore) with the given message. */
 function commitLeft(worktree: string, message: string): boolean {
   if (conflictedFiles(worktree).length > 0) return false;
-  const added = git(worktree, ["add", "-A", "--", ".", `:(exclude)${PROGRESS_FILE}`]);
+  const added = git(worktree, ["add", "-A", "--", "."]);
   if (!added.ok) return false;
-  return git(worktree, ["commit", "-q", "--no-verify", "-m", message]).ok;
+  const committed = git(worktree, ["commit", "-q", "--no-verify", "-m", message]).ok;
+  // The note is the worker's report, not part of the change: take it out of the
+  // branch again, leaving the file for the step to read.
+  untrackNote(worktree);
+  return committed;
 }
 
 /**
