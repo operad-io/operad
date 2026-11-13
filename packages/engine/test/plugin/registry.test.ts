@@ -7,6 +7,7 @@ import {
   definePlugin,
   loadPluginRegistry,
   MemoryPluginStore,
+  OBJECT_CHANGE_FACT,
   PluginRegistry,
 } from "../../src/index.ts";
 import notes from "../fixtures/plugins/notes.ts";
@@ -90,7 +91,7 @@ describe("plugin registry", () => {
     expect(store.list("note").objects.map((item) => item.id)).toEqual(["n1"]);
     expect(
       store.facts().some(
-        (fact) => fact.type === "note" && fact.cause === "step run-1",
+        (fact) => fact.type === OBJECT_CHANGE_FACT && fact.cause === "step run-1",
       ),
     ).toBe(true);
 

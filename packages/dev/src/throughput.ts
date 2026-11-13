@@ -6,7 +6,12 @@
  * steps and its waits for a person took. Nothing comes from git.
  */
 
-import type { StoredObject, ViewContext } from "@operad-io/engine";
+import {
+  foldObjectFacts,
+  type PluginFact,
+  type StoredObject,
+  type ViewContext,
+} from "@operad-io/engine";
 import {
   listAll,
   repositoryData,
@@ -151,37 +156,38 @@ async function readTask(
   // Each attempt's cost, the latest recorded for it: a rework is paid for too.
   const attemptCosts = new Map<number, number>();
   const reasons = new Set<string>();
+  const facts: PluginFact[] = [];
   let cursor: string | undefined;
   for (;;) {
     const page = await ctx.store.facts(
       { type: object.type, id: object.id },
       cursor === undefined ? {} : { cursor },
     );
-    for (const fact of page.facts) {
-      if (fact.type !== "task") continue;
-      const data = taskData(fact.data);
-      const attempt = data.attempt;
-      if (data.phase === "merged" && mergedAt === undefined) mergedAt = fact.at;
-      if (data.phase === "waiting" && previous !== "waiting") {
-        reasons.add(reasonOf(data, fact.cause));
-      }
-      previous = data.phase;
-      if (attempt !== undefined) {
-        maxAttempt = Math.max(maxAttempt, attempt.number);
-        if (typeof attempt.cost === "number" && Number.isFinite(attempt.cost)) {
-          attemptCosts.set(attempt.number, attempt.cost);
-        }
-        if (typeof attempt.run === "string" && !runs.includes(attempt.run)) runs.push(attempt.run);
-        const waiting = typeof attempt.integrationWait === "string" && attempt.integrationWait.length > 0;
-        if (waiting && waitFrom === undefined) waitFrom = fact.at;
-        if (!waiting && waitFrom !== undefined) {
-          integrateWaitMs += Math.max(0, fact.at - waitFrom);
-          waitFrom = undefined;
-        }
-      }
-    }
+    facts.push(...page.facts);
     if (page.next === undefined) break;
     cursor = page.next;
+  }
+  for (const version of foldObjectFacts(facts)) {
+    const data = taskData(version.data);
+    const attempt = data.attempt;
+    if (data.phase === "merged" && mergedAt === undefined) mergedAt = version.fact.at;
+    if (data.phase === "waiting" && previous !== "waiting") {
+      reasons.add(reasonOf(data, version.fact.cause));
+    }
+    previous = data.phase;
+    if (attempt !== undefined) {
+      maxAttempt = Math.max(maxAttempt, attempt.number);
+      if (typeof attempt.cost === "number" && Number.isFinite(attempt.cost)) {
+        attemptCosts.set(attempt.number, attempt.cost);
+      }
+      if (typeof attempt.run === "string" && !runs.includes(attempt.run)) runs.push(attempt.run);
+      const waiting = typeof attempt.integrationWait === "string" && attempt.integrationWait.length > 0;
+      if (waiting && waitFrom === undefined) waitFrom = version.fact.at;
+      if (!waiting && waitFrom !== undefined) {
+        integrateWaitMs += Math.max(0, version.fact.at - waitFrom);
+        waitFrom = undefined;
+      }
+    }
   }
   if (mergedAt === undefined || mergedAt < since) return undefined;
   const own = taskData(object.data).cost;
