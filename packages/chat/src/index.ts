@@ -369,3 +369,4 @@ export default createChatPlugin();
 export * from "./model.ts";
 export * from "./reply.ts";
 export * from "./views.ts";
+export * from "./tail.ts";

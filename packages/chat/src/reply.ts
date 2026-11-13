@@ -12,6 +12,7 @@ import { emptyFold, foldLines, maskSecrets, type FoldEntry, type FoldState } fro
 import {
   allEntries,
   allMessages,
+  chatFacts,
   IMAGE_TYPES,
   chatData,
   type ChatData,
@@ -19,7 +20,9 @@ import {
   chatRef,
   currentSession,
   ENTRY_FACT,
+  latestRunOf,
   MESSAGE_FACT,
+  RUN_FACT,
   newMessageId,
   promptFor,
   unanswered,
@@ -352,7 +355,7 @@ export function toolOutputPath(home: string, chat: string, runId: string, callId
 }
 
 /** The chat's own secret values, so nothing recorded or written can carry one. */
-async function secretValues(ctx: StepContext): Promise<readonly string[]> {
+export async function secretValues(ctx: Pick<StepContext, "secrets">): Promise<readonly string[]> {
   try {
     const values: string[] = [];
     for (const name of await ctx.secrets.names()) {
@@ -577,6 +580,11 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
     }
     folded = foldLines([value], folded);
   };
+
+  // The run is a fact before the agent starts: a view finds the step's log by it.
+  if (latestRunOf(chatFacts(ctx.store, object.id)) !== ctx.runId) {
+    await ctx.facts.append({ type: RUN_FACT, object: chatRef(object.id), data: { runId: ctx.runId } });
+  }
 
   let outcome: PluginStepResult;
   try {

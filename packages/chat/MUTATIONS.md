@@ -96,9 +96,61 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0362-M14 | packages/chat/src/reply.ts | the final text was compared with the entry before masking it, so a secret-bearing reply stayed as an entry too | `chat entries > secret values are masked before a text, thinking, tool or file fact is written` |
+
+## T-0363 — the transcript's after, mark and tail
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0363-M1 | packages/chat/src/views.ts | `after` was ignored, so every read gave the whole page | `chat transcript: after, mark and tail > a read with after returns only what was recorded later, and says so` |
+| T-0363-M2 | packages/chat/src/views.ts | a read with `after` gave the mark back unchanged | `chat transcript: after, mark and tail > the mark moves with what was recorded and holds when nothing was` |
+| T-0363-M3 | packages/chat/src/views.ts | the thinking being written was left out of the tail | `chat transcript: after, mark and tail > thinking being written is a block quote with no label` |
+| T-0363-M4 | packages/chat/src/views.ts | the text being written was left out of the tail | `chat transcript: after, mark and tail > text being written is in the tail and not in the markdown` |
+| T-0363-M5 | packages/chat/src/views.ts | the running tool calls were left out of the tail | `chat transcript: after, mark and tail > a tool call that started and did not end is one line with its start` |
+| T-0363-M6 | packages/chat/src/views.ts | the tail was read whether or not the run still runs | `chat transcript: after, mark and tail > there is no tail when nothing runs, and none without a log` |
+| T-0363-M7 | packages/chat/src/views.ts | text the facts already hold was repeated in the tail | `chat transcript: after, mark and tail > a finished entry is never in both the markdown and the tail` |
+| T-0363-M8 | packages/chat/src/views.ts | a tool call the facts already hold as finished was repeated in the tail | `chat transcript: after, mark and tail > a finished entry is never in both the markdown and the tail` |
+| T-0363-M9 | packages/chat/src/views.ts | a radian chat's tail showed text and thinking | `chat transcript: after, mark and tail > a radian chat's tail has the tool lines only` |
+| T-0363-M10 | packages/chat/src/views.ts | the tail was not masked | `chat transcript: after, mark and tail > a secret is masked in the tail` |
+| T-0363-M11 | packages/chat/src/tail.ts | the whole log was read, not its end | `chat transcript: after, mark and tail > reading the tail of a log of 50 000 lines reads a bounded number of bytes` |
+| T-0363-M12 | packages/chat/src/reply.ts | the reply step did not record its run, so no log was found | `chat transcript: after, mark and tail > text being written is in the tail and not in the markdown` |
 ## T-0369 — the new-chat form narrows model and effort by agent
 
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0369-M1 | packages/chat/src/model.ts | a configured model was the default of every agent, not only the one that lists it | `bot:chat per-agent conditionals > one if/then per agent carries its lists and defaults; a bot's model is the default only of the agent that lists it` |
 | T-0369-M2 | packages/chat/src/model.ts | an agent that lists nothing still got a `model`/`effort` in its `then` | `bot:chat per-agent conditionals > one if/then per agent carries its lists and defaults; a bot's model is the default only of the agent that lists it` |
+
+## T-0363 — rework 1: a window that starts inside unfinished content
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0363-M13 | packages/chat/src/tail.ts | a window was never widened, so text or thinking that began before it lost its start | `chat transcript: after, mark and tail > a text, thinking or tool call that began before the window is still whole` |
+| T-0363-M14 | packages/chat/src/tail.ts | output of a call with no start or end in the window did not widen it, so the running call was dropped | `chat transcript: after, mark and tail > a text, thinking or tool call that began before the window is still whole` |
+
+## T-0363 — rework 3: a quiet point instead of a shape check
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0363-M15 | packages/chat/src/tail.ts | the earlier acceptance rule came back (a reset line and no unpaired output), so a silent call whose start is before the window was dropped | `chat transcript: after, mark and tail > a silent call stays in the tail while a parallel call fills the window` |
+
+## T-0363 — rework 4: no quiet point in a log without message ends
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0363-M16 | packages/chat/src/tail.ts | in a log with no text, thinking or message end, a finished call was taken as the quiet point | `chat transcript: after, mark and tail > in a log with no message ends a finished call does not hide a running one` |
+
+## T-0363 — rework 6: the log is folded incrementally
+
+The window rule (M11 to M16 above) was replaced by a fold that keeps its state and byte offset per log and reads only what was appended; M11, M13, M14, M15 and M16 no longer apply to the code. The bounded-read test keeps its name and now checks the appended bytes.
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0363-M17 | packages/chat/src/tail.ts | every read started again from byte 0 | `chat transcript: after, mark and tail > reading the tail of a log of 50 000 lines reads a bounded number of bytes` |
+| T-0363-M18 | packages/chat/src/tail.ts | a log shorter than the saved offset kept its old state | `chat transcript: after, mark and tail > a log that was cut short or replaced is read again from its start` |
+| T-0363-M19 | packages/chat/src/tail.ts | the partial last line was counted as read, so its second half was lost | `chat transcript: after, mark and tail > a line split across two appends is folded once, whole` |
+
+## T-0363 — rework 7: the partial last line is kept
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0363-M20 | packages/chat/src/tail.ts | the saved offset stopped after the last complete line, so a partial line was read again at every poll | `chat transcript: after, mark and tail > a large unfinished line is read once, not at every poll` |
