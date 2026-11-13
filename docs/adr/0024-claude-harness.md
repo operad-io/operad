@@ -24,7 +24,9 @@ operad passes nothing. A subscription login sits in the Keychain, which the proc
 
 ### D4: The Claude in the child does no discovery
 
-`settingSources: []`; `permissionMode: 'default'` given explicitly (the default `auto` classifier is not accepted); `permissionPrompts: 'host'`; `canUseTool` is the only permission surface. The system prompt is the SDK's `claude_code` preset without additions. The tool set is the SDK's default set; operad's own tools are not connected. No plugins, skills or hook files are loaded.
+`settingSources: []`, so no user or project settings and no instruction files are read; `permissionMode: 'default'` given explicitly (the default `auto` classifier is not accepted); `permissionPrompts: 'host'`; `canUseTool` is the only permission surface. The system prompt is the SDK's `claude_code` preset without additions. The environment the worker gives `claude` turns off auto memory, instruction files, telemetry, error reporting and background tasks. The only hooks are those the worker passes in code (`PreToolUse`, `PostToolUse`, `PostToolUseFailure`, which write the log); no hook files are loaded.
+
+The tool set is the SDK's default tools minus a fixed disallowed list of tools that only schedule or wait for work outside the turn (`Monitor`, `ScheduleWakeup`, `CronCreate`, `CronDelete`, `CronList`, `TaskStop`), so a run is one foreground turn. It is extended by operad's own MCP server, started over stdio, when the step provides one, and by a bot's MCP servers, each started behind its guard, which holds their secrets.
 
 ### D5: Session files stay in the user's `~/.claude/projects/`
 
