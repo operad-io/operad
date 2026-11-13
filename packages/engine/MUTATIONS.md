@@ -737,3 +737,10 @@ the row fields.
 | T-0366-M12 | packages/engine/src/kernel/decide.ts | a person wait ignored the timed-out question's choices and always added its late choices, so a background run offered `allow_always` | `decide: an answered question returns to the step > a timed-out question offers its own choices, and a late choice only when the step hands one over` |
 | T-0368-M1 | packages/engine/src/views/presentation.ts | a row over the limit was an error on its first measure, with no second measure | `presentation views > a row slow once only is not an error: it is measured again (T-0368)` |
 | T-0365-M8 | packages/engine/src/plugin/registry.ts | a function `models` was called without the plugin's settings | `a harness plugin's models > a function is called with the plugin's settings each time the list is read` |
+
+## T-0381 — resolving an id never reads the whole fact list
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0381-M1 | packages/engine/src/views/presentation.ts | the undeclared-type lookup in `resolve` read the whole fact list again | `presentation views > resolving an id never reads the whole fact list (T-0381) > memory: scoped, typed, undeclared, ambiguous and unknown ids` |
+| T-0381-M2 | packages/engine/src/plugin/store.ts | the memory store did not record an object's type by id when a fact was tracked, so `objectTypesOf` was empty | `presentation views > resolving an id never reads the whole fact list (T-0381) > memory: scoped, typed, undeclared, ambiguous and unknown ids` |

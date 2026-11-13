@@ -335,6 +335,9 @@ export interface ObjectStore {
   /** One page of one object's facts in sequence order. */
   facts(object: ObjectRef, options?: FactsOptions): FactsPage;
 
+  /** The distinct object types that have facts under this object id, sorted. */
+  objectTypesOf(id: string): readonly string[];
+
   /**
    * Calls `listener` for facts of `object` after `options.cursor`; without a
    * cursor, only facts appended after the subscription starts.
