@@ -11,9 +11,9 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
-import { ViewError } from "@operad-io/engine";
+import { objectValueAfter, ViewError } from "@operad-io/engine";
 import { isBusy } from "@operad-io/engine/platform";
-import type { FlowDefinition, ObjectStore, StoredObject } from "@operad-io/engine";
+import type { FlowDefinition, ObjectStore, PluginFact, StoredObject } from "@operad-io/engine";
 import { git } from "./git.ts";
 import { withRepositoryLock } from "./lock.ts";
 import {
@@ -2131,17 +2131,15 @@ export async function setConcurrency(
 
 /** Rebuilds the objects a store's facts describe, in append order. */
 export function rebuildObjects(
-  facts: readonly {
-    readonly type: string;
-    readonly object: { readonly type: string; readonly id: string } | undefined;
-    readonly data: Record<string, unknown>;
-  }[],
+  facts: readonly PluginFact[],
 ): Map<string, Record<string, unknown>> {
   const objects = new Map<string, Record<string, unknown>>();
   for (const fact of facts) {
     const object = fact.object;
-    if (object === undefined || fact.type !== object.type) continue;
-    objects.set(`${object.type}:${object.id}`, { ...fact.data });
+    if (object === undefined) continue;
+    const key = `${object.type}:${object.id}`;
+    const value = objectValueAfter(fact, objects.get(key) ?? {});
+    if (value !== undefined) objects.set(key, { ...value });
   }
   return objects;
 }

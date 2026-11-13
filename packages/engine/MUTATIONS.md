@@ -768,3 +768,13 @@ the row fields.
 | T-0384-M4 | packages/engine/src/log/sqlite.ts | `schemaNeedsWork` did not look for `runs_object`, so an older store never gained the index | `a store without the object index gains it on open` |
 | T-0384-M5 | packages/engine/src/views/presentation.ts | history asked for every run instead of one object's | `presentation views > history asks the log for one object's runs` |
 | T-0384-M6 | packages/engine/src/views/presentation.ts | `hasRun` read every run and filtered by object in JS | `presentation views > naming an object that only has a run asks the log for that object's runs` |
+## T-0385 — object facts hold only changes
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0385-M1 | packages/engine/src/plugin/sqlite-store.ts | a put wrote the whole object as `changed` on every change again | `object facts hold changes > put records only changed and removed fields (sqlite)` |
+| T-0385-M2 | packages/engine/src/plugin/sqlite-store.ts | an unchanged put returned the old object and wrote no fact, losing the cause dev reads | `object facts hold changes > a put that changes nothing keeps an empty change fact (sqlite)` |
+| T-0385-M3 | packages/engine/src/plugin/object-facts.ts | folding ignored the removed field names | `object facts hold changes > folding gives every version and matches the object table after random puts` |
+| T-0385-M4 | packages/engine/src/plugin/object-facts.ts | folding no longer read a fact written as an old full snapshot | `dev views > the answer section gives the same output from old full snapshots as from changes` |
+| T-0385-M5 | packages/engine/src/plugin/sqlite-store.ts | the migration returned without rewriting any full snapshot | `object facts hold changes > an old full-snapshot store is migrated once, keeping facts and appended data` |
+| T-0385-M10 | packages/engine/src/plugin/sqlite-store.ts | a put read the previous version before taking the write lock, so a concurrent commit was missing from its change | `object facts hold changes > a put diffs against the version committed while it waited for the lock` |

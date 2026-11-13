@@ -12,7 +12,7 @@ A worker that runs a step reopens the same store from `store.location`, so the s
 
 | Call | Returns | What it does |
 |---|---|---|
-| `put(type, id, data, cause)` | the stored object | Stores a new **version** of the object and appends the change as a fact. `data` is JSON-shaped; `cause` names what made the change (`notes/draft`, `action:notes/publish`). A change is never an update in place: `version` counts up |
+| `put(type, id, data, cause)` | the stored object | Stores a new **version** of the object and appends the change as a fact. `data` is JSON-shaped; `cause` names what made the change (`notes/draft`, `action:notes/publish`). A change is never an update in place: `version` counts up. A put whose data changed nothing writes an empty change, `{ changed: {}, removed: [] }`, so its cause is still in the history |
 | `get(type, id)` | the object or `undefined` | `{ type, id, data, version, cause, at }` |
 | `list(type, { where?, cursor?, limit?, index? })` | `{ objects, next? }` | One page of objects of `type`, **ordered by id**, filtered by `where`. `next` is the cursor of the next page |
 | `facts(object, { cursor?, limit? })` | `{ facts, next? }` | One page of one object's facts in sequence order |
@@ -24,6 +24,12 @@ A worker that runs a step reopens the same store from `store.location`, so the s
 
 The plugin's own store (`PluginStore`) also has `append(input)` for a fact that is not an object change; a plugin writes those through `ctx.facts.append({ type, data, object?, cause? })`. A fact holds data and paths, **never process output**: write output to `ctx.logger` and put the path in the fact.
 A fact's `cause` is the one you give; when you give none the kernel fills the call that wrote it (`action:<plugin>/<name>`, `command:<plugin>/<name>`, `standing:<plugin>`, `tick:<plugin>`, `source:<plugin>`, `check:<plugin>`, or `step:<plugin>/<name>` for a step), so a history line can say why something changed.
+
+## Reading changes
+
+A fact written by `put` holds the object's **changed top-level fields** and the names of the fields it removed, not the whole object: `{ changed: { state: "done" }, removed: ["brief"] }`; its type is `OBJECT_CHANGE_FACT` (`"object.changed"`). The first put writes every field in `changed`. The object table always holds the complete current value. An appended fact is not a version and has its own type.
+
+`foldObjectFacts(facts, start?)` yields `{ fact, data }` for each version in order, where `data` is the whole object after that fact; it returns the final value. A reader that needs a field at a fact uses it instead of reading `fact.data`. It also reads a fact written before changes existed, whose type equals the object type and whose data is the whole object. `objectValueAfter(fact, previous)` does one fact, for a reader rebuilding several objects; `diffObject(previous, data)`, `applyObjectChange(previous, change)`, `objectChangeOf(data)` and `isObjectFact(fact)` are the same rules, one step at a time.
 
 ## Filters, pages and cursors
 

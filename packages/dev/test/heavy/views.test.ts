@@ -8,7 +8,7 @@ import {
   getTask,
   setTaskPhase,
 } from "../../src/service.ts";
-import { SqlitePluginStore, type StepContext } from "@operad-io/engine";
+import { MemoryPluginStore, SqlitePluginStore, type StepContext } from "@operad-io/engine";
 import { taskPlaceWait } from "../../src/place-wait.ts";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -412,6 +412,40 @@ describe("dev views", () => {
     };
     expect(older.markdown).toBe("First answer.");
     expect(older.next).toBeUndefined();
+  });
+
+  test("the answer section gives the same output from old full snapshots as from changes", async () => {
+    const { store, task } = await setup();
+    const base = taskData((await getTask(store, task.id)).data);
+    const long = `Closing report.\n\n${"Detail line. ".repeat(20)}`;
+    const snapshots = [
+      { ...base, attempt: { number: 1, finalMessage: "First answer." } },
+      { ...base, attempt: { number: 2, finalMessage: null } },
+      { ...base, attempt: { number: 2, finalMessage: long } },
+    ];
+    const oldStore = new MemoryPluginStore({ root: "unused" });
+    for (const snapshot of snapshots) {
+      oldStore.append({
+        type: "task",
+        object: { type: "task", id: task.id },
+        cause: "dev:work",
+        data: snapshot,
+      });
+    }
+    const newStore = new MemoryPluginStore({ root: "unused" });
+    for (const snapshot of snapshots) {
+      newStore.put("task", task.id, snapshot, "dev:work");
+    }
+    const latest = await getTask(store, task.id);
+    const read = async (source: MemoryPluginStore, cursor?: string) =>
+      taskViews.load(
+        { store: source } as never,
+        latest,
+        "answer",
+        cursor === undefined ? {} : { cursor },
+      );
+    expect(await read(oldStore)).toEqual(await read(newStore));
+    expect(await read(oldStore, "1")).toEqual(await read(newStore, "1"));
   });
 
   test("the diff section is the stat and the diff, and pages by file when long", async () => {

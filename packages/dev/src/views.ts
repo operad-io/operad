@@ -1,11 +1,13 @@
 /** How a plan and a task appear in a list and a detail page. */
 
-import type {
-  ObjectRow,
-  ObjectViews,
-  StoredObject,
-  ViewContext,
-  ViewSection,
+import {
+  foldObjectFacts,
+  type ObjectRow,
+  type ObjectViews,
+  type PluginFact,
+  type StoredObject,
+  type ViewContext,
+  type ViewSection,
 } from "@operad-io/engine";
 import {
   closeSync,
@@ -710,24 +712,25 @@ async function answerSection(
   readonly pages?: readonly { readonly label: string; readonly cursor?: string }[];
 }> {
   const byAttempt = new Map<number, string>();
+  const facts: PluginFact[] = [];
   let page: string | undefined;
   for (;;) {
-    const facts = await ctx.store.facts(
+    const read = await ctx.store.facts(
       { type: object.type, id: object.id },
       page === undefined ? {} : { cursor: page },
     );
-    for (const fact of facts.facts) {
-      if (fact.type !== "task") continue;
-      const attempt = taskData(fact.data).attempt;
-      if (attempt === undefined) continue;
-      if (typeof attempt.finalMessage === "string" && attempt.finalMessage.length > 0) {
-        byAttempt.set(attempt.number, attempt.finalMessage);
-      } else if (attempt.finalMessage === null) {
-        byAttempt.delete(attempt.number);
-      }
+    facts.push(...read.facts);
+    if (read.next === undefined) break;
+    page = read.next;
+  }
+  for (const version of foldObjectFacts(facts)) {
+    const attempt = taskData(version.data).attempt;
+    if (attempt === undefined) continue;
+    if (typeof attempt.finalMessage === "string" && attempt.finalMessage.length > 0) {
+      byAttempt.set(attempt.number, attempt.finalMessage);
+    } else if (attempt.finalMessage === null) {
+      byAttempt.delete(attempt.number);
     }
-    if (facts.next === undefined) break;
-    page = facts.next;
   }
   const numbers = [...byAttempt.keys()].sort((a, b) => b - a);
   if (numbers.length === 0) return { markdown: "_No answer yet._" };
@@ -955,41 +958,42 @@ export async function metrics(
   now: number = Date.now(),
 ): Promise<string> {
   const byAttempt = new Map<number, AttemptMetrics>();
+  const facts: PluginFact[] = [];
   let cursor: string | undefined;
   for (;;) {
     const page = await ctx.store.facts(
       { type: object.type, id: object.id },
       cursor === undefined ? {} : { cursor },
     );
-    for (const fact of page.facts) {
-      if (fact.type !== "task") continue;
-      const attempt = taskData(fact.data).attempt;
-      if (attempt === undefined) continue;
-      let entry = byAttempt.get(attempt.number);
-      if (entry === undefined) {
-        entry = {
-          number: attempt.number,
-          runs: [],
-          last: undefined,
-          lastStep: "",
-          timed: false,
-          ms: 0,
-          steps: new Map(),
-          running: undefined,
-        };
-        byAttempt.set(attempt.number, entry);
-      }
-      const step = /^dev:(\w+)$/.exec(fact.cause)?.[1];
-      if (step !== undefined && (METRIC_STEPS as readonly string[]).includes(step)) {
-        entry.lastStep = step;
-      }
-      entry.last = attempt;
-      if (typeof attempt.run === "string" && !entry.runs.includes(attempt.run)) {
-        entry.runs.push(attempt.run);
-      }
-    }
+    facts.push(...page.facts);
     if (page.next === undefined) break;
     cursor = page.next;
+  }
+  for (const version of foldObjectFacts(facts)) {
+    const attempt = taskData(version.data).attempt;
+    if (attempt === undefined) continue;
+    let entry = byAttempt.get(attempt.number);
+    if (entry === undefined) {
+      entry = {
+        number: attempt.number,
+        runs: [],
+        last: undefined,
+        lastStep: "",
+        timed: false,
+        ms: 0,
+        steps: new Map(),
+        running: undefined,
+      };
+      byAttempt.set(attempt.number, entry);
+    }
+    const step = /^dev:(\w+)$/.exec(version.fact.cause)?.[1];
+    if (step !== undefined && (METRIC_STEPS as readonly string[]).includes(step)) {
+      entry.lastStep = step;
+    }
+    entry.last = attempt;
+    if (typeof attempt.run === "string" && !entry.runs.includes(attempt.run)) {
+      entry.runs.push(attempt.run);
+    }
   }
   // Only an attempt that ran a step is one: the others are facts about a task.
   for (const [number, entry] of byAttempt) if (entry.lastStep === "") byAttempt.delete(number);

@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { StepContext, ViewContext } from "@operad-io/engine";
+import { MemoryPluginStore, type StepContext, type ViewContext } from "@operad-io/engine";
 import {
   allEntries,
   allMessages,
@@ -57,6 +57,53 @@ async function transcript(r: Rig, chat: string, cursor?: string): Promise<{ mark
 }
 
 describe("chat entries", () => {
+  test("the transcript is the same from old full chat snapshots as from changes", async () => {
+    const id = "C-0001";
+    const ref = { type: "chat", id };
+    const base = {
+      harness: "fake",
+      cwd: "",
+      title: "Test",
+      closed: false,
+      access: {},
+      skills: [],
+      channels: [],
+    };
+    const message = (messageId: string, role: "user" | "assistant", text: string) => ({
+      id: messageId,
+      role,
+      from: { via: role === "user" ? "cli" : "", id: "" },
+      text,
+      attachments: [],
+      source: { kind: role === "user" ? "cli" : "", ref: null },
+    });
+    const oldStore = new MemoryPluginStore({ root: "unused" });
+    oldStore.append({ type: "chat", object: ref, cause: "seed", data: base });
+    oldStore.append({ type: "chat.message", object: ref, cause: "say", data: message("m1", "user", "hello") });
+    oldStore.append({ type: "chat", object: ref, cause: "reply", data: { ...base, session: "s-1" } });
+    oldStore.append({ type: "chat.message", object: ref, cause: "reply", data: message("m2", "assistant", "hi there") });
+    const newStore = new MemoryPluginStore({ root: "unused" });
+    newStore.put("chat", id, base, "seed");
+    newStore.append({ type: "chat.message", object: ref, cause: "say", data: message("m1", "user", "hello") });
+    newStore.put("chat", id, { ...base, session: "s-1" }, "reply");
+    newStore.append({ type: "chat.message", object: ref, cause: "reply", data: message("m2", "assistant", "hi there") });
+    const object = newStore.get("chat", id);
+    if (object === undefined) throw new Error("no chat");
+    const context = (store: MemoryPluginStore): ViewContext =>
+      ({
+        plugin: "chat",
+        home: "",
+        cwd: "",
+        store,
+        settings: {},
+      }) as unknown as ViewContext;
+    const oldView = await chatViews.load(context(oldStore), object, "transcript", {});
+    const newView = await chatViews.load(context(newStore), object, "transcript", {});
+    expect(oldView).toEqual(newView);
+    expect(oldView.markdown).toContain("hello");
+    expect(oldView.markdown).toContain("hi there");
+  });
+
   test("a run records its text, thinking and tool calls with its run id, and leaves the final reply as the message", async () => {
     const r = await rig((ctx) => {
       const line = send(ctx);

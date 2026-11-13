@@ -102,6 +102,7 @@
   "@operad-io/engine:OpenLogOptions": "the run log backend's types: only the kernel and the runner open the log",
   "@operad-io/engine:OperadConfig": "the home's config types: read and written by the host, a plugin receives its own section as ctx.settings",
   "@operad-io/engine:PLUGIN_PROJECT_DIRECTORY": "installs a plugin package into the operad home: the CLI host uses it, a plugin never calls it",
+  "@operad-io/engine:PLUGIN_STORE_SCHEMA_VERSION": "the plugin store file schema version: the store migrates itself, and a plugin never reads it",
   "@operad-io/engine:PendingEffect": "the kernel's fact, input and state types: a plugin returns results and never builds them",
   "@operad-io/engine:PendingEffectKind": "the kernel's fact, input and state types: a plugin returns results and never builds them",
   "@operad-io/engine:PendingItem": "the presentation view the host builds for clients: a plugin declares views and never calls it",
