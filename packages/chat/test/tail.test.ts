@@ -1,8 +1,8 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { SectionContent, StepContext, ViewContext } from "@operad-io/engine";
-import { agentLogPath, chatViews, foldLogTail, RUN_FACT, TAIL_LOG_BYTES } from "../src/index.ts";
+import { agentLogPath, chatViews, foldLogTail, RUN_FACT } from "../src/index.ts";
 import { cleanupRoots, reply, rig } from "./support.ts";
 
 afterAll(cleanupRoots);
@@ -189,81 +189,117 @@ describe("chat transcript: after, mark and tail", () => {
     expect(during.tail).not.toContain("quiet");
   });
 
-  test("a text, thinking or tool call that began before the window is still whole", async () => {
-    const r = await rig(() => reply("x"));
-    const path = agentLogPath(r.store.root, "fake", "run-long");
+  const logIn = (r: Rig, run: string): string => {
+    const path = agentLogPath(r.store.root, "fake", run);
     mkdirSync(join(path, ".."), { recursive: true });
-    const big = "y".repeat(1024);
-    const ended = JSON.stringify({ type: "message_end", role: "assistant" });
-    const lines = [
-      JSON.stringify({ type: "text_end", text: "old" }),
-      ended,
-      JSON.stringify({ type: "thinking_delta", text: "T-start " }),
-      ...Array.from({ length: 400 }, () => JSON.stringify({ type: "thinking_delta", text: big })),
-    ];
-    writeFileSync(path, `${lines.join("\n")}\n`);
-    const thinking = foldLogTail(path)?.state.thinking ?? "";
+    return path;
+  };
+  const text = (lines: readonly Record<string, unknown>[]): string => lines.map((line) => `${JSON.stringify(line)}\n`).join("");
+  const big = "y".repeat(1024);
+  const ids = (path: string): string[] | undefined => foldLogTail(path)?.state.calls.map((call) => call.callId);
+
+  test("a text, thinking or tool call that began long ago is still whole", async () => {
+    const r = await rig(() => reply("x"));
+    const thinkingPath = logIn(r, "run-thinking");
+    writeFileSync(
+      thinkingPath,
+      text([
+        { type: "message_end", role: "assistant" },
+        { type: "thinking_delta", text: "T-start " },
+        ...Array.from({ length: 400 }, () => ({ type: "thinking_delta", text: big })),
+      ]),
+    );
+    const thinking = foldLogTail(thinkingPath)?.state.thinking ?? "";
     expect(thinking.startsWith("T-start ")).toBe(true);
     expect(thinking.length).toBe(8 + 400 * 1024);
 
-    const tool = [
-      JSON.stringify({ type: "text_end", text: "old" }),
-      ended,
-      JSON.stringify(start("long", "Bash", "make", 1_000)),
-      ...Array.from({ length: 400 }, () => JSON.stringify({ type: "tool_output", toolCallId: "long", text: big })),
-      JSON.stringify(start("other", "Read", "a", 2_000)),
-      JSON.stringify({ type: "tool_execution_end", toolCallId: "other", toolName: "Read", isError: false, durationMs: 1 }),
-    ];
-    writeFileSync(path, `${tool.join("\n")}\n`);
-    expect(foldLogTail(path)?.state.calls.map((call) => call.callId)).toEqual(["long"]);
+    const toolPath = logIn(r, "run-tool");
+    writeFileSync(
+      toolPath,
+      text([
+        start("long", "Bash", "make", 1_000),
+        ...Array.from({ length: 400 }, () => ({ type: "tool_output", toolCallId: "long", text: big })),
+        start("other", "Read", "a", 2_000),
+        { type: "tool_execution_end", toolCallId: "other", toolName: "Read", isError: false, durationMs: 1 },
+      ]),
+    );
+    expect(ids(toolPath)).toEqual(["long"]);
   });
 
-  test("a silent call stays in the tail while a parallel call fills the window", async () => {
+  test("a silent call stays in the tail while a parallel call fills the log", async () => {
     const r = await rig(() => reply("x"));
-    const path = agentLogPath(r.store.root, "fake", "run-parallel");
-    mkdirSync(join(path, ".."), { recursive: true });
-    const big = "y".repeat(1024);
-    const lines = [
-      JSON.stringify({ type: "message_end", role: "assistant" }),
-      JSON.stringify(start("A", "Bash", "sleep 999", 1_000)),
-      JSON.stringify(start("B", "Bash", "make", 1_001)),
-      ...Array.from({ length: 400 }, () => JSON.stringify({ type: "tool_output", toolCallId: "B", text: big })),
-      JSON.stringify({ type: "tool_execution_end", toolCallId: "B", toolName: "Bash", isError: false, durationMs: 9 }),
-    ];
-    writeFileSync(path, `${lines.join("\n")}\n`);
-    const read = foldLogTail(path);
-    expect(read?.state.calls.map((call) => call.callId)).toEqual(["A"]);
-    expect(statSync(path).size).toBeGreaterThan(TAIL_LOG_BYTES);
+    const path = logIn(r, "run-parallel");
+    writeFileSync(
+      path,
+      text([
+        { type: "message_end", role: "assistant" },
+        start("A", "Bash", "sleep 999", 1_000),
+        start("B", "Bash", "make", 1_001),
+        ...Array.from({ length: 400 }, () => ({ type: "tool_output", toolCallId: "B", text: big })),
+        { type: "tool_execution_end", toolCallId: "B", toolName: "Bash", isError: false, durationMs: 9 },
+      ]),
+    );
+    expect(ids(path)).toEqual(["A"]);
   });
 
   test("in a log with no message ends a finished call does not hide a running one", async () => {
     const r = await rig(() => reply("x"));
-    const path = agentLogPath(r.store.root, "fake", "run-radian");
-    mkdirSync(join(path, ".."), { recursive: true });
-    const lines = [
-      JSON.stringify(start("A", "Bash", "sleep 999", 1_000)),
-      JSON.stringify(start("B", "Bash", "make", 1_001)),
-      ...Array.from({ length: 400 }, () => JSON.stringify({ type: "journal", note: "z".repeat(1024) })),
-      JSON.stringify({ type: "tool_execution_end", toolCallId: "B", toolName: "Bash", isError: false, durationMs: 9 }),
-    ];
-    writeFileSync(path, `${lines.join("\n")}\n`);
-    expect(foldLogTail(path)?.state.calls.map((call) => call.callId)).toEqual(["A"]);
+    const path = logIn(r, "run-radian");
+    writeFileSync(
+      path,
+      text([
+        start("A", "Bash", "sleep 999", 1_000),
+        start("B", "Bash", "make", 1_001),
+        ...Array.from({ length: 400 }, () => ({ type: "journal", note: big })),
+        { type: "tool_execution_end", toolCallId: "B", toolName: "Bash", isError: false, durationMs: 9 },
+      ]),
+    );
+    expect(ids(path)).toEqual(["A"]);
   });
 
   test("reading the tail of a log of 50 000 lines reads a bounded number of bytes", async () => {
     const r = await rig(() => reply("x"));
-    const path = agentLogPath(r.store.root, "fake", "run-big");
-    mkdirSync(join(path, ".."), { recursive: true });
-    const done = Array.from({ length: 50_000 }, (_, index) =>
-      JSON.stringify(index % 10 === 9 ? { type: "message_end", role: "assistant" } : { type: "text_end", text: `line number ${index} ${"x".repeat(40)}` }),
-    );
-    const last = [JSON.stringify(start("tail-call", "Bash", "sleep 9", 5_000)), JSON.stringify({ type: "text_delta", text: "now writing" })];
-    writeFileSync(path, `${[...done, ...last].join("\n")}\n`);
-    const size = statSync(path).size;
-    expect(size).toBeGreaterThan(TAIL_LOG_BYTES * 5);
+    const path = logIn(r, "run-big");
+    // A radian-shaped log: many complete calls and no message end.
+    const done: Record<string, unknown>[] = [];
+    for (let index = 0; index < 25_000; index += 1) {
+      done.push(start(`c${index}`, "Bash", `echo ${index}`, index));
+      done.push({ type: "tool_execution_end", toolCallId: `c${index}`, toolName: "Bash", isError: false, durationMs: 1 });
+    }
+    writeFileSync(path, text([...done, start("open", "Bash", "sleep 9", 5_000)]));
+    const first = foldLogTail(path);
+    expect(first?.bytesRead).toBe(statSync(path).size);
+    expect(ids(path)).toEqual(["open"]);
+    // The second read takes nothing; a read after an append takes only the append.
+    expect(foldLogTail(path)?.bytesRead).toBe(0);
+    const added = text([{ type: "text_delta", text: "now writing" }]);
+    appendFileSync(path, added);
+    const next = foldLogTail(path);
+    expect(next?.bytesRead).toBe(Buffer.byteLength(added));
+    expect(next?.state.text).toBe("now writing");
+    expect(next?.state.calls.map((call) => call.callId)).toEqual(["open"]);
+  });
+
+  test("a log that was cut short or replaced is read again from its start", async () => {
+    const r = await rig(() => reply("x"));
+    const path = logIn(r, "run-replaced");
+    writeFileSync(path, text([start("old", "Bash", "a long command so the file is long", 1_000), { type: "text_delta", text: "stale words" }]));
+    expect(ids(path)).toEqual(["old"]);
+    writeFileSync(path, text([start("new", "Bash", "b", 2_000)]));
     const read = foldLogTail(path);
-    expect(read?.bytesRead).toBeLessThanOrEqual(TAIL_LOG_BYTES);
-    expect(read?.state.text).toBe("now writing");
-    expect(read?.state.calls.map((call) => call.callId)).toEqual(["tail-call"]);
+    expect(read?.state.calls.map((call) => call.callId)).toEqual(["new"]);
+    expect(read?.state.text).toBe("");
+    expect(read?.bytesRead).toBe(statSync(path).size);
+  });
+
+  test("a line split across two appends is folded once, whole", async () => {
+    const r = await rig(() => reply("x"));
+    const path = logIn(r, "run-split");
+    const line = `${JSON.stringify({ type: "text_delta", text: "whole" })}\n`;
+    writeFileSync(path, line + line.slice(0, 10));
+    expect(foldLogTail(path)?.state.text).toBe("whole");
+    appendFileSync(path, line.slice(10));
+    expect(foldLogTail(path)?.state.text).toBe("wholewhole");
+    expect(foldLogTail(path)?.state.text).toBe("wholewhole");
   });
 });

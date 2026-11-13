@@ -29,7 +29,7 @@ the same unfinished text again.
 Each reply run also records a `chat.run` fact with its run id, so the transcript
 can find the log of the step that runs the agent. While that run lasts, the
 `transcript` section returns a `tail`: the text and thinking being written and
-the tool calls that started and did not end, read from the last 256 KB of that
+the tool calls that started and did not end, read from the appended part of that
 log, with secrets masked. It also returns `mark`, and a read with `after: <mark>`
 returns only what was recorded later.
 
