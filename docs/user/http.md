@@ -10,6 +10,7 @@ description: The /v1 HTTP interface: the http section, the token, endpoints, eve
 
 | Key | Type | Default | What it does |
 |---|---|---|---|
+| `http` | object | `{ "enabled": true, "port": 7480, "listen": ["127.0.0.1"] }` | The HTTP interface section. A missing section uses the defaults; a command that writes it without `enabled` leaves the interface on. |
 | `http.enabled` | boolean | `true` | Start the HTTP interface with `operad serve`. Set `false` to turn it off; `operad tui` then cannot reach a `serve`. |
 | `http.port` | integer | `7480` | The port to listen on; `0` asks the system for one. |
 | `http.listen` | array of strings | `["127.0.0.1"]` | The IP addresses to listen on. |

@@ -51,14 +51,28 @@ or starts the server like this:
 | `http.listen` | array of strings in `config.json` | `["127.0.0.1"]` | IP literals `serve` may listen on; the first one is the default TUI address. |
 | `http.port` | integer in `config.json` | `7480` | `0` to `65535`; the TUI needs the port `serve` actually uses, so `0` needs `--url`. |
 
-## Themes
+## The tui.json file
 
-The colours come from a theme. Choose one in `$OPERAD_HOME/tui.json` (its JSON
-Schema is `packages/tui/tui.schema.json`) or for one session with `--theme`:
+`$OPERAD_HOME/tui.json` holds this client's own settings. It is JSON; a missing
+file means the defaults. The TUI watches the file and repaints when it changes.
+A file that is not a JSON object, is not valid JSON, names a key other than the
+two below and `$schema`, or names no known theme is refused with the file and
+the problem; at start the TUI does not open.
 
+<!-- schema: tui.schema.json -->
 ```json
-{ "theme": "terminal" }
+{ "theme": "nord", "layout": "tree" }
 ```
+
+| Key | Type | Default | Allowed values | When it takes effect | Wrong value |
+|---|---|---|---|---|---|
+| `theme` | string | `"auto"` | `auto`, `light`, `dark`, `terminal`, a family or a shipped theme, or the name of a theme file in `$OPERAD_HOME/themes` | At start and whenever `tui.json` changes; `--theme` beats it for one session | Refused: the TUI does not start and the message names the file and the unknown theme |
+| `layout` | string | `"tree"` | `tree`, `list` | At start and whenever `tui.json` changes; `t` switches it for the session | Refused: the TUI does not start and the message names the file and the key |
+
+`layout` says how an object page draws its next level: `tree` nests children
+under the first sibling in their `after` order, and `list` shows one flat list.
+
+## Themes
 
 | Name | Look |
 |---|---|
@@ -66,9 +80,46 @@ Schema is `packages/tui/tui.schema.json`) or for one session with `--theme`:
 | `light`, `dark` | The operad app's colours. |
 | `terminal` | The terminal's own 16 colours (accent magenta, run blue, ok green, error red, weak bright black), so its scheme sets the look; it works without truecolor. |
 
-An unknown name is an error that lists the names. A `tui.json` that is not a
-JSON object, is not valid JSON, has a key other than `theme`, or names no known
-theme is an error that names the file and the problem; the TUI does not start.
+An unknown name is an error that lists the names. An unknown theme in
+`tui.json` is an error that names the file and the problem; the TUI does not
+start. The keys of `tui.json` are in [its section](#the-tuijson-file).
+
+The colours come from a theme. `theme` in `tui.json` chooses one; `--theme`
+chooses one for a session. A theme file names only the tokens it changes;
+`extends` fills the rest. A colour is `"#rrggbb"` or an ANSI index from 0 to 15.
+
+<!-- schema: theme.schema.json -->
+```json
+{ "extends": "dark", "colors": { "accent": "#ff8800", "error": 9 } }
+```
+
+| Key | Type | Default | Allowed values | When it takes effect | Wrong value |
+|---|---|---|---|---|---|
+| `comment` | string | absent | a note for people: where the colours come from and their licence | When the file is read; it changes no colour | Ignored if it is text; any other type refuses the file |
+| `extends` | string | `"dark"` | `light`, `dark`, `terminal`, a shipped theme, or another theme file | When the file is read; a cycle is refused | Refused: `theme not changed: <why>` while the last good theme stays; at start the TUI does not open |
+| `colors` | object | `{}` | the token names below | When the file is read; a token left out comes from `extends` | Refused: an unknown token names the file and the key |
+| `colors.text` | string or integer | inherited from `extends` | `"#rrggbb"` or an integer `0`–`15` | When the theme is drawn | Refused: a bad colour names the file and the key; the last good theme stays |
+| `colors.weak` | string or integer | inherited | `"#rrggbb"` or `0`–`15`; secondary text | When the theme is drawn | Refused, as above |
+| `colors.rule` | string or integer | inherited | `"#rrggbb"` or `0`–`15`; rules and borders | When the theme is drawn | Refused, as above |
+| `colors.accent` | string or integer | inherited | `"#rrggbb"` or `0`–`15`; what needs you | When the theme is drawn | Refused, as above |
+| `colors.run` | string or integer | inherited | `"#rrggbb"` or `0`–`15`; work in progress | When the theme is drawn | Refused, as above |
+| `colors.ok` | string or integer | inherited | `"#rrggbb"` or `0`–`15`; success | When the theme is drawn | Refused, as above |
+| `colors.error` | string or integer | inherited | `"#rrggbb"` or `0`–`15`; failure | When the theme is drawn | Refused, as above |
+| `colors.cancelled` | string or integer | inherited | `"#rrggbb"` or `0`–`15`; a cancelled object | When the theme is drawn | Refused, as above |
+| `colors.add` | string or integer | inherited | `"#rrggbb"` or `0`–`15`; added diff lines | When the theme is drawn | Refused, as above |
+| `colors.remove` | string or integer | inherited | `"#rrggbb"` or `0`–`15`; removed diff lines | When the theme is drawn | Refused, as above |
+| `colors.tint` | string or integer | inherited | `"#rrggbb"` or `0`–`15`; the selected row's background | When the theme is drawn | Refused, as above |
+| `colors.code` | string or integer | inherited | `"#rrggbb"` or `0`–`15`; a code block's background | When the theme is drawn | Refused, as above |
+| `colors.background` | string or integer | inherited | `"#rrggbb"` or `0`–`15`; the fill of the palette, note, confirmation and key list boxes | When the theme is drawn | Refused, as above |
+
+The tokens mean: `text`, `weak` (secondary text), `rule` (rules and borders),
+`accent` (needs you), `run` (in progress), `ok` (success), `error`,
+`cancelled` (a cancelled object), `add` and `remove` (diff lines), `tint` (the
+selected row's background), `code` (a code block's background) and
+`background` (the fill of the palette, note, confirmation and key list boxes). A file with the name of a built-in theme
+(`auto`, `light`, `dark`, `terminal`, a family or a shipped theme) is refused. A
+cycle in `extends`, an unknown token, a bad colour or an unknown key refuses the
+file, names it, and leaves the last good theme in place.
 
 ### Popular themes
 
@@ -179,7 +230,7 @@ reads is below.
 | `G` | key | none | The last row; under 100 columns with an object open, the end of the section (it resumes following a live section). |
 | `r` | key | none | Fetch every list again, and the open object with its live sections. When the open section failed to load, it asks for that section again too. |
 | `a` | key | none | Run the open object's main action, the first one the object offers now (the footer names it with its key). A key bound to an action (below) wins over `a`. On Pending, when the selected item's choices are not actions on its object, `a` opens those choices and answers the question. With no action, one footer line says so. |
-| a bound key | key | `GET /v1/keys` | Run that action on the open object. A user binding in `keys.json` beats a plugin default on the same key. Reserved keys cannot be bound: `enter`, `return`, `escape`, `esc`, `tab`, the arrows (`up`, `down`, `left`, `right`), `pageup`, `pagedown`, `home`, `end`, `space`, `[`, `]`, `:`, `?`, `/`, `b`, `f`, `g`, `j`, `k`, `q`, `r` (letters in either case) and `1`–`9`, as well as Ctrl-C and any Ctrl or Meta chord. A plugin default or `keys.json` entry on a reserved key is dropped; at start one footer line names each dropped key with its action and source. The action stays reachable from the `:` palette, with no key shown. If the object does not offer the action now, one footer line says it is not available. |
+| a bound key | key | `GET /v1/keys` | Run that action on the open object. A user binding in `keys.json` beats a plugin default on the same key. Reserved keys cannot be bound: `enter`, `return`, `escape`, `esc`, `tab`, the arrows (`up`, `down`, `left`, `right`), `pageup`, `pagedown`, `home`, `end`, `space`, `[`, `]`, `:`, `?`, `/`, `b`, `f`, `g`, `j`, `k`, `n`, `p`, `q`, `r`, `t` (letters in either case) and `1`–`9`, as well as Ctrl-C and any Ctrl or Meta chord. A plugin default or `keys.json` entry on a reserved key is dropped; at start one footer line names each dropped key with its action and source. The action stays reachable from the `:` palette, with no key shown. If the object does not offer the action now, one footer line says it is not available. |
 | `:` | key | none | Open the palette: type to fuzzy match the `plugin:action` names the open object offers, each with its key and "needs a note" or "asks to confirm", the TUI's own commands and the settings. A plugin whose objects belong under settings lists them here in a group named after each type; `enter` opens that object's page. `↑` / `↓` (or Ctrl-P / Ctrl-N) move, `enter` runs, `escape` closes. With no object open it lists nothing but "no object is selected". |
 | note input | key | none | An action with a note field opens a text input. Typing adds text, `backspace` deletes, `shift-enter` or `Ctrl-J` adds a line, `enter` sends and `escape` cancels. A required note cannot be sent empty. |
 | confirmation | key | none | An action that asks to confirm shows `<action> <id>? [y/N]` in red. `y` sends it with `confirmed: true`; any other key cancels. |
@@ -187,6 +238,32 @@ reads is below.
 | `q` | key | none | Quit. |
 | `Ctrl-C` | key | none | Quit at once. The terminal restores itself; no other Ctrl or Meta chord does anything. |
 | `escape` | key | none | Close the key list, or close the open object and stop its requests. While the key list is open only `?`, `escape` and `q` act; the others leave the list alone. |
+
+## `keys.json`
+
+`$OPERAD_HOME/keys.json` overrides the key bindings that plugins ship. It is a
+JSON object whose key is a key name and whose value is an action name,
+`<plugin>:<action>`. A user binding beats a plugin default on the same key. A
+binding on a reserved key is dropped; at start one footer line names each
+dropped key with its action and source, and the action stays in the `:` palette
+with no key shown. A binding that names no loaded action is ignored with one
+logged line.
+
+<!-- schema: keys.schema.json -->
+```json
+{ "m": "dev:merge", "g": "dev:reject", "n": "dev:rework" }
+```
+
+| Key | Type | Default | Allowed values | When it takes effect | Wrong value |
+|---|---|---|---|---|---|
+| `keys.<name>` | string | no override | `<plugin>:<action>` for a loaded action | When the plugins load; a running `serve` reloads when the file changes, and the TUI reads the bindings from it | Refused: `key bindings "<path>": <reason>`; an unknown action is ignored with `key "<key>": "<action>" is not a loaded action; the key is ignored` |
+
+The reserved keys are `enter`, `return`, `escape`, `esc`, `tab`, the arrows
+(`up`, `down`, `left`, `right`, and their `arrow` names), `pageup`,
+`page-up`, `prior`, `pagedown`, `page-down`, `next`, `home`, `end`, `space`,
+`[`, `]`, `:`, `?`, `/`, `b`, `f`, `g`, `j`, `k`, `n`, `p`, `q`, `r`, `t`
+(letters in either case) and `1`–`9`, as well as Ctrl-C and any Ctrl or Meta
+chord. A reserved key cannot be bound.
 
 ## Live updates, states and leaving
 

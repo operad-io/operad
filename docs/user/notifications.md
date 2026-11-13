@@ -13,8 +13,9 @@ starts waiting for a person:
 
 | Key | Type | Default | What it does |
 |---|---|---|---|
-| `command` | string or `null` | `null` | A shell line, run with `sh -c` in the operad home. `null` turns notifications off. |
-| `on` | array | `["waiting"]` | What starts the command. `waiting` is the only value: an object now waits for a person. |
+| `notify` | object | `{ "command": null, "on": ["waiting"] }` | The notification section. A missing section means notifications are off. |
+| `notify.command` | string or `null` | `null` | A shell line, run with `sh -c` in the operad home. `null` turns notifications off. |
+| `notify.on` | array | `["waiting"]` | What starts the command. `waiting` is the only value: an object now waits for a person. |
 
 The command runs once per item and wait, with these in its environment:
 

@@ -1,33 +1,91 @@
 ---
-description: The config.json file: where the home is, every section and its keys.
+description: The config.json file: where the home is, every section and key, and every plugin's settings.
 ---
 
 # config.json
 
-`config.json` configures `operad`. This page says where the home is, which sections the file has and what each does. The `http` section is on [the HTTP page](http.md#the-http-section); the `notify` section on [notifications](notifications.md); the `mcp` section is below and on [the MCP page](mcp.md).
+`config.json` configures `operad`. This page says where the home is, every key of the file, and every plugin's settings section. The `http` keys are also on [the HTTP page](http.md#the-http-section), the `notify` keys on [notifications](notifications.md), the `mcp` keys on [the MCP page](mcp.md), and the repository settings of `dev` on [the dev page](dev.md).
 
 ## The home
 
 `operad` keeps its state in one directory: `$OPERAD_HOME` when it is set, and
-`~/.operad` otherwise. The home holds `config.json`, the store and the secrets
-directory. A secret file is mode `0600` inside a `0700` directory; nothing in
-this manual prints a secret.
+`~/.operad` otherwise. The home holds `config.json`, the store, the secrets
+directory, `access-user.json`, `keys.json`, `triggers.json`, `tui.json` and the
+themes directory. A secret file is mode `0600` inside a `0700` directory;
+nothing in this manual prints a secret.
 
-## config.json
+## An example
 
-`config.json` is JSON. A missing file means the defaults below.
-
+<!-- schema: config.schema.json -->
 ```json
 {
   "plugins": {
     "shell": { "module": "@operad-io/shell", "enabled": true },
-    "radian": { "module": "@operad-io/harness-radian", "enabled": true },
-    "dev": { "module": "@operad-io/dev", "enabled": true }
+    "cron": { "module": "@operad-io/source-cron", "enabled": true },
+    "chat": { "module": "@operad-io/chat", "settings": { "speaker": "Operad Bot" } },
+    "dev": { "module": "@operad-io/dev", "settings": { "checks": 2 } },
+    "pool": { "module": "@operad-io/pool", "settings": { "harnesses": { "pi": 2 } } },
+    "bot": {
+      "module": "@operad-io/bot",
+      "settings": {
+        "bots": {
+          "default": {
+            "harness": "pi",
+            "model": "opencode-go/deepseek-v4.1-flash",
+            "effort": "medium",
+            "cwd": "~/work/assistant",
+            "skills": ["~/work/assistant/skills"],
+            "speaker": "Assistant",
+            "mcpAllow": ["notes.search"],
+            "access": { "readOnly": true, "askCommands": ["git push"] }
+          }
+        }
+      }
+    },
+    "claude": {
+      "module": "@operad-io/harness-claude",
+      "settings": {
+        "model": "sonnet",
+        "effort": "high",
+        "command": "claude",
+        "maxTurns": 40,
+        "budgetUsd": 10,
+        "bashTimeoutSecs": 1800,
+        "wallTimeSecs": 3600,
+        "stallSecs": 600,
+        "concurrency": { "sonnet": 2 }
+      }
+    },
+    "pi": {
+      "module": "@operad-io/harness-pi",
+      "settings": {
+        "model": "opencode-go/deepseek-v4.1-flash",
+        "models": ["opencode-go/deepseek-v4.1-flash", "openai/gpt-5"],
+        "thinkingLevel": "medium",
+        "command": "pi",
+        "authPath": "~/.pi/agent/auth.json",
+        "modelsPath": "~/.pi/agent/models.json",
+        "wallTimeSecs": 3600,
+        "stallSecs": 600,
+        "bashTimeoutSecs": 1800,
+        "concurrency": { "opencode-go/deepseek-v4.1-flash": 2 }
+      }
+    },
+    "radian": {
+      "module": "@operad-io/harness-radian",
+      "settings": {
+        "command": "radian",
+        "wallTimeSecs": 300,
+        "stallSecs": 600,
+        "concurrency": { "anthropic/claude-sonnet-4": 1 }
+      }
+    }
   },
-  "store": { "backend": "sqlite", "path": "~/.operad/store/log.sqlite" },
+  "store": { "backend": "sqlite", "path": "store/log.sqlite" },
   "http": { "enabled": true, "port": 7480, "listen": ["127.0.0.1"] },
-  "notify": { "command": null, "on": ["waiting"] },
+  "notify": { "command": "sh ~/.operad/notify.sh", "on": ["waiting"] },
   "mcp": {
+    "channel": { "notify": ["waiting", "ended", "loop"], "loopAfter": 3 },
     "actions": ["dev:rework", "dev:reverify", "dev:reject", "dev:priority", "dev:concurrency", "chat:close"],
     "confirmActions": ["chat:close"]
   },
@@ -35,32 +93,284 @@ this manual prints a secret.
 }
 ```
 
-- `plugins`: plugins keyed by name. Each entry is a module name or path, or an
-  object with `module`, `enabled` and the plugin's own `settings`. The key can
-  also be an array of module names.
-- `store`: where the objects and their history live. `backend` is `sqlite`, the
-  only one; `path` is the database file, `store/log.sqlite` in the home when
-  absent. A relative path resolves against the home. Any other `backend` is a
-  config error.
-- `http`: the interface `operad serve` exposes to clients. It is off unless
-  `enabled` is true; no other command opens the port.
-- `ask`: how long `ctx.ask` waits for an answer by default; see
-  [Asking a person from a step](../plugins/asking.md).
-- `notify`: a command `serve` runs when something waits for a person; see
-  [Notifications](notifications.md). It is off while `command` is `null`.
-- `mcp`: the plugin actions the MCP server may run for a lead; see
-  [MCP server](mcp.md).
+A missing `config.json` means the default configuration: `shell`, `radian`, `chat`
+and `dev` installed, the store at `store/log.sqlite`, `http` on at
+`127.0.0.1:7480`, notifications off, the MCP lists above and the ask grace of
+600 seconds. `operad init` writes that file when the home has none.
 
-## The `mcp` section
+Every top-level section is optional. A key that the file writes outside these
+sections is ignored by the kernel; a key inside a section that the section's
+schema does not name is refused with the section and the key in the message.
 
-| Key | Type | Default | What it does |
-|---|---|---|---|
-| `mcp.actions` | array of `plugin:action` strings | `["dev:rework", "dev:reverify", "dev:reject", "dev:priority", "dev:concurrency", "chat:close"]` | The actions `operad mcp` may run. Every other action is refused with a message naming it and saying the owner runs it. |
-| `mcp.confirmActions` | array of `plugin:action` strings | `["chat:close"]` | The allowed actions that also carry `confirm: true`. Such an action is refused even when `actions` names it unless this list names it too. |
+## The sections
 
-Both lists take effect the next time `operad mcp` starts. They do not change an
-action already running. The MCP server never offers the owner's actions as its
-own; `show` lists them separately so the lead can tell the owner what to run.
+| Key | Type | Default | Allowed values | When it takes effect | Wrong value |
+|---|---|---|---|---|---|
+| `plugins` | object, or an array of module names | the four plugins `operad init` installs | plugin name to a module name, a path, or an options object | At every command start, and when a running `serve` reloads after a change | Refused: `plugins: must be an object of plugin options or an array of module names` |
+| `store` | object | sqlite at `<home>/store/log.sqlite` | the keys below | At every command start | Refused: `store: must be an object` |
+| `http` | object | on, port `7480`, `127.0.0.1` | the keys on [the HTTP page](http.md#the-http-section) | When `operad serve` starts; a reload when the new config loads | Refused: `http: must be an object`, or the field's own message |
+| `notify` | object | command `null`, `on` `["waiting"]` | the keys on [notifications](notifications.md) | When `operad serve` starts; a reload when the new config loads | Refused: `notify: must be an object`, or the field's own message |
+| `mcp` | object | the lists below | the keys below | When `operad mcp` starts | Refused: `mcp: must be an object`, or the field's own message |
+| `ask` | object | `{ "graceSecs": 600 }` | the keys below | When a step asks a person | Refused: `ask: must be an object`, or `ask.graceSecs: ...` |
+
+The kernel reads `config.json` when a command starts. A running `serve` watches
+the file and reloads when the new file loads; when it does not load, the old
+configuration keeps running and the problem is logged. A one-shot command reads
+the file again on its next run.
+
+### `plugins`
+
+| Key | Type | Default | Allowed values | When it takes effect | Wrong value |
+|---|---|---|---|---|---|
+| `plugins` | object or array | `[]` in a file with no `plugins` section | plugin name to a module or an options object; an array entry is a module name | When plugins load | Refused: `plugins: must be an object of plugin options or an array of module names` |
+| `plugins.<name>` | string or object | none | a non-empty module name or path, or an object with the keys below | When plugins load | Refused: `plugins.<name>: must be a module name or an object of options` |
+| `plugins.<name>.module` | string | the key `<name>` itself | a module name, a path relative to the home, or a `file:` URL; the shipped packages are `@operad-io/<name>`, or `@operad-io/harness-<name>` for `claude`, `pi` and `radian` | When plugins load | Refused: `plugins.<name>.module: must be a non-empty string` |
+| `plugins.<name>.enabled` | boolean | `true` | `true` or `false` | When plugins load; a disabled plugin's stored objects stay | Refused: `plugins.<name>.enabled: must be a boolean` |
+| `plugins.<name>.settings` | object | `{}` | the section that plugin's own settings schema accepts; see below | When plugins load | The plugin is refused, with one line `plugin "<name>": ...` naming the field; a plugin that needs it is refused too |
+
+A plugin entry whose module fails to import, whose settings are not valid, or
+whose declared name does not match its key does not load. The rest of the file
+still loads, and `serve` and `operad plugin check` print the line that says why.
+`operad plugin list`, `operad plugin enable`, `operad plugin disable` and
+`operad plugin check` are on [the CLI page](cli.md).
+
+`operad init` installs `shell`, `radian`, `chat` and `dev`. `pi`, `claude`,
+`pool` and `bot` are shipped but not installed; enable one with
+`operad plugin enable <name>`.
+
+### `store`
+
+| Key | Type | Default | Allowed values | When it takes effect | Wrong value |
+|---|---|---|---|---|---|
+| `store.backend` | string | `"sqlite"` | `"sqlite"` only | At every command start | Refused: `store.backend: must be "sqlite"` |
+| `store.path` | string | `<home>/store/log.sqlite` | a non-empty path; a relative path resolves against the home | At every command start | Refused: `store.path: must be a non-empty string` |
+
+The store is what the history and pending views read. Changing the path makes
+the new process read another history; it does not move the old file.
+
+### `mcp`
+
+| Key | Type | Default | Allowed values | When it takes effect | Wrong value |
+|---|---|---|---|---|---|
+| `mcp.channel` | object | `{ "notify": ["waiting", "ended", "loop"], "loopAfter": 3 }` | the keys below | When `operad mcp` starts | Refused: `mcp.channel: must be an object` |
+| `mcp.channel.notify` | array of strings | `["waiting", "ended", "loop"]` | `waiting`, `ended`, `loop`, `changes` | When `operad mcp` starts | Refused: `mcp.channel.notify: unknown entry <value>; use "waiting", "ended", "loop", "changes"` |
+| `mcp.channel.loopAfter` | integer | `3` | `2` or more | When `operad mcp` starts | Refused: `mcp.channel.loopAfter: must be an integer of 2 or more` |
+| `mcp.actions` | array of strings | `["dev:rework", "dev:reverify", "dev:reject", "dev:priority", "dev:concurrency", "chat:close"]` | `<plugin>:<action>` names | When `operad mcp` starts | Refused: `mcp.actions: must be an array of "<plugin>:<action>" names` |
+| `mcp.confirmActions` | array of strings | `["chat:close"]` | `<plugin>:<action>` names that are also in `mcp.actions` and ask to confirm | When `operad mcp` starts | Refused: `mcp.confirmActions: must be an array of "<plugin>:<action>" names` |
+
+`mcp.actions` is the list the MCP server may run for a lead. Every other action
+is refused for the owner to run. `mcp.confirmActions` is the smaller list of
+allowed actions that also need `confirm: true`; an action in `actions` but not
+here is refused even when the MCP call confirms it. The channel keys are
+explained on [the MCP page](mcp.md#claude-code-channel).
+
+### `ask`
+
+| Key | Type | Default | Allowed values | When it takes effect | Wrong value |
+|---|---|---|---|---|---|
+| `ask.graceSecs` | number | `600` | `0` to `2147483` seconds; `0` does not wait | When a step calls `ctx.ask` without a narrower grace | Refused: `ask.graceSecs: must be a number of seconds from 0 to 2147483` |
+
+The step's own `askGraceSecs` param, or the call's own grace, can be narrower.
+There is no unlimited value; use the largest allowed number when a person may
+answer after a long time. Asking is described in
+[Asking a person from a step](../plugins/asking.md).
+
+## Plugin settings
+
+Plugin settings sit under `plugins.<name>.settings`. A plugin with no settings
+schema has no keys: `shell` and the cron source (`cron`, the
+`@operad-io/source-cron` package) are configured entirely by their flow steps and
+by `triggers.json`. `review-grading` is a library that reads
+`<repository>/.operad/review.json`, documented on [the dev page](dev.md#reviewjson).
+The MCP server, the terminal client, the HTTP interface and notifications are
+configured by the sections above, not by plugin settings.
+
+Every setting is read when the plugin loads. A running `serve` reloads when
+`config.json` changes and the new file loads; a step that has already started
+keeps the settings it started with. The exceptions are named in each table.
+
+### `bot`
+
+The `bot` section describes chats that belong to a bot. The default bot
+`default` exists even when it is not written. Names are lowercase letters,
+digits, `-` and `_`, and start with a letter or digit; any other name refuses
+the bot with `bot "<name>": a name is lowercase letters, digits, "-" and "_", and starts with a letter or digit`.
+A bot is read again at every reply, so an edit applies to the next reply. See
+[Chats and bots](chats-and-bots.md).
+
+| Key | Type | Default | Allowed values | When it takes effect | Wrong value |
+|---|---|---|---|---|---|
+| `bot.bots` | object | `{ "default": {} }` | bot name to a bot object | Next reply | Refused by the schema; a bad name refuses that bot |
+| `bot.bots.<name>` | object | `{}` | the keys below | Next reply | Refused: `bot "<name>": ...` or the schema's field message |
+| `bot.bots.<name>.cwd` | string | `~/.operad/bot` for `default`, `~/.operad/bot/<name>` for another bot | a directory inside `~/.operad/bot`, or outside the operad home entirely | Next reply and the next chat start | Refused: `bot "<name>": the working directory <path> is inside the operad home but outside <bot dir>` or `... is the operad home or holds it` |
+| `bot.bots.<name>.harness` | string | the first loaded agent a chat offers | a loaded agent plugin name, such as `claude` or `pi` | When a new chat starts | A name that is not an agent is refused when the chat starts |
+| `bot.bots.<name>.skills` | array of strings | `[]` | directories that hold a `SKILL.md`; a relative path is under the working directory | Next reply | Refused: `skill "<path>": there is no SKILL.md in <path>` |
+| `bot.bots.<name>.model` | string | the agent's default | a model the chat's agent lists | When a new chat starts | Refused at chat start when the agent does not list it |
+| `bot.bots.<name>.effort` | string | the agent's default | an effort the chat's agent lists | When a new chat starts | Refused at chat start when the agent does not list it |
+| `bot.bots.<name>.speaker` | string | the `chat.speaker` value | non-empty text | Next reply | Refused by the schema |
+| `bot.bots.<name>.mcpServers` | object | `{}` | server name to a server object; add one with `operad bot mcp`, which a person approves | Next reply | Refused by the schema; a server whose tools changed is not mounted |
+| `bot.bots.<name>.mcpServers.<name>` | object | none | the keys below | Next reply | Refused by the schema |
+| `bot.bots.<name>.mcpServers.<name>.command` | string | none | the program that starts the server | Next reply | Refused by the schema; a missing command means the server cannot start |
+| `bot.bots.<name>.mcpServers.<name>.args` | array of strings | `[]` | the program's arguments | Next reply | Refused by the schema |
+| `bot.bots.<name>.mcpServers.<name>.package` | string | none | the package the command runs, when it runs one | Next reply | Refused by the schema |
+| `bot.bots.<name>.mcpServers.<name>.version` | string | none | the pinned version of that package | Next reply | Refused by the schema |
+| `bot.bots.<name>.mcpServers.<name>.secrets` | array of strings | `[]` | variable names; each value is the bot plugin's secret `<server>.<variable>` | When the server starts | Refused by the schema; a missing secret is given as empty |
+| `bot.bots.<name>.mcpServers.<name>.tools` | array of objects | `[]` | the tools a person approved | Next reply | Refused by the schema |
+| `bot.bots.<name>.mcpServers.<name>.tools.name` | string | required | a tool name | Next reply | Refused by the schema |
+| `bot.bots.<name>.mcpServers.<name>.tools.description` | string | `""` | the tool's description | Next reply | Refused by the schema |
+| `bot.bots.<name>.mcpServers.<name>.digest` | string | none | the digest of the tool names and descriptions | Next reply | A chat that finds other tools does not mount the server |
+| `bot.bots.<name>.mcpAllow` | array of strings | `[]` | `<server>.<tool>` or `<server>.*` | Next reply | Refused by the schema |
+| `bot.bots.<name>.access` | object | `{}` | the keys below; added to the default access profile | Next reply | Refused by the schema |
+| `bot.bots.<name>.access.denyPaths` | array of strings | `[]` | paths; appended to the default list | Next reply | Refused by the schema |
+| `bot.bots.<name>.access.denyCommands` | array of strings | `[]` | command rules; appended to the default list | Next reply | Refused by the schema |
+| `bot.bots.<name>.access.askCommands` | array of strings | `[]` | command rules; appended to the default list | Next reply | Refused by the schema |
+| `bot.bots.<name>.access.askPaths` | array of strings | `[]` | paths; appended to the default list | Next reply | Refused by the schema |
+| `bot.bots.<name>.access.readOnly` | boolean | `false` | `true` turns the bot's working directory read-only; a bot can tighten the default, never loosen it | Next reply | Refused by the schema |
+
+The default profile and the meaning of each access field are on
+[the access page](access.md). `mcpAllow` has the same meaning as the profile's
+`allowMcp`; an unlisted MCP tool asks first.
+
+### `chat`
+
+| Key | Type | Default | Allowed values | When it takes effect | Wrong value |
+|---|---|---|---|---|---|
+| `chat.speaker` | string | `"Operad Bot"` | non-empty text | When a chat transcript is rendered | Refused by the schema |
+
+A bot chat uses its bot's `speaker` instead. See [Chats and bots](chats-and-bots.md).
+
+### `dev`
+
+| Key | Type | Default | Allowed values | When it takes effect | Wrong value |
+|---|---|---|---|---|---|
+| `dev.checks` | integer | `2` | `1` or more | When the next check takes a place; checks already waiting or running keep theirs | Refused by the schema; the plugin is refused and the log names `settings.checks` |
+
+`dev.checks` is the most checks (a task's verify, and the checks before a merge)
+that run at once in this home, across every repository. A repository can lower
+its own share with `gate.places` in [its dev.json](dev.md#the-gate-and-its-checks).
+
+### `pool`
+
+| Key | Type | Default | Allowed values | When it takes effect | Wrong value |
+|---|---|---|---|---|---|
+| `pool.harnesses` | object | `{}` | harness plugin name to a count | When the next `pool/agent` step starts; steps already going keep their place | Refused by the schema; the plugin is refused and the log names `settings.harnesses` |
+| `pool.harnesses.<name>` | integer | no cap for that harness | `1` or more | When the next `pool/agent` step starts | Refused by the schema |
+
+The count covers every run through `pool/agent` in this home for that harness,
+across repositories and flows. A flow that calls a harness step directly does
+not count, but the harness's own `concurrency` still applies. See [Sharing
+agents between flows](dev.md#sharing-agents-between-flows-the-pool-plugin).
+
+### `claude`
+
+The `claude` plugin runs Claude Code. Its step is `claude/agent`; see
+[the dev page](dev.md#long-commands-under-claude).
+
+| Key | Type | Default | Allowed values | When it takes effect | Wrong value |
+|---|---|---|---|---|---|
+| `claude.model` | string | claude's default, `sonnet` for a new chat | a model name claude takes, such as `opus` or `sonnet` | When an agent step or a new chat starts | Refused by the schema |
+| `claude.effort` | string | claude's default | `low`, `medium`, `high`, `xhigh`, `max` | When an agent step or a new chat starts | Refused by the schema |
+| `claude.command` | string | `"claude"` | a command name or path | When an agent step starts | Refused by the schema; a command that is not claude fails the plugin check |
+| `claude.maxTurns` | integer | no limit | `1` or more | When an agent step starts | Refused by the schema |
+| `claude.budgetUsd` | number | no limit | `0.01` or more | When an agent step starts | Refused by the schema |
+| `claude.bashTimeoutSecs` | integer | `1800` | `1` or more seconds | When an agent step starts | Refused by the schema |
+| `claude.wallTimeSecs` | number | `3600` | `1` to `28500` seconds | When an agent step starts | Refused by the schema; a larger value also fails the step with `must be at most 28500` |
+| `claude.stallSecs` | number | `600` | `1` or more seconds | When an agent step starts | Refused by the schema |
+| `claude.concurrency` | object | `{}` | model name to a count of `1` or more | With the next agent step that starts, at most the count for that model | Refused by the schema; the count's key is named |
+| `claude.concurrency.<name>` | integer | no limit for that model | `1` or more | With the next agent step for that model | Refused by the schema |
+
+`maxTurns` and `budgetUsd` are limits for one run; unset means no limit.
+`budgetUsd` is for API-key logins. `bashTimeoutSecs` is the longest one Bash
+call may run, in the foreground. `concurrency` counts every run in the home,
+including the ones `dev` starts; a change does not stop runs already going.
+
+### `pi`
+
+The `pi` plugin runs pi. Its step is `pi/agent`; see [Long commands under
+pi](dev.md#long-commands-under-pi).
+
+| Key | Type | Default | Allowed values | When it takes effect | Wrong value |
+|---|---|---|---|---|---|
+| `pi.model` | string | pi's default model | `provider/id` | When an agent step or a new chat starts | Refused by the schema |
+| `pi.models` | array of strings | every model `pi --list-models` prints | `provider/id` values | When a new chat lists its models | Refused by the schema |
+| `pi.thinkingLevel` | string | pi's default | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` | When an agent step or a new chat starts | Refused by the schema |
+| `pi.command` | string | `"pi"` | a command name or path that leads into an installed `@earendil-works/pi-coding-agent` | When the plugin loads and when an agent step starts | Refused by the schema; a missing or old install fails the plugin check |
+| `pi.authPath` | string | `"~/.pi/agent/auth.json"` | pi's credentials file | When an agent step starts | Refused by the schema |
+| `pi.modelsPath` | string | `"~/.pi/agent/models.json"` | pi's custom models file | When an agent step starts | Refused by the schema |
+| `pi.wallTimeSecs` | number | `3600` | `1` to `28500` seconds | When an agent step starts | Refused by the schema; a larger value also fails the step with `must be at most 28500` |
+| `pi.stallSecs` | number | `600` | `1` or more seconds | When an agent step starts | Refused by the schema |
+| `pi.bashTimeoutSecs` | integer | `1800` | `1` or more seconds | When an agent step starts | Refused by the schema |
+| `pi.concurrency` | object | `{}` | model name to a count of `1` or more | With the next agent step that starts, at most the count for that model | Refused by the schema; the count's key is named |
+| `pi.concurrency.<name>` | integer | no limit for that model | `1` or more | With the next agent step for that model | Refused by the schema |
+
+`authPath` and `modelsPath` are read by pi; `~` is the user's home. A change to
+`concurrency` applies to the next step that starts; steps already going keep
+their place.
+
+### `radian`
+
+The `radian` plugin runs radian. Its step is `radian/agent`.
+
+| Key | Type | Default | Allowed values | When it takes effect | Wrong value |
+|---|---|---|---|---|---|
+| `radian.command` | string | `"radian"` | the radian executable: a name on `PATH` or a path | When an agent step starts | Refused by the schema; a command that cannot be found fails the step |
+| `radian.wallTimeSecs` | number | `300` | a positive number of seconds | When an agent step starts | Refused by the schema |
+| `radian.stallSecs` | number | `600` | a positive number of seconds | When an agent step starts | Refused by the schema |
+| `radian.concurrency` | object | `{}` | model name to a count of `1` or more | With the next agent step that starts, at most the count for that model | Refused by the schema; the count's key is named |
+| `radian.concurrency.<name>` | integer | no limit for that model | `1` or more | With the next agent step for that model | Refused by the schema |
+
+Radian has no `model` setting; a step is limited by the `--provider` and
+`--model` in its own arguments. A step without `--model` is not limited by
+`concurrency`.
+
+## `triggers.json`
+
+`triggers.json` in the home holds the rules that say which event starts which
+flow. It is a JSON array; a missing file means no rules of your own. A rule of
+yours replaces a plugin rule with the same `source` and `type`; a plugin rule
+for that pair is then not used.
+
+<!-- schema: triggers.schema.json -->
+```json
+[
+  {
+    "source": "operad",
+    "type": "dev.waiting",
+    "start": { "flow": "dev", "params": {} },
+    "object": "$event.object",
+    "mode": "observe"
+  },
+  {
+    "source": "cron",
+    "type": "tick",
+    "start": { "flow": "nightly" },
+    "object": "flow:nightly",
+    "mode": "auto",
+    "schedule": "0 3 * * *"
+  }
+]
+```
+
+| Key | Type | Default | Allowed values | When it takes effect | Wrong value |
+|---|---|---|---|---|---|
+| `source` | string | required | the source that sends the event, such as `cron` or `operad` | When the file is read | Refused: `rule <n>: source: must be a non-empty string` |
+| `type` | string | required | the event type, such as `tick` or `run.done` | When the file is read | Refused: `rule <n>: type: must be a non-empty string` |
+| `start` | object | required | the keys below | When the file is read | Refused: `rule <n>: start: must be an object` |
+| `start.flow` | string | required | a loaded flow name | When the file is read; an unknown flow is refused | Refused: `rule <n>: start.flow: unknown flow "<name>"` |
+| `start.params` | any JSON value | absent | the flow's fixed parameters | When the rule starts the flow | Refused if it is not plain JSON: `rule <n>: ... is not JSON` |
+| `object` | string | required | a fixed object id, or `$event.object` | When the rule starts a run | Refused: `rule <n>: object: must be a non-empty string` |
+| `mode` | string | required | `observe`, `candidate`, `auto` | When the rule starts a run | Refused: `rule <n>: mode: must be "observe", "candidate", "auto"` |
+| `schedule` | string | absent | a five-field cron expression in the local time zone | When a cron rule is loaded; only rules with source `cron` use it | Refused: `rule <n>: schedule: <why the cron expression is not valid>` |
+
+The cron source is the plugin named `cron` from `@operad-io/source-cron`. It
+emits one `tick` per due minute for each rule with `source` `cron` and a
+`schedule`; other rules ignore `schedule`. A rule may not name the reserved
+source `operad` when it is added by a command.
+
+If `triggers.json` is not valid, the whole file is refused, with the rule and
+field in the message. `operad serve` logs it and runs without sources until the
+file is fixed; a command that needs a rule reports it. A running `serve` watches
+the file and reloads when the new file loads.
 
 ## Settings from a client
 
