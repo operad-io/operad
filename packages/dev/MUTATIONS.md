@@ -1050,3 +1050,10 @@ the row fields.
 | T-0379-M7 | packages/dev/src/schedule.ts | `poolOf` read the pool from current dev.json instead of the task's stored graph | `each pool counts its own running tasks > a running task keeps the pool of the graph it started with when dev.json changes` |
 | T-0379-M8 | packages/dev/src/steps.ts | `poolParams` left out `countPrefix`, so each pool counted a shared worker separately | `dev/work with workers > a worker shared by two pools has one count, whichever pool asks` |
 | T-0379-M9 | packages/dev/src/schedule.ts | `storedGraphPool` looked for step ids `work`, `work_<n>` again instead of the step's `dev/work` call | `each pool counts its own running tasks > a renamed work step still gives the task its pool` |
+
+## T-0386 rework 1 — the newest pass decides the settings; {file} is quoted in place
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0386-M5 | packages/dev/src/flaky.ts | the brief took `stress` from the newest occurrence that had one, not from the newest occurrence | `the command that reached the threshold decides the stress command and the rule` |
+| T-0386-M6 | packages/dev/src/flaky.ts | `{file}` was replaced by a space and the quoted file, so `--file={file}` split | `{file} is quoted in place, also when it follows an option` |

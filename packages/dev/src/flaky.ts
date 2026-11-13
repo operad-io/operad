@@ -300,8 +300,9 @@ function flakyRule(repositoryPath: string, rule: string | undefined): string {
 function stressCommand(template: string, name: string, file: string | undefined): string {
   return template
     .replace(/\{(name|pattern)\}/g, (_, kind: string) => shellQuote(kind === "name" ? name : anchoredPattern(name)))
-    .replace(/[ \t]*\{file\}/g, file === undefined ? "" : ` ${shellQuote(file)}`)
-    .replace(/^ /, "");
+    // An unknown file leaves nothing behind.
+    .replace(/\{file\}/g, file === undefined ? "" : shellQuote(file))
+    .replace(/[ \t]+$/gm, "");
 }
 
 function stamp(at: number): string {
@@ -335,11 +336,12 @@ export function flakyBrief(
     lines.push("", `${entry.task} at ${stamp(entry.at)}:`, fence, entry.excerpt, fence);
   }
   const latest = [...record.occurrences].reverse();
-  const stress = latest.find((entry) => entry.stress !== undefined)?.stress;
+  // The newest pass is the one that reached the threshold: only its command's settings count.
+  const stress = latest[0]?.stress;
   if (stress !== undefined) {
     lines.push("", "Reproduce it:", "```sh", stressCommand(stress, record.name, file), "```", "", "Write the number of runs in place of `<N>`: it follows the rule quoted below.");
   }
-  lines.push("", "The rule for flaky tests:", "", flakyRule(repositoryPath, latest.find((entry) => entry.rule !== undefined)?.rule));
+  lines.push("", "The rule for flaky tests:", "", flakyRule(repositoryPath, latest[0]?.rule));
   return lines.join("\n");
 }
 

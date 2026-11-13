@@ -141,6 +141,26 @@ describe("a flaky test proposes a task", () => {
     expect(() => validateDevSettings({ name: "x", gate: { commands: [{ run: "t", failed: { ...failed, stress: "" } }] } })).toThrow(/failed\.stress/);
   });
 
+  test("{file} is quoted in place, also when it follows an option", async () => {
+    const s = await setup(true);
+    s.options.failed = { stress: "runner --file={file} -t {pattern}", rule: ".operad/flaky.md" };
+    await s.track("T-0001-a", logWith(TEST), 1);
+    const brief = taskData((await s.flaky())[0]?.data ?? {}).brief;
+    expect(brief).toContain(`runner --file='${FILE}' -t '^widget keeps its shape$'`);
+  });
+
+  test("the command that reached the threshold decides the stress command and the rule", async () => {
+    const s = await setup(true);
+    await s.track("T-0001-a", logWith(TEST), 2);
+    s.options.failed = {};
+    await s.track("T-0002-b", logWith(TEST), 2);
+    const brief = taskData((await s.flaky())[0]?.data ?? {}).brief;
+    expect(brief).not.toContain("Reproduce it");
+    expect(brief).not.toContain("<N>");
+    expect(brief).not.toContain("Stress it first.");
+    expect(brief).toContain("Do not raise a timeout or add a retry inside a test to make it pass.");
+  });
+
   test("the first match of a repeated failure wins, as the file's own section", () => {
     const log = ["a.test.ts:", "FAIL: t", "b.test.ts:", "summary:", "FAIL: t"].join("\n");
     const found = failureExcerpt(log, "t", "^FAIL: (.+)$");
