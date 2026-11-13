@@ -350,13 +350,13 @@ describe("a followed merge and the code serve has loaded", () => {
     testHooks.integrateTestHooks.codeRoot = path;
     try {
       const docs = commitOnSide(path, branch, "docs/manual.md");
-      expect(followMain(repository, fixture.root, branch, docs).updated).toBe(true);
+      expect((await followMain(repository, fixture.root, branch, docs)).updated).toBe(true);
       expect((await fixture.registry.standing()).map((item) => item.id)).toEqual([]);
 
       const code = commitOnSide(path, branch, "packages/dev/src/x.ts");
-      expect(followMain(repository, fixture.root, branch, code).updated).toBe(true);
+      expect((await followMain(repository, fixture.root, branch, code)).updated).toBe(true);
       const again = commitOnSide(path, branch, "packages/engine/src/y.ts");
-      expect(followMain(repository, fixture.root, branch, again).updated).toBe(true);
+      expect((await followMain(repository, fixture.root, branch, again)).updated).toBe(true);
 
       const items = (await fixture.registry.standing()).filter((item) => item.id === "serve-older");
       expect(items.length).toBe(1);
@@ -385,7 +385,7 @@ describe("a followed merge and the code serve has loaded", () => {
     testHooks.integrateTestHooks.codeRoot = path;
     try {
       const sha = commitOnSide(path, branch, "packages/dev/src/p.ts");
-      followMain(repository, fixture.root, branch, sha);
+      await followMain(repository, fixture.root, branch, sha);
       expect((await fixture.registry.standing()).map((item) => item.id)).toEqual(["serve-older"]);
     } finally {
       testHooks.integrateTestHooks.codeRoot = undefined;
@@ -410,7 +410,7 @@ describe("a followed merge and the code serve has loaded", () => {
         rmSync(join(fixture.root, "dev", "serve-code"), { recursive: true, force: true });
         count += 1;
         const sha = commitOnSide(path, branch, `packages/dev/src/q${count}.ts`);
-        followMain(repository, fixture.root, branch, sha);
+        await followMain(repository, fixture.root, branch, sha);
         expect((await fixture.registry.standing()).map((item) => item.id)).toEqual(["serve-older"]);
       }
     } finally {
@@ -426,7 +426,7 @@ describe("a followed merge and the code serve has loaded", () => {
     testHooks.integrateTestHooks.codeRoot = path;
     try {
       const sha = commitOnSide(path, branch, "packages/dev/dev.schema.json");
-      followMain(repository, fixture.root, branch, sha);
+      await followMain(repository, fixture.root, branch, sha);
       expect((await fixture.registry.standing()).map((item) => item.id)).toEqual(["serve-older"]);
     } finally {
       testHooks.integrateTestHooks.codeRoot = undefined;
@@ -441,7 +441,7 @@ describe("a followed merge and the code serve has loaded", () => {
     testHooks.integrateTestHooks.codeRoot = path;
     try {
       const sha = commitOnSide(path, branch, "packages/engine/schemas/config.schema.json");
-      followMain(repository, fixture.root, branch, sha);
+      await followMain(repository, fixture.root, branch, sha);
       expect((await fixture.registry.standing()).map((item) => item.id)).toEqual(["serve-older"]);
     } finally {
       testHooks.integrateTestHooks.codeRoot = undefined;
@@ -469,13 +469,13 @@ describe("a followed merge and the code serve has loaded", () => {
         "packages/tui/src/z.ts",
       ]) {
         const sha = commitOnSide(path, branch, file);
-        followMain(repository, fixture.root, branch, sha);
+        await followMain(repository, fixture.root, branch, sha);
       }
       expect((await fixture.registry.standing()).map((item) => item.id)).toEqual([]);
 
       testHooks.integrateTestHooks.codeRoot = join(fixture.root, "elsewhere");
       const other = commitOnSide(path, branch, "packages/dev/src/q.ts");
-      followMain(repository, fixture.root, branch, other);
+      await followMain(repository, fixture.root, branch, other);
       expect((await fixture.registry.standing()).map((item) => item.id)).toEqual([]);
     } finally {
       testHooks.integrateTestHooks.codeRoot = undefined;

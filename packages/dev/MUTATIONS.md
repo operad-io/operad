@@ -1066,3 +1066,12 @@ the row fields.
 |---|---|---|---|
 | T-0386-M5 | packages/dev/src/flaky.ts | the brief took `stress` from the newest occurrence that had one, not from the newest occurrence | `the command that reached the threshold decides the stress command and the rule` |
 | T-0386-M6 | packages/dev/src/flaky.ts | `{file}` was replaced by a space and the quoted file, so `--file={file}` split | `{file} is quoted in place, also when it follows an option` |
+
+## T-0387-main-clone-prepare — the main clone runs `prepare`
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0387-M1 | packages/dev/src/mainclone.ts | a failing prepare line no longer stopped the lines after it | `a failing line gives the note, stops the rest and keeps the fast-forward` |
+| T-0387-M2 | packages/dev/src/mainclone.ts | a fast-forwarded clone ran no prepare line | `a fast-forwarded clone runs each prepare line in order in the clone` |
+| T-0387-M3 | packages/dev/src/mainclone.ts | removed the empty-`prepare` early return, so a repository without `prepare` still ran a command | `no prepare lines run no command` |
+| T-0387-M4 | packages/dev/src/mainclone.ts | a clone already at the target ran the prepare lines too | `a clone that did not move runs nothing` |

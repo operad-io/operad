@@ -1183,46 +1183,38 @@ describe("dev/integrate main clone", () => {
     expect((await taskOf(state)).brief).toContain("main clone not updated");
   });
 
-  test("a lockfile change runs the install in the clone, once, after the fast-forward", async () => {
+  test("the prepare lines run in the clone after the fast-forward, in order", async () => {
     const state = await fixture();
-    const calls: { cwd: string; cmd: readonly string[]; head: string }[] = [];
-    integrateTestHooks.runCommand = (cwd, cmd) => {
-      calls.push({ cwd, cmd, head: cloneHead(state) });
+    writeDevJson(state.remote.repository, { prepare: ["echo one", "echo two"] });
+    const calls: { cwd: string; line: string; head: string }[] = [];
+    integrateTestHooks.runCommand = async (cwd, line) => {
+      calls.push({ cwd, line, head: cloneHead(state) });
       return { ok: true, out: "" };
     };
     try {
-      await commitIn(state.worktree, "bun.lock", "lock\n", "lock");
-      gitOrThrow(state.worktree, ["push", "origin", `HEAD:refs/heads/work/${state.taskId}`]);
-      const verified = await state.registry.runStep("dev/verify", {}, {
-        runId: "verify-run-2",
-        object: { type: "task", id: state.taskKey, data: {} },
-      });
-      expect(verified.result).toBe("pass");
-      const result = await integrate(state);
-      expect(result.result).toBe("merged");
-      expect(calls).toEqual([
-        {
-          cwd: state.remote.repository,
-          cmd: ["bun", "install", "--frozen-lockfile"],
-          head: remoteMain(state),
-        },
-      ]);
-      expect(result.data?.mainClone).toMatchObject({ updated: true, installed: true });
+      expect((await integrate(state)).result).toBe("merged");
+      expect(calls.map((call) => call.line)).toEqual(["echo one", "echo two"]);
+      for (const call of calls) {
+        expect(call.cwd).toBe(state.remote.repository);
+        expect(call.head).toBe(remoteMain(state));
+      }
     } finally {
       integrateTestHooks.runCommand = undefined;
     }
   });
 
-  test("no lockfile change runs no install, and a failed install is reported", async () => {
+  test("a failing prepare line in the clone is reported and the merge stays", async () => {
     const state = await fixture();
-    let ran = 0;
-    integrateTestHooks.runCommand = () => {
-      ran += 1;
-      return { ok: false, out: "boom" };
-    };
+    writeDevJson(state.remote.repository, { prepare: ["echo one"] });
+    integrateTestHooks.runCommand = async () => ({ ok: false, out: "boom" });
     try {
-      expect((await integrate(state)).result).toBe("merged");
-      expect(ran).toBe(0);
+      const result = await integrate(state);
+      expect(result.result).toBe("merged");
+      expect(result.data?.mainClone).toMatchObject({
+        updated: true,
+        note: "prepare failed: echo one: boom",
+      });
+      expect(cloneHead(state)).toBe(remoteMain(state));
     } finally {
       integrateTestHooks.runCommand = undefined;
     }

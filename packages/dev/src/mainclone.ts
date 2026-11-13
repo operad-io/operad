@@ -5,89 +5,56 @@
  * through git is ever used: no reset, rebase or stash.
  */
 
-import { createHash } from "node:crypto";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 import { git } from "./steps.ts";
-
-const MARKER = join("node_modules", ".operad-installed-lock");
-
-function lockHash(repository: string): string | undefined {
-  try {
-    return createHash("sha256")
-      .update(readFileSync(join(repository, "bun.lock")))
-      .digest("hex");
-  } catch {
-    return undefined;
-  }
-}
-
-function readMarker(repository: string): string | undefined {
-  try {
-    return readFileSync(join(repository, MARKER), "utf8").trim();
-  } catch {
-    return undefined;
-  }
-}
-
-function writeMarker(repository: string): void {
-  const hash = lockHash(repository);
-  if (hash === undefined || !existsSync(join(repository, "node_modules"))) return;
-  try {
-    writeFileSync(join(repository, MARKER), `${hash}\n`);
-  } catch {
-    // The marker only lets a rerun notice a missed install.
-  }
-}
-
-function install(repository: string, run: CommandRunner): MainCloneOutcome {
-  const done = run(repository, ["bun", "install", "--frozen-lockfile"]);
-  if (done.ok) writeMarker(repository);
-  return done.ok
-    ? { updated: true, installed: true, note: "bun install --frozen-lockfile done" }
-    : {
-        updated: true,
-        installed: false,
-        note: `bun install --frozen-lockfile failed: ${lastLine(done.out)}`,
-      };
-}
 
 /** What a command runner reports. */
 export interface CommandResult {
   readonly ok: boolean;
+  /** The last line of the output. */
   readonly out: string;
 }
 
-/** Runs a command in a directory; tests replace it so no real install runs. */
+/**
+ * Runs one prepare line in a directory. The merge step passes one that runs it
+ * as a checkout's prepare line runs; tests replace it.
+ */
 export type CommandRunner = (
   cwd: string,
-  cmd: readonly string[],
-) => CommandResult;
-
-export const runCommand: CommandRunner = (cwd, cmd) => {
-  const result = Bun.spawnSync({
-    cmd: [...cmd],
-    cwd,
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  return {
-    ok: result.exitCode === 0,
-    out: `${result.stdout.toString()}${result.stderr.toString()}`.trim(),
-  };
-};
+  line: string,
+) => Promise<CommandResult>;
 
 /** What happened to the main clone. */
 export interface MainCloneOutcome {
   readonly updated: boolean;
-  /** Why the clone was not updated, or how the install ended. */
+  /** Why the clone was not updated, or how the prepare lines ended. */
   readonly note?: string | undefined;
-  readonly installed?: boolean | undefined;
+  /** True when the prepare lines ran and passed. */
+  readonly prepared?: boolean | undefined;
 }
 
 function lastLine(text: string): string {
   const lines = text.split("\n").filter((line) => line.trim().length > 0);
   return lines[lines.length - 1] ?? "";
+}
+
+/** Runs the lines in order in the clone; the first failure stops them. */
+async function prepare(
+  repository: string,
+  lines: readonly string[],
+  run: CommandRunner,
+): Promise<MainCloneOutcome> {
+  if (lines.length === 0) return { updated: true };
+  for (const line of lines) {
+    const done = await run(repository, line);
+    if (!done.ok) {
+      return {
+        updated: true,
+        prepared: false,
+        note: `prepare failed: ${line}: ${lastLine(done.out)}`,
+      };
+    }
+  }
+  return { updated: true, prepared: true, note: "prepare done" };
 }
 
 /** The text a task's Changes shows, or undefined when there is nothing to say. */
@@ -96,13 +63,17 @@ export function mainCloneChange(outcome: MainCloneOutcome): string | undefined {
   return outcome.note === undefined ? undefined : `main clone: ${outcome.note}`;
 }
 
-/** Fast-forwards the main clone to `sha` when it is on `branch` and clean. */
-export function updateMainClone(
+/**
+ * Fast-forwards the main clone to `sha` when it is on `branch` and clean, then
+ * runs the prepare lines there when the clone moved.
+ */
+export async function updateMainClone(
   repository: string,
   branch: string,
   sha: string,
-  run: CommandRunner = runCommand,
-): MainCloneOutcome {
+  lines: readonly string[],
+  run: CommandRunner,
+): Promise<MainCloneOutcome> {
   const current = git(repository, ["symbolic-ref", "--short", "-q", "HEAD"]);
   if (!current.ok || current.out !== branch) {
     return {
@@ -117,20 +88,9 @@ export function updateMainClone(
   if (status.out.length > 0) {
     return { updated: false, note: "uncommitted changes" };
   }
-  const before = git(repository, ["rev-parse", "HEAD"]);
-  if (!before.ok) return { updated: false, note: `cannot read HEAD: ${before.err}` };
   if (git(repository, ["merge-base", "--is-ancestor", sha, "HEAD"]).ok) {
-    // A kill between the fast-forward and the install leaves the lock file
-    // ahead of what was installed: the marker of the last install tells.
-    const marker = readMarker(repository);
-    const hash = lockHash(repository);
-    if (marker !== undefined && hash !== undefined && marker !== hash) {
-      return install(repository, run);
-    }
     return { updated: true };
   }
-  // Remember what the clone has installed before the lock file can change.
-  if (readMarker(repository) === undefined) writeMarker(repository);
   const merge = git(repository, ["merge", "--ff-only", sha]);
   if (!merge.ok) {
     return {
@@ -138,14 +98,5 @@ export function updateMainClone(
       note: `cannot fast-forward: ${lastLine(merge.err || merge.out) || "git merge failed"}`,
     };
   }
-  const changed = git(repository, [
-    "diff",
-    "--name-only",
-    before.out,
-    "HEAD",
-    "--",
-    "bun.lock",
-  ]);
-  if (!changed.ok || changed.out.length === 0) return { updated: true };
-  return install(repository, run);
+  return prepare(repository, lines, run);
 }
