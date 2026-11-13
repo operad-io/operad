@@ -1,0 +1,14 @@
+{
+  "name": "@operad-io/harness-codex",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@operad-io/access-match": "workspace:*",
+    "@operad-io/engine": "workspace:*",
+    "@operad-io/harness-process": "workspace:*"
+  }
+}

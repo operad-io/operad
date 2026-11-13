@@ -38,7 +38,7 @@ is shown as `wrote an invalid report`.
 ## Limiting runs of one model
 
 A provider may answer HTTP 429 when several runs use one model at once. The
-`radian`, `pi` and `claude` plugins can limit that. Set `concurrency` in
+`radian`, `pi`, `claude` and `codex` plugins can limit that. Set `concurrency` in
 the plugin's `settings`:
 
 ```json
@@ -66,6 +66,7 @@ The limit is on a key, and the plugin builds it from the step's `args`:
 |---|---|---|
 | `pi` | `pi:<model>` | the `--model` argument, else the plugin's `model` setting; with neither, the step is not limited |
 | `claude` | `claude:<model>` | the `--model` argument, else the plugin's `model` setting; with neither, the step is not limited |
+| `codex` | `codex:<model>` | the `--model` argument, else the plugin's `model` setting; with neither, the step is not limited |
 | `radian` | `radian:<provider>/<model>` | the `--provider` and `--model` arguments only (the model alone when there is no `--provider`); radian has no `model` setting, and a step without `--model` is not limited |
 
 The model is read from the step's own `args`, in either `--model value` or
@@ -80,6 +81,21 @@ It (and `GET /v1/running`) shows the step as
 front of it. `operad history` shows `<step> is queued`. If the step is stopped
 while it waits (the run is cancelled), it leaves the line, never runs, and ends
 as failed with the reason that it was cancelled.
+
+### The `codex` settings
+
+`codex` runs the user's own Codex through `codex-acp`; how to set it up is in
+`docs/dogfood.md`. Its settings are in the `codex` section of `config.json`:
+
+| Setting | Type | Default | What it does |
+|---|---|---|---|
+| `codex.model` | string | Codex's own | The model; the step's `--model` wins. |
+| `codex.effort` | `minimal`, `low`, `medium`, `high`, `xhigh` | Codex's own | The reasoning effort; the step's `--effort` wins. |
+| `codex.command` | array of strings | the `bun` and the `codex-acp` of `PATH` | The program and arguments that start codex-acp. |
+| `codex.wallTimeSecs` | number, 1 to 28500 | `3600` | The longest one run may take. |
+| `codex.stallSecs` | number, 1 or more | `600` | How long a run may be silent while no tool call is open. An image generation counts as an open tool call. |
+| `codex.concurrency` | object, model name to integer | `{}` | The limit described above. |
+| `codex.concurrency.<name>` | integer, 1 or more | none | How many runs of the model `<name>` may go at once. |
 
 ### Long commands under claude
 
@@ -425,7 +441,7 @@ A step ends with one of these results:
 The end results apply to plugins of the `harness` kind: they run an agent, and
 a flow reads any agent the same way. `operad plugin check` refuses a harness
 step that declares another name and names it. The agent steps of
-`radian`, `pi` and `claude` declare `done`, `failed` and `interrupted`.
+`radian`, `pi`, `claude` and `codex` declare `done`, `failed` and `interrupted`.
 Plugins of other kinds name their own results. `shell` is a `stage`, not a
 harness: its steps run a command or a check and give a verdict, so they end in
 `pass` and `fail` (and `ready` or `waiting` for a check), and the end results
