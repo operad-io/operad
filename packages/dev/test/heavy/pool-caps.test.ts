@@ -13,6 +13,7 @@ import {
   getTask,
   setAuto,
 } from "../../src/service.ts";
+import { taskData } from "../../src/model.ts";
 import { taskViews } from "../../src/views.ts";
 import { schedulerTestHooks } from "../../src/schedule.ts";
 import { cleanupTempRoots, guardLockHandles, makeGitRepository, storeAt, tempRoot } from "../support.ts";
@@ -46,18 +47,20 @@ async function setup(extra: Record<string, unknown> = {}) {
     onCancelRun: () => {},
   });
   const repository = await addRepository(store, { path: repositoryPath });
-  writeFileSync(
-    join(repositoryPath, ".operad", "dev.json"),
-    `${JSON.stringify({
-      name: repository.name,
-      workers: WORKERS,
-      pools: POOLS,
-      flows: FLOWS,
-      ...extra,
-    })}\n`,
-  );
+  const rewrite = (more: Record<string, unknown>): void =>
+    writeFileSync(
+      join(repositoryPath, ".operad", "dev.json"),
+      `${JSON.stringify({
+        name: repository.name,
+        workers: WORKERS,
+        pools: POOLS,
+        flows: FLOWS,
+        ...more,
+      })}\n`,
+    );
+  rewrite(extra);
   schedulerTestHooks.write = () => undefined;
-  return { store, registry, repository };
+  return { store, registry, repository, rewrite };
 }
 
 type Fixture = Awaited<ReturnType<typeof setup>>;
@@ -149,5 +152,32 @@ describe("each pool counts its own running tasks (T-0379)", () => {
       { slug: "image1", flow: "image" },
     ]);
     expect(await startedSlugs(fixture, keys)).toHaveLength(1);
+  });
+
+  test("a running task keeps the pool of the graph it started with when dev.json changes (T-0379)", async () => {
+    const fixture = await setup();
+    const keys = await tasks(fixture, [
+      { slug: "image1", flow: "image" },
+      { slug: "image2", flow: "image" },
+    ]);
+    expect(await startedSlugs(fixture, keys)).toEqual(["image1"]);
+    // The start's run is a stub here: mark the task as running its run.
+    const image1 = keys.get("image1") ?? "";
+    const started = await getTask(fixture.store, image1);
+    expect(taskData(started.data).flowGraph).toBeDefined();
+    await fixture.store.put("task", image1, { ...started.data, phase: "running", run: "run-image1" }, "test");
+    // The image flow now takes its workers from the default pool; image1 still
+    // runs the graph it started with, in the image pool.
+    fixture.rewrite({
+      flows: { ...FLOWS, image: { stages: [{ stage: "work" }, { stage: "human" }] } },
+    });
+    const plan = await addPlan(fixture.store, { repository: fixture.repository, slug: "q", title: "q", concurrency: 10 });
+    await setAuto(fixture.store, plan.id, "run");
+    const code = await addTask(fixture.store, { plan: plan.id, slug: "code", title: "code", flow: "default" });
+    await confirmPlan(fixture.store, plan.id);
+    await fixture.registry.tick();
+    const ids = fixture.registry.takeStartedRuns().map((request) => request.object?.id);
+    // The default pool is empty, so the code task starts: image1 is not counted there.
+    expect(ids).toContain(code.id);
   });
 });

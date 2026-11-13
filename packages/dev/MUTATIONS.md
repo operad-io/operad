@@ -1039,3 +1039,5 @@ the row fields.
 | T-0379-M4 | packages/dev/src/steps.ts | `poolParams` always took workers from `default` | `dev/work with workers > a pool without a fallback waits on usage_limit and never takes another pool's worker` |
 | T-0379-M5 | packages/dev/src/schedule.ts | `canStart` ignored the pool's cap | `each pool counts its own running tasks > a pool's concurrency limits it below its workers' counts` |
 | T-0379-M6 | packages/dev/src/flow-compiler.ts | `workParams` left the stage's pool out of the work step's params | `a work stage's pool reaches the compiled work step` |
+| T-0379-M7 | packages/dev/src/schedule.ts | `poolOf` read the pool from current dev.json instead of the task's stored graph | `each pool counts its own running tasks > a running task keeps the pool of the graph it started with when dev.json changes` |
+| T-0379-M8 | packages/dev/src/steps.ts | `poolParams` left out `countPrefix`, so each pool counted a shared worker separately | `dev/work with workers > a worker shared by two pools has one count, whichever pool asks` |

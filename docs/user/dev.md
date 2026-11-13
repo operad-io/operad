@@ -492,6 +492,8 @@ place, and its row says which pool is full when the repository has more than
 one (`waiting for the image pool's slot (T-0007)`); one past a worker's own
 `count` or the home cap waits in `pool/agent`.
 
+A worker listed in two pools has one `count`: its places are shared by both pools. A task keeps counting against the pool of the flow it started with, even if `dev.json` changes while it runs.
+
 A pool whose workers have no `fallback` never hands its work to a worker of
 another pool: when the model is unavailable or its usage limit is reached, the
 work waits and tries again, and after the allowed waits it goes to a person.

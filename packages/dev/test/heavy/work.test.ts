@@ -830,7 +830,7 @@ describe("dev/work with workers", () => {
     const places = new FilePlaces(join(state.root, "pool"));
     const held = await places.claim([
       {
-        own: "count:repository/default/second",
+        own: "count:repository/second",
         ownLimit: 1,
         home: "harness:fake-harness",
         homeLimit: undefined,
@@ -863,7 +863,7 @@ describe("dev/work with workers", () => {
     const places = new FilePlaces(join(state.root, "pool"));
     const held = await places.claim([
       {
-        own: "count:repository/default/second",
+        own: "count:repository/second",
         ownLimit: 1,
         home: "harness:fake-harness",
         homeLimit: undefined,
@@ -891,6 +891,40 @@ describe("dev/work with workers", () => {
     expect(readFileSync(logPath, "utf8")).toContain("worker second is free; the work starts");
     const after = await taskDataOf(state);
     expect(after.attempt?.workerWait ?? null).toBeNull();
+  });
+
+  test("a worker shared by two pools has one count, whichever pool asks (T-0379)", async () => {
+    const state = await fixture("nothing", {
+      workers: { shared: fake("nothing") },
+      pools: { default: ["shared"], image: ["shared"] },
+    });
+    const places = new FilePlaces(join(state.root, "pool"));
+    // A task of the default pool holds the worker's one place.
+    const held = await places.claim([
+      {
+        own: "count:repository/shared",
+        ownLimit: 1,
+        home: "harness:fake-harness",
+        homeLimit: undefined,
+        holder: "T-0001",
+      },
+    ]);
+    if (held.kind !== "taken") throw new Error("the place was not free");
+    let waiting: () => void = () => undefined;
+    const sawWaiting = new Promise<void>((resolve) => {
+      waiting = resolve;
+    });
+    const work = runWork(
+      state,
+      "run-1",
+      (plugin, type) => {
+        if (plugin === "pool" && type === "pool.waiting") waiting();
+      },
+      { flowPool: "image" },
+    );
+    await sawWaiting;
+    await held.release();
+    expect((await work).data).toMatchObject({ worker: "shared" });
   });
 
   test("a rework whose worker is free shows no wait", async () => {

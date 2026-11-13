@@ -4,6 +4,7 @@
  * plan is finished. Scheduling lives here, not in the kernel (operad decision 12).
  */
 
+import { DEFAULT_POOL } from "@operad-io/pool";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -323,6 +324,18 @@ function dependencyState(
   };
 }
 
+/** The pool of the first work step of the graph a task started with. */
+function storedGraphPool(graph: FlowDefinition | undefined): string | undefined {
+  const work = graph?.steps.find((step) => /^work(_\d+)?$/.test(step.id));
+  if (work === undefined) return undefined;
+  const outer: unknown = work.params;
+  const inner: unknown =
+    typeof outer === "object" && outer !== null ? (outer as { params?: unknown }).params : undefined;
+  const pool: unknown =
+    typeof inner === "object" && inner !== null ? (inner as { flowPool?: unknown }).flowPool : undefined;
+  return typeof pool === "string" ? pool : DEFAULT_POOL;
+}
+
 function planConcurrency(plan: PlanData): number {
   const value: unknown = plan.concurrency;
   return typeof value === "number" && Number.isFinite(value) ? value : 1;
@@ -640,7 +653,10 @@ async function scheduleRepository(
   ).length;
   // A task counts against the pool of the flow it runs.
   const plansByName = new Map(plans.map((object) => [bareId(object.id), planData(object.data)]));
+  // A task that has started runs the graph it started with, so its pool is
+  // that graph's; dev.json changing meanwhile does not move it.
   const poolOf = (task: TaskData): string =>
+    storedGraphPool(task.flowGraph) ??
     flowPool(settings, task.flow ?? plansByName.get(task.plan)?.flow);
   const poolActive = new Map<string, number>();
   for (const object of current) {

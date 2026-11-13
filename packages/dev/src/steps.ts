@@ -1033,6 +1033,8 @@ function poolParams(
     cwd: worktree,
     inbox,
     prefix: `${repository.name}/${pool}`,
+    // A worker shared by two pools has one count: the claim ignores the pool.
+    countPrefix: repository.name,
     holder,
     workers: fallback === undefined ? workers : [...workers, fallback],
     fallbacks: resolved.fallbacks,
