@@ -584,18 +584,11 @@ not know yet, such as after a merge changed what `dev.json` may hold):
 ### When a merge changes the code `serve` runs
 
 The main clone follows a merge when it can (a fast-forward on a clean clone), but
-a `serve` that is already running keeps the code it loaded until it reloads
-(see Changed code).
-When a followed merge changes that code, which means any file under the directory of the kernel (`engine`, `cli`) or
-of a package the home loads (source, flows, `bin/`, schemas at any depth,
-manifests), `operad pending` shows
-`serve runs older code than main: restart it when no check runs (merged <commit>
-in <repository>)`, once however many merges followed. Markdown files (docs and the
-mutation records), `test/` and `fixtures/` do not count. The item is advice: it
-may appear for a change that did not need a restart, but a change to a loaded
-package's code or schema always raises it. `serve` restarts itself when the new
-code loads and the item goes away with the restart; when the new code does not
-load, `serve` keeps the old code and the item stays until the files are fixed.
+a `serve` that is already running keeps the code it loaded until it reloads. That
+is the kernel's own watch, not `dev`: see Changed code in the command line
+guide. When the code on disk differs from what `serve` runs and it has not taken
+it up, `operad pending` shows `serve runs older code than the files on disk`,
+whichever plugin or repository the change came from.
 
 `dev` also needs the plugins its steps run through. When the home does not load
 `pool`, `operad pending` shows `plugin pool is not loaded and dev runs its

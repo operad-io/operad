@@ -754,6 +754,13 @@ the row fields.
 | T-0389-M1 | packages/engine/src/config/config.ts | `DEFAULT_MCP.actions` named `chat:close` again, so a config without `mcp.actions` allowed an action | `operad config > a config without mcp allows no action` and `the engine's defaults name no plugin and allow no action` |
 | T-0389-M2 | packages/engine/src/config/config.ts | `setPluginEnabled` read the offered module without an own-property check, so `constructor` counted as offered | `operad config > plugin enable adds an offered plugin and refuses one that is not offered` |
 
+## T-0388 — the code watch reports that serve runs older code
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0388-M1 | packages/engine/src/loop/code-watch.ts | `check` reported "not older" even when the files differed from the baseline | `serve runs older code than the files on disk > a loaded file that changed while the restart is deferred shows one item, gone after the restart` |
+| T-0388-M2 | packages/engine/src/loop/older-code.ts | `servesOlderCode` ignored who holds the serve lock, so a notice of another process counted | `serve runs older code than the files on disk > a notice left by a serve that is no longer the lock holder shows nothing` |
+| T-0388-M7 | packages/engine/src/loop/code-watch.ts | `start` ignored the `declined` option, so a watch started on already-tried files offered them again | `a code watch > a watch that starts on files already tried is older at once and offers only a later change` |
 ## T-0384 — indexed run reads
 
 | id | file | mutation | failing test |

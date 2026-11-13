@@ -39,6 +39,7 @@ import {
   openConfigLog,
   Notifier,
   CodeWatch,
+  olderCodeNotice,
   ensureHttpToken,
   listenAddressKind,
   pairLink,
@@ -84,6 +85,7 @@ import {
   superviseServe,
   settingsRoots,
   takeCodeSnapshot,
+  serveSnapshots,
 } from "./code-reload.ts";
 import type { CodeSnapshot } from "./code-reload.ts";
 import {
@@ -1698,6 +1700,8 @@ async function commandServe(
   let outcome = "stopped" as "stopped" | "reload";
   let unreleased: HttpStopError | undefined;
   let watch: CodeWatch | undefined;
+  const olderNotice = olderCodeNotice(context.home);
+  olderNotice.clear();
   try {
     if (context.config.http.enabled) {
       const startHttp = (): Promise<HttpServerHandle> =>
@@ -1739,8 +1743,10 @@ async function commandServe(
         roots: context.code.roots,
         alsoWatch: settingsRoots(context.home),
         baseline: context.code.baseline,
+        declined: context.code.tried,
         quietMs: envNumber("OPERAD_RELOAD_QUIET_MS", 1_000),
         pollMs: envNumber("OPERAD_RELOAD_POLL_MS", 5_000),
+        onOlder: olderNotice.report,
         onChange: async () => {
           const what = await check();
           // A stop that came while the new code was tried is not started again.
@@ -1777,6 +1783,7 @@ async function commandServe(
     });
   } finally {
     watch?.stop();
+    olderNotice.clear();
     await notifier.stop();
     if (http !== undefined) {
       try {
@@ -2605,17 +2612,27 @@ export async function main(
       // a second serve fails here, with exit 4, and touches nothing. The lock
       // is handed to `serve`, so there is no check and then act.
       const { supervised, replaces, retryBind } = serveStartFlags();
-      const runChecked = async (isSupervised: boolean, retryBind: boolean): Promise<"stopped" | "reload"> => {
+      // What this process loaded when it first served: a serve restored here runs that code.
+      const snapshotOf = serveSnapshots();
+      const runChecked = async (
+        isSupervised: boolean,
+        retryBind: boolean,
+        restored: boolean,
+      ): Promise<"stopped" | "reload"> => {
         const lock = acquireLock(serveLockPath(home));
         try {
           // serve answers clients that are in no directory: a bare id must not
           // be scoped to the repository serve happened to start in, so its
           // views resolve ids from the home, outside every repository.
-          const context = await openContext(home, io, {
+          const opened = await openContext(home, io, {
             viewsCwd: home,
             trackCode: true,
             follow: true,
           });
+          const context =
+            opened.code === undefined
+              ? opened
+              : { ...opened, code: snapshotOf(opened.code, restored) };
           try {
             return await commandServe(context, io, args.slice(1), lock, isSupervised, retryBind);
           } finally {
@@ -2639,9 +2656,10 @@ export async function main(
       const runOnce = async (
         isSupervised: boolean,
         retryBind: boolean,
+        restored = false,
       ): Promise<"stopped" | "reload"> => {
         try {
-          return await runChecked(isSupervised, retryBind);
+          return await runChecked(isSupervised, retryBind, restored);
         } catch (error) {
           // The lock is released by now; see leaveStuck.
           if (!(error instanceof HandOverStuck)) throw error;
@@ -2684,7 +2702,7 @@ export async function main(
         return supervised
           ? RELOAD_EXIT
           : await superviseServe(
-              () => runOnce(false, true),
+              () => runOnce(false, true, true),
               (message) => io.error(message),
             );
       }

@@ -46,7 +46,7 @@ operad 和 `dev` 要做成开放框架：别的项目、别的技术栈拿来就
    - area 的推导不做：`dev` 不再从 `packages/<name>/` 推 area，自动开出的 flaky 任务不带 area。
    - 本仓库把今天的规则文字和 `scripts/stress.sh` 命令搬进自己的 `.operad/`。
 2. **A2：主 clone 快进之后跑 `prepare`**，不认 `bun.lock`，不加新键。`prepare` 的含义从“`dev` 建的每个检出”扩到“以及快进后的主 clone”，文档写明；每次合并都跑一遍。
-3. **A4：“serve 在跑旧代码”由内核的 code-watch 给出**（`packages/engine/src/loop/code-watch.ts` 已经记着 serve 加载了哪些文件）。`dev` 里的 `recordServeCode` 和 `serve-older` 一项删掉；内核的这一项对任何加载了的代码都成立，不认 `dev`、`@operad-io/` 前缀或 `packages/` 布局。它是已有 watch 多报的一项待处理，不是新的内核概念。
+3. **A4（已做，T-0388）：“serve 在跑旧代码”由内核的 code-watch 给出**（`packages/engine/src/loop/code-watch.ts` 已经记着 serve 加载了哪些文件）。`dev` 里的 `recordServeCode` 和 `serve-older` 一项删掉；内核的这一项对任何加载了的代码都成立，不认 `dev`、`@operad-io/` 前缀或 `packages/` 布局。它是已有 watch 多报的一项待处理，不是新的内核概念。
 4. **B1、B2：默认值挪到 CLI 的 `init`**。engine 里没有任何插件名和动作名：默认插件列表、可选插件列表、插件名到包名的对应、`mcp.actions` 的默认，都归 CLI（发行版的默认）；engine 对缺省的 `mcp.actions` 是空。`operad init` 写出的 `config.json` 带上今天的默认。不改插件合约：哪些动作交给 lead 只由 owner 的配置决定，之后 enable 的插件的动作要手动加进 `mcp.actions`。
 5. **边界由测试守住**（原待决 4，lead 定，owner 未逐条确认）：`packages/dev/src` 的非测试源码里不出现 `bun `、`bun.lock`、`scripts/`、`CLAUDE.md`、`packages/`；engine 的非测试源码里不出现任何随 operad 发行的插件名和 `<插件>:` 动作名。
 6. **验收用一个非 Bun 的示例仓库**（原待决 5，lead 定，owner 未逐条确认）：测试里的一个小 fixture（没有 `package.json`、`scripts/`、`CLAUDE.md`，检查命令是 shell），用户文档里给同样的例子。

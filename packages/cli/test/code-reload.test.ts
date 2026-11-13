@@ -1,10 +1,24 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { CodeWatch, describeChange, type CodeChange } from "../../engine/src/index.ts";
+import {
+  acquireLock,
+  CodeWatch,
+  describeChange,
+  fingerprintCode,
+  listPending,
+  MemoryPluginStore,
+  newHashCache,
+  olderCodeNotice,
+  openLog,
+  PluginRegistry,
+  serveLockPath,
+  type CodeChange,
+} from "../../engine/src/index.ts";
 import { fakeClock } from "../../engine/src/testing/index.ts";
 import { cleanupTempRoots, tempRoot } from "../../engine/test/plugin/support.ts";
 import {
+  serveSnapshots,
   loadsAsWellAs,
   problemKey,
   takeCodeSnapshot,
@@ -142,4 +156,83 @@ describe("plugin code in a serve snapshot", () => {
       w.watch.stop();
     }
   });
+});
+
+
+describe("a serve restored after a restart could not listen", () => {
+  /**
+   * The wiring of `serve`: the process snapshots its code when it first serves,
+   * a restored serve takes that first snapshot as its baseline, and the code
+   * watch reports into the notice that `pending` shows.
+   */
+  async function scenario(changed: "engine" | "plugin") {
+    const home = await tempRoot();
+    const roots = ["engine", "plugin"].map((name) => {
+      const path = join(home, name);
+      mkdirSync(path, { recursive: true });
+      writeFileSync(join(path, "index.ts"), "export const v = 1;\n");
+      return { label: name, path };
+    });
+    const snapshotOf = serveSnapshots();
+    const take = (): CodeSnapshot => {
+      const cache = newHashCache();
+      return { roots, baseline: fingerprintCode(roots, cache), cache };
+    };
+    // The first serve loads the code, then a file changes and its restart fails to listen.
+    snapshotOf(take(), false);
+    writeFileSync(join(home, changed, "index.ts"), "export const v = 2;\n");
+
+    const storeRoot = join(home, "store");
+    const log = openLog({ backend: "sqlite", path: join(storeRoot, "log.sqlite") });
+    const registry = new PluginRegistry([], {
+      home,
+      storeRoot,
+      store: new MemoryPluginStore({ root: storeRoot }),
+      onLog: () => undefined,
+    });
+    const lock = acquireLock(serveLockPath(home));
+    const notice = olderCodeNotice(home);
+    const serve = async (restored: boolean): Promise<readonly string[]> => {
+      notice.clear();
+      const snapshot = snapshotOf(take(), restored);
+      const clock = fakeClock();
+      const watch = new CodeWatch({
+        roots: snapshot.roots,
+        baseline: snapshot.baseline,
+        declined: snapshot.tried,
+        quietMs: 100,
+        pollMs: 1_000,
+        clock,
+        watch: () => () => undefined,
+        onOlder: notice.report,
+        onChange: async () => "keep",
+      });
+      watch.start();
+      clock.advance(1_000);
+      clock.advance(100);
+      for (let turn = 0; turn < 5; turn += 1) await Promise.resolve();
+      const items = (await listPending(log, registry)).map((item) => item.prompt);
+      watch.stop();
+      return items;
+    };
+    return {
+      serve,
+      done: async () => {
+        lock.release();
+        await log.close();
+      },
+    };
+  }
+
+  for (const changed of ["engine", "plugin"] as const) {
+    test(`a changed ${changed} file shows the item; a serve that restarted on the new code shows none`, async () => {
+      const s = await scenario(changed);
+      const restored = await s.serve(true);
+      expect(restored).toHaveLength(1);
+      expect(restored[0]).toContain("serve runs older code than the files on disk");
+      // A successful restart takes a fresh snapshot of what is on disk.
+      expect(await s.serve(false)).toEqual([]);
+      await s.done();
+    });
+  }
 });

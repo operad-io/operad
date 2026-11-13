@@ -264,6 +264,10 @@
   "@operad-io/engine:pluginProjectPath": "installs a plugin package into the operad home: the CLI host uses it, a plugin never calls it",
   "@operad-io/engine:runningFromWorkspace": "installs a plugin package into the operad home: the CLI host uses it, a plugin never calls it",
   "@operad-io/engine:writeConfig": "reads or writes config.json or triggers.json for the host; a plugin receives its own section as ctx.settings and its rules as `rules`",
-  "@operad-io/engine:PLUGIN_STORE_SCHEMA_VERSION": "the plugin store file schema version: the store migrates itself, and a plugin never reads it"
+  "@operad-io/engine:PLUGIN_STORE_SCHEMA_VERSION": "the plugin store file schema version: the store migrates itself, and a plugin never reads it",
+  "@operad-io/engine:OLDER_CODE_ITEM_ID": "serve's notice that it runs older code than the files on disk: host code, a plugin never calls it",
+  "@operad-io/engine:OLDER_CODE_PROMPT": "serve's notice that it runs older code than the files on disk: host code, a plugin never calls it",
+  "@operad-io/engine:olderCodeNotice": "serve's notice that it runs older code than the files on disk: host code, a plugin never calls it",
+  "@operad-io/engine:servesOlderCode": "serve's notice that it runs older code than the files on disk: host code, a plugin never calls it"
  }
 }

@@ -1,12 +1,10 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { listPending, PluginRegistry } from "@operad-io/engine";
 import poolPlugin from "@operad-io/pool";
 import plugin from "../../src/index.ts";
-import { git as gitQuery } from "../../src/git.ts";
-import { followMain } from "../../src/integrate.ts";
 import { schedulerTestHooks } from "../../src/schedule.ts";
 import {
   addPlan,
@@ -17,7 +15,6 @@ import {
   setAuto,
   setTaskPhase,
 } from "../../src/service.ts";
-import { recordServeCode } from "../../src/standing.ts";
 import { taskData, type RepositoryData } from "../../src/model.ts";
 import {
   cleanupTempRoots,
@@ -303,199 +300,5 @@ describe("a stopped task when a plugin dev needs is missing", () => {
     });
     await loaded.tick(lookup);
     expect(loaded.takeStartedRuns().length).toBe(1);
-  });
-});
-
-describe("a followed merge and the code serve has loaded", () => {
-  function git(cwd: string, args: readonly string[]): string {
-    const result = gitQuery(cwd, args, { raw: false });
-    if (!result.ok) throw new Error(`git ${args.join(" ")} in ${cwd}: ${result.err}`);
-    return result.out;
-  }
-
-  async function mainClone(
-    fixture: Fixture,
-  ): Promise<{ readonly path: string; readonly branch: string; readonly repository: RepositoryData }> {
-    const { path, repository } = await addRepo(fixture, "operad");
-    git(path, ["add", ".operad/dev.json"]);
-    git(path, ["-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-qm", "settings"]);
-    return { path, branch: git(path, ["symbolic-ref", "--short", "HEAD"]), repository };
-  }
-
-  function commitOnSide(path: string, branch: string, file: string): string {
-    git(path, ["checkout", "-q", "-b", "side"]);
-    mkdirSync(join(path, file, ".."), { recursive: true });
-    writeFileSync(join(path, file), "export {};\n");
-    git(path, ["add", file]);
-    git(path, ["-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-qm", file]);
-    const sha = git(path, ["rev-parse", "HEAD"]);
-    git(path, ["checkout", "-q", branch]);
-    git(path, ["branch", "-D", "side"]);
-    return sha;
-  }
-
-  function serveStartedAt(root: string, at: number): void {
-    writeFileSync(join(root, "serve.lock"), `${JSON.stringify({ pid: process.pid, at })}\n`);
-    writeFileSync(
-      join(root, "config.json"),
-      JSON.stringify({ plugins: { dev: { module: "@operad-io/dev", enabled: true } } }),
-    );
-  }
-
-  test("a merge that touches packages/dev/src raises the item once; docs alone do not", async () => {
-    const fixture = await setup();
-    const { path, branch, repository } = await mainClone(fixture);
-    serveStartedAt(fixture.root, 1);
-    const testHooks = await import("../../src/integrate.ts");
-    testHooks.integrateTestHooks.codeRoot = path;
-    try {
-      const docs = commitOnSide(path, branch, "docs/manual.md");
-      expect((await followMain(repository, fixture.root, branch, docs)).updated).toBe(true);
-      expect((await fixture.registry.standing()).map((item) => item.id)).toEqual([]);
-
-      const code = commitOnSide(path, branch, "packages/dev/src/x.ts");
-      expect((await followMain(repository, fixture.root, branch, code)).updated).toBe(true);
-      const again = commitOnSide(path, branch, "packages/engine/src/y.ts");
-      expect((await followMain(repository, fixture.root, branch, again)).updated).toBe(true);
-
-      const items = (await fixture.registry.standing()).filter((item) => item.id === "serve-older");
-      expect(items.length).toBe(1);
-      expect(items[0]?.prompt).toContain(
-        "serve runs older code than main: restart it when no check runs",
-      );
-      expect(items[0]?.prompt).toContain(again.slice(0, 7));
-
-      // A restarted serve has the new code: the item is gone.
-      serveStartedAt(fixture.root, Date.now() + 1000);
-      expect((await fixture.registry.standing()).map((item) => item.id)).toEqual([]);
-    } finally {
-      testHooks.integrateTestHooks.codeRoot = undefined;
-    }
-  });
-
-  test("a plugin loaded by a path to a package of the clone counts as loaded", async () => {
-    const fixture = await setup();
-    const { path, branch, repository } = await mainClone(fixture);
-    serveStartedAt(fixture.root, 1);
-    writeFileSync(
-      join(fixture.root, "config.json"),
-      JSON.stringify({ plugins: { dev: { module: join(path, "packages/dev/src/index.ts"), enabled: true } } }),
-    );
-    const testHooks = await import("../../src/integrate.ts");
-    testHooks.integrateTestHooks.codeRoot = path;
-    try {
-      const sha = commitOnSide(path, branch, "packages/dev/src/p.ts");
-      await followMain(repository, fixture.root, branch, sha);
-      expect((await fixture.registry.standing()).map((item) => item.id)).toEqual(["serve-older"]);
-    } finally {
-      testHooks.integrateTestHooks.codeRoot = undefined;
-    }
-  });
-
-  test("string and array plugin entries count as loaded too", async () => {
-    const fixture = await setup();
-    const { path, branch, repository } = await mainClone(fixture);
-    serveStartedAt(fixture.root, 1);
-    const testHooks = await import("../../src/integrate.ts");
-    testHooks.integrateTestHooks.codeRoot = path;
-    const dev = join(path, "packages/dev/src/index.ts");
-    mkdirSync(join(path, "packages/dev"), { recursive: true });
-    writeFileSync(join(path, "packages/dev/package.json"), "{}\n");
-    git(path, ["add", "packages/dev/package.json"]);
-    git(path, ["-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-qm", "pkg"]);
-    try {
-      let count = 0;
-      for (const plugins of [{ dev }, [dev], { dev: "dev" }, { dev: { enabled: true } }]) {
-        writeFileSync(join(fixture.root, "config.json"), JSON.stringify({ plugins }));
-        rmSync(join(fixture.root, "dev", "serve-code"), { recursive: true, force: true });
-        count += 1;
-        const sha = commitOnSide(path, branch, `packages/dev/src/q${count}.ts`);
-        await followMain(repository, fixture.root, branch, sha);
-        expect((await fixture.registry.standing()).map((item) => item.id)).toEqual(["serve-older"]);
-      }
-    } finally {
-      testHooks.integrateTestHooks.codeRoot = undefined;
-    }
-  });
-
-  test("a merge that changes a schema serve validates with raises the item", async () => {
-    const fixture = await setup();
-    const { path, branch, repository } = await mainClone(fixture);
-    serveStartedAt(fixture.root, 1);
-    const testHooks = await import("../../src/integrate.ts");
-    testHooks.integrateTestHooks.codeRoot = path;
-    try {
-      const sha = commitOnSide(path, branch, "packages/dev/dev.schema.json");
-      await followMain(repository, fixture.root, branch, sha);
-      expect((await fixture.registry.standing()).map((item) => item.id)).toEqual(["serve-older"]);
-    } finally {
-      testHooks.integrateTestHooks.codeRoot = undefined;
-    }
-  });
-
-  test("a nested schema or a manifest of a loaded package raises the item", async () => {
-    const fixture = await setup();
-    const { path, branch, repository } = await mainClone(fixture);
-    serveStartedAt(fixture.root, 1);
-    const testHooks = await import("../../src/integrate.ts");
-    testHooks.integrateTestHooks.codeRoot = path;
-    try {
-      const sha = commitOnSide(path, branch, "packages/engine/schemas/config.schema.json");
-      await followMain(repository, fixture.root, branch, sha);
-      expect((await fixture.registry.standing()).map((item) => item.id)).toEqual(["serve-older"]);
-    } finally {
-      testHooks.integrateTestHooks.codeRoot = undefined;
-    }
-  });
-
-  test("a package serve does not load, tests and a merge in another repository raise nothing", async () => {
-    const fixture = await setup();
-    const { path, branch, repository } = await mainClone(fixture);
-    serveStartedAt(fixture.root, 1);
-    const testHooks = await import("../../src/integrate.ts");
-    testHooks.integrateTestHooks.codeRoot = path;
-    // Like the real clone: cli lists the tui among its dependencies.
-    mkdirSync(join(path, "packages/cli"), { recursive: true });
-    writeFileSync(
-      join(path, "packages/cli/package.json"),
-      JSON.stringify({ dependencies: { "@operad-io/tui": "workspace:*" } }),
-    );
-    git(path, ["add", "packages/cli/package.json"]);
-    git(path, ["-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-qm", "cli"]);
-    try {
-      for (const file of [
-        "packages/dev/test/x.test.ts",
-        "packages/dev/MUTATIONS.md",
-        "packages/tui/src/z.ts",
-      ]) {
-        const sha = commitOnSide(path, branch, file);
-        await followMain(repository, fixture.root, branch, sha);
-      }
-      expect((await fixture.registry.standing()).map((item) => item.id)).toEqual([]);
-
-      testHooks.integrateTestHooks.codeRoot = join(fixture.root, "elsewhere");
-      const other = commitOnSide(path, branch, "packages/dev/src/q.ts");
-      await followMain(repository, fixture.root, branch, other);
-      expect((await fixture.registry.standing()).map((item) => item.id)).toEqual([]);
-    } finally {
-      testHooks.integrateTestHooks.codeRoot = undefined;
-    }
-  });
-
-  test("a merge when no serve holds the home raises nothing", async () => {
-    const fixture = await setup();
-    expect(
-      recordServeCode({
-        home: fixture.root,
-        codeRoot: "/x",
-        repository: { name: "operad", path: "/x" },
-        from: "a",
-        to: "b",
-        files: ["packages/dev/src/a.ts"],
-        at: 5,
-      }),
-    ).toBe(true);
-    rmSync(join(fixture.root, "serve.lock"), { force: true });
-    expect(await fixture.registry.standing()).toEqual([]);
   });
 });

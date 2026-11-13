@@ -4,7 +4,6 @@
  * never runs either itself.
  */
 
-import { fileURLToPath } from "node:url";
 import { isRecord, messageOf, type PluginStepResult, type StepContext, type StepRunOptions } from "@operad-io/engine";
 import { appendChange, appendRework, storeKey, type CleanupFailure, type CleanupRecord, type IntegrationRecord, type TaskAttempt, type TaskData } from "./model.ts";
 import {
@@ -27,7 +26,6 @@ import {
   type CommandRunner,
   type MainCloneOutcome,
 } from "./mainclone.ts";
-import { recordServeCode } from "./standing.ts";
 import { runCheckSteadily } from "./notcode.ts";
 import { runCheckCommands } from "./rerun.ts";
 import { reportFlakyTests } from "./flaky.ts";
@@ -67,8 +65,6 @@ export const integrateTestHooks: {
   at?: ((point: string) => void) | undefined;
   /** Replaces the command runner the main clone's install uses. */
   runCommand?: CommandRunner | undefined;
-  /** The repository serve's code comes from; tests name a scratch one. */
-  codeRoot?: string | undefined;
   /** Called once a task has taken its ticket in the integration queue. */
   queued?: ((task: string) => void) | undefined;
   /** Awaited once a task has the turn, before it builds anything. */
@@ -79,18 +75,8 @@ export const integrateTestHooks: {
   wait?: ((ms: number) => Promise<void>) | undefined;
 } = {};
 
-/** The repository whose code this module was loaded from. */
-function ownCodeRoot(): string {
-  const result = git(fileURLToPath(new URL(".", import.meta.url)), [
-    "rev-parse",
-    "--show-toplevel",
-  ]);
-  return result.ok ? result.out : "";
-}
-
 export async function followMain(
   repository: { readonly name: string; readonly path: string },
-  home: string,
   branch: string,
   sha: string,
   prepare: { readonly lines: readonly string[]; readonly run: CommandRunner } = {
@@ -98,32 +84,13 @@ export async function followMain(
     run: async () => ({ ok: true, out: "" }),
   },
 ): Promise<MainCloneOutcome> {
-  const before = git(repository.path, ["rev-parse", "HEAD"]);
-  const outcome = await updateMainClone(
+  return updateMainClone(
     repository.path,
     branch,
     sha,
     prepare.lines,
     integrateTestHooks.runCommand ?? prepare.run,
   );
-  const after = git(repository.path, ["rev-parse", "HEAD"]);
-  if (outcome.updated && before.ok && after.ok && before.out !== after.out) {
-    const changed = git(repository.path, ["diff", "--name-only", before.out, after.out]);
-    try {
-      recordServeCode({
-        home,
-        codeRoot: integrateTestHooks.codeRoot ?? ownCodeRoot(),
-        repository,
-        from: before.out,
-        to: after.out,
-        files: changed.ok ? changed.out.split("\n").filter((line) => line.length > 0) : [],
-        at: Date.now(),
-      });
-    } catch {
-      // The note is a courtesy; the merge has landed either way.
-    }
-  }
-  return outcome;
 }
 
 function shortSha(sha: string): string {
@@ -401,7 +368,6 @@ export async function runIntegrate(
     const note = record.checkNote;
     const clone = await followMain(
       context.repository,
-      ctx.home,
       settings.mainBranch,
       cloneSha,
       { lines: settings.prepare, run: mainCloneRunner(ctx, settings) },
@@ -477,7 +443,6 @@ export async function runIntegrate(
         : [];
       const clone = await followMain(
         context.repository,
-        ctx.home,
         settings.mainBranch,
         typeof previous.batchHead === "string" ? previous.batchHead : previous.candidate,
         { lines: settings.prepare, run: mainCloneRunner(ctx, settings) },

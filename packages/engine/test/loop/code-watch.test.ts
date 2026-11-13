@@ -223,6 +223,43 @@ describe("a code watch", () => {
     w.watch.stop();
   });
 
+  test("a watch that starts on files already tried is older at once and offers only a later change", async () => {
+    const { root, file } = await project();
+    const roots = [{ label: "pkg", path: root }];
+    const baseline = fingerprintCode(roots);
+    writeFileSync(file, "export const a = 2;\n");
+    const clock = fakeClock();
+    const events = fakeWatch();
+    const changes: CodeChange[] = [];
+    const older: boolean[] = [];
+    const watch = new CodeWatch({
+      roots,
+      baseline,
+      declined: fingerprintCode(roots),
+      quietMs: 100,
+      pollMs: 10_000,
+      clock,
+      watch: events.watch,
+      onOlder: (value) => older.push(value),
+      onChange: async (change) => {
+        changes.push(change);
+        return "keep";
+      },
+    });
+    watch.start();
+    expect(older).toEqual([true]);
+    events.fire();
+    clock.advance(100);
+    await settle();
+    expect(changes).toHaveLength(0);
+    writeFileSync(file, "export const a = 3;\n");
+    events.fire();
+    clock.advance(100);
+    await settle();
+    expect(changes).toHaveLength(1);
+    watch.stop();
+  });
+
   test("a kept change is not offered again until the files change again", async () => {
     const w = await watched(async () => "keep");
     writeFileSync(w.file, "export const a = (;\n");
