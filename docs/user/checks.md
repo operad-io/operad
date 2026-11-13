@@ -74,6 +74,24 @@ the repository and Bun.
 
 Each variable is read when the script starts.
 
+## When a check fails
+
+A failure before the line runs (a missing clone, a failed bundle or copy, a
+connection, fetch or checkout) exits 1 with one line that names the step; fix
+that step and run the check again. A line that runs exits with the line's own
+code and its output comes back as it was written. A task of the `dev` plugin
+records the failing line, its exit code and the last output; see
+[Troubleshooting](troubleshooting.md#checks-and-tests) for the messages and what
+to do.
+
+A test that failed and then passed on a rerun is a bug until shown otherwise.
+Do not raise its timeout and do not add a retry inside the test. A task whose
+brief is to fix a flaky test runs `scripts/stress.sh` twice: once to reproduce
+before the fix and once to confirm after it, and states the command, the number
+of runs and the result in its final answer. Every other task's check is
+`bash scripts/check-changed.sh`; the full `bash scripts/verify.sh` runs once
+more at integration, before merge.
+
 ## Reproducing a flaky test
 
 ```sh

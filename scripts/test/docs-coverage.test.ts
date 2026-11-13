@@ -129,6 +129,7 @@ interface SchemaItem {
 /** Keys of config.json whose section has a page of its own. */
 const CONFIG_SECTION_PAGES: Readonly<Record<string, string>> = {
   http: "http.md",
+  mcp: "mcp.md",
   notify: "notifications.md",
 };
 
@@ -415,7 +416,7 @@ describe("the user docs", () => {
     const internal = /\b(graph|node|fact|effect|decide|evolve|runner|backend)(s|d)?\b/gi;
     // `store.backend` is a key the user writes in config.json, and "takes effect"
     // is the plain English of the column that says when a setting applies.
-    const keys = /`backend`|"backend"|\b(takes?|taking|in|into|no) effect\b/gi;
+    const keys = /\bstore\.backend\b|`backend`|"backend"|\b(takes?|taking|in|into|no) effect\b/gi;
     const found: string[] = [];
     for (const path of userPages()) {
       read(path).split("\n").forEach((line, index) => {

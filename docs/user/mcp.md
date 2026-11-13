@@ -212,7 +212,42 @@ server from `.mcp.json`:
 claude --dangerously-load-development-channels server:operad
 ```
 
+## Lead permissions
+
+The server may run only the actions `mcp.actions` names; every other action is
+the owner's, and `show` lists it under `ownerActions` instead. An action that
+carries `confirm: true` also needs `mcp.confirmActions` to name it. The
+settings are in `config.json` and are read when `operad mcp` starts:
+
+| Key | Type | Default | Allowed values | When it takes effect |
+|---|---|---|---|---|
+| `mcp` | object | see the keys below | `channel`, `actions`, `confirmActions` | When `operad mcp` starts. |
+| `mcp.actions` | array of strings | `["dev:rework", "dev:reverify", "dev:reject", "dev:priority", "dev:concurrency", "chat:close"]` | `plugin:action` names | When `operad mcp` starts: the actions the lead may run. Any other action is refused with a message naming it and saying the owner runs it. |
+| `mcp.confirmActions` | array of strings | `["chat:close"]` | `plugin:action` names | When `operad mcp` starts: the allowed actions that also carry `confirm: true`. An action that is only in `actions` and asks to confirm is refused; one only in this list is refused too. |
+| `mcp.channel` | object | see the two keys below | `notify`, `loopAfter` | When `operad mcp --claude-channel` starts. |
+| `mcp.channel.notify` | array of strings | `["waiting", "ended", "loop"]` | `waiting`, `ended`, `loop`, `changes` | When the channel starts: what sends a block. `waiting` is a wait opening; `ended` a final state; `loop` the same state reached `loopAfter` times with no wait or end between; `changes` every state change. An unknown value is a config error naming it. |
+| `mcp.channel.loopAfter` | integer | `3` | A whole number from 2 | When the channel starts: how many times in a row an object reaches the same state before a `loop` block. A value below 2 is a config error naming it. |
+
+`mcp.actions` and `mcp.confirmActions` never change an action already running.
+The MCP server never offers the owner's actions as its own; `show` lists them
+separately so the lead can tell the owner what to run.
+
 ## Tools
+
+| Tool | Required arguments | What it returns |
+|---|---|---|
+| `types` | none | `{ "types": [...] }`, the same list as `GET /v1/types`. |
+| `list` | none; one of `type`, `root`, `parent` is needed | `{ "rows": [...], "next": "<c>" }`, the same page as `GET /v1/objects`. |
+| `show` | `id` | The object with its row, sections, allowed actions and `ownerActions`. |
+| `section` | `id`, `section` | `{ "markdown", "next", "mark", "tail", "delta" }`, the same read as the HTTP section call; optional `cursor`, `after`, `full`. |
+| `pending` | none | `{ "items": [...] }`, with only the actions the lead may run. |
+| `answer` | `runId`, `waitId`, `choice` | `{ "runId", "waitId", "choice" }`; optional `note`, `confirmed`. |
+| `running` | none | `{ "items": [...], "load": { "load1", "cores" } }`. |
+| `history` | `id` | `{ "id", "markdown", "next" }`, the History section. |
+| `command` | `plugin`, `verb` | The plugin verb's value, the same as `operad <plugin> <verb>`; optional `args` and `input`. |
+| `act` | `action` | The action record; optional `id`, `args`, `note`. |
+
+The rest of this page gives each tool's full input schema and the result shape.
 
 The tool table is exported as `TOOLS` from `@operad-io/mcp`; the server serves
 that same table. Every result is a normal MCP tool result with
