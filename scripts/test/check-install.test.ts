@@ -88,7 +88,7 @@ describe("scripts/check-install.ts", () => {
       expect(code).toBe(1);
       expect(err.trim().split("\n")).toHaveLength(1);
       // Only the first three missing links are named, and which ones come first depends on the packages there are.
-      expect(err).toMatch(/packages\/[a-z-]+\/node_modules\/@operad-io\/access-match/);
+      expect(err).toMatch(/packages\/(?:[a-z-]+\/)?[a-z-]+\/node_modules\/@operad-io\/access-match/);
       expect(err).toContain("run bun install");
     } finally {
       rmSync(dir, { recursive: true, force: true });
