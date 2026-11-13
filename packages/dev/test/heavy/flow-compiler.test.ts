@@ -177,6 +177,17 @@ test("a work stage's pool reaches the compiled work step (T-0379)", () => {
   expect(stepOf(flow.steps, "work").params).toEqual({ use: "dev/work", params: { flowPool: "image" } });
 });
 
+test("a work stage's workerBrief and commit reach the compiled work step (T-0380)", () => {
+  const flow = compileDevFlow("image", [
+    { stage: "work", workerBrief: ".operad/image.md", commit: true },
+    { stage: "human" },
+  ]);
+  expect(stepOf(flow.steps, "work").params).toEqual({
+    use: "dev/work",
+    params: { flowWorkerBrief: ".operad/image.md", flowCommit: true },
+  });
+});
+
 test("stage parameters reach the compiled steps", () => {
   const flow = compileDevFlow("params", [
     { stage: "work", use: "claude/agent", args: ["--model", "x"], brief: "short" },

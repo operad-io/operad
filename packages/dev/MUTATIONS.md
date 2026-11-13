@@ -1042,3 +1042,13 @@ the row fields.
 | T-0379-M7 | packages/dev/src/schedule.ts | `poolOf` read the pool from current dev.json instead of the task's stored graph | `each pool counts its own running tasks > a running task keeps the pool of the graph it started with when dev.json changes` |
 | T-0379-M8 | packages/dev/src/steps.ts | `poolParams` left out `countPrefix`, so each pool counted a shared worker separately | `dev/work with workers > a worker shared by two pools has one count, whichever pool asks` |
 | T-0379-M9 | packages/dev/src/schedule.ts | `storedGraphPool` looked for step ids `work`, `work_<n>` again instead of the step's `dev/work` call | `each pool counts its own running tasks > a renamed work step still gives the task its pool` |
+
+## T-0380 — work stage `workerBrief` and `commit`
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0380-M1 | packages/dev/src/steps.ts | `readWorkerBrief` ignored the stage's file and read the repository's | `a work stage's workerBrief replaces the repository's brief (T-0380)` |
+| T-0380-M2 | packages/dev/src/steps.ts | the commit ran whatever `flowCommit` said | `a work stage with commit false leaves the worktree untouched (T-0380)` |
+| T-0380-M3 | packages/dev/src/steps.ts | the commit message left out the task id | `a work stage with commit true commits what the worker wrote (T-0380)` |
+| T-0380-M4 | packages/dev/src/settings.ts | loading accepted a `workerBrief` file that does not exist | `a work stage's workerBrief file must exist (T-0380)` |
+| T-0380-M5 | packages/dev/src/flow-compiler.ts | `workParams` dropped `flowCommit` | `a work stage's workerBrief and commit reach the compiled work step (T-0380)` |

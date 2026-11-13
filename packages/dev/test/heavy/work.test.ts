@@ -1,7 +1,8 @@
 import { createPoolPlugin } from "@operad-io/pool";
 import { FilePlaces } from "@operad-io/pool";
 import { afterAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
   definePlugin,
@@ -18,6 +19,7 @@ import {
   taskData,
   taskViews,
 } from "../../src/index.ts";
+import { readDevSettings } from "../../src/settings.ts";
 import {
   advanceMain,
   commitIn,
@@ -297,7 +299,7 @@ function runWork(
   state: Fixture,
   runId = "work-run",
   onEvent: (plugin: string, type: string) => void = () => undefined,
-  params?: Readonly<Record<string, string>>,
+  params?: Readonly<Record<string, string | boolean>>,
 ) {
   return state.registry.runStep("dev/work", {}, {
     runId,
@@ -632,6 +634,64 @@ describe("dev/work", () => {
     const without = await fixture("nothing", { workerBrief: "Repository brief." });
     await runWork(without);
     expect(readRecord(without).prompt).not.toContain("Keep the diff small.");
+  });
+
+  test("a work stage's workerBrief replaces the repository's brief (T-0380)", async () => {
+    const state = await fixture("nothing", { workerBrief: "Repository brief." });
+    writeFileSync(join(state.remote.repository, ".operad", "image-brief.md"), "Image brief: draw it yourself.");
+    await runWork(state, "work-run", () => undefined, {
+      flowWorkerBrief: ".operad/image-brief.md",
+      flowBrief: "Keep it small.",
+    });
+    const { prompt } = readRecord(state);
+    expect(prompt.startsWith("Image brief: draw it yourself.")).toBe(true);
+    expect(prompt).not.toContain("Repository brief.");
+    expect(prompt.endsWith("\n\nKeep it small.")).toBe(true);
+  });
+
+  test("a work stage's workerBrief file must exist (T-0380)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "operad-wb-"));
+    mkdirSync(join(dir, ".operad"));
+    writeFileSync(
+      join(dir, ".operad", "dev.json"),
+      JSON.stringify({
+        flows: { image: { stages: [{ stage: "work", workerBrief: ".operad/missing.md" }, { stage: "human" }] } },
+      }),
+    );
+    let message = "";
+    try {
+      await readDevSettings(dir);
+    } catch (error) {
+      message = String(error);
+    }
+    expect(message).toContain("flows.image.stages[0].workerBrief");
+    writeFileSync(join(dir, ".operad", "missing.md"), "here now");
+    await readDevSettings(dir);
+  });
+
+  test("a work stage with commit true commits what the worker wrote (T-0380)", async () => {
+    const state = await fixture("dirty");
+    const result = await runWork(state, "work-run", () => undefined, { flowCommit: true });
+    expect(result.result).toBe("done");
+    const path = join(state.remote.repository, ".operad-worktrees", state.taskId);
+    expect(gitOrThrow(path, ["status", "--porcelain"]).trim()).toBe("");
+    const subject = gitOrThrow(path, ["log", "-1", "--format=%s"]).trim();
+    expect(subject.startsWith(`${state.taskId}: `)).toBe(true);
+    expect(gitOrThrow(path, ["show", "--stat", "--format=", "HEAD"])).toContain("dirty.txt");
+  });
+
+  test("a work stage with commit true and nothing left is not an error (T-0380)", async () => {
+    const state = await fixture("nothing");
+    const result = await runWork(state, "work-run", () => undefined, { flowCommit: true });
+    expect(result.result).toBe("nothing");
+  });
+
+  test("a work stage with commit false leaves the worktree untouched (T-0380)", async () => {
+    const state = await fixture("dirty");
+    const result = await runWork(state);
+    expect(result.result).toBe("failed");
+    const path = join(state.remote.repository, ".operad-worktrees", state.taskId);
+    expect(gitOrThrow(path, ["status", "--porcelain"])).toContain("dirty.txt");
   });
 
   test("a conflict left by the worktree step starts the prompt", async () => {

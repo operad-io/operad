@@ -58,6 +58,8 @@
             "use": { "description": "The harness step, such as radian/agent; unset uses the repository's worker.", "type": "string", "minLength": 1 },
             "args": { "description": "Arguments for the harness step; unset uses the worker's own.", "type": "array", "items": { "type": "string" } },
             "pool": { "description": "The pool this stage takes its workers from; unset is default. The name must be in pools.", "type": "string", "minLength": 1 },
+            "workerBrief": { "description": "A file, relative to the repository, whose text replaces the repository's workerBrief for this stage. The file must exist.", "type": "string", "minLength": 1 },
+            "commit": { "description": "When true, after the worker ends done, dev commits every change left in the worktree with the message '<task id>: <task title>'. Default false: the worker commits itself.", "type": "boolean" },
             "brief": { "description": "Extra instructions appended to the worker's prompt.", "type": "string", "minLength": 1 },
             "beforeAttempt": { "description": "The preparation before the attempt: merge-main (fetch and merge the latest main) or none. Unset leaves the worktree step's merge in force.", "type": "string", "enum": ["merge-main", "none"] }
           },
