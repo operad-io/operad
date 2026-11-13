@@ -2338,9 +2338,12 @@ async function loadTui(home: string): Promise<TuiRunner> {
     version: ENGINE_VERSION,
     from: import.meta.dir,
   });
+  // A string variable keeps the type checker from requiring the package,
+  // which the CLI deliberately does not depend on.
+  const entry: string = "@operad-io/tui/app";
   const loaded = (
     installed === undefined
-      ? await import("@operad-io/tui/app")
+      ? await import(entry)
       : await import(pathToFileURL(installed).href)
   ) as { readonly runTui: TuiRunner };
   return loaded.runTui;
