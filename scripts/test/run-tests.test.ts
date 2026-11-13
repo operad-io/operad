@@ -68,8 +68,7 @@ function heavyTest(root: string, failing = false): void {
     root,
     "packages/a/test/heavy/heavy.test.ts",
     `import { expect, test } from "bun:test";
-test("heavy takes a while", async () => {
-  await new Promise((r) => setTimeout(r, 80));
+test("heavy runs", () => {
   expect(1).toBe(${failing ? 2 : 1});
 });
 `,
@@ -104,7 +103,7 @@ describe("run-tests.sh", () => {
     heavyTest(root);
     const { code, out } = run(root, times, []);
     expect(code).toBe(0);
-    expect(out).toContain("heavy takes a while");
+    expect(out).toContain("heavy runs");
     expect(readFileSync(times, "utf8").trim()).toMatch(
       new RegExp(
         String.raw`^date=\d{4}-\d\d-\d\dT[\d:]+Z commit=\S+ tests=4 together=\d+ heavy=\d+ total=\d+ parallel=${parallel} heavyParallel=2 result=pass$`,
@@ -131,7 +130,7 @@ describe("run-tests.sh", () => {
     );
     const { code, out } = run(root, join(root, "times"), ["a"]);
     expect(code).toBe(0);
-    expect(out).toContain("heavy takes a while");
+    expect(out).toContain("heavy runs");
     expect(out).not.toContain("b is heavy and fails");
   });
 
@@ -140,7 +139,7 @@ describe("run-tests.sh", () => {
     heavyTest(root, true);
     const { code, out } = run(root, times, []);
     expect(code).not.toBe(0);
-    expect(out).toContain("heavy takes a while");
+    expect(out).toContain("heavy runs");
     expect(readFileSync(times, "utf8")).toContain("heavy=");
     expect(readFileSync(times, "utf8")).toContain("result=fail");
   });
@@ -150,7 +149,7 @@ describe("run-tests.sh", () => {
     heavyTest(root);
     const { code, out } = run(root, times, [], { OPERAD_TEST_OVERLAP: "1" });
     expect(code).toBe(0);
-    expect(out).toContain("heavy takes a while");
+    expect(out).toContain("heavy runs");
     expect(readFileSync(times, "utf8").trim()).toMatch(
       new RegExp(
         String.raw`tests=4 together=\d+ heavy=\d+ total=\d+ parallel=${parallel} heavyParallel=2 result=pass$`,
@@ -163,7 +162,7 @@ describe("run-tests.sh", () => {
     heavyTest(root, true);
     const { code, out } = run(root, times, [], { OPERAD_TEST_OVERLAP: "1" });
     expect(code).not.toBe(0);
-    expect(out).toContain("heavy takes a while");
+    expect(out).toContain("heavy runs");
     expect(readFileSync(times, "utf8")).toContain("result=fail");
   });
 

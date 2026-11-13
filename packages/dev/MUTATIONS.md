@@ -1080,3 +1080,11 @@ the row fields.
 | T-0387-M2 | packages/dev/src/mainclone.ts | a fast-forwarded clone ran no prepare line | `a fast-forwarded clone runs each prepare line in order in the clone` |
 | T-0387-M3 | packages/dev/src/mainclone.ts | removed the empty-`prepare` early return, so a repository without `prepare` still ran a command | `no prepare lines run no command` |
 | T-0387-M4 | packages/dev/src/mainclone.ts | a clone already at the target ran the prepare lines too | `a clone that did not move runs nothing` |
+
+## T-0394 — test slimming follow-ups
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0394-M1 | packages/dev/test/fixtures/hold.ts | the watcher no longer checked that its owner was alive, so a hold whose owner was killed ran to its lifetime | `a task cancelled in the integrate step > its check's hold ends when the process that owns it is killed` |
+| T-0394-M2 | packages/dev/test/fixtures/hold.ts | the lifetime backstop reported itself as the owner check | `the hold fixture > ends at its lifetime even when its owner lives` |
+| T-0394-M3 | packages/dev/test/fixtures/hold.ts | the wait used bash's `read -t`/`read -u` again, which dash rejects, so it spun instead of reading the fifo | `the hold fixture > blocks under POSIX sh until the release line arrives` |
