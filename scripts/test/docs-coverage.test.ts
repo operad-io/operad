@@ -543,7 +543,8 @@ describe("the user docs", () => {
     expect([...examples.keys()].filter((name) => !expected.includes(name))).toEqual([]);
     for (const name of expected) {
       const found = examples.get(name) ?? [];
-      expect({ name, count: found.length }).toEqual({ name, count: 1 });
+      // At least one example; dev.json has a second, for a repository that is not JavaScript.
+      expect({ name, some: found.length > 0 }).toEqual({ name, some: true });
       const file = schemaFiles().find((path) => basename(path) === name);
       if (file === undefined) throw new Error(`no schema file named ${name}`);
       const schema = JSON.parse(read(file)) as Json;

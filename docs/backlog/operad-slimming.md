@@ -47,6 +47,7 @@
 ## 决定（已定，2026-11-11 owner）
 
 1. **B2：只留 `sqlite`，去掉 `jsonl`。** `operad.md` 决定 13 同日改为只自带 `sqlite`；日志接口和一致性测试留着。代价是存储不再能直接读、直接 diff，接受。起因：切到 `sqlite` 之后，T-0251 为了让 `jsonl` 每个 tick 的开销不随历史增长改了十轮，而默认后台和大多数测试还在用 `jsonl`。要删的：`log/jsonl.ts`、`plugin/file-store.ts`，以及只为两种存储互相转换才有的代码（`store copy`/`store use` 的转换部分）；默认后台改为 `sqlite`；测试改用 `sqlite` 或内存实现。harness 的工作日志（`harness-process` 的 `JsonlLog`）不是存储，不在此列。还在用 `jsonl` 的家目录不考虑（待决问题 2 已答）。
+2. **B1 的一项：删掉 engine 的 `MOVED_MODULES`**（2026-11-13 owner 同意，T-0390 已删）。配置里写旧模块名 `@operad-io/engine/shell` 的不再自动改成 `@operad-io/shell`，要写新名字；owner 的家目录已经是新名字。起因：`operad-open-framework.md` 定了 engine 不出现任何插件名。B1 的其余各项（`dev` 的旧设置、旧 id、旧对象迁移、旧 review 记录）仍未定。
 
 ## 待决问题（未定）
 

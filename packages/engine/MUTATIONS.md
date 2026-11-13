@@ -781,3 +781,9 @@ the row fields.
 | T-0385-M4 | packages/engine/src/plugin/object-facts.ts | folding no longer read a fact written as an old full snapshot | `dev views > the answer section gives the same output from old full snapshots as from changes` |
 | T-0385-M5 | packages/engine/src/plugin/sqlite-store.ts | the migration returned without rewriting any full snapshot | `object facts hold changes > an old full-snapshot store is migrated once, keeping facts and appended data` |
 | T-0385-M10 | packages/engine/src/plugin/sqlite-store.ts | a put read the previous version before taking the write lock, so a concurrent commit was missing from its change | `object facts hold changes > a put diffs against the version committed while it waited for the lock` |
+
+## T-0390-boundary-and-example — rework 1
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0390-M2 | packages/engine/src/util.ts | a string literal `"@operad-io/shell"` was put back in the engine | `the kernel boundary > the engine's source has no shipped plugin's name or action name` |
