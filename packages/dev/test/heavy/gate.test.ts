@@ -1595,7 +1595,7 @@ describe("dev/review fallback and retry", () => {
     const message = String(result.data?.message);
     expect(message).toContain("primary was unavailable");
     expect(message).toContain("fallback first was unavailable");
-    expect(message).toContain("fallback second reviewed");
+    expect(message).toContain("fallback[1] second reviewed");
     expect(state.reviewer.calls.map((call) => call.args)).toEqual([
       ["unavailable", "--model", "primary"],
       ["unavailable", "--model", "first"],
@@ -1616,7 +1616,7 @@ describe("dev/review fallback and retry", () => {
     await verify(state);
     const result = await review(state, "review-fallback-list-failed");
     expect(result.result).toBe("pass");
-    expect(String(result.data?.message)).toContain("fallback second reviewed");
+    expect(String(result.data?.message)).toContain("fallback[1] second reviewed");
   }, 30_000);
 
   test("a fallback that times out twice passes to the next one", async () => {
@@ -1631,7 +1631,7 @@ describe("dev/review fallback and retry", () => {
     const result = await review(state, "review-fallback-list-timeout");
     expect(result.result).toBe("pass");
     expect(String(result.data?.message)).toContain("fallback first timed out");
-    expect(String(result.data?.message)).toContain("fallback second reviewed");
+    expect(String(result.data?.message)).toContain("fallback[1] second reviewed");
     expect(state.reviewer.calls.map((call) => call.args[2])).toEqual([
       "primary",
       "first",
@@ -1654,7 +1654,7 @@ describe("dev/review fallback and retry", () => {
     const message = String(result.data?.message);
     expect(message).toContain("primary was unavailable");
     expect(message).toContain("fallback first");
-    expect(message).toContain("fallback second");
+    expect(message).toContain("fallback[1] second");
     expect(state.reviewer.calls.map((call) => call.args[2])).toEqual([
       "primary",
       "first",
@@ -1686,7 +1686,7 @@ describe("dev/review fallback and retry", () => {
     const message = String(result.data?.message);
     expect(message).toContain("primary was unavailable");
     expect(message).toContain("fallback first was unavailable");
-    expect(message).toContain("fallback second was unavailable");
+    expect(message).toContain("fallback[1] second was unavailable");
     const task = await taskOf(state);
     expect(task.attempt?.review?.decision).toBe("unavailable");
   });
