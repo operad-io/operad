@@ -7,8 +7,10 @@ import {
   openLog,
   PluginRegistry,
   type PendingItem,
+  type StepContext,
 } from "@operad-io/engine";
 import plugin from "../../src/index.ts";
+import { saveTaskGuarded } from "../../src/steps.ts";
 import { trackFlakyTests } from "../../src/flaky.ts";
 import { repositoryMark } from "../../src/marks.ts";
 import { bareId, listAll, planData, repositoryData, taskData } from "../../src/model.ts";
@@ -19,8 +21,6 @@ import {
   cancelTask,
   confirmPlan,
   confirmTask,
-  refreshPlanCounts,
-  refreshRepositoryCounts,
   setTaskPhase,
 } from "../../src/service.ts";
 import { cleanupTempRoots, guardLockHandles, makeGitRepository, storeAt, tempRoot } from "../support.ts";
@@ -164,10 +164,8 @@ describe("a proposed task is pending", () => {
 
 describe("an integrating task counts as running, not as waiting for a person", () => {
   async function rows(s: Setup) {
-    const plan = await s.store.get("plan", s.plan.id);
-    if (plan === undefined) throw new Error("no plan");
-    await refreshPlanCounts(s.store, plan);
-    await refreshRepositoryCounts(s.store, "demo");
+    // The scheduler's own tick recounts the plan; the plan write refreshes the repository.
+    await s.registry.tick();
     return {
       plan: (await s.views.get(`plan:${s.plan.id}`)).row,
       repository: {
@@ -180,8 +178,10 @@ describe("an integrating task counts as running, not as waiting for a person", (
     const task = (await listAll(s.store, "task"))[0];
     if (task === undefined) throw new Error("no task");
     const data = taskData(task.data);
-    await s.store.put(
-      "task",
+    const ctx = { store: s.store, runId: "run-1", params: null, home: s.root } as unknown as StepContext;
+    // The write the integrate step makes, with its claim check and repository lock.
+    const written = await saveTaskGuarded(
+      ctx,
       task.id,
       {
         ...data,
@@ -193,8 +193,9 @@ describe("an integrating task counts as running, not as waiting for a person", (
           ...(integrating ? { integrating: "run-1" } : {}),
         },
       },
-      "test:waiting",
+      "dev:integrate",
     );
+    if (!written) throw new Error("the guarded write was refused");
   }
 
   test("integrating: running marks and no waiting note", async () => {
@@ -209,8 +210,9 @@ describe("an integrating task counts as running, not as waiting for a person", (
   test("ready to merge with auto off: the plan waits", async () => {
     const s = await setup();
     await waitingTask(s, false);
-    const { plan } = await rows(s);
+    const { plan, repository } = await rows(s);
     expect(plan.mark).toBe("waiting");
     expect(plan.note).toContain("1 waiting");
+    expect(repository.mark).not.toBe("running");
   });
 });

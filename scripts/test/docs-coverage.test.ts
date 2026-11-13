@@ -322,7 +322,6 @@ function docsPages(): string[] {
   return [
     ...walk(userDir, (path) => path.endsWith(".md")),
     ...walk(join(root, "docs", "plugins"), (path) => path.endsWith(".md")),
-    join(root, "docs", "dogfood.md"),
   ].sort();
 }
 
