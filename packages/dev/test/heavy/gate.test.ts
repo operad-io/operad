@@ -1,7 +1,7 @@
 import { listAll } from "../../src/model.ts";
 import type { ReviewSettingsUsed } from "../../src/rework.ts";
 import { chmodSync } from "node:fs";
-import { afterAll, afterEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
   appendFileSync,
   existsSync,
@@ -3005,6 +3005,14 @@ describe("the dev flow", () => {
 });
 
 describe("dev/verify reruns only the failed tests", () => {
+  // A pass on a busy machine is not counted as flaky, so these tests read a
+  // quiet load of their own, never the host's.
+  beforeEach(() => {
+    notCodeTestHooks.load = () => ({ load1: 0, cores: 10 });
+  });
+  afterEach(() => {
+    notCodeTestHooks.load = undefined;
+  });
   const MATCH = "^\\(fail\\) (.+?) \\[[0-9.]+m?s\\]$";
   const failing = (...names: string[]): string =>
     `${names.map((name) => `echo ${JSON.stringify(`(fail) ${name} [1.00ms]`)} >&2`).join("; ")}; exit 1`;

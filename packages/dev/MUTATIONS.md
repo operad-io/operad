@@ -1086,3 +1086,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0390-M1 | packages/dev/src/gate.ts | a comment naming `bun test` and `packages/dev` was put back | `the kernel boundary > the dev plugin's source has no bun, bun.lock, scripts/, CLAUDE.md or packages/` |
+
+## T-0395-flaky-dev-verify-reruns-only-the-failed-tests-a — the rerun tests read an injected load
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0395-M1 | packages/dev/test/heavy/gate.test.ts | the load injected for `dev/verify reruns only the failed tests` was the busy one the failing checks saw (33.92 on 16 cores) instead of a quiet one | `dev/verify reruns only the failed tests > a failed test that passes alone passes the check, is reported and counted` and `... an earlier attempt's names in the run log do not stop this attempt's rerun` |
