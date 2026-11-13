@@ -16,9 +16,17 @@ test("the stdio program takes --home, and the configured home without it", () =>
   expect(homeFromArgs(["--home"])).toBe(defaultOperadHome());
 });
 
-test("the default policy lets a lead run the confirmed chat:close, and still refuses an unlisted confirmed action", async () => {
+test("with no mcp config the policy allows no action; the configured lists decide", async () => {
   const { actionMayRun, mcpPolicy } = await import("../src/policy.ts");
-  const policy = mcpPolicy(undefined);
+  const none = mcpPolicy(undefined);
+  expect(actionMayRun(none, { name: "chat:close", confirm: true })).toBe(false);
+  expect(actionMayRun(none, { name: "dev:rework", confirm: false })).toBe(false);
+  const policy = mcpPolicy({
+    channel: DEFAULT_MCP_CHANNEL,
+    actions: ["chat:close", "dev:merge"],
+    confirmActions: ["chat:close"],
+  });
   expect(actionMayRun(policy, { name: "chat:close", confirm: true })).toBe(true);
   expect(actionMayRun(policy, { name: "dev:merge", confirm: true })).toBe(false);
+  expect(actionMayRun(policy, { name: "dev:rework", confirm: false })).toBe(false);
 });

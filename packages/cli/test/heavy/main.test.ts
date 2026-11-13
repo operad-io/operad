@@ -6,6 +6,7 @@ import {
   SqlitePluginStore,
   Runner,
   answerRun,
+  ensureConfig,
   loadPluginRegistry,
   openConfigLog,
   readConfig,
@@ -13,6 +14,7 @@ import {
   storeRootOf,
 } from "@operad-io/engine";
 import { addRepository } from "../../../dev/src/service.ts";
+import { distributionConfig } from "../../src/defaults.ts";
 import { main, type CliIo } from "../../src/main.ts";
 import { cleanupTempRoots, tempRoot } from "../../../engine/test/plugin/support.ts";
 import { fakeRadian } from "../../../harness/radian/test/support.ts";
@@ -168,6 +170,10 @@ describe("operad command", () => {
             enabled: true,
           },
           dev: { module: "@operad-io/dev", enabled: true },
+        },
+        mcp: {
+          actions: ["dev:rework", "dev:reverify", "dev:reject", "dev:priority", "dev:concurrency", "chat:close"],
+          confirmActions: ["chat:close"],
         },
       });
       const config = JSON.parse(
@@ -602,6 +608,23 @@ describe("operad command", () => {
     const disabled = capture();
     expect(await main(["plugin", "disable", "notes"], { home, io: disabled.io })).toBe(0);
     expect(disabled.text()).toContain("notes: disabled");
+  });
+
+  test("plugin enable pool works on a fresh init home and keeps its plugins and mcp lists", async () => {
+    const root = await tempRoot();
+    const fresh = join(root, "home");
+    {
+      await ensureConfig(fresh, distributionConfig(fresh));
+      const out = capture();
+      expect(await main(["plugin", "enable", "pool"], { home: fresh, io: out.io })).toBe(0);
+      const written = JSON.parse(readFileSync(join(fresh, "config.json"), "utf8")) as {
+        plugins: Record<string, unknown>;
+        mcp: { actions: string[] };
+      };
+      expect(Object.keys(written.plugins)).toEqual(["shell", "radian", "chat", "dev", "pool"]);
+      expect(written.mcp.actions).toContain("dev:rework");
+      expect(written.mcp.actions.some((name) => name.startsWith("pool:"))).toBe(false);
+    }
   });
 
   test("plugin enable adds a shipped plugin the default config leaves out", async () => {

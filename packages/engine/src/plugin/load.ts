@@ -5,7 +5,7 @@ import { pathToFileURL } from "node:url";
 import { readConfig, type PluginConfigEntry } from "../config/config.ts";
 import { messageOf, PluginError } from "./errors.ts";
 import { defaultOperadHome } from "./home.ts";
-import { INSTALL_ON_ENABLE, installedPackageFile, runningFromWorkspace } from "./install.ts";
+import { installedPackageFile, runningFromWorkspace } from "./install.ts";
 import { keysPathFor, readKeysFile } from "./keys.ts";
 import { PluginRegistry } from "./registry.ts";
 import type { PluginRegistryOptions } from "./registry.ts";
@@ -16,6 +16,12 @@ export interface LoadPluginRegistryOptions extends PluginRegistryOptions {
   readonly configPath?: string | undefined;
   /** Defaults to `<home>/keys.json`. */
   readonly keysPath?: string | undefined;
+  /**
+   * Plugins whose package the distribution installs into the home when a person
+   * enables them. A missing one is reported with the command that installs it.
+   * Empty by default: the engine names no plugin.
+   */
+  readonly installOnEnable?: readonly string[] | undefined;
 }
 
 let loadCount = 0;
@@ -188,7 +194,7 @@ export async function loadConfiguredPlugins(
     } catch (error) {
       if (
         entry.name !== undefined &&
-        INSTALL_ON_ENABLE.includes(entry.name) &&
+        (options.installOnEnable ?? []).includes(entry.name) &&
         installed === undefined &&
         !runningFromWorkspace()
       ) {

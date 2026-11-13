@@ -222,8 +222,8 @@ settings are in `config.json` and are read when `operad mcp` starts:
 | Key | Type | Default | Allowed values | When it takes effect |
 |---|---|---|---|---|
 | `mcp` | object | see the keys below | `channel`, `actions`, `confirmActions` | When `operad mcp` starts. |
-| `mcp.actions` | array of strings | `["dev:rework", "dev:reverify", "dev:reject", "dev:priority", "dev:concurrency", "chat:close"]` | `plugin:action` names | When `operad mcp` starts: the actions the lead may run. Any other action is refused with a message naming it and saying the owner runs it. |
-| `mcp.confirmActions` | array of strings | `["chat:close"]` | `plugin:action` names | When `operad mcp` starts: the allowed actions that also carry `confirm: true`. An action that is only in `actions` and asks to confirm is refused; one only in this list is refused too. |
+| `mcp.actions` | array of strings | `[]` (`operad init` writes the five `dev` lead actions and `chat:close` into a new file) | `plugin:action` names | When `operad mcp` starts: the actions the lead may run. Any other action is refused with a message naming it and saying the owner runs it. |
+| `mcp.confirmActions` | array of strings | `[]` (`operad init` writes `["chat:close"]` into a new file) | `plugin:action` names | When `operad mcp` starts: the allowed actions that also carry `confirm: true`. An action that is only in `actions` and asks to confirm is refused; one only in this list is refused too. |
 | `mcp.channel` | object | see the two keys below | `notify`, `loopAfter` | When `operad mcp --claude-channel` starts. |
 | `mcp.channel.notify` | array of strings | `["waiting", "ended", "loop"]` | `waiting`, `ended`, `loop`, `changes` | When the channel starts: what sends a block. `waiting` is a wait opening; `ended` a final state; `loop` the same state reached `loopAfter` times with no wait or end between; `changes` every state change. An unknown value is a config error naming it. |
 | `mcp.channel.loopAfter` | integer | `3` | A whole number from 2 | When the channel starts: how many times in a row an object reaches the same state before a `loop` block. A value below 2 is a config error naming it. |
@@ -231,6 +231,11 @@ settings are in `config.json` and are read when `operad mcp` starts:
 `mcp.actions` and `mcp.confirmActions` never change an action already running.
 The MCP server never offers the owner's actions as its own; `show` lists them
 separately so the lead can tell the owner what to run.
+
+With no `mcp.actions` in `config.json` the lead may run no action. A home made
+before `operad init` wrote these lists may lack them; add the lines from
+[config.json](config.md) to its `mcp` section and restart `operad mcp`. Enabling
+a plugin later does not add its actions; list them by hand.
 
 ## Tools
 

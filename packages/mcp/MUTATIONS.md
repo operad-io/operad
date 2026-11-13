@@ -89,3 +89,4 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0361-M8 | packages/mcp/src/tools.ts | the `section` tool dropped its `after` argument instead of passing it on | `operad mcp > initializes, lists the table and reads every tool on fixture objects` |
+| T-0389-M1 | packages/mcp/src/policy.ts | `mcpPolicy(undefined)` fell back to a list naming `chat:close` instead of allowing nothing | `with no mcp config the policy allows no action; the configured lists decide` |
