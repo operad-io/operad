@@ -22,7 +22,7 @@ operad plugin enable claude
 ```
 
 That installs `@operad-io/harness-claude` and the Agent SDK client it needs into
-a Bun project under `~/.operad/plugins`. It does not install Claude Code: use the
+a Bun project under `~/.operad/plugins`. It does not install `claude` itself: use the
 `claude` command you already installed and logged in to. The first enable needs
 network access to the npm registry. `operad plugin check claude` says what to run
 when it is not installed.
