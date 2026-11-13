@@ -957,6 +957,21 @@ export function startShell(deps: TuiShellDeps): TuiShell {
   }
 
   /**
+   * The typed id of an object a pending or running row names (their ids are
+   * `<type>:<id>`), for an event that publishes the bare id.
+   */
+  function typedFromLists(id: string): string | undefined {
+    for (const tab of state.tabs) {
+      if (tab.kind !== "pending" && tab.kind !== "running") continue;
+      const found = tab.list.rows.find(
+        (row) => row.id.includes(":") && sameObject(row.id, id),
+      );
+      if (found !== undefined) return found.id;
+    }
+    return undefined;
+  }
+
+  /**
    * Fetches one row again. An object that no open list holds yet (a new one)
    * refetches the list of its type instead.
    */
@@ -979,7 +994,7 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     const requestId =
       knownRow?.type !== undefined && !knownRow.id.startsWith(`${knownRow.type}:`)
         ? `${knownRow.type}:${knownRow.id}`
-        : knownRow?.id ?? wire(id);
+        : knownRow?.id ?? typedFromLists(id) ?? wire(id);
     const result = await settle(read.call(client, requestId, signal));
     if (signal.aborted || finished) return;
     if (!result.ok) {
