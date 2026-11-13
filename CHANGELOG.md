@@ -71,8 +71,8 @@ The first public release. Install it with `bun add -g @operad-io/cli`; it needs
 
 ### Telegram
 
-- `@operad-io/telegram` is new and optional: `operad plugin enable telegram`
-  and `operad secret set telegram token`.
+- `@operad-io/telegram` is optional: `operad plugin enable telegram` and
+  `operad secret set telegram token`.
 - A listed Telegram user's private messages open and continue a chat on a bot.
   Each reply of that chat is sent back to Telegram, and pending items of a bound
   chat, and of the plugins you list, are sent too. A restart neither repeats a
