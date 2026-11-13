@@ -1,6 +1,11 @@
 <p align="center"><b>English</b> · <a href="README.zh-CN.md">中文</a></p>
 
-<h1 align="center">operad</h1>
+<p align="center">
+<picture>
+<source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-dark.png">
+<img alt="operad" src="docs/assets/logo-light.png" width="320">
+</picture>
+</p>
 
 <p align="center"><b>An open orchestration layer for coding agents.</b><br>
 Run any agent through verified flows: plan, work, verify, review, merge.</p>

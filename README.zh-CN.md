@@ -1,6 +1,11 @@
 <p align="center"><a href="README.md">English</a> · <b>中文</b></p>
 
-<h1 align="center">operad</h1>
+<p align="center">
+<picture>
+<source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-dark.png">
+<img alt="operad" src="docs/assets/logo-light.png" width="320">
+</picture>
+</p>
 
 <p align="center"><b>编码 agent 的开放编排层。</b><br>
 让任何 agent 走一条经过验证的流程：计划、开发、检查、评审、合并。</p>
