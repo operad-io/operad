@@ -2,6 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
+import { workspacePackages } from "../changed-packages.ts";
 
 const roots: string[] = [];
 afterAll(() => {
@@ -10,8 +11,8 @@ afterAll(() => {
 
 const packages = [
   "engine",
-  "harness/process",
   "mcp",
+  "harness/process",
   "access-match",
   "shell",
   "chat",
@@ -115,6 +116,42 @@ describe("publish.sh", () => {
     const lines = readFileSync(calls, "utf8").trim().split("\n");
     expect(lines.some((line) => line.startsWith("publish ") && line.includes("/engine.tgz"))).toBe(false);
     expect(lines.filter((line) => line.startsWith("publish "))).toHaveLength(packages.length - 1);
+  });
+
+  test("the real order puts every package after its @operad-io dependencies", () => {
+    const root = dirname(dirname(import.meta.dir));
+    const text = readFileSync(join(root, "scripts", "publish.sh"), "utf8");
+    const block = /packages=\(\n([\s\S]*?)\n\)/.exec(text)?.[1] ?? "";
+    const listed = block
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0 && !line.startsWith("#"));
+    const position = new Map(listed.map((directory, index) => [directory, index]));
+    const manifests = workspacePackages(root).map((directory) => {
+      const manifest = JSON.parse(
+        readFileSync(join(root, "packages", directory, "package.json"), "utf8"),
+      ) as { name: string; private?: boolean; dependencies?: Record<string, string> };
+      return { directory, manifest };
+    });
+    const byName = new Map(manifests.map(({ directory, manifest }) => [manifest.name, directory]));
+    for (const { directory, manifest } of manifests) {
+      if (manifest.private === true) continue;
+      expect({ directory, listed: position.has(directory) }).toEqual({ directory, listed: true });
+      for (const dependency of Object.keys(manifest.dependencies ?? {})) {
+        if (!dependency.startsWith("@operad-io/")) continue;
+        const dependencyDirectory = byName.get(dependency);
+        expect({ directory, dependency, known: dependencyDirectory !== undefined }).toEqual({
+          directory,
+          dependency,
+          known: true,
+        });
+        expect({ directory, dependency, ordered: (position.get(dependencyDirectory ?? "") ?? -1) < (position.get(directory) ?? -1) }).toEqual({
+          directory,
+          dependency,
+          ordered: true,
+        });
+      }
+    }
   });
 
   test("a word it does not know is a usage error", () => {

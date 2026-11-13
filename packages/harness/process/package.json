@@ -3,9 +3,7 @@
   "version": "0.0.1",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts",
-    "./test-support": "./src/test-support.ts",
-    "./test-fake-lines": "./src/test-fake-lines.ts"
+    ".": "./src/index.ts"
   },
   "dependencies": {
     "@operad-io/engine": "workspace:*",

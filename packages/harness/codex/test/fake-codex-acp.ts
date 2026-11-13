@@ -17,7 +17,7 @@
  */
 
 import { appendFileSync, writeFileSync } from "node:fs";
-import { waitForRelease } from "@operad-io/harness-process/test-fake-lines";
+import { waitForRelease } from "../../process/test/fake-lines.ts";
 
 if (process.argv.includes("--version")) {
   console.log("fake-codex-acp 9.9.9");

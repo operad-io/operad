@@ -15,7 +15,7 @@
  */
 
 import { appendFileSync } from "node:fs";
-import { waitForRelease } from "@operad-io/harness-process/test-fake-lines";
+import { waitForRelease } from "../../process/test/fake-lines.ts";
 import type { WorkerHooks } from "../src/worker.ts";
 import { FakeProvider, type FakeResponse, type FakeToolCall } from "./fake-provider.ts";
 

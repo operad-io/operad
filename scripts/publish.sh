@@ -36,8 +36,8 @@ done
 # Dependency order: a package comes after every @operad-io package it needs.
 packages=(
   engine
-  harness/process
   mcp
+  harness/process
   access-match
   shell
   chat

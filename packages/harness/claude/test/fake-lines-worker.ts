@@ -8,7 +8,7 @@
  */
 
 import { writeFileSync } from "node:fs";
-import { startFakeLines } from "@operad-io/harness-process/test-fake-lines";
+import { startFakeLines } from "../../process/test/fake-lines.ts";
 
 const { mode, recordPath, input, stdinLine, line, mark, released, hang } = await startFakeLines("FAKE_CLAUDE");
 

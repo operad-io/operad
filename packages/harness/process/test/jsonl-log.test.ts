@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { PluginLogger } from "@operad-io/engine";
 import { FLUSH_CHARS, FLUSH_MS, JsonlLog } from "../src/jsonl-log.ts";
-import { manualClock, type ManualClock } from "../src/test-support.ts";
+import { manualClock, type ManualClock } from "./support.ts";
 
 interface BlockingLogger {
   readonly logger: PluginLogger;

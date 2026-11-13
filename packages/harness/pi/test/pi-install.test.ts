@@ -12,7 +12,7 @@ import {
   findPi,
   loadPi,
 } from "../src/pi-install.ts";
-import { cleanupTempRoots, tempRoot } from "@operad-io/harness-process/test-support";
+import { cleanupTempRoots, tempRoot } from "../../process/test/support.ts";
 
 afterAll(cleanupTempRoots);
 

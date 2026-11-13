@@ -22,7 +22,7 @@ import {
   tempRoot,
   waitForFile,
   type ManualClock,
-} from "@operad-io/harness-process/test-support";
+} from "../../../process/test/support.ts";
 
 afterAll(cleanupTempRoots);
 

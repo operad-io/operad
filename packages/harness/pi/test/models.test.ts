@@ -2,7 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { MemoryPluginStore, PluginRegistry } from "@operad-io/engine";
-import { cleanupTempRoots, tempRoot } from "@operad-io/harness-process/test-support";
+import { cleanupTempRoots, tempRoot } from "../../process/test/support.ts";
 import { createPiHarnessPlugin, parsePiCatalogue } from "../src/index.ts";
 
 afterAll(cleanupTempRoots);
