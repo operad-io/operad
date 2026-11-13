@@ -76,8 +76,25 @@ echo "remote-check: checking $sha on $host"
 quoted=$(printf '%q ' "$sha" "$bundle" "$tree" "$path_dirs" "$command" "$slots" "$lane")
 "${ssh_cmd[@]}" "$host" "bash -s -- $quoted" <<'REMOTE'
 sha=$1; bundle=$2; tree=$3; path_dirs=$4; command=$5; slots=$6; lane=$7
-cleanup() { [ "$bundle" = none ] || rm -f "$HOME/$bundle"; }
+watch=
+cleanup() {
+  [ -z "$watch" ] || kill "$watch" 2>/dev/null || true
+  [ "$bundle" = none ] || rm -f "$HOME/$bundle"
+}
 trap cleanup EXIT
+# A local stop closes the connection, and sshd ends this session's parent. The
+# watcher then ends this whole process group, so neither a command nor a check
+# still waiting for a slot is left running on the host. It ignores a HUP, which
+# the host may also send, until it has done that.
+parent=$PPID
+(
+  trap '' HUP TERM INT
+  while kill -0 "$parent" 2>/dev/null; do sleep 1; done
+  kill -TERM -$$ 2>/dev/null || kill -TERM $$ 2>/dev/null || true
+  sleep 1
+  kill -KILL -$$ 2>/dev/null || true
+) &
+watch=$!
 export OPERAD_CHECK_SLOTS=$slots
 if [ -n "$lane" ]; then export OPERAD_CHECK_LANE=$lane; else unset OPERAD_CHECK_LANE; fi
 # Names the slots this check may take: the integration slot, or task slots 1..N.
@@ -129,42 +146,8 @@ git checkout -q --detach --force "$sha" || { echo "remote-check: checkout of $sh
 # node_modules, and tests that list packages/ would find it.
 git clean -q -ffdx -e /node_modules >/dev/null 2>&1 || true
 export PATH="$(eval echo "$path_dirs"):$PATH"
-# Run the command in a process group of its own, and watch the session's stdin.
-# A stop of the local remote-check.sh closes this channel: the watcher sees the
-# end of stdin (and a HUP trap covers a host that also sends one), then ends the
-# command's whole group, so no check is left running on the host.
-child=
-watcher=
-shutdown() {
-  trap '' HUP TERM INT
-  if [ -n "$watcher" ]; then kill "$watcher" 2>/dev/null || true; watcher=; fi
-  if [ -n "$child" ]; then
-    kill -TERM -"$child" 2>/dev/null || kill -TERM "$child" 2>/dev/null
-    sleep 1
-    kill -KILL -"$child" 2>/dev/null || true
-  fi
-  exit 143
-}
-trap shutdown HUP TERM INT
-exec 3<&0
-set -m
-bash -c "$command" < /dev/null &
-child=$!
-set +m
-(
-  while IFS= read -r _ <&3; do :; done
-  if [ -n "$child" ]; then
-    kill -TERM -"$child" 2>/dev/null || kill -TERM "$child" 2>/dev/null
-    sleep 1
-    kill -KILL -"$child" 2>/dev/null || true
-  fi
-) &
-watcher=$!
-wait "$child"
-status=$?
-trap - HUP TERM INT
-if [ -n "$watcher" ]; then kill "$watcher" 2>/dev/null || true; fi
-exit "$status"
+# The session watcher above ends this group if the local check stops.
+bash -c "$command"
 REMOTE
 code=$?
 if [ "$code" -eq 255 ]; then
