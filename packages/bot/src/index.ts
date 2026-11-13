@@ -111,6 +111,8 @@ export interface OpenChat {
   readonly model?: string | undefined;
   readonly effort?: string | undefined;
   readonly title?: string | undefined;
+  /** The channels (`telegram:<chat>`) whose messages land in this chat. */
+  readonly channels?: readonly string[] | undefined;
   readonly cause: string;
 }
 
@@ -151,6 +153,7 @@ export async function openChat(input: OpenChat): Promise<string> {
       access: bot.access,
       skills: bot.skills,
       title: input.title ?? `Bot (${bot.name})`,
+      ...(input.channels === undefined ? {} : { channels: input.channels }),
       refresh: SETTINGS_STEP,
     },
     input.cause,
