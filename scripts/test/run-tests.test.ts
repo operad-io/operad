@@ -46,12 +46,14 @@ function run(
   const inherited = { ...process.env };
   delete inherited.OPERAD_TEST_PARALLEL;
   delete inherited.OPERAD_TEST_HEAVY_PARALLEL;
+  delete inherited.OPERAD_TEST_OVERLAP;
   const result = Bun.spawnSync(["bash", "scripts/run-tests.sh", ...args], {
     cwd: root,
     env: {
       ...inherited,
       OPERAD_TEST_PARALLEL: parallel,
       OPERAD_TEST_HEAVY_PARALLEL: "2",
+      OPERAD_TEST_OVERLAP: "0",
       OPERAD_TEST_TIMES: times,
       ...env,
     },
@@ -140,6 +142,28 @@ describe("run-tests.sh", () => {
     expect(code).not.toBe(0);
     expect(out).toContain("heavy takes a while");
     expect(readFileSync(times, "utf8")).toContain("heavy=");
+    expect(readFileSync(times, "utf8")).toContain("result=fail");
+  });
+
+  test("with overlap the heavy step runs beside the light step and is still counted, shown and recorded", () => {
+    const { root, times } = repository();
+    heavyTest(root);
+    const { code, out } = run(root, times, [], { OPERAD_TEST_OVERLAP: "1" });
+    expect(code).toBe(0);
+    expect(out).toContain("heavy takes a while");
+    expect(readFileSync(times, "utf8").trim()).toMatch(
+      new RegExp(
+        String.raw`tests=4 together=\d+ heavy=\d+ total=\d+ parallel=${parallel} heavyParallel=2 result=pass$`,
+      ),
+    );
+  });
+
+  test("with overlap a failing heavy test still fails the run", () => {
+    const { root, times } = repository();
+    heavyTest(root, true);
+    const { code, out } = run(root, times, [], { OPERAD_TEST_OVERLAP: "1" });
+    expect(code).not.toBe(0);
+    expect(out).toContain("heavy takes a while");
     expect(readFileSync(times, "utf8")).toContain("result=fail");
   });
 

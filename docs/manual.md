@@ -1223,7 +1223,11 @@ worker processes (`bun test --parallel`), and the `tui` package afterwards, one
 file after another, because its terminal library does not load in a parallel
 worker. `OPERAD_TEST_PARALLEL` (a whole number of 1 or more, default `2`) is the
 number of worker processes; any other value stops the script with a message
-that names the variable. Given package names (`bash scripts/run-tests.sh dev
+that names the variable. Tests that start a real process, build a real git
+repository, open a port or hold a lot of memory live under `test/heavy/` of
+their package and run in a step of their own, beside the light step, in
+`OPERAD_TEST_HEAVY_PARALLEL` workers (default `8`; `OPERAD_TEST_OVERLAP=0` runs
+that step after the light one). Given package names (`bash scripts/run-tests.sh dev
 shell`), it runs only those packages' tests. `check-changed.sh` installs and type-checks the same way, then tests only
 the packages a change touches: every package with a file changed since the merge
 base of `HEAD` and `origin/main` (committed, staged, unstaged or untracked), and

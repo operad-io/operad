@@ -11,13 +11,16 @@
 # number of 1 or more, default 2: several task checks and an integration check
 # run at once on a 10-core Mac, and 4 made the step limits tests time out). The
 # heavy step runs the heavy directories of the selected packages in
-# OPERAD_TEST_HEAVY_PARALLEL worker processes (default 2), so the two kinds do
-# not fight each other for the machine. packages/tui keeps its own step, one
+# OPERAD_TEST_HEAVY_PARALLEL worker processes (default 8), beside the light step
+# (OPERAD_TEST_OVERLAP=0 runs it after instead). On the check host (idle, light
+# parallel 5) a full run took 714 s on main, 946 s with heavy 4 after light,
+# 761 s with 6 after, 619 s with 6 beside, 450 s with 8 beside: the heavy files
+# are mostly waiting, so they want more workers than the light step does. packages/tui keeps its own step, one
 # file after another, heavy files included: under --parallel (which implies
 # --isolate) the opentui native library fails to load ("Cannot access 'default'
 # before initialization").
-# OPERAD_TEST_OVERLAP=1 starts the heavy step beside the light and tui steps
-# instead of after them (its output is shown when the others end).
+# The heavy step starts beside the light and tui steps; its output is shown
+# when they end.
 # All steps run; the exit code is non-zero when any failed.
 #
 # Every run ends its output with the ten slowest tests of the run (file, test,
@@ -28,8 +31,8 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."
 parallel=${OPERAD_TEST_PARALLEL:-2}
-heavy_parallel=${OPERAD_TEST_HEAVY_PARALLEL:-2}
-overlap=${OPERAD_TEST_OVERLAP:-0}
+heavy_parallel=${OPERAD_TEST_HEAVY_PARALLEL:-8}
+overlap=${OPERAD_TEST_OVERLAP:-1}
 if ! [[ "$parallel" =~ ^[1-9][0-9]*$ ]]; then
   echo "run-tests: OPERAD_TEST_PARALLEL must be a whole number of 1 or more, not '$parallel'" >&2
   exit 2
