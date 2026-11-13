@@ -19,6 +19,7 @@ operad is an open orchestration layer for coding agents. It runs an agent (radia
 - [http](http.md): the `/v1` endpoints, events and errors.
 - [mcp](mcp.md): the MCP server for a lead agent.
 - [chats-and-bots](chats-and-bots.md): chats with an agent, and bots.
+- [telegram](telegram.md): write to a bot and answer what waits for you from Telegram.
 - [notifications](notifications.md): the notify command.
 - [checks](checks.md): checking a change, and reproducing a flaky test.
 - [environment](environment.md): every environment variable.

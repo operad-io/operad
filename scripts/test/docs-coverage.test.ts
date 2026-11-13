@@ -143,10 +143,11 @@ const FILE_PAGES: Readonly<Record<string, string>> = {
   "review.schema.json": "dev.md",
   "bot.schema.json": "config.md",
   "access-user.schema.json": "access.md",
+  "telegram.schema.json": "telegram.md",
 };
 
-/** Plugin settings are sections of config.json, so their keys are on config.md. */
-const PLUGIN_PAGES: Readonly<Record<string, string>> = {};
+/** Plugin settings are sections of config.json, so their keys are on config.md, unless the plugin has a page. */
+const PLUGIN_PAGES: Readonly<Record<string, string>> = { telegram: "telegram.md" };
 
 function schemaFiles(): string[] {
   return [
@@ -464,7 +465,7 @@ describe("the user docs", () => {
   test("every page of the structure exists", () => {
     for (const name of [
       "index", "quickstart", "config", "dev", "access", "cli", "tui", "app", "http", "mcp",
-      "chats-and-bots", "notifications", "checks", "environment", "troubleshooting",
+      "chats-and-bots", "telegram", "notifications", "checks", "environment", "troubleshooting",
     ]) {
       expect(existsSync(page(`${name}.md`))).toBe(true);
     }

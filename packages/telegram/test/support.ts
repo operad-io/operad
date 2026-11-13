@@ -20,6 +20,8 @@ import {
   prepareSettings,
   type JsonValue,
   type LogBackend,
+  type PluginStepResult,
+  type StepContext,
   type SourceContext,
   type TriggerEvent,
 } from "@operad-io/engine";
@@ -125,15 +127,34 @@ export function replyUpdate(updateId: number, userId: number, chatId: number, te
 }
 
 /** The harness a chat opens with; it answers nothing (no runner runs in these tests). */
-function fakeHarness() {
+function fakeHarness(agent: AgentScript | undefined) {
   return definePlugin({
     name: "test-agent",
     kind: "harness",
     version: "0.0.0",
     models: { list: ["test-model"], default: "test-model" },
     efforts: { list: [], default: null },
+    ...(agent === undefined
+      ? {}
+      : {
+          steps: [
+            {
+              name: "agent",
+              resumable: true,
+              results: ["done", "failed", "interrupted", "waiting"],
+              run: (ctx: StepContext, params: unknown) => agent(ctx, isRecord(params) ? params : {}),
+            },
+          ],
+        }),
   });
 }
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** What the fake agent does with one round of a chat's reply. */
+export type AgentScript = (ctx: StepContext, params: Record<string, unknown>) => Promise<PluginStepResult> | PluginStepResult;
 
 export interface TelegramWorld {
   readonly root: string;
@@ -158,6 +179,8 @@ export interface WorldOptions {
   readonly clock?: (() => number) | undefined;
   /** Views announce changes through `events()`; off unless a test needs it. */
   readonly follow?: boolean | undefined;
+  /** What the chat's agent does; with none it has no step and no run can be driven. */
+  readonly agent?: AgentScript | undefined;
 }
 
 /** Builds the world a source runs in; the caller owns and removes `root`. */
@@ -175,7 +198,7 @@ export async function createTelegramWorld(options: WorldOptions): Promise<Telegr
   const store = new SqlitePluginStore({ root: storeRoot, clock });
   const log = openLog({ backend: "sqlite", path: join(storeRoot, SQLITE_FILE_NAME), follow: false });
   let kernel: Kernel | undefined;
-  const registry = new PluginRegistry([createChatPlugin(), createBotPlugin(), fakeHarness()], {
+  const registry = new PluginRegistry([createChatPlugin(), createBotPlugin(), fakeHarness(options.agent)], {
     home,
     cwd: options.root,
     store,
