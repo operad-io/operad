@@ -280,3 +280,23 @@ export async function superviseServe(
     detach();
   }
 }
+
+/**
+ * Calls `stop` on SIGINT and SIGTERM and returns what to call when the serve's
+ * stop is done. Under a supervisor a stop signal can arrive twice (the
+ * terminal sends it to the whole group and the supervisor passes it on,
+ * asynchronously), so the handlers stay for good: one arriving after the stop
+ * is done and before the process ends must not reach the default action, which
+ * would end it with 130. Without a supervisor the first signal is the only
+ * one, and the handlers are removed.
+ */
+export function listenForStop(supervised: boolean, stop: () => void): () => void {
+  const listen = supervised ? process.on.bind(process) : process.once.bind(process);
+  listen("SIGINT", stop);
+  listen("SIGTERM", stop);
+  return () => {
+    if (supervised) return;
+    process.removeListener("SIGINT", stop);
+    process.removeListener("SIGTERM", stop);
+  };
+}

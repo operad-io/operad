@@ -83,6 +83,7 @@ import {
   codeChecker,
   RELOAD_EXIT,
   superviseServe,
+  listenForStop,
   settingsRoots,
   takeCodeSnapshot,
   serveSnapshots,
@@ -1660,12 +1661,7 @@ async function commandServe(
   const stop = (): void => {
     controller.abort();
   };
-  // Under a supervisor a stop signal can arrive twice (the terminal sends it
-  // to the whole group and the supervisor passes it on); the second must not
-  // reach the default action and end the stop half way.
-  const listen = supervised ? process.on.bind(process) : process.once.bind(process);
-  listen("SIGINT", stop);
-  listen("SIGTERM", stop);
+  const releaseStop = listenForStop(supervised, stop);
 
   let rules: readonly TriggerRule[] = [];
   let sourcesAllowed = true;
@@ -1796,8 +1792,7 @@ async function commandServe(
       }
     }
     await kernel.stopSources();
-    process.removeListener("SIGINT", stop);
-    process.removeListener("SIGTERM", stop);
+    releaseStop();
   }
   if (unreleased !== undefined) throw new HandOverStuck(unreleased, outcome === "reload");
   return outcome;
