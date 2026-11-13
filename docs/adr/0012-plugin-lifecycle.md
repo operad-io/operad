@@ -14,7 +14,7 @@ The SDK carries a version number (`operadPlugin: 1`). `operad plugin check <path
 
 ### D2: Plugins can be enabled and disabled
 
-`plugins.<name>.enabled` in `config.json` (boolean, default `true`). `operad init` installs `shell`, `radian` and `dev` by default (the worker of `dev` uses the `radian` harness).
+`plugins.<name>.enabled` in `config.json` (boolean, default `true`). `operad init` enables `shell`, `radian`, `chat` and `dev` by default.
 
 - A disabled plugin is not loaded: its commands, actions, views and default rules do not appear. Objects and history already stored are left alone and are visible again after re-enabling.
 - A plugin that depends on it (`requires`) is not loaded either, and the reason is said.
