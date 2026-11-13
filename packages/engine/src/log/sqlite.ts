@@ -78,6 +78,7 @@ const SCHEMA = `
   );
   CREATE UNIQUE INDEX IF NOT EXISTS runs_one_active
     ON runs (flow, object) WHERE ended_at IS NULL;
+  CREATE INDEX IF NOT EXISTS runs_object ON runs (object);
   CREATE TABLE IF NOT EXISTS facts (
     run_id  TEXT NOT NULL REFERENCES runs (run_id),
     seq     INTEGER NOT NULL,
@@ -314,6 +315,7 @@ function schemaNeedsWork(database: Database): boolean {
     !hasTable(database, "global_facts") ||
     !hasTable(database, "outcomes") ||
     !hasIndex(database, "runs_one_active") ||
+    !hasIndex(database, "runs_object") ||
     inputsNeedMigration(database) ||
     !tableColumns(database, "runs").some((item) => item.name === "start_input_id") ||
     !tableColumns(database, "global_facts").some((item) => item.name === "unique_key") ||
@@ -417,6 +419,7 @@ class SqliteLogBackend implements LogBackend {
   readonly #newRunId: () => string;
   readonly #path: string;
   readonly #subscriptionWatch: SubscriptionWatch;
+  readonly #onSnapshot: (() => void) | undefined;
   readonly #listeners = new Set<(change: LogChange) => void>();
   #stopWatch: (() => void) | undefined;
   #stopPoll: (() => void) | undefined;
@@ -430,7 +433,9 @@ class SqliteLogBackend implements LogBackend {
     newRunId: () => string,
     path: string,
     subscriptionWatch: SubscriptionWatch,
+    onSnapshot?: () => void,
   ) {
+    this.#onSnapshot = onSnapshot;
     this.#database = database;
     this.#clock = clock;
     this.#newRunId = newRunId;
@@ -588,17 +593,16 @@ class SqliteLogBackend implements LogBackend {
   async runs(options: RunsOptions = {}): Promise<RunInfo[]> {
     this.#assertOpen();
     const activeOnly = options.active === true ? 1 : 0;
+    const object = options.object ?? null;
     const rows = this.#database
-      .query<RunRow, [number]>(
+      .query<RunRow, [number, string | null, string | null]>(
         "SELECT r.run_id, r.flow, r.object, r.started_at, r.ended_at, r.start_input_id, r.access, " +
-          "COALESCE(f.last_seq, 0) AS last_seq " +
-          "FROM runs r LEFT JOIN (" +
-          "  SELECT run_id, MAX(seq) AS last_seq FROM facts GROUP BY run_id" +
-          ") f ON f.run_id = r.run_id " +
-          "WHERE (? = 0 OR r.ended_at IS NULL) " +
+          "COALESCE((SELECT MAX(seq) FROM facts WHERE run_id = r.run_id), 0) AS last_seq " +
+          "FROM runs r " +
+          "WHERE (? = 0 OR r.ended_at IS NULL) AND (? IS NULL OR r.object = ?) " +
           "ORDER BY r.started_at, r.run_id",
       )
-      .all(activeOnly);
+      .all(activeOnly, object, object);
     return rows.map((row) => this.#toRunInfo(row));
   }
 
@@ -793,7 +797,9 @@ class SqliteLogBackend implements LogBackend {
       this.#dataVersion = this.#readDataVersion();
       this.#snapshot = this.#takeSnapshot();
       this.#stopWatch = this.#subscriptionWatch.watch(dirname(this.#path), () => {
-        this.#notifyExternal();
+        // The plugin store shares this directory: its writes fire the watch
+        // too, so look at the data version before taking a snapshot.
+        this.#poll();
       });
       this.#stopPoll = this.#subscriptionWatch.repeat(this.#subscriptionWatch.pollMs, () => {
         this.#poll();
@@ -870,6 +876,7 @@ class SqliteLogBackend implements LogBackend {
   }
 
   #takeSnapshot(): Map<string, RunSnapshot> {
+    this.#onSnapshot?.();
     const rows = this.#database
       .query<RunRow, []>(
         "SELECT r.run_id, r.flow, r.object, r.started_at, r.ended_at, " +
@@ -991,6 +998,7 @@ export function openSqliteLogBackend(
     options.runId ?? randomUUID,
     path,
     resolveSubscriptionWatch(options),
+    options.onSnapshot,
   );
 }
 
