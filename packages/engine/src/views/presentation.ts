@@ -54,7 +54,7 @@ import {
 import { readState } from "../runner/service.ts";
 import { recordAnswer } from "../runner/answer.ts";
 import { StateError } from "../runner/errors.ts";
-import { listPending, type PendingItem } from "./pending.ts";
+import { listPending, type CandidateSource, type PendingItem } from "./pending.ts";
 import {
   listSettings,
   setSetting,
@@ -587,6 +587,7 @@ export class Views {
   /** The timer that announces an object when its rate window ends. */
   private readonly growthTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly unsubscribe: (() => void)[] = [];
+  private candidateSource: CandidateSource | undefined;
   private preparing: Promise<void> | undefined;
 
   constructor(options: ViewsOptions) {
@@ -1466,6 +1467,14 @@ export class Views {
     }
   }
 
+  /**
+   * Where `pending` gets the trigger candidates and refused starts, the same
+   * source HTTP passes `listPending`. The host that owns the kernel sets it.
+   */
+  useCandidates(source: CandidateSource | undefined): void {
+    this.candidateSource = source;
+  }
+
   /** What waits for a person: the pending view, as HTTP serves it. */
   async pending(): Promise<readonly PendingItem[]> {
     if (this.log === undefined) {
@@ -1474,7 +1483,7 @@ export class Views {
         "this server has no run log, so it cannot list what is pending",
       );
     }
-    return listPending(this.log, this.registry, undefined, this);
+    return listPending(this.log, this.registry, this.candidateSource, this);
   }
 
   /** Runs one action by `<plugin>:<action>`, honouring note and confirm. */

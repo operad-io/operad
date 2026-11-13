@@ -225,4 +225,41 @@ describe("a source plugin's start gets the client API", () => {
       await log.close();
     }
   });
+
+  test("pending shows the trigger candidates HTTP shows", async () => {
+    const root = await tempRoot();
+    const storeRoot = join(root, "store");
+    const store = new MemoryPluginStore({ root: storeRoot });
+    const registry = new PluginRegistry([gate], { home: root, storeRoot, store });
+    const log = openLog({ backend: "sqlite", path: join(storeRoot, "log.sqlite") });
+    const views = createViews({ registry, store, log });
+    const kernel = new Kernel({
+      log,
+      registry,
+      home: root,
+      storeRoot,
+      rules: [
+        {
+          source: "feed",
+          type: "new",
+          start: { flow: "gated" },
+          object: "item:1",
+          mode: "candidate",
+        },
+      ],
+      client: views,
+      onLog: () => undefined,
+    });
+    views.useCandidates(kernel);
+    try {
+      store.put("item", "1", {}, "test");
+      expect(await views.pending()).toEqual([]);
+      await kernel.receive({ source: "feed", key: "k1", type: "new", hops: 0 });
+      const items = await views.pending();
+      expect(items.map((item) => item.kind)).toEqual(["candidate"]);
+    } finally {
+      views.close();
+      await log.close();
+    }
+  });
 });

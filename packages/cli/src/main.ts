@@ -434,7 +434,7 @@ function kernelFor(
   io: CliIo,
   rules: readonly TriggerRule[],
 ): Kernel {
-  return new Kernel({
+  const kernel = new Kernel({
     log: context.log,
     registry: context.registry,
     home: context.home,
@@ -443,6 +443,9 @@ function kernelFor(
     client: context.views,
     onLog: (message) => io.error(`${message}\n`),
   });
+  // A source plugin's `pending` shows the candidates HTTP shows.
+  context.views.useCandidates(kernel);
+  return kernel;
 }
 
 function splitFlag(
