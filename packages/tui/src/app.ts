@@ -957,16 +957,21 @@ export function startShell(deps: TuiShellDeps): TuiShell {
   }
 
   /**
-   * The typed id of an object a pending or running row names (their ids are
-   * `<type>:<id>`), for an event that publishes the bare id.
+   * The typed id of an object a pending, running or settings row names, for an
+   * event that publishes the bare id. Pending and running ids are already
+   * `<type>:<id>`; a settings row carries its type beside a bare id.
    */
   function typedFromLists(id: string): string | undefined {
-    for (const tab of state.tabs) {
-      if (tab.kind !== "pending" && tab.kind !== "running") continue;
-      const found = tab.list.rows.find(
-        (row) => row.id.includes(":") && sameObject(row.id, id),
-      );
-      if (found !== undefined) return found.id;
+    const tabs = [
+      ...state.tabs.filter((tab) => tab.kind === "pending" || tab.kind === "running"),
+      ...(state.settingsTab === undefined ? [] : [state.settingsTab]),
+    ];
+    for (const tab of tabs) {
+      for (const row of tab.list.rows) {
+        if (!sameObject(row.id, id)) continue;
+        if (row.id.includes(":")) return row.id;
+        if (row.type !== undefined) return `${row.type}:${row.id}`;
+      }
     }
     return undefined;
   }
