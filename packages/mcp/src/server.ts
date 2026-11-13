@@ -1,7 +1,9 @@
 /** The MCP stdio server: JSON-RPC framing, method dispatch and read tools. */
 
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { ENGINE_VERSION, Kernel, ViewError, cancelRun, createViews, defaultOperadHome, isRecord, listPending, loadPluginRegistry, messageOf, openConfigLog, openPluginStore, readConfig, recordAnswer, storeRootOf, type ActionInfo, type LogBackend, type OperadConfig, type PluginRegistry, type Views } from "@operad-io/engine";
+import { fileURLToPath } from "node:url";
+import { Kernel, ViewError, cancelRun, createViews, defaultOperadHome, isRecord, listPending, loadPluginRegistry, messageOf, openConfigLog, openPluginStore, readConfig, recordAnswer, storeRootOf, type ActionInfo, type LogBackend, type OperadConfig, type PluginRegistry, type Views } from "@operad-io/engine";
 import { InvalidToolArguments } from "./arguments.ts";
 import { actionInfoNamed, actionMayRun, mcpPolicy } from "./policy.ts";
 import {
@@ -20,6 +22,14 @@ import {
   type ToolResult,
 } from "./tools.ts";
 import type { ToolDefinition } from "./tools.ts";
+
+/** The mcp package's own version, which the server reports to a client. */
+export const MCP_VERSION = (() => {
+  const manifest: unknown = JSON.parse(
+    readFileSync(fileURLToPath(new URL("../package.json", import.meta.url)), "utf8"),
+  );
+  return isRecord(manifest) && typeof manifest.version === "string" ? manifest.version : "0.0.0";
+})();
 
 /** The MCP protocol version this server implements. */
 export const PROTOCOL_VERSION = "2025-06-18";
@@ -311,7 +321,7 @@ async function dispatch(
               experimental: { [CHANNEL_CAPABILITY]: {} },
             }
           : { tools: {} },
-        serverInfo: { name: "operad", version: ENGINE_VERSION },
+        serverInfo: { name: "operad", version: MCP_VERSION },
         instructions: claudeChannel
           ? `${instructionsFor(context.mcp, context.registry.actions())}\n\n${CHANNEL_INSTRUCTIONS}`
           : instructionsFor(context.mcp, context.registry.actions()),
