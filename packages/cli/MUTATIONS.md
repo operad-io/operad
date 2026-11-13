@@ -136,8 +136,8 @@ the row fields.
 | T-0377-M6 | packages/cli/package.json | removed `"license": "MIT"` from the CLI manifest | `the packages a publish needs > every publishable package has one version, the repository fields and the licence` |
 | T-0377-M8 | packages/cli/src/main.ts | `loadTui` skipped `ensureInstalledPackage` and imported the package directly, so a published CLI never installed the terminal client into the home | `operad tui > installs the terminal client into the home when the CLI has no copy` |
 
-## T-0388 — rework 2: a restored serve still knows its kernel code is older
+## T-0388 — rework 4: a restored serve keeps the snapshot of its first start
 
 | id | file | mutation | failing test |
 |---|---|---|---|
-| T-0388-M3 | packages/cli/src/code-reload.ts | `keepKernelBaseline` dropped the earlier hashes of the engine and cli files, so a restored serve compared them with themselves | `a serve restored after a restart could not listen > the kernel files keep the hashes the process loaded; plugin files take the current ones` |
+| T-0388-M3 | packages/cli/src/code-reload.ts | `serveSnapshots` gave a restored serve the fresh disk snapshot instead of the one from the process's first start, so the watch saw no difference | `a serve restored after a restart could not listen > a changed engine file shows the item; a serve that restarted on the new code shows none` (and the same test for a changed plugin file) |

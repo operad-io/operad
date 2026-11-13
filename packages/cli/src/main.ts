@@ -87,10 +87,9 @@ import {
   superviseServe,
   settingsRoots,
   takeCodeSnapshot,
-  keepKernelBaseline,
+  serveSnapshots,
 } from "./code-reload.ts";
 import type { CodeSnapshot } from "./code-reload.ts";
-import type { CodeFingerprint } from "@operad-io/engine";
 import {
   BindFailed,
   HandOverStuck,
@@ -1654,7 +1653,6 @@ async function commandServe(
   lock: LockHandle,
   supervised: boolean,
   retryBind: boolean,
-  restored: boolean,
 ): Promise<"stopped" | "reload"> {
   const interval = process.env.OPERAD_SERVE_INTERVAL_MS;
   const parsed = interval === undefined ? Number.NaN : Number(interval);
@@ -1702,7 +1700,6 @@ async function commandServe(
   let outcome = "stopped" as "stopped" | "reload";
   let unreleased: HttpStopError | undefined;
   let watch: CodeWatch | undefined;
-  let keepFirst = restored;
   const olderNotice = olderCodeNotice(context.home);
   olderNotice.clear();
   try {
@@ -1750,13 +1747,6 @@ async function commandServe(
         pollMs: envNumber("OPERAD_RELOAD_POLL_MS", 5_000),
         onOlder: olderNotice.report,
         onChange: async () => {
-          // A serve restored after a restart could not listen already tried
-          // the code on disk once: it keeps its code, shows the notice, and
-          // takes up the next change.
-          if (keepFirst) {
-            keepFirst = false;
-            return "keep";
-          }
           const what = await check();
           // A stop that came while the new code was tried is not started again.
           if (what === undefined || controller.signal.aborted) return "keep";
@@ -2621,8 +2611,8 @@ export async function main(
       // a second serve fails here, with exit 4, and touches nothing. The lock
       // is handed to `serve`, so there is no check and then act.
       const { supervised, replaces, retryBind } = serveStartFlags();
-      // The kernel code this process loaded when it first served.
-      let firstBaseline: CodeFingerprint | undefined;
+      // What this process loaded when it first served: a serve restored here runs that code.
+      const snapshotOf = serveSnapshots();
       const runChecked = async (
         isSupervised: boolean,
         retryBind: boolean,
@@ -2638,13 +2628,12 @@ export async function main(
             trackCode: true,
             follow: true,
           });
-          if (opened.code !== undefined) firstBaseline ??= opened.code.baseline;
           const context =
-            restored && opened.code !== undefined && firstBaseline !== undefined
-              ? { ...opened, code: keepKernelBaseline(opened.code, firstBaseline) }
-              : opened;
+            opened.code === undefined
+              ? opened
+              : { ...opened, code: snapshotOf(opened.code, restored) };
           try {
-            return await commandServe(context, io, args.slice(1), lock, isSupervised, retryBind, restored);
+            return await commandServe(context, io, args.slice(1), lock, isSupervised, retryBind);
           } finally {
             context.views.close();
             await context.log.close();

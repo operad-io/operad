@@ -13,11 +13,10 @@ import {
   fingerprintCode,
   newHashCache,
   codeRoots,
-  ENGINE_CODE_ROOT,
   waitForCodeChange,
 } from "@operad-io/engine";
 import type { CodeFingerprint, CodeRoot } from "@operad-io/engine";
-import { basename, extname, join, sep } from "node:path";
+import { basename, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const CLI_ENTRY = fileURLToPath(new URL("../bin/operad.ts", import.meta.url));
@@ -63,28 +62,18 @@ export function takeCodeSnapshot(
 }
 
 /**
- * The snapshot of a serve that runs again in a process that loaded its kernel
- * code earlier (the supervisor restoring the old code after a restart could not
- * listen). The plugins were loaded from disk just now, but the engine and cli
- * modules are the ones `earlier` saw: their files take the earlier hashes, so
- * the watch sees a change when they differ on disk.
+ * Keeps the snapshot a process took when it first served. A serve restored in
+ * the same process after a restart could not listen runs every module that
+ * process loaded at its first start (engine, cli and the plugins: Bun keeps
+ * them in its module cache), so its baseline is that first snapshot, not the
+ * files on disk now. The watch then sees the change that caused the failed
+ * restart and the older-code item shows.
  */
-export function keepKernelBaseline(now: CodeSnapshot, earlier: CodeFingerprint): CodeSnapshot {
-  const kernel = [ENGINE_CODE_ROOT.path, CLI_CODE_ROOT.path].map((path) =>
-    path.endsWith(sep) ? path : path + sep,
-  );
-  const inKernel = (file: string): boolean => kernel.some((root) => file.startsWith(root));
-  const hashes = new Map([...now.baseline.hashes].filter(([file]) => !inKernel(file)));
-  const labels = new Map([...now.baseline.labels].filter(([file]) => !inKernel(file)));
-  for (const [file, hash] of earlier.hashes) {
-    if (!inKernel(file)) continue;
-    hashes.set(file, hash);
-    const label = earlier.labels.get(file);
-    if (label !== undefined) labels.set(file, label);
-  }
-  return {
-    ...now,
-    baseline: { hashes, labels, directories: now.baseline.directories },
+export function serveSnapshots(): (fresh: CodeSnapshot, restored: boolean) => CodeSnapshot {
+  let first: CodeSnapshot | undefined;
+  return (fresh, restored) => {
+    first ??= fresh;
+    return restored ? { ...fresh, baseline: first.baseline } : fresh;
   };
 }
 
