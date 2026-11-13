@@ -36,6 +36,16 @@
                   "type": "integer",
                   "minimum": 1,
                   "default": 10
+                },
+                "stress": {
+                  "description": "The command that reproduces a flaky test of this line, written into the brief of the task dev proposes for it. {name}, {pattern} and {file} are replaced as in rerun; {file} is the test's file, or nothing when it is not known. Without it the brief has no command.",
+                  "type": "string",
+                  "minLength": 1
+                },
+                "rule": {
+                  "description": "A path inside the repository to a text file with the repository's rule for flaky tests, quoted in the brief. Without it, or when the file is missing or empty, the brief quotes dev's own sentence.",
+                  "type": "string",
+                  "minLength": 1
                 }
               },
               "required": ["match", "rerun"],

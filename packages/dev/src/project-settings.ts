@@ -33,6 +33,8 @@ export const DEV_PROJECT_SETTINGS: ProjectSettingsDeclaration = {
                       match: { type: "string", minLength: 1 },
                       rerun: { type: "string", minLength: 1 },
                       max: { type: "integer", minimum: 1 },
+                      stress: { type: "string", minLength: 1 },
+                      rule: { type: "string", minLength: 1 },
                     },
                     required: ["match", "rerun"],
                     additionalProperties: false,

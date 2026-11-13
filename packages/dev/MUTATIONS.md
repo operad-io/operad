@@ -1028,3 +1028,12 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0376-M1 | packages/dev/src/marks.ts | `runningMark` returned `blocked` again for `workerWait` | `task marks > running, work step waits for a worker another task holds` |
+
+## T-0386 — flaky tasks take their rule, command and excerpt from the settings
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0386-M1 | packages/dev/src/flaky.ts | the excerpt was found by bun's `(fail) name [` prefix instead of the command's `failed.match` | `a repository with no bun, no scripts and no CLAUDE.md gets its excerpt, command and rule from its settings` |
+| T-0386-M2 | packages/dev/src/flaky.ts | the brief wrote the "Reproduce it" block (a `bun test --rerun-each` line) when `failed.stress` was not set | `without stress the brief has no command and no sentence about <N>` |
+| T-0386-M3 | packages/dev/src/flaky.ts | the rule file's path was not held inside the repository, so `../outside.md` was quoted | `without rule, or with a missing, empty or outside rule file, the brief quotes the built-in sentence` |
+| T-0386-M4 | packages/dev/src/flaky.ts | the task was proposed with an area taken from `packages/<name>/` again | `the threshold proposes exactly one task with the expected brief` |

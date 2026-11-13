@@ -98,6 +98,10 @@ export interface FailedRerun {
   readonly rerun: string;
   /** The most failed tests that are run again; more fails the check. */
   readonly max: number;
+  /** The command that reproduces a flaky test; `{name}`, `{pattern}` and `{file}` are replaced. */
+  readonly stress?: string;
+  /** A path inside the repository to the text of its rule for flaky tests. */
+  readonly rule?: string;
 }
 
 /** A check command: a shell line, or a line with a rerun of its failed tests. */
@@ -518,10 +522,20 @@ function lineList(value: unknown, field: string): readonly string[] {
   return lines;
 }
 
+/** A path relative to the repository that stays inside it. */
+function rulePath(value: unknown, field: string): string {
+  const path = nonEmptyString(value, field);
+  const parts = path.split(/[\\/]/);
+  if (isAbsolute(path) || parts.includes("..")) {
+    throw new DevError(field, "must be a path inside the repository");
+  }
+  return path;
+}
+
 function failedRerun(value: unknown, field: string): FailedRerun {
   if (!isRecord(value)) throw new DevError(field, "must be an object");
   for (const key of Object.keys(value)) {
-    if (key !== "match" && key !== "rerun" && key !== "max") {
+    if (key !== "match" && key !== "rerun" && key !== "max" && key !== "stress" && key !== "rule") {
       throw new DevError(`${field}.${key}`, "is not a failed setting");
     }
   }
@@ -546,6 +560,10 @@ function failedRerun(value: unknown, field: string): FailedRerun {
       value.max === undefined
         ? 10
         : positiveInteger(value.max, `${field}.max`),
+    ...(value.stress === undefined
+      ? {}
+      : { stress: nonEmptyString(value.stress, `${field}.stress`) }),
+    ...(value.rule === undefined ? {} : { rule: rulePath(value.rule, `${field}.rule`) }),
   };
 }
 
