@@ -123,6 +123,15 @@ function cliPrefix(scratchRoot: string, tarballs: ReadonlyMap<string, string>): 
   return join(prefix, "node_modules", ".bin", "operad");
 }
 
+/** A radian command: `init` only asks whether it is on PATH. */
+function fakeRadian(directory: string): string {
+  mkdirSync(directory, { recursive: true });
+  const path = join(directory, "radian");
+  writeFileSync(path, "#!/bin/sh\nexit 0\n");
+  chmodSync(path, 0o755);
+  return directory;
+}
+
 /** A claude command that only answers the two probes `plugin check` runs. */
 function fakeClaude(directory: string): string {
   mkdirSync(directory, { recursive: true });
@@ -154,7 +163,10 @@ describe("publishing and installing the packages", () => {
     expect(existsSync(binary)).toBe(true);
 
     const home = join(scratchRoot, "home");
-    const path = `${fakeClaude(join(scratchRoot, "bin"))}${delimiter}${process.env.PATH ?? ""}`;
+    const bin = join(scratchRoot, "bin");
+    fakeClaude(bin);
+    fakeRadian(bin);
+    const path = `${bin}${delimiter}${process.env.PATH ?? ""}`;
     const env = { OPERAD_HOME: home, PATH: path };
 
     const help = run([binary, "--help"], scratchRoot, env);
