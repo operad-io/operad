@@ -157,3 +157,11 @@ the row fields.
 | T-0398-M5 | packages/cli/src/main.ts | `commandServe` did not clear the older-code notice at its start | `a serve picks up changed code > the older-code notice is cleared when serve starts and when it stops` |
 | T-0398-M6 | packages/cli/src/main.ts | `commandServe` did not clear the older-code notice when it ended | same test |
 | T-0398-M7 | packages/cli/src/main.ts | (re-check of T-0388-M5) the code watch was not given `declined: context.code.tried`; the end-to-end test could pass before the poll that finds the change ran, so a test now checks the wiring where the watch is built | `the serve command's code watch > is given the change a restart already tried and reports into the notice` |
+
+## T-0398 rework 1 — a restored serve treats only what it imported again as loaded from the disk
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0398-M13 | packages/cli/src/code-reload.ts | `restoredBaseline` ignored the path plugins' entry files, so an entry file the restored serve imported again counted as changed | `what a restored serve counts as loaded again > the entry file of a path plugin is loaded again; its other files are not` |
+| T-0398-M14 | packages/cli/src/code-reload.ts | files of a plugin not loaded at the first start came from the first snapshot (absent), not the disk | `what a restored serve counts as loaded again > a plugin enabled since the first start counts as loaded from the disk` |
+| T-0398-M15 | packages/cli/src/code-reload.ts | every file labelled `plugin …` was taken from the disk (the earlier behaviour), so a package-name plugin or a path plugin's helper read as loaded again | `what a restored serve counts as loaded again > a plugin given by package name stays as the first start loaded it` |

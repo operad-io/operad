@@ -5,6 +5,7 @@ import {
   acquireLock,
   CodeWatch,
   describeChange,
+  diffFingerprints,
   fingerprintCode,
   listPending,
   MemoryPluginStore,
@@ -177,7 +178,8 @@ describe("a serve restored after a restart could not listen", () => {
     const snapshotOf = serveSnapshots();
     const take = (): CodeSnapshot => {
       const cache = newHashCache();
-      return { roots, baseline: fingerprintCode(roots, cache), cache };
+      // The plugin is a path plugin: its entry file is imported again.
+      return { roots, baseline: fingerprintCode(roots, cache), cache, entries: new Set([join(home, "plugin-x", "index.ts")]) };
     };
     // The first serve loads the code, then a file changes and its restart fails to listen.
     snapshotOf(take(), false);
@@ -239,6 +241,58 @@ describe("a serve restored after a restart could not listen", () => {
     const s = await scenario("plugin");
     expect(await s.serve(true)).toEqual([]);
     await s.done();
+  });
+});
+
+describe("what a restored serve counts as loaded again", () => {
+  /** A snapshot of an engine root, a path plugin (entry and a helper) and a plugin given by package name. */
+  function snapshot(home: string, withLate: boolean): CodeSnapshot {
+    const roots = [
+      { label: "engine", path: join(home, "engine") },
+      { label: "plugin path", path: join(home, "path") },
+      { label: "plugin named", path: join(home, "named") },
+      ...(withLate ? [{ label: "plugin late", path: join(home, "late") }] : []),
+    ];
+    const cache = newHashCache();
+    return {
+      roots,
+      baseline: fingerprintCode(roots, cache),
+      cache,
+      entries: new Set([join(home, "path", "entry.ts")]),
+    };
+  }
+
+  async function changed(edit: (home: string) => void, withLateAtRestore: boolean): Promise<readonly string[] | undefined> {
+    const home = await tempRoot();
+    for (const [dir, file] of [
+      ["engine", "index.ts"],
+      ["path", "entry.ts"],
+      ["path", "helper.ts"],
+      ["named", "index.ts"],
+      ["late", "index.ts"],
+    ] as const) {
+      mkdirSync(join(home, dir), { recursive: true });
+      writeFileSync(join(home, dir, file), "export const v = 1;\n");
+    }
+    const snapshotOf = serveSnapshots();
+    snapshotOf(snapshot(home, false), false);
+    edit(home);
+    const restored = snapshotOf(snapshot(home, withLateAtRestore), true);
+    return diffFingerprints(restored.baseline, fingerprintCode(restored.roots))?.files.map((file) => file.slice(home.length + 1));
+  }
+  const edit = (home: string, path: string): void => writeFileSync(join(home, path), "export const v = 2;\n");
+
+  test("the entry file of a path plugin is loaded again; its other files are not", async () => {
+    expect(await changed((home) => edit(home, "path/entry.ts"), false)).toBeUndefined();
+    expect(await changed((home) => edit(home, "path/helper.ts"), false)).toEqual(["path/helper.ts"]);
+  });
+
+  test("a plugin given by package name stays as the first start loaded it", async () => {
+    expect(await changed((home) => edit(home, "named/index.ts"), false)).toEqual(["named/index.ts"]);
+  });
+
+  test("a plugin enabled since the first start counts as loaded from the disk", async () => {
+    expect(await changed((home) => edit(home, "late/index.ts"), true)).toBeUndefined();
   });
 });
 
