@@ -146,3 +146,9 @@ the row fields.
 | T-0388-M5 | packages/cli/src/main.ts | the serve's code watch was not given `declined: context.code.tried`, so the restored serve reloaded on the same change again | same test (a second `reloading:` line, and the item is gone) |
 | T-0388-M6 | packages/cli/src/main.ts | the serve's code watch did not report `onOlder` to the notice | same test (no `serve-older.json`) |
 | T-0392-M1 | packages/cli/src/code-reload.ts | `listenForStop`'s release removed the handlers of a supervised serve too, so a late passed-on signal ended it with 130 | `the stop signal handlers of a serve > a supervised serve keeps them after its stop is done; another serve does not` |
+
+## T-0399 — the supervised serve's stop listeners stay until it exits
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0399-M1 | packages/cli/src/main.ts | `commandServe` called `listenForStop(false, stop)`, so a supervised serve removed its SIGINT and SIGTERM listeners when its stop was done | `a supervised serve that has stopped > still listens for SIGINT and SIGTERM` |
