@@ -7,14 +7,14 @@ const exampleDir = join(root, "packages", "engine", "test", "fixtures", "example
 
 /** Every TypeScript block of the page: its file name and its text. */
 function blocks(): { readonly file: string; readonly text: string }[] {
-  const page = readFileSync(join(root, "docs", "plugin-authoring.md"), "utf8");
+  const page = readFileSync(join(root, "docs", "plugins", "index.md"), "utf8");
   return [...page.matchAll(/```ts\n\/\/ example-plugin\/(\S+)\n([\s\S]*?)```/g)].map(
     (match) => ({ file: match[1] ?? "", text: `// example-plugin/${match[1]}\n${match[2]}` }),
   );
 }
 
-test("every TypeScript block of docs/plugin-authoring.md names a file of the example", () => {
-  const page = readFileSync(join(root, "docs", "plugin-authoring.md"), "utf8");
+test("every TypeScript block of docs/plugins/index.md names a file of the example", () => {
+  const page = readFileSync(join(root, "docs", "plugins", "index.md"), "utf8");
   const all = [...page.matchAll(/```ts\n/g)].length;
   expect(blocks()).toHaveLength(all);
   expect(all).toBeGreaterThan(4);
