@@ -1,6 +1,6 @@
 {
   "name": "@operad-io/review-grading",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
@@ -8,7 +8,7 @@
   "dependencies": {
     "@operad-io/engine": "workspace:*"
   },
-  "description": "operad: review report grading (in development)",
+  "description": "operad: review report grading",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/operad-io/operad.git",

@@ -1,6 +1,6 @@
 {
   "name": "@operad-io/tui",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
@@ -11,7 +11,7 @@
     "@opentui/core": "0.6.8",
     "@operad-io/engine": "workspace:*"
   },
-  "description": "operad: the terminal client (in development)",
+  "description": "operad: the terminal client",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/operad-io/operad.git",

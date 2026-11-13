@@ -154,7 +154,7 @@ The key names are those of the client; see the key table of [the terminal client
 ## `requires`
 
 ```ts
-requires: { api: "^1.0.0", plugins: { shell: "^0.0.0" } },
+requires: { api: "^1.0.0", plugins: { shell: "^0.1.0" } },
 ```
 
 `api` is checked against `PLUGIN_API_VERSION` (`1.0.0`), each entry of `plugins` against the loaded plugin's `version`.

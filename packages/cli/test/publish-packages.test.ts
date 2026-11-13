@@ -36,6 +36,9 @@ function packageDirectories(): string[] {
 
 const publishable = packageDirectories().filter((directory) => manifestOf(directory).private !== true);
 
+/** The one version every public package carries; change it here and in the manifests for a release. */
+const RELEASE_VERSION = "0.1.0";
+
 /** The runtime package closure of one manifest. */
 function closure(start: Manifest): Set<string> {
   const byName = new Map(packageDirectories().map((directory) => [manifestOf(directory).name, manifestOf(directory)]));
@@ -59,7 +62,7 @@ describe("the packages a publish needs", () => {
     expect(publishable.length).toBeGreaterThan(10);
     for (const directory of publishable) {
       const manifest = manifestOf(directory);
-      expect({ directory, version: manifest.version }).toEqual({ directory, version: "0.0.1" });
+      expect({ directory, version: manifest.version }).toEqual({ directory, version: RELEASE_VERSION });
       expect({ directory, private: manifest.private }).toEqual({ directory, private: undefined });
       expect({ directory, description: typeof manifest.description }).toEqual({ directory, description: "string" });
       expect({ directory, license: manifest.license }).toEqual({ directory, license: "MIT" });
@@ -79,6 +82,12 @@ describe("the packages a publish needs", () => {
         licenseFile: true,
       });
     }
+  });
+
+  test("every public package has the same version", () => {
+    const versions = new Map(publishable.map((directory) => [directory, manifestOf(directory).version]));
+    const distinct = new Set(versions.values());
+    expect(distinct.size, `versions differ: ${JSON.stringify(Object.fromEntries(versions))}`).toBe(1);
   });
 
   test("only what the CLI does not need at runtime stays private", () => {

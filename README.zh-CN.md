@@ -100,6 +100,7 @@ operad dev:merge T-0001-greet --yes
 - [User manual](docs/user/index.md)：quickstart、`config.json`、`dev` 插件、access profile、所有命令、排错。
 - [Writing a plugin](docs/plugins/index.md)：给插件作者。
 - [docs/backlog/](docs/backlog/)：方向和还没定的问题。
+- [CONTRIBUTING.md](CONTRIBUTING.md)：怎么参与；[SECURITY.md](SECURITY.md)：私下报告安全漏洞。
 
 ## 状态
 
@@ -117,6 +118,7 @@ operad 还在开发中，会有毛边，也会有变动。
 | [`shell`](packages/shell) | shell 命令和检查步骤 |
 | [`chat`](packages/chat), [`bot`](packages/bot) | 和 agent 的对话；目录、agent 和 skill |
 | [`pool`](packages/pool) | 在多次运行之间共用的 worker |
+| [`telegram`](packages/telegram) | 在 Telegram 里聊天、处理 pending |
 | [`tui`](packages/tui), [`mcp`](packages/mcp) | 终端客户端；MCP server |
 | [`harness/claude`](packages/harness/claude), [`harness/codex`](packages/harness/codex), [`harness/pi`](packages/harness/pi), [`harness/radian`](packages/harness/radian) | operad 能跑的 agent |
 | [`harness/process`](packages/harness/process) | 各 harness 共用的辅助代码 |

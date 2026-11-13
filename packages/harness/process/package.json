@@ -1,6 +1,6 @@
 {
   "name": "@operad-io/harness-process",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
@@ -9,7 +9,7 @@
     "@operad-io/engine": "workspace:*",
     "@operad-io/mcp": "workspace:*"
   },
-  "description": "operad: the shared process and log helpers of the harness plugins (in development)",
+  "description": "operad: the shared process and log helpers of the harness plugins",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/operad-io/operad.git",

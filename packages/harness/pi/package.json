@@ -1,6 +1,6 @@
 {
   "name": "@operad-io/harness-pi",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
@@ -14,7 +14,7 @@
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "1.5.0"
   },
-  "description": "operad: the pi harness, a client of the pi coding agent library (in development)",
+  "description": "operad: the pi harness, a client of the pi coding agent library",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/operad-io/operad.git",

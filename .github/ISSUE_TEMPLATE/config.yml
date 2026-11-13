@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or idea to talk through
+    url: https://github.com/operad-io/operad/discussions
+    about: Ask how to use operad, or discuss an idea, in Discussions.

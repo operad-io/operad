@@ -1,0 +1,59 @@
+name: Bug report
+description: Something operad did that it should not have, or did not do.
+labels: ["bug"]
+body:
+  - type: input
+    id: operad-version
+    attributes:
+      label: operad version
+      description: The output of `operad --version`, or of `operad plugin list`.
+    validations:
+      required: true
+  - type: input
+    id: bun-version
+    attributes:
+      label: Bun version
+      description: The output of `bun --version`.
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: macOS 15, Ubuntu 24.04, ...
+    validations:
+      required: true
+  - type: input
+    id: harness
+    attributes:
+      label: Agent harness
+      description: Which agent operad was running, for example claude, codex, pi or radian.
+    validations:
+      required: true
+  - type: textarea
+    id: ran
+    attributes:
+      label: What you ran
+      description: The commands, the flow and the relevant part of `config.json`.
+    validations:
+      required: true
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: history
+    attributes:
+      label: Relevant `operad history` lines
+      description: Remove tokens, keys, passwords and private paths or names before you paste.
+      render: text
+    validations:
+      required: false
