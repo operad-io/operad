@@ -353,7 +353,8 @@ and prints the reason. It writes `.operad/dev.json` when the repository has none
 reached and has the main branch published; it asks the remote read-only and
 pushes nothing. `operad dev repo list` prints `no repositories` or one
 `<name>  <path>` line per repository. `operad dev repo remove <name>` prints
-`removed <name>`.
+`removed <name>`. It refuses a repository that has an open task
+(`repository "<name>" has <n> open task(s)`); merge or cancel those tasks first.
 
 `operad dev plan add --slug <slug> --title <title> [--concurrency <n>]
 [--flow <name>] [--repo <name>]` creates a plan and prints its id. The request
