@@ -73,4 +73,4 @@ Each package keeps its mutation checks in `MUTATIONS.md`; a row names the broken
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0402-M1 | scripts/run-tests.sh | the heartbeat started only when `OPERAD_TEST_HEARTBEAT_SECS` was `0`, so a silent step printed no line | `run-tests.sh > a step that writes only at its end still shows a heartbeat line` |
-| T-0402-M2 | scripts/remote-check.sh | the remote command ran in the session shell instead of its own group with a HUP trap, so a local stop left it running on the host | `remote-check.sh > a stop of the local check ends the command on the host` (the remote pid was still present after 5 s) |
+| T-0402-M2 | scripts/remote-check.sh | the watcher on the host session was removed, so a local stop closed the connection but left the remote command running | `remote-check.sh > a stop of the local check ends the command on the host` (the remote pid was still present after 5 s) |
