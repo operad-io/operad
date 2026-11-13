@@ -160,7 +160,7 @@ the row fields.
 | dirty-names-M3 | packages/dev/src/steps.ts | a rename's old path was listed as a file | `changedFiles > a rename reports the new path only, whole` |
 | dirty-names-M4 | packages/dev/src/steps.ts | the name was cut at column 2 instead of 3 | `changedFiles > a modified tracked file that comes first keeps its whole name` |
 | dirty-names-M5 | packages/dev/src/steps.ts | `-z` left out of the status call | `changedFiles > a modified tracked file that comes first keeps its whole name` |
-| T-0048-M6 | packages/dev/src/model.ts | the task `done` filter also listed cancelled | `the task filters come from the phase list`, `docs/manual.md lists the dev filters with the states the code declares` |
+| T-0048-M6 | packages/dev/src/model.ts | the task `done` filter also listed cancelled | `the task filters come from the phase list`, `docs/user/dev.md lists the dev filters with the states the code declares` |
 
 ## T-0047 — repository hints and qualified ids
 
@@ -1015,3 +1015,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0359-M10 | packages/dev/src/views.ts | the live increment and tool output line types were no longer skipped, so they appeared in a task's Log | `the agent's text, a tool error's first line and a turn's end are shown; tool output is not` |
+
+## T-0369 — the new-chat form narrows model and effort by agent
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0369-M5 | packages/dev/src/chat.ts | `dev:chat` left the `allOf` conditionals out of its schema | `dev:chat per-agent conditionals > one if/then per offered agent carries its lists and defaults` |

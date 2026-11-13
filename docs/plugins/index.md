@@ -1,5 +1,7 @@
 # Writing a plugin
 
+This page is for plugin authors; a person who uses operad starts at [the user manual](../user/index.md). A step that asks a person a question is in [Asking a person from a step](asking.md).
+
 A plugin is a TypeScript module that declares what it adds: object types,
 steps, flows, and optionally commands, views, actions and trigger rules. This
 page builds the smallest useful one and tests it without starting `operad
@@ -326,8 +328,8 @@ row: (object) => ({
 
 Clients name each type's plugin (`plugin` in `GET /v1/types`) so they can group
 types by plugin, list the top level with `root`, and open one level down with
-`parent=<id>`. A type's filters apply inside the level. See the manual's
-"Levels" section for the exact behaviour, including the order of a list across
+`parent=<id>`. A type's filters apply inside the level. See
+[Levels](../user/cli.md#levels) for the exact behaviour, including the order of a list across
 types and what an unknown parent returns.
 
 ## Putting objects under settings

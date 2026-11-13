@@ -440,3 +440,10 @@ the row fields.
 | T-0364-M7 | packages/tui/src/app.ts | a whole refresh (after `r` or a reconnect) also read after the mark instead of reading the section whole once | `a live section reads after its mark > after a reconnect the section is read whole once, then continues from its new mark` |
 | T-0364-M8 | packages/tui/src/app.ts | a section that gave no mark asked with an empty `after` instead of being read whole | `a live section reads after its mark > a section that gives no mark is fetched as before` |
 | T-0364-M9 | packages/tui/src/app.ts | a whole read no longer cancelled the after reads in flight, so an older delta landed first and its version dropped the whole read | `a live section reads after its mark > a whole read after r is not dropped behind an older after read` |
+
+## T-0369 — the new-chat form narrows by the chosen agent
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0369-M6 | packages/tui/src/actions.ts | the next field was asked with its top-level choices, ignoring the earlier answer's conditional | `arguments of an action > the model list narrows to the chosen agent, with that agent's default preselected` |
+| T-0369-M7 | packages/tui/src/actions.ts | a field the chosen agent's branch lists nothing for was still asked, with the top-level union | `arguments of an action > an agent whose branch lists no model is not asked for one; another agent's list is its own` |

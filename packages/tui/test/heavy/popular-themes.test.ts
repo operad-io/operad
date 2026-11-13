@@ -19,7 +19,7 @@ import { drawState } from "../../src/view/index.ts";
 
 const PACKAGE = join(import.meta.dir, "..", "..");
 const THEMES = join(PACKAGE, "themes");
-const MANUAL = join(PACKAGE, "..", "..", "docs", "manual.md");
+const MANUAL = join(PACKAGE, "..", "..", "docs", "user", "tui.md");
 
 interface ThemeFile {
   readonly comment: string;

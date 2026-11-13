@@ -775,6 +775,14 @@ export interface ActionArgSchema {
   readonly $defs?: Readonly<Record<string, unknown>> | undefined;
   /** Exactly one of these must fit. A `$ref` is already replaced by what it names. */
   readonly oneOf?: readonly ActionArgSchema[] | undefined;
+  /**
+   * Conditionals a client reads to narrow a field by another (`if`/`then`, as
+   * JSON Schema). Only an action's `argsFor` result carries them; the kernel
+   * does not evaluate them when it validates the person's values.
+   */
+  readonly allOf?: readonly ActionArgSchema[] | undefined;
+  readonly if?: ActionArgSchema | undefined;
+  readonly then?: ActionArgSchema | undefined;
   readonly properties?: Readonly<Record<string, ActionArgSchema>> | undefined;
   readonly required?: readonly string[] | undefined;
   readonly additionalProperties?: false | ActionArgSchema | undefined;

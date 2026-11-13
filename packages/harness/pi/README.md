@@ -135,7 +135,7 @@ A flow switches harness by changing `use` from `radian/agent` to
 params, the result names (`done`, `failed`, `interrupted`) and the facts
 (`exitCode`, `signal`, `sessionId`, `finalMessage`, `usage`, `log`,
 `durationMs`, `stderr`) are `radian`'s, except `args` (below). `usage`
-is the standard one described in [the manual](../../../docs/manual.md#usage-and-end-results):
+is the standard one described in [the manual](../../../docs/user/dev.md#usage-and-end-results):
 `model` is the step's `--model` or the `model` setting, and the worker's
 `cost.micros` becomes `costMicros`.
 `sessionId` is the path of pi's
@@ -184,7 +184,7 @@ param (`wallTimeSecs`, `stallSecs`) overrides the setting of the same name.
 | `concurrency` | object, model to positive integer | `{}` | how many runs of one model may go at once, such as `{ "opencode-go/deepseek-v4.1-flash": 2 }`; a model not listed has no limit |
 
 How `concurrency` limits runs, what the key is and how a queued step shows
-are in [the manual](../../../docs/manual.md#limiting-runs-of-one-model).
+are in [the manual](../../../docs/user/dev.md#limiting-runs-of-one-model).
 
 A leading `~` in a path is the user's home directory. The step's own timeout is
 eight hours, above every allowed wall time.
