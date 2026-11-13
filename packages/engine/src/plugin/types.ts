@@ -1,3 +1,4 @@
+import type { ClientApi } from "../views/presentation.ts";
 import type { FlowDefinition } from "../flow/types.ts";
 import type { KernelState } from "../kernel/types.ts";
 import type { Secret } from "../log/secret.ts";
@@ -1112,6 +1113,11 @@ export interface SourceContext extends PluginBaseContext {
   readonly clock: () => number;
   /** Sends one event through the kernel's rules. */
   emit(event: SourceEvent): Promise<void>;
+  /**
+   * The client API HTTP and the TUI use, the same object: `list`, `get`,
+   * `section`, `events`, `act` and `pending`. `act` needs an actor.
+   */
+  readonly client: ClientApi;
 }
 
 /** The shape `definePlugin` accepts. The version is added by the helper. */

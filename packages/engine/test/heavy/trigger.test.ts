@@ -36,6 +36,7 @@ import {
   type TriggerEvent,
   type TriggerResult,
   type TriggerRule,
+  type ClientApi,
 } from "../../src/index.ts";
 import plugin from "../fixtures/plugins/trigger.ts";
 import { cleanupTempRoots, tempRoot } from "../plugin/support.ts";
@@ -1926,6 +1927,7 @@ describe("source plugins", () => {
     const started = await registry.startSources({
       rules: [],
       clock: () => 0,
+      client: {} as unknown as ClientApi,
       emit: () => {
         throw new Error("event refused");
       },
