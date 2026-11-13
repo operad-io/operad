@@ -35,7 +35,7 @@ compaction.
 ## stdin
 
 One JSON object, then EOF (the step may keep stdin open for `grant_ack` lines).
-`test/protocol.test.ts` checks the program against this table. A field not in
+`test/heavy/protocol.test.ts` checks the program against this table. A field not in
 the table is refused, not ignored.
 
 | field | type | required | meaning |

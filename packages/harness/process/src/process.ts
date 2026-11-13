@@ -55,7 +55,7 @@ export { DRAIN_GRACE_MS, KILL_GRACE_MS, lastLines, systemClock, type Clock } fro
  * The file replaces a fourth pipe. Bun closes an extra pipe (stdio index 3 and
  * up) of a child process twice, once when its stream ends and once when the
  * child object is collected; by then a SQLite database may own the number, and
- * macOS kills the process (EXC_GUARD). See test/descriptor-owner.test.ts.
+ * macOS kills the process (EXC_GUARD). See test/heavy/descriptor-owner.test.ts.
  */
 const SENTINEL = [
   "trap ':' TERM",

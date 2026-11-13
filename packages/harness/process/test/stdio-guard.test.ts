@@ -11,7 +11,7 @@ const EXPLANATION = [
   "between, a SQLite database can take the descriptor number, and macOS kills",
   "the process with EXC_GUARD (exit 137). Use at most three stdio entries and",
   "do not read stdio[3] or higher; send extra output to a file instead.",
-  "See commit bf3a73e and packages/harness/process/test/descriptor-owner.test.ts.",
+  "See commit bf3a73e and packages/harness/process/test/heavy/descriptor-owner.test.ts.",
 ].join("\n");
 
 export interface Violation {
