@@ -114,6 +114,13 @@ Types (`StepContext`, `ActionTypeDefinition`, `ObjectRow`, ...) are exported too
 | `MemoryPluginStore` | The in-process store, for tests and one-shot use | [Storage](storage.md) |
 | `SqlitePluginStore` | The store backed by one SQLite file | [Storage](storage.md) |
 | `openPluginStore` | Opens the store a home uses | [Storage](storage.md) |
+| `OBJECT_CHANGE_FACT` | `"object.changed"`: the type of a fact `put` writes | [Storage](storage.md#reading-changes) |
+| `foldObjectFacts` | `foldObjectFacts(facts, start?)`: yields the whole object after each version fact, and returns the final value | [Storage](storage.md#reading-changes) |
+| `objectValueAfter` | The whole object after one fact, or `undefined` for an appended fact | [Storage](storage.md#reading-changes) |
+| `diffObject` | The changed fields and removed names from one object value to the next, or `undefined` when nothing changed | [Storage](storage.md#reading-changes) |
+| `applyObjectChange` | The whole object after applying one change | [Storage](storage.md#reading-changes) |
+| `objectChangeOf` | The change a change fact's data holds | [Storage](storage.md#reading-changes) |
+| `isObjectFact` | `true` for a fact that records a version of its object | [Storage](storage.md#reading-changes) |
 | `DEFAULT_PAGE_LIMIT` | `100` | [Storage](storage.md#filters-pages-and-cursors) |
 | `MAX_PAGE_LIMIT` | `1000` | [Storage](storage.md#filters-pages-and-cursors) |
 | `pageLimit` | The limit a page uses | [Storage](storage.md#filters-pages-and-cursors) |

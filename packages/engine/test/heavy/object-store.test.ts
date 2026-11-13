@@ -4,8 +4,12 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   CursorError,
+  foldObjectFacts,
   type ListOptions,
+  MemoryPluginStore,
+  OBJECT_CHANGE_FACT,
   openPluginStore,
+  PLUGIN_STORE_SCHEMA_VERSION,
   SqlitePluginStore,
   WhereError,
   type PluginStore,
@@ -412,4 +416,262 @@ describe("object facts", () => {
       stopSecond?.();
     });
   }
+});
+
+
+describe("object facts hold changes", () => {
+  for (const backend of BACKENDS) {
+    test(`put records only changed and removed fields (${backend})`, async () => {
+      const store = await open(backend);
+      store.put(
+        "note",
+        "n1",
+        { title: "One", brief: "long", tags: ["a"], meta: { nested: true } },
+        "seed",
+      );
+      const first = store.facts({ type: "note", id: "n1" }).facts[0];
+      expect(first?.type).toBe(OBJECT_CHANGE_FACT);
+      expect(first?.data).toEqual({
+        changed: { title: "One", brief: "long", tags: ["a"], meta: { nested: true } },
+        removed: [],
+      });
+
+      store.put(
+        "note",
+        "n1",
+        { title: "One", brief: "short", tags: ["a"], meta: { nested: true } },
+        "edit",
+      );
+      store.put("note", "n1", { title: "One", tags: ["a", "b"] }, "edit");
+      const facts = store.facts({ type: "note", id: "n1" }).facts;
+      expect(facts[1]?.data).toEqual({ changed: { brief: "short" }, removed: [] });
+      expect(facts[2]?.data).toEqual({
+        changed: { tags: ["a", "b"] },
+        removed: ["brief", "meta"],
+      });
+    });
+
+    test(`a put that changes nothing keeps an empty change fact (${backend})`, async () => {
+      const store = await open(backend);
+      const first = await store.put(
+        "note",
+        "n1",
+        { title: "One", nested: { list: [1, 2] } },
+        "seed",
+      );
+      const facts = store.facts({ type: "note", id: "n1" }).facts;
+      const again = await store.put(
+        "note",
+        "n1",
+        { nested: { list: [1, 2] }, title: "One" },
+        "same",
+      );
+      const after = store.facts({ type: "note", id: "n1" }).facts;
+      expect(after).toHaveLength(facts.length + 1);
+      expect(after.at(-1)).toMatchObject({
+        type: OBJECT_CHANGE_FACT,
+        cause: "same",
+        data: { changed: {}, removed: [] },
+      });
+      expect(again.version).toBe(first.version + 1);
+      expect((await store.get("note", "n1"))?.data).toEqual(first.data);
+    });
+  }
+
+  test("folding gives every version and matches the object table after random puts", () => {
+    const store = new MemoryPluginStore({ root: "unused" });
+    let state = 0x5eed;
+    const random = (): number => {
+      state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+      return state / 0x1_0000_0000;
+    };
+    const fields = ["a", "b", "c", "d"] as const;
+    const values = [undefined, 0, 1, "x", "y", [1, 2], { deep: true }] as const;
+    const expected: Record<string, unknown>[] = [];
+    let data: Record<string, unknown> = {};
+    for (let step = 0; step < 200; step += 1) {
+      const field = fields[Math.floor(random() * fields.length)] ?? "a";
+      const value = values[Math.floor(random() * values.length)];
+      if (value === undefined) delete data[field];
+      else data[field] = value;
+      const written = store.put("note", "n1", { ...data }, `edit ${step}`);
+      expected.push({ ...written.data });
+      const facts = store.facts({ type: "note", id: "n1" }, { limit: 1_000 }).facts;
+      const versions = [...foldObjectFacts(facts)].map((version) => ({ ...version.data }));
+      expect(versions).toEqual(expected);
+      expect(versions.at(-1) ?? {}).toEqual({ ...(store.get("note", "n1")?.data ?? {}) });
+    }
+  });
+
+  test("an old full-snapshot store is migrated once, keeping facts and appended data", async () => {
+    const root = await tempRoot();
+    const file = join(root, "store", "plugins.sqlite");
+    mkdirSync(join(root, "store"), { recursive: true });
+    const objects = [
+      { type: "note", id: "n1", data: { title: "Two" }, version: 3, cause: "edit", at: 50 },
+    ];
+    const oldFacts = [
+      { sequence: 1, type: "note", object_type: "note", object_id: "n1", cause: "seed", at: 10, data: { title: "One", brief: "long", tags: ["a"] } },
+      { sequence: 2, type: "note.seen", object_type: "note", object_id: "n1", cause: "reader", at: 20, data: { by: "person" } },
+      { sequence: 3, type: "note", object_type: "note", object_id: "n1", cause: "edit", at: 30, data: { title: "One", tags: ["a", "b"] } },
+      { sequence: 4, type: "note", object_type: "note", object_id: "n1", cause: "edit-again", at: 40, data: { title: "One", tags: ["a", "b"] } },
+      { sequence: 5, type: "note", object_type: "note", object_id: "n1", cause: "edit", at: 50, data: { title: "Two" } },
+    ] as const;
+    const database = new Database(file);
+    try {
+      database.exec(`
+        CREATE TABLE schema_version (
+          id      INTEGER PRIMARY KEY CHECK (id = 1),
+          version INTEGER NOT NULL
+        );
+        INSERT INTO schema_version (id, version) VALUES (1, 1);
+        CREATE TABLE objects (
+          type    TEXT NOT NULL,
+          id      TEXT NOT NULL,
+          data    TEXT NOT NULL,
+          version INTEGER NOT NULL,
+          cause   TEXT NOT NULL,
+          at      INTEGER NOT NULL,
+          PRIMARY KEY (type, id)
+        );
+        CREATE TABLE facts (
+          sequence    INTEGER PRIMARY KEY AUTOINCREMENT,
+          type        TEXT NOT NULL,
+          object_type TEXT,
+          object_id   TEXT,
+          cause       TEXT NOT NULL,
+          at          INTEGER NOT NULL,
+          data        TEXT NOT NULL
+        );
+        CREATE INDEX facts_by_object ON facts (object_type, object_id, sequence);
+        CREATE INDEX facts_by_object_id ON facts (object_id, object_type);
+        CREATE TABLE declared_index (
+          type  TEXT NOT NULL,
+          field TEXT NOT NULL,
+          PRIMARY KEY (type, field)
+        );
+        CREATE TABLE declared_types (type TEXT PRIMARY KEY);
+      `);
+      const insertObject = database.query(
+        "INSERT INTO objects (type, id, data, version, cause, at) VALUES (?, ?, ?, ?, ?, ?)",
+      );
+      for (const object of objects) {
+        insertObject.run(
+          object.type,
+          object.id,
+          JSON.stringify(object.data),
+          object.version,
+          object.cause,
+          object.at,
+        );
+      }
+      const insertFact = database.query(
+        "INSERT INTO facts (sequence, type, object_type, object_id, cause, at, data) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      );
+      for (const fact of oldFacts) {
+        insertFact.run(
+          fact.sequence,
+          fact.type,
+          fact.object_type,
+          fact.object_id,
+          fact.cause,
+          fact.at,
+          JSON.stringify(fact.data),
+        );
+      }
+    } finally {
+      database.close();
+    }
+
+    const store = new SqlitePluginStore({ root: join(root, "store"), follow: false });
+    const migrated = store.facts({ type: "note", id: "n1" }, { limit: 100 }).facts;
+    const versions = [...foldObjectFacts(migrated)];
+    expect(versions.map((version) => version.data)).toEqual([
+      { title: "One", brief: "long", tags: ["a"] },
+      { title: "One", tags: ["a", "b"] },
+      { title: "One", tags: ["a", "b"] },
+      { title: "Two" },
+    ]);
+    expect(versions.map((version) => version.fact.sequence)).toEqual([1, 3, 4, 5]);
+    expect(migrated.map((fact) => [fact.sequence, fact.cause, fact.at])).toEqual([
+      [1, "seed", 10],
+      [2, "reader", 20],
+      [3, "edit", 30],
+      [4, "edit-again", 40],
+      [5, "edit", 50],
+    ]);
+    expect(migrated[0]?.type).toBe(OBJECT_CHANGE_FACT);
+    expect(migrated[1]).toMatchObject({
+      type: "note.seen",
+      data: { by: "person" },
+      cause: "reader",
+      at: 20,
+    });
+    expect(store.get("note", "n1")?.data).toEqual({ title: "Two" });
+    const version = new Database(file);
+    try {
+      expect(
+        version
+          .query<{ version: number }, []>("SELECT version FROM schema_version WHERE id = 1")
+          .get()?.version,
+      ).toBe(PLUGIN_STORE_SCHEMA_VERSION);
+    } finally {
+      version.close();
+    }
+    store.close();
+
+    const reopened = new SqlitePluginStore({ root: join(root, "store"), follow: false });
+    try {
+      expect(reopened.facts({ type: "note", id: "n1" }, { limit: 100 }).facts).toEqual(migrated);
+    } finally {
+      reopened.close();
+    }
+  });
+
+  test("a store written before schema_version existed is treated as the snapshot version", async () => {
+    const root = await tempRoot();
+    const file = join(root, "store", "plugins.sqlite");
+    mkdirSync(join(root, "store"), { recursive: true });
+    const database = new Database(file);
+    try {
+      database.exec(`
+        CREATE TABLE facts (
+          sequence    INTEGER PRIMARY KEY AUTOINCREMENT,
+          type        TEXT NOT NULL,
+          object_type TEXT,
+          object_id   TEXT,
+          cause       TEXT NOT NULL,
+          at          INTEGER NOT NULL,
+          data        TEXT NOT NULL
+        );
+      `);
+      database
+        .query(
+          "INSERT INTO facts (sequence, type, object_type, object_id, cause, at, data) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        )
+        .run(
+          1,
+          "note",
+          "note",
+          "n1",
+          "seed",
+          10,
+          JSON.stringify({ title: "One", brief: "long" }),
+        );
+    } finally {
+      database.close();
+    }
+    const store = new SqlitePluginStore({ root: join(root, "store"), follow: false });
+    try {
+      const facts = store.facts({ type: "note", id: "n1" }, { limit: 10 }).facts;
+      expect(facts[0]).toMatchObject({
+        type: OBJECT_CHANGE_FACT,
+        cause: "seed",
+        at: 10,
+        data: { changed: { title: "One", brief: "long" }, removed: [] },
+      });
+    } finally {
+      store.close();
+    }
+  });
 });

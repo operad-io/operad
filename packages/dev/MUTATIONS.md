@@ -1066,3 +1066,12 @@ the row fields.
 |---|---|---|---|
 | T-0386-M5 | packages/dev/src/flaky.ts | the brief took `stress` from the newest occurrence that had one, not from the newest occurrence | `the command that reached the threshold decides the stress command and the rule` |
 | T-0386-M6 | packages/dev/src/flaky.ts | `{file}` was replaced by a space and the quoted file, so `--file={file}` split | `{file} is quoted in place, also when it follows an option` |
+
+## T-0385 — reading object facts as changes
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0385-M6 | packages/dev/src/views.ts | the Answer section read a change fact as if it were a whole snapshot | `dev views > the answer section gives the same output from old full snapshots as from changes` |
+| T-0385-M7 | packages/dev/src/views.ts | the attempts table read a change fact as if it were a whole snapshot | `dev views > the metrics summary has at most four columns, a row per attempt and a total` |
+| T-0385-M8 | packages/dev/src/throughput.ts | a task's history in Metrics was read as whole snapshots instead of folded changes | `repository metrics > counts per hour and per day, cost per merge, and step times` |
+| T-0385-M9 | packages/dev/src/service.ts | `rebuildObjects` kept only facts whose type equaled the object type, dropping every change | `2 000 random operations rebuild from history every time` |
