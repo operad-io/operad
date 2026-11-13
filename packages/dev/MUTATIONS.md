@@ -1140,6 +1140,8 @@ the row fields.
 | T-0414-M1 | packages/dev/src/gate.ts | the guard for a fallback index past the end of the list never fires (`>= list.length + 99`), so a shortened list retries with the primary's harness | `the next review run with a list of fallbacks > a recorded fallback index past the end of a shortened list ends the round` |
 | T-0414-M2 | packages/dev/src/gate.ts | `runPhrase` leaves out the list place of a later fallback | `dev/review fallback and retry > every fallback of a list failing without a report ends the review, naming each reason` |
 | T-0414-M3 | packages/dev/src/settings.ts | an empty `reviewer.fallback` list is accepted | `reviewer.fallback as a list > an empty list is refused and an entry's fields are named by index` |
+| T-0414-M5 | packages/dev/src/notcode.ts | `timeoutAlone` treats a load equal to the limit as busy again (`>` becomes `>=`) | `a test that timed out when run alone > a load equal to the flaky limit is not busy: the timeout is the code` |
+| T-0414-M6 | packages/dev/src/notcode.ts | the load in the note is rounded to a whole number again | `a test that timed out when run alone > a fractional load shows with one decimal, not rounded up to the limit` |
 
 ## T-0401-timeout-alone-is-code — rework 1
 

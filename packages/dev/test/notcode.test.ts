@@ -233,4 +233,20 @@ describe("a test that timed out when run alone", () => {
     const steady = await runCheckSteadily({ run: async () => alone(), limit: 30 });
     expect(steady.notCode?.kind).toBe("test-timeout");
   });
+
+  test("a load equal to the flaky limit is not busy: the timeout is the code", async () => {
+    notCodeTestHooks.load = () => ({ load1: 20, cores: 10 });
+    const steady = await runCheckSteadily({ run: async () => alone(), limit: undefined });
+    expect(steady.runs).toBe(1);
+    expect(steady.notCode).toBeUndefined();
+    const data = steady.checked.outcome?.data as { message: string };
+    expect(data.message).toContain("under load 20 on 10 cores");
+  });
+
+  test("a fractional load shows with one decimal, not rounded up to the limit", async () => {
+    notCodeTestHooks.load = () => ({ load1: 19.6, cores: 10 });
+    const steady = await runCheckSteadily({ run: async () => alone(), limit: undefined });
+    const data = steady.checked.outcome?.data as { message: string };
+    expect(data.message).toContain("under load 19.6 on 10 cores");
+  });
 });
