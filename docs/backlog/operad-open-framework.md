@@ -1,6 +1,6 @@
 # operad-open-framework：把 operad 自己的开发流程从代码里拿出去
 
-- 状态：idea（2026-11-11 写下；清单来自一次代码检查，形状是建议，owner 回头决定）
+- 状态：decided（2026-11-13 owner 定了 A1、A2、A4、B1、B2 的形状，见“决定”；A5 未定；A3、B3、B4 已做，P-0028）
 - 涉及：`operad.md` 决定 12、14、15、16、17；`operad-dev-flows.md`；`operad-plugins.md`；`operad-worker-pool.md`
 - 来源：2026-11-11 对 `packages/` 非测试源码的检查（关键词搜索加重点文件阅读，不是逐行通读，可能有漏的小处）
 
@@ -35,7 +35,23 @@ operad 和 `dev` 要做成开放框架：别的项目、别的技术栈拿来就
 3. `packages/cli/src/main.ts` 的 `onCancelRun`：输入来源写成 `"dev"`，会记进日志；看起来是遗留。
 4. TUI 用 `/^(done|merged)$/` 判断一行是否完成（`view/index.ts` 三处、`state.ts` 一处）；`merged` 是 `dev` 的状态词，mark 机制已经能表达。
 
-## 建议的形状（未定）
+## 决定（已定，2026-11-13 owner）
+
+仓库已公开、npm 发布在即，别的技术栈的仓库装上后会撞到下面这些写死的约定，所以这一项排在 Telegram 之前。
+
+1. **A1：flaky 的规则和复现命令放进 `gate.commands[].failed`**（`integration.keyCommands[].failed` 同样），不加新的顶层词。新增两个键：
+   - `failed.stress`：复现命令，带 `{pattern}` 和 `{file}`，和已有的 `failed.rerun` 同一套占位；没给时 brief 不写命令。
+   - `failed.rule`：一个文件路径（相对仓库），内容是这个仓库对 flaky 测试的规则文字；没给时用 `dev` 自带的一句和工具无关的话（“失败后重跑通过的测试是 bug；不要加超时或重试让它通过”）。
+   - `dev` 不再读 `CLAUDE.md`，不再探测 `scripts/stress.sh`，不再用 `bun test --rerun-each`。日志摘录用找到这次失败的那条命令自己的 `failed.match`，不认 bun 的输出格式。
+   - area 的推导不做：`dev` 不再从 `packages/<name>/` 推 area，自动开出的 flaky 任务不带 area。
+   - 本仓库把今天的规则文字和 `scripts/stress.sh` 命令搬进自己的 `.operad/`。
+2. **A2：主 clone 快进之后跑 `prepare`**，不认 `bun.lock`，不加新键。`prepare` 的含义从“`dev` 建的每个检出”扩到“以及快进后的主 clone”，文档写明；每次合并都跑一遍。
+3. **A4：“serve 在跑旧代码”由内核的 code-watch 给出**（`packages/engine/src/loop/code-watch.ts` 已经记着 serve 加载了哪些文件）。`dev` 里的 `recordServeCode` 和 `serve-older` 一项删掉；内核的这一项对任何加载了的代码都成立，不认 `dev`、`@operad-io/` 前缀或 `packages/` 布局。它是已有 watch 多报的一项待处理，不是新的内核概念。
+4. **B1、B2：默认值挪到 CLI 的 `init`**。engine 里没有任何插件名和动作名：默认插件列表、可选插件列表、插件名到包名的对应、`mcp.actions` 的默认，都归 CLI（发行版的默认）；engine 对缺省的 `mcp.actions` 是空。`operad init` 写出的 `config.json` 带上今天的默认。不改插件合约：哪些动作交给 lead 只由 owner 的配置决定，之后 enable 的插件的动作要手动加进 `mcp.actions`。
+5. **边界由测试守住**（原待决 4，lead 定，owner 未逐条确认）：`packages/dev/src` 的非测试源码里不出现 `bun `、`bun.lock`、`scripts/`、`CLAUDE.md`、`packages/`；engine 的非测试源码里不出现任何随 operad 发行的插件名和 `<插件>:` 动作名。
+6. **验收用一个非 Bun 的示例仓库**（原待决 5，lead 定，owner 未逐条确认）：测试里的一个小 fixture（没有 `package.json`、`scripts/`、`CLAUDE.md`，检查命令是 shell），用户文档里给同样的例子。
+
+## 当初建议的形状（A5 仍未定；其余以上面的决定为准）
 
 1. **A1**：flaky 的规则文本、复现命令、area 的推导都由仓库在 `dev.json` 里给；`dev` 自带的默认只留一句和工具无关的话（“失败后重跑通过的测试是 bug；不要加超时或重试让它通过”），没给复现命令时 brief 不写命令。日志摘录改用该命令自己的 `failed.match` 找失败行，不认 bun 的格式。本仓库把今天的文字和命令搬进 `.operad/dev.json`。
 2. **A2**：主 clone 快进之后跑仓库配置的命令（复用 `prepare`，或新加一个只在主 clone 跑的 hook），不认 `bun.lock`。本仓库在配置里写 `bun install --frozen-lockfile`。
@@ -48,11 +64,8 @@ operad 和 `dev` 要做成开放框架：别的项目、别的技术栈拿来就
 
 ## 待决问题（未定）
 
-1. A1、A2、A5 都会给 `dev.json` 加新的设置键，是新的用户可见的词（决定 14），键名要 owner 同意。
-2. A4 放哪里：独立插件，还是内核 code-watch。后者要看是否违反决定 12（内核不加插件能做的事）。
-3. B1 的“插件声明可交给 lead 的动作”是合约的改动，要不要做，还是只把默认值挪到 `init`。
-4. 要不要加一条测试守住边界：`packages/dev/src` 里不出现 `bun `、`scripts/`、`CLAUDE.md`、`packages/` 这类字样；engine、cli、tui、mcp 的源码里不出现 `dev:` 和其他插件名。
-5. 是否用一个非 Bun 的示例仓库（比如 Python 或 Go 的小项目）做验收，并放进文档。
+1. A5：排除列表里的 `.radian-sandbox/` 由谁声明（harness 自己，还是仓库配置）；分支名前缀 `work/` 和合并信息要不要做成设置。它们不是 Bun 的约定，别的技术栈的仓库不会因此走不通，所以不在 2026-11-13 这一批里。
+2. 已有的 home 如果 `config.json` 里没有 `mcp.actions`，决定 4 之后 lead 能做的动作变成空；升级说明里写一句，还是 `init` 之外再给一个补默认值的办法。
 
 ## 验收
 
