@@ -129,12 +129,15 @@ git checkout -q --detach --force "$sha" || { echo "remote-check: checkout of $sh
 # node_modules, and tests that list packages/ would find it.
 git clean -q -ffdx -e /node_modules >/dev/null 2>&1 || true
 export PATH="$(eval echo "$path_dirs"):$PATH"
-# Run the command in a process group of its own. When the connection drops,
-# sshd sends this shell a HUP; the trap then ends the command's whole group, so
-# a stop of the local remote-check.sh does not leave the remote check running.
+# Run the command in a process group of its own, and watch the session's stdin.
+# A stop of the local remote-check.sh closes this channel: the watcher sees the
+# end of stdin (and a HUP trap covers a host that also sends one), then ends the
+# command's whole group, so no check is left running on the host.
 child=
+watcher=
 shutdown() {
   trap '' HUP TERM INT
+  if [ -n "$watcher" ]; then kill "$watcher" 2>/dev/null || true; watcher=; fi
   if [ -n "$child" ]; then
     kill -TERM -"$child" 2>/dev/null || kill -TERM "$child" 2>/dev/null
     sleep 1
@@ -143,13 +146,24 @@ shutdown() {
   exit 143
 }
 trap shutdown HUP TERM INT
+exec 3<&0
+(
+  while IFS= read -r _ <&3; do :; done
+  if [ -n "$child" ]; then
+    kill -TERM -"$child" 2>/dev/null || kill -TERM "$child" 2>/dev/null
+    sleep 1
+    kill -KILL -"$child" 2>/dev/null || true
+  fi
+) &
+watcher=$!
 set -m
-bash -c "$command" &
+bash -c "$command" < /dev/null &
 child=$!
 set +m
 wait "$child"
 status=$?
 trap - HUP TERM INT
+if [ -n "$watcher" ]; then kill "$watcher" 2>/dev/null || true; fi
 exit "$status"
 REMOTE
 code=$?
