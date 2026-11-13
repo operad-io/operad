@@ -18,6 +18,7 @@ import {
   loadTriggerRules,
   openLog,
   prepareSettings,
+  recordAnswer,
   type JsonValue,
   type LogBackend,
   type PluginStepResult,
@@ -181,6 +182,8 @@ export interface WorldOptions {
   readonly follow?: boolean | undefined;
   /** What the chat's agent does; with none it has no step and no run can be driven. */
   readonly agent?: AgentScript | undefined;
+  /** More plugins loaded beside the chat and bot plugins, such as `dev`. */
+  readonly plugins?: readonly unknown[] | undefined;
 }
 
 /** Builds the world a source runs in; the caller owns and removes `root`. */
@@ -198,7 +201,7 @@ export async function createTelegramWorld(options: WorldOptions): Promise<Telegr
   const store = new SqlitePluginStore({ root: storeRoot, clock });
   const log = openLog({ backend: "sqlite", path: join(storeRoot, SQLITE_FILE_NAME), follow: false });
   let kernel: Kernel | undefined;
-  const registry = new PluginRegistry([createChatPlugin(), createBotPlugin(), fakeHarness(options.agent)], {
+  const registry = new PluginRegistry([createChatPlugin(), createBotPlugin(), fakeHarness(options.agent), ...(options.plugins ?? [])], {
     home,
     cwd: options.root,
     store,
@@ -206,6 +209,10 @@ export async function createTelegramWorld(options: WorldOptions): Promise<Telegr
     clock,
     settings: {},
     onLog,
+    // What `operad serve` does with an answer an action gives: record it for the run.
+    onAnswer: async (runId, choice, note, actor) => {
+      await recordAnswer({ log, runId, choice, ...(note === undefined ? {} : { note }), actor });
+    },
     onEvent: async (event: TriggerEvent) => {
       await kernel?.receive(event);
     },

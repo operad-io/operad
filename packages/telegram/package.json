@@ -21,5 +21,8 @@
     "telegram.schema.json",
     "README.md",
     "LICENSE"
-  ]
+  ],
+  "devDependencies": {
+    "@operad-io/dev": "workspace:*"
+  }
 }

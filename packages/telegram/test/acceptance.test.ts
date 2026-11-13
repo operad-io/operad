@@ -5,11 +5,14 @@
  */
 
 import { afterAll, expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CHAT_TYPE, allMessages, chatData } from "@operad-io/chat";
-import { Runner, type SourceContext } from "@operad-io/engine";
+import { Runner, defineFlow, definePlugin, type SourceContext } from "@operad-io/engine";
+import { serveOnce } from "../../engine/src/loop/serve.ts";
+import devPlugin, { addPlan, addRepository, addTask, confirmPlan, getTask, setTaskPhase, taskData } from "@operad-io/dev";
 import {
   PendingSender,
   ReplySender,
@@ -109,6 +112,61 @@ function startPlugin(ctx: SourceContext, api: BotApi) {
   };
 }
 
+/** The test is the serve loop: a run the kernel records is given to a runner, after each event the plugin emits. */
+function serveLoop(w: TelegramWorld, root: string): {
+  readonly ctx: SourceContext;
+  readonly runners: Promise<unknown>[];
+  drive(): Promise<void>;
+  /** One pass of `operad serve`: it applies the answers recorded for waiting runs and gives each run a runner. */
+  pass(): Promise<void>;
+} {
+  const runners: Promise<unknown>[] = [];
+  const driven = new Set<string>();
+  const launch = async (runId: string): Promise<void> => {
+    const run = (await w.log.runs()).find((candidate) => candidate.runId === runId);
+    if (run === undefined || run.object === undefined) throw new Error(`no run ${runId}`);
+    const found = w.registry.flow(run.flow);
+    if (found === undefined) throw new Error(`no flow ${run.flow}`);
+    const [type, id] = run.object.split(":");
+    if (type === undefined || id === undefined) throw new Error(`object ${run.object}`);
+    runners.push(
+      new Runner({
+        log: w.log,
+        flow: found.flow,
+        runId,
+        registry: w.registry,
+        lockRoot: join(root, "locks"),
+        object: { type, id },
+      }).run(),
+    );
+  };
+  const drive = async (): Promise<void> => {
+    for (const run of await w.log.runs()) {
+      if (driven.has(run.runId) || run.object === undefined) continue;
+      driven.add(run.runId);
+      await launch(run.runId);
+    }
+  };
+  const pass = async (): Promise<void> => {
+    await serveOnce({
+      log: w.log,
+      registry: w.registry,
+      kernel: w.kernel,
+      lockRoot: join(root, "locks"),
+      spawnRun: launch,
+    });
+    await Promise.all(runners);
+  };
+  const ctx: SourceContext = {
+    ...w.ctx,
+    emit: async (event) => {
+      await w.ctx.emit(event);
+      await drive();
+    },
+  };
+  return { ctx, runners, drive, pass };
+}
+
 test("from the first Telegram message to an answered pending item", async () => {
   const root = await mkdtemp(join(tmpdir(), "telegram-acceptance-"));
   roots.push(root);
@@ -127,36 +185,7 @@ test("from the first Telegram message to an answered pending item", async () => 
     },
   });
 
-  // The test is the serve loop: a run the kernel records is given to a runner.
-  const runners: Promise<unknown>[] = [];
-  const driven = new Set<string>();
-  const drive = async (): Promise<void> => {
-    for (const run of await w.log.runs()) {
-      if (driven.has(run.runId) || run.object === undefined) continue;
-      driven.add(run.runId);
-      const found = w.registry.flow(run.flow);
-      if (found === undefined) throw new Error(`no flow ${run.flow}`);
-      const [type, id] = run.object.split(":");
-      if (type === undefined || id === undefined) throw new Error(`object ${run.object}`);
-      runners.push(
-        new Runner({
-          log: w.log,
-          flow: found.flow,
-          runId: run.runId,
-          registry: w.registry,
-          lockRoot: join(root, "locks"),
-          object: { type, id },
-        }).run(),
-      );
-    }
-  };
-  const ctx: SourceContext = {
-    ...w.ctx,
-    emit: async (event) => {
-      await w.ctx.emit(event);
-      await drive();
-    },
-  };
+  const { ctx, runners } = serveLoop(w, root);
 
   const api = new LongPollApi();
   const plugin = startPlugin(ctx, api);
@@ -230,5 +259,106 @@ test("from the first Telegram message to an answered pending item", async () => 
   expect(again.sent).toEqual([]);
   expect(sentBefore).toBe(3);
   await restarted.stop();
+  await w.close();
+});
+
+/** A git work tree with one commit and an origin, which dev needs of a repository. */
+async function makeGitRepository(parent: string): Promise<string> {
+  const path = join(parent, "repository");
+  await mkdir(path, { recursive: true });
+  const git = (...args: string[]): void => {
+    const result = spawnSync("git", ["-c", "user.name=test", "-c", "user.email=test@example.com", ...args], { cwd: path });
+    if (result.status !== 0) throw new Error(`git ${args.join(" ")}: ${result.stderr.toString()}`);
+  };
+  git("init", "-q");
+  git("remote", "add", "origin", "https://example.com/repo.git");
+  await writeFile(join(path, "README.md"), "# test\n");
+  git("add", "README.md");
+  git("commit", "-qm", "start");
+  return path;
+}
+
+/** A run waiting where dev's task waits for a person, so the real dev actions are on the item. */
+const waitsPlugin = definePlugin({
+  name: "waits",
+  kind: "domain",
+  version: "0.0.0",
+  flows: [
+    defineFlow({
+      name: "waits:review",
+      entry: "wait",
+      steps: [
+        {
+          id: "wait",
+          kind: "wait_person",
+          params: { prompt: "The task is ready for you.", choices: ["merge", "reject", "rework", "reverify"] },
+          replay: "safe",
+          next: { merge: "done", reject: "done", rework: "done", reverify: "done", interrupted: "done" },
+        },
+        { id: "done", kind: "end", params: { status: "done" }, replay: "safe" },
+      ],
+    }),
+  ],
+});
+
+test("a proposed task and a task waiting for a merge are answered from Telegram through the real dev plugin", async () => {
+  const root = await mkdtemp(join(tmpdir(), "telegram-acceptance-dev-"));
+  roots.push(root);
+  const w = await createTelegramWorld({ root, users: [42], follow: true, pending: ["dev"], plugins: [devPlugin, waitsPlugin] });
+  const repository = await addRepository(w.store, { path: await makeGitRepository(root) });
+  const plan = await addPlan(w.store, { repository, slug: "work", title: "Work" });
+  await addTask(w.store, { plan: plan.id, slug: "first", title: "First" });
+  await confirmPlan(w.store, plan.id);
+  // Added to a confirmed plan, it is proposed and waits for the owner.
+  const proposed = await addTask(w.store, { plan: plan.id, slug: "second", title: "Second", openedBy: "dev" });
+  // A task whose review is done waits for a merge, as a run of its flow would leave it.
+  const waiting = await addTask(w.store, { plan: plan.id, slug: "third", title: "Third" });
+  await setTaskPhase(w.store, waiting.id, "waiting");
+  const current = taskData((await getTask(w.store, waiting.id)).data);
+  await w.store.put("task", waiting.id, { ...current, attempt: { number: 1, run: "run-1", verified: "abc123" } }, "test:verified");
+  const started = await w.kernel.start({ flow: "waits:review", object: `task:${waiting.id}` });
+  if (started.kind !== "started") throw new Error("the wait did not start");
+
+  const { ctx, drive, pass } = serveLoop(w, root);
+  await drive();
+  const api = new LongPollApi();
+  const plugin = startPlugin(ctx, api);
+  await plugin.ready;
+
+  // Both items reach the listed user, each with the buttons its real actions give.
+  await api.until(() => api.sent.length === 2);
+  const proposedCard = api.sent.find((message) => message.text.includes("proposed"));
+  const mergeCard = api.sent.find((message) => message.text.includes("ready for you"));
+  if (proposedCard === undefined || mergeCard === undefined) throw new Error(`cards: ${JSON.stringify(api.sent.map((m) => m.text))}`);
+  expect(proposedCard.chatId).toBe(42);
+  expect(proposedCard.keyboard?.flat().map((button) => button.text)).toContain("confirm");
+  const mergeButtons = mergeCard.keyboard?.flat().map((button) => button.text) ?? [];
+  expect(mergeButtons).toContain("merge");
+  // reject and rework need a note: no button, a reply is the note.
+  expect(mergeButtons).not.toContain("reject");
+  expect(mergeCard.text).toContain("Reply to this message to reject");
+
+  // A tap on confirm confirms the task, as the Telegram user.
+  const confirm = proposedCard.keyboard?.flat().find((button) => button.text === "confirm");
+  if (confirm === undefined) throw new Error("no confirm button");
+  api.deliver(tap(200, 42, 42, proposedCard.messageId, confirm.data));
+  await api.until(() => api.edits.some((edit) => edit.messageId === proposedCard.messageId && edit.text.includes("answered: confirm")));
+  expect(taskData((await getTask(w.store, proposed.id)).data).phase).toBe("ready");
+
+  // A tap from a user who is not listed changes nothing.
+  api.deliver(tap(201, 7, 42, mergeCard.messageId, "o:0"));
+  await api.until(() => api.callbacks.some((callback) => callback.callbackId === "cb-201"));
+  expect(taskData((await getTask(w.store, waiting.id)).data).brief).not.toContain("merge requested");
+
+  // A tap on merge answers the run's wait and the run goes on.
+  const merge = mergeCard.keyboard?.flat().find((button) => button.text === "merge");
+  if (merge === undefined) throw new Error("no merge button");
+  api.deliver(tap(202, 42, 42, mergeCard.messageId, merge.data));
+  await api.until(() => api.edits.some((edit) => edit.messageId === mergeCard.messageId && edit.text.includes("answered: merge")));
+  await pass();
+  expect(taskData((await getTask(w.store, waiting.id)).data).brief).toContain("merge requested");
+  // Only dev's note about its missing worker pool is left; it has nothing to answer.
+  expect((await w.views.pending()).map((item) => item.runId)).toEqual(["dev:plugin:pool"]);
+  await plugin.stop();
   await w.close();
 });
