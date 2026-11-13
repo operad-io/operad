@@ -199,6 +199,7 @@ describe("a serve restored after a restart could not listen", () => {
       const watch = new CodeWatch({
         roots: snapshot.roots,
         baseline: snapshot.baseline,
+        declined: snapshot.tried,
         quietMs: 100,
         pollMs: 1_000,
         clock,

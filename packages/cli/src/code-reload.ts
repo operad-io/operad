@@ -40,6 +40,11 @@ export interface CodeSnapshot {
   readonly roots: readonly CodeRoot[];
   readonly baseline: CodeFingerprint;
   readonly cache: ReturnType<typeof newHashCache>;
+  /**
+   * The files on disk when a restart was already tried and fell back: the
+   * restored serve does not try that same change again.
+   */
+  readonly tried?: CodeFingerprint | undefined;
 }
 
 export function takeCodeSnapshot(
@@ -67,13 +72,14 @@ export function takeCodeSnapshot(
  * process loaded at its first start (engine, cli and the plugins: Bun keeps
  * them in its module cache), so its baseline is that first snapshot, not the
  * files on disk now. The watch then sees the change that caused the failed
- * restart and the older-code item shows.
+ * restart and the older-code item shows; the files on disk now count as
+ * already tried, so the same change is not tried again in a loop.
  */
 export function serveSnapshots(): (fresh: CodeSnapshot, restored: boolean) => CodeSnapshot {
   let first: CodeSnapshot | undefined;
   return (fresh, restored) => {
     first ??= fresh;
-    return restored ? { ...fresh, baseline: first.baseline } : fresh;
+    return restored ? { ...fresh, baseline: first.baseline, tried: fresh.baseline } : fresh;
   };
 }
 

@@ -136,8 +136,11 @@ the row fields.
 | T-0377-M6 | packages/cli/package.json | removed `"license": "MIT"` from the CLI manifest | `the packages a publish needs > every publishable package has one version, the repository fields and the licence` |
 | T-0377-M8 | packages/cli/src/main.ts | `loadTui` skipped `ensureInstalledPackage` and imported the package directly, so a published CLI never installed the terminal client into the home | `operad tui > installs the terminal client into the home when the CLI has no copy` |
 
-## T-0388 — rework 4: a restored serve keeps the snapshot of its first start
+## T-0388 — rework 5: a restored serve shows the item once and does not try the same change again
 
 | id | file | mutation | failing test |
 |---|---|---|---|
-| T-0388-M3 | packages/cli/src/code-reload.ts | `serveSnapshots` gave a restored serve the fresh disk snapshot instead of the one from the process's first start, so the watch saw no difference | `a serve restored after a restart could not listen > a changed engine file shows the item; a serve that restarted on the new code shows none` (and the same test for a changed plugin file) |
+| T-0388-M3 | packages/cli/src/code-reload.ts | `serveSnapshots` gave a restored serve the fresh disk snapshot instead of the one from the process's first start | `a serve restored after a restart could not listen > a changed engine file shows the item; …` (and the plugin one) |
+| T-0388-M4 | packages/cli/src/main.ts | the restore callback of `superviseServe` ran `runOnce(false, true, false)`, so the restored serve took a fresh baseline | `a reload with two listen addresses > a bind that keeps failing leaves the old code serving both addresses, with one line in the log` (real serve and child processes; the item is missing) |
+| T-0388-M5 | packages/cli/src/main.ts | the serve's code watch was not given `declined: context.code.tried`, so the restored serve reloaded on the same change again | same test (a second `reloading:` line, and the item is gone) |
+| T-0388-M6 | packages/cli/src/main.ts | the serve's code watch did not report `onOlder` to the notice | same test (no `serve-older.json`) |

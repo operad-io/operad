@@ -1743,6 +1743,7 @@ async function commandServe(
         roots: context.code.roots,
         alsoWatch: settingsRoots(context.home),
         baseline: context.code.baseline,
+        declined: context.code.tried,
         quietMs: envNumber("OPERAD_RELOAD_QUIET_MS", 1_000),
         pollMs: envNumber("OPERAD_RELOAD_POLL_MS", 5_000),
         onOlder: olderNotice.report,

@@ -329,6 +329,12 @@ export interface CodeWatchOptions {
   readonly alsoWatch?: readonly CodeRoot[] | undefined;
   /** What the process loaded; the watch takes its own when omitted. */
   readonly baseline?: CodeFingerprint | undefined;
+  /**
+   * The files as they were when a change was already tried and kept before this
+   * watch started (a serve that fell back to its old code). They count as
+   * declined: the handler is offered only what differs from them.
+   */
+  readonly declined?: CodeFingerprint | undefined;
   /** How long files stay unchanged before the watch acts. */
   readonly quietMs: number;
   /** The timers of the quiet period and the fallback check; tests inject theirs. */
@@ -377,7 +383,13 @@ export class CodeWatch {
   start(): void {
     const current = fingerprintCode(this.options.roots, this.cache);
     this.baseline ??= current;
-    this.sync(current, this.settings());
+    const settings = this.settings();
+    if (this.options.declined !== undefined) {
+      this.declined = { code: this.options.declined, settings };
+    }
+    // Code that already differs from the baseline at the start is older now.
+    this.setOlder(diffFingerprints(this.baseline, current) !== undefined);
+    this.sync(current, settings);
     const pollMs = this.options.pollMs ?? 5_000;
     const tick = (): void => {
       if (this.closed) return;

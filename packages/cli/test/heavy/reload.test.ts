@@ -495,6 +495,8 @@ describe("a reload with two listen addresses", () => {
       expect(await answers(urlOf("127.0.0.1", port))).toBe(true);
       expect(await answers(urlOf(second, port))).toBe(true);
       expect(output.text).not.toContain("Failed to start server");
+      // The new code took over: serve runs what is on disk, so nothing is pending about it.
+      expect(await operad(s, ["pending", "--json"])).not.toContain("serve runs older code");
     } finally {
       closeStream?.();
       await stopServe(s);
@@ -529,6 +531,11 @@ describe("a reload with two listen addresses", () => {
       await blocker.stop(true);
       blocker = undefined;
       await output.until(/serving /, 2);
+      // The old code serves again while the changed plugin is on disk: pending says so,
+      // and the restored serve does not try that change again.
+      await waitForFileNamed(join(s.home, "serve-older.json"));
+      expect(await operad(s, ["pending", "--json"])).toContain("serve runs older code than the files on disk");
+      expect(output.text.match(/reloading: /g)).toHaveLength(1);
       expect(await answers(urlOf("127.0.0.1", port))).toBe(true);
       expect(await answers(urlOf(second, port))).toBe(true);
       expect(output.text.match(/the old code tries every address again/g)).toHaveLength(1);
