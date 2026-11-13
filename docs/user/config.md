@@ -93,10 +93,30 @@ nothing in this manual prints a secret.
 }
 ```
 
-A missing `config.json` means the default configuration: `shell`, `radian`, `chat`
-and `dev` installed, the store at `store/log.sqlite`, `http` on at
-`127.0.0.1:7480`, notifications off, the MCP lists above and the ask grace of
-600 seconds. `operad init` writes that file when the home has none.
+`operad init` writes a `config.json` when the home has none: `shell`, `radian`,
+`chat` and `dev` installed, the store at `store/log.sqlite`, `http` on at
+`127.0.0.1:7480`, notifications off, the `mcp.actions` and `mcp.confirmActions`
+lists above and the ask grace of 600 seconds. All of it is written into the
+file; nothing in it is a hidden default. A home with no `config.json` at all
+has no plugins and allows no lead action.
+
+An existing home is never rewritten. `operad init` on a home that has a
+`config.json` keeps the file as it is; the one exception is a file with no
+`plugins` key, which gets the default plugins added and nothing else. A
+`config.json` without `mcp.actions` allows no lead action. A home made before
+this change lists its plugins already but may have no `mcp.actions`; to keep
+the lead's actions, add these lines to its `mcp` section and restart
+`operad mcp`:
+
+```json
+"mcp": {
+  "actions": ["dev:rework", "dev:reverify", "dev:reject", "dev:priority", "dev:concurrency", "chat:close"],
+  "confirmActions": ["chat:close"]
+}
+```
+
+Enabling a plugin later does not add its actions to `mcp.actions`; add them by
+hand.
 
 Every top-level section is optional. The kernel reads only the keys it names:
 an unknown key at the top level, inside an engine section (`store`, `http`,
@@ -158,8 +178,8 @@ the new process read another history; it does not move the old file.
 | `mcp.channel` | object | `{ "notify": ["waiting", "ended", "loop"], "loopAfter": 3 }` | the keys below | When `operad mcp` starts | Refused: `mcp.channel: must be an object` |
 | `mcp.channel.notify` | array of strings | `["waiting", "ended", "loop"]` | `waiting`, `ended`, `loop`, `changes` | When `operad mcp` starts | Refused: `mcp.channel.notify: unknown entry <value>; use "waiting", "ended", "loop", "changes"` |
 | `mcp.channel.loopAfter` | integer | `3` | `2` or more | When `operad mcp` starts | Refused: `mcp.channel.loopAfter: must be an integer of 2 or more` |
-| `mcp.actions` | array of strings | `["dev:rework", "dev:reverify", "dev:reject", "dev:priority", "dev:concurrency", "chat:close"]` | `<plugin>:<action>` names | When `operad mcp` starts | Refused: `mcp.actions: must be an array of "<plugin>:<action>" names` |
-| `mcp.confirmActions` | array of strings | `["chat:close"]` | `<plugin>:<action>` names that are also in `mcp.actions` and ask to confirm | When `operad mcp` starts | Refused: `mcp.confirmActions: must be an array of "<plugin>:<action>" names` |
+| `mcp.actions` | array of strings | `[]` (`operad init` writes the five `dev` lead actions and `chat:close` into a new file) | `<plugin>:<action>` names | When `operad mcp` starts | Refused: `mcp.actions: must be an array of "<plugin>:<action>" names` |
+| `mcp.confirmActions` | array of strings | `[]` (`operad init` writes `["chat:close"]` into a new file) | `<plugin>:<action>` names that are also in `mcp.actions` and ask to confirm | When `operad mcp` starts | Refused: `mcp.confirmActions: must be an array of "<plugin>:<action>" names` |
 
 `mcp.actions` is the list the MCP server may run for a lead. Every other action
 is refused for the owner to run. `mcp.confirmActions` is the smaller list of

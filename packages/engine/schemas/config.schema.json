@@ -154,13 +154,7 @@
             "type": "string",
             "minLength": 1
           },
-          "default": [
-            "dev:rework",
-            "dev:reverify",
-            "dev:reject",
-            "dev:priority",
-            "dev:concurrency"
-          ],
+          "default": [],
           "description": "The plugin actions named <plugin>:<action> that operad mcp may run. Every other action is refused for the owner to run. Takes effect at the next operad mcp start."
         },
         "confirmActions": {

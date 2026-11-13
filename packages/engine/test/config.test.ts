@@ -4,10 +4,11 @@ import { join } from "node:path";
 import {
   ConfigError,
   DEFAULT_MCP,
-  DEFAULT_PLUGINS,
   configJson,
   defaultConfig,
   ensureConfig,
+  setPluginEnabled,
+  type OperadConfig,
   readConfig,
   storeRootOf,
   writeConfig,
@@ -16,24 +17,69 @@ import { cleanupTempRoots, tempRoot } from "./plugin/support.ts";
 
 afterAll(cleanupTempRoots);
 
+/** A distribution's config for a new home, as the CLI passes it to `ensureConfig`. */
+function distro(home: string): OperadConfig {
+  return {
+    ...defaultConfig(home),
+    plugins: [
+      { name: "shell", module: "@operad-io/shell", enabled: true, settings: {} },
+      { name: "dev", module: "@operad-io/dev", enabled: true, settings: {} },
+    ],
+    mcp: { ...DEFAULT_MCP, actions: ["dev:rework", "chat:close"], confirmActions: ["chat:close"] },
+  };
+}
+
 describe("operad config", () => {
-  test("the default plugins are shell, the radian harness, chat and dev", async () => {
-    expect(DEFAULT_PLUGINS).toEqual(["shell", "radian", "chat", "dev"]);
+  test("the engine's defaults name no plugin and allow no action", async () => {
+    expect(defaultConfig("/h").plugins).toEqual([]);
+    expect(DEFAULT_MCP.actions).toEqual([]);
+    expect(DEFAULT_MCP.confirmActions).toEqual([]);
     const root = await tempRoot();
     const home = join(root, "home");
     await ensureConfig(home);
-    const text = JSON.parse(
-      await readFile(join(home, "config.json"), "utf8"),
-    ) as { plugins: Record<string, { module: string; enabled: boolean }> };
+    const text = JSON.parse(await readFile(join(home, "config.json"), "utf8")) as {
+      plugins: Record<string, unknown>;
+      mcp: { actions: string[]; confirmActions: string[] };
+    };
+    expect(text.plugins).toEqual({});
+    expect(text.mcp.actions).toEqual([]);
+  });
+
+  test("init writes the given defaults, plugins and mcp lists, into a new file", async () => {
+    const root = await tempRoot();
+    const home = join(root, "home");
+    await ensureConfig(home, distro(home));
+    const text = JSON.parse(await readFile(join(home, "config.json"), "utf8")) as {
+      plugins: Record<string, unknown>;
+      mcp: { actions: string[]; confirmActions: string[] };
+    };
     expect(text.plugins).toEqual({
       shell: { module: "@operad-io/shell", enabled: true },
-      "radian": {
-        module: "@operad-io/harness-radian",
-        enabled: true,
-      },
-      chat: { module: "@operad-io/chat", enabled: true },
       dev: { module: "@operad-io/dev", enabled: true },
     });
+    expect(text.mcp.actions).toEqual(["dev:rework", "chat:close"]);
+    expect(text.mcp.confirmActions).toEqual(["chat:close"]);
+  });
+
+  test("a config without mcp allows no action", async () => {
+    const root = await tempRoot();
+    const home = join(root, "home");
+    await Bun.write(join(home, "config.json"), JSON.stringify({ plugins: {} }));
+    expect((await readConfig(home)).mcp.actions).toEqual([]);
+    expect((await readConfig(home)).mcp.confirmActions).toEqual([]);
+    await Bun.write(join(home, "config.json"), JSON.stringify({ mcp: { channel: {} } }));
+    expect((await readConfig(home)).mcp.actions).toEqual([]);
+  });
+
+  test("plugin enable adds an offered plugin and refuses one that is not offered", async () => {
+    const root = await tempRoot();
+    const home = join(root, "home");
+    await ensureConfig(home, distro(home));
+    const offer = { optional: { pool: "@operad-io/pool" } };
+    await setPluginEnabled(home, "pool", true, offer);
+    expect((await readConfig(home)).plugins.map((entry) => entry.name)).toEqual(["shell", "dev", "pool"]);
+    await expect(setPluginEnabled(home, "bot", true, offer)).rejects.toThrow(/no such plugin/);
+    await expect(setPluginEnabled(home, "constructor", true, offer)).rejects.toThrow(/no such plugin/);
   });
 
   test("a missing config means sqlite at <home>/store/log.sqlite", async () => {
@@ -41,7 +87,7 @@ describe("operad config", () => {
     const home = join(root, "home");
     const config = await readConfig(home);
     expect(config).toEqual({
-      plugins: defaultConfig(home).plugins,
+      plugins: [],
       store: { backend: "sqlite", path: join(home, "store", "log.sqlite") },
       http: { enabled: true, port: 7480, listen: ["127.0.0.1"] },
       notify: { command: null, on: ["waiting"] },
@@ -55,15 +101,16 @@ describe("operad config", () => {
     const root = await tempRoot();
     const home = join(root, "home");
     await Bun.write(join(home, "config.json"), JSON.stringify({ store: { path: "s" } }));
-    const ensured = await ensureConfig(home);
+    const ensured = await ensureConfig(home, distro(home));
     expect(ensured.created).toBe(false);
-    expect(ensured.config.plugins).toEqual(defaultConfig(home).plugins);
+    expect(ensured.config.plugins).toEqual(distro(home).plugins);
+    expect(ensured.config.mcp.actions).toEqual([]);
     const text = JSON.parse(await readFile(join(home, "config.json"), "utf8")) as {
       store: { path: string };
     };
     expect(text.store.path).toBe("s");
-    const again = await ensureConfig(home);
-    expect(again.config.plugins).toEqual(defaultConfig(home).plugins);
+    const again = await ensureConfig(home, distro(home));
+    expect(again.config.plugins).toEqual(distro(home).plugins);
   });
 
   test("a failed write leaves the existing config whole", async () => {
@@ -81,7 +128,7 @@ describe("operad config", () => {
     const root = await tempRoot();
     const home = join(root, "home");
     await Bun.write(join(home, "config.json"), JSON.stringify({ store: { path: "s" } }));
-    await ensureConfig(home);
+    await ensureConfig(home, distro(home));
     expect(await readdir(home)).toEqual(["config.json"]);
   });
 
@@ -138,7 +185,7 @@ describe("operad config", () => {
     const root = await tempRoot();
     const home = join(root, "home");
     const first = await ensureConfig(home);
-    const second = await ensureConfig(home);
+    const second = await ensureConfig(home, distro(home));
     expect(first.created).toBe(true);
     expect(second.created).toBe(false);
     expect(second.config).toEqual(defaultConfig(home));
@@ -337,12 +384,9 @@ describe("operad config", () => {
     await Bun.write(join(home, "config.json"), JSON.stringify({ mcp: {} }));
     expect((await readConfig(home)).mcp).toEqual({
       channel: { notify: ["waiting", "ended", "loop"], loopAfter: 3 },
-      actions: [...DEFAULT_MCP.actions],
-      confirmActions: ["chat:close"],
+      actions: [],
+      confirmActions: [],
     });
-    // The lead may close a chat: allowed, and confirmed, in the shipped defaults.
-    expect(DEFAULT_MCP.actions).toContain("chat:close");
-    expect(DEFAULT_MCP.confirmActions).toContain("chat:close");
   });
 
   test("reads mcp.channel and keeps it when written", async () => {

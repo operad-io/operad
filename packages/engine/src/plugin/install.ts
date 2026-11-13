@@ -19,9 +19,6 @@ export const PLUGIN_PROJECT_DIRECTORY = "plugins";
 /** The package name the generated project manifests use. */
 const PROJECT_NAME = "operad-plugins";
 
-/** The plugins whose package is installed into the home rather than shipped with the CLI. */
-export const INSTALL_ON_ENABLE: readonly string[] = ["claude"];
-
 /** Where the home's plugin project lives. */
 export function pluginProjectPath(home: string): string {
   return join(home, PLUGIN_PROJECT_DIRECTORY);
