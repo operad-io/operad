@@ -7,6 +7,7 @@
  * program, never by the hub.
  */
 
+import pkg from "../package.json" with { type: "json" };
 import { secretValuesOf } from "@operad-io/access-match";
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
@@ -348,7 +349,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
   return definePlugin({
     name: "pi",
     kind: "harness",
-    version: "0.0.0",
+    version: pkg.version,
     models: piModels,
     efforts: PI_EFFORTS,
     settings: PLUGIN_SETTINGS,

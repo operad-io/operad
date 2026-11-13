@@ -5,6 +5,7 @@
  * its own `count` in the repository and the home-wide cap on its harness.
  */
 
+import pkg from "../package.json" with { type: "json" };
 import { definePlugin, isRecord, type PluginStepResult, type StepContext, type StepRunOptions } from "@operad-io/engine";
 import { reportWorkerPlaced } from "@operad-io/engine/platform";
 import { join } from "node:path";
@@ -204,7 +205,7 @@ export function createPoolPlugin(options: PoolPluginOptions = {}) {
   return definePlugin({
     name: "pool",
     kind: "stage",
-    version: "0.0.0",
+    version: pkg.version,
     settings: POOL_SETTINGS,
     steps: [
       {

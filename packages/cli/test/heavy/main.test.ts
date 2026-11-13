@@ -635,7 +635,8 @@ describe("operad command", () => {
 
     const listed = capture();
     expect(await main(["plugin", "list"], { home, io: listed.io })).toBe(0);
-    expect(listed.text()).toContain("pi  0.0.0  enabled");
+    const piVersion = (JSON.parse(readFileSync(fileURLToPath(new URL("../../../harness/pi/package.json", import.meta.url)), "utf8")) as { version: string }).version;
+    expect(listed.text()).toContain(`pi  ${piVersion}  enabled`);
 
     const claude = capture();
     expect(await main(["plugin", "enable", "claude"], { home, io: claude.io })).toBe(0);
