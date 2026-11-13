@@ -34,6 +34,7 @@ import {
   shiftCostTotals,
   taskCostShare,
   type PlanCostTotals,
+  isIntegrating,
   planState,
   PLAN_FINAL_STATES,
   TASK_FINAL_STATES,
@@ -151,6 +152,11 @@ async function afterLockNames(
  * Repositories
  * ------------------------------------------------------------------------- */
 
+/** A task that works: running, in review, or integrating (phase waiting, merge already chosen). */
+function isActiveTask(task: TaskData): boolean {
+  return task.phase === "running" || task.phase === "review" || isIntegrating(task);
+}
+
 /** Open plans and open tasks of one repository, as its row shows them. */
 async function openCounts(
   store: ObjectStore,
@@ -173,10 +179,7 @@ async function openCounts(
     openTasks: tasks.filter(
       (object) => !TASK_FINAL_STATES.includes(taskData(object.data).phase),
     ).length,
-    activeTasks: tasks.filter((object) => {
-      const phase = taskData(object.data).phase;
-      return phase === "running" || phase === "review";
-    }).length,
+    activeTasks: tasks.filter((object) => isActiveTask(taskData(object.data))).length,
   };
 }
 
@@ -800,10 +803,9 @@ async function recountPlan(
   const cancelledCount = tasks.filter(
     (object) => taskData(object.data).phase === "cancelled",
   ).length;
-  const activeCount = tasks.filter((object) => {
-    const phase = taskData(object.data).phase;
-    return phase === "running" || phase === "review";
-  }).length;
+  const activeCount = tasks.filter((object) =>
+    isActiveTask(taskData(object.data)),
+  ).length;
   const waitingCount = tasks.filter((object) =>
     needsPerson(taskData(object.data)),
   ).length;

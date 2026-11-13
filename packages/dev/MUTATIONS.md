@@ -1116,3 +1116,9 @@ the row fields.
 |---|---|---|---|
 | T-0401-M1 | packages/dev/src/notcode.ts | `timeoutAlone` ignored the load and treated every alone-rerun timeout as code | `a test that timed out when run alone > under a load above the flaky limit it waits and runs again, as before` |
 | T-0401-M2 | packages/dev/src/notcode.ts | `timeoutAlone` was never called, so an alone-rerun timeout under low load waited as not code | `a test that timed out when run alone > under a load below the flaky limit it is the code: one run, a rework note, no wait` |
+## T-0400-integrating-counts-as-running — an integrating task is active, not waiting for a person
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0400-M1 | packages/dev/src/service.ts | `isActiveTask` leaves out `isIntegrating(task)`, so the plan and the repository do not count an integrating task as active | `an integrating task counts as running, not as waiting for a person > integrating: running marks and no waiting note` |
+| T-0400-M2 | packages/dev/src/refusals.ts | `needsPerson` no longer returns false for an integrating task, so the plan note says "1 waiting" and its mark is waiting | `an integrating task counts as running, not as waiting for a person > integrating: running marks and no waiting note` |

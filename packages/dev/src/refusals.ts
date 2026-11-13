@@ -236,8 +236,12 @@ export function taskStateOf(task: TaskData): TaskState {
   return task.phase;
 }
 
-/** A task a person has to act on: proposed, or stopped and asking (not a review model's wait). */
+/**
+ * A task a person has to act on: proposed, or stopped and asking (not a review
+ * model's wait, and not an integrating task: the merge is already chosen).
+ */
 export function needsPerson(task: TaskData): boolean {
+  if (isIntegrating(task)) return false;
   return task.phase === "proposed" || (task.phase === "waiting" && !inReviewWait(task));
 }
 
