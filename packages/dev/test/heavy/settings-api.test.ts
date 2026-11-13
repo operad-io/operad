@@ -67,6 +67,7 @@ describe("dev settings through operad settings", () => {
     expect(byName.get("dev.reviewer.use")?.description).toContain("reviews a task");
     expect(byName.get("dev.reviewer.timeoutSecs")?.editable).toBe(true);
     expect(byName.get("dev.gate.commandTimeoutSecs")?.editable).toBe(true);
+    expect(byName.get("dev.gate.stallSecs")?.editable).toBe(true);
     expect(byName.get("dev.gate.commands")?.editable).toBe(true);
     expect(byName.get("dev.reviewer.fixLevel")).toMatchObject({ editable: true, confirm: true });
     expect(byName.get("dev.review.default.fixLevel")).toMatchObject({ editable: true, confirm: true });

@@ -87,6 +87,8 @@ export interface LineRunOptions {
   readonly cwd: string;
   readonly env?: Readonly<Record<string, string>> | undefined;
   readonly timeoutMs?: number | undefined;
+  /** How long the line may write no output before its group is stopped. */
+  readonly stallMs?: number | undefined;
   readonly signal: AbortSignal;
   readonly logger?: PluginLogger | undefined;
   readonly clock?: Clock | undefined;
@@ -106,10 +108,13 @@ export interface LineOutcome {
   readonly exitCode: number | null;
   readonly signal: string | null;
   readonly timedOut: boolean;
+  readonly stalled: boolean;
   readonly cancelled: boolean;
   readonly spawnError: string | undefined;
   readonly log: string | undefined;
   readonly tail: readonly string[];
+  /** More of the end of the output, for the reason a stall gives. */
+  readonly stallTail: readonly string[];
 }
 
 /** The last `count` lines of a chunk of output, with no trailing blank line. */
@@ -130,14 +135,17 @@ class Output {
   private wrote = false;
   private chain: Promise<void> = Promise.resolve();
   private readonly logger: PluginLogger | undefined;
+  private readonly onOutput: (() => void) | undefined;
 
-  constructor(logger: PluginLogger | undefined) {
+  constructor(logger: PluginLogger | undefined, onOutput?: () => void) {
     this.logger = logger;
+    this.onOutput = onOutput;
   }
 
   push(text: string): void {
     if (text.length === 0) return;
     this.tail = (this.tail + text).slice(-TAIL_LIMIT);
+    this.onOutput?.();
     if (this.logger === undefined) return;
 
     this.buffer += text;
@@ -432,15 +440,18 @@ export async function runLine(options: LineRunOptions): Promise<LineOutcome> {
       exitCode: null,
       signal: null,
       timedOut: false,
+      stalled: false,
       cancelled: true,
       spawnError: undefined,
       log: options.logger?.path,
       tail: [],
+      stallTail: [],
     };
   }
 
   const clock = options.clock ?? systemClock;
-  const output = new Output(options.logger);
+  let resetStallForOutput = (): void => {};
+  const output = new Output(options.logger, () => resetStallForOutput());
   let child: ChildProcess;
   try {
     child = spawn(
@@ -466,10 +477,12 @@ export async function runLine(options: LineRunOptions): Promise<LineOutcome> {
       exitCode: null,
       signal: null,
       timedOut: false,
+      stalled: false,
       cancelled: false,
       spawnError,
       log: options.logger?.path,
       tail: output.tailLines(20),
+      stallTail: output.tailLines(200),
     };
   }
 
@@ -511,6 +524,7 @@ export async function runLine(options: LineRunOptions): Promise<LineOutcome> {
 
   let finished = false;
   let timedOut = false;
+  let stalled = false;
   let cancelled = false;
   let timer: unknown;
   if (options.timeoutMs !== undefined) {
@@ -520,6 +534,22 @@ export async function runLine(options: LineRunOptions): Promise<LineOutcome> {
       void stop();
     }, options.timeoutMs);
   }
+  let stallTimer: unknown;
+  const clearStall = (): void => {
+    if (stallTimer === undefined) return;
+    clock.clearTimeout(stallTimer);
+    stallTimer = undefined;
+  };
+  const resetStall = (): void => {
+    if (finished || options.stallMs === undefined || options.stallMs <= 0) return;
+    clearStall();
+    stallTimer = clock.setTimeout(() => {
+      if (finished) return;
+      stalled = true;
+      void stop();
+    }, options.stallMs);
+  };
+  resetStallForOutput = resetStall;
   const onAbort = (): void => {
     if (finished) return;
     cancelled = true;
@@ -536,7 +566,10 @@ export async function runLine(options: LineRunOptions): Promise<LineOutcome> {
     exited.then((exit): Startup => ({ kind: "exit", exit })),
   ]);
 
-  const finish = async (): Promise<readonly string[]> => {
+  const finish = async (): Promise<{
+    readonly tail: readonly string[];
+    readonly stallTail: readonly string[];
+  }> => {
     const drainedOutput = Promise.all(drained).then(() => undefined);
     let drainTimer: unknown;
     const drainLimit = new Promise<void>((resolve) => {
@@ -548,16 +581,17 @@ export async function runLine(options: LineRunOptions): Promise<LineOutcome> {
     control?.destroy();
     await drainedOutput;
     await output.end();
-    return output.tailLines(20);
+    return { tail: output.tailLines(20), stallTail: output.tailLines(200) };
   };
 
   if (startup.kind !== "ready") {
     finished = true;
     if (timer !== undefined) clock.clearTimeout(timer);
+    clearStall();
     options.signal.removeEventListener("abort", onAbort);
     await stop();
     await Promise.race([exited, failed]);
-    const tail = await finish();
+    const { tail, stallTail } = await finish();
     const spawnError =
       cancelled || timedOut
         ? undefined
@@ -568,15 +602,18 @@ export async function runLine(options: LineRunOptions): Promise<LineOutcome> {
       exitCode: startup.kind === "exit" ? startup.exit.code : null,
       signal: startup.kind === "exit" ? startup.exit.signal : null,
       timedOut,
+      stalled: false,
       cancelled,
       spawnError,
       log: options.logger?.path,
       tail,
+      stallTail,
     };
   }
 
   readySeen = true;
   openGate();
+  resetStall();
 
   // One read serves the race and, if the shell's exit wins it, the look for
   // the record afterwards: a second read would queue behind this one and miss
@@ -594,6 +631,7 @@ export async function runLine(options: LineRunOptions): Promise<LineOutcome> {
 
   finished = true;
   if (timer !== undefined) clock.clearTimeout(timer);
+  clearStall();
   options.signal.removeEventListener("abort", onAbort);
 
   let exit: Exit;
@@ -614,22 +652,24 @@ export async function runLine(options: LineRunOptions): Promise<LineOutcome> {
   // A line that reported its own status has already ended, so there is nothing
   // left to give SIGTERM time for; waiting the grace here made every successful
   // line pay 500 ms. A cancellation or timeout still takes the TERM path.
-  if (ended.kind === "end" && !cancelled && !timedOut) {
+  if (ended.kind === "end" && !cancelled && !timedOut && !stalled) {
     const pid = child.pid;
     if (pid !== undefined) (options.killGroup ?? killProcessGroup)(pid, "SIGKILL");
   } else {
     await stop();
   }
   await Promise.race([exited, failed]);
-  const tail = await finish();
+  const { tail, stallTail } = await finish();
 
   return {
     exitCode: exit.code,
     signal: exit.signal,
     timedOut,
+    stalled,
     cancelled,
     spawnError: undefined,
     log: options.logger?.path,
     tail,
+    stallTail,
   };
 }

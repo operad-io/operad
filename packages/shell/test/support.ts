@@ -34,6 +34,18 @@ export async function waitForFile(path: string): Promise<void> {
   }
 }
 
+/** Resolves when the file holds `text`. Event first; a look every `LOOK_MS` besides. */
+export async function waitForText(path: string, text: string): Promise<void> {
+  for (;;) {
+    try {
+      if (readFileSync(path, "utf8").includes(text)) return;
+    } catch {
+      // Not there yet.
+    }
+    await waitForChange(dirname(path), basename(path), LOOK_MS);
+  }
+}
+
 /** True for a pid a test may signal: a finite integer above 1 (never 0, 1 or a group). */
 export function signalable(pid: number | undefined): pid is number {
   return pid !== undefined && Number.isInteger(pid) && pid > 1;
@@ -62,10 +74,14 @@ export { alive, waitForGone } from "../../engine/test/plugin/support.ts";
 export interface ManualClock extends Clock {
   /** Fires every timeout still scheduled; returns how many there were. */
   fireTimeouts(): number;
+  /** Moves time forward, firing only the timeouts that are then due. */
+  advance(ms: number): number;
   /** Resolves once `predicate` holds; every timer change rechecks it. */
   when(predicate: () => boolean): Promise<void>;
   /** How many timeouts are scheduled right now. */
   readonly pending: number;
+  /** How many timeouts have been scheduled, a new one after each output line. */
+  readonly scheduled: number;
   /** How many grace waits were requested. */
   readonly sleeps: number;
 }
@@ -76,9 +92,11 @@ export interface ManualClock extends Clock {
  * to know a timer exists asks `when` and is woken by a timer change.
  */
 export function manualClock(): ManualClock {
-  const timers = new Set<{ readonly handler: () => void }>();
+  const timers = new Set<{ readonly handler: () => void; readonly deadline: number }>();
   const waiters: Array<{ readonly predicate: () => boolean; readonly resolve: () => void }> = [];
   let sleeps = 0;
+  let now = 0;
+  let scheduled = 0;
 
   const notify = (): void => {
     for (let index = waiters.length - 1; index >= 0; index -= 1) {
@@ -90,14 +108,15 @@ export function manualClock(): ManualClock {
   };
 
   return {
-    setTimeout(handler) {
-      const timer = { handler };
+    setTimeout(handler, ms) {
+      const timer = { handler, deadline: now + ms };
       timers.add(timer);
+      scheduled += 1;
       notify();
       return timer;
     },
     clearTimeout(handle) {
-      timers.delete(handle as { readonly handler: () => void });
+      timers.delete(handle as { readonly handler: () => void; readonly deadline: number });
       notify();
     },
     sleep() {
@@ -111,6 +130,21 @@ export function manualClock(): ManualClock {
       notify();
       return due.length;
     },
+    advance(ms) {
+      now += ms;
+      let fired = 0;
+      for (;;) {
+        const due = [...timers].filter((timer) => timer.deadline <= now);
+        if (due.length === 0) break;
+        for (const timer of due) {
+          timers.delete(timer);
+          timer.handler();
+          fired += 1;
+        }
+        notify();
+      }
+      return fired;
+    },
     when(predicate) {
       if (predicate()) return Promise.resolve();
       return new Promise<void>((resolve) => {
@@ -119,6 +153,9 @@ export function manualClock(): ManualClock {
     },
     get pending() {
       return timers.size;
+    },
+    get scheduled() {
+      return scheduled;
     },
     get sleeps() {
       return sleeps;

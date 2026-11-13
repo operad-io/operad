@@ -67,3 +67,11 @@ Each package keeps its mutation checks in `MUTATIONS.md`; a row names the broken
 | T-0373-M2 | scripts/test/plugin-docs.allow.json | `definePlugin`, which `packages/pool/src/index.ts` imports, was added to the allow list | `scripts/test/plugin-docs.test.ts > the plugin docs > a name a plugin package imports is never on the allow list` |
 | T-0373-M3 | docs/plugins/types.md | the `PluginStepResult` table row (a type `packages/pool/src/index.ts` imports) was removed | `scripts/test/plugin-docs.test.ts > the plugin docs > every export a plugin can import has an entry under docs/plugins` |
 | T-0375-M1 | scripts/test/fixtures/hold.ts | the hold no longer checked that its owner was alive (the loop only retried the read) | `remote-check.sh > a blocked fixture ends when the test that started it is killed` |
+
+## T-0402-check-stall-limit — the check's heartbeat and a remote stop
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0402-M1 | scripts/run-tests.sh | the heartbeat printed on wall time even when no report or output file grew, so a silent hang would keep resetting the gate's stall timer | `run-tests.sh > a silent step prints no heartbeat that would hide a stall` |
+| T-0402-M2 | scripts/remote-check.sh | the watcher on the host session was removed, so a local stop closed the connection but left the remote command running | `remote-check.sh > a stop of the local check ends the command on the host` (the remote pid was still present after 5 s) |
+| T-0402-M3 | scripts/run-tests.sh | the heartbeat's growth comparison was reversed, so a step whose output grew never printed one | `run-tests.sh > a step whose output grows still prints a heartbeat` (expected `run-tests: still running`) |

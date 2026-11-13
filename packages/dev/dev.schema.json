@@ -300,6 +300,11 @@
           "exclusiveMinimum": 0,
           "default": 1800
         },
+        "stallSecs": {
+          "description": "How long a gate command, or an integration key command, may write nothing before dev stops its process group, in seconds. A stalled command fails the check with reason \"stall\" and goes to the worker; it is not rerun and is not a \"not the code\" wait. Unset turns the limit off.",
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
         "places": {
           "description": "The most checks of this repository that run at once, on top of the home's limit. A check waits, without a time limit, for a place of the home and one of the repository. Unset means the repository has no limit of its own.",
           "type": "integer",

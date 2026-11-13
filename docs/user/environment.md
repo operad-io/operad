@@ -34,6 +34,7 @@ message named in the row.
 | `OPERAD_TEST_PARALLEL` | integer | `2` | whole number, 1 or more | When `run-tests.sh` starts: how many worker processes run test files. Any other value stops the script with `run-tests: OPERAD_TEST_PARALLEL must be a whole number of 1 or more, not '<value>'`. |
 | `OPERAD_TEST_HEAVY_PARALLEL` | integer | `8` | whole number, 1 or more | When `run-tests.sh` starts: how many worker processes run the heavy test files (under `test/heavy/`). Any other value stops the script with a message that names the variable. |
 | `OPERAD_TEST_OVERLAP` | integer | `1` | `1` runs the heavy step beside the light step; `0` runs it after the light step | When `run-tests.sh` starts. |
+| `OPERAD_TEST_HEARTBEAT_SECS` | integer | `60` | a whole number of seconds, or `0` to turn it off | When `run-tests.sh` starts: how often it checks whether a step's report or output grew, and prints a heartbeat line when it did. A silent step prints nothing. |
 | `OPERAD_TEST_TIMES` | path | `~/.operad-test-times` | A file path | Where each full test run appends one line of timings (`run-tests.sh` and `test-times.ts`). |
 
 ## What operad sets

@@ -100,7 +100,11 @@ that step and run the check again. A line that runs exits with the line's own
 code and its output comes back as it was written. A task of the `dev` plugin
 records the failing line, its exit code and the last output; see
 [Troubleshooting](troubleshooting.md#checks-and-tests) for the messages and what
-to do.
+to do. A check command that writes nothing for the repository's
+`gate.stallSecs` is stopped, its process group included; a stop of the local
+`remote-check.sh` ends the remote command too. `run-tests.sh` prints a heartbeat
+line every `OPERAD_TEST_HEARTBEAT_SECS` seconds only while a step's report or
+output grows, so a silent hang still trips that limit.
 
 A test that failed and then passed on a rerun is a bug until shown otherwise.
 Do not raise its timeout and do not add a retry inside the test. A task whose

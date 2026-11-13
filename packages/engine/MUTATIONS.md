@@ -802,6 +802,11 @@ the row fields.
 |---|---|---|---|
 | T-0398-M1 | packages/engine/src/loop/code-watch.ts | `setOlder(true)` ran before `onChange` decided, so the item also showed during a reload that succeeds | `a code watch > older code is reported only when serve keeps it, never while a reload is decided or after it succeeds` |
 
+## T-0402-check-stall-limit — a gate command's stall limit
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0402-M1 | packages/engine/src/platform/process-group.ts | a new output line armed another stall timer without clearing the previous one, so a line that kept printing was still stopped by the old timer | `shell/check > a check that keeps printing is not stopped by the stall limit` (the second `advance` fired 2 timers instead of 0) |
 ## T-0405 — the client API in a source plugin's `start`
 
 | id | file | mutation | failing test |

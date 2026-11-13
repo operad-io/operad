@@ -362,6 +362,68 @@ describe("shell/check", () => {
     expect(String(data.message)).toContain("check line 2 was stopped after 5s");
   });
 
+  test("a check that writes nothing for stallSecs is stopped and names its last lines", async () => {
+    const clock = manualClock();
+    const { root, registry } = await fixture(createShellPlugin({ clock }));
+    const marker = join(root, "stall-started");
+    const log = join(root, "store", "logs", "shell", "runs", "run-stall", "check.log");
+    const running = registry.runStep(
+      "shell/check",
+      {
+        lines: [
+          `echo 'packages/a/test/a.test.ts:'; echo 'the last test line'; trap '' TERM; echo $$ > '${marker}'; sleep 30`,
+        ],
+        stallSecs: 5,
+      },
+      { runId: "run-stall" },
+    );
+
+    await waitForFile(marker);
+    expect(clock.advance(5000)).toBe(1);
+
+    const result = await running;
+    expect(result.result).toBe("fail");
+    const data = dataOf(result);
+    expect(data.reason).toBe("stall");
+    expect(String(data.message)).toContain("check wrote nothing for 5s");
+    expect(String(data.message)).toContain("packages/a/test/a.test.ts:");
+    expect(String(data.message)).toContain("the last test line");
+    expect(readFileSync(log, "utf8")).toContain("the last test line");
+  });
+
+  test("a check that keeps printing is not stopped by the stall limit", async () => {
+    const clock = manualClock();
+    const { root, registry } = await fixture(createShellPlugin({ clock }));
+    const first = join(root, "first");
+    const second = join(root, "second");
+    const step1 = join(root, "step1");
+    const step2 = join(root, "step2");
+    const running = registry.runStep(
+      "shell/check",
+      {
+        lines: [
+          `echo first; touch '${first}'; while [ ! -e '${step1}' ]; do sleep 0.01; done; echo second; touch '${second}'; while [ ! -e '${step2}' ]; do sleep 0.01; done; echo done`,
+        ],
+        stallSecs: 1,
+      },
+      { runId: "run-stall-print" },
+    );
+
+    await waitForFile(first);
+    // The first line armed a new timer in place of the one the run started with.
+    await clock.when(() => clock.scheduled >= 2);
+    // Almost the limit passes with no stop; the next line then resets it.
+    expect(clock.advance(900)).toBe(0);
+    writeFileSync(step1, "");
+    await waitForFile(second);
+    await clock.when(() => clock.scheduled >= 3);
+    expect(clock.advance(900)).toBe(0);
+    writeFileSync(step2, "");
+
+    const result = await running;
+    expect(result.result).toBe("pass");
+  });
+
   test("an empty list passes", async () => {
     const { registry } = await fixture();
     const result = await registry.runStep(

@@ -25,6 +25,9 @@
 #
 # Every run ends its output with the ten slowest tests of the run (file, test,
 # seconds; scripts/slowest-tests.ts). That only lists: it never fails the check.
+# A heartbeat line prints every OPERAD_TEST_HEARTBEAT_SECS seconds (default
+# 60, 0 turns it off) only while a step's report or output file grows, so a
+# silent hang still trips a gate's stall limit.
 # Every full run (no package name) also appends one line to the times file
 # (OPERAD_TEST_TIMES, default ~/.operad-test-times; see scripts/test-times.ts,
 # which prints the median, the fastest and the number of runs).
@@ -83,18 +86,71 @@ done
 for dir in "${extra[@]+"${extra[@]}"}"; do
   if has_light "$dir"; then together+=("$dir"); fi
 done
+heartbeat=${OPERAD_TEST_HEARTBEAT_SECS:-60}
+if ! [[ "$heartbeat" =~ ^[0-9]+$ ]]; then
+  echo "run-tests: OPERAD_TEST_HEARTBEAT_SECS must be a whole number of seconds, not '$heartbeat'" >&2
+  exit 2
+fi
 reports=$(mktemp -d)
-trap 'rm -rf "$reports"' EXIT
+heartbeat_pid=
+started=$(date +%s)
+# The heartbeat runs in a process group of its own, so stopping it also stops
+# the sleep it waits in. It prints only when the report or output of a step
+# grew, so a worker spinning without writing anything is still a stall.
+report_bytes() {
+  local total=0 file size
+  for file in "$reports"/*; do
+    case "$file" in
+      *.xml|*.out) ;;
+      *) continue ;;
+    esac
+    [ -f "$file" ] || continue
+    size=$(wc -c <"$file" 2>/dev/null | tr -d ' ')
+    total=$((total + ${size:-0}))
+  done
+  echo "$total"
+}
+stop_heartbeat() {
+  if [ -n "$heartbeat_pid" ]; then
+    kill -TERM -"$heartbeat_pid" 2>/dev/null || kill -TERM "$heartbeat_pid" 2>/dev/null || true
+    wait "$heartbeat_pid" 2>/dev/null || true
+    heartbeat_pid=
+  fi
+}
+cleanup() {
+  stop_heartbeat
+  rm -rf "$reports"
+}
+trap cleanup EXIT
+if [ "$heartbeat" != 0 ]; then
+  set -m
+  (
+    seen=$(report_bytes)
+    while :; do
+      sleep "$heartbeat"
+      now=$(report_bytes)
+      [ "$now" -gt "$seen" ] || continue
+      seen=$now
+      # A report written just as its step ends is not progress into silence.
+      ls "$reports"/active-* >/dev/null 2>&1 || continue
+      printf 'run-tests: still running (%ss, %s bytes of output)\n' \
+        "$(($(date +%s) - started))" "$now"
+    done
+  ) &
+  heartbeat_pid=$!
+  set +m
+fi
 code=0
 steps=""
 tests=0
-started=$(date +%s)
 # step <name> <test args...>: runs one bun test step, times it, keeps its junit report.
 step() {
   local name=$1 began count
   shift
   began=$(date +%s)
+  : >"$reports/active-$name"
   bun test --timeout 30000 --reporter=junit --reporter-outfile="$reports/$name.xml" "$@" || code=1
+  rm -f "$reports/active-$name"
   steps="$steps $name=$(($(date +%s) - began))"
   count=$(sed -n 's/^<testsuites [^>]*tests="\([0-9]*\)".*/\1/p' "$reports/$name.xml" 2>/dev/null | head -n 1)
   tests=$((tests + ${count:-0}))
@@ -102,8 +158,11 @@ step() {
 if [ ${#heavy[@]} -gt 0 ] && [ "$overlap" = 1 ]; then
   (
     began=$(date +%s)
+    : >"$reports/active-heavy"
     bun test --timeout 30000 --reporter=junit --reporter-outfile="$reports/heavy.xml" --parallel="$heavy_parallel" "${heavy[@]}" >"$reports/heavy.out" 2>&1
-    echo $? >"$reports/heavy.code"
+    status=$?
+    rm -f "$reports/active-heavy"
+    echo "$status" >"$reports/heavy.code"
     echo $(($(date +%s) - began)) >"$reports/heavy.secs"
   ) &
   heavy_pid=$!

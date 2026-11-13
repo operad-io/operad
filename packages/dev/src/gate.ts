@@ -304,7 +304,13 @@ export async function runVerify(
     run: () =>
       runCheckCommands(
         runStep,
-        { cwd: path, timeoutSecs: context.settings.gate.commandTimeoutSecs },
+        {
+          cwd: path,
+          timeoutSecs: context.settings.gate.commandTimeoutSecs,
+          ...(context.settings.gate.stallSecs === undefined
+            ? {}
+            : { stallSecs: context.settings.gate.stallSecs }),
+        },
         commands,
         stepOptions(ctx, path),
         rerun,
@@ -367,6 +373,7 @@ export async function runVerify(
     run: ctx.runId,
     commands: commands.map((line) => (typeof line === "string" ? line : line.run)),
     ...(command === undefined ? {} : { command }),
+    ...(typeof outcomeData.reason === "string" ? { reason: outcomeData.reason } : {}),
     ...(log === undefined ? {} : { log }),
     ...(message === undefined ? {} : { message }),
     ...(lineNumber === undefined ? {} : { lineNumber }),

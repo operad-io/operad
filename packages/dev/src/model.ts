@@ -162,6 +162,8 @@ export interface VerifyRecord {
   /** The file the failed command's output was written to. */
   readonly log?: string | null;
   readonly message?: string | null;
+  /** The check's reason: `stall` names a command that stopped writing. */
+  readonly reason?: string | null;
   readonly lineNumber?: number | null;
   /** The gate commands this verify ran, as they were when it ran. */
   readonly commands?: readonly string[];

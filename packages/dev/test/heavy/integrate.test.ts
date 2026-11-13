@@ -66,6 +66,7 @@ const CHILD = fileURLToPath(
 interface FixtureOptions {
   readonly style?: IntegrationStyle;
   readonly keyCommands?: readonly unknown[];
+  readonly stallSecs?: number;
   readonly check?: Readonly<Record<string, number>>;
   readonly hooks?: readonly string[];
   /** Tasks of the same repository, verified like the first, that integrate with it. */
@@ -97,6 +98,7 @@ function writeDevJson(
   value: {
     readonly style?: IntegrationStyle;
     readonly keyCommands?: readonly unknown[];
+    readonly stallSecs?: number;
     readonly prepare?: readonly string[];
     readonly check?: Readonly<Record<string, number>>;
     readonly hooks?: readonly string[];
@@ -110,7 +112,11 @@ function writeDevJson(
       {
         name: "repository",
         ...(value.prepare === undefined ? {} : { prepare: value.prepare }),
-        gate: { commands: ["true"], commandTimeoutSecs: 60 },
+        gate: {
+          commands: ["true"],
+          commandTimeoutSecs: 60,
+          ...(value.stallSecs === undefined ? {} : { stallSecs: value.stallSecs }),
+        },
         integration: {
           style: value.style ?? "merge",
           keyCommands: value.keyCommands ?? [],
@@ -639,6 +645,33 @@ describe("dev/integrate", () => {
     expect(task.brief).toContain("exit 3");
     expect(remoteMain(state)).toBe(before);
   });
+
+  test("a key command that stops writing fails as a stall, is not rerun, and sends the task back", async () => {
+    const state = await fixture({
+      style: "merge",
+      stallSecs: 0.2,
+      keyCommands: [],
+    });
+    const count = join(state.root, "key-runs");
+    writeDevJson(state.remote.repository, {
+      style: "merge",
+      stallSecs: 0.2,
+      keyCommands: [
+        `echo x >> '${count}'; echo 'packages/a/test/a.test.ts:'; echo 'the last test line'; sleep 5`,
+      ],
+    });
+    const before = remoteMain(state);
+    const result = await integrate(state);
+    expect(result.result).toBe("fail");
+    expect(String(result.data?.message)).toContain("check wrote nothing for 0.2s");
+    expect(String(result.data?.message)).toContain("the last test line");
+    expect(readFileSync(count, "utf8").trim().split("\n")).toHaveLength(1);
+
+    const task = await taskOf(state);
+    expect(task.phase).toBe("running");
+    expect(task.brief).toContain("check wrote nothing");
+    expect(remoteMain(state)).toBe(before);
+  }, 30_000);
 
   test("the verified sha is merged even after the branch head moves", async () => {
     const state = await fixture({ style: "merge" });
