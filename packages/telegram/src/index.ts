@@ -7,6 +7,7 @@
  * `token`; it never reaches a fact, a log line or an error.
  */
 
+import pkg from "../package.json" with { type: "json" };
 import { definePlugin, type SourceHandle } from "@operad-io/engine";
 import { createBotApi } from "./api.ts";
 import { TELEGRAM_SETTINGS, TOKEN_SECRET } from "./settings.ts";
@@ -17,7 +18,7 @@ export function createTelegramPlugin() {
   return definePlugin({
     name: "telegram",
     kind: "source",
-    version: "0.0.0",
+    version: pkg.version,
     settings: TELEGRAM_SETTINGS,
     async start(ctx): Promise<SourceHandle> {
       const token = await ctx.secrets.get(TOKEN_SECRET);

@@ -1,7 +1,7 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": { "rootDir": ".", "outDir": "../../.tsbuild/telegram" },
-  "include": ["src", "test"],
+  "include": ["package.json", "src", "test"],
   "references": [
     { "path": "../chat" },
     { "path": "../engine" }
