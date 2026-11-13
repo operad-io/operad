@@ -440,6 +440,7 @@ function kernelFor(
     home: context.home,
     storeRoot: context.storeRoot,
     rules,
+    client: context.views,
     onLog: (message) => io.error(`${message}\n`),
   });
 }

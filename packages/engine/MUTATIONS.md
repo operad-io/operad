@@ -801,3 +801,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0398-M1 | packages/engine/src/loop/code-watch.ts | `setOlder(true)` ran before `onChange` decided, so the item also showed during a reload that succeeds | `a code watch > older code is reported only when serve keeps it, never while a reload is decided or after it succeeds` |
+
+## T-0405 — the client API in a source plugin's `start`
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0405-M1 | packages/engine/src/views/presentation.ts | `act` skipped the check that the call names an actor (`{ via, id }`), so a call without one ran | `a source plugin's start gets the client API > act without an actor is refused and answers nothing` |

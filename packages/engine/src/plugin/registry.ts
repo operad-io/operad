@@ -1,3 +1,4 @@
+import type { ClientApi } from "../views/presentation.ts";
 import { join } from "node:path";
 import type { FlowDefinition, StepType } from "../flow/types.ts";
 import { loadFlow as loadFlowFile } from "../flow/load.ts";
@@ -1572,6 +1573,7 @@ export class PluginRegistry {
     readonly rules: readonly TriggerRule[];
     readonly clock: () => number;
     readonly emit: (event: TriggerEvent) => MaybePromise<void>;
+    readonly client: ClientApi;
     readonly signal?: AbortSignal | undefined;
   }): Promise<readonly { readonly plugin: string; readonly handle: SourceHandle }[]> {
     const running: { plugin: string; handle: SourceHandle }[] = [];
@@ -1609,6 +1611,7 @@ export class PluginRegistry {
         settings: this.settingsFor(plugin.name),
         secrets: this.secretsFor(plugin.name),
         emit,
+        client: options.client,
       };
       try {
         const handle = await plugin.start(ctx);
