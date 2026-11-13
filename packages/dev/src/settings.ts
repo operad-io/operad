@@ -1014,7 +1014,7 @@ export function flowPool(settings: DevSettings, flowName: string | undefined): s
 
 /** The fields a stage of each kind may name. */
 const STAGE_FIELDS: Readonly<Record<DevStage["stage"], readonly string[]>> = {
-  work: ["stage", "use", "args", "pool", "brief", "beforeAttempt"],
+  work: ["stage", "use", "args", "pool", "workerBrief", "commit", "brief", "beforeAttempt"],
   check: ["stage", "commands", "rerun"],
   review: ["stage", "use", "args", "later", "grading"],
   human: ["stage"],
@@ -1051,6 +1051,11 @@ function stageOf(value: unknown, field: string): DevStage {
       const args = optionalList("args");
       const pool = optionalString("pool");
       const brief = optionalString("brief");
+      const workerBrief = optionalString("workerBrief");
+      if (value.commit !== undefined && typeof value.commit !== "boolean") {
+        throw new DevError(`${field}.commit`, "must be true or false");
+      }
+      const commit = value.commit;
       const beforeAttempt = optionalString("beforeAttempt");
       if (
         beforeAttempt !== undefined &&
@@ -1067,6 +1072,8 @@ function stageOf(value: unknown, field: string): DevStage {
         ...(use === undefined ? {} : { use }),
         ...(args === undefined ? {} : { args }),
         ...(pool === undefined ? {} : { pool }),
+        ...(workerBrief === undefined ? {} : { workerBrief }),
+        ...(commit === undefined ? {} : { commit }),
         ...(brief === undefined ? {} : { brief }),
         ...(beforeAttempt === undefined ? {} : { beforeAttempt }),
       };
@@ -1274,6 +1281,20 @@ function settingsFromText(
     resolve(repositoryPath, settings.worktreeRoot),
     field,
   );
+  for (const [name, flow] of Object.entries(settings.flows ?? {})) {
+    flow.stages.forEach((stage, index) => {
+      if (stage.stage !== "work" || stage.workerBrief === undefined) return;
+      const field = `flows.${name}.stages[${index}].workerBrief`;
+      if (isAbsolute(stage.workerBrief)) {
+        throw new DevError(field, "must be a path relative to the repository");
+      }
+      const file = resolve(repositoryPath, stage.workerBrief);
+      if (!existsSync(file)) {
+        throw new DevError(field, `${file} does not exist`);
+      }
+      assertInsideRepository(repositoryPath, file, field);
+    });
+  }
   return { settings, text };
 }
 
@@ -1421,7 +1442,17 @@ export function workerBriefPath(
 export async function readWorkerBrief(
   repositoryPath: string,
   settings: DevSettings,
+  stageFile?: string,
 ): Promise<string> {
+  if (stageFile !== undefined) {
+    // A stage's own file replaces the repository's; it must exist.
+    const file = resolve(repositoryPath, stageFile);
+    try {
+      return readFileSync(file, "utf8");
+    } catch (error) {
+      throw new DevError("workerBrief", `cannot read ${file}: ${String(error)}`);
+    }
+  }
   const path = workerBriefPath(repositoryPath, settings);
   if (!existsSync(path)) return DEFAULT_WORKER_BRIEF;
   try {
