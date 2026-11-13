@@ -116,6 +116,7 @@ The packages are published under `@operad-io`. Most people install only `@operad
 | [`shell`](packages/shell) | shell command and check steps |
 | [`chat`](packages/chat), [`bot`](packages/bot) | a conversation with an agent; a directory, an agent and skills |
 | [`pool`](packages/pool) | workers shared by runs |
+| [`telegram`](packages/telegram) | chats and pending items in Telegram |
 | [`tui`](packages/tui), [`mcp`](packages/mcp) | the terminal client; the MCP server |
 | [`harness/claude`](packages/harness/claude), [`harness/codex`](packages/harness/codex), [`harness/pi`](packages/harness/pi), [`harness/radian`](packages/harness/radian) | the agents operad can run |
 | [`harness/process`](packages/harness/process) | helpers shared by the harnesses |
