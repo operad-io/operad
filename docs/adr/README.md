@@ -41,3 +41,11 @@ An ADR states a decision that is in force, as if it had always been the decision
 | [0023](0023-pi-harness.md) | The `pi` Harness | A Bun child process, no discovery, the user's pi and login, access matching |
 | [0024](0024-claude-harness.md) | The `claude` Harness | The Agent SDK client, the user's binary and login, `canUseTool`, facts |
 | [0025](0025-access-profile.md) | The Access Profile | A guardrail enforced by each harness, asks as pending items, the user layer |
+| [0026](0026-chat.md) | The Chat | One object, message events and `chat:reply`, asking in the middle, agent, model and effort, closing |
+| [0027](0027-chat-record.md) | Chat Attachments and the Record of a Reply | Uploads to the chat's directory, entries as facts, text through the section's tail |
+| [0028](0028-repository-and-bot-chats.md) | Repository Chats and Bot Chats | Two kinds by origin, read-only main clone, MCP tools, first message creates, channels |
+| [0029](0029-serve-and-clients.md) | `operad serve` and the Clients | The display interface over HTTP, one backend, an app that knows no plugin |
+| [0030](0030-bot.md) | The Bot Plugin | The bot object, its directory, changes only through proposals, MCP servers in settings |
+| [0031](0031-bot-mcp-servers.md) | MCP Servers on a Bot | No directory, pending registration, pinned versions, tool-change stop, secrets at start |
+| [0032](0032-triggers-sources-and-channels.md) | Triggers, Sources and Channels | One start entry, rules, three modes, `source` plugins, run results as events, four channels |
+| [0033](0033-telegram.md) | The Telegram Plugin | In-process channel and source, automatic binding, buttons and replies |
