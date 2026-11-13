@@ -292,7 +292,37 @@ export class PendingSender implements PendingResponder {
     } catch {
       return undefined;
     }
-    return latest;
+    if (latest !== undefined) return latest;
+    return this.chosenIn(sent);
+  }
+
+  /** The choice a question was answered with, from the object's history ("you chose X"), when no action shows it. */
+  private async chosenIn(sent: SentItem): Promise<string | undefined> {
+    if (sent.object === undefined || sent.waitId === undefined) return undefined;
+    let markdown: string;
+    try {
+      markdown = (await this.client.section(sent.object, "history")).markdown;
+    } catch {
+      return undefined;
+    }
+    const labels = sent.options.filter((option) => option.how === "choice").map((option) => option.label);
+    let chosen: string | undefined;
+    for (const line of markdown.split("\n")) {
+      const at = line.indexOf("you chose ");
+      if (at < 0) continue;
+      const rest = line.slice(at + "you chose ".length);
+      const found = labels.find((label) => rest.startsWith(label) && !/^\w/.test(rest.slice(label.length)));
+      if (found !== undefined) chosen = found;
+    }
+    return chosen;
+  }
+
+  /** Changes the other copies of an item that was answered in one chat, with the same words. */
+  private async settleSiblings(key: string, label: string): Promise<void> {
+    for (const [other, copy] of Object.entries(this.state)) {
+      if (other === key || copy.answered !== undefined || itemKeyOf(other) !== itemKeyOf(key)) continue;
+      await this.settle(other, copy, label);
+    }
   }
 
   /** Changes the message of an answered item: the buttons go, the text ends "answered: X". */
@@ -353,6 +383,7 @@ export class PendingSender implements PendingResponder {
       const refusal = await this.answer(sent, option, { via: VIA, id: String(callback.from.id) }, undefined);
       if (refusal === undefined) {
         await this.settle(key, sent, option.label);
+        await this.settleSiblings(key, option.label);
         await this.tell(callback.id, undefined);
       } else {
         await this.tell(callback.id, refusal);
@@ -395,7 +426,9 @@ export class PendingSender implements PendingResponder {
       if (option === undefined) return false;
       const refusal = await this.answer(sent, option, { via: VIA, id: String(message.from?.id) }, note);
       if (refusal === undefined) {
-        await this.settle(key, sent, option.how === "free" ? note : option.label);
+        const words = option.how === "free" ? note : option.label;
+        await this.settle(key, sent, words);
+        await this.settleSiblings(key, words);
       } else {
         await reply(refusal).catch(() => undefined);
         await this.pass().catch(() => undefined);

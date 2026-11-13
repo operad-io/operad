@@ -34,6 +34,8 @@ class StubClient {
   readonly answers: { runId: string; waitId: string; choice: string; actor: unknown }[] = [];
   /** Refuse every act and answer, as the client does for an item already answered. */
   refuse = false;
+  /** What the history section of a chat reads. */
+  history = "";
   private wake: ((result: IteratorResult<ViewEvent>) => void) | undefined;
   private readonly woken: ViewEvent[] = [];
 
@@ -56,7 +58,8 @@ class StubClient {
           actions: [actionInfo("dev", "merge", false), actionInfo("dev", "reject", true)],
         };
       },
-      section: (id, sectionId, cursor, options) => w.views.section(id, sectionId, cursor, options),
+      section: async (id, sectionId, cursor, options) =>
+        sectionId === "history" ? { markdown: this.history } : w.views.section(id, sectionId, cursor, options),
       events: () => ({
         [Symbol.asyncIterator]: () => ({
           next: () =>
@@ -280,6 +283,44 @@ describe("pending items go to Telegram", () => {
     await api.nextSend();
     expect(api.sent).toHaveLength(1);
     await running.stop();
+    await w.close();
+  });
+
+  test("a tap on a choice answers the question as the telegram user, and every copy of the item reads answered: X", async () => {
+    const { w, api, chat, client, sender, source } = await setup({ pending: ["dev"] });
+    client.items = [
+      item({
+        runId: "r1",
+        waitId: "w1",
+        flow: "chat",
+        prompt: "Run rm?",
+        choices: ["allow", "deny"],
+        object: `chat:${chat}`,
+        actions: [{ plugin: "dev", action: "noop" }],
+      }),
+    ];
+    await sender.sync();
+    expect(api.sent.map((request) => request.chatId)).toEqual([555, 42]);
+    api.updates = [tap(400, 42, 555, 9_001, "o:0")];
+    await source.poll();
+    expect(client.answers).toEqual([{ runId: "r1", waitId: "w1", choice: "allow", actor: { via: "telegram", id: "42" } }]);
+    expect(client.acts.filter((entry) => !entry.name.startsWith("chat:"))).toHaveLength(0);
+    expect(api.edits.map((edit) => [edit.chatId, edit.text.split("\n\n").at(-1)])).toEqual([
+      [555, "answered: allow"],
+      [42, "answered: allow"],
+    ]);
+    await w.close();
+  });
+
+  test("a question answered somewhere else reads answered: X with the choice the history shows", async () => {
+    const { w, api, chat, client, sender } = await setup();
+    client.items = [item({ runId: "r1", waitId: "w1", flow: "chat", prompt: "Run rm?", choices: ["allow", "deny"], object: `chat:${chat}` })];
+    await sender.sync();
+    client.history = "## chat run\n- 10:00 asked you\n- 10:01 you chose allow (via cli, as me)\n";
+    client.items = [];
+    await sender.sync();
+    expect(api.edits).toHaveLength(1);
+    expect(api.edits[0]?.text).toEndWith("answered: allow");
     await w.close();
   });
 });
