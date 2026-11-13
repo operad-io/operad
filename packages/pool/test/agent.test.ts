@@ -73,6 +73,22 @@ describe("picking", () => {
     await Promise.all([one, two]);
   });
 
+  test("a count prefix gives two pools of one repository one count for a shared worker (T-0379)", async () => {
+    const r = await rig();
+    const shared = { countPrefix: "repo" };
+    const one = r.run(params([a], { ...shared, prefix: "repo/default" }));
+    const first = await r.calls.next();
+    const two = r.run(params([a], { ...shared, prefix: "repo/image" }));
+    // The second pool waits: the worker's one place is taken.
+    const waiting = await r.events.next();
+    expect(waiting.data).toMatchObject({ pool: "repo/image", full: "flow" });
+    expect(r.book.used("count:repo/a")).toBe(1);
+    first.finish(done);
+    const second = await r.calls.next();
+    second.finish(done);
+    await Promise.all([one, two]);
+  });
+
   test("with worker set only that worker may run, even when another has room", async () => {
     const r = await rig();
     const holder = r.run(params([a, b]));

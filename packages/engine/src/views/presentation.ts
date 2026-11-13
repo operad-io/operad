@@ -1152,7 +1152,7 @@ export class Views {
       object === undefined &&
       owner !== undefined &&
       !(await this.hasRun(resolved.type, resolved.id)) &&
-      this.objectFacts(resolved.type, resolved.id).length === 0
+      this.store.facts({ type: resolved.type, id: resolved.id }, { limit: 1 }).facts.length === 0
     ) {
       // A plugin that scopes ids claims any well-formed id; nothing stored or
       // recorded under it means the id matches nothing.
@@ -1900,18 +1900,6 @@ export class Views {
         matches.push({ type: entry.type, id, object });
       }
     }
-    // A match in a declared type wins: types seen only in the facts (a type no
-    // loaded plugin declares any more) are looked at when no declared type holds
-    // the id.
-    const seen = new Set(matches.map((match) => match.type));
-    for (const fact of matches.length > 0 ? [] : (this.store.facts?.() ?? [])) {
-      const object = fact.object;
-      if (object === undefined || object.id !== id) continue;
-      if (seen.has(object.type)) continue;
-      const stored = await this.store.get(object.type, object.id);
-      seen.add(object.type);
-      matches.push({ type: object.type, id, object: stored });
-    }
     if (matches.length > 1) {
       throw new ViewError(
         "ambiguous",
@@ -1963,6 +1951,22 @@ export class Views {
       const scoped = suffixed[0];
       if (scoped !== undefined) return scoped;
     }
+
+    // A match in a declared type wins: types seen only in the facts (a type no
+    // loaded plugin declares any more) are looked at last, through the store's
+    // lookup by object id, when nothing else claimed the id.
+    const undeclared: ResolvedObject[] = [];
+    for (const type of this.store.objectTypesOf(id)) {
+      undeclared.push({ type, id, object: await this.store.get(type, id) });
+    }
+    if (undeclared.length > 1) {
+      throw new ViewError(
+        "ambiguous",
+        `"${id}" is ambiguous: use ${undeclared.map((match) => `${match.type}:${id}`).sort().join(", ")}`,
+      );
+    }
+    const orphan = undeclared[0];
+    if (orphan !== undefined) return orphan;
 
     if (this.log !== undefined) {
       const runs = await this.log.runs();

@@ -297,7 +297,7 @@ function runWork(
   state: Fixture,
   runId = "work-run",
   onEvent: (plugin: string, type: string) => void = () => undefined,
-  params?: { readonly flowBrief: string },
+  params?: Readonly<Record<string, string>>,
 ) {
   return state.registry.runStep("dev/work", {}, {
     runId,
@@ -830,7 +830,7 @@ describe("dev/work with workers", () => {
     const places = new FilePlaces(join(state.root, "pool"));
     const held = await places.claim([
       {
-        own: "count:repository/default/second",
+        own: "count:repository/second",
         ownLimit: 1,
         home: "harness:fake-harness",
         homeLimit: undefined,
@@ -863,7 +863,7 @@ describe("dev/work with workers", () => {
     const places = new FilePlaces(join(state.root, "pool"));
     const held = await places.claim([
       {
-        own: "count:repository/default/second",
+        own: "count:repository/second",
         ownLimit: 1,
         home: "harness:fake-harness",
         homeLimit: undefined,
@@ -893,6 +893,40 @@ describe("dev/work with workers", () => {
     expect(after.attempt?.workerWait ?? null).toBeNull();
   });
 
+  test("a worker shared by two pools has one count, whichever pool asks (T-0379)", async () => {
+    const state = await fixture("nothing", {
+      workers: { shared: fake("nothing") },
+      pools: { default: ["shared"], image: ["shared"] },
+    });
+    const places = new FilePlaces(join(state.root, "pool"));
+    // A task of the default pool holds the worker's one place.
+    const held = await places.claim([
+      {
+        own: "count:repository/shared",
+        ownLimit: 1,
+        home: "harness:fake-harness",
+        homeLimit: undefined,
+        holder: "T-0001",
+      },
+    ]);
+    if (held.kind !== "taken") throw new Error("the place was not free");
+    let waiting: () => void = () => undefined;
+    const sawWaiting = new Promise<void>((resolve) => {
+      waiting = resolve;
+    });
+    const work = runWork(
+      state,
+      "run-1",
+      (plugin, type) => {
+        if (plugin === "pool" && type === "pool.waiting") waiting();
+      },
+      { flowPool: "image" },
+    );
+    await sawWaiting;
+    await held.release();
+    expect((await work).data).toMatchObject({ worker: "shared" });
+  });
+
   test("a rework whose worker is free shows no wait", async () => {
     const state = await fixture("nothing", { workers: { second: fake("nothing") } });
     await runWork(state, "run-1");
@@ -902,6 +936,47 @@ describe("dev/work with workers", () => {
     const log = existsSync(logPath) ? readFileSync(logPath, "utf8") : "";
     expect(log).not.toContain("waiting for worker");
     expect((await taskDataOf(state)).attempt?.workerWait ?? null).toBeNull();
+  });
+
+  test("a work stage's pool is the pool its workers come from (T-0379)", async () => {
+    const state = await fixture("nothing", {
+      workers: { claude: fake("commit"), codex: fake("nothing") },
+      pools: { default: ["claude"], image: ["codex"] },
+    });
+    const result = await runWork(state, "run-1", undefined, { flowPool: "image" });
+    expect(result.data).toMatchObject({ worker: "codex" });
+    expect((await taskDataOf(state)).attempt?.worker).toBe("codex");
+    // The rework goes back to the same worker inside that pool.
+    await visit(state, "rework-run");
+    const second = await runWork(state, "run-2", undefined, { flowPool: "image" });
+    expect(second.data).toMatchObject({ worker: "codex" });
+  });
+
+  test("a pool without a fallback waits on usage_limit and never takes another pool's worker (T-0379)", async () => {
+    for (const mode of ["usage_limit", "unavailable"]) {
+      const state = await fixture("nothing", {
+        workers: { claude: fake("commit"), codex: fake(mode) },
+        pools: { default: ["claude"], image: ["codex"] },
+      });
+      const result = await runWork(state, "run-1", undefined, { flowPool: "image" });
+      expect(result.result).toBe("unavailable");
+      expect(typeof result.data?.retryAt).toBe("number");
+      // The code worker never ran: the harness's last record is the image worker's.
+      expect((JSON.parse(readFileSync(state.record, "utf8")) as { args: string[] }).args).toEqual([mode]);
+      expect((await taskDataOf(state)).attempt?.worker).toBe("codex");
+    }
+  });
+
+  test("a rework whose worker left the stage's pool is replaced inside that pool (T-0379)", async () => {
+    const state = await fixture("nothing", {
+      workers: { claude: fake("nothing"), codex: fake("nothing") },
+      pools: { default: ["claude"], image: ["codex"] },
+    });
+    await runWork(state, "run-1");
+    expect((await taskDataOf(state)).attempt?.worker).toBe("claude");
+    await visit(state, "rework-run");
+    const second = await runWork(state, "run-2", undefined, { flowPool: "image" });
+    expect(second.data).toMatchObject({ worker: "codex", work: "work: codex; claude is no longer in the pool" });
   });
 
   test("a worker removed from dev.json is replaced and the change is recorded", async () => {

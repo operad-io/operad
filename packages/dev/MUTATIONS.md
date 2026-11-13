@@ -1028,3 +1028,32 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0376-M1 | packages/dev/src/marks.ts | `runningMark` returned `blocked` again for `workerWait` | `task marks > running, work step waits for a worker another task holds` |
+
+## T-0386 — flaky tasks take their rule, command and excerpt from the settings
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0386-M1 | packages/dev/src/flaky.ts | the excerpt was found by bun's `(fail) name [` prefix instead of the command's `failed.match` | `a repository with no bun, no scripts and no CLAUDE.md gets its excerpt, command and rule from its settings` |
+| T-0386-M2 | packages/dev/src/flaky.ts | the brief wrote the "Reproduce it" block (a `bun test --rerun-each` line) when `failed.stress` was not set | `without stress the brief has no command and no sentence about <N>` |
+| T-0386-M3 | packages/dev/src/flaky.ts | the rule file's path was not held inside the repository, so `../outside.md` was quoted | `without rule, or with a missing, empty or outside rule file, the brief quotes the built-in sentence` |
+| T-0386-M4 | packages/dev/src/flaky.ts | the task was proposed with an area taken from `packages/<name>/` again | `the threshold proposes exactly one task with the expected brief` |
+## T-0379 — a work stage's pool and per-pool task caps
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0379-M1 | packages/dev/src/settings.ts | `flowPool` always answered `default`, so every task counted against the code pool | `each pool counts its own running tasks > a full code pool does not stop an image task, and the other way round` |
+| T-0379-M2 | packages/dev/src/settings.ts | `poolCap` ignored the pool's `concurrency` | `pool caps and the work stage's pool > a pool's cap is its workers' counts, or its concurrency when smaller` |
+| T-0379-M3 | packages/dev/src/settings.ts | a work stage naming an unknown pool was accepted | `pool caps and the work stage's pool > a work stage's pool is read, and an unknown pool is refused with the field named` |
+| T-0379-M4 | packages/dev/src/steps.ts | `poolParams` always took workers from `default` | `dev/work with workers > a pool without a fallback waits on usage_limit and never takes another pool's worker` |
+| T-0379-M5 | packages/dev/src/schedule.ts | `canStart` ignored the pool's cap | `each pool counts its own running tasks > a pool's concurrency limits it below its workers' counts` |
+| T-0379-M6 | packages/dev/src/flow-compiler.ts | `workParams` left the stage's pool out of the work step's params | `a work stage's pool reaches the compiled work step` |
+| T-0379-M7 | packages/dev/src/schedule.ts | `poolOf` read the pool from current dev.json instead of the task's stored graph | `each pool counts its own running tasks > a running task keeps the pool of the graph it started with when dev.json changes` |
+| T-0379-M8 | packages/dev/src/steps.ts | `poolParams` left out `countPrefix`, so each pool counted a shared worker separately | `dev/work with workers > a worker shared by two pools has one count, whichever pool asks` |
+| T-0379-M9 | packages/dev/src/schedule.ts | `storedGraphPool` looked for step ids `work`, `work_<n>` again instead of the step's `dev/work` call | `each pool counts its own running tasks > a renamed work step still gives the task its pool` |
+
+## T-0386 rework 1 — the newest pass decides the settings; {file} is quoted in place
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0386-M5 | packages/dev/src/flaky.ts | the brief took `stress` from the newest occurrence that had one, not from the newest occurrence | `the command that reached the threshold decides the stress command and the rule` |
+| T-0386-M6 | packages/dev/src/flaky.ts | `{file}` was replaced by a space and the quoted file, so `--file={file}` split | `{file} is quoted in place, also when it follows an option` |

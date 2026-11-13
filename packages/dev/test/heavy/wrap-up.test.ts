@@ -537,7 +537,7 @@ describe("a work step that holds a worker's place and does not start it (T-0349)
     const places = new FilePlaces(join(state.root, "pool"));
     const held = await places.claim([
       {
-        own: "count:repository/default/fake-harness",
+        own: "count:repository/fake-harness",
         ownLimit: 1,
         home: "harness:fake-harness",
         homeLimit: undefined,

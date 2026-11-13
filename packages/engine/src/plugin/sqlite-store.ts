@@ -94,6 +94,8 @@ const SCHEMA = `
   );
   CREATE INDEX IF NOT EXISTS facts_by_object
     ON facts (object_type, object_id, sequence);
+  CREATE INDEX IF NOT EXISTS facts_by_object_id
+    ON facts (object_id, object_type);
   CREATE TABLE IF NOT EXISTS declared_index (
     type  TEXT NOT NULL,
     field TEXT NOT NULL,
@@ -308,6 +310,15 @@ export class SqlitePluginStore implements PluginStore {
           }
         : {}),
     };
+  }
+
+  objectTypesOf(id: string): readonly string[] {
+    const rows = this.db
+      .query(
+        "SELECT DISTINCT object_type FROM facts WHERE object_id = ? AND object_type IS NOT NULL ORDER BY object_type",
+      )
+      .all(id) as { object_type: string }[];
+    return rows.map((row) => row.object_type);
   }
 
   facts(): readonly PluginFact[];

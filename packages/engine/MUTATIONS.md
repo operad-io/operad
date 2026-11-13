@@ -745,3 +745,9 @@ the row fields.
 | T-0377-M1 | packages/engine/src/plugin/install.ts | `ensureInstalledPackage` no longer passed `--omit=optional` to `bun install`, so the claude SDK's platform packages would be installed | `ensuring a package is installed in the home > writes the project, skips optional dependencies and returns the package file` (also the failed-install message test) |
 | T-0377-M2 | packages/engine/src/plugin/load.ts | `loadPlugin` no longer fell back to the package file in the home when the module name did not resolve | `ensuring a package is installed in the home > the loader falls back to the package in the home` |
 | T-0377-M7 | packages/engine/src/plugin/install.ts | `ensureInstalledPackage` always passed `--omit=optional`, so the terminal client's native optional packages would be skipped too | `ensuring a package is installed in the home > an install that needs its optional packages keeps them on` |
+## T-0381 — resolving an id never reads the whole fact list
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0381-M1 | packages/engine/src/views/presentation.ts | the undeclared-type lookup in `resolve` read the whole fact list again | `presentation views > resolving an id never reads the whole fact list (T-0381) > memory: scoped, typed, undeclared, ambiguous and unknown ids` |
+| T-0381-M2 | packages/engine/src/plugin/store.ts | the memory store did not record an object's type by id when a fact was tracked, so `objectTypesOf` was empty | `presentation views > resolving an id never reads the whole fact list (T-0381) > memory: scoped, typed, undeclared, ambiguous and unknown ids` |

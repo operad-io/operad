@@ -48,6 +48,8 @@ export class MemoryPluginStore implements PluginStore {
   private readonly indexes = new Map<string, readonly string[]>();
   private readonly entries: PluginFact[] = [];
   private readonly byObject = new Map<string, PluginFact[]>();
+  /** The object types that have facts, by object id. */
+  private readonly typesById = new Map<string, Set<string>>();
   private readonly listeners = new Set<(object: ObjectRef) => void>();
   private readonly factListeners = new Set<FactSubscription>();
 
@@ -149,6 +151,10 @@ export class MemoryPluginStore implements PluginStore {
           }
         : {}),
     };
+  }
+
+  objectTypesOf(id: string): readonly string[] {
+    return [...(this.typesById.get(id) ?? [])].sort();
   }
 
   facts(): readonly PluginFact[];
@@ -280,6 +286,9 @@ export class MemoryPluginStore implements PluginStore {
   private track(fact: PluginFact): void {
     if (fact.object === undefined) return;
     const key = this.key(fact.object.type, fact.object.id);
+    const types = this.typesById.get(fact.object.id);
+    if (types === undefined) this.typesById.set(fact.object.id, new Set([fact.object.type]));
+    else types.add(fact.object.type);
     const list = this.byObject.get(key);
     if (list === undefined) this.byObject.set(key, [fact]);
     else list.push(fact);

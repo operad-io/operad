@@ -874,6 +874,80 @@ describe("presentation views", () => {
     await log.close();
   });
 
+  describe("resolving an id never reads the whole fact list (T-0381)", () => {
+    const view = {
+      row: (object: { readonly id: string }) => ({ id: object.id, title: "", state: "new" }),
+      sections: () => [],
+      load: () => ({ markdown: "" }),
+    };
+    const scopedPlugin = definePlugin({
+      name: "scoped",
+      kind: "domain",
+      version: "0.0.1",
+      objects: [
+        {
+          name: "task",
+          resolve: (_ctx, _type, id) => (id.startsWith("TK") ? `repo/${id}` : undefined),
+        },
+        { name: "note" },
+      ],
+      views: { task: view, note: view },
+    });
+
+    /** The store with a count of the calls that ask for every fact. */
+    function counting<T extends MemoryPluginStore | SqlitePluginStore>(
+      inner: T,
+    ): { readonly store: T; readonly full: () => number } {
+      let full = 0;
+      const store = new Proxy(inner, {
+        get(target, property) {
+          const value: unknown = Reflect.get(target, property, target);
+          if (property !== "facts" || typeof value !== "function") {
+            return typeof value === "function" ? value.bind(target) : value;
+          }
+          return (...args: unknown[]) => {
+            if (args.length === 0) full += 1;
+            return Reflect.apply(value, target, args);
+          };
+        },
+      });
+      return { store, full: () => full };
+    }
+
+    for (const kind of ["memory", "sqlite"] as const) {
+      test(`${kind}: scoped, typed, undeclared, ambiguous and unknown ids`, async () => {
+        const root = await tempRoot();
+        const inner =
+          kind === "memory"
+            ? new MemoryPluginStore({ root: join(root, "plugins") })
+            : new SqlitePluginStore({ root: join(root, "plugins") });
+        const { store, full } = counting(inner);
+        store.put("task", "repo/TK1-work", {}, "seed");
+        store.put("note", "n1", {}, "seed");
+        store.put("legacy", "only-legacy", {}, "seed");
+        store.put("legacy", "twice", {}, "seed");
+        store.put("legacy2", "twice", {}, "seed");
+        const views = trackedViews({
+          registry: new PluginRegistry([scopedPlugin], { store }),
+          store,
+        });
+        expect((await views.get("TK1-work")).id).toBe("repo/TK1-work");
+        expect((await views.get("task:repo/TK1-work")).id).toBe("repo/TK1-work");
+        expect((await views.get("n1")).type).toBe("note");
+        expect((await views.get("only-legacy")).type).toBe("legacy");
+        await expect(views.get("twice")).rejects.toMatchObject({
+          kind: "ambiguous",
+          message: '"twice" is ambiguous: use legacy2:twice, legacy:twice',
+        });
+        await expect(views.get("missing")).rejects.toMatchObject({ kind: "not-found" });
+        await views.section("TK1-work", "history");
+        expect(full()).toBe(0);
+        expect(inner.objectTypesOf("twice")).toEqual(["legacy", "legacy2"]);
+        expect(inner.objectTypesOf("nobody")).toEqual([]);
+      });
+    }
+  });
+
   test("a plugin's resolve hook scopes a bare id before the suffix lookup", async () => {
     const root = await tempRoot();
     const store = new MemoryPluginStore({ root: join(root, "plugins") });
