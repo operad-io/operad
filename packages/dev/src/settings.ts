@@ -957,21 +957,46 @@ export function poolWorkers(
   return found;
 }
 
+/** The pool's own cap: its workers' counts, or its `concurrency` when smaller. */
+export function poolCap(settings: DevSettings, pool: string): number {
+  const total = poolWorkers(settings, pool).reduce((sum, worker) => sum + worker.count, 0);
+  const limit = settings.workers.poolConcurrency?.[pool];
+  return limit === undefined ? total : Math.min(total, limit);
+}
+
 /**
- * How many tasks the repository runs at once: the sum of the `default` pool's
- * counts, further capped by `concurrency` when the file sets it.
+ * How many tasks one pool runs at once (the `default` pool unless one is
+ * named): its cap, further limited by the file's `concurrency` when written.
  */
-export function runningTaskCap(settings: DevSettings): number {
-  const total = poolWorkers(settings, DEFAULT_POOL).reduce(
-    (sum, worker) => sum + worker.count,
+export function runningTaskCap(settings: DevSettings, pool: string = DEFAULT_POOL): number {
+  const total = poolCap(settings, pool);
+  return settings.concurrencySet ? Math.min(total, settings.concurrency) : total;
+}
+
+/**
+ * How many tasks the repository runs at once across all pools: every pool's
+ * cap added up, and the file's `concurrency` when written caps them together.
+ */
+export function repositoryTaskCap(settings: DevSettings): number {
+  const total = Object.keys(settings.workers.pools).reduce(
+    (sum, name) => sum + poolCap(settings, name),
     0,
   );
   return settings.concurrencySet ? Math.min(total, settings.concurrency) : total;
 }
 
+/** The pool a flow's tasks count against: its first work stage's pool, or `default`. */
+export function flowPool(settings: DevSettings, flowName: string | undefined): string {
+  const spec = settings.flows[flowName ?? "default"];
+  for (const stage of spec?.stages ?? []) {
+    if (stage.stage === "work") return stage.pool ?? DEFAULT_POOL;
+  }
+  return DEFAULT_POOL;
+}
+
 /** The fields a stage of each kind may name. */
 const STAGE_FIELDS: Readonly<Record<DevStage["stage"], readonly string[]>> = {
-  work: ["stage", "use", "args", "brief", "beforeAttempt"],
+  work: ["stage", "use", "args", "pool", "brief", "beforeAttempt"],
   check: ["stage", "commands", "rerun"],
   review: ["stage", "use", "args", "later", "grading"],
   human: ["stage"],
@@ -1006,6 +1031,7 @@ function stageOf(value: unknown, field: string): DevStage {
     case "work": {
       const use = optionalString("use");
       const args = optionalList("args");
+      const pool = optionalString("pool");
       const brief = optionalString("brief");
       const beforeAttempt = optionalString("beforeAttempt");
       if (
@@ -1022,6 +1048,7 @@ function stageOf(value: unknown, field: string): DevStage {
         stage: "work",
         ...(use === undefined ? {} : { use }),
         ...(args === undefined ? {} : { args }),
+        ...(pool === undefined ? {} : { pool }),
         ...(brief === undefined ? {} : { brief }),
         ...(beforeAttempt === undefined ? {} : { beforeAttempt }),
       };
@@ -1082,7 +1109,10 @@ function flowSpecOf(value: unknown, field: string): DevFlowSpec {
  * or human stage, and its last stage is human because integrate is the step
  * that puts a change on main.
  */
-function flowsOf(value: unknown): DevFlows {
+function flowsOf(
+  value: unknown,
+  pools: Readonly<Record<string, readonly string[]>>,
+): DevFlows {
   if (value === undefined) return DEFAULT_DEV_SETTINGS.flows;
   if (!isRecord(value)) {
     throw new DevError("flows", "must be a JSON object");
@@ -1100,6 +1130,14 @@ function flowsOf(value: unknown): DevFlows {
         "needs at least one check, review or human stage",
       );
     }
+    flow.stages.forEach((stage, index) => {
+      if (stage.stage === "work" && stage.pool !== undefined && pools[stage.pool] === undefined) {
+        throw new DevError(
+          `${field}.stages[${index}].pool`,
+          `no pool named "${stage.pool}" in pools`,
+        );
+      }
+    });
     flows[name] = flow;
   }
   return flows;
@@ -1184,7 +1222,7 @@ export function validateDevSettings(value: unknown): DevSettings {
       value.retry === undefined
         ? DEFAULT_DEV_SETTINGS.retry
         : retrySettings(value.retry, "retry"),
-    flows: flowsOf(value.flows),
+    flows: flowsOf(value.flows, workers.pools),
   };
 }
 

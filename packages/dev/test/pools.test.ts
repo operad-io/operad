@@ -2,7 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { DevError } from "../src/model.ts";
 import {
   DEFAULT_DEV_SETTINGS,
+  flowPool,
+  poolCap,
   poolWorkers,
+  repositoryTaskCap,
   runningTaskCap,
   validateDevSettings,
 } from "../src/settings.ts";
@@ -96,5 +99,87 @@ describe("the running-task cap", () => {
     expect(runningTaskCap(validateDevSettings({ workers, concurrency: 2 }))).toBe(2);
     expect(runningTaskCap(validateDevSettings({ workers, concurrency: 8 }))).toBe(3);
     expect(runningTaskCap(validateDevSettings({ workers }))).toBe(3);
+  });
+});
+
+describe("pool caps and the work stage's pool (T-0379)", () => {
+  const codex = { use: "harness-codex/agent", count: 3 };
+  const workers = { claude, pi, codex };
+
+  test("a pool may be an object with workers and concurrency; the list form stays valid", () => {
+    const settings = validateDevSettings({
+      workers,
+      pools: { default: ["claude", "pi"], image: { workers: ["codex"], concurrency: 2 } },
+    });
+    expect(poolWorkers(settings, "image").map((worker) => worker.name)).toEqual(["codex"]);
+    expect(settings.workers.pools).toEqual({ default: ["claude", "pi"], image: ["codex"] });
+  });
+
+  test("a pool's cap is its workers' counts, or its concurrency when smaller", () => {
+    const settings = validateDevSettings({
+      workers,
+      pools: {
+        default: ["claude", "pi"],
+        image: { workers: ["codex"], concurrency: 2 },
+        big: { workers: ["codex"], concurrency: 10 },
+      },
+    });
+    expect(poolCap(settings, "default")).toBe(3);
+    expect(poolCap(settings, "image")).toBe(2);
+    expect(poolCap(settings, "big")).toBe(3);
+  });
+
+  test("each pool is capped alone; the repository's concurrency caps them together", () => {
+    const pools = { default: ["claude"], image: ["codex"] };
+    const open = validateDevSettings({ workers, pools });
+    expect(runningTaskCap(open, "default")).toBe(2);
+    expect(runningTaskCap(open, "image")).toBe(3);
+    expect(repositoryTaskCap(open)).toBe(5);
+    const capped = validateDevSettings({ workers, pools, concurrency: 4 });
+    expect(runningTaskCap(capped, "image")).toBe(3);
+    expect(repositoryTaskCap(capped)).toBe(4);
+    expect(runningTaskCap(validateDevSettings({ workers, pools, concurrency: 2 }), "image")).toBe(2);
+  });
+
+  test("a bad pool object is refused with its field", () => {
+    expect(refusal({ workers, pools: { default: { workers: ["claude"], concurrency: 0 } } }).field).toBe(
+      "pools.default.concurrency",
+    );
+    expect(refusal({ workers, pools: { default: { workers: ["nope"] } } }).field).toBe(
+      "pools.default.workers[0]",
+    );
+    expect(refusal({ workers, pools: { default: { workers: [], concurrency: 1 } } }).field).toBe(
+      "pools.default.workers",
+    );
+    expect(refusal({ workers, pools: { default: { workers: ["claude"], extra: 1 } } }).field).toBe(
+      "pools.default.extra",
+    );
+  });
+
+  test("a work stage's pool is read, and an unknown pool is refused with the field named", () => {
+    const stages = (pool: string) => ({ flows: { image: { stages: [{ stage: "work", pool }, { stage: "human" }] } } });
+    const settings = validateDevSettings({
+      workers,
+      pools: { default: ["claude"], image: ["codex"] },
+      ...stages("image"),
+    });
+    expect(flowPool(settings, "image")).toBe("image");
+    expect(flowPool(settings, "default")).toBe("default");
+    expect(flowPool(settings, undefined)).toBe("default");
+    const error = refusal({ workers, pools: { default: ["claude"] }, ...stages("ghost") });
+    expect(error.field).toBe("flows.image.stages[0].pool");
+    expect(error.message).toContain("ghost");
+    expect(refusal({ workers, ...stages("") }).field).toBe("flows.image.stages[0].pool");
+  });
+
+  test("a flow's pool is its first work stage's", () => {
+    const settings = validateDevSettings({
+      workers,
+      pools: { default: ["claude"], image: ["codex"] },
+      flows: {
+        two: { stages: [{ stage: "work", pool: "image" }, { stage: "work" }, { stage: "human" }] },
+      },
+    });
+    expect(flowPool(settings, "two")).toBe("image");
   });
 });

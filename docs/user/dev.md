@@ -25,7 +25,7 @@ refused with the field path in front, such as `workers.claude.fallback: ...`.
 | `dev.mainBranch` | string | `"main"` | a branch name | When a task branch starts and merges main | Refused: `mainBranch: must be a non-empty string` |
 | `dev.worktreeRoot` | string | `".operad-worktrees"` | a relative path inside the repository | When a worktree is created or read | Refused: `worktreeRoot: must be relative to the repository` or `worktreeRoot: must stay inside the repository` |
 | `dev.worktrees` | string | unset | the old name of `worktreeRoot`; read when `worktreeRoot` is absent | When the file is read | Refused with the same two messages, naming `worktrees` |
-| `dev.concurrency` | integer | unset: the `default` pool's counts alone set it | `1` or more | On the next scheduler pass; running tasks are not stopped | Refused: `concurrency: must be a positive integer` |
+| `dev.concurrency` | integer | unset: each pool's counts alone set its cap | `1` or more | On the next scheduler pass; running tasks are not stopped | Refused: `concurrency: must be a positive integer` |
 | `dev.sandbox` | string | unset | any string; kept so older files still validate | Never; the value is ignored | Ignored |
 | `dev.worker` | object | `{ "use": "radian/agent", "args": [] }` when neither `worker` nor `workers` is written | the keys below; not allowed together with `workers` | When the file is read | Refused: `worker: cannot be set together with workers; use one or the other` |
 | `dev.worker.use` | string | `"radian/agent"` | a step name `<plugin>/<step>` | When the worker step starts | Refused: `worker.use: must be a non-empty string` |
@@ -41,7 +41,7 @@ refused with the field path in front, such as `workers.claude.fallback: ...`.
 | `dev.workers.<name>.stallSecs` | number | unset: the harness's own limit | above `0` | When the worker step starts | Refused: `workers.<name>.stallSecs: must be a positive number of seconds` |
 | `dev.workers.<name>.fallback` | string | unset | another worker of `workers`; not itself and not a worker with its own fallback | When a worker's model is unavailable | Refused: `workers.<name>.fallback: "<name>" cannot fall back to itself`, `... is not a worker in workers`, or `... already has a fallback` |
 | `dev.pools` | object | one pool named `default` holding every worker in the order written | pool name to a non-empty list of worker names | When the file is read; `dev` needs the pool named `default` | Refused: `pools: must be an object`, `pools: must define at least one pool`, `pools.<name>: must be a non-empty list of worker names`, or `pools: needs a pool named "default", the one the dev flow uses` |
-| `dev.pools.<name>` | array of strings | one `default` pool when `pools` is absent | worker names; each must exist in `workers` | On the next scheduler pass for the `default` pool | Refused: `pools.<name>[<i>]: "<worker>" is not a worker in workers` |
+| `dev.pools.<name>` | array of strings, or an object | one `default` pool when `pools` is absent | worker names; each must exist in `workers`; or `{ "workers": [...], "concurrency": n }` | On the next scheduler pass | Refused: `pools.<name>[<i>]: "<worker>" is not a worker in workers`, `pools.<name>.workers[<i>]: ...`, `pools.<name>.concurrency: must be an integer of at least 1` or `pools.<name>.<key>: is not a pool setting` |
 | `dev.workerBrief` | string | `".operad/worker-brief.md"` | a path to a Markdown file; a missing file uses the built-in four-line brief | When the work step builds the worker prompt | Refused: `workerBrief: must be a non-empty string` |
 | `dev.prepare` | array of strings | `[]` | shell lines run in every checkout after it is created or moved to a new commit, before a step uses it | When a checkout is made or moved | Refused: `prepare: must be an array of command lines` or `prepare[<i>]: must be a non-empty string`; a failing line fails the step with `prepare failed` |
 
@@ -127,6 +127,7 @@ A repository's own flows are explained in [Flows and their stages](#flows-and-th
 | `dev.flows.<name>.stages.stage` | string | required | `work`, `check`, `review`, `human` | When the stage is reached | Refused: `flows.<name>.stages[<i>].stage: must be "work", "check", "review" or "human"` |
 | `dev.flows.<name>.stages.use` | string | the repository worker for `work`, `reviewer.use` for `review` | a step name | When that stage starts | Refused: `flows.<name>.stages[<i>].use: must be a non-empty string` |
 | `dev.flows.<name>.stages.args` | array of strings | the worker's or reviewer's own arguments | arguments for that step | When that stage starts | Refused: `flows.<name>.stages[<i>].args: must be an array of strings` |
+| `dev.flows.<name>.stages.pool` | string | `default` | a pool name from `pools` (a `work` stage only) | When the work stage starts, and for the running-task cap | Refused: `flows.<name>.stages[<i>].pool: no pool named "<pool>" in pools` |
 | `dev.flows.<name>.stages.brief` | string | unset | extra instructions appended to the worker prompt | When the work stage starts | Refused: `flows.<name>.stages[<i>].brief: must be a non-empty string` |
 | `dev.flows.<name>.stages.beforeAttempt` | string | unset: the worktree step's merge stays in force | `merge-main`, `none` | Before the work stage runs | Refused: `flows.<name>.stages[<i>].beforeAttempt: must be "merge-main" or "none"` |
 | `dev.flows.<name>.stages.commands` | array | `gate.commands` | check commands | When the check stage starts | Refused: `flows.<name>.stages[<i>].commands: must be an array of commands` or the command's own error |
@@ -428,7 +429,7 @@ which carries whatever the task's branch had when it started.
 | Field | Type | What it does |
 |---|---|---|
 | `workers` | object | The repository's workers. Same fields as in [A flow: `workers` and `pools`](#a-flow-workers-and-pools); that table is the one place the worker fields, defaults and refusals are listed. |
-| `pools` | object | Pool groups. `dev` uses the pool named `default`, so a `pools` setting must define it. Without `pools`, `default` holds every worker in the order written. |
+| `pools` | object | Pool groups. A pool is a list of worker names, or an object `{ "workers": [...], "concurrency": n }`. A work stage takes its workers from the pool its `pool` field names; with none it uses `default`, so a `pools` setting must define `default`. Without `pools`, `default` holds every worker in the order written. |
 | `concurrency` | integer, 1 or more | An extra cap on running tasks; see below. |
 
 <!-- schema: dev.schema.json -->
@@ -462,21 +463,32 @@ Errors in `workers` and `pools` name the field path, such as
 its harness like any worker's. A file that has both `worker` and `workers`, or
 `pools` without `workers`, is refused when it is read.
 
-**How many tasks run at once.** A repository runs at most as many tasks as the
-sum of the `count` of the workers in its `default` pool. When the file sets
-`concurrency` it caps that sum further and never raises it. A plan's own
-`concurrency` still applies on top of this. A task past the cap waits for a
-free place; one past a worker's own `count` or the home cap waits in
-`pool/agent`.
+**How many tasks run at once.** Each pool has its own cap: the sum of the
+`count` of its workers, or its `concurrency` when that is smaller. A task counts
+against the pool of the flow it runs: its first `work` stage's `pool`, or
+`default`. A full code pool does not stop a task of a flow that uses another
+pool from starting, and the other way round. When the file sets `concurrency`
+it caps all pools together and never raises one pool's cap. A plan's own
+`concurrency` still applies on top of this. A task past a cap waits for a free
+place, and its row says which pool is full when the repository has more than
+one (`waiting for the image pool's slot (T-0007)`); one past a worker's own
+`count` or the home cap waits in `pool/agent`.
 
-**Which worker.** The work step passes the `default` pool and the key
-`<repository>/default` to `pool/agent`. The attempt records the `worker` that
+A pool whose workers have no `fallback` never hands its work to a worker of
+another pool: when the model is unavailable or its usage limit is reached, the
+work waits and tries again, and after the allowed waits it goes to a person.
+Choose a task's flow with `task add --flow <name>` (the `command` tool of MCP
+passes it like the CLI) or `task update <id> --flow <name>`; the update is
+refused once the task has started its first attempt.
+
+**Which worker.** The work step passes the stage's pool (`default` unless the
+stage names another) and the key `<repository>/<pool>` to `pool/agent`. The attempt records the `worker` that
 ran (after a fallback, the fallback worker, with `fallbackFrom` naming the one
 that failed), and the work result says `work: claude` or
 `work: pi (fallback from claude)`. After a rework or a reject, the next work
 attempt asks for the worker of the attempt before, so it resumes that worker's
 session when the harness can. If that worker is busy the work waits for it;
-another worker does not take it. If the worker is no longer in the `default`
+another worker does not take it. If the worker is no longer in the stage's
 pool the pool picks any worker with room and the result says
 `work: pi; claude is no longer in the pool`.
 

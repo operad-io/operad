@@ -1027,3 +1027,14 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0376-M1 | packages/dev/src/marks.ts | `runningMark` returned `blocked` again for `workerWait` | `task marks > running, work step waits for a worker another task holds` |
+
+## T-0379 — a work stage's pool and per-pool task caps
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0379-M1 | packages/dev/src/settings.ts | `flowPool` always answered `default`, so every task counted against the code pool | `each pool counts its own running tasks > a full code pool does not stop an image task, and the other way round` |
+| T-0379-M2 | packages/dev/src/settings.ts | `poolCap` ignored the pool's `concurrency` | `pool caps and the work stage's pool > a pool's cap is its workers' counts, or its concurrency when smaller` |
+| T-0379-M3 | packages/dev/src/settings.ts | a work stage naming an unknown pool was accepted | `pool caps and the work stage's pool > a work stage's pool is read, and an unknown pool is refused with the field named` |
+| T-0379-M4 | packages/dev/src/steps.ts | `poolParams` always took workers from `default` | `dev/work with workers > a pool without a fallback waits on usage_limit and never takes another pool's worker` |
+| T-0379-M5 | packages/dev/src/schedule.ts | `canStart` ignored the pool's cap | `each pool counts its own running tasks > a pool's concurrency limits it below its workers' counts` |
+| T-0379-M6 | packages/dev/src/flow-compiler.ts | `workParams` left the stage's pool out of the work step's params | `a work stage's pool reaches the compiled work step` |

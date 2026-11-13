@@ -57,6 +57,8 @@ import {
 import {
   DEV_SETTINGS_FILE,
   readDevSettings,
+  flowPool,
+  repositoryTaskCap,
   runningTaskCap,
   settingsProblem,
   type DevSettings,
@@ -326,8 +328,9 @@ function planConcurrency(plan: PlanData): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 1;
 }
 
-function repositoryConcurrency(settings: DevSettings): number {
-  const value: unknown = runningTaskCap(settings);
+function repositoryConcurrency(settings: DevSettings, pool?: string): number {
+  const value: unknown =
+    pool === undefined ? repositoryTaskCap(settings) : runningTaskCap(settings, pool);
   return typeof value === "number" && Number.isFinite(value) ? value : 1;
 }
 
@@ -635,6 +638,17 @@ async function scheduleRepository(
   let repositoryActive = current.filter((object) =>
     isActive(taskData(object.data)),
   ).length;
+  // A task counts against the pool of the flow it runs.
+  const plansByName = new Map(plans.map((object) => [bareId(object.id), planData(object.data)]));
+  const poolOf = (task: TaskData): string =>
+    flowPool(settings, task.flow ?? plansByName.get(task.plan)?.flow);
+  const poolActive = new Map<string, number>();
+  for (const object of current) {
+    const task = taskData(object.data);
+    if (!isActive(task)) continue;
+    const pool = poolOf(task);
+    poolActive.set(pool, (poolActive.get(pool) ?? 0) + 1);
+  }
   const started = new Set<string>();
   // Which running or reviewing task holds each area in this repository.
   const areaActive = new Map<string, string>();
@@ -700,7 +714,9 @@ async function scheduleRepository(
     if (!canStartWork) return false;
     if (task.area !== undefined && areaActive.has(task.area)) return false;
     if (planConcurrency(plan) - (planActive.get(planId) ?? 0) <= 0) return false;
-    return repositoryActive < repositoryConcurrency(settings);
+    if (repositoryActive >= repositoryConcurrency(settings)) return false;
+    const pool = poolOf(task);
+    return (poolActive.get(pool) ?? 0) < repositoryConcurrency(settings, pool);
   };
 
   /**
@@ -774,6 +790,8 @@ async function scheduleRepository(
         writeSchedulerLine(`${bareId(pick.id)} ready -> running`);
         planActive.set(planId, (planActive.get(planId) ?? 0) + 1);
         repositoryActive += 1;
+        const startedPool = poolOf(task);
+        poolActive.set(startedPool, (poolActive.get(startedPool) ?? 0) + 1);
         if (task.area !== undefined) areaActive.set(task.area, bareId(pick.id));
         started.add(pick.id);
         if (useOldestPlan) oldestPlanHeld.add(pick.id);
@@ -907,8 +925,24 @@ async function scheduleRepository(
         note = undefined;
       } else if (plan !== undefined && holders.length >= planConcurrency(plan)) {
         note = `waiting for the plan's slot (${heldBy(holders)})`;
-      } else if (all.length >= repositoryConcurrency(settings)) {
-        note = `waiting for the repository's slot (${heldBy(all)})`;
+      } else {
+        const pool = poolOf(task);
+        const inPool = current
+          .filter((other) => {
+            const otherTask = taskData(other.data);
+            return (isActive(otherTask) || started.has(other.id)) && poolOf(otherTask) === pool;
+          })
+          .map((other) => bareId(other.id))
+          .sort();
+        if (
+          Object.keys(settings.workers.pools).length > 1 &&
+          inPool.length >= repositoryConcurrency(settings, pool)
+        ) {
+          // Which pool is full: a full code pool is not a full image pool.
+          note = `waiting for the ${pool} pool's slot (${heldBy(inPool)})`;
+        } else if (all.length >= repositoryConcurrency(settings)) {
+          note = `waiting for the repository's slot (${heldBy(all)})`;
+        }
       }
     }
     await setSlotHold(ctx.store, object.id, note);
