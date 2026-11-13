@@ -311,6 +311,7 @@ export async function runVerify(
         checkPlaces(ctx, context.repository, context.settings.gate.places, context.taskKey),
       ),
     limit: context.settings.check.loadLimit,
+    flakyLimit: context.settings.check.flakyLoadLimit,
     signal: ctx.signal,
     log: (text) => ctx.logger.write(text),
   });

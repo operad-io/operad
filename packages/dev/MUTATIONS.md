@@ -1110,6 +1110,12 @@ the row fields.
 | T-0398-M11 | packages/dev/src/standing.ts | void: T-0094-M12 names dev code and a test that T-0388 deleted | none (void) |
 | T-0398-M12 | packages/dev/src/standing.ts | void: T-0094-M14 names dev code and a test that T-0388 deleted | none (void) |
 
+## T-0401-timeout-alone-is-code — a test timeout alone under a quiet machine is the code
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0401-M1 | packages/dev/src/notcode.ts | `timeoutAlone` ignored the load and treated every alone-rerun timeout as code | `a test that timed out when run alone > under a load above the flaky limit it waits and runs again, as before` |
+| T-0401-M2 | packages/dev/src/notcode.ts | `timeoutAlone` was never called, so an alone-rerun timeout under low load waited as not code | `a test that timed out when run alone > under a load below the flaky limit it is the code: one run, a rework note, no wait` |
 ## T-0400-integrating-counts-as-running — an integrating task is active, not waiting for a person
 
 | id | file | mutation | failing test |
@@ -1122,3 +1128,8 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0403-M1 | packages/dev/src/gate.ts | `nextFallback` returns `undefined` after the first fallback (index `+ 1` becomes `+ 99`), so a list stops at its first entry | `dev/review fallback and retry > a list of fallbacks is tried in order until one writes the report` |
+## T-0401-timeout-alone-is-code — rework 1
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0401-M3 | packages/dev/src/rerun.ts | `runCheckCommands` passed `false` for `aloneRerun` when the failed test failed again alone | `a failed test that fails again when run alone > the result says it was the test's own rerun, and a quiet machine makes it the code` |
