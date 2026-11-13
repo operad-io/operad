@@ -28,7 +28,7 @@ export const MCP_VERSION = (() => {
   const manifest: unknown = JSON.parse(
     readFileSync(fileURLToPath(new URL("../package.json", import.meta.url)), "utf8"),
   );
-  return isRecord(manifest) && typeof manifest.version === "string" ? manifest.version : "0.0.0";
+  return isRecord(manifest) && typeof manifest.version === "string" ? manifest.version : "unknown";
 })();
 
 /** The MCP protocol version this server implements. */
