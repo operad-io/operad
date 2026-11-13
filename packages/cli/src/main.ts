@@ -1796,8 +1796,13 @@ async function commandServe(
       }
     }
     await kernel.stopSources();
-    process.removeListener("SIGINT", stop);
-    process.removeListener("SIGTERM", stop);
+    // Under a supervisor the handlers stay: the supervisor passes each stop
+    // signal on asynchronously, so one can still arrive after the stop is done
+    // and before the process ends; the default action would end it with 130.
+    if (!supervised) {
+      process.removeListener("SIGINT", stop);
+      process.removeListener("SIGTERM", stop);
+    }
   }
   if (unreleased !== undefined) throw new HandOverStuck(unreleased, outcome === "reload");
   return outcome;
