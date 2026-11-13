@@ -13,6 +13,7 @@ afterAll(cleanupTempRoots);
 const CLI_ENTRY = fileURLToPath(new URL("../../bin/operad.ts", import.meta.url));
 const ENGINE = fileURLToPath(new URL("../../../engine/src/index.ts", import.meta.url));
 const PLATFORM = fileURLToPath(new URL("../../../engine/src/platform/index.ts", import.meta.url));
+const SUPERVISE = fileURLToPath(new URL("../fixtures/supervise-serve.ts", import.meta.url));
 
 /** The plugin of every test: `hold` waits for a file, `stamp` writes the version of its code. */
 function pluginSource(version: string, work: string): string {
@@ -73,6 +74,29 @@ export default definePlugin({
 `;
 }
 
+/**
+ * A plugin that keeps the serve process alive after its stop and, on request,
+ * reports the signal handlers the process has at that moment.
+ */
+function heldPluginSource(work: string): string {
+  return `
+import { definePlugin } from ${JSON.stringify(ENGINE)};
+import { existsSync, writeFileSync } from "node:fs";
+
+const WORK = ${JSON.stringify(work)};
+
+// The serve's stop ends the kernel's work, not this handle: a terminal or a
+// supervisor still holds the process afterwards. Each turn answers a probe
+// with the signal handlers the process listens with.
+setInterval(() => {
+  if (!existsSync(WORK + "/probe")) return;
+  writeFileSync(WORK + "/listeners", process.listenerCount("SIGINT") + " " + process.listenerCount("SIGTERM"));
+}, 20);
+
+export default definePlugin({ name: "heldserve", kind: "domain", version: "0.0.1" });
+`;
+}
+
 /** The output of a process, as text that tests wait on instead of sleeping. */
 class Output {
   text = "";
@@ -127,6 +151,14 @@ beforeEach(() => {
 async function waitForFileNamed(path: string): Promise<void> {
   while (!existsSync(path)) {
     if (Date.now() > waitDeadline) throw new Error(`timed out waiting for file ${path}`);
+    await waitForChange(dirname(path), basename(path), 200);
+  }
+}
+
+/** Resolves once the file is gone. */
+async function waitForFileGone(path: string): Promise<void> {
+  while (existsSync(path)) {
+    if (Date.now() > waitDeadline) throw new Error(`timed out waiting for ${path} to go`);
     await waitForChange(dirname(path), basename(path), 200);
   }
 }
@@ -426,6 +458,50 @@ describe("a serve picks up changed code", () => {
   }, 60_000);
 });
 
+describe("a supervised serve that has stopped", () => {
+  test("still listens for SIGINT and SIGTERM", async () => {
+    const s = await setup();
+    writeFileSync(s.plugin, heldPluginSource(s.work));
+    writeFileSync(join(s.home, "triggers.json"), "[]\n");
+    // The real supervisor starts the serve child, which carries the flag that
+    // keeps the stop handlers after its stop is done.
+    const serve = Bun.spawn({
+      cmd: [process.execPath, SUPERVISE, "serve"],
+      cwd: s.home,
+      env: childEnv(s.env),
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const output = new Output(serve.stdout, serve.stderr);
+    let childPid: number | undefined;
+    try {
+      await output.until(/serving /);
+      childPid = readLockPid(join(s.home, "serve.lock"));
+      if (childPid === undefined) throw new Error("the serve lock has no pid");
+      expect(childPid).not.toBe(serve.pid);
+      // The terminal signals the group; here the serve child itself gets it.
+      process.kill(childPid, "SIGINT");
+      // The lock is released after the stop handlers were released, and the
+      // plugin keeps the process alive, as a terminal still holding it would.
+      await waitForFileGone(join(s.home, "serve.lock"));
+      writeFileSync(join(s.work, "probe"), "go\n");
+      await waitForFileNamed(join(s.work, "listeners"));
+      expect(readFileSync(join(s.work, "listeners"), "utf8").trim()).toBe("1 1");
+      expect(serve.exitCode).toBeNull();
+    } finally {
+      if (childPid !== undefined) {
+        try {
+          process.kill(childPid, "SIGKILL");
+        } catch {
+          // It already ended.
+        }
+      }
+      if (serve.exitCode === null) serve.kill("SIGKILL");
+      await serve.exited;
+    }
+  }, 60_000);
+});
 
 /** The second address: the machine's private one when it has one (a phone's), else ::1 (127.0.0.2 is not bound on macOS). */
 function secondAddress(): string {
