@@ -1204,3 +1204,18 @@ the row fields.
 | T-0458-M3 | packages/dev/src/project-settings.ts | dev's check of a dev.json value was skipped, so a flow with only `work` stages was written | `dev.flows and dev.flowList in settings > a save that breaks a rule is refused with dev's reason and writes nothing` and `the command line lists and saves flows, and refuses with dev's reason` |
 | T-0458-M4 | packages/dev/src/project-settings.ts | a `dev.json` flow whose name a TypeScript flow also has was written | `dev.flows and dev.flowList in settings > a save that breaks a rule is refused with dev's reason and writes nothing` |
 | T-0458-M5 | packages/dev/src/project-flows.ts | a TypeScript flow dev refuses was listed without dev's reason | `dev.flows and dev.flowList in settings > flowList reads dev.json, TypeScript and refused TypeScript flows` |
+
+## T-0463 — plan and task creation actions
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0463-M1 | packages/dev/src/create-actions.ts | `dev:plan` dropped the request before it called the command's creation path | `dev:plan and dev:task > over HTTP a plan and a task take their flow, request, brief and after` |
+| T-0463-M2 | packages/dev/src/create-actions.ts | `dev:task` dropped `after` before it called the command's creation path | `dev:plan and dev:task > over HTTP a plan and a task take their flow, request, brief and after` |
+| T-0463-M3 | packages/dev/src/project-flows.ts | `flowNamesOf` no longer moved `default` to the front of the flow list | `dev:plan and dev:task > the schemas list the repository's flows default first and the plan's tasks` |
+| T-0463-M4 | packages/dev/src/create-actions.ts | `dev:plan` stopped asking for confirmation | `dev:plan and dev:task > the plan action asks before it creates` |
+| T-0463-M5 | packages/dev/src/create-actions.ts | the task action's `after` choices were always empty, so a valid `after` was refused by the schema | `dev:plan and dev:task > over HTTP a plan and a task take their flow, request, brief and after` and `dev:plan and dev:task > the schemas list the repository's flows default first and the plan's tasks` |
+| T-0463-M6 | packages/dev/src/model.ts | `slugFromTitle` kept the title's case and punctuation instead of making a slug | `dev:plan and dev:task > over HTTP a plan and a task take their flow, request, brief and after` and `dev:plan and dev:task > a slug left out comes from the title` |
+| T-0463-M7 | packages/dev/src/create-actions.ts | the plan action's `flow` had no `enum`, so an unknown flow reached the run instead of being refused by the schema | `dev:plan and dev:task > the schemas list the repository's flows default first and the plan's tasks` and `dev:plan and dev:task > refusals are the command's: unknown flow, bad slug, cancelled plan` |
+| T-0463-M8 | packages/dev/src/commands.ts | `createPlan` ignored the given slug and always derived one from the title | `dev:plan and dev:task > over HTTP a plan and a task take their flow, request, brief and after` and `dev:plan and dev:task > refusals are the command's: unknown flow, bad slug, cancelled plan` |
+| T-0463-M9 | packages/dev/src/service.ts | `addTask` and `addTaskLocked` no longer refused a cancelled plan | `dev:plan and dev:task > refusals are the command's: unknown flow, bad slug, cancelled plan` |
+| T-0463-M10 | packages/dev/src/model.ts | `validateSlug` stopped refusing a slug with a space and capitals | `dev:plan and dev:task > refusals are the command's: unknown flow, bad slug, cancelled plan` |

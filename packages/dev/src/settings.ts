@@ -1499,9 +1499,7 @@ function readDefaults(repositoryPath: string): ReadSettings {
  * not valid never stops work: the last valid settings stay in force. Only a
  * repository that never had valid settings gets the error.
  */
-export async function readDevSettings(
-  repositoryPath: string,
-): Promise<DevSettings> {
+export function readDevSettingsNow(repositoryPath: string): DevSettings {
   try {
     const read = readSettingsNow(repositoryPath);
     keep(repositoryPath, read);
@@ -1511,6 +1509,13 @@ export async function readDevSettings(
     if (kept !== undefined) return kept.settings;
     throw error;
   }
+}
+
+/** Reads a repository's settings; an action's schema uses the synchronous form. */
+export async function readDevSettings(
+  repositoryPath: string,
+): Promise<DevSettings> {
+  return readDevSettingsNow(repositoryPath);
 }
 
 /**

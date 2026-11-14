@@ -1237,6 +1237,10 @@ async function commandAction(
   argv: readonly string[],
   tty: boolean,
 ): Promise<boolean> {
+  // A plugin command and an action may share a plain name (`plan` is both a
+  // dev command and the action that creates a plan). The command keeps the
+  // plain name; its action is still reached as `dev:plan`.
+  if (context.registry.resolveCommand(argv) !== undefined) return false;
   const help = splitFlag(argv, "--help");
   if (help.present) {
     const info = actionInfoForArgv(context, help.args);

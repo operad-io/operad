@@ -93,6 +93,29 @@ It records the action the same way the command line does, and a running
 records its caller the same way and answers with the same rules as the command
 line and a plugin action.
 
+### Creating a plan and a task
+
+A plan is created on a repository with `dev:plan`; it asks for confirmation.
+A `flow` is one the repository lists in `dev.flowList`, and a missing `slug` is
+taken from the title:
+
+```http
+POST /v1/act
+{"action":"dev:plan","id":"repo:operad","confirmed":true,"args":{"title":"Tighten the checks","slug":"checks","request":"Make the checks finish sooner.","flow":"quick"}}
+```
+
+The answer carries `opens` as `plan:operad/P-0042-checks`. A task is created on
+that plan with `dev:task`; `after` names any tasks of the plan it waits for:
+
+```http
+POST /v1/act
+{"action":"dev:task","id":"plan:operad/P-0042-checks","args":{"title":"Cache the check","brief":"Cache the check result.","flow":"quick","after":["T-0041-warm-cache"]}}
+```
+
+The answer carries `opens` as `task:operad/T-0042-cache-the-check`. Both actions
+run the same code as `operad dev plan add` and `operad dev task add`, so a
+refusal is the command's line, word for word.
+
 ## Reading a section
 
 `GET /v1/objects/<id>/sections/<section>` reads one section. `cursor` takes the

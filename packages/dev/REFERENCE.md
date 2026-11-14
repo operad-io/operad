@@ -30,7 +30,7 @@ object type, and a row names the level above it as its `parent`:
   open task counts. The default filter shows `active`; `--filter removed` shows
   the removed ones. Its sections are Overview (the path, the default branch,
   whether `.operad/dev.json` is in force, the worker and the reviewer) and the
-  kernel's History. A repo has no actions of its own: `repo add` and
+  kernel's History. A repo's `dev:plan` action creates a plan; `repo add` and
   `repo remove` stay commands. A repository registered before `repo` existed
   is carried over the first time anything lists or reads `repo` objects, so
   `operad list repo` works in a fresh process.

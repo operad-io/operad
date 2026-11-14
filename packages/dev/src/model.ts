@@ -648,6 +648,17 @@ export function validateSlug(slug: unknown): string {
   return slug;
 }
 
+/** The slug an action takes from a title when it is given none. */
+export function slugFromTitle(title: unknown, fallback: string): string {
+  const text = typeof title === "string" ? title : "";
+  const words = text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  const slug = words.slice(0, 48).replace(/-+$/g, "");
+  return slug.length === 0 ? fallback : slug;
+}
+
 export function validateTitle(title: unknown): string {
   if (typeof title !== "string" || title.trim().length === 0) {
     throw new DevError("title", "must be a non-empty string");
