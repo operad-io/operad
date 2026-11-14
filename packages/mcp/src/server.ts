@@ -255,10 +255,15 @@ function toolContext(
   };
 }
 
-function requireEmptyParams(params: unknown): void {
+/**
+ * A request parameter object. The MCP specification lets any request carry
+ * `_meta`, a list request carry `cursor`, and its schema leaves params open to
+ * other keys, so nothing beyond the object shape is refused here.
+ */
+function requireParamsObject(params: unknown): void {
   if (params === undefined || params === null) return;
-  if (!isRecord(params) || Object.keys(params).length > 0) {
-    throw new RpcError(RPC_ERRORS.params, "this method takes no parameters");
+  if (!isRecord(params)) {
+    throw new RpcError(RPC_ERRORS.params, "this method takes an object of parameters");
   }
 }
 
@@ -331,10 +336,10 @@ async function dispatch(
           : instructionsFor(context.mcp, context.registry.actions()),
       };
     case "ping":
-      requireEmptyParams(params);
+      requireParamsObject(params);
       return {};
     case "tools/list":
-      requireEmptyParams(params);
+      requireParamsObject(params);
       return { tools: TOOLS };
     case "tools/call":
       return callTool(params, context);

@@ -408,6 +408,34 @@ describe("operad mcp", () => {
     }
   });
 
+  test("accepts the parameters the MCP specification allows on ping and tools/list", async () => {
+    const { home } = await makeHome();
+    const child = openSession(home);
+    try {
+      // radian 0.4.0 (rmcp 3.5.1) sends `_meta.progressToken` on every request,
+      // and a paging client sends `cursor`; the specification allows other keys too.
+      const shapes = [
+        undefined,
+        {},
+        { cursor: "page-2" },
+        { _meta: { progressToken: 7 } },
+        { cursor: "page-2", _meta: { progressToken: 7 } },
+        { _meta: { "io.modelcontextprotocol/protocolVersion": PROTOCOL_VERSION } },
+        { cursor: "page-2", _meta: { progressToken: 7 }, ignored: true },
+      ] as const;
+      let id = 1;
+      for (const params of shapes) {
+        const listed = await child.request(id++, "tools/list", params);
+        expect(resultOf(listed).tools).toEqual(TOOLS);
+        const ping = await child.request(id++, "ping", params);
+        expect(resultOf(ping)).toEqual({});
+      }
+    } finally {
+      const closed = await child.close();
+      expect(closed.code).toBe(0);
+    }
+  });
+
   test("offers no tool to read or change settings: owner decisions are not offered here", () => {
     expect(TOOLS.map((tool) => tool.name).filter((name) => /set/i.test(name))).toEqual([]);
   });
@@ -725,9 +753,9 @@ describe("operad mcp", () => {
 
       for (const [id, method, params, message] of [
         [4, "initialize", [], "initialize needs an object of parameters"],
-        [5, "ping", ["x"], "this method takes no parameters"],
-        [6, "ping", { x: 1 }, "this method takes no parameters"],
-        [7, "tools/list", [], "this method takes no parameters"],
+        [5, "ping", ["x"], "this method takes an object of parameters"],
+        [6, "ping", "x", "this method takes an object of parameters"],
+        [7, "tools/list", [], "this method takes an object of parameters"],
         [8, "tools/call", [], "tools/call needs an object of parameters"],
         [9, "tools/call", {}, "tools/call needs a tool name"],
         [10, "tools/call", { name: "" }, "tools/call needs a tool name"],
