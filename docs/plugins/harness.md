@@ -91,7 +91,7 @@ A worker definition:
 
 Two counts decide whether a worker may start: its own `count` under the `prefix`, and the home-wide cap of its harness, `settings.harnesses` of the `pool` plugin (`{ "<harness plugin>": <count> }`, each an integer of at least `1`; a harness not listed has no limit; takes effect with the next `pool/agent` step that starts).
 The step waits for the first worker with room, emits `pool.waiting` (`WAITING_EVENT`) when it has to wait and `pool.acquired` (`ACQUIRED_EVENT`) when it got a place after waiting, runs the harness step with `ctx.runStep`, and releases the places when the run ends.
-A fallback is tried once, when the first worker's model is unavailable or at its usage limit, the harness could not start (`reason` `missing` or `spawn`) or the step threw; a session belongs to the worker asked for, so the fallback starts its own. The result's data adds `worker`, `harness` and, after a fallback, `fallbackFrom`.
+A fallback is tried once, when the first worker's model is unavailable or at its usage limit, or the harness process could not start (`reason` `missing` or `spawn`); a session belongs to the worker asked for, so the fallback starts its own. A step that throws does not fall back: it fails as it would without one. The result's data adds `worker`, `harness` and, after a fallback, `fallbackFrom`.
 `pool/agent` ends `done`, `failed` or `interrupted`, with a limit of eight hours (`timeoutSecs`).
 The places are kept in a file under `<home>/pool`, because every step runs in a fresh worker thread that loads the plugin again; `PlaceBook` and `FilePlaces` are the two stores of places.
 

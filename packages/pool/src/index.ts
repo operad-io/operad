@@ -275,11 +275,15 @@ export function createPoolPlugin(options: PoolPluginOptions = {}) {
           const first = await attempt(ctx, prefix, candidates, params, options);
           if (first.kind === "aborted") return interrupted();
           const name = first.worker.fallback;
+          // A throw is not a trigger: the harness reports a process that
+          // cannot start as a failed result with reason `missing` or `spawn`,
+          // and anything else thrown is the step's own error. It fails the
+          // work, as it does when the worker has no fallback.
           const triggered =
             name !== undefined &&
             !ctx.signal.aborted &&
-            (first.kind === "threw" ||
-              modelUnavailable(first.result.data) ||
+            first.kind === "result" &&
+            (modelUnavailable(first.result.data) ||
               (first.result.result === "failed" && harnessDidNotStart(first.result.data)));
           if (!triggered) {
             if (first.kind === "threw") throw first.error;
