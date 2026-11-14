@@ -90,3 +90,9 @@ the row fields.
 |---|---|---|---|
 | T-0361-M8 | packages/mcp/src/tools.ts | the `section` tool dropped its `after` argument instead of passing it on | `operad mcp > initializes, lists the table and reads every tool on fixture objects` |
 | T-0389-M1 | packages/mcp/src/policy.ts | `mcpPolicy(undefined)` fell back to a list naming `chat:close` instead of allowing nothing | `with no mcp config the policy allows no action; the configured lists decide` |
+
+## T-0443 — the parameters a list request may carry
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0443-M1 | packages/mcp/src/server.ts | an otherwise valid params object was refused again when it carried keys | `operad mcp > accepts the parameters the MCP specification allows on ping and tools/list` |

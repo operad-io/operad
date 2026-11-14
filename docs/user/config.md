@@ -108,8 +108,11 @@ nothing in this manual prints a secret.
 }
 ```
 
-`operad init` writes a `config.json` when the home has none: `shell`, `radian`,
-`chat`, `pool` and `dev` installed, the store at `store/log.sqlite`, `http` on at
+`operad init` writes a `config.json` when the home has none: `shell`, `chat`,
+`pool` and `dev`, plus a harness plugin for each of `radian`, `claude` and `pi`
+whose command is on `PATH`, in that order. When none is found it writes
+`radian`, and `operad init` fails with a message naming the three agents and how
+to install one. It writes the store at `store/log.sqlite`, `http` on at
 `127.0.0.1:7480`, notifications off, the `mcp.actions` and `mcp.confirmActions`
 lists above and the ask grace of 600 seconds. All of it is written into the
 file; nothing in it is a hidden default. A home with no `config.json` at all
@@ -144,7 +147,7 @@ plugin and the field.
 
 | Key | Type | Default | Allowed values | When it takes effect | Wrong value |
 |---|---|---|---|---|---|
-| `plugins` | object, or an array of module names | the four plugins `operad init` installs | plugin name to a module name, a path, or an options object | At every command start, and when a running `serve` reloads after a change | Refused: `plugins: must be an object of plugin options or an array of module names` |
+| `plugins` | object, or an array of module names | `shell`, `chat`, `pool` and `dev`, plus the harness for each of `radian`, `claude` and `pi` found on `PATH` (`radian` when none is found) | plugin name to a module name, a path, or an options object | At every command start, and when a running `serve` reloads after a change | Refused: `plugins: must be an object of plugin options or an array of module names` |
 | `store` | object | sqlite at `<home>/store/log.sqlite` | the keys below | At every command start | Refused: `store: must be an object` |
 | `http` | object | on, port `7480`, `127.0.0.1` | the keys on [the HTTP page](http.md#the-http-section) | When `operad serve` starts; a reload when the new config loads | Refused: `http: must be an object`, or the field's own message |
 | `notify` | object | command `null`, `on` `["waiting"]` | the keys on [notifications](notifications.md) | When `operad serve` starts; a reload when the new config loads | Refused: `notify: must be an object`, or the field's own message |
@@ -172,8 +175,10 @@ still loads, and `serve` and `operad plugin check` print the line that says why.
 `operad plugin list`, `operad plugin enable`, `operad plugin disable` and
 `operad plugin check` are on [the CLI page](cli.md).
 
-`operad init` installs `shell`, `radian`, `chat`, `pool` and `dev` (dev runs its workers
-through pool). `pi`, `claude`, `codex`,
+`operad init` installs `shell`, `chat`, `pool` and `dev` (dev runs its workers
+through pool), and enables `radian`, `claude` and `pi` when their commands are on
+`PATH` as it creates the home. A new home that enables `claude` also gets
+`@operad-io/harness-claude` and its Agent SDK in `~/.operad/plugins`. `codex`,
 `bot` and `telegram` are shipped but not installed; enable one with
 `operad plugin enable <name>`.
 

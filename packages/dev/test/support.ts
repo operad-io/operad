@@ -5,6 +5,8 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Readable } from "node:stream";
+import { fileURLToPath } from "node:url";
 import { GIT_TIMEOUT_MS, GitTimeoutError } from "../src/git.ts";
 import { SqlitePluginStore } from "@operad-io/engine";
 import { openWaitHandleCount as openLockHandleCount } from "@operad-io/engine/platform";
@@ -87,4 +89,85 @@ export function guardLockHandles(): void {
   afterEach(() => {
     expect(openLockHandleCount()).toBe(0);
   });
+}
+
+/** The CLI's own entry point, loaded by path: the dev package does not build against the cli package. */
+interface CliMain {
+  main(
+    args: readonly string[],
+    options: {
+      home: string;
+      io: { write(text: string): void; error(text: string): void };
+      isTTY: boolean;
+    },
+  ): Promise<number>;
+}
+const CLI_MAIN = fileURLToPath(new URL("../../cli/src/main.ts", import.meta.url));
+
+export interface RunResult {
+  readonly code: number;
+  readonly out: string;
+  readonly err: string;
+}
+
+let inProcess: Promise<unknown> = Promise.resolve();
+
+/**
+ * Runs a command in this process: the CLI's own `main` with collected output,
+ * the working directory, standard input (empty unless given) and environment
+ * set around it. One command at a time, because the working directory, stdin
+ * and environment belong to the process; commands a test starts together run
+ * in turn.
+ */
+export function runInProcess(
+  home: string,
+  cwd: string,
+  args: readonly string[],
+  input?: string | Readable,
+  env: Record<string, string> = {},
+): Promise<RunResult> {
+  const turn = inProcess.then(() => runInProcessNow(home, cwd, args, input, env));
+  inProcess = turn.catch(() => undefined);
+  return turn;
+}
+
+async function runInProcessNow(
+  home: string,
+  cwd: string,
+  args: readonly string[],
+  input: string | Readable | undefined,
+  env: Record<string, string>,
+): Promise<RunResult> {
+  const out: string[] = [];
+  const err: string[] = [];
+  const previousCwd = process.cwd();
+  const previousEnv = { ...process.env };
+  const stdinDescriptor = Object.getOwnPropertyDescriptor(process, "stdin");
+  process.chdir(cwd);
+  Object.assign(process.env, { OPERAD_HOME: home }, env);
+  Object.defineProperty(process, "stdin", {
+    configurable: true,
+    value:
+      input instanceof Readable
+        ? input
+        : Readable.from(input === undefined ? [] : [Buffer.from(input)]),
+  });
+  try {
+    const { main } = (await import(CLI_MAIN)) as CliMain;
+    const code = await main([...args], {
+      home,
+      io: { write: (text) => out.push(text), error: (text) => err.push(text) },
+      isTTY: false,
+    });
+    return { code, out: out.join(""), err: err.join("") };
+  } finally {
+    if (stdinDescriptor !== undefined) {
+      Object.defineProperty(process, "stdin", stdinDescriptor);
+    }
+    for (const key of Object.keys(process.env)) {
+      if (!(key in previousEnv)) delete process.env[key];
+    }
+    Object.assign(process.env, previousEnv);
+    process.chdir(previousCwd);
+  }
 }

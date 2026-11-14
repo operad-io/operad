@@ -14,7 +14,9 @@ The SDK carries a version number (`operadPlugin: 1`). `operad plugin check <path
 
 ### D2: Plugins can be enabled and disabled
 
-`plugins.<name>.enabled` in `config.json` (boolean, default `true`). `operad init` enables `shell`, `radian`, `chat`, `dev` and `pool` by default.
+`plugins.<name>.enabled` in `config.json` (boolean, default `true`). `operad init` writes `shell`, `chat`, `dev` and `pool` into a new home, and a harness plugin for each agent command it finds on `PATH`: `radian`, `claude` and `pi`, in that order. When it finds none, it writes `radian` and fails with a message naming the three agents and how to install one. `codex` is not part of this choice: it needs `codex-acp` and stays off until `operad plugin enable codex`. A home that already has a `config.json` is not rewritten.
+
+A repository whose `.operad/dev.json` names neither `worker` nor `workers`, and leaves `reviewer.use` out, uses the first enabled harness plugin in `config.json` in the fixed order `radian`, `claude`, `pi`, `codex`. With no enabled harness it uses `radian/agent`.
 
 - A disabled plugin is not loaded: its commands, actions, views and default rules do not appear. Objects and history already stored are left alone and are visible again after re-enabling.
 - A plugin that depends on it (`requires`) is not loaded either, and the reason is said.
