@@ -213,3 +213,8 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0446-M1 | packages/cli/src/main.ts | `init` installed the default `@operad-io/harness-claude` for any enabled claude entry, ignoring the entry's own `module` | `publishing and installing the packages > init leaves a claude entry that names its own module without installing the default package` |
+## T-0448-flaky-a-supervised-serve-that-has-stopped-still — the probe answer is written whole
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0448-M1 | packages/cli/test/heavy/reload.test.ts | the held plugin wrote `listeners` in place (truncate, then write) instead of renaming a finished file, so the test could read it empty | `a supervised serve that has stopped > still listens for SIGINT and SIGTERM` (seen as `Received: ""`; a race, so only under load) |
