@@ -88,20 +88,21 @@ Code it stands for: `packages/dev/src/integration-queue.ts` (tickets, claims,
 results, `turn`, `claim`, `fallBack`, `publish`, `finish`),
 `packages/dev/src/integrate.ts` (`runIntegrate`, `landBatch`, the replay after a
 crash, `recordMerged`), `packages/dev/src/mainclone.ts` (`updateMainClone`).
-ADR 0034 had not merged; the model follows the code.
+ADR 0034 had not merged; the model follows the code, including T-0432 (a withdrawal and a batch leader's last check and push share `land.lock`; the result goes pending, pushed, done) and T-0433 (the saved `prepareDue` marker makes a restart run prepare).
 
 Run: `bash scripts/tla.sh integrate` (config `MC.cfg`). Other configurations go
 after `-config`:
 
 | Config | Tasks and constants | What it checks |
 |---|---|---|
-| `MC.cfg` | 3 tasks, `MaxVer`=0, `MaxHand`=1, `MaxLocal`=0, `MaxCrash`=0, `MaxRound`=2, `BatchMax`=2 | invariants and properties below (not `OneMerge`: finding 4 violates it here) |
-| `MCCrash.cfg` | 2 tasks, `MaxVer`=1, `MaxHand`=1, `MaxLocal`=0, `MaxCrash`=1 | the same, with one rework and one kill |
-| `MCLocal.cfg` | 2 tasks, `MaxVer`=0, `MaxHand`=1, `MaxLocal`=1, `MaxCrash`=0 | the same (with `OneMerge`), with a commit made by hand in the clone |
-| `MCOneMerge.cfg` | 3 tasks, `MaxCrash`=1 | finding 1 (violates `OneMerge`) |
+| `MC.cfg` | 3 tasks, `MaxVer`=0, `MaxHand`=1, `MaxLocal`=0, `MaxCrash`=0, `MaxRound`=2, `BatchMax`=2 | invariants and properties below, with `NoUnwantedMerge` and `PrepareRan` (not `OneMerge`: finding 4 violates it here) |
+| `MCCrash.cfg` | 2 tasks, `MaxVer`=1, `MaxHand`=1, `MaxLocal`=0, `MaxCrash`=1 | the same, with one rework and one kill, with `PrepareRan` but not `NoUnwantedMerge` (finding 5 violates it here) |
+| `MCLocal.cfg` | 2 tasks, `MaxVer`=0, `MaxHand`=1, `MaxLocal`=1, `MaxCrash`=0 | the same (with `OneMerge`, `NoUnwantedMerge`, `PrepareRan`), with a commit made by hand in the clone |
+| `MCOneMerge.cfg` | 3 tasks, `MaxCrash`=1 | finding 1 (violates `OneMerge`; recorded, not fixed: `docs/backlog/operad-tla.md` decision 6; this configuration fails on purpose) |
 | `MCOneMergeCancel.cfg` | 3 tasks, `MaxHand`=1, `MaxCrash`=0 | finding 4 (violates `OneMerge`, no crash needed) |
-| `MCUnwanted.cfg` | 2 tasks, `MaxHand`=1 | finding 2 (violates `NoUnwantedMerge`) |
-| `MCPrepare.cfg` | 2 tasks, `MaxCrash`=1 | a kill after the clone moves still runs prepare on restart |
+| `MCUnwanted.cfg` | 2 tasks, `MaxHand`=1 | finding 2, fixed by T-0432 (`NoUnwantedMerge` now holds) |
+| `MCPrepare.cfg` | 2 tasks, `MaxCrash`=1 | a kill after the clone moves still runs prepare on restart, fixed by T-0433 (`PrepareRan` now holds) |
+| `MCRejoin.cfg` | 2 tasks, `MaxVer`=1, `MaxCrash`=0 | finding 5 (violates `NoUnwantedMerge`; fails on purpose) |
 
 Invariants: `OriginLinear` (origin/main only grows), `MergedWasChecked` (a push
 happens only with the checks passed on the pushed candidate; a commit's parent is
@@ -109,8 +110,7 @@ part of its identity, so the checked commit is the merged one), `CloneNotAhead`
 (the clone holds no commit origin lacks, except those made by hand there),
 `LocalKept` (a hand-made commit is never dropped: only a fast-forward moves the
 clone), `CloneEqualsOrigin` (at rest, a clone whose last follow succeeded and
-that has no local commit equals origin/main), `OneMerge` (it holds in `MCLocal.cfg`, 2 tasks; with 3 tasks it fails, findings 1 and 4, so it is checked only in `MCOneMerge.cfg` and `MCOneMergeCancel.cfg`), `NoUnwantedMerge`
-(these two are the findings).
+that has no local commit equals origin/main), `OneMerge` (it holds in `MCLocal.cfg`, 2 tasks; with 3 tasks it fails, findings 1 and 4, so it is checked only in `MCOneMerge.cfg` and `MCOneMergeCancel.cfg`), `NoUnwantedMerge` (a task merged although it was cancelled or reworked; a member still wants the commit while its phase is active at the version the batch holds) and `PrepareRan` (at rest no task's marker says prepare is due).
 
 Properties, under weak fairness of what the code does by itself (the world, that
 is hand pushes, cancel, rework, kills and the clone's owner, is not fair):
@@ -129,7 +129,13 @@ reached origin; the model's push is atomic), the "already on main" path where th
 candidate's tree equals main's, a failing prepare (the model only has prepare
 run or not run), the check places, and ADR 0034.
 
-Findings (counterexamples against the intended model; not fixed here):
+How the model follows the two fixes:
+
+- `land.lock` (T-0432): a batch leader's `Pending` (last check, result, push) is one hold of the lock, from `Pending` to `Push` (`LandHeld`: some batched leader has phase `pending`; a kill frees it). A ticket is removed only under that lock, so `Withdraw` and every other removal (`Build`'s and `Check`'s rework or failure, `Record`, `Batched1`) wait for it (`LeaveOK`), except the holder's own. A claimed follower or the leader whose batch result is `pushed` or `done` and lists it is not withdrawn: the cancel reports a merge (`PushedWith`). The result goes `pending` at `Pending`, `pushed` at `Push`, `done` at `Record`; a follower records the merge on `pushed` or `done`, or when a dead leader's pending head is on origin. A solo (not batched) push does not take the lock in the code, so it does not in the model.
+- the prepare marker (T-0433): `due` is per task (it was one flag for the clone). The fast-forward saves `due` before moving the clone and `Prepare` clears it; a restart that finds the commit already in the clone runs prepare when its task's `due` is set. A follow that is skipped (off the branch, dirty, diverged) clears it, as the code does. The save and the fast-forward are one step; a kill between them leaves the clone unmoved, which the replay treats like a fresh follow.
+- `Wanted` (the check behind `NoUnwantedMerge`) now counts a member in any active phase at the batch's version as wanting the commit; before, only `queued` or `crashed`, which called a follower that already held a turn of its own (finding 4) unwanted.
+
+Findings (counterexamples against the intended model; 1, 4 and 5 are not fixed):
 
 1. `OneMerge`: leader t2 publishes a batch result for follower t1 and dies; t3,
    queued behind the claimed t1, takes the turn; t1 sees that the dead leader's
@@ -140,13 +146,21 @@ Findings (counterexamples against the intended model; not fixed here):
 2. `NoUnwantedMerge`: t2 claims t1 and reaches pending, t1 is cancelled, t2
    pushes a commit containing t1's change (Join t2, Join t1, Turn t2, Claim,
    Build, Check, Pending, Withdraw t1, Push). Code: the gap between `stillQueued`
-   and `git push` in `landBatch`.
+   and `git push` in `landBatch`. **Fixed by T-0432** (`land.lock`); `MCUnwanted.cfg`
+   and `NoUnwantedMerge` in `MC.cfg` hold.
+3. `PrepareRan`: a kill after the clone moved (a push, a fast-forward, a kill, a
+   restart that finds the commit in the clone) skipped prepare. **Fixed by T-0433**
+   (the saved marker); `MCPrepare.cfg` and `PrepareRan` in `MC.cfg` and `MCCrash.cfg` hold.
 
-Full runs on ten cores, no error: `MC.cfg` 1,014,488 distinct states (3,895,029
-generated), depth 40, 8 min 28 s; `MCCrash.cfg` 3,317,520 distinct (14,519,959
-generated), depth 36, 17 min 55 s; `MCLocal.cfg` 32,392 distinct (139,685
-generated), depth 30, 16 s; `MCPrepare.cfg` 178,052 distinct (725,105 generated),
-depth 32, 29 s. Three tasks with a rework and a kill together did not finish in
+Full runs on ten cores, no error, after T-0432 and T-0433 (T-0439; `MC.cfg` and
+`MCCrash.cfg` ran together, so their times are longer than alone): `MC.cfg` 972,296
+distinct states (3,743,697 generated), depth 40, 12 min 19 s; `MCCrash.cfg` 3,040,792
+distinct (13,456,519 generated), depth 36, 22 min 13 s; `MCLocal.cfg` 31,816 distinct
+(137,573 generated), depth 30, 13 s; `MCPrepare.cfg` 173,204 distinct (709,425
+generated), depth 32, 7 s; `MCUnwanted.cfg` 15,908 distinct (60,833 generated), depth
+29, 3 s. Before the fixes: `MC.cfg` 1,014,488 distinct, 8 min 28 s; `MCCrash.cfg`
+3,317,520 distinct, 17 min 55 s; `MCLocal.cfg` 32,392 distinct; `MCPrepare.cfg`
+178,052 distinct. Three tasks with a rework and a kill together did not finish in
 twenty minutes, which is why the configurations are split.
 
 4. `OneMerge` without a crash (found when `OneMerge` was added to `MC.cfg`): leader
@@ -159,8 +173,28 @@ twenty minutes, which is why the configurations are split.
    are TLC's and differ in the run). Same shape as finding 1 with a cancel in
    place of a crash: the claim removal in `IntegrationQueue.turn()`. Pushes stay safe.
 
-Each finding configuration stops at its counterexample: 65,641 distinct states and 6 s
-(`MCOneMerge`, depth 13), 2,903 and 4 s (`MCUnwanted`, depth 13) and 79,781 and 6 s (`MCOneMergeCancel`, depth 16).
+5. `NoUnwantedMerge` with a rework (found by T-0439 in `MCCrash.cfg`; same shape with
+   no kill in `MCRejoin.cfg`): leader t1 claims t2; t2 is withdrawn for rework before
+   the push (this takes `land.lock` and passes), which prunes the claim, and t2 joins
+   the queue again with its new commit. t1's last check only asks whether a ticket
+   named t2 exists (`stillQueued` compares names), finds the new one, and pushes the
+   batch with t2's old commit (trace: Join t1, Join t2, Turn t1, Claim, Build,
+   Withdraw t2 (rework), Join t2, Check, Pending, Push). Code: `stillQueued` and
+   `landWhenStillQueued` in `integration-queue.ts` match tickets by task name, not by
+   the verified commit a ticket carries and the claim recorded. The lock does not
+   close it: the withdrawal and the rejoin both come before the lock is taken. Main
+   gets the superseded commit; the reworked one merges after it. **Recorded here for
+   the lead; not fixed.** `MCCrash.cfg` therefore checks `PrepareRan` but not
+   `NoUnwantedMerge` (`MC.cfg`, `MCLocal.cfg` and `MCUnwanted.cfg` have no rework).
+
+`MCOneMerge.cfg` and `MCOneMergeCancel.cfg` still fail on `OneMerge` (findings 1 and 4
+are recorded, not fixed: `docs/backlog/operad-tla.md` decision 6). T-0432 and T-0433
+did not change them (T-0439: `MCOneMerge` violated at depth 13, `MCOneMergeCancel` at
+depth 15). Each finding configuration stops at its counterexample (the counts vary
+between runs with the workers): about 54,000 to 63,000 distinct states and 5 to 8 s
+(`MCOneMerge`, depth 13), 16,000 and 2 to 3 s (`MCUnwanted` before the fixes: 2,903 and
+4 s, depth 13), 74,000 to 78,000 and 6 to 12 s (`MCOneMergeCancel`), 14,000 and 2 s
+(`MCRejoin`, depth 13).
 
 Mutation checks: one guard removed in `Integrate.tla`, TLC run, guard restored.
 
@@ -173,6 +207,12 @@ Mutation checks: one guard removed in `Integrate.tla`, TLC run, guard restored.
 | the follow is always skipped (the off-branch/dirty branch of `Follow` enabled by `TRUE`) | 2 tasks, `CloneFollowsMerge` | action part of `CloneFollowsMerge` violated | Join, Turn, Claim, Build, Check, Pending, Push, Follow | 573, 10, 4 s |
 | the clone moves (`clone' = ts` replaced by `clone' = clone`) | 2 tasks, only `CloneFollowsMerge` | temporal property violated | Join, Turn, Join, Claim, Withdraw, Turn, Claim, Build, Check, Pending, Push, Follow, Prepare, Record | 3,132, 24, 6 s (the unmutated model passes: 3,132 states) |
 | the clone follows before the push (`Pending` appends the candidate to the clone) | 2 tasks, `CloneNotAhead` | `CloneNotAhead` violated | Join, Turn, Claim, Build, Check, Pending | 1,187, 8, 4 s |
+| T-0432: `Withdraw` takes no lock and does not see a pushed result (`~LandHeld /\ ~PushedWith(t)` removed) | `MCUnwanted.cfg` | `NoUnwantedMerge` violated (the old finding 2) | Join, Join, Turn, Claim, Build, Check, Pending, Withdraw, Push | 2,672, 12, 6 s |
+| T-0432: `Withdraw` no longer waits for the push (`~LandHeld` removed) | `MCUnwanted.cfg` | `NoUnwantedMerge` violated (the old finding 2) | the same | 2,980, 12, 6 s |
+| T-0432: other ticket removals do not wait for the lock (`LeaveOK` made true) | `MC.cfg` | `NoUnwantedMerge` violated: a claimed follower leaves by failing while the leader holds the lock, and the leader pushes it | 22 steps | depth 23, 8 min 26 s (seen while building the model, before `LeaveOK` was added) |
+| T-0433: no prepare marker (the already-in-clone follow ignores `due`) | `MCPrepare.cfg` | `PrepareRan` violated (the old finding 3) | Join, Join, Withdraw, Turn, Claim, Build, Check, Pending, Push, Follow, Crash, Restart, Follow, Record | 34,413, 15, 9 s |
+
+Each mutation was restored and the model rerun clean (the results above are from the restored model).
 
 ## Trace validation: do real runs fit the models
 
@@ -236,6 +276,7 @@ withdrawal.
 | the same | `integrate` | accepted; 406 distinct states, depth 20 |
 | `operad/T-0417-adr-kernel`, `T-0418-adr-dev-harness`, `T-0419-adr-chat-channels`, `T-0420-adr-framework-slimming` (P-0049's tasks; T-0418 and T-0420 were reworked, T-0420 failed an integration and went back) | `pool` | accepted; 6,931 distinct states, depth 47 |
 | the same | `integrate` | accepted; 6,367 distinct states, depth 42 |
+| the same, after T-0432 and T-0433 (T-0439; the trace spec also checks `NoUnwantedMerge` and `PrepareRan`) | `integrate` | accepted; 6,367 distinct states (18,277 generated), depth 42, 3 s |
 
 Mutation check of the trace specs: in `Integrate.tla`, `ReworkOrFail` made to
 always end in `failed` (no rework): the P-0049 trace is rejected, 7 of 10 events,
