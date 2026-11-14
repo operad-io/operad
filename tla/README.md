@@ -142,15 +142,15 @@ Findings (counterexamples against the intended model; not fixed here):
    prepare (Join, Turn, Claim, Build, Check, Pending, Push, Follow, Crash,
    Restart, Follow, Record). Code: the is-ancestor early return in `updateMainClone`.
 
-Full runs on ten cores, no error: `MC.cfg` 1,014,488 distinct states (3,874,185
-generated), depth 40, 7 min 45 s; `MCCrash.cfg` 3,317,520 distinct (14,471,157
-generated), depth 36, 18 min 24 s; `MCLocal.cfg` 32,392 distinct (139,077
-generated), depth 30, 21 s. Three tasks with a rework and a kill together did not
+Full runs on ten cores, no error: `MC.cfg` 1,014,488 distinct states (3,895,029
+generated), depth 40, 8 min 28 s; `MCCrash.cfg` 3,317,520 distinct (14,519,959
+generated), depth 36, 17 min 55 s; `MCLocal.cfg` 32,392 distinct (139,685
+generated), depth 30, 16 s. Three tasks with a rework and a kill together did not
 finish in twenty minutes, which is why the configurations are split.
 
-Each finding configuration stops at its counterexample: 68,057 states and 11 s
-(`MCOneMerge`), 2,626 and 4 s (`MCUnwanted`), 23,683 and 5 s (`MCPrepare`), all
-at depth 12 to 16 when found.
+Each finding configuration stops at its counterexample: 65,641 distinct states and 6 s
+(`MCOneMerge`, depth 13), 2,903 and 4 s (`MCUnwanted`, depth 13), 27,980 and 8 s
+(`MCPrepare`, depth 15).
 
 Mutation checks: one guard removed in `Integrate.tla`, TLC run, guard restored.
 
@@ -160,5 +160,6 @@ Mutation checks: one guard removed in `Integrate.tla`, TLC run, guard restored.
 | the push only lands on the candidate's parent (`Tip(origin) = c.parent` made true) | `MC.cfg` | `OriginLinear` violated | Join, Turn, Claim, Build, Check, HandPush, Pending, Push | 2,246, 9, 10 s |
 | the turn goes to the first unclaimed ticket (`TurnHolder = t` dropped) | `MC.cfg` with `OneMerge` | `OneMerge` violated | Join t1, Join t2, Turn t1, Turn t2 | 207, 5, 3 s |
 | fast-forward only (`IsPrefix(clone, ts)` made true) | `MCLocal.cfg` | `LocalKept` violated | Join, Turn, Claim, Build, Check, CloneCommit, Pending, Push, Follow | 2,880, 11, 7 s |
+| the follow is always skipped (the off-branch/dirty branch of `Follow` enabled by `TRUE`) | 2 tasks, `CloneFollowsMerge` | action part of `CloneFollowsMerge` violated | Join, Turn, Claim, Build, Check, Pending, Push, Follow | 573, 10, 4 s |
 | the clone moves (`clone' = ts` replaced by `clone' = clone`) | 2 tasks, only `CloneFollowsMerge` | temporal property violated | Join, Turn, Join, Claim, Withdraw, Turn, Claim, Build, Check, Pending, Push, Follow, Prepare, Record | 3,132, 24, 6 s (the unmutated model passes: 3,132 states) |
 | the clone follows before the push (`Pending` appends the candidate to the clone) | 2 tasks, `CloneNotAhead` | `CloneNotAhead` violated | Join, Turn, Claim, Build, Check, Pending | 1,187, 8, 4 s |

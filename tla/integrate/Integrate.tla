@@ -247,24 +247,35 @@ Push(t) ==
        crashes, cand, chk, rec>>
 
 \* updateMainClone: fast-forward only, on the branch, clean.
+\* Each branch is enabled only under its own condition from updateMainClone.
+FollowBlocked(t) ==
+  \/ ~cbranch \/ cdirty
+  \/ (~Has(clone, tgt[t])
+      /\ ~IsPrefix(clone, SubSeq(origin, 1, IdxOf(origin, tgt[t]))))
+
 Follow(t) ==
   /\ ph[t] = "pushed"
   /\ LET ts == SubSeq(origin, 1, IdxOf(origin, tgt[t])) IN
-     IF ~cbranch \/ cdirty
-     THEN /\ ph' = [ph EXCEPT ![t] = "followed"]
-          /\ tgt' = [tgt EXCEPT ![t] = NoCommit]  \* not updated: the note says why
-          /\ UNCHANGED <<clone, needPrep, followedTo>>
-     ELSE IF Has(clone, tgt[t])
-     THEN /\ ph' = [ph EXCEPT ![t] = "followed"]
-          /\ followedTo' = tgt[t]
-          /\ UNCHANGED <<clone, needPrep, tgt>>
-     ELSE IF IsPrefix(clone, ts)
-     THEN /\ clone' = ts /\ needPrep' = TRUE /\ followedTo' = tgt[t]
-          /\ ph' = [ph EXCEPT ![t] = "prep"]
-          /\ UNCHANGED tgt
-     ELSE /\ ph' = [ph EXCEPT ![t] = "followed"]
-          /\ tgt' = [tgt EXCEPT ![t] = NoCommit]  \* cannot fast-forward
-          /\ UNCHANGED <<clone, needPrep, followedTo>>
+     \/ \* off the branch or uncommitted changes: not updated, the note says why
+        /\ ~cbranch \/ cdirty
+        /\ ph' = [ph EXCEPT ![t] = "followed"]
+        /\ tgt' = [tgt EXCEPT ![t] = NoCommit]
+        /\ UNCHANGED <<clone, needPrep, followedTo>>
+     \/ \* the commit is already in the clone (is-ancestor): nothing to do
+        /\ cbranch /\ ~cdirty /\ Has(clone, tgt[t])
+        /\ ph' = [ph EXCEPT ![t] = "followed"]
+        /\ followedTo' = tgt[t]
+        /\ UNCHANGED <<clone, needPrep, tgt>>
+     \/ \* clean, on the branch, the clone is an ancestor of the commit: fast-forward
+        /\ cbranch /\ ~cdirty /\ ~Has(clone, tgt[t]) /\ IsPrefix(clone, ts)
+        /\ clone' = ts /\ needPrep' = TRUE /\ followedTo' = tgt[t]
+        /\ ph' = [ph EXCEPT ![t] = "prep"]
+        /\ UNCHANGED tgt
+     \/ \* clean, on the branch, but diverged (a local commit): cannot fast-forward
+        /\ cbranch /\ ~cdirty /\ ~Has(clone, tgt[t]) /\ ~IsPrefix(clone, ts)
+        /\ ph' = [ph EXCEPT ![t] = "followed"]
+        /\ tgt' = [tgt EXCEPT ![t] = NoCommit]
+        /\ UNCHANGED <<clone, needPrep, followedTo>>
   /\ UNCHANGED <<origin, cdirty, cbranch, nlocal, hands, crashes, ver, queue,
        claim, solo, res, mem, cand, chk, rnd, rec, unwanted>>
 
@@ -437,8 +448,13 @@ PushedGetsMerged == \A t \in Tasks : (ph[t] = "pushed") ~> (ph[t] = "merged")
 \* After a merge the main clone holds the merged commit, unless the follow was
 \* skipped (off the branch, uncommitted changes, local commits): then the note
 \* says so (tgt is NoCommit). A hand push after the last merge is not followed.
-CloneFollowsMerge == \A t \in Tasks :
-  (ph[t] = "pushed") ~> (ph[t] = "merged" /\ (tgt[t] = NoCommit \/ Has(clone, tgt[t])))
+CloneFollowsMerge ==
+  /\ \A t \in Tasks :
+       (ph[t] = "pushed") ~> (ph[t] = "merged" /\ (tgt[t] = NoCommit \/ Has(clone, tgt[t])))
+  \* a follow is skipped only when the clone was off the branch, dirty or diverged
+  /\ [][\A t \in Tasks :
+        (ph[t] = "pushed" /\ ph'[t] \in {"followed", "prep"} /\ tgt'[t] = NoCommit)
+          => FollowBlocked(t)]_vars
 
 \* A task in the queue is merged, reported (failed, cancelled) or sent back (idle).
 QueuedResolves == \A t \in Tasks :
