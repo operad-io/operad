@@ -862,3 +862,18 @@ the row fields.
 | T-0459-M7 | packages/engine/src/http/server.ts | a switch was not recorded with the client and token label | `plugins over HTTP > disable and enable change the config the command line reads, and are recorded` |
 | T-0459-M8 | packages/engine/src/http/server.ts | `GET /v1/plugins` answered an empty list | `plugins over HTTP > GET /v1/plugins lists what `operad plugin list` prints, with where each comes from` |
 | T-0458-M6 | packages/engine/src/http/server.ts | a refusal by a plugin's own settings check (`refused`) was answered `400` instead of `422` | `dev.flows and dev.flowList in settings > over HTTP a refusal is 422 with dev's reason, and the file is unchanged` |
+
+## T-0460 — settings follow-ups, lastRun reading and plugin HTTP edges
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0460-M1 | packages/engine/src/views/settings.ts | a deeper name under a setting that is not editable was answered `not-found` instead of `not-available` | `POST /v1/settings with a deeper name changes one entry and keeps a concurrent change` |
+| T-0460-M2 | packages/engine/src/views/settings.ts | `entrySchema` read an inherited name such as `toString` from `Object.prototype` instead of checking the schema's own properties | `POST /v1/settings with a deeper name changes one entry and keeps a concurrent change` |
+| T-0460-M3 | packages/engine/src/views/settings.ts | a deeper name checked its value before `confirm`, so an invalid and unconfirmed value answered differently from a setting | `an invalid value that is also unconfirmed answers confirm at both depths` |
+| T-0460-M4 | packages/engine/src/views/settings.ts | a derived project value overrode a stored one instead of filling only a property with no stored value | `a stored project value wins over a derived one` |
+| T-0460-M7 | packages/engine/src/http/server.ts | a settings value the schema refused was answered `400` instead of `422` | `POST /v1/settings with a deeper name changes one entry and keeps a concurrent change` |
+| T-0460-M8 | packages/engine/src/views/presentation.ts | every GET read the newest ended run's facts again instead of keeping what it already read | `the ending of a run is read once, not on every object read` |
+| T-0460-M9 | packages/engine/src/http/server.ts | a plugin switch was not kept in the run log with the client and token label | `plugins over HTTP > disable and enable change the config the command line reads, and are recorded` (in `packages/cli/test/plugins-http.test.ts`) |
+| T-0460-M11 | packages/engine/src/http/server.ts | `POST /v1/plugins` stopped checking that `enabled` is true or false | `plugins over HTTP > a body that is not name and enabled is a 400` (in `packages/cli/test/plugins-http.test.ts`) |
+| T-0460-M12 | packages/engine/src/http/server.ts | `POST /v1/plugins` accepted a method other than GET or POST | `plugins over HTTP > a body that is not name and enabled is a 400` (in `packages/cli/test/plugins-http.test.ts`) |
+| T-0460-M13 | packages/engine/src/views/settings.ts | a project file that could not be read skipped its `derived` hook, so a read-only list it could still explain disappeared | `dev.flows and dev.flowList in settings > a dev.json that cannot be read still lists flows and says why` (in `packages/dev/test/heavy/flows-over-settings.test.ts`) |

@@ -600,6 +600,11 @@ export class Views {
   private readonly growthPending = new Set<string>();
   /** The timer that announces an object when its rate window ends. */
   private readonly growthTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** How the newest ended run of an object ended, keyed by its run and last fact. */
+  private readonly lastRunEnds = new Map<
+    string,
+    { readonly runId: string; readonly lastSeq: number; readonly end: ViewRunEnd | undefined }
+  >();
   private readonly unsubscribe: (() => void)[] = [];
   private candidateSource: CandidateSource | undefined;
   private preparing: Promise<void> | undefined;
@@ -717,6 +722,7 @@ export class Views {
     this.growthTimers.clear();
     this.growthPending.clear();
     this.growthAnnouncedAt.clear();
+    this.lastRunEnds.clear();
   }
 
   /** The filter a list of this type uses when the caller names none. */
@@ -2107,10 +2113,22 @@ export class Views {
   /** How the newest run of an object ended, read from its ending fact. */
   private async lastRunEnd(type: string, id: string): Promise<ViewRunEnd | undefined> {
     if (this.log === undefined) return undefined;
-    const runs = await this.log.runs({ object: objectKey(type, id) });
+    const key = objectKey(type, id);
+    const runs = await this.log.runs({ object: key });
     let newest: RunInfo | undefined;
     for (const run of runs) if (newest === undefined || run.startedAt >= newest.startedAt) newest = run;
-    if (newest === undefined || newest.active) return undefined;
+    if (newest === undefined || newest.active) {
+      this.lastRunEnds.delete(key);
+      return undefined;
+    }
+    const cached = this.lastRunEnds.get(key);
+    if (
+      cached !== undefined &&
+      cached.runId === newest.runId &&
+      cached.lastSeq === newest.lastSeq
+    ) {
+      return cached.end;
+    }
     let found: ViewRunEnd | undefined;
     // What the last step said when it failed: a flow that fails by moving to
     // an end step records no reason of its own.
@@ -2143,6 +2161,7 @@ export class Views {
     } catch (error) {
       this.onLog(`could not read how the run of "${type}:${id}" ended: ${messageOf(error)}`);
     }
+    this.lastRunEnds.set(key, { runId: newest.runId, lastSeq: newest.lastSeq, end: found });
     return found;
   }
 

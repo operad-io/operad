@@ -1998,15 +1998,17 @@ type PluginIdentity = { readonly name: string | undefined; readonly version: str
 async function pluginRows(
   home: string,
   plugins: OperadConfig["plugins"],
-  loaded?: Map<string, PluginIdentity>,
+  loaded?: Map<string, PluginIdentity | null>,
   load: (module: string, home: string) => Promise<unknown> = loadPlugin,
 ): Promise<(PluginInfo & { readonly key: string })[]> {
   const rows: (PluginInfo & { readonly key: string })[] = [];
   for (const entry of plugins) {
-    let identity: PluginIdentity | undefined;
+    let identity: PluginIdentity | null | undefined;
     if (entry.enabled) {
       // `serve` passes a cache: loading a path plugin again imports a new copy
       // of it each time, which a long-running process must not do per request.
+      // A failed load is cached too, as null, so a broken file is not imported
+      // again on every list.
       identity = loaded?.get(entry.module);
       if (identity === undefined) {
         try {
@@ -2014,7 +2016,8 @@ async function pluginRows(
           identity = { name: definitionName(definition), version: definitionVersion(definition) };
           loaded?.set(entry.module, identity);
         } catch {
-          identity = undefined;
+          identity = null;
+          loaded?.set(entry.module, null);
         }
       }
     }
@@ -2188,7 +2191,7 @@ export function pluginAdminFor(
   context: Context,
   load: (module: string, home: string) => Promise<unknown> = loadPlugin,
 ): PluginAdmin {
-  const loaded = new Map<string, PluginIdentity>();
+  const loaded = new Map<string, PluginIdentity | null>();
   const rowsNow = async (): Promise<(PluginInfo & { readonly key: string })[]> =>
     pluginRows(context.home, (await readConfig(context.home)).plugins, loaded, load);
   const publicRow = ({ key: _key, ...row }: PluginInfo & { readonly key: string }): PluginInfo => row;
