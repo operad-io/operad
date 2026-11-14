@@ -172,3 +172,12 @@ the row fields.
 | T-0398-M15 | packages/cli/src/code-reload.ts | every file labelled `plugin …` was taken from the disk (the earlier behaviour), so a package-name plugin or a path plugin's helper read as loaded again | `what a restored serve counts as loaded again > a plugin given by package name stays as the first start loaded it` |
 | T-0415-M1 | packages/telegram/package.json | the telegram package's version set to `0.1.1` while the rest stayed `0.1.0` | `the packages a publish needs > every public package has the same version` |
 | T-0423-M9 | packages/cli/src/main.ts | an empty user name was used as the actor id, so every CLI action was refused | `the CLI's actor > is the user name, and `cli` when the name is empty so the action is not refused` |
+
+## T-0427 — the CLI reads its output streams only when it writes
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0427-M1 | packages/cli/src/main.ts | the module hooked `process.stdout` and `process.stderr` again when it loaded, so importing it read the streams | `the CLI's module > does not touch process.stdout or process.stderr when it is imported` |
+| T-0427-M2 | packages/cli/src/main.ts | `main` took the terminal from `process.stdout.isTTY` and `process.stdin.isTTY` again, so a command with injected output read the streams | `the CLI's main with injected output > list takes the terminal from the descriptors, not process.stdout` |
+| T-0427-M3 | packages/cli/src/main.ts | `pair` took its terminal from `process.stdout.isTTY` again | `the CLI's main with injected output > pair takes the terminal from the descriptor, not process.stdout` |
+| T-0427-M4 | packages/cli/src/main.ts | `stdoutColumns` read `process.stdout.columns` without checking that the descriptor is a terminal | `the CLI's main with injected output > show takes its width without reading process.stdout when it is not a terminal` |
