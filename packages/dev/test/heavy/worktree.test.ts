@@ -419,12 +419,13 @@ describe("dev/worktree", () => {
       readonly remote: string;
       readonly mainBranch: string;
       readonly worktreeRoot: string;
-      readonly worker: { readonly use: string };
+      readonly worker?: unknown;
     };
     expect(settings.remote).toBe("origin");
     expect(settings.mainBranch).toBe("main");
     expect(settings.worktreeRoot).toBe(".operad-worktrees");
-    expect(settings.worker.use).toBe("radian/agent");
+    // The worker is left out so the repository follows the harness its home enables.
+    expect(settings.worker).toBeUndefined();
   });
 });
 
