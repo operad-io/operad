@@ -36,6 +36,7 @@ After(e) ==
     [] e = "result:reverify:ready" -> {"review"}
     [] e = "result:integrate:merged" -> {"merged"}
     [] e \in {"run:cancelled", "result:work:cancelled", "result:integrate:cancelled"} -> {"cancelled"}
+    [] e \in {"run:failed", "run:crashed"} -> {"unmodelled"}   \* no model has these: a history with one is rejected
     [] OTHER -> {}
 
 Steps == SelectSeq(TraceEvents, LAMBDA e : After(e[2]) # {})
