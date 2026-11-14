@@ -8,7 +8,7 @@ export default definePlugin({
   settings: {
     type: "object",
     properties: {
-      limit: { type: "integer", minimum: 1, default: 2, description: "Items at once.", editable: true },
+      limit: { type: "integer", title: "Items at once", minimum: 1, default: 2, description: "Items at once.", editable: true },
       mode: { type: "string", default: "a", editable: true, confirm: true },
       fixed: { type: "string", default: "x" },
       entries: {

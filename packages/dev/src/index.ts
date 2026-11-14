@@ -154,6 +154,7 @@ export function createDevPlugin() {
       properties: {
         checks: {
           type: "integer",
+          title: "Checks at once",
           minimum: 1,
           default: 2,
           editable: true,

@@ -111,16 +111,19 @@ export const PLUGIN_SETTINGS = {
   properties: {
     model: {
       type: "string" as const,
+      title: "Agent model",
       minLength: 1,
       description: "The model name codex takes; unset uses Codex's own default.",
     },
     effort: {
       type: "string" as const,
+      title: "Reasoning effort",
       enum: EFFORT_LEVELS,
       description: "The reasoning effort; unset uses Codex's own default.",
     },
     command: {
       type: "array" as const,
+      title: "Codex command",
       minItems: 1,
       items: { type: "string" as const, minLength: 1 },
       description:
@@ -128,6 +131,7 @@ export const PLUGIN_SETTINGS = {
     },
     wallTimeSecs: {
       type: "number" as const,
+      title: "Run time limit",
       minimum: 1,
       maximum: MAX_WALL_TIME_SECS,
       default: DEFAULT_WALL_TIME_SECS,
@@ -135,6 +139,7 @@ export const PLUGIN_SETTINGS = {
     },
     stallSecs: {
       type: "number" as const,
+      title: "Stall limit",
       minimum: 1,
       default: DEFAULT_STALL_SECS,
       description: "How long an agent may be silent while no tool call is open.",

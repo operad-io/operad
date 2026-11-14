@@ -7,18 +7,21 @@
   "properties": {
     "users": {
       "type": "array",
+      "title": "Allowed users",
       "items": { "type": "integer", "minimum": 1 },
       "default": [],
       "description": "The Telegram user ids whose private messages become chat messages. A message from anyone else is recorded and answered with nothing."
     },
     "bot": {
       "type": "string",
+      "title": "Default bot",
       "minLength": 1,
       "default": "default",
       "description": "The bot a chat is opened on when a listed user writes first."
     },
     "pending": {
       "type": "array",
+      "title": "Pending forwarding",
       "items": { "type": "string", "minLength": 1 },
       "default": [],
       "description": "The plugins whose pending items are also sent to Telegram, such as [\"dev\"]. Items of a chat bound to Telegram are always sent."

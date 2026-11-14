@@ -190,22 +190,26 @@ const PLUGIN_SETTINGS = {
   properties: {
     model: {
       type: "string" as const,
+      title: "Agent model",
       minLength: 3,
       description: "The model as provider/id; unset uses pi's default model.",
     },
     models: {
       type: "array" as const,
+      title: "Model choices",
       items: { type: "string" as const, minLength: 3 },
       description:
         "The models a chat may pick, as provider/id; unset offers every model pi lists.",
     },
     thinkingLevel: {
       type: "string" as const,
+      title: "Reasoning level",
       enum: THINKING_LEVELS,
       description: "The reasoning level; unset uses pi's default.",
     },
     command: {
       type: "string" as const,
+      title: "Pi command",
       minLength: 1,
       default: DEFAULT_PI_COMMAND,
       description:
@@ -213,18 +217,21 @@ const PLUGIN_SETTINGS = {
     },
     authPath: {
       type: "string" as const,
+      title: "Credentials file",
       minLength: 1,
       default: DEFAULT_AUTH_PATH,
       description: "pi's credentials file.",
     },
     modelsPath: {
       type: "string" as const,
+      title: "Models file",
       minLength: 1,
       default: DEFAULT_MODELS_PATH,
       description: "pi's custom models file.",
     },
     wallTimeSecs: {
       type: "number" as const,
+      title: "Run time limit",
       minimum: 1,
       maximum: MAX_WALL_TIME_SECS,
       default: DEFAULT_WALL_TIME_SECS,
@@ -232,12 +239,14 @@ const PLUGIN_SETTINGS = {
     },
     stallSecs: {
       type: "number" as const,
+      title: "Stall limit",
       minimum: 1,
       default: DEFAULT_STALL_SECS,
       description: "How long an agent may be silent while no tool call is open.",
     },
     bashTimeoutSecs: {
       type: "integer" as const,
+      title: "Bash timeout",
       minimum: 1,
       default: DEFAULT_BASH_TIMEOUT_SECS,
       description:

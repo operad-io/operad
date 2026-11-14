@@ -32,6 +32,7 @@ export const POOL_SETTINGS = {
   properties: {
     harnesses: {
       type: "object" as const,
+      title: "Runs per agent",
       additionalProperties: {
         type: "integer" as const,
         minimum: 1,

@@ -94,6 +94,7 @@ export const DEV_PROJECT_SETTINGS: ProjectSettingsDeclaration = {
         properties: {
           concurrency: {
             type: "integer",
+            title: "Tasks at once",
             minimum: 1,
             editable: true,
             description:
@@ -101,6 +102,7 @@ export const DEV_PROJECT_SETTINGS: ProjectSettingsDeclaration = {
           },
           autoDefault: {
             type: "string",
+            title: "New plan auto level",
             enum: ["off", "run", "merge"],
             default: "off",
             editable: true,
@@ -110,6 +112,7 @@ export const DEV_PROJECT_SETTINGS: ProjectSettingsDeclaration = {
           },
           flows: {
             type: "object",
+            title: "Custom flows",
             editable: true,
             description:
               "The repository's own flows, by name. A flow is { \"stages\": [...] }, each stage one of work, check, review or human; dev checks the flow when it is saved and refuses one that breaks its rules. A name may also be changed on its own (dev.flows.<name>); null removes it.",
@@ -122,6 +125,7 @@ export const DEV_PROJECT_SETTINGS: ProjectSettingsDeclaration = {
           },
           flowList: {
             type: "array",
+            title: "Flow list",
             items: { type: "object" },
             description:
               "Every flow of the repository, read only: its name, where it comes from (dev.json, typescript or built-in), its stages for a dev.json flow or the built-in default, the steps dev reads for a TypeScript flow, or why dev refuses the file.",
@@ -131,6 +135,7 @@ export const DEV_PROJECT_SETTINGS: ProjectSettingsDeclaration = {
             properties: {
               commands: {
                 type: "array",
+                title: "Check commands",
                 items: { $ref: "#/$defs/checkCommand" },
                 default: [],
                 editable: true,
@@ -139,6 +144,7 @@ export const DEV_PROJECT_SETTINGS: ProjectSettingsDeclaration = {
               },
               commandTimeoutSecs: {
                 type: "number",
+                title: "Check timeout",
                 minimum: 1,
                 default: 1800,
                 editable: true,
@@ -147,6 +153,7 @@ export const DEV_PROJECT_SETTINGS: ProjectSettingsDeclaration = {
               },
               stallSecs: {
                 type: "number",
+                title: "Check stall limit",
                 minimum: 1,
                 editable: true,
                 description:
@@ -159,6 +166,7 @@ export const DEV_PROJECT_SETTINGS: ProjectSettingsDeclaration = {
             properties: {
               use: {
                 type: "string",
+                title: "Reviewing agent",
                 minLength: 1,
                 default: "radian/agent",
                 editable: true,
@@ -167,6 +175,7 @@ export const DEV_PROJECT_SETTINGS: ProjectSettingsDeclaration = {
               },
               args: {
                 type: "array",
+                title: "Reviewer arguments",
                 items: { type: "string" },
                 default: [],
                 editable: true,
@@ -175,6 +184,7 @@ export const DEV_PROJECT_SETTINGS: ProjectSettingsDeclaration = {
               },
               timeoutSecs: {
                 type: "number",
+                title: "Review timeout",
                 minimum: 1,
                 default: 600,
                 editable: true,
@@ -183,6 +193,7 @@ export const DEV_PROJECT_SETTINGS: ProjectSettingsDeclaration = {
               },
               fixLevel: {
                 type: "string",
+                title: "Rework threshold",
                 enum: ["critical", "major", "minor"],
                 default: "major",
                 editable: true,
@@ -209,6 +220,7 @@ export const DEV_PROJECT_SETTINGS: ProjectSettingsDeclaration = {
                 properties: {
                   critical: {
                     type: "string",
+                    title: "Critical meaning",
                     editable: true,
                     confirm: true,
                     description:
@@ -216,6 +228,7 @@ export const DEV_PROJECT_SETTINGS: ProjectSettingsDeclaration = {
                   },
                   major: {
                     type: "string",
+                    title: "Major meaning",
                     editable: true,
                     confirm: true,
                     description:
@@ -223,6 +236,7 @@ export const DEV_PROJECT_SETTINGS: ProjectSettingsDeclaration = {
                   },
                   minor: {
                     type: "string",
+                    title: "Minor meaning",
                     editable: true,
                     confirm: true,
                     description:
@@ -232,6 +246,7 @@ export const DEV_PROJECT_SETTINGS: ProjectSettingsDeclaration = {
               },
               rules: {
                 type: "array",
+                title: "Grading rules",
                 items: { type: "string" },
                 editable: true,
                 confirm: true,
@@ -240,6 +255,7 @@ export const DEV_PROJECT_SETTINGS: ProjectSettingsDeclaration = {
               },
               fixLevel: {
                 type: "string",
+                title: "Rework threshold",
                 enum: ["critical", "major", "minor"],
                 editable: true,
                 confirm: true,

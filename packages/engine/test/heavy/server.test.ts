@@ -816,6 +816,7 @@ describe("http server", () => {
       const listed = (await json(await api(h, "/v1/settings?scope=global"))).settings as {
         name: string;
         value?: unknown;
+        title?: string;
         editable: boolean;
       }[];
       expect(listed.map((item) => item.name)).toEqual([
@@ -826,6 +827,7 @@ describe("http server", () => {
         "webtest.strict",
       ]);
       expect(listed[0]?.value).toBe(2);
+      expect(listed[0]?.title).toBe("Items at once");
 
       const changed = await post({ name: "webtest.limit", value: 5 });
       expect(changed.status).toBe(200);

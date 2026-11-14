@@ -2636,6 +2636,7 @@ async function commandSettings(
             settingsCell(item.value),
             `default ${settingsCell(item.default)}`,
             marks,
+            ...(item.title === undefined ? [] : [item.title]),
             ...(item.description === undefined ? [] : [item.description]),
           ].join("  ") + "\n",
         );

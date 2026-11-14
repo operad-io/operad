@@ -276,14 +276,17 @@ const PLUGIN_SETTINGS = {
   properties: {
     command: {
       type: "string" as const,
+      title: "Radian command",
       description: "The radian executable to run.",
     },
     wallTimeSecs: {
       type: "number" as const,
+      title: "Run time limit",
       description: "The longest one agent run may take.",
     },
     stallSecs: {
       type: "number" as const,
+      title: "Stall limit",
       description: "How long an agent may be silent between tool calls.",
     },
     concurrency: CONCURRENCY_SETTING,
