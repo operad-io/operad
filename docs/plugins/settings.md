@@ -93,7 +93,7 @@ projectSettings: {
 | `files[].check` | function | `(ProjectSettingsContext) => string \| undefined`: run on the whole file as it would be written, after the schema and before the write. A string refuses the change with that reason, as it is, and nothing is written | `check: must be a function` |
 | `files[].derived` | function | `(ProjectSettingsContext) => { <property>: JsonValue }`: read-only values worked out when settings are listed; a property with no stored value takes the value here | `derived: must be a function` |
 
-`ProjectSettingsContext` is `{ repository, value }`: the repository and the file's JSON object.
+`ProjectSettingsContext` is `{ repository, name, value }`: the repository, the setting being changed (empty when listing) and the file's JSON object.
 
 A repository that is not registered: `no registered repository "<r>"; registered: <names>`.
 

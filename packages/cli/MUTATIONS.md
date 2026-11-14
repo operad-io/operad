@@ -239,3 +239,9 @@ the row fields.
 | T-0459-M6 | packages/cli/src/main.ts | the list read the config `serve` loaded at its start, not the file now | `plugins over HTTP > disable and enable change the config the command line reads, and are recorded` |
 | T-0459-M9 | packages/cli/src/main.ts | a switch looked the plugin up by the requested name only, so a plugin filed under another key than its declared name answered 404 after the write | `plugins over HTTP > a plugin filed under another key than its declared name is switched by either name` |
 | T-0459-M10 | packages/cli/src/main.ts | the list loaded each enabled plugin file again on every call | `plugins over HTTP > listing again does not load a plugin file again` |
+
+## T-0460 — plugin HTTP follow-ups
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0460-M10 | packages/cli/src/main.ts | a plugin whose load failed was not cached, so every `GET /v1/plugins` imported it again | `plugins over HTTP > a plugin file that fails to load is not imported on every list` |

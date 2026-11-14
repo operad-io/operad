@@ -64,6 +64,16 @@ async function setup(
               type: "object",
               properties: { depth: { type: "integer", editable: true } },
             },
+            entries: {
+              type: "object",
+              editable: true,
+              confirm: true,
+              additionalProperties: {
+                type: "object",
+                properties: { n: { type: "integer", minimum: 1 } },
+                additionalProperties: false,
+              },
+            },
           },
         },
         projectSettings: {
@@ -161,6 +171,61 @@ describe("settings", () => {
     expect(config()).toBe(before);
     await views.set("demo.mode", "b", { confirmed: true });
     expect(JSON.parse(config()).plugins.demo.settings.mode).toBe("b");
+  });
+
+  test("an invalid value that is also unconfirmed answers confirm at both depths", async () => {
+    const { views, config } = await setup();
+    const before = config();
+    const top = await views
+      .set("demo.entries", "not an object")
+      .catch((e: unknown) => e);
+    expect((top as ViewError).kind).toBe("confirm");
+    const deeper = await views
+      .set("demo.entries.a.n", 0)
+      .catch((e: unknown) => e);
+    expect((deeper as ViewError).kind).toBe("confirm");
+    await views.set("demo.entries", { a: { n: 1 }, b: { n: 2 } }, { confirmed: true });
+    const invalid = await views
+      .set("demo.entries.a.n", 0, { confirmed: true })
+      .catch((e: unknown) => e);
+    expect((invalid as ViewError).kind).toBe("args");
+    expect(JSON.parse(config()).plugins.demo.settings.entries).toEqual({
+      a: { n: 1 },
+      b: { n: 2 },
+    });
+    expect(config()).not.toBe(before);
+  });
+
+  test("two deeper writes at the same moment both land", async () => {
+    const { views, config } = await setup();
+    await views.set("demo.entries", { a: { n: 1 }, b: { n: 2 } }, { confirmed: true });
+    await Promise.all([
+      views.set("demo.entries.a.n", 5, { confirmed: true }),
+      views.set("demo.entries.b.n", 9, { confirmed: true }),
+    ]);
+    expect(JSON.parse(config()).plugins.demo.settings.entries).toEqual({
+      a: { n: 5 },
+      b: { n: 9 },
+    });
+  });
+
+  test("a stored project value wins over a derived one", async () => {
+    const { views, repo } = await setup(undefined, [
+      {
+        name: "review",
+        path: "review.json",
+        derived: () => ({ computed: 1 }),
+        schema: {
+          type: "object",
+          properties: { computed: { type: "integer" } },
+        },
+      },
+    ]);
+    writeFileSync(join(repo, ".operad", "review.json"), `${JSON.stringify({ computed: 2 })}\n`);
+    const listed = (await views.settings("alpha")).find(
+      (item) => item.name === "demo.review.computed",
+    );
+    expect(listed?.value).toBe(2);
   });
 
   test("the rest of the file keeps its keys, order and indent", async () => {

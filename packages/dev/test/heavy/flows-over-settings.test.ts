@@ -145,6 +145,39 @@ describe("dev.flows and dev.flowList in settings", () => {
     expect(Object.keys(JSON.parse(readFileSync(devFile, "utf8")).flows)).toEqual(["one"]);
   });
 
+  test("a dev.json that cannot be read still lists flows and says why", async () => {
+    const { options, devFile } = await setup();
+    writeFileSync(devFile, `{ "name": "repo", "flows": `);
+    const list = await flowList(options);
+    const file = list.find((item) => item.name === "dev.json");
+    expect(file?.refused).toContain("dev.json");
+    expect(list.some((item) => item.name === "ts" && item.source === "typescript")).toBe(true);
+    expect(list.some((item) => item.name === "default" && item.source === "built-in")).toBe(true);
+  });
+
+  test("an invalid flow already written does not block an unrelated setting", async () => {
+    const { options, devFile } = await setup();
+    writeFileSync(
+      devFile,
+      `${JSON.stringify(
+        { name: "repo", concurrency: 1, flows: { bad: { stages: [{ stage: "work" }] } } },
+        null,
+        2,
+      )}\n`,
+    );
+    await setSetting(options, "dev.concurrency", 3, { scope: "repo" });
+    const written = JSON.parse(readFileSync(devFile, "utf8"));
+    expect(written.concurrency).toBe(3);
+    expect(written.flows.bad).toEqual({ stages: [{ stage: "work" }] });
+    const refused = await refusal(
+      setSetting(options, "dev.flows.good", GOOD, { scope: "repo" }),
+    );
+    expect(refused.kind).toBe("refused");
+    expect(refused.message).toContain(
+      "flows.bad.stages: needs at least one check, review or human stage",
+    );
+  });
+
   test("a save that breaks a rule is refused with dev's reason and writes nothing", async () => {
     const { options, devFile } = await setup();
     const before = readFileSync(devFile, "utf8");
@@ -229,6 +262,8 @@ describe("dev.flows and dev.flowList in settings", () => {
         "flows.bad.stages: needs at least one check, review or human stage",
       );
       expect(readFileSync(devFile, "utf8")).toBe(before);
+      const schemaRefused = await post({ stages: "not a list" });
+      expect(schemaRefused.status).toBe(422);
       expect((await post(GOOD)).status).toBe(200);
     } finally {
       await server.stop();
