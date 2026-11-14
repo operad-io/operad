@@ -240,6 +240,12 @@ the row fields.
 | T-0459-M9 | packages/cli/src/main.ts | a switch looked the plugin up by the requested name only, so a plugin filed under another key than its declared name answered 404 after the write | `plugins over HTTP > a plugin filed under another key than its declared name is switched by either name` |
 | T-0459-M10 | packages/cli/src/main.ts | the list loaded each enabled plugin file again on every call | `plugins over HTTP > listing again does not load a plugin file again` |
 
+## T-0460 — plugin HTTP follow-ups
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0460-M10 | packages/cli/src/main.ts | a plugin whose load failed was not cached, so every `GET /v1/plugins` imported it again | `plugins over HTTP > a plugin file that fails to load is not imported on every list` |
+
 ## T-0462 — installing a plugin from npm
 
 | id | file | mutation | failing test |
@@ -250,8 +256,3 @@ the row fields.
 | T-0462-M8 | packages/cli/src/main.ts | the refusal no longer said a package needed its install script | `plugin add > a package whose declaration needs its install script says so` |
 | T-0462-M9 | packages/cli/src/main.ts | the plugin check before the config write was skipped | `plugin add > refuses a plugin declaration the check rejects` |
 | T-0462-M10 | packages/cli/src/main.ts | an HTTP install was accepted without `"confirmed": true` | `plugins over HTTP > installing asks to confirm and writes nothing without it` |
-## T-0460 — plugin HTTP follow-ups
-
-| id | file | mutation | failing test |
-|---|---|---|---|
-| T-0460-M10 | packages/cli/src/main.ts | a plugin whose load failed was not cached, so every `GET /v1/plugins` imported it again | `plugins over HTTP > a plugin file that fails to load is not imported on every list` |
