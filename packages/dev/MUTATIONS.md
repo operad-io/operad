@@ -1204,3 +1204,10 @@ the row fields.
 | T-0458-M3 | packages/dev/src/project-settings.ts | dev's check of a dev.json value was skipped, so a flow with only `work` stages was written | `dev.flows and dev.flowList in settings > a save that breaks a rule is refused with dev's reason and writes nothing` and `the command line lists and saves flows, and refuses with dev's reason` |
 | T-0458-M4 | packages/dev/src/project-settings.ts | a `dev.json` flow whose name a TypeScript flow also has was written | `dev.flows and dev.flowList in settings > a save that breaks a rule is refused with dev's reason and writes nothing` |
 | T-0458-M5 | packages/dev/src/project-flows.ts | a TypeScript flow dev refuses was listed without dev's reason | `dev.flows and dev.flowList in settings > flowList reads dev.json, TypeScript and refused TypeScript flows` |
+
+## T-0461-flowlist-default-stages — the built-in default lists its stages
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0461-M1 | packages/dev/src/project-flows.ts | `defaultFlowStages` left the check commands and the reviewer args out, so the built-in default listed bare stages | `dev.flows and dev.flowList in settings > the built-in default lists the stages its worker, reviewer and gate give it` |
+| T-0461-M2 | packages/dev/src/project-flows.ts | `listRepositoryFlows` added the built-in default even when `dev.json` defined `default` | `dev.flows and dev.flowList in settings > a dev.json default is listed instead of the built-in one` |

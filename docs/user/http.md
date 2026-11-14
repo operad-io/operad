@@ -144,10 +144,12 @@ change `dev` refuses is `422` with `dev`'s own reason, word for word, and
 nothing is written; a client does not repeat the rules. `dev.flowList` is a
 read-only setting whose value lists every flow of the repository, TypeScript
 ones included: `[{ "name", "source": "dev.json" | "typescript" | "built-in",
-"stages"?, "steps"?, "refused"? }]`. A `dev.json` flow carries its `stages`; a
-TypeScript flow carries the `steps` (`id`, `kind`, `use`) `dev` reads when it
-loads the file, or `refused` with `dev`'s reason when the file breaks a rule. A
-TypeScript flow is still saved as a file.
+"stages"?, "steps"?, "refused"? }]`. A `dev.json` flow and the built-in
+`default` carry their `stages`; the built-in default's stages carry the
+repository's `worker`, `reviewer` and `gate` settings. A TypeScript flow carries
+the `steps` (`id`, `kind`, `use`) `dev` reads when it loads the file, or
+`refused` with `dev`'s reason when the file breaks a rule. A TypeScript flow is
+still saved as a file.
 
 `POST /v1/act` also records the caller as `{ "via":
 "<client>", "id": "<token label>" }`; the token label is `operad app` unless the
