@@ -134,6 +134,7 @@ describe("how an object's last run ended, over HTTP", () => {
       await reply(r);
       const last = (await r.object()).lastRun as Record<string, unknown>;
       expect(last.outcome).toBe("failed");
+      expect(last.reason).toBe("boom");
       expect(typeof last.endedAt).toBe("number");
     } finally {
       await r.close();

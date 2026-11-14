@@ -47,6 +47,7 @@ import type {
 } from "../plugin/types.ts";
 import { ROW_BADGE_MAX, ROW_MARKS } from "../plugin/types.ts";
 import {
+  historyEntry,
   localMinute,
   runHistoryLines,
   type HistoryFact,
@@ -2110,17 +2111,31 @@ export class Views {
     for (const run of runs) if (newest === undefined || run.startedAt >= newest.startedAt) newest = run;
     if (newest === undefined || newest.active) return undefined;
     let found: ViewRunEnd | undefined;
+    // What the last step said when it failed: a flow that fails by moving to
+    // an end step records no reason of its own.
+    let stepWhy = "";
     try {
       for await (const fact of this.log.read(newest.runId)) {
+        if (fact.kind === "step_result") {
+          stepWhy = historyEntry(fact).why;
+          if (!isRecord(fact.payload) || fact.payload.result !== "failed") stepWhy = "";
+          continue;
+        }
         if (fact.kind !== "run_ended") continue;
         const payload = fact.payload;
         if (typeof payload !== "object" || payload === null || Array.isArray(payload)) continue;
         const status = payload.status;
         if (status !== "done" && status !== "failed" && status !== "cancelled") continue;
-        const reason = payload.reason;
+        const recorded = payload.reason;
+        const reason =
+          typeof recorded === "string" && recorded.length > 0
+            ? recorded
+            : status === "failed" && stepWhy.length > 0
+              ? stepWhy
+              : undefined;
         found = {
           outcome: status,
-          ...(typeof reason === "string" && reason.length > 0 ? { reason } : {}),
+          ...(reason === undefined ? {} : { reason }),
           endedAt: fact.time,
         };
       }
