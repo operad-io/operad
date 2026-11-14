@@ -14,7 +14,7 @@ Each plugin has one JSON Schema. The kernel validates that plugin's section of `
 
 ### D2: `secrets`
 
-`ctx.secrets.get(name)` and `set(name, value)` are scoped per plugin and are stored outside the log (a 0600 file, replaceable later by a keychain). A secret never enters a fact, a param, an environment variable or `history`. A login state and a scoped key are the same thing. The `Secret` type exists, and this is where it is kept.
+`ctx.secrets.get(name)` and `set(name, value)` are scoped per plugin and are stored outside the log (a 0600 file). A secret never enters a fact, a param, an environment variable or `history`. A login state and a scoped key are the same thing. The `Secret` type exists, and this is where it is kept.
 
 ### D3: Runs carry an access profile
 

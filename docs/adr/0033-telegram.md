@@ -10,7 +10,7 @@ Telegram is the first channel and the first outside source, and in operad's eyes
 
 ### D1: No card object in the first channel
 
-`telegram` is an in-process plugin; it watches pending items directly and answers through the existing action interface. A persistent card object (version, claiming a card, reporting delivery) is not built until a second channel needs it. Idempotence holds anyway: a pending item can be answered only once, and the action interface refuses the second answer.
+`telegram` is an in-process plugin; it watches pending items directly and answers through the existing action interface. A persistent card object (version, claiming a card, reporting delivery) is not built. Idempotence holds anyway: a pending item can be answered only once, and the action interface refuses the second answer.
 
 ### D2: The plugin gets the client API
 
@@ -26,11 +26,11 @@ The plugin is `telegram`. The token is the secret `token` (`operad secret set te
 
 ### D5: Binding is automatic
 
-The first time a listed user writes to the Telegram bot in a private chat, the plugin opens a chat on the configured bot and binds this private chat to it; later messages go into the same chat. When that chat is closed, the next message opens a new one. Each listed user has a chat of their own. Only private chats are served: no groups, and no action to bind an existing chat or to change the bot.
+The first time a listed user writes to the Telegram bot in a private chat, the plugin opens a chat on the configured bot and binds this private chat to it; messages after that go into the same chat. When that chat is closed, the next message opens a new one. Each listed user has a chat of their own. Only private chats are served: no groups, and no action to bind an existing chat or to change the bot.
 
 ### D6: Messages of listed users count as made on the spot
 
-A message from a listed user counts as started by a person on the spot (in the sense of the access profile's rule on runs nobody started on the spot, ADR 0025); the input carries the `actor`. A message from someone not listed is only recorded: no reply, no chat, nothing started.
+A message from a listed user counts as started by a person on the spot; the input carries the `actor`. A message from someone not listed is only recorded: no reply, no chat, nothing started.
 
 ### D7: What is sent
 

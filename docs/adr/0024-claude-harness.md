@@ -16,7 +16,7 @@ The package is `@operad-io/harness-claude`, the step `claude/agent`, the flow `c
 
 ### D2: Two child processes; the binary is the user's
 
-The hub starts `bun worker.ts`; `worker.ts` imports the SDK, and the SDK starts the `claude` on `PATH` through `pathToClaudeCodeExecutable` (the setting `command` changes it). operad does not carry Claude Code: the `overrides` in `package.json` replace the eight `@anthropic-ai/claude-agent-sdk-<platform>` packages with `empty-npm-package`, and the SDK client is a range, not an exact version. `operad plugin check` runs `claude --version` and `claude auth status` and reports the Claude Code version, the SDK version and the login method; it refuses, saying so, when Claude Code is below the floor the worker was written for or there is no login, and only reports the SDK version.
+The hub starts `bun worker.ts`; `worker.ts` imports the SDK, and the SDK starts the `claude` on `PATH` through `pathToClaudeCodeExecutable` (the setting `command` changes it). operad does not carry Claude Code: the `overrides` in `package.json` replace the eight `@anthropic-ai/claude-agent-sdk-<platform>` packages with `empty-npm-package`, and the SDK client is a range, not an exact version. `operad plugin check` runs `claude --version` and `claude auth status` and reports the Claude Code version, the SDK version and the login method; it refuses, saying so, when Claude Code is below the floor the worker was written for (`2.1.319`) or there is no login, and only reports the SDK version.
 
 ### D3: The credential is the user's own claude login
 
@@ -50,4 +50,4 @@ SIGTERM to the worker calls `abortController.abort()` and writes a `cancelled` R
 
 ### D10: Versions
 
-The SDK client is not pinned: `package.json` holds a caret range, the lock file records the version last tested, `bun update` moves it forward, and `--frozen-lockfile` stays reproducible. The SDK's version number follows Claude Code's. Claude Code is the user's and updates itself, so the floor is on it; `operad plugin check` reports both versions and the worker records `initializationResult().claude_code_version` in the log. An SDK behind Claude Code is normal and is not refused; a Claude Code below the floor is.
+The SDK client is not pinned: `package.json` holds a caret range, the lock file records the version last tested, `bun update` moves it forward, and `--frozen-lockfile` stays reproducible. The SDK's version number follows Claude Code's (`0.3.319` to `2.1.319`); when it moves to `0.4`, the caret range on `0.x` is changed by hand. Claude Code is the user's and updates itself, so the floor is on it; `operad plugin check` reports both versions and the worker records `initializationResult().claude_code_version` in the log. An SDK behind Claude Code is normal and is not refused; a Claude Code below the floor is.

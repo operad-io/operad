@@ -29,7 +29,7 @@ The kernel has four basic steps:
 - wait (for a time, or for the condition a plugin check reports);
 - end.
 
-Running commands, running checks, running a harness, sending to a channel and landing a change are all steps that plugins provide. Parallelism and joining are added later.
+Running commands, running checks, running a harness, sending to a channel and landing a change are all steps that plugins provide.
 
 ### D5: A flow can be generated from a project's JSON configuration
 

@@ -18,7 +18,7 @@ Registering is a pending item of the bot (ADR 0030 D4). The review page lists th
 
 ### D3: A local server is pinned to a version
 
-A floating version (`@latest`, a tag, a range, no version) is refused for a package runner, and the server is not started. An upgrade is its own pending item that shows the change of version and of the tool list. Since there is no sandbox shell yet, approving a local server means trusting its package: it is resident and heavier than a skill's script, and the review page says so.
+A floating version (`@latest`, a tag, a range, no version) is refused for a package runner, and the server is not started. An upgrade is its own pending item that shows the change of version and of the tool list. Approving a local server means trusting its package: it is resident and heavier than a skill's script, and the review page says so.
 
 ### D4: A change of tools switches the server off
 

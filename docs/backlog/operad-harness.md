@@ -12,7 +12,7 @@ hub 的会话路由只认 radian 的 journal 和 control port，worker 只有 `r
 
 1. **ACP 不带的四样由 operad 补**：费用从 token 用量事实按模型价目算；预算由 operad 看着用量断（超了 `session/cancel`）；宿主钩子不要，事实从 `session/update` 流记；operad 的工具以 stdio MCP server 的形式给 ACP 类 harness。能力声明里这四项对 `acp` 接法照实标"operad 侧"。
 2. 每个 harness 一张机械禁用表（Claude 是 `disallowedTools`，radian 是 tier，Codex 是 sandbox 策略加 execpolicy）。
-3. Claude 的对应关系里没进 ADR 的：`canUseTool` 回调里调 `ctx.ask`；访问档的 deny 清单翻成带范围的 `disallowedTools`（在所有权限模式下都拒）；operad 的工具以 stdio MCP server 给（`mcpServers`，启动 `@operad-io/mcp` 的 `stdio.ts`）；`createSdkMcpServer` 要 `zod` 作直接依赖，目前没有任务要求加；`maxBudgetUsd`、`maxTurns`、`abortController` 做上限和取消；`includePartialMessages` 打开，逐字增量按 ADR 0027 D4–D6 走日志行，不落盘。许可：Anthropic 不允许第三方产品提供 claude.ai 登录或配额；operad 作为产品发出去时只能 API key。
+3. Claude 的对应关系里没进 ADR 的：`canUseTool` 回调里调 `ctx.ask`；访问档的 deny 和 ask 清单在 `canUseTool` 里判（ADR 0024 D6）；operad 的工具以 stdio MCP server 给（`mcpServers`，启动 `@operad-io/mcp` 的 `stdio.ts`）；`createSdkMcpServer` 要 `zod` 作直接依赖，目前没有任务要求加；`maxBudgetUsd`、`maxTurns`、`abortController` 做上限和取消；`includePartialMessages` 打开，逐字增量按 ADR 0027 D4–D6 走日志行，不落盘。许可：Anthropic 不允许第三方产品提供 claude.ai 登录或配额；operad 作为产品发出去时只能 API key。
 4. `sdk` 接法的版本耦合里没进 ADR 的：本体有版本下限（已在 ADR 0022 D6、0023 D9、0024 D2）。
 
 ## 待决问题（未定）

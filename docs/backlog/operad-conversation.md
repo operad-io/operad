@@ -22,7 +22,7 @@ OpenClaw 是聊天优先，operad 到现在是流程优先。第一个要满足�
 
 ## 顺序
 
-HTTP 接口和 app 换后端已完成（ADR 0029）。剩下按这个顺序：先做 ask 闭环（access-match 的 `askCommands` 判定；claude 的 `canUseTool` 和 pi 的 `tool_call` 调 `ctx.ask`，宽限期、`waiting`、续接加一次性许可三段都走通），它不依赖 chat，也是 `operad-sandbox.md` 第一版的一半；再做 `chat` 基础插件加 `dev:chat`；再做 `bot` 插件的 bot 对象和 `bot:chat`；最后 app 只加 chat 页的输入框。前置：`harness-*` 的 `resumeSession`（已有）、显示接口、事件与规则（已有）、T-0175。
+HTTP 接口和 app 换后端已完成（ADR 0029）。剩下按这个顺序：先做 ask 闭环（access-match 的 `askCommands` 判定；claude 的 `canUseTool` 和 pi 的 `tool_call` 调 `ctx.ask`，宽限期、`waiting`、续接加一次性许可三段都走通），它不依赖 chat，也是 `operad-sandbox.md` 第一版的一半；三种 harness 同时接，ask 闭环在 claude 和 pi 上做，radian 是降级那一档；再做 `chat` 基础插件加 `dev:chat`；再做 `bot` 插件的 bot 对象和 `bot:chat`；最后 app 只加 chat 页的输入框。前置：`harness-*` 的 `resumeSession`（已有）、显示接口、事件与规则（已有）、T-0175。
 
 ## 待决问题（未定）
 

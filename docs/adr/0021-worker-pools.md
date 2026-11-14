@@ -47,7 +47,7 @@ The `dev` flow uses the repository's `default` pool. Another flow names a pool i
 
 ### D8: Fallback is configured in the repository layer
 
-A worker may name `fallback: <another worker of the same repository>`. It triggers only when the harness reports that the model is unavailable or the quota is used up (`unavailable` and `usage_limit` of the model error) or when the harness process cannot start. A timeout (`wallTimeSecs`, `stallSecs`) does not trigger it: the worktree may hold half-finished work, which is for a person to judge. The fallback takes the fallback worker's own `count` and its harness total, and waits when they are busy. A fallback chain is at most one step and has no cycle; both are checked at load.
+A worker may name `fallback: <another worker of the same repository>`. It triggers only when the harness reports that the model is unavailable or the quota is used up (`unavailable` and `usage_limit` of the model error) or when the harness process cannot start. A timeout (`wallTimeSecs`, `stallSecs`) does not trigger it: the worktree may hold half-finished work, which is for the lead to judge. The fallback takes the fallback worker's own `count` and its harness total, and waits when they are busy. A fallback chain is at most one step and has no cycle; both are checked at load.
 
 ### D9: A worker with no fallback waits
 

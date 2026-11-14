@@ -18,7 +18,7 @@ A harness is a plugin of kind `harness` with a name, a way of starting, a connec
 
 ### D3: Which connection each harness uses
 
-- `claude` uses `@anthropic-ai/claude-agent-sdk` (`sdk`); `pi` uses `@earendil-works/pi-coding-agent` (`sdk`, ADR 0023 and ADR 0024).
+- `claude` uses `@anthropic-ai/claude-agent-sdk` (`sdk`, ADR 0024); `pi` uses `@earendil-works/pi-coding-agent` (`sdk`, ADR 0023).
 - `radian` uses `radian acp`; `codex` uses `codex-acp`; other harnesses use their own ACP entry (`acp`).
 - The built-in command adapter stays as the fallback for tools that can only run once and cannot interact: the prompt goes in, the last message comes out, and the receipt is a JSON code block at the end of the message. It has no session face. A receipt holds at least `done`, `nothing`, `failed`, `needs_decision` or `waiting`, and `waiting` carries `wait_check`.
 
