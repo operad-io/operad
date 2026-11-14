@@ -23,6 +23,18 @@ export type CommandRunner = (
   line: string,
 ) => Promise<CommandResult>;
 
+/**
+ * The task's durable record of whether this merge's prepare still has to run.
+ * It is saved before the fast-forward, so a restart after the clone moved runs
+ * the lines even when the clone already holds the commit.
+ */
+export interface PrepareMarker {
+  /** True when the record says this merge moved the clone and prepare is not done. */
+  readonly due: boolean;
+  /** Saves whether prepare is due; false when the record could not be written. */
+  readonly save: (due: boolean) => Promise<boolean>;
+}
+
 /** What happened to the main clone. */
 export interface MainCloneOutcome {
   readonly updated: boolean;
@@ -57,6 +69,18 @@ async function prepare(
   return { updated: true, prepared: true, note: "prepare done" };
 }
 
+/** Runs prepare and records that it is no longer due, even when a line failed. */
+async function prepareAndClear(
+  repository: string,
+  lines: readonly string[],
+  run: CommandRunner,
+  marker: PrepareMarker | undefined,
+): Promise<MainCloneOutcome> {
+  const outcome = await prepare(repository, lines, run);
+  await marker?.save(false);
+  return outcome;
+}
+
 /** The text a task's Changes shows, or undefined when there is nothing to say. */
 export function mainCloneChange(outcome: MainCloneOutcome): string | undefined {
   if (!outcome.updated) return `main clone not updated: ${outcome.note ?? "unknown"}`;
@@ -65,7 +89,9 @@ export function mainCloneChange(outcome: MainCloneOutcome): string | undefined {
 
 /**
  * Fast-forwards the main clone to `sha` when it is on `branch` and clean, then
- * runs the prepare lines there when the clone moved.
+ * runs the prepare lines there when the clone moved. A marker left by an
+ * interrupted merge makes a replay run prepare even when the clone already
+ * holds the commit.
  */
 export async function updateMainClone(
   repository: string,
@@ -73,6 +99,7 @@ export async function updateMainClone(
   sha: string,
   lines: readonly string[],
   run: CommandRunner,
+  marker?: PrepareMarker | undefined,
 ): Promise<MainCloneOutcome> {
   const current = git(repository, ["symbolic-ref", "--short", "-q", "HEAD"]);
   if (!current.ok || current.out !== branch) {
@@ -88,15 +115,27 @@ export async function updateMainClone(
   if (status.out.length > 0) {
     return { updated: false, note: "uncommitted changes" };
   }
-  if (git(repository, ["merge-base", "--is-ancestor", sha, "HEAD"]).ok) {
-    return { updated: true };
+  const already = git(repository, ["merge-base", "--is-ancestor", sha, "HEAD"]).ok;
+  if (already) {
+    if (marker?.due !== true) return { updated: true };
+    if (lines.length === 0) {
+      await marker.save(false);
+      return { updated: true };
+    }
+    return prepareAndClear(repository, lines, run, marker);
+  }
+  if (lines.length > 0 && marker !== undefined) {
+    if (!(await marker.save(true))) {
+      return { updated: false, note: "cannot record that prepare is due" };
+    }
   }
   const merge = git(repository, ["merge", "--ff-only", sha]);
   if (!merge.ok) {
+    if (lines.length > 0 && marker !== undefined) await marker.save(false);
     return {
       updated: false,
       note: `cannot fast-forward: ${lastLine(merge.err || merge.out) || "git merge failed"}`,
     };
   }
-  return prepare(repository, lines, run);
+  return prepareAndClear(repository, lines, run, marker);
 }

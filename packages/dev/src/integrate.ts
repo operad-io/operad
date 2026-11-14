@@ -25,6 +25,7 @@ import {
   updateMainClone,
   type CommandRunner,
   type MainCloneOutcome,
+  type PrepareMarker,
 } from "./mainclone.ts";
 import { runCheckSteadily } from "./notcode.ts";
 import { runCheckCommands } from "./rerun.ts";
@@ -83,6 +84,7 @@ export async function followMain(
     lines: [],
     run: async () => ({ ok: true, out: "" }),
   },
+  marker?: PrepareMarker | undefined,
 ): Promise<MainCloneOutcome> {
   return updateMainClone(
     repository.path,
@@ -90,6 +92,7 @@ export async function followMain(
     sha,
     prepare.lines,
     integrateTestHooks.runCommand ?? prepare.run,
+    marker,
   );
 }
 
@@ -358,6 +361,22 @@ export async function runIntegrate(
   let flakyReason: string | undefined;
   /** The other tasks this task was merged with in one batch. */
   let batchWith: readonly string[] = [];
+  /** Saves that this merge's prepare is due before the clone moves, and done after. */
+  const prepareMarker = (record: IntegrationRecord): PrepareMarker => ({
+    due: record.prepareDue === true,
+    save: async (due) => {
+      const pending: IntegrationRecord = {
+        ...record,
+        result: "pending",
+        prepareDue: due,
+      };
+      return (
+        (await writeIntegration(ctx, context, task, attempt, pending, {
+          integrating: true,
+        })) !== undefined
+      );
+    },
+  });
   const recordMerged = async (
     record: IntegrationRecord,
     sha: string,
@@ -371,10 +390,15 @@ export async function runIntegrate(
       settings.mainBranch,
       cloneSha,
       { lines: settings.prepare, run: mainCloneRunner(ctx, settings) },
+      prepareMarker(record),
     );
     integrateTestHooks.at?.("clone-followed");
     const cloneChange = mainCloneChange(clone);
-    const withClone: IntegrationRecord = { ...record, mainClone: { ...clone } };
+    const withClone: IntegrationRecord = {
+      ...record,
+      prepareDue: false,
+      mainClone: { ...clone },
+    };
     if (
       (await writeIntegration(ctx, context, task, attempt, withClone, {
         phase: "merged",
@@ -446,10 +470,12 @@ export async function runIntegrate(
         settings.mainBranch,
         typeof previous.batchHead === "string" ? previous.batchHead : previous.candidate,
         { lines: settings.prepare, run: mainCloneRunner(ctx, settings) },
+        prepareMarker(record),
       );
       const cloneChange = mainCloneChange(clone);
       const withClone: IntegrationRecord = {
         ...record,
+        prepareDue: false,
         mainClone: { ...clone },
       };
       if (

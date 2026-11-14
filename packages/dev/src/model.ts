@@ -317,6 +317,8 @@ export interface IntegrationRecord {
   /** True when the branch head was no longer the verified commit. */
   readonly headMoved?: boolean | null;
   readonly pushed?: boolean | null;
+  /** True when this merge moved the clone and its prepare lines have not finished. */
+  readonly prepareDue?: boolean | null;
   readonly message?: string | null;
   readonly command?: string | null;
   readonly log?: string | null;

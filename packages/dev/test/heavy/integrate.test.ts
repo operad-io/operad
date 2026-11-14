@@ -1237,6 +1237,31 @@ describe("dev/integrate main clone", () => {
     }
   });
 
+  test("a kill after the fast-forward and before prepare ends runs prepare once on the rerun", async () => {
+    const state = await fixture();
+    writeDevJson(state.remote.repository, { prepare: ["one", "two"] });
+    await killedAt(state, "prepare", "dev/integrate", "integrate-run");
+    const calls: string[] = [];
+    integrateTestHooks.runCommand = async (_cwd, line) => {
+      calls.push(line);
+      return { ok: true, out: "" };
+    };
+    try {
+      const result = await freshRegistry(state).runStep("dev/integrate", {}, {
+        runId: "integrate-run",
+        object: { type: "task", id: state.taskKey, data: {} },
+      });
+      expect(result.result).toBe("merged");
+      expect(calls).toEqual(["one", "two"]);
+      expect((await taskOf(state)).attempt?.integration).toMatchObject({
+        result: "merged",
+        prepareDue: false,
+      });
+    } finally {
+      integrateTestHooks.runCommand = undefined;
+    }
+  }, 60_000);
+
   test("a failing prepare line in the clone is reported and the merge stays", async () => {
     const state = await fixture();
     writeDevJson(state.remote.repository, { prepare: ["echo one"] });

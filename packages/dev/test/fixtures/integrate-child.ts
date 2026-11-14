@@ -3,7 +3,8 @@
  * a named point, so the parent can prove a rerun of the step is the same as a
  * first run.
  *
- * The point is `push` (right after the push) or one of the points in
+ * The point is `push` (right after the push), `prepare` (after the main clone
+ * moved, before a prepare line ends) or one of the points in
  * `integrateTestHooks.at`. For `hook-ran` the child dies after the Nth hook, `N`
  * being the fifth argument.
  */
@@ -39,6 +40,12 @@ const die = (): void => {
 };
 if (point === "push") {
   integrateTestHooks.afterPush = die;
+} else if (point === "prepare") {
+  // Die after the clone fast-forwarded and before the first prepare line ends.
+  integrateTestHooks.runCommand = async () => {
+    die();
+    return { ok: true, out: "" };
+  };
 } else {
   let seen = 0;
   integrateTestHooks.at = (reached) => {

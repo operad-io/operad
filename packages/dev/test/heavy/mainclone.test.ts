@@ -64,6 +64,40 @@ test("a clone that did not move runs nothing", async () => {
   expect(calls).toEqual([]);
 });
 
+test("a clone already at the commit runs no prepare when the record does not say it is due", async () => {
+  const { dir, target } = scratch();
+  await updateMainClone(dir, "main", target, [], async () => ({ ok: true, out: "" }));
+  const { calls, run } = recorder();
+  const saves: boolean[] = [];
+  const outcome = await updateMainClone(dir, "main", target, ["one"], run, {
+    due: false,
+    save: async (due) => {
+      saves.push(due);
+      return true;
+    },
+  });
+  expect(outcome).toEqual({ updated: true });
+  expect(calls).toEqual([]);
+  expect(saves).toEqual([]);
+});
+
+test("a replay whose record says prepare is due runs it although the clone already holds the commit", async () => {
+  const { dir, target } = scratch();
+  await updateMainClone(dir, "main", target, [], async () => ({ ok: true, out: "" }));
+  const { calls, run } = recorder();
+  const saves: boolean[] = [];
+  const outcome = await updateMainClone(dir, "main", target, ["one", "two"], run, {
+    due: true,
+    save: async (due) => {
+      saves.push(due);
+      return true;
+    },
+  });
+  expect(calls.map((call) => call.line)).toEqual(["one", "two"]);
+  expect(saves).toEqual([false]);
+  expect(outcome).toMatchObject({ updated: true, prepared: true });
+});
+
 test("a failing line gives the note, stops the rest and keeps the fast-forward", async () => {
   const { dir, target } = scratch();
   const { calls, run } = recorder((line) => line !== "bad");

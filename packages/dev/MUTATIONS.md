@@ -1154,3 +1154,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0430-M2 | packages/dev/src/schedule.ts | the scheduler's start of a ready task whose plan's auto level is not `off` never matched (`plan.auto !== "off"` became `plan.auto === "never"`), so `dev:auto --level run` started nothing | `a fresh home follows the Quickstart > operad init, then the Quickstart's commands in order, start the task` |
+
+## T-0433-prepare-after-restart — an interrupted merge runs its prepare on replay
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0433-M1 | packages/dev/src/mainclone.ts | the is-ancestor branch returned before looking at the prepare marker, so a replay whose clone already held the commit skipped prepare | `dev/integrate main clone > a kill after the fast-forward and before prepare ends runs prepare once on the rerun` (expected `["one", "two"]`, received `[]`) |
