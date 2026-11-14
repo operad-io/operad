@@ -41,9 +41,9 @@ When a pool has room, the next ready task (in the order of plan priority and dep
 
 The `dev` flow uses the repository's `default` pool. Another flow names a pool in its own step parameters, such as `design`. The caller resolves a pool name to worker definitions from the `.operad/dev.json` in the registered repository's main clone, not from the copy in a worktree (which may be an older branch version). `pool/agent` receives only resolved definitions and a counting key (`<repository>/<worker name>`), so the `pool` plugin knows neither repositories nor `dev.json`.
 
-### D7: Rework goes to the original worker
+### D7: Rework goes to the worker that ran last
 
-`dev` records the worker of each attempt. The work after a rework or a reject names the original worker; if it is busy the step waits for it, and continues its session when it can. If the original worker is no longer in the repository's `workers`, the free worker takes it and the history says the worker changed.
+`dev` records the worker of each attempt. The work after a rework or a reject names the worker that ran the latest attempt, which is the fallback worker when a fallback ran it, because that worker holds the session to continue; if it is busy the step waits for it, and continues its session when it can. If that worker is no longer in the repository's `workers`, the free worker takes it and the history says the worker changed.
 
 ### D8: Fallback is configured in the repository layer
 

@@ -14,12 +14,16 @@ ADR 写得准不准是三件事：写的是不是 owner 定的（人读，TLA+ �
 2. **不进检查流程**：不进 `scripts/verify.sh`、`check-changed.sh`、`run-tests.sh`，也不进 `.operad/dev.json` 的 gate 和 integration；单独一个脚本手动跑。看结果再定要不要进。
 3. **TLC 不是运行时依赖**：不写进任何 `package.json`；脚本按固定版本取 `tla2tools.jar`，放在仓库外的缓存里，校验 sha256。本机有 Java 11。
 4. **用真实记录做 trace validation**：从 `operad history --json` 导出事件序列，交给 TLC 检查它是不是模型允许的路径。只读，不改内核，不直接打开存储。
+5. **反例的处理**（2026-11-14 owner：按 lead 建议）：lead 先在真实代码里确认，再给 owner 看、开修复 task。
+6. **第一批反例**（2026-11-14 owner：按 lead 建议）：
+   - pool 模型：ADR 0021 D7 改成“回到最后做这个任务的 worker”（代码本来就这样）；D8 不改，代码改成 harness 步骤抛异常时不切 fallback（P-0053）。
+   - integrate 模型：已取消的任务在打包推送的间隙里被合进 main、重启后漏跑 prepare，这两个修（P-0053）。
+   - 领头任务崩溃后两个任务同时拿到合并的轮次（`integration-queue.ts` 的 `turn()` 清掉占位后继续）：只记录，不修。git 拒绝非快进推送，main 不会坏，代价是白跑一轮。
 
 ## 待决问题（未定）
 
-1. 模型找到的反例怎么处理：lead 每个开一个修复 task，还是先给 owner 看。建议：lead 先确认在真实代码里能复现，再开 task。
-2. 做完之后要不要进检查流程（比如只在改了 `pool` 或 `integrate` 的 task 里跑）。
-3. 引擎的运行和恢复（ADR 0004 D2、D3、D6、D7）、问人的竞争（ADR 0008）、serve 的重启（ADR 0029）要不要接着建模。
+1. 做完之后要不要进检查流程（比如只在改了 `pool` 或 `integrate` 的 task 里跑）。
+2. 引擎的运行和恢复（ADR 0004 D2、D3、D6、D7）、问人的竞争（ADR 0008）、serve 的重启（ADR 0029）要不要接着建模。
 
 ## 验收
 

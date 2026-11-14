@@ -31,7 +31,7 @@ ADR 0021 it stands for:
 | D3 repository share | `WCount` per worker; `used`; one default pool per repository |
 | D4 both layers have room | `Room(w)`: `OwnRoom(w) /\ HomeRoom(w)`, taken in one atomic `Claim` |
 | D5 whoever is free takes the work | `Claim`: the first free worker in the pool's order (`WRank`); none free means the task stays `waiting` |
-| D7 rework goes to the original worker | `Rework`, `ReworkRunning`: `want` is the worker the latest attempt recorded; the task waits for that one only |
+| D7 rework goes to the worker that ran last | `Rework`, `ReworkRunning`: `want` is the worker the latest attempt recorded; the task waits for that one only |
 | D8 fallback | `RunModelError`: the first worker's places are released, then the fallback worker is claimed; a timeout (`RunFailed`) does not trigger it; the chain is one step (checked in `ASSUME`) |
 | D9 no fallback waits | `RunModelError` with no fallback: `retry` (the retry wait, `MaxWaits` times) for the same worker, then `person`; never another worker |
 | D11 reviewer not in a pool | the `review` phase holds nothing |
@@ -43,7 +43,7 @@ at most one worker), `SlotsMatchHolders` (the book's counts equal what running
 tasks hold: a place is released whenever its task stops holding it),
 `RunsOnAsked` (a rework, a fallback or a retry runs only on the worker asked
 for), `RunsInOwnRepo`, `ReviewerHoldsNothing`, `NoHoldAndWait` and
-`NoWaitCycle` (a waiting task holds nothing, so the waits of rework-to-original
+`NoWaitCycle` (a waiting task holds nothing, so the waits of rework-to-last-worker
 and of no-fallback-waits form no cycle).
 
 Properties checked, under weak fairness of `Start`, `Claim`, the end of a run
@@ -68,9 +68,6 @@ order of waiters is not a queue, which the model does not constrain.
 
 Differences from ADR 0021 (the model follows the code):
 
-- A rework after a fallback goes to the fallback worker, not to the original
-  one: the work step records the worker that ran last (`outcomeData.worker`),
-  and the next attempt asks for it. D7 says "the original worker".
 - The fallback triggers when the harness step throws, not only on `unavailable`,
   `usage_limit` or a start failure (`first.kind === "threw"` in `pool/agent`).
   The model treats a throw like a model error.
