@@ -24,3 +24,5 @@ recorded. The root [MUTATIONS.md](../../../MUTATIONS.md) explains the format and
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0465-M6 | packages/harness/codex/src/install.ts | `codexSignedIn` answered true on any exit instead of only a zero one | `codex's signedIn answer > is false when codex login status exits non-zero` |
+| T-0465-M10 | packages/harness/codex/src/install.ts | a codex that could not start answered false instead of absent | `codex's signedIn answer > is absent when codex cannot be started` |
+| T-0465-M11 | packages/harness/codex/src/index.ts | removed the cache check, so `codex login status` ran on every read | `codex's signedIn answer > asks codex once per short cache period` |

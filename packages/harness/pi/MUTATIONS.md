@@ -139,3 +139,5 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0465-M4 | packages/harness/pi/src/index.ts | `hasCredential` counted a credential for any provider, not the provider pi will use | `pi's signedIn answer > is false when the credential is for another provider`, `pi's signedIn answer > falls back to pi's default provider` |
+| T-0465-M12 | packages/harness/pi/src/index.ts | a missing auth file answered absent instead of false | `pi's signedIn answer > is absent when the file cannot be read, and false when it is missing` |
+| T-0465-M13 | packages/harness/pi/src/index.ts | a malformed auth file answered false instead of absent | `pi's signedIn answer > is absent when the file cannot be read, and false when it is missing` |

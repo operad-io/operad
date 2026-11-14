@@ -161,3 +161,6 @@ setup it depends on, in the order they were recorded. The root
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0465-M3 | packages/harness/claude/src/claude-install.ts | `claudeSignedIn` returned true whenever `auth status` could be read instead of its `loggedIn` answer | `claude's signedIn answer > is false when claude auth status says loggedIn false` |
+| T-0465-M7 | packages/harness/claude/src/index.ts | removed the cache check, so `claude auth status` ran on every read | `claude's signedIn answer > asks claude once per short cache period` |
+| T-0465-M8 | packages/harness/claude/src/claude-install.ts | a missing claude answered false instead of absent | `claude's signedIn answer > is absent when claude is missing or the answer cannot be read` |
+| T-0465-M9 | packages/harness/claude/src/claude-install.ts | an unreadable `claude auth status` answer became false instead of absent | `claude's signedIn answer > is absent when claude is missing or the answer cannot be read` |

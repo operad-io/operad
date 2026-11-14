@@ -4,10 +4,10 @@
  */
 
 import { afterAll, describe, expect, test } from "bun:test";
-import { chmodSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempRoots, tempRoot } from "../../process/test/support.ts";
-import { createCodexHarnessPlugin } from "../src/index.ts";
+import { SIGNED_IN_CACHE_MS, createCodexHarnessPlugin } from "../src/index.ts";
 
 afterAll(cleanupTempRoots);
 
@@ -38,5 +38,21 @@ describe("codex's signedIn answer", () => {
     const root = await tempRoot();
     const plugin = createCodexHarnessPlugin({ codex: [join(root, "no-codex")] });
     expect(await plugin.signedIn?.({})).toBeUndefined();
+  });
+
+  test("asks codex once per short cache period", async () => {
+    const root = await tempRoot();
+    const codex = join(root, "codex");
+    const counter = join(root, "count");
+    script(codex, `printf x >> ${JSON.stringify(counter)}\nexit 0`);
+    let clock = 1_000;
+    const plugin = createCodexHarnessPlugin({ codex: [codex], now: () => clock });
+    expect(await plugin.signedIn?.({})).toBe(true);
+    expect(await plugin.signedIn?.({})).toBe(true);
+    expect(existsSync(counter)).toBe(true);
+    expect(readFileSync(counter, "utf8").length).toBe(1);
+    clock += SIGNED_IN_CACHE_MS + 1;
+    expect(await plugin.signedIn?.({})).toBe(true);
+    expect(readFileSync(counter, "utf8").length).toBe(2);
   });
 });
