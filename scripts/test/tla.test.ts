@@ -57,4 +57,11 @@ describe("scripts/tla.sh", () => {
     expect(result.code).toBe(2);
     expect(result.err).toContain("pool");
   });
+
+  test("TLA_MAIN names the module and the config to run instead of MC", () => {
+    const { env } = sandbox("x");
+    const result = run(["pool"], { ...env, TLA_MAIN: "Nope" });
+    expect(result.code).toBe(2);
+    expect(result.err).toContain("Nope.tla and Nope.cfg");
+  });
 });

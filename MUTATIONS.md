@@ -81,6 +81,10 @@ Each package keeps its mutation checks in `MUTATIONS.md`; a row names the broken
 | T-0414-M4 | scripts/run-tests.sh | the heartbeat no longer counts the heavy step's captured output (`*.out`) as growth | `run-tests.sh > heavy output growing alone prints a heartbeat while the heavy step is still open` |
 | T-0414-M7 | scripts/run-tests.sh | the heartbeat no longer exits when the script's process is gone (the `kill -0` line is deleted) | `run-tests.sh > the heartbeat ends by itself when the script is killed without a chance to stop it` |
 | T-0424-M1 | scripts/tla.sh | the sha256 comparison of the downloaded jar was replaced by `false`, so a jar with the wrong hash was kept and run | `scripts/tla.sh > a download whose sha256 differs is refused and not kept` |
+| T-0426-M1 | scripts/tla-trace.ts | the merge of several histories no longer sorted by time | `scripts/tla-trace.ts > two histories are merged by time and keep each task's own order` |
+| T-0426-M2 | scripts/tla-trace.ts | `TraceMaxFails` counted `integrate fail` but not `integrate conflict` | `scripts/tla-trace.ts > failed integrations are counted as the reworks the model must allow` |
+| T-0426-M3 | scripts/tla-trace.ts | `verdictOf` took the last TRACE line instead of the furthest one | `scripts/tla-trace.ts > the verdict of TLC's output > a run that ends with no error stopped at the last position it reached` |
+| T-0426-M4 | scripts/tla.sh | `TLA_MAIN` was ignored (`main="MC"`) | `scripts/tla.sh > TLA_MAIN names the module and the config to run instead of MC` |
 
 ## T-0417 — the ADR snapshot test
 
