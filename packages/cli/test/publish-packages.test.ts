@@ -37,7 +37,7 @@ function packageDirectories(): string[] {
 const publishable = packageDirectories().filter((directory) => manifestOf(directory).private !== true);
 
 /** The one version every public package carries; change it here and in the manifests for a release. */
-const RELEASE_VERSION = "0.1.0";
+const RELEASE_VERSION = "0.1.1";
 
 /** The runtime package closure of one manifest. */
 function closure(start: Manifest): Set<string> {
