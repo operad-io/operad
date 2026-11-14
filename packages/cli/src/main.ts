@@ -2,6 +2,7 @@ import { INSTALL_ON_ENABLE, OPTIONAL_PLUGINS, defaultPluginModule, distributionC
 import { closeSync, mkdirSync, openSync, readFileSync, writeSync } from "node:fs";
 import { userInfo } from "node:os";
 import { join } from "node:path";
+import { isatty } from "node:tty";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   ConfigError,
@@ -131,16 +132,52 @@ function isClosedPipe(error: unknown): boolean {
   );
 }
 
+/** Whether a standard descriptor is a terminal, without creating its stream. */
+function descriptorIsTTY(fd: 0 | 1): boolean {
+  return isatty(fd);
+}
+
+/** stdout's width when it is a terminal; a stream that cannot be read leaves it unknown. */
+function stdoutColumns(): number | undefined {
+  if (!isatty(1)) return undefined;
+  try {
+    return process.stdout.columns;
+  } catch {
+    return undefined;
+  }
+}
+
+const hookedStreams = new WeakSet<NodeJS.WriteStream>();
+
+function hookStream(stream: NodeJS.WriteStream): void {
+  if (hookedStreams.has(stream)) return;
+  hookedStreams.add(stream);
+  // A write that fails later arrives as an error event; EPIPE ends output the
+  // same way, anything else stays an unhandled error as it was.
+  stream.on("error", (error) => {
+    if (isClosedPipe(error)) {
+      outputClosed = true;
+      return;
+    }
+    throw error;
+  });
+}
+
 /**
  * Writes to a process stream. A closed pipe (EPIPE) stops all output without a
  * message; any other write error is thrown as before. The write is synchronous
  * on the descriptor: Bun reports a write queued behind a full pipe as done and
  * drops it at exit, so a reader that closes meanwhile went unseen and the
  * status was 0.
+ *
+ * The stream is read only here, not when the module loads: under
+ * `bun test --isolate`, Bun can leave a stale epoll registration for a stdio
+ * stream of an earlier file, so merely reading process.stdout fails with
+ * EEXIST before this command writes anything (oven-sh/bun#37968).
  */
-function writeStream(stream: NodeJS.WriteStream, text: string): void {
+function writeStream(fd: 1 | 2, text: string): void {
   if (outputClosed) return;
-  const fd = stream === process.stderr ? 2 : 1;
+  hookStream(fd === 2 ? process.stderr : process.stdout);
   try {
     const bytes = Buffer.from(text);
     let offset = 0;
@@ -159,21 +196,9 @@ function writeStream(stream: NodeJS.WriteStream, text: string): void {
   }
 }
 
-// A write that fails later arrives as an error event; EPIPE ends output the
-// same way, anything else stays an unhandled error as it was.
-for (const stream of [process.stdout, process.stderr]) {
-  stream.on("error", (error) => {
-    if (isClosedPipe(error)) {
-      outputClosed = true;
-      return;
-    }
-    throw error;
-  });
-}
-
 const STDIO: CliIo = {
-  write: (text) => writeStream(process.stdout, text),
-  error: (text) => writeStream(process.stderr, text),
+  write: (text) => writeStream(1, text),
+  error: (text) => writeStream(2, text),
 };
 
 /** A command line mistake; exit code 2. */
@@ -2101,12 +2126,12 @@ async function readSecretValue(io: CliIo): Promise<string> {
   });
   const muted = rl as unknown as { _writeToOutput?: (text: string) => void };
   muted._writeToOutput = () => undefined;
-  writeStream(process.stderr, "secret value: ");
+  writeStream(2, "secret value: ");
   try {
     return (await rl.question("")).replace(/\r?\n$/, "");
   } finally {
     rl.close();
-    writeStream(process.stderr, "\n");
+    writeStream(2, "\n");
   }
 }
 
@@ -2446,9 +2471,7 @@ export async function main(
 ): Promise<number> {
   const io = options.io ?? STDIO;
   const home = options.home ?? defaultOperadHome();
-  const tty =
-    options.isTTY ??
-    (process.stdout.isTTY === true && process.stdin.isTTY === true);
+  const tty = options.isTTY ?? (descriptorIsTTY(1) && descriptorIsTTY(0));
   const command = args[0];
 
   try {
@@ -2530,7 +2553,7 @@ export async function main(
         home,
         io,
         args.slice(1),
-        options.isTTY ?? process.stdout.isTTY === true,
+        options.isTTY ?? descriptorIsTTY(1),
       );
     }
 
@@ -2792,7 +2815,7 @@ export async function main(
           return 0;
         }
         if (command === "show") {
-          await commandShow(context, io, showRepo?.args ?? args.slice(1), tty, options.columns ?? process.stdout.columns);
+          await commandShow(context, io, showRepo?.args ?? args.slice(1), tty, options.columns ?? stdoutColumns());
           return 0;
         }
         const { args: rest, present } = splitFlag(args.slice(1), "--json");
