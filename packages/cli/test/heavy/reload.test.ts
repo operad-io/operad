@@ -81,7 +81,7 @@ export default definePlugin({
 function heldPluginSource(work: string): string {
   return `
 import { definePlugin } from ${JSON.stringify(ENGINE)};
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, renameSync, writeFileSync } from "node:fs";
 
 const WORK = ${JSON.stringify(work)};
 
@@ -90,7 +90,9 @@ const WORK = ${JSON.stringify(work)};
 // with the signal handlers the process listens with.
 setInterval(() => {
   if (!existsSync(WORK + "/probe")) return;
-  writeFileSync(WORK + "/listeners", process.listenerCount("SIGINT") + " " + process.listenerCount("SIGTERM"));
+  // Written aside and renamed, so a reader that sees the file sees all of it.
+  writeFileSync(WORK + "/listeners.tmp", process.listenerCount("SIGINT") + " " + process.listenerCount("SIGTERM"));
+  renameSync(WORK + "/listeners.tmp", WORK + "/listeners");
 }, 20);
 
 export default definePlugin({ name: "heldserve", kind: "domain", version: "0.0.1" });
