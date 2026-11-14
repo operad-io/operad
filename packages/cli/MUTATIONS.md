@@ -282,4 +282,3 @@ the row fields.
 |---|---|---|---|
 | T-0472-M4 | packages/cli/src/main.ts | a switch answer no longer carried an enabled harness's signedIn | `plugins over HTTP > a switch answers a harness's signedIn while it is enabled, and leaves it out when disabled` |
 | T-0472-M5 | packages/cli/src/main.ts | signedIn was asked for a disabled harness, so its switch answer carried an answer it should not | `plugins over HTTP > a switch answers a harness's signedIn while it is enabled, and leaves it out when disabled` |
-| T-0472-M10 | packages/cli/src/main.ts | the install answer returned `withSignIn(publicRow(row))` again, asking for the new harness's login instead of returning its row directly | `plugins over HTTP > an install answer leaves signedIn out while the new harness is off` |
