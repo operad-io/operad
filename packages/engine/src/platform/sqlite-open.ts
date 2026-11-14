@@ -18,18 +18,27 @@ export function setBusyTimeout(database: Database): void {
   database.run(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MS}`);
 }
 
-/** SQLITE_BUSY and its extended codes (SQLITE_BUSY_SNAPSHOT, SQLITE_BUSY_RECOVERY, ...). */
-function isBusyCode(code: unknown): boolean {
-  return code === "SQLITE_BUSY" || (typeof code === "string" && code.startsWith("SQLITE_BUSY_"));
-}
-
+/**
+ * True for a busy store: SQLITE_BUSY or any extended code of it
+ * (SQLITE_BUSY_SNAPSHOT, SQLITE_BUSY_RECOVERY, SQLITE_BUSY_TIMEOUT), whether the
+ * error is the one SQLite raised or the `cause` of an error that wrapped it.
+ */
 export function isBusy(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    isBusyCode((error as { code?: unknown }).code)
-  );
+  for (let depth = 0; depth < 8; depth += 1) {
+    if (typeof error !== "object" || error === null) return false;
+    const { code, errno, cause } = error as {
+      code?: unknown;
+      errno?: unknown;
+      cause?: unknown;
+    };
+    if (code === "SQLITE_BUSY" || (typeof code === "string" && code.startsWith("SQLITE_BUSY_"))) return true;
+    // The primary result code is the low byte of an extended one; 5 is BUSY.
+    if (typeof errno === "number" && typeof code === "string" && code.startsWith("SQLITE") && (errno & 0xff) === 5) {
+      return true;
+    }
+    error = cause;
+  }
+  return false;
 }
 
 /**
