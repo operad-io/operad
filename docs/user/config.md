@@ -109,7 +109,7 @@ nothing in this manual prints a secret.
 ```
 
 `operad init` writes a `config.json` when the home has none: `shell`, `radian`,
-`chat` and `dev` installed, the store at `store/log.sqlite`, `http` on at
+`chat`, `pool` and `dev` installed, the store at `store/log.sqlite`, `http` on at
 `127.0.0.1:7480`, notifications off, the `mcp.actions` and `mcp.confirmActions`
 lists above and the ask grace of 600 seconds. All of it is written into the
 file; nothing in it is a hidden default. A home with no `config.json` at all
@@ -172,8 +172,9 @@ still loads, and `serve` and `operad plugin check` print the line that says why.
 `operad plugin list`, `operad plugin enable`, `operad plugin disable` and
 `operad plugin check` are on [the CLI page](cli.md).
 
-`operad init` installs `shell`, `radian`, `chat` and `dev`. `pi`, `claude`, `codex`,
-`pool`, `bot` and `telegram` are shipped but not installed; enable one with
+`operad init` installs `shell`, `radian`, `chat`, `pool` and `dev` (dev runs its workers
+through pool). `pi`, `claude`, `codex`,
+`bot` and `telegram` are shipped but not installed; enable one with
 `operad plugin enable <name>`.
 
 ### `store`

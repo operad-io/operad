@@ -1148,3 +1148,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0401-M3 | packages/dev/src/rerun.ts | `runCheckCommands` passed `false` for `aloneRerun` when the failed test failed again alone | `a failed test that fails again when run alone > the result says it was the test's own rerun, and a quiet machine makes it the code` |
+
+## T-0430-fresh-home-runs-task — the Quickstart starts the task
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0430-M2 | packages/dev/src/schedule.ts | the scheduler's start of a ready task whose plan's auto level is not `off` never matched (`plan.auto !== "off"` became `plan.auto === "never"`), so `dev:auto --level run` started nothing | `a fresh home follows the Quickstart > operad init, then the Quickstart's commands in order, start the task` |
