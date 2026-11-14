@@ -333,7 +333,7 @@ builds one flag per argument the action declares:
 operad dev:reject T-0003 --note "cover concurrent writers"
 operad dev confirm T-0003 --yes
 operad chat:send C-0001 --note "why does the gate fail on main?"
-operad dev:model C-0001 --model sonnet
+operad chat:model C-0001 --model sonnet
 ```
 
 A required note with no `--note` is asked for in a terminal, and refused in a

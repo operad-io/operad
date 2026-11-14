@@ -184,15 +184,15 @@ an error row. It is passed through list, get and pending rows unchanged, and
 `after` with the task ids it waits for, as stored: a task of another repository shows as
 `<repository>/<task id>`.
 
-`operad task add` and `operad task update` take `--after <task>` for a task of the same
+`operad dev task add` and `operad dev task update` take `--after <task>` for a task of the same
 repository (any plan) or `--after <repository>/<task>` for a task of any registered
 repository. The task is blocked until every task it follows is merged, wherever it is,
 and its note says what it waits for (`waiting for operad/T-0188` for another repository).
 The named task must exist, and a task cannot follow itself or close a cycle.
 
-`operad plan add` and `operad task add` take `--flow <name>`, one of the flows the
+`operad dev plan add` and `operad dev task add` take `--flow <name>`, one of the flows the
 repository's `.operad/dev.json` defines. A task without `--flow` takes its plan's flow,
-and a plan without one takes `default`. `operad task update <id> --flow <name>` changes
+and a plan without one takes `default`. `operad dev task update <id> --flow <name>` changes
 a task's flow only before its first attempt; after that the command refuses. A task
 whose flow dev.json does not define stays ready, and its row and its plan's row say
 `flow <name> is not defined in .operad/dev.json`. When the repository defines more than

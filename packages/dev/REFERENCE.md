@@ -7,7 +7,7 @@ merge. It is a plugin: the kernel knows none of these words.
 
 | word | what it is |
 |---|---|
-| **repo** | a git work tree with a remote that `dev` is allowed to work on; `operad repo add <path>` registers it |
+| **repo** | a git work tree with a remote that `dev` is allowed to work on; `operad dev repo add <path>` registers it |
 | **plan** | one request, its tasks and how far they may run without you |
 | **task** | one unit of work in a plan, with a brief and the tasks that must merge before it |
 | **brief** | the Markdown a task's worker reads; a rework section is appended to it, and a trailing `## Changes` section records every edit |
@@ -24,7 +24,7 @@ merge. It is a plugin: the kernel knows none of these words.
 object type, and a row names the level above it as its `parent`:
 
 - A **repo** object exists for every repository registered with
-  `operad repo add`; its id is the repository name. It has no parent, so it is
+  `operad dev repo add`; its id is the repository name. It has no parent, so it is
   a top-level object of `dev`. Its row has the name as id and title, the state
   `active` (or `removed` after `repo remove`) and a note with the open plan and
   open task counts. The default filter shows `active`; `--filter removed` shows
@@ -51,20 +51,20 @@ views and `--after` accept both forms, and an id is matched exactly.
 ## Commands
 
 ```
-operad repo add <path> [--name <name>]
-operad repo list
-operad repo remove <name>
-operad plan add --slug <slug> --title <title> [--concurrency <n>] [--flow <name>] [--repo <name>]   # request on stdin
-operad task add --plan <plan> --slug <slug> --title <title> [--after <task>]... [--area <area>] [--flow <name>] [--chat <id>] [--repo <name>]   # brief on stdin
-operad task edit <id>      # $EDITOR on the brief body; proposed or ready only
-operad task update <id> [--title <title>] [--after <task>]... [--area <area>] [--flow <name>]   # --area "" clears it, --after "" clears the dependencies
+operad dev repo add <path> [--name <name>]
+operad dev repo list
+operad dev repo remove <name>
+operad dev plan add --slug <slug> --title <title> [--concurrency <n>] [--flow <name>] [--repo <name>]   # request on stdin
+operad dev task add --plan <plan> --slug <slug> --title <title> [--after <task>]... [--area <area>] [--flow <name>] [--chat <id>] [--repo <name>]   # brief on stdin
+operad dev task edit <id>      # $EDITOR on the brief body; proposed or ready only
+operad dev task update <id> [--title <title>] [--after <task>]... [--area <area>] [--flow <name>]   # --area "" clears it, --after "" clears the dependencies
 operad start <task>        # start one ready task now, whatever its plan's auto level
 operad reruns              # how often each test passed only on its own rerun, most frequent first
 ```
 
 `--chat <id>` opens the task on the worktree of a repository chat that already has one: the task works on `work/chat-<id>` instead of making its own worktree and branch.
 
-`task edit` takes the new brief from standard input when it is piped and not empty; otherwise it opens `$EDITOR` (or `$VISUAL`) on the brief body. For the non-interactive form, set `$EDITOR` to a command that writes the file it is given, for example `EDITOR="cp /path/brief.md" operad task edit T-0001-example`: the command receives that file as `$1`. When standard input is not a terminal, `task edit` waits one second for a piped brief before it uses the editor, so an open stdin that never delivers one cannot hang the command. A repository lock another dev command holds is named, and the command gives up after 10 seconds.
+`task edit` takes the new brief from standard input when it is piped and not empty; otherwise it opens `$EDITOR` (or `$VISUAL`) on the brief body. For the non-interactive form, set `$EDITOR` to a command that writes the file it is given, for example `EDITOR="cp /path/brief.md" operad dev task edit T-0001-example`: the command receives that file as `$1`. When standard input is not a terminal, `task edit` waits one second for a piped brief before it uses the editor, so an open stdin that never delivers one cannot hang the command. A repository lock another dev command holds is named, and the command gives up after 10 seconds.
 
 ### Where a command runs, and ids
 
@@ -93,7 +93,7 @@ no registered repository contains /Users/hai/Code/radian; run the command inside
   operad-ios  ~/Code/operad-ios
 ```
 
-With nothing registered it points at `operad repo add <path>`.
+With nothing registered it points at `operad dev repo add <path>`.
 
 ## Actions
 
@@ -346,7 +346,7 @@ is reported finished once. Every change prints one line:
 tick, whatever its plan's auto level is. The task's dependencies and both
 concurrency limits still hold, so an ineligible task waits for a later tick.
 
-`operad task update <id> --after ...` also works on a task that waits because a
+`operad dev task update <id> --after ...` also works on a task that waits because a
 dependency was cancelled: changing its dependencies, or clearing them with
 `--after ""`, ends that wait (its run is stopped), and the task starts on a later
 tick like any ready task.
@@ -374,7 +374,7 @@ not limited, and the same area name in two repositories does not block.
 | | |
 |---|---|
 | type | string, default none |
-| set | `operad task add --area <area>`, `operad task update <id> --area <area>` (`--area ""` clears it) |
+| set | `operad dev task add --area <area>`, `operad dev task update <id> --area <area>` (`--area ""` clears it) |
 | effect | a ready task whose area is held by a running or reviewing task is not started; it starts on a later tick once that task leaves those phases (it merges, is cancelled, or waits for a person) |
 | when | the area is read on every tick, so a change made while the task is `proposed` or `ready` applies from the next tick |
 
@@ -628,7 +628,7 @@ The diff is built with rename detection, and `maxDiffBytes` and
 
 ## Settings
 
-`operad repo add` writes `<repository>/.operad/dev.json` when it is absent (its
+`operad dev repo add` writes `<repository>/.operad/dev.json` when it is absent (its
 schema is `dev.schema.json`) and adds `.operad-worktrees/` and
 `.radian-sandbox/` to the repository's `.git/info/exclude`.
 

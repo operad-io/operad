@@ -52,14 +52,14 @@ You also need `git`, a repository with a remote, and one of `claude`, `pi` or `r
 ## Quickstart
 
 ```sh
-operad init                     # create the home and check the plugins
-operad repo add .               # register this repository
-operad plan add --slug hello --title "Add a greeting" < request.md
-operad task add --plan P-0001-hello --slug greet --title "Print the greeting" < task.md
+operad init                 # create the home and check the plugins
+operad dev repo add .       # register this repository
+operad dev plan add --slug hello --title "Add a greeting" < request.md
+operad dev task add --plan P-0001-hello --slug greet --title "Print the greeting" < task.md
 operad dev:confirm P-0001-hello
-operad serve                    # run the loop
+operad serve                # run the loop
 
-operad pending                  # what waits for you
+operad pending              # what waits for you
 operad dev:merge T-0001-greet --yes
 ```
 
@@ -67,7 +67,7 @@ Not sure what goes in `.operad/dev.json`? [Paste this prompt](docs/user/setup-pr
 
 ## How it works
 
-1. **You ask.** Describe a request with `operad plan add`, split it into tasks with `operad task add`, then confirm the plan.
+1. **You ask.** Describe a request with `operad dev plan add`, split it into tasks with `operad dev task add`, then confirm the plan.
 2. **An agent works.** Each task gets its own git worktree and a brief. The worker commits there.
 3. **Checks run.** The commands you list in `.operad/dev.json` run against the commit.
 4. **An agent reviews.** A reviewer reads the change and writes a report. Findings send the task back for rework, up to a limit.
