@@ -1,5 +1,5 @@
 /**
- * The pi child program (docs/backlog/operad-harness-pi.md decisions 2, 3, 5, 6).
+ * The pi child program (ADR 0023 D2, D3, D5, D6).
  *
  * Reads one JSON object from stdin, runs one prompt in pi and writes one JSON
  * object per line to stdout, the last a Result. `README.md` holds the tables.

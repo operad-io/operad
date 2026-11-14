@@ -124,7 +124,7 @@ The types a plugin imports, by the page that explains them. The values these ent
 | `SubscriptionWatch` | The watch, the fallback timer and its period one subscription uses. | [platform](platform.md) |
 | `SubscriptionWatchOptions` | What an owner lets a test replace: the period, the timer and the watch. | [platform](platform.md) |
 | `WorkerReports` | The two things a worker run reports to the step that asked for it. | [platform](platform.md) |
-| `AccessProfile` | An access profile: opaque JSON the kernel hands to steps. Its shape belongs to `operad-sandbox.md`, not to the kernel. | [settings](settings.md) |
+| `AccessProfile` | An access profile: opaque JSON the kernel hands to steps. Its shape belongs to ADR 0025, not to the kernel. | [settings](settings.md) |
 | `KeyBindings` | A key binding a plugin brings as its default. | [settings](settings.md) |
 | `ProjectSettingsDeclaration` | The project settings a plugin declares. | [settings](settings.md) |
 | `ProjectSettingsFile` | One settings file under a repository's `.operad/`, with its schema. | [settings](settings.md) |

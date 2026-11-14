@@ -1,5 +1,5 @@
 /**
- * The acceptance of docs/backlog/operad-open-framework.md: a repository that
+ * The acceptance of ADR 0034 D6: a repository that
  * is not JavaScript, with no package.json, no scripts/ directory and no
  * CLAUDE.md, goes from plan to merge with only its `.operad/dev.json`. A stub
  * worker and a stub reviewer stand in for the agents; nothing sleeps.

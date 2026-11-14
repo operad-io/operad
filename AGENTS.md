@@ -8,18 +8,18 @@ workspace:
 | `packages/engine` (`@operad-io/engine`) | the graph engine: event-sourced, resumable runs of a graph whose structure is data and whose node logic is TypeScript |
 | `packages/cli` (`@operad-io/cli`) | the `operad` command |
 
-The direction, the decisions in force and the open questions are in
-`docs/backlog/operad.md`; each part has its own item (`operad-engine.md`,
-`operad-plugins.md`, `operad-harness.md`, `operad-channels.md`,
-`operad-contract.md`, `operad-presentation.md`, `operad-conversation.md`,
-`operad-sandbox.md`, `operad-bot.md`, `operad-worker-pool.md`, `operad-dev-flows.md`,
-`operad-open-framework.md`, `operad-slimming.md`, `operad-test-slimming.md`). Read the items that touch what you change before you
-change it, and do not contradict a decided point. A change that needs a decided
-point reversed changes that item first, in its own docs-only commit.
+The direction and the decisions in force are in the architecture decision
+records in `docs/adr/` (start at its README index). Intended work and open
+questions are in `docs/backlog/`, one file per item, and each item references
+the ADRs it touches. Read the ADRs that touch what you change before you change
+it, and do not contradict one. To change a decision, edit the ADR in its own
+docs-only commit merged with the code; an ADR is a snapshot of the decisions in
+force. When an item lands, its backlog file is deleted and its decisions are
+written into ADRs.
 
 ## The kernel stays small
 
-`docs/backlog/operad.md` decisions 12 to 15 set the boundary. The kernel has the
+ADR 0002 D1 to D4 set the boundary. The kernel has the
 fact log (behind a storage backend interface), flow execution, four basic steps
 (call a plugin step, wait for a person, wait for a time or condition, end),
 plugin loading, and three views. Everything else is a plugin: running commands,

@@ -4,7 +4,7 @@
     "dev": {
       "levels": {
         "critical": "Merging causes harm: data loss or corruption, a security hole, a crash or hang in normal use, or main's build or tests break.",
-        "major": "Something the brief asks for is wrong or missing on a path a user or caller takes in normal use; a decided point in docs/backlog is contradicted; or a behaviour the brief requires has no test.",
+        "major": "Something the brief asks for is wrong or missing on a path a user or caller takes in normal use; a decided point in docs/adr is contradicted; or a behaviour the brief requires has no test.",
         "minor": "Anything the brief does not ask for: rare inputs, extra robustness, wording, style, refactors."
       },
       "rules": [

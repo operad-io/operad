@@ -58,7 +58,7 @@ async function importPluginFile(file: string): Promise<Record<string, unknown>> 
  * named in every import error. A path gets a fresh module instance so a later
  * reload does not reuse the old value.
  *
- * `installed` is the package's file in the home's Bun project (decision 11).
+ * `installed` is the package's file in the home's Bun project (ADR 0012 D4).
  * The workspace link is tried first, so a checkout keeps loading its own code;
  * when there is no such link, the home package is imported by path.
  */

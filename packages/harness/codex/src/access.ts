@@ -1,6 +1,6 @@
 /**
  * The access profile applied to the calls codex asks permission for
- * (docs/backlog/operad-harness.md decision 6).
+ * (ADR 0022 D4).
  *
  * codex-acp sends `session/request_permission` for a command that leaves the
  * sandbox, a file change and a network request. The request describes the call
