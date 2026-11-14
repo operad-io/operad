@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Runs TLC on a model under tla/. Usage: scripts/tla.sh <model> [TLC arguments...]
 # <model> is a directory of tla/ holding MC.tla and MC.cfg. Not part of any check.
+# TLA_MAIN=<name> runs <name>.tla with <name>.cfg instead of MC (the trace checks);
+# TLA_LIB=<dir> is searched for modules too (where scripts/tla-trace.ts wrote TraceData.tla).
 set -euo pipefail
 
 # The pinned TLC release and the sha256 its jar must have.
@@ -15,9 +17,10 @@ if [ $# -lt 1 ]; then
 fi
 model="$1"
 shift
+main="${TLA_MAIN:-MC}"
 dir="$root/tla/$model"
-if [ ! -f "$dir/MC.tla" ] || [ ! -f "$dir/MC.cfg" ]; then
-  echo "tla.sh: no model '$model' (need $dir/MC.tla and MC.cfg)" >&2
+if [ ! -f "$dir/$main.tla" ] || [ ! -f "$dir/$main.cfg" ]; then
+  echo "tla.sh: no model '$model' (need $dir/$main.tla and $main.cfg)" >&2
   exit 2
 fi
 
@@ -48,4 +51,6 @@ fi
 states="$(mktemp -d "${TMPDIR:-/tmp}/operad-tla.XXXXXX")"
 trap 'rm -rf "$states"' EXIT
 cd "$dir"
-java -XX:+UseParallelGC -cp "$jar" tlc2.TLC -metadir "$states" -config MC.cfg -workers auto "$@" MC.tla
+lib=()
+if [ -n "${TLA_LIB:-}" ]; then lib=("-DTLA-Library=$(cd "$TLA_LIB" && pwd)"); fi
+java -XX:+UseParallelGC ${lib[@]+"${lib[@]}"} -cp "$jar" tlc2.TLC -metadir "$states" -config "$main.cfg" -workers auto "$@" "$main.tla"

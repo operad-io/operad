@@ -71,8 +71,10 @@ Differences from ADR 0021 (the model follows the code):
 - D9 "waits as `retry_wait` does": the work step retries after `retrySecs`, at
   most `MAX_WORK_WAITS` times, then waits for a person. Modelled as `retry`.
 
-Run it: `bash scripts/tla.sh pool` (TLC 2.19, release v1.7.4) takes about 2 min 20 s on ten cores
-(326,670 distinct states, 1,578,576 generated, depth 32). A fourth task did not
+Also modelled, found by trace validation (below): `Reverify`, a person's `reverify` of a task that waits after its work failed or ran out of time. The dev flow verifies and reviews what the work left, with no worker; the first model had no such step.
+
+Run it: `bash scripts/tla.sh pool` (TLC 2.19, release v1.7.4) takes about 2 min on ten cores
+(326,670 distinct states, 1,728,804 generated, depth 32; 1,578,576 generated before `Reverify`). A fourth task did not
 finish in twenty minutes.
 
 ## `integrate`: the integration queue and the main clone
@@ -159,3 +161,72 @@ Mutation checks: one guard removed in `Integrate.tla`, TLC run, guard restored.
 | the follow is always skipped (the off-branch/dirty branch of `Follow` enabled by `TRUE`) | 2 tasks, `CloneFollowsMerge` | action part of `CloneFollowsMerge` violated | Join, Turn, Claim, Build, Check, Pending, Push, Follow | 573, 10, 4 s |
 | the clone moves (`clone' = ts` replaced by `clone' = clone`) | 2 tasks, only `CloneFollowsMerge` | temporal property violated | Join, Turn, Join, Claim, Withdraw, Turn, Claim, Build, Check, Pending, Push, Follow, Prepare, Record | 3,132, 24, 6 s (the unmutated model passes: 3,132 states) |
 | the clone follows before the push (`Pending` appends the candidate to the clone) | 2 tasks, `CloneNotAhead` | `CloneNotAhead` violated | Join, Turn, Claim, Build, Check, Pending | 1,187, 8, 4 s |
+
+## Trace validation: do real runs fit the models
+
+`scripts/tla-trace.ts` reads `operad history <id> --json` output (a file per
+task, or one history on stdin) and writes `TraceData.tla`: the tasks, their
+repositories and the events of the histories merged by time. It never opens the
+store. `tla/pool/PoolTrace.tla` and `tla/integrate/IntegrateTrace.tla` check
+that the events are a behaviour of `Pool` and of `Integrate`: an event the model
+shows is one step of the model's `Next` on that task, after which the task's
+observed phase is the one the event says; steps the history does not show are
+free between two events, as long as they change no task's observed phase.
+
+```
+operad history operad/T-0417-adr-kernel --json > t0417.json     # one per task
+bun scripts/tla-trace.ts --out /tmp/trace operad/T-0417-adr-kernel=t0417.json ...
+TLA_MAIN=TraceMC TLA_LIB=/tmp/trace bash scripts/tla.sh pool -workers 1 -deadlock | tee /tmp/pool.out
+bun scripts/tla-trace.ts verdict /tmp/pool.out
+```
+
+`<id>` is what `operad history` was given; the part before `/` is the repository.
+`TLA_MAIN=TraceMC` runs `tla/<model>/TraceMC.tla` and `TraceMC.cfg` instead of
+`MC`, `TLA_LIB` is where `TraceData.tla` is, and `-workers 1 -deadlock` is
+needed (a dead end is a branch that took the wrong hidden step; only one worker
+keeps TLC's progress register exact). TLC reports "Invariant NotAllMatched is
+violated" when the model allows the whole history (the accept, with the
+behaviour found); a run that ends with no error means the model stopped, and
+`verdict` reads the `TRACE` lines TLC printed and says at which event
+(`accepted: ...` exits 0, `rejected: ...` exits 3). The events the history
+yields are `start:<step>`, `result:<step>:<result>` (the history's "work done" is
+`result:work:done`), `choose:<action>` and `run:start`, `run:done`,
+`run:cancelled`. Both specs also check the model's safety invariants on the
+way. The trace check needs Java and is run by hand; the script and its test
+(`scripts/test/tla-trace.test.ts`, with two real histories as fixtures) need
+none.
+
+### What the history shows and what is free
+
+| Model | Shown (the observed phase) | Free |
+|---|---|---|
+| `pool` | per task: not started, the work step active (`waiting`, `running` or `retry` are one), review (anything after the work and before the merge), person (the work failed), merged, cancelled; the number of work starts (bounds `attempts`: `MaxAttempts` = the most starts of one task); the order of events across tasks | which worker, `holds`, `used`, `homeUsed`, `want`, `last`, `isFb`, `waits`, `phase` inside the work class: whether a task waited for a worker or ran, a fallback, a retry wait |
+| `integrate` | per task: integrating (queued up to followed), merged, sent back (`idle`), failed (person), cancelled; the number of failures that sent a task back (`MaxVer`); the order across tasks | the queue, the turn, claims and batches, candidates, checks, rounds, the push and the clone, hand pushes (one allowed), crashes (none), local commits (none) |
+
+The instance for a trace is the smallest that is not free: `pool` has one worker
+with one place per repository and no home total; `integrate` has `BatchMax` 2,
+`MaxRound` 2 and one hand push. The history does not tell which worker a task
+used, so `pool` cannot check that two tasks never hold one worker, nor that a
+task waited for the worker another task held: `operad history` does not show the
+wait, which is written to the step's log and the task's row only (`steps.ts`,
+`onPoolEvent`). A task that ends by `result:work:done` with the note "the branch
+already has unchecked work" (no worker ran) is read as a normal run. In
+`integrate` a withdrawal (`Withdraw`) is not a hidden step: a cancel has its own
+event, and without this a failed integration could be explained away as a
+withdrawal.
+
+### Runs checked (the owner's home, 2026-11-13)
+
+| Tasks | Model | Result |
+|---|---|---|
+| `operad-ios/T-0076-chat-bottom-followups` (reworked, work timed out, reverified) with `operad-ios/T-0077-state-colors-followups` | `pool` before `Reverify` | rejected: 7 of 9 events (145 distinct states, depth 19); the next is `result:reverify:ready` of T-0076 (model gap, fixed) |
+| the same | `pool` | accepted; 114 distinct states, depth 13 |
+| the same | `integrate` | accepted; 406 distinct states, depth 20 |
+| `operad/T-0417-adr-kernel`, `T-0418-adr-dev-harness`, `T-0419-adr-chat-channels`, `T-0420-adr-framework-slimming` (P-0049's tasks; T-0418 and T-0420 were reworked, T-0420 failed an integration and went back) | `pool` | accepted; 6,931 distinct states, depth 47 |
+| the same | `integrate` | accepted; 6,367 distinct states, depth 42 |
+
+Mutation check of the trace specs: in `Integrate.tla`, `ReworkOrFail` made to
+always end in `failed` (no rework): the P-0049 trace is rejected, 7 of 10 events,
+the next is `result:integrate:fail` of T-0420 (5,212 distinct states, 12 s).
+In `Pool.tla`, `Reverify` taken out of `Next`: the T-0076 trace is rejected at
+`result:reverify:ready`, as above.
