@@ -53,8 +53,7 @@ and https://operad.io/llms.txt.
    - Leave `autoDefault` at "off": nothing merges without me.
    - Do not invent model names or flags. Leave `args` empty unless I give you some.
 
-5. Register and verify. Run `operad plugin enable pool` (the dev flow needs it), then
-   `operad init` and `operad dev repo add .`. Read every line they print. If a command
+5. Register and verify. Run `operad init` and `operad dev repo add .`. Read every line they print. If a command
    refuses a field, fix the file using the field path in the message and run it again.
    `operad pending` must not show an invalid-settings item for this repo.
 
