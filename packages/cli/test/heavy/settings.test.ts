@@ -116,6 +116,48 @@ describe("operad settings", () => {
     expect((await operad(home, "settings", "set", "demo.limit")).code).toBe(2);
   });
 
+  test("set with a deeper name changes one entry and keeps the others", async () => {
+    const { home, config } = await makeHome();
+    await operad(home, "settings", "set", "demo.items", '{"a":{"size":1},"b":{"size":2}}', "--yes");
+    // a client that read the map earlier changes `a`; `b` was changed by someone else meanwhile
+    const other = await operad(home, "settings", "set", "demo.items.b.size", "7", "--yes");
+    expect(other.code).toBe(0);
+    expect(other.out).toBe("demo.items.b.size = 7\n");
+    const mine = await operad(home, "settings", "set", "demo.items.a", '{"tag":"x"}', "--yes");
+    expect(mine.out).toBe('demo.items.a = {"tag":"x"}\n');
+    expect(JSON.parse(readFileSync(config, "utf8")).plugins.demo.settings.items).toEqual({
+      a: { tag: "x" },
+      b: { size: 7 },
+    });
+    const added = await operad(home, "settings", "set", "demo.items.c.tag", "new", "--yes");
+    expect(added.code).toBe(0);
+    const removed = await operad(home, "settings", "set", "demo.items.a", "null", "--yes");
+    expect(removed.code).toBe(0);
+    expect(JSON.parse(readFileSync(config, "utf8")).plugins.demo.settings.items).toEqual({
+      b: { size: 7 },
+      c: { tag: "new" },
+    });
+  });
+
+  test("set with a deeper name follows the same schema, confirm and editable rules", async () => {
+    const { home, config } = await makeHome();
+    await operad(home, "settings", "set", "demo.items.a.size", "1", "--yes");
+    const before = readFileSync(config, "utf8");
+    const invalid = await operad(home, "settings", "set", "demo.items.a.size", "0", "--yes");
+    expect(invalid.code).toBe(2);
+    expect(invalid.err).toContain("must be at least 1");
+    const unknownField = await operad(home, "settings", "set", "demo.items.a.nope", "1", "--yes");
+    expect(unknownField.code).not.toBe(0);
+    expect(unknownField.err).toContain('no setting "demo.items.a.nope"');
+    const unconfirmed = await operad(home, "settings", "set", "demo.items.a.size", "3");
+    expect(unconfirmed.code).toBe(2);
+    expect(unconfirmed.err).toContain("--yes");
+    // `locked` is not editable, so neither is any entry of it
+    const readOnly = await operad(home, "settings", "set", "demo.locked.k", "v");
+    expect(readOnly.code).not.toBe(0);
+    expect(readFileSync(config, "utf8")).toBe(before);
+  });
+
   test("--repo changes the file under that repository's .operad", async () => {
     const { home, repo, config } = await makeHome();
     const before = readFileSync(config, "utf8");

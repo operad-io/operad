@@ -125,7 +125,16 @@ are required; `value` may be `null`. The answer is the changed entry. A name
 that is not a setting is `404`; a value the schema refuses is `422` with the
 schema's reason; a setting that is read-only, or asks to confirm and does not
 receive `confirmed`, is `409`. A successful change writes the file atomically
-and keeps every other key. `POST /v1/act` also records the caller as `{ "via":
+and keeps every other key.
+
+For a setting that holds a map or an object and is editable (`bot.bots`), `name`
+may go deeper: `bot.bots.<name>` sets one entry and `bot.bots.<name>.<field>`
+one field of it. The server reads the file and writes the entry under the same
+lock, so an entry another client changed meanwhile is kept; a client that wrote
+the whole map would overwrite it, so prefer the deeper name. The value is checked
+against the schema of that entry, and the parent setting's `editable` and
+`confirm` rules apply. A path the schema has no entry for is `404`. A `null`
+value at a deeper name removes the entry or field. `POST /v1/act` also records the caller as `{ "via":
 "<client>", "id": "<token label>" }`; the token label is `operad app` unless the
 secret store names another.
 

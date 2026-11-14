@@ -368,15 +368,35 @@ export async function setSetting(
 ): Promise<SettingInfo> {
   const scope = set.scope ?? GLOBAL_SCOPE;
   let match: { readonly place: Place; readonly leaf: Leaf } | undefined;
+  // A name deeper than an editable setting that holds a map or an object
+  // changes one entry of it: `bot.bots.<name>` or `bot.bots.<name>.<field>`.
+  let deeper: { readonly place: Place; readonly leaf: Leaf; readonly sub: string[] } | undefined;
   for (const place of await places(options, scope)) {
     const prefix = `${place.prefix}.`;
     if (!name.startsWith(prefix)) continue;
     const path = name.slice(prefix.length);
-    const leaf = leaves(place.schema).find((item) => item.path.join(".") === path);
+    const found = leaves(place.schema);
+    const leaf = found.find((item) => item.path.join(".") === path);
     if (leaf !== undefined) {
       match = { place, leaf };
       break;
     }
+    if (deeper === undefined) {
+      const parent = found.find(
+        (item) =>
+          item.schema.editable === true && path.startsWith(`${item.path.join(".")}.`),
+      );
+      if (parent !== undefined) {
+        deeper = {
+          place,
+          leaf: parent,
+          sub: path.slice(parent.path.join(".").length + 1).split("."),
+        };
+      }
+    }
+  }
+  if (match === undefined && deeper !== undefined) {
+    return setEntry(deeper.place, deeper.leaf, deeper.sub, name, value, scope, set);
   }
   if (match === undefined) {
     throw new SettingsError(
@@ -447,6 +467,108 @@ export async function setSetting(
     }
     await writeFileAtomic(place.file, render(file), set.hooks);
 
+    return infoOf(place, leaf, valueAt(file.value, place.inside));
+  });
+}
+
+/** The schema of the entry `sub` names inside a setting, when the schema declares one. */
+function entrySchema(
+  schema: ActionArgSchema,
+  sub: readonly string[],
+): ActionArgSchema | undefined {
+  let node: ActionArgSchema | undefined = schema;
+  for (const key of sub) {
+    if (key.length === 0 || node === undefined) return undefined;
+    const next: ActionArgSchema | undefined = node.properties?.[key];
+    node =
+      next ??
+      (typeof node.additionalProperties === "object" ? node.additionalProperties : undefined);
+  }
+  return node;
+}
+
+function refuseArgs(error: unknown): never {
+  if (error instanceof ActionArgsError) {
+    throw new SettingsError("args", error.message.replace(": args.", ": "), {
+      cause: error,
+    });
+  }
+  throw error;
+}
+
+/**
+ * Changes one entry inside an editable setting, under the same rules as the
+ * setting (editable, confirm, schema). The file is read and written under its
+ * lock, so another entry changed meanwhile is kept. `null` removes the entry.
+ */
+async function setEntry(
+  place: Place,
+  parent: Leaf,
+  sub: readonly string[],
+  name: string,
+  value: unknown,
+  scope: string,
+  set: SetOptions,
+): Promise<SettingInfo> {
+  const schema = entrySchema(parent.schema, sub);
+  if (schema === undefined) {
+    throw new SettingsError(
+      "not-found",
+      scope === GLOBAL_SCOPE
+        ? `no setting "${name}"`
+        : `no setting "${name}" for repository "${scope}"`,
+    );
+  }
+  const remove = value === null;
+  if (!remove) {
+    try {
+      validateSchemaValue(schema, value, name, "value");
+    } catch (error) {
+      refuseArgs(error);
+    }
+  }
+  if (parent.schema.confirm === true && set.confirmed !== true) {
+    throw new SettingsError("confirm", `setting "${name}" needs confirmation`);
+  }
+  const path = [...parent.path, ...sub];
+  const leaf: Leaf = {
+    path,
+    schema: { ...schema, editable: true, confirm: parent.schema.confirm === true },
+  };
+  return withLockFile(`${place.file}.lock`, async () => {
+    const file = await readJsonFile(place.file, place.fresh);
+    if (place.scope === GLOBAL_SCOPE) {
+      const plugins = file.value.plugins;
+      const plugin = place.inside[1] ?? "";
+      if (!isRecord(plugins)) {
+        throw new SettingsError(
+          "args",
+          `${place.file}: plugins must be an object keyed by plugin name to change a setting`,
+        );
+      }
+      const entry = plugins[plugin];
+      if (typeof entry === "string") {
+        plugins[plugin] = { module: entry, enabled: true };
+      } else if (!isRecord(entry)) {
+        throw new SettingsError(
+          "not-found",
+          `${place.file}: plugin "${plugin}" is not listed`,
+        );
+      }
+    }
+    if (remove) {
+      const holder = valueAt(valueAt(file.value, place.inside), path.slice(0, -1));
+      const last = path[path.length - 1];
+      if (isRecord(holder) && last !== undefined) delete holder[last];
+    } else {
+      setAt(file.value, [...place.inside, ...path], value);
+    }
+    try {
+      validateSchemaValue(place.schema, valueAt(file.value, place.inside), name, "settings");
+    } catch (error) {
+      refuseArgs(error);
+    }
+    await writeFileAtomic(place.file, render(file), set.hooks);
     return infoOf(place, leaf, valueAt(file.value, place.inside));
   });
 }

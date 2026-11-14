@@ -841,3 +841,6 @@ the row fields.
 |---|---|---|---|
 | T-0452-M1 | packages/engine/src/plugin/registry.ts | `takeStartedRuns(count)` ignored `count` and drained everything | `takeStartedRuns(count) drains only the oldest requests` |
 | T-0452-M2 | packages/engine/src/platform/sqlite-open.ts | `isBusy` matched only the exact `SQLITE_BUSY` code again | `isBusy recognises only a SQLITE_BUSY error` |
+| T-0456-M1 | packages/engine/src/views/settings.ts | a deeper setting name skipped the parent setting's `confirm` rule | `set with a deeper name follows the same schema, confirm and editable rules` |
+| T-0456-M2 | packages/engine/src/views/settings.ts | a deeper setting name was accepted under a parent that is not editable | `set with a deeper name follows the same schema, confirm and editable rules` |
+| T-0456-M3 | packages/engine/src/views/settings.ts | a `null` value at a deeper name wrote `null` instead of removing the entry | `POST /v1/settings with a deeper name changes one entry and keeps a concurrent change` |
