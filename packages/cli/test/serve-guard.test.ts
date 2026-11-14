@@ -130,10 +130,12 @@ describe("the line an ending serve prints", () => {
       "    at b (/repo/node_modules/dep/index.js:1:1)",
       "    at c (node:internal/process:1:1)",
       "    at d (/repo/packages/engine/src/loop/serve.ts:2:2)",
+      "    at e (/home/u/.bun/install/global/node_modules/@operad-io/engine/src/loop/serve.ts:3:3)",
     ].join("\n");
     expect(ownFrames(error)).toEqual([
       "at a (/repo/packages/cli/src/main.ts:1:1)",
       "at d (/repo/packages/engine/src/loop/serve.ts:2:2)",
+      "at e (/home/u/.bun/install/global/node_modules/@operad-io/engine/src/loop/serve.ts:3:3)",
     ]);
   });
 });

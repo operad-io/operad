@@ -31,7 +31,7 @@ export function isBusy(error: unknown): boolean {
       errno?: unknown;
       cause?: unknown;
     };
-    if (typeof code === "string" && code.startsWith("SQLITE_BUSY")) return true;
+    if (code === "SQLITE_BUSY" || (typeof code === "string" && code.startsWith("SQLITE_BUSY_"))) return true;
     // The primary result code is the low byte of an extended one; 5 is BUSY.
     if (typeof errno === "number" && typeof code === "string" && code.startsWith("SQLITE") && (errno & 0xff) === 5) {
       return true;

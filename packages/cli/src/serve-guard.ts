@@ -20,20 +20,25 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/**
+ * A frame is operad's own when its path is in a source checkout (`/packages/`)
+ * or in an installed operad package (`node_modules/@operad-io/`); other
+ * dependencies and the runtime are not.
+ */
+function isOwnFrame(line: string): boolean {
+  if (line.includes("node:") || line.includes("native")) return false;
+  if (line.includes("/node_modules/@operad-io/")) return true;
+  if (line.includes("node_modules")) return false;
+  return /\/(packages|plugins)\/|operad/.test(line);
+}
+
 /** The first frames of the stack that are operad's own code (not node_modules, not the runtime). */
 export function ownFrames(error: unknown, limit = 5): string[] {
   if (!(error instanceof Error) || error.stack === undefined) return [];
   return error.stack
     .split("\n")
     .map((line) => line.trim())
-    .filter(
-      (line) =>
-        line.startsWith("at ") &&
-        !line.includes("node_modules") &&
-        !line.includes("node:") &&
-        !line.includes("native") &&
-        /\/(packages|plugins)\/|operad/.test(line),
-    )
+    .filter((line) => line.startsWith("at ") && isOwnFrame(line))
     .slice(0, limit);
 }
 
