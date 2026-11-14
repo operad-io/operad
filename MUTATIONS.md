@@ -108,3 +108,5 @@ Each package keeps its mutation checks in `MUTATIONS.md`; a row names the broken
 |---|---|---|---|
 | T-0467-M1 | scripts/test/mutations-append-only.test.ts | `firstMovedLine` always returned undefined, so a deleted, edited or mid-file row passed | `MUTATIONS.md files are append-only > a deleted row fails and names the file and the first missing line` |
 | T-0467-M2 | scripts/check-changed.sh | the named selection no longer added `./scripts/`, so a package change skipped the scripts tests | `check-changed.sh > a change under packages/a/src runs the package's tests and scripts/test` |
+| T-0467-M3 | scripts/check-changed.sh | restored `none) exit 0`, so a selection of none skipped the scripts tests | `check-changed.sh > a selection of none still runs scripts/test and no package's tests` |
+| T-0467-M4 | scripts/run-tests.sh | put `./scripts/` into `names` again, so run-tests.sh looked for it under `packages/` | `check-changed.sh > a change under packages/a/src runs the package's tests and scripts/test` |
