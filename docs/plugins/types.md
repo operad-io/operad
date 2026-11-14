@@ -127,6 +127,7 @@ The types a plugin imports, by the page that explains them. The values these ent
 | `AccessProfile` | An access profile: opaque JSON the kernel hands to steps. Its shape belongs to ADR 0025, not to the kernel. | [settings](settings.md) |
 | `KeyBindings` | A key binding a plugin brings as its default. | [settings](settings.md) |
 | `ProjectSettingsDeclaration` | The project settings a plugin declares. | [settings](settings.md) |
+| `ProjectSettingsContext` | What a project settings file's `check` (the file as it would be written) and `derived` (the file as it is) are given: the repository and the file's JSON object. | [settings](settings.md) |
 | `ProjectSettingsFile` | One settings file under a repository's `.operad/`, with its schema. | [settings](settings.md) |
 | `SettingsRepository` | A repository a plugin has registered. | [settings](settings.md) |
 | `Fact` | A fact as it is stored and read. | [steps](steps.md) |
