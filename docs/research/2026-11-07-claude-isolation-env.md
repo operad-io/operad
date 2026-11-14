@@ -1,6 +1,7 @@
 # Claude Code isolation environment variables (2026-11-07)
 
-Research note for the claude harness item in `docs/backlog/`, decision 4: besides
+Research note for the open part of the claude harness item in
+`docs/backlog/operad-harness-claude.md`, the environment-variable check: besides
 `settingSources: []`, which environment variables keep Claude Code quiet? The
 table below was in the package's spike notes, which T-0266 deleted; this
 note keeps the observation.

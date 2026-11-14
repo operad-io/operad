@@ -1,5 +1,5 @@
 /**
- * Finds the user's installed pi (docs/backlog/operad-harness-pi.md decision 9).
+ * Finds the user's installed pi (ADR 0023 D9).
  * The `pi` command on PATH (or the `command` setting) is resolved to its real
  * path; walking up from there reaches the package directory whose
  * `package.json` is `@earendil-works/pi-coding-agent`, and the file its

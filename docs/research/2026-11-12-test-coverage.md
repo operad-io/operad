@@ -1,6 +1,6 @@
 # Test coverage (2026-11-12)
 
-Measured once for `operad-test-slimming.md` decision 1. This is a
+Measured once for the coverage target in `docs/backlog/operad-test-slimming.md`, which is not in an ADR yet. This is a
 research note: it changes no code, no test and no check.
 
 ## Run

@@ -85,3 +85,9 @@ Each package keeps its mutation checks in `MUTATIONS.md`; a row names the broken
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0417-M1 | scripts/test/adr-snapshot.test.ts | the date rule no longer matched a `YYYY-MM-DD` date (the pattern required an extra character) | `the ADRs are snapshots, not plans > a violation names the file and the line` |
+
+## T-0421 — references to backlog decisions
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0421-M1 | AGENTS.md | put a backlog file name followed by a decision number back in the kernel paragraph, outside `docs/backlog/` | `a backlog decision is cited by its ADR > no file outside docs/backlog cites a backlog decision by number` |

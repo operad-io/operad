@@ -116,7 +116,7 @@ export default definePlugin({
       },
       async load(_ctx, object, sectionId, { cursor, after }) {
         if (sectionId === "info") {
-          // A section written before decision 15: it carries a mark and a tail
+          // A section written before ADR 0019: it carries a mark and a tail
           // but answers every read with the whole page.
           return { markdown: INFO, mark: "info-1", tail: "unfinished" };
         }

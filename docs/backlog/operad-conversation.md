@@ -2,7 +2,7 @@
 
 - 状态：decided（决定已移入 ADR；本文件只留未做的部分、顺序、待决问题和验收）
 - 涉及 ADR：0026、0027、0028、0029、0018、0022、0025
-- 涉及：`operad.md` 决定 12–17；`operad-presentation.md`；`operad-channels.md` 决定 7–15；`operad-harness.md`；`operad-sandbox.md`；`operad-bot.md`；`operad-dev-flows.md` 决定 4
+- 涉及：ADR 0002 D1–D4、ADR 0003 D1–D2、ADR 0032 D1–D8、ADR 0020 D4；`operad-presentation.md`；`operad-harness.md`；`operad-sandbox.md`；`operad-bot.md`
 - 来源：owner 的使用场景；OpenClaw（聊天优先的个人助理）；2026-11-09 的讨论
 
 ## 背景

@@ -5,9 +5,8 @@
 #
 # Light and heavy tests run as separate steps. A heavy test starts a real
 # process, builds a real git repository, opens a port, or holds a lot of memory;
-# it lives under test/heavy/ of its package (decision 8 of
-# docs/backlog/operad-test-slimming.md). The light step leaves those files out
-# and runs in OPERAD_TEST_PARALLEL worker processes (bun test --parallel; a whole
+# it lives under test/heavy/ of its package (ADR 0036 D2). The light step
+# leaves those files out and runs in OPERAD_TEST_PARALLEL worker processes (bun test --parallel; a whole
 # number of 1 or more, default 2: several task checks and an integration check
 # run at once on a 10-core Mac, and 4 made the step limits tests time out). The
 # heavy step runs the heavy directories of the selected packages in

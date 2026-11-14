@@ -1,5 +1,5 @@
 /**
- * The boundary of docs/backlog/operad-open-framework.md decision 5: the dev
+ * The boundary of ADR 0034 D5: the dev
  * plugin's source knows nothing of this repository's conventions, and the
  * engine's source knows no plugin that ships with operad. Like the platform-rule
  * test, it reads the sources.

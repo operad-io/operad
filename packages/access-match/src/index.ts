@@ -22,7 +22,7 @@ export interface AccessGrant {
  * A call a person allowed always, from the access profile's user layer. A
  * command entry is the exact command text and its working directory; a path
  * entry is the tool, the path and the working directory
- * (`operad-sandbox.md` decisions 4 and 11).
+ * (ADR 0025 D3 and D7).
  */
 export interface AlwaysAllowEntry {
   readonly kind: "command" | "path";
@@ -60,7 +60,8 @@ export interface AccessProfile {
   /**
    * The MCP tools that run without asking, as `<server>.<tool>` or `<server>.*`.
    * Having the field at all (even empty) puts MCP tools under the profile: a tool
-   * not listed counts as a write and asks (`operad-sandbox.md` decision 9).
+   * not listed counts as a write and asks (the MCP-tool rule in
+   * `docs/backlog/operad-sandbox.md`, not in an ADR yet).
    */
   readonly allowMcp?: readonly string[] | undefined;
   /** Permissions not yet used; the caller uses one up before it lets a call through. */
@@ -68,7 +69,8 @@ export interface AccessProfile {
   /**
    * Calls a person answered `allow_always` for: they run without asking, and
    * only after every deny passed. The harness leaves them out in a background
-   * run (`operad-sandbox.md` decisions 8 and 11).
+   * run (`docs/backlog/operad-sandbox.md` for the background run; ADR 0025 D7
+   * for the user layer).
    */
   readonly alwaysAllow?: readonly AlwaysAllowEntry[] | undefined;
 }
@@ -487,7 +489,7 @@ function redirectTarget(word: string, next: string | undefined): string | undefi
 /**
  * The ask verdict of a command, when no deny applied. A command that hides what
  * it runs (inline code) cannot be matched, so it asks while `askCommands` is
- * set (`operad-sandbox.md` decision 4).
+ * set (ADR 0025 D3).
  */
 function askBash(profile: AccessProfile, command: string, asked: AskedPaths | undefined, cwd: string, home: string): Verdict {
   const texts = profile.askCommands ?? [];
