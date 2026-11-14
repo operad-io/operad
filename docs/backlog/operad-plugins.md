@@ -1,6 +1,6 @@
 # operad-plugins：插件运行时、SDK、热加载、安全模型
 
-- 状态：种类、启停、热加载、第三方依赖已进 ADR；下面留 SDK 的其余部分
+- 状态：种类、启停、热加载、第三方依赖与按 npm 包名安装已进 ADR；下面留 SDK 的其余部分
 - 涉及 ADR：0011、0012、0010
 - 来源：`operad.md`；`research/2026-11-04-agent-autoloop.md`「协议要点」「插件体系」；`research/2026-11-05-noop.md`「决定、门禁、自治」
 
@@ -12,7 +12,7 @@
 
 ## 决定（已定，还没做，所以留在这里）
 
-2. 插件是 TS 模块，放在固定路径：项目级 `.operad/plugins/` → 用户级 `~/.operad/plugins/` → 内置。项目级只在已信任的项目装载。`operad plugin add <git 地址>` 只 clone，不跑安装脚本。
+2. 插件是 TS 模块，放在固定路径：项目级 `.operad/plugins/` → 用户级 `~/.operad/plugins/` → 内置。项目级只在已信任的项目装载。
 3'. 每种插件一个一致性检查：`operad plugin check <路径>` 起一个临时引擎跑该种类的契约。
 4. SDK 文档以 skill 的形式随 operad 安装，给写插件的 agent 读；插件由 agent 替用户写是预期的主路径。
 5. **生成的步骤默认跑在沙箱里**：只读工作目录以外的文件系统、无网络，除非 graph 明确给。沙箱由 radian 剥出来的壳提供（`operad.md` 待决问题 2）。

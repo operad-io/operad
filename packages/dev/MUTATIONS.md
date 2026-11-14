@@ -1219,3 +1219,26 @@ the row fields.
 |---|---|---|---|
 | T-0460-M5 | packages/dev/src/project-settings.ts | dev checked every dev.json setting, so an invalid flow already in the file blocked an unrelated setting | `dev.flows and dev.flowList in settings > an invalid flow already written does not block an unrelated setting` |
 | T-0460-M6 | packages/dev/src/project-settings.ts | a dev.json that could not be read left `dev.flowList` with no value and no reason | `dev.flows and dev.flowList in settings > a dev.json that cannot be read still lists flows and says why` |
+
+## T-0463 — plan and task creation actions
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0463-M1 | packages/dev/src/create-actions.ts | `dev:plan` dropped the request before it called the command's creation path | `dev:plan and dev:task > over HTTP a plan and a task take their flow, request, brief and after` |
+| T-0463-M2 | packages/dev/src/create-actions.ts | `dev:task` dropped `after` before it called the command's creation path | `dev:plan and dev:task > over HTTP a plan and a task take their flow, request, brief and after` |
+| T-0463-M3 | packages/dev/src/project-flows.ts | `flowNamesOf` no longer moved `default` to the front of the flow list | `dev:plan and dev:task > the schemas list the repository's flows default first and the plan's tasks` |
+| T-0463-M4 | packages/dev/src/create-actions.ts | `dev:plan` stopped asking for confirmation | `dev:plan and dev:task > the plan action asks before it creates` |
+| T-0463-M5 | packages/dev/src/create-actions.ts | the task action's `after` choices were always empty, so a valid `after` was refused by the schema | `dev:plan and dev:task > over HTTP a plan and a task take their flow, request, brief and after` and `dev:plan and dev:task > the schemas list the repository's flows default first and the plan's tasks` |
+| T-0463-M6 | packages/dev/src/model.ts | `slugFromTitle` kept the title's case and punctuation instead of making a slug | `dev:plan and dev:task > over HTTP a plan and a task take their flow, request, brief and after` and `dev:plan and dev:task > a slug left out comes from the title` |
+| T-0463-M7 | packages/dev/src/create-actions.ts | the plan action's `flow` had no `enum`, so an unknown flow reached the run instead of being refused by the schema | `dev:plan and dev:task > the schemas list the repository's flows default first and the plan's tasks` and `dev:plan and dev:task > refusals are the command's: unknown flow, bad slug, cancelled plan` |
+| T-0463-M8 | packages/dev/src/commands.ts | `createPlan` ignored the given slug and always derived one from the title | `dev:plan and dev:task > over HTTP a plan and a task take their flow, request, brief and after` and `dev:plan and dev:task > refusals are the command's: unknown flow, bad slug, cancelled plan` |
+| T-0463-M9 | packages/dev/src/service.ts | `addTask` and `addTaskLocked` no longer refused a cancelled plan | `dev:plan and dev:task > refusals are the command's: unknown flow, bad slug, cancelled plan` |
+| T-0463-M10 | packages/dev/src/model.ts | `validateSlug` stopped refusing a slug with a space and capitals | `dev:plan and dev:task > refusals are the command's: unknown flow, bad slug, cancelled plan` |
+| T-0463-M12 | packages/dev/src/create-actions.ts | the task creation action had no rank, so it sorted before the plan's own actions | `the order of the actions > a confirmed, auto off plan offers dev:auto first`, `... > a confirmed, auto on plan offers dev:priority first`, `... > a paused plan offers dev:auto first`, `... > a finished plan offers dev:priority first` and `... > the views list a confirmed plan's actions in the same order, auto first` |
+| T-0463-M13 | packages/dev/src/create-actions.ts | `dev:plan`'s `when` returned true for a removed repository | `dev:plan and dev:task > a removed repository offers no plan action and creates no plan` |
+## T-0461-flowlist-default-stages — the built-in default lists its stages
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0461-M1 | packages/dev/src/project-flows.ts | `defaultFlowStages` left the check commands and the reviewer args out, so the built-in default listed bare stages | `dev.flows and dev.flowList in settings > the built-in default lists the stages its worker, reviewer and gate give it` |
+| T-0461-M2 | packages/dev/src/project-flows.ts | `listRepositoryFlows` added the built-in default even when `dev.json` defined `default` | `dev.flows and dev.flowList in settings > a dev.json default is listed instead of the built-in one` |

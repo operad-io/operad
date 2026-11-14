@@ -245,3 +245,19 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0460-M10 | packages/cli/src/main.ts | a plugin whose load failed was not cached, so every `GET /v1/plugins` imported it again | `plugins over HTTP > a plugin file that fails to load is not imported on every list` |
+
+## T-0463 — a plain command keeps its name from an action
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0463-M11 | packages/cli/src/main.ts | `commandAction` did not let a plugin command keep a plain name an action also has, so `operad plan add` and `operad task add` ran the new actions instead of the commands | `operad with the dev plugin > the real binary registers and plans; list, show and confirm run in process` and the rest of that file's plan and task command tests |
+## T-0462 — installing a plugin from npm
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0462-M5 | packages/cli/src/main.ts | an invalid npm package name was not refused | `plugin add > refuses a name npm does not allow and a version that is not exact` |
+| T-0462-M6 | packages/cli/src/main.ts | a default export without a plugin declaration was not refused as such | `plugin add > refuses a package that is not an operad plugin` |
+| T-0462-M7 | packages/cli/src/main.ts | the declared name was not checked against the configured plugins | `plugin add > refuses a declared name that a configured plugin already uses` |
+| T-0462-M8 | packages/cli/src/main.ts | the refusal no longer said a package needed its install script | `plugin add > a package whose declaration needs its install script says so` |
+| T-0462-M9 | packages/cli/src/main.ts | the plugin check before the config write was skipped | `plugin add > refuses a plugin declaration the check rejects` |
+| T-0462-M10 | packages/cli/src/main.ts | an HTTP install was accepted without `"confirmed": true` | `plugins over HTTP > installing asks to confirm and writes nothing without it` |

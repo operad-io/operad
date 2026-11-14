@@ -77,7 +77,7 @@ otherwise. An object id in a path is URL-encoded; `<id>` may be the bare id or
 | `GET /v1/objects/<id>/sections/<section>?cursor=<c>&full=<bool>&after=<mark>` | `{ "markdown": "...", "next": "<c>", "mark": "<m>", "tail": "..." }`. `full=true` skips the size cap. `mark` is an opaque position the finished content goes to and `tail` is the Markdown of the part still changing; a plugin that does not use them sends neither. With `after=<mark>` from an earlier read, `markdown` holds only the finished content after that mark; the answer then also carries `delta`: true when it is that part alone, false when the plugin answered with a whole page and a client must replace instead of append. The size cap covers `markdown` and `tail` together but never cuts `tail`: when both do not fit, `markdown` is shortened first; when even the tail and the truncation note do not fit, the call is refused with an over-cap message naming `--full`. A mark from another section or object is refused with `400`. |
 | `POST /v1/act` | Runs one action. The body is `{ "action": "plugin:action", "id": "<id>", "args": {...}, "note": "...", "confirmed": true }`; only `action` is always required, and an action that targets an object also needs `id`. An action with `confirm: true` needs `"confirmed": true`. The body is at most 1 MiB; a larger one gets `413` with `the request body is larger than the 1 MB limit`. An argument the action's schema declares with `"format": "file"` (a string, or a list of strings) takes the `ref` of an upload; the action runs with the path the file is stored at. |
 | `GET /v1/plugins` | `{ "plugins": [{ "name": "dev", "version": "0.4.0", "enabled": true, "origin": "builtin" }] }`: the configured plugins, in config order, with what `operad plugin list` prints. `version` is `null` for a plugin that is off or did not load, where the command line prints `-`. `origin` is `builtin` for a package operad ships and `home` for any other plugin the home's `config.json` names (a path or another package); plugins of a project are not loaded, so there is no third value. |
-| `POST /v1/plugins` | Turns one plugin on or off. The body is `{ "name": "<plugin>", "enabled": true, "confirmed"?: true }`; `name` and `enabled` are required. The answer is `{ "plugin": { ... } }`, the changed entry as above. See [Plugins](#plugins). |
+| `POST /v1/plugins` | Turns one plugin on or off, or installs one from npm. To switch, the body is `{ "name": "<plugin>", "enabled": true, "confirmed"?: true }`; `name` and `enabled` are required. To install, it is `{ "install": "<package>[@version]", "confirmed": true }`; the answer is `{ "plugin": { ... } }`, the new entry turned off. See [Plugins](#plugins). |
 | `GET /v1/settings?scope=<scope>` | Lists the settings a person may tune: `{ "settings": [{ "name", "scope", "value", "default", "description", "type", "enum", "editable", "confirm" }] }`. Without `scope` it lists the global settings and every repository scope; a scope names one repository. A setting that cannot be read in a scope is left out. |
 | `POST /v1/settings` | Changes one setting. The body is `{ "name": "<plugin>.<path>", "value": <any>, "scope"?: "<repo>", "confirmed"?: true }`; `name` and `value` are required, and `value` may be `null`. The answer is the changed setting, the same shape as one entry above. An unknown setting name is `404`; a value the schema refuses is `422` with the reason; a setting that is not editable, or asks to confirm without `confirmed`, is `409`. |
 | `POST /v1/uploads?name=<file name>` | Uploads a file for an action's file argument. The body is the file itself, streamed; its `content-type` header is kept as the file's type. The answer is `201` and `{ "ref", "name", "type", "size" }`. A file larger than 20 MB gets `413` and a message naming the limit. The `ref` works once: the action that takes it moves the file into the target object's attachment directory under the operad home (`attachments/<type>/<id>/`), and a second use is refused with `400`. An upload no action took within an hour is removed. |
@@ -93,6 +93,29 @@ label>" }`; `via` is `http` unless the client named itself, and the token label 
 same way the command line does, and a running `operad serve` carries on the
 steps a waiting run asks for. `POST /v1/answer` records its caller the same way
 and answers with the same rules as the command line and a plugin action.
+
+### Creating a plan and a task
+
+A plan is created on a repository with `dev:plan`; it asks for confirmation.
+A `flow` is one the repository lists in `dev.flowList`, and a missing `slug` is
+taken from the title:
+
+```http
+POST /v1/act
+{"action":"dev:plan","id":"repo:operad","confirmed":true,"args":{"title":"Tighten the checks","slug":"checks","request":"Make the checks finish sooner.","flow":"quick"}}
+```
+
+The answer carries `opens` as `plan:operad/P-0042-checks`. A task is created on
+that plan with `dev:task`; `after` names any tasks of the plan it waits for:
+
+```http
+POST /v1/act
+{"action":"dev:task","id":"plan:operad/P-0042-checks","args":{"title":"Cache the check","brief":"Cache the check result.","flow":"quick","after":["T-0041-warm-cache"]}}
+```
+
+The answer carries `opens` as `task:operad/T-0042-cache-the-check`. Both actions
+run the same code as `operad dev plan add` and `operad dev task add`, so a
+refusal is the command's line, word for word.
 
 ## Reading a section
 
@@ -145,12 +168,14 @@ change `dev` refuses is `422` with `dev`'s own reason, word for word, and
 nothing is written; a client does not repeat the rules. `dev.flowList` is a
 read-only setting whose value lists every flow of the repository, TypeScript
 ones included: `[{ "name", "source": "dev.json" | "typescript" | "built-in",
-"stages"?, "steps"?, "refused"? }]`. A `dev.json` flow carries its `stages`; a
-TypeScript flow carries the `steps` (`id`, `kind`, `use`) `dev` reads when it
-loads the file, or `refused` with `dev`'s reason when the file breaks a rule. A
-TypeScript flow is still saved as a file. When `dev.json` cannot be read at all,
-the list keeps a `dev.json` entry whose `refused` is the reason, beside the
-TypeScript flows and the built-in one.
+"stages"?, "steps"?, "refused"? }]`. A `dev.json` flow and the built-in
+`default` carry their `stages`; the built-in default's stages carry the
+repository's `worker`, `reviewer` and `gate` settings. A TypeScript flow carries
+the `steps` (`id`, `kind`, `use`) `dev` reads when it loads the file, or
+`refused` with `dev`'s reason when the file breaks a rule. A TypeScript flow is
+still saved as a file. When `dev.json` cannot be read at all, the list keeps a
+`dev.json` entry whose `refused` is the reason, beside the TypeScript flows and
+the built-in one.
 
 ## Plugins
 
@@ -164,6 +189,14 @@ TypeScript flows and the built-in one.
 | `409` | `cannot disable "<name>": run "<run>" (<step>) is active`: a run uses one of the plugin's steps, as exit `3` is on the command line. |
 | `409` | A disable without `"confirmed": true`. The command line has no such step; here a tap on a phone could switch off a plugin's commands, actions and automatic work for every client, so the client says it meant it. Turning a plugin on never asks. The run check comes first, so a plugin that is in use gets the run reason, not the confirmation. |
 | `400` | The body lacks a `name`, `enabled` is not true or false, or `confirmed` is not a boolean. |
+
+`POST /v1/plugins` with `{ "install": "<package>[@version]", "confirmed": true }` does what `operad plugin add` does: it installs the package into the home's plugin directory with its install scripts off, runs the check, and adds it to `config.json` turned off. `<package>` is a valid npm name with an exact `@version`, or no version for the latest. The answer is `{ "plugin": { ... } }`, the new entry with `"enabled": false`. Installing needs `"confirmed": true`, because it changes what the home can load and installs code from outside it. The refusals are the command line's, with its words:
+
+| Status | When |
+|---|---|
+| `409` | An install without `"confirmed": true`. |
+| `400` | `install` is not a non-empty package name, or the package name or version is not valid npm syntax. |
+| `422` | The package cannot be installed, its default export is not a plugin declaration, its declared name is already configured, or its entry needs an install script that was not run. |
 
 A change takes effect at the next load, as on the command line: the next `operad` command, or the next `serve` load. The answer shows the new `enabled` at once, but the running `serve` still has the plugin as it loaded it. `serve` watches `config.json`, and after the file has been quiet for a moment it reloads by itself and says so on its own output (`reloading: ...`). There is no field or event that says a reload is due; a client sees the reload as its event stream ending and reconnecting, and then refetches its lists (see [Events](#events)).
 

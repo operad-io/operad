@@ -1,0 +1,255 @@
+import { afterAll, describe, expect, test } from "bun:test";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import {
+  type InstallRunner,
+} from "@operad-io/engine";
+import { main, type CliIo } from "../src/main.ts";
+import { cleanupTempRoots, tempRoot } from "../../engine/test/plugin/support.ts";
+
+afterAll(cleanupTempRoots);
+
+interface Output {
+  readonly io: CliIo;
+  text(): string;
+  errors(): string;
+}
+
+function capture(): Output {
+  let out = "";
+  let err = "";
+  return {
+    io: {
+      write: (text) => {
+        out += text;
+      },
+      error: (text) => {
+        err += text;
+      },
+    },
+    text: () => out,
+    errors: () => err,
+  };
+}
+
+interface FixturePackage {
+  readonly version: string;
+  readonly declaration: string;
+  readonly scripts?: Readonly<Record<string, string>> | undefined;
+}
+
+/** A `bun add` that writes the package a local registry would have put there. */
+function fakeInstall(
+  packages: ReadonlyMap<string, FixturePackage>,
+  calls: { cwd: string; args: readonly string[] }[] = [],
+): InstallRunner {
+  return (cwd, args) => {
+    calls.push({ cwd, args });
+    const target = args[1] ?? "";
+    const at = target.startsWith("@") ? target.indexOf("@", 1) : target.indexOf("@");
+    const name = at > 0 ? target.slice(0, at) : target;
+    const asked = at > 0 ? target.slice(at + 1) : undefined;
+    const fixture = packages.get(name);
+    if (fixture === undefined) {
+      return { exitCode: 1, stdout: "", stderr: `404 ${name} is not found` };
+    }
+    const version = asked ?? fixture.version;
+    const manifestPath = join(cwd, "package.json");
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as {
+      dependencies?: Record<string, string>;
+    };
+    manifest.dependencies = { ...(manifest.dependencies ?? {}), [name]: version };
+    writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+    const directory = join(cwd, "node_modules", name);
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(
+      join(directory, "package.json"),
+      JSON.stringify({
+        name,
+        version,
+        type: "module",
+        exports: { ".": "./index.ts" },
+        ...(fixture.scripts === undefined ? {} : { scripts: fixture.scripts }),
+      }),
+    );
+    writeFileSync(join(directory, "index.ts"), `${fixture.declaration}\n`);
+    return { exitCode: 0, stdout: "", stderr: "" };
+  };
+}
+
+async function makeHome(plugins: Record<string, unknown> = {}): Promise<{
+  readonly root: string;
+  readonly home: string;
+}> {
+  const root = await tempRoot();
+  const home = join(root, "home");
+  mkdirSync(home, { recursive: true });
+  writeFileSync(
+    join(home, "config.json"),
+    JSON.stringify({
+      plugins,
+      store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
+    }),
+  );
+  return { root, home };
+}
+
+function configOf(home: string): {
+  plugins: Record<string, { module: string; enabled: boolean }>;
+} {
+  return JSON.parse(readFileSync(join(home, "config.json"), "utf8")) as {
+    plugins: Record<string, { module: string; enabled: boolean }>;
+  };
+}
+
+const addedDeclaration =
+  'export default { operadPlugin: 1, name: "added", kind: "domain", version: "2.0.0" };';
+
+describe("plugin add", () => {
+  test("installs an npm package, prints it, and leaves it off until enable", async () => {
+    const { home } = await makeHome();
+    const calls: { cwd: string; args: readonly string[] }[] = [];
+    const run = fakeInstall(
+      new Map([["fixture-plugin", { version: "1.2.3", declaration: addedDeclaration }]]),
+      calls,
+    );
+
+    const output = capture();
+    expect(
+      await main(["plugin", "add", "fixture-plugin@1.2.3"], {
+        home,
+        io: output.io,
+        pluginInstall: run,
+      }),
+    ).toBe(0);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.args).toEqual([
+      "add",
+      "fixture-plugin@1.2.3",
+      "--exact",
+      "--ignore-scripts",
+      "--no-summary",
+    ]);
+    expect(output.text()).toContain("installed fixture-plugin@1.2.3 (plugin added 2.0.0)");
+    expect(output.text()).toContain("operad plugin enable added");
+    expect(configOf(home).plugins.added).toEqual({ module: "fixture-plugin", enabled: false });
+
+    const listed = capture();
+    expect(await main(["plugin", "list"], { home, io: listed.io })).toBe(0);
+    expect(listed.text()).toContain("added  -  disabled");
+
+    const enabled = capture();
+    expect(await main(["plugin", "enable", "added"], { home, io: enabled.io })).toBe(0);
+    expect(enabled.text()).toContain("added: enabled");
+    expect(configOf(home).plugins.added?.enabled).toBe(true);
+  });
+
+  test("a package with no version asks for the latest", async () => {
+    const { home } = await makeHome();
+    const run = fakeInstall(
+      new Map([["latest-plugin", { version: "9.9.9", declaration: addedDeclaration }]]),
+    );
+    const output = capture();
+    expect(await main(["plugin", "add", "latest-plugin"], { home, io: output.io, pluginInstall: run })).toBe(0);
+    expect(output.text()).toContain("installed latest-plugin@9.9.9");
+  });
+
+  test("refuses a name npm does not allow and a version that is not exact", async () => {
+    const { home } = await makeHome();
+    const calls: { cwd: string; args: readonly string[] }[] = [];
+    const run = fakeInstall(new Map(), calls);
+    const before = readFileSync(join(home, "config.json"), "utf8");
+
+    for (const [spec, reason] of [
+      ["Not A Name", "not a valid npm package name"],
+      ["fixture-plugin@^1.2.3", "not an exact version"],
+    ] as const) {
+      const output = capture();
+      expect(await main(["plugin", "add", spec], { home, io: output.io, pluginInstall: run })).toBe(2);
+      expect(output.errors()).toContain(reason);
+    }
+    expect(calls).toHaveLength(0);
+    expect(readFileSync(join(home, "config.json"), "utf8")).toBe(before);
+  });
+
+  test("refuses a package that is not an operad plugin", async () => {
+    const { home } = await makeHome();
+    const before = readFileSync(join(home, "config.json"), "utf8");
+    const run = fakeInstall(
+      new Map([
+        [
+          "plain-package",
+          {
+            version: "1.0.0",
+            declaration: 'export default { name: "plain", kind: "domain", version: "1.0.0" };',
+          },
+        ],
+      ]),
+    );
+    const output = capture();
+    expect(await main(["plugin", "add", "plain-package"], { home, io: output.io, pluginInstall: run })).toBe(1);
+    expect(output.errors()).toContain("not an operad plugin");
+    expect(readFileSync(join(home, "config.json"), "utf8")).toBe(before);
+  });
+
+  test("refuses a plugin declaration the check rejects", async () => {
+    const { home } = await makeHome();
+    const before = readFileSync(join(home, "config.json"), "utf8");
+    const run = fakeInstall(
+      new Map([
+        [
+          "bad-kind-package",
+          {
+            version: "1.0.0",
+            declaration:
+              'export default { operadPlugin: 1, name: "bad-kind", kind: "not-a-kind", version: "1.0.0" };',
+          },
+        ],
+      ]),
+    );
+    const output = capture();
+    expect(await main(["plugin", "add", "bad-kind-package"], { home, io: output.io, pluginInstall: run })).toBe(1);
+    expect(output.errors()).toContain("kind");
+    expect(readFileSync(join(home, "config.json"), "utf8")).toBe(before);
+  });
+
+  test("refuses a declared name that a configured plugin already uses", async () => {
+    const { home } = await makeHome({ added: { module: "@operad-io/shell", enabled: false } });
+    const before = readFileSync(join(home, "config.json"), "utf8");
+    const run = fakeInstall(
+      new Map([
+        [
+          "clashing-package",
+          { version: "1.0.0", declaration: addedDeclaration },
+        ],
+      ]),
+    );
+    const output = capture();
+    expect(await main(["plugin", "add", "clashing-package"], { home, io: output.io, pluginInstall: run })).toBe(1);
+    expect(output.errors()).toContain('plugin "added": already configured');
+    expect(output.errors()).toContain("clashes");
+    expect(readFileSync(join(home, "config.json"), "utf8")).toBe(before);
+  });
+
+  test("a package whose declaration needs its install script says so", async () => {
+    const { home } = await makeHome();
+    const run = fakeInstall(
+      new Map([
+        [
+          "needs-script",
+          {
+            version: "1.0.0",
+            declaration: 'export default { name: "needs-script", kind: "domain", version: "1.0.0" };',
+            scripts: { postinstall: "bun run build" },
+          },
+        ],
+      ]),
+    );
+    const output = capture();
+    expect(await main(["plugin", "add", "needs-script"], { home, io: output.io, pluginInstall: run })).toBe(1);
+    expect(output.errors()).toContain("not an operad plugin");
+    expect(output.errors()).toContain("install script");
+    expect(output.errors()).toContain("runs none of the package scripts");
+  });
+});

@@ -2,6 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
+  addPackage,
   ensureInstalledPackage,
   installedPackageFile,
   loadPlugin,
@@ -154,5 +155,145 @@ describe("ensuring a package is installed in the home", () => {
     };
     expect(loaded.name).toBe("fixture");
     expect(existsSync(fixture.file)).toBe(true);
+  });
+});
+
+
+/** Packs a package from a directory into a tarball a test can install without a registry. */
+function packFixture(
+  root: string,
+  options: {
+    readonly name: string;
+    readonly version: string;
+    readonly declaration: string;
+    readonly postinstall?: string | undefined;
+  },
+): string {
+  const directory = join(root, "fixture-package");
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(
+    join(directory, "package.json"),
+    JSON.stringify({
+      name: options.name,
+      version: options.version,
+      type: "module",
+      exports: { ".": "./index.ts" },
+      ...(options.postinstall === undefined
+        ? {}
+        : { scripts: { postinstall: options.postinstall } }),
+    }),
+  );
+  writeFileSync(join(directory, "index.ts"), `${options.declaration}\n`);
+  const destination = join(root, "packs");
+  mkdirSync(destination, { recursive: true });
+  const packed = Bun.spawnSync({
+    cmd: ["bun", "pm", "pack", "--destination", destination, "--quiet"],
+    cwd: directory,
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  if (packed.exitCode !== 0) {
+    throw new Error(`bun pm pack failed: ${packed.stderr.toString()}`);
+  }
+  return packed.stdout.toString().trim();
+}
+
+describe("adding a package to the home project", () => {
+  test("installs a local tarball and runs none of its install script", async () => {
+    const root = await tempRoot();
+    const home = join(root, "home");
+    const tarball = packFixture(root, {
+      name: "@operad-io/add-fixture",
+      version: "1.2.3",
+      declaration: 'export default { operadPlugin: 1, name: "added-fixture", kind: "domain", version: "2.0.0" };',
+      postinstall: "echo ran > postinstall-ran",
+    });
+
+    const added = await addPackage({ home, specifier: `file:${tarball}` });
+
+    expect(added).toMatchObject({
+      name: "@operad-io/add-fixture",
+      version: "1.2.3",
+      hasInstallScript: true,
+    });
+    expect(existsSync(added.file)).toBe(true);
+    expect(
+      existsSync(
+        join(pluginProjectPath(home), "node_modules", "@operad-io/add-fixture", "postinstall-ran"),
+      ),
+    ).toBe(false);
+    const manifest = JSON.parse(readFileSync(pluginProjectManifestPath(home), "utf8")) as {
+      dependencies: Record<string, string>;
+    };
+    expect(manifest.dependencies["@operad-io/add-fixture"]).toContain("file:");
+  });
+
+  test("asks Bun for the exact version, or the latest, with scripts off", async () => {
+    const root = await tempRoot();
+    const fixture = installFixture(root, "@operad-io/add-command-fixture", "3.1.4");
+    const calls: { cwd: string; args: readonly string[] }[] = [];
+    const run = (cwd: string, args: readonly string[]): { exitCode: number; stdout: string; stderr: string } => {
+      calls.push({ cwd, args });
+      return { exitCode: 0, stdout: "", stderr: "" };
+    };
+
+    const exact = await addPackage({
+      home: fixture.home,
+      specifier: fixture.specifier,
+      version: fixture.version,
+      run,
+    });
+    const latest = await addPackage({ home: fixture.home, specifier: fixture.specifier, run });
+
+    expect(exact.version).toBe(fixture.version);
+    expect(latest.version).toBe(fixture.version);
+    expect(calls).toEqual([
+      {
+        cwd: pluginProjectPath(fixture.home),
+        args: [
+          "add",
+          `${fixture.specifier}@${fixture.version}`,
+          "--exact",
+          "--ignore-scripts",
+          "--no-summary",
+        ],
+      },
+      {
+        cwd: pluginProjectPath(fixture.home),
+        args: ["add", fixture.specifier, "--exact", "--ignore-scripts", "--no-summary"],
+      },
+    ]);
+  });
+
+  test("a package whose entry needs its install script says so", async () => {
+    const root = await tempRoot();
+    const directory = join(root, "fixture-package");
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(
+      join(directory, "package.json"),
+      JSON.stringify({
+        name: "@operad-io/needs-script",
+        version: "1.0.0",
+        type: "module",
+        exports: { ".": "./built/index.js" },
+        scripts: { postinstall: "mkdir -p built && echo 'export default {}' > built/index.js" },
+      }),
+    );
+    const destination = join(root, "packs");
+    mkdirSync(destination, { recursive: true });
+    const packed = Bun.spawnSync({
+      cmd: ["bun", "pm", "pack", "--destination", destination, "--quiet"],
+      cwd: directory,
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    expect(packed.exitCode).toBe(0);
+    const tarball = packed.stdout.toString().trim();
+
+    await expect(
+      addPackage({ home: join(root, "home"), specifier: `file:${tarball}` }),
+    ).rejects.toThrow(/install script.*needs one/s);
   });
 });

@@ -877,3 +877,12 @@ the row fields.
 | T-0460-M11 | packages/engine/src/http/server.ts | `POST /v1/plugins` stopped checking that `enabled` is true or false | `plugins over HTTP > a body that is not name and enabled is a 400` (in `packages/cli/test/plugins-http.test.ts`) |
 | T-0460-M12 | packages/engine/src/http/server.ts | `POST /v1/plugins` accepted a method other than GET or POST | `plugins over HTTP > a body that is not name and enabled is a 400` (in `packages/cli/test/plugins-http.test.ts`) |
 | T-0460-M13 | packages/engine/src/views/settings.ts | a project file that could not be read skipped its `derived` hook, so a read-only list it could still explain disappeared | `dev.flows and dev.flowList in settings > a dev.json that cannot be read still lists flows and says why` (in `packages/dev/test/heavy/flows-over-settings.test.ts`) |
+
+## T-0462 — installing a plugin from npm
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0462-M1 | packages/engine/src/plugin/install.ts | `bun add` ran without `--ignore-scripts` | `adding a package to the home project > asks Bun for the exact version, or the latest, with scripts off` |
+| T-0462-M2 | packages/engine/src/plugin/install.ts | the requested exact version was dropped from the package spec | `adding a package to the home project > asks Bun for the exact version, or the latest, with scripts off` |
+| T-0462-M3 | packages/engine/src/config/config.ts | a newly added plugin was written enabled instead of off | `plugin add > installs an npm package, prints it, and leaves it off until enable` |
+| T-0462-M4 | packages/engine/src/http/server.ts | the `install` form was not read, so the endpoint asked for a name instead | `plugins over HTTP > installing answers the new entry turned off, and it stays off until enabled` |

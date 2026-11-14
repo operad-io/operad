@@ -29,6 +29,19 @@ Every step is recorded: `operad history <task>` shows what ran, what a check or 
 
 The keys for each part are in the sections below: [the repository and its workers](#the-repository-and-its-workers), [the gate and its checks](#the-gate-and-its-checks), [work, review, integration and cleanup](#work-review-integration-and-cleanup) and [flows and their stages](#flows-and-their-stages).
 
+## Creating a plan or a task
+
+A client creates a plan with the `dev:plan` action on a repository and a task
+with the `dev:task` action on a plan, the way `dev:chat` creates a chat.
+`dev:plan` takes a `title`, an optional `slug`, the request as its note and a
+`flow` from the repository's flows, with `default` first; it asks for
+confirmation before it creates the plan. `dev:task` takes a `title`, an optional
+`slug`, the brief as its note, the same `flow`, and `after`, any number of that
+plan's tasks. A slug that is left out is taken from the title. Both run the same
+code as `operad dev plan add` and `operad dev task add`, so they validate and
+refuse with the command's own words; the command line keeps creating them with
+those commands.
+
 ## Every `.operad/dev.json` key
 
 A repository's `dev.json` is JSON; the schema is `packages/dev/dev.schema.json`.
@@ -177,15 +190,16 @@ A repository's own flows are explained in [Flows and their stages](#flows-and-th
 A client can read and change these flows without touching the file:
 `operad settings --repo <name>` lists `dev.flowList`, every flow of the
 repository with where it comes from (`dev.json`, `typescript` or `built-in`), its
-stages (a `dev.json` flow) or its steps (a TypeScript flow), or dev's reason when
-it refuses a TypeScript file. When `dev.json` cannot be read at all, the list
-keeps a `dev.json` entry whose `refused` is the reason, beside the TypeScript
-flows and the built-in one. `operad settings set dev.flows.<name> '<flow
-JSON>' --repo <name>` saves one `dev.json` flow (`null` removes it; `dev.flows`
-sets them all). Dev checks the whole file first: its schema, the rules below
-and a name a TypeScript flow in `.operad/flows` also has. A refusal prints dev's
-reason, and the file is unchanged. The same names work over HTTP
-([Settings](http.md#settings)).
+stages (a `dev.json` flow or the built-in `default`, whose stages carry the
+repository's `worker`, `reviewer` and `gate` settings) or its steps (a TypeScript
+flow), or dev's reason when it refuses a TypeScript file. When `dev.json` cannot
+be read at all, the list keeps a `dev.json` entry whose `refused` is the reason,
+beside the TypeScript flows and the built-in one. `operad settings set
+dev.flows.<name> '<flow JSON>' --repo <name>` saves one `dev.json` flow (`null`
+removes it; `dev.flows` sets them all). Dev checks the whole file first: its
+schema, the rules below and a name a TypeScript flow in `.operad/flows` also has.
+A refusal prints dev's reason, and the file is unchanged. The same names work
+over HTTP ([Settings](http.md#settings)).
 
 | Key | Type | Default | Allowed values | When it takes effect | Wrong value |
 |---|---|---|---|---|---|

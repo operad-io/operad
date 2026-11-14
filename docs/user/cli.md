@@ -52,6 +52,7 @@ and `operad help` print the whole table.
 | `operad running` | `--json` | Lists the runs in progress: object, step, step time, title, run age and queued time. Prints `nothing is running` when empty. |
 | `operad flows` | `--json` | Lists the loaded flows, the plugin each belongs to, and why one cannot start. Prints `no flows loaded` when empty. |
 | `operad plugin list` | none | Lists the configured plugins with their version and `enabled` or `disabled`. |
+| `operad plugin add <package>` | none | Installs an npm plugin into the home's plugin directory with its install scripts off. `<package>` is a valid npm name with an exact `@version`, or no version for the latest. Runs the same check as `operad plugin check`, then adds it to `config.json` turned off. Prints the package, its version, the plugin's declared name and version, and the `operad plugin enable` line. Refuses a name npm does not allow, a version that is not exact, a package that is not an operad plugin, and a declared name a configured plugin already uses. |
 | `operad plugin enable <name>` | none | Enables a plugin at the next command; a shipped plugin that is not in the config is added. Prints `<name>: enabled`. |
 | `operad plugin disable <name>` | none | Disables a plugin at the next command. Refuses with exit `3` while a run uses one of its steps. Prints `<name>: disabled`. |
 | `operad plugin check <path>` | none | Loads a plugin declaration without starting a run. Prints `<name>: ok` or the problem; exit `1` on a problem. |
@@ -83,7 +84,7 @@ and `operad help` print the whole table.
 | `operad bot mcp <bot> <name> [<command> [args…]]` | none of its own; the command's words are the server's | Proposes a local MCP server after reading its tools. With no command, reads a pasted `mcpServers` entry from stdin. |
 | `operad bot setting <bot>` | none | Proposes a settings change for one bot from JSON on stdin; a person approves it. |
 
-A client of `serve` does the same over HTTP with `GET /v1/plugins` and `POST /v1/plugins`; see [Plugins](http.md#plugins).
+A client of `serve` does the same over HTTP with `GET /v1/plugins` and `POST /v1/plugins`, including installing with the `"install"` form; see [Plugins](http.md#plugins).
 
 ## Options
 

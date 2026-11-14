@@ -32,6 +32,8 @@ export interface PluginSwitchOptions {
  */
 export interface PluginAdmin {
   list(): Promise<readonly PluginInfo[]>;
+  /** Installs `<package>[@version]` and adds it turned off; it needs the confirmation. */
+  install(specifier: string, options: PluginSwitchOptions): Promise<PluginInfo>;
   /** Writes `plugins.<name>.enabled` in `config.json`; it takes effect at the next load. */
   set(name: string, enabled: boolean, options: PluginSwitchOptions): Promise<PluginInfo>;
 }
