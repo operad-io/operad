@@ -5,6 +5,26 @@ All notable changes to operad are written here. The format follows
 [Semantic Versioning](https://semver.org/). Every `@operad-io` package carries
 the same version.
 
+## [0.1.1] - 2026-11-14
+
+### Fixed
+
+- `operad init` now installs `pool`, which `dev` needs to run workers. Without
+  it no task started.
+- The README quickstart now starts the task: a new plan's auto level is off, so
+  it runs `operad dev:auto <plan> --level run`.
+- Two commands in the user manual were wrong: `operad show <id> --section` and
+  `operad chat:model`.
+
+### Changed
+
+- A worker's fallback no longer takes over when the harness step fails with an
+  error. It is used only when the model is unavailable, the quota is used up, or
+  the harness cannot start.
+- The docs write the dev commands with the dev prefix (`operad dev repo add`,
+  `operad dev plan add`, `operad dev task add`), and the message for a missing
+  repository says `operad dev repo add <path>`.
+
 ## [0.1.0] - 2026-11-13
 
 The first public release. Install it with `bun add -g @operad-io/cli`; it needs
@@ -105,4 +125,5 @@ The first public release. Install it with `bun add -g @operad-io/cli`; it needs
   `operad http token rotate` replaces it. The app itself is not in this
   repository.
 
+[0.1.1]: https://github.com/operad-io/operad/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/operad-io/operad/releases/tag/v0.1.0
