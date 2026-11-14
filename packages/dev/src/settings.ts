@@ -47,8 +47,68 @@ export const DEV_SETTINGS_SCHEMA = "https://operad.io/schemas/dev.schema.json";
 /** The default location of a repository's worker brief. */
 export const WORKER_BRIEF_FILE = ".operad/worker-brief.md";
 
-/** The harness step a repository uses when it names none. */
+/** The harness step a repository uses when it names none and the home enables none. */
 export const DEFAULT_WORKER_USE = "radian/agent";
+
+/** The harness order a repository with no worker settings chooses from. */
+export const DEFAULT_HARNESS_ORDER: readonly string[] = ["radian", "claude", "pi", "codex"];
+
+/** The harness a plugin entry names, whether by its key or by its package. */
+function harnessPlugin(name: string | undefined, module: unknown): string | undefined {
+  for (const harness of DEFAULT_HARNESS_ORDER) {
+    if (name === harness) return harness;
+    if (typeof module !== "string") continue;
+    if (
+      module === `@operad-io/harness-${harness}` ||
+      module.endsWith(`/harness-${harness}`) ||
+      module.endsWith(`/harness/${harness}/src/index.ts`)
+    ) {
+      return harness;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * The first enabled harness in the home's `config.json`, in `DEFAULT_HARNESS_ORDER`.
+ * A missing or unreadable file keeps the old radian default.
+ */
+export function defaultAgentUse(home: string = defaultOperadHome()): string {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(readFileSync(join(home, "config.json"), "utf8"));
+  } catch {
+    return DEFAULT_WORKER_USE;
+  }
+  if (!isRecord(raw)) return DEFAULT_WORKER_USE;
+  const plugins = raw.plugins;
+  const enabled = new Set<string>();
+  if (Array.isArray(plugins)) {
+    for (const entry of plugins) {
+      if (typeof entry === "string") {
+        const found = harnessPlugin(undefined, entry);
+        if (found !== undefined) enabled.add(found);
+        continue;
+      }
+      const record = isRecord(entry) ? entry : undefined;
+      if (record?.enabled === false) continue;
+      const name = typeof record?.name === "string" ? record.name : undefined;
+      const module = record?.module;
+      const found = harnessPlugin(name, module) ?? harnessPlugin(undefined, module);
+      if (found !== undefined) enabled.add(found);
+    }
+  } else if (isRecord(plugins)) {
+    for (const [name, entry] of Object.entries(plugins)) {
+      const record = isRecord(entry) ? entry : undefined;
+      if (record?.enabled === false) continue;
+      const module = typeof entry === "string" ? entry : record?.module;
+      const found = harnessPlugin(name, module) ?? harnessPlugin(undefined, module);
+      if (found !== undefined) enabled.add(found);
+    }
+  }
+  const first = DEFAULT_HARNESS_ORDER.find((name) => enabled.has(name));
+  return first === undefined ? DEFAULT_WORKER_USE : `${first}/agent`;
+}
 
 /** How long a review waits before it runs again after a model was unavailable. */
 export const DEFAULT_REVIEWER_RETRY_SECS = 120;
@@ -338,6 +398,17 @@ export const DEFAULT_DEV_SETTINGS: DevSettings = {
   flows: {},
 };
 
+/** The defaults when the home enables `agentUse` instead of radian. */
+export function defaultDevSettings(agentUse: string = defaultAgentUse()): DevSettings {
+  if (agentUse === DEFAULT_WORKER_USE) return DEFAULT_DEV_SETTINGS;
+  return {
+    ...DEFAULT_DEV_SETTINGS,
+    worker: { use: agentUse, args: [] },
+    workers: legacyWorkers({ use: agentUse, args: [] }, DEFAULT_DEV_SETTINGS.concurrency),
+    reviewer: { ...DEFAULT_DEV_SETTINGS.reviewer, use: agentUse },
+  };
+}
+
 const KNOWN_FIELDS = new Set([
   "$schema",
   "name",
@@ -460,7 +531,7 @@ function settingsStringList(value: unknown, field: string): readonly string[] {
   });
 }
 
-function workerSettings(value: unknown, field: string): WorkerSettings {
+function workerSettings(value: unknown, field: string, defaultUse: string): WorkerSettings {
   if (!isRecord(value)) {
     throw new DevError(field, "must be an object");
   }
@@ -471,7 +542,7 @@ function workerSettings(value: unknown, field: string): WorkerSettings {
   }
   const use =
     value.use === undefined
-      ? DEFAULT_DEV_SETTINGS.worker.use
+      ? defaultUse
       : nonEmptyString(value.use, `${field}.use`);
   const args =
     value.args === undefined
@@ -799,7 +870,7 @@ function reviewerFirst(value: unknown, field: string): ReviewerFirst {
   };
 }
 
-function reviewerSettings(value: unknown, field: string): ReviewerSettings {
+function reviewerSettings(value: unknown, field: string, defaultUse: string): ReviewerSettings {
   if (!isRecord(value)) {
     throw new DevError(field, "must be an object");
   }
@@ -836,7 +907,7 @@ function reviewerSettings(value: unknown, field: string): ReviewerSettings {
   return {
     use:
       value.use === undefined
-        ? DEFAULT_DEV_SETTINGS.reviewer.use
+        ? defaultUse
         : nonEmptyString(value.use, `${field}.use`),
     args:
       value.args === undefined
@@ -961,6 +1032,7 @@ function firstWorker(workers: ParsedWorkers): WorkerSettings {
 function workerSettingsOf(
   value: Readonly<Record<string, unknown>>,
   concurrency: number,
+  defaults: DevSettings,
 ): { readonly worker: WorkerSettings; readonly workers: ParsedWorkers } {
   if (value.workers === undefined) {
     if (value.pools !== undefined) {
@@ -968,8 +1040,8 @@ function workerSettingsOf(
     }
     const worker =
       value.worker === undefined
-        ? DEFAULT_DEV_SETTINGS.worker
-        : workerSettings(value.worker, "worker");
+        ? defaults.worker
+        : workerSettings(value.worker, "worker", defaults.worker.use);
     return { worker, workers: legacyWorkers(worker, concurrency) };
   }
   if (value.worker !== undefined) {
@@ -1203,7 +1275,10 @@ function flowsOf(
 /**
  * Validates one parsed dev.json value and fills the defaults.
  */
-export function validateDevSettings(value: unknown): DevSettings {
+export function validateDevSettings(
+  value: unknown,
+  defaults: DevSettings = defaultDevSettings(),
+): DevSettings {
   if (!isRecord(value)) {
     throw new DevError("dev.json", "must be a JSON object");
   }
@@ -1215,9 +1290,9 @@ export function validateDevSettings(value: unknown): DevSettings {
   const worktreeRoot = worktreeRootOf(value);
   const concurrency =
     value.concurrency === undefined
-      ? DEFAULT_DEV_SETTINGS.concurrency
+      ? defaults.concurrency
       : positiveInteger(value.concurrency, "concurrency");
-  const { worker, workers } = workerSettingsOf(value, concurrency);
+  const { worker, workers } = workerSettingsOf(value, concurrency, defaults);
   return {
     ...(value.name === undefined
       ? {}
@@ -1257,8 +1332,8 @@ export function validateDevSettings(value: unknown): DevSettings {
         : workSettings(value.work, "work"),
     reviewer:
       value.reviewer === undefined
-        ? DEFAULT_DEV_SETTINGS.reviewer
-        : reviewerSettings(value.reviewer, "reviewer"),
+        ? defaults.reviewer
+        : reviewerSettings(value.reviewer, "reviewer", defaults.reviewer.use),
     integration:
       value.integration === undefined
         ? DEFAULT_DEV_SETTINGS.integration
@@ -1339,7 +1414,7 @@ function readSettingsNow(repositoryPath: string): ReadSettings {
       resolve(repositoryPath, DEFAULT_DEV_SETTINGS.worktreeRoot),
       "worktreeRoot",
     );
-    return { settings: DEFAULT_DEV_SETTINGS, text: "" };
+    return { settings: defaultDevSettings(), text: "" };
   }
   let text: string;
   try {
@@ -1415,7 +1490,7 @@ function readDefaults(repositoryPath: string): ReadSettings {
     resolve(repositoryPath, DEFAULT_DEV_SETTINGS.worktreeRoot),
     "worktreeRoot",
   );
-  return { settings: DEFAULT_DEV_SETTINGS, text: "" };
+  return { settings: defaultDevSettings(), text: "" };
 }
 
 /**

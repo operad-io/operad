@@ -483,7 +483,6 @@ function writeSettings(repositoryPath: string, name: string): void {
         mainBranch: DEFAULT_DEV_SETTINGS.mainBranch,
         worktreeRoot: DEFAULT_DEV_SETTINGS.worktreeRoot,
         concurrency: DEFAULT_DEV_SETTINGS.concurrency,
-        worker: DEFAULT_DEV_SETTINGS.worker,
         workerBrief: DEFAULT_DEV_SETTINGS.workerBrief,
       },
       null,

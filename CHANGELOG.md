@@ -5,6 +5,21 @@ All notable changes to operad are written here. The format follows
 [Semantic Versioning](https://semver.org/). Every `@operad-io` package carries
 the same version.
 
+## [Unreleased]
+
+### Fixed
+
+- `operad init` now enables `radian`, `claude` and `pi` for the agent commands
+  it finds on `PATH` when it creates a home. With none found it keeps `radian`
+  and fails with a message naming the three agents and how to install one. A
+  new home with `claude` installs `@operad-io/harness-claude` and its SDK.
+- A repository whose `.operad/dev.json` writes no `worker` or `workers`, and no
+  `reviewer.use`, now uses the first harness enabled in the home, in the order
+  `radian`, `claude`, `pi`, `codex`, instead of always `radian/agent`. A new
+  `.operad/dev.json` written by `operad dev repo add` leaves the worker out.
+- `codex` is still off until `operad plugin enable codex`; `init` does not look
+  for `codex-acp`.
+
 ## [0.1.1] - 2026-11-14
 
 ### Fixed
@@ -132,5 +147,6 @@ The first public release. Install it with `bun add -g @operad-io/cli`; it needs
   `operad http token rotate` replaces it. The app itself is not in this
   repository.
 
+[Unreleased]: https://github.com/operad-io/operad/compare/v0.1.1...HEAD
 [0.1.1]: https://github.com/operad-io/operad/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/operad-io/operad/releases/tag/v0.1.0

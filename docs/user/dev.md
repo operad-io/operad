@@ -38,6 +38,11 @@ stay in force and `operad pending` shows one item for the repository (see
 [When `dev.json` is not valid](#when-devjson-is-not-valid)). A wrong value is
 refused with the field path in front, such as `workers.claude.fallback: ...`.
 
+A file that writes neither `worker` nor `workers` uses one worker whose `use` is
+the first harness enabled in the home's `config.json`, in the order `radian`,
+`claude`, `pi`, `codex`; a file that leaves out `reviewer.use` uses the same
+harness. With no enabled harness both are `radian/agent`.
+
 ### The repository and its workers
 
 | Key | Type | Default | Allowed values | When it takes effect | Wrong value |
@@ -50,8 +55,8 @@ refused with the field path in front, such as `workers.claude.fallback: ...`.
 | `dev.worktrees` | string | unset | the old name of `worktreeRoot`; read when `worktreeRoot` is absent | When the file is read | Refused with the same two messages, naming `worktrees` |
 | `dev.concurrency` | integer | unset: each pool's counts alone set its cap | `1` or more | On the next scheduler pass; running tasks are not stopped | Refused: `concurrency: must be a positive integer` |
 | `dev.sandbox` | string | unset | any string; kept so older files still validate | Never; the value is ignored | Ignored |
-| `dev.worker` | object | `{ "use": "radian/agent", "args": [] }` when neither `worker` nor `workers` is written | the keys below; not allowed together with `workers` | When the file is read | Refused: `worker: cannot be set together with workers; use one or the other` |
-| `dev.worker.use` | string | `"radian/agent"` | a step name `<plugin>/<step>` | When the worker step starts | Refused: `worker.use: must be a non-empty string` |
+| `dev.worker` | object | `{ "use": <first enabled harness>, "args": [] }` when neither `worker` nor `workers` is written | the keys below; not allowed together with `workers` | When the file is read | Refused: `worker: cannot be set together with workers; use one or the other` |
+| `dev.worker.use` | string | the first enabled harness in the home (`radian/agent` when none is enabled) | a step name `<plugin>/<step>` | When the worker step starts | Refused: `worker.use: must be a non-empty string` |
 | `dev.worker.args` | array of strings | `[]` | arguments for that step | When the worker step starts | Refused: `worker.args: must be an array of strings` |
 | `dev.worker.wallTimeSecs` | number | unset | above `0` | When the worker step starts | Refused: `worker.wallTimeSecs: must be a positive number of seconds` |
 | `dev.worker.stallSecs` | number | unset | above `0` | When the worker step starts | Refused: `worker.stallSecs: must be a positive number of seconds` |
@@ -135,7 +140,7 @@ alone, is handled as before.
 | `dev.work` | object | `{ "wrapUpAt": 0.85 }` | the key below | When a work step starts | Refused: `work: must be an object` or `work.<key>: is not a work setting` |
 | `dev.work.wrapUpAt` | number | `0.85` | above `0` and below `1` | When the work step reaches that share of its time limit | Refused: `work.wrapUpAt: must be a number above 0 and below 1` |
 | `dev.reviewer` | object | the reviewer defaults below | the keys below | When a review step starts | Refused: `reviewer: must be an object` or `reviewer.<key>: is not a reviewer setting` |
-| `dev.reviewer.use` | string | `"radian/agent"` | a step name `<plugin>/<step>` | When a review starts | Refused: `reviewer.use: must be a non-empty string` |
+| `dev.reviewer.use` | string | the first enabled harness in the home (`radian/agent` when none is enabled) | a step name `<plugin>/<step>` | When a review starts | Refused: `reviewer.use: must be a non-empty string` |
 | `dev.reviewer.args` | array of strings | `[]` | arguments for that step | When a review starts | Refused: `reviewer.args: must be an array of strings` |
 | `dev.reviewer.firstArgs` | array of strings | unset | arguments for the first review of an attempt | When the first review of an attempt starts | Refused: `reviewer.firstArgs: must be an array of strings` |
 | `dev.reviewer.first` | object | unset | the keys below; a set value replaces the reviewer's own for the first review | When the first review of an attempt starts | Refused: `reviewer.first: must be an object` or `reviewer.first.<key>: is not a first review setting` |
@@ -381,7 +386,7 @@ The four differ in these ways:
 
 - `claude`: runs your own `claude` through the Claude Agent SDK, with the login `claude` already has. A step is one foreground turn.
 - `pi`: finds the pi library you installed from the `pi` on `PATH` and loads it in a child process. It needs a pi of version 1.5.0 or newer.
-- `radian`: runs `radian exec` in the directory. radian cannot let through a one-time permission, so a profile that carries one is refused for it. It is the default `dev.reviewer.use`.
+- `radian`: runs `radian exec` in the directory. radian cannot let through a one-time permission, so a profile that carries one is refused for it. It is the fallback default when the home enables no harness.
 - `codex`: starts your `codex-acp` and talks to it over ACP, with your Codex login. It is off until `operad plugin enable codex`. Codex's own sandbox stays on and limits writes to the worktree, and the access profile is asked only about what leaves the sandbox. A subscription login gives no cost, so `costMicros` is `null`.
 
 The time limits and the per-model limit are in the sections that follow.
@@ -455,8 +460,8 @@ the `codex` section of `config.json`:
 
 ### The `pi` settings
 
-`pi` runs the pi coding agent instead of radian. It is not in the default
-config: turn it on with `operad plugin enable pi`.
+`pi` runs the pi coding agent instead of radian. A new home enables it when
+`pi` is on `PATH`; enable it later with `operad plugin enable pi`.
 
 **Install pi.** operad does not bring its own pi: it uses the one you installed,
 with bun (`bun add -g @earendil-works/pi-coding-agent`) or npm
@@ -516,15 +521,16 @@ The step's results and the model-error rules are in
 
 ### The `claude` settings
 
-`claude` runs `claude`, Anthropic's coding agent, instead of radian. It is not in
-the default config: turn it on with `operad plugin enable claude`.
+`claude` runs `claude`, Anthropic's coding agent, instead of radian. A new home
+enables it when `claude` is on `PATH`; enable it later with
+`operad plugin enable claude`.
 
 Outside a workspace checkout, enabling installs `@operad-io/harness-claude` and
 the Agent SDK client it needs into a Bun project under `~/.operad/plugins`,
-skipping the SDK's optional platform packages. It does not install `claude`
-itself. The first enable needs network access to the npm registry. When the
-package is not installed, `operad plugin check claude` names the command that
-installs it.
+skipping the SDK's optional platform packages; `operad init` does this when it
+creates a home with `claude` enabled. It does not install `claude` itself. The
+first enable needs network access to the npm registry. When the package is not
+installed, `operad plugin check claude` names the command that installs it.
 
 **Install claude and log in.** operad does not bring its own claude: it uses the
 one you installed (see https://code.claude.com), so a `claude` command must be on
@@ -687,8 +693,8 @@ that picks a worker with room, runs that worker's harness step and hands the
 result back. A flow that uses it (the `dev` flow does) describes its workers;
 the home says how many runs one harness may have in all.
 
-The plugin is shipped but not installed by `operad init`; `operad plugin enable
-pool` adds it.
+`operad init` installs the plugin; a home made before that needs
+`operad plugin enable pool`.
 
 ### Home: `settings.harnesses`
 
