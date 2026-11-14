@@ -16,6 +16,9 @@ export const DEFAULT_CLAUDE_COMMAND = "claude";
 /** How long `claude --version` or `claude auth status` may take. */
 const PROBE_TIMEOUT_MS = 30_000;
 
+/** How long `claude auth status` may take when a client asks for the login state. */
+export const SIGNED_IN_PROBE_TIMEOUT_MS = 10_000;
+
 /** The check could not pass; the message says what to do. */
 export class ClaudeInstallError extends Error {
   constructor(message: string) {
@@ -113,6 +116,76 @@ function loginKind(stdout: string): string | undefined {
     (part): part is string => part !== undefined,
   );
   return extra.length === 0 ? method : `${method} (${extra.join(", ")})`;
+}
+
+/**
+ * The `loggedIn` answer of `claude auth status`, when the output carries a
+ * boolean; undefined when it cannot be read. Only this field is read.
+ */
+function loggedInOf(stdout: string): boolean | undefined {
+  let value: unknown;
+  try {
+    value = JSON.parse(stdout);
+  } catch {
+    return undefined;
+  }
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  const answer = Reflect.get(value, "loggedIn");
+  return typeof answer === "boolean" ? answer : undefined;
+}
+
+interface AsyncRan {
+  readonly exitCode: number | null;
+  readonly stdout: string;
+}
+
+/** Runs `claude` without blocking the event loop, and gives up after the timeout. */
+async function runClaudeAsync(path: string, args: readonly string[]): Promise<AsyncRan | undefined> {
+  const signal = AbortSignal.timeout(SIGNED_IN_PROBE_TIMEOUT_MS);
+  let child: ReturnType<typeof Bun.spawn>;
+  try {
+    child = Bun.spawn([path, ...args], {
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "ignore",
+      signal,
+    });
+  } catch {
+    return undefined;
+  }
+  try {
+    const stream = child.stdout;
+    if (!(stream instanceof ReadableStream)) return undefined;
+    const [stdout, exitCode] = await Promise.all([
+      new Response(stream).text(),
+      child.exited,
+    ]);
+    return signal.aborted ? undefined : { exitCode, stdout };
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Whether the user's claude is signed in, from `claude auth status`: true or
+ * false when that answer can be read, undefined when there is no claude or the
+ * answer is not usable. It never blocks the event loop and reads no account
+ * detail, only `loggedIn`.
+ */
+export async function claudeSignedIn(command: string | undefined): Promise<boolean | undefined> {
+  let path: string;
+  try {
+    path = findClaude(command);
+  } catch {
+    return undefined;
+  }
+  const ran = await runClaudeAsync(path, ["auth", "status"]);
+  if (ran === undefined) return undefined;
+  const loggedIn = loggedInOf(ran.stdout);
+  if (loggedIn === undefined) return undefined;
+  // A failing exit with `loggedIn: true` contradicts itself; do not guess.
+  if (ran.exitCode !== 0 && loggedIn) return undefined;
+  return loggedIn;
 }
 
 /**

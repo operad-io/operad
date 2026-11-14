@@ -270,3 +270,8 @@ the row fields.
 | T-0470-M2 | packages/cli/src/main.ts | a version that is not exact was accepted | `plugin add > refuses a version that is not exact` |
 | T-0470-M3 | packages/cli/src/main.ts | npm names were limited to lowercase without a leading dot or underscore | `plugin add > accepts a legacy npm name with capitals or a leading dot or underscore` |
 | T-0470-M6 | packages/cli/src/main.ts | a refusal removed a package the home project already named instead of putting its previous dependency back | `plugin add > a refused add leaves a package the project already had` |
+## T-0465 — a harness reports whether its agent is signed in
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0465-M2 | packages/cli/src/main.ts | the plugin list no longer asked the registry for a harness's `signedIn`, so `/v1/plugins` left the field out | `plugins over HTTP > GET /v1/plugins carries a harness's signedIn answer, and leaves it out when it cannot tell` |

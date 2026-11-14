@@ -7,7 +7,8 @@
 
 import pkg from "../package.json" with { type: "json" };
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
+import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { mapRadianCall } from "./refusal.ts";
 export { radianRefusal } from "./refusal.ts";
@@ -199,6 +200,8 @@ export function radianModel(args: unknown): string | undefined {
 export interface RadianHarnessSettings {
   /** The command name or path; defaults to `radian`. */
   readonly command?: string | undefined;
+  /** The credentials file; defaults to `$RADIAN_HOME/credentials/auth.json` or `~/.radian/credentials/auth.json`. */
+  readonly authPath?: string | undefined;
   /** The default wall-time limit in seconds. */
   readonly wallTimeSecs?: number | undefined;
   /** The default stall limit in seconds. */
@@ -206,6 +209,51 @@ export interface RadianHarnessSettings {
   readonly clock?: Clock | undefined;
   /** Milliseconds now, for tool call start times and durations; a test injects it. */
   readonly now?: (() => number) | undefined;
+}
+
+/** The credentials file radian's own login writes. */
+export function defaultRadianAuthPath(): string {
+  const home = process.env.RADIAN_HOME;
+  return home !== undefined && home.length > 0
+    ? join(home, "credentials", "auth.json")
+    : join(homedir(), ".radian", "credentials", "auth.json");
+}
+
+function isMissingFile(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === "ENOENT"
+  );
+}
+
+/** A credential is any object stored under a provider; its fields are never read. */
+function hasCredential(auth: unknown): boolean {
+  return isRecord(auth) && Object.values(auth).some((value) => isRecord(value));
+}
+
+/**
+ * Whether radian's auth file holds a credential. The file is parsed but no
+ * credential field is read, kept or returned; a missing file means no
+ * credential (false), and an unreadable or malformed one means it cannot tell
+ * (undefined).
+ */
+async function radianSignedIn(authPath: string): Promise<boolean | undefined> {
+  let text: string;
+  try {
+    text = await readFile(authPath, "utf8");
+  } catch (error) {
+    return isMissingFile(error) ? false : undefined;
+  }
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+  if (!isRecord(value)) return undefined;
+  return hasCredential(value);
 }
 
 interface ResolvedSettings {
@@ -498,6 +546,7 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
     clock: settings.clock ?? systemClock,
     now: settings.now ?? Date.now,
   };
+  const authPath = settings.authPath ?? defaultRadianAuthPath();
 
   const promptFlow = defineFlow({
     name: "radian:prompt",
@@ -527,6 +576,7 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
     version: pkg.version,
     models: RADIAN_MODELS,
     efforts: RADIAN_EFFORTS,
+    signedIn: (_settings: Readonly<Record<string, unknown>>) => radianSignedIn(authPath),
     settings: PLUGIN_SETTINGS,
     steps: [
       {
