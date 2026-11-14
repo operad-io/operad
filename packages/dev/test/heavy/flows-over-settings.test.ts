@@ -115,7 +115,8 @@ describe("dev.flows and dev.flowList in settings", () => {
     const { options } = await setup({ flows: { review: GOOD } });
     const list = await flowList(options);
     const byName = new Map(list.map((item) => [item.name, item]));
-    expect(byName.get("default")).toEqual({ name: "default", source: "built-in" });
+    expect(byName.get("default")?.source).toBe("built-in");
+    expect(byName.get("default")?.stages).toHaveLength(4);
     expect(byName.get("review")?.source).toBe("dev.json");
     expect(byName.get("review")?.stages).toEqual(GOOD.stages);
     const ts = byName.get("ts");
@@ -131,6 +132,31 @@ describe("dev.flows and dev.flowList in settings", () => {
     expect((await refusal(setSetting(options, "dev.flowList", [], { scope: "repo" }))).kind).toBe(
       "not-available",
     );
+  });
+
+  test("the built-in default lists the stages its worker, reviewer and gate give it", async () => {
+    const { options } = await setup({
+      worker: { use: "claude/agent", args: ["--model", "opus"] },
+      reviewer: { use: "pi/agent", args: ["--model", "gpt"] },
+      gate: { commands: ["bun test"] },
+    });
+    const built = (await flowList(options)).find((item) => item.name === "default");
+    expect(built).toEqual({
+      name: "default",
+      source: "built-in",
+      stages: [
+        { stage: "work", use: "claude/agent", args: ["--model", "opus"] },
+        { stage: "check", commands: ["bun test"] },
+        { stage: "review", use: "pi/agent", args: ["--model", "gpt"] },
+        { stage: "human" },
+      ],
+    });
+  });
+
+  test("a dev.json default is listed instead of the built-in one", async () => {
+    const { options } = await setup({ flows: { default: GOOD } });
+    const defaults = (await flowList(options)).filter((item) => item.name === "default");
+    expect(defaults).toEqual([{ name: "default", source: "dev.json", stages: GOOD.stages }]);
   });
 
   test("a valid flow is saved whole or by name, and shows in the list", async () => {

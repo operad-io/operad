@@ -124,7 +124,7 @@ export const DEV_PROJECT_SETTINGS: ProjectSettingsDeclaration = {
             type: "array",
             items: { type: "object" },
             description:
-              "Every flow of the repository, read only: its name, where it comes from (dev.json, typescript or built-in), its stages for a dev.json flow, the steps dev reads for a TypeScript flow, or why dev refuses the file.",
+              "Every flow of the repository, read only: its name, where it comes from (dev.json, typescript or built-in), its stages for a dev.json flow or the built-in default, the steps dev reads for a TypeScript flow, or why dev refuses the file.",
           },
           gate: {
             type: "object",

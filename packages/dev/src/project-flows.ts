@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { FlowDefinition, StepShape } from "@operad-io/engine";
 import type { DevSettings } from "./settings.ts";
+import type { DevStage } from "./flow-compiler.ts";
 import { isRecord } from "@operad-io/engine";
 
 const FLOW_SUFFIX = ".flow.ts";
@@ -192,12 +193,27 @@ export interface FlowInfo {
   readonly name: string;
   /** Where the flow comes from. */
   readonly source: "dev.json" | "typescript" | "built-in";
-  /** A dev.json flow: its stages, as written. */
+  /** A dev.json flow or the built-in default: its stages. */
   readonly stages?: readonly unknown[];
   /** A TypeScript flow: the steps dev reads when it loads the file. */
   readonly steps?: readonly { readonly id: string; readonly kind: string; readonly use?: string }[];
   /** Why dev refuses the flow; the flow starts no task. */
   readonly refused?: string;
+}
+
+/**
+ * The stages of the built-in default flow, with the parameters this
+ * repository's `worker`, `reviewer` and `gate` settings give them (ADR 0020
+ * D7), so a client can show them and start an edited copy from them. These
+ * three settings carry no secrets.
+ */
+export function defaultFlowStages(settings: DevSettings): DevStage[] {
+  return [
+    { stage: "work", use: settings.worker.use, args: [...settings.worker.args] },
+    { stage: "check", commands: [...settings.gate.commands] },
+    { stage: "review", use: settings.reviewer.use, args: [...settings.reviewer.args] },
+    { stage: "human" },
+  ];
 }
 
 /**
@@ -243,7 +259,11 @@ export async function listRepositoryFlows(
     });
   }
   if (!infos.some((info) => info.name === "default")) {
-    infos.unshift({ name: "default", source: "built-in" });
+    infos.unshift({
+      name: "default",
+      source: "built-in",
+      stages: defaultFlowStages(settings),
+    });
   }
   return infos;
 }
