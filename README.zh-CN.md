@@ -57,6 +57,7 @@ operad dev repo add .       # 注册当前仓库
 operad dev plan add --slug hello --title "Add a greeting" < request.md
 operad dev task add --plan P-0001-hello --slug greet --title "Print the greeting" < task.md
 operad dev:confirm P-0001-hello
+operad dev:auto P-0001-hello --level run   # 新计划的 auto 级别是 off，不会自动开始任务；run 让 serve 开始它
 operad serve                # 跑起循环
 
 operad pending              # 有什么在等你

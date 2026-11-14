@@ -289,7 +289,7 @@ function noRepositoryHere(
   if (registered.length === 0) {
     return new DevError(
       "repo",
-      `no registered repository contains ${cwd}, and none is registered; register one with \`operad repo add <path>\``,
+      `no registered repository contains ${cwd}, and none is registered; register one with \`operad dev repo add <path>\``,
     );
   }
   return new DevError(
@@ -308,7 +308,7 @@ function unknownRepository(
   if (registered.length === 0) {
     return new DevError(
       "repo",
-      `no registered repository "${name}", and none is registered; register one with \`operad repo add <path>\``,
+      `no registered repository "${name}", and none is registered; register one with \`operad dev repo add <path>\``,
     );
   }
   return new DevError(
