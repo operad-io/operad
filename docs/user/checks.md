@@ -8,11 +8,11 @@ How a change is checked before it merges, and how a flaky test is reproduced. Th
 
 ## Why it exists
 
-A change should be checked the same way whether a person or a `dev` task makes it, and the check should not cost more than the change needs. Running the whole suite for every small change is slow, so `check-changed.sh` tests only the packages a change can affect, and the full `verify.sh` runs once more at integration, before merge. `remote-check.sh` can run a check on another machine, in one of several slots, so that checks run at the same time do not share one working tree. A test that fails once and passes on a rerun is not ignored: the page treats it as a bug and gives a way to reproduce it, `stress.sh`. The rule is not to raise its timeout and not to add a retry inside the test.
+A change should be checked the same way whether a person or a `dev` task makes it, and the check should not cost more than the change needs. Running the whole suite for every small change is slow, so `check-changed.sh` tests the packages a change can affect and always the tests under `scripts/test`, and the full `verify.sh` runs once more at integration, before merge. `remote-check.sh` can run a check on another machine, in one of several slots, so that checks run at the same time do not share one working tree. A test that fails once and passes on a rerun is not ignored: the page treats it as a bug and gives a way to reproduce it, `stress.sh`. The rule is not to raise its timeout and not to add a retry inside the test.
 
 ## How it works
 
-1. A check is a shell line. `bash scripts/verify.sh` installs with the lockfile, type-checks and runs every package's tests with `scripts/run-tests.sh`. `bash scripts/check-changed.sh` does the same installation and type-check, then picks the packages a change touches and the packages that load them, prints the choice (`all`, `none` or names) and tests only those.
+1. A check is a shell line. `bash scripts/verify.sh` installs with the lockfile, type-checks and runs every package's tests with `scripts/run-tests.sh`. `bash scripts/check-changed.sh` does the same installation and type-check, then picks the packages a change touches and the packages that load them, prints the choice (`all`, `none` or names), and tests those packages together with the tests under `scripts/test`.
 2. `remote-check.sh` runs the line here, or when `OPERAD_CHECK_HOST` is set, copies `HEAD` to that host as a git bundle, takes a slot, checks out the commit and runs the line there. The output and the exit code come back as the line's own.
 3. A `dev` task runs the lines in `gate.commands` against its commit. When a line fails, `dev` finds the failing test names with `failed.match` and runs each again alone with `failed.rerun`, which uses the `--` form of `remote-check.sh`. See [the gate and its settings](dev.md).
 4. A test that passes only on its rerun is recorded. After `check.flakyTask` such passes (default 2), `dev` proposes a task to fix it, with the rule from `failed.rule` and the command from `failed.stress`.
@@ -40,13 +40,14 @@ repository, open a port or hold a lot of memory live under `test/heavy/` of
 their package and run in a step of their own, beside the light step, in
 `OPERAD_TEST_HEAVY_PARALLEL` workers (default `8`; `OPERAD_TEST_OVERLAP=0` runs
 that step after the light one). Given package names (`bash scripts/run-tests.sh dev
-shell`), it runs only those packages' tests. `check-changed.sh` installs and type-checks the same way, then tests only
-the packages a change touches: every package with a file changed since the merge
+shell`), it runs only those packages' tests. `check-changed.sh` installs and type-checks the same way, then tests the
+packages a change touches: every package with a file changed since the merge
 base of `HEAD` and `origin/main` (committed, staged, unstaged or untracked), and
 every package whose code loads one of those, directly or through others. A
 package whose tests, not its code, load a changed package has its tests run too;
 that goes no further. A change outside `packages/` (the lockfile, the root
-manifest, `scripts/`, `docs/`, `.operad/`) tests every package. It prints the
+manifest, `scripts/`, `docs/`, `.operad/`) tests every package. Every selection,
+including `none`, also runs the tests under `scripts/test`. It prints the
 packages it chose before the tests (`all`, `none`, or the names).
 `OPERAD_CHECK_BASE` (a commit, default the merge base) changes what it compares
 with. This repository's task check runs `check-changed.sh`, and its integration
