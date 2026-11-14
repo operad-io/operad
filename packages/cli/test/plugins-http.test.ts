@@ -49,6 +49,7 @@ interface Rig {
   readonly cli: (...argv: string[]) => Promise<{ code: number; out: string; err: string }>;
   readonly configText: () => string;
   readonly startRun: () => Promise<void>;
+  readonly globalFacts: () => Promise<{ kind: string; payload: unknown; cause: unknown }[]>;
 }
 
 async function withRig(
@@ -111,6 +112,13 @@ async function withRig(
         } finally {
           await log.close();
         }
+      },
+      globalFacts: async () => {
+        const facts: { kind: string; payload: unknown; cause: unknown }[] = [];
+        for await (const fact of context.log.readGlobal()) {
+          facts.push({ kind: fact.kind, payload: fact.payload, cause: fact.cause });
+        }
+        return facts;
       },
     });
   } finally {
@@ -195,6 +203,18 @@ describe("plugins over HTTP", () => {
       expect(body.plugin).toMatchObject({ name: "demo", enabled: false, origin: "home" });
       expect((await rig.cli("plugin", "list")).out).toContain("demo  -  disabled\n");
       expect(rig.logs.some((line) => line.includes('plugin "demo" disabled via tui as '))).toBe(true);
+      const disabled = (await rig.globalFacts()).find(
+        (fact) =>
+          fact.kind === "plugin_switched" &&
+          (fact.payload as { name?: string; enabled?: boolean }).name === "demo" &&
+          (fact.payload as { enabled?: boolean }).enabled === false,
+      );
+      expect(disabled?.payload).toMatchObject({
+        name: "demo",
+        enabled: false,
+        actor: { via: "tui" },
+      });
+      expect(disabled?.cause).toBe("plugin:demo");
 
       const on = await call(rig, "POST", { name: "demo", enabled: true });
       expect(on.status).toBe(200);
@@ -374,5 +394,18 @@ export default definePlugin({ name: "declared", kind: "domain", version: "2.0.0"
       );
       expect(rig.configText()).toBe(before);
     }, run);
+  });
+
+  test("a plugin file that fails to load is not imported on every list", async () => {
+    await withRig(async (rig) => {
+      const broken = join(rig.home, "broken.ts");
+      writeFileSync(broken, "this is not a plugin\n");
+      const raw = JSON.parse(rig.configText()) as { plugins: Record<string, unknown> };
+      raw.plugins.broken = { module: broken, enabled: true };
+      writeFileSync(join(rig.home, "config.json"), JSON.stringify(raw));
+      expect((await call(rig, "GET")).status).toBe(200);
+      expect((await call(rig, "GET")).status).toBe(200);
+      expect(rig.loaded.filter((module) => module === broken)).toHaveLength(1);
+    });
   });
 });

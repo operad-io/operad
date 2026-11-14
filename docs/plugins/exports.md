@@ -49,12 +49,12 @@ Types (`StepContext`, `ActionTypeDefinition`, `ObjectRow`, ...) are exported too
 | `CursorError` | A cursor is not one this store made for this call | [Storage](storage.md#filters-pages-and-cursors) |
 | `WhereError` | A `where` filter names a field the type did not declare in `index` | [Storage](storage.md#filters-pages-and-cursors) |
 | `StateError` | An answer or a cancel does not fit the run's state (`run <id> is not waiting for a person`) | [Pending](pending.md#a-wait-for-a-person-in-a-flow) |
-| `ViewError` | A list, a section or an action call is refused; its `kind` is one of `not-found`, `ambiguous`, `no-views`, `section`, `timeout`, `action`, `not-available`, `unavailable`, `note`, `confirm`, `args`, `where`, `filter`, `cursor` | [Views](views.md), [Actions](actions.md#order-of-the-checks) |
+| `ViewError` | A list, a section or an action call is refused; its `kind` is one of `not-found`, `ambiguous`, `no-views`, `section`, `timeout`, `action`, `not-available`, `unavailable`, `note`, `confirm`, `args`, `refused`, `where`, `filter`, `cursor` | [Views](views.md), [Actions](actions.md#order-of-the-checks) |
 | `ActiveRunError` | `flow "<f>" already has an active run for object "<o>" (<runId>)`; has `flow`, `object`, `runId` | [Events](events.md#rules) |
 | `CronError` | A cron expression is not valid | [Events](events.md#a-source-plugin) |
 | `SecretSerializationError` | A `Secret` is serialised to JSON | [Settings](settings.md#secrets) |
 | `TriggerError` | A rule is malformed; the message names the file, the rule's index and the field | [Events](events.md#rules) |
-| `SettingsError` | A settings call is refused and nothing was written; its `kind` is `not-found`, `args`, `not-available`, `confirm` or `ambiguous` | [Settings](settings.md#editing-a-setting) |
+| `SettingsError` | A settings call is refused and nothing was written; its `kind` is `not-found`, `args`, `not-available`, `confirm`, `ambiguous` or `refused` | [Settings](settings.md#editing-a-setting) |
 | `UploadMissingError` | An upload reference names no upload: never made, already used or expired | [Actions](actions.md#the-args-schema) |
 | `UploadTooLargeError` | An upload is larger than `MAX_UPLOAD_BYTES`; has `limit` | [Actions](actions.md#the-args-schema) |
 

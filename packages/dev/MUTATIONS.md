@@ -1204,3 +1204,10 @@ the row fields.
 | T-0458-M3 | packages/dev/src/project-settings.ts | dev's check of a dev.json value was skipped, so a flow with only `work` stages was written | `dev.flows and dev.flowList in settings > a save that breaks a rule is refused with dev's reason and writes nothing` and `the command line lists and saves flows, and refuses with dev's reason` |
 | T-0458-M4 | packages/dev/src/project-settings.ts | a `dev.json` flow whose name a TypeScript flow also has was written | `dev.flows and dev.flowList in settings > a save that breaks a rule is refused with dev's reason and writes nothing` |
 | T-0458-M5 | packages/dev/src/project-flows.ts | a TypeScript flow dev refuses was listed without dev's reason | `dev.flows and dev.flowList in settings > flowList reads dev.json, TypeScript and refused TypeScript flows` |
+
+## T-0460 — settings follow-ups
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0460-M5 | packages/dev/src/project-settings.ts | dev checked every dev.json setting, so an invalid flow already in the file blocked an unrelated setting | `dev.flows and dev.flowList in settings > an invalid flow already written does not block an unrelated setting` |
+| T-0460-M6 | packages/dev/src/project-settings.ts | a dev.json that could not be read left `dev.flowList` with no value and no reason | `dev.flows and dev.flowList in settings > a dev.json that cannot be read still lists flows and says why` |

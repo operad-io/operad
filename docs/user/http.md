@@ -87,11 +87,12 @@ otherwise. An object id in a path is URL-encoded; `<id>` may be the bare id or
 
 An action's `args` may carry JSON Schema conditionals that narrow a field by another: `allOf` holds `{ "if": { "properties": { "agent": { "const": "claude" } }, "required": ["agent"] }, "then": { "properties": { "model": { "enum": [...], "default": "..." }, "effort": { ... } } } }`, one per agent. The new-chat actions (`bot:chat`, `dev:chat`) use it: the top-level `model` and `effort` enums list every loaded agent's choices (a client that reads nothing else still works), and the `then` of the chosen agent holds the list and default that agent takes (the bot's configured model or effort when that agent lists it, else the agent's default). An agent that lists no model or effort has no `model` or `effort` in its `then`: nothing can be picked for it. A client shows the chosen agent's enum and default, and falls back to the top-level one until an agent is chosen. The server does not evaluate the conditionals when it checks a request; it refuses a model or effort the agent does not list by name.
 
-`POST /v1/act` records the caller as `{ "via": "http", "id": "operad app" }`.
-It records the action the same way the command line does, and a running
-`operad serve` carries on the steps a waiting run asks for. `POST /v1/answer`
-records its caller the same way and answers with the same rules as the command
-line and a plugin action.
+`POST /v1/act` records the caller as `{ "via": "<client>", "id": "<token
+label>" }`; `via` is `http` unless the client named itself, and the token label is
+`operad app` unless the secret store names another. It records the action the
+same way the command line does, and a running `operad serve` carries on the
+steps a waiting run asks for. `POST /v1/answer` records its caller the same way
+and answers with the same rules as the command line and a plugin action.
 
 ## Reading a section
 
@@ -147,11 +148,9 @@ ones included: `[{ "name", "source": "dev.json" | "typescript" | "built-in",
 "stages"?, "steps"?, "refused"? }]`. A `dev.json` flow carries its `stages`; a
 TypeScript flow carries the `steps` (`id`, `kind`, `use`) `dev` reads when it
 loads the file, or `refused` with `dev`'s reason when the file breaks a rule. A
-TypeScript flow is still saved as a file.
-
-`POST /v1/act` also records the caller as `{ "via":
-"<client>", "id": "<token label>" }`; the token label is `operad app` unless the
-secret store names another.
+TypeScript flow is still saved as a file. When `dev.json` cannot be read at all,
+the list keeps a `dev.json` entry whose `refused` is the reason, beside the
+TypeScript flows and the built-in one.
 
 ## Plugins
 
@@ -176,7 +175,7 @@ secret store names another.
 
 A change takes effect at the next load, as on the command line: the next `operad` command, or the next `serve` load. The answer shows the new `enabled` at once, but the running `serve` still has the plugin as it loaded it. `serve` watches `config.json`, and after the file has been quiet for a moment it reloads by itself and says so on its own output (`reloading: ...`). There is no field or event that says a reload is due; a client sees the reload as its event stream ending and reconnecting, and then refetches its lists (see [Events](#events)).
 
-Like `POST /v1/act`, a switch is recorded with the caller as `{ "via": "<client>", "id": "<token label>" }`, in `serve`'s log: `http: plugin "dev" disabled via tui as operad app`. A refusal is logged with its status. The bearer token is required, as on every endpoint.
+Like `POST /v1/act`, a switch is recorded with the caller as `{ "via": "<client>", "id": "<token label>" }`: as an event in the run log, and as a line in `serve`'s log: `http: plugin "dev" disabled via tui as operad app`. A refusal is logged with its status. The bearer token is required, as on every endpoint.
 
 ## Row marks
 
@@ -301,6 +300,6 @@ Every error body is:
 | `409` | The action is not available now, it needs confirmation, or its plugin is not loaded. |
 | `405` | The endpoint exists but not for that method; the body says `this endpoint takes GET` or `this endpoint takes POST`. |
 | `413` | The request body is larger than 1 MiB, or an upload is larger than 20 MB. |
-| `422` | The action's plugin refused it; `message` is the plugin's own message. |
+| `422` | The action's plugin refused it, or a setting's value the schema refuses; `message` is the plugin's own reason or the schema's. |
 | `504` | A section did not load in time. |
 | `500` | Anything else; the body carries no stack trace. |
