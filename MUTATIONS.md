@@ -110,3 +110,10 @@ Each package keeps its mutation checks in `MUTATIONS.md`; a row names the broken
 | T-0467-M2 | scripts/check-changed.sh | the named selection no longer added `./scripts/`, so a package change skipped the scripts tests | `check-changed.sh > a change under packages/a/src runs the package's tests and scripts/test` |
 | T-0467-M3 | scripts/check-changed.sh | restored `none) exit 0`, so a selection of none skipped the scripts tests | `check-changed.sh > a selection of none still runs scripts/test and no package's tests` |
 | T-0467-M4 | scripts/run-tests.sh | put `./scripts/` into `names` again, so run-tests.sh looked for it under `packages/` | `check-changed.sh > a change under packages/a/src runs the package's tests and scripts/test` |
+
+## T-0474 — review follow-ups for the MUTATIONS.md check
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0474-M2 | scripts/test/mutations-append-only.test.ts | `checkBase` let the missing `origin/main` error through again | `MUTATIONS.md files are append-only > the check base is unset when OPERAD_CHECK_BASE is unset and origin/main is absent` |
+| T-0474-M3 | scripts/test/mutations-append-only.test.ts | the missing-file branch skipped the file without a problem, so a deleted MUTATIONS.md passed | `MUTATIONS.md files are append-only > a deleted file fails and names its first base line` |
