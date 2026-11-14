@@ -92,6 +92,9 @@ nothing starts. A tap from an unlisted user counts for nothing.
   shows (bold, italic, code, links; headings and lists become plain lines), and a
   long reply goes out as several messages. A failed send is tried again with
   growing waits. Replies written before the plugin first ran are not sent.
+- The typing indicator. While a reply of a chat bound to Telegram is being
+  written, that Telegram chat shows the bot as typing; it stops when the reply is
+  sent or the run ends, fails or is cancelled.
 - Each item waiting in a chat bound to Telegram, and each item of a plugin listed
   in `telegram.pending` (to every listed user). It is one message with a button for
   each choice. After an answer from anywhere (Telegram, the app, the command line)

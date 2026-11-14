@@ -11,17 +11,22 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CHAT_TYPE, allMessages, chatData } from "@operad-io/chat";
 import { Runner, defineFlow, definePlugin, serveOnce, type SourceContext } from "@operad-io/engine";
+import { fakeClock, type FakeClock } from "@operad-io/engine/testing";
 import devPlugin, { addPlan, addRepository, addTask, confirmPlan, getTask, setTaskPhase, taskData } from "@operad-io/dev";
 import {
   PendingSender,
   ReplySender,
   TelegramSource,
+  TypingSender,
+  TYPING_INTERVAL_MS,
+  createTelegramPlugin,
   telegramChannel,
   writeOffset,
   type AnswerCallbackRequest,
   type BotApi,
   type EditMessageRequest,
   type GetUpdatesRequest,
+  type SendChatActionRequest,
   type SendMessageRequest,
   type TelegramUpdate,
 } from "../src/index.ts";
@@ -40,6 +45,7 @@ class LongPollApi implements BotApi {
   readonly sent: (SendMessageRequest & { readonly messageId: number })[] = [];
   readonly edits: EditMessageRequest[] = [];
   readonly callbacks: AnswerCallbackRequest[] = [];
+  readonly chatActions: SendChatActionRequest[] = [];
   private readonly watchers: (() => void)[] = [];
 
   /** What the person does: update ids are the caller's, and one may be sent again. */
@@ -77,6 +83,11 @@ class LongPollApi implements BotApi {
     this.changed();
   }
 
+  async sendChatAction(request: SendChatActionRequest): Promise<void> {
+    this.chatActions.push(request);
+    this.changed();
+  }
+
   private changed(): void {
     for (const watcher of [...this.watchers]) watcher();
   }
@@ -93,6 +104,25 @@ class LongPollApi implements BotApi {
       this.watchers.push(watcher);
     });
   }
+}
+
+/** Waits on the test's clock, and ends early when its signal aborts. */
+function clockWait(clock: FakeClock): (ms: number, signal: AbortSignal) => Promise<void> {
+  return (ms, signal) =>
+    new Promise<void>((resolve) => {
+      if (signal.aborted) {
+        resolve();
+        return;
+      }
+      let handle: unknown;
+      const done = (): void => {
+        if (handle !== undefined) clock.clearTimeout(handle);
+        signal.removeEventListener("abort", done);
+        resolve();
+      };
+      handle = clock.setTimeout(done, Math.max(0, ms));
+      signal.addEventListener("abort", done, { once: true });
+    });
 }
 
 /** Starts the plugin's three parts as `start(ctx)` does, on one fake Bot API. */
@@ -260,6 +290,103 @@ test("from the first Telegram message to an answered pending item", async () => 
   expect(again.sent).toEqual([]);
   expect(sentBefore).toBe(3);
   await restarted.stop();
+  await w.close();
+});
+
+test("the telegram plugin starts and stops typing through a real chat reply run", async () => {
+  const root = await mkdtemp(join(tmpdir(), "telegram-typing-plugin-"));
+  roots.push(root);
+  let release: (() => void) | undefined;
+  let entered: (() => void) | undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const running = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const w = await createTelegramWorld({
+    root,
+    users: [42],
+    follow: true,
+    agent: async () => {
+      entered?.();
+      await gate;
+      return { result: "done", data: { finalMessage: "done", sessionId: "s-1" } };
+    },
+  });
+  const { ctx, runners } = serveLoop(w, root);
+  const api = new LongPollApi();
+  const clock = fakeClock();
+  const plugin = createTelegramPlugin({ api, clock: () => clock.now(), wait: clockWait(clock) });
+  const start = plugin.start;
+  if (start === undefined) throw new Error("the plugin does not start");
+  const handle = await start(ctx);
+
+  api.deliver(update(100, 42, 555, "hello"));
+  await api.until(() => api.chatActions.length >= 1);
+  expect(api.chatActions[0]).toMatchObject({ chatId: 555, action: "typing" });
+  await running;
+  clock.advance(TYPING_INTERVAL_MS);
+  await api.until(() => api.chatActions.length >= 2);
+  expect(api.chatActions).toHaveLength(2);
+
+  await handle.stop();
+  expect(clock.pending).toBe(0);
+  clock.advance(TYPING_INTERVAL_MS * 3);
+  expect(api.chatActions).toHaveLength(2);
+
+  release?.();
+  await Promise.all(runners);
+  await w.close();
+});
+
+test("typing follows a real chat reply run from its start to its end", async () => {
+  const root = await mkdtemp(join(tmpdir(), "telegram-typing-run-"));
+  roots.push(root);
+  let release: (() => void) | undefined;
+  let entered: (() => void) | undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const running = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const w = await createTelegramWorld({
+    root,
+    users: [42],
+    follow: true,
+    agent: async () => {
+      entered?.();
+      await gate;
+      return { result: "done", data: { finalMessage: "done", sessionId: "s-1" } };
+    },
+  });
+  const { ctx, runners } = serveLoop(w, root);
+  const api = new LongPollApi();
+  const clock = fakeClock();
+  const typing = new TypingSender(ctx, { api, clock: () => clock.now(), wait: clockWait(clock) });
+  const handle = typing.start();
+  await handle.ready;
+
+  api.deliver(update(200, 42, 555, "hello"));
+  await new TelegramSource(ctx, { api }).poll();
+  await api.until(() => api.chatActions.length >= 1);
+  expect(api.chatActions[0]).toMatchObject({ chatId: 555, action: "typing" });
+  await running;
+  clock.advance(TYPING_INTERVAL_MS);
+  await api.until(() => api.chatActions.length >= 2);
+
+  release?.();
+  await Promise.all(runners);
+  const chat = (await w.store.list(CHAT_TYPE)).objects[0]?.id;
+  if (chat === undefined) throw new Error("no chat was opened");
+  await typing.syncChat(chat);
+  expect(clock.pending).toBe(0);
+  expect((await w.views.get(chat)).row.running).toBe(false);
+  clock.advance(TYPING_INTERVAL_MS * 3);
+  expect(api.chatActions).toHaveLength(2);
+
+  await handle.stop();
   await w.close();
 });
 

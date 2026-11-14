@@ -9,14 +9,24 @@
 
 import pkg from "../package.json" with { type: "json" };
 import { definePlugin, type SourceHandle } from "@operad-io/engine";
-import { createBotApi } from "./api.ts";
+import { createBotApi, type BotApi } from "./api.ts";
 import { TELEGRAM_SETTINGS, TOKEN_SECRET } from "./settings.ts";
 import { PendingSender } from "./pending.ts";
 import { ReplySender } from "./replies.ts";
 import { TelegramSource, delay } from "./source.ts";
+import { TypingSender } from "./typing.ts";
+
+/** What a test gives the plugin instead of what it builds itself. */
+export interface TelegramPluginOptions {
+  /** The Bot API to use; by default the real one, from the token. */
+  readonly api?: BotApi | undefined;
+  readonly clock?: (() => number) | undefined;
+  readonly wait?: ((ms: number, signal: AbortSignal) => Promise<void>) | undefined;
+  readonly intervalMs?: number | undefined;
+}
 
 /** Builds the Telegram source plugin. */
-export function createTelegramPlugin() {
+export function createTelegramPlugin(options: TelegramPluginOptions = {}) {
   return definePlugin({
     name: "telegram",
     kind: "source",
@@ -29,14 +39,22 @@ export function createTelegramPlugin() {
           "the telegram plugin has no token; set it with `operad secret set telegram token`",
         );
       }
-      const api = createBotApi({ token });
+      const api = options.api ?? createBotApi({ token });
+      const wait = options.wait ?? delay;
       const pending = new PendingSender(ctx, { api });
+      const typing = new TypingSender(ctx, {
+        api,
+        ...(options.clock === undefined ? {} : { clock: options.clock }),
+        wait,
+        ...(options.intervalMs === undefined ? {} : { intervalMs: options.intervalMs }),
+      }).start();
+      const replies = new ReplySender(ctx, { api, wait }).start();
       const source = new TelegramSource(ctx, { api, pending }).start();
-      const replies = new ReplySender(ctx, { api, wait: delay }).start();
       const sent = pending.start();
       return {
         stop: async () => {
           await source.stop();
+          await typing.stop();
           await replies.stop();
           await sent.stop();
         },
@@ -54,3 +72,4 @@ export * from "./replies.ts";
 export * from "./settings.ts";
 export * from "./source.ts";
 export * from "./state.ts";
+export * from "./typing.ts";
