@@ -365,7 +365,7 @@ function closePluginStore(store: unknown): void {
   if (typeof close === "function") close.call(store);
 }
 
-async function openContext(
+export async function openContext(
   home: string,
   io: CliIo,
   options: OpenContextOptions = {},
