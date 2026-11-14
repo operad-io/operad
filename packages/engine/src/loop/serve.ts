@@ -13,6 +13,7 @@ import { acquireLock, lockHeld, runLockPath, serveLockPath } from "../runner/loc
 import type { LockHandle } from "../runner/lock.ts";
 import { StepLimits } from "../runner/limits.ts";
 import { applyInput, objectKey, parseObjectKey, readState } from "../runner/service.ts";
+import { isBusy } from "../platform/index.ts";
 import { reapStale } from "../platform/step-reap.ts";
 import { isRecord } from "../util.ts";
 
@@ -271,106 +272,116 @@ export async function serveOnce(
   const started: string[] = [];
   const spawned: string[] = [];
 
-  await options.registry.tick(runLookup(options.log));
-  const requests = options.registry.takeStartedRuns();
-  for (const request of requests) {
-    if (options.shouldStop?.() === true) break;
-    const object = startObjectKey(request);
-    try {
-      const result = await kernel.start({
-        flow: request.flow,
-        object,
-        ...(request.params === undefined ? {} : { params: request.params }),
-        ...(request.trigger === undefined ? {} : { trigger: request.trigger }),
-        ...(request.inputId === undefined ? {} : { inputId: request.inputId }),
-        ...(request.access === undefined ? {} : { access: request.access }),
+  try {
+    await options.registry.tick(runLookup(options.log));
+    const requests = [...options.registry.startedRuns];
+    for (const request of requests) {
+      if (options.shouldStop?.() === true) break;
+      const object = startObjectKey(request);
+      try {
+        const result = await kernel.start({
+          flow: request.flow,
+          object,
+          ...(request.params === undefined ? {} : { params: request.params }),
+          ...(request.trigger === undefined ? {} : { trigger: request.trigger }),
+          ...(request.inputId === undefined ? {} : { inputId: request.inputId }),
+          ...(request.access === undefined ? {} : { access: request.access }),
+        });
+        if (result.kind === "started") started.push(result.runId);
+      } catch (error) {
+        if (error instanceof StartRefusedError) {
+          options.onLog?.(`${request.plugin}/${request.flow}: ${error.message}`);
+        } else if (!(error instanceof ActiveRunError)) throw error;
+      }
+    }
+    // Only a pass that took every start request drains them. A busy store leaves
+    // them in place, so the next pass tries the same starts again.
+    options.registry.takeStartedRuns();
+
+    if (options.shouldStop?.() !== true) {
+      await applyRecordedAnswers({
+        log: options.log,
+        registry: options.registry,
+        kernel,
+        clock,
+        ...(options.shouldStop === undefined
+          ? {}
+          : { shouldStop: options.shouldStop }),
       });
-      if (result.kind === "started") started.push(result.runId);
-    } catch (error) {
-      if (error instanceof StartRefusedError) {
-        options.onLog?.(`${request.plugin}/${request.flow}: ${error.message}`);
-      } else if (!(error instanceof ActiveRunError)) throw error;
-    }
-  }
-
-  if (options.shouldStop?.() !== true) {
-    await applyRecordedAnswers({
-      log: options.log,
-      registry: options.registry,
-      kernel,
-      clock,
-      ...(options.shouldStop === undefined
-        ? {}
-        : { shouldStop: options.shouldStop }),
-    });
-  }
-
-  // Places freed while no process was left to hand them on (a crash after a
-  // step's result, a run that ended) go to the next in line before runs are
-  // given processes.
-  if (options.shouldStop?.() !== true) {
-    await new StepLimits({ log: options.log, lockRoot: options.lockRoot }).grant();
-  }
-
-  const active = await options.log.runs({ active: true });
-  for (const run of active) {
-    if (options.shouldStop?.() === true) break;
-    const state = await readState(options.log, run.runId);
-
-    if (state.status === "ended") {
-      // Recording the end event comes first; `emitRunEnd` ends the run before
-      // routing it, so a recovered run can start the same flow on the object.
-      await kernel.emitRunEnd(run.runId, state);
-      continue;
-    }
-    if (state.status === "waiting_person") continue;
-
-    // A run no loaded plugin declares has no graph to drive it. It fails now,
-    // naming its flow, instead of sitting at starting while a child retries.
-    if (options.registry.flow(run.flow) === undefined) {
-      const reason = `flow "${run.flow}" is not loaded`;
-      options.onLog?.(`run ${run.runId}: ${reason}`);
-      await kernel.failRun(run.runId, reason);
-      continue;
     }
 
-    const now = clock();
-    if (
-      state.effect?.kind === "schedule_wake" &&
-      state.effect.due !== null &&
-      now < state.effect.due
-    ) {
-      continue;
+    // Places freed while no process was left to hand them on (a crash after a
+    // step's result, a run that ended) go to the next in line before runs are
+    // given processes.
+    if (options.shouldStop?.() !== true) {
+      await new StepLimits({ log: options.log, lockRoot: options.lockRoot }).grant();
     }
 
-    if (isRunnerAlive(run.runId)) continue;
-    if (options.isRecentlySpawned?.(run.runId) === true) continue;
+    const active = await options.log.runs({ active: true });
+    for (const run of active) {
+      if (options.shouldStop?.() === true) break;
+      const state = await readState(options.log, run.runId);
 
-    // A step the flow needs went missing: the run waits for the plugin.
-    const problem = options.registry.startProblem(run.flow);
-    if (problem !== undefined) {
-      options.onLog?.(`run ${run.runId}: ${problem}`);
-      continue;
+      if (state.status === "ended") {
+        // Recording the end event comes first; `emitRunEnd` ends the run before
+        // routing it, so a recovered run can start the same flow on the object.
+        await kernel.emitRunEnd(run.runId, state);
+        continue;
+      }
+      if (state.status === "waiting_person") continue;
+
+      // A run no loaded plugin declares has no graph to drive it. It fails now,
+      // naming its flow, instead of sitting at starting while a child retries.
+      if (options.registry.flow(run.flow) === undefined) {
+        const reason = `flow "${run.flow}" is not loaded`;
+        options.onLog?.(`run ${run.runId}: ${reason}`);
+        await kernel.failRun(run.runId, reason);
+        continue;
+      }
+
+      const now = clock();
+      if (
+        state.effect?.kind === "schedule_wake" &&
+        state.effect.due !== null &&
+        now < state.effect.due
+      ) {
+        continue;
+      }
+
+      if (isRunnerAlive(run.runId)) continue;
+      if (options.isRecentlySpawned?.(run.runId) === true) continue;
+
+      // A step the flow needs went missing: the run waits for the plugin.
+      const problem = options.registry.startProblem(run.flow);
+      if (problem !== undefined) {
+        options.onLog?.(`run ${run.runId}: ${problem}`);
+        continue;
+      }
+
+      // A start that died after creating its run must not become a run with no
+      // record of the event that made it: restore the start files first, so the
+      // child starts from the intended input and sees the same event.
+      kernel.adoptStart(run);
+
+      await options.spawnRun(run.runId, {
+        recover:
+          state.status === "running" &&
+          state.effect !== null &&
+          state.effectStarted === state.effect.id,
+      });
+      spawned.push(run.runId);
     }
 
-    // A start that died after creating its run must not become a run with no
-    // record of the event that made it: restore the start files first, so the
-    // child starts from the intended input and sees the same event.
-    kernel.adoptStart(run);
-
-    await options.spawnRun(run.runId, {
-      recover:
-        state.status === "running" &&
-        state.effect !== null &&
-        state.effectStarted === state.effect.id,
-    });
-    spawned.push(run.runId);
-  }
-
-  // A recorded event whose routing was interrupted is routed again. Outcomes
-  // are derived from the log by input id, so a second pass cannot repeat one.
-  if (options.shouldStop?.() !== true) {
-    await kernel.recoverUnrouted();
+    // A recorded event whose routing was interrupted is routed again. Outcomes
+    // are derived from the log by input id, so a second pass cannot repeat one.
+    if (options.shouldStop?.() !== true) {
+      await kernel.recoverUnrouted();
+    }
+  } catch (error) {
+    // A store another process holds past the busy timeout fails this pass,
+    // not the serve: the work that needs it is tried again on the next pass.
+    if (!isBusy(error)) throw error;
+    options.onLog?.("serve: database is locked; trying again");
   }
 
   return { started, spawned };
