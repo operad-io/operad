@@ -1,9 +1,8 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Database } from "bun:sqlite";
-import { readFileSync } from "node:fs";
 import { openConfigLog, openPluginStore, readConfig, storeRootOf } from "../../../engine/src/index.ts";
 import { waitForChange } from "../../../engine/src/platform/index.ts";
 import { cleanupTempRoots, tempRoot } from "../../../engine/test/plugin/support.ts";

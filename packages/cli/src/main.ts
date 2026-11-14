@@ -84,7 +84,6 @@ import {
   recordServeFailure,
   retryWhileBusy,
   serveStage,
-  tolerateBusy,
 } from "./serve-guard.ts";
 import {
   BIND_FAILED_EXIT,
@@ -436,6 +435,16 @@ async function openContext(
         graph,
         source: "cli",
       }),
+  }).catch((error: unknown) => {
+    // A retry opens again: what this attempt opened must not stay open.
+    for (const close of [() => closePluginStore(store), () => log.close()]) {
+      try {
+        void Promise.resolve(close()).catch(() => undefined);
+      } catch {
+        // The load error below is the one to report.
+      }
+    }
+    throw error;
   });
   loaded = registry;
   return {
@@ -1730,10 +1739,6 @@ async function commandServe(
     controller.abort();
   };
   const releaseStop = listenForStop(supervised, stop);
-  const unguard = guardBackgroundBusy({
-    home: context.home,
-    log: (message) => io.error(`${message}\n`),
-  });
 
   let rules: readonly TriggerRule[] = [];
   let sourcesAllowed = true;
@@ -1855,10 +1860,9 @@ async function commandServe(
     });
   } finally {
     serveStage("stopping");
-    const say = (message: string): void => io.error(`${message}\n`);
     watch?.stop();
     olderNotice.clear();
-    await tolerateBusy("stopping the notifier", () => notifier.stop(), say);
+    await notifier.stop();
     if (http !== undefined) {
       try {
         await http.stop();
@@ -1869,9 +1873,8 @@ async function commandServe(
         unreleased = error;
       }
     }
-    await tolerateBusy("stopping the sources", () => kernel.stopSources(), say);
+    await kernel.stopSources();
     releaseStop();
-    unguard();
   }
   if (unreleased !== undefined) throw new HandOverStuck(unreleased, outcome === "reload");
   return outcome;
@@ -2696,6 +2699,12 @@ export async function main(
         restored: boolean,
       ): Promise<"stopped" | "reload"> => {
         const lock = acquireLock(serveLockPath(home));
+        // Held across a reload's wait for the stores, so a busy write that
+        // work of the old context left running is never unguarded.
+        const unguard = guardBackgroundBusy({
+          home,
+          log: (message) => io.error(`${message}\n`),
+        });
         try {
           // serve answers clients that are in no directory: a bare id must not
           // be scoped to the repository serve happened to start in, so its
@@ -2722,14 +2731,13 @@ export async function main(
           } finally {
             // Clean up the old plugin store when a serve context ends. An idle
             // handle does not block writers; the busy timeout here came from
-            // other processes committing while a log write waited. A busy
-            // store at this point must not turn a reload into an exit.
-            const say = (message: string): void => io.error(`${message}\n`);
-            await tolerateBusy("closing the views", () => context.views.close(), say);
-            await tolerateBusy("closing the plugin store", () => closePluginStore(context.registry.store), say);
-            await tolerateBusy("closing the log", () => context.log.close(), say);
+            // other processes committing while a log write waited.
+            await context.views.close();
+            closePluginStore(context.registry.store);
+            await context.log.close();
           }
         } finally {
+          unguard();
           lock.release();
         }
       };

@@ -9,7 +9,6 @@ import {
   ownFrames,
   recordServeFailure,
   retryWhileBusy,
-  tolerateBusy,
 } from "../src/serve-guard.ts";
 
 afterAll(cleanupTempRoots);
@@ -36,19 +35,6 @@ async function lockedStore(): Promise<{ write: () => void; release: () => void }
 }
 
 describe("a busy store does not end serve", () => {
-  test("a cleanup step that meets the lock is logged and the next step runs", async () => {
-    const store = await lockedStore();
-    const lines: string[] = [];
-    await tolerateBusy("closing the log", () => store.write(), (line) => lines.push(line));
-    expect(lines).toEqual(["serve: closing the log: database is locked; going on"]);
-    await expect(
-      tolerateBusy("closing the log", () => {
-        throw new Error("disk full");
-      }, () => undefined),
-    ).rejects.toThrow("disk full");
-    store.release();
-  });
-
   test("an operation that meets the lock is tried again until it succeeds", async () => {
     const store = await lockedStore();
     const lines: string[] = [];
@@ -131,11 +117,16 @@ describe("the line an ending serve prints", () => {
       "    at c (node:internal/process:1:1)",
       "    at d (/repo/packages/engine/src/loop/serve.ts:2:2)",
       "    at e (/home/u/.bun/install/global/node_modules/@operad-io/engine/src/loop/serve.ts:3:3)",
+      "    at f (/Users/x/alternative/operad/packages/cli/src/main.ts:4:4)",
+      "    at g (C:\\Users\\x\\app\\node_modules\\@operad-io\\engine\\src\\serve.ts:5:5)",
+      "    at h (native)",
     ].join("\n");
     expect(ownFrames(error)).toEqual([
       "at a (/repo/packages/cli/src/main.ts:1:1)",
       "at d (/repo/packages/engine/src/loop/serve.ts:2:2)",
       "at e (/home/u/.bun/install/global/node_modules/@operad-io/engine/src/loop/serve.ts:3:3)",
+      "at f (/Users/x/alternative/operad/packages/cli/src/main.ts:4:4)",
+      "at g (C:\\Users\\x\\app\\node_modules\\@operad-io\\engine\\src\\serve.ts:5:5)",
     ]);
   });
 });
