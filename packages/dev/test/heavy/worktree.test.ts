@@ -252,6 +252,124 @@ describe("dev/worktree", () => {
     expect(task.attempts).toBe(2);
   });
 
+  test("a merge with main keeps main's MUTATIONS.md rows before the task's", async () => {
+    const state = await fixture();
+    const base = [
+      "# Mutation records",
+      "",
+      "| id | file | mutation | failing test |",
+      "|---|---|---|---|",
+      "| T-1-M1 | a.ts | base | `test > base` |",
+      "",
+    ].join("\n");
+    const taskSection = [
+      "",
+      "## T-2 — task rows",
+      "",
+      "| id | file | mutation | failing test |",
+      "|---|---|---|---|",
+      "| T-2-M1 | b.ts | task | `test > task` |",
+      "",
+    ].join("\n");
+    const mainSection = [
+      "",
+      "## T-3 — main rows",
+      "",
+      "| id | file | mutation | failing test |",
+      "|---|---|---|---|",
+      "| T-3-M1 | c.ts | main | `test > main` |",
+      "",
+    ].join("\n");
+    await advanceMain(
+      state.remote,
+      ".gitattributes",
+      "MUTATIONS.md merge=union\n**/MUTATIONS.md merge=union\n",
+      "main declares the union merge",
+    );
+    await advanceMain(state.remote, "MUTATIONS.md", base, "main has mutation records");
+    await runWorktree(state, "run-1");
+    const path = worktreeOf(state);
+    await commitIn(path, "MUTATIONS.md", `${base}${taskSection}`, "task appends a row");
+    await advanceMain(
+      state.remote,
+      "MUTATIONS.md",
+      `${base}${mainSection}`,
+      "main appends a row",
+    );
+
+    const result = await runWorktree(state, "run-2");
+    expect(result.result).toBe("ready");
+    const merged = readFileSync(join(path, "MUTATIONS.md"), "utf8");
+    expect(merged).toBe(`${base}${mainSection}${taskSection}`);
+    // T-0467's append-only check sees main's lines first, then the task's.
+    expect(merged.startsWith(`${base}${mainSection}`)).toBe(true);
+    expect(merged.indexOf(taskSection.trim())).toBeGreaterThan(
+      merged.indexOf(mainSection.trim()),
+    );
+  });
+
+  test("a task branch that did not touch MUTATIONS.md takes main's file unchanged", async () => {
+    const state = await fixture();
+    const base = "# Mutation records\n\n| id | file |\n|---|---|\n| T-1-M1 | a.ts |\n";
+    const mainSection = "\n## T-3 — main rows\n\n| id | file |\n|---|---|\n| T-3-M1 | c.ts |\n";
+    await advanceMain(
+      state.remote,
+      ".gitattributes",
+      "MUTATIONS.md merge=union\n**/MUTATIONS.md merge=union\n",
+      "main declares the union merge",
+    );
+    await advanceMain(state.remote, "MUTATIONS.md", base, "main has mutation records");
+    await runWorktree(state, "run-1");
+    await advanceMain(
+      state.remote,
+      "MUTATIONS.md",
+      `${base}${mainSection}`,
+      "main appends a row",
+    );
+
+    const result = await runWorktree(state, "run-2");
+    expect(result.result).toBe("ready");
+    expect(readFileSync(join(worktreeOf(state), "MUTATIONS.md"), "utf8")).toBe(
+      `${base}${mainSection}`,
+    );
+  });
+
+  test("a conflict the worker resolves keeps main's MUTATIONS.md rows first", async () => {
+    const state = await fixture();
+    const base = "# Mutation records\n\n| id | file |\n|---|---|\n| T-1-M1 | a.ts |\n";
+    const taskSection = "\n## T-2 — task rows\n\n| id | file |\n|---|---|\n| T-2-M1 | b.ts |\n";
+    const mainSection = "\n## T-3 — main rows\n\n| id | file |\n|---|---|\n| T-3-M1 | c.ts |\n";
+    await advanceMain(
+      state.remote,
+      ".gitattributes",
+      "MUTATIONS.md merge=union\n**/MUTATIONS.md merge=union\n",
+      "main declares the union merge",
+    );
+    await advanceMain(state.remote, "MUTATIONS.md", base, "main has mutation records");
+    await runWorktree(state, "run-1");
+    const path = worktreeOf(state);
+    await commitIn(path, "MUTATIONS.md", `${base}${taskSection}`, "task appends a row");
+    await commitIn(path, "README.md", "# branch\n", "task changes readme");
+    await advanceMain(
+      state.remote,
+      "MUTATIONS.md",
+      `${base}${mainSection}`,
+      "main appends a row",
+    );
+    await advanceMain(state.remote, "README.md", "# main\n", "main changes readme");
+
+    const result = await runWorktree(state, "run-2");
+    expect(result.result).toBe("conflict");
+    const expected = `${base}${mainSection}${taskSection}`;
+    expect(readFileSync(join(path, "MUTATIONS.md"), "utf8")).toBe(expected);
+
+    // The worker resolves the other file and commits the merge.
+    await commitIn(path, "README.md", "# resolved\n", "resolve merge");
+    // The test git helper trims its output; the working file above keeps the
+    // final newline.
+    expect(gitOrThrow(path, ["show", "HEAD:MUTATIONS.md"])).toBe(expected.trimEnd());
+  });
+
   test("a replay of the same run reuses the attempt number", async () => {
     const state = await fixture();
     await runWorktree(state, "run-1");

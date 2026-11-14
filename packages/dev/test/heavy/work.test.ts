@@ -1,7 +1,14 @@
 import { createPoolPlugin } from "@operad-io/pool";
 import { FilePlaces } from "@operad-io/pool";
 import { afterAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
@@ -127,6 +134,24 @@ function fakeHarness(record: string) {
           if (mode === "dirty") {
             writeFileSync(join(input.cwd, "dirty.txt"), "not committed\n");
           }
+          if (mode === "resolve-wrong-mutations") {
+            const wrong = join(input.cwd, ".wrong-mutations");
+            writeFileSync(join(input.cwd, "README.md"), "# resolved\n");
+            if (existsSync(wrong)) {
+              writeFileSync(join(input.cwd, "MUTATIONS.md"), readFileSync(wrong, "utf8"));
+            }
+            gitOrThrow(input.cwd, ["add", "README.md", "MUTATIONS.md"]);
+            gitOrThrow(input.cwd, [
+              "-c",
+              "user.name=worker",
+              "-c",
+              "user.email=worker@example.com",
+              "commit",
+              "-qm",
+              "resolve the merge",
+            ]);
+            rmSync(wrong, { force: true });
+          }
           if (mode === "reset") {
             gitOrThrow(input.cwd, ["reset", "--hard", "HEAD~1"]);
           }
@@ -203,6 +228,8 @@ interface FixtureOptions {
   readonly workerBrief?: string;
   /** Extra plugins to load next to dev and the fake harness. */
   readonly plugins?: readonly unknown[];
+  /** Files on main before the task's worktree is made. */
+  readonly base?: Readonly<Record<string, string>>;
 }
 
 async function fixture(
@@ -211,6 +238,9 @@ async function fixture(
 ): Promise<Fixture> {
   const root = await tempRoot();
   const remote = await makeRemote(root);
+  for (const [file, text] of Object.entries(options.base ?? {})) {
+    await advanceMain(remote, file, text, `main adds ${file}`);
+  }
   const store = storeAt(root);
   const repository = await addRepository(store, {
     path: remote.repository,
@@ -739,6 +769,44 @@ describe("dev/work", () => {
     ).toBe(true);
     expect(prompt).toContain("- README.md");
     expect(prompt).toContain("Start by resolving every conflict");
+  });
+
+  test("a worker's conflict commit keeps main's MUTATIONS.md rows first", async () => {
+    const base = "# Mutation records\n\n| id | file |\n|---|---|\n| T-1-M1 | a.ts |\n";
+    const taskSection = "\n## T-2 — task rows\n\n| id | file |\n|---|---|\n| T-2-M1 | b.ts |\n";
+    const mainSection = "\n## T-3 — main rows\n\n| id | file |\n|---|---|\n| T-3-M1 | c.ts |\n";
+    const state = await fixture("resolve-wrong-mutations", {
+      base: {
+        ".gitattributes": "MUTATIONS.md merge=union\n**/MUTATIONS.md merge=union\n",
+        "MUTATIONS.md": base,
+      },
+    });
+    const path = join(state.remote.repository, ".operad-worktrees", state.taskId);
+    await commitIn(path, "MUTATIONS.md", `${base}${taskSection}`, "task appends a row");
+    await commitIn(path, "README.md", "# branch\n", "task changes readme");
+    await advanceMain(
+      state.remote,
+      "MUTATIONS.md",
+      `${base}${mainSection}`,
+      "main appends a row",
+    );
+    await advanceMain(state.remote, "README.md", "# main\n", "main changes readme");
+    const conflict = await state.registry.runStep("dev/worktree", {}, {
+      runId: "mutations-conflict",
+      object: { type: "task", id: state.taskKey, data: {} },
+    });
+    expect(conflict.result).toBe("conflict");
+
+    // The worker commits the union order; dev puts main's rows back first.
+    writeFileSync(
+      join(path, ".wrong-mutations"),
+      `${base}${taskSection}${mainSection}`,
+    );
+    const result = await runWork(state, "mutations-work");
+    expect(result.result).toBe("done");
+    const expected = `${base}${mainSection}${taskSection}`;
+    expect(readFileSync(join(path, "MUTATIONS.md"), "utf8")).toBe(expected);
+    expect(gitOrThrow(path, ["show", "HEAD:MUTATIONS.md"])).toBe(expected.trimEnd());
   });
 });
 

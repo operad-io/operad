@@ -5,7 +5,14 @@
  */
 
 import { withWorkerReports } from "@operad-io/engine/platform";
-import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import {
   messageOf,
@@ -362,14 +369,144 @@ function failed(message: string, files?: readonly string[]): Prepared {
   return { kind: "failed", message, ...(files === undefined ? {} : { files }) };
 }
 
+/** True for the root and package files whose rows are appended, never moved. */
+function isMutationFile(path: string): boolean {
+  return (
+    path === "MUTATIONS.md" ||
+    (path.startsWith("packages/") && path.endsWith("/MUTATIONS.md"))
+  );
+}
+
+/** The lines of a file; a final newline does not add an empty last line. */
+function linesOf(text: string): readonly string[] {
+  if (text === "") return [];
+  return (text.endsWith("\n") ? text.slice(0, -1) : text).split("\n");
+}
+
+/** The lines `after` has beyond a longest common subsequence with `before`. */
+function linesOnlyIn(before: readonly string[], after: readonly string[]): readonly string[] {
+  const table: Uint32Array[] = Array.from(
+    { length: before.length + 1 },
+    () => new Uint32Array(after.length + 1),
+  );
+  for (let row = before.length - 1; row >= 0; row -= 1) {
+    const line = table[row];
+    const next = table[row + 1];
+    if (line === undefined || next === undefined) continue;
+    for (let column = after.length - 1; column >= 0; column -= 1) {
+      line[column] =
+        before[row] === after[column]
+          ? (next[column + 1] ?? 0) + 1
+          : Math.max(next[column] ?? 0, line[column + 1] ?? 0);
+    }
+  }
+  const added: string[] = [];
+  let row = 0;
+  let column = 0;
+  while (row < before.length && column < after.length) {
+    if (before[row] === after[column]) {
+      row += 1;
+      column += 1;
+    } else if ((table[row + 1]?.[column] ?? 0) >= (table[row]?.[column + 1] ?? 0)) {
+      row += 1;
+    } else {
+      const line = after[column];
+      if (line !== undefined) added.push(line);
+      column += 1;
+    }
+  }
+  while (column < after.length) {
+    const line = after[column];
+    if (line !== undefined) added.push(line);
+    column += 1;
+  }
+  return added;
+}
+
+/**
+ * Main's file unchanged, then the lines the merged file has beyond it, in their
+ * order. A union merge puts the task's rows before main's, so the task's lines
+ * would otherwise sit inside main's file instead of after it.
+ */
+function mainFirst(mainText: string, mergedText: string): string {
+  const added = [...linesOnlyIn(linesOf(mainText), linesOf(mergedText))];
+  while (added[0]?.trim() === "") added.shift();
+  while (added[added.length - 1]?.trim() === "") added.pop();
+  if (added.length === 0) return mainText;
+  let text = mainText;
+  if (text.length > 0 && !text.endsWith("\n")) text += "\n";
+  if (text.length > 0 && !text.endsWith("\n\n")) text += "\n";
+  return `${text}${added.join("\n")}\n`;
+}
+
+/** The MUTATIONS.md files main changed since a branch tip. */
+function mainChangedMutations(
+  path: string,
+  before: string,
+  mainRef: string,
+): readonly string[] {
+  const base = git(path, ["merge-base", before, mainRef]);
+  if (!base.ok || base.out.length === 0) return [];
+  const diff = git(path, ["diff", "--name-only", base.out, mainRef]);
+  if (!diff.ok) return [];
+  return diff.out.split("\n").filter((file) => isMutationFile(file));
+}
+
+/** Rewrites the merged MUTATIONS.md files with main's rows first; returns those it changed. */
+function mainFirstMutations(
+  path: string,
+  mainRef: string,
+  files: readonly string[],
+): readonly string[] {
+  const conflicted = new Set(conflictedFiles(path));
+  const changed: string[] = [];
+  for (const file of files) {
+    if (conflicted.has(file)) continue;
+    const main = git(path, ["show", `${mainRef}:${file}`], true);
+    const merged = join(path, file);
+    if (!main.ok || !existsSync(merged)) continue;
+    const current = readFileSync(merged, "utf8");
+    const next = mainFirst(main.out, current);
+    if (next === current) continue;
+    writeFileSync(merged, next);
+    changed.push(file);
+  }
+  return changed;
+}
+
+/** Amends the merge, or commits after an extra worker commit, with the rewritten files. */
+function commitMainFirstMutations(
+  path: string,
+  files: readonly string[],
+  mergeHead?: string | undefined,
+): boolean {
+  if (files.length === 0) return true;
+  const added = git(path, ["add", "--", ...files]);
+  if (!added.ok) return false;
+  const second = git(path, ["rev-parse", "--verify", "--quiet", "HEAD^2"]);
+  const amend =
+    second.ok && (mergeHead === undefined || second.out === mergeHead);
+  return git(path, [
+    "commit",
+    ...(amend ? ["--amend", "--no-edit"] : ["-m", "mutations: keep main's rows first"]),
+    "--no-verify",
+  ]).ok;
+}
+
 /** Merges the fetched main into a reused branch and reports a conflict. */
 function mergeLatest(path: string, mainRef: string): Prepared {
   const before = headOf(path);
   const commit = git(path, ["rev-parse", "--short", mainRef]).out;
+  const mutationFiles =
+    before === undefined ? [] : mainChangedMutations(path, before, mainRef);
   const merge = git(path, ["merge", "--no-edit", "--no-ff", mainRef]);
   if (!merge.ok) {
     const files = conflictedFiles(path);
     if (files.length > 0 || mergeInProgress(path)) {
+      // The worker will commit the merge after resolving the other files; put
+      // main's rows first now so that commit already has the right order.
+      const changed = mainFirstMutations(path, mainRef, mutationFiles);
+      if (changed.length > 0) git(path, ["add", "--", ...changed]);
       return {
         kind: "conflict",
         base: headOf(path),
@@ -380,6 +517,10 @@ function mergeLatest(path: string, mainRef: string): Prepared {
     return failed(
       `cannot merge "${mainRef}" into the worktree: ${merge.err || merge.out}`,
     );
+  }
+  const changed = mainFirstMutations(path, mainRef, mutationFiles);
+  if (changed.length > 0 && !commitMainFirstMutations(path, changed)) {
+    return failed(`cannot keep main's rows first in ${changed.join(", ")}`);
   }
   const after = headOf(path);
   return {
@@ -1256,6 +1397,21 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
     }
   }
 
+  // A conflict is left for the worker to resolve and commit. Keep the main it
+  // merged so the commit is checked again after the worker is done.
+  const mergeHead = mergeInProgress(path)
+    ? git(path, ["rev-parse", "MERGE_HEAD"]).out
+    : undefined;
+  const mergeMutationFiles =
+    mergeHead === undefined || mergeHead.length === 0
+      ? []
+      : (() => {
+          const mergeBefore = headOf(path);
+          return mergeBefore === undefined
+            ? []
+            : mainChangedMutations(path, mergeBefore, mergeHead);
+        })();
+
   const stageParams = (ctx.params ?? {}) as {
     readonly flowWorkerBrief?: unknown;
     readonly flowCommit?: unknown;
@@ -1657,6 +1813,27 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
   // Inspect the tree before deciding: a harness failure must still name what
   // it left uncommitted, and a success must still fail on a dirty tree.
   let dirty = changedFiles(path);
+
+  // The worker resolved and committed the merge; put main's rows first in that
+  // commit, or in one commit after the worker's own. An aborted merge changed
+  // nothing, so it is left alone.
+  const afterMerge = headOf(path);
+  if (
+    mergeHead !== undefined &&
+    mergeHead.length > 0 &&
+    afterMerge !== undefined &&
+    !mergeInProgress(path) &&
+    isAncestor(path, mergeHead, afterMerge)
+  ) {
+    const changed = mainFirstMutations(path, mergeHead, mergeMutationFiles);
+    if (changed.length > 0 && !commitMainFirstMutations(path, changed, mergeHead)) {
+      return finish("failed", {
+        reason: "mutations",
+        message: `cannot keep main's rows first in ${changed.join(", ")}`,
+      });
+    }
+    dirty = changedFiles(path);
+  }
 
   // A worker whose sandbox cannot write .git leaves its work uncommitted; the
   // stage asks dev to commit it, before verify so the check sees the commit.
