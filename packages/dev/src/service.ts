@@ -528,11 +528,13 @@ export async function addRepository(
   }
 
   const name = validateRepositoryName(options.name ?? basename(path));
-  const existing = await findRepository(store, name);
-  if (existing !== undefined) {
+  const existing = await findRepository(store, name, { includeRemoved: true });
+  const previous =
+    existing === undefined ? undefined : repositoryData(existing.data);
+  if (previous !== undefined && !previous.removed) {
     throw new DevError(
       "name",
-      `repository "${name}" is already registered at "${repositoryData(existing.data).path}"`,
+      `repository "${name}" is already registered at "${previous.path}"`,
     );
   }
   const samePath = (await listRepositories(store)).find(
@@ -545,14 +547,19 @@ export async function addRepository(
     );
   }
 
-  const data: RepositoryData = {
-    name,
-    path,
-    removed: false,
-    openPlans: 0,
-    openTasks: 0,
-    activeTasks: 0,
-  };
+  // A removed repository is registered again under its name: its counters and
+  // every plan and task under that name stay, and only its path changes.
+  const data: RepositoryData =
+    previous === undefined
+      ? {
+          name,
+          path,
+          removed: false,
+          openPlans: 0,
+          openTasks: 0,
+          activeTasks: 0,
+        }
+      : { ...previous, name, path, removed: false };
   await store.put(REPOSITORY_TYPE, name, data, "dev:repo-add");
   writeSettings(path, name);
   ensureExcludes(path);

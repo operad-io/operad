@@ -350,8 +350,12 @@ is running` when no `serve` holds the home.
 
 `operad dev repo add <path> [--name <name>]` registers a directory that is a git
 work tree with a remote. It refuses, and writes nothing, a directory that is not
-the root of a git work tree, that has no remote, or that is already registered,
-and prints the reason. It writes `.operad/dev.json` when the repository has none.
+the root of a git work tree, that has no remote, whose name is already
+registered and not removed, or whose path is already registered under another
+active name, and prints the reason. It writes `.operad/dev.json` when the
+repository has none. A name whose repository was removed is registered again at
+the new path, keeping its plans and tasks: to move a repository's folder, remove
+the repository, move the folder, then add it again under the same name.
 `operad init` checks, for each registered repository, that its remote can be
 reached and has the main branch published; it asks the remote read-only and
 pushes nothing. `operad dev repo list` prints `no repositories` or one
