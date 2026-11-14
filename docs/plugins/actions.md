@@ -5,7 +5,7 @@ description: Actions a plugin offers on an object: every field, the args schema 
 # Actions
 
 An action is something a person can do to an object: a button in the app, a key in the terminal, `operad <plugin>:<action> <id>` on the command line, an MCP tool.
-A plugin declares it on an object type and decides when it is available; the kernel checks the person's values and runs it.
+A plugin declares it on an object type and decides when it is available; the kernel checks the person's values and runs it. An action with no `on` targets no object and is sent without an id (for example `dev:repo-add`, which registers a repository on the serve's machine); the kernel checks its values and confirmation the same way.
 The name a person types is `<plugin>:<action>` (or `<plugin>/<action>`, or the plain name when only one plugin offers it on that type).
 
 ```ts
@@ -38,7 +38,7 @@ actions: [
 | Field | Type | Default | Allowed values | When it takes effect | A wrong value |
 |---|---|---|---|---|---|
 | `name` | string | required | Non-empty. A name and its `on` pair is unique | At load | `actions[<i>]: name: must be a non-empty string`; `actions: duplicate action "<a>" on object type "<t>"` |
-| `on` | string | required | An object type some loaded plugin owns | At load | `action "<a>": on: unknown object type "<t>"` |
+| `on` | string | required unless the action targets no object | An object type some loaded plugin owns; absent when the action targets no object | At load | `action "<a>": on: unknown object type "<t>"` |
 | `when` | function | required | `(data, env) => boolean`; the action is offered only when it returns `true`. A throw is logged (`when failed: <message>`) and the action is refused with `<object> cannot <action> now` | At load; at each offer and each run | `actions[<i>]: when: must be a function` |
 | `run` | function | required | `(ctx, args) => string \| ActionOutcome \| anything` | At load; at each run | `actions[<i>]: run: must be a function` |
 | `args` | [args schema](#the-args-schema) | not set (no arguments) | An object schema | At load | `actions[<i>]: args.<path>: <what>` |
@@ -59,7 +59,7 @@ What `run` returns is the line a person reads, or nothing. An action that create
 
 When a person runs an action the kernel checks, in this order, and stops at the first refusal:
 
-1. The object exists and the action is declared on its type.
+1. For an action on an object, the object exists and the action is declared on its type. An action with no `on` needs no object.
 2. `settled`: a line means success without running.
 3. `when`: not `true` is refused with the `why` line, or `<object> cannot <action> now`.
 4. The note: a `required` property with `role: "note"` that is missing or empty is refused with `action "<a>" needs a note; pass --<name> <text>`.

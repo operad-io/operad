@@ -877,3 +877,9 @@ the row fields.
 | T-0460-M11 | packages/engine/src/http/server.ts | `POST /v1/plugins` stopped checking that `enabled` is true or false | `plugins over HTTP > a body that is not name and enabled is a 400` (in `packages/cli/test/plugins-http.test.ts`) |
 | T-0460-M12 | packages/engine/src/http/server.ts | `POST /v1/plugins` accepted a method other than GET or POST | `plugins over HTTP > a body that is not name and enabled is a 400` (in `packages/cli/test/plugins-http.test.ts`) |
 | T-0460-M13 | packages/engine/src/views/settings.ts | a project file that could not be read skipped its `derived` hook, so a read-only list it could still explain disappeared | `dev.flows and dev.flowList in settings > a dev.json that cannot be read still lists flows and says why` (in `packages/dev/test/heavy/flows-over-settings.test.ts`) |
+
+## T-0464 — an action that targets no object
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0464-M8 | packages/engine/src/views/presentation.ts | `act` without an object id no longer ran an action that targets no object | `registering a repository through dev:repo-add over HTTP > it asks to confirm, registers a git work tree with a bare remote, and the repo object lists` (and every other case in that file) |

@@ -66,7 +66,7 @@ export function typesMarkdown(types: readonly ViewTypeInfo[]): string {
 function actionMarkdown(action: ViewObject["actions"][number]): string[] {
   const key = action.key === undefined ? "" : ` (${action.key})`;
   const lines = [`- \`${action.name}\`${key}`];
-  lines.push(`  - on: \`${action.on}\``);
+  lines.push(`  - on: ${action.on === undefined ? "none" : `\`${action.on}\``}`);
   lines.push(
     `  - note: ${action.note === undefined ? "none" : `\`${action.note}\`${action.noteRequired ? " (required)" : ""}`}`,
   );

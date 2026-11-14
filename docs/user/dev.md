@@ -295,6 +295,21 @@ review step then fails rather than guessing a grading.
 
 When the worker adds no commit, the task waits with `work did nothing` if the branch has nothing beyond main or its latest commit already passed verify. If the branch already holds commits not on main and its latest commit has not passed verify (an earlier run stopped before verify ended), the task does not wait: history says `the branch already has unchecked work; checking it` and the task goes on to verify.
 
+## Adding a repository from a client
+
+A client talking to a remote `operad serve` cannot run `operad dev repo add` on
+that machine, so `dev` also declares the action `dev:repo-add`. It takes the
+repository's `path` on the machine that runs `serve`, and optionally a `name`,
+and it asks for confirmation. The action and the command call the same code:
+the action adds what the command adds, writes the same `.operad/dev.json`, and
+refuses with the command's words (not a git work tree, no remote, already
+registered). Its answer is the command's line, `added <name> (<path>)`, and the
+new repository then appears with `GET /v1/objects?type=repo`.
+
+```json
+{ "action": "dev:repo-add", "args": { "path": "/srv/operad" }, "confirmed": true }
+```
+
 ## Where `dev` commands run
 
 A `dev` command takes its repository from the directory, from `--repo <name>`
