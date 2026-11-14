@@ -29,6 +29,19 @@ Every step is recorded: `operad history <task>` shows what ran, what a check or 
 
 The keys for each part are in the sections below: [the repository and its workers](#the-repository-and-its-workers), [the gate and its checks](#the-gate-and-its-checks), [work, review, integration and cleanup](#work-review-integration-and-cleanup) and [flows and their stages](#flows-and-their-stages).
 
+## Creating a plan or a task
+
+A client creates a plan with the `dev:plan` action on a repository and a task
+with the `dev:task` action on a plan, the way `dev:chat` creates a chat.
+`dev:plan` takes a `title`, an optional `slug`, the request as its note and a
+`flow` from the repository's flows, with `default` first; it asks for
+confirmation before it creates the plan. `dev:task` takes a `title`, an optional
+`slug`, the brief as its note, the same `flow`, and `after`, any number of that
+plan's tasks. A slug that is left out is taken from the title. Both run the same
+code as `operad dev plan add` and `operad dev task add`, so they validate and
+refuse with the command's own words; the command line keeps creating them with
+those commands.
+
 ## Every `.operad/dev.json` key
 
 A repository's `dev.json` is JSON; the schema is `packages/dev/dev.schema.json`.

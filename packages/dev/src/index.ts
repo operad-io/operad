@@ -10,6 +10,7 @@ import { runAnnounce } from "./announce.ts";
 import { checkDev } from "./check.ts";
 import { chatActions, runChatWorktree } from "./chat.ts";
 import { commands } from "./commands.ts";
+import { creationActions } from "./create-actions.ts";
 import { runRework, runReview, runReviewDue, runVerify, runWorkDue } from "./gate.ts";
 import { runRetry, runRetryDue } from "./retry.ts";
 import { runCleanup, runIntegrate } from "./integrate.ts";
@@ -183,7 +184,7 @@ export function createDevPlugin() {
         mode: "auto",
       },
     ],
-    actions: [...actions, ...chatActions],
+    actions: [...actions, ...chatActions, ...creationActions],
     commands,
     onTick: runScheduler,
     standing: devStanding,
@@ -209,6 +210,7 @@ export * from "./announce.ts";
 export * from "./chat.ts";
 export * from "./check.ts";
 export * from "./commands.ts";
+export * from "./create-actions.ts";
 export * from "./gate.ts";
 export * from "./integrate.ts";
 export * from "./model.ts";

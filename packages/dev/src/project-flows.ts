@@ -159,6 +159,34 @@ export async function loadProjectFlows(
   return { flows, refused };
 }
 
+/**
+ * The names `dev.flowList` shows for a repository, with `default` first. It
+ * names a TypeScript file without loading it, so an action's schema can list
+ * the choices synchronously.
+ */
+export function flowNamesOf(
+  repositoryPath: string,
+  settings: DevSettings,
+): readonly string[] {
+  const names = Object.keys(settings.flows);
+  const directory = join(repositoryPath, PROJECT_FLOWS_DIR);
+  if (existsSync(directory)) {
+    const files = readdirSync(directory)
+      .filter((item) => item.endsWith(FLOW_SUFFIX))
+      .sort();
+    for (const file of files) names.push(file.slice(0, -FLOW_SUFFIX.length));
+  }
+  const unique = [...new Set(names)];
+  const at = unique.indexOf("default");
+  if (at < 0) {
+    unique.unshift("default");
+  } else if (at > 0) {
+    unique.splice(at, 1);
+    unique.unshift("default");
+  }
+  return unique;
+}
+
 /** One flow of a repository, as a client lists it. */
 export interface FlowInfo {
   readonly name: string;
