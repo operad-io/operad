@@ -1254,7 +1254,6 @@ the row fields.
 | T-0471-M2 | packages/dev/src/service.ts | registering a removed repository again kept its old path | `dev repositories > add, remove, add again under the same name at another path keeps plans and tasks and uses the new path` (the `path` assertion) |
 | T-0471-M3 | packages/dev/src/service.ts | an active repository was registered again under its name, instead of being refused | `dev repositories > add again under the name of an active repository is refused` |
 | T-0471-M4 | packages/dev/src/service.ts | a path registered under another active name was accepted | `dev repositories > add at a path registered under another active name is refused` |
-
 ## T-0466 — dev's lock lives outside the working tree
 
 | id | file | mutation | failing test |
