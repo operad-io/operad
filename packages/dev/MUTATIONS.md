@@ -1207,3 +1207,4 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0450-M1 | packages/dev/src/integration-queue.ts | `stillQueued` matched followers by task name only | `a claimed task that leaves the queue > a batch that falls back does not write its ticket back` |
+| T-0450-M2 | packages/dev/src/integration-queue.ts | `join` took max(live seq)+1 again, without the last issued seq | `a follower that rejoins as the last in the queue > is not the ticket the batch claimed` |

@@ -311,7 +311,21 @@ export class IntegrationQueue {
     await withLockFile(
       join(this.directory, "join.lock"),
       () => {
-        const last = this.tickets().reduce((most, ticket) => Math.max(most, ticket.seq), 0);
+        // A seq is never given twice: a task that leaves and rejoins as the
+        // last in the queue must not get its old seq back, or a batch that
+        // claimed the old ticket could not tell the new one from it.
+        const counter = join(this.directory, "last-seq");
+        let issued = 0;
+        try {
+          issued = Number(readFileSync(counter, "utf8"));
+        } catch {
+          issued = 0;
+        }
+        const last = this.tickets().reduce(
+          (most, ticket) => Math.max(most, ticket.seq),
+          Number.isFinite(issued) ? issued : 0,
+        );
+        writeFileSync(counter, String(last + 1));
         const ticket: Ticket = {
           seq: last + 1,
           task: this.options.task,

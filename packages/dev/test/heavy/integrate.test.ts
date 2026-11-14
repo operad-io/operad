@@ -1974,6 +1974,31 @@ describe("a claimed task that leaves the queue", () => {
   });
 });
 
+describe("a follower that rejoins as the last in the queue", () => {
+  test("is not the ticket the batch claimed", async () => {
+    const root = await tempRoot();
+    const repository = { name: "repository", path: "/r/repository" };
+    const make = (task: string) =>
+      new IntegrationQueue({
+        home: root,
+        repository,
+        task,
+        run: "run",
+        verified: "0".repeat(40),
+        message: `Merge work/${task}`,
+        say: () => {},
+      });
+    const [a, b] = [make("T-a"), make("T-b")];
+    await a.join();
+    await b.join();
+    const followers = a.claim(2);
+    expect(followers.map((ticket) => ticket.task)).toEqual(["T-b"]);
+    await b.leave();
+    await b.join();
+    expect(a.stillQueued(followers)).toEqual([]);
+  });
+});
+
 describe("a claimed task aborted after the leader's push", () => {
   test("reports the merge that is on main, not a cancel", async () => {
     const root = await tempRoot();
