@@ -2,7 +2,7 @@
 
 - 状态：decided（方向；已做的决定移入 ADR，本文件留未做的部分；标「建议」的几条是讨论里提出、owner 没有逐条确认的，开 task 前再问一次）
 - 涉及 ADR：0031、0030、0025
-- 涉及：`operad-bot.md`；`operad-sandbox.md`（3、8、9、10 留在 backlog；4、6、7 见 ADR 0025 D3、D5、D6）；`operad-conversation.md`（ADR 0028 D4）；`operad-contract.md`（ADR 0009 D1、0010 D2）；`operad-harness.md`（3 见 ADR 0022 D3，4 留在 backlog）
+- 涉及：`operad-bot.md`；`operad-sandbox.md`（默认访问档、后台运行、MCP 工具和密钥边界留在 backlog；其余见 ADR 0025）；`operad-conversation.md`（ADR 0028 D4）；`operad-contract.md`（ADR 0009 D1、0010 D2）；`operad-harness.md`（3 见 ADR 0022 D3，4 留在 backlog）
 - 来源：`research/2026-11-11-grok-bot.md`「技能和 MCP」；2026-11-11 和 owner 的讨论；`chrome-devtools-mcp` 和 `@playwright/mcp` 的 README 与文档（2026-11-11 读）
 
 ## 背景

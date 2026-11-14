@@ -2,7 +2,7 @@
 
 - 状态：decided（决定已移入 ADR 0033；本文件只留待决问题和验收）
 - 涉及 ADR：0033、0032、0026
-- 涉及：`operad-channels.md`（1–5、18 留在 backlog；6、11、16、17 见 ADR 0033 D1、0032 D5、D9、D10）；`operad-conversation.md`（ADR 0026 D2、D6、0028 D6）；`operad-bot.md`（4 留在 backlog；6、11 见 ADR 0032 D10、0030 D3）；`operad-contract.md`（ADR 0007 D2、0010 D2）；`operad-sandbox.md`（ADR 0025 D4）
+- 涉及：`operad-channels.md`（前五条和登录与读取一条留在 backlog；6、11、16、17 见 ADR 0033 D1、0032 D5、D9、D10）；`operad-conversation.md`（ADR 0026 D2、D6、0028 D6）；`operad-bot.md`（4 留在 backlog；6、11 见 ADR 0032 D10、0030 D3）；`operad-contract.md`（ADR 0007 D2、0010 D2）；`operad-sandbox.md`（ADR 0025 D4）
 - 来源：2026-11-09 chat 的讨论；Telegram Bot API（`getUpdates` 长轮询、inline keyboard 的 `callback_query`、reply）
 
 ## 背景

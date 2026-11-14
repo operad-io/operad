@@ -2,7 +2,7 @@
 
 - 状态：大部分已进 ADR；下面只留还没做的两条、顺序和验收
 - 涉及 ADR：0006、0007、0008、0009、0010
-- 涉及：`operad.md`；`operad-plugins.md`；`operad-presentation.md`；`operad-channels.md` 决定 7–17 见 ADR 0032，18 留在 backlog；`operad-conversation.md`；`operad-sandbox.md`；`operad-bot.md`
+- 涉及：`operad.md`；`operad-plugins.md`；`operad-presentation.md`；`operad-channels.md` 决定 7–17 见 ADR 0032，其登录与读取一条留在 backlog；`operad-conversation.md`；`operad-sandbox.md`；`operad-bot.md`
 - 来源：对话、知识库（可换后台）、记忆、来源插件、每日搜集这几个场景对内核的要求；radian arc 的 reviewer 被 429 吃掉十次 attempt 的教训
 
 ## 决定（已定，还没做，所以留在这里）
