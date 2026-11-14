@@ -928,7 +928,7 @@ item goes away once `pool` is loaded.
 ```
 $ operad list task
 T-0044-views   Worker views   running   $0.35  pi
-$ operad section T-0044-views metrics
+$ operad show T-0044-views --section metrics
 | worker | attempts | cost | time | first pass |
 | --- | --- | --- | --- | --- |
 | claude | 2 | $0.30 | 4m10s | 1/2 |
