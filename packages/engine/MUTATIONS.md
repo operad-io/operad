@@ -841,3 +841,12 @@ the row fields.
 |---|---|---|---|
 | T-0452-M1 | packages/engine/src/plugin/registry.ts | `takeStartedRuns(count)` ignored `count` and drained everything | `takeStartedRuns(count) drains only the oldest requests` |
 | T-0452-M2 | packages/engine/src/platform/sqlite-open.ts | `isBusy` matched only the exact `SQLITE_BUSY` code again | `isBusy recognises only a SQLITE_BUSY error` |
+
+## T-0457 — an object shows how its last run ended
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0457-M1 | packages/engine/src/views/presentation.ts | `lastRun.outcome` was always `done` | `how an object's last run ended, over HTTP > a reply that fails shows outcome failed` |
+| T-0457-M2 | packages/engine/src/views/presentation.ts | the recorded reason was left out of `lastRun` | `how an object's last run ended, over HTTP > a run ended with a reason carries the reason line` |
+| T-0457-M3 | packages/engine/src/views/presentation.ts | the oldest run was read instead of the newest | `how an object's last run ended, over HTTP > a newer run that is still going hides the earlier ending` |
+| T-0457-M4 | packages/engine/src/views/presentation.ts | `lastRun.endedAt` was 0 instead of the ending fact's time | `how an object's last run ended, over HTTP > a reply that ends shows outcome done and when` |
