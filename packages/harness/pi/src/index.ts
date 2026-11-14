@@ -10,7 +10,7 @@
 import pkg from "../package.json" with { type: "json" };
 import { secretValuesOf } from "@operad-io/access-match";
 import { existsSync, readFileSync } from "node:fs";
-import { mkdir } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -157,6 +157,65 @@ function piDefaultModel(settingsPath: string): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+/** What pi is likely to use: the model's provider, else its settings' default provider. */
+function piProvider(model: unknown, settingsPath: string): string | undefined {
+  if (typeof model === "string" && model.includes("/")) {
+    const provider = model.slice(0, model.indexOf("/"));
+    if (provider.length > 0) return provider;
+  }
+  try {
+    const value: unknown = JSON.parse(readFileSync(settingsPath, "utf8"));
+    if (isRecord(value) && typeof value.defaultProvider === "string" && value.defaultProvider.length > 0) {
+      return value.defaultProvider;
+    }
+  } catch {
+    // No settings file, or one this cannot read: no provider is known.
+  }
+  return undefined;
+}
+
+/** A credential is any object stored under a provider; its fields are never read. */
+function hasCredential(auth: unknown, provider: string | undefined): boolean {
+  if (!isRecord(auth)) return false;
+  const stored = (id: string): boolean => Object.hasOwn(auth, id) && isRecord(auth[id]);
+  return provider === undefined ? Object.keys(auth).some(stored) : stored(provider);
+}
+
+function isMissingFile(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === "ENOENT"
+  );
+}
+
+/**
+ * Whether pi's auth file holds a credential for the provider it will use. The
+ * file is parsed but no credential field is read, kept or returned; a missing
+ * file means no credential (false), and an unreadable or malformed one means
+ * it cannot tell (undefined).
+ */
+async function piSignedIn(
+  authPath: string,
+  provider: string | undefined,
+): Promise<boolean | undefined> {
+  let text: string;
+  try {
+    text = await readFile(authPath, "utf8");
+  } catch (error) {
+    return isMissingFile(error) ? false : undefined;
+  }
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+  if (!isRecord(value)) return undefined;
+  return hasCredential(value, provider);
 }
 
 /** The efforts a chat may pick with this agent, mapped to its thinking levels. */
@@ -352,6 +411,12 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
     version: pkg.version,
     models: piModels,
     efforts: PI_EFFORTS,
+    signedIn: async (settings) => {
+      const authPath = expandHome(
+        typeof settings.authPath === "string" ? settings.authPath : DEFAULT_AUTH_PATH,
+      );
+      return piSignedIn(authPath, piProvider(settings.model, piSettingsPath));
+    },
     settings: PLUGIN_SETTINGS,
     steps: [
       {

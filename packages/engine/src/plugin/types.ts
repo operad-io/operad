@@ -1171,6 +1171,15 @@ export interface PluginShape {
     | undefined;
   /** A harness plugin: the efforts a chat may pick (empty list: none can be chosen). */
   readonly efforts?: HarnessEfforts | undefined;
+  /**
+   * A harness plugin: whether its agent is signed in now. `true` or `false`
+   * when it can tell, `undefined` when it cannot; only that answer is exposed,
+   * never a credential. A function is called with the plugin's settings each
+   * time the answer is read.
+   */
+  readonly signedIn?:
+    | ((settings: Readonly<Record<string, JsonValue>>) => MaybePromise<boolean | undefined>)
+    | undefined;
   /** Access profile fields this plugin's steps apply. */
   readonly enforces?: readonly string[] | undefined;
   /** What this plugin needs loaded before it can be used. */

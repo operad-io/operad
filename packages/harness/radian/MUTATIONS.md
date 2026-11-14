@@ -80,3 +80,9 @@ the row fields.
 | T-0327-M12 | packages/harness/radian/src/refusal.ts | radian let an unlisted MCP tool run | `radian/agent > radian refuses another server's tool unless the profile lists it: it cannot ask` |
 | T-0327-M13 | packages/harness/radian/src/index.ts | radian was not given a bot's MCP servers | `radian/agent > a bot's servers are written to radian's MCP config by name, with operad's server kept` |
 | T-0358-M11 | packages/harness/radian/src/index.ts | the step did not hand its lines to the receiver | `radian/agent > a receiver gets each line the step writes to its log, as it is logged` |
+
+## T-0465 — a harness reports whether its agent is signed in
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0465-M5 | packages/harness/radian/src/index.ts | `hasCredential` counted an empty credentials object as a stored credential | `radian's signedIn answer > is false when the credentials file holds none` |

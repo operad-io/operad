@@ -133,3 +133,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0362-M17 | packages/harness/pi/src/worker.ts | a long tool output was written as its first line only, so the chunks past the cap were dropped | `a tool output longer than the cap reaches the receiver in chunks past the cap` |
+
+## T-0465 — a harness reports whether its agent is signed in
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0465-M4 | packages/harness/pi/src/index.ts | `hasCredential` counted a credential for any provider, not the provider pi will use | `pi's signedIn answer > is false when the credential is for another provider`, `pi's signedIn answer > falls back to pi's default provider` |

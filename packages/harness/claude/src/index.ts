@@ -58,7 +58,7 @@ import {
   type Clock,
   type ToolEvent,
 } from "@operad-io/harness-process";
-import { CLAUDE_FLOOR, DEFAULT_CLAUDE_COMMAND, inspectClaude, sdkVersion } from "./claude-install.ts";
+import { CLAUDE_FLOOR, DEFAULT_CLAUDE_COMMAND, claudeSignedIn, inspectClaude, sdkVersion } from "./claude-install.ts";
 import { DEFAULT_BASH_TIMEOUT_SECS, EFFORT_LEVELS, type WorkerResult } from "./protocol.ts";
 
 /** How long an agent may run before the step stops it. */
@@ -72,6 +72,9 @@ export const STEP_TIMEOUT_SECS = 8 * 3600;
 
 /** The longest wall time a run may ask for: the step timeout minus a margin. */
 export const MAX_WALL_TIME_SECS = STEP_TIMEOUT_SECS - 300;
+
+/** How long the answer of `claude auth status` is kept before it is asked again. */
+export const SIGNED_IN_CACHE_MS = 30_000;
 
 const WORKER_PATH = fileURLToPath(new URL("./worker.ts", import.meta.url));
 
@@ -102,6 +105,8 @@ export interface ClaudeHarnessOptions {
   readonly command?: string | undefined;
   /** The arguments before the worker input; defaults to `worker.ts`. */
   readonly args?: readonly string[] | undefined;
+  /** The time now in milliseconds; defaults to `Date.now`. It ages the login cache. */
+  readonly now?: (() => number) | undefined;
 }
 
 /** The models a chat may pick with this agent, and the one used when none is set. */
@@ -191,6 +196,21 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
   const clock = options.clock ?? systemClock;
   const command = options.command ?? process.execPath;
   const commandArgs = options.args ?? [WORKER_PATH];
+  const now = options.now ?? Date.now;
+  // `claude auth status` runs a child process, so its answer is kept for a
+  // short time and asked without blocking serve. A failed answer is kept too,
+  // so a missing claude is not spawned for on every list.
+  const signedInCache = new Map<string, { readonly at: number; readonly value: boolean | undefined }>();
+
+  async function claudeSignedInCached(settings: Readonly<Record<string, unknown>>): Promise<boolean | undefined> {
+    const commandSetting = typeof settings.command === "string" ? settings.command : undefined;
+    const key = commandSetting ?? "";
+    const kept = signedInCache.get(key);
+    if (kept !== undefined && now() - kept.at < SIGNED_IN_CACHE_MS) return kept.value;
+    const value = await claudeSignedIn(commandSetting);
+    signedInCache.set(key, { at: now(), value });
+    return value;
+  }
 
   const promptFlow = defineFlow({
     name: "claude:prompt",
@@ -233,6 +253,7 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
     version: pkg.version,
     models: CLAUDE_MODELS,
     efforts: CLAUDE_EFFORTS,
+    signedIn: (settings) => claudeSignedInCached(settings),
     settings: PLUGIN_SETTINGS,
     steps: [
       {

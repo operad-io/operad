@@ -58,7 +58,7 @@ import {
   type UsageSource,
 } from "@operad-io/harness-process";
 import { decideAccess, type JudgedCall } from "./access.ts";
-import { codexCommand, commandOf, inspectCodex } from "./install.ts";
+import { codexCommand, codexSignedIn, commandOf, inspectCodex } from "./install.ts";
 import { CodexLog } from "./log.ts";
 
 /** How long an agent may run before the step stops it. */
@@ -76,6 +76,9 @@ export const STEP_TIMEOUT_SECS = 8 * 3600;
 
 /** The longest wall time a run may ask for: the step timeout minus a margin. */
 export const MAX_WALL_TIME_SECS = STEP_TIMEOUT_SECS - 300;
+
+/** How long the answer of `codex login status` is kept before it is asked again. */
+export const SIGNED_IN_CACHE_MS = 30_000;
 
 /** How long codex-acp has to answer `session/cancel` before the step ends it. */
 export const CANCEL_GRACE_MS = 10_000;
@@ -225,6 +228,20 @@ export function failureOf(end: Extract<AcpEnd, { kind: "error" }>, model: string
 export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
   const clock = options.clock ?? systemClock;
   const now = options.now ?? Date.now;
+  // `codex login status` runs a child process, so its answer is kept for a
+  // short time and asked without blocking serve.
+  const signedInCache = new Map<string, { readonly at: number; readonly value: boolean | undefined }>();
+
+  async function codexSignedInCached(): Promise<boolean | undefined> {
+    const bun = Bun.which("bun") ?? process.execPath;
+    const codex = options.codex ?? codexCommand(bun);
+    const key = codex?.join("\u0000") ?? "";
+    const kept = signedInCache.get(key);
+    if (kept !== undefined && now() - kept.at < SIGNED_IN_CACHE_MS) return kept.value;
+    const value = await codexSignedIn(codex);
+    signedInCache.set(key, { at: now(), value });
+    return value;
+  }
 
   const promptFlow = defineFlow({
     name: "codex:prompt",
@@ -267,6 +284,7 @@ export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
     version: pkg.version,
     models: CODEX_MODELS,
     efforts: CODEX_EFFORTS,
+    signedIn: (_settings: Readonly<Record<string, unknown>>) => codexSignedInCached(),
     settings: PLUGIN_SETTINGS,
     steps: [
       {

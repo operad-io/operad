@@ -11,6 +11,9 @@ import { readFileSync, realpathSync } from "node:fs";
 /** How long one probe may take. */
 const PROBE_TIMEOUT_MS = 30_000;
 
+/** How long `codex login status` may take when a client asks for the login state. */
+export const SIGNED_IN_PROBE_TIMEOUT_MS = 10_000;
+
 /** The check could not pass; the message says what to do. */
 export class CodexInstallError extends Error {
   constructor(message: string) {
@@ -92,6 +95,35 @@ function versionOf(stdout: string): string | undefined {
 function loginKind(stdout: string): string {
   const found = /^Logged in using ([A-Za-z0-9 ]{1,30}?)(?:\s+-|\s*$)/m.exec(stdout.trim());
   return found?.[1] ?? "unknown login";
+}
+
+/**
+ * Whether the user's Codex is signed in, from `codex login status`: true on a
+ * zero exit, false on a non-zero one, undefined when codex is absent or cannot
+ * be asked. It never blocks the event loop and reads no account detail.
+ */
+export async function codexSignedIn(codex: readonly string[] | undefined): Promise<boolean | undefined> {
+  if (codex === undefined) return undefined;
+  const signal = AbortSignal.timeout(SIGNED_IN_PROBE_TIMEOUT_MS);
+  let child: ReturnType<typeof Bun.spawn>;
+  try {
+    child = Bun.spawn([...codex, "login", "status"], {
+      stdin: "ignore",
+      env: { ...process.env },
+      stdout: "ignore",
+      stderr: "ignore",
+      signal,
+    });
+  } catch {
+    return undefined;
+  }
+  try {
+    const exitCode = await child.exited;
+    if (signal.aborted || exitCode === null) return undefined;
+    return exitCode === 0;
+  } catch {
+    return undefined;
+  }
 }
 
 /** What `operad plugin check` learns about the install. */

@@ -155,3 +155,9 @@ setup it depends on, in the order they were recorded. The root
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0362-M16 | packages/harness/claude/src/worker.ts | a long tool output was written as its first line only, so the rest was lost | `tool output is written in lines cut at the shared cap, so none of it is lost` |
+
+## T-0465 — a harness reports whether its agent is signed in
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0465-M3 | packages/harness/claude/src/claude-install.ts | `claudeSignedIn` returned true whenever `auth status` could be read instead of its `loggedIn` answer | `claude's signedIn answer > is false when claude auth status says loggedIn false` |

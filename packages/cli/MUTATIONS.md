@@ -261,3 +261,9 @@ the row fields.
 | T-0462-M8 | packages/cli/src/main.ts | the refusal no longer said a package needed its install script | `plugin add > a package whose declaration needs its install script says so` |
 | T-0462-M9 | packages/cli/src/main.ts | the plugin check before the config write was skipped | `plugin add > refuses a plugin declaration the check rejects` |
 | T-0462-M10 | packages/cli/src/main.ts | an HTTP install was accepted without `"confirmed": true` | `plugins over HTTP > installing asks to confirm and writes nothing without it` |
+
+## T-0465 — a harness reports whether its agent is signed in
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0465-M2 | packages/cli/src/main.ts | the plugin list no longer asked the registry for a harness's `signedIn`, so `/v1/plugins` left the field out | `plugins over HTTP > GET /v1/plugins carries a harness's signedIn answer, and leaves it out when it cannot tell` |

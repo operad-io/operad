@@ -22,6 +22,9 @@ const demoPath = fileURLToPath(
 const notesPath = fileURLToPath(
   new URL("../../engine/test/fixtures/example-plugin/index.ts", import.meta.url),
 );
+const signedInPath = fileURLToPath(
+  new URL("../../engine/test/fixtures/plugins/signed-in-harness.ts", import.meta.url),
+);
 
 function capture(): { io: CliIo; out(): string; err(): string } {
   let out = "";
@@ -55,6 +58,7 @@ interface Rig {
 async function withRig(
   body: (rig: Rig) => Promise<void>,
   installRun?: InstallRunner,
+  extraPlugins: Record<string, { module: string; enabled: boolean; settings?: unknown }> = {},
 ): Promise<void> {
   const root = await tempRoot();
   const home = join(root, "home");
@@ -66,6 +70,7 @@ async function withRig(
         demo: { module: demoPath, enabled: true },
         notes: { module: notesPath, enabled: true },
         shell: { module: "@operad-io/shell", enabled: false },
+        ...extraPlugins,
       },
       store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
     }),
@@ -141,6 +146,7 @@ interface Row {
   version: string | null;
   enabled: boolean;
   origin: string;
+  signedIn?: boolean;
 }
 
 /** A `bun add` that writes the package a local registry would have put there. */
@@ -194,6 +200,28 @@ describe("plugins over HTTP", () => {
       expect(plugins.find((row) => row.name === "notes")?.version).toBe("0.1.0");
     });
   });
+
+  test("GET /v1/plugins carries a harness's signedIn answer, and leaves it out when it cannot tell", async () => {
+    const listing = async (answer: boolean): Promise<Row[]> => {
+      let rows: Row[] = [];
+      await withRig(
+        async (rig) => {
+          const response = await call(rig, "GET");
+          expect(response.status).toBe(200);
+          rows = ((await response.json()) as { plugins: Row[] }).plugins;
+        },
+        undefined,
+        { signed: { module: signedInPath, enabled: true, settings: { answer } } },
+      );
+      return rows;
+    };
+    expect((await listing(true)).find((row) => row.name === "signed")?.signedIn).toBe(true);
+    expect((await listing(false)).find((row) => row.name === "signed")?.signedIn).toBe(false);
+    const rows = await listing(true);
+    expect(rows.find((row) => row.name === "demo")?.signedIn).toBeUndefined();
+    expect(rows.find((row) => row.name === "shell")?.signedIn).toBeUndefined();
+  });
+
 
   test("disable and enable change the config the command line reads, and are recorded", async () => {
     await withRig(async (rig) => {

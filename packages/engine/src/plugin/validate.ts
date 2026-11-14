@@ -73,6 +73,9 @@ export interface NormalizedPlugin {
     | ((settings: Readonly<Record<string, JsonValue>>) => HarnessModels)
     | undefined;
   readonly efforts: HarnessEfforts | undefined;
+  readonly signedIn:
+    | ((settings: Readonly<Record<string, JsonValue>>) => MaybePromise<boolean | undefined>)
+    | undefined;
   readonly requires: PluginRequires | undefined;
 }
 
@@ -788,6 +791,7 @@ export function normalizePlugin(raw: unknown, index: number): NormalizedPlugin {
     enforces: normalizeEnforces(raw.enforces, `${at}: enforces`) ?? [],
     models: normalizeModels(raw.models, kind, at),
     efforts: normalizeEfforts(raw.efforts, kind, at),
+    signedIn: normalizeSignedIn(raw.signedIn, kind, at),
     requires: normalizeRequires(raw.requires, at),
   };
 }
@@ -825,6 +829,23 @@ function normalizeEfforts(value: unknown, kind: string, at: string): HarnessEffo
     list: levels.list,
     default: levels.fallback,
     ...(typeof flag === "string" ? { flag } : {}),
+  };
+}
+
+/** A harness plugin's `signedIn` hook: true, false, or undefined when it cannot tell. */
+function normalizeSignedIn(
+  value: unknown,
+  kind: string,
+  at: string,
+): ((settings: Readonly<Record<string, JsonValue>>) => MaybePromise<boolean | undefined>) | undefined {
+  if (value === undefined) return undefined;
+  if (kind !== "harness") throw new PluginError(`${at}: signedIn: only a harness plugin declares signedIn`);
+  if (typeof value !== "function") throw new PluginError(`${at}: signedIn: must be a function`);
+  const source = value as (settings: Readonly<Record<string, JsonValue>>) => unknown;
+  return async (settings) => {
+    const answer = await source(settings);
+    if (answer === undefined || answer === true || answer === false) return answer;
+    throw new PluginError(`${at}: signedIn: must return true, false or undefined`);
   };
 }
 

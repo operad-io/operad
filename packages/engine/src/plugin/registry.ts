@@ -1094,6 +1094,24 @@ export class PluginRegistry {
     return found;
   }
 
+  /**
+   * Whether a loaded harness plugin's agent is signed in now: true or false
+   * when it can tell, undefined when it is not a harness, declares no
+   * `signedIn`, or the check fails. This is the one answer a client receives;
+   * a credential is never read out.
+   */
+  async signedInFor(plugin: string): Promise<boolean | undefined> {
+    const found = this.byName.get(plugin);
+    if (found === undefined || found.kind !== "harness" || found.signedIn === undefined) {
+      return undefined;
+    }
+    try {
+      return await found.signedIn(this.settingsFor(plugin));
+    } catch {
+      return undefined;
+    }
+  }
+
   /** What an action's checks may read. */
   actionEnv(): ActionEnv {
     return {

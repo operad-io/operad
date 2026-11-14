@@ -16,6 +16,11 @@ export interface PluginInfo {
   readonly version: string | null;
   readonly enabled: boolean;
   readonly origin: PluginOrigin;
+  /**
+   * A loaded harness plugin's answer about its agent's login: `true` or
+   * `false`, absent when it cannot tell. Only the answer is exposed.
+   */
+  readonly signedIn?: boolean | undefined;
 }
 
 export interface PluginSwitchOptions {

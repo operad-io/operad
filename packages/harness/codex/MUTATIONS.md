@@ -18,3 +18,9 @@ recorded. The root [MUTATIONS.md](../../../MUTATIONS.md) explains the format and
 | T-0378-M13 | packages/harness/codex/src/index.ts | a refused call was not logged as blocked | `codex/agent: permissions > a command the profile denies is rejected and logged as blocked` |
 | T-0378-M14 | packages/harness/codex/src/access.ts | a network request with no command was refused while a command rule is set | `codex/agent: permissions > a network request with no command is allowed once even where a command rule is set` |
 | T-0378-M16 | packages/harness/codex/src/access.ts | a request with a command and a url was judged as a network request, so a deny rule never saw the command | `codex/agent: permissions > a network request that carries a command is judged as that command` |
+
+## T-0465 — a harness reports whether its agent is signed in
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0465-M6 | packages/harness/codex/src/install.ts | `codexSignedIn` answered true on any exit instead of only a zero one | `codex's signedIn answer > is false when codex login status exits non-zero` |
