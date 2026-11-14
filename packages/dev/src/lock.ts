@@ -1,6 +1,6 @@
 /** The repository lock: one dev writer per repository, safe across processes. */
 
-import { existsSync, realpathSync, unlinkSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, statSync, unlinkSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { defaultOperadHome } from "@operad-io/engine";
 import {
@@ -9,7 +9,6 @@ import {
   withLockFile,
   type LockFileOptions,
 } from "@operad-io/engine/platform";
-import { git } from "./git.ts";
 import { DevError } from "./model.ts";
 
 /** What a waiter may inject: the clock, how it waits, and where a log goes. */
@@ -27,15 +26,40 @@ function realpathOr(path: string): string {
 }
 
 /**
- * The identity of a repository, shared by every worktree. The git directory is
- * common to all worktrees, so a lock taken through one holds through all.
+ * The git directory a repository shares with its worktrees. A normal checkout
+ * has `.git` as a directory; a linked worktree has a `.git` file naming its git
+ * directory, whose `commondir` file names the shared one. Reading both keeps
+ * the lock path off a git process and off the working tree.
+ */
+function commonGitDirectory(repositoryPath: string): string {
+  const dotGit = join(repositoryPath, ".git");
+  try {
+    if (statSync(dotGit).isDirectory()) return realpathOr(dotGit);
+    const line = /^gitdir:\s*(.+?)\s*$/m.exec(readFileSync(dotGit, "utf8"));
+    const named = line?.[1];
+    if (named !== undefined) {
+      const gitDirectory = resolve(repositoryPath, named);
+      const commonFile = join(gitDirectory, "commondir");
+      if (existsSync(commonFile)) {
+        const common = readFileSync(commonFile, "utf8").trim();
+        if (common.length > 0) return realpathOr(resolve(gitDirectory, common));
+      }
+      return realpathOr(gitDirectory);
+    }
+  } catch {
+    // Not a readable git checkout; its own path is the best identity left.
+  }
+  return realpathOr(resolve(repositoryPath));
+}
+
+/**
+ * The identity of a repository, shared by every worktree, so a lock taken
+ * through one holds through all.
  */
 function repositoryKey(repositoryPath: string): string {
-  const common = git(repositoryPath, ["rev-parse", "--git-common-dir"]);
-  const directory = realpathOr(
-    common.ok ? resolve(repositoryPath, common.out) : resolve(repositoryPath),
-  );
-  return new Bun.CryptoHasher("sha1").update(directory).digest("hex");
+  return new Bun.CryptoHasher("sha1")
+    .update(commonGitDirectory(repositoryPath))
+    .digest("hex");
 }
 
 /**

@@ -1242,3 +1242,9 @@ the row fields.
 |---|---|---|---|
 | T-0461-M1 | packages/dev/src/project-flows.ts | `defaultFlowStages` left the check commands and the reviewer args out, so the built-in default listed bare stages | `dev.flows and dev.flowList in settings > the built-in default lists the stages its worker, reviewer and gate give it` |
 | T-0461-M2 | packages/dev/src/project-flows.ts | `listRepositoryFlows` added the built-in default even when `dev.json` defined `default` | `dev.flows and dev.flowList in settings > a dev.json default is listed instead of the built-in one` |
+
+## T-0466 — a linked worktree shares the repository lock
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0466-M5 | packages/dev/src/lock.ts | `commonGitDirectory` used the worktree's own path instead of reading the `.git` file and its `commondir`, so a linked worktree took a different lock from its repository | `the repository lock > a linked worktree shares its repository's lock` |

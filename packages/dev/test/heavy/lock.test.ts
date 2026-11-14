@@ -125,6 +125,14 @@ describe("the repository lock", () => {
     expect(existsSync(lock)).toBe(false);
   });
 
+  test("a linked worktree shares its repository's lock", async () => {
+    const root = await tempRoot();
+    const repositoryPath = await makeGitRepository(root);
+    const worktree = join(root, "linked");
+    gitOrThrow(repositoryPath, ["worktree", "add", "-q", "-b", "linked", worktree]);
+    expect(repositoryLockPath(worktree)).toBe(repositoryLockPath(repositoryPath));
+  });
+
   test("a main clone whose lock dev holds is clean and fast-forwards", async () => {
     const root = await tempRoot();
     const repositoryPath = await makeGitRepository(root);
