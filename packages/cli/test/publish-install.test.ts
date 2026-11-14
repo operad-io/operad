@@ -202,7 +202,7 @@ describe("publishing and installing the packages", () => {
     expect(check.out).toContain("claude: ok");
   }, 120_000);
 
-  test("init retries a claude install that failed after config.json was written", async () => {
+  test.skipIf(!online)("init retries a claude install that failed after config.json was written", async () => {
     const scratchRoot = scratch("operad-publish-retry-");
     const tarballs = packAll(join(scratchRoot, "tarballs"));
     const binary = cliPrefix(scratchRoot, tarballs);
