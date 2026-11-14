@@ -2,6 +2,7 @@ import { INSTALL_ON_ENABLE, OPTIONAL_PLUGINS, defaultPluginModule, distributionC
 import { closeSync, mkdirSync, openSync, readFileSync, writeSync } from "node:fs";
 import { userInfo } from "node:os";
 import { join } from "node:path";
+import { isatty } from "node:tty";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   ConfigError,
@@ -129,6 +130,21 @@ function isClosedPipe(error: unknown): boolean {
     error !== null &&
     (error as { code?: unknown }).code === "EPIPE"
   );
+}
+
+/** Whether a standard descriptor is a terminal, without creating its stream. */
+function descriptorIsTTY(fd: 0 | 1): boolean {
+  return isatty(fd);
+}
+
+/** stdout's width when it is a terminal; a stream that cannot be read leaves it unknown. */
+function stdoutColumns(): number | undefined {
+  if (!isatty(1)) return undefined;
+  try {
+    return process.stdout.columns;
+  } catch {
+    return undefined;
+  }
 }
 
 const hookedStreams = new WeakSet<NodeJS.WriteStream>();
@@ -2455,9 +2471,7 @@ export async function main(
 ): Promise<number> {
   const io = options.io ?? STDIO;
   const home = options.home ?? defaultOperadHome();
-  const tty =
-    options.isTTY ??
-    (process.stdout.isTTY === true && process.stdin.isTTY === true);
+  const tty = options.isTTY ?? (descriptorIsTTY(1) && descriptorIsTTY(0));
   const command = args[0];
 
   try {
@@ -2539,7 +2553,7 @@ export async function main(
         home,
         io,
         args.slice(1),
-        options.isTTY ?? process.stdout.isTTY === true,
+        options.isTTY ?? descriptorIsTTY(1),
       );
     }
 
@@ -2801,7 +2815,7 @@ export async function main(
           return 0;
         }
         if (command === "show") {
-          await commandShow(context, io, showRepo?.args ?? args.slice(1), tty, options.columns ?? process.stdout.columns);
+          await commandShow(context, io, showRepo?.args ?? args.slice(1), tty, options.columns ?? stdoutColumns());
           return 0;
         }
         const { args: rest, present } = splitFlag(args.slice(1), "--json");

@@ -178,3 +178,6 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0427-M1 | packages/cli/src/main.ts | the module hooked `process.stdout` and `process.stderr` again when it loaded, so importing it read the streams | `the CLI's module > does not touch process.stdout or process.stderr when it is imported` |
+| T-0427-M2 | packages/cli/src/main.ts | `main` took the terminal from `process.stdout.isTTY` and `process.stdin.isTTY` again, so a command with injected output read the streams | `the CLI's main with injected output > list takes the terminal from the descriptors, not process.stdout` |
+| T-0427-M3 | packages/cli/src/main.ts | `pair` took its terminal from `process.stdout.isTTY` again | `the CLI's main with injected output > pair takes the terminal from the descriptor, not process.stdout` |
+| T-0427-M4 | packages/cli/src/main.ts | `stdoutColumns` read `process.stdout.columns` without checking that the descriptor is a terminal | `the CLI's main with injected output > show takes its width without reading process.stdout when it is not a terminal` |
