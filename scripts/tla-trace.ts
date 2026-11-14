@@ -7,7 +7,7 @@
  *   operad history operad-ios/T-0077-state-colors-followups --json > b.json
  *   bun scripts/tla-trace.ts --out /tmp/trace \
  *     operad-ios/T-0076-chat-bottom-followups=a.json operad-ios/T-0077-state-colors-followups=b.json
- *   TLA_MAIN=PoolTraceMC TLA_LIB=/tmp/trace bash scripts/tla.sh pool -workers 1
+ *   TLA_MAIN=TraceMC TLA_LIB=/tmp/trace bash scripts/tla.sh pool -workers 1 -deadlock
  *
  * Arguments: `<id>=<file>` (the id is what you gave `operad history`; the part
  * before `/` is the repository), or with no file, one history on stdin and
@@ -55,13 +55,17 @@ const NOISE = [/^running /, /^moving to /, /^waiting for you/, /^event /, /^cont
 
 /**
  * The event a history line stands for, or undefined when the line only
- * narrates. Events are `run:start`, `run:done`, `run:cancelled`,
+ * narrates. Events are `run:start`, `run:done`, `run:cancelled`, `run:failed`,
+ * `run:crashed` (a step re-run after a crash; neither is in a model, so a trace
+ * holding one is rejected there rather than accepted without it),
  * `start:<step>`, `result:<step>:<result>` and `choose:<action>`.
  */
 export function eventOf(line: HistoryLine): string | undefined {
   const what = line.what;
   if (what === "run started") return "run:start";
   if (what === "run done") return "run:done";
+  if (what === "run failed") return "run:failed";
+  if (/^re-running .* after a crash$/.test(what)) return "run:crashed";
   if (line.step === null && /cancel/i.test(what)) return "run:cancelled";
   if (NOISE.some((pattern) => pattern.test(what))) return undefined;
   const started = /^started (\S+)$/.exec(what);
@@ -211,6 +215,12 @@ export function verdictOf(tlcOutput: string): Verdict {
   }
   if (/Invariant NotAllMatched is violated/.test(tlcOutput) || matched === total) {
     return { accepted: true, matched: total, total };
+  }
+  // No error in the whole run is the only way the model rejects: anything else
+  // (another invariant, a deadlock, a parse error) stopped TLC for another reason.
+  if (!/Model checking completed\. No error has been found/.test(tlcOutput)) {
+    const why = /Error: ([^\n]*)/.exec(tlcOutput)?.[1] ?? "it did not finish";
+    throw new Error(`TLC stopped for another reason than the model refusing an event (${why}); run with -workers 1 -deadlock`);
   }
   return { accepted: false, matched, total, rejected: { task, event } };
 }

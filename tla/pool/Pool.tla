@@ -121,10 +121,13 @@ RunDone(t) ==
   /\ EndRun(t, w)
   /\ UNCHANGED <<want, isFb, attempts, waits>>
 
-(* The model is unavailable or at its usage limit, or the harness process
-   cannot start (a failed result with reason `missing` or `spawn`).
+(* The model is unavailable or at its usage limit (`modelUnavailable`), or the
+   harness process cannot start (a failed result with reason `missing` or `spawn`).
    D8: a worker with a fallback runs it, after its own places are released.
-   D9: otherwise the step waits and runs the same worker again, then a person. *)
+   D9: with no fallback, only an unavailable model waits (the retry wait, steps.ts
+   `modelUnavailable(outcomeData) && waits < MAX_WORK_WAITS`) and runs the same
+   worker again; a process that did not start, or a wait budget that is spent,
+   goes to a person. The model does not tell the two causes apart: either may happen. *)
 RunModelError(t) ==
   LET w == holds[t] IN
   /\ phase[t] = "running"
@@ -135,13 +138,13 @@ RunModelError(t) ==
             /\ want' = [want EXCEPT ![t] = WFallback[w]]
             /\ isFb' = [isFb EXCEPT ![t] = TRUE]
             /\ UNCHANGED waits
-       ELSE IF waits[t] < MaxWaits
-              THEN /\ phase' = [phase EXCEPT ![t] = "retry"]
-                   /\ want' = [want EXCEPT ![t] = w]
-                   /\ waits' = [waits EXCEPT ![t] = @ + 1]
-                   /\ UNCHANGED isFb
-              ELSE /\ phase' = [phase EXCEPT ![t] = "person"]
-                   /\ UNCHANGED <<want, isFb, waits>>
+       ELSE \/ /\ waits[t] < MaxWaits
+               /\ phase' = [phase EXCEPT ![t] = "retry"]
+               /\ want' = [want EXCEPT ![t] = w]
+               /\ waits' = [waits EXCEPT ![t] = @ + 1]
+               /\ UNCHANGED isFb
+            \/ /\ phase' = [phase EXCEPT ![t] = "person"]
+               /\ UNCHANGED <<want, isFb, waits>>
   /\ UNCHANGED attempts
 
 (* A timeout, a thrown harness step or another failure: D8 says no fallback;
@@ -182,12 +185,21 @@ CancelIdle(t) ==
   /\ NoBook
   /\ UNCHANGED <<holds, want, last, isFb, attempts, waits>>
 
-(* The retry timer of the work step fires: pool/agent is called again. *)
+(* The retry timer of the work step fires: pool/agent is called again. The
+   work step's worktree visit after a retry wait is not a replay, so it counts a
+   new attempt (steps.ts `attemptFor`) and `prepare` sets `workWaits` to 0
+   (steps.ts:768, 871). In the code nothing bounds that loop; here the count
+   stops at MaxAttempts and the waits are reset only while it still grows, so
+   the state space is finite and the waits then run out. *)
 Retry(t) ==
   /\ phase[t] = "retry"
   /\ phase' = [phase EXCEPT ![t] = "waiting"]
+  /\ IF attempts[t] < MaxAttempts
+       THEN /\ attempts' = [attempts EXCEPT ![t] = @ + 1]
+            /\ waits' = [waits EXCEPT ![t] = 0]
+       ELSE UNCHANGED <<attempts, waits>>
   /\ NoBook
-  /\ UNCHANGED <<holds, want, last, isFb, attempts, waits>>
+  /\ UNCHANGED <<holds, want, last, isFb>>
 
 (* The reviewer accepts: the task is merged. *)
 Merge(t) ==
@@ -249,6 +261,9 @@ TypeOK ==
   /\ homeUsed \in [Harnesses -> Nat]
   /\ want \in [Tasks -> Workers \cup {None}]
   /\ last \in [Tasks -> Workers \cup {None}]
+  /\ isFb \in [Tasks -> BOOLEAN]
+  /\ attempts \in [Tasks -> 0..MaxAttempts]
+  /\ waits \in [Tasks -> 0..MaxWaits]
 
 \* D3: the repository share is never exceeded.
 RepoLimit == \A w \in Workers : used[w] <= WCount[w]
@@ -280,19 +295,18 @@ RunsInOwnRepo == \A t \in Tasks : holds[t] # None => WRepo[holds[t]] = TRepo[t]
 ReviewerHoldsNothing == \A t \in Tasks : phase[t] = "review" => holds[t] = None
 
 \* No hold-and-wait: a task that waits holds nothing, so a waiting task only
-\* waits for running tasks, which wait for nobody: the wait graph has no cycle.
+\* waits for running tasks, which wait for nobody. That is the whole argument
+\* for "no cycle of waits"; a separate NoWaitCycle invariant was vacuous.
 NoHoldAndWait == \A t \in Tasks : phase[t] \in {"waiting", "retry", "person"} => holds[t] = None
 
-WaitsFor(t, u) ==
-  /\ phase[t] = "waiting" /\ holds[u] # None
-  /\ \/ holds[u] \in Cands(t)
-     \/ \E w \in Cands(t) : WHarness[w] = WHarness[holds[u]] /\ WHarness[w] \in Capped
-NoWaitCycle == \A t \in Tasks : ~((\E u \in Tasks : WaitsFor(t, u)) /\ (\E u \in Tasks : WaitsFor(u, t)))
 
 -------------------------------------------------------------------------
 (* Liveness, under Fairness *)
 
-\* A waiting task gets a worker (or ends) once one is free.
+\* A waiting task gets a worker (or ends) once one is free. This holds because
+\* tasks, attempts and waits are bounded and Claim is weakly fair; it says little
+\* about starvation in the code, where the wake-up of waiters is not a queue and a
+\* waiter may lose a capped harness again and again.
 WaitingGetsWorker == \A t \in Tasks : (phase[t] = "waiting") ~> (phase[t] # "waiting")
 
 \* A running worker's run ends.

@@ -36,6 +36,14 @@ describe("scripts/tla-trace.ts", () => {
     expect(eventOf(line("run cancelled"))).toBe("run:cancelled");
   });
 
+  test("a failed run and a step re-run after a crash are events no model has", () => {
+    expect(eventOf(line("run failed"))).toBe("run:failed");
+    expect(eventOf(line("re-running work after a crash", "work"))).toBe("run:crashed");
+    const trace = buildTrace([{ id: A, lines: [line("run started"), line("run failed")] }]);
+    expect(trace.events.map((e) => e.event)).toEqual(["run:start", "run:failed"]);
+    expect(trace.ignored).toEqual([]);
+  });
+
   test("the fixture history reads as the events of its flow", () => {
     const trace = buildTrace([{ id: B, lines: load("T-0077-state-colors-followups") }]);
     const events = trace.events.map((e) => e.event);
@@ -133,6 +141,13 @@ describe("scripts/tla-trace.ts", () => {
         total: 3,
         rejected: { task: "b", event: "result:reverify:ready" },
       });
+    });
+
+    test("a run TLC stopped for another reason is not a rejection", () => {
+      const head = progress(0, 3, "a", "start:work") + progress(1, 3, "a", "result:work:done");
+      expect(() => verdictOf(head + "Error: Invariant RepoLimit is violated.\n")).toThrow("RepoLimit is violated");
+      expect(() => verdictOf(head + "Error: Deadlock reached.\n")).toThrow("Deadlock reached");
+      expect(() => verdictOf(head)).toThrow("another reason");
     });
 
     test("output that is not a trace check is refused", () => {
