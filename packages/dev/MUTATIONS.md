@@ -957,7 +957,7 @@ the row fields.
 
 | id | file | mutation | failing test |
 |---|---|---|---|
-| T-0340-M1 | packages/dev/src/refusals.ts | the plan's second confirm said "nothing more to do", so the in-process confirm check no longer matched | `operad with the dev plugin > the real binary registers and plans; list, show and confirm run in process` |
+| T-0340-M1 | packages/dev/src/refusals.ts | the plan's second confirm said "nothing more to do", so the in-process confirm check no longer matched | `operad with the dev plugin > the real binary registers, plans, lists, shows and confirms` |
 
 ## T-0343 — integration checks take a freed place before verify checks
 
@@ -1176,4 +1176,10 @@ the row fields.
 
 | id | file | mutation | failing test |
 |---|---|---|---|
-| T-0437-M1 | packages/dev/src/service.ts | `confirmPlan` stopped writing the `ready` change line into each task it released, a first confirm that now runs in process | `operad with the dev plugin > the real binary registers and plans; list, show and confirm run in process` (expected `/- \d\d:\d\d {2}ready/`, received only the `created` line) |
+| T-0437-M1 | packages/dev/src/refusals.ts | the plan's second confirm said "already done", so the in-process confirm check no longer matched | `operad with the dev plugin > the real binary registers, plans, lists, shows and confirms` |
+
+## T-0442 — one shared in-process runner; the in-process confirm is checked
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0442-M1 | packages/dev/src/service.ts | `confirmPlan` stopped writing the `ready` change line into each task it released, a first confirm that runs in process | `operad with the dev plugin > the real binary registers and plans; list, show and confirm run in process` (expected `/- \d\d:\d\d {2}ready/`, received only the `created` line) |
