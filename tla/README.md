@@ -114,9 +114,11 @@ Properties, under weak fairness of what the code does by itself (the world, that
 is hand pushes, cancel, rework, kills and the clone's owner, is not fair):
 `PushedGetsMerged`, `QueuedResolves` (a task in the queue is merged, reported
 failed or cancelled, or sent back for rework) and `CloneFollowsMerge` (after a
-merge the clone holds the merged commit, unless the follow was skipped: off the
-branch, uncommitted changes, local commits; the code reports that in the task's
-changes). A hand push after the last merge is not followed by the clone: the code
+merge the clone holds the merged commit, unless the follow was skipped; an
+action clause checks that a skip happens only when the clone was off the branch,
+dirty or diverged, because each branch of `Follow` is enabled only under its own
+condition from `updateMainClone`, so a clean clone on the branch must
+fast-forward). A hand push after the last merge is not followed by the clone: the code
 only follows merges it made, so "the clone ends equal to origin/main" holds only
 when no hand push came after the last merge and the follow was not skipped.
 
