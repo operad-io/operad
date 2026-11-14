@@ -15,6 +15,10 @@ the same version.
   it runs `operad dev:auto <plan> --level run`.
 - Two commands in the user manual were wrong: `operad show <id> --section` and
   `operad chat:model`.
+- A task cancelled while the batch it was claimed into was being pushed could
+  still be merged with that batch. Cancelling and the push now take turns: either
+  the batch lands without the task, or the cancel says the task was already
+  merged.
 
 ### Changed
 
