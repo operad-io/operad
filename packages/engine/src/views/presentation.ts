@@ -1542,15 +1542,21 @@ export class Views {
         `action "${name}" needs an actor: { via, id } says who asked`,
       );
     }
-    // An action that targets no object names no id. The kernel has no such
-    // action today, but the HTTP body allows it, so the views say why it
-    // cannot run instead of refusing the request before looking it up.
+    // An action that targets no object names no id: the HTTP body allows it,
+    // and the action itself says whether it can run without one.
     if (id === undefined) {
       const info = this.resolveActionInfo(name);
-      throw new ViewError(
-        "not-found",
-        `action "${info.name}" targets ${info.on} objects; pass the object id`,
-      );
+      if (info.on !== undefined) {
+        throw new ViewError(
+          "not-found",
+          `action "${info.name}" targets ${info.on} objects; pass the object id`,
+        );
+      }
+      const action = this.registry.targetlessAction(info.plugin, info.action);
+      if (action === undefined) {
+        throw new ViewError("action", `there is no action "${name}"`);
+      }
+      return this.runAction({ plugin: info.plugin, action, info }, undefined, undefined, options);
     }
     const resolved = await this.resolve(id);
     const object = resolved.object;
@@ -1567,11 +1573,26 @@ export class Views {
         ? resolved.id
         : this.guardedRow(owner.plugin, resolved.type, object).id;
     const target = this.resolveAction(name, resolved.type, subject);
+    return this.runAction(target, object, subject, options);
+  }
+
+  /** The checks and the call one resolved action shares, with or without an object. */
+  private async runAction(
+    target: {
+      readonly plugin: string;
+      readonly action: ActionTypeDefinition;
+      readonly info: ActionInfo;
+    },
+    object: StoredObject | undefined,
+    subject: string | undefined,
+    options: ActOptions,
+  ): Promise<ViewActionRun> {
     const env = this.registry.actionEnv();
+    const label = subject ?? target.info.name;
 
     // A result that is already true is not an error: the plugin says so and
     // nothing runs.
-    if (target.action.settled !== undefined) {
+    if (object !== undefined && target.action.settled !== undefined) {
       let message: string | undefined;
       try {
         message = await target.action.settled(object, options.args ?? {}, env);
@@ -1593,18 +1614,23 @@ export class Views {
 
     let holds: unknown;
     try {
-      holds = await target.action.when(object.data, env);
+      holds = await target.action.when(object?.data ?? {}, env);
     } catch (error) {
       this.onLog(
         `plugin "${target.plugin}": action "${target.action.name}": when failed: ${messageOf(error)}`,
       );
       throw new ViewError(
         "not-available",
-        `${subject} cannot ${target.info.name} now`,
+        `${label} cannot ${target.info.name} now`,
       );
     }
     if (holds !== true) {
-      throw new ViewError("not-available", await this.refusal(target, object, subject));
+      throw new ViewError(
+        "not-available",
+        object === undefined || subject === undefined
+          ? `${target.info.name} cannot run now`
+          : await this.refusal(target, object, subject),
+      );
     }
 
     const args: Record<string, unknown> = { ...(options.args ?? {}) };
@@ -1628,10 +1654,14 @@ export class Views {
       );
     }
 
+    const schema =
+      object === undefined
+        ? target.action.args
+        : target.action.argsFor?.(object, env) ?? target.action.args;
     let personArgs: Record<string, unknown>;
     try {
       personArgs = validateActionArgs(
-        target.action.argsFor?.(object, env) ?? target.action.args,
+        schema,
         args,
         `action "${target.info.name}"`,
       );
@@ -1655,20 +1685,34 @@ export class Views {
 
     // An uploaded file is taken only now that nothing else can refuse the call;
     // the action gets the stored path where the client sent the reference.
-    const stored = await this.takeFiles(
-      target.action.argsFor?.(object, env) ?? target.action.args,
-      personArgs,
-      resolved.type,
-      resolved.id,
-      target.info.name,
-    );
+    let stored = personArgs;
+    if (object === undefined) {
+      const given = fileProperties(schema).filter(
+        (file) => personArgs[file.name] !== undefined,
+      );
+      if (given.length > 0) {
+        throw new ViewError(
+          "args",
+          `action "${target.info.name}" targets no object, so it takes no file`,
+        );
+      }
+    } else {
+      stored = await this.takeFiles(
+        schema,
+        personArgs,
+        object.type,
+        object.id,
+        target.info.name,
+      );
+    }
 
-    const runId = await this.waitingRunId(resolved.type, resolved.id);
+    const runId =
+      object === undefined ? undefined : await this.waitingRunId(object.type, object.id);
     const result = await this.registry.runAction(
       `${target.plugin}/${target.action.name}`,
       stored,
       {
-        object,
+        ...(object === undefined ? {} : { object }),
         ...(runId === undefined ? {} : { runId }),
         actor: options.actor,
         cwd: this.cwd,
@@ -1821,7 +1865,8 @@ export class Views {
               ? info.action === name
               : info.plugin === target.plugin && info.action === target.action,
           )
-          .map((info) => info.on),
+          .map((info) => info.on)
+          .filter((on): on is string => on !== undefined),
       ),
     ];
     return new ViewError(
