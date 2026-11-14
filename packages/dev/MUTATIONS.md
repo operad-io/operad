@@ -1178,3 +1178,8 @@ the row fields.
 |---|---|---|---|
 | T-0441-M2 | packages/dev/src/settings.ts | `defaultAgentUse` returned `radian/agent` before reading the home's config | `the agent of a repository that names no worker > is the first enabled harness in the fixed order`, `... > comes from the home's config, and the reviewer follows it`, `... > also applies when dev.json is missing` and `... > an enabled codex is still a harness` |
 | T-0441-M3 | packages/dev/src/service.ts | `repo add` wrote `worker: { "use": "radian/agent", "args": [] }` into a new `.operad/dev.json` again, so the repository did not follow the home | `dev/worktree > a missing settings file means the documented defaults` |
+## T-0437 — the real-binary CLI test starts the binary twice
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0437-M1 | packages/dev/src/refusals.ts | the plan's second confirm said "already done", so the in-process confirm check no longer matched | `operad with the dev plugin > the real binary registers, plans, lists, shows and confirms` |
