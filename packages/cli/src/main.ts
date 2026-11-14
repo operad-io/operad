@@ -7,6 +7,10 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   ConfigError,
   FileSecretStore,
+  addPackage,
+  addPluginEntry,
+  OPERAD_PLUGIN_VERSION,
+  isRecord,
   Kernel,
   LockHeldError,
   acquireLock,
@@ -60,6 +64,7 @@ import {
   startHttpServer,
   storeRootOf,
   ENGINE_VERSION,
+  type AddedPackage,
   type ActionArgsSchema,
   type ActionArgSchema,
   type ActionInfo,
@@ -222,6 +227,8 @@ export interface MainOptions {
   readonly columns?: number | undefined;
   /** Replaces the OpenTUI app in a test; the real one is imported only by `tui`. */
   readonly tui?: TuiRunner | undefined;
+  /** Replaces the `bun add` command in a test for `plugin add`; defaults to Bun. */
+  readonly pluginInstall?: InstallRunner | undefined;
 }
 
 /** What the CLI hands the terminal app. */
@@ -281,6 +288,7 @@ const HELP = [
   "  running              runs in progress",
   "  flows                loaded flows and where they come from",
   "  plugin list          plugins with their version and whether they are enabled",
+  "  plugin add <npm package> install a plugin from npm, off until it is enabled",
   "  plugin enable <name> load a plugin again at the next command",
   "  plugin disable <name> stop loading a plugin at the next command",
   "  plugin check <path>  validate a plugin declaration without starting it",
@@ -2089,13 +2097,18 @@ function resolvableFrom(specifier: string, from: string): boolean {
   }
 }
 
+/** What checking one plugin declaration against the configured plugins found. */
+interface PluginCheckResult {
+  readonly ok: boolean;
+  readonly message: string;
+}
+
 /** Validates one loaded plugin with the configured plugins, without starting a run. */
-async function checkLoadedDefinition(
+async function validateLoadedDefinition(
   context: Context,
-  io: CliIo,
   name: string,
   definition: unknown,
-): Promise<number> {
+): Promise<PluginCheckResult> {
   const configured = await loadConfiguredPlugins({ home: context.home, installOnEnable: INSTALL_ON_ENABLE });
   const others = configured.loaded
     .map((loaded) => loaded.definition)
@@ -2111,16 +2124,25 @@ async function checkLoadedDefinition(
       onLog: () => undefined,
     });
   } catch (error) {
-    io.write(`${name}: ${messageOf(error)}\n`);
-    return 1;
+    return { ok: false, message: `${name}: ${messageOf(error)}` };
   }
   if (!registry.names().includes(name)) {
     const refusal = registry.refusals().find((item) => item.plugin === name);
-    io.write(`${refusal?.message ?? `${name}: not loaded`}\n`);
-    return 1;
+    return { ok: false, message: refusal?.message ?? `${name}: not loaded` };
   }
-  io.write(`${name}: ok\n`);
-  return 0;
+  return { ok: true, message: `${name}: ok` };
+}
+
+/** Validates one loaded plugin with the configured plugins, without starting a run. */
+async function checkLoadedDefinition(
+  context: Context,
+  io: CliIo,
+  name: string,
+  definition: unknown,
+): Promise<number> {
+  const checked = await validateLoadedDefinition(context, name, definition);
+  io.write(`${checked.message}\n`);
+  return checked.ok ? 0 : 1;
 }
 
 /** What refuses a plugin change; the command line and `serve` word the same reasons their own way. */
@@ -2133,6 +2155,156 @@ const COMMAND_REFUSALS: PluginRefusals = {
   unknown: (message) => new ConfigError(message),
   active: (message) => new StateError(message),
 };
+
+/** What refuses a plugin `add`; the command line and `serve` word the same reasons their own way. */
+interface PluginAddRefusals {
+  invalid(message: string): Error;
+  refused(message: string): Error;
+}
+
+const COMMAND_ADD_REFUSALS: PluginAddRefusals = {
+  invalid: (message) => new UsageError(message),
+  refused: (message) => new ConfigError(message),
+};
+
+const HTTP_ADD_REFUSALS: PluginAddRefusals = {
+  invalid: (message) => new ViewError("args", message),
+  refused: (message) => new ViewError("refused", message),
+};
+
+/** An exact npm version: no range, tag or leading v. */
+const EXACT_NPM_VERSION =
+  /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
+
+function isNpmNamePart(value: string): boolean {
+  return (
+    value.length > 0 &&
+    value.length <= 214 &&
+    /^[a-z0-9][a-z0-9._-]*$/.test(value) &&
+    value !== "node_modules" &&
+    value !== "favicon.ico"
+  );
+}
+
+/** The npm rules a package name follows: one part, or `@scope/name`. */
+function isNpmPackageName(name: string): boolean {
+  if (name.length === 0 || name.length > 214) return false;
+  const scoped = name.startsWith("@");
+  const parts = (scoped ? name.slice(1) : name).split("/");
+  if (scoped ? parts.length !== 2 : parts.length !== 1) return false;
+  return parts.every(isNpmNamePart);
+}
+
+/** Splits `<package>[@version]`, refusing a name npm does not allow and a version that is not exact. */
+function parsePluginPackageSpec(
+  raw: string,
+  refusals: PluginAddRefusals,
+): { readonly name: string; readonly version?: string | undefined } {
+  const at = raw.startsWith("@") ? raw.indexOf("@", 1) : raw.indexOf("@");
+  const name = at > 0 ? raw.slice(0, at) : raw;
+  const version = at > 0 ? raw.slice(at + 1) : undefined;
+  if (!isNpmPackageName(name)) {
+    throw refusals.invalid(`"${raw}": not a valid npm package name`);
+  }
+  if (version !== undefined && !EXACT_NPM_VERSION.test(version)) {
+    throw refusals.invalid(
+      `"${raw}": not an exact version; name a version like 1.2.3, or leave it out for the latest`,
+    );
+  }
+  return {
+    name,
+    ...(version === undefined ? {} : { version }),
+  };
+}
+
+function withInstallScriptHint(message: string, hasInstallScript: boolean): string {
+  return hasInstallScript
+    ? `${message}; its package declares an install script, and installing runs none of the package scripts, so a package that needs one cannot be added`
+    : message;
+}
+
+/** What `plugin add` installed and the name the plugin declares. */
+interface AddedPlugin {
+  readonly packageName: string;
+  readonly packageVersion: string;
+  readonly declaredName: string;
+  readonly declaredVersion: string;
+}
+
+/** Installs one npm package, checks it, and adds it to `config.json` turned off. */
+async function addPlugin(
+  context: Context,
+  spec: string,
+  refusals: PluginAddRefusals,
+  run?: InstallRunner,
+): Promise<AddedPlugin> {
+  const parsed = parsePluginPackageSpec(spec, refusals);
+  let added: AddedPackage;
+  try {
+    added = await addPackage({
+      home: context.home,
+      specifier: parsed.name,
+      ...(parsed.version === undefined ? {} : { version: parsed.version }),
+      ...(run === undefined ? {} : { run }),
+    });
+  } catch (error) {
+    throw refusals.refused(`${parsed.name}: ${messageOf(error)}`);
+  }
+
+  let definition: unknown;
+  try {
+    definition = await loadPlugin(added.file, context.home, added.file);
+  } catch (error) {
+    throw refusals.refused(
+      withInstallScriptHint(
+        `${parsed.name}: not an operad plugin: ${messageOf(error)}`,
+        added.hasInstallScript,
+      ),
+    );
+  }
+  if (!isRecord(definition) || definition.operadPlugin !== OPERAD_PLUGIN_VERSION) {
+    throw refusals.refused(
+      withInstallScriptHint(
+        `${parsed.name}: not an operad plugin: its default export declares no operadPlugin`,
+        added.hasInstallScript,
+      ),
+    );
+  }
+  const declaredName = definitionName(definition);
+  if (declaredName === undefined) {
+    throw refusals.refused(
+      withInstallScriptHint(
+        `${parsed.name}: not an operad plugin: its declaration has no name`,
+        added.hasInstallScript,
+      ),
+    );
+  }
+
+  const fresh = await readConfig(context.home);
+  const configured = new Set(
+    fresh.plugins
+      .map((entry) => entry.name)
+      .filter((name): name is string => name !== undefined),
+  );
+  if (configured.has(declaredName) || context.registry.names().includes(declaredName)) {
+    throw refusals.refused(
+      `plugin "${declaredName}": already configured; the package's declared plugin name clashes with it`,
+    );
+  }
+
+  const checked = await validateLoadedDefinition(context, declaredName, definition);
+  if (!checked.ok) {
+    throw refusals.refused(withInstallScriptHint(checked.message, added.hasInstallScript));
+  }
+
+  await addPluginEntry(context.home, declaredName, added.name);
+  return {
+    packageName: added.name,
+    packageVersion: added.version,
+    declaredName,
+    declaredVersion: definitionVersion(definition) ?? "",
+  };
+}
 
 /** Refuses what `plugin enable` or `plugin disable` refuses, before anything is written or installed. */
 async function checkPluginChange(
@@ -2190,6 +2362,7 @@ async function changePlugin(
 export function pluginAdminFor(
   context: Context,
   load: (module: string, home: string) => Promise<unknown> = loadPlugin,
+  installRun?: InstallRunner,
 ): PluginAdmin {
   const loaded = new Map<string, PluginIdentity | null>();
   const rowsNow = async (): Promise<(PluginInfo & { readonly key: string })[]> =>
@@ -2197,6 +2370,20 @@ export function pluginAdminFor(
   const publicRow = ({ key: _key, ...row }: PluginInfo & { readonly key: string }): PluginInfo => row;
   return {
     list: async () => (await rowsNow()).map(publicRow),
+    install: async (specifier, options) => {
+      if (!options.confirmed) {
+        throw new ViewError(
+          "confirm",
+          `installing "${specifier}" writes config.json; send "confirmed": true to install it`,
+        );
+      }
+      const added = await addPlugin(context, specifier, HTTP_ADD_REFUSALS, installRun);
+      const row = (await rowsNow()).find((item) => item.key === added.declaredName);
+      if (row === undefined) {
+        throw new ViewError("not-found", `plugins.${added.declaredName}: no such plugin`);
+      }
+      return publicRow(row);
+    },
     set: async (name, enabled, options) => {
       const fresh: Context = { ...context, config: await readConfig(context.home) };
       // The list names a plugin by what it declares, and the file may key it
@@ -2229,11 +2416,26 @@ async function commandPluginAdmin(
   context: Context,
   io: CliIo,
   argv: readonly string[],
+  installRun?: InstallRunner,
 ): Promise<number> {
   const sub = argv[0];
   if (sub === "list") {
     if (argv.length > 1) throw new UsageError("plugin list takes no arguments");
     return commandPluginList(context, io);
+  }
+  if (sub === "add") {
+    const spec = argv[1];
+    if (spec === undefined) throw new UsageError("plugin add needs an npm package");
+    if (argv.length > 2) throw new UsageError("plugin add takes one npm package");
+    const added = await addPlugin(context, spec, COMMAND_ADD_REFUSALS, installRun);
+    const version = added.declaredVersion.length === 0 ? "" : ` ${added.declaredVersion}`;
+    io.write(
+      `installed ${added.packageName}@${added.packageVersion} (plugin ${added.declaredName}${version})\n`,
+    );
+    io.write(
+      `\`operad plugin enable ${added.declaredName}\` turns it on; it stays off until then\n`,
+    );
+    return 0;
   }
   if (sub === "enable" || sub === "disable") {
     const name = argv[1];
@@ -2732,7 +2934,7 @@ export async function main(
     if (command === "plugin") {
       const context = await openContext(home, io);
       try {
-        return await commandPluginAdmin(context, io, args.slice(1));
+        return await commandPluginAdmin(context, io, args.slice(1), options.pluginInstall);
       } finally {
         context.views.close();
         await context.log.close();

@@ -34,3 +34,11 @@ A repository whose `.operad/dev.json` names neither `worker` nor `workers`, and 
 ### D4: A plugin with third-party npm dependencies is not in the base install; enabling it installs it into the operad home
 
 `@operad-io/cli` depends only on packages that have no third-party dependencies; a plugin such as `claude` is not its dependency. When a user enables such a plugin, operad installs the plugin package and its dependencies into one place under the operad home (a Bun project), skipping `optionalDependencies`, and the plugin loads from there. When it is not installed, `operad plugin check` and any command that uses it say how to install it. Development inside the repository uses the workspace as before and does not go through this.
+
+### D5: A plugin from npm is added by package name, turned off
+
+`operad plugin add <package>[@version]` installs a plugin from npm into the home's Bun project. It names an exact version, or the latest when none is given. The install runs with install scripts off, so it runs none of the package's own scripts; a package whose entry needs its install script cannot be added, and the refusal says so.
+
+Before the plugin is turned on, operad checks it as `operad plugin check` does and adds it to `config.json` turned off, keyed by the name the plugin declares. Enabling it is the existing `operad plugin enable`, so a person sees what they enable. The command prints the package, its version, the plugin's declared name and version, and how to enable it. It refuses a name that is not a valid npm package name, a version that is not exact, a package whose default export is not a plugin declaration, and a declared name that a configured plugin already uses, each naming the reason.
+
+`POST /v1/plugins` with `{ "install": "<package>[@version]", "confirmed": true }` does the same and answers the new entry, turned off.

@@ -2,6 +2,7 @@ export { definePlugin } from "./define-plugin.ts";
 export { AccessError, AskTimeoutError, messageOf, PluginError, StartRefusedError, StepNotLoadedError } from "./errors.ts";
 export { defaultOperadHome } from "./home.ts";
 export {
+  addPackage,
   ensureInstalledPackage,
   installedPackageFile,
   pluginProjectManifestPath,
@@ -9,7 +10,7 @@ export {
   PLUGIN_PROJECT_DIRECTORY,
   runningFromWorkspace,
 } from "./install.ts";
-export type { EnsureInstalledOptions, InstallRun, InstallRunner } from "./install.ts";
+export type { AddedPackage, AddPackageOptions, EnsureInstalledOptions, InstallRun, InstallRunner } from "./install.ts";
 export { keysPathFor, readKeysFile } from "./keys.ts";
 export {
   loadConfiguredPlugins,

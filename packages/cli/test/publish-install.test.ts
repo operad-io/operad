@@ -103,6 +103,27 @@ function overridesOf(tarballs: ReadonlyMap<string, string>, omit: readonly strin
   return overrides;
 }
 
+/** A local stand-in for the Claude Agent SDK, for tests that do not check the SDK install. */
+function fakeSdkTarball(root: string): string {
+  const directory = join(root, "fake-claude-agent-sdk");
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(
+    join(directory, "package.json"),
+    JSON.stringify({
+      name: "@anthropic-ai/claude-agent-sdk",
+      version: "0.3.319",
+      type: "module",
+      exports: { ".": "./index.js" },
+    }),
+  );
+  writeFileSync(join(directory, "index.js"), "export default {};\n");
+  const destination = join(root, "fake-claude-sdk-tarballs");
+  mkdirSync(destination, { recursive: true });
+  const packed = run(["bun", "pm", "pack", "--destination", destination, "--quiet"], directory);
+  expect({ code: packed.code, err: packed.err }).toEqual({ code: 0, err: "" });
+  return packed.out.trim();
+}
+
 /** Installs the CLI from the tarballs into a prefix of its own. */
 function cliPrefix(scratchRoot: string, tarballs: ReadonlyMap<string, string>): string {
   const prefix = join(scratchRoot, "prefix");
@@ -174,7 +195,10 @@ describe("publishing and installing the packages", () => {
         private: true,
         type: "module",
         dependencies: { "@operad-io/harness-claude": `file:${claudePackage ?? ""}` },
-        overrides: overridesOf(tarballs, ["@operad-io/harness-claude"]),
+        overrides: {
+          ...overridesOf(tarballs, ["@operad-io/harness-claude"]),
+          "@anthropic-ai/claude-agent-sdk": `file:${fakeSdkTarball(scratchRoot)}`,
+        },
       }),
     );
     const bin = join(scratchRoot, "bin");
@@ -210,6 +234,7 @@ describe("publishing and installing the packages", () => {
     const claudePackage = tarballs.get("@operad-io/harness-claude");
     expect(claudePackage).toBeDefined();
     const project = join(home, "plugins");
+    const sdk = fakeSdkTarball(scratchRoot);
     const manifest = (dependency: string): void => {
       mkdirSync(project, { recursive: true });
       writeFileSync(
@@ -219,7 +244,10 @@ describe("publishing and installing the packages", () => {
           private: true,
           type: "module",
           dependencies: { "@operad-io/harness-claude": dependency },
-          overrides: overridesOf(tarballs, ["@operad-io/harness-claude"]),
+          overrides: {
+            ...overridesOf(tarballs, ["@operad-io/harness-claude"]),
+            "@anthropic-ai/claude-agent-sdk": `file:${sdk}`,
+          },
         }),
       );
     };
