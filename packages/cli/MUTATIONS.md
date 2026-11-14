@@ -208,3 +208,8 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0445-M3 | packages/cli/src/main.ts | the serve context did not close its plugin store, so the process that became the supervisor kept `plugins.sqlite` open | `the process that becomes the supervisor closes the old plugin store on reload` |
+## T-0446-init-finds-agent-followups — init leaves a claude entry with its own module
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0446-M1 | packages/cli/src/main.ts | `init` installed the default `@operad-io/harness-claude` for any enabled claude entry, ignoring the entry's own `module` | `publishing and installing the packages > init leaves a claude entry that names its own module without installing the default package` |

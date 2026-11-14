@@ -518,7 +518,8 @@ async function commandInit(home: string, io: CliIo): Promise<number> {
   // and SDK now, as `operad plugin enable claude` would install them (ADR 0012
   // D4). Reading the config first makes a second init retry an install that
   // failed after the config was written.
-  if (config.plugins.some((entry) => entry.name === "claude" && entry.enabled)) {
+  const claude = config.plugins.find((entry) => entry.name === "claude" && entry.enabled);
+  if (claude !== undefined && (claude.module ?? defaultPluginModule("claude")) === defaultPluginModule("claude")) {
     await ensureInstalledPackage({
       home,
       specifier: defaultPluginModule("claude"),
