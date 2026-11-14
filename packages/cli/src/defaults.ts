@@ -7,8 +7,14 @@ import {
   type PluginOffer,
 } from "@operad-io/engine";
 
-/** The plugins `operad init` installs, in load order. */
+/**
+ * The plugins `operad init` installs when it finds no agent on `PATH`, in load
+ * order. The harness in the middle is replaced by the ones it finds.
+ */
 export const DEFAULT_PLUGINS: readonly string[] = ["shell", "radian", "chat", "pool", "dev"];
+
+/** The harness plugins `operad init` turns on when their agent command is on `PATH`, in this order. */
+export const INIT_HARNESS_PLUGINS: readonly string[] = ["radian", "claude", "pi"];
 
 /**
  * Plugins shipped with operad that `plugin enable <name>` can add. Most are not
@@ -41,11 +47,20 @@ export const DEFAULT_LEAD_ACTIONS: readonly string[] = [
 /** The allowed actions that also need the confirmation. */
 export const DEFAULT_CONFIRM_ACTIONS: readonly string[] = ["chat:close"];
 
-/** The config a new home starts with. */
-export function distributionConfig(home: string): OperadConfig {
+/** The plugins of a new home: the fixed ones plus the harnesses found on `PATH`. */
+export function defaultPluginsFor(harnesses: readonly string[]): readonly string[] {
+  const agents = harnesses.length === 0 ? ["radian"] : harnesses;
+  return ["shell", ...agents, "chat", "pool", "dev"];
+}
+
+/** The config a new home starts with, with the harness plugins passed in place of the fallback. */
+export function distributionConfig(
+  home: string,
+  harnesses: readonly string[] = [],
+): OperadConfig {
   return {
     ...defaultConfig(home),
-    plugins: DEFAULT_PLUGINS.map((name) => ({
+    plugins: defaultPluginsFor(harnesses).map((name) => ({
       name,
       module: defaultPluginModule(name),
       enabled: true,

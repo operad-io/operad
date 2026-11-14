@@ -1,4 +1,4 @@
-import { INSTALL_ON_ENABLE, OPTIONAL_PLUGINS, defaultPluginModule, distributionConfig, pluginOffer } from "./defaults.ts";
+import { INIT_HARNESS_PLUGINS, INSTALL_ON_ENABLE, OPTIONAL_PLUGINS, defaultPluginModule, distributionConfig, pluginOffer } from "./defaults.ts";
 import { closeSync, mkdirSync, openSync, readFileSync, writeSync } from "node:fs";
 import { userInfo } from "node:os";
 import { join } from "node:path";
@@ -491,10 +491,32 @@ function printValue(io: CliIo, value: unknown): void {
 }
 
 async function commandInit(home: string, io: CliIo): Promise<number> {
-  const ensured = await ensureConfig(home, distributionConfig(home));
+  // A new home turns on the agents this machine has. With none, it keeps the
+  // old default of radian and the check below says what to install.
+  const path = process.env.PATH ?? "";
+  const harnesses = INIT_HARNESS_PLUGINS.filter(
+    (name) => Bun.which(name, { PATH: path }) !== null,
+  );
+  const ensured = await ensureConfig(home, distributionConfig(home, harnesses));
   io.write(
     `${ensured.created ? "created" : "using"} ${ensured.path}\n`,
   );
+  if (ensured.created && harnesses.length === 0) {
+    io.write(
+      "no agent found on PATH: install claude (https://code.claude.com), pi (bun add -g @earendil-works/pi-coding-agent) or radian, then run operad init again\n",
+    );
+  }
+  if (ensured.created && harnesses.includes("claude")) {
+    // claude is not a CLI dependency: a new home gets its package and SDK now,
+    // as `operad plugin enable claude` would install them (ADR 0012 D4).
+    await ensureInstalledPackage({
+      home,
+      specifier: defaultPluginModule("claude"),
+      version: ENGINE_VERSION,
+      from: import.meta.dir,
+      omitOptional: true,
+    });
+  }
   const config = await readConfig(home);
   const storeRoot = storeRootOf(config);
   const registry = await loadPluginRegistry({

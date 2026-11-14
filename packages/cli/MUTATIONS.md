@@ -195,3 +195,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0430-M1 | packages/cli/src/defaults.ts | `pool` left out of `DEFAULT_PLUGINS`, so `operad init` did not install the plugin dev runs its workers through | `a fresh home follows the Quickstart > operad init, then the Quickstart's commands in order, start the task` (in `packages/dev/test/heavy/fresh-home.test.ts`) |
+
+## T-0441-init-finds-agent — a new home enables the agents on PATH
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0441-M1 | packages/cli/src/main.ts | the harness list was always empty, so `operad init` never enabled claude or pi for a command on `PATH` | `\`operad init\` finds the agent on PATH > only claude is enabled, and its package is not a CLI dependency` and `... > only pi is enabled` |
