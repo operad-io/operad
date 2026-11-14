@@ -177,6 +177,9 @@ export const PLAN_RANKS: Record<PlanActionName, (state: Parameters<typeof planDa
   cancel: () => 9,
 };
 
+/** The rank of the action that adds a task: after the plan's own actions, before cancel. */
+export const PLAN_CREATE_TASK_RANK = 4;
+
 /** Reads a required enum argument; the kernel checks it first, this is for types. */
 function enumArgument<T extends string>(
   args: unknown,
