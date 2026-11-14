@@ -1254,6 +1254,7 @@ the row fields.
 | T-0471-M2 | packages/dev/src/service.ts | registering a removed repository again kept its old path | `dev repositories > add, remove, add again under the same name at another path keeps plans and tasks and uses the new path` (the `path` assertion) |
 | T-0471-M3 | packages/dev/src/service.ts | an active repository was registered again under its name, instead of being refused | `dev repositories > add again under the name of an active repository is refused` |
 | T-0471-M4 | packages/dev/src/service.ts | a path registered under another active name was accepted | `dev repositories > add at a path registered under another active name is refused` |
+
 ## T-0466 — dev's lock lives outside the working tree
 
 | id | file | mutation | failing test |
@@ -1263,3 +1264,9 @@ the row fields.
 | T-0466-M3 | packages/dev/src/lock.ts | the legacy cleanup returned whenever `.operad/dev.lock` existed, so an unheld old lock stayed in the working tree | `the repository lock > a legacy in-tree lock is removed when nobody holds it` |
 | T-0466-M4 | packages/dev/src/lock.ts | the legacy cleanup unlinked `.operad/dev.lock` without checking whether an older dev held it | `the repository lock > a held legacy in-tree lock is left alone` |
 | T-0466-M5 | packages/dev/src/lock.ts | `commonGitDirectory` used the worktree's own path instead of reading the `.git` file and its `commondir`, so a linked worktree took a different lock from its repository | `the repository lock > a linked worktree shares its repository's lock` |
+
+## T-0473 — dev's lock tests use a scratch home
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0473-M1 | packages/dev/src/lock.ts | `withRepositoryLock` ignored the home it was given and took the lock in the default home | `the repository lock > a live holder past the deadline is a dev lock error naming its pid` and `... > the lock lives in the operad home, not the working tree, and is gone afterwards` |
