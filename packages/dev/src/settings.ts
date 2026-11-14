@@ -85,7 +85,16 @@ export function defaultAgentUse(home: string = defaultOperadHome()): string {
   const enabled = new Set<string>();
   if (Array.isArray(plugins)) {
     for (const entry of plugins) {
-      const found = harnessPlugin(undefined, entry);
+      if (typeof entry === "string") {
+        const found = harnessPlugin(undefined, entry);
+        if (found !== undefined) enabled.add(found);
+        continue;
+      }
+      const record = isRecord(entry) ? entry : undefined;
+      if (record?.enabled === false) continue;
+      const name = typeof record?.name === "string" ? record.name : undefined;
+      const module = record?.module;
+      const found = harnessPlugin(name, module) ?? harnessPlugin(undefined, module);
       if (found !== undefined) enabled.add(found);
     }
   } else if (isRecord(plugins)) {

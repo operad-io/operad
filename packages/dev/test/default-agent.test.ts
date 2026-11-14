@@ -73,6 +73,35 @@ describe("the agent of a repository that names no worker", () => {
     expect(settings.reviewer.use).toBe("claude/agent");
   });
 
+  test("reads the array form and skips an entry with enabled false", async () => {
+    const root = await tempRoot();
+    const home = join(root, "home");
+    mkdirSync(home, { recursive: true });
+    writeFileSync(
+      join(home, "config.json"),
+      JSON.stringify({
+        plugins: [
+          { name: "radian", module: "@operad-io/harness-radian", enabled: false },
+          { name: "claude", module: "@operad-io/harness-claude", enabled: false },
+          { name: "pi", module: "@operad-io/harness-pi" },
+          { name: "codex", module: "@operad-io/harness-codex" },
+        ],
+      }),
+    );
+    expect(defaultAgentUse(home)).toBe("pi/agent");
+  });
+
+  test("reads the array of module names", async () => {
+    const root = await tempRoot();
+    const home = join(root, "home");
+    mkdirSync(home, { recursive: true });
+    writeFileSync(
+      join(home, "config.json"),
+      JSON.stringify({ plugins: ["@operad-io/harness-claude", "@operad-io/harness-pi"] }),
+    );
+    expect(defaultAgentUse(home)).toBe("claude/agent");
+  });
+
   test("keeps radian when the home enables no harness", async () => {
     const root = await tempRoot();
     expect(defaultAgentUse(join(root, "no-home"))).toBe(DEFAULT_WORKER_USE);

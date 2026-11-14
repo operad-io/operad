@@ -1183,3 +1183,4 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0437-M1 | packages/dev/src/refusals.ts | the plan's second confirm said "already done", so the in-process confirm check no longer matched | `operad with the dev plugin > the real binary registers, plans, lists, shows and confirms` |
+| T-0441-M4 | packages/dev/src/settings.ts | the array form of `plugins` passed each whole entry to `harnessPlugin` and ignored `enabled: false`, so an object entry never named its harness | `the agent of a repository that names no worker > reads the array form and skips an entry with enabled false` |
