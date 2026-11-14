@@ -93,7 +93,7 @@ after `-config`:
 | `MCLocal.cfg` | 2 tasks, `MaxVer`=0, `MaxHand`=1, `MaxLocal`=1, `MaxCrash`=0 | the same, with a commit made by hand in the clone |
 | `MCOneMerge.cfg` | 3 tasks, `MaxCrash`=1 | finding 1 (violates `OneMerge`) |
 | `MCUnwanted.cfg` | 2 tasks, `MaxHand`=1 | finding 2 (violates `NoUnwantedMerge`) |
-| `MCPrepare.cfg` | 2 tasks, `MaxCrash`=1 | finding 3 (violates `PrepareRan`) |
+| `MCPrepare.cfg` | 2 tasks, `MaxCrash`=1 | a kill after the clone moves still runs prepare on restart |
 
 Invariants: `OriginLinear` (origin/main only grows), `MergedWasChecked` (a push
 happens only with the checks passed on the pushed candidate; a commit's parent is
@@ -102,7 +102,7 @@ part of its identity, so the checked commit is the merged one), `CloneNotAhead`
 `LocalKept` (a hand-made commit is never dropped: only a fast-forward moves the
 clone), `CloneEqualsOrigin` (at rest, a clone whose last follow succeeded and
 that has no local commit equals origin/main), `OneMerge`, `NoUnwantedMerge`,
-`PrepareRan` (the last three are the findings).
+`PrepareRan` (the first two are the findings).
 
 Properties, under weak fairness of what the code does by itself (the world, that
 is hand pushes, cancel, rework, kills and the clone's owner, is not fair):
@@ -133,20 +133,16 @@ Findings (counterexamples against the intended model; not fixed here):
    pushes a commit containing t1's change (Join t2, Join t1, Turn t2, Claim,
    Build, Check, Pending, Withdraw t1, Push). Code: the gap between `stillQueued`
    and `git push` in `landBatch`.
-3. `PrepareRan`: the process is killed after the clone fast-forwarded and before
-   prepare ran; the replay finds the commit already in the clone and skips
-   prepare (Join, Turn, Claim, Build, Check, Pending, Push, Follow, Crash,
-   Restart, Follow, Record). Code: the is-ancestor early return in `updateMainClone`.
 
 Full runs on ten cores, no error: `MC.cfg` 1,014,488 distinct states (3,895,029
 generated), depth 40, 8 min 28 s; `MCCrash.cfg` 3,317,520 distinct (14,519,959
 generated), depth 36, 17 min 55 s; `MCLocal.cfg` 32,392 distinct (139,685
-generated), depth 30, 16 s. Three tasks with a rework and a kill together did not
-finish in twenty minutes, which is why the configurations are split.
+generated), depth 30, 16 s; `MCPrepare.cfg` 178,052 distinct (725,105 generated),
+depth 32, 29 s. Three tasks with a rework and a kill together did not finish in
+twenty minutes, which is why the configurations are split.
 
 Each finding configuration stops at its counterexample: 65,641 distinct states and 6 s
-(`MCOneMerge`, depth 13), 2,903 and 4 s (`MCUnwanted`, depth 13), 27,980 and 8 s
-(`MCPrepare`, depth 15).
+(`MCOneMerge`, depth 13) and 2,903 and 4 s (`MCUnwanted`, depth 13).
 
 Mutation checks: one guard removed in `Integrate.tla`, TLC run, guard restored.
 
