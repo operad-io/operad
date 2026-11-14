@@ -1987,24 +1987,36 @@ function definitionVersion(value: unknown): string | undefined {
   return undefined;
 }
 
-/** One configured plugin as `plugin list` prints it. */
+/** What loading a plugin gave: the name and version it declares. */
+type PluginIdentity = { readonly name: string | undefined; readonly version: string | undefined };
+
+/** One configured plugin as `plugin list` prints it, with the key `config.json` files it under. */
 async function pluginRows(
   home: string,
   plugins: OperadConfig["plugins"],
-): Promise<PluginInfo[]> {
-  const rows: PluginInfo[] = [];
+  loaded?: Map<string, PluginIdentity>,
+): Promise<(PluginInfo & { readonly key: string })[]> {
+  const rows: (PluginInfo & { readonly key: string })[] = [];
   for (const entry of plugins) {
-    let definition: unknown;
+    let identity: PluginIdentity | undefined;
     if (entry.enabled) {
-      try {
-        definition = await loadPlugin(entry.module, home);
-      } catch {
-        definition = undefined;
+      // `serve` passes a cache: loading a path plugin again imports a new copy
+      // of it each time, which a long-running process must not do per request.
+      identity = loaded?.get(entry.module);
+      if (identity === undefined) {
+        try {
+          const definition = await loadPlugin(entry.module, home);
+          identity = { name: definitionName(definition), version: definitionVersion(definition) };
+          loaded?.set(entry.module, identity);
+        } catch {
+          identity = undefined;
+        }
       }
     }
     rows.push({
-      name: definitionName(definition) ?? entry.name ?? entry.module,
-      version: definitionVersion(definition) ?? null,
+      key: entry.name ?? entry.module,
+      name: identity?.name ?? entry.name ?? entry.module,
+      version: identity?.version ?? null,
       enabled: entry.enabled,
       origin: entry.module.startsWith("@operad-io/") ? "builtin" : "home",
     });
@@ -2168,17 +2180,24 @@ async function changePlugin(
  * and refuses with the command line's reasons.
  */
 export function pluginAdminFor(context: Context): PluginAdmin {
-  const list = async (): Promise<PluginInfo[]> =>
-    pluginRows(context.home, (await readConfig(context.home)).plugins);
+  const loaded = new Map<string, PluginIdentity>();
+  const rowsNow = async (): Promise<(PluginInfo & { readonly key: string })[]> =>
+    pluginRows(context.home, (await readConfig(context.home)).plugins, loaded);
+  const publicRow = ({ key: _key, ...row }: PluginInfo & { readonly key: string }): PluginInfo => row;
   return {
-    list,
+    list: async () => (await rowsNow()).map(publicRow),
     set: async (name, enabled, options) => {
       const fresh: Context = { ...context, config: await readConfig(context.home) };
+      // The list names a plugin by what it declares, and the file may key it
+      // differently; either name finds the entry.
+      const before = await rowsNow();
+      const target = before.find((row) => row.key === name) ?? before.find((row) => row.name === name);
+      const key = target?.key ?? name;
       const refusals: PluginRefusals = {
         unknown: (message) => new ViewError("not-found", message),
         active: (message) => new ViewError("unavailable", message),
       };
-      await changePlugin(fresh, name, enabled, refusals, () => {
+      await changePlugin(fresh, key, enabled, refusals, () => {
         // Turning a plugin off takes its commands, actions and automatic work
         // away for every client at the next load, so a client says it meant it.
         if (!enabled && !options.confirmed) {
@@ -2188,9 +2207,9 @@ export function pluginAdminFor(context: Context): PluginAdmin {
           );
         }
       });
-      const row = (await list()).find((item) => item.name === name);
+      const row = (await rowsNow()).find((item) => item.key === key);
       if (row === undefined) throw new ViewError("not-found", `plugins.${name}: no such plugin`);
-      return row;
+      return publicRow(row);
     },
   };
 }
