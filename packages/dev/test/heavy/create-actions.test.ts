@@ -12,7 +12,7 @@ import {
   startHttpServer,
   storeRootOf,
 } from "@operad-io/engine";
-import { addRepository, cancelPlan } from "../../src/service.ts";
+import { addRepository, cancelPlan, removeRepository } from "../../src/service.ts";
 import { bareId, planData, taskData } from "../../src/model.ts";
 import { cleanupTempRoots, guardLockHandles, makeGitRepository, tempRoot } from "../support.ts";
 
@@ -287,6 +287,29 @@ describe("dev:plan and dev:task", () => {
       });
       expect(refused.status).toBe(409);
       expect(errorOf(refused.body).kind).toBe("confirm");
+      expect((await fixture.store.list("plan")).objects).toEqual([]);
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  test("a removed repository offers no plan action and creates no plan", async () => {
+    const fixture = await setup();
+    try {
+      await removeRepository(fixture.store, "repo");
+
+      const repo = await object(fixture, "repo:repo");
+      const names = (repo.actions as readonly ActionView[]).map((action) => action.name);
+      expect(names).not.toContain("dev:plan");
+
+      const refused = await act(fixture, {
+        action: "dev:plan",
+        id: "repo:repo",
+        confirmed: true,
+        args: { title: "After removal" },
+      });
+      expect(refused.status).toBe(409);
+      expect(errorOf(refused.body).kind).toBe("not-available");
       expect((await fixture.store.list("plan")).objects).toEqual([]);
     } finally {
       await fixture.close();

@@ -1226,3 +1226,4 @@ the row fields.
 |---|---|---|---|
 | T-0460-M5 | packages/dev/src/project-settings.ts | dev checked every dev.json setting, so an invalid flow already in the file blocked an unrelated setting | `dev.flows and dev.flowList in settings > an invalid flow already written does not block an unrelated setting` |
 | T-0460-M6 | packages/dev/src/project-settings.ts | a dev.json that could not be read left `dev.flowList` with no value and no reason | `dev.flows and dev.flowList in settings > a dev.json that cannot be read still lists flows and says why` |
+| T-0463-M13 | packages/dev/src/create-actions.ts | `dev:plan`'s `when` returned true for a removed repository | `dev:plan and dev:task > a removed repository offers no plan action and creates no plan` |
