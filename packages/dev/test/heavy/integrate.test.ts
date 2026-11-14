@@ -1292,6 +1292,46 @@ describe("dev/integrate main clone", () => {
     }
   }, 60_000);
 
+  test("a rerun whose fetch fails keeps the prepare the killed run left due (T-0440)", async () => {
+    const state = await fixture();
+    writeDevJson(state.remote.repository, { prepare: ["one", "two"] });
+    await killedAt(state, "prepare", "dev/integrate", "integrate-run");
+    // The first fetch of the rerun fails, the ones after it work.
+    const wrapper = join(state.root, "upload-wrapper.sh");
+    const failed = join(state.root, "upload-failed");
+    writeFileSync(
+      wrapper,
+      [
+        "#!/bin/sh",
+        `if [ ! -e '${failed}' ]; then touch '${failed}'; echo 'connection refused' >&2; exit 1; fi`,
+        'exec git-upload-pack "$@"',
+        "",
+      ].join("\n"),
+    );
+    chmodSync(wrapper, 0o755);
+    gitOrThrow(state.remote.repository, ["config", "remote.origin.uploadpack", wrapper]);
+    const calls: string[] = [];
+    integrateTestHooks.runCommand = async (_cwd, line) => {
+      calls.push(line);
+      return { ok: true, out: "" };
+    };
+    try {
+      const result = await freshRegistry(state).runStep("dev/integrate", {}, {
+        runId: "integrate-run",
+        object: { type: "task", id: state.taskKey, data: {} },
+      });
+      expect(result.result).toBe("merged");
+      expect(existsSync(failed)).toBe(true);
+      expect(calls).toEqual(["one", "two"]);
+      expect((await taskOf(state)).attempt?.integration).toMatchObject({
+        result: "merged",
+        prepareDue: false,
+      });
+    } finally {
+      integrateTestHooks.runCommand = undefined;
+    }
+  }, 60_000);
+
   test("a failing prepare line in the clone is reported and the merge stays", async () => {
     const state = await fixture();
     writeDevJson(state.remote.repository, { prepare: ["echo one"] });

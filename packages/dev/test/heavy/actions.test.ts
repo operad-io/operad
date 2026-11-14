@@ -1,10 +1,14 @@
 import { afterAll, describe, expect, test } from "bun:test";
+import { mkdirSync, realpathSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { PluginRegistry } from "@operad-io/engine";
 import plugin from "../../src/index.ts";
+import { integrationQueueDirectory } from "../../src/integration-queue.ts";
 import {
   addPlan,
   addRepository,
   addTask,
+  cancelTask,
   getPlan,
   getTask,
   setConcurrency,
@@ -464,5 +468,73 @@ describe("dev actions", () => {
     await expect(
       addPlan(store, { repository, slug: "bad", title: "Bad", concurrency: 17 }),
     ).rejects.toThrow(/1 to 16/);
+  });
+
+  /**
+   * Leaves two queued tasks and the result of a batch whose leader already
+   * pushed, as a cancel finds them. Returns the task ids.
+   */
+  async function pushedBatch() {
+    const root = await tempRoot();
+    const repositoryPath = await makeGitRepository(root);
+    const store = storeAt(root);
+    const registry = new PluginRegistry([plugin], { store, storeRoot: store.root, home: root });
+    const repository = await addRepository(store, { path: repositoryPath });
+    const plan = await addPlan(store, { repository, slug: "work", title: "Work" });
+    const one = await addTask(store, { plan: plan.id, slug: "one", title: "One" });
+    const two = await addTask(store, { plan: plan.id, slug: "two", title: "Two" });
+    await registry.runAction("dev/confirm", {}, { object: await getPlan(store, plan.id), actor: ACTOR });
+    const name = taskData((await getTask(store, one.id)).data).repository;
+    const directory = integrationQueueDirectory(root, {
+      name,
+      path: realpathSync(repositoryPath),
+    });
+    mkdirSync(directory, { recursive: true });
+    const ids = [one.id, two.id].map((id) => id.slice(id.indexOf("/") + 1));
+    ids.forEach((task, index) => {
+      writeFileSync(
+        join(directory, `t-${task}.json`),
+        JSON.stringify({
+          seq: index + 1,
+          task,
+          run: `run-${index}`,
+          pid: process.pid,
+          verified: "abc",
+          message: "m",
+        }),
+      );
+    });
+    const [leader, follower] = ids;
+    writeFileSync(
+      join(directory, `c-${leader}.json`),
+      JSON.stringify({ leader, members: [follower] }),
+    );
+    writeFileSync(
+      join(directory, `r-${leader}.json`),
+      JSON.stringify({
+        base: "b",
+        head: "h",
+        state: "pushed",
+        members: ids.map((task) => ({ task, sha: "s" })),
+      }),
+    );
+    return { store, registry, plan, one, two, ids, root };
+  }
+
+  test("cancel of a plan says which tasks a batch had already pushed (T-0440)", async () => {
+    const { store, registry, plan, ids } = await pushedBatch();
+    const run = await registry.runAction("dev/cancel", {}, {
+      object: await getPlan(store, plan.id),
+      actor: ACTOR,
+    });
+    expect(run.value).toBe(`${ids.join(", ")} merged before the cancel and stays merged`);
+  });
+
+  test("a cancel called without the home does not look at the integration queue (T-0440)", async () => {
+    const { store, one } = await pushedBatch();
+    // The store sits at <home>/store, as the default one does; no guess is made.
+    const cancelled = await cancelTask(store, one.id);
+    expect(cancelled.alreadyMerged).toBeUndefined();
+    expect(taskData((await getTask(store, one.id)).data).phase).toBe("cancelled");
   });
 });
