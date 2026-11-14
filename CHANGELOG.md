@@ -19,6 +19,9 @@ the same version.
   still be merged with that batch. Cancelling and the push now take turns: either
   the batch lands without the task, or the cancel says the task was already
   merged.
+- When `operad serve` stopped after a merge moved the main clone but before the
+  repository's `prepare` lines finished, they were not run again on restart.
+  They now finish after the restart.
 
 ### Changed
 
