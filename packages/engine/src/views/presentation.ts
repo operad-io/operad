@@ -6,7 +6,7 @@
 
 import { readFileSync } from "node:fs";
 import { objectLink } from "../http/link.ts";
-import type { LogBackend } from "../log/types.ts";
+import type { LogBackend, RunInfo } from "../log/types.ts";
 import {
   followsChanges,
   type FollowOptions,
@@ -47,6 +47,7 @@ import type {
 } from "../plugin/types.ts";
 import { ROW_BADGE_MAX, ROW_MARKS } from "../plugin/types.ts";
 import {
+  historyEntry,
   localMinute,
   runHistoryLines,
   type HistoryFact,
@@ -130,6 +131,15 @@ export interface ViewAction extends ActionInfo {
   readonly key?: string | undefined;
 }
 
+/** How a run ended: the outcome, the reason line of a failure, and when. */
+export interface ViewRunEnd {
+  readonly outcome: "done" | "failed" | "cancelled";
+  /** The reason the run recorded; left out when it recorded none. */
+  readonly reason?: string | undefined;
+  /** When the run ended, in milliseconds since the epoch. */
+  readonly endedAt: number;
+}
+
 /** What `get` returns: a row, the section directory and the actions. */
 export interface ViewObject {
   readonly id: string;
@@ -141,6 +151,8 @@ export interface ViewObject {
   readonly actions: readonly ViewAction[];
   /** Set when the object's plugin is no longer loaded. */
   readonly unavailable?: string | undefined;
+  /** How the object's newest run ended; absent when it has no run or that run is still going. */
+  readonly lastRun?: ViewRunEnd | undefined;
   /** The ids of the objects of this type whose row has this one in `after`. */
   readonly dependents?: readonly string[] | undefined;
 }
@@ -1211,6 +1223,7 @@ export class Views {
 
     sections = sections.filter((section) => section.id !== HISTORY_SECTION);
     sections.push({ id: HISTORY_SECTION, title: "History" });
+    const lastRun = await this.lastRunEnd(resolved.type, resolved.id);
 
     return {
       id: resolved.id,
@@ -1220,6 +1233,7 @@ export class Views {
       sections,
       actions,
       ...(unavailable === undefined ? {} : { unavailable }),
+      ...(lastRun === undefined ? {} : { lastRun }),
       ...(dependents.length === 0 ? {} : { dependents }),
     };
   }
@@ -2087,6 +2101,48 @@ export class Views {
       );
     }
     return matches[0];
+  }
+
+  /** How the newest run of an object ended, read from its ending fact. */
+  private async lastRunEnd(type: string, id: string): Promise<ViewRunEnd | undefined> {
+    if (this.log === undefined) return undefined;
+    const runs = await this.log.runs({ object: objectKey(type, id) });
+    let newest: RunInfo | undefined;
+    for (const run of runs) if (newest === undefined || run.startedAt >= newest.startedAt) newest = run;
+    if (newest === undefined || newest.active) return undefined;
+    let found: ViewRunEnd | undefined;
+    // What the last step said when it failed: a flow that fails by moving to
+    // an end step records no reason of its own.
+    let stepWhy = "";
+    try {
+      for await (const fact of this.log.read(newest.runId)) {
+        if (fact.kind === "step_result") {
+          stepWhy = historyEntry(fact).why;
+          if (!isRecord(fact.payload) || fact.payload.result !== "failed") stepWhy = "";
+          continue;
+        }
+        if (fact.kind !== "run_ended") continue;
+        const payload = fact.payload;
+        if (typeof payload !== "object" || payload === null || Array.isArray(payload)) continue;
+        const status = payload.status;
+        if (status !== "done" && status !== "failed" && status !== "cancelled") continue;
+        const recorded = payload.reason;
+        const reason =
+          typeof recorded === "string" && recorded.length > 0
+            ? recorded
+            : status === "failed" && stepWhy.length > 0
+              ? stepWhy
+              : undefined;
+        found = {
+          outcome: status,
+          ...(reason === undefined ? {} : { reason }),
+          endedAt: fact.time,
+        };
+      }
+    } catch (error) {
+      this.onLog(`could not read how the run of "${type}:${id}" ended: ${messageOf(error)}`);
+    }
+    return found;
   }
 
   private async hasRun(type: string, id: string): Promise<boolean> {

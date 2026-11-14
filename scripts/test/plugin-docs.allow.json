@@ -166,6 +166,7 @@
   "@operad-io/engine:ViewListPage": "the presentation view the host builds for clients: a plugin declares views and never calls it",
   "@operad-io/engine:ViewObject": "the presentation view the host builds for clients: a plugin declares views and never calls it",
   "@operad-io/engine:ViewRow": "the presentation view the host builds for clients: a plugin declares views and never calls it",
+  "@operad-io/engine:ViewRunEnd": "the presentation view the host builds for clients: a plugin declares views and never calls it",
   "@operad-io/engine:ViewSectionContent": "the presentation view the host builds for clients: a plugin declares views and never calls it",
   "@operad-io/engine:ViewSectionInfo": "the presentation view the host builds for clients: a plugin declares views and never calls it",
   "@operad-io/engine:ViewSectionPage": "the presentation view the host builds for clients: a plugin declares views and never calls it",
