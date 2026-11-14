@@ -1171,3 +1171,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0433-M1 | packages/dev/src/mainclone.ts | the is-ancestor branch returned before looking at the prepare marker, so a replay whose clone already held the commit skipped prepare | `dev/integrate main clone > a kill after the fast-forward and before prepare ends runs prepare once on the rerun` (expected `["one", "two"]`, received `[]`) |
+
+## T-0437 — the real-binary CLI test starts the binary twice
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0437-M1 | packages/dev/src/refusals.ts | the plan's second confirm said "already done", so the in-process confirm check no longer matched | `operad with the dev plugin > the real binary registers, plans, lists, shows and confirms` |
