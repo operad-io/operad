@@ -1,7 +1,19 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { findClaude, ClaudeNotFoundError } from "../src/claude-install.ts";
+import { findClaude, findClaudeAsync, ClaudeNotFoundError } from "../src/claude-install.ts";
 
 const ROOT = join(import.meta.dir, "..", "..", "..", "..");
 
@@ -89,5 +101,19 @@ describe("the claude command", () => {
   test("with no claude on PATH it fails with a message that says what to do", () => {
     expect(() => findClaude(undefined, "")).toThrow(ClaudeNotFoundError);
     expect(() => findClaude(undefined, "/nonexistent-dir")).toThrow(/install claude/);
+  });
+
+  test("the async lookup follows a symlink to the command's real path", async () => {
+    const root = mkdtempSync(join(tmpdir(), "claude-link-"));
+    try {
+      const target = join(root, "actual");
+      const link = join(root, "claude");
+      writeFileSync(target, "#!/bin/sh\n");
+      chmodSync(target, 0o755);
+      symlinkSync(target, link);
+      await expect(findClaudeAsync(link)).resolves.toBe(realpathSync(target));
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

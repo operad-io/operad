@@ -201,15 +201,26 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
   // short time and asked without blocking serve. A failed answer is kept too,
   // so a missing claude is not spawned for on every list.
   const signedInCache = new Map<string, { readonly at: number; readonly value: boolean | undefined }>();
+  const signedInPending = new Map<string, Promise<boolean | undefined>>();
 
   async function claudeSignedInCached(settings: Readonly<Record<string, unknown>>): Promise<boolean | undefined> {
     const commandSetting = typeof settings.command === "string" ? settings.command : undefined;
     const key = commandSetting ?? "";
     const kept = signedInCache.get(key);
     if (kept !== undefined && now() - kept.at < SIGNED_IN_CACHE_MS) return kept.value;
-    const value = await claudeSignedIn(commandSetting);
-    signedInCache.set(key, { at: now(), value });
-    return value;
+    // Two clients asking at once share one probe, so serve starts one claude.
+    const pending = signedInPending.get(key);
+    if (pending !== undefined) return pending;
+    const probe = claudeSignedIn(commandSetting)
+      .then((value) => {
+        signedInCache.set(key, { at: now(), value });
+        return value;
+      })
+      .finally(() => {
+        signedInPending.delete(key);
+      });
+    signedInPending.set(key, probe);
+    return probe;
   }
 
   const promptFlow = defineFlow({
