@@ -820,3 +820,9 @@ the row fields.
 |---|---|---|---|
 | T-0406-M6 | packages/engine/src/views/presentation.ts | `answer` skipped the check that the call names an actor (`{ via, id }`), so a call without one was recorded | `a source plugin's start gets the client API > answer without an actor is refused and answers nothing` |
 | T-0423-M8 | packages/engine/src/http/token.ts | an empty token label was used as the actor id, so every action over HTTP was refused | `a source plugin's start gets the client API > an empty token label acts under the default label, so its actions are not refused` |
+
+## T-0445 — serve survives a busy store
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0445-M1 | packages/engine/src/loop/serve.ts | a pass that met `SQLITE_BUSY` rethrew it (the old code), so the CLI's last-resort handler ended serve | `serve while another process holds the store's write lock > logs the busy pass, keeps running, and serves the next run after the lock is released` |
