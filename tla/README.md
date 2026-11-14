@@ -86,33 +86,79 @@ finish in twenty minutes.
 Code it stands for: `packages/dev/src/integration-queue.ts` (tickets, claims,
 results, `turn`, `claim`, `fallBack`, `publish`, `finish`),
 `packages/dev/src/integrate.ts` (`runIntegrate`, `landBatch`, the replay after a
-crash, `recordMerged`), `packages/dev/src/mainclone.ts` (`updateMainClone`). ADR
-0034 had not merged; the model follows the code.
+crash, `recordMerged`), `packages/dev/src/mainclone.ts` (`updateMainClone`).
+ADR 0034 had not merged; the model follows the code.
 
-Run: `bash scripts/tla.sh integrate` (3 tasks, no rework, no crash; 978,728
-distinct states, depth 39, about 5 minutes on ten cores). Other runs, with
-`-config`: `MCCrash.cfg` (2 tasks, one rework, one crash; 3,163,064 distinct
-states, depth 36, about 15 minutes), `MCLocal.cfg` (a commit made by hand in the
-clone), and three configurations that each hold one invariant the code
-violates: `MCOneMerge.cfg`, `MCUnwanted.cfg`, `MCPrepare.cfg` (counterexamples
-below).
+Run: `bash scripts/tla.sh integrate` (config `MC.cfg`). Other configurations go
+after `-config`:
 
-Invariants: `OriginLinear`, `MergedWasChecked`, `CloneNotAhead`, `LocalKept`,
-`CloneEqualsOrigin`; properties `PushedGetsMerged`, `QueuedResolves` (weak
-fairness on what the code does itself).
+| Config | Tasks and constants | What it checks |
+|---|---|---|
+| `MC.cfg` | 3 tasks, `MaxVer`=0, `MaxHand`=1, `MaxLocal`=0, `MaxCrash`=0, `MaxRound`=2, `BatchMax`=2 | invariants and properties below |
+| `MCCrash.cfg` | 2 tasks, `MaxVer`=1, `MaxHand`=1, `MaxLocal`=0, `MaxCrash`=1 | the same, with one rework and one kill |
+| `MCLocal.cfg` | 2 tasks, `MaxVer`=0, `MaxHand`=1, `MaxLocal`=1, `MaxCrash`=0 | the same, with a commit made by hand in the clone |
+| `MCOneMerge.cfg` | 3 tasks, `MaxCrash`=1 | finding 1 (violates `OneMerge`) |
+| `MCUnwanted.cfg` | 2 tasks, `MaxHand`=1 | finding 2 (violates `NoUnwantedMerge`) |
+| `MCPrepare.cfg` | 2 tasks, `MaxCrash`=1 | finding 3 (violates `PrepareRan`) |
+
+Invariants: `OriginLinear` (origin/main only grows), `MergedWasChecked` (a push
+happens only with the checks passed on the pushed candidate; a commit's parent is
+part of its identity, so the checked commit is the merged one), `CloneNotAhead`
+(the clone holds no commit origin lacks, except those made by hand there),
+`LocalKept` (a hand-made commit is never dropped: only a fast-forward moves the
+clone), `CloneEqualsOrigin` (at rest, a clone whose last follow succeeded and
+that has no local commit equals origin/main), `OneMerge`, `NoUnwantedMerge`,
+`PrepareRan` (the last three are the findings).
+
+Properties, under weak fairness of what the code does by itself (the world, that
+is hand pushes, cancel, rework, kills and the clone's owner, is not fair):
+`PushedGetsMerged`, `QueuedResolves` (a task in the queue is merged, reported
+failed or cancelled, or sent back for rework) and `CloneFollowsMerge` (after a
+merge the clone holds the merged commit, unless the follow was skipped: off the
+branch, uncommitted changes, local commits; the code reports that in the task's
+changes). A hand push after the last merge is not followed by the clone: the code
+only follows merges it made, so "the clone ends equal to origin/main" holds only
+when no hand push came after the last merge and the follow was not skipped.
+
+Left out: the lost-acknowledgement push (the code looks whether the candidate
+reached origin; the model's push is atomic), the "already on main" path where the
+candidate's tree equals main's, a failing prepare (the model only has prepare
+run or not run), the check places, and ADR 0034.
 
 Findings (counterexamples against the intended model; not fixed here):
 
-- `OneMerge`: leader A publishes a batch result and dies; C, queued behind the
-  claimed B, takes the turn; B sees the dead leader's push never landed, voids
-  the claim and takes the turn as well. Two tasks hold a turn. Pushes stay
-  safe: a non-fast-forward push is refused.
-- `NoUnwantedMerge`: a claimed follower cancelled (or reworked) after the
-  leader's `stillQueued` check and before its push is merged anyway.
-- `PrepareRan`: the process is killed after the main clone fast-forwarded and
-  before the prepare lines ran; the replay finds the commit already in the
-  clone and skips prepare.
+1. `OneMerge`: leader t2 publishes a batch result for follower t1 and dies; t3,
+   queued behind the claimed t1, takes the turn; t1 sees that the dead leader's
+   push never landed, voids the claim and takes the turn as well (trace:
+   Join t2, Join t1, Join t3, Turn t2, Claim t2 {t1}, Build, Check, Pending,
+   Crash t2, Turn t3, ClaimVoid t1, Turn t1). Code: the claim removal in
+   `IntegrationQueue.turn()`. Pushes stay safe: a non-fast-forward push is refused.
+2. `NoUnwantedMerge`: t2 claims t1 and reaches pending, t1 is cancelled, t2
+   pushes a commit containing t1's change (Join t2, Join t1, Turn t2, Claim,
+   Build, Check, Pending, Withdraw t1, Push). Code: the gap between `stillQueued`
+   and `git push` in `landBatch`.
+3. `PrepareRan`: the process is killed after the clone fast-forwarded and before
+   prepare ran; the replay finds the commit already in the clone and skips
+   prepare (Join, Turn, Claim, Build, Check, Pending, Push, Follow, Crash,
+   Restart, Follow, Record). Code: the is-ancestor early return in `updateMainClone`.
 
-Not checked yet: the mutation runs (guards removed to show TLC catches them),
-the lost-acknowledgement push, the "already on main" tree-equal path, a failing
-prepare, and a clone made clean again after a skipped follow.
+Full runs on ten cores, no error: `MC.cfg` 1,014,488 distinct states (3,874,185
+generated), depth 40, 7 min 45 s; `MCCrash.cfg` 3,317,520 distinct (14,471,157
+generated), depth 36, 18 min 24 s; `MCLocal.cfg` 32,392 distinct (139,077
+generated), depth 30, 21 s. Three tasks with a rework and a kill together did not
+finish in twenty minutes, which is why the configurations are split.
+
+Each finding configuration stops at its counterexample: 68,057 states and 11 s
+(`MCOneMerge`), 2,626 and 4 s (`MCUnwanted`), 23,683 and 5 s (`MCPrepare`), all
+at depth 12 to 16 when found.
+
+Mutation checks: one guard removed in `Integrate.tla`, TLC run, guard restored.
+
+| Guard removed | Config | TLC result | Trace | States, depth, time |
+|---|---|---|---|---|
+| the checks (`Pending` accepts `built`, `Push` no longer needs `chk`) | `MC.cfg` | `MergedWasChecked` violated | Join, Turn, Claim, Build, Pending, Push | 792, 7, 9 s |
+| the push only lands on the candidate's parent (`Tip(origin) = c.parent` made true) | `MC.cfg` | `OriginLinear` violated | Join, Turn, Claim, Build, Check, HandPush, Pending, Push | 2,246, 9, 10 s |
+| the turn goes to the first unclaimed ticket (`TurnHolder = t` dropped) | `MC.cfg` with `OneMerge` | `OneMerge` violated | Join t1, Join t2, Turn t1, Turn t2 | 207, 5, 3 s |
+| fast-forward only (`IsPrefix(clone, ts)` made true) | `MCLocal.cfg` | `LocalKept` violated | Join, Turn, Claim, Build, Check, CloneCommit, Pending, Push, Follow | 2,880, 11, 7 s |
+| the clone moves (`clone' = ts` replaced by `clone' = clone`) | 2 tasks, only `CloneFollowsMerge` | temporal property violated | Join, Turn, Join, Claim, Withdraw, Turn, Claim, Build, Check, Pending, Push, Follow, Prepare, Record | 3,132, 24, 6 s (the unmutated model passes: 3,132 states) |
+| the clone follows before the push (`Pending` appends the candidate to the clone) | 2 tasks, `CloneNotAhead` | `CloneNotAhead` violated | Join, Turn, Claim, Build, Check, Pending | 1,187, 8, 4 s |

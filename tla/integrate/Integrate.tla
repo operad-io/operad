@@ -252,18 +252,21 @@ Follow(t) ==
   /\ LET ts == SubSeq(origin, 1, IdxOf(origin, tgt[t])) IN
      IF ~cbranch \/ cdirty
      THEN /\ ph' = [ph EXCEPT ![t] = "followed"]
+          /\ tgt' = [tgt EXCEPT ![t] = NoCommit]  \* not updated: the note says why
           /\ UNCHANGED <<clone, needPrep, followedTo>>
      ELSE IF Has(clone, tgt[t])
      THEN /\ ph' = [ph EXCEPT ![t] = "followed"]
           /\ followedTo' = tgt[t]
-          /\ UNCHANGED <<clone, needPrep>>
+          /\ UNCHANGED <<clone, needPrep, tgt>>
      ELSE IF IsPrefix(clone, ts)
      THEN /\ clone' = ts /\ needPrep' = TRUE /\ followedTo' = tgt[t]
           /\ ph' = [ph EXCEPT ![t] = "prep"]
+          /\ UNCHANGED tgt
      ELSE /\ ph' = [ph EXCEPT ![t] = "followed"]
+          /\ tgt' = [tgt EXCEPT ![t] = NoCommit]  \* cannot fast-forward
           /\ UNCHANGED <<clone, needPrep, followedTo>>
   /\ UNCHANGED <<origin, cdirty, cbranch, nlocal, hands, crashes, ver, queue,
-       claim, solo, res, mem, cand, chk, rnd, rec, tgt, unwanted>>
+       claim, solo, res, mem, cand, chk, rnd, rec, unwanted>>
 
 \* The prepare lines run in the clone after it moved (they may fail; the note says so).
 Prepare(t) ==
@@ -430,6 +433,12 @@ CloneEqualsOrigin ==
 \* ---- properties ----
 \* A task that has pushed is recorded as merged.
 PushedGetsMerged == \A t \in Tasks : (ph[t] = "pushed") ~> (ph[t] = "merged")
+
+\* After a merge the main clone holds the merged commit, unless the follow was
+\* skipped (off the branch, uncommitted changes, local commits): then the note
+\* says so (tgt is NoCommit). A hand push after the last merge is not followed.
+CloneFollowsMerge == \A t \in Tasks :
+  (ph[t] = "pushed") ~> (ph[t] = "merged" /\ (tgt[t] = NoCommit \/ Has(clone, tgt[t])))
 
 \* A task in the queue is merged, reported (failed, cancelled) or sent back (idle).
 QueuedResolves == \A t \in Tasks :
