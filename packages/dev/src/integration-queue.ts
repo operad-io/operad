@@ -12,6 +12,11 @@
  * A ticket is written only by its own task. Claims and "integrate alone" marks
  * are separate files the leader owns (`c-<leader>.json`, `s-<task>.json`), so a
  * task that leaves while it is claimed is never written back.
+ *
+ * Withdrawing a ticket and a leader's last check-and-push take the same lock
+ * (`land.lock`): either the withdrawal comes first, so the leader sees it and
+ * lands without that task, or the push comes first, so the task stays in the
+ * batch. The lock is held across the push, and nothing slower.
  */
 
 import {
@@ -50,11 +55,12 @@ export interface BatchResult {
   readonly head: string;
   readonly note?: string | undefined;
   /**
-   * `pending` from before the leader pushes until it has recorded the merge. A
-   * pending result whose leader is gone is settled by whether `head` landed.
-   * A result without a state is done.
+   * `pending` from before the leader pushes until the push succeeds, `pushed`
+   * once it has, and `done` after the leader recorded the merge. A pending
+   * result whose leader is gone is settled by whether `head` landed. A result
+   * without a state is done.
    */
-  readonly state?: "pending" | "done" | undefined;
+  readonly state?: "pending" | "pushed" | "done" | undefined;
   readonly members: readonly { readonly task: string; readonly sha: string }[];
 }
 
@@ -70,6 +76,24 @@ export class IntegrationQueueCancelled extends Error {
 export type Turn =
   | { readonly kind: "turn" }
   | { readonly kind: "batched"; readonly leader: string; readonly result: BatchResult };
+
+/** What withdrawing a ticket found: it went, or the leader had already pushed it. */
+export type Withdrawal =
+  | { readonly kind: "withdrawn" }
+  | { readonly kind: "merged"; readonly leader: string; readonly result: BatchResult };
+
+/** What a leader's last check, publish and push did. */
+export type Landing = "withdrawn" | "pushed" | "failed";
+
+/**
+ * Test-only hooks. Production code never sets them. `lockWait` replaces the
+ * wait of the land lock so a test can see a withdrawal wait behind a push;
+ * `withdrawn` reports what that withdrawal found.
+ */
+export const integrationQueueTestHooks: {
+  lockWait?: ((ms: number) => Promise<void>) | undefined;
+  withdrawn?: ((task: string, kind: Withdrawal["kind"]) => void) | undefined;
+} = {};
 
 export interface QueueOptions {
   readonly home: string;
@@ -109,6 +133,10 @@ function processAlive(pid: number): boolean {
 
 function safeName(task: string): string {
   return task.replace(/[^A-Za-z0-9._-]/g, "_");
+}
+
+function landLockPath(directory: string): string {
+  return join(directory, "land.lock");
 }
 
 function writeAtomic(path: string, value: unknown): void {
@@ -169,6 +197,26 @@ export class IntegrationQueue {
 
   private resultPath(leader: string): string {
     return join(this.directory, `r-${safeName(leader)}.json`);
+  }
+
+  /** The lock a withdrawal and a leader's last check-and-push share. */
+  private withLandLock<T>(work: () => Promise<T> | T): Promise<T> {
+    const wait = integrationQueueTestHooks.lockWait;
+    return withLockFile(landLockPath(this.directory), work, {
+      label: "integration queue",
+      onLog: () => {},
+      ...(wait === undefined ? {} : { wait }),
+    });
+  }
+
+  /** Removes this task's ticket and its "integrate alone" mark. */
+  private removeTicket(): void {
+    this.joined = false;
+    rmSync(this.ticketPath(this.options.task), { force: true });
+    rmSync(this.soloPath(this.options.task), { force: true });
+    // Looking prunes what no one needs now: a leader's claim and result stay
+    // while a task it claimed is still queued.
+    this.tickets();
   }
 
   /** The live tickets in queue order; tickets of dead processes are dropped. */
@@ -272,14 +320,63 @@ export class IntegrationQueue {
   }
 
   /** Gives the turn back, and the ticket with it. */
-  leave(): void {
+  async leave(): Promise<void> {
     if (!this.joined) return;
-    this.joined = false;
-    rmSync(this.ticketPath(this.options.task), { force: true });
-    rmSync(this.soloPath(this.options.task), { force: true });
-    // Looking prunes what no one needs now: a leader's claim and result stay
-    // while a task it claimed is still queued.
-    this.tickets();
+    await this.withLandLock(() => this.removeTicket());
+  }
+
+  /**
+   * A withdrawal takes the land lock, so it cannot slip between a leader's last
+   * check and its push. It removes the ticket unless the leader already pushed
+   * a batch that lists this task; then it says so and leaves the task to record
+   * its merge.
+   */
+  async withdraw(): Promise<Withdrawal> {
+    const withdrawal = await this.withLandLock(() => {
+      const me = this.options.task;
+      const mine = this.tickets().find((ticket) => ticket.task === me);
+      const leader = mine?.claimedBy;
+      if (leader !== undefined) {
+        const result = this.readResult(leader);
+        if (
+          result !== undefined &&
+          result.state !== "pending" &&
+          result.members.some((member) => member.task === me)
+        ) {
+          return { kind: "merged" as const, leader, result };
+        }
+      }
+      this.removeTicket();
+      return { kind: "withdrawn" as const };
+    });
+    integrationQueueTestHooks.withdrawn?.(this.options.task, withdrawal.kind);
+    return withdrawal;
+  }
+
+  /**
+   * The leader's last check, its result and the push, under the land lock. A
+   * ticket that left first makes this land without its batch; a push that
+   * lands first leaves a result a waiting withdrawal reads as merged.
+   */
+  async landWhenStillQueued(
+    followers: readonly Ticket[],
+    result: BatchResult,
+    push: () => Promise<boolean> | boolean,
+  ): Promise<Landing> {
+    return this.withLandLock(async () => {
+      const queued = new Set(this.tickets().map((ticket) => ticket.task));
+      if (
+        !queued.has(this.options.task) ||
+        this.stillQueued(followers).length !== followers.length
+      ) {
+        return "withdrawn" as const;
+      }
+      this.publish(result);
+      const pushed = await push();
+      if (!pushed) return "failed" as const;
+      this.markPushed();
+      return "pushed" as const;
+    });
   }
 
   private readResult(leader: string): BatchResult | undefined {
@@ -321,8 +418,19 @@ export class IntegrationQueue {
         }
         holder = claimed;
       }
-      if (this.options.signal?.aborted === true) throw new IntegrationQueueCancelled();
-      if (mine === undefined) throw new Error("the integration ticket is gone");
+      if (this.options.signal?.aborted === true) {
+        const withdrawal = await this.withdraw();
+        if (withdrawal.kind === "merged") {
+          return {
+            kind: "batched",
+            leader: withdrawal.leader,
+            result: withdrawal.result,
+          };
+        }
+        throw new IntegrationQueueCancelled();
+      }
+      // Only a withdrawal removes a live task's ticket; its run is cancelled.
+      if (mine === undefined) throw new IntegrationQueueCancelled();
       if (holder === undefined) {
         const head = tickets.find((ticket) => ticket.claimedBy === undefined);
         if (head !== undefined && head.task === me) return { kind: "turn" };
@@ -379,7 +487,14 @@ export class IntegrationQueue {
     writeAtomic(this.resultPath(this.options.task), { ...result, state: "pending" });
   }
 
-  /** The push landed and the leader has recorded it: the result is final. */
+  /** The push landed: a waiting withdrawal now reads the batch as merged. */
+  private markPushed(): void {
+    const result = this.readResult(this.options.task);
+    if (result === undefined) return;
+    writeAtomic(this.resultPath(this.options.task), { ...result, state: "pushed" });
+  }
+
+  /** The leader has recorded the merge: the result is final. */
   finish(): void {
     const result = this.readResult(this.options.task);
     if (result === undefined) return;
@@ -387,7 +502,28 @@ export class IntegrationQueue {
   }
 
   /** A claimed task is done with the result. */
-  done(): void {
-    this.leave();
+  async done(): Promise<void> {
+    await this.leave();
   }
+}
+
+/**
+ * Takes a task out of the integration queue on behalf of a cancel, with the
+ * land lock a leader's last check-and-push takes. It answers `merged` when the
+ * leader already pushed a batch that lists the task.
+ */
+export async function withdrawIntegration(
+  home: string,
+  repository: { readonly name: string; readonly path: string },
+  task: string,
+): Promise<Withdrawal> {
+  return new IntegrationQueue({
+    home,
+    repository,
+    task,
+    run: "",
+    verified: "",
+    message: "",
+    say: () => {},
+  }).withdraw();
 }

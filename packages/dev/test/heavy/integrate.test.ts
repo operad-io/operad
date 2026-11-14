@@ -12,7 +12,10 @@ import {
 import { join } from "node:path";
 import { holdUntilReleased } from "../fixtures/hold.ts";
 import { notCodeTestHooks } from "../../src/notcode.ts";
-import { IntegrationQueue } from "../../src/integration-queue.ts";
+import {
+  IntegrationQueue,
+  integrationQueueTestHooks,
+} from "../../src/integration-queue.ts";
 import { validateDevSettings } from "../../src/settings.ts";
 import { fileURLToPath } from "node:url";
 import { SqlitePluginStore, PluginRegistry } from "@operad-io/engine";
@@ -1298,6 +1301,9 @@ afterEach(() => {
   integrateTestHooks.turnTaken = undefined;
   integrateTestHooks.wait = undefined;
   integrateTestHooks.claimed = undefined;
+  integrateTestHooks.beforePush = undefined;
+  integrationQueueTestHooks.lockWait = undefined;
+  integrationQueueTestHooks.withdrawn = undefined;
 });
 
 function firstParentSubjects(state: Fixture): string[] {
@@ -1410,7 +1416,7 @@ describe("integration queue", () => {
       rings.ring();
       await waiting;
       expect(turn).toBe("turn");
-      queue.leave();
+      await queue.leave();
     } finally {
       child.kill("SIGKILL");
       await child.exited;
@@ -1592,6 +1598,125 @@ describe("a task that leaves a batch", () => {
   });
 });
 
+describe("a follower cancelled while the leader may push", () => {
+  test("a withdrawal before the leader's last check lands without the follower", async () => {
+    const state = await fixture({
+      more: 1,
+      batch: 2,
+      keyCommands: ["true"],
+    });
+    const second = state.others[0];
+    if (second === undefined) throw new Error("second task missing");
+    const rings = bell();
+    integrateTestHooks.wait = rings.wait;
+    const queued = new Map([
+      [state.taskId, signal()],
+      [second.taskId, signal()],
+    ]);
+    integrateTestHooks.queued = (task) => queued.get(task)?.resolve();
+    const claimed = signal();
+    const release = signal();
+    integrateTestHooks.claimed = async () => {
+      claimed.resolve();
+      await release.promise;
+    };
+
+    const stopped = new AbortController();
+    const first = integrate(state, "integrate-run");
+    await queued.get(state.taskId)?.promise;
+    const runner = second.registry.runStep("dev/integrate", {}, {
+      runId: "integrate-run-2",
+      object: { type: "task", id: second.taskKey, data: {} },
+      signal: stopped.signal,
+    });
+    await queued.get(second.taskId)?.promise;
+    await claimed.promise;
+
+    const cancelled = await cancelTask(state.store, second.taskKey, {
+      home: state.root,
+    });
+    expect(cancelled.alreadyMerged).toBeUndefined();
+    expect(taskRowState(await taskOf(second))).toBe("cancelled");
+    stopped.abort();
+    rings.ring();
+    expect((await runner).result).toBe("cancelled");
+    release.resolve();
+
+    expect((await first).result).toBe("merged");
+    expect(taskRowState(await taskOf(second))).toBe("cancelled");
+    expect(git(state.remote.origin, ["cat-file", "-e", "main:code1.txt"]).ok).toBe(false);
+    expect(gitOrThrow(state.remote.origin, ["show", "main:code.txt"])).toBe("line");
+  });
+
+  test("a cancel that waits behind the push reports the merge, not a cancel", async () => {
+    const state = await fixture({
+      more: 1,
+      batch: 2,
+      keyCommands: ["true"],
+    });
+    const second = state.others[0];
+    if (second === undefined) throw new Error("second task missing");
+    const rings = bell();
+    integrateTestHooks.wait = rings.wait;
+    const queued = new Map([
+      [state.taskId, signal()],
+      [second.taskId, signal()],
+    ]);
+    integrateTestHooks.queued = (task) => queued.get(task)?.resolve();
+    const reached = signal();
+    const release = signal();
+    integrateTestHooks.beforePush = async () => {
+      reached.resolve();
+      await release.promise;
+    };
+    const waiting = signal();
+    const letWait = signal();
+    integrationQueueTestHooks.lockWait = async () => {
+      waiting.resolve();
+      await letWait.promise;
+    };
+    const withdrawn = signal();
+    integrationQueueTestHooks.withdrawn = () => withdrawn.resolve();
+
+    const first = integrate(state, "integrate-run");
+    await queued.get(state.taskId)?.promise;
+    const runner = second.registry.runStep("dev/integrate", {}, {
+      runId: "integrate-run-2",
+      object: { type: "task", id: second.taskKey, data: {} },
+    });
+    await queued.get(second.taskId)?.promise;
+    await reached.promise;
+
+    // The leader holds the land lock between its check and its push. The
+    // cancel cannot withdraw first; it waits and then finds the pushed batch.
+    const cancellation = cancelTask(state.store, second.taskKey, {
+      home: state.root,
+    });
+    const firstEvent = await Promise.race([
+      waiting.promise.then(() => "waiting" as const),
+      withdrawn.promise.then(() => "withdrawn" as const),
+    ]);
+    release.resolve();
+    letWait.resolve();
+    expect((await first).result).toBe("merged");
+    const cancelled = await cancellation;
+    expect(firstEvent).toBe("waiting");
+    expect(cancelled.alreadyMerged).toBe(
+      `${second.taskId} was merged; nothing can be cancelled`,
+    );
+    expect(cancelled.runs).toEqual([]);
+    expect(taskRowState(await taskOf(second))).toBe("integrating");
+
+    rings.ring();
+    expect((await runner).result).toBe("merged");
+    const data = await taskOf(second);
+    expect(data.phase).toBe("merged");
+    expect(data.brief).toContain(`integrated in a batch with ${state.taskId}`);
+    expect(gitOrThrow(state.remote.origin, ["show", "main:code1.txt"])).toBe("line");
+    expect(gitOrThrow(state.remote.origin, ["show", "main:code.txt"])).toBe("line");
+  });
+});
+
 describe("a claimed task that leaves the queue", () => {
   test("a batch that falls back does not write its ticket back", async () => {
     const root = await tempRoot();
@@ -1612,14 +1737,14 @@ describe("a claimed task that leaves the queue", () => {
     await c.join();
     const followers = a.claim(3);
     expect(followers.map((ticket) => ticket.task)).toEqual(["T-b", "T-c"]);
-    b.leave();
+    await b.leave();
     expect(a.stillQueued(followers).map((ticket) => ticket.task)).toEqual(["T-c"]);
     a.fallBack(followers);
     expect(a.tickets().map((ticket) => ticket.task)).toEqual(["T-a", "T-c"]);
     expect(a.tickets()[1]?.solo).toBe(true);
-    a.leave();
+    await a.leave();
     expect((await c.turn()).kind).toBe("turn");
-    c.leave();
+    await c.leave();
     expect(a.tickets()).toEqual([]);
   });
 });

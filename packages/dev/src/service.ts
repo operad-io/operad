@@ -10,11 +10,12 @@ import {
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { basename, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { objectValueAfter, ViewError } from "@operad-io/engine";
 import { isBusy } from "@operad-io/engine/platform";
 import type { FlowDefinition, ObjectStore, PluginFact, StoredObject } from "@operad-io/engine";
 import { git } from "./git.ts";
+import { withdrawIntegration } from "./integration-queue.ts";
 import { withRepositoryLock } from "./lock.ts";
 import {
   appendChange,
@@ -1902,14 +1903,45 @@ async function cancelRuns(
   }
 }
 
+interface CancelledTasks {
+  readonly runs: readonly RunToCancel[];
+  /** The tasks a batch had already pushed; they stay merged, not cancelled. */
+  readonly merged: readonly string[];
+}
+
+/** Where a cancel finds the integration queue: the home the action runs in. */
+function cancelHome(
+  store: ObjectStore,
+  options: CancelOptions,
+): string | undefined {
+  if (options.home !== undefined) return options.home;
+  // Before this option, a cancel called the service directly: the default
+  // store sits at `<home>/store`, so that home still finds the queue.
+  return basename(store.root) === "store" ? dirname(store.root) : undefined;
+}
+
 async function cancelTasks(
   store: ObjectStore,
   tasks: readonly StoredObject[],
-): Promise<readonly RunToCancel[]> {
+  home: string | undefined,
+  repositoryPath: string,
+): Promise<CancelledTasks> {
   const runs: RunToCancel[] = [];
+  const merged: string[] = [];
   for (const object of tasks) {
     const data = taskData(object.data);
     if (!isOpenTask(data)) continue;
+    if (home !== undefined) {
+      const withdrawal = await withdrawIntegration(
+        home,
+        { name: data.repository, path: repositoryPath },
+        bareId(object.id),
+      );
+      if (withdrawal.kind === "merged") {
+        merged.push(object.id);
+        continue;
+      }
+    }
     if (data.run !== null) runs.push({ run: data.run, flow: data.flowGraph });
     await writeTask(
       store,
@@ -1924,33 +1956,47 @@ async function cancelTasks(
       "dev:task-cancel",
     );
   }
-  return runs;
+  return { runs, merged };
 }
 
 export interface CancelOptions {
   readonly runs?: DevRunControl | undefined;
+  /** The operad home, where the integration queue lives. */
+  readonly home?: string | undefined;
+}
+
+export interface CancelledTask {
+  readonly task: StoredObject;
+  readonly runs: readonly RunToCancel[];
+  /** Set when a batch pushed the task first: it stays merged and is not cancelled. */
+  readonly alreadyMerged?: string | undefined;
 }
 
 export async function cancelPlan(
   store: ObjectStore,
   id: string,
   options: CancelOptions = {},
-): Promise<{ readonly plan: StoredObject; readonly runs: readonly RunToCancel[] }> {
+): Promise<{
+  readonly plan: StoredObject;
+  readonly runs: readonly RunToCancel[];
+  readonly merged: readonly string[];
+}> {
   const initial = await getPlan(store, id);
   const initialData = planData(initial.data);
+  const home = cancelHome(store, options);
   const cancelled = await withRepoLock(
     store,
     initialData.repository,
-    async () => {
+    async (fresh) => {
       const plan = await getPlan(store, id);
       const data = planData(plan.data);
-      if (refusePlan("cancel", data, id)) return { plan, runs: [] };
+      if (refusePlan("cancel", data, id)) return { plan, runs: [], merged: [] };
       const tasks = await tasksOfPlan(store, id);
-      const runs = await cancelTasks(store, tasks);
+      const { runs, merged } = await cancelTasks(store, tasks, home, fresh.path);
       const next: PlanData = { ...data, status: "cancelled" };
       const written = await writePlan(store, id, next, "dev:plan-cancel");
       await refreshPlanCounts(store, written);
-      return { plan: written, runs };
+      return { plan: written, runs, merged };
     },
   );
   await cancelRuns(options.runs, cancelled.runs);
@@ -1961,16 +2007,29 @@ export async function cancelTask(
   store: ObjectStore,
   id: string,
   options: CancelOptions = {},
-): Promise<{ readonly task: StoredObject; readonly runs: readonly RunToCancel[] }> {
+): Promise<CancelledTask> {
   const initial = await getTask(store, id);
   const initialData = taskData(initial.data);
+  const home = cancelHome(store, options);
   const cancelled = await withRepoLock(
     store,
     initialData.repository,
-    async () => {
+    async (fresh) => {
       const task = await getTask(store, id);
       const data = taskData(task.data);
-      if (refuseTask("cancel", data, id)) return { task, runs: [] };
+      if (refuseTask("cancel", data, id)) {
+        return { task, runs: [], merged: data.phase === "merged" };
+      }
+      if (home !== undefined) {
+        const withdrawal = await withdrawIntegration(
+          home,
+          { name: data.repository, path: fresh.path },
+          bareId(id),
+        );
+        if (withdrawal.kind === "merged") {
+          return { task, runs: [], merged: true };
+        }
+      }
       const runs: readonly RunToCancel[] =
         data.run === null ? [] : [{ run: data.run, flow: data.flowGraph }];
       const written = await writeTask(
@@ -1986,11 +2045,17 @@ export async function cancelTask(
         "dev:task-cancel",
       );
       await refreshPlanCountsOf(store, storeKey(data.repository, data.plan));
-      return { task: written, runs };
+      return { task: written, runs, merged: false };
     },
   );
   await cancelRuns(options.runs, cancelled.runs);
-  return cancelled;
+  return {
+    task: cancelled.task,
+    runs: cancelled.runs,
+    ...(cancelled.merged
+      ? { alreadyMerged: `${bareId(id)} was merged; nothing can be cancelled` }
+      : {}),
+  };
 }
 
 /**
