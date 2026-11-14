@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
+import { Readable } from "node:stream";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -6,26 +7,72 @@ import { cleanupTempRoots, makeGitRepository, tempRoot } from "../support.ts";
 
 afterAll(cleanupTempRoots);
 
-const CLI_ENTRY = fileURLToPath(new URL("../../../cli/bin/operad.ts", import.meta.url));
 const PLUGIN = fileURLToPath(new URL("../../src/index.ts", import.meta.url));
 const POOL = fileURLToPath(new URL("../../../pool/src/index.ts", import.meta.url));
 const SHELL = fileURLToPath(new URL("../../../shell/src/index.ts", import.meta.url));
 
-async function run(home: string, cwd: string, args: readonly string[]) {
-  const child = Bun.spawn({
-    cmd: [process.execPath, CLI_ENTRY, ...args],
-    cwd,
-    env: { ...process.env, OPERAD_HOME: home },
-    stdin: "ignore",
-    stdout: "pipe",
-    stderr: "pipe",
+/** The CLI's own entry point, loaded by path: the dev package does not build against the cli package. */
+interface CliMain {
+  main(
+    args: readonly string[],
+    options: {
+      home: string;
+      io: { write(text: string): void; error(text: string): void };
+      isTTY: boolean;
+    },
+  ): Promise<number>;
+}
+const CLI_MAIN = fileURLToPath(new URL("../../../cli/src/main.ts", import.meta.url));
+
+/**
+ * Runs a command in this process: the CLI's own `main` with collected output,
+ * the working directory and an empty standard input around it. What these
+ * cases test is the settings wiring, not starting the binary; the real entry
+ * stays a smoke case in `cli.test.ts`. Each start here also waited on the
+ * other heavy files the check host ran beside this one, which took these
+ * cases to 4-28 s against the 30 s limit (T-0436).
+ */
+let inProcess: Promise<unknown> = Promise.resolve();
+
+/** One command at a time: the working directory, stdin and environment belong to the process. */
+function run(home: string, cwd: string, args: readonly string[]) {
+  const turn = inProcess.then(() => runNow(home, cwd, args));
+  inProcess = turn.catch(() => undefined);
+  return turn;
+}
+
+async function runNow(home: string, cwd: string, args: readonly string[]) {
+  const out: string[] = [];
+  const err: string[] = [];
+  const previousCwd = process.cwd();
+  const previousEnv = { ...process.env };
+  const stdinDescriptor = Object.getOwnPropertyDescriptor(process, "stdin");
+  process.chdir(cwd);
+  Object.assign(process.env, { OPERAD_HOME: home });
+  // A real start of the command had `stdin: "ignore"`; give this process the
+  // same empty stream rather than the test runner's own input.
+  Object.defineProperty(process, "stdin", {
+    configurable: true,
+    value: Readable.from([]),
   });
-  const [out, err, code] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-    child.exited,
-  ]);
-  return { out, err, code };
+  try {
+    const { main } = (await import(CLI_MAIN)) as CliMain;
+    const code = await main([...args], {
+      home,
+      io: { write: (text) => out.push(text), error: (text) => err.push(text) },
+      isTTY: false,
+    });
+    return { out: out.join(""), err: err.join(""), code };
+  } finally {
+    if (stdinDescriptor !== undefined) {
+      Object.defineProperty(process, "stdin", stdinDescriptor);
+    }
+    for (const key of Object.keys(process.env)) {
+      if (!(key in previousEnv)) delete process.env[key];
+    }
+    Object.assign(process.env, previousEnv);
+    process.chdir(previousCwd);
+  }
 }
 
 async function setup() {

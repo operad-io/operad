@@ -1149,8 +1149,20 @@ the row fields.
 |---|---|---|---|
 | T-0401-M3 | packages/dev/src/rerun.ts | `runCheckCommands` passed `false` for `aloneRerun` when the failed test failed again alone | `a failed test that fails again when run alone > the result says it was the test's own rerun, and a quiet machine makes it the code` |
 
+## T-0432-batch-cancel-window — a withdrawal and the leader's push take one lock
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0432-M1 | packages/dev/src/integration-queue.ts | `withLandLock` ran its work without the lock, so a withdrawal slipped between the leader's last check and its push | `a follower cancelled while the leader may push > a cancel that waits behind the push reports the merge, not a cancel` |
+| T-0432-M2 | packages/dev/src/integration-queue.ts | `withdraw` read only a claimed follower's result, so a cancel of the leader while it pushed still removed its ticket and marked it cancelled | `a follower cancelled while the leader may push > a cancel that waits behind the leader's own push reports the leader merged` |
 ## T-0430-fresh-home-runs-task — the Quickstart starts the task
 
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0430-M2 | packages/dev/src/schedule.ts | the scheduler's start of a ready task whose plan's auto level is not `off` never matched (`plan.auto !== "off"` became `plan.auto === "never"`), so `dev:auto --level run` started nothing | `a fresh home follows the Quickstart > operad init, then the Quickstart's commands in order, start the task` |
+
+## T-0436 — the settings API cases run the cli in this process
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0436-M1 | packages/dev/src/commands.ts | `plan add` no longer read the repository's `autoDefault` (`auto: "off"`), so a new plan started at off | `dev settings through operad settings > a new plan starts at the auto level the repository sets` (its `expect(line).toContain("  run  ")`) |

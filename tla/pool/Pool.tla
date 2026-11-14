@@ -209,13 +209,22 @@ Rework(t) ==
   /\ NoBook
   /\ UNCHANGED <<holds, last>>
 
+(* A person who sees a task that is waiting after its work failed or ran out of
+   time chooses `reverify`: the dev flow verifies and reviews what the work left,
+   with no worker (found by trace validation; the first model had no such step). *)
+Reverify(t) ==
+  /\ phase[t] = "person"
+  /\ phase' = [phase EXCEPT ![t] = "review"]
+  /\ NoBook
+  /\ UNCHANGED <<holds, want, last, isFb, attempts, waits>>
+
 Finished == \A t \in Tasks : phase[t] \in Terminal
 
 Next ==
   \/ \E t \in Tasks :
        \/ Start(t) \/ Claim(t) \/ RunDone(t) \/ RunModelError(t) \/ RunFailed(t)
        \/ CancelRunning(t) \/ ReworkRunning(t) \/ CancelIdle(t) \/ Retry(t)
-       \/ Merge(t) \/ Rework(t)
+       \/ Merge(t) \/ Rework(t) \/ Reverify(t)
   \/ Finished /\ UNCHANGED vars
 
 \* Weak fairness: a claim that stays possible is taken, a run that is going ends,
