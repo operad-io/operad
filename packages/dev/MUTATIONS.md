@@ -1149,6 +1149,12 @@ the row fields.
 |---|---|---|---|
 | T-0401-M3 | packages/dev/src/rerun.ts | `runCheckCommands` passed `false` for `aloneRerun` when the failed test failed again alone | `a failed test that fails again when run alone > the result says it was the test's own rerun, and a quiet machine makes it the code` |
 
+## T-0432-batch-cancel-window — a withdrawal and the leader's push take one lock
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0432-M1 | packages/dev/src/integration-queue.ts | `withLandLock` ran its work without the lock, so a withdrawal slipped between the leader's last check and its push | `a follower cancelled while the leader may push > a cancel that waits behind the push reports the merge, not a cancel` |
+| T-0432-M2 | packages/dev/src/integration-queue.ts | `withdraw` read only a claimed follower's result, so a cancel of the leader while it pushed still removed its ticket and marked it cancelled | `a follower cancelled while the leader may push > a cancel that waits behind the leader's own push reports the leader merged` |
 ## T-0430-fresh-home-runs-task — the Quickstart starts the task
 
 | id | file | mutation | failing test |

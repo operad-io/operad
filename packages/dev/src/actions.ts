@@ -443,7 +443,10 @@ export const actions: readonly ActionTypeDefinition[] = [
     why: planWhy("cancel"),
     settled: planSettled("cancel"),
     async run(ctx) {
-      await cancelPlan(ctx.store, ctx.object.id, { runs: ctx.runs });
+      await cancelPlan(ctx.store, ctx.object.id, {
+        runs: ctx.runs,
+        home: ctx.home,
+      });
     },
   },
   {
@@ -459,7 +462,11 @@ export const actions: readonly ActionTypeDefinition[] = [
     why: taskWhy("cancel"),
     settled: taskSettled("cancel"),
     async run(ctx) {
-      await cancelTask(ctx.store, ctx.object.id, { runs: ctx.runs });
+      const cancelled = await cancelTask(ctx.store, ctx.object.id, {
+        runs: ctx.runs,
+        home: ctx.home,
+      });
+      return cancelled.alreadyMerged;
     },
   },
   {

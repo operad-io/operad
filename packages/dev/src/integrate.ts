@@ -71,6 +71,11 @@ export const integrateTestHooks: {
   turnTaken?: ((task: string) => Promise<void> | void) | undefined;
   /** Awaited by a batch's leader once it has claimed the tasks queued behind it. */
   claimed?: ((followers: readonly string[]) => Promise<void> | void) | undefined;
+  /**
+   * Awaited under the queue's land lock between the leader's last check and
+   * its push. A test holds the push to make a cancel race it.
+   */
+  beforePush?: ((candidate: string) => Promise<void> | void) | undefined;
   /** How a task waits for its turn before it looks again. */
   wait?: ((ms: number) => Promise<void>) | undefined;
 } = {};
@@ -709,11 +714,18 @@ export async function runIntegrate(
         return merged;
       };
       // A claimed task that left (cancelled) is not merged: one by one instead.
-      // Checked last, so the window between this and the push is as short as it can be.
-      if (queue.stillQueued(followers).length !== followers.length) return undefined;
-      queue.publish(result);
-      const push = git(gate, ["push", settings.remote, `HEAD:refs/heads/${settings.mainBranch}`]);
-      if (push.ok) {
+      // The check and the push share the queue's land lock with a withdrawal,
+      // so a cancel either comes before the check or after the push.
+      const landed = await queue.landWhenStillQueued(followers, result, async () => {
+        await integrateTestHooks.beforePush?.(batchHead);
+        return git(gate, [
+          "push",
+          settings.remote,
+          `HEAD:refs/heads/${settings.mainBranch}`,
+        ]).ok;
+      });
+      if (landed === "withdrawn") return undefined;
+      if (landed === "pushed") {
         integrateTestHooks.afterPush?.(batchHead);
         return land({});
       }
@@ -1118,7 +1130,7 @@ export async function runIntegrate(
       `main moved ${MAX_INTEGRATION_ROUNDS} times while the candidate was built; ${lastError}`,
     );
   } finally {
-    queue.leave();
+    await queue.leave();
   }
 }
 
