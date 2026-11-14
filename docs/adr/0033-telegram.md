@@ -34,7 +34,7 @@ A message from a listed user counts as started by a person on the spot; the inpu
 
 ### D7: What is sent
 
-Each new reply of a chat bound to Telegram is sent to that Telegram chat once. Pending items are sent: every question in a chat bound to Telegram, and the pending items of the plugins listed in `pending`. Live progress (the stream of tool calls) is not sent. Markdown is reduced to what Telegram accepts, and a long reply is split into several messages; this is done inside the plugin.
+Each new reply of a chat bound to Telegram is sent to that Telegram chat once. Pending items are sent: every question in a chat bound to Telegram, and the pending items of the plugins listed in `pending`. Live progress (the stream of tool calls) is not sent. While a reply is written, the bound Telegram chat shows the bot as typing. Markdown is reduced to what Telegram accepts, and a long reply is split into several messages; this is done inside the plugin.
 
 ### D8: How a pending item is answered
 
