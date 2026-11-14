@@ -841,24 +841,14 @@ the row fields.
 |---|---|---|---|
 | T-0452-M1 | packages/engine/src/plugin/registry.ts | `takeStartedRuns(count)` ignored `count` and drained everything | `takeStartedRuns(count) drains only the oldest requests` |
 | T-0452-M2 | packages/engine/src/platform/sqlite-open.ts | `isBusy` matched only the exact `SQLITE_BUSY` code again | `isBusy recognises only a SQLITE_BUSY error` |
-## T-0456 — a deeper setting name changes one entry
-
-| id | file | mutation | failing test |
-|---|---|---|---|
-| T-0456-M1 | packages/engine/src/views/settings.ts | a deeper setting name skipped the parent setting's `confirm` rule | `set with a deeper name follows the same schema, confirm and editable rules` (in `packages/cli/test/heavy/settings.test.ts`) |
-| T-0456-M2 | packages/engine/src/views/settings.ts | a deeper setting name was accepted under a parent that is not editable | `set with a deeper name follows the same schema, confirm and editable rules` (in `packages/cli/test/heavy/settings.test.ts`) |
+| T-0456-M1 | packages/engine/src/views/settings.ts | a deeper setting name skipped the parent setting's `confirm` rule | `set with a deeper name follows the same schema, confirm and editable rules` |
+| T-0456-M2 | packages/engine/src/views/settings.ts | a deeper setting name was accepted under a parent that is not editable | `set with a deeper name follows the same schema, confirm and editable rules` |
 | T-0456-M3 | packages/engine/src/views/settings.ts | a `null` value at a deeper name wrote `null` instead of removing the entry | `POST /v1/settings with a deeper name changes one entry and keeps a concurrent change` |
-| T-0456-M4 | packages/engine/src/views/settings.ts | a deeper setting name wrote the whole parent map built from the request instead of only the named entry, dropping the other entries | `set with a deeper name changes one entry and keeps the others` (in `packages/cli/test/heavy/settings.test.ts`) and `POST /v1/settings with a deeper name changes one entry and keeps a concurrent change` |
+| T-0456-M4 | packages/engine/src/views/settings.ts | a deeper setting name wrote the whole parent map built from the request instead of only the named entry, dropping the other entries | `set with a deeper name changes one entry and keeps the others` and `POST /v1/settings with a deeper name changes one entry and keeps a concurrent change` |
 | T-0456-M5 | packages/engine/src/views/settings.ts | a deeper setting name accepted `__proto__`, `constructor` or `prototype` as a key, so a write reached `Object.prototype` | `POST /v1/settings with a deeper name changes one entry and keeps a concurrent change` |
-| T-0456-M6 | packages/engine/src/views/settings.ts | a deeper setting name with a path the schema has no entry for was not refused with `not-found` | `set with a deeper name follows the same schema, confirm and editable rules` (in `packages/cli/test/heavy/settings.test.ts`) and `POST /v1/settings with a deeper name changes one entry and keeps a concurrent change` |
-
-## T-0458 — flows read and changed through settings
-
-| id | file | mutation | failing test |
-|---|---|---|---|
-| T-0458-M1 | packages/engine/src/views/settings.ts | a project settings file's own `check` was never run before a write, so a flow dev refuses was saved | `dev.flows and dev.flowList in settings > a save that breaks a rule is refused with dev's reason and writes nothing` and `the command line lists and saves flows, and refuses with dev's reason` (both in `packages/dev/test/heavy/flows-over-settings.test.ts`) |
+| T-0456-M6 | packages/engine/src/views/settings.ts | a deeper setting name with a path the schema has no entry for was not refused with `not-found` | `set with a deeper name follows the same schema, confirm and editable rules` and `POST /v1/settings with a deeper name changes one entry and keeps a concurrent change` |
+| T-0458-M1 | packages/engine/src/views/settings.ts | a project settings file's own `check` was never run before a write, so a flow dev refuses was saved | `dev.flows and dev.flowList in settings > a save that breaks a rule is refused with dev's reason and writes nothing` and `the command line lists and saves flows, and refuses with dev's reason` |
 | T-0458-M2 | packages/engine/src/views/settings.ts | the values a project settings file derives (`dev.flowList`) were left out of the listing | `dev.flows and dev.flowList in settings > flowList reads dev.json, TypeScript and refused TypeScript flows` |
-| T-0458-M6 | packages/engine/src/http/server.ts | a refusal by a plugin's own settings check (`refused`) was answered `400` instead of `422` | `dev.flows and dev.flowList in settings > over HTTP a refusal is 422 with dev's reason, and the file is unchanged` (in `packages/dev/test/heavy/flows-over-settings.test.ts`) |
 
 ## T-0457 — an object shows how its last run ended
 
@@ -869,13 +859,9 @@ the row fields.
 | T-0457-M3 | packages/engine/src/views/presentation.ts | the oldest run was read instead of the newest | `how an object's last run ended, over HTTP > a newer run that is still going hides the earlier ending` |
 | T-0457-M4 | packages/engine/src/views/presentation.ts | `lastRun.endedAt` was 0 instead of the ending fact's time | `how an object's last run ended, over HTTP > a reply that ends shows outcome done and when` |
 | T-0457-M5 | packages/engine/src/views/presentation.ts | a failure that recorded no reason of its own did not take the failed step's message | `how an object's last run ended, over HTTP > a reply that fails shows outcome failed` |
-
-## T-0459 — plugins over HTTP
-
-| id | file | mutation | failing test |
-|---|---|---|---|
 | T-0459-M7 | packages/engine/src/http/server.ts | a switch was not recorded with the client and token label | `plugins over HTTP > disable and enable change the config the command line reads, and are recorded` |
 | T-0459-M8 | packages/engine/src/http/server.ts | `GET /v1/plugins` answered an empty list | `plugins over HTTP > GET /v1/plugins lists what `operad plugin list` prints, with where each comes from` |
+| T-0458-M6 | packages/engine/src/http/server.ts | a refusal by a plugin's own settings check (`refused`) was answered `400` instead of `422` | `dev.flows and dev.flowList in settings > over HTTP a refusal is 422 with dev's reason, and the file is unchanged` |
 
 ## T-0460 — settings follow-ups, lastRun reading and plugin HTTP edges
 
