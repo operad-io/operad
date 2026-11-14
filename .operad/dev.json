@@ -4,26 +4,16 @@
   "concurrency": 3,
   "maxAutoRework": 4,
   "workers": {
-    "claude": {
-      "use": "claude/agent",
-      "args": [
-        "--model",
-        "sonnet"
-      ],
-      "count": 1,
-      "stallSecs": 900,
-      "wallTimeSecs": 7200
-    },
     "pi": {
       "use": "pi/agent",
       "args": [
         "--model",
         "opencode-go/deepseek-v4.1-flash"
       ],
-      "count": 1,
+      "count": 2,
       "stallSecs": 900,
       "wallTimeSecs": 7200,
-      "fallback": "claude"
+      "fallback": "radian"
     },
     "radian": {
       "use": "radian/agent",
@@ -36,12 +26,11 @@
       "count": 1,
       "stallSecs": 900,
       "wallTimeSecs": 7200,
-      "fallback": "claude"
+      "fallback": "pi"
     }
   },
   "pools": {
     "default": [
-      "claude",
       "pi",
       "radian"
     ]
@@ -58,15 +47,6 @@
     "timeoutSecs": 3600,
     "stallSecs": 900,
     "fallback": [
-      {
-        "use": "claude/agent",
-        "args": [
-          "--model",
-          "opus",
-          "--effort",
-          "medium"
-        ]
-      },
       {
         "use": "claude/agent",
         "args": [
