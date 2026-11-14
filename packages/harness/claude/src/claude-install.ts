@@ -6,6 +6,7 @@
  */
 
 import { realpathSync } from "node:fs";
+import { realpath } from "node:fs/promises";
 
 /** The oldest Claude Code the worker is written for. */
 export const CLAUDE_FLOOR = "2.1.319";
@@ -36,15 +37,28 @@ export class ClaudeNotFoundError extends ClaudeInstallError {
   }
 }
 
+/** The command on `path`, before its real path is resolved. */
+function whichClaude(command: string | undefined, path: string | undefined): string {
+  const wanted = command ?? DEFAULT_CLAUDE_COMMAND;
+  const found = wanted.includes("/") ? Bun.which(wanted) : Bun.which(wanted, { PATH: path ?? "" });
+  if (found === null) throw new ClaudeNotFoundError(wanted);
+  return found;
+}
+
 /**
  * The real path of the claude command: a name looked up on `path`, or a path.
  * Throws `ClaudeNotFoundError` when there is none.
  */
 export function findClaude(command: string | undefined, path: string | undefined = process.env.PATH): string {
-  const wanted = command ?? DEFAULT_CLAUDE_COMMAND;
-  const found = wanted.includes("/") ? Bun.which(wanted) : Bun.which(wanted, { PATH: path ?? "" });
-  if (found === null) throw new ClaudeNotFoundError(wanted);
-  return realpathSync(found);
+  return realpathSync(whichClaude(command, path));
+}
+
+/** As `findClaude`, but resolving the real path without blocking the event loop. */
+export async function findClaudeAsync(
+  command: string | undefined,
+  path: string | undefined = process.env.PATH,
+): Promise<string> {
+  return await realpath(whichClaude(command, path));
 }
 
 /** Negative, zero or positive as version `a` is below, equal to or above `b`. */
@@ -175,7 +189,7 @@ async function runClaudeAsync(path: string, args: readonly string[]): Promise<As
 export async function claudeSignedIn(command: string | undefined): Promise<boolean | undefined> {
   let path: string;
   try {
-    path = findClaude(command);
+    path = await findClaudeAsync(command);
   } catch {
     return undefined;
   }

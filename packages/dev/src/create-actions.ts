@@ -10,6 +10,7 @@ import type {
   ObjectStore,
   StoredObject,
 } from "@operad-io/engine";
+import { PLAN_CREATE_TASK_RANK } from "./actions.ts";
 import { createPlan, createTask } from "./commands.ts";
 import {
   bareId,
@@ -162,8 +163,7 @@ const taskAction: ActionTypeDefinition = {
   name: "task",
   on: "plan",
   creates: "task",
-  // A creation action comes after the plan's own next steps and before cancel.
-  rank: () => 4,
+  rank: () => PLAN_CREATE_TASK_RANK,
   args: taskArgs([], []),
   argsFor: (object, env) => {
     const plan = planData(object.data);

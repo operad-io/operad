@@ -34,6 +34,15 @@ describe("claude's signedIn answer", () => {
     expect(await plugin.signedIn?.({ command })).toBe(false);
   });
 
+  test("is absent when a failing exit contradicts loggedIn true", async () => {
+    const root = await tempRoot();
+    const command = join(root, "claude");
+    script(command, `printf '%s\\n' '{"loggedIn":true}'
+exit 1`);
+    const plugin = createClaudeHarnessPlugin();
+    expect(await plugin.signedIn?.({ command })).toBeUndefined();
+  });
+
   test("is absent when claude is missing or the answer cannot be read", async () => {
     const root = await tempRoot();
     const missing = join(root, "no-claude");
@@ -42,6 +51,20 @@ describe("claude's signedIn answer", () => {
     const plugin = createClaudeHarnessPlugin();
     expect(await plugin.signedIn?.({ command: missing })).toBeUndefined();
     expect(await plugin.signedIn?.({ command: malformed })).toBeUndefined();
+  });
+
+  test("two clients asking at once share one probe", async () => {
+    const root = await tempRoot();
+    const command = join(root, "claude");
+    const counter = join(root, "count");
+    script(command, `printf x >> ${JSON.stringify(counter)}\nprintf '%s\\n' '{"loggedIn":true}'`);
+    const plugin = createClaudeHarnessPlugin();
+    const answers = await Promise.all([
+      plugin.signedIn?.({ command }),
+      plugin.signedIn?.({ command }),
+    ]);
+    expect(answers).toEqual([true, true]);
+    expect(readFileSync(counter, "utf8").length).toBe(1);
   });
 
   test("asks claude once per short cache period", async () => {

@@ -164,3 +164,11 @@ setup it depends on, in the order they were recorded. The root
 | T-0465-M7 | packages/harness/claude/src/index.ts | removed the cache check, so `claude auth status` ran on every read | `claude's signedIn answer > asks claude once per short cache period` |
 | T-0465-M8 | packages/harness/claude/src/claude-install.ts | a missing claude answered false instead of absent | `claude's signedIn answer > is absent when claude is missing or the answer cannot be read` |
 | T-0465-M9 | packages/harness/claude/src/claude-install.ts | an unreadable `claude auth status` answer became false instead of absent | `claude's signedIn answer > is absent when claude is missing or the answer cannot be read` |
+
+## T-0472 — claude signedIn follow-ups
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0472-M6 | packages/harness/claude/src/claude-install.ts | a failing exit with loggedIn true was returned as true instead of absent | `claude's signedIn answer > is absent when a failing exit contradicts loggedIn true` |
+| T-0472-M7 | packages/harness/claude/src/index.ts | two clients asking at once each started a probe because the pending answer was not shared | `claude's signedIn answer > two clients asking at once share one probe` |
+| T-0472-M8 | packages/harness/claude/src/claude-install.ts | the async lookup returned the symlink instead of the command's real path | `the claude command > the async lookup follows a symlink to the command's real path` |
