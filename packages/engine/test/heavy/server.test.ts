@@ -878,6 +878,12 @@ describe("http server", () => {
       expect(invalid.status).toBe(400);
       expect((await post({ name: "webtest.entries.a.zzz", value: 1 })).status).toBe(404);
       expect((await post({ name: "webtest.fixed.k", value: "y" })).status).toBe(404);
+      for (const key of ["__proto__", "constructor", "prototype"]) {
+        expect((await post({ name: `webtest.entries.${key}.n`, value: 3 })).status).toBe(404);
+        expect((await post({ name: `webtest.entries.a.${key}`, value: {} })).status).toBe(404);
+      }
+      expect(Object.prototype.hasOwnProperty.call({}, "n")).toBe(false);
+      expect(({} as Record<string, unknown>).n).toBeUndefined();
       expect(read().entries).toEqual({ a: { n: 5 }, b: { n: 9 } });
 
       expect((await post({ name: "webtest.entries.b", value: null })).status).toBe(200);

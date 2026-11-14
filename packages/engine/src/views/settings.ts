@@ -471,6 +471,8 @@ export async function setSetting(
   });
 }
 
+const UNSAFE_KEYS: ReadonlySet<string> = new Set(["__proto__", "constructor", "prototype"]);
+
 /** The schema of the entry `sub` names inside a setting, when the schema declares one. */
 function entrySchema(
   schema: ActionArgSchema,
@@ -478,7 +480,8 @@ function entrySchema(
 ): ActionArgSchema | undefined {
   let node: ActionArgSchema | undefined = schema;
   for (const key of sub) {
-    if (key.length === 0 || node === undefined) return undefined;
+    // Never a key that names something every object inherits.
+    if (key.length === 0 || UNSAFE_KEYS.has(key) || node === undefined) return undefined;
     const next: ActionArgSchema | undefined = node.properties?.[key];
     node =
       next ??
