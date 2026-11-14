@@ -280,6 +280,19 @@ describe("plugin registry", () => {
     expect(registry.takeStartedRuns()).toEqual([]);
   });
 
+  test("takeStartedRuns(count) drains only the oldest requests", async () => {
+    const root = await tempRoot();
+    const registry = new PluginRegistry([defineTickPlugin()], {
+      storeRoot: join(root, "store"),
+    });
+    await registry.tick();
+    const first = registry.startedRuns.length;
+    await registry.tick();
+    expect(registry.startedRuns.length).toBe(first * 2);
+    expect(registry.takeStartedRuns(first)).toHaveLength(first);
+    expect(registry.startedRuns).toHaveLength(first);
+  });
+
   test("logs an onTick failure instead of raising it", async () => {
     const root = await tempRoot();
     const logs: string[] = [];

@@ -202,7 +202,7 @@ describe("publishing and installing the packages", () => {
     expect(check.out).toContain("claude: ok");
   }, 120_000);
 
-  test("init retries a claude install that failed after config.json was written", async () => {
+  test.skipIf(!online)("init retries a claude install that failed after config.json was written", async () => {
     const scratchRoot = scratch("operad-publish-retry-");
     const tarballs = packAll(join(scratchRoot, "tarballs"));
     const binary = cliPrefix(scratchRoot, tarballs);
@@ -242,6 +242,37 @@ describe("publishing and installing the packages", () => {
     const check = run([binary, "plugin", "check", "claude"], scratchRoot, env);
     expect({ code: check.code, err: check.err }).toEqual({ code: 0, err: "" });
     expect(check.out).toContain("claude: ok");
+  }, 120_000);
+
+  test("init leaves a claude entry that names its own module without installing the default package", async () => {
+    const scratchRoot = scratch("operad-publish-own-module-");
+    const tarballs = packAll(join(scratchRoot, "tarballs"));
+    const binary = cliPrefix(scratchRoot, tarballs);
+    const home = join(scratchRoot, "home");
+    const bin = join(scratchRoot, "bin");
+    fakeRadian(bin);
+    // No claude on PATH, so the first init enables radian and installs nothing.
+    const env = { OPERAD_HOME: home, PATH: [bin, dirname(process.execPath), "/usr/bin", "/bin"].join(delimiter) };
+
+    const first = run([binary, "init"], scratchRoot, env);
+    expect(first.code).toBe(0);
+    const path = join(home, "config.json");
+    const config = JSON.parse(readFileSync(path, "utf8")) as {
+      plugins: Record<string, { enabled: boolean; module?: string }>;
+    };
+    writeFileSync(
+      path,
+      JSON.stringify({
+        ...config,
+        plugins: { ...config.plugins, claude: { enabled: true, module: join(scratchRoot, "own-claude.ts") } },
+      }),
+    );
+    const second = run([binary, "init"], scratchRoot, env);
+    expect(second.code).toBe(0);
+    // An install of the default package would have added it to the home's project.
+    const manifest = join(home, "plugins", "package.json");
+    const text = existsSync(manifest) ? readFileSync(manifest, "utf8") : "";
+    expect(text).not.toContain("@operad-io/harness-claude");
   }, 120_000);
 
   test.skipIf(!online)(

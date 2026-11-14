@@ -1,5 +1,7 @@
 /** The public shapes of the append-only fact log. */
 
+import type { Database } from "bun:sqlite";
+import type { ImmediateWriter } from "../platform/sqlite-open.ts";
 import type { FollowOptions } from "../platform/watch.ts";
 
 /** A value that JSON can represent without losing anything. */
@@ -133,6 +135,13 @@ export interface LogBackendOptions extends FollowOptions {
     directory: string,
     onChange: (filename: string | null) => void,
   ) => () => void;
+  /**
+   * Internal, for tests only; not part of the backend contract. Wraps the connection an immediate write goes through, so a test
+   * can act between reading `data_version` and taking the write lock.
+   */
+  readonly immediateWriter?:
+    | ((database: Database) => ImmediateWriter)
+    | undefined;
 }
 
 /** A change to a run: a start, an end, or one appended batch. */

@@ -64,6 +64,9 @@ test("the busy timeout is installed on the connection", () => {
 test("isBusy recognises only a SQLITE_BUSY error", () => {
   expect(isBusy(Object.assign(new Error("busy"), { code: "SQLITE_BUSY" }))).toBe(true);
   expect(isBusy(Object.assign(new Error("other"), { code: "SQLITE_ERROR" }))).toBe(false);
+  expect(isBusy(Object.assign(new Error("busy"), { code: "SQLITE_BUSY_SNAPSHOT" }))).toBe(true);
+  expect(isBusy(Object.assign(new Error("busy"), { code: "SQLITE_BUSY_RECOVERY" }))).toBe(true);
+  expect(isBusy(Object.assign(new Error("other"), { code: "SQLITE_BUSYX" }))).toBe(false);
   expect(isBusy("SQLITE_BUSY")).toBe(false);
   expect(isBusy(null)).toBe(false);
 });

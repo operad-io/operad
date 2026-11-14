@@ -1623,9 +1623,12 @@ export class PluginRegistry {
     return running;
   }
 
-  /** Removes and returns the start requests collected so far. */
-  takeStartedRuns(): StartRunRequest[] {
-    return this.starts.splice(0);
+  /**
+   * Removes and returns the start requests collected so far, or the oldest
+   * `count` of them, so a loop drains only what it has tried.
+   */
+  takeStartedRuns(count?: number): StartRunRequest[] {
+    return count === undefined ? this.starts.splice(0) : this.starts.splice(0, count);
   }
 
   private actionsFor(

@@ -18,12 +18,17 @@ export function setBusyTimeout(database: Database): void {
   database.run(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MS}`);
 }
 
+/** SQLITE_BUSY and its extended codes (SQLITE_BUSY_SNAPSHOT, SQLITE_BUSY_RECOVERY, ...). */
+function isBusyCode(code: unknown): boolean {
+  return code === "SQLITE_BUSY" || (typeof code === "string" && code.startsWith("SQLITE_BUSY_"));
+}
+
 export function isBusy(error: unknown): boolean {
   return (
     typeof error === "object" &&
     error !== null &&
     "code" in error &&
-    (error as { code?: unknown }).code === "SQLITE_BUSY"
+    isBusyCode((error as { code?: unknown }).code)
   );
 }
 
