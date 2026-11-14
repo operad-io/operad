@@ -129,6 +129,8 @@ describe("a fresh home follows the Quickstart", () => {
       stdout: "pipe",
       stderr: "pipe",
     });
+    // Drain stderr so a chatty serve cannot fill the pipe and stall.
+    void new Response(serve.stderr).text();
     try {
       // serve prints each change of a task's phase; the task leaves ready when it starts.
       // The bound only ends a wait that never gets its line, so serve is stopped below.

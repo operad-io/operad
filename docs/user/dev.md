@@ -787,7 +787,8 @@ the place is dropped the next time a `pool/agent` step looks.
 ## `dev.json`: workers and pools
 
 The `dev` plugin's work step runs every task through `pool/agent`, so `dev`
-needs the `pool` plugin enabled (`operad plugin enable pool`). The repository
+needs the `pool` plugin enabled. `operad init` enables it; a home made before
+that needs `operad plugin enable pool`. The repository
 chooses its workers in `<repository>/.operad/dev.json`; `dev` reads that file in
 the registered repository's main clone, never the copy in a task's worktree,
 which carries whatever the task's branch had when it started.
