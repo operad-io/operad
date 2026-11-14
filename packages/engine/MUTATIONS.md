@@ -862,3 +862,12 @@ the row fields.
 | T-0459-M7 | packages/engine/src/http/server.ts | a switch was not recorded with the client and token label | `plugins over HTTP > disable and enable change the config the command line reads, and are recorded` |
 | T-0459-M8 | packages/engine/src/http/server.ts | `GET /v1/plugins` answered an empty list | `plugins over HTTP > GET /v1/plugins lists what `operad plugin list` prints, with where each comes from` |
 | T-0458-M6 | packages/engine/src/http/server.ts | a refusal by a plugin's own settings check (`refused`) was answered `400` instead of `422` | `dev.flows and dev.flowList in settings > over HTTP a refusal is 422 with dev's reason, and the file is unchanged` |
+
+## T-0462 — installing a plugin from npm
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0462-M1 | packages/engine/src/plugin/install.ts | `bun add` ran without `--ignore-scripts` | `adding a package to the home project > asks Bun for the exact version, or the latest, with scripts off` |
+| T-0462-M2 | packages/engine/src/plugin/install.ts | the requested exact version was dropped from the package spec | `adding a package to the home project > asks Bun for the exact version, or the latest, with scripts off` |
+| T-0462-M3 | packages/engine/src/config/config.ts | a newly added plugin was written enabled instead of off | `plugin add > installs an npm package, prints it, and leaves it off until enable` |
+| T-0462-M4 | packages/engine/src/http/server.ts | the `install` form was not read, so the endpoint asked for a name instead | `plugins over HTTP > installing answers the new entry turned off, and it stays off until enabled` |

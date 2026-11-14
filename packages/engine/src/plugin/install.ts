@@ -266,3 +266,133 @@ export async function ensureInstalledPackage(options: EnsureInstalledOptions): P
   }
   return installed;
 }
+
+
+/** The lifecycle scripts a package needs before it can be imported. */
+const INSTALL_SCRIPT_NAMES = ["preinstall", "install", "postinstall"] as const;
+
+function packageManifest(packageDirectory: string): Record<string, unknown> | undefined {
+  try {
+    return readManifest(join(packageDirectory, "package.json"));
+  } catch {
+    return undefined;
+  }
+}
+
+/** True when the package's manifest declares a lifecycle script. */
+function declaresInstallScript(manifest: Record<string, unknown> | undefined): boolean {
+  const scripts = manifest?.scripts;
+  if (!isRecord(scripts)) return false;
+  return INSTALL_SCRIPT_NAMES.some((name) => typeof scripts[name] === "string");
+}
+
+function installScriptHint(packageDirectory: string): string {
+  return declaresInstallScript(packageManifest(packageDirectory))
+    ? "; its package declares an install script, and installing runs no package scripts, so a package that needs one cannot be added"
+    : "";
+}
+
+function dependenciesOf(manifest: Record<string, unknown> | undefined): Record<string, unknown> {
+  if (manifest === undefined) return {};
+  const dependencies = manifest.dependencies;
+  return isRecord(dependencies) ? dependencies : {};
+}
+
+/** The dependency name `bun add` wrote for a package, including a local tarball. */
+function addedDependencyName(
+  before: Record<string, unknown>,
+  after: Record<string, unknown>,
+  wanted: string | undefined,
+): string | undefined {
+  if (wanted !== undefined) return wanted;
+  const previous = dependenciesOf(before);
+  const next = dependenciesOf(after);
+  const changed = Object.keys(next).filter((name) => previous[name] !== next[name]);
+  if (changed.length === 1) return changed[0];
+  const named = Object.entries(next).find(
+    ([, value]) => typeof value === "string" && value.includes("file:"),
+  );
+  return named?.[0];
+}
+
+/** Options for adding one package to the home project. */
+export interface AddPackageOptions {
+  readonly home: string;
+  /** A package name, or a local tarball a test installs without a registry. */
+  readonly specifier: string;
+  /** An exact version; absent asks Bun for the latest. */
+  readonly version?: string | undefined;
+  /** A test replaces the command; defaults to Bun. */
+  readonly run?: InstallRunner | undefined;
+}
+
+/** What adding a package installed. */
+export interface AddedPackage {
+  readonly name: string;
+  readonly version: string;
+  readonly file: string;
+  /** True when the package declares a lifecycle script Bun was told not to run. */
+  readonly hasInstallScript: boolean;
+}
+
+/**
+ * Installs one package into the home's Bun project with install scripts off.
+ * The package may be a name with an exact version, a name with no version
+ * (the latest), or a local tarball a test names. Unlike
+ * `ensureInstalledPackage`, this always asks Bun for the package, so a person
+ * adding it gets the version they named.
+ */
+export async function addPackage(options: AddPackageOptions): Promise<AddedPackage> {
+  const directory = pluginProjectPath(options.home);
+  const path = join(directory, "package.json");
+  const before = readManifest(path);
+  mkdirSync(directory, { recursive: true });
+  if (before === undefined) {
+    writeFileSync(
+      path,
+      `${JSON.stringify({ name: PROJECT_NAME, private: true, type: "module" }, null, 2)}\n`,
+    );
+  }
+  const target =
+    options.version === undefined ? options.specifier : `${options.specifier}@${options.version}`;
+  const args = ["add", target, "--exact", "--ignore-scripts", "--no-summary"];
+  const run = (options.run ?? runWithBun)(directory, args);
+  if (run.exitCode !== 0) {
+    throw new Error(
+      `${options.specifier}: \`bun ${args.join(" ")}\` in ${directory} failed with exit code ${String(run.exitCode)}; ${outputTail(run)}`,
+    );
+  }
+  const after = readManifest(path);
+  if (after === undefined) {
+    throw new Error(`${options.specifier}: \`bun ${args.join(" ")}\` in ${directory} wrote no package.json`);
+  }
+  const wanted =
+    options.specifier.startsWith("file:") || options.specifier.startsWith(".") || options.specifier.startsWith("/")
+      ? undefined
+      : options.specifier;
+  const name = addedDependencyName(before ?? {}, after, wanted);
+  if (name === undefined) {
+    throw new Error(`${options.specifier}: was installed into ${directory}, but the project does not name it`);
+  }
+  const packageDirectory = join(directory, "node_modules", packageNameOf(name));
+  const manifest = packageManifest(packageDirectory);
+  if (manifest === undefined) {
+    throw new Error(`${options.specifier}: was installed into ${directory}, but its package.json is missing`);
+  }
+  const version = manifest.version;
+  if (typeof version !== "string" || version.length === 0) {
+    throw new Error(`${options.specifier}: its installed package has no version`);
+  }
+  const file = installedPackageFile(options.home, name);
+  if (file === undefined) {
+    throw new Error(
+      `${options.specifier}: was installed into ${directory}, but its entry does not resolve${installScriptHint(packageDirectory)}`,
+    );
+  }
+  return {
+    name,
+    version,
+    file,
+    hasInstallScript: declaresInstallScript(manifest),
+  };
+}

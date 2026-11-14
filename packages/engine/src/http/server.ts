@@ -564,17 +564,34 @@ function createHandler(
       if (!isRecord(body)) {
         return errorResponse(400, "args", "the body must be an object");
       }
-      const { name, enabled, confirmed } = body;
-      if (typeof name !== "string" || name.length === 0) {
-        return errorResponse(400, "args", "the body needs a name");
-      }
-      if (typeof enabled !== "boolean") {
-        return errorResponse(400, "args", "enabled must be true or false");
-      }
+      const { install, name, enabled, confirmed } = body;
       if (confirmed !== undefined && typeof confirmed !== "boolean") {
         return errorResponse(400, "args", "confirmed must be a boolean");
       }
       const actor: Actor = { via: clientName(request.headers.get(CLIENT_HEADER)), id: token.label };
+      if (install !== undefined) {
+        if (typeof install !== "string" || install.trim().length === 0) {
+          return errorResponse(400, "args", "install must be a non-empty package name");
+        }
+        try {
+          const plugin = await admin.install(install, { confirmed: confirmed === true, actor });
+          onLog(`http: plugin installed from "${install}" via ${actor.via} as ${actor.id}`);
+          return json({ plugin });
+        } catch (error) {
+          if (error instanceof ViewError) {
+            onLog(`http: plugin "${install}" refused (${viewErrorStatus(error.kind)}): ${error.message}`);
+            throw error;
+          }
+          onLog(`http: plugin "${install}" refused (422): ${messageOf(error)}`);
+          return errorResponse(422, "refused", messageOf(error));
+        }
+      }
+      if (typeof name !== "string" || name.length === 0) {
+        return errorResponse(400, "args", "the body needs a name or an install");
+      }
+      if (typeof enabled !== "boolean") {
+        return errorResponse(400, "args", "enabled must be true or false");
+      }
       try {
         const plugin = await admin.set(name, enabled, { confirmed: confirmed === true, actor });
         onLog(`http: plugin "${name}" ${enabled ? "enabled" : "disabled"} via ${actor.via} as ${actor.id}`);

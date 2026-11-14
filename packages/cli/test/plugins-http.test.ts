@@ -9,6 +9,7 @@ import {
   readHttpToken,
   startHttpServer,
   type HttpServerHandle,
+  type InstallRunner,
 } from "@operad-io/engine";
 import { main, openContext, pluginAdminFor, type CliIo } from "../src/main.ts";
 import { cleanupTempRoots, tempRoot } from "../../engine/test/plugin/support.ts";
@@ -50,7 +51,10 @@ interface Rig {
   readonly startRun: () => Promise<void>;
 }
 
-async function withRig(body: (rig: Rig) => Promise<void>): Promise<void> {
+async function withRig(
+  body: (rig: Rig) => Promise<void>,
+  installRun?: InstallRunner,
+): Promise<void> {
   const root = await tempRoot();
   const home = join(root, "home");
   mkdirSync(home, { recursive: true });
@@ -77,10 +81,14 @@ async function withRig(body: (rig: Rig) => Promise<void>): Promise<void> {
       views: context.views,
       log: context.log,
       registry: context.registry,
-      plugins: pluginAdminFor(context, (module, base) => {
-        loaded.push(module);
-        return loadPlugin(module, base);
-      }),
+      plugins: pluginAdminFor(
+        context,
+        (module, base) => {
+          loaded.push(module);
+          return loadPlugin(module, base);
+        },
+        installRun,
+      ),
       onLog: (message) => logs.push(message),
     });
     const token = (await readHttpToken(home))?.token ?? "";
@@ -125,6 +133,37 @@ interface Row {
   version: string | null;
   enabled: boolean;
   origin: string;
+}
+
+/** A `bun add` that writes the package a local registry would have put there. */
+function fakeInstall(
+  name: string,
+  declared: string,
+  version = "1.2.3",
+  declaration?: string,
+): InstallRunner {
+  return (cwd, args) => {
+    const target = args[1] ?? "";
+    const at = target.startsWith("@") ? target.indexOf("@", 1) : target.indexOf("@");
+    const asked = at > 0 ? target.slice(at + 1) : version;
+    const manifestPath = join(cwd, "package.json");
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as {
+      dependencies?: Record<string, string>;
+    };
+    manifest.dependencies = { ...(manifest.dependencies ?? {}), [name]: asked };
+    writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+    const directory = join(cwd, "node_modules", name);
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(
+      join(directory, "package.json"),
+      JSON.stringify({ name, version: asked, type: "module", exports: { ".": "./index.ts" } }),
+    );
+    writeFileSync(
+      join(directory, "index.ts"),
+      `${declaration ?? `export default { operadPlugin: 1, name: ${JSON.stringify(declared)}, kind: "domain", version: "2.0.0" };`}\n`,
+    );
+    return { exitCode: 0, stdout: "", stderr: "" };
+  };
 }
 
 describe("plugins over HTTP", () => {
@@ -256,5 +295,84 @@ export default definePlugin({ name: "declared", kind: "domain", version: "2.0.0"
       await call(rig, "GET");
       expect(rig.loaded.length).toBe(first);
     });
+  });
+
+  test("installing asks to confirm and writes nothing without it", async () => {
+    const run = fakeInstall("http-fixture", "http-added");
+    await withRig(async (rig) => {
+      const before = rig.configText();
+      const refused = await call(rig, "POST", { install: "http-fixture@1.2.3" });
+      expect(refused.status).toBe(409);
+      expect(((await refused.json()) as { error: { message: string } }).error.message).toContain("confirmed");
+      expect(rig.configText()).toBe(before);
+    }, run);
+  });
+
+  test("installing answers the new entry turned off, and it stays off until enabled", async () => {
+    const run = fakeInstall("http-fixture", "http-added");
+    await withRig(async (rig) => {
+      const response = await call(
+        rig,
+        "POST",
+        { install: "http-fixture@1.2.3", confirmed: true },
+        { "x-operad-client": "desktop" },
+      );
+      expect(response.status).toBe(200);
+      const { plugin } = (await response.json()) as { plugin: Row };
+      expect(plugin).toMatchObject({
+        name: "http-added",
+        version: null,
+        enabled: false,
+        origin: "home",
+      });
+      const config = JSON.parse(rig.configText()) as {
+        plugins: Record<string, { module: string; enabled: boolean }>;
+      };
+      expect(config.plugins["http-added"]).toEqual({ module: "http-fixture", enabled: false });
+      expect(rig.logs.some((line) => line.includes('plugin installed from "http-fixture@1.2.3" via desktop'))).toBe(true);
+
+      const listed = await rig.cli("plugin", "list");
+      expect(listed.out).toContain("http-added  -  disabled");
+
+      const enabled = await call(rig, "POST", { name: "http-added", enabled: true });
+      expect(enabled.status).toBe(200);
+      expect(((await enabled.json()) as { plugin: Row }).plugin.enabled).toBe(true);
+      expect(
+        (JSON.parse(rig.configText()) as { plugins: { "http-added": { enabled: boolean } } }).plugins[
+          "http-added"
+        ].enabled,
+      ).toBe(true);
+    }, run);
+  });
+
+  test("an invalid install name is refused with its reason and writes nothing", async () => {
+    const run = fakeInstall("http-fixture", "http-added");
+    await withRig(async (rig) => {
+      const before = rig.configText();
+      const refused = await call(rig, "POST", { install: "Not A Name", confirmed: true });
+      expect(refused.status).toBe(400);
+      expect(((await refused.json()) as { error: { message: string } }).error.message).toContain(
+        "not a valid npm package name",
+      );
+      expect(rig.configText()).toBe(before);
+    }, run);
+  });
+
+  test("a package that is not an operad plugin is refused with its reason", async () => {
+    const run = fakeInstall(
+      "plain-http",
+      "plain",
+      "1.2.3",
+      'export default { name: "plain", kind: "domain", version: "1.0.0" };',
+    );
+    await withRig(async (rig) => {
+      const before = rig.configText();
+      const refused = await call(rig, "POST", { install: "plain-http", confirmed: true });
+      expect(refused.status).toBe(422);
+      expect(((await refused.json()) as { error: { message: string } }).error.message).toContain(
+        "not an operad plugin",
+      );
+      expect(rig.configText()).toBe(before);
+    }, run);
   });
 });
