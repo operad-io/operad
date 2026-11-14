@@ -56,6 +56,7 @@ import {
   runningFromWorkspace,
   readStoredTrigger,
   recordAnswer,
+  removePackage,
   rotateHttpToken,
   serve,
   serveLockPath,
@@ -2176,13 +2177,20 @@ const HTTP_ADD_REFUSALS: PluginAddRefusals = {
 const EXACT_NPM_VERSION =
   /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
 
+/** Characters npm keeps in a package name; capitals and these were allowed for old packages. */
+const NPM_NAME_PART = /^[A-Za-z0-9._~!()*'-]+$/;
+
 function isNpmNamePart(value: string): boolean {
+  const lowered = value.toLowerCase();
   return (
     value.length > 0 &&
     value.length <= 214 &&
-    /^[a-z0-9][a-z0-9._-]*$/.test(value) &&
-    value !== "node_modules" &&
-    value !== "favicon.ico"
+    NPM_NAME_PART.test(value) &&
+    value !== "." &&
+    value !== ".." &&
+    !value.startsWith("-") &&
+    lowered !== "node_modules" &&
+    lowered !== "favicon.ico"
   );
 }
 
@@ -2251,59 +2259,86 @@ async function addPlugin(
     throw refusals.refused(`${parsed.name}: ${messageOf(error)}`);
   }
 
-  let definition: unknown;
   try {
-    definition = await loadPlugin(added.file, context.home, added.file);
+    let definition: unknown;
+    try {
+      definition = await loadPlugin(added.file, context.home, added.file);
+    } catch (error) {
+      throw refusals.refused(
+        withInstallScriptHint(
+          `${parsed.name}: not an operad plugin: ${messageOf(error)}`,
+          added.hasInstallScript,
+        ),
+      );
+    }
+    if (!isRecord(definition) || definition.operadPlugin !== OPERAD_PLUGIN_VERSION) {
+      throw refusals.refused(
+        withInstallScriptHint(
+          `${parsed.name}: not an operad plugin: its default export declares no operadPlugin`,
+          added.hasInstallScript,
+        ),
+      );
+    }
+    const declaredName = definitionName(definition);
+    if (declaredName === undefined) {
+      throw refusals.refused(
+        withInstallScriptHint(
+          `${parsed.name}: not an operad plugin: its declaration has no name`,
+          added.hasInstallScript,
+        ),
+      );
+    }
+
+    const fresh = await readConfig(context.home);
+    const configured = new Set(
+      fresh.plugins
+        .map((entry) => entry.name)
+        .filter((name): name is string => name !== undefined),
+    );
+    if (configured.has(declaredName) || context.registry.names().includes(declaredName)) {
+      throw refusals.refused(
+        `plugin "${declaredName}": already configured; the package's declared plugin name clashes with it`,
+      );
+    }
+
+    const checked = await validateLoadedDefinition(context, declaredName, definition);
+    if (!checked.ok) {
+      throw refusals.refused(withInstallScriptHint(checked.message, added.hasInstallScript));
+    }
+
+    await addPluginEntry(context.home, declaredName, added.name);
+    return {
+      packageName: added.name,
+      packageVersion: added.version,
+      declaredName,
+      declaredVersion: definitionVersion(definition) ?? "",
+    };
+  } catch (error) {
+    return await removeRefusedPackage(context, added, error, refusals, run);
+  }
+}
+
+/** Takes a package a refused `add` installed back out, and keeps the refusal. */
+async function removeRefusedPackage(
+  context: Context,
+  added: AddedPackage,
+  refusal: unknown,
+  refusals: PluginAddRefusals,
+  run?: InstallRunner,
+): Promise<never> {
+  try {
+    await removePackage({
+      home: context.home,
+      name: added.name,
+      ...(added.previousVersion === undefined ? {} : { previous: added.previousVersion }),
+      ...(run === undefined ? {} : { run }),
+    });
   } catch (error) {
     throw refusals.refused(
-      withInstallScriptHint(
-        `${parsed.name}: not an operad plugin: ${messageOf(error)}`,
-        added.hasInstallScript,
-      ),
+      `${messageOf(refusal)}; the package stayed in the home's plugin project: ${messageOf(error)}`,
     );
   }
-  if (!isRecord(definition) || definition.operadPlugin !== OPERAD_PLUGIN_VERSION) {
-    throw refusals.refused(
-      withInstallScriptHint(
-        `${parsed.name}: not an operad plugin: its default export declares no operadPlugin`,
-        added.hasInstallScript,
-      ),
-    );
-  }
-  const declaredName = definitionName(definition);
-  if (declaredName === undefined) {
-    throw refusals.refused(
-      withInstallScriptHint(
-        `${parsed.name}: not an operad plugin: its declaration has no name`,
-        added.hasInstallScript,
-      ),
-    );
-  }
-
-  const fresh = await readConfig(context.home);
-  const configured = new Set(
-    fresh.plugins
-      .map((entry) => entry.name)
-      .filter((name): name is string => name !== undefined),
-  );
-  if (configured.has(declaredName) || context.registry.names().includes(declaredName)) {
-    throw refusals.refused(
-      `plugin "${declaredName}": already configured; the package's declared plugin name clashes with it`,
-    );
-  }
-
-  const checked = await validateLoadedDefinition(context, declaredName, definition);
-  if (!checked.ok) {
-    throw refusals.refused(withInstallScriptHint(checked.message, added.hasInstallScript));
-  }
-
-  await addPluginEntry(context.home, declaredName, added.name);
-  return {
-    packageName: added.name,
-    packageVersion: added.version,
-    declaredName,
-    declaredVersion: definitionVersion(definition) ?? "",
-  };
+  throw refusal;
 }
 
 /** Refuses what `plugin enable` or `plugin disable` refuses, before anything is written or installed. */
@@ -2368,8 +2403,18 @@ export function pluginAdminFor(
   const rowsNow = async (): Promise<(PluginInfo & { readonly key: string })[]> =>
     pluginRows(context.home, (await readConfig(context.home)).plugins, loaded, load);
   const publicRow = ({ key: _key, ...row }: PluginInfo & { readonly key: string }): PluginInfo => row;
+  // The plugin list already reaches every client; a harness adds its agent's
+  // login there, so a client never needs a session to know it.
+  const withSignIn = async (row: PluginInfo): Promise<PluginInfo> => {
+    if (!row.enabled) return row;
+    const signedIn = await context.registry.signedInFor(row.name);
+    return signedIn === undefined ? row : { ...row, signedIn };
+  };
   return {
-    list: async () => (await rowsNow()).map(publicRow),
+    list: async () =>
+      Promise.all(
+        (await rowsNow()).map(async ({ key: _key, ...row }) => withSignIn(row)),
+      ),
     install: async (specifier, options) => {
       if (!options.confirmed) {
         throw new ViewError(
@@ -2382,7 +2427,7 @@ export function pluginAdminFor(
       if (row === undefined) {
         throw new ViewError("not-found", `plugins.${added.declaredName}: no such plugin`);
       }
-      return publicRow(row);
+      return withSignIn(publicRow(row));
     },
     set: async (name, enabled, options) => {
       const fresh: Context = { ...context, config: await readConfig(context.home) };
@@ -2407,7 +2452,7 @@ export function pluginAdminFor(
       });
       const row = (await rowsNow()).find((item) => item.key === key);
       if (row === undefined) throw new ViewError("not-found", `plugins.${name}: no such plugin`);
-      return publicRow(row);
+      return withSignIn(publicRow(row));
     },
   };
 }

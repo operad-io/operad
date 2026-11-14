@@ -309,6 +309,24 @@ review step then fails rather than guessing a grading.
 
 When the worker adds no commit, the task waits with `work did nothing` if the branch has nothing beyond main or its latest commit already passed verify. If the branch already holds commits not on main and its latest commit has not passed verify (an earlier run stopped before verify ended), the task does not wait: history says `the branch already has unchecked work; checking it` and the task goes on to verify.
 
+## Moving a repository's folder
+
+A registered repository keeps its name, plans and tasks when its folder moves.
+Remove it first, move the folder, then register it again under the same name:
+
+```sh
+operad dev repo remove operad-ios
+mv ~/Code/radian-ios ~/Code/operad-ios
+operad dev repo add ~/Code/operad-ios --name operad-ios
+```
+
+Adding a name whose repository was removed registers it again at the new path;
+the plans and tasks under the name stay, and the new path is the one their
+worktrees, main clone and `.operad/dev.json` use. A name that is registered and
+not removed is still refused. The `.operad/dev.json` and the exclude lines are
+written at the new path when they are missing, as for a new repository. The
+`dev:repo-add` action does the same.
+
 ## Adding a repository from a client
 
 A client talking to a remote `operad serve` cannot run `operad dev repo add` on

@@ -28,6 +28,7 @@ import {
   briefBody,
   changesBody,
   listAll,
+  repositoryData,
   storeKey,
   taskData,
   type RepositoryData,
@@ -139,6 +140,93 @@ describe("dev repositories", () => {
     );
     expect(exclude.match(/\.operad-worktrees\//g)).toHaveLength(1);
     expect(exclude.match(/\.radian-sandbox\//g)).toHaveLength(1);
+  });
+
+  test("add, remove, add again under the same name at another path keeps plans and tasks and uses the new path", async () => {
+    const root = await tempRoot();
+    const oldPath = await makeGitRepository(root, "old");
+    const newPath = await makeGitRepository(root, "new");
+    const store = storeAt(root);
+    const repository = await addRepository(store, {
+      path: oldPath,
+      name: "moving",
+    });
+    const plan = await addPlan(store, {
+      repository,
+      slug: "work",
+      title: "Work",
+    });
+    const task = await addTask(store, {
+      plan: plan.id,
+      slug: "one",
+      title: "One",
+    });
+    await setTaskPhase(store, task.id, "merged");
+    const before = await findRepository(store, "moving", { includeRemoved: true });
+    if (before === undefined) throw new Error("the repository disappeared");
+    const counters = repositoryData(before.data);
+    expect(counters.openPlans).toBe(1);
+    expect(counters.openTasks).toBe(0);
+
+    await removeRepository(store, "moving");
+    const again = await addRepository(store, { path: newPath, name: "moving" });
+    expect(again).toMatchObject({
+      name: "moving",
+      path: newPath,
+      removed: false,
+      openPlans: counters.openPlans,
+      openTasks: counters.openTasks,
+      activeTasks: counters.activeTasks,
+    });
+    expect((await resolveRepository(store, { name: "moving" })).path).toBe(
+      newPath,
+    );
+    expect(
+      (await findRepository(store, "moving", { includeRemoved: true }))?.data.path,
+    ).toBe(newPath);
+    expect((await getPlan(store, plan.id)).data.title).toBe("Work");
+    expect((await getTask(store, task.id)).data.title).toBe("One");
+    expect((await listAll(store, "plan")).map((object) => object.id)).toEqual([
+      plan.id,
+    ]);
+    expect((await listAll(store, "task")).map((object) => object.id)).toEqual([
+      task.id,
+    ]);
+    const settings = JSON.parse(
+      readFileSync(join(newPath, ".operad", "dev.json"), "utf8"),
+    ) as { name: string };
+    expect(settings.name).toBe("moving");
+    expect(
+      readFileSync(join(newPath, ".git", "info", "exclude"), "utf8"),
+    ).toContain(".operad-worktrees/");
+  });
+
+  test("add again under the name of an active repository is refused", async () => {
+    const root = await tempRoot();
+    const firstPath = await makeGitRepository(root, "first");
+    const secondPath = await makeGitRepository(root, "second");
+    const store = storeAt(root);
+    await addRepository(store, { path: firstPath, name: "active" });
+
+    await expect(
+      addRepository(store, { path: secondPath, name: "active" }),
+    ).rejects.toThrow(`repository "active" is already registered at "${firstPath}"`);
+    expect((await resolveRepository(store, { name: "active" })).path).toBe(
+      firstPath,
+    );
+    expect(existsSync(join(secondPath, ".operad", "dev.json"))).toBe(false);
+  });
+
+  test("add at a path registered under another active name is refused", async () => {
+    const root = await tempRoot();
+    const path = await makeGitRepository(root, "shared");
+    const store = storeAt(root);
+    await addRepository(store, { path, name: "first" });
+
+    await expect(
+      addRepository(store, { path, name: "second" }),
+    ).rejects.toThrow(`"${path}" is already registered as "first"`);
+    expect(await findRepository(store, "second")).toBeUndefined();
   });
 });
 

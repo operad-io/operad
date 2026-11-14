@@ -118,7 +118,7 @@ for what waits, and `operad history <id>` for what a run did.
 | Message | What it means | What to do |
 |---|---|---|
 | `no repository "<name>"` | The repository is not registered. | `operad dev repo add <path> [--name <name>]`. |
-| `repository "<name>" was removed` | The repository was removed. | Add it again under its path. |
+| `repository "<name>" was removed` | The repository was removed. | Move the folder if needed, then `operad dev repo add <path> --name <name>`; see [dev](dev.md#moving-a-repositorys-folder). |
 | `<path> has no remote` | `repo add` needs a remote. | Add an `origin` remote, then retry. |
 | `no plan "<plan>"` | The plan id is wrong or not in this repository. | `operad list plan --repo <name>`. |
 | `no task "<task>"` | The task id is wrong. | `operad list task --repo <name>`. |
