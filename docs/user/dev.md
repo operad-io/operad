@@ -16,7 +16,7 @@ plan -> tasks (draft) -> confirm -> ready -> work -> check -> review -> you merg
                                                +-------+--------+  rework
 ```
 
-1. **Plan and tasks.** A plan is one request (`operad plan add`). Each task in it has a brief, the instructions for the worker (`operad task add`). A task may wait for another with `--after`. `operad dev:confirm <plan>` moves the plan's draft tasks to ready; a confirmed plan is what `operad serve` schedules.
+1. **Plan and tasks.** A plan is one request (`operad dev plan add`). Each task in it has a brief, the instructions for the worker (`operad dev task add`). A task may wait for another with `--after`. `operad dev:confirm <plan>` moves the plan's draft tasks to ready; a confirmed plan is what `operad serve` schedules.
 2. **Start.** `serve` starts ready tasks, up to the repository's `concurrency` and each pool's cap. Each task gets its own git worktree and branch, so tasks never touch each other or your checkout.
 3. **Work.** A worker, chosen from `workers` through a pool, runs in the task's worktree with the brief and commits there. A worker whose model is unavailable can hand the work to its `fallback`.
 4. **Check.** The commands in `gate.commands` run against the commit. A failing test is run again on its own first, so a flaky test is told apart from a real failure.

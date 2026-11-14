@@ -52,14 +52,14 @@ operad --help
 ## 快速上手
 
 ```sh
-operad init                     # 创建 home，检查插件
-operad repo add .               # 注册当前仓库
-operad plan add --slug hello --title "Add a greeting" < request.md
-operad task add --plan P-0001-hello --slug greet --title "Print the greeting" < task.md
+operad init                 # 创建 home，检查插件
+operad dev repo add .       # 注册当前仓库
+operad dev plan add --slug hello --title "Add a greeting" < request.md
+operad dev task add --plan P-0001-hello --slug greet --title "Print the greeting" < task.md
 operad dev:confirm P-0001-hello
-operad serve                    # 跑起循环
+operad serve                # 跑起循环
 
-operad pending                  # 有什么在等你
+operad pending              # 有什么在等你
 operad dev:merge T-0001-greet --yes
 ```
 
@@ -67,7 +67,7 @@ operad dev:merge T-0001-greet --yes
 
 ## 工作方式
 
-1. **你提需求。** 用 `operad plan add` 写下需求，用 `operad task add` 拆成任务，再确认计划。
+1. **你提需求。** 用 `operad dev plan add` 写下需求，用 `operad dev task add` 拆成任务，再确认计划。
 2. **agent 开发。** 每个任务有自己的 git worktree 和一份说明。worker 在里面提交。
 3. **跑检查。** 你在 `.operad/dev.json` 里列的命令，会在这次提交上跑一遍。
 4. **agent 评审。** reviewer 读改动，写一份报告。有意见就退回返工，次数有上限。
