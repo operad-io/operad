@@ -12,6 +12,9 @@ const FIXTURE = fileURLToPath(
 const RUN_FIXTURE = fileURLToPath(
   new URL("../fixtures/run-main-without-stdio.ts", import.meta.url),
 );
+const TERMINAL_SECRET_FIXTURE = fileURLToPath(
+  new URL("../fixtures/secret-on-terminal.ts", import.meta.url),
+);
 const PLUGIN = fileURLToPath(
   new URL("../../../engine/test/fixtures/plugins/presentation.ts", import.meta.url),
 );
@@ -139,5 +142,21 @@ describe("the CLI's main with injected output", () => {
     expect(result.code).toBe(0);
     expect(result.out).toContain('secret "token" set');
     expect(`${result.out}${result.err}`).not.toContain("read process.");
+  });
+
+  test("secret set with a terminal stdin stops before reading process.stdin", async () => {
+    const child = Bun.spawn({
+      cmd: [process.execPath, "test", TERMINAL_SECRET_FIXTURE],
+      env: testEnv({ OPERAD_TEST_SECRET_HOME: home }),
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [out, err, code] = await Promise.all([
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+      child.exited,
+    ]);
+    expect(code, `${out}${err}`).toBe(0);
   });
 });
