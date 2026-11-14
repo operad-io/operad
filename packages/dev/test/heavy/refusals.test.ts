@@ -38,8 +38,10 @@ function sayings(line: Line): string[] {
 }
 
 describe("the table of refusal lines", () => {
-  test("every action the plugin declares has a row for every state", () => {
+  test("every action the plugin declares for an object has a row for every state", () => {
     for (const action of actions) {
+      // An action that targets no object has no plan or task state to refuse.
+      if (action.on === undefined) continue;
       const table = action.on === "plan" ? PLAN_LINES : TASK_LINES;
       const row = (table as Record<string, Record<string, Line> | undefined>)[action.name];
       expect(row, `${action.name} on ${action.on}`).toBeDefined();
