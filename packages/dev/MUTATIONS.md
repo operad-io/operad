@@ -1205,14 +1205,6 @@ the row fields.
 | T-0458-M4 | packages/dev/src/project-settings.ts | a `dev.json` flow whose name a TypeScript flow also has was written | `dev.flows and dev.flowList in settings > a save that breaks a rule is refused with dev's reason and writes nothing` |
 | T-0458-M5 | packages/dev/src/project-flows.ts | a TypeScript flow dev refuses was listed without dev's reason | `dev.flows and dev.flowList in settings > flowList reads dev.json, TypeScript and refused TypeScript flows` |
 
-## T-0466 — dev's lock lives outside the working tree
-
-| id | file | mutation | failing test |
-|---|---|---|---|
-| T-0466-M1 | packages/dev/src/lock.ts | `repositoryLockPath` returned `.operad/dev.lock` inside the working tree again, so a held lock made the main clone dirty and blocked the fast-forward | `the repository lock > the lock lives in the operad home, not the working tree, and is gone afterwards` and `... > a main clone whose lock dev holds is clean and fast-forwards` |
-| T-0466-M2 | packages/dev/src/lock.ts | `repositoryKey` added the process id, so two dev processes took different lock files and did not exclude each other | `the repository lock > two processes still exclude each other` |
-| T-0466-M3 | packages/dev/src/lock.ts | the legacy cleanup returned whenever `.operad/dev.lock` existed, so an unheld old lock stayed in the working tree | `the repository lock > a legacy in-tree lock is removed when nobody holds it` |
-| T-0466-M4 | packages/dev/src/lock.ts | the legacy cleanup unlinked `.operad/dev.lock` without checking whether an older dev held it | `the repository lock > a held legacy in-tree lock is left alone` |
 ## T-0460 — settings follow-ups
 
 | id | file | mutation | failing test |
@@ -1242,12 +1234,6 @@ the row fields.
 |---|---|---|---|
 | T-0461-M1 | packages/dev/src/project-flows.ts | `defaultFlowStages` left the check commands and the reviewer args out, so the built-in default listed bare stages | `dev.flows and dev.flowList in settings > the built-in default lists the stages its worker, reviewer and gate give it` |
 | T-0461-M2 | packages/dev/src/project-flows.ts | `listRepositoryFlows` added the built-in default even when `dev.json` defined `default` | `dev.flows and dev.flowList in settings > a dev.json default is listed instead of the built-in one` |
-
-## T-0466 — a linked worktree shares the repository lock
-
-| id | file | mutation | failing test |
-|---|---|---|---|
-| T-0466-M5 | packages/dev/src/lock.ts | `commonGitDirectory` used the worktree's own path instead of reading the `.git` file and its `commondir`, so a linked worktree took a different lock from its repository | `the repository lock > a linked worktree shares its repository's lock` |
 ## T-0464 — the repo-add action over HTTP
 
 | id | file | mutation | failing test |
@@ -1259,3 +1245,13 @@ the row fields.
 | T-0464-M5 | packages/dev/src/service.ts | the already-registered refusal no longer said "is already registered" | `registering a repository through dev:repo-add over HTTP > a repository that is already registered is refused in the command's words` |
 | T-0464-M6 | packages/dev/src/actions.ts | `repo-add` ignored the optional name and registered under the folder name | `registering a repository through dev:repo-add over HTTP > the path is the one on the serve's machine and the name is optional` |
 | T-0464-M7 | packages/dev/src/actions.ts | `repo-add` no longer required a path | `registering a repository through dev:repo-add over HTTP > a body without a path is refused by the action's schema` |
+
+## T-0466 — dev's lock lives outside the working tree
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0466-M1 | packages/dev/src/lock.ts | `repositoryLockPath` returned `.operad/dev.lock` inside the working tree again, so a held lock made the main clone dirty and blocked the fast-forward | `the repository lock > the lock lives in the operad home, not the working tree, and is gone afterwards` and `... > a main clone whose lock dev holds is clean and fast-forwards` |
+| T-0466-M2 | packages/dev/src/lock.ts | `repositoryKey` added the process id, so two dev processes took different lock files and did not exclude each other | `the repository lock > two processes still exclude each other` |
+| T-0466-M3 | packages/dev/src/lock.ts | the legacy cleanup returned whenever `.operad/dev.lock` existed, so an unheld old lock stayed in the working tree | `the repository lock > a legacy in-tree lock is removed when nobody holds it` |
+| T-0466-M4 | packages/dev/src/lock.ts | the legacy cleanup unlinked `.operad/dev.lock` without checking whether an older dev held it | `the repository lock > a held legacy in-tree lock is left alone` |
+| T-0466-M5 | packages/dev/src/lock.ts | `commonGitDirectory` used the worktree's own path instead of reading the `.git` file and its `commondir`, so a linked worktree took a different lock from its repository | `the repository lock > a linked worktree shares its repository's lock` |
