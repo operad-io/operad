@@ -45,6 +45,9 @@ function fakeInstall(
 ): InstallRunner {
   return (cwd, args) => {
     calls.push({ cwd, args });
+    if (args[0] === "install") {
+      return { exitCode: 0, stdout: "", stderr: "" };
+    }
     const manifestPath = join(cwd, "package.json");
     const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as {
       dependencies?: Record<string, string>;
@@ -269,6 +272,44 @@ describe("plugin add", () => {
     };
     expect(manifest.dependencies?.["plain-package"]).toBeUndefined();
     expect(readFileSync(join(home, "config.json"), "utf8")).toBe(before);
+  });
+
+  test("a refused add leaves a package the project already had", async () => {
+    const { home } = await makeHome({ existing: { module: "kept-package", enabled: true } });
+    const project = join(home, "plugins");
+    const kept = join(project, "node_modules", "kept-package");
+    mkdirSync(kept, { recursive: true });
+    writeFileSync(
+      join(project, "package.json"),
+      JSON.stringify({
+        name: "operad-plugins",
+        private: true,
+        type: "module",
+        dependencies: { "kept-package": "1.0.0" },
+      }),
+    );
+    writeFileSync(
+      join(kept, "package.json"),
+      JSON.stringify({ name: "kept-package", version: "1.0.0", type: "module", exports: { ".": "./index.ts" } }),
+    );
+    writeFileSync(join(kept, "index.ts"), `${declarationFor("existing")}\n`);
+
+    const calls: { cwd: string; args: readonly string[] }[] = [];
+    const run = fakeInstall(
+      new Map([["kept-package", { version: "2.0.0", declaration: declarationFor("existing") }]]),
+      calls,
+    );
+    const output = capture();
+    expect(await main(["plugin", "add", "kept-package"], { home, io: output.io, pluginInstall: run })).toBe(1);
+    expect(output.errors()).toContain('plugin "existing": already configured');
+
+    expect(calls.map((call) => call.args[0])).toEqual(["add", "install"]);
+    expect(calls[1]?.args).toEqual(["install", "--ignore-scripts", "--no-summary"]);
+    const manifest = JSON.parse(readFileSync(join(project, "package.json"), "utf8")) as {
+      dependencies?: Record<string, string>;
+    };
+    expect(manifest.dependencies?.["kept-package"]).toBe("1.0.0");
+    expect(existsSync(kept)).toBe(true);
   });
 
   test("refuses a plugin declaration the check rejects", async () => {

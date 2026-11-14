@@ -270,3 +270,4 @@ the row fields.
 | T-0470-M1 | packages/cli/src/main.ts | a refused package was left in the home's plugin project instead of being removed | `plugin add > a refused package does not stay in the home project` |
 | T-0470-M2 | packages/cli/src/main.ts | a version that is not exact was accepted | `plugin add > refuses a version that is not exact` |
 | T-0470-M3 | packages/cli/src/main.ts | npm names were limited to lowercase without a leading dot or underscore | `plugin add > accepts a legacy npm name with capitals or a leading dot or underscore` |
+| T-0470-M6 | packages/cli/src/main.ts | a refusal removed a package the home project already named instead of putting its previous dependency back | `plugin add > a refused add leaves a package the project already had` |

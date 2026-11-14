@@ -331,6 +331,11 @@ export interface RemovePackageOptions {
   readonly home: string;
   /** The package name `addPackage` returned. */
   readonly name: string;
+  /**
+   * The dependency spec the project had before the add; when present, put it
+   * back instead of removing the package the project already needed.
+   */
+  readonly previous?: string | undefined;
   /** A test replaces the command; defaults to Bun. */
   readonly run?: InstallRunner | undefined;
 }
@@ -342,6 +347,8 @@ export interface AddedPackage {
   readonly file: string;
   /** True when the package declares a lifecycle script Bun was told not to run. */
   readonly hasInstallScript: boolean;
+  /** The dependency spec the project named before the add, when it named one. */
+  readonly previousVersion?: string | undefined;
 }
 
 /**
@@ -398,28 +405,40 @@ export async function addPackage(options: AddPackageOptions): Promise<AddedPacka
       `${options.specifier}: was installed into ${directory}, but its entry does not resolve${installScriptHint(packageDirectory)}`,
     );
   }
+  const previous = before === undefined ? undefined : dependenciesOf(before)[name];
   return {
     name,
     version,
     file,
     hasInstallScript: declaresInstallScript(manifest),
+    previousVersion: typeof previous === "string" ? previous : undefined,
   };
 }
 
 /**
  * Takes a package out of the home's Bun project again, dependency, files and
  * lockfile entry alike. A refusal after `addPackage` calls this so a package
- * operad refused does not stay installed; a package the project does not name
- * is left alone.
+ * operad refused does not stay installed; the project already naming it means
+ * it was not this add's to take away, so `previous` puts that dependency back.
+ * A package the project does not name is left alone.
  */
 export async function removePackage(options: RemovePackageOptions): Promise<void> {
   const directory = pluginProjectPath(options.home);
   const path = join(directory, "package.json");
   const manifest = readManifest(path);
   if (manifest === undefined) return;
-  const dependencies = manifest.dependencies;
-  if (!isRecord(dependencies) || !Object.hasOwn(dependencies, options.name)) return;
-  const args = ["remove", options.name, "--ignore-scripts", "--no-summary"];
+  let args: string[];
+  if (options.previous !== undefined) {
+    const dependencies = isRecord(manifest.dependencies) ? manifest.dependencies : {};
+    dependencies[options.name] = options.previous;
+    manifest.dependencies = dependencies;
+    writeFileSync(path, `${JSON.stringify(manifest, null, 2)}\n`);
+    args = ["install", "--ignore-scripts", "--no-summary"];
+  } else {
+    const dependencies = manifest.dependencies;
+    if (!isRecord(dependencies) || !Object.hasOwn(dependencies, options.name)) return;
+    args = ["remove", options.name, "--ignore-scripts", "--no-summary"];
+  }
   const run = (options.run ?? runWithBun)(directory, args);
   if (run.exitCode !== 0) {
     throw new Error(

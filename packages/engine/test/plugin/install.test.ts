@@ -288,6 +288,39 @@ describe("adding a package to the home project", () => {
     expect(manifest.dependencies?.[added.name]).toBeUndefined();
   });
 
+  test("putting back a dependency the project already named does not remove it", async () => {
+    const root = await tempRoot();
+    const home = join(root, "home");
+    const project = pluginProjectPath(home);
+    mkdirSync(project, { recursive: true });
+    writeFileSync(
+      pluginProjectManifestPath(home),
+      JSON.stringify({
+        name: "operad-plugins",
+        private: true,
+        type: "module",
+        dependencies: { "kept-fixture": "1.0.0" },
+      }),
+    );
+    const calls: (readonly string[])[] = [];
+
+    await removePackage({
+      home,
+      name: "kept-fixture",
+      previous: "1.0.0",
+      run: (_cwd, args) => {
+        calls.push(args);
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    });
+
+    expect(calls).toEqual([["install", "--ignore-scripts", "--no-summary"]]);
+    const manifest = JSON.parse(readFileSync(pluginProjectManifestPath(home), "utf8")) as {
+      dependencies?: Record<string, string>;
+    };
+    expect(manifest.dependencies).toEqual({ "kept-fixture": "1.0.0" });
+  });
+
   test("a package whose entry needs its install script says so", async () => {
     const root = await tempRoot();
     const directory = join(root, "fixture-package");

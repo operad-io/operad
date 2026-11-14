@@ -151,6 +151,9 @@ function fakeInstall(
   declaration?: string,
 ): InstallRunner {
   return (cwd, args) => {
+    if (args[0] === "install") {
+      return { exitCode: 0, stdout: "", stderr: "" };
+    }
     const manifestPath = join(cwd, "package.json");
     const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as {
       dependencies?: Record<string, string>;

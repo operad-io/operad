@@ -2330,6 +2330,7 @@ async function removeRefusedPackage(
     await removePackage({
       home: context.home,
       name: added.name,
+      ...(added.previousVersion === undefined ? {} : { previous: added.previousVersion }),
       ...(run === undefined ? {} : { run }),
     });
   } catch (error) {
