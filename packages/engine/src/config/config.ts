@@ -4,6 +4,7 @@ import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { defaultOperadHome } from "../plugin/home.ts";
 import { MAX_ASK_GRACE_SECS } from "../plugin/types.ts";
+import { withLockFile, type LockFileOptions } from "../platform/index.ts";
 import {
   openLog,
   type LogBackend,
@@ -618,49 +619,53 @@ export async function setPluginEnabled(
  * Adds one plugin to `config.json` turned off, keeping every other key. The
  * name is the plugin's declared name, and `module` is the npm package it was
  * installed from; turning it on is a separate command, so a person sees what
- * they enable.
+ * they enable. The read and write take the config lock, so another writer's
+ * change is not lost.
  */
 export async function addPluginEntry(
   home: string,
   name: string,
   module: string,
+  options: LockFileOptions = {},
 ): Promise<void> {
   const file = configPath(home);
-  let raw: Record<string, unknown>;
-  try {
-    const text = await readFile(file, "utf8");
-    const parsed: unknown = JSON.parse(text);
-    if (!isRecord(parsed)) throw new ConfigError(`${file}: must be a JSON object`);
-    raw = parsed;
-  } catch (error) {
-    if (!(
-      typeof error === "object" &&
-      error !== null &&
-      "code" in error &&
-      error.code === "ENOENT"
-    )) {
-      if (error instanceof ConfigError) throw error;
-      throw new ConfigError(`${file}: invalid JSON: ${String(error)}`, {
-        cause: error,
-      });
+  return withLockFile(`${file}.lock`, async () => {
+    let raw: Record<string, unknown>;
+    try {
+      const text = await readFile(file, "utf8");
+      const parsed: unknown = JSON.parse(text);
+      if (!isRecord(parsed)) throw new ConfigError(`${file}: must be a JSON object`);
+      raw = parsed;
+    } catch (error) {
+      if (!(
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        error.code === "ENOENT"
+      )) {
+        if (error instanceof ConfigError) throw error;
+        throw new ConfigError(`${file}: invalid JSON: ${String(error)}`, {
+          cause: error,
+        });
+      }
+      raw = configJson(defaultConfig(home));
     }
-    raw = configJson(defaultConfig(home));
-  }
 
-  if (raw.plugins === undefined) {
-    raw.plugins = {};
-  }
-  if (!isRecord(raw.plugins)) {
-    throw new ConfigError(
-      `${file}: plugins: must be an object keyed by plugin name to add one`,
-    );
-  }
-  if (Object.hasOwn(raw.plugins, name)) {
-    throw new ConfigError(`${file}: plugins.${name}: already exists`);
-  }
-  raw.plugins[name] = { module, enabled: false };
-  await mkdir(home, { recursive: true });
-  await writeFile(file, `${JSON.stringify(raw, null, 2)}\n`);
+    if (raw.plugins === undefined) {
+      raw.plugins = {};
+    }
+    if (!isRecord(raw.plugins)) {
+      throw new ConfigError(
+        `${file}: plugins: must be an object keyed by plugin name to add one`,
+      );
+    }
+    if (Object.hasOwn(raw.plugins, name)) {
+      throw new ConfigError(`${file}: plugins.${name}: already exists`);
+    }
+    raw.plugins[name] = { module, enabled: false };
+    await mkdir(home, { recursive: true });
+    await writeFile(file, `${JSON.stringify(raw, null, 2)}\n`);
+  }, options);
 }
 
 /** Opens the log the config selects. Options pass through to the backend. */

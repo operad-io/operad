@@ -5,6 +5,7 @@ import { join } from "node:path";
 import {
   ConfigError,
   DEFAULT_MCP,
+  addPluginEntry,
   configJson,
   defaultConfig,
   ensureConfig,
@@ -14,6 +15,7 @@ import {
   storeRootOf,
   writeConfig,
 } from "../src/index.ts";
+import { withLockFile } from "../src/platform/index.ts";
 import { cleanupTempRoots, tempRoot } from "./plugin/support.ts";
 
 afterAll(cleanupTempRoots);
@@ -81,6 +83,53 @@ describe("operad config", () => {
     expect((await readConfig(home)).plugins.map((entry) => entry.name)).toEqual(["shell", "dev", "pool"]);
     await expect(setPluginEnabled(home, "bot", true, offer)).rejects.toThrow(/no such plugin/);
     await expect(setPluginEnabled(home, "constructor", true, offer)).rejects.toThrow(/no such plugin/);
+  });
+
+  test("adding a plugin entry waits for the config lock and keeps the other writer's change", async () => {
+    const root = await tempRoot();
+    const home = join(root, "home");
+    await ensureConfig(home);
+    const lockPath = join(home, "config.json.lock");
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let acquired!: () => void;
+    const holding = new Promise<void>((resolve) => {
+      acquired = resolve;
+    });
+    const held = withLockFile(lockPath, async () => {
+      acquired();
+      await released;
+    });
+    await holding;
+
+    let waiting!: () => void;
+    const waitingForLock = new Promise<void>((resolve) => {
+      waiting = resolve;
+    });
+    const adding = addPluginEntry(home, "added", "fixture", {
+      wait: async () => {
+        waiting();
+        await released;
+      },
+    });
+    try {
+      const first = await Promise.race([
+        waitingForLock.then(() => "waited" as const),
+        adding.then(() => "wrote" as const),
+      ]);
+      expect(first).toBe("waited");
+      const raw = JSON.parse(await readFile(join(home, "config.json"), "utf8")) as {
+        plugins: Record<string, unknown>;
+      };
+      expect(raw.plugins.added).toBeUndefined();
+    } finally {
+      release();
+    }
+    await held;
+    await adding;
+    expect((await readConfig(home)).plugins.map((entry) => entry.name)).toContain("added");
   });
 
   test("a missing config means sqlite at <home>/store/log.sqlite", async () => {

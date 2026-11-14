@@ -891,3 +891,11 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0464-M8 | packages/engine/src/views/presentation.ts | `act` without an object id no longer ran an action that targets no object | `registering a repository through dev:repo-add over HTTP > it asks to confirm, registers a git work tree with a bare remote, and the repo object lists` (and every other case in that file) |
+
+## T-0470 — plugin npm install follow-ups
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0470-M4 | packages/engine/src/plugin/install.ts | `removePackage` left the package in the project | `adding a package to the home project > removing a package takes the dependency and its files out again` |
+| T-0470-M5 | packages/engine/src/config/config.ts | `addPluginEntry` took a lock only its own process held, so it did not wait for another writer | `operad config > adding a plugin entry waits for the config lock and keeps the other writer's change` |
+| T-0470-M7 | packages/engine/src/plugin/install.ts | `removePackage` ignored the dependency the project had before the add and removed the package instead of putting the previous spec back | `adding a package to the home project > putting back a dependency the project already named does not remove it` |
