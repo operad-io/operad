@@ -22,7 +22,7 @@ VARIABLES
   cdirty,      \* the clone has uncommitted changes
   cbranch,     \* the clone is on the main branch
   nlocal,      \* commits made by hand in the clone
-  needPrep,    \* the clone moved and its prepare lines have not run yet
+  due,         \* per task: its merge moved the clone and prepare has not finished (the saved marker, T-0433)
   followedTo,  \* the commit the last successful follow brought the clone to
   hands, crashes,
   ph,          \* each task's phase
@@ -39,7 +39,7 @@ VARIABLES
   tgt,         \* the commit the main clone follows
   unwanted     \* tasks merged although cancelled or reworked; "unchecked": a push whose checks had not passed
 
-vars == <<origin, clone, cdirty, cbranch, nlocal, needPrep, followedTo, hands,
+vars == <<origin, clone, cdirty, cbranch, nlocal, due, followedTo, hands,
   crashes, ph, ver, queue, claim, solo, res, mem, cand, chk, rnd, rec, tgt,
   unwanted>>
 
@@ -81,15 +81,24 @@ PrunedRes == [l \in Tasks |->
 OnMain(t) == \E i \in 1..Len(origin) : <<t, ver[t]>> \in origin[i].mem
 Batched(t) == Cardinality(mem[t]) > 1
 StillQueued(t) == \A p \in mem[t] : p[1] = t \/ InLQ(p[1])
+\* A member still wants the commit when it is still in the integration at the
+\* version the batch holds; a task that was cancelled or reworked does not. (A
+\* follower that holds a turn of its own, finding 4, still wants it.)
 Wanted(l, p) ==
   \/ p[1] = l
-  \/ (ph[p[1]] \in {"queued", "crashed"} /\ ver[p[1]] = p[2])
+  \/ (ph[p[1]] \in Active /\ ver[p[1]] = p[2])
 Others(t) == {p[1] : p \in mem[t]} \ {t}
+
+\* land.lock is held by a batch leader from the last check to the push (ph
+\* "pending"; a kill frees it). A ticket is removed only under that lock
+\* (leave() and withdraw()), so a removal waits, except the holder's own.
+LandHeld == \E u \in Tasks : ph[u] = "pending" /\ Batched(u)
+LeaveOK(t) == ~LandHeld \/ ph[t] = "pending"
 
 \* ---- initial state ----
 Init ==
   /\ origin = <<>> /\ clone = <<>> /\ cdirty = FALSE /\ cbranch = TRUE
-  /\ nlocal = 0 /\ needPrep = FALSE /\ followedTo = NoCommit
+  /\ nlocal = 0 /\ due = [t \in Tasks |-> FALSE] /\ followedTo = NoCommit
   /\ hands = 0 /\ crashes = 0
   /\ ph = [t \in Tasks |-> "idle"] /\ ver = [t \in Tasks |-> 0]
   /\ queue = <<>> /\ claim = [t \in Tasks |-> None] /\ solo = {}
@@ -107,7 +116,7 @@ Join(t) ==
   /\ queue' = Append(queue, t)
   /\ rec' = [rec EXCEPT ![t] = NoCommit]
   /\ claim' = PrunedClaim /\ res' = PrunedRes
-  /\ UNCHANGED <<origin, clone, cdirty, cbranch, nlocal, needPrep, followedTo,
+  /\ UNCHANGED <<origin, clone, cdirty, cbranch, nlocal, due, followedTo,
        hands, crashes, ver, solo, mem, cand, chk, rnd, tgt, unwanted>>
 
 \* The first live ticket that is not claimed has the turn.
@@ -115,7 +124,7 @@ Turn(t) ==
   /\ ph[t] = "queued"
   /\ TurnHolder = t
   /\ ph' = [ph EXCEPT ![t] = "turn"]
-  /\ UNCHANGED <<origin, clone, cdirty, cbranch, nlocal, needPrep, followedTo,
+  /\ UNCHANGED <<origin, clone, cdirty, cbranch, nlocal, due, followedTo,
        hands, crashes, ver, queue, claim, solo, res, mem, cand, chk, rnd, rec,
        tgt, unwanted>>
 
@@ -125,7 +134,7 @@ OnMainDone(t) ==
   /\ OnMain(t)
   /\ ph' = [ph EXCEPT ![t] = "pushed"]
   /\ tgt' = [tgt EXCEPT ![t] = Tip(origin)]
-  /\ UNCHANGED <<origin, clone, cdirty, cbranch, nlocal, needPrep, followedTo,
+  /\ UNCHANGED <<origin, clone, cdirty, cbranch, nlocal, due, followedTo,
        hands, crashes, ver, queue, claim, solo, res, mem, cand, chk, rnd, rec,
        unwanted>>
 
@@ -146,7 +155,7 @@ Claim(t) ==
            ELSE UNCHANGED <<claim, res>>
   /\ ph' = [ph EXCEPT ![t] = "start"]
   /\ rnd' = [rnd EXCEPT ![t] = 0]
-  /\ UNCHANGED <<origin, clone, cdirty, cbranch, nlocal, needPrep, followedTo,
+  /\ UNCHANGED <<origin, clone, cdirty, cbranch, nlocal, due, followedTo,
        hands, crashes, ver, queue, solo, cand, chk, rec, tgt, unwanted>>
 
 \* A batch could not land: its tasks integrate one by one (queue.fallBack).
@@ -178,11 +187,11 @@ Build(t) ==
         /\ FallBack(t)
         /\ UNCHANGED <<ver, queue, cand, chk>>
      \/ \* conflict with main, alone: rework
-        /\ ~Batched(t)
+        /\ ~Batched(t) /\ LeaveOK(t)
         /\ ReworkOrFail(t)
         /\ queue' = Without(queue, t) /\ solo' = solo \ {t}
         /\ UNCHANGED <<claim, res, mem, cand, rnd, chk>>
-  /\ UNCHANGED <<origin, clone, cdirty, cbranch, nlocal, needPrep, followedTo,
+  /\ UNCHANGED <<origin, clone, cdirty, cbranch, nlocal, due, followedTo,
        hands, crashes, rec, tgt, unwanted>>
 
 \* The integration checks run on the candidate.
@@ -195,9 +204,10 @@ Check(t) ==
      \/ \* the code fails the checks: a batch falls back, a single task is reworked
         /\ UNCHANGED chk
         /\ \/ Batched(t) /\ FallBack(t) /\ UNCHANGED <<ver, queue>>
-           \/ ~Batched(t) /\ ReworkOrFail(t) /\ queue' = Without(queue, t)
+           \/ ~Batched(t) /\ LeaveOK(t) /\ ReworkOrFail(t) /\ queue' = Without(queue, t)
               /\ solo' = solo \ {t} /\ UNCHANGED <<claim, res, mem, rnd>>
      \/ \* not the code (the machine): the task waits for a person, a batch falls back
+        /\ LeaveOK(t)
         /\ UNCHANGED chk
         /\ ph' = [ph EXCEPT ![t] = "failed"]
         /\ queue' = Without(queue, t)
@@ -205,13 +215,15 @@ Check(t) ==
         /\ claim' = [x \in Tasks |-> IF claim[x] = t /\ Batched(t) THEN None ELSE claim[x]]
         /\ res' = [res EXCEPT ![t] = IF Batched(t) THEN [state |-> "none", head |-> NoCommit] ELSE @]
         /\ UNCHANGED <<ver, mem, rnd>>
-  /\ UNCHANGED <<origin, clone, cdirty, cbranch, nlocal, needPrep, followedTo,
+  /\ UNCHANGED <<origin, clone, cdirty, cbranch, nlocal, due, followedTo,
        hands, crashes, cand, rec, tgt, unwanted>>
 
 \* The pending record is saved; a batch publishes its result if no one left.
 Pending(t) ==
   /\ ph[t] = "checked"
   /\ rec' = [rec EXCEPT ![t] = cand[t]]
+  \* Batched: the last check, the result and the push are one hold of land.lock
+  \* (landWhenStillQueued); ph "pending" is that hold, until Push or a kill.
   /\ IF Batched(t) /\ ~StillQueued(t)
      THEN /\ FallBack(t)
           /\ UNCHANGED <<ver, queue, cand>>
@@ -219,7 +231,7 @@ Pending(t) ==
                        THEN [state |-> "pending", head |-> cand[t]] ELSE @]
           /\ ph' = [ph EXCEPT ![t] = "pending"]
           /\ UNCHANGED <<claim, solo, mem, rnd>>
-  /\ UNCHANGED <<origin, clone, cdirty, cbranch, nlocal, needPrep, followedTo,
+  /\ UNCHANGED <<origin, clone, cdirty, cbranch, nlocal, due, followedTo,
        hands, crashes, ver, queue, cand, chk, tgt, unwanted>>
 
 \* git push: it lands only when origin/main is still the candidate's parent.
@@ -233,7 +245,8 @@ Push(t) ==
                \cup (IF chk[t] THEN {} ELSE {"unchecked"})
           /\ ph' = [ph EXCEPT ![t] = "pushed"]
           /\ tgt' = [tgt EXCEPT ![t] = c]
-          /\ UNCHANGED <<queue, solo, claim, res, mem, rnd, ver>>
+          /\ res' = [res EXCEPT ![t] = IF Batched(t) THEN [state |-> "pushed", head |-> c] ELSE @]
+          /\ UNCHANGED <<queue, solo, claim, mem, rnd, ver>>
      ELSE /\ UNCHANGED <<origin, unwanted, tgt>>
           /\ IF rnd[t] < MaxRound
              THEN /\ ph' = [ph EXCEPT ![t] = "start"]
@@ -243,7 +256,7 @@ Push(t) ==
              ELSE /\ ph' = [ph EXCEPT ![t] = "failed"]
                   /\ queue' = Without(queue, t) /\ solo' = solo \ {t}
                   /\ UNCHANGED <<claim, res, mem, rnd, ver>>
-  /\ UNCHANGED <<clone, cdirty, cbranch, nlocal, needPrep, followedTo, hands,
+  /\ UNCHANGED <<clone, cdirty, cbranch, nlocal, due, followedTo, hands,
        crashes, cand, chk, rec>>
 
 \* updateMainClone: fast-forward only, on the branch, clean.
@@ -260,28 +273,28 @@ Follow(t) ==
         /\ ~cbranch \/ cdirty
         /\ ph' = [ph EXCEPT ![t] = "followed"]
         /\ tgt' = [tgt EXCEPT ![t] = NoCommit]
-        /\ needPrep' = FALSE
+        /\ due' = [due EXCEPT ![t] = FALSE]
         /\ UNCHANGED <<clone, followedTo>>
      \/ \* the commit is already in the clone and this merge owes no prepare
-        /\ cbranch /\ ~cdirty /\ Has(clone, tgt[t]) /\ ~needPrep
+        /\ cbranch /\ ~cdirty /\ Has(clone, tgt[t]) /\ ~due[t]
         /\ ph' = [ph EXCEPT ![t] = "followed"]
         /\ followedTo' = tgt[t]
-        /\ UNCHANGED <<clone, needPrep, tgt>>
-     \/ \* the commit is already in the clone but a merge left prepare due
-        /\ cbranch /\ ~cdirty /\ Has(clone, tgt[t]) /\ needPrep
+        /\ UNCHANGED <<clone, due, tgt>>
+     \/ \* the commit is already in the clone and the task's marker says prepare is due (a restart)
+        /\ cbranch /\ ~cdirty /\ Has(clone, tgt[t]) /\ due[t]
         /\ ph' = [ph EXCEPT ![t] = "prep"]
         /\ followedTo' = tgt[t]
-        /\ UNCHANGED <<clone, needPrep, tgt>>
+        /\ UNCHANGED <<clone, due, tgt>>
      \/ \* clean, on the branch, the clone is an ancestor of the commit: fast-forward
         /\ cbranch /\ ~cdirty /\ ~Has(clone, tgt[t]) /\ IsPrefix(clone, ts)
-        /\ clone' = ts /\ needPrep' = TRUE /\ followedTo' = tgt[t]
+        /\ clone' = ts /\ due' = [due EXCEPT ![t] = TRUE] /\ followedTo' = tgt[t]
         /\ ph' = [ph EXCEPT ![t] = "prep"]
         /\ UNCHANGED tgt
      \/ \* clean, on the branch, but diverged (a local commit): cannot fast-forward
         /\ cbranch /\ ~cdirty /\ ~Has(clone, tgt[t]) /\ ~IsPrefix(clone, ts)
         /\ ph' = [ph EXCEPT ![t] = "followed"]
         /\ tgt' = [tgt EXCEPT ![t] = NoCommit]
-        /\ needPrep' = FALSE
+        /\ due' = [due EXCEPT ![t] = FALSE]
         /\ UNCHANGED <<clone, followedTo>>
   /\ UNCHANGED <<origin, cdirty, cbranch, nlocal, hands, crashes, ver, queue,
        claim, solo, res, mem, cand, chk, rnd, rec, unwanted>>
@@ -289,7 +302,7 @@ Follow(t) ==
 \* The prepare lines run in the clone after it moved (they may fail; the note says so).
 Prepare(t) ==
   /\ ph[t] = "prep"
-  /\ needPrep' = FALSE
+  /\ due' = [due EXCEPT ![t] = FALSE]
   /\ ph' = [ph EXCEPT ![t] = "followed"]
   /\ UNCHANGED <<origin, clone, cdirty, cbranch, nlocal, followedTo, hands,
        crashes, ver, queue, claim, solo, res, mem, cand, chk, rnd, rec, tgt,
@@ -298,27 +311,28 @@ Prepare(t) ==
 \* recordMerged, then queue.finish() and queue.leave().
 Record(t) ==
   /\ ph[t] = "followed"
+  /\ LeaveOK(t)
   /\ ph' = [ph EXCEPT ![t] = "merged"]
   /\ res' = [res EXCEPT ![t] =
-       IF res[t].state = "pending" /\ Has(queue, t)
+       IF res[t].state \in {"pending", "pushed"} /\ Has(queue, t)
        THEN [state |-> "done", head |-> res[t].head] ELSE @]
   /\ queue' = Without(queue, t) /\ solo' = solo \ {t}
-  /\ UNCHANGED <<origin, clone, cdirty, cbranch, nlocal, needPrep, followedTo,
+  /\ UNCHANGED <<origin, clone, cdirty, cbranch, nlocal, due, followedTo,
        hands, crashes, ver, claim, mem, cand, chk, rnd, rec, tgt, unwanted>>
 
 \* A claimed task records the leader's result (done, or pending with a dead
 \* leader whose push landed); a pending result whose push never landed voids the claim.
 Batched1(x) ==
-  /\ ph[x] = "queued" /\ Claimed(x)
+  /\ ph[x] = "queued" /\ Claimed(x) /\ LeaveOK(x)
   /\ LET l == claim[x]
          listed == \E p \in mem[l] : p[1] = x
          stale == \E p \in mem[l] : p[1] = x /\ p[2] # ver[x]
          landed == res[l].state = "pending" /\ ~InLQ(l) /\ Has(origin, res[l].head)
-     IN /\ \/ res[l].state = "done" \/ landed
+     IN /\ \/ res[l].state \in {"pushed", "done"} \/ landed
         /\ ph' = [ph EXCEPT ![x] = IF listed THEN "merged" ELSE "failed"]
         /\ unwanted' = IF stale THEN unwanted \cup {x} ELSE unwanted
   /\ queue' = Without(queue, x) /\ solo' = solo \ {x}
-  /\ UNCHANGED <<origin, clone, cdirty, cbranch, nlocal, needPrep, followedTo,
+  /\ UNCHANGED <<origin, clone, cdirty, cbranch, nlocal, due, followedTo,
        hands, crashes, ver, claim, res, mem, cand, chk, rnd, rec, tgt>>
 
 ClaimVoid(x) ==
@@ -327,21 +341,29 @@ ClaimVoid(x) ==
      /\ res[l].state = "pending" /\ ~InLQ(l) /\ ~Has(origin, res[l].head)
      /\ claim' = [y \in Tasks |-> IF claim[y] = l THEN None ELSE claim[y]]
      /\ res' = [res EXCEPT ![l] = [state |-> "none", head |-> NoCommit]]
-  /\ UNCHANGED <<origin, clone, cdirty, cbranch, nlocal, needPrep, followedTo,
+  /\ UNCHANGED <<origin, clone, cdirty, cbranch, nlocal, due, followedTo,
        hands, crashes, ph, ver, queue, solo, mem, cand, chk, rnd, rec, tgt,
        unwanted>>
 
 \* ---- what the world does ----
 
 \* A task is cancelled or reworked (new verified commit) before its push.
+\* It takes land.lock, so it waits while a batch leader holds it (ph "pending"),
+\* and a task the leader already pushed is reported merged, not withdrawn.
+PushedWith(t) ==
+  LET l == IF Claimed(t) THEN claim[t] ELSE t
+  IN res[l].state \in {"pushed", "done"} /\ \E p \in res[l].head.mem : p[1] = t
+
 Withdraw(t) ==
   /\ ph[t] \in {"queued", "turn", "start", "built", "checked"}
+  /\ ~LandHeld
+  /\ ~PushedWith(t)
   /\ \/ ph' = [ph EXCEPT ![t] = "cancelled"] /\ UNCHANGED ver
      \/ /\ ver[t] < MaxVer
         /\ ph' = [ph EXCEPT ![t] = "idle"]
         /\ ver' = [ver EXCEPT ![t] = @ + 1]
   /\ queue' = Without(queue, t) /\ solo' = solo \ {t}
-  /\ UNCHANGED <<origin, clone, cdirty, cbranch, nlocal, needPrep, followedTo,
+  /\ UNCHANGED <<origin, clone, cdirty, cbranch, nlocal, due, followedTo,
        hands, crashes, claim, res, mem, cand, chk, rnd, rec, tgt, unwanted>>
 
 \* The integrating process is killed; its ticket stays until someone looks.
@@ -350,7 +372,7 @@ Crash(t) ==
   /\ ph[t] \in Active \ {"crashed"}
   /\ ph' = [ph EXCEPT ![t] = "crashed"]
   /\ crashes' = crashes + 1
-  /\ UNCHANGED <<origin, clone, cdirty, cbranch, nlocal, needPrep, followedTo,
+  /\ UNCHANGED <<origin, clone, cdirty, cbranch, nlocal, due, followedTo,
        hands, ver, queue, claim, solo, res, mem, cand, chk, rnd, rec, tgt,
        unwanted>>
 
@@ -367,7 +389,7 @@ Restart(t) ==
   /\ IF rec[t] # NoCommit /\ Has(origin, rec[t])
      THEN UNCHANGED <<claim, res>>
      ELSE claim' = PrunedClaim /\ res' = PrunedRes
-  /\ UNCHANGED <<origin, clone, cdirty, cbranch, nlocal, needPrep, followedTo,
+  /\ UNCHANGED <<origin, clone, cdirty, cbranch, nlocal, due, followedTo,
        hands, crashes, ver, solo, mem, cand, chk, rnd, rec,
        unwanted>>
 
@@ -375,18 +397,18 @@ HandPush ==
   /\ hands < MaxHand
   /\ origin' = Append(origin, [parent |-> Tip(origin), mem |-> {}, kind |-> "hand"])
   /\ hands' = hands + 1
-  /\ UNCHANGED <<clone, cdirty, cbranch, nlocal, needPrep, followedTo, crashes,
+  /\ UNCHANGED <<clone, cdirty, cbranch, nlocal, due, followedTo, crashes,
        ph, ver, queue, claim, solo, res, mem, cand, chk, rnd, rec, tgt, unwanted>>
 
 CloneDirty ==
   /\ cdirty' = ~cdirty
-  /\ UNCHANGED <<origin, clone, cbranch, nlocal, needPrep, followedTo, hands,
+  /\ UNCHANGED <<origin, clone, cbranch, nlocal, due, followedTo, hands,
        crashes, ph, ver, queue, claim, solo, res, mem, cand, chk, rnd, rec,
        tgt, unwanted>>
 
 CloneBranch ==
   /\ cbranch' = ~cbranch
-  /\ UNCHANGED <<origin, clone, cdirty, nlocal, needPrep, followedTo, hands,
+  /\ UNCHANGED <<origin, clone, cdirty, nlocal, due, followedTo, hands,
        crashes, ph, ver, queue, claim, solo, res, mem, cand, chk, rnd, rec,
        tgt, unwanted>>
 
@@ -394,7 +416,7 @@ CloneCommit ==
   /\ nlocal < MaxLocal
   /\ clone' = Append(clone, [parent |-> Tip(clone), mem |-> {}, kind |-> "local"])
   /\ nlocal' = nlocal + 1
-  /\ UNCHANGED <<origin, cdirty, cbranch, needPrep, followedTo, hands, crashes,
+  /\ UNCHANGED <<origin, cdirty, cbranch, due, followedTo, hands, crashes,
        ph, ver, queue, claim, solo, res, mem, cand, chk, rnd, rec, tgt, unwanted>>
 
 AtRest == \A t \in Tasks : ph[t] \in Final
@@ -442,7 +464,7 @@ LocalKept == nlocal > 0 => \E i \in 1..Len(clone) : clone[i].kind = "local"
 NoUnwantedMerge == unwanted \cap Tasks = {}
 
 \* The prepare lines ran after the clone moved, once everything is done.
-PrepareRan == AtRest => ~needPrep
+PrepareRan == AtRest => \A t \in Tasks : ~due[t]
 
 \* After the last merge, a clone that was followed ends equal to origin/main.
 CloneEqualsOrigin ==
