@@ -11,8 +11,14 @@ import {
 } from "@operad-io/engine/platform";
 import { DevError } from "./model.ts";
 
-/** What a waiter may inject: the clock, how it waits, and where a log goes. */
-export type RepositoryLockOptions = Omit<LockFileOptions, "label">;
+/**
+ * What a waiter may inject: the clock, how it waits, where a log goes, and the
+ * operad home that holds the lock file.
+ */
+export type RepositoryLockOptions = Omit<LockFileOptions, "label"> & {
+  /** The home whose `dev/repository-locks` holds the file; defaults to `$OPERAD_HOME`. */
+  readonly home?: string | undefined;
+};
 
 /** Where an older dev kept its lock, inside the working tree. */
 const LEGACY_LOCK_FILE = join(".operad", "dev.lock");
@@ -110,9 +116,10 @@ export async function withRepositoryLock<T>(
   options: RepositoryLockOptions = {},
 ): Promise<T> {
   await removeLegacyLock(repositoryPath);
-  const lockPath = repositoryLockPath(repositoryPath);
+  const { home, ...lockOptions } = options;
+  const lockPath = repositoryLockPath(repositoryPath, home);
   try {
-    return await withLockFile(lockPath, work, { ...options, label: "dev lock" });
+    return await withLockFile(lockPath, work, { ...lockOptions, label: "dev lock" });
   } catch (error) {
     if (error instanceof LockTimeoutError) {
       throw new DevError(

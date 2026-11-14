@@ -88,8 +88,9 @@ function branchAhead(repositoryPath: string): {
 describe("the repository lock", () => {
   test("a live holder past the deadline is a dev lock error naming its pid", async () => {
     const root = await tempRoot();
+    const home = join(root, "home");
     const repositoryPath = await makeGitRepository(root);
-    const lock = repositoryLockPath(repositoryPath);
+    const lock = repositoryLockPath(repositoryPath, home);
     mkdirSync(dirname(lock), { recursive: true });
     writeFileSync(
       lock,
@@ -98,6 +99,7 @@ describe("the repository lock", () => {
     );
     let tick = 0;
     const failure = await withRepositoryLock(repositoryPath, () => undefined, {
+      home,
       clock: () => (tick === 0 ? 0 : 10_001),
       wait: async () => {
         tick += 1;
@@ -111,15 +113,20 @@ describe("the repository lock", () => {
 
   test("the lock lives in the operad home, not the working tree, and is gone afterwards", async () => {
     const root = await tempRoot();
+    const home = join(root, "home");
     const repositoryPath = await makeGitRepository(root);
-    const lock = repositoryLockPath(repositoryPath);
+    const lock = repositoryLockPath(repositoryPath, home);
     const legacy = legacyLockPath(repositoryPath);
     let existed = false;
     let legacyExisted = true;
-    await withRepositoryLock(repositoryPath, () => {
-      existed = existsSync(lock);
-      legacyExisted = existsSync(legacy);
-    });
+    await withRepositoryLock(
+      repositoryPath,
+      () => {
+        existed = existsSync(lock);
+        legacyExisted = existsSync(legacy);
+      },
+      { home },
+    );
     expect(existed).toBe(true);
     expect(legacyExisted).toBe(false);
     expect(existsSync(lock)).toBe(false);
@@ -127,40 +134,49 @@ describe("the repository lock", () => {
 
   test("a linked worktree shares its repository's lock", async () => {
     const root = await tempRoot();
+    const home = join(root, "home");
     const repositoryPath = await makeGitRepository(root);
     const worktree = join(root, "linked");
     gitOrThrow(repositoryPath, ["worktree", "add", "-q", "-b", "linked", worktree]);
-    expect(repositoryLockPath(worktree)).toBe(repositoryLockPath(repositoryPath));
+    expect(repositoryLockPath(worktree, home)).toBe(
+      repositoryLockPath(repositoryPath, home),
+    );
   });
 
   test("a main clone whose lock dev holds is clean and fast-forwards", async () => {
     const root = await tempRoot();
+    const home = join(root, "home");
     const repositoryPath = await makeGitRepository(root);
     const { branch, target } = branchAhead(repositoryPath);
-    await withRepositoryLock(repositoryPath, async () => {
-      const status = gitOrThrow(repositoryPath, [
-        "status",
-        "--porcelain",
-        "--untracked-files=normal",
-      ]);
-      expect(status).toBe("");
-      const outcome = await updateMainClone(
-        repositoryPath,
-        branch,
-        target,
-        [],
-        async () => ({ ok: true, out: "" }),
-      );
-      expect(outcome).toEqual({ updated: true });
-      expect(gitOrThrow(repositoryPath, ["rev-parse", "HEAD"])).toBe(target);
-    });
+    await withRepositoryLock(
+      repositoryPath,
+      async () => {
+        const status = gitOrThrow(repositoryPath, [
+          "status",
+          "--porcelain",
+          "--untracked-files=normal",
+        ]);
+        expect(status).toBe("");
+        const outcome = await updateMainClone(
+          repositoryPath,
+          branch,
+          target,
+          [],
+          async () => ({ ok: true, out: "" }),
+        );
+        expect(outcome).toEqual({ updated: true });
+        expect(gitOrThrow(repositoryPath, ["rev-parse", "HEAD"])).toBe(target);
+      },
+      { home },
+    );
   });
 
   test("two processes still exclude each other", async () => {
     const root = await tempRoot();
+    const home = join(root, "home");
     const repositoryPath = await makeGitRepository(root);
     const child = Bun.spawn({
-      cmd: [process.execPath, HOLDER, repositoryPath],
+      cmd: [process.execPath, HOLDER, repositoryPath, home],
       env: { ...process.env },
       stdin: "pipe",
       stdout: "pipe",
@@ -176,6 +192,7 @@ describe("the repository lock", () => {
           entered = true;
         },
         {
+          home,
           clock: () => (tick === 0 ? 0 : 10_001),
           wait: async () => {
             tick += 1;
@@ -198,17 +215,19 @@ describe("the repository lock", () => {
 
   test("a legacy in-tree lock is removed when nobody holds it", async () => {
     const root = await tempRoot();
+    const home = join(root, "home");
     const repositoryPath = await makeGitRepository(root);
     leaveLegacyLock(repositoryPath, await deadPid());
-    await withRepositoryLock(repositoryPath, () => undefined);
+    await withRepositoryLock(repositoryPath, () => undefined, { home });
     expect(existsSync(legacyLockPath(repositoryPath))).toBe(false);
   });
 
   test("a held legacy in-tree lock is left alone", async () => {
     const root = await tempRoot();
+    const home = join(root, "home");
     const repositoryPath = await makeGitRepository(root);
     leaveLegacyLock(repositoryPath, process.pid);
-    await withRepositoryLock(repositoryPath, () => undefined);
+    await withRepositoryLock(repositoryPath, () => undefined, { home });
     expect(existsSync(legacyLockPath(repositoryPath))).toBe(true);
   });
 });
