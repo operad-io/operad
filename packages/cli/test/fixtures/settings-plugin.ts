@@ -12,6 +12,20 @@ export default definePlugin({
       mode: { type: "string", default: "a", editable: true, confirm: true },
       label: { type: "string", editable: true },
       fixed: { type: "string", default: "x" },
+      items: {
+        type: "object",
+        editable: true,
+        confirm: true,
+        additionalProperties: {
+          type: "object",
+          properties: { size: { type: "integer", minimum: 1 }, tag: { type: "string" } },
+          additionalProperties: false,
+        },
+      },
+      locked: {
+        type: "object",
+        additionalProperties: { type: "string" },
+      },
     },
   },
   projectSettings: {

@@ -11,6 +11,15 @@ export default definePlugin({
       limit: { type: "integer", minimum: 1, default: 2, description: "Items at once.", editable: true },
       mode: { type: "string", default: "a", editable: true, confirm: true },
       fixed: { type: "string", default: "x" },
+      entries: {
+        type: "object",
+        editable: true,
+        additionalProperties: {
+          type: "object",
+          properties: { n: { type: "integer", minimum: 1 } },
+          additionalProperties: false,
+        },
+      },
     },
   },
   objects: [{ name: "item", index: ["state"] }],

@@ -822,6 +822,7 @@ describe("http server", () => {
         "webtest.limit",
         "webtest.mode",
         "webtest.fixed",
+        "webtest.entries",
       ]);
       expect(listed[0]?.value).toBe(2);
 
@@ -843,6 +844,50 @@ describe("http server", () => {
       expect((await post({ name: "webtest.mode", value: "b", confirmed: true })).status).toBe(200);
       expect((await post({ value: 1 })).status).toBe(400);
       expect((await api(h, "/v1/settings", { method: "DELETE" })).status).toBe(405);
+    } finally {
+      await h.close();
+    }
+  });
+
+  test("POST /v1/settings with a deeper name changes one entry and keeps a concurrent change", async () => {
+    const h = await makeHarness();
+    try {
+      writeFileSync(
+        join(h.home, "config.json"),
+        JSON.stringify({
+          plugins: { webtest: { module: pluginPath, settings: { entries: { a: { n: 1 }, b: { n: 2 } } } } },
+        }),
+      );
+      const post = (body: unknown): Promise<Response> =>
+        api(h, "/v1/settings", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        });
+      const read = (): { entries: unknown } =>
+        JSON.parse(readFileSync(join(h.home, "config.json"), "utf8")).plugins.webtest.settings;
+
+      // another client changes `b` after this one read the map; this one changes only `a`
+      expect((await post({ name: "webtest.entries.b.n", value: 9 })).status).toBe(200);
+      const changed = await post({ name: "webtest.entries.a", value: { n: 5 } });
+      expect(changed.status).toBe(200);
+      expect(await json(changed)).toMatchObject({ name: "webtest.entries.a", value: { n: 5 } });
+      expect(read().entries).toEqual({ a: { n: 5 }, b: { n: 9 } });
+
+      const invalid = await post({ name: "webtest.entries.a.n", value: 0 });
+      expect(invalid.status).toBe(400);
+      expect((await post({ name: "webtest.entries.a.zzz", value: 1 })).status).toBe(404);
+      expect((await post({ name: "webtest.fixed.k", value: "y" })).status).toBe(404);
+      for (const key of ["__proto__", "constructor", "prototype"]) {
+        expect((await post({ name: `webtest.entries.${key}.n`, value: 3 })).status).toBe(404);
+        expect((await post({ name: `webtest.entries.a.${key}`, value: {} })).status).toBe(404);
+      }
+      expect(Object.prototype.hasOwnProperty.call({}, "n")).toBe(false);
+      expect(({} as Record<string, unknown>).n).toBeUndefined();
+      expect(read().entries).toEqual({ a: { n: 5 }, b: { n: 9 } });
+
+      expect((await post({ name: "webtest.entries.b", value: null })).status).toBe(200);
+      expect(read().entries).toEqual({ a: { n: 5 } });
     } finally {
       await h.close();
     }
