@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { SqlitePluginStore } from "@operad-io/engine";
 import { cleanupTempRoots, tempRoot } from "../../../engine/test/plugin/support.ts";
 import { testEnv } from "../env.ts";
 
@@ -18,18 +19,29 @@ const PLUGIN = fileURLToPath(
 afterAll(cleanupTempRoots);
 
 let home = "";
+let storeRoot = "";
 beforeAll(async () => {
   const root = await tempRoot();
   home = join(root, "home");
+  storeRoot = join(root, "store");
   mkdirSync(home, { recursive: true });
   writeFileSync(
     join(home, "config.json"),
     JSON.stringify({
       plugins: [PLUGIN],
-      store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
+      store: { backend: "sqlite", path: join(storeRoot, "log.sqlite") },
     }),
   );
 });
+
+function seed(id: string, data: Record<string, unknown>): void {
+  const store = new SqlitePluginStore({ root: storeRoot });
+  try {
+    store.put("item", id, data, "seed");
+  } finally {
+    store.close();
+  }
+}
 
 interface GuardedResult {
   readonly code?: number | undefined;
@@ -107,6 +119,25 @@ describe("the CLI's main with injected output", () => {
     expect(result.failure).toBeUndefined();
     expect(result.touched).toBeUndefined();
     expect(result.code).toBe(1);
+    expect(`${result.out}${result.err}`).not.toContain("read process.");
+  });
+
+  test("a note prompt does not read process.stdin when injected io has no readLine", async () => {
+    seed("prompt", { title: "One", state: "new" });
+    const result = await runGuarded(["demo:approve", "item:prompt"], true);
+    expect(result.failure).toBeUndefined();
+    expect(result.touched).toBeUndefined();
+    expect(result.code).toBe(2);
+    expect(result.err).toContain("needs a note");
+    expect(`${result.out}${result.err}`).not.toContain("read process.");
+  });
+
+  test("secret set does not read process.stdin when injected io has no readLine", async () => {
+    const result = await runGuarded(["secret", "set", "notes", "token"], false);
+    expect(result.failure).toBeUndefined();
+    expect(result.touched).toBeUndefined();
+    expect(result.code).toBe(0);
+    expect(result.out).toContain('secret "token" set');
     expect(`${result.out}${result.err}`).not.toContain("read process.");
   });
 });

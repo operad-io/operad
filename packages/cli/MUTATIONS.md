@@ -181,3 +181,10 @@ the row fields.
 | T-0427-M2 | packages/cli/src/main.ts | `main` took the terminal from `process.stdout.isTTY` and `process.stdin.isTTY` again, so a command with injected output read the streams | `the CLI's main with injected output > list takes the terminal from the descriptors, not process.stdout` |
 | T-0427-M3 | packages/cli/src/main.ts | `pair` took its terminal from `process.stdout.isTTY` again | `the CLI's main with injected output > pair takes the terminal from the descriptor, not process.stdout` |
 | T-0427-M4 | packages/cli/src/main.ts | `stdoutColumns` read `process.stdout.columns` without checking that the descriptor is a terminal | `the CLI's main with injected output > show takes its width without reading process.stdout when it is not a terminal` |
+
+## T-0428-flaky-cli-stdout-epoll-followups — interactive prompts do not read process streams
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0428-M1 | packages/cli/src/main.ts | `readLine` fell back to `process.stdin` and `process.stdout` for an injected io without `readLine`, so a note prompt read the streams | `the CLI's main with injected output > a note prompt does not read process.stdin when injected io has no readLine` |
+| T-0428-M2 | packages/cli/src/main.ts | `readSecretValue` checked `process.stdin.isTTY` instead of the descriptor, so `secret set` read the stream even when stdin was a pipe | `the CLI's main with injected output > secret set does not read process.stdin when injected io has no readLine` |

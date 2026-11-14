@@ -1,7 +1,9 @@
 /**
- * Imports the CLI with process.stdout and process.stderr unreadable. Reading
- * either during the import fails, as Bun's stale epoll registration made the
- * stream's creation fail under `bun test --isolate` (oven-sh/bun#37968).
+ * Imports the CLI with process.stdout and process.stderr unreadable, the way
+ * Bun's stale epoll registration made the stream's creation fail under
+ * `bun test --isolate` (oven-sh/bun#37968). This stands in for the failure
+ * deterministically: the upstream issue is Linux-only and has no standalone
+ * reproduction, so the test does not wait for the real collision.
  */
 const saved = {
   stdout: Object.getOwnPropertyDescriptor(process, "stdout"),
