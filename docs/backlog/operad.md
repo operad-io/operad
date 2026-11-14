@@ -3,7 +3,7 @@
 - 状态：方向已定并已进 ADR；下面只留还没做完的决定、顺序、待决问题和验收
 - 涉及 ADR：0001、0002、0003
 - 来源：`research/2026-11-04-agent-autoloop.md`；`research/2026-11-05-noop.md`；`research/2026-10-20-arc-competitors.md`
-- 子项：`operad-engine.md`、`operad-plugins.md`、`operad-harness.md`、`operad-channels.md`、`operad-contract.md`、`operad-presentation.md`、`operad-conversation.md`、`operad-sandbox.md`、`operad-bot.md`、`operad-bot-mcp.md`、`operad-harness-pi.md`、`operad-harness-claude.md`、`operad-telegram.md`；`hub-event-inlet.md` 归入 `operad-channels.md`
+- 子项：`operad-engine.md`、`operad-plugins.md`、`operad-harness.md`、`operad-channels.md`、`operad-contract.md`、`operad-presentation.md`、`operad-conversation.md`、`operad-sandbox.md`、`operad-bot.md`、`operad-bot-mcp.md`、`operad-harness-pi.md`、`operad-harness-claude.md`、`operad-telegram.md`、`operad-desktop.md`；`hub-event-inlet.md` 归入 `operad-channels.md`
 
 ## 决定（已定，还没做完，所以留在这里）
 
