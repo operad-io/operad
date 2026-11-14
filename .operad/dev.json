@@ -25,8 +25,7 @@
       ],
       "count": 1,
       "stallSecs": 900,
-      "wallTimeSecs": 7200,
-      "fallback": "pi"
+      "wallTimeSecs": 7200
     }
   },
   "pools": {
