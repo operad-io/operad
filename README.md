@@ -49,6 +49,13 @@ operad --help
 
 You also need `git`, a repository with a remote, and one of `claude`, `pi` or `radian` on your `PATH`.
 
+A new home turns on `radian`, and `operad init` fails while `radian` is missing. To work with `claude` or `pi` instead, turn that one on and `radian` off before `operad init`:
+
+```sh
+operad plugin enable claude   # or: operad plugin enable pi
+operad plugin disable radian
+```
+
 ## Quickstart
 
 ```sh

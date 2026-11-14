@@ -199,7 +199,11 @@ describe("operad with the dev plugin", () => {
     const planId = plan.out.trim();
     expect(planId).toBe("P-0001-alpha");
 
-    const task = await runReal(
+    // The real binary has now registered and planned: two starts prove the entry
+    // is connected (ADR 0036 D1). The rest runs in this process, as the other
+    // tests here do: on a check host each start waited behind other checks, and
+    // six starts ran from under 5s to over 30s.
+    const task = await run(
       home,
       repository,
       [
@@ -218,11 +222,11 @@ describe("operad with the dev plugin", () => {
     const taskId = task.out.trim();
     expect(taskId).toBe("T-0001-first");
 
-    const listed = await runReal(home, repository, ["list", "task"]);
+    const listed = await run(home, repository, ["list", "task"]);
     expect(listed.code).toBe(0);
     expect(listed.out).toContain(`${taskId}  proposed  #0  First task`);
 
-    const planShown = await runReal(home, repository, ["show", planId]);
+    const planShown = await run(home, repository, ["show", planId]);
     expect(planShown.code).toBe(0);
     const planLines = planShown.out.split("\n");
     const rowAt = planLines.findIndex((line) => line.includes(`${taskId}  proposed  #0  First task`));
@@ -231,10 +235,6 @@ describe("operad with the dev plugin", () => {
     expect(rowAt).toBeLessThan(sectionsAt);
     expect(planLines[sectionsAt]).not.toContain("Tasks");
 
-    // The real binary has now registered, planned, listed and shown. The
-    // remaining reads and the second confirm run in this process: ten starts
-    // of the binary came too close to the 30s timeout on a check host that
-    // runs another test file at the same time.
     const brief = await run(home, repository, [
       "show",
       taskId,
@@ -245,7 +245,7 @@ describe("operad with the dev plugin", () => {
     expect(brief.out).toContain("Use the store.");
     expect(brief.out).not.toContain("## Changes");
 
-    const confirmed = await runReal(home, repository, ["dev:confirm", planId]);
+    const confirmed = await run(home, repository, ["dev:confirm", planId]);
     expect(confirmed.code).toBe(0);
     const ready = await run(home, repository, ["list", "task"]);
     expect(ready.out).toContain(`${taskId}  ready  #0  First task`);
