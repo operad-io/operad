@@ -9,7 +9,7 @@
 
 import type { ProjectSettingsDeclaration } from "@operad-io/engine";
 import { flowClash, listRepositoryFlows } from "./project-flows.ts";
-import { readDevSettings, settingsValueProblem } from "./settings.ts";
+import { defaultDevSettings, readDevSettings, settingsProblem, settingsValueProblem } from "./settings.ts";
 import { listRepositories } from "./service.ts";
 import type { JsonValue } from "@operad-io/engine";
 
@@ -21,19 +21,46 @@ export const DEV_PROJECT_SETTINGS: ProjectSettingsDeclaration = {
       name: "dev",
       path: "dev.json",
       // dev's own check of the file as it would be written: its schema and rules
-      // (ADR 0020 D4), then the name clash with a TypeScript flow (D6).
-      check: ({ repository, value }) =>
-        settingsValueProblem(repository.path, value) ??
-        flowClash(repository.path, value.flows),
+      // (ADR 0020 D4), then the name clash with a TypeScript flow (D6). It runs
+      // for a flow change only, so an invalid flow already in the file does not
+      // block an unrelated setting.
+      check: ({ repository, value, name }) => {
+        if (name !== "dev.flows" && !name.startsWith("dev.flows.")) return undefined;
+        return (
+          settingsValueProblem(repository.path, value) ??
+          flowClash(repository.path, value.flows)
+        );
+      },
       derived: async ({ repository }) => {
+        const problem = settingsProblem(repository.path);
         let settings;
         try {
           settings = await readDevSettings(repository.path);
-        } catch {
-          return {};
+        } catch (error) {
+          // The file was never valid, so there are no dev.json flows to list;
+          // the read-only list stays and says why, beside the TypeScript flows.
+          const reason =
+            problem ?? (error instanceof Error ? error.message : String(error));
+          const list = await listRepositoryFlows(
+            repository.path,
+            repository.name,
+            defaultDevSettings(),
+          );
+          return {
+            flowList: [
+              { name: "dev.json", source: "dev.json", refused: reason },
+              ...list,
+            ] as unknown as JsonValue,
+          };
         }
         const list = await listRepositoryFlows(repository.path, repository.name, settings);
-        return { flowList: list as unknown as JsonValue };
+        return {
+          flowList: (
+            problem === undefined
+              ? list
+              : [{ name: "dev.json", source: "dev.json", refused: problem }, ...list]
+          ) as unknown as JsonValue,
+        };
       },
       schema: {
         type: "object",

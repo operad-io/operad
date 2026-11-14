@@ -154,7 +154,8 @@ describe("operad settings", () => {
     expect(unconfirmed.err).toContain("--yes");
     // `locked` is not editable, so neither is any entry of it
     const readOnly = await operad(home, "settings", "set", "demo.locked.k", "v");
-    expect(readOnly.code).not.toBe(0);
+    expect(readOnly.code).toBe(3);
+    expect(readOnly.err).toContain("cannot be changed here");
     expect(readFileSync(config, "utf8")).toBe(before);
   });
 

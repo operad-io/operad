@@ -225,31 +225,43 @@ interface Place {
 }
 
 /** The plugin's own check of the file as it would be written; refuses with its reason. */
-async function runCheck(place: Place, value: unknown): Promise<void> {
+async function runCheck(place: Place, name: string, value: unknown): Promise<void> {
   const project = place.project;
   const check = project?.file.check;
   if (project === undefined || check === undefined || !isRecord(value)) return;
-  const reason = await check({ repository: project.repository, value });
+  const reason = await check({ repository: project.repository, value, name });
   if (reason !== undefined) throw new SettingsError("refused", reason);
 }
 
 async function readPlace(place: Place): Promise<unknown> {
+  const project = place.project;
+  const derived = project?.file.derived;
+  let file: JsonFile | undefined;
   try {
-    const file = await readJsonFile(place.file, place.fresh);
-    const stored = valueAt(file.value, place.inside);
-    const project = place.project;
-    const derived = project?.file.derived;
-    if (project !== undefined && derived !== undefined) {
-      return {
-        ...(isRecord(stored) ? stored : {}),
-        ...(await derived({ repository: project.repository, value: file.value })),
-      };
-    }
-    return stored;
+    file = await readJsonFile(place.file, place.fresh);
   } catch (error) {
-    if (error instanceof SettingsError) return undefined;
-    throw error;
+    if (!(error instanceof SettingsError)) throw error;
   }
+  if (file === undefined) {
+    if (project === undefined || derived === undefined) return undefined;
+    // A derived value may still explain why the file cannot be read (dev's
+    // flow list names the broken dev.json); with no hook there is nothing.
+    try {
+      return await derived({ repository: project.repository, value: {}, name: "" });
+    } catch {
+      return undefined;
+    }
+  }
+  const stored = valueAt(file.value, place.inside);
+  if (project !== undefined && derived !== undefined) {
+    // A stored value wins; the derived value fills only a property the file
+    // does not store.
+    return {
+      ...(await derived({ repository: project.repository, value: file.value, name: "" })),
+      ...(isRecord(stored) ? stored : {}),
+    };
+  }
+  return stored;
 }
 
 async function places(
@@ -399,6 +411,8 @@ export async function setSetting(
   // A name deeper than an editable setting that holds a map or an object
   // changes one entry of it: `bot.bots.<name>` or `bot.bots.<name>.<field>`.
   let deeper: { readonly place: Place; readonly leaf: Leaf; readonly sub: string[] } | undefined;
+  // A deeper name under a setting that is not editable is read-only, not unknown.
+  let blocked: { readonly place: Place; readonly leaf: Leaf; readonly sub: string[] } | undefined;
   for (const place of await places(options, scope)) {
     const prefix = `${place.prefix}.`;
     if (!name.startsWith(prefix)) continue;
@@ -409,17 +423,16 @@ export async function setSetting(
       match = { place, leaf };
       break;
     }
-    if (deeper === undefined) {
-      const parent = found.find(
-        (item) =>
-          item.schema.editable === true && path.startsWith(`${item.path.join(".")}.`),
-      );
+    if (deeper === undefined && blocked === undefined) {
+      const parent = found.find((item) => path.startsWith(`${item.path.join(".")}.`));
       if (parent !== undefined) {
-        deeper = {
+        const entry = {
           place,
           leaf: parent,
           sub: path.slice(parent.path.join(".").length + 1).split("."),
         };
+        if (parent.schema.editable === true) deeper = entry;
+        else blocked = entry;
       }
     }
   }
@@ -427,6 +440,9 @@ export async function setSetting(
     return setEntry(deeper.place, deeper.leaf, deeper.sub, name, value, scope, set);
   }
   if (match === undefined) {
+    if (blocked !== undefined) {
+      throw new SettingsError("not-available", `setting "${name}" cannot be changed here`);
+    }
     throw new SettingsError(
       "not-found",
       scope === GLOBAL_SCOPE
@@ -439,6 +455,14 @@ export async function setSetting(
   if (leaf.schema.editable !== true) {
     throw new SettingsError("not-available", `setting "${name}" cannot be changed here`);
   }
+  // Confirmation comes before the value check at both depths, so a value that
+  // is both invalid and unconfirmed answers the same way everywhere.
+  if (leaf.schema.confirm === true && set.confirmed !== true) {
+    throw new SettingsError(
+      "confirm",
+      `setting "${name}" needs confirmation`,
+    );
+  }
   try {
     validateSchemaValue(leaf.schema, value, name, "value");
   } catch (error) {
@@ -448,12 +472,6 @@ export async function setSetting(
       });
     }
     throw error;
-  }
-  if (leaf.schema.confirm === true && set.confirmed !== true) {
-    throw new SettingsError(
-      "confirm",
-      `setting "${name}" needs confirmation`,
-    );
   }
 
   return withLockFile(`${place.file}.lock`, async () => {
@@ -493,7 +511,7 @@ export async function setSetting(
       }
       throw error;
     }
-    await runCheck(place, valueAt(file.value, place.inside));
+    await runCheck(place, name, valueAt(file.value, place.inside));
     await writeFileAtomic(place.file, render(file), set.hooks);
 
     return infoOf(place, leaf, valueAt(file.value, place.inside));
@@ -511,7 +529,13 @@ function entrySchema(
   for (const key of sub) {
     // Never a key that names something every object inherits.
     if (key.length === 0 || UNSAFE_KEYS.has(key) || node === undefined) return undefined;
-    const next: ActionArgSchema | undefined = node.properties?.[key];
+    // Only a property the schema declares itself; an inherited name such as
+    // `toString` is not an entry schema.
+    const properties: Record<string, ActionArgSchema> | undefined = node.properties;
+    const next: ActionArgSchema | undefined =
+      properties !== undefined && Object.hasOwn(properties, key)
+        ? properties[key]
+        : undefined;
     node =
       next ??
       (typeof node.additionalProperties === "object" ? node.additionalProperties : undefined);
@@ -552,15 +576,16 @@ async function setEntry(
     );
   }
   const remove = value === null;
+  // The same order as a setting itself: confirmation, then the value.
+  if (parent.schema.confirm === true && set.confirmed !== true) {
+    throw new SettingsError("confirm", `setting "${name}" needs confirmation`);
+  }
   if (!remove) {
     try {
       validateSchemaValue(schema, value, name, "value");
     } catch (error) {
       refuseArgs(error);
     }
-  }
-  if (parent.schema.confirm === true && set.confirmed !== true) {
-    throw new SettingsError("confirm", `setting "${name}" needs confirmation`);
   }
   const path = [...parent.path, ...sub];
   const leaf: Leaf = {
@@ -600,7 +625,7 @@ async function setEntry(
     } catch (error) {
       refuseArgs(error);
     }
-    await runCheck(place, valueAt(file.value, place.inside));
+    await runCheck(place, name, valueAt(file.value, place.inside));
     await writeFileAtomic(place.file, render(file), set.hooks);
     return infoOf(place, leaf, valueAt(file.value, place.inside));
   });

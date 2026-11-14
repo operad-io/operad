@@ -1211,6 +1211,8 @@ export interface ProjectSettingsFile {
 /** What a project settings file's `check` and `derived` are given. */
 export interface ProjectSettingsContext {
   readonly repository: SettingsRepository;
+  /** The setting being changed, such as `dev.flows.mine`; empty when listing. */
+  readonly name: string;
   /** The file's JSON object: as it would be written for `check`, as it is for `derived`. */
   readonly value: Readonly<Record<string, unknown>>;
 }
