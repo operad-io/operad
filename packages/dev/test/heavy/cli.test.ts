@@ -19,7 +19,14 @@ import { commandTestHooks } from "../../src/commands.ts";
 import { withRepositoryLock } from "../../src/lock.ts";
 import { bareId, listAll } from "../../src/model.ts";
 import { addPlan, addRepository, addTask, setTaskPhase } from "../../src/service.ts";
-import { cleanupTempRoots, guardLockHandles, makeGitRepository, tempRoot } from "../support.ts";
+import {
+  cleanupTempRoots,
+  guardLockHandles,
+  makeGitRepository,
+  runInProcess,
+  tempRoot,
+  type RunResult,
+} from "../support.ts";
 
 afterAll(cleanupTempRoots);
 guardLockHandles();
@@ -28,25 +35,6 @@ const CLI_ENTRY = fileURLToPath(new URL("../../../cli/bin/operad.ts", import.met
 const PLUGIN = fileURLToPath(new URL("../../src/index.ts", import.meta.url));
 const POOL = fileURLToPath(new URL("../../../pool/src/index.ts", import.meta.url));
 const SHELL = fileURLToPath(new URL("../../../shell/src/index.ts", import.meta.url));
-
-/** The CLI's own entry point, loaded by path: the dev package does not build against the cli package. */
-interface CliMain {
-  main(
-    args: readonly string[],
-    options: {
-      home: string;
-      io: { write(text: string): void; error(text: string): void };
-      isTTY: boolean;
-    },
-  ): Promise<number>;
-}
-const CLI_MAIN = fileURLToPath(new URL("../../../cli/src/main.ts", import.meta.url));
-
-interface RunResult {
-  readonly code: number;
-  readonly out: string;
-  readonly err: string;
-}
 
 async function setup(): Promise<{
   readonly root: string;
@@ -96,85 +84,12 @@ async function runReal(
   return { out, err, code };
 }
 
-/**
- * Runs a command in this process: the CLI's own `main` with collected output,
- * the working directory, standard input and environment set around it. Tests
- * in this file run one after another, so the process-wide state is safe.
- */
-let inProcess: Promise<unknown> = Promise.resolve();
-
-/**
- * One command at a time: the working directory, stdin and environment belong
- * to the process, so commands a test starts together run in turn.
- */
-function run(
-  home: string,
-  cwd: string,
-  args: readonly string[],
-  input?: string,
-  env: Record<string, string> = {},
-): Promise<RunResult> {
-  const turn = inProcess.then(() => runNow(home, cwd, args, input, env));
-  inProcess = turn.catch(() => undefined);
-  return turn;
-}
-
+const run = runInProcess;
 /** Runs a command with a stdin stream of the test's choosing, in its turn. */
-function runWithStdin(
-  home: string,
-  cwd: string,
-  args: readonly string[],
-  stdin: Readable,
-  env: Record<string, string> = {},
-): Promise<RunResult> {
-  const turn = inProcess.then(() => runNow(home, cwd, args, stdin, env));
-  inProcess = turn.catch(() => undefined);
-  return turn;
-}
-
-async function runNow(
-  home: string,
-  cwd: string,
-  args: readonly string[],
-  input: string | Readable | undefined,
-  env: Record<string, string>,
-): Promise<RunResult> {
-  const out: string[] = [];
-  const err: string[] = [];
-  const previousCwd = process.cwd();
-  const previousEnv = { ...process.env };
-  const stdinDescriptor = Object.getOwnPropertyDescriptor(process, "stdin");
-  process.chdir(cwd);
-  Object.assign(process.env, { OPERAD_HOME: home }, env);
-  Object.defineProperty(process, "stdin", {
-    configurable: true,
-    value:
-      input instanceof Readable
-        ? input
-        : Readable.from(input === undefined ? [] : [Buffer.from(input)]),
-  });
-  try {
-    const { main } = (await import(CLI_MAIN)) as CliMain;
-    const code = await main([...args], {
-      home,
-      io: { write: (text) => out.push(text), error: (text) => err.push(text) },
-      isTTY: false,
-    });
-    return { code, out: out.join(""), err: err.join("") };
-  } finally {
-    if (stdinDescriptor !== undefined) {
-      Object.defineProperty(process, "stdin", stdinDescriptor);
-    }
-    for (const key of Object.keys(process.env)) {
-      if (!(key in previousEnv)) delete process.env[key];
-    }
-    Object.assign(process.env, previousEnv);
-    process.chdir(previousCwd);
-  }
-}
+const runWithStdin = runInProcess;
 
 describe("operad with the dev plugin", () => {
-  test("the real binary registers, plans, lists, shows and confirms", async () => {
+  test("the real binary registers and plans; list, show and confirm run in process", async () => {
     const { root, home, repository } = await setup();
 
     const added = await runReal(home, repository, ["repo", "add", "."]);
