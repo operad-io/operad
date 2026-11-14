@@ -57,12 +57,15 @@ function firstLine(stdout: ReadableStream<Uint8Array>): Promise<string> {
           text += decoder.decode(value, { stream: true });
           const end = text.indexOf("\n");
           if (end >= 0) {
+            await reader.cancel();
             resolve(text.slice(0, end));
             return;
           }
         }
       } catch (error) {
         reject(error);
+      } finally {
+        reader.releaseLock();
       }
     })();
   });
