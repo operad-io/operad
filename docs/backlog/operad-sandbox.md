@@ -2,7 +2,7 @@
 
 - 状态：第一版形状已定，已做的点进了 ADR；壳的形态未定
 - 涉及 ADR：0025、0010
-- 涉及：`operad.md` 决定 7、待决 2（仍未进 ADR）；`operad-plugins.md` 决定 5、6（仍未进 ADR）；`operad-harness.md` 决定 5（ADR 0022 D3）
+- 涉及：`operad.md` 决定 7、待决 2（仍未进 ADR）；`operad-plugins.md` 决定 5、6（仍未进 ADR）；`operad-harness.md`（ADR 0022 D3）
 - 来源：OpenClaw 的 `tools.exec` 审批规则与沙箱文档；IronClaw；radian 的权限规则（`crates/radian-permissions/README.md`）
 
 ## 背景

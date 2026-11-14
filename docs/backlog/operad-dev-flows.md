@@ -18,4 +18,4 @@
 
 ## 验收
 
-一个仓库写两个 flow（一个有 review、一个没有），两个 task 各走各的；没写 `flows` 的仓库行为和今天一样（现有测试全过）；违反硬约束的配置被拒绝并说明原因；`--flow` 写错的 task 不开工并说明。
+一个仓库写两个 flow（一个有 review、一个没有），两个 task 各走各的；没写 `flows` 的仓库行为和今天一样（现有测试全过）；违反硬约束的配置被拒绝并说明原因（`dev.json` 和 `.operad/flows/*.flow.ts` 一样，和 `dev.json` 同名的 `.flow.ts` 也拒绝）；`--flow` 写错的 task 不开工并说明。

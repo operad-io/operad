@@ -23,7 +23,7 @@ The project's `.operad/dev.json` is JSON with a JSON Schema. `flows.<name>` is o
 
 ### D3: `dev` completes the route
 
-When a stage fails, the run returns to the nearest `work` stage before it and redoes it; with no `work` stage before it, the run waits for a person. Retries, timeouts, cancellation and the wait for an unavailable model behave as they do for the built-in flow. `dev` adds the worktree preparation at the start and integrate at the end. The plan's `auto` setting decides whether a person's `human` stage ends in waiting for a person or in an automatic merge.
+When a stage fails, the run returns to the nearest `work` stage before it and redoes it; with no `work` stage before it, the run waits for a person. Retries, timeouts, cancellation and the wait for an unavailable model behave as they do for the built-in flow. `dev` adds the worktree preparation at the start and integrate at the end. The plan's `auto` setting decides whether a `human` stage ends in waiting for a person or in an automatic merge.
 
 ### D4: Two hard rules
 

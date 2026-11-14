@@ -34,7 +34,6 @@ The name comes from the operad in mathematics: an operation with n inputs and on
 - The runtime is Bun.
 - There is one reason for TypeScript: the extension surface must be text that hot-loads without a build, that an agent can write in seconds, in the same language as the kernel, so that `operad plugin check` can type-check it.
 - A trusted plugin loads in process; this is the fast path. An untrusted or generated step runs across a process boundary and inside a sandbox, with the same contract. No runtime gives a real isolation boundary in process, so "the same process" is not a reason for the language.
-- A second plugin language is added later through a cross-process plugin host, with the contract unchanged.
 - A Rust kernel with a TS runtime would work but contradicts the one reason above.
 
 ### D4: The flow engine is the core

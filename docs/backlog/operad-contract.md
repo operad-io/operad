@@ -2,7 +2,7 @@
 
 - 状态：大部分已进 ADR；下面只留还没做的两条、顺序和验收
 - 涉及 ADR：0006、0007、0008、0009、0010
-- 涉及：`operad.md`；`operad-plugins.md`；`operad-presentation.md`；`operad-channels.md` 决定 7–17 见 ADR 0032，其登录与读取一条留在 backlog；`operad-conversation.md`；`operad-sandbox.md`；`operad-bot.md`
+- 涉及：`operad.md`；`operad-plugins.md`；`operad-presentation.md`；`operad-channels.md`（通道与来源的已定部分见 ADR 0032，登录与读取一条留在 backlog）；`operad-conversation.md`；`operad-sandbox.md`；`operad-bot.md`
 - 来源：对话、知识库（可换后台）、记忆、来源插件、每日搜集这几个场景对内核的要求；radian arc 的 reviewer 被 429 吃掉十次 attempt 的教训
 
 ## 决定（已定，还没做，所以留在这里）
@@ -12,7 +12,12 @@
 
 ## 顺序
 
-3 和 `skills` 都是纯增量、以后加不破坏的；`operad-conversation` 之前不必做。
+3 和 `skills` 都是纯增量、以后加不破坏的；`operad-conversation` 之前要做的是 ADR 0008 的问人。
+
+## 待决问题（未定）
+
+1. 多人：`actor` 已经带 `id`，多人怎么共用通道和设备还没定。
+2. `secrets` 的 0600 文件以后是否换成系统钥匙串。
 
 ## 验收
 

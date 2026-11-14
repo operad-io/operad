@@ -29,7 +29,7 @@
    - 旧 id `PL0001`、`TK0001`（`model.ts`）；旧的 `repository` 对象迁移（`service.ts` 的 `migrateLegacyRepositories`）；旧的 review `pass`/`fail` 记录。
    - 前提：用过旧格式的只有我们自己的家目录和仓库（operad、radian、radian-ios）。把数据和配置迁一次，这些代码就能全删。
 2. **存储两套实现**：已定只留 `sqlite`，已做，见 ADR 0035。
-3. **`operad-open-framework.md` 的 A1 到 A4**（约 300 到 400 行）：flaky brief 的规则和探测、`linkWorkspacePackages`、“serve 在跑旧代码”的提醒。搬进配置之后这部分代码不再需要；跟着那一项走，这里只记数。
+3. **`operad-open-framework.md` 的 A1 到 A4**（约 300 到 400 行）：flaky brief 的规则和探测、`linkWorkspacePackages`、“serve 在跑旧代码”的提醒。已搬进配置和 ADR 0034，相关代码已删；这里只记数。
 
 ### C. 收益小或不减行数的
 

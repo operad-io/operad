@@ -5,11 +5,6 @@
 - 涉及：`operad-harness.md`；`operad-harness-pi.md`；ADR 0008 D1–D5、0009 D2、0010 D2–D3
 - 来源：`research/2026-11-06-harness-sdks.md`「Claude」；`@anthropic-ai/claude-agent-sdk` 0.3.319 的 `sdk.d.ts`；Agent SDK 概览页和 Claude Code 的 Authentication 页；本机实测
 
-## 已定，尚未做或未核实
-
-- 等 ADR 0010 D2 的 `ctx.secrets` 进了 `StepContext`，API key 走 `env: { ANTHROPIC_API_KEY }` 这条路，不换接法。这一句政策写进用户文档。
-- 子进程里的 Claude 不做发现这一条里：opencode 关掉自动记忆等的那串环境变量，逐个核对现版本还认不认，认的照抄。
-
 ## 建议的任务切分
 
 1. **spike**：Bun 下 `worker.ts` 原型：`overrides` 换空包、`pathToClaudeCodeExecutable`、零 token 探针、一次真实请求；记下 `settingSources: []` 之外还要关什么。

@@ -14,4 +14,4 @@ A person has one way to act on the system. A command line and a phone behave the
 
 ### D2: Every input from a person carries an `actor`
 
-An `actor` is `{ via: "ios" | "telegram" | "cli" | …, id }`. It is recorded in `person_answered` and in the facts of an action. Channel allow-lists, several devices and, later, several people rely on it.
+An `actor` is `{ via: "ios" | "telegram" | "cli" | …, id }`. It is recorded in `person_answered` and in the facts of an action. Channel allow-lists and several devices rely on it.
