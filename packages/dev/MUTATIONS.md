@@ -1178,8 +1178,6 @@ the row fields.
 |---|---|---|---|
 | T-0441-M2 | packages/dev/src/settings.ts | `defaultAgentUse` returned `radian/agent` before reading the home's config | `the agent of a repository that names no worker > is the first enabled harness in the fixed order`, `... > comes from the home's config, and the reviewer follows it`, `... > also applies when dev.json is missing` and `... > an enabled codex is still a harness` |
 | T-0441-M3 | packages/dev/src/service.ts | `repo add` wrote `worker: { "use": "radian/agent", "args": [] }` into a new `.operad/dev.json` again, so the repository did not follow the home | `dev/worktree > a missing settings file means the documented defaults` |
-| T-0441-M4 | packages/dev/src/settings.ts | the array form of `plugins` passed each whole entry to `harnessPlugin` and ignored `enabled: false`, so an object entry never named its harness | `the agent of a repository that names no worker > reads the array form and skips an entry with enabled false` |
-
 ## T-0437 — the real-binary CLI test starts the binary twice
 
 | id | file | mutation | failing test |
@@ -1191,3 +1189,4 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0442-M1 | packages/dev/src/service.ts | `confirmPlan` stopped writing the `ready` change line into each task it released, a first confirm that runs in process | `operad with the dev plugin > the real binary registers and plans; list, show and confirm run in process` (expected `/- \d\d:\d\d {2}ready/`, received only the `created` line) |
+| T-0441-M4 | packages/dev/src/settings.ts | the array form of `plugins` passed each whole entry to `harnessPlugin` and ignored `enabled: false`, so an object entry never named its harness | `the agent of a repository that names no worker > reads the array form and skips an entry with enabled false` |
