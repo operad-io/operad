@@ -40,6 +40,7 @@ import {
   getPlan,
   getTask,
   releaseWaitingClaim,
+  addRepository,
   setAuto,
   setConcurrency,
   validatePlanConcurrency,
@@ -399,7 +400,58 @@ const reverifyTaskAction: ActionTypeDefinition = {
   },
 };
 
+/**
+ * Registers a repository from a client that talks to a serve on another
+ * machine. The path is on the serve's machine; the refusal is `addRepository`'s,
+ * the same line the command prints.
+ */
+const repoAddAction: ActionTypeDefinition = {
+  name: "repo-add",
+  args: {
+    type: "object",
+    properties: {
+      path: {
+        type: "string",
+        minLength: 1,
+        description: "The repository's path on the machine that runs serve.",
+      },
+      name: {
+        type: "string",
+        minLength: 1,
+        description: "The name to register it under; the folder name when left out.",
+      },
+    },
+    required: ["path"],
+    additionalProperties: false,
+  },
+  confirm: true,
+  when() {
+    return true;
+  },
+  async run(ctx, args) {
+    const given =
+      typeof args === "object" && args !== null
+        ? (args as Record<string, unknown>)
+        : {};
+    const path = given.path;
+    const name = given.name;
+    if (typeof path !== "string") {
+      throw new DevError("path", "repo add needs a path");
+    }
+    if (name !== undefined && typeof name !== "string") {
+      throw new DevError("name", "must be a string");
+    }
+    const repository = await addRepository(ctx.store, {
+      path,
+      ...(name === undefined ? {} : { name }),
+      cwd: ctx.cwd,
+    });
+    return `added ${repository.name} (${repository.path})`;
+  },
+};
+
 export const actions: readonly ActionTypeDefinition[] = [
+  repoAddAction,
   {
     name: "confirm",
     on: "plan",
