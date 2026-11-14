@@ -36,16 +36,27 @@
     ]
   },
   "reviewer": {
-    "use": "claude/agent",
+    "use": "pi/agent",
     "args": [
       "--model",
-      "sonnet",
-      "--effort",
+      "openai-codex/gpt-5.6-terra",
+      "--thinking",
       "medium"
     ],
     "fixLevel": "major",
     "timeoutSecs": 3600,
-    "stallSecs": 900
+    "stallSecs": 900,
+    "fallback": [
+      {
+        "use": "claude/agent",
+        "args": [
+          "--model",
+          "sonnet",
+          "--effort",
+          "medium"
+        ]
+      }
+    ]
   },
   "prepare": [
     "bun install --frozen-lockfile"
