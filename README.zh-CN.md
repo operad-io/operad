@@ -99,7 +99,8 @@ operad dev:merge T-0001-greet --yes
 
 - [User manual](docs/user/index.md)：quickstart、`config.json`、`dev` 插件、access profile、所有命令、排错。
 - [Writing a plugin](docs/plugins/index.md)：给插件作者。
-- [docs/backlog/](docs/backlog/)：方向和还没定的问题。
+- [Architecture decision records](docs/adr/)：在用的决定。
+- [docs/backlog/](docs/backlog/)：计划和还没定的问题。
 - [CONTRIBUTING.md](CONTRIBUTING.md)：怎么参与；[SECURITY.md](SECURITY.md)：私下报告安全漏洞。
 
 ## 状态

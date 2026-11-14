@@ -2,7 +2,7 @@
  * The pending side of the Telegram plugin: what waits for a person goes to
  * Telegram as one message per item, with one button per option.
  *
- * What is sent (decision 7): an item waiting in a chat bound to Telegram goes
+ * What is sent (ADR 0033 D7): an item waiting in a chat bound to Telegram goes
  * to that Telegram chat; an item of a plugin listed in the `pending` setting
  * goes to every listed user; nothing else. The plugin reads the items from the
  * client API's `pending()` whenever `events()` wakes it, and answers through the

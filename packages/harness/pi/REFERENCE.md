@@ -3,7 +3,7 @@
 The pi harness. `src/worker.ts` is the child program: it imports the library of the pi you installed (see "Installing pi"),
 reads one JSON object from stdin, runs one prompt and writes one JSON object per
 line to stdout. The last line is the `Result`. The hub-side step
-(`src/index.ts`, described under "The plugin" below) spawns it. Decisions: `docs/backlog/operad-harness-pi.md` 2, 3, 5, 6, 7.
+(`src/index.ts`, described under "The plugin" below) spawns it. Decisions: ADR 0023 D2, D3, D5, D6, D7.
 
 Run it as `bun packages/harness/pi/src/worker.ts`. stderr is free text for
 humans and is never parsed.
@@ -271,8 +271,8 @@ refused and never asked about, so no fact holds a secret.
   call asks again. After `reject_once` no grant arrives and the model is told so
   in the prompt.
 - A run no person's message started (a schedule, a webhook or another event)
-  neither reads the user layer nor offers `allow_always` (`operad-sandbox.md`
-  decision 8).
+  neither reads the user layer nor offers `allow_always` (`docs/backlog/operad-sandbox.md`,
+  not in an ADR yet).
 
 The host's half (`createCallAsker`, `askCall`, `askRequest`) is in
 `@operad-io/harness-process`. `askCommands` is in the step's `enforces`.

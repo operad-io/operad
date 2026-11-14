@@ -11,7 +11,7 @@
  * sends neither a sent message again nor skips one written while the process was
  * down. A send that fails is retried on the injected wait; a send that gives up
  * is recorded as a `send_failed` event of the plugin and is not tried again. Only replies are sent,
- * never the tool calls (decision 7).
+ * never the tool calls (ADR 0033 D7).
  */
 
 import { CHAT_TYPE, allMessages, chatData, type Message } from "@operad-io/chat";

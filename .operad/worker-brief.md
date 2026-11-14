@@ -1,10 +1,13 @@
 # Working on operad
 
-Read `AGENTS.md` before you change anything. It names the backlog items to read
-and the boundary the kernel keeps.
+Read `AGENTS.md` before you change anything. It names the decisions to read and
+the boundary the kernel keeps.
 
-- Do not contradict a decided point in `docs/backlog/`. A change that needs one
-  reversed changes that item first, in its own docs-only commit.
+- Do not contradict a decided point in `docs/adr/`. A change that needs one
+  reversed changes that ADR first, in its own docs-only commit merged with the
+  code. An ADR is a snapshot; intended work lives in `docs/backlog/`, one file
+  per item, and references the ADRs it touches. A backlog file is deleted when
+  its item lands and its decisions are written into ADRs.
 - The kernel stays small. A feature a plugin could provide belongs in a plugin.
   A user of the kernel sees three words: flow, pending, history. Every other
   user-visible word belongs to a plugin.

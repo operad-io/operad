@@ -92,7 +92,8 @@ export function canAsk(access: unknown): boolean {
 /**
  * The question for one call. The grace and `onTimeout` are the kernel's
  * defaults. `allowAlways` is false in a background run, which neither consults
- * the user layer nor offers to remember a call (`operad-sandbox.md` decision 8).
+ * the user layer nor offers to remember a call (`docs/backlog/operad-sandbox.md`,
+ * not in an ADR yet).
  */
 export function askRequest(call: AskCall, allowAlways = false): AskRequest {
   const prompt =
@@ -121,7 +122,7 @@ export function askRequest(call: AskCall, allowAlways = false): AskRequest {
 
 /**
  * The question of a harness that cannot enforce a one-time permission
- * (`radian`; `operad-contract.md` decision 6): no grant, and a refusal
+ * (`radian`; ADR 0008 D1 to D5): no grant, and a refusal
  * once the grace passes, because a late `allow_once` could not be carried out.
  */
 export function degradedAskRequest(prompt: string): AskRequest {

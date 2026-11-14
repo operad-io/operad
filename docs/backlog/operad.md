@@ -10,7 +10,7 @@
 4'. 迁移不是移植代码，是用新引擎表达现有流水线跑到 parity；现有测试当验收规格。
 7. **生成的步骤默认跑在沙箱里。** 沙箱从 radian 的 agent 里剥出来，变成包任何命令的壳；它是 operad 层的能力，不是某个 harness 的能力。
 8'. **事件是资料、规则是指令**（资料一半已进 ADR 0009）：来源送进来的字决定不了路由、目录、权限；每种插件一把作用域密钥。
-9. **一种 harness 是一个描述文件**，任务和会话同一份；接法有两种，官方 SDK 在进程内当客户端，或 ACP 客户端（`operad-harness.md` 决定 1 到 3）。
+9. **一种 harness 是一个描述文件**，任务和会话同一份；接法有两种，官方 SDK 在进程内当客户端，或 ACP 客户端（ADR 0022 D1 到 D3）。
 11. 新仓库到 parity 之前，Rust arc 继续跑 dogfood；两边并行是计划内的成本。
 
 ## 顺序
@@ -21,7 +21,7 @@
 
 1. 分发方式（npm 之外是否上 Homebrew）；`operad.run` 是否注册。
 2. 沙箱壳的形态：radian 二进制里的子命令（`radian sandbox -- <命令>`），还是独立的小程序。第一版的护栏（访问档：禁入目录、危险命令、询问）已在 `operad-sandbox.md` 定下，不等壳。
-3. iOS app 的后端：已定为 operad 自己的 HTTP 层（`operad-conversation.md` 决定 10）；hub 的会话路由留到对话跑通为止。
+3. iOS app 的后端：已定为 operad 自己的 HTTP 层（ADR 0029 D1）；hub 的会话路由留到对话跑通为止。
 4. 订阅条款：用 Claude Code 订阅账号跑全自动流水线，厂商建议高频自动化用 API key；哪些 flow 允许订阅账号、哪些要求 API key。交互会话不受此限。
 5. 远程机器：push（daemon 拨回）还是 pull。
 

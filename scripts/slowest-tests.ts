@@ -2,7 +2,7 @@
  * slowest-tests.ts <junit.xml>...: prints the ten slowest tests of the runs
  * whose junit reports (bun test --reporter=junit) are named: file, test name,
  * seconds. scripts/run-tests.sh ends its output with this list. It only lists
- * (decision 7 of docs/backlog/operad-test-slimming.md): it exits 0 whatever
+ * (ADR 0036 D4): it exits 0 whatever
  * the reports hold, a missing or unreadable one included.
  */
 import { readFileSync } from "node:fs";

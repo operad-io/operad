@@ -1,7 +1,7 @@
 /**
  * Packages that are not part of the CLI's own dependencies are installed into
  * one Bun project under the operad home when the person enables them
- * (docs/backlog/operad-plugins.md decision 11). The project keeps its own
+ * (ADR 0012 D4). The project keeps its own
  * `package.json` and lockfile; nothing is installed into the CLI's tree.
  *
  * The claude harness needs `@anthropic-ai/claude-agent-sdk`, whose optional
