@@ -132,11 +132,6 @@ function isClosedPipe(error: unknown): boolean {
   );
 }
 
-/** Whether a standard descriptor is a terminal, without creating its stream. */
-function descriptorIsTTY(fd: 0 | 1): boolean {
-  return isatty(fd);
-}
-
 /** stdout's width when it is a terminal; a stream that cannot be read leaves it unknown. */
 function stdoutColumns(): number | undefined {
   if (!isatty(1)) return undefined;
@@ -1161,6 +1156,10 @@ async function promptNote(io: CliIo): Promise<string> {
 
 async function readLine(io: CliIo, prompt: string): Promise<string | undefined> {
   if (io.readLine !== undefined) return io.readLine(prompt);
+  // Only the real command reads the process streams. A caller that injected
+  // its io supplies readLine when it wants prompts; reading the streams there
+  // could hit Bun's stale epoll registration (oven-sh/bun#37968).
+  if (io !== STDIO) return undefined;
   const { createInterface } = await import("node:readline/promises");
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   try {
@@ -2112,12 +2111,15 @@ async function readSecretValue(io: CliIo): Promise<string> {
     if (line === undefined) throw new UsageError("secret set: no value was read");
     return line.replace(/\r?\n$/, "");
   }
-  if (process.stdin.isTTY !== true) {
+  if (!isatty(0)) {
     const text = await Bun.stdin.text();
     const line = text.split(/\r?\n/, 1)[0];
     if (line === undefined) throw new UsageError("secret set: no value was read");
     return line;
   }
+  // As in readLine, a caller that injected its io and wants a secret prompt
+  // supplies readLine; only the real command reads the process streams.
+  if (io !== STDIO) throw new UsageError("secret set: no value was read");
   const { createInterface } = await import("node:readline/promises");
   const rl = createInterface({
     input: process.stdin,
@@ -2471,7 +2473,7 @@ export async function main(
 ): Promise<number> {
   const io = options.io ?? STDIO;
   const home = options.home ?? defaultOperadHome();
-  const tty = options.isTTY ?? (descriptorIsTTY(1) && descriptorIsTTY(0));
+  const tty = options.isTTY ?? (isatty(1) && isatty(0));
   const command = args[0];
 
   try {
@@ -2553,7 +2555,7 @@ export async function main(
         home,
         io,
         args.slice(1),
-        options.isTTY ?? descriptorIsTTY(1),
+        options.isTTY ?? isatty(1),
       );
     }
 

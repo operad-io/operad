@@ -1,7 +1,9 @@
 /**
  * Runs one CLI command with process.stdout, process.stderr and process.stdin
- * unreadable. Reading any of them fails, as Bun's stale epoll registration did
- * under `bun test --isolate` (oven-sh/bun#37968).
+ * unreadable, the way Bun's stale epoll registration made their creation fail
+ * under `bun test --isolate` (oven-sh/bun#37968). This stands in for the
+ * failure deterministically: the upstream issue is Linux-only and has no
+ * standalone reproduction, so the test does not wait for the real collision.
  */
 const home = process.argv[2] ?? "";
 const tty = process.argv[3] === "tty";
