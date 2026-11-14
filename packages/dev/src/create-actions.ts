@@ -162,6 +162,8 @@ const taskAction: ActionTypeDefinition = {
   name: "task",
   on: "plan",
   creates: "task",
+  // A creation action comes after the plan's own next steps and before cancel.
+  rank: () => 4,
   args: taskArgs([], []),
   argsFor: (object, env) => {
     const plan = planData(object.data);
