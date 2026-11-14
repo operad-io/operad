@@ -163,6 +163,20 @@ describe("publishing and installing the packages", () => {
     expect(existsSync(binary)).toBe(true);
 
     const home = join(scratchRoot, "home");
+    const claudePackage = tarballs.get("@operad-io/harness-claude");
+    expect(claudePackage).toBeDefined();
+    const project = join(home, "plugins");
+    mkdirSync(project, { recursive: true });
+    writeFileSync(
+      join(project, "package.json"),
+      JSON.stringify({
+        name: "operad-plugins",
+        private: true,
+        type: "module",
+        dependencies: { "@operad-io/harness-claude": `file:${claudePackage ?? ""}` },
+        overrides: overridesOf(tarballs, ["@operad-io/harness-claude"]),
+      }),
+    );
     const bin = join(scratchRoot, "bin");
     fakeClaude(bin);
     fakeRadian(bin);
@@ -181,10 +195,11 @@ describe("publishing and installing the packages", () => {
       plugins: Record<string, { enabled: boolean }>;
     };
     expect(config.plugins.shell?.enabled).toBe(true);
+    expect(config.plugins.claude?.enabled).toBe(true);
 
-    const missing = run([binary, "plugin", "check", "claude"], scratchRoot, env);
-    expect({ code: missing.code, err: missing.err }).toEqual({ code: 1, err: "" });
-    expect(missing.out).toBe("claude: not installed; run `operad plugin enable claude` to install it\n");
+    const check = run([binary, "plugin", "check", "claude"], scratchRoot, env);
+    expect({ code: check.code, err: check.err }).toEqual({ code: 0, err: "" });
+    expect(check.out).toContain("claude: ok");
   }, 120_000);
 
   test.skipIf(!online)(
