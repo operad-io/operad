@@ -886,6 +886,11 @@ the row fields.
 | T-0462-M2 | packages/engine/src/plugin/install.ts | the requested exact version was dropped from the package spec | `adding a package to the home project > asks Bun for the exact version, or the latest, with scripts off` |
 | T-0462-M3 | packages/engine/src/config/config.ts | a newly added plugin was written enabled instead of off | `plugin add > installs an npm package, prints it, and leaves it off until enable` |
 | T-0462-M4 | packages/engine/src/http/server.ts | the `install` form was not read, so the endpoint asked for a name instead | `plugins over HTTP > installing answers the new entry turned off, and it stays off until enabled` |
+## T-0464 — an action that targets no object
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0464-M8 | packages/engine/src/views/presentation.ts | `act` without an object id no longer ran an action that targets no object | `registering a repository through dev:repo-add over HTTP > it asks to confirm, registers a git work tree with a bare remote, and the repo object lists` (and every other case in that file) |
 
 ## T-0470 — plugin npm install follow-ups
 
@@ -894,9 +899,3 @@ the row fields.
 | T-0470-M4 | packages/engine/src/plugin/install.ts | `removePackage` left the package in the project | `adding a package to the home project > removing a package takes the dependency and its files out again` |
 | T-0470-M5 | packages/engine/src/config/config.ts | `addPluginEntry` took a lock only its own process held, so it did not wait for another writer | `operad config > adding a plugin entry waits for the config lock and keeps the other writer's change` |
 | T-0470-M7 | packages/engine/src/plugin/install.ts | `removePackage` ignored the dependency the project had before the add and removed the package instead of putting the previous spec back | `adding a package to the home project > putting back a dependency the project already named does not remove it` |
-
-## T-0464 — an action that targets no object
-
-| id | file | mutation | failing test |
-|---|---|---|---|
-| T-0464-M8 | packages/engine/src/views/presentation.ts | `act` without an object id no longer ran an action that targets no object | `registering a repository through dev:repo-add over HTTP > it asks to confirm, registers a git work tree with a bare remote, and the repo object lists` (and every other case in that file) |
