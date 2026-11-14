@@ -849,3 +849,13 @@ the row fields.
 | T-0456-M6 | packages/engine/src/views/settings.ts | a deeper setting name with a path the schema has no entry for was not refused with `not-found` | `set with a deeper name follows the same schema, confirm and editable rules` and `POST /v1/settings with a deeper name changes one entry and keeps a concurrent change` |
 | T-0458-M1 | packages/engine/src/views/settings.ts | a project settings file's own `check` was never run before a write, so a flow dev refuses was saved | `dev.flows and dev.flowList in settings > a save that breaks a rule is refused with dev's reason and writes nothing` and `the command line lists and saves flows, and refuses with dev's reason` |
 | T-0458-M2 | packages/engine/src/views/settings.ts | the values a project settings file derives (`dev.flowList`) were left out of the listing | `dev.flows and dev.flowList in settings > flowList reads dev.json, TypeScript and refused TypeScript flows` |
+
+## T-0457 — an object shows how its last run ended
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0457-M1 | packages/engine/src/views/presentation.ts | `lastRun.outcome` was always `done` | `how an object's last run ended, over HTTP > a reply that fails shows outcome failed` |
+| T-0457-M2 | packages/engine/src/views/presentation.ts | the recorded reason was left out of `lastRun` | `how an object's last run ended, over HTTP > a run ended with a reason carries the reason line` |
+| T-0457-M3 | packages/engine/src/views/presentation.ts | the oldest run was read instead of the newest | `how an object's last run ended, over HTTP > a newer run that is still going hides the earlier ending` |
+| T-0457-M4 | packages/engine/src/views/presentation.ts | `lastRun.endedAt` was 0 instead of the ending fact's time | `how an object's last run ended, over HTTP > a reply that ends shows outcome done and when` |
+| T-0457-M5 | packages/engine/src/views/presentation.ts | a failure that recorded no reason of its own did not take the failed step's message | `how an object's last run ended, over HTTP > a reply that fails shows outcome failed` |
