@@ -80,6 +80,13 @@ import {
 } from "@operad-io/engine";
 import { ChannelTypeError, runMcpServer } from "@operad-io/mcp";
 import {
+  guardBackgroundBusy,
+  recordServeFailure,
+  retryWhileBusy,
+  serveStage,
+  tolerateBusy,
+} from "./serve-guard.ts";
+import {
   BIND_FAILED_EXIT,
   codeChecker,
   RELOAD_EXIT,
@@ -1723,9 +1730,14 @@ async function commandServe(
     controller.abort();
   };
   const releaseStop = listenForStop(supervised, stop);
+  const unguard = guardBackgroundBusy({
+    home: context.home,
+    log: (message) => io.error(`${message}\n`),
+  });
 
   let rules: readonly TriggerRule[] = [];
   let sourcesAllowed = true;
+  serveStage("loading the trigger rules");
   try {
     rules = await loadTriggerRules({
       home: context.home,
@@ -1760,6 +1772,7 @@ async function commandServe(
   const olderNotice = olderCodeNotice(context.home);
   olderNotice.clear();
   try {
+    serveStage("starting the http server");
     if (context.config.http.enabled) {
       const startHttp = (): Promise<HttpServerHandle> =>
         startHttpServer({
@@ -1784,10 +1797,12 @@ async function commandServe(
           })
         : await startHttp();
     }
+    serveStage("starting the sources");
     if (sourcesAllowed) {
       await kernel.startSources();
     }
 
+    serveStage("serving");
     io.write(`serving ${context.home}\n`);
     if (context.code !== undefined) {
       const check = codeChecker({
@@ -1839,9 +1854,11 @@ async function commandServe(
       },
     });
   } finally {
+    serveStage("stopping");
+    const say = (message: string): void => io.error(`${message}\n`);
     watch?.stop();
     olderNotice.clear();
-    await notifier.stop();
+    await tolerateBusy("stopping the notifier", () => notifier.stop(), say);
     if (http !== undefined) {
       try {
         await http.stop();
@@ -1852,8 +1869,9 @@ async function commandServe(
         unreleased = error;
       }
     }
-    await kernel.stopSources();
+    await tolerateBusy("stopping the sources", () => kernel.stopSources(), say);
     releaseStop();
+    unguard();
   }
   if (unreleased !== undefined) throw new HandOverStuck(unreleased, outcome === "reload");
   return outcome;
@@ -2682,11 +2700,19 @@ export async function main(
           // serve answers clients that are in no directory: a bare id must not
           // be scoped to the repository serve happened to start in, so its
           // views resolve ids from the home, outside every repository.
-          const opened = await openContext(home, io, {
-            viewsCwd: home,
-            trackCode: true,
-            follow: true,
-          });
+          // A store another process holds is waited for again, not a reason to
+          // end: this is also how new code starts after a reload.
+          serveStage("opening the stores");
+          const opened = await retryWhileBusy(
+            "opening the stores",
+            () =>
+              openContext(home, io, {
+                viewsCwd: home,
+                trackCode: true,
+                follow: true,
+              }),
+            { log: (message) => io.error(`${message}\n`) },
+          );
           const context =
             opened.code === undefined
               ? opened
@@ -2694,12 +2720,14 @@ export async function main(
           try {
             return await commandServe(context, io, args.slice(1), lock, isSupervised, retryBind);
           } finally {
-            context.views.close();
             // Clean up the old plugin store when a serve context ends. An idle
             // handle does not block writers; the busy timeout here came from
-            // other processes committing while a log write waited.
-            closePluginStore(context.registry.store);
-            await context.log.close();
+            // other processes committing while a log write waited. A busy
+            // store at this point must not turn a reload into an exit.
+            const say = (message: string): void => io.error(`${message}\n`);
+            await tolerateBusy("closing the views", () => context.views.close(), say);
+            await tolerateBusy("closing the plugin store", () => closePluginStore(context.registry.store), say);
+            await tolerateBusy("closing the log", () => context.log.close(), say);
           }
         } finally {
           lock.release();
@@ -2927,6 +2955,11 @@ export async function main(
     }
     if (error instanceof ConfigError) {
       io.error(`operad: ${error.message}\n`);
+      return 1;
+    }
+    if (command === "serve" && args[1] !== "stop") {
+      // The line names the operation; the stack's first frames go to serve.log.
+      io.error(`operad: ${recordServeFailure(home, serveStage(), error)}\n`);
       return 1;
     }
     io.error(

@@ -68,6 +68,15 @@ test("isBusy recognises only a SQLITE_BUSY error", () => {
   expect(isBusy(null)).toBe(false);
 });
 
+test("isBusy recognises an extended busy code and a busy error that was wrapped", () => {
+  expect(isBusy(Object.assign(new Error("busy"), { code: "SQLITE_BUSY_SNAPSHOT" }))).toBe(true);
+  expect(isBusy(Object.assign(new Error("busy"), { code: "SQLITE_ERROR", errno: 517 }))).toBe(true);
+  expect(isBusy(Object.assign(new Error("other"), { code: "SQLITE_ERROR", errno: 1 }))).toBe(false);
+  const busy = Object.assign(new Error("database is locked"), { code: "SQLITE_BUSY" });
+  expect(isBusy(new Error("plugin failed", { cause: busy }))).toBe(true);
+  expect(isBusy(new Error("plugin failed", { cause: new Error("other") }))).toBe(false);
+});
+
 test("WAL is switched on once and left on", () => {
   const database = new Database(join(tempDirectory(), "b.sqlite"));
   setBusyTimeout(database);
