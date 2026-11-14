@@ -1276,3 +1276,9 @@ the row fields.
 | T-0468-M1 | packages/dev/src/steps.ts | `mainFirst` returned the union-merged file unchanged | `dev/worktree > a merge with main keeps main's MUTATIONS.md rows before the task's` |
 | T-0468-M2 | packages/dev/src/steps.ts | the conflict branch did not stage the rewritten MUTATIONS.md, so the worker's merge commit kept the union order | `dev/worktree > a conflict the worker resolves keeps main's MUTATIONS.md rows first` |
 | T-0468-M3 | packages/dev/src/steps.ts | the work step did not rewrite the MUTATIONS.md the worker committed | `dev/work > a worker's conflict commit keeps main's MUTATIONS.md rows first` |
+
+## T-0474 — review follow-up for main's MUTATIONS rows
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0474-M1 | packages/dev/src/steps.ts | `mainFirst` took only the merged file's extras and ignored the lines the task appended, so a task table header identical to main's was dropped | `dev/worktree > a merge keeps a task section whose table lines are also in main's section` |

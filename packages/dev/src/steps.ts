@@ -426,13 +426,41 @@ function linesOnlyIn(before: readonly string[], after: readonly string[]): reado
   return added;
 }
 
+/** The lines `after` has in addition to the counts of the same lines in `before`. */
+function linesBeyond(before: readonly string[], after: readonly string[]): readonly string[] {
+  const left = new Map<string, number>();
+  for (const line of before) left.set(line, (left.get(line) ?? 0) + 1);
+  const added: string[] = [];
+  for (const line of after) {
+    const count = left.get(line) ?? 0;
+    if (count === 0) added.push(line);
+    else left.set(line, count - 1);
+  }
+  return added;
+}
+
+/** The lines a task appended to a file since the merge base. */
+function taskAddition(baseText: string, taskText: string): readonly string[] {
+  if (taskText.startsWith(baseText)) return linesOf(taskText.slice(baseText.length));
+  return linesOnlyIn(linesOf(baseText), linesOf(taskText));
+}
+
 /**
- * Main's file unchanged, then the lines the merged file has beyond it, in their
- * order. A union merge puts the task's rows before main's, so the task's lines
- * would otherwise sit inside main's file instead of after it.
+ * Main's file unchanged, then the task's appended lines, then anything else the
+ * merged file has. A union merge puts the task's rows before main's, so the
+ * task's lines would otherwise sit inside main's file instead of after it. The
+ * task's own version says exactly which lines it appended, so a blank line or
+ * table header that is also in main's file is kept.
  */
-function mainFirst(mainText: string, mergedText: string): string {
-  const added = [...linesOnlyIn(linesOf(mainText), linesOf(mergedText))];
+function mainFirst(
+  mainText: string,
+  taskText: string,
+  baseText: string,
+  mergedText: string,
+): string {
+  const taskLines = taskAddition(baseText, taskText);
+  const extra = linesBeyond([...linesOf(mainText), ...taskLines], linesOf(mergedText));
+  const added = [...taskLines, ...extra];
   while (added[0]?.trim() === "") added.shift();
   while (added[added.length - 1]?.trim() === "") added.pop();
   if (added.length === 0) return mainText;
@@ -442,34 +470,46 @@ function mainFirst(mainText: string, mergedText: string): string {
   return `${text}${added.join("\n")}\n`;
 }
 
+/** A MUTATIONS.md main changed since a branch tip, and the merge base it changed from. */
+type MutationChange = {
+  readonly file: string;
+  readonly base: string;
+};
+
 /** The MUTATIONS.md files main changed since a branch tip. */
 function mainChangedMutations(
   path: string,
   before: string,
   mainRef: string,
-): readonly string[] {
+): readonly MutationChange[] {
   const base = git(path, ["merge-base", before, mainRef]);
   if (!base.ok || base.out.length === 0) return [];
   const diff = git(path, ["diff", "--name-only", base.out, mainRef]);
   if (!diff.ok) return [];
-  return diff.out.split("\n").filter((file) => isMutationFile(file));
+  return diff.out
+    .split("\n")
+    .filter((file) => isMutationFile(file))
+    .map((file) => ({ file, base: base.out }));
 }
 
 /** Rewrites the merged MUTATIONS.md files with main's rows first; returns those it changed. */
 function mainFirstMutations(
   path: string,
   mainRef: string,
-  files: readonly string[],
+  taskRef: string,
+  files: readonly MutationChange[],
 ): readonly string[] {
   const conflicted = new Set(conflictedFiles(path));
   const changed: string[] = [];
-  for (const file of files) {
+  for (const { file, base } of files) {
     if (conflicted.has(file)) continue;
     const main = git(path, ["show", `${mainRef}:${file}`], true);
+    const task = git(path, ["show", `${taskRef}:${file}`], true);
+    const fromBase = git(path, ["show", `${base}:${file}`], true);
     const merged = join(path, file);
-    if (!main.ok || !existsSync(merged)) continue;
+    if (!main.ok || !task.ok || !fromBase.ok || !existsSync(merged)) continue;
     const current = readFileSync(merged, "utf8");
-    const next = mainFirst(main.out, current);
+    const next = mainFirst(main.out, task.out, fromBase.out, current);
     if (next === current) continue;
     writeFileSync(merged, next);
     changed.push(file);
@@ -508,7 +548,10 @@ function mergeLatest(path: string, mainRef: string): Prepared {
     if (files.length > 0 || mergeInProgress(path)) {
       // The worker will commit the merge after resolving the other files; put
       // main's rows first now so that commit already has the right order.
-      const changed = mainFirstMutations(path, mainRef, mutationFiles);
+      const changed =
+        before === undefined
+          ? []
+          : mainFirstMutations(path, mainRef, before, mutationFiles);
       if (changed.length > 0) git(path, ["add", "--", ...changed]);
       return {
         kind: "conflict",
@@ -521,7 +564,10 @@ function mergeLatest(path: string, mainRef: string): Prepared {
       `cannot merge "${mainRef}" into the worktree: ${merge.err || merge.out}`,
     );
   }
-  const changed = mainFirstMutations(path, mainRef, mutationFiles);
+  const changed =
+    before === undefined
+      ? []
+      : mainFirstMutations(path, mainRef, before, mutationFiles);
   if (changed.length > 0 && !commitMainFirstMutations(path, changed)) {
     return failed(`cannot keep main's rows first in ${changed.join(", ")}`);
   }
@@ -1405,15 +1451,15 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
   const mergeHead = mergeInProgress(path)
     ? git(path, ["rev-parse", "MERGE_HEAD"]).out
     : undefined;
-  const mergeMutationFiles =
-    mergeHead === undefined || mergeHead.length === 0
-      ? []
-      : (() => {
-          const mergeBefore = headOf(path);
-          return mergeBefore === undefined
-            ? []
-            : mainChangedMutations(path, mergeBefore, mergeHead);
-        })();
+  let mergeTaskRef: string | undefined;
+  let mergeMutationFiles: readonly MutationChange[] = [];
+  if (mergeHead !== undefined && mergeHead.length > 0) {
+    const mergeBefore = headOf(path);
+    if (mergeBefore !== undefined) {
+      mergeTaskRef = mergeBefore;
+      mergeMutationFiles = mainChangedMutations(path, mergeBefore, mergeHead);
+    }
+  }
 
   const stageParams = (ctx.params ?? {}) as {
     readonly flowWorkerBrief?: unknown;
@@ -1828,7 +1874,10 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
     !mergeInProgress(path) &&
     isAncestor(path, mergeHead, afterMerge)
   ) {
-    const changed = mainFirstMutations(path, mergeHead, mergeMutationFiles);
+    const changed =
+      mergeTaskRef === undefined
+        ? []
+        : mainFirstMutations(path, mergeHead, mergeTaskRef, mergeMutationFiles);
     if (changed.length > 0 && !commitMainFirstMutations(path, changed, mergeHead)) {
       return finish("failed", {
         reason: "mutations",

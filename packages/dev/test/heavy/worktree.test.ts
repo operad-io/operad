@@ -308,6 +308,35 @@ describe("dev/worktree", () => {
     );
   });
 
+  test("a merge keeps a task section whose table lines are also in main's section", async () => {
+    const state = await fixture();
+    const base = ["# Mutation records", "", "| id | file |", "|---|---|", "| T-1-M1 | a.ts |", ""].join("\n");
+    const taskSection = ["", "| id | file |", "|---|---|", "| T-2-M1 | b.ts |", ""].join("\n");
+    const mainSection = ["", "| id | file |", "|---|---|", "| T-3-M1 | c.ts |", ""].join("\n");
+    await advanceMain(
+      state.remote,
+      ".gitattributes",
+      "MUTATIONS.md merge=union\n**/MUTATIONS.md merge=union\n",
+      "main declares the union merge",
+    );
+    await advanceMain(state.remote, "MUTATIONS.md", base, "main has mutation records");
+    await runWorktree(state, "run-1");
+    const path = worktreeOf(state);
+    await commitIn(path, "MUTATIONS.md", `${base}${taskSection}`, "task appends a row");
+    await advanceMain(
+      state.remote,
+      "MUTATIONS.md",
+      `${base}${mainSection}`,
+      "main appends a row",
+    );
+
+    const result = await runWorktree(state, "run-2");
+    expect(result.result).toBe("ready");
+    const merged = readFileSync(join(path, "MUTATIONS.md"), "utf8");
+    expect(merged).toBe(`${base}${mainSection}${taskSection}`);
+    expect(merged).toContain("| T-2-M1 | b.ts |");
+  });
+
   test("a task branch that did not touch MUTATIONS.md takes main's file unchanged", async () => {
     const state = await fixture();
     const base = "# Mutation records\n\n| id | file |\n|---|---|\n| T-1-M1 | a.ts |\n";

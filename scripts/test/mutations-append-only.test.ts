@@ -103,10 +103,17 @@ export function mutationProblems(repository: string, base: string): string[] {
 }
 
 /** The commit a check compares with: OPERAD_CHECK_BASE, or the merge base of HEAD and origin/main. */
-export function checkBase(repository: string, env: Readonly<Record<string, string | undefined>>): string {
+export function checkBase(
+  repository: string,
+  env: Readonly<Record<string, string | undefined>>,
+): string | undefined {
   const override = env.OPERAD_CHECK_BASE;
   if (override !== undefined && override !== "") return override;
-  return git(repository, "merge-base", "HEAD", "origin/main").trim();
+  try {
+    return git(repository, "merge-base", "HEAD", "origin/main").trim();
+  } catch {
+    return undefined;
+  }
 }
 
 function write(path: string, text: string): void {
@@ -135,9 +142,18 @@ function repository(): { root: string; base: string } {
   return { root: path, base: git(path, "rev-parse", "HEAD").trim() };
 }
 
+const base = checkBase(root, process.env);
+const realRepositoryTest = base === undefined ? test.skip : test;
+
 describe("MUTATIONS.md files are append-only", () => {
-  test("every file still starts with the lines of its version at the check base", () => {
-    expect(mutationProblems(root, checkBase(root, process.env))).toEqual([]);
+  realRepositoryTest("every file still starts with the lines of its version at the check base", () => {
+    if (base === undefined) return;
+    expect(mutationProblems(root, base)).toEqual([]);
+  });
+
+  test("the check base is unset when OPERAD_CHECK_BASE is unset and origin/main is absent", () => {
+    const { root: path } = repository();
+    expect(checkBase(path, {})).toBeUndefined();
   });
 
   test("a deleted row fails and names the file and the first missing line", () => {
@@ -145,6 +161,14 @@ describe("MUTATIONS.md files are append-only", () => {
     write(join(path, "MUTATIONS.md"), BASE.replace("| T-0001-M1 | a.ts | base | `test > base` |\n", ""));
     expect(mutationProblems(path, base)).toEqual([
       'MUTATIONS.md: line 5 is missing, changed or moved: "| T-0001-M1 | a.ts | base | `test > base` |"',
+    ]);
+  });
+
+  test("a deleted file fails and names its first base line", () => {
+    const { root: path, base: commit } = repository();
+    rmSync(join(path, "MUTATIONS.md"));
+    expect(mutationProblems(path, commit)).toEqual([
+      'MUTATIONS.md: the file is missing; its first line was "# Mutation records"',
     ]);
   });
 
