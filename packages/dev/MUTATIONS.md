@@ -1154,3 +1154,8 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0432-M1 | packages/dev/src/integration-queue.ts | `withLandLock` ran its work without the lock, so a withdrawal slipped between the leader's last check and its push | `a follower cancelled while the leader may push > a cancel that waits behind the push reports the merge, not a cancel` |
+## T-0430-fresh-home-runs-task — the Quickstart starts the task
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0430-M2 | packages/dev/src/schedule.ts | the scheduler's start of a ready task whose plan's auto level is not `off` never matched (`plan.auto !== "off"` became `plan.auto === "never"`), so `dev:auto --level run` started nothing | `a fresh home follows the Quickstart > operad init, then the Quickstart's commands in order, start the task` |

@@ -57,6 +57,7 @@ operad dev repo add .       # register this repository
 operad dev plan add --slug hello --title "Add a greeting" < request.md
 operad dev task add --plan P-0001-hello --slug greet --title "Print the greeting" < task.md
 operad dev:confirm P-0001-hello
+operad dev:auto P-0001-hello --level run   # a new plan's auto level is off, which starts nothing; run lets serve start its tasks
 operad serve                # run the loop
 
 operad pending              # what waits for you

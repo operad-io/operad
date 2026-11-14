@@ -121,7 +121,8 @@ RunDone(t) ==
   /\ EndRun(t, w)
   /\ UNCHANGED <<want, isFb, attempts, waits>>
 
-(* The model is unavailable or at its usage limit, or the harness cannot start.
+(* The model is unavailable or at its usage limit, or the harness process
+   cannot start (a failed result with reason `missing` or `spawn`).
    D8: a worker with a fallback runs it, after its own places are released.
    D9: otherwise the step waits and runs the same worker again, then a person. *)
 RunModelError(t) ==
@@ -143,7 +144,8 @@ RunModelError(t) ==
                    /\ UNCHANGED <<want, isFb, waits>>
   /\ UNCHANGED attempts
 
-(* A timeout or another failure: D8 says no fallback; a person judges. *)
+(* A timeout, a thrown harness step or another failure: D8 says no fallback;
+   a person judges. *)
 RunFailed(t) ==
   LET w == holds[t] IN
   /\ phase[t] = "running"

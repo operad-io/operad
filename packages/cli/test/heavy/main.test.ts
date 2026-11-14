@@ -610,20 +610,20 @@ describe("operad command", () => {
     expect(disabled.text()).toContain("notes: disabled");
   });
 
-  test("plugin enable pool works on a fresh init home and keeps its plugins and mcp lists", async () => {
+  test("plugin enable bot works on a fresh init home and keeps its plugins and mcp lists", async () => {
     const root = await tempRoot();
     const fresh = join(root, "home");
     {
       await ensureConfig(fresh, distributionConfig(fresh));
       const out = capture();
-      expect(await main(["plugin", "enable", "pool"], { home: fresh, io: out.io })).toBe(0);
+      expect(await main(["plugin", "enable", "bot"], { home: fresh, io: out.io })).toBe(0);
       const written = JSON.parse(readFileSync(join(fresh, "config.json"), "utf8")) as {
         plugins: Record<string, unknown>;
         mcp: { actions: string[] };
       };
-      expect(Object.keys(written.plugins)).toEqual(["shell", "radian", "chat", "dev", "pool"]);
+      expect(Object.keys(written.plugins)).toEqual(["shell", "radian", "chat", "pool", "dev", "bot"]);
       expect(written.mcp.actions).toContain("dev:rework");
-      expect(written.mcp.actions.some((name) => name.startsWith("pool:"))).toBe(false);
+      expect(written.mcp.actions.some((name) => name.startsWith("bot:"))).toBe(false);
     }
   });
 

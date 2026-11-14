@@ -189,3 +189,9 @@ the row fields.
 | T-0428-M1 | packages/cli/src/main.ts | `readLine` fell back to `process.stdin` and `process.stdout` for an injected io without `readLine`, so a note prompt read the streams | `the CLI's main with injected output > a note prompt does not read process.stdin when injected io has no readLine` |
 | T-0428-M2 | packages/cli/src/main.ts | `readSecretValue` checked `process.stdin.isTTY` instead of the descriptor, so `secret set` read the stream even when stdin was a pipe | `the CLI's main with injected output > secret set does not read process.stdin when injected io has no readLine` |
 | T-0428-M3 | packages/cli/src/main.ts | `readSecretValue` let an injected io without `readLine` read `process.stdin` when stdin was a terminal, so `secret set` touched the stream instead of stopping | `the CLI's main with injected output > secret set with a terminal stdin stops before reading process.stdin` |
+
+## T-0430-fresh-home-runs-task — a fresh home has pool
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0430-M1 | packages/cli/src/defaults.ts | `pool` left out of `DEFAULT_PLUGINS`, so `operad init` did not install the plugin dev runs its workers through | `a fresh home follows the Quickstart > operad init, then the Quickstart's commands in order, start the task` (in `packages/dev/test/heavy/fresh-home.test.ts`) |

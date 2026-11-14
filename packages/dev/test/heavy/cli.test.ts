@@ -884,7 +884,7 @@ describe("operad with the dev plugin", () => {
     const none = await run(home, outside, ["start", "T-0001-x"]);
     expect(none.code).not.toBe(0);
     expect(none.err).toContain(`no registered repository contains`);
-    expect(none.err).toContain("operad repo add <path>");
+    expect(none.err).toContain("operad dev repo add <path>");
 
     // Register and seed the two repositories directly: this test is about how
     // the CLI resolves ids, not about adding the objects.

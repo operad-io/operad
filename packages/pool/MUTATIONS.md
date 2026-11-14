@@ -37,3 +37,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0349-M1 | packages/pool/src/index.ts | did not tell the step that asked when it gave the worker a place | `a work step that holds a worker's place and does not start it (T-0349) > the task says the worker has not started, and says when it has` (packages/dev/test/wrap-up.test.ts) |
+
+## T-0431 — a thrown first attempt does not fall back
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0431-M1 | packages/pool/src/index.ts | treated a thrown first attempt as a fallback trigger again | `fallback > a worker with a fallback whose step throws does not run the fallback` |

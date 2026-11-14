@@ -8,11 +8,12 @@ import {
 } from "@operad-io/engine";
 
 /** The plugins `operad init` installs, in load order. */
-export const DEFAULT_PLUGINS: readonly string[] = ["shell", "radian", "chat", "dev"];
+export const DEFAULT_PLUGINS: readonly string[] = ["shell", "radian", "chat", "pool", "dev"];
 
 /**
- * Plugins shipped with operad that `operad init` does not install. They are
- * not in the default config; `plugin enable <name>` adds them.
+ * Plugins shipped with operad that `plugin enable <name>` can add. Most are not
+ * in the default config; `pool` is, and stays here so a home made before init
+ * installed it can still enable it.
  */
 export const OPTIONAL_PLUGINS: readonly string[] = ["pi", "claude", "codex", "pool", "bot", "telegram"];
 
