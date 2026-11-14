@@ -1154,3 +1154,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0430-M2 | packages/dev/src/schedule.ts | the scheduler's start of a ready task whose plan's auto level is not `off` never matched (`plan.auto !== "off"` became `plan.auto === "never"`), so `dev:auto --level run` started nothing | `a fresh home follows the Quickstart > operad init, then the Quickstart's commands in order, start the task` |
+
+## T-0436 — the settings API cases run the cli in this process
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0436-M1 | packages/dev/src/commands.ts | `plan add` no longer read the repository's `autoDefault` (`auto: "off"`), so a new plan started at off | `dev settings through operad settings > a new plan starts at the auto level the repository sets` (its `expect(line).toContain("  run  ")`) |
