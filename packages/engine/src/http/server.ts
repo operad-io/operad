@@ -4,6 +4,7 @@
  * starts this; no other command opens the port.
  */
 
+import type { PluginAdmin } from "./plugins.ts";
 import { randomBytes } from "node:crypto";
 import type { HttpConfig } from "../config/config.ts";
 import type { LogBackend } from "../log/types.ts";
@@ -58,6 +59,8 @@ export interface HttpServerOptions {
   readonly log: LogBackend;
   readonly registry: PluginRegistry;
   readonly kernel?: Kernel | undefined;
+  /** Lists and switches plugins for `/v1/plugins`; without it the endpoint is `404`. */
+  readonly plugins?: PluginAdmin | undefined;
   readonly onLog?: ((message: string) => void) | undefined;
   /** Called once per address with the URL it listens on. */
   readonly onListen?: ((url: string) => void) | undefined;
@@ -546,6 +549,42 @@ function createHandler(
 
     if (method === "GET" && path === "/v1/running") {
       return json(await listRunning(options.log, options.clock, options.views));
+    }
+
+    if (path === "/v1/plugins") {
+      const admin = options.plugins;
+      if (admin === undefined) return errorResponse(404, "not-found", "no such endpoint");
+      if (method === "GET") return json({ plugins: await admin.list() });
+      if (method !== "POST") {
+        return errorResponse(405, "method", "this endpoint takes GET or POST");
+      }
+      const body = await readBody(request);
+      if (!isRecord(body)) {
+        return errorResponse(400, "args", "the body must be an object");
+      }
+      const { name, enabled, confirmed } = body;
+      if (typeof name !== "string" || name.length === 0) {
+        return errorResponse(400, "args", "the body needs a name");
+      }
+      if (typeof enabled !== "boolean") {
+        return errorResponse(400, "args", "enabled must be true or false");
+      }
+      if (confirmed !== undefined && typeof confirmed !== "boolean") {
+        return errorResponse(400, "args", "confirmed must be a boolean");
+      }
+      const actor: Actor = { via: clientName(request.headers.get(CLIENT_HEADER)), id: token.label };
+      try {
+        const plugin = await admin.set(name, enabled, { confirmed: confirmed === true, actor });
+        onLog(`http: plugin "${name}" ${enabled ? "enabled" : "disabled"} via ${actor.via} as ${actor.id}`);
+        return json({ plugin });
+      } catch (error) {
+        if (error instanceof ViewError) {
+          onLog(`http: plugin "${name}" refused (${viewErrorStatus(error.kind)}): ${error.message}`);
+          throw error;
+        }
+        onLog(`http: plugin "${name}" refused (422): ${messageOf(error)}`);
+        return errorResponse(422, "refused", messageOf(error));
+      }
     }
 
     if (path === "/v1/settings") {
