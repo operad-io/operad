@@ -174,6 +174,17 @@ alone, is handled as before.
 A repository's own flows are explained in [Flows and their stages](#flows-and-their-stages). The built-in
 `default` flow is used when `flows` is absent.
 
+A client can read and change these flows without touching the file:
+`operad settings --repo <name>` lists `dev.flowList`, every flow of the
+repository with where it comes from (`dev.json`, `typescript` or `built-in`), its
+stages (a `dev.json` flow) or its steps (a TypeScript flow), or dev's reason when
+it refuses a TypeScript file. `operad settings set dev.flows.<name> '<flow
+JSON>' --repo <name>` saves one `dev.json` flow (`null` removes it; `dev.flows`
+sets them all). Dev checks the whole file first: its schema, the rules below
+and a name a TypeScript flow in `.operad/flows` also has. A refusal prints dev's
+reason, and the file is unchanged. The same names work over HTTP
+([Settings](http.md#settings)).
+
 | Key | Type | Default | Allowed values | When it takes effect | Wrong value |
 |---|---|---|---|---|---|
 | `dev.flows` | object | absent: the built-in `default` flow | flow name to a flow object | When a plan or task starts a run of that flow | Refused: `flows: must be a JSON object`, `flows: a flow needs a non-empty name`, or the flow's own error |

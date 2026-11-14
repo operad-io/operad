@@ -272,6 +272,8 @@ function viewErrorStatus(kind: ViewError["kind"]): number {
     case "not-available":
     case "confirm":
       return 409;
+    case "refused":
+      return 422;
     case "timeout":
       return 504;
     default:

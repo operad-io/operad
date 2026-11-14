@@ -134,7 +134,20 @@ lock, so an entry another client changed meanwhile is kept; a client that wrote
 the whole map would overwrite it, so prefer the deeper name. The value is checked
 against the schema of that entry, and the parent setting's `editable` and
 `confirm` rules apply. A path the schema has no entry for is `404`. A `null`
-value at a deeper name removes the entry or field. `POST /v1/act` also records the caller as `{ "via":
+value at a deeper name removes the entry or field. The flows of a repository are settings too. `dev.flows` (scope: the repository)
+is editable, whole or by name (`dev.flows.<name>`, `null` removes one), and `dev`
+checks the whole `dev.json` as it would be written before it writes it: the
+schema, the two hard rules of a flow and a name a TypeScript flow also has. A
+change `dev` refuses is `422` with `dev`'s own reason, word for word, and
+nothing is written; a client does not repeat the rules. `dev.flowList` is a
+read-only setting whose value lists every flow of the repository, TypeScript
+ones included: `[{ "name", "source": "dev.json" | "typescript" | "built-in",
+"stages"?, "steps"?, "refused"? }]`. A `dev.json` flow carries its `stages`; a
+TypeScript flow carries the `steps` (`id`, `kind`, `use`) `dev` reads when it
+loads the file, or `refused` with `dev`'s reason when the file breaks a rule. A
+TypeScript flow is still saved as a file.
+
+`POST /v1/act` also records the caller as `{ "via":
 "<client>", "id": "<token label>" }`; the token label is `operad app` unless the
 secret store names another.
 

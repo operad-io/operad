@@ -60,7 +60,8 @@ describe("dev settings through operad settings", () => {
     expect(project.out).not.toContain("dev.dev.");
     for (const item of items) {
       expect(item.description).toBeTruthy();
-      expect(item.editable).toBe(true);
+      // dev.flowList is the one read-only setting: the flows a client reads.
+      expect(item.editable).toBe(item.name !== "dev.flowList");
     }
     const old = await run(home, repository, [
       "settings", "set", "dev.dev.concurrency", "2", "--repo", name,
