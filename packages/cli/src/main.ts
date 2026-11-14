@@ -78,6 +78,7 @@ import {
   type ViewRow,
   type Views,
 } from "@operad-io/engine";
+import { isBusy } from "@operad-io/engine/platform";
 import { ChannelTypeError, runMcpServer } from "@operad-io/mcp";
 import {
   BIND_FAILED_EXIT,
@@ -2682,11 +2683,23 @@ export async function main(
           // serve answers clients that are in no directory: a bare id must not
           // be scoped to the repository serve happened to start in, so its
           // views resolve ids from the home, outside every repository.
-          const opened = await openContext(home, io, {
-            viewsCwd: home,
-            trackCode: true,
-            follow: true,
-          });
+          // A store another process holds past the busy timeout (a schema
+          // change on reload takes the write lock) must not end the serve:
+          // open again until it is free.
+          let opened: Awaited<ReturnType<typeof openContext>>;
+          for (;;) {
+            try {
+              opened = await openContext(home, io, {
+                viewsCwd: home,
+                trackCode: true,
+                follow: true,
+              });
+              break;
+            } catch (error) {
+              if (!isBusy(error)) throw error;
+              io.error(`serve: ${error instanceof Error ? error.message : String(error)}\n`);
+            }
+          }
           const context =
             opened.code === undefined
               ? opened

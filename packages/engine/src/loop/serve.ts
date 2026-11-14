@@ -294,9 +294,10 @@ export async function serveOnce(
         } else if (!(error instanceof ActiveRunError)) throw error;
       }
     }
-    // Only a pass that took every start request drains them. A busy store leaves
-    // them in place, so the next pass tries the same starts again.
-    options.registry.takeStartedRuns();
+    // Only a pass that tried every request in its snapshot drains them, and
+    // only those: a request pushed meanwhile waits for the next pass. A busy
+    // store leaves them in place, so the next pass tries the same starts again.
+    options.registry.takeStartedRuns(requests.length);
 
     if (options.shouldStop?.() !== true) {
       await applyRecordedAnswers({
@@ -381,7 +382,7 @@ export async function serveOnce(
     // A store another process holds past the busy timeout fails this pass,
     // not the serve: the work that needs it is tried again on the next pass.
     if (!isBusy(error)) throw error;
-    options.onLog?.("serve: database is locked; trying again");
+    options.onLog?.(`serve: ${error instanceof Error ? error.message : String(error)}`);
   }
 
   return { started, spawned };

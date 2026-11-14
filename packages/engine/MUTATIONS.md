@@ -833,3 +833,10 @@ the row fields.
 | T-0445-M1 | packages/engine/src/loop/serve.ts | a pass that met `SQLITE_BUSY` rethrew it (the old code), so the CLI's last-resort handler ended serve | `serve while another process holds the store's write lock > logs the busy pass, keeps running, and serves the next run after the lock is released` |
 | T-0445-M2 | packages/engine/src/plugin/sqlite-store.ts | the background poll rethrew `SQLITE_BUSY` instead of skipping the turn | `a poll that meets a busy store skips its turn instead of throwing` |
 | T-0445-M4 | packages/engine/src/log/sqlite.ts | log writes used `transaction(work).immediate()` again instead of the platform's `writeImmediate`, so they gave up at the busy timeout while another process kept committing | `a log write waits past the busy timeout while another process commits` |
+
+## T-0452 — serve-survives-busy-store follow-ups
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0452-M1 | packages/engine/src/plugin/registry.ts | `takeStartedRuns(count)` ignored `count` and drained everything | `takeStartedRuns(count) drains only the oldest requests` |
+| T-0452-M2 | packages/engine/src/platform/sqlite-open.ts | `isBusy` matched only the exact `SQLITE_BUSY` code again | `isBusy recognises only a SQLITE_BUSY error` |
