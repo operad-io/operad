@@ -1269,3 +1269,10 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0473-M1 | packages/dev/src/lock.ts | `withRepositoryLock` ignored the home it was given and took the lock in the default home | `the repository lock > a live holder past the deadline is a dev lock error naming its pid` and `... > the lock lives in the operad home, not the working tree, and is gone afterwards` |
+## T-0468 — main's MUTATIONS rows stay first
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0468-M1 | packages/dev/src/steps.ts | `mainFirst` returned the union-merged file unchanged | `dev/worktree > a merge with main keeps main's MUTATIONS.md rows before the task's` |
+| T-0468-M2 | packages/dev/src/steps.ts | the conflict branch did not stage the rewritten MUTATIONS.md, so the worker's merge commit kept the union order | `dev/worktree > a conflict the worker resolves keeps main's MUTATIONS.md rows first` |
+| T-0468-M3 | packages/dev/src/steps.ts | the work step did not rewrite the MUTATIONS.md the worker committed | `dev/work > a worker's conflict commit keeps main's MUTATIONS.md rows first` |
