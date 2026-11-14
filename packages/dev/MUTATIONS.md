@@ -1166,3 +1166,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0436-M1 | packages/dev/src/commands.ts | `plan add` no longer read the repository's `autoDefault` (`auto: "off"`), so a new plan started at off | `dev settings through operad settings > a new plan starts at the auto level the repository sets` (its `expect(line).toContain("  run  ")`) |
+
+## T-0437 — the real-binary CLI test starts the binary twice
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0437-M1 | packages/dev/src/refusals.ts | the plan's second confirm said "already done", so the in-process confirm check no longer matched | `operad with the dev plugin > the real binary registers, plans, lists, shows and confirms` |
