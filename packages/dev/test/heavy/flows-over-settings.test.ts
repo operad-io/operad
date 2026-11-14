@@ -4,6 +4,14 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   PluginRegistry,
+  SqlitePluginStore,
+  createViews,
+  loadPluginRegistry,
+  openConfigLog,
+  readConfig,
+  readHttpToken,
+  startHttpServer,
+  storeRootOf,
   SettingsError,
   listSettings,
   setSetting,
@@ -143,7 +151,7 @@ describe("dev.flows and dev.flowList in settings", () => {
     const noDecision = await refusal(
       setSetting(options, "dev.flows.bad", { stages: [{ stage: "work" }] }, { scope: "repo" }),
     );
-    expect(noDecision.kind).toBe("args");
+    expect(noDecision.kind).toBe("refused");
     expect(noDecision.message).toBe(
       "flows.bad.stages: needs at least one check, review or human stage",
     );
@@ -181,5 +189,51 @@ describe("dev.flows and dev.flowList in settings", () => {
     expect(refused.code).toBe(2);
     expect(refused.err).toContain("flows.bad.stages: needs at least one check, review or human stage");
     expect(readFileSync(devFile, "utf8")).toBe(before);
+  });
+
+  test("over HTTP a refusal is 422 with dev's reason, and the file is unchanged", async () => {
+    const { root, home, devFile } = await setup();
+    writeFileSync(
+      join(home, "config.json"),
+      `${JSON.stringify({
+        plugins: [PLUGIN, POOL, SHELL],
+        store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
+        http: { enabled: true, port: 0, listen: ["127.0.0.1"] },
+      })}\n`,
+    );
+    const config = await readConfig(home);
+    const store = new SqlitePluginStore({ root: storeRootOf(config) });
+    const log = openConfigLog(config);
+    const registry = await loadPluginRegistry({ home, store });
+    const views = createViews({ registry, store, log, loadTimeoutMs: 200, onLog: () => undefined });
+    const server = await startHttpServer({
+      home,
+      config: { enabled: true, port: 0, listen: ["127.0.0.1"] },
+      views,
+      log,
+      registry,
+      onLog: () => undefined,
+    });
+    try {
+      const token = await readHttpToken(home);
+      const post = (value: unknown): Promise<Response> =>
+        fetch(`${server.urls[0]}/v1/settings`, {
+          method: "POST",
+          headers: { authorization: `Bearer ${token?.token}`, "content-type": "application/json" },
+          body: JSON.stringify({ name: "dev.flows.bad", value, scope: "repo" }),
+        });
+      const before = readFileSync(devFile, "utf8");
+      const refused = await post({ stages: [{ stage: "work" }] });
+      expect(refused.status).toBe(422);
+      expect(((await refused.json()) as { error: { message: string } }).error.message).toBe(
+        "flows.bad.stages: needs at least one check, review or human stage",
+      );
+      expect(readFileSync(devFile, "utf8")).toBe(before);
+      expect((await post(GOOD)).status).toBe(200);
+    } finally {
+      await server.stop();
+      views.close();
+      await log.close();
+    }
   });
 });

@@ -205,6 +205,7 @@ export type ViewErrorKind =
   | "note"
   | "confirm"
   | "args"
+  | "refused"
   | "where"
   | "filter"
   | "cursor";

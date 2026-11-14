@@ -48,7 +48,9 @@ export type SettingsErrorKind =
   | "args"
   | "not-available"
   | "confirm"
-  | "ambiguous";
+  | "ambiguous"
+  /** The plugin's own check refused the change; the message is its reason. */
+  | "refused";
 
 /** A settings call refused; nothing was written. */
 export class SettingsError extends Error {
@@ -228,7 +230,7 @@ async function runCheck(place: Place, value: unknown): Promise<void> {
   const check = project?.file.check;
   if (project === undefined || check === undefined || !isRecord(value)) return;
   const reason = await check({ repository: project.repository, value });
-  if (reason !== undefined) throw new SettingsError("args", reason);
+  if (reason !== undefined) throw new SettingsError("refused", reason);
 }
 
 async function readPlace(place: Place): Promise<unknown> {

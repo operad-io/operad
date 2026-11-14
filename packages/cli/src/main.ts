@@ -2936,6 +2936,7 @@ export async function main(
         error.kind === "confirm" ||
         error.kind === "ambiguous" ||
         error.kind === "args" ||
+        error.kind === "refused" ||
         error.kind === "where" ||
         error.kind === "cursor"
       ) {

@@ -859,3 +859,4 @@ the row fields.
 | T-0457-M3 | packages/engine/src/views/presentation.ts | the oldest run was read instead of the newest | `how an object's last run ended, over HTTP > a newer run that is still going hides the earlier ending` |
 | T-0457-M4 | packages/engine/src/views/presentation.ts | `lastRun.endedAt` was 0 instead of the ending fact's time | `how an object's last run ended, over HTTP > a reply that ends shows outcome done and when` |
 | T-0457-M5 | packages/engine/src/views/presentation.ts | a failure that recorded no reason of its own did not take the failed step's message | `how an object's last run ended, over HTTP > a reply that fails shows outcome failed` |
+| T-0458-M6 | packages/engine/src/http/server.ts | a refusal by a plugin's own settings check (`refused`) was answered `400` instead of `422` | `dev.flows and dev.flowList in settings > over HTTP a refusal is 422 with dev's reason, and the file is unchanged` |
