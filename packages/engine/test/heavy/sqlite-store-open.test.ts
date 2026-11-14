@@ -123,3 +123,32 @@ test("a write waits for another process's write transaction and succeeds after i
   expect(store.get("note", "one")?.data).toEqual({ text: "hello" });
   store.close();
 });
+
+test("a poll that meets a busy store skips its turn instead of throwing", () => {
+  const file = tempFile();
+  const store = new SqlitePluginStore({ root: join(file, ".."), file });
+  try {
+    const real = store["db"];
+    const busy = new Proxy(real, {
+      get(target, property, receiver) {
+        if (property === "query") {
+          return () => {
+            throw Object.assign(new Error("database is locked"), {
+              code: "SQLITE_BUSY",
+            });
+          };
+        }
+        const value: unknown = Reflect.get(target, property, receiver);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    (store as unknown as { db: Database }).db = busy;
+    expect(() => (store as unknown as { pollFacts(): void }).pollFacts()).not.toThrow();
+
+    (store as unknown as { db: Database }).db = real;
+    store.put("note", "one", { text: "hello" }, "test");
+    expect(() => (store as unknown as { pollFacts(): void }).pollFacts()).not.toThrow();
+  } finally {
+    store.close();
+  }
+});

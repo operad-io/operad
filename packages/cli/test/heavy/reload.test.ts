@@ -14,6 +14,7 @@ const CLI_ENTRY = fileURLToPath(new URL("../../bin/operad.ts", import.meta.url))
 const ENGINE = fileURLToPath(new URL("../../../engine/src/index.ts", import.meta.url));
 const PLATFORM = fileURLToPath(new URL("../../../engine/src/platform/index.ts", import.meta.url));
 const SUPERVISE = fileURLToPath(new URL("../fixtures/supervise-serve.ts", import.meta.url));
+const LSOF = Bun.which("lsof");
 
 /** The plugin of every test: `hold` waits for a file, `stamp` writes the version of its code. */
 function pluginSource(version: string, work: string): string {
@@ -261,6 +262,21 @@ async function stopServe(setupValue: Setup): Promise<void> {
   await operad(setupValue, ["serve", "stop"]);
 }
 
+/** The files a process has open, when the system can list them. */
+function openFiles(pid: number): string[] {
+  if (LSOF === null) return [];
+  const result = Bun.spawnSync({
+    cmd: [LSOF, "-p", String(pid), "-Fn"],
+    stdout: "pipe",
+    stderr: "ignore",
+  });
+  return result.stdout
+    .toString()
+    .split("\n")
+    .filter((line) => line.startsWith("n"))
+    .map((line) => line.slice(1));
+}
+
 async function runFirstCase(): Promise<void> {
   const s = await setup();
   const serve = spawnOperad(s, ["serve"]);
@@ -301,6 +317,31 @@ async function runFirstCase(): Promise<void> {
     expect(await serve.exited).toBe(0);
   }
 }
+
+test.skipIf(LSOF === null)("the process that becomes the supervisor closes the old plugin store on reload", async () => {
+  const s = await setup();
+  const serve = spawnOperad(s, ["serve"]);
+  const output = new Output(serve.stdout, serve.stderr);
+  try {
+    await output.until(/serving /);
+    const pid = serve.pid;
+    if (pid === undefined) throw new Error("serve has no pid");
+    expect(readLockPid(join(s.home, "serve.lock"))).toBe(pid);
+
+    writeFileSync(s.plugin, pluginSource("v2", s.work));
+    await output.until(/reloading: /);
+    await output.until(/serving /, 2);
+    expect(serve.exitCode).toBeNull();
+
+    // This process is now the supervisor. Its old serve context held the
+    // plugin store open; the new child needs the file to itself.
+    const files = openFiles(pid);
+    expect(files.filter((path) => path.includes("/plugins.sqlite"))).toEqual([]);
+  } finally {
+    await stopServe(s);
+    await serve.exited;
+  }
+}, 60_000);
 
 describe("a serve picks up changed code", () => {
   test("a running step finishes on the old code; the next step runs the new code", async () => {

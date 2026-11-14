@@ -202,3 +202,9 @@ the row fields.
 |---|---|---|---|
 | T-0441-M1 | packages/cli/src/main.ts | the harness list was always empty, so `operad init` never enabled claude or pi for a command on `PATH` | `\`operad init\` finds the agent on PATH > only claude is enabled, and its package is not a CLI dependency` and `... > only pi is enabled` |
 | T-0441-M5 | packages/cli/src/main.ts | `init` installed claude only when it had just created the config, so a second init did not retry an install that failed after the config was written | `publishing and installing the packages > init retries a claude install that failed after config.json was written` |
+
+## T-0445 — serve survives a busy store
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0445-M3 | packages/cli/src/main.ts | the serve context did not close its plugin store, so the process that became the supervisor kept `plugins.sqlite` open | `the process that becomes the supervisor closes the old plugin store on reload` |
