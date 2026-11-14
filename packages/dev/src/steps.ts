@@ -371,9 +371,12 @@ function failed(message: string, files?: readonly string[]): Prepared {
 
 /** True for the root and package files whose rows are appended, never moved. */
 function isMutationFile(path: string): boolean {
+  const parts = path.split("/");
   return (
     path === "MUTATIONS.md" ||
-    (path.startsWith("packages/") && path.endsWith("/MUTATIONS.md"))
+    (parts.length >= 3 &&
+      parts[0] === "packages" &&
+      parts[parts.length - 1] === "MUTATIONS.md")
   );
 }
 
