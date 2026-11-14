@@ -10,7 +10,14 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CHAT_TYPE, allMessages, chatData } from "@operad-io/chat";
-import { Runner, defineFlow, definePlugin, serveOnce, type SourceContext } from "@operad-io/engine";
+import {
+  GROWTH_EVENT_INTERVAL_MS,
+  Runner,
+  defineFlow,
+  definePlugin,
+  serveOnce,
+  type SourceContext,
+} from "@operad-io/engine";
 import { fakeClock, type FakeClock } from "@operad-io/engine/testing";
 import devPlugin, { addPlan, addRepository, addTask, confirmPlan, getTask, setTaskPhase, taskData } from "@operad-io/dev";
 import {
@@ -123,6 +130,11 @@ function clockWait(clock: FakeClock): (ms: number, signal: AbortSignal) => Promi
       handle = clock.setTimeout(done, Math.max(0, ms));
       signal.addEventListener("abort", done, { once: true });
     });
+}
+
+/** Lets work already woken by a clock advance run before the next assertion. */
+function nextTurn(): Promise<void> {
+  return new Promise<void>((resolve) => setImmediate(resolve));
 }
 
 /** Starts the plugin's three parts as `start(ctx)` does, on one fake Bot API. */
@@ -343,6 +355,7 @@ test("the telegram plugin starts and stops typing through a real chat reply run"
 test("typing follows a real chat reply run from its start to its end", async () => {
   const root = await mkdtemp(join(tmpdir(), "telegram-typing-run-"));
   roots.push(root);
+  const clock = fakeClock();
   let release: (() => void) | undefined;
   let entered: (() => void) | undefined;
   const gate = new Promise<void>((resolve) => {
@@ -355,6 +368,7 @@ test("typing follows a real chat reply run from its start to its end", async () 
     root,
     users: [42],
     follow: true,
+    clock: () => clock.now(),
     agent: async () => {
       entered?.();
       await gate;
@@ -363,7 +377,6 @@ test("typing follows a real chat reply run from its start to its end", async () 
   });
   const { ctx, runners } = serveLoop(w, root);
   const api = new LongPollApi();
-  const clock = fakeClock();
   const typing = new TypingSender(ctx, { api, clock: () => clock.now(), wait: clockWait(clock) });
   const handle = typing.start();
   await handle.ready;
@@ -373,6 +386,8 @@ test("typing follows a real chat reply run from its start to its end", async () 
   await api.until(() => api.chatActions.length >= 1);
   expect(api.chatActions[0]).toMatchObject({ chatId: 555, action: "typing" });
   await running;
+  // Watch the real client's changes from here, without a manual sync.
+  const events = ctx.client.events()[Symbol.asyncIterator]();
   clock.advance(TYPING_INTERVAL_MS);
   await api.until(() => api.chatActions.length >= 2);
 
@@ -380,12 +395,71 @@ test("typing follows a real chat reply run from its start to its end", async () 
   await Promise.all(runners);
   const chat = (await w.store.list(CHAT_TYPE)).objects[0]?.id;
   if (chat === undefined) throw new Error("no chat was opened");
-  await typing.syncChat(chat);
-  expect(clock.pending).toBe(0);
   expect((await w.views.get(chat)).row.running).toBe(false);
+  // The real client announces the chat when the run ends; no manual sync.
+  clock.advance(GROWTH_EVENT_INTERVAL_MS);
+  const announced = await events.next();
+  expect(announced.done).toBe(false);
+  await typing.settled();
   clock.advance(TYPING_INTERVAL_MS * 3);
+  await nextTurn();
   expect(api.chatActions).toHaveLength(2);
 
+  await events.return?.();
+  await handle.stop();
+  await w.close();
+});
+
+test("typing stops when a real chat reply run fails without recording a reply", async () => {
+  const root = await mkdtemp(join(tmpdir(), "telegram-typing-failed-"));
+  roots.push(root);
+  const clock = fakeClock();
+  let release: (() => void) | undefined;
+  let entered: (() => void) | undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const running = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const w = await createTelegramWorld({
+    root,
+    users: [42],
+    follow: true,
+    clock: () => clock.now(),
+    agent: async () => {
+      entered?.();
+      await gate;
+      return { result: "failed", data: { reason: "test", message: "the agent failed" } };
+    },
+  });
+  const { ctx, runners } = serveLoop(w, root);
+  const api = new LongPollApi();
+  const typing = new TypingSender(ctx, { api, clock: () => clock.now(), wait: clockWait(clock) });
+  const handle = typing.start();
+  await handle.ready;
+
+  api.deliver(update(300, 42, 555, "hello"));
+  await new TelegramSource(ctx, { api }).poll();
+  await api.until(() => api.chatActions.length >= 1);
+  await running;
+  // The failed run's end is the next change the real client announces.
+  const events = ctx.client.events()[Symbol.asyncIterator]();
+
+  release?.();
+  await Promise.all(runners);
+  const chat = (await w.store.list(CHAT_TYPE)).objects[0]?.id;
+  if (chat === undefined) throw new Error("no chat was opened");
+  expect((await w.views.get(chat)).row.running).toBe(false);
+  clock.advance(GROWTH_EVENT_INTERVAL_MS);
+  const announced = await events.next();
+  expect(announced.done).toBe(false);
+  await typing.settled();
+  clock.advance(TYPING_INTERVAL_MS * 3);
+  await nextTurn();
+  expect(api.chatActions).toHaveLength(1);
+
+  await events.return?.();
   await handle.stop();
   await w.close();
 });

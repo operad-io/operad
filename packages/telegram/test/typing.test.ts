@@ -2,13 +2,14 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CHAT_TYPE, MESSAGE_FACT, chatRef } from "@operad-io/chat";
+import { CHAT_TYPE, MESSAGE_FACT, allMessages, chatRef } from "@operad-io/chat";
 import { Secret, type ClientApi, type SourceContext, type ViewEvent } from "@operad-io/engine";
 import { fakeClock, type FakeClock } from "@operad-io/engine/testing";
 import {
   BotApiError,
   ReplySender,
   TelegramSource,
+  EVENT_RETRY_MS,
   TypingSender,
   TYPING_INTERVAL_MS,
   createBotApi,
@@ -24,7 +25,11 @@ afterAll(async () => {
 /** A client the test drives: which chats run, and a way to wake the watcher. */
 class EventClient implements ClientApi {
   readonly running = new Map<string, boolean>();
+  /** How often a detail page and a list were read; events should use the list. */
+  gets = 0;
+  lists = 0;
   private wake: ((result: IteratorResult<ViewEvent>) => void) | undefined;
+  private fail: ((error: unknown) => void) | undefined;
   private readonly queued: ViewEvent[] = [];
   private readonly views: TelegramWorld["views"];
 
@@ -37,15 +42,32 @@ class EventClient implements ClientApi {
     if (this.wake !== undefined) {
       const wake = this.wake;
       this.wake = undefined;
+      this.fail = undefined;
       wake({ done: false, value: event });
     } else {
       this.queued.push(event);
     }
   }
 
-  list: ClientApi["list"] = (type, options) => this.views.list(type, options);
+  /** Makes the stream the watcher is reading fail, as a killed connection does. */
+  failEvents(): void {
+    const fail = this.fail;
+    this.wake = undefined;
+    this.fail = undefined;
+    fail?.(new Error("the event stream failed"));
+  }
+
+  list: ClientApi["list"] = async (type, options) => {
+    this.lists += 1;
+    const page = await this.views.list(type, options);
+    return {
+      ...page,
+      rows: page.rows.map((row) => ({ ...row, running: this.running.get(row.id) ?? false })),
+    };
+  };
 
   get: ClientApi["get"] = async (id) => {
+    this.gets += 1;
     const object = await this.views.get(id);
     return { ...object, row: { ...object.row, running: this.running.get(object.id) ?? false } };
   };
@@ -59,13 +81,15 @@ class EventClient implements ClientApi {
         next: () => {
           const queued = this.queued.shift();
           if (queued !== undefined) return Promise.resolve({ done: false, value: queued });
-          return new Promise<IteratorResult<ViewEvent>>((resolve) => {
+          return new Promise<IteratorResult<ViewEvent>>((resolve, reject) => {
             this.wake = resolve;
+            this.fail = reject;
           });
         },
         return: async () => {
           this.wake?.({ done: true, value: undefined });
           this.wake = undefined;
+          this.fail = undefined;
           return { done: true, value: undefined };
         },
       }),
@@ -138,6 +162,31 @@ async function setup(): Promise<Fixture> {
   };
 }
 
+/** Lets work already woken by a clock advance run before the next assertion. */
+function nextTurn(): Promise<void> {
+  return new Promise<void>((resolve) => setImmediate(resolve));
+}
+
+/** Records the reply the chat's user message waits for. */
+async function appendReply(f: Fixture): Promise<void> {
+  const user = allMessages(f.w.store, f.chat).find((message) => message.role === "user");
+  if (user === undefined) throw new Error("the chat has no user message");
+  await f.w.ctx.facts.append({
+    type: MESSAGE_FACT,
+    object: chatRef(f.chat),
+    data: {
+      id: "m-typing-reply",
+      role: "assistant",
+      from: { via: "agent", id: "default" },
+      text: "the answer",
+      attachments: [],
+      source: { kind: "agent", ref: null },
+      replyTo: [user.id],
+      runId: "run-typing",
+    },
+  });
+}
+
 describe("the typing indicator", () => {
   test("the Bot API client sends the typing action to the chat", async () => {
     const calls: { url: string; init: RequestInit | undefined }[] = [];
@@ -154,7 +203,7 @@ describe("the typing indicator", () => {
     expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({ chat_id: 555, action: "typing" });
   });
 
-  test("is sent when a reply starts, repeated while it runs, and stops after it ends", async () => {
+  test("is sent when a reply starts, repeated while it is written, and stops once the reply is recorded", async () => {
     const f = await setup();
     f.client.running.set(f.chat, true);
     await f.sender.syncChat(f.chat);
@@ -165,25 +214,27 @@ describe("the typing indicator", () => {
     await f.api.until(() => f.api.chatActions.length >= 2);
     expect(f.api.chatActions).toHaveLength(2);
 
-    f.client.running.set(f.chat, false);
+    // The reply is recorded while the run goes on: writing is over.
+    await appendReply(f);
     await f.sender.syncChat(f.chat);
-    expect(f.clock.pending).toBe(0);
+    expect(f.client.running.get(f.chat)).toBe(true);
     f.clock.advance(TYPING_INTERVAL_MS * 3);
+    await nextTurn();
     expect(f.api.chatActions).toHaveLength(2);
     await f.stop();
   });
 
-  test("stops after a reply run fails", async () => {
+  test("stops when a reply run ends without recording a reply", async () => {
     const f = await setup();
     f.client.running.set(f.chat, true);
     await f.sender.syncChat(f.chat);
     expect(f.api.chatActions).toHaveLength(1);
 
-    // A failed run is no longer running; the client says so when it ends.
+    // A failed or cancelled run has no reply message; the client says it ended.
     f.client.running.set(f.chat, false);
     await f.sender.syncChat(f.chat);
-    expect(f.clock.pending).toBe(0);
     f.clock.advance(TYPING_INTERVAL_MS * 3);
+    await nextTurn();
     expect(f.api.chatActions).toHaveLength(1);
     await f.stop();
   });
@@ -212,38 +263,38 @@ describe("the typing indicator", () => {
     f.client.running.set(other, true);
     await f.sender.syncChat(other);
     f.clock.advance(TYPING_INTERVAL_MS * 3);
+    await nextTurn();
     expect(f.api.chatActions).toHaveLength(0);
     await f.stop();
   });
 
-  test("a failed send is not retried, adds nothing to history and does not hold up a reply", async () => {
+  test("a failed send is not retried at once, is renewed on the next interval, and adds nothing to history", async () => {
     const f = await setup();
     const before = f.w.store.facts(chatRef(f.chat), { limit: 500 }).facts.length;
+    let attempts = 0;
     f.api.beforeChatAction = () => {
-      throw new BotApiError("Forbidden: bot was blocked by the user", { retryable: false });
+      attempts += 1;
+      if (attempts === 1) throw new BotApiError("Forbidden: bot was blocked by the user", { retryable: false });
     };
     f.client.running.set(f.chat, true);
     await f.sender.syncChat(f.chat);
     expect(f.api.chatActions).toHaveLength(1);
+    // Another event while the send fails still does not send it again at once.
+    await f.sender.syncChat(f.chat);
+    expect(f.api.chatActions).toHaveLength(1);
 
-    await f.w.ctx.facts.append({
-      type: MESSAGE_FACT,
-      object: chatRef(f.chat),
-      data: {
-        id: "m-typing-reply",
-        role: "assistant",
-        from: { via: "agent", id: "default" },
-        text: "the answer",
-        attachments: [],
-        source: { kind: "agent", ref: null },
-      },
-    });
+    // The indicator is still renewed when its interval comes.
+    f.clock.advance(TYPING_INTERVAL_MS);
+    await f.api.until(() => f.api.chatActions.length >= 2);
+    expect(f.api.chatActions).toHaveLength(2);
+    expect(attempts).toBe(2);
+
+    await appendReply(f);
     await new ReplySender(f.w.ctx, { api: f.api, wait: async () => undefined }).sweepAll();
     expect(f.api.sent.map((request) => request.text)).toEqual(["the answer"]);
 
-    f.client.running.set(f.chat, false);
     await f.sender.syncChat(f.chat);
-    expect(f.api.chatActions).toHaveLength(1);
+    expect(f.api.chatActions).toHaveLength(2);
     expect(f.w.store.facts(chatRef(f.chat), { limit: 500 }).facts).toHaveLength(before + 1);
     const failed: string[] = [];
     for await (const input of f.w.log.readInputs()) {
@@ -252,4 +303,49 @@ describe("the typing indicator", () => {
     expect(failed).toEqual([]);
     await f.stop();
   });
+
+  test("coalesces a burst of events into one list and no detail page", async () => {
+    const f = await setup();
+    f.client.running.set(f.chat, true);
+    f.client.lists = 0;
+    f.client.gets = 0;
+    // The first check runs while the other events arrive: at most one more
+    // check follows it, rather than one per event.
+    await Promise.all(Array.from({ length: 10 }, () => f.sender.syncChat(f.chat)));
+    expect(f.api.chatActions).toHaveLength(1);
+    expect(f.client.lists).toBeLessThanOrEqual(2);
+    expect(f.client.gets).toBe(0);
+    await f.stop();
+  });
+
+  test("takes the client's events again after the stream fails", async () => {
+    const f = await setup();
+    f.client.failEvents();
+    // Let the watcher see the failure and arm its retry.
+    await Promise.resolve();
+    f.client.running.set(f.chat, true);
+    f.client.announce(f.chat);
+    f.clock.advance(EVENT_RETRY_MS);
+    await f.api.until(() => f.api.chatActions.length >= 1);
+    expect(f.api.chatActions[0]).toMatchObject({ chatId: 555, action: "typing" });
+    await f.stop();
+  });
+
+  test("stops when a run ends without an event, as the periodic check sees it", async () => {
+    const f = await setup();
+    f.client.running.set(f.chat, true);
+    await f.sender.syncChat(f.chat);
+    expect(f.api.chatActions).toHaveLength(1);
+
+    f.client.running.set(f.chat, false);
+    f.clock.advance(TYPING_INTERVAL_MS);
+    await f.sender.settled();
+    const sent = f.api.chatActions.length;
+    expect(sent).toBeLessThanOrEqual(2);
+    f.clock.advance(TYPING_INTERVAL_MS * 3);
+    await f.sender.settled();
+    expect(f.api.chatActions).toHaveLength(sent);
+    await f.stop();
+  });
+
 });

@@ -3,21 +3,26 @@
  * bot as typing while a reply run is writing one.
  *
  * It wakes on the client API's `events()`, which names a chat whenever it
- * changes, and asks the client API's `get()` whether a run is working on that
- * chat. It reads a bound chat's channels from the plugin's store, as the reply
- * side does. Telegram shows the indicator for about five seconds, so it is sent
- * again while the run is active; a failed send is not retried and is not
- * written to history.
+ * changes, and reads whether that chat still has a message to answer and a run
+ * working on it. The run flags come from `list`, one read for a burst of
+ * events, not a detail page per event. It reads a bound chat's channels from
+ * the plugin's store, as the reply side does. Telegram shows the indicator for
+ * about five seconds, so it is sent again while the reply is written; it stops
+ * when the reply is recorded, even if its run goes on. A failed send is logged
+ * once and is not written to history.
  */
 
-import { CHAT_TYPE, chatData } from "@operad-io/chat";
-import { messageOf, type ClientApi, type SourceContext } from "@operad-io/engine";
+import { CHAT_TYPE, allMessages, chatData, unanswered } from "@operad-io/chat";
+import { messageOf, type ClientApi, type SourceContext, type ViewEvent } from "@operad-io/engine";
 import type { BotApi } from "./api.ts";
 import { telegramChatsOf } from "./replies.ts";
 import { delay } from "./source.ts";
 
 /** How often the indicator is renewed; Telegram shows it for about five seconds. */
 export const TYPING_INTERVAL_MS = 4_000;
+
+/** How long to wait before following the client's events again after a failure. */
+export const EVENT_RETRY_MS = 1_000;
 
 export interface TypingSenderOptions {
   readonly api: BotApi;
@@ -43,7 +48,11 @@ export class TypingSender {
   private readonly controller = new AbortController();
   private readonly active = new Map<string, Typing>();
   private readonly loops = new Set<Promise<void>>();
-  private readonly checks = new Map<string, Promise<void>>();
+  /** Chat ids whose state should be read next; repeated ids coalesce. */
+  private readonly wanted = new Set<string>();
+  private checking: Promise<void> | undefined;
+  private reconciling: Promise<void> | undefined;
+  private iterator: AsyncIterator<ViewEvent> | undefined;
   private stopped = false;
   private watching: Promise<void> = Promise.resolve();
 
@@ -64,18 +73,12 @@ export class TypingSender {
 
   /** Checks every bound chat once, then follows the client's events. */
   start(): { readonly stop: () => Promise<void>; readonly ready: Promise<void> } {
-    const iterator = this.client.events()[Symbol.asyncIterator]();
     const initial = this.syncAll().catch((error: unknown) => this.log(`could not show typing: ${messageOf(error)}`));
     this.watching = (async () => {
       await initial;
-      while (!this.stopped) {
-        const next = await iterator.next();
-        if (next.done === true || this.stopped) return;
-        const id = next.value.id;
-        if (id.length > 0) {
-          void this.syncChat(id).catch((error: unknown) => this.log(`could not show typing: ${messageOf(error)}`));
-        }
-      }
+      // The periodic pass also ends an indicator whose run-end event was lost
+      // by a bounded event stream.
+      await Promise.all([this.follow(), this.reconcile()]);
     })();
     return {
       ready: initial,
@@ -83,12 +86,64 @@ export class TypingSender {
         this.stopped = true;
         this.controller.abort();
         for (const typing of this.active.values()) typing.controller.abort();
-        await iterator.return?.();
+        try {
+          await this.iterator?.return?.();
+        } catch {
+          // The stream is already unusable; stopping is still complete.
+        }
         await this.watching.catch(() => undefined);
-        await Promise.all([...this.checks.values()]);
+        while (this.checking !== undefined) await this.checking.catch(() => undefined);
         await Promise.all([...this.loops]);
       },
     };
+  }
+
+  /** Follows the client's events, taking the stream again after a failure. */
+  private async follow(): Promise<void> {
+    while (!this.stopped) {
+      const iterator = this.client.events()[Symbol.asyncIterator]();
+      this.iterator = iterator;
+      try {
+        while (!this.stopped) {
+          const next = await iterator.next();
+          if (next.done === true || this.stopped) return;
+          const id = next.value.id;
+          if (id.length > 0) {
+            void this.syncChat(id).catch((error: unknown) => this.log(`could not show typing: ${messageOf(error)}`));
+          }
+        }
+      } catch (error) {
+        if (this.stopped) return;
+        void this.log(`could not follow changes for typing: ${messageOf(error)}`).catch(() => undefined);
+        await this.wait(EVENT_RETRY_MS, this.controller.signal).catch(() => undefined);
+      } finally {
+        if (this.iterator === iterator) this.iterator = undefined;
+        try {
+          await iterator.return?.();
+        } catch {
+          // A stream that failed may refuse to close; the next stream is new.
+        }
+      }
+    }
+  }
+
+  /** Checks every bound chat once per interval, so a lost event cannot leave typing on. */
+  private async reconcile(): Promise<void> {
+    while (!this.stopped) {
+      try {
+        await this.wait(this.intervalMs, this.controller.signal);
+      } catch {
+        return;
+      }
+      if (this.stopped) return;
+      const pass = this.syncAll().catch((error: unknown) => this.log(`could not show typing: ${messageOf(error)}`));
+      this.reconciling = pass;
+      try {
+        await pass;
+      } finally {
+        if (this.reconciling === pass) this.reconciling = undefined;
+      }
+    }
   }
 
   /** Checks every chat bound to Telegram once. */
@@ -105,37 +160,93 @@ export class TypingSender {
     await Promise.all(ids.map((id) => this.syncChat(id)));
   }
 
-  /** Shows or stops the indicator of one chat, as the reply run now stands. */
+  /** Shows or stops the indicator of one chat, as the answer now stands. */
   syncChat(chatId: string): Promise<void> {
-    const previous = this.checks.get(chatId) ?? Promise.resolve();
-    const run = previous.catch(() => undefined).then(() => this.check(chatId));
-    const settled = run.catch(() => undefined);
-    this.checks.set(chatId, settled);
-    void settled.then(() => {
-      if (this.checks.get(chatId) === settled) this.checks.delete(chatId);
+    this.wanted.add(chatId);
+    return this.scheduleChecks();
+  }
+
+  /** Waits for the checks asked so far, including one just woken by an event. */
+  async settled(): Promise<void> {
+    // A watcher woken by the same event queues its check in a following turn.
+    await Promise.resolve();
+    while (this.checking !== undefined || this.reconciling !== undefined) {
+      const work = this.checking ?? this.reconciling;
+      if (work === undefined) return;
+      await work.catch(() => undefined);
+    }
+  }
+
+  private scheduleChecks(): Promise<void> {
+    const existing = this.checking;
+    if (existing !== undefined) return existing;
+    const run = this.drainChecks().finally(() => {
+      if (this.checking === run) {
+        this.checking = undefined;
+        if (!this.stopped && this.wanted.size > 0) void this.scheduleChecks();
+      }
     });
+    this.checking = run;
     return run;
   }
 
-  private async check(chatId: string): Promise<void> {
-    if (this.stopped) return;
-    const stored = await this.ctx.store.get(CHAT_TYPE, chatId);
-    if (stored === undefined) return;
-    const target = telegramChatsOf(chatData(stored.data).channels)[0];
-    if (target === undefined) return;
-    let running: boolean;
+  private async drainChecks(): Promise<void> {
+    while (!this.stopped && this.wanted.size > 0) {
+      const ids = [...this.wanted];
+      this.wanted.clear();
+      await this.checkChats(ids);
+    }
+  }
+
+  /** Reads the chats named by one burst of events, with one list read for their run flags. */
+  private async checkChats(ids: readonly string[]): Promise<void> {
+    const bound: { readonly chatId: string; readonly target: number }[] = [];
+    for (const chatId of ids) {
+      if (this.stopped) return;
+      const stored = await this.ctx.store.get(CHAT_TYPE, chatId);
+      if (stored === undefined) continue;
+      const target = telegramChatsOf(chatData(stored.data).channels)[0];
+      if (target === undefined) continue;
+      bound.push({ chatId, target });
+    }
+    if (this.stopped || bound.length === 0) return;
+    let running: ReadonlyMap<string, boolean>;
     try {
-      running = (await this.client.get(chatId)).row.running;
-    } catch {
-      await this.stopTyping(chatId);
+      running = await this.runningOf(bound.map((chat) => chat.chatId));
+    } catch (error) {
+      await this.log(`could not show typing: ${messageOf(error)}`);
+      for (const chat of bound) await this.stopTyping(chat.chatId);
       return;
     }
-    if (this.stopped) return;
-    if (!running) {
-      await this.stopTyping(chatId);
-      return;
+    for (const chat of bound) {
+      if (this.stopped) return;
+      if (running.get(chat.chatId) !== true) {
+        await this.stopTyping(chat.chatId);
+        continue;
+      }
+      // The reply is recorded on the chat before its run ends. Once it answers
+      // every message, writing is over even if the run goes on.
+      if (unanswered(allMessages(this.ctx.store, chat.chatId)).length === 0) {
+        await this.stopTyping(chat.chatId);
+        continue;
+      }
+      this.startTyping(chat.chatId, chat.target);
     }
-    this.startTyping(chatId, target);
+  }
+
+  /** The running flags of the named chats from a list read, not a detail page per event. */
+  private async runningOf(ids: readonly string[]): Promise<ReadonlyMap<string, boolean>> {
+    const wanted = new Set(ids);
+    const found = new Map<string, boolean>();
+    let cursor: string | undefined;
+    do {
+      const page = await this.client.list(CHAT_TYPE, { ...(cursor === undefined ? {} : { cursor }) });
+      for (const row of page.rows) {
+        if (wanted.has(row.id)) found.set(row.id, row.running);
+      }
+      cursor = page.next;
+    } while (cursor !== undefined && found.size < wanted.size);
+    return found;
   }
 
   private startTyping(chatId: string, target: number): void {
@@ -173,7 +284,7 @@ export class TypingSender {
       } catch (error) {
         if (!controller.signal.aborted && !this.stopped && !warned) {
           warned = true;
-          await this.log(`could not show typing in chat ${chatId}: ${messageOf(error)}`);
+          void this.log(`could not show typing in chat ${chatId}: ${messageOf(error)}`).catch(() => undefined);
         }
       }
       next = this.clock() + this.intervalMs;
