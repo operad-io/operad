@@ -1254,3 +1254,12 @@ the row fields.
 | T-0471-M2 | packages/dev/src/service.ts | registering a removed repository again kept its old path | `dev repositories > add, remove, add again under the same name at another path keeps plans and tasks and uses the new path` (the `path` assertion) |
 | T-0471-M3 | packages/dev/src/service.ts | an active repository was registered again under its name, instead of being refused | `dev repositories > add again under the name of an active repository is refused` |
 | T-0471-M4 | packages/dev/src/service.ts | a path registered under another active name was accepted | `dev repositories > add at a path registered under another active name is refused` |
+## T-0466 — dev's lock lives outside the working tree
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0466-M1 | packages/dev/src/lock.ts | `repositoryLockPath` returned `.operad/dev.lock` inside the working tree again, so a held lock made the main clone dirty and blocked the fast-forward | `the repository lock > the lock lives in the operad home, not the working tree, and is gone afterwards` and `... > a main clone whose lock dev holds is clean and fast-forwards` |
+| T-0466-M2 | packages/dev/src/lock.ts | `repositoryKey` added the process id, so two dev processes took different lock files and did not exclude each other | `the repository lock > two processes still exclude each other` |
+| T-0466-M3 | packages/dev/src/lock.ts | the legacy cleanup returned whenever `.operad/dev.lock` existed, so an unheld old lock stayed in the working tree | `the repository lock > a legacy in-tree lock is removed when nobody holds it` |
+| T-0466-M4 | packages/dev/src/lock.ts | the legacy cleanup unlinked `.operad/dev.lock` without checking whether an older dev held it | `the repository lock > a held legacy in-tree lock is left alone` |
+| T-0466-M5 | packages/dev/src/lock.ts | `commonGitDirectory` used the worktree's own path instead of reading the `.git` file and its `commondir`, so a linked worktree took a different lock from its repository | `the repository lock > a linked worktree shares its repository's lock` |
