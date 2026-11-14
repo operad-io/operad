@@ -13,7 +13,7 @@
  */
 
 import { CHAT_TYPE, allMessages, chatData, unanswered } from "@operad-io/chat";
-import { messageOf, type ClientApi, type SourceContext, type ViewEvent } from "@operad-io/engine";
+import { messageOf, type ClientApi, type SourceContext } from "@operad-io/engine";
 import type { BotApi } from "./api.ts";
 import { telegramChatsOf } from "./replies.ts";
 import { delay } from "./source.ts";
@@ -52,7 +52,7 @@ export class TypingSender {
   private readonly wanted = new Set<string>();
   private checking: Promise<void> | undefined;
   private reconciling: Promise<void> | undefined;
-  private iterator: AsyncIterator<ViewEvent> | undefined;
+  private iterator: AsyncIterator<{ readonly id: string }> | undefined;
   private stopped = false;
   private watching: Promise<void> = Promise.resolve();
 

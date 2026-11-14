@@ -64,3 +64,4 @@ the row fields.
 | T-0451-M3 | packages/telegram/src/typing.ts | a failed event stream was not taken again, so typing stopped watching until serve restarted | `the typing indicator > takes the client's events again after the stream fails` (timed out) |
 | T-0451-M4 | packages/telegram/src/typing.ts | the periodic check was not started, so an indicator whose run-end event was lost kept renewing | `the typing indicator > stops when a run ends without an event, as the periodic check sees it` |
 | T-0451-M5 | packages/telegram/src/typing.ts | a run that stopped running left the indicator going | `the typing indicator > stops when a reply run ends without recording a reply` |
+| T-0451-M6 | packages/telegram/src/typing.ts | the event iterator took the engine's `ViewEvent`, a name on the plugin docs allow list, so a plugin package imported it | `scripts/test/plugin-docs.test.ts > the plugin docs > a name a plugin package imports is never on the allow list` |
