@@ -79,6 +79,7 @@ function fakeHarness(record: string) {
               resumeSession: input.resumeSession ?? null,
             }),
           );
+          if (mode === "throw") throw new Error("the fake harness crashed");
           if (mode === "fail") {
             return {
               result: "failed",
@@ -1027,6 +1028,22 @@ describe("dev/work with workers", () => {
     await visit(state, "rework-run");
     const second = await runWork(state, "run-2", undefined, { flowPool: "image" });
     expect(second.data).toMatchObject({ worker: "codex" });
+  });
+
+  test("a worker with a fallback whose step throws does not run the fallback, and the work fails", async () => {
+    const state = await fixture("nothing", {
+      workers: {
+        claude: fake("throw", { fallback: "pi" }),
+        pi: fake("nothing"),
+      },
+    });
+    const result = await runWork(state, "run-1");
+    expect(result.result).toBe("failed");
+    const task = await taskDataOf(state);
+    expect(task.phase).toBe("waiting");
+    expect(task.attempt?.fallbackFrom).toBeNull();
+    // The fallback would have written its own mode to the record.
+    expect((JSON.parse(readFileSync(state.record, "utf8")) as { args: string[] }).args).toEqual(["throw"]);
   });
 
   test("a pool without a fallback waits on usage_limit and never takes another pool's worker (T-0379)", async () => {

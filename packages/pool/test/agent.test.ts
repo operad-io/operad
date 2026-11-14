@@ -389,14 +389,32 @@ describe("fallback", () => {
     expect(r.book.used(`count:${PREFIX}/claude`)).toBe(0);
   });
 
-  test("a throw before the harness starts runs the fallback", async () => {
+  test("a worker with a fallback whose step throws does not run the fallback", async () => {
     const r = await rig();
     const run = r.run(params([claude, pi]));
-    (await r.calls.next()).fail(new Error("no such program"));
-    const call = await r.calls.next();
-    call.finish(done);
-    const result = await run;
-    expect(result.data).toMatchObject({ worker: "pi", fallbackFrom: "claude" });
+    (await r.calls.next()).fail(new Error("the harness step threw"));
+    let fallback: HarnessCall | undefined;
+    const outcome = await Promise.race([
+      run.then(
+        () => ({ kind: "result" as const }),
+        (error: unknown) => ({ kind: "rejected" as const, error }),
+      ),
+      r.calls.next().then((call) => {
+        fallback = call;
+        return { kind: "fallback" as const };
+      }),
+    ]);
+    // Let an unexpected fallback finish, so the test ends with its assertion
+    // rather than a step left pending.
+    fallback?.finish(done);
+    await run.catch(() => undefined);
+    expect(outcome.kind).toBe("rejected");
+    if (outcome.kind !== "rejected") return;
+    expect(outcome.error).toBeInstanceOf(Error);
+    expect((outcome.error as Error).message).toBe("the harness step threw");
+    expect(r.calls.length).toBe(0);
+    expect(r.book.used(`count:${PREFIX}/claude`)).toBe(0);
+    expect(r.book.used("harness:harness-a")).toBe(0);
   });
 
   test("a timeout never falls back", async () => {
