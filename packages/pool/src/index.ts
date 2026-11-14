@@ -278,7 +278,10 @@ export function createPoolPlugin(options: PoolPluginOptions = {}) {
           // A throw is not a trigger: the harness reports a process that
           // cannot start as a failed result with reason `missing` or `spawn`,
           // and anything else thrown is the step's own error. It fails the
-          // work, as it does when the worker has no fallback.
+          // work, as it does when the worker has no fallback. That includes a
+          // worker whose harness plugin is not loaded: the step throws
+          // StepNotLoadedError before any process exists, and it does not fall
+          // back.
           const triggered =
             name !== undefined &&
             !ctx.signal.aborted &&

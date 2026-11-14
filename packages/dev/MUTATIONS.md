@@ -1171,3 +1171,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0433-M1 | packages/dev/src/mainclone.ts | the is-ancestor branch returned before looking at the prepare marker, so a replay whose clone already held the commit skipped prepare | `dev/integrate main clone > a kill after the fast-forward and before prepare ends runs prepare once on the rerun` (expected `["one", "two"]`, received `[]`) |
+
+## T-0440 — the prepare left due is kept; the land lock waits for a push
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0440-M1 | packages/dev/src/integrate.ts | a merged record always wrote `prepareDue: false`, even when the clone did not move | `dev/integrate main clone > a rerun that finds the clone dirty keeps the prepare the killed run left due (T-0440)` |

@@ -443,10 +443,13 @@ export const actions: readonly ActionTypeDefinition[] = [
     why: planWhy("cancel"),
     settled: planSettled("cancel"),
     async run(ctx) {
-      await cancelPlan(ctx.store, ctx.object.id, {
+      const cancelled = await cancelPlan(ctx.store, ctx.object.id, {
         runs: ctx.runs,
         home: ctx.home,
       });
+      return cancelled.merged.length === 0
+        ? undefined
+        : `${cancelled.merged.map(bareId).join(", ")} merged before the cancel and stays merged`;
     },
   },
   {

@@ -24,6 +24,7 @@ import {
   addPlan,
   addRepository,
   addTask,
+  cancelPlan,
   cancelTask,
   confirmPlan,
   createDevPlugin,
@@ -1265,6 +1266,32 @@ describe("dev/integrate main clone", () => {
     }
   }, 60_000);
 
+  test("a rerun that finds the clone dirty keeps the prepare the killed run left due (T-0440)", async () => {
+    const state = await fixture();
+    writeDevJson(state.remote.repository, { prepare: ["one", "two"] });
+    await killedAt(state, "prepare", "dev/integrate", "integrate-run");
+    writeFileSync(join(state.remote.repository, "scratch.txt"), "mine\n");
+    const calls: string[] = [];
+    integrateTestHooks.runCommand = async (_cwd, line) => {
+      calls.push(line);
+      return { ok: true, out: "" };
+    };
+    try {
+      const result = await freshRegistry(state).runStep("dev/integrate", {}, {
+        runId: "integrate-run",
+        object: { type: "task", id: state.taskKey, data: {} },
+      });
+      expect(result.result).toBe("merged");
+      expect(calls).toEqual([]);
+      expect((await taskOf(state)).attempt?.integration).toMatchObject({
+        result: "merged",
+        prepareDue: true,
+      });
+    } finally {
+      integrateTestHooks.runCommand = undefined;
+    }
+  }, 60_000);
+
   test("a failing prepare line in the clone is reported and the merge stays", async () => {
     const state = await fixture();
     writeDevJson(state.remote.repository, { prepare: ["echo one"] });
@@ -1739,6 +1766,74 @@ describe("a follower cancelled while the leader may push", () => {
     expect(data.brief).toContain(`integrated in a batch with ${state.taskId}`);
     expect(gitOrThrow(state.remote.origin, ["show", "main:code1.txt"])).toBe("line");
     expect(gitOrThrow(state.remote.origin, ["show", "main:code.txt"])).toBe("line");
+  });
+
+  test("a plan cancel that waits behind a push that reported an error but landed says what merged (T-0440)", async () => {
+    const state = await fixture({
+      more: 1,
+      batch: 2,
+      keyCommands: ["true"],
+    });
+    const second = state.others[0];
+    if (second === undefined) throw new Error("second task missing");
+    const wrapper = join(state.root, "receive-wrapper.sh");
+    writeFileSync(
+      wrapper,
+      [
+        "#!/bin/sh",
+        'git-receive-pack "$@"',
+        "echo 'the connection dropped after the remote accepted the push' >&2",
+        "exit 1",
+        "",
+      ].join("\n"),
+    );
+    chmodSync(wrapper, 0o755);
+    gitOrThrow(state.remote.repository, ["config", "remote.origin.receivepack", wrapper]);
+    const rings = bell();
+    integrateTestHooks.wait = rings.wait;
+    const queued = new Map([
+      [state.taskId, signal()],
+      [second.taskId, signal()],
+    ]);
+    integrateTestHooks.queued = (task) => queued.get(task)?.resolve();
+    const reached = signal();
+    const release = signal();
+    integrateTestHooks.beforePush = async () => {
+      reached.resolve();
+      await release.promise;
+    };
+    const waiting = signal();
+    const letWait = signal();
+    integrationQueueTestHooks.lockWait = async () => {
+      waiting.resolve();
+      await letWait.promise;
+    };
+
+    const first = integrate(state, "integrate-run");
+    await queued.get(state.taskId)?.promise;
+    const runner = second.registry.runStep("dev/integrate", {}, {
+      runId: "integrate-run-2",
+      object: { type: "task", id: second.taskKey, data: {} },
+    });
+    await queued.get(second.taskId)?.promise;
+    await reached.promise;
+
+    const cancellation = cancelPlan(state.store, state.planKey, { home: state.root });
+    await waiting.promise;
+    release.resolve();
+    letWait.resolve();
+    expect((await first).result).toBe("merged");
+    const cancelled = await cancellation;
+    expect([...cancelled.merged].sort()).toEqual([state.taskKey, second.taskKey].sort());
+    expect(taskRowState(await taskOf(second))).toBe("integrating");
+
+    rings.ring();
+    expect((await runner).result).toBe("merged");
+    // The follower's record says the batch, so a replay follows its head.
+    const record = (await taskOf(second)).attempt?.integration;
+    expect(record?.batchHead).toBe(remoteMain(state));
+    expect(record?.batch).toEqual([state.taskId]);
+    expect(gitOrThrow(state.remote.origin, ["show", "main:code1.txt"])).toBe("line");
   });
 
   test("a cancel that waits behind the leader's own push reports the leader merged", async () => {

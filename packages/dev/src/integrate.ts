@@ -367,8 +367,13 @@ export async function runIntegrate(
   /** The other tasks this task was merged with in one batch. */
   let batchWith: readonly string[] = [];
   /** Saves that this merge's prepare is due before the clone moves, and done after. */
+  // A killed run of this step may have left prepare due; a restart that cannot
+  // fetch builds fresh records and must not forget it.
+  const leftDue =
+    task.attempt?.integration?.run === ctx.runId &&
+    task.attempt.integration.prepareDue === true;
   const prepareMarker = (record: IntegrationRecord): PrepareMarker => ({
-    due: record.prepareDue === true,
+    due: record.prepareDue === true || leftDue,
     save: async (due) => {
       const pending: IntegrationRecord = {
         ...record,
@@ -390,18 +395,20 @@ export async function runIntegrate(
     mergedLine: string = `merged as ${shortSha(sha)}`,
   ): Promise<PluginStepResult> => {
     const note = record.checkNote;
+    const marker = prepareMarker(record);
     const clone = await followMain(
       context.repository,
       settings.mainBranch,
       cloneSha,
       { lines: settings.prepare, run: mainCloneRunner(ctx, settings) },
-      prepareMarker(record),
+      marker,
     );
     integrateTestHooks.at?.("clone-followed");
     const cloneChange = mainCloneChange(clone);
+    // A clone that did not move keeps the prepare the killed run left due.
     const withClone: IntegrationRecord = {
       ...record,
-      prepareDue: false,
+      prepareDue: !clone.updated && marker.due,
       mainClone: { ...clone },
     };
     if (
@@ -470,17 +477,18 @@ export async function runIntegrate(
       const previousBatch = Array.isArray(previous.batch)
         ? previous.batch.filter((name): name is string => typeof name === "string")
         : [];
+      const marker = prepareMarker(record);
       const clone = await followMain(
         context.repository,
         settings.mainBranch,
         typeof previous.batchHead === "string" ? previous.batchHead : previous.candidate,
         { lines: settings.prepare, run: mainCloneRunner(ctx, settings) },
-        prepareMarker(record),
+        marker,
       );
       const cloneChange = mainCloneChange(clone);
       const withClone: IntegrationRecord = {
         ...record,
-        prepareDue: false,
+        prepareDue: !clone.updated && marker.due,
         mainClone: { ...clone },
       };
       if (
@@ -742,16 +750,25 @@ export async function runIntegrate(
       // A claimed task that left (cancelled) is not merged: one by one instead.
       // The check and the push share the queue's land lock with a withdrawal,
       // so a cancel either comes before the check or after the push.
+      // A push that reports an error may still have landed: that is settled
+      // inside the lock, so a cancel waiting on it sees a pushed batch.
+      let landedDespiteError = false;
       const landed = await queue.landWhenStillQueued(followers, result, async () => {
         await integrateTestHooks.beforePush?.(batchHead);
-        return git(gate, [
+        const pushed = git(gate, [
           "push",
           settings.remote,
           `HEAD:refs/heads/${settings.mainBranch}`,
         ]).ok;
+        if (pushed) return true;
+        git(repository, ["fetch", "--prune", settings.remote]);
+        const after = revParse(repository, mainRef);
+        landedDespiteError = after !== undefined && contains(repository, batchHead, after);
+        return landedDespiteError;
       });
       if (landed === "withdrawn") return undefined;
       if (landed === "pushed") {
+        if (landedDespiteError) return land({ landed: true });
         integrateTestHooks.afterPush?.(batchHead);
         return land({});
       }
@@ -785,6 +802,9 @@ export async function runIntegrate(
       head: head ?? null,
       headMoved,
       pushed: true,
+      // What a replay needs to follow the batch's head and say the batch.
+      batchHead: leaderResult.head,
+      batch: batchWith,
       ...(leaderResult.note === undefined ? {} : { checkNote: leaderResult.note }),
     };
     return recordMerged(record, mine.sha, {}, leaderResult.head);
