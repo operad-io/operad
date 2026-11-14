@@ -1,12 +1,12 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Database } from "bun:sqlite";
-import { readFileSync } from "node:fs";
 import { openConfigLog, openPluginStore, readConfig, storeRootOf } from "../../../engine/src/index.ts";
 import { waitForChange } from "../../../engine/src/platform/index.ts";
 import { cleanupTempRoots, tempRoot } from "../../../engine/test/plugin/support.ts";
+import { openContext } from "../../src/main.ts";
 import { testEnv } from "../env.ts";
 
 afterAll(cleanupTempRoots);
@@ -106,6 +106,11 @@ import { definePlugin } from ${JSON.stringify(ENGINE)};
 import { existsSync, writeFileSync } from "node:fs";
 
 const WORK = ${JSON.stringify(work)};
+
+// Work left running by a loaded plugin: a busy rejection nobody awaits, while the stores open.
+if (existsSync(WORK + "/reject-on-load")) {
+  void Promise.reject(Object.assign(new Error("database is locked"), { code: "SQLITE_BUSY" }));
+}
 
 export default definePlugin({
   name: "busystore",
@@ -214,6 +219,61 @@ describe("serve opens and runs while another process holds a store's write lock"
       await serve.exited;
     }
   }, 70_000);
+
+  test("a busy rejection outside a pass while the stores open is logged, not fatal", async () => {
+    const { home, work, pluginStore } = await setup();
+    writeFileSync(join(work, "reject-on-load"), "");
+    const serve = Bun.spawn({
+      cmd: [process.execPath, CLI_ENTRY, "serve"],
+      cwd: home,
+      env: testEnv({ OPERAD_HOME: home, OPERAD_SERVE_INTERVAL_MS: "100" }),
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const output = new Output(serve, serve.stdout, serve.stderr);
+    const deadline = Date.now() + 50_000;
+    let holder: Bun.Subprocess<"pipe", "pipe", "pipe"> | undefined;
+    try {
+      holder = await holdWriteLock(pluginStore);
+      const seen = await output.untilOrExit(
+        /^serve: opening the stores \(background\): database is locked.*going on$/m,
+        serve,
+        deadline,
+      );
+      if (seen === "exit") throw new Error(`serve ended on a busy rejection:\n${output.text}`);
+      expect(serve.exitCode).toBeNull();
+      await release(holder);
+      holder = undefined;
+      expect(await output.untilOrExit(/^serving /m, serve, deadline)).toBe("line");
+    } finally {
+      if (holder !== undefined && holder.exitCode === null) {
+        holder.kill("SIGKILL");
+        await holder.exited;
+      }
+      if (serve.exitCode === null) serve.kill("SIGTERM");
+      await serve.exited;
+    }
+  }, 70_000);
+
+  test("an open that meets the lock closes the handles it opened", async () => {
+    const { home, pluginStore } = await setup();
+    const holder = await holdWriteLock(pluginStore);
+    const original = Database.prototype.close;
+    let closed = 0;
+    Database.prototype.close = function (this: Database, ...args: Parameters<Database["close"]>) {
+      closed += 1;
+      return original.apply(this, args);
+    };
+    try {
+      await expect(openContext(home, { write: () => undefined, error: () => undefined })).rejects.toThrow();
+      // The plugin store and the log, both opened before the registry failed.
+      expect(closed).toBeGreaterThanOrEqual(2);
+    } finally {
+      Database.prototype.close = original;
+      await release(holder);
+    }
+  }, 30_000);
 
   test("an error that ends serve names its operation, with the stack in serve.log", async () => {
     const { home, pluginStore } = await setup();

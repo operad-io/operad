@@ -25,8 +25,10 @@ function messageOf(error: unknown): string {
  * or in an installed operad package (`node_modules/@operad-io/`); other
  * dependencies and the runtime are not.
  */
-function isOwnFrame(line: string): boolean {
-  if (line.includes("node:") || line.includes("native")) return false;
+function isOwnFrame(frame: string): boolean {
+  // Windows paths use backslashes; the checks below read forward slashes.
+  const line = frame.replaceAll("\\", "/");
+  if (line.includes("node:") || line.includes("[native code]")) return false;
   if (line.includes("/node_modules/@operad-io/")) return true;
   if (line.includes("node_modules")) return false;
   return /\/(packages|plugins)\/|operad/.test(line);
@@ -93,20 +95,6 @@ export async function retryWhileBusy<T>(
       options.log(`serve: ${operation}: database is locked; trying again`);
     }
     await wait();
-  }
-}
-
-/** Runs a cleanup step; a busy store is logged and the next step still runs. */
-export async function tolerateBusy(
-  operation: string,
-  run: () => Promise<void> | void,
-  log: (message: string) => void,
-): Promise<void> {
-  try {
-    await run();
-  } catch (error) {
-    if (!isBusy(error)) throw error;
-    log(`serve: ${operation}: database is locked; going on`);
   }
 }
 
