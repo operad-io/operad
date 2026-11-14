@@ -35,7 +35,7 @@ An ADR states a decision that is in force, as if it had always been the decision
 | [0017](0017-settings.md) | Settings | Kernel-read settings changed through `settings` and `set` |
 | [0018](0018-created-objects-and-settings-objects.md) | Opening Created Objects, Creating Actions, and Objects Under Settings | `opens`, `creates`, objects hosted under settings |
 | [0019](0019-live-sections.md) | Live Sections | `after` mark, `tail`, update rate |
-| [0020](0020-project-flows.md) | Project Flows in the `dev` Plugin | Flows as ordered stages in `dev.json`, two hard rules, `--flow`, `pool`, `workerBrief`, `commit` |
+| [0020](0020-project-flows.md) | Project Flows in the `dev` Plugin | Flows as ordered stages in `dev.json`, two hard rules, `--flow`, `pool`, `workerBrief`, `commit`, flows through settings |
 | [0021](0021-worker-pools.md) | Worker Pools | The `pool` plugin, home totals per harness, repository workers and pools, fallback |
 | [0022](0022-harness-interface.md) | The Harness Interface | `sdk` and `acp` connections, harness names, the user's own harness, `codex` |
 | [0023](0023-pi-harness.md) | The `pi` Harness | A Bun child process, no discovery, the user's pi and login, access matching |
