@@ -30,6 +30,7 @@ import {
   type PluginKind,
   type PluginRequires,
   type ProjectSettingsDeclaration,
+  type ProjectSettingsFile,
   type SourceContext,
   type SourceHandle,
   type StandingContext,
@@ -221,7 +222,22 @@ function normalizeProjectSettings(
       throw new PluginError(messageOf(error), { cause: error });
     }
     if (schema === undefined) throw new PluginError(`${where}: schema: is required`);
-    return { name, path, schema };
+    for (const hook of ["check", "derived"]) {
+      if (item[hook] !== undefined && typeof item[hook] !== "function") {
+        throw new PluginError(`${where}: ${hook}: must be a function`);
+      }
+    }
+    return {
+      name,
+      path,
+      schema,
+      ...(item.check === undefined
+        ? {}
+        : { check: item.check as ProjectSettingsFile["check"] }),
+      ...(item.derived === undefined
+        ? {}
+        : { derived: item.derived as ProjectSettingsFile["derived"] }),
+    };
   });
   return {
     repositories: value.repositories as ProjectSettingsDeclaration["repositories"],

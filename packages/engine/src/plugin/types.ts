@@ -1191,6 +1191,28 @@ export interface ProjectSettingsFile {
   /** Where the file is, relative to the repository's `.operad/`. */
   readonly path: string;
   readonly schema: ActionArgsSchema;
+  /**
+   * The plugin's own check of the whole file as it would be written, run after
+   * the schema and before the write. A string is the reason to refuse; nothing
+   * is written and the client is told that reason as it is.
+   */
+  readonly check?:
+    | ((ctx: ProjectSettingsContext) => MaybePromise<string | undefined>)
+    | undefined;
+  /**
+   * Read-only values the plugin works out when settings are listed, by
+   * property name. A property that has no stored value takes the value here.
+   */
+  readonly derived?:
+    | ((ctx: ProjectSettingsContext) => MaybePromise<Readonly<Record<string, JsonValue>>>)
+    | undefined;
+}
+
+/** What a project settings file's `check` and `derived` are given. */
+export interface ProjectSettingsContext {
+  readonly repository: SettingsRepository;
+  /** The file's JSON object: as it would be written for `check`, as it is for `derived`. */
+  readonly value: Readonly<Record<string, unknown>>;
 }
 
 /** A repository a plugin has registered. */

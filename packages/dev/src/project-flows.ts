@@ -158,3 +158,79 @@ export async function loadProjectFlows(
   }
   return { flows, refused };
 }
+
+/** One flow of a repository, as a client lists it. */
+export interface FlowInfo {
+  readonly name: string;
+  /** Where the flow comes from. */
+  readonly source: "dev.json" | "typescript" | "built-in";
+  /** A dev.json flow: its stages, as written. */
+  readonly stages?: readonly unknown[];
+  /** A TypeScript flow: the steps dev reads when it loads the file. */
+  readonly steps?: readonly { readonly id: string; readonly kind: string; readonly use?: string }[];
+  /** Why dev refuses the flow; the flow starts no task. */
+  readonly refused?: string;
+}
+
+/**
+ * Every flow a repository has: those of dev.json, the TypeScript files in
+ * `.operad/flows`, and the built-in default when nothing names `default`. A
+ * TypeScript file dev refuses is listed with dev's reason.
+ */
+export async function listRepositoryFlows(
+  repositoryPath: string,
+  repository: string,
+  settings: DevSettings,
+): Promise<FlowInfo[]> {
+  const infos: FlowInfo[] = Object.entries(settings.flows).map(([name, flow]) => ({
+    name,
+    source: "dev.json",
+    stages: flow.stages as readonly unknown[],
+  }));
+  const loaded = await loadProjectFlows(repositoryPath, repository, settings);
+  const directory = join(repositoryPath, PROJECT_FLOWS_DIR);
+  const files = existsSync(directory)
+    ? readdirSync(directory).filter((file) => file.endsWith(FLOW_SUFFIX)).sort()
+    : [];
+  for (const file of files) {
+    const name = file.slice(0, -FLOW_SUFFIX.length);
+    const reason = loaded.refused.get(name);
+    const flow = loaded.flows.get(name);
+    infos.push({
+      name,
+      source: "typescript",
+      ...(flow === undefined
+        ? {}
+        : {
+            steps: flow.steps.map((step) => {
+              const use = useOf(step as unknown as Record<string, unknown>);
+              return {
+                id: step.id,
+                kind: step.kind,
+                ...(use === undefined ? {} : { use }),
+              };
+            }),
+          }),
+      ...(reason === undefined ? {} : { refused: reason }),
+    });
+  }
+  if (!infos.some((info) => info.name === "default")) {
+    infos.unshift({ name: "default", source: "built-in" });
+  }
+  return infos;
+}
+
+/**
+ * The reason a dev.json value cannot be written because of a TypeScript flow:
+ * a flow of the same name is in `.operad/flows`.
+ */
+export function flowClash(repositoryPath: string, flows: unknown): string | undefined {
+  if (!isRecord(flows)) return undefined;
+  for (const name of Object.keys(flows)) {
+    const where = `${PROJECT_FLOWS_DIR}/${name}${FLOW_SUFFIX}`;
+    if (existsSync(join(repositoryPath, where))) {
+      return `flow "${name}" is defined in dev.json and in ${where}; keep one`;
+    }
+  }
+  return undefined;
+}

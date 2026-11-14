@@ -8,7 +8,10 @@
  */
 
 import type { ProjectSettingsDeclaration } from "@operad-io/engine";
+import { flowClash, listRepositoryFlows } from "./project-flows.ts";
+import { readDevSettings, settingsValueProblem } from "./settings.ts";
 import { listRepositories } from "./service.ts";
+import type { JsonValue } from "@operad-io/engine";
 
 export const DEV_PROJECT_SETTINGS: ProjectSettingsDeclaration = {
   repositories: async ({ store }) =>
@@ -17,6 +20,21 @@ export const DEV_PROJECT_SETTINGS: ProjectSettingsDeclaration = {
     {
       name: "dev",
       path: "dev.json",
+      // dev's own check of the file as it would be written: its schema and rules
+      // (ADR 0020 D4), then the name clash with a TypeScript flow (D6).
+      check: ({ repository, value }) =>
+        settingsValueProblem(repository.path, value) ??
+        flowClash(repository.path, value.flows),
+      derived: async ({ repository }) => {
+        let settings;
+        try {
+          settings = await readDevSettings(repository.path);
+        } catch {
+          return {};
+        }
+        const list = await listRepositoryFlows(repository.path, repository.name, settings);
+        return { flowList: list as unknown as JsonValue };
+      },
       schema: {
         type: "object",
         $defs: {
@@ -62,6 +80,24 @@ export const DEV_PROJECT_SETTINGS: ProjectSettingsDeclaration = {
             confirm: true,
             description:
               "The auto level a new plan starts at: off waits for you to start tasks, run starts them by itself, merge also merges a task whose review passed. Plans already made keep their level.",
+          },
+          flows: {
+            type: "object",
+            editable: true,
+            description:
+              "The repository's own flows, by name. A flow is { \"stages\": [...] }, each stage one of work, check, review or human; dev checks the flow when it is saved and refuses one that breaks its rules. A name may also be changed on its own (dev.flows.<name>); null removes it.",
+            additionalProperties: {
+              type: "object",
+              properties: {
+                stages: { type: "array", items: { type: "object" } },
+              },
+            },
+          },
+          flowList: {
+            type: "array",
+            items: { type: "object" },
+            description:
+              "Every flow of the repository, read only: its name, where it comes from (dev.json, typescript or built-in), its stages for a dev.json flow, the steps dev reads for a TypeScript flow, or why dev refuses the file.",
           },
           gate: {
             type: "object",
