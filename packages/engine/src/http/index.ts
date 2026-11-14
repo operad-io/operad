@@ -4,6 +4,7 @@ export {
   validateListenAddresses,
   type ListenAddressKind,
 } from "./address.ts";
+export type { PluginAdmin, PluginInfo, PluginOrigin, PluginSwitchOptions } from "./plugins.ts";
 export { LINK_SCHEME, objectLink, pairLink } from "./link.ts";
 export {
   DEFAULT_HTTP_TOKEN_LABEL,
