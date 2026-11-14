@@ -1,6 +1,6 @@
 /**
  * The access profile applied to claude's tool calls
- * (docs/backlog/operad-harness-claude.md decision 6).
+ * (ADR 0024 D6).
  *
  * `@operad-io/access-match` judges calls by lower-case tool names and the
  * input fields `command` and `path`; claude names its tools in Title case and

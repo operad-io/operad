@@ -22,7 +22,7 @@ import { isRegistered, prepareWorktree, workBranch, worktreePath } from "./steps
 /**
  * The harnesses a repository chat offers, in order: the ones that can stop a
  * tool call before it starts, so the main clone stays read-only
- * (`operad-conversation.md` decisions 13 and 14). radian is not one.
+ * (ADR 0028 D2, D3). radian is not one.
  */
 export const CHAT_HARNESSES = ["claude", "pi"] as const;
 

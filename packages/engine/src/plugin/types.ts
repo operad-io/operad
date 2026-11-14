@@ -203,7 +203,7 @@ export interface ViewContext extends PluginBaseContext {
 
 /**
  * An access profile: opaque JSON the kernel hands to steps. Its shape belongs
- * to `operad-sandbox.md`, not to the kernel.
+ * to ADR 0025, not to the kernel.
  */
 export type AccessProfile = Readonly<Record<string, JsonValue>>;
 

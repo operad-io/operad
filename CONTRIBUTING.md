@@ -19,9 +19,12 @@ There is no build step: Bun runs the TypeScript directly.
 
 - [User manual](docs/user/index.md): what operad does and the words it uses.
 - [Writing a plugin](docs/plugins/index.md): the plugin API.
-- [docs/backlog/](docs/backlog/): the direction and the decisions already made.
-  Please do not contradict a decided point; if a change needs one reversed,
-  propose that in an issue first.
+- [Architecture decision records](docs/adr/): the decisions in force. Please
+  do not contradict one; if a change needs a decision reversed, propose that in
+  an issue first and edit the ADR in its own docs-only commit merged with the
+  code.
+- [docs/backlog/](docs/backlog/): the maintainers' working notes, one file per
+  item, in Chinese. Each references the ADRs it touches.
 
 ## Rules
 

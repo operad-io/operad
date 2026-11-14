@@ -35,4 +35,4 @@ The kernel records a wait-for-person fact carrying the step's effect id. The ans
 
 ### D5: `onTimeout`
 
-The behaviour after a timeout, `onTimeout`, is `waiting` (it requires the harness to be able to resume) or `reject_once` (the only choice for a harness that cannot resume, decided by the descriptor file, which a user cannot override).
+The default behaviour after a timeout, `onTimeout`, is `waiting` (it requires the harness to be able to resume) or `reject_once` (the only choice for a harness that cannot resume, decided by the descriptor file, which a user cannot override).

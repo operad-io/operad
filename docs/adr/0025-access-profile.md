@@ -14,7 +14,7 @@ It is a JSON document with a Schema, attached to a flow, a conversation or a rep
 
 ### D2: Enforcement belongs to the harness plugin
 
-Each harness translates the profile into its own mechanism: `radian` into permission rules and a tier; `claude` into `canUseTool` and the deny tools; a command adapter that has no permission mechanism accepts only deny rules and refuses a profile that has `askCommands`. A field a harness cannot translate is declared unsupported in its declaration, and the run is refused at start instead of the field being ignored.
+Each harness translates the profile into its own mechanism: `radian` into permission rules and a tier; `claude` into `canUseTool`, where the deny and ask rules are judged (ADR 0024 D6); a command adapter that has no permission mechanism accepts only deny rules and refuses a profile that has `askCommands`. A field a harness cannot translate is declared unsupported in its declaration, and the run is refused at start instead of the field being ignored.
 
 ### D3: Four rules taken from OpenClaw
 

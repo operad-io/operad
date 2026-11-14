@@ -2,8 +2,8 @@
  * test-times.ts [file]: prints the number of full runs, the median and the
  * fastest total seconds of the passing ones, read from the file
  * scripts/run-tests.sh appends one line to per full run. The median is the
- * measure of the six-minute target (decision 6 of
- * docs/backlog/operad-test-slimming.md).
+ * measure of the six-minute target in `docs/backlog/operad-test-slimming.md`,
+ * which is not in an ADR yet.
  *
  * The file: OPERAD_TEST_TIMES, else ~/.operad-test-times. On the check host
  * that is the check user's home directory, which scripts/remote-check.sh never

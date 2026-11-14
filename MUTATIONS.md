@@ -48,6 +48,8 @@ Each package keeps its mutation checks in `MUTATIONS.md`; a row names the broken
 | T-0255-M1 | scripts/test/remote-check.test.ts | the tests passed the surrounding check's `OPERAD_CHECK_*` settings on to the script again | `remote-check.sh > slots and the integration lane > a task check never takes the integration slot, and a second integration waits for the first` (run with `OPERAD_CHECK_LANE=integration OPERAD_CHECK_SLOTS=2` in the environment) |
 | T-0377-M5 | scripts/publish.sh | removed the registry check, so `--publish` packed and published a version that was already on the registry | `publish.sh > --publish skips a version the registry already has` (also the ordering test) |
 | T-0377-M9 | scripts/publish.sh | put `harness/process` before its `@operad-io/mcp` dependency again | `publish.sh > the real order puts every package after its @operad-io dependencies` |
+| T-0429-M1 | scripts/test/adr-references.test.ts | dropped the `第 N 条` citation pattern | `a backlog decision is cited by its ADR > a citation is reported with the file and the line` |
+| T-0429-M2 | scripts/test/adr-snapshot.test.ts | dropped the rule that catches the plan word "later" | `the ADRs are snapshots, not plans > a violation names the file and the line` |
 
 ## T-0297 — follow-ups from the flaky-test work
 
@@ -85,3 +87,9 @@ Each package keeps its mutation checks in `MUTATIONS.md`; a row names the broken
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0417-M1 | scripts/test/adr-snapshot.test.ts | the date rule no longer matched a `YYYY-MM-DD` date (the pattern required an extra character) | `the ADRs are snapshots, not plans > a violation names the file and the line` |
+
+## T-0421 — references to backlog decisions
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0421-M1 | AGENTS.md | put a backlog file name followed by a decision number back in the kernel paragraph, outside `docs/backlog/` | `a backlog decision is cited by its ADR > no file outside docs/backlog cites a backlog decision by number` |

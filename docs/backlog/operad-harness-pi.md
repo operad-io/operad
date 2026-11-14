@@ -2,12 +2,12 @@
 
 - 状态：接法、进程边界、第一版范围已定并进了 ADR；下面只留没进 ADR 的点、任务切分、待决和验收
 - 涉及 ADR：0022、0023、0024、0025
-- 涉及：`operad-harness.md`；`operad-contract.md` 决定 6、8、11、12
+- 涉及：`operad-harness.md`；ADR 0008 D1–D5、0009 D2、0010 D2–D3
 - 来源：`research/2026-11-06-harness-sdks.md`「pi」；pi 1.5.0 源码 `packages/coding-agent/docs/{sdk,extensions,cli-integration,message-types}.md`、`src/core/{sdk,agent-session,session-manager,auth-storage}.ts`、`src/core/tools/bash.ts`、`examples/sdk/*.ts`
 
 ## 已定，尚未做或未核实
 
-- 等合约决定 11 的 `ctx.secrets` 进了 `StepContext`，再加 API key 一条路（`setRuntimeApiKey`），不换接法。
+- 等 ADR 0010 D2 的 `ctx.secrets` 进了 `StepContext`，再加 API key 一条路（`setRuntimeApiKey`），不换接法。
 - `steer`、`followUp`、逐 token 流（`message_update` 的 `text_delta`）留给 `operad-conversation`，第一版不接。
 - 第三方扩展的 `confirm`：`uiContext` 接到 `ctx.ask`，不再静默返回假。
 

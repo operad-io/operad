@@ -1,6 +1,6 @@
 /**
  * The codex harness: one `agent` step that starts the user's `codex-acp` and
- * talks ACP to it (docs/backlog/operad-harness.md decisions 2 and 10), plus the
+ * talks ACP to it (ADR 0022 D2, D8), plus the
  * `codex:prompt` flow. The step has the params, result names and facts of
  * `pi/agent` and `claude/agent`, so a flow changes harness by changing `use`.
  * The ACP client is `AcpClient` of `@operad-io/harness-process`; `runAgent`

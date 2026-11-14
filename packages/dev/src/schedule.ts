@@ -1,7 +1,7 @@
 /**
  * The dev plugin's scheduler. The kernel calls `onTick`; this module decides
  * which ready tasks start, which reviewed task auto merge answers, and when a
- * plan is finished. Scheduling lives here, not in the kernel (operad decision 12).
+ * plan is finished. Scheduling lives here, not in the kernel (ADR 0002 D1).
  */
 
 import { DEFAULT_POOL } from "@operad-io/pool";

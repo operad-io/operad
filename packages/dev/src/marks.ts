@@ -1,5 +1,5 @@
 /**
- * The mark and badge a dev row carries (presentation decision 10). The marks
+ * The mark and badge a dev row carries (ADR 0016). The marks
  * are read from the same task and plan data the views read: the phase, what
  * the attempt has recorded so far, and the holds the scheduler keeps.
  */

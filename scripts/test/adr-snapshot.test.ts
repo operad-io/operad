@@ -16,7 +16,7 @@ const FORBIDDEN: readonly { readonly why: string; readonly pattern: RegExp }[] =
   { why: "a task id", pattern: /\b(?:T-\d{4}|TK\d{4})\b/ },
   { why: "a date", pattern: /\b\d{4}-\d{2}-\d{2}\b/ },
   { why: 'the phrase "next task"', pattern: /next task/i },
-  { why: 'the phrase "later task"', pattern: /later task/i },
+  { why: 'the plan word "later"', pattern: /(?<!`)\blater\b(?!`)/i },
   { why: 'the phrase "this task"', pattern: /this task/i },
   { why: 'the phrase "previous task"', pattern: /previous task/i },
 ];
@@ -75,14 +75,16 @@ describe("the ADRs are snapshots, not plans", () => {
   });
 
   test("a violation names the file and the line", () => {
-    const text = "# ADR 0001: X\n\nsee docs/backlog/a.md\nfixed in T-0123 on 2026-11-13\nin the next task\n";
+    const text = "# ADR 0001: X\n\nsee docs/backlog/a.md\nfixed in T-0123 on 2026-11-13\nin the next task\nthis is added later\n";
     expect(snapshotViolations("docs/adr/0001-x.md", text)).toEqual([
       "docs/adr/0001-x.md:3: contains a docs/backlog path",
       "docs/adr/0001-x.md:4: contains a task id",
       "docs/adr/0001-x.md:4: contains a date",
       'docs/adr/0001-x.md:5: contains the phrase "next task"',
+      'docs/adr/0001-x.md:6: contains the plan word "later"',
     ]);
     expect(snapshotViolations("a.md", "TK0001 and later task, this task, previous task")).toHaveLength(4);
+    expect(snapshotViolations("a.md", "the `later` parameter is not plan wording")).toEqual([]);
   });
 
   test("an ADR missing from the index, and an index entry without a file, are reported", () => {

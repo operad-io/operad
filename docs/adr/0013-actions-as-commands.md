@@ -4,7 +4,7 @@ Status: accepted
 
 ## Background
 
-A client (command line, TUI, iOS, a later web page) knows no plugin. Otherwise every new plugin would change every client, and a plugin an agent writes on the spot could not be used on a phone at once. A plugin only produces content, a client only renders, and the kernel carries it.
+A client (command line, TUI, iOS, web page) knows no plugin. Otherwise every new plugin would change every client, and a plugin an agent writes on the spot could not be used on a phone at once. A plugin only produces content, a client only renders, and the kernel carries it.
 
 ## Decisions
 
@@ -18,4 +18,4 @@ A string with `role: "note"` in the parameters is a description to fill in (for 
 
 ### D3: Keys have two layers
 
-A plugin can carry default bindings (`{ "m": "dev:merge" }`). A user overrides them in `~/.operad/keys.json` in the same format, and the user's wins. When two plugins' default keys clash, the one loaded later does not take effect, a line is shown at startup, and the palette still works.
+A plugin can carry default bindings (`{ "m": "dev:merge" }`). A user overrides them in `~/.operad/keys.json` in the same format, and the user's wins. When two plugins' default keys clash, the one loaded second does not take effect, a line is shown at startup, and the palette still works.

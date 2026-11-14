@@ -1040,8 +1040,8 @@ describe("radian/agent step limit", () => {
 });
 
 /**
- * radian is the degraded harness for questions (`operad-contract.md` decision
- * 6): no hook sees its tool calls, so it cannot enforce a one-time permission,
+ * radian is the degraded harness for questions (ADR 0008 D1 to D5): no hook
+ * sees its tool calls, so it cannot enforce a one-time permission,
  * and a question it asks is refused once the grace passes instead of waiting
  * for a late answer. radian itself writes no question today; these tests ask
  * through a probe step that declares what radian's step declares.

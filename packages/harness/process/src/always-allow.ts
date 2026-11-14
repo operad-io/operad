@@ -1,7 +1,8 @@
 /**
  * The access profile's user layer: the calls a person answered `allow_always`
- * for, in `$OPERAD_HOME/access-user.json` (`operad-sandbox.md` decisions 4, 5,
- * 8 and 11). A missing file is an empty list. A file that cannot be read is
+ * for, in `$OPERAD_HOME/access-user.json` (ADR 0025 D3, D4 and D7; the rule
+ * for a background run is still in `docs/backlog/operad-sandbox.md`). A missing
+ * file is an empty list. A file that cannot be read is
  * reported by the step that reads it and treated as empty. Writes take the
  * platform file lock and replace the file atomically.
  */
@@ -164,8 +165,8 @@ export function alwaysAllowFromGrant(access: unknown, cwd: string): AlwaysAllowE
 
 /**
  * The profile a step passes on: its own entries plus the user layer, or no
- * entries at all in a run no person's message started (`operad-sandbox.md`
- * decision 8).
+ * entries at all in a run no person's message started (`docs/backlog/operad-sandbox.md`,
+ * not in an ADR yet).
  */
 export function accessWithAlwaysAllow(
   access: unknown,
@@ -190,7 +191,7 @@ const MESSAGE_SOURCES = new Set(["ios", "telegram", "cli", "tui", "other"]);
  * a message event from one of the chat's own client sources is a person's
  * message in that conversation. Every other event (a schedule, a webhook, an
  * incoming message from another source, a run's own event) is a background run
- * (`operad-sandbox.md` decision 8).
+ * (`docs/backlog/operad-sandbox.md`, not in an ADR yet).
  */
 export function personStarted(trigger: unknown): boolean {
   if (trigger === undefined || trigger === null) return true;

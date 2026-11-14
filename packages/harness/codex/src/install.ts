@@ -1,6 +1,6 @@
 /**
  * The user's own `codex-acp` and Codex: found, never bundled
- * (docs/backlog/operad-harness.md decisions 8 and 10). `inspectCodex` is what
+ * (ADR 0022 D6, D8). `inspectCodex` is what
  * `operad plugin check` runs: `codex-acp --version`, `codex --version` and
  * `codex login status`. Credentials are the user's own Codex (ChatGPT) login;
  * operad never reads or writes them.

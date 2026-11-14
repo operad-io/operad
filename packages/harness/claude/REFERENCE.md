@@ -3,14 +3,14 @@
 The claude harness. `src/worker.ts` is the child program: it runs one prompt
 through the Agent SDK, which starts your own `claude` command. It reads one
 JSON object from stdin and writes one JSON object per line to stdout. The last
-line is the `Result`. Decisions: `docs/backlog/operad-harness-claude.md` 2 to 8.
+line is the `Result`. Decisions: ADR 0024 D2 to D8.
 
 Run it as `bun packages/harness/claude/src/worker.ts`. stderr is free text for
 humans and is never parsed.
 
 operad bundles no claude. The root `package.json` replaces the eight
 platform packages of the SDK with empty ones
-(`docs/backlog/operad-harness-claude.md` decision 2), and the worker finds
+(ADR 0024 D2), and the worker finds
 `claude` on `PATH` (or at the `command` it is given) and resolves its real path.
 The login is the one `claude` already has; the worker passes no credential. A
 `CLAUDE_CODE_OAUTH_TOKEN` in the environment (from `claude setup-token`) reaches
@@ -279,8 +279,8 @@ refused and never asked about, so no fact holds a secret.
   call asks again. After `reject_once` no grant arrives and the model is told so
   in the prompt.
 - A run no person's message started (a schedule, a webhook or another event)
-  neither reads the user layer nor offers `allow_always` (`operad-sandbox.md`
-  decision 8).
+  neither reads the user layer nor offers `allow_always` (`docs/backlog/operad-sandbox.md`,
+  not in an ADR yet).
 
 The host's half (`createCallAsker`, `askCall`, `askRequest`) is in
 `@operad-io/harness-process`. `askCommands` is in the step's `enforces`.

@@ -1,6 +1,6 @@
 # 各家 harness 的程序接口：谁有 Claude Agent SDK 那样的东西（2026-11-06）
 
-`operad-harness.md` 原来写的是"会话的统一协议是 ACP，Claude Code 走已有的 ACP 适配器"。这份笔记核对各家 harness 今天对外的 SDK 和协议，决定 1 到 4 据此改写。判断单列，其余是核实过的事实；标 **未核** 的是没找到一手出处的。
+`operad-harness.md` 原来写的是"会话的统一协议是 ACP，Claude Code 走已有的 ACP 适配器"。这份笔记核对各家 harness 今天对外的 SDK 和协议，ADR 0022 D1 到 D3 据此改写；其余仍是未定项。判断单列，其余是核实过的事实；标 **未核** 的是没找到一手出处的。
 
 ## 要对照的能力
 

@@ -1,6 +1,6 @@
 /**
  * The user's own `claude`: found, never bundled
- * (docs/backlog/operad-harness-claude.md decisions 2 and 10). `inspectClaude`
+ * (ADR 0024 D2, D10). `inspectClaude`
  * is what `operad plugin check` runs: `claude --version` and
  * `claude auth status`.
  */

@@ -2,8 +2,7 @@
 
 The access profile matcher. `match(profile, call)` says whether one tool call
 may run under the `denyPaths`, `denyCommands` and `askCommands` of an access profile
-(`docs/backlog/operad-sandbox.md` decisions 1 and 4,
-`docs/backlog/operad-harness-pi.md` decision 7). Harnesses call it in their
+(ADR 0025 D1 and D3, and ADR 0023 D7). Harnesses call it in their
 tool-call hook: pi today, Claude and the command adapter later.
 
 ```ts
@@ -34,10 +33,10 @@ the `home` option). `test/match.test.ts` follows the tables below.
 | `askPaths` | string[], optional | paths a write asks about (`~/.zshrc`, `~/.*profile`); `*` stays within one path segment and a path under a match counts. Judged for `write` and `edit`, and for a `bash` redirect (`>`, `>>`) to such a path, which asks with the whole command. Deny wins over it |
 | `readOnly` | boolean, optional | the call's working directory is read-only: a write under it (`write`, `edit`, a `bash` redirect) asks, as if the directory were in `askPaths`. Deny wins over it |
 | `readPaths` | array of paths, optional | directories the agent may read although `denyPaths` covers an ancestor: a read tool (`read`, `grep`, `find`, `ls`) or a `bash` command that only reads may touch a path under one. A write there asks (the entries count as `askPaths`); every other denied path stays denied |
-| `allowMcp` | string[], optional | MCP tools that run without asking, as `<server>.<tool>` or `<server>.*`. The field's presence (even empty) puts MCP tools under the profile: a call with `tool: "mcp"` and `input: { server, tool }` that is not listed counts as a write and asks (`kind: "command"`, value `mcp <server>.<tool>`), per `operad-sandbox.md` decision 9. When the field is absent, MCP tools are not under the profile and are allowed |
-| `askCommands` | string[], optional | rules in the shape of `denyCommands`; a `bash` command part that matches one of these asks a person (`operad-sandbox.md` decisions 1 and 3). Writes to shell profiles are `askPaths` |
+| `allowMcp` | string[], optional | MCP tools that run without asking, as `<server>.<tool>` or `<server>.*`. The field's presence (even empty) puts MCP tools under the profile: a call with `tool: "mcp"` and `input: { server, tool }` that is not listed counts as a write and asks (`kind: "command"`, value `mcp <server>.<tool>`), per the MCP-tool rule in `docs/backlog/operad-sandbox.md`, not in an ADR yet. When the field is absent, MCP tools are not under the profile and are allowed |
+| `askCommands` | string[], optional | rules in the shape of `denyCommands`; a `bash` command part that matches one of these asks a person (ADR 0025 D1; the built-in default profile that fills `askCommands` is still in `docs/backlog/operad-sandbox.md`). Writes to shell profiles are `askPaths` |
 
-| `alwaysAllow` | `{ kind: "command" \| "path", value, cwd, tool? }[]`, optional | calls a person answered `allow_always` for. A command entry is the exact command text and cwd; a path entry is the tool, the path and cwd. Such a call is allowed when it would otherwise ask. A deny still wins, and a harness leaves the entries out of a run no person's message started (`operad-sandbox.md` decisions 4, 5, 8 and 11) |
+| `alwaysAllow` | `{ kind: "command" \| "path", value, cwd, tool? }[]`, optional | calls a person answered `allow_always` for. A command entry is the exact command text and cwd; a path entry is the tool, the path and cwd. Such a call is allowed when it would otherwise ask. A deny still wins, and a harness leaves the entries out of a run no person's message started (ADR 0025 D3, D4 and D7; the background-run rule is still in `docs/backlog/operad-sandbox.md`) |
 
 | `grants` | `{ waitId, kind: "command" \| "path", value, tool? }[]`, optional | one-time permissions not yet used; see `findGrant` |
 
@@ -104,7 +103,7 @@ The reason is `part "<part>" is refused by denyCommands rule "<rule>"`.
 "<rule>"`, and the verdict's `value` is the whole command of the call: that is
 what a person is asked about and what a one-time permission (`findGrant`) covers.
 Inline code (below) asks while `askCommands` is set, with the rule `inline code`:
-what it runs cannot be matched (`operad-sandbox.md` decision 4).
+what it runs cannot be matched (ADR 0025 D3).
 
 ## Inline code
 
@@ -153,7 +152,7 @@ Lexical means the file system is never asked. These pass:
 - a path built by a program the command starts, or read from a file;
 - paths in a script the agent wrote and then runs.
 
-The profile is a guard rail, not a boundary (`operad-sandbox.md` decision 7).
+The profile is a guard rail, not a boundary (ADR 0025 D6).
 
 ## Shell expansion in bash paths
 

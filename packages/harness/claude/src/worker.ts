@@ -1,6 +1,5 @@
 /**
- * The claude child program (docs/backlog/operad-harness-claude.md decisions
- * 2 to 8).
+ * The claude child program (ADR 0024 D2 to D8).
  *
  * Reads one JSON object from stdin, runs one prompt through the Agent SDK
  * (which starts the user's own `claude`) and writes one JSON object per line
