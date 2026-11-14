@@ -14,6 +14,7 @@ import { TELEGRAM_SETTINGS, TOKEN_SECRET } from "./settings.ts";
 import { PendingSender } from "./pending.ts";
 import { ReplySender } from "./replies.ts";
 import { TelegramSource, delay } from "./source.ts";
+import { TypingSender } from "./typing.ts";
 
 /** Builds the Telegram source plugin. */
 export function createTelegramPlugin() {
@@ -31,12 +32,14 @@ export function createTelegramPlugin() {
       }
       const api = createBotApi({ token });
       const pending = new PendingSender(ctx, { api });
-      const source = new TelegramSource(ctx, { api, pending }).start();
+      const typing = new TypingSender(ctx, { api, wait: delay }).start();
       const replies = new ReplySender(ctx, { api, wait: delay }).start();
+      const source = new TelegramSource(ctx, { api, pending }).start();
       const sent = pending.start();
       return {
         stop: async () => {
           await source.stop();
+          await typing.stop();
           await replies.stop();
           await sent.stop();
         },
@@ -54,3 +57,4 @@ export * from "./replies.ts";
 export * from "./settings.ts";
 export * from "./source.ts";
 export * from "./state.ts";
+export * from "./typing.ts";

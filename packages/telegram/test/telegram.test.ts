@@ -322,6 +322,7 @@ describe("the telegram source", () => {
       },
       async editMessage(): Promise<void> {},
       async answerCallback(): Promise<void> {},
+      async sendChatAction(): Promise<void> {},
     };
     const telegram = new TelegramSource(w.ctx, {
       api,

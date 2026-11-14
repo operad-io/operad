@@ -49,3 +49,11 @@ the row fields.
 | T-0423-M5 | packages/telegram/src/format.ts | a long line was cut between the halves of a surrogate pair | `the markdown a reply is reduced to > a long line is never cut inside a surrogate pair` |
 | T-0423-M6 | packages/telegram/src/api.ts | a send had no time limit of its own | `a send that fails > a send that stalls is ended by its time limit and counts as a failure that can be retried` |
 | T-0423-M7 | packages/telegram/src/pending.ts | a reply from an unlisted user to an item's message was taken as an answer | `pending items go to Telegram > a reply from an unlisted user to an item's message answers nothing` |
+| T-0444-M1 | packages/telegram/src/typing.ts | the client's `get` was ignored, so a running reply never showed typing | `the typing indicator > is sent when a reply starts, repeated while it runs, and stops after it ends` |
+| T-0444-M2 | packages/telegram/src/typing.ts | a reply that stopped running did not end the indicator | `the typing indicator > is sent when a reply starts, repeated while it runs, and stops after it ends` |
+| T-0444-M3 | packages/telegram/src/typing.ts | a chat with no Telegram channel was sent typing anyway | `the typing indicator > is not sent for a chat that is not bound to Telegram` |
+| T-0444-M4 | packages/telegram/src/typing.ts | an event's chat id was ignored, so a reply start never began typing | `the typing indicator > starts when the client's events name a running chat, and stop ends it` (timed out) |
+| T-0444-M5 | packages/telegram/src/typing.ts | the indicator was renewed at twice the interval, so it was not repeated while the reply ran | `the typing indicator > is sent when a reply starts, repeated while it runs, and stops after it ends` (timed out) |
+| T-0444-M6 | packages/telegram/src/typing.ts | a failed `sendChatAction` was sent again at once | `the typing indicator > a failed send is not retried, adds nothing to history and does not hold up a reply` |
+| T-0444-M7 | packages/telegram/src/api.ts | `sendChatAction` called the `sendMessage` method | `the typing indicator > the Bot API client sends the typing action to the chat` |
+| T-0444-M8 | packages/telegram/src/typing.ts | stopping the plugin left the active indicators running | `the typing indicator > starts when the client's events name a running chat, and stop ends it` (timed out) |

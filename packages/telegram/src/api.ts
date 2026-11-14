@@ -88,6 +88,14 @@ export interface AnswerCallbackRequest {
   readonly signal?: AbortSignal | undefined;
 }
 
+/** What a chat shows of the bot while a reply is written. */
+export interface SendChatActionRequest {
+  readonly chatId: number;
+  /** `typing` is the only action this plugin sends. */
+  readonly action: "typing";
+  readonly signal?: AbortSignal | undefined;
+}
+
 /** Why a Bot API call failed, and whether trying again can help. */
 export class BotApiError extends Error {
   /** False for a refusal that will not change (a bad request, a blocked bot). */
@@ -118,6 +126,8 @@ export interface BotApi {
   editMessage(request: EditMessageRequest): Promise<void>;
   /** Tells Telegram the tap was seen, with a short note for the person. */
   answerCallback(request: AnswerCallbackRequest): Promise<void>;
+  /** Shows what the bot is doing in a chat, such as that it is typing. */
+  sendChatAction(request: SendChatActionRequest): Promise<void>;
 }
 
 export interface BotApiOptions {
@@ -266,6 +276,13 @@ export function createBotApi(options: BotApiOptions): BotApi {
           callback_query_id: input.callbackId,
           ...(input.text === undefined ? {} : { text: input.text }),
         },
+        input.signal,
+      );
+    },
+    async sendChatAction(input) {
+      await post(
+        "sendChatAction",
+        { chat_id: input.chatId, action: input.action },
         input.signal,
       );
     },

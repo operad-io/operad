@@ -32,6 +32,7 @@ import type {
   BotApi,
   EditMessageRequest,
   GetUpdatesRequest,
+  SendChatActionRequest,
   SendMessageRequest,
   TelegramUpdate,
 } from "../src/api.ts";
@@ -71,6 +72,29 @@ export class FakeApi implements BotApi {
   readonly edits: EditMessageRequest[] = [];
   /** Every answer to a button tap, in order. */
   readonly callbacks: AnswerCallbackRequest[] = [];
+  /** Every typing indicator, in order. */
+  readonly chatActions: SendChatActionRequest[] = [];
+  /** Called before each chat action; throw to fail it. */
+  beforeChatAction: ((request: SendChatActionRequest, count: number) => void) | undefined;
+  private chatActionAttempts = 0;
+  private readonly watchers: (() => void)[] = [];
+
+  /** Resolves when `found` holds; looked at again after every chat action. */
+  async until(found: () => boolean): Promise<void> {
+    if (found()) return;
+    await new Promise<void>((resolve) => {
+      const watcher = (): void => {
+        if (!found()) return;
+        this.watchers.splice(this.watchers.indexOf(watcher), 1);
+        resolve();
+      };
+      this.watchers.push(watcher);
+    });
+  }
+
+  private changed(): void {
+    for (const watcher of [...this.watchers]) watcher();
+  }
 
   async editMessage(request: EditMessageRequest): Promise<void> {
     this.edits.push(request);
@@ -78,6 +102,13 @@ export class FakeApi implements BotApi {
 
   async answerCallback(request: AnswerCallbackRequest): Promise<void> {
     this.callbacks.push(request);
+  }
+
+  async sendChatAction(request: SendChatActionRequest): Promise<void> {
+    this.chatActionAttempts += 1;
+    this.chatActions.push(request);
+    this.changed();
+    this.beforeChatAction?.(request, this.chatActionAttempts);
   }
 
   async getUpdates(request: GetUpdatesRequest): Promise<readonly TelegramUpdate[]> {

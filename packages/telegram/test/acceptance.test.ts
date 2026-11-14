@@ -22,6 +22,7 @@ import {
   type BotApi,
   type EditMessageRequest,
   type GetUpdatesRequest,
+  type SendChatActionRequest,
   type SendMessageRequest,
   type TelegramUpdate,
 } from "../src/index.ts";
@@ -40,6 +41,7 @@ class LongPollApi implements BotApi {
   readonly sent: (SendMessageRequest & { readonly messageId: number })[] = [];
   readonly edits: EditMessageRequest[] = [];
   readonly callbacks: AnswerCallbackRequest[] = [];
+  readonly chatActions: SendChatActionRequest[] = [];
   private readonly watchers: (() => void)[] = [];
 
   /** What the person does: update ids are the caller's, and one may be sent again. */
@@ -74,6 +76,11 @@ class LongPollApi implements BotApi {
 
   async answerCallback(request: AnswerCallbackRequest): Promise<void> {
     this.callbacks.push(request);
+    this.changed();
+  }
+
+  async sendChatAction(request: SendChatActionRequest): Promise<void> {
+    this.chatActions.push(request);
     this.changed();
   }
 
