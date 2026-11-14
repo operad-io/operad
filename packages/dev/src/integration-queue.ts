@@ -335,7 +335,9 @@ export class IntegrationQueue {
     const withdrawal = await this.withLandLock(() => {
       const me = this.options.task;
       const mine = this.tickets().find((ticket) => ticket.task === me);
-      const leader = mine?.claimedBy;
+      // A follower reads its leader's result; the leader reads its own. The
+      // leader's ticket is still here while it pushes, so it must be asked too.
+      const leader = mine === undefined ? undefined : (mine.claimedBy ?? me);
       if (leader !== undefined) {
         const result = this.readResult(leader);
         if (

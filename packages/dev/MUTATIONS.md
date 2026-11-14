@@ -1154,6 +1154,7 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0432-M1 | packages/dev/src/integration-queue.ts | `withLandLock` ran its work without the lock, so a withdrawal slipped between the leader's last check and its push | `a follower cancelled while the leader may push > a cancel that waits behind the push reports the merge, not a cancel` |
+| T-0432-M2 | packages/dev/src/integration-queue.ts | `withdraw` read only a claimed follower's result, so a cancel of the leader while it pushed still removed its ticket and marked it cancelled | `a follower cancelled while the leader may push > a cancel that waits behind the leader's own push reports the leader merged` |
 ## T-0430-fresh-home-runs-task — the Quickstart starts the task
 
 | id | file | mutation | failing test |

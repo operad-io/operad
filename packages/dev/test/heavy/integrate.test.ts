@@ -1715,6 +1715,67 @@ describe("a follower cancelled while the leader may push", () => {
     expect(gitOrThrow(state.remote.origin, ["show", "main:code1.txt"])).toBe("line");
     expect(gitOrThrow(state.remote.origin, ["show", "main:code.txt"])).toBe("line");
   });
+
+  test("a cancel that waits behind the leader's own push reports the leader merged", async () => {
+    const state = await fixture({
+      more: 1,
+      batch: 2,
+      keyCommands: ["true"],
+    });
+    const second = state.others[0];
+    if (second === undefined) throw new Error("second task missing");
+    const rings = bell();
+    integrateTestHooks.wait = rings.wait;
+    const queued = new Map([
+      [state.taskId, signal()],
+      [second.taskId, signal()],
+    ]);
+    integrateTestHooks.queued = (task) => queued.get(task)?.resolve();
+    integrateTestHooks.turnTaken = async (task) => {
+      if (task === state.taskId) await queued.get(second.taskId)?.promise;
+    };
+    const reached = signal();
+    const release = signal();
+    integrateTestHooks.beforePush = async () => {
+      reached.resolve();
+      await release.promise;
+    };
+    const waiting = signal();
+    const letWait = signal();
+    integrationQueueTestHooks.lockWait = async () => {
+      waiting.resolve();
+      await letWait.promise;
+    };
+
+    const first = integrate(state, "integrate-run");
+    await queued.get(state.taskId)?.promise;
+    const runner = second.registry.runStep("dev/integrate", {}, {
+      runId: "integrate-run-2",
+      object: { type: "task", id: second.taskKey, data: {} },
+    });
+    await queued.get(second.taskId)?.promise;
+    await reached.promise;
+
+    const cancellation = cancelTask(state.store, state.taskKey, {
+      home: state.root,
+    });
+    await waiting.promise;
+    release.resolve();
+    letWait.resolve();
+    expect((await first).result).toBe("merged");
+    const cancelled = await cancellation;
+    expect(cancelled.alreadyMerged).toBe(
+      `${state.taskId} was merged; nothing can be cancelled`,
+    );
+    expect(cancelled.runs).toEqual([]);
+    expect((await taskOf(state)).phase).toBe("merged");
+
+    rings.ring();
+    expect((await runner).result).toBe("merged");
+    expect((await taskOf(second)).phase).toBe("merged");
+    expect(gitOrThrow(state.remote.origin, ["show", "main:code1.txt"])).toBe("line");
+    expect(gitOrThrow(state.remote.origin, ["show", "main:code.txt"])).toBe("line");
+  });
 });
 
 describe("a claimed task that leaves the queue", () => {
