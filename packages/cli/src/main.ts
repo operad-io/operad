@@ -2694,8 +2694,9 @@ export async function main(
             return await commandServe(context, io, args.slice(1), lock, isSupervised, retryBind);
           } finally {
             context.views.close();
-            // The process that becomes the supervisor after a reload must not
-            // keep the old plugin store open while the new serve writes it.
+            // Clean up the old plugin store when a serve context ends. An idle
+            // handle does not block writers; the busy timeout here came from
+            // other processes committing while a log write waited.
             closePluginStore(context.registry.store);
             await context.log.close();
           }

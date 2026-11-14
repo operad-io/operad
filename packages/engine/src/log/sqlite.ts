@@ -38,6 +38,7 @@ import {
   resolveSubscriptionWatch,
   setBusyTimeout,
   writeImmediate,
+  type ImmediateWriter,
   type SubscriptionWatch,
 } from "../platform/index.ts";
 import type {
@@ -418,6 +419,7 @@ function migrateSchema(database: Database, path: string, from: number): number {
 
 class SqliteLogBackend implements LogBackend {
   readonly #database: Database;
+  readonly #immediateWriter: ((database: Database) => ImmediateWriter) | undefined;
   readonly #clock: () => number;
   readonly #newRunId: () => string;
   readonly #path: string;
@@ -437,9 +439,11 @@ class SqliteLogBackend implements LogBackend {
     path: string,
     subscriptionWatch: SubscriptionWatch,
     onSnapshot?: () => void,
+    immediateWriter?: (database: Database) => ImmediateWriter,
   ) {
     this.#onSnapshot = onSnapshot;
     this.#database = database;
+    this.#immediateWriter = immediateWriter;
     this.#clock = clock;
     this.#newRunId = newRunId;
     this.#path = path;
@@ -456,7 +460,7 @@ class SqliteLogBackend implements LogBackend {
     assertName(object, "object");
     if (access !== undefined) assertJsonValue(access, "run access");
     this.#assertOpen();
-    return writeImmediate(this.#database, () => {
+    return this.#write(() => {
       const active = this.#database
         .query<{ run_id: string }, [string, string]>(
           "SELECT run_id FROM runs WHERE flow = ? AND object = ? AND ended_at IS NULL",
@@ -497,7 +501,7 @@ class SqliteLogBackend implements LogBackend {
   async endRun(runId: string): Promise<void> {
     assertRunId(runId);
     this.#assertOpen();
-    writeImmediate(this.#database, () => {
+    this.#write(() => {
       const row = this.#runRow(runId);
       if (!row) throw new RunNotFoundError(runId);
       if (row.ended_at !== null) return;
@@ -520,7 +524,7 @@ class SqliteLogBackend implements LogBackend {
     assertName(sourceKey, "sourceKey");
     assertJsonValue(payload, "input payload");
     this.#assertOpen();
-    return writeImmediate(this.#database, () => {
+    return this.#write(() => {
       if (runId !== null) {
         const row = this.#runRow(runId);
         if (!row) throw new RunNotFoundError(runId);
@@ -547,7 +551,7 @@ class SqliteLogBackend implements LogBackend {
     for (const fact of facts) validateNewFact(fact);
     this.#assertOpen();
 
-    return writeImmediate(this.#database, () => {
+    return this.#write(() => {
       const row = this.#runRow(runId);
       if (!row) throw new RunNotFoundError(runId);
       if (row.ended_at !== null) throw new RunEndedError(runId);
@@ -621,7 +625,7 @@ class SqliteLogBackend implements LogBackend {
     validateNewFact(fact);
     if (uniqueKey !== undefined) assertName(uniqueKey, "uniqueKey");
     this.#assertOpen();
-    return writeImmediate(this.#database, () => {
+    return this.#write(() => {
       if (uniqueKey !== undefined) {
         const existing = this.#database
           .query<GlobalFactRow, [string]>(
@@ -731,7 +735,7 @@ class SqliteLogBackend implements LogBackend {
     assertName(kind, "outcome kind");
     assertJsonValue(payload, "outcome payload");
     this.#assertOpen();
-    return writeImmediate(this.#database, () => {
+    return this.#write(() => {
       const existing = this.#outcomeRow(inputId, kind);
       if (existing !== undefined) {
         return { duplicate: true, outcome: outcomeOfRow(existing) };
@@ -926,6 +930,11 @@ class SqliteLogBackend implements LogBackend {
     }
   }
 
+  #write<T>(work: () => T): T {
+    const writer = this.#immediateWriter?.(this.#database) ?? this.#database;
+    return writeImmediate(writer, work);
+  }
+
   #assertOpen(): void {
     if (this.#closed) throw new StoreClosedError();
   }
@@ -1002,6 +1011,7 @@ export function openSqliteLogBackend(
     path,
     resolveSubscriptionWatch(options),
     options.onSnapshot,
+    options.immediateWriter,
   );
 }
 
