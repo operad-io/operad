@@ -577,6 +577,21 @@ function createHandler(
       const actor: Actor = { via: clientName(request.headers.get(CLIENT_HEADER)), id: token.label };
       try {
         const plugin = await admin.set(name, enabled, { confirmed: confirmed === true, actor });
+        // A switch belongs in the lasting log like an action's caller, even
+        // though it changes config.json rather than an object.
+        try {
+          await options.log.appendGlobal({
+            kind: "plugin_switched",
+            payload: {
+              name: plugin.name,
+              enabled: plugin.enabled,
+              actor: { via: actor.via, id: actor.id },
+            },
+            cause: `plugin:${plugin.name}`,
+          });
+        } catch (error) {
+          onLog(`http: could not record the switch of "${plugin.name}": ${messageOf(error)}`);
+        }
         onLog(`http: plugin "${name}" ${enabled ? "enabled" : "disabled"} via ${actor.via} as ${actor.id}`);
         return json({ plugin });
       } catch (error) {
@@ -614,12 +629,21 @@ function createHandler(
       if (confirmed !== undefined && typeof confirmed !== "boolean") {
         return errorResponse(400, "args", "confirmed must be a boolean");
       }
-      return json(
-        await options.views.set(name, body.value, {
-          ...(scope === undefined ? {} : { scope }),
-          confirmed: confirmed === true,
-        }),
-      );
+      try {
+        return json(
+          await options.views.set(name, body.value, {
+            ...(scope === undefined ? {} : { scope }),
+            confirmed: confirmed === true,
+          }),
+        );
+      } catch (error) {
+        // The body was checked above; a value or file the settings schema
+        // refuses is unprocessable, not a malformed request.
+        if (error instanceof ViewError && error.kind === "args") {
+          return errorResponse(422, "args", error.message);
+        }
+        throw error;
+      }
     }
 
     if (path.startsWith("/v1/attachments/")) {

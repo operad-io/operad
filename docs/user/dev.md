@@ -179,7 +179,9 @@ A client can read and change these flows without touching the file:
 repository with where it comes from (`dev.json`, `typescript` or `built-in`), its
 stages (a `dev.json` flow or the built-in `default`, whose stages carry the
 repository's `worker`, `reviewer` and `gate` settings) or its steps (a TypeScript
-flow), or dev's reason when it refuses a TypeScript file. `operad settings set
+flow), or dev's reason when it refuses a TypeScript file. When `dev.json` cannot
+be read at all, the list keeps a `dev.json` entry whose `refused` is the reason,
+beside the TypeScript flows and the built-in one. `operad settings set
 dev.flows.<name> '<flow JSON>' --repo <name>` saves one `dev.json` flow (`null`
 removes it; `dev.flows` sets them all). Dev checks the whole file first: its
 schema, the rules below and a name a TypeScript flow in `.operad/flows` also has.
