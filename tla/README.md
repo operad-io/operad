@@ -80,3 +80,39 @@ Differences from ADR 0021 (the model follows the code):
 Run it: `bash scripts/tla.sh pool` (TLC 2.19, release v1.7.4) takes about three minutes on ten cores
 (326,670 distinct states, 1,578,576 generated, depth 32). A fourth task did not
 finish in twenty minutes.
+
+## `integrate`: the integration queue and the main clone
+
+Code it stands for: `packages/dev/src/integration-queue.ts` (tickets, claims,
+results, `turn`, `claim`, `fallBack`, `publish`, `finish`),
+`packages/dev/src/integrate.ts` (`runIntegrate`, `landBatch`, the replay after a
+crash, `recordMerged`), `packages/dev/src/mainclone.ts` (`updateMainClone`). ADR
+0034 had not merged; the model follows the code.
+
+Run: `bash scripts/tla.sh integrate` (3 tasks, no rework, no crash; 978,728
+distinct states, depth 39, about 5 minutes on ten cores). Other runs, with
+`-config`: `MCCrash.cfg` (2 tasks, one rework, one crash; 3,163,064 distinct
+states, depth 36, about 15 minutes), `MCLocal.cfg` (a commit made by hand in the
+clone), and three configurations that each hold one invariant the code
+violates: `MCOneMerge.cfg`, `MCUnwanted.cfg`, `MCPrepare.cfg` (counterexamples
+below).
+
+Invariants: `OriginLinear`, `MergedWasChecked`, `CloneNotAhead`, `LocalKept`,
+`CloneEqualsOrigin`; properties `PushedGetsMerged`, `QueuedResolves` (weak
+fairness on what the code does itself).
+
+Findings (counterexamples against the intended model; not fixed here):
+
+- `OneMerge`: leader A publishes a batch result and dies; C, queued behind the
+  claimed B, takes the turn; B sees the dead leader's push never landed, voids
+  the claim and takes the turn as well. Two tasks hold a turn. Pushes stay
+  safe: a non-fast-forward push is refused.
+- `NoUnwantedMerge`: a claimed follower cancelled (or reworked) after the
+  leader's `stillQueued` check and before its push is merged anyway.
+- `PrepareRan`: the process is killed after the main clone fast-forwarded and
+  before the prepare lines ran; the replay finds the commit already in the
+  clone and skips prepare.
+
+Not checked yet: the mutation runs (guards removed to show TLC catches them),
+the lost-acknowledgement push, the "already on main" tree-equal path, a failing
+prepare, and a clone made clean again after a skipped follow.
