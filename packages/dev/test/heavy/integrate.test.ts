@@ -1960,6 +1960,10 @@ describe("a claimed task that leaves the queue", () => {
     expect(followers.map((ticket) => ticket.task)).toEqual(["T-b", "T-c"]);
     await b.leave();
     expect(a.stillQueued(followers).map((ticket) => ticket.task)).toEqual(["T-c"]);
+    await b.join();
+    // b left and rejoined: its new ticket is not the one the batch claimed.
+    expect(a.stillQueued(followers).map((ticket) => ticket.task)).toEqual(["T-c"]);
+    await b.leave();
     a.fallBack(followers);
     expect(a.tickets().map((ticket) => ticket.task)).toEqual(["T-a", "T-c"]);
     expect(a.tickets()[1]?.solo).toBe(true);

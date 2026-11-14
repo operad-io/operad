@@ -1201,3 +1201,9 @@ the row fields.
 |---|---|---|---|
 | T-0442-M1 | packages/dev/src/service.ts | `confirmPlan` stopped writing the `ready` change line into each task it released, a first confirm that runs in process | `operad with the dev plugin > the real binary registers and plans; list, show and confirm run in process` (expected `/- \d\d:\d\d {2}ready/`, received only the `created` line) |
 | T-0441-M4 | packages/dev/src/settings.ts | the array form of `plugins` passed each whole entry to `harnessPlugin` and ignored `enabled: false`, so an object entry never named its harness | `the agent of a repository that names no worker > reads the array form and skips an entry with enabled false` |
+
+## T-0450 — a rejoined follower's old commit is not pushed
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0450-M1 | packages/dev/src/integration-queue.ts | `stillQueued` matched followers by task name only | `a claimed task that leaves the queue > a batch that falls back does not write its ticket back` |

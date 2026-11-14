@@ -477,10 +477,14 @@ export class IntegrationQueue {
     return followers;
   }
 
-  /** The claimed tasks that are still queued: a task that left is not merged. */
+  /**
+   * The claimed tickets that are still queued: a task that left is not merged,
+   * and one that left and rejoined holds a new ticket (a new seq), so the
+   * commit the batch built from the old one is not its commit.
+   */
   stillQueued(followers: readonly Ticket[]): readonly Ticket[] {
-    const queued = new Set(this.tickets().map((ticket) => ticket.task));
-    return followers.filter((ticket) => queued.has(ticket.task));
+    const queued = new Map(this.tickets().map((ticket) => [ticket.task, ticket.seq]));
+    return followers.filter((ticket) => queued.get(ticket.task) === ticket.seq);
   }
 
   /** A batch that could not land: its tasks integrate one by one, never batched again. */
