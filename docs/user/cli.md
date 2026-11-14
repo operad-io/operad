@@ -83,6 +83,8 @@ and `operad help` print the whole table.
 | `operad bot mcp <bot> <name> [<command> [args…]]` | none of its own; the command's words are the server's | Proposes a local MCP server after reading its tools. With no command, reads a pasted `mcpServers` entry from stdin. |
 | `operad bot setting <bot>` | none | Proposes a settings change for one bot from JSON on stdin; a person approves it. |
 
+A client of `serve` does the same over HTTP with `GET /v1/plugins` and `POST /v1/plugins`; see [Plugins](http.md#plugins).
+
 ## Options
 
 | Option | Commands | Meaning |

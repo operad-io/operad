@@ -857,3 +857,5 @@ the row fields.
 | T-0457-M3 | packages/engine/src/views/presentation.ts | the oldest run was read instead of the newest | `how an object's last run ended, over HTTP > a newer run that is still going hides the earlier ending` |
 | T-0457-M4 | packages/engine/src/views/presentation.ts | `lastRun.endedAt` was 0 instead of the ending fact's time | `how an object's last run ended, over HTTP > a reply that ends shows outcome done and when` |
 | T-0457-M5 | packages/engine/src/views/presentation.ts | a failure that recorded no reason of its own did not take the failed step's message | `how an object's last run ended, over HTTP > a reply that fails shows outcome failed` |
+| T-0459-M7 | packages/engine/src/http/server.ts | a switch was not recorded with the client and token label | `plugins over HTTP > disable and enable change the config the command line reads, and are recorded` |
+| T-0459-M8 | packages/engine/src/http/server.ts | `GET /v1/plugins` answered an empty list | `plugins over HTTP > GET /v1/plugins lists what `operad plugin list` prints, with where each comes from` |
