@@ -125,6 +125,8 @@ export interface LockFileOptions {
   readonly onLog?: ((message: string) => void) | undefined;
   /** Names the lock in log lines; defaults to `lock`. */
   readonly label?: string | undefined;
+  /** How long to wait for a live holder; defaults to `LOCK_TIMEOUT_MS`. */
+  readonly timeoutMs?: number | undefined;
 }
 
 /**
@@ -279,6 +281,7 @@ async function acquire(
   clock: () => number,
   wait: (ms: number) => Promise<void>,
   log: (message: string) => void,
+  timeoutMs: number,
 ): Promise<LockRecord> {
   const started = clock();
   for (;;) {
@@ -319,7 +322,7 @@ async function acquire(
       continue;
     }
 
-    if (clock() - started > LOCK_TIMEOUT_MS) {
+    if (clock() - started > timeoutMs) {
       const who =
         holder.record === undefined ? "unknown pid" : `pid ${holder.record.pid}`;
       throw new LockTimeoutError(lockPath, who);
@@ -376,7 +379,13 @@ export async function withLockFile<T>(
   const label = options.label ?? "lock";
   const onLog = options.onLog ?? ((message: string) => console.error(message));
   const log = (message: string): void => onLog(`${label}: ${message}`);
-  const mine = await acquire(lockPath, clock, wait, log);
+  const mine = await acquire(
+    lockPath,
+    clock,
+    wait,
+    log,
+    options.timeoutMs ?? LOCK_TIMEOUT_MS,
+  );
   try {
     return await work();
   } finally {

@@ -1178,6 +1178,17 @@ the row fields.
 |---|---|---|---|
 | T-0441-M2 | packages/dev/src/settings.ts | `defaultAgentUse` returned `radian/agent` before reading the home's config | `the agent of a repository that names no worker > is the first enabled harness in the fixed order`, `... > comes from the home's config, and the reviewer follows it`, `... > also applies when dev.json is missing` and `... > an enabled codex is still a harness` |
 | T-0441-M3 | packages/dev/src/service.ts | `repo add` wrote `worker: { "use": "radian/agent", "args": [] }` into a new `.operad/dev.json` again, so the repository did not follow the home | `dev/worktree > a missing settings file means the documented defaults` |
+## T-0440 — the prepare left due is kept; the land lock waits for a push
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0440-M1 | packages/dev/src/integrate.ts | a merged record always wrote `prepareDue: false`, even when the clone did not move | `dev/integrate main clone > a rerun that finds the clone dirty keeps the prepare the killed run left due (T-0440)` |
+| T-0440-M3 | packages/dev/src/integrate.ts | `prepareMarker` ignored the `prepareDue` a killed run left (`\|\| leftDue` removed) | `dev/integrate main clone > a rerun whose fetch fails keeps the prepare the killed run left due (T-0440)` (expected `["one", "two"]`, received `[]`) |
+| T-0440-M4 | packages/dev/src/integrate.ts | the push callback returned false after a push that errored but landed, instead of settling it inside the land lock | `a follower cancelled while the leader may push > a plan cancel that waits behind a push that reported an error but landed says what merged (T-0440)` |
+| T-0440-M5 | packages/dev/src/integrate.ts | `recordBatched` left `batchHead` and `batch` out of the follower's record | `a follower cancelled while the leader may push > a plan cancel that waits behind a push that reported an error but landed says what merged (T-0440)` (the follower's record assertions) |
+| T-0440-M6 | packages/dev/src/actions.ts | the plan cancel action returned nothing for the tasks a batch had pushed | `dev actions > cancel of a plan says which tasks a batch had already pushed (T-0440)` |
+| T-0440-M7 | packages/dev/src/service.ts | a cancel without `home` guessed the home from the store's path again | `dev actions > a cancel called without the home does not look at the integration queue (T-0440)` |
+
 ## T-0437 — the real-binary CLI test starts the binary twice
 
 | id | file | mutation | failing test |

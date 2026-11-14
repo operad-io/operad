@@ -131,7 +131,7 @@ export async function updateMainClone(
   }
   const merge = git(repository, ["merge", "--ff-only", sha]);
   if (!merge.ok) {
-    if (lines.length > 0 && marker !== undefined) await marker.save(false);
+    if (lines.length > 0 && marker !== undefined) await marker.save(marker.due);
     return {
       updated: false,
       note: `cannot fast-forward: ${lastLine(merge.err || merge.out) || "git merge failed"}`,

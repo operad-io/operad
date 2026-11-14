@@ -316,6 +316,31 @@ describe("the lock file", () => {
     expect(existsSync(lock)).toBe(true);
   });
 
+  test("a waiter given a longer timeout outlasts the default one (T-0440)", async () => {
+    const { repositoryPath } = await setup();
+    const lock = join(repositoryPath, ".operad", "long.lock");
+    mkdirSync(join(repositoryPath, ".operad"), { recursive: true });
+    writeFileSync(
+      lock,
+      JSON.stringify({ pid: process.pid, startedAt: null, nonce: "holder" }),
+      "utf8",
+    );
+    let now = 0;
+    let waits = 0;
+    await expect(
+      withLockFile(lock, () => undefined, {
+        timeoutMs: 60_000,
+        clock: () => now,
+        wait: async () => {
+          waits += 1;
+          now += waits === 1 ? 20_000 : 60_000;
+        },
+      }),
+    ).rejects.toBeInstanceOf(LockTimeoutError);
+    // Past the default 10 s it kept waiting; only the longer limit ended it.
+    expect(waits).toBe(2);
+  });
+
   test("a failed job releases the lock", async () => {
     const { repositoryPath } = await setup();
     await expect(

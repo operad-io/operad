@@ -10,7 +10,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import { objectValueAfter, ViewError } from "@operad-io/engine";
 import { isBusy } from "@operad-io/engine/platform";
 import type { FlowDefinition, ObjectStore, PluginFact, StoredObject } from "@operad-io/engine";
@@ -1908,17 +1908,6 @@ interface CancelledTasks {
   readonly merged: readonly string[];
 }
 
-/** Where a cancel finds the integration queue: the home the action runs in. */
-function cancelHome(
-  store: ObjectStore,
-  options: CancelOptions,
-): string | undefined {
-  if (options.home !== undefined) return options.home;
-  // Before this option, a cancel called the service directly: the default
-  // store sits at `<home>/store`, so that home still finds the queue.
-  return basename(store.root) === "store" ? dirname(store.root) : undefined;
-}
-
 async function cancelTasks(
   store: ObjectStore,
   tasks: readonly StoredObject[],
@@ -1960,7 +1949,10 @@ async function cancelTasks(
 
 export interface CancelOptions {
   readonly runs?: DevRunControl | undefined;
-  /** The operad home, where the integration queue lives. */
+  /**
+   * The operad home, where the integration queue lives. Without it a cancel
+   * does not look at the queue: only the action, which knows the home, passes it.
+   */
   readonly home?: string | undefined;
 }
 
@@ -1982,7 +1974,7 @@ export async function cancelPlan(
 }> {
   const initial = await getPlan(store, id);
   const initialData = planData(initial.data);
-  const home = cancelHome(store, options);
+  const { home } = options;
   const cancelled = await withRepoLock(
     store,
     initialData.repository,
@@ -2009,7 +2001,7 @@ export async function cancelTask(
 ): Promise<CancelledTask> {
   const initial = await getTask(store, id);
   const initialData = taskData(initial.data);
-  const home = cancelHome(store, options);
+  const { home } = options;
   const cancelled = await withRepoLock(
     store,
     initialData.repository,

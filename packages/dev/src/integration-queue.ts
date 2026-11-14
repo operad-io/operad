@@ -31,6 +31,13 @@ import {
 import { join } from "node:path";
 import { waitForChange, withLockFile } from "@operad-io/engine/platform";
 
+/**
+ * How long a waiter accepts a live holder of the land lock. The holder is
+ * across a git push, which has no bound of its own, so the engine's 10 s
+ * default would fail every cancel and leave behind a slow push.
+ */
+const LAND_LOCK_TIMEOUT_MS = 30 * 60 * 1000;
+
 /** How often a waiting integration looks again when nothing announced a change. */
 const RECHECK_MS = 500;
 
@@ -205,6 +212,7 @@ export class IntegrationQueue {
     return withLockFile(landLockPath(this.directory), work, {
       label: "integration queue",
       onLog: () => {},
+      timeoutMs: LAND_LOCK_TIMEOUT_MS,
       ...(wait === undefined ? {} : { wait }),
     });
   }
@@ -512,7 +520,10 @@ export class IntegrationQueue {
 /**
  * Takes a task out of the integration queue on behalf of a cancel, with the
  * land lock a leader's last check-and-push takes. It answers `merged` when the
- * leader already pushed a batch that lists the task.
+ * leader already pushed a batch that lists the task. The ticket goes at once,
+ * before the cancelled run has seen its abort: that run can no longer push
+ * (its last check finds no ticket), and the next task may start its turn while
+ * the cancelled run is still winding down.
  */
 export async function withdrawIntegration(
   home: string,
