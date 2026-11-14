@@ -1143,7 +1143,7 @@ export function actorOfCli(username: string = userInfo().username): Actor {
 function actionCandidates(
   context: Context,
   name: string,
-): readonly { readonly name: string; readonly on: string }[] {
+): readonly { readonly name: string; readonly on?: string | undefined }[] {
   return context.registry
     .actions()
     .filter((info) => info.action === name);

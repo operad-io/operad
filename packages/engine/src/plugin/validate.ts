@@ -589,11 +589,16 @@ function normalizeActions(
       throw new PluginError(`${at}[${index}]: must be an object`);
     }
     const name = requireNameText(entry.name, `${at}[${index}]: name`);
-    const on = requireNameText(entry.on, `${at}[${index}]: on`);
-    const key = `${name}\u0000${on}`;
+    const on =
+      entry.on === undefined
+        ? undefined
+        : requireNameText(entry.on, `${at}[${index}]: on`);
+    const key = `${name}\u0000${on ?? ""}`;
     if (names.has(key)) {
       throw new PluginError(
-        `${at}: duplicate action "${name}" on object type "${on}"`,
+        on === undefined
+          ? `${at}: duplicate action "${name}" that targets no object`
+          : `${at}: duplicate action "${name}" on object type "${on}"`,
       );
     }
     names.add(key);
@@ -631,7 +636,7 @@ function normalizeActions(
     }
     actions.push({
       name,
-      on,
+      ...(on === undefined ? {} : { on }),
       ...(typeof entry.creates === "string" ? { creates: entry.creates } : {}),
       ...(args === undefined ? {} : { args }),
       ...(confirm === undefined ? {} : { confirm }),
@@ -1008,7 +1013,7 @@ export function validatePluginSet(plugins: readonly NormalizedPlugin[]): void {
 
   for (const plugin of plugins) {
     for (const action of plugin.actions) {
-      if (!objects.has(action.on)) {
+      if (action.on !== undefined && !objects.has(action.on)) {
         throw new PluginError(
           `plugin "${plugin.name}": action "${action.name}": on: unknown object type "${action.on}"`,
         );

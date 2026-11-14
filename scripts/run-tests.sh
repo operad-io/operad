@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # run-tests.sh [package...]: runs the test suite, or the tests of the named
-# packages (directory names under packages/, such as tui or harness/claude). With no name it runs every
-# package and scripts/.
+# packages (directory names under packages/, such as tui or harness/claude). An
+# argument that starts with ./ or / is a test directory outside packages/. With
+# no argument it runs every package and scripts/.
 #
 # Light and heavy tests run as separate steps. A heavy test starts a real
 # process, builds a real git repository, opens a port, or holds a lot of memory;
@@ -51,8 +52,14 @@ if [ $# -eq 0 ]; then
   done
   extra=("./scripts/")
 else
-  names=("$@")
+  names=()
   extra=()
+  for arg in "$@"; do
+    case "$arg" in
+      ./*|/*) extra+=("$arg") ;;
+      *) names+=("$arg") ;;
+    esac
+  done
 fi
 
 # True when a directory holds a test file outside its test/heavy/ directory.
@@ -71,7 +78,7 @@ has_heavy() {
 together=()
 alone=()
 heavy=()
-for name in "${names[@]}"; do
+for name in "${names[@]+"${names[@]}"}"; do
   dir="./packages/${name}"
   if [ "$name" = tui ]; then
     # The opentui native library cannot load under --parallel, so the whole tui

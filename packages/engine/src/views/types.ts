@@ -53,8 +53,9 @@ export function listTypes(registry: PluginRegistry): readonly ViewTypeInfo[] {
       ...new Set(
         registry
           .actions()
-          .filter((action) => action.creates === entry.type)
-          .map((action) => action.on),
+          .filter((action) => action.creates === entry.type && action.on !== undefined)
+          .map((action) => action.on)
+          .filter((on): on is string => on !== undefined),
       ),
     ];
     types.push({

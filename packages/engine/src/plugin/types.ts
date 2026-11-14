@@ -838,10 +838,14 @@ export interface HarnessEfforts {
   readonly flag?: string | undefined;
 }
 
-/** An action a plugin offers on an object type. */
+/** An action a plugin offers on an object type, or without one. */
 export interface ActionTypeDefinition {
   readonly name: string;
-  readonly on: string;
+  /**
+   * The object type the action works on. Absent when the action targets no
+   * object: it runs from its arguments alone, as a client's POST /v1/act does.
+   */
+  readonly on?: string | undefined;
   /** The person's input, as a JSON Schema object. */
   readonly args?: ActionArgsSchema | undefined;
   /**
@@ -953,7 +957,8 @@ export interface ActionContext extends PluginBaseContext {
 
 /** Options for running an action through the registry. */
 export interface ActionRunOptions {
-  readonly object: RunObject | StoredObject;
+  /** The object the action is on; absent when the action targets no object. */
+  readonly object?: RunObject | StoredObject | undefined;
   readonly runId?: string | undefined;
   readonly cwd?: string | undefined;
   readonly signal?: AbortSignal | undefined;

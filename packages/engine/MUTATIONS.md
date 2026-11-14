@@ -892,3 +892,8 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0465-M1 | packages/engine/src/plugin/registry.ts | `signedInFor` returned undefined instead of asking the loaded harness's `signedIn` with its settings | `a harness plugin's signedIn > passes true and false through, and gives undefined when it cannot tell`, `a harness plugin's signedIn > reads the plugin's settings each time` |
+## T-0464 — an action that targets no object
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0464-M8 | packages/engine/src/views/presentation.ts | `act` without an object id no longer ran an action that targets no object | `registering a repository through dev:repo-add over HTTP > it asks to confirm, registers a git work tree with a bare remote, and the repo object lists` (and every other case in that file) |

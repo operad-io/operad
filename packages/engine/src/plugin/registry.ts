@@ -161,8 +161,8 @@ export interface PluginRefusal {
 export interface ActionInfo {
   readonly plugin: string;
   readonly action: string;
-  /** The object type the action works on. */
-  readonly on: string;
+  /** The object type the action works on; absent when it targets no object. */
+  readonly on?: string | undefined;
   /** Addressed as `<plugin>:<action>`. */
   readonly name: string;
   /** The person's input, as a JSON Schema object. */
@@ -417,7 +417,7 @@ export class PluginRegistry {
         actionInfos.push({
           plugin: plugin.name,
           action: action.name,
-          on: action.on,
+          ...(action.on === undefined ? {} : { on: action.on }),
           name: `${plugin.name}:${action.name}`,
           ...(action.args === undefined ? {} : { args: action.args }),
           ...(note.name === undefined ? {} : { note: note.name }),
@@ -495,6 +495,16 @@ export class PluginRegistry {
           item.name === action &&
           (objectType === undefined || item.on === objectType),
       );
+  }
+
+  /** The definition of one action that targets no object, or undefined. */
+  targetlessAction(
+    plugin: string,
+    action: string,
+  ): ActionTypeDefinition | undefined {
+    return this.byName
+      .get(plugin)
+      ?.actions.find((item) => item.name === action && item.on === undefined);
   }
 
   /** The plugin names in load order. */
@@ -1122,16 +1132,19 @@ export class PluginRegistry {
     };
   }
 
-  /** Runs an action on an object, by `plugin/action` or a unique plain name. */
+  /** Runs an action, by `plugin/action` or a unique plain name. */
   async runAction(
     name: string,
     args: unknown,
     options: ActionRunOptions,
   ): Promise<ActionRun> {
-    const found = this.findAction(name, options.object.type);
+    const object = options.object;
+    const found = this.findAction(name, object?.type);
     const label = `action "${found.plugin.name}:${found.action.name}"`;
     const personArgs = validateActionArgs(
-      found.action.argsFor?.(options.object, this.actionEnv()) ?? found.action.args,
+      (object === undefined
+        ? undefined
+        : found.action.argsFor?.(object, this.actionEnv())) ?? found.action.args,
       args,
       label,
     );
@@ -1148,7 +1161,9 @@ export class PluginRegistry {
     // it never changes the object's data.
     await this.store.append({
       type: "action_invoked",
-      object: { type: options.object.type, id: options.object.id },
+      ...(object === undefined
+        ? {}
+        : { object: { type: object.type, id: object.id } }),
       cause,
       data: {
         action: `${found.plugin.name}/${found.action.name}`,
@@ -1172,7 +1187,8 @@ export class PluginRegistry {
       settings: this.settingsFor(found.plugin.name),
       secrets: this.secretsFor(found.plugin.name),
       runId,
-      object: options.object,
+      // A targetless action has no object; it runs from its arguments alone.
+      object: object ?? { type: "", id: "", data: {} },
       actor,
       answer,
       harnesses: this.loadedHarnesses(),
@@ -1669,7 +1685,7 @@ export class PluginRegistry {
 
   private findAction(
     name: string,
-    objectType: string,
+    objectType?: string | undefined,
   ): { readonly plugin: LoadedPlugin; readonly action: ActionTypeDefinition } {
     const named = splitActionName(name);
     if (named !== undefined) {
@@ -1678,7 +1694,11 @@ export class PluginRegistry {
       const plugin = this.byName.get(pluginName);
       if (plugin !== undefined) {
         const action = plugin.actions.find(
-          (item) => item.name === actionName && item.on === objectType,
+          (item) =>
+            item.name === actionName &&
+            (objectType === undefined
+              ? item.on === undefined
+              : item.on === objectType),
         );
         if (action !== undefined) return { plugin, action };
         const other = plugin.actions.find((item) => item.name === actionName);
@@ -1708,7 +1728,9 @@ export class PluginRegistry {
       throw new PluginError(`action "${name}": no loaded plugin declares it`);
     }
     const action =
-      found.actions.find((item) => item.on === objectType) ?? found.actions[0];
+      found.actions.find((item) =>
+        objectType === undefined ? item.on === undefined : item.on === objectType,
+      ) ?? found.actions[0];
     if (action === undefined) {
       throw new PluginError(`action "${name}": no loaded plugin declares it`);
     }
@@ -1719,11 +1741,19 @@ export class PluginRegistry {
   private requireActionObject(
     plugin: LoadedPlugin,
     action: ActionTypeDefinition,
-    objectType: string,
+    objectType?: string | undefined,
   ): void {
+    if (objectType === undefined) {
+      if (action.on !== undefined) {
+        throw new PluginError(
+          `plugin "${plugin.name}": action "${action.name}": on: expected no object, got object type "${action.on}"`,
+        );
+      }
+      return;
+    }
     if (action.on !== objectType) {
       throw new PluginError(
-        `plugin "${plugin.name}": action "${action.name}": on: expected object type "${action.on}", got "${objectType}"`,
+        `plugin "${plugin.name}": action "${action.name}": on: expected object type "${action.on ?? "none"}", got "${objectType}"`,
       );
     }
   }

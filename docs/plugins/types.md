@@ -17,7 +17,7 @@ The types a plugin imports, by the page that explains them. The values these ent
 | `ActionOutcome` | What an action returns when it created an object: the line of text a person reads, and `opens`, the object as `type:id`. Returning only text still works. The kernel, the client API and HTTP pass... | [actions](actions.md) |
 | `ActionRun` | An action that ran, with the value its plugin returned. | [actions](actions.md) |
 | `ActionRunOptions` | Options for running an action through the registry. | [actions](actions.md) |
-| `ActionTypeDefinition` | An action a plugin offers on an object type. | [actions](actions.md) |
+| `ActionTypeDefinition` | An action a plugin offers on an object type, or with no `on` on no object. | [actions](actions.md) |
 | `Answer` | The answer a plugin action gives to the person wait it is answering. | [actions](actions.md) |
 | `CommandContext` | The context a command verb receives. | [actions](actions.md) |
 | `CommandDefinition` | A CLI verb a plugin declares. | [actions](actions.md) |
