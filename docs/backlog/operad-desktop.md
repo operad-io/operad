@@ -81,6 +81,14 @@ operad 现在有三个客户端：命令行、TUI、iOS。三个都要求用户�
 31. **插件可以带自己的界面。**（owner，2026-11-14）做法是 operad 的三个界面（桌面应用、TUI、iOS）给插件提供一个界面组件库。这是桌面应用之后的下一个项目，不在第一版里。这要改 ADR 0014 D5。
 32. **开始做时单独开一个 backlog 条目**（建议）。在那之前，桌面应用的通用界面先用一套自己的组件写（列表、对象页面、动作表单、设置表单），以后把这套组件开放给插件，不另写一套。
 
+### 第一批（2026-11-14 owner：按 lead 建议）
+
+33. **第一批要求本机已经装好 operad。** 自带 operad 单独做一个计划，那时再定待决 3。
+34. **第一版只做 macOS。**（待决 7）
+35. **界面测试用 `happy-dom` 和 `@testing-library/react`**（开发依赖），壳的逻辑用 `bun:test`。真窗口的端到端测试第一批不做。
+36. 决定 6–8 按建议执行（界面用 React；启动 serve 复用 TUI 的 `ensureServer` 和 `discoverServer`；关掉应用不停 serve）。
+37. **设计稿是视觉模版**（`operad-desktop` 仓库 `docs/design/`）：具体实现和用词以 iOS 客户端和 operad 现在的约定为准；两边都没有的新词先问 owner。
+
 ## 原型结果（2026-11-14，macOS arm64，Electrobun 2.0.6）
 
 一个 Electrobun 窗口，主进程调用 `ensureServer` 和 `discoverServer`，然后读 `/v1/types` 显示在窗口里。代码没有进仓库。
