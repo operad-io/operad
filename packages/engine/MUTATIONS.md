@@ -904,3 +904,11 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0465-M1 | packages/engine/src/plugin/registry.ts | `signedInFor` returned undefined instead of asking the loaded harness's `signedIn` with its settings | `a harness plugin's signedIn > passes true and false through, and gives undefined when it cannot tell`, `a harness plugin's signedIn > reads the plugin's settings each time` |
+
+## T-0472 — targetless action follow-ups
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0472-M1 | packages/engine/src/views/presentation.ts | a targetless action with a file argument skipped the refusal and ran with the reference unstored | `an action that targets no object > refuses a file argument, because there is no object to store it under` |
+| T-0472-M2 | packages/engine/src/views/presentation.ts | a targetless action whose when was false lost its action name from the refusal | `an action that targets no object > says it cannot run now when its when is false` |
+| T-0472-M3 | packages/engine/src/plugin/validate.ts | two targetless actions with one name reported a plain duplicate instead of saying they target no object | `loading targetless actions > refuses two actions with one name that both target no object` |
