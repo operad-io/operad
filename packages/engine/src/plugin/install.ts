@@ -326,6 +326,15 @@ export interface AddPackageOptions {
   readonly run?: InstallRunner | undefined;
 }
 
+/** Options for removing one package from the home project. */
+export interface RemovePackageOptions {
+  readonly home: string;
+  /** The package name `addPackage` returned. */
+  readonly name: string;
+  /** A test replaces the command; defaults to Bun. */
+  readonly run?: InstallRunner | undefined;
+}
+
 /** What adding a package installed. */
 export interface AddedPackage {
   readonly name: string;
@@ -395,4 +404,26 @@ export async function addPackage(options: AddPackageOptions): Promise<AddedPacka
     file,
     hasInstallScript: declaresInstallScript(manifest),
   };
+}
+
+/**
+ * Takes a package out of the home's Bun project again, dependency, files and
+ * lockfile entry alike. A refusal after `addPackage` calls this so a package
+ * operad refused does not stay installed; a package the project does not name
+ * is left alone.
+ */
+export async function removePackage(options: RemovePackageOptions): Promise<void> {
+  const directory = pluginProjectPath(options.home);
+  const path = join(directory, "package.json");
+  const manifest = readManifest(path);
+  if (manifest === undefined) return;
+  const dependencies = manifest.dependencies;
+  if (!isRecord(dependencies) || !Object.hasOwn(dependencies, options.name)) return;
+  const args = ["remove", options.name, "--ignore-scripts", "--no-summary"];
+  const run = (options.run ?? runWithBun)(directory, args);
+  if (run.exitCode !== 0) {
+    throw new Error(
+      `${options.name}: \`bun ${args.join(" ")}\` in ${directory} failed with exit code ${String(run.exitCode)}; ${outputTail(run)}`,
+    );
+  }
 }

@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   type InstallRunner,
@@ -45,6 +45,20 @@ function fakeInstall(
 ): InstallRunner {
   return (cwd, args) => {
     calls.push({ cwd, args });
+    const manifestPath = join(cwd, "package.json");
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as {
+      dependencies?: Record<string, string>;
+    };
+    if (args[0] === "remove") {
+      const name = args[1] ?? "";
+      if (manifest.dependencies !== undefined) {
+        delete manifest.dependencies[name];
+        if (Object.keys(manifest.dependencies).length === 0) delete manifest.dependencies;
+      }
+      writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+      rmSync(join(cwd, "node_modules", name), { recursive: true, force: true });
+      return { exitCode: 0, stdout: "", stderr: "" };
+    }
     const target = args[1] ?? "";
     const at = target.startsWith("@") ? target.indexOf("@", 1) : target.indexOf("@");
     const name = at > 0 ? target.slice(0, at) : target;
@@ -54,10 +68,6 @@ function fakeInstall(
       return { exitCode: 1, stdout: "", stderr: `404 ${name} is not found` };
     }
     const version = asked ?? fixture.version;
-    const manifestPath = join(cwd, "package.json");
-    const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as {
-      dependencies?: Record<string, string>;
-    };
     manifest.dependencies = { ...(manifest.dependencies ?? {}), [name]: version };
     writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
     const directory = join(cwd, "node_modules", name);
@@ -104,6 +114,10 @@ function configOf(home: string): {
 
 const addedDeclaration =
   'export default { operadPlugin: 1, name: "added", kind: "domain", version: "2.0.0" };';
+
+function declarationFor(name: string): string {
+  return `export default { operadPlugin: 1, name: ${JSON.stringify(name)}, kind: "domain", version: "1.0.0" };`;
+}
 
 describe("plugin add", () => {
   test("installs an npm package, prints it, and leaves it off until enable", async () => {
@@ -155,22 +169,58 @@ describe("plugin add", () => {
     expect(output.text()).toContain("installed latest-plugin@9.9.9");
   });
 
-  test("refuses a name npm does not allow and a version that is not exact", async () => {
+  test("refuses a name npm does not allow", async () => {
     const { home } = await makeHome();
     const calls: { cwd: string; args: readonly string[] }[] = [];
     const run = fakeInstall(new Map(), calls);
     const before = readFileSync(join(home, "config.json"), "utf8");
 
-    for (const [spec, reason] of [
-      ["Not A Name", "not a valid npm package name"],
-      ["fixture-plugin@^1.2.3", "not an exact version"],
-    ] as const) {
+    for (const spec of ["Not A Name", "@scope", "node_modules"]) {
       const output = capture();
       expect(await main(["plugin", "add", spec], { home, io: output.io, pluginInstall: run })).toBe(2);
-      expect(output.errors()).toContain(reason);
+      expect(output.errors()).toContain("not a valid npm package name");
     }
     expect(calls).toHaveLength(0);
     expect(readFileSync(join(home, "config.json"), "utf8")).toBe(before);
+  });
+
+  test("refuses a version that is not exact", async () => {
+    const { home } = await makeHome();
+    const calls: { cwd: string; args: readonly string[] }[] = [];
+    const run = fakeInstall(new Map(), calls);
+    const before = readFileSync(join(home, "config.json"), "utf8");
+
+    const output = capture();
+    expect(
+      await main(["plugin", "add", "fixture-plugin@^1.2.3"], {
+        home,
+        io: output.io,
+        pluginInstall: run,
+      }),
+    ).toBe(2);
+    expect(output.errors()).toContain("not an exact version");
+    expect(calls).toHaveLength(0);
+    expect(readFileSync(join(home, "config.json"), "utf8")).toBe(before);
+  });
+
+  test("accepts a legacy npm name with capitals or a leading dot or underscore", async () => {
+    const { home } = await makeHome();
+    const run = fakeInstall(
+      new Map([
+        ["Legacy.Plugin", { version: "1.0.0", declaration: declarationFor("legacy-capitals") }],
+        ["_legacy", { version: "1.0.0", declaration: declarationFor("legacy-underscore") }],
+        [".legacy", { version: "1.0.0", declaration: declarationFor("legacy-dot") }],
+      ]),
+    );
+    for (const spec of ["Legacy.Plugin", "_legacy", ".legacy"]) {
+      const output = capture();
+      expect(await main(["plugin", "add", spec], { home, io: output.io, pluginInstall: run })).toBe(0);
+    }
+    expect(configOf(home).plugins).toMatchObject({
+      "legacy-capitals": { module: "Legacy.Plugin", enabled: false },
+      "legacy-underscore": { module: "_legacy", enabled: false },
+      "legacy-dot": { module: ".legacy", enabled: false },
+    });
   });
 
   test("refuses a package that is not an operad plugin", async () => {
@@ -190,6 +240,34 @@ describe("plugin add", () => {
     const output = capture();
     expect(await main(["plugin", "add", "plain-package"], { home, io: output.io, pluginInstall: run })).toBe(1);
     expect(output.errors()).toContain("not an operad plugin");
+    expect(readFileSync(join(home, "config.json"), "utf8")).toBe(before);
+  });
+
+  test("a refused package does not stay in the home project", async () => {
+    const { home } = await makeHome();
+    const before = readFileSync(join(home, "config.json"), "utf8");
+    const calls: { cwd: string; args: readonly string[] }[] = [];
+    const run = fakeInstall(
+      new Map([
+        [
+          "plain-package",
+          {
+            version: "1.0.0",
+            declaration: 'export default { name: "plain", kind: "domain", version: "1.0.0" };',
+          },
+        ],
+      ]),
+      calls,
+    );
+    const output = capture();
+    expect(await main(["plugin", "add", "plain-package"], { home, io: output.io, pluginInstall: run })).toBe(1);
+    expect(calls.map((call) => call.args[0])).toEqual(["add", "remove"]);
+    expect(calls[1]?.args).toEqual(["remove", "plain-package", "--ignore-scripts", "--no-summary"]);
+    expect(existsSync(join(home, "plugins", "node_modules", "plain-package"))).toBe(false);
+    const manifest = JSON.parse(readFileSync(join(home, "plugins", "package.json"), "utf8")) as {
+      dependencies?: Record<string, string>;
+    };
+    expect(manifest.dependencies?.["plain-package"]).toBeUndefined();
     expect(readFileSync(join(home, "config.json"), "utf8")).toBe(before);
   });
 

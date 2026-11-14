@@ -8,9 +8,10 @@ export {
   pluginProjectManifestPath,
   pluginProjectPath,
   PLUGIN_PROJECT_DIRECTORY,
+  removePackage,
   runningFromWorkspace,
 } from "./install.ts";
-export type { AddedPackage, AddPackageOptions, EnsureInstalledOptions, InstallRun, InstallRunner } from "./install.ts";
+export type { AddedPackage, AddPackageOptions, EnsureInstalledOptions, InstallRun, InstallRunner, RemovePackageOptions } from "./install.ts";
 export { keysPathFor, readKeysFile } from "./keys.ts";
 export {
   loadConfiguredPlugins,

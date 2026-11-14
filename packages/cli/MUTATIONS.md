@@ -251,13 +251,22 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0463-M11 | packages/cli/src/main.ts | `commandAction` did not let a plugin command keep a plain name an action also has, so `operad plan add` and `operad task add` ran the new actions instead of the commands | `operad with the dev plugin > the real binary registers and plans; list, show and confirm run in process` and the rest of that file's plan and task command tests |
+
 ## T-0462 — installing a plugin from npm
 
 | id | file | mutation | failing test |
 |---|---|---|---|
-| T-0462-M5 | packages/cli/src/main.ts | an invalid npm package name was not refused | `plugin add > refuses a name npm does not allow and a version that is not exact` |
+| T-0462-M5 | packages/cli/src/main.ts | an invalid npm package name was not refused | `plugin add > refuses a name npm does not allow` |
 | T-0462-M6 | packages/cli/src/main.ts | a default export without a plugin declaration was not refused as such | `plugin add > refuses a package that is not an operad plugin` |
 | T-0462-M7 | packages/cli/src/main.ts | the declared name was not checked against the configured plugins | `plugin add > refuses a declared name that a configured plugin already uses` |
 | T-0462-M8 | packages/cli/src/main.ts | the refusal no longer said a package needed its install script | `plugin add > a package whose declaration needs its install script says so` |
 | T-0462-M9 | packages/cli/src/main.ts | the plugin check before the config write was skipped | `plugin add > refuses a plugin declaration the check rejects` |
 | T-0462-M10 | packages/cli/src/main.ts | an HTTP install was accepted without `"confirmed": true` | `plugins over HTTP > installing asks to confirm and writes nothing without it` |
+
+## T-0470 — plugin npm install follow-ups
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0470-M1 | packages/cli/src/main.ts | a refused package was left in the home's plugin project instead of being removed | `plugin add > a refused package does not stay in the home project` |
+| T-0470-M2 | packages/cli/src/main.ts | a version that is not exact was accepted | `plugin add > refuses a version that is not exact` |
+| T-0470-M3 | packages/cli/src/main.ts | npm names were limited to lowercase without a leading dot or underscore | `plugin add > accepts a legacy npm name with capitals or a leading dot or underscore` |

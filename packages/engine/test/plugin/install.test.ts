@@ -8,6 +8,7 @@ import {
   loadPlugin,
   pluginProjectManifestPath,
   pluginProjectPath,
+  removePackage,
 } from "../../src/index.ts";
 import { cleanupTempRoots, tempRoot } from "./support.ts";
 
@@ -264,6 +265,27 @@ describe("adding a package to the home project", () => {
         args: ["add", fixture.specifier, "--exact", "--ignore-scripts", "--no-summary"],
       },
     ]);
+  });
+
+  test("removing a package takes the dependency and its files out again", async () => {
+    const root = await tempRoot();
+    const home = join(root, "home");
+    const tarball = packFixture(root, {
+      name: "@operad-io/remove-fixture",
+      version: "1.0.0",
+      declaration: 'export default { operadPlugin: 1, name: "removed", kind: "domain", version: "1.0.0" };',
+    });
+    const added = await addPackage({ home, specifier: `file:${tarball}` });
+    expect(existsSync(added.file)).toBe(true);
+
+    await removePackage({ home, name: added.name });
+
+    expect(existsSync(added.file)).toBe(false);
+    expect(installedPackageFile(home, added.name)).toBeUndefined();
+    const manifest = JSON.parse(readFileSync(pluginProjectManifestPath(home), "utf8")) as {
+      dependencies?: Record<string, string>;
+    };
+    expect(manifest.dependencies?.[added.name]).toBeUndefined();
   });
 
   test("a package whose entry needs its install script says so", async () => {

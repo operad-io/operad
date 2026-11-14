@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -151,13 +151,23 @@ function fakeInstall(
   declaration?: string,
 ): InstallRunner {
   return (cwd, args) => {
-    const target = args[1] ?? "";
-    const at = target.startsWith("@") ? target.indexOf("@", 1) : target.indexOf("@");
-    const asked = at > 0 ? target.slice(at + 1) : version;
     const manifestPath = join(cwd, "package.json");
     const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as {
       dependencies?: Record<string, string>;
     };
+    if (args[0] === "remove") {
+      const name = args[1] ?? "";
+      if (manifest.dependencies !== undefined) {
+        delete manifest.dependencies[name];
+        if (Object.keys(manifest.dependencies).length === 0) delete manifest.dependencies;
+      }
+      writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+      rmSync(join(cwd, "node_modules", name), { recursive: true, force: true });
+      return { exitCode: 0, stdout: "", stderr: "" };
+    }
+    const target = args[1] ?? "";
+    const at = target.startsWith("@") ? target.indexOf("@", 1) : target.indexOf("@");
+    const asked = at > 0 ? target.slice(at + 1) : version;
     manifest.dependencies = { ...(manifest.dependencies ?? {}), [name]: asked };
     writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
     const directory = join(cwd, "node_modules", name);
