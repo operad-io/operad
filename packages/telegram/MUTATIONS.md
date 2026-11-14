@@ -57,3 +57,5 @@ the row fields.
 | T-0444-M6 | packages/telegram/src/typing.ts | a failed `sendChatAction` was sent again at once | `the typing indicator > a failed send is not retried, adds nothing to history and does not hold up a reply` |
 | T-0444-M7 | packages/telegram/src/api.ts | `sendChatAction` called the `sendMessage` method | `the typing indicator > the Bot API client sends the typing action to the chat` |
 | T-0444-M8 | packages/telegram/src/typing.ts | stopping the plugin left the active indicators running | `the typing indicator > starts when the client's events name a running chat, and stop ends it` (timed out) |
+| T-0444-M9 | packages/telegram/src/index.ts | `createTelegramPlugin` did not start the typing side | `the telegram plugin starts and stops typing through a real chat reply run` (timed out) |
+| T-0444-M10 | packages/telegram/src/index.ts | `createTelegramPlugin` stopped without stopping the typing side | `the telegram plugin starts and stops typing through a real chat reply run` |
