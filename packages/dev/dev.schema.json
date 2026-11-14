@@ -171,10 +171,9 @@
       "type": "object",
       "properties": {
         "use": {
-          "description": "The harness step, such as radian/agent.",
+          "description": "The harness step, such as claude/agent; unset uses the first enabled harness in the home (radian, claude, pi, codex), or radian/agent when none is enabled.",
           "type": "string",
-          "minLength": 1,
-          "default": "radian/agent"
+          "minLength": 1
         },
         "args": {
           "description": "Extra arguments the harness step passes to its command.",
@@ -195,11 +194,7 @@
           "exclusiveMinimum": 0
         }
       },
-      "additionalProperties": false,
-      "default": {
-        "use": "radian/agent",
-        "args": []
-      }
+      "additionalProperties": false
     },
     "workers": {
       "description": "The repository's workers, by name. At least one. Not allowed together with worker.",
@@ -377,10 +372,9 @@
       "type": "object",
       "properties": {
         "use": {
-          "description": "The harness step, such as radian/agent.",
+          "description": "The harness step, such as claude/agent; unset uses the first enabled harness in the home (radian, claude, pi, codex), or radian/agent when none is enabled.",
           "type": "string",
-          "minLength": 1,
-          "default": "radian/agent"
+          "minLength": 1
         },
         "args": {
           "description": "Extra arguments the harness step passes to its command.",
@@ -518,17 +512,7 @@
           "default": 1000000
         }
       },
-      "additionalProperties": false,
-      "default": {
-        "use": "radian/agent",
-        "args": [],
-        "timeoutSecs": 600,
-        "fixLevel": "major",
-        "followups": true,
-        "retrySecs": 120,
-        "maxFileDiffBytes": 200000,
-        "maxDiffBytes": 1000000
-      }
+      "additionalProperties": false
     },
     "integration": {
       "description": "How the integrate step builds the candidate and lands it on main.",
