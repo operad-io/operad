@@ -3,9 +3,18 @@
 import type {
   CommandContext,
   CommandDefinition,
+  ObjectStore,
   StoredObject,
 } from "@operad-io/engine";
-import { DevError, bareId, briefBody, storeKey, taskData, type RepositoryData } from "./model.ts";
+import {
+  DevError,
+  bareId,
+  briefBody,
+  slugFromTitle,
+  storeKey,
+  taskData,
+  type RepositoryData,
+} from "./model.ts";
 import { chatWorktreeOf } from "./chat.ts";
 import { flakyTasksByName } from "./flaky.ts";
 import { listRerunCounts } from "./reruns.ts";
@@ -189,6 +198,36 @@ async function assertFlow(repository: RepositoryData, flow: string): Promise<voi
   }
 }
 
+export interface CreatePlanOptions {
+  readonly repository: RepositoryData;
+  /** Unset takes the slug from the title. */
+  readonly slug?: string | undefined;
+  readonly title: string;
+  readonly request?: string | undefined;
+  /** As the command's `--concurrency` value, before it is checked. */
+  readonly concurrency?: string | undefined;
+  /** As the command's `--flow` value, before it is checked. */
+  readonly flow?: string | undefined;
+}
+
+/** Creates a plan by the command's path; an action and `plan add` both use it. */
+export async function createPlan(
+  store: ObjectStore,
+  options: CreatePlanOptions,
+): Promise<StoredObject> {
+  const flow = flowFlag(options.flow);
+  if (flow !== undefined) await assertFlow(options.repository, flow);
+  return addPlan(store, {
+    repository: options.repository,
+    slug: options.slug ?? slugFromTitle(options.title, "plan"),
+    title: options.title,
+    request: options.request ?? "",
+    concurrency: concurrencyFlag(options.concurrency),
+    auto: (await readDevSettings(options.repository.path)).autoDefault,
+    ...(flow === undefined ? {} : { flow }),
+  });
+}
+
 async function runPlan(
   ctx: CommandContext,
   argv: readonly string[],
@@ -199,16 +238,13 @@ async function runPlan(
     throw new DevError("command", `plan ${call.name} takes flags, not ${call.rest[0]}`);
   }
   const repository = await objectByPlan(parsed, ctx.store, ctx.cwd);
-  const flow = flowFlag(one(parsed, "--flow"));
-  if (flow !== undefined) await assertFlow(repository, flow);
-  const plan = await addPlan(ctx.store, {
+  const plan = await createPlan(ctx.store, {
     repository,
     slug: required(parsed, "--slug", "plan add"),
     title: required(parsed, "--title", "plan add"),
     request: await readStdinText(ctx.input),
-    concurrency: concurrencyFlag(one(parsed, "--concurrency")),
-    auto: (await readDevSettings(repository.path)).autoDefault,
-    ...(flow === undefined ? {} : { flow }),
+    concurrency: one(parsed, "--concurrency"),
+    flow: one(parsed, "--flow"),
   });
   return bareId(plan.id);
 }
@@ -264,6 +300,58 @@ async function newBrief(ctx: CommandContext, body: string): Promise<string> {
   return editText(body, { root: ctx.store.root });
 }
 
+export interface CreateTaskOptions {
+  readonly repository: RepositoryData;
+  /** The plan's bare id, without its repository. */
+  readonly plan: string;
+  /** Unset takes the slug from the title. */
+  readonly slug?: string | undefined;
+  readonly title: string;
+  readonly brief?: string | undefined;
+  readonly after?: readonly string[] | undefined;
+  readonly area?: string | undefined;
+  /** As the command's `--flow` value, before it is checked. */
+  readonly flow?: string | undefined;
+  readonly chat?: string | undefined;
+}
+
+/** Creates a task by the command's path; an action and `task add` both use it. */
+export async function createTask(
+  store: ObjectStore,
+  options: CreateTaskOptions,
+): Promise<StoredObject> {
+  const planKey = storeKey(options.repository.name, options.plan);
+  const planObject = await store.get("plan", planKey);
+  if (planObject === undefined) {
+    throw new DevError("plan", `no plan "${options.plan}"`);
+  }
+  if (
+    (planObject.data as { repository?: unknown }).repository !==
+    options.repository.name
+  ) {
+    throw new DevError(
+      "plan",
+      `plan "${options.plan}" is not in repository "${options.repository.name}"`,
+    );
+  }
+  const flow = flowFlag(options.flow);
+  if (flow !== undefined) await assertFlow(options.repository, flow);
+  const worktree =
+    options.chat === undefined
+      ? undefined
+      : await chatWorktreeOf(store, options.repository, options.chat);
+  return addTask(store, {
+    plan: planKey,
+    slug: options.slug ?? slugFromTitle(options.title, "task"),
+    title: options.title,
+    brief: options.brief ?? "",
+    after: options.after ?? [],
+    area: options.area,
+    ...(flow === undefined ? {} : { flow }),
+    ...(worktree === undefined ? {} : { worktree }),
+  });
+}
+
 async function runTask(
   ctx: CommandContext,
   argv: readonly string[],
@@ -284,35 +372,16 @@ async function runTask(
       throw new DevError("command", `task add takes flags, not ${call.rest[0]}`);
     }
     const repository = await objectByPlan(parsed, ctx.store, ctx.cwd);
-    const plan = required(parsed, "--plan", "task add");
-    const planKey = storeKey(repository.name, plan);
-    const planObject = await ctx.store.get("plan", planKey);
-    if (planObject === undefined) {
-      throw new DevError("plan", `no plan "${plan}"`);
-    }
-    if (
-      (planObject.data as { repository?: unknown }).repository !==
-      repository.name
-    ) {
-      throw new DevError(
-        "plan",
-        `plan "${plan}" is not in repository "${repository.name}"`,
-      );
-    }
-    const flow = flowFlag(one(parsed, "--flow"));
-    if (flow !== undefined) await assertFlow(repository, flow);
-    const chat = one(parsed, "--chat");
-    const worktree =
-      chat === undefined ? undefined : await chatWorktreeOf(ctx.store, repository, chat);
-    const task = await addTask(ctx.store, {
-      plan: planKey,
+    const task = await createTask(ctx.store, {
+      repository,
+      plan: required(parsed, "--plan", "task add"),
       slug: required(parsed, "--slug", "task add"),
       title: required(parsed, "--title", "task add"),
       brief: await readStdinText(ctx.input),
       after: many(parsed, "--after"),
       area: one(parsed, "--area"),
-      ...(flow === undefined ? {} : { flow }),
-      ...(worktree === undefined ? {} : { worktree }),
+      flow: one(parsed, "--flow"),
+      chat: one(parsed, "--chat"),
     });
     return bareId(task.id);
   }
