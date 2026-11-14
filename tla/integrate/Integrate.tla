@@ -260,10 +260,16 @@ Follow(t) ==
         /\ ~cbranch \/ cdirty
         /\ ph' = [ph EXCEPT ![t] = "followed"]
         /\ tgt' = [tgt EXCEPT ![t] = NoCommit]
-        /\ UNCHANGED <<clone, needPrep, followedTo>>
-     \/ \* the commit is already in the clone (is-ancestor): nothing to do
-        /\ cbranch /\ ~cdirty /\ Has(clone, tgt[t])
+        /\ needPrep' = FALSE
+        /\ UNCHANGED <<clone, followedTo>>
+     \/ \* the commit is already in the clone and this merge owes no prepare
+        /\ cbranch /\ ~cdirty /\ Has(clone, tgt[t]) /\ ~needPrep
         /\ ph' = [ph EXCEPT ![t] = "followed"]
+        /\ followedTo' = tgt[t]
+        /\ UNCHANGED <<clone, needPrep, tgt>>
+     \/ \* the commit is already in the clone but a merge left prepare due
+        /\ cbranch /\ ~cdirty /\ Has(clone, tgt[t]) /\ needPrep
+        /\ ph' = [ph EXCEPT ![t] = "prep"]
         /\ followedTo' = tgt[t]
         /\ UNCHANGED <<clone, needPrep, tgt>>
      \/ \* clean, on the branch, the clone is an ancestor of the commit: fast-forward
@@ -275,7 +281,8 @@ Follow(t) ==
         /\ cbranch /\ ~cdirty /\ ~Has(clone, tgt[t]) /\ ~IsPrefix(clone, ts)
         /\ ph' = [ph EXCEPT ![t] = "followed"]
         /\ tgt' = [tgt EXCEPT ![t] = NoCommit]
-        /\ UNCHANGED <<clone, needPrep, followedTo>>
+        /\ needPrep' = FALSE
+        /\ UNCHANGED <<clone, followedTo>>
   /\ UNCHANGED <<origin, cdirty, cbranch, nlocal, hands, crashes, ver, queue,
        claim, solo, res, mem, cand, chk, rnd, rec, unwanted>>
 
