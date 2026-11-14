@@ -16,6 +16,8 @@ import type {
   ActionArgSchema,
   ActionArgsSchema,
   ObjectStore,
+  ProjectSettingsFile,
+  SettingsRepository,
 } from "../plugin/types.ts";
 import { isRecord } from "../util.ts";
 
@@ -46,7 +48,9 @@ export type SettingsErrorKind =
   | "args"
   | "not-available"
   | "confirm"
-  | "ambiguous";
+  | "ambiguous"
+  /** The plugin's own check refused the change; the message is its reason. */
+  | "refused";
 
 /** A settings call refused; nothing was written. */
 export class SettingsError extends Error {
@@ -213,12 +217,35 @@ interface Place {
   readonly file: string;
   readonly inside: readonly string[];
   readonly fresh: () => Record<string, unknown>;
+  /** A project file's repository and the plugin's own hooks for it. */
+  readonly project?: {
+    readonly repository: SettingsRepository;
+    readonly file: ProjectSettingsFile;
+  };
+}
+
+/** The plugin's own check of the file as it would be written; refuses with its reason. */
+async function runCheck(place: Place, value: unknown): Promise<void> {
+  const project = place.project;
+  const check = project?.file.check;
+  if (project === undefined || check === undefined || !isRecord(value)) return;
+  const reason = await check({ repository: project.repository, value });
+  if (reason !== undefined) throw new SettingsError("refused", reason);
 }
 
 async function readPlace(place: Place): Promise<unknown> {
   try {
     const file = await readJsonFile(place.file, place.fresh);
-    return valueAt(file.value, place.inside);
+    const stored = valueAt(file.value, place.inside);
+    const project = place.project;
+    const derived = project?.file.derived;
+    if (project !== undefined && derived !== undefined) {
+      return {
+        ...(isRecord(stored) ? stored : {}),
+        ...(await derived({ repository: project.repository, value: file.value })),
+      };
+    }
+    return stored;
   } catch (error) {
     if (error instanceof SettingsError) return undefined;
     throw error;
@@ -270,6 +297,7 @@ async function places(
           file: join(repository.path, ".operad", file.path),
           inside: [],
           fresh: () => ({}),
+          project: { repository, file },
         });
       }
     }
@@ -465,6 +493,7 @@ export async function setSetting(
       }
       throw error;
     }
+    await runCheck(place, valueAt(file.value, place.inside));
     await writeFileAtomic(place.file, render(file), set.hooks);
 
     return infoOf(place, leaf, valueAt(file.value, place.inside));
@@ -571,6 +600,7 @@ async function setEntry(
     } catch (error) {
       refuseArgs(error);
     }
+    await runCheck(place, valueAt(file.value, place.inside));
     await writeFileAtomic(place.file, render(file), set.hooks);
     return infoOf(place, leaf, valueAt(file.value, place.inside));
   });

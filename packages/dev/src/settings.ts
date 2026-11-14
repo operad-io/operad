@@ -1513,6 +1513,27 @@ export async function readDevSettings(
   }
 }
 
+/**
+ * What is wrong with a dev.json value that is about to be written, or
+ * undefined when dev would accept it. The reason is dev's own, as it reads it
+ * when it loads the file.
+ */
+export function settingsValueProblem(
+  repositoryPath: string,
+  value: unknown,
+): string | undefined {
+  try {
+    settingsFromText(
+      repositoryPath,
+      join(repositoryPath, DEV_SETTINGS_FILE),
+      JSON.stringify(value),
+    );
+    return undefined;
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+}
+
 /** What is wrong with the repository's settings file now, or undefined when it is valid. */
 export function settingsProblem(repositoryPath: string): string | undefined {
   try {

@@ -443,7 +443,7 @@ the file and reloads when the new file loads.
 <name> <value>` changes one; `--repo <name>` names a registered repository. A
 global setting is `<plugin>.<path>`. A project file whose name equals its
 plugin's name takes the plugin name alone, so `.operad/dev.json` is
-`dev.concurrency`, `dev.autoDefault`, `dev.gate.commands`,
+`dev.concurrency`, `dev.autoDefault`, `dev.flows` (editable; dev checks it on save) and `dev.flowList` (read only), `dev.gate.commands`,
 `dev.gate.commandTimeoutSecs`, `dev.reviewer.use`, `dev.reviewer.args`,
 `dev.reviewer.timeoutSecs` and `dev.reviewer.fixLevel`. Another file adds its
 name: `.operad/review.json` is `dev.review.default.levels`,

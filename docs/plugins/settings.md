@@ -90,6 +90,10 @@ projectSettings: {
 | `files[].name` | string | Lowercase letters, digits and `-`; unique. The setting's qualified name is `<plugin>.<name>.<path>`, or `<plugin>.<path>` when the name equals the plugin's | `name: must be lowercase letters, digits and -`; `name "<n>" is declared twice` |
 | `files[].path` | string | A relative `.json` path under the repository's `.operad/`, no `..` | `path: must be a relative .json path under .operad/ without ".."` |
 | `files[].schema` | schema | An object schema; required | `schema: is required` |
+| `files[].check` | function | `(ProjectSettingsContext) => string \| undefined`: run on the whole file as it would be written, after the schema and before the write. A string refuses the change with that reason, as it is, and nothing is written | `check: must be a function` |
+| `files[].derived` | function | `(ProjectSettingsContext) => { <property>: JsonValue }`: read-only values worked out when settings are listed; a property with no stored value takes the value here | `derived: must be a function` |
+
+`ProjectSettingsContext` is `{ repository, value }`: the repository and the file's JSON object.
 
 A repository that is not registered: `no registered repository "<r>"; registered: <names>`.
 
