@@ -826,3 +826,4 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0445-M1 | packages/engine/src/loop/serve.ts | a pass that met `SQLITE_BUSY` rethrew it (the old code), so the CLI's last-resort handler ended serve | `serve while another process holds the store's write lock > logs the busy pass, keeps running, and serves the next run after the lock is released` |
+| T-0445-M2 | packages/engine/src/plugin/sqlite-store.ts | the background poll rethrew `SQLITE_BUSY` instead of skipping the turn | `a poll that meets a busy store skips its turn instead of throwing` |

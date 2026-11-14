@@ -4,7 +4,9 @@
  * Every append and every startRun is one `BEGIN IMMEDIATE` transaction, so a
  * process killed mid-write leaves either the whole batch or none of it. WAL
  * lets a reader keep a consistent snapshot of a run while another process
- * appends to it.
+ * appends to it. Writes go through the platform's `writeImmediate`: a full
+ * store shared by serve, its run processes and other commands retries while
+ * another connection is committing instead of giving up at the busy timeout.
  */
 
 import { Database } from "bun:sqlite";
@@ -35,6 +37,7 @@ import {
   enableWal,
   resolveSubscriptionWatch,
   setBusyTimeout,
+  writeImmediate,
   type SubscriptionWatch,
 } from "../platform/index.ts";
 import type {
@@ -328,12 +331,12 @@ function ensureSchema(database: Database, path: string): void {
   if (version === undefined) {
     // One immediate transaction for the whole schema: a second process opening
     // the file at the same time waits in the busy handler, then finds it done.
-    database.transaction(() => {
+    writeImmediate(database, () => {
       database.exec(SCHEMA);
       database.run("INSERT OR IGNORE INTO schema_version (id, version) VALUES (1, ?)", [
         SCHEMA_VERSION,
       ]);
-    }).immediate();
+    });
     version = readSchemaVersion(database);
   }
 
@@ -360,7 +363,7 @@ function ensureSchema(database: Database, path: string): void {
   // and an older runs table that could not name the input that made the run.
   // A current store needs none of it, so opening it stays read-only.
   if (!schemaNeedsWork(database)) return;
-  database.transaction(() => {
+  writeImmediate(database, () => {
     // Recreate any base table or index a store lost; every statement is
     // `IF NOT EXISTS`, so an existing object is left as it is.
     database.exec(SCHEMA);
@@ -382,7 +385,7 @@ function ensureSchema(database: Database, path: string): void {
       "CREATE UNIQUE INDEX IF NOT EXISTS global_facts_unique_key " +
         "ON global_facts (unique_key) WHERE unique_key IS NOT NULL",
     );
-  }).immediate();
+  });
 }
 
 /**
@@ -394,7 +397,7 @@ function migrateSchema(database: Database, path: string, from: number): number {
   let version = from;
   while (version < SCHEMA_VERSION) {
     if (version === 1) {
-      database.transaction(() => {
+      writeImmediate(database, () => {
         const columns = database
           .query<{ readonly name: string }, []>("PRAGMA table_info(runs)")
           .all();
@@ -402,7 +405,7 @@ function migrateSchema(database: Database, path: string, from: number): number {
           database.run("ALTER TABLE runs ADD COLUMN access TEXT");
         }
         database.run("UPDATE schema_version SET version = ? WHERE id = 1", [2]);
-      }).immediate();
+      });
       version = 2;
       continue;
     }
@@ -453,7 +456,7 @@ class SqliteLogBackend implements LogBackend {
     assertName(object, "object");
     if (access !== undefined) assertJsonValue(access, "run access");
     this.#assertOpen();
-    return this.#database.transaction(() => {
+    return writeImmediate(this.#database, () => {
       const active = this.#database
         .query<{ run_id: string }, [string, string]>(
           "SELECT run_id FROM runs WHERE flow = ? AND object = ? AND ended_at IS NULL",
@@ -488,13 +491,13 @@ class SqliteLogBackend implements LogBackend {
         ...(access === undefined ? {} : { access }),
         startInputId,
       };
-    }).immediate();
+    });
   }
 
   async endRun(runId: string): Promise<void> {
     assertRunId(runId);
     this.#assertOpen();
-    this.#database.transaction(() => {
+    writeImmediate(this.#database, () => {
       const row = this.#runRow(runId);
       if (!row) throw new RunNotFoundError(runId);
       if (row.ended_at !== null) return;
@@ -503,7 +506,7 @@ class SqliteLogBackend implements LogBackend {
         runId,
       ]);
       this.#notify({ runId, object: row.object });
-    }).immediate();
+    });
   }
 
   async recordInput(
@@ -517,7 +520,7 @@ class SqliteLogBackend implements LogBackend {
     assertName(sourceKey, "sourceKey");
     assertJsonValue(payload, "input payload");
     this.#assertOpen();
-    return this.#database.transaction(() => {
+    return writeImmediate(this.#database, () => {
       if (runId !== null) {
         const row = this.#runRow(runId);
         if (!row) throw new RunNotFoundError(runId);
@@ -531,7 +534,7 @@ class SqliteLogBackend implements LogBackend {
         [inputId, runId, source, sourceKey, JSON.stringify(payload), this.#clock()],
       );
       return { duplicate: result.changes === 0, inputId };
-    }).immediate();
+    });
   }
 
   async append(
@@ -544,7 +547,7 @@ class SqliteLogBackend implements LogBackend {
     for (const fact of facts) validateNewFact(fact);
     this.#assertOpen();
 
-    return this.#database.transaction(() => {
+    return writeImmediate(this.#database, () => {
       const row = this.#runRow(runId);
       if (!row) throw new RunNotFoundError(runId);
       if (row.ended_at !== null) throw new RunEndedError(runId);
@@ -582,7 +585,7 @@ class SqliteLogBackend implements LogBackend {
       }
       this.#notify({ runId, object: row.object });
       return { lastSeq: row.last_seq + stored.length, facts: stored };
-    }).immediate();
+    });
   }
 
   read(runId: string): AsyncIterable<Fact> {
@@ -618,7 +621,7 @@ class SqliteLogBackend implements LogBackend {
     validateNewFact(fact);
     if (uniqueKey !== undefined) assertName(uniqueKey, "uniqueKey");
     this.#assertOpen();
-    return this.#database.transaction(() => {
+    return writeImmediate(this.#database, () => {
       if (uniqueKey !== undefined) {
         const existing = this.#database
           .query<GlobalFactRow, [string]>(
@@ -653,7 +656,7 @@ class SqliteLogBackend implements LogBackend {
         time,
         ...(uniqueKey === undefined ? {} : { uniqueKey }),
       };
-    }).immediate();
+    });
   }
 
   readGlobal(): AsyncIterable<GlobalFact> {
@@ -728,7 +731,7 @@ class SqliteLogBackend implements LogBackend {
     assertName(kind, "outcome kind");
     assertJsonValue(payload, "outcome payload");
     this.#assertOpen();
-    return this.#database.transaction(() => {
+    return writeImmediate(this.#database, () => {
       const existing = this.#outcomeRow(inputId, kind);
       if (existing !== undefined) {
         return { duplicate: true, outcome: outcomeOfRow(existing) };
@@ -748,7 +751,7 @@ class SqliteLogBackend implements LogBackend {
         duplicate: false,
         outcome: { inputId, kind, payload, seq, time },
       };
-    }).immediate();
+    });
   }
 
   async *readOutcomes(): AsyncGenerator<InputOutcome> {

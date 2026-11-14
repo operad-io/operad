@@ -352,6 +352,13 @@ interface OpenContextOptions {
   readonly follow?: boolean | undefined;
 }
 
+/** Drops the plugin store's database handle; a memory store has none. */
+function closePluginStore(store: unknown): void {
+  if (typeof store !== "object" || store === null || !("close" in store)) return;
+  const close = store.close;
+  if (typeof close === "function") close.call(store);
+}
+
 async function openContext(
   home: string,
   io: CliIo,
@@ -2687,6 +2694,9 @@ export async function main(
             return await commandServe(context, io, args.slice(1), lock, isSupervised, retryBind);
           } finally {
             context.views.close();
+            // The process that becomes the supervisor after a reload must not
+            // keep the old plugin store open while the new serve writes it.
+            closePluginStore(context.registry.store);
             await context.log.close();
           }
         } finally {

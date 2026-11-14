@@ -2,7 +2,7 @@
 
 import { Database } from "bun:sqlite";
 import { existsSync, mkdirSync } from "node:fs";
-import { enableWal, setBusyTimeout, writeImmediate } from "../platform/index.ts";
+import { enableWal, isBusy, setBusyTimeout, writeImmediate } from "../platform/index.ts";
 import { dirname, join } from "node:path";
 import {
   followsChanges,
@@ -658,14 +658,22 @@ export class SqlitePluginStore implements PluginStore {
   private pollFacts(): void {
     // A removed database has nothing left to deliver; its timer outlives it.
     if (!existsSync(this.location.file ?? this.root)) return;
-    const rows = this.db
-      .query(
-        `SELECT sequence, type, object_type, object_id, cause, at, data
-         FROM facts
-         WHERE sequence > ?
-         ORDER BY sequence`,
-      )
-      .all(this.polledSequence) as FactRow[];
+    let rows: FactRow[];
+    try {
+      rows = this.db
+        .query(
+          `SELECT sequence, type, object_type, object_id, cause, at, data
+           FROM facts
+           WHERE sequence > ?
+           ORDER BY sequence`,
+        )
+        .all(this.polledSequence) as FactRow[];
+    } catch (error) {
+      // A busy store is a poll that missed this turn, not a serve that ends:
+      // the next turn reads what was committed then.
+      if (isBusy(error)) return;
+      throw error;
+    }
     for (const row of rows) {
       const fact = this.factOf(row);
       this.polledSequence = Math.max(this.polledSequence, fact.sequence);
