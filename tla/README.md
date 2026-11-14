@@ -98,7 +98,7 @@ after `-config`:
 | `MC.cfg` | 3 tasks, `MaxVer`=0, `MaxHand`=1, `MaxLocal`=0, `MaxCrash`=0, `MaxRound`=2, `BatchMax`=2 | invariants and properties below, with `NoUnwantedMerge` and `PrepareRan` (not `OneMerge`: finding 4 violates it here) |
 | `MCCrash.cfg` | 2 tasks, `MaxVer`=1, `MaxHand`=1, `MaxLocal`=0, `MaxCrash`=1 | the same, with one rework and one kill, with `PrepareRan` but not `NoUnwantedMerge` (finding 5 violates it here) |
 | `MCLocal.cfg` | 2 tasks, `MaxVer`=0, `MaxHand`=1, `MaxLocal`=1, `MaxCrash`=0 | the same (with `OneMerge`, `NoUnwantedMerge`, `PrepareRan`), with a commit made by hand in the clone |
-| `MCOneMerge.cfg` | 3 tasks, `MaxCrash`=1 | finding 1 (violates `OneMerge`; recorded, not fixed: `docs/backlog/operad-tla.md` decision 6; this configuration fails on purpose) |
+| `MCOneMerge.cfg` | 3 tasks, `MaxCrash`=1 | finding 1 (violates `OneMerge`; recorded, not fixed: the owner's decision recorded in `docs/backlog/operad-tla.md`; this configuration fails on purpose) |
 | `MCOneMergeCancel.cfg` | 3 tasks, `MaxHand`=1, `MaxCrash`=0 | finding 4 (violates `OneMerge`, no crash needed) |
 | `MCUnwanted.cfg` | 2 tasks, `MaxHand`=1 | finding 2, fixed by T-0432 (`NoUnwantedMerge` now holds) |
 | `MCPrepare.cfg` | 2 tasks, `MaxCrash`=1 | a kill after the clone moves still runs prepare on restart, fixed by T-0433 (`PrepareRan` now holds) |
@@ -188,7 +188,7 @@ twenty minutes, which is why the configurations are split.
    `NoUnwantedMerge` (`MC.cfg`, `MCLocal.cfg` and `MCUnwanted.cfg` have no rework).
 
 `MCOneMerge.cfg` and `MCOneMergeCancel.cfg` still fail on `OneMerge` (findings 1 and 4
-are recorded, not fixed: `docs/backlog/operad-tla.md` decision 6). T-0432 and T-0433
+are recorded, not fixed: the owner's decision recorded in `docs/backlog/operad-tla.md`). T-0432 and T-0433
 did not change them (T-0439: `MCOneMerge` violated at depth 13, `MCOneMergeCancel` at
 depth 15). Each finding configuration stops at its counterexample (the counts vary
 between runs with the workers): about 54,000 to 63,000 distinct states and 5 to 8 s
