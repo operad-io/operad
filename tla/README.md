@@ -33,7 +33,7 @@ ADR 0021 it stands for:
 | D5 whoever is free takes the work | `Claim`: the first free worker in the pool's order (`WRank`); none free means the task stays `waiting` |
 | D7 rework goes to the worker that ran last | `Rework`, `ReworkRunning`: `want` is the worker the latest attempt recorded; the task waits for that one only |
 | D8 fallback | `RunModelError`: the first worker's places are released, then the fallback worker is claimed; a timeout or a thrown step (`RunFailed`) does not trigger it; the chain is one step (checked in `ASSUME`) |
-| D9 no fallback waits | `RunModelError` with no fallback: `retry` (the retry wait, `MaxWaits` times) for the same worker, then `person`; never another worker |
+| D9 no fallback waits | `RunModelError` with no fallback: `retry` (the retry wait, `MaxWaits` times) for the same worker, or `person`; never another worker. In the code only an unavailable model or usage limit retries (`modelUnavailable`); a process that did not start (`missing`, `spawn`) goes to a person. The model does not tell the two causes apart, so either may happen |
 | D11 reviewer not in a pool | the `review` phase holds nothing |
 | a task that ends, fails, is cancelled or reworked while holding a place | `RunDone`, `RunFailed`, `RunModelError`, `CancelRunning`, `ReworkRunning` all release (`EndRun`) |
 
@@ -42,13 +42,12 @@ exceeded), `OneTaskPerSlot` (a worker holds at most `count` tasks; a task holds
 at most one worker), `SlotsMatchHolders` (the book's counts equal what running
 tasks hold: a place is released whenever its task stops holding it),
 `RunsOnAsked` (a rework, a fallback or a retry runs only on the worker asked
-for), `RunsInOwnRepo`, `ReviewerHoldsNothing`, `NoHoldAndWait` and
-`NoWaitCycle` (a waiting task holds nothing, so the waits of rework-to-last-worker
-and of no-fallback-waits form no cycle).
+for), `RunsInOwnRepo`, `ReviewerHoldsNothing` and
+`NoHoldAndWait` (a waiting task holds nothing, so a waiting task only waits for running tasks, which wait for nobody: that is the argument that waits form no cycle; an earlier `NoWaitCycle` invariant was vacuous and was removed).
 
 Properties checked, under weak fairness of `Start`, `Claim`, the end of a run
 and the retry timer (cancel, rework, the reviewer and a person are not fair):
-`WaitingGetsWorker` (a waiting task stops waiting) and `RunsEnd`.
+`WaitingGetsWorker` (a waiting task stops waiting) and `RunsEnd`. `WaitingGetsWorker` holds because tasks, attempts and waits are bounded and `Claim` is weakly fair; it says little about starvation in the code, where the wake-up of waiters is not a queue and a waiter may lose a capped harness again and again.
 
 Instance (`MC.tla`): harnesses claude, pi, codex; claude and pi capped at 1 at
 home; repositories r1 and r2; workers `r1claude` (falls back to `r1pi`),
@@ -70,12 +69,18 @@ Differences from ADR 0021 (the model follows the code):
 
 - D9 "waits as `retry_wait` does": the work step retries after `retrySecs`, at
   most `MAX_WORK_WAITS` times, then waits for a person. Modelled as `retry`.
+- The bound is not the code's. After a retry wait the work step's worktree visit
+  is not a replay, so it counts a new attempt (`attemptFor`), and `prepare` sets
+  `workWaits` to 0 (`steps.ts`): in the code each retry restarts the wait budget
+  and nothing bounds the loop. `Retry` counts an attempt and resets `waits` while
+  `attempts < MaxAttempts`; after that the count stays and the waits run out, so
+  the model is finite.
 
 Also modelled, found by trace validation (below): `Reverify`, a person's `reverify` of a task that waits after its work failed or ran out of time. The dev flow verifies and reviews what the work left, with no worker; the first model had no such step.
 
 Run it: `bash scripts/tla.sh pool` (TLC 2.19, release v1.7.4) takes about 2 min on ten cores
-(326,670 distinct states, 1,728,804 generated, depth 32; 1,578,576 generated before `Reverify`). A fourth task did not
-finish in twenty minutes.
+(207,082 distinct states, 1,071,194 generated, depth 32, 52 s on ten cores, after `Retry` counts attempts and `RunModelError` may go to a person; 326,670 distinct and about 2 min before). A fourth task did not
+finish in twenty minutes with the earlier model.
 
 ## `integrate`: the integration queue and the main clone
 
@@ -90,10 +95,11 @@ after `-config`:
 
 | Config | Tasks and constants | What it checks |
 |---|---|---|
-| `MC.cfg` | 3 tasks, `MaxVer`=0, `MaxHand`=1, `MaxLocal`=0, `MaxCrash`=0, `MaxRound`=2, `BatchMax`=2 | invariants and properties below |
+| `MC.cfg` | 3 tasks, `MaxVer`=0, `MaxHand`=1, `MaxLocal`=0, `MaxCrash`=0, `MaxRound`=2, `BatchMax`=2 | invariants and properties below (not `OneMerge`: finding 4 violates it here) |
 | `MCCrash.cfg` | 2 tasks, `MaxVer`=1, `MaxHand`=1, `MaxLocal`=0, `MaxCrash`=1 | the same, with one rework and one kill |
-| `MCLocal.cfg` | 2 tasks, `MaxVer`=0, `MaxHand`=1, `MaxLocal`=1, `MaxCrash`=0 | the same, with a commit made by hand in the clone |
+| `MCLocal.cfg` | 2 tasks, `MaxVer`=0, `MaxHand`=1, `MaxLocal`=1, `MaxCrash`=0 | the same (with `OneMerge`), with a commit made by hand in the clone |
 | `MCOneMerge.cfg` | 3 tasks, `MaxCrash`=1 | finding 1 (violates `OneMerge`) |
+| `MCOneMergeCancel.cfg` | 3 tasks, `MaxHand`=1, `MaxCrash`=0 | finding 4 (violates `OneMerge`, no crash needed) |
 | `MCUnwanted.cfg` | 2 tasks, `MaxHand`=1 | finding 2 (violates `NoUnwantedMerge`) |
 | `MCPrepare.cfg` | 2 tasks, `MaxCrash`=1 | a kill after the clone moves still runs prepare on restart |
 
@@ -103,8 +109,8 @@ part of its identity, so the checked commit is the merged one), `CloneNotAhead`
 (the clone holds no commit origin lacks, except those made by hand there),
 `LocalKept` (a hand-made commit is never dropped: only a fast-forward moves the
 clone), `CloneEqualsOrigin` (at rest, a clone whose last follow succeeded and
-that has no local commit equals origin/main), `OneMerge`, `NoUnwantedMerge`,
-`PrepareRan` (the first two are the findings).
+that has no local commit equals origin/main), `OneMerge` (it holds in `MCLocal.cfg`, 2 tasks; with 3 tasks it fails, findings 1 and 4, so it is checked only in `MCOneMerge.cfg` and `MCOneMergeCancel.cfg`), `NoUnwantedMerge`
+(these two are the findings).
 
 Properties, under weak fairness of what the code does by itself (the world, that
 is hand pushes, cancel, rework, kills and the clone's owner, is not fair):
@@ -143,8 +149,18 @@ generated), depth 30, 16 s; `MCPrepare.cfg` 178,052 distinct (725,105 generated)
 depth 32, 29 s. Three tasks with a rework and a kill together did not finish in
 twenty minutes, which is why the configurations are split.
 
+4. `OneMerge` without a crash (found when `OneMerge` was added to `MC.cfg`): leader
+   t2 claims t3 and reaches pending, a hand push moves origin/main so t2's push is
+   refused, and t2 is cancelled (`Withdraw`) while its result file stays. t3's
+   claim still holds (the leader left a result), so t1 takes the turn; then t3
+   voids the claim, which the leader's gone without landing, and takes the turn
+   too (trace: Join t1, Join t2, Join t3, Turn, Claim, Build, Check, Pending,
+   HandPush, Push (refused), Withdraw t2, Turn, ClaimVoid, Turn; the task names
+   are TLC's and differ in the run). Same shape as finding 1 with a cancel in
+   place of a crash: the claim removal in `IntegrationQueue.turn()`. Pushes stay safe.
+
 Each finding configuration stops at its counterexample: 65,641 distinct states and 6 s
-(`MCOneMerge`, depth 13) and 2,903 and 4 s (`MCUnwanted`, depth 13).
+(`MCOneMerge`, depth 13), 2,903 and 4 s (`MCUnwanted`, depth 13) and 79,781 and 6 s (`MCOneMergeCancel`, depth 16).
 
 Mutation checks: one guard removed in `Integrate.tla`, TLC run, guard restored.
 
@@ -187,7 +203,7 @@ behaviour found); a run that ends with no error means the model stopped, and
 (`accepted: ...` exits 0, `rejected: ...` exits 3). The events the history
 yields are `start:<step>`, `result:<step>:<result>` (the history's "work done" is
 `result:work:done`), `choose:<action>` and `run:start`, `run:done`,
-`run:cancelled`. Both specs also check the model's safety invariants on the
+`run:cancelled`, `run:failed` (the run ended failed) and `run:crashed` (a step re-run after a crash). Neither of the last two is in a model, so a history holding one is rejected at it rather than accepted without it. If TLC stops for another reason (another invariant, a deadlock because `-deadlock` was left out, a parse error), `verdict` fails with that reason instead of reporting a rejection. Both specs also check the model's safety invariants on the
 way. The trace check needs Java and is run by hand; the script and its test
 (`scripts/test/tla-trace.test.ts`, with two real histories as fixtures) need
 none.

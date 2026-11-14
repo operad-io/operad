@@ -23,6 +23,7 @@ After(e) ==
     [] e \in {"result:integrate:fail", "result:integrate:conflict"} -> {"idle"}
     [] e = "result:integrate:failed" -> {"failed"}
     [] e \in {"run:cancelled", "result:integrate:cancelled"} -> {"cancelled"}
+    [] e \in {"run:failed", "run:crashed"} -> {"unmodelled"}   \* no model has these: a history with one is rejected
     [] OTHER -> {}
 
 Steps == SelectSeq(TraceEvents, LAMBDA e : After(e[2]) # {})

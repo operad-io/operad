@@ -85,6 +85,10 @@ Each package keeps its mutation checks in `MUTATIONS.md`; a row names the broken
 | T-0426-M2 | scripts/tla-trace.ts | `TraceMaxFails` counted `integrate fail` but not `integrate conflict` | `scripts/tla-trace.ts > failed integrations are counted as the reworks the model must allow` |
 | T-0426-M3 | scripts/tla-trace.ts | `verdictOf` took the last TRACE line instead of the furthest one | `scripts/tla-trace.ts > the verdict of TLC's output > a run that ends with no error stopped at the last position it reached` |
 | T-0426-M4 | scripts/tla.sh | `TLA_MAIN` was ignored (`main="MC"`) | `scripts/tla.sh > TLA_MAIN names the module and the config to run instead of MC` |
+| T-0438-M1 | scripts/tla.sh | `main` was always `MC`, ignoring `TLA_MAIN` | `scripts/tla.sh > TLA_MAIN picks <name>.tla and <name>.cfg, and TLA_LIB goes to TLC as its library` |
+| T-0438-M2 | scripts/tla.sh | the verified download was not moved into the cache | `scripts/tla.sh > a matching download is kept, and the next run uses it without fetching` |
+| T-0438-M3 | scripts/tla-trace.ts | `run failed` no longer made an event | `scripts/tla-trace.ts > a failed run and a step re-run after a crash are events no model has` |
+| T-0438-M4 | scripts/tla-trace.ts | `verdictOf` no longer refused a TLC run that stopped for another reason | `scripts/tla-trace.ts > the verdict of TLC's output > a run TLC stopped for another reason is not a rejection` |
 
 ## T-0417 — the ADR snapshot test
 
