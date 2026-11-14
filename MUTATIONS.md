@@ -101,3 +101,10 @@ Each package keeps its mutation checks in `MUTATIONS.md`; a row names the broken
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0421-M1 | AGENTS.md | put a backlog file name followed by a decision number back in the kernel paragraph, outside `docs/backlog/` | `a backlog decision is cited by its ADR > no file outside docs/backlog cites a backlog decision by number` |
+
+## T-0467 — MUTATIONS.md is append-only and checks run the scripts tests
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0467-M1 | scripts/test/mutations-append-only.test.ts | `firstMovedLine` always returned undefined, so a deleted, edited or mid-file row passed | `MUTATIONS.md files are append-only > a deleted row fails and names the file and the first missing line` |
+| T-0467-M2 | scripts/check-changed.sh | the named selection no longer added `./scripts/`, so a package change skipped the scripts tests | `check-changed.sh > a change under packages/a/src runs the package's tests and scripts/test` |
