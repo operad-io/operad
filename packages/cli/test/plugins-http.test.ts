@@ -3,6 +3,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  loadPlugin,
   openConfigLog,
   readConfig,
   readHttpToken,
@@ -43,6 +44,7 @@ interface Rig {
   readonly base: string;
   readonly token: string;
   readonly logs: string[];
+  readonly loaded: string[];
   readonly cli: (...argv: string[]) => Promise<{ code: number; out: string; err: string }>;
   readonly configText: () => string;
   readonly startRun: () => Promise<void>;
@@ -66,6 +68,7 @@ async function withRig(body: (rig: Rig) => Promise<void>): Promise<void> {
   const quiet = capture();
   const context = await openContext(home, quiet.io);
   const logs: string[] = [];
+  const loaded: string[] = [];
   let server: HttpServerHandle | undefined;
   try {
     server = await startHttpServer({
@@ -74,7 +77,10 @@ async function withRig(body: (rig: Rig) => Promise<void>): Promise<void> {
       views: context.views,
       log: context.log,
       registry: context.registry,
-      plugins: pluginAdminFor(context),
+      plugins: pluginAdminFor(context, (module, base) => {
+        loaded.push(module);
+        return loadPlugin(module, base);
+      }),
       onLog: (message) => logs.push(message),
     });
     const token = (await readHttpToken(home))?.token ?? "";
@@ -83,6 +89,7 @@ async function withRig(body: (rig: Rig) => Promise<void>): Promise<void> {
       base: server.urls[0] ?? "",
       token,
       logs,
+      loaded,
       cli: async (...argv) => {
         const out = capture();
         const code = await main(argv, { home, io: out.io });
@@ -242,25 +249,12 @@ export default definePlugin({ name: "declared", kind: "domain", version: "2.0.0"
 
   test("listing again does not load a plugin file again", async () => {
     await withRig(async (rig) => {
-      const file = join(rig.home, "counted.ts");
-      writeFileSync(
-        file,
-        `import { definePlugin } from ${JSON.stringify(join(import.meta.dir, "../../engine/src/index.ts"))};
-const g = globalThis as { __pluginsHttpLoads?: number };
-g.__pluginsHttpLoads = (g.__pluginsHttpLoads ?? 0) + 1;
-export default definePlugin({ name: "counted", kind: "domain", version: "1.0.0", objects: [{ name: "thing" }] });
-`,
-      );
-      const raw = JSON.parse(rig.configText()) as { plugins: Record<string, unknown> };
-      raw.plugins.counted = { module: file, enabled: true };
-      writeFileSync(join(rig.home, "config.json"), JSON.stringify(raw));
-      const loads = (): number => (globalThis as { __pluginsHttpLoads?: number }).__pluginsHttpLoads ?? 0;
       await call(rig, "GET");
-      const first = loads();
+      const first = rig.loaded.length;
+      expect(first).toBe(2);
       await call(rig, "GET");
       await call(rig, "GET");
-      expect(first).toBe(1);
-      expect(loads()).toBe(first);
+      expect(rig.loaded.length).toBe(first);
     });
   });
 });

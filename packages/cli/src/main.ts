@@ -1995,6 +1995,7 @@ async function pluginRows(
   home: string,
   plugins: OperadConfig["plugins"],
   loaded?: Map<string, PluginIdentity>,
+  load: (module: string, home: string) => Promise<unknown> = loadPlugin,
 ): Promise<(PluginInfo & { readonly key: string })[]> {
   const rows: (PluginInfo & { readonly key: string })[] = [];
   for (const entry of plugins) {
@@ -2005,7 +2006,7 @@ async function pluginRows(
       identity = loaded?.get(entry.module);
       if (identity === undefined) {
         try {
-          const definition = await loadPlugin(entry.module, home);
+          const definition = await load(entry.module, home);
           identity = { name: definitionName(definition), version: definitionVersion(definition) };
           loaded?.set(entry.module, identity);
         } catch {
@@ -2179,10 +2180,13 @@ async function changePlugin(
  * `config.json` at each call, because the file changes while `serve` runs,
  * and refuses with the command line's reasons.
  */
-export function pluginAdminFor(context: Context): PluginAdmin {
+export function pluginAdminFor(
+  context: Context,
+  load: (module: string, home: string) => Promise<unknown> = loadPlugin,
+): PluginAdmin {
   const loaded = new Map<string, PluginIdentity>();
   const rowsNow = async (): Promise<(PluginInfo & { readonly key: string })[]> =>
-    pluginRows(context.home, (await readConfig(context.home)).plugins, loaded);
+    pluginRows(context.home, (await readConfig(context.home)).plugins, loaded, load);
   const publicRow = ({ key: _key, ...row }: PluginInfo & { readonly key: string }): PluginInfo => row;
   return {
     list: async () => (await rowsNow()).map(publicRow),
