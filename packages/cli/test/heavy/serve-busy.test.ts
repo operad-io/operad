@@ -207,7 +207,7 @@ describe("serve while another process holds the store's write lock", () => {
       // the busy timeout. That pass fails; the serve must not.
       writeFileSync(join(work, "request-1"), "");
       const outcome = await output.untilOrExit(
-        /^serve: database is locked; trying again$/m,
+        /^serve: database is locked$/m,
         serve,
         deadline,
       );

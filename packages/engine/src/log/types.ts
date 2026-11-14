@@ -136,7 +136,7 @@ export interface LogBackendOptions extends FollowOptions {
     onChange: (filename: string | null) => void,
   ) => () => void;
   /**
-   * Test hook: wraps the connection an immediate write goes through, so a test
+   * Internal, for tests only; not part of the backend contract. Wraps the connection an immediate write goes through, so a test
    * can act between reading `data_version` and taking the write lock.
    */
   readonly immediateWriter?:
