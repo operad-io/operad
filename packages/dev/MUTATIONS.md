@@ -1213,3 +1213,9 @@ the row fields.
 | T-0466-M2 | packages/dev/src/lock.ts | `repositoryKey` added the process id, so two dev processes took different lock files and did not exclude each other | `the repository lock > two processes still exclude each other` |
 | T-0466-M3 | packages/dev/src/lock.ts | the legacy cleanup returned whenever `.operad/dev.lock` existed, so an unheld old lock stayed in the working tree | `the repository lock > a legacy in-tree lock is removed when nobody holds it` |
 | T-0466-M4 | packages/dev/src/lock.ts | the legacy cleanup unlinked `.operad/dev.lock` without checking whether an older dev held it | `the repository lock > a held legacy in-tree lock is left alone` |
+## T-0460 — settings follow-ups
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0460-M5 | packages/dev/src/project-settings.ts | dev checked every dev.json setting, so an invalid flow already in the file blocked an unrelated setting | `dev.flows and dev.flowList in settings > an invalid flow already written does not block an unrelated setting` |
+| T-0460-M6 | packages/dev/src/project-settings.ts | a dev.json that could not be read left `dev.flowList` with no value and no reason | `dev.flows and dev.flowList in settings > a dev.json that cannot be read still lists flows and says why` |

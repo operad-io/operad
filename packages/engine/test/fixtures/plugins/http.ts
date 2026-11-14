@@ -20,6 +20,11 @@ export default definePlugin({
           additionalProperties: false,
         },
       },
+      strict: {
+        type: "object",
+        editable: true,
+        properties: { known: { type: "integer" } },
+      },
     },
   },
   objects: [{ name: "item", index: ["state"] }],

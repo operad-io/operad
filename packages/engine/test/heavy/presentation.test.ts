@@ -168,15 +168,23 @@ function manualGrowthLog(inner: LogBackend): {
 
 function countingLog(
   log: LogBackend,
-): { readonly counting: LogBackend; readonly asked: (string | undefined)[] } {
+): {
+  readonly counting: LogBackend;
+  readonly asked: (string | undefined)[];
+  readonly read: string[];
+} {
   const asked: (string | undefined)[] = [];
+  const read: string[] = [];
   const counting: LogBackend = {
     ...log,
     startRun: (flow, object, input, access) => log.startRun(flow, object, input, access),
     endRun: (runId) => log.endRun(runId),
     recordInput: (runId, source, key, payload) => log.recordInput(runId, source, key, payload),
     append: (runId, seq, facts) => log.append(runId, seq, facts),
-    read: (runId) => log.read(runId),
+    read: (runId) => {
+      read.push(runId);
+      return log.read(runId);
+    },
     appendGlobal: (fact, key) => log.appendGlobal(fact, key),
     readGlobal: () => log.readGlobal(),
     readInputs: () => log.readInputs(),
@@ -192,7 +200,7 @@ function countingLog(
       return log.runs(options);
     },
   };
-  return { counting, asked };
+  return { counting, asked, read };
 }
 
 describe("presentation views", () => {
@@ -290,6 +298,21 @@ describe("presentation views", () => {
     expect(object.row.id).toBe("ghost");
     expect(asked.length).toBeGreaterThan(0);
     expect(asked.every((object) => object === "item:ghost")).toBe(true);
+  });
+
+  test("the ending of a run is read once, not on every object read", async () => {
+    const { store, registry, log } = await fixture();
+    const runId = await waitFact(log, "item:one", "run_started", { flow: "demo-flow" });
+    await log.append(runId, 1, [
+      { kind: "run_ended", payload: { status: "done", reason: null }, cause: "test" },
+    ]);
+    await log.endRun(runId);
+    const { counting, read } = countingLog(log);
+    const views = trackedViews({ registry, store, log: counting });
+    expect((await views.get("item:one")).lastRun?.outcome).toBe("done");
+    expect(read.filter((id) => id === runId)).toHaveLength(1);
+    expect((await views.get("item:one")).lastRun?.outcome).toBe("done");
+    expect(read.filter((id) => id === runId)).toHaveLength(1);
   });
 
   test("the history of an object with two runs shows no tag and no run id", async () => {
