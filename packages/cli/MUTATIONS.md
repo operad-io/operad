@@ -202,3 +202,9 @@ the row fields.
 |---|---|---|---|
 | T-0441-M1 | packages/cli/src/main.ts | the harness list was always empty, so `operad init` never enabled claude or pi for a command on `PATH` | `\`operad init\` finds the agent on PATH > only claude is enabled, and its package is not a CLI dependency` and `... > only pi is enabled` |
 | T-0441-M5 | packages/cli/src/main.ts | `init` installed claude only when it had just created the config, so a second init did not retry an install that failed after the config was written | `publishing and installing the packages > init retries a claude install that failed after config.json was written` |
+
+## T-0446-init-finds-agent-followups — init leaves a claude entry with its own module
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0446-M1 | packages/cli/src/main.ts | `init` installed the default `@operad-io/harness-claude` for any enabled claude entry, ignoring the entry's own `module` | `publishing and installing the packages > init leaves a claude entry that names its own module without installing the default package` |
