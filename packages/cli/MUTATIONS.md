@@ -201,3 +201,4 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0441-M1 | packages/cli/src/main.ts | the harness list was always empty, so `operad init` never enabled claude or pi for a command on `PATH` | `\`operad init\` finds the agent on PATH > only claude is enabled, and its package is not a CLI dependency` and `... > only pi is enabled` |
+| T-0441-M5 | packages/cli/src/main.ts | `init` installed claude only when it had just created the config, so a second init did not retry an install that failed after the config was written | `publishing and installing the packages > init retries a claude install that failed after config.json was written` |

@@ -506,9 +506,12 @@ async function commandInit(home: string, io: CliIo): Promise<number> {
       "no agent found on PATH: install claude (https://code.claude.com), pi (bun add -g @earendil-works/pi-coding-agent) or radian, then run operad init again\n",
     );
   }
-  if (ensured.created && harnesses.includes("claude")) {
-    // claude is not a CLI dependency: a new home gets its package and SDK now,
-    // as `operad plugin enable claude` would install them (ADR 0012 D4).
+  const config = await readConfig(home);
+  // claude is not a CLI dependency: a home that enables it gets its package
+  // and SDK now, as `operad plugin enable claude` would install them (ADR 0012
+  // D4). Reading the config first makes a second init retry an install that
+  // failed after the config was written.
+  if (config.plugins.some((entry) => entry.name === "claude" && entry.enabled)) {
     await ensureInstalledPackage({
       home,
       specifier: defaultPluginModule("claude"),
@@ -517,7 +520,6 @@ async function commandInit(home: string, io: CliIo): Promise<number> {
       omitOptional: true,
     });
   }
-  const config = await readConfig(home);
   const storeRoot = storeRootOf(config);
   const registry = await loadPluginRegistry({
     installOnEnable: INSTALL_ON_ENABLE,
