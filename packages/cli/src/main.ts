@@ -2427,7 +2427,8 @@ export function pluginAdminFor(
       if (row === undefined) {
         throw new ViewError("not-found", `plugins.${added.declaredName}: no such plugin`);
       }
-      return withSignIn(publicRow(row));
+      // A new install is off and not in the registry yet, so it has no login to report.
+      return publicRow(row);
     },
     set: async (name, enabled, options) => {
       const fresh: Context = { ...context, config: await readConfig(context.home) };

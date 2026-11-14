@@ -235,6 +235,42 @@ describe("plugins over HTTP", () => {
     expect(rows.find((row) => row.name === "shell")?.signedIn).toBeUndefined();
   });
 
+  test("a switch answers a harness's signedIn while it is enabled, and leaves it out when disabled", async () => {
+    await withRig(
+      async (rig) => {
+        const on = await call(rig, "POST", { name: "signed", enabled: true });
+        expect(on.status).toBe(200);
+        expect(((await on.json()) as { plugin: Row }).plugin).toMatchObject({
+          name: "signed",
+          enabled: true,
+          signedIn: true,
+        });
+        const off = await call(rig, "POST", { name: "signed", enabled: false, confirmed: true });
+        expect(off.status).toBe(200);
+        const plugin = ((await off.json()) as { plugin: Row }).plugin;
+        expect(plugin.enabled).toBe(false);
+        expect(plugin.signedIn).toBeUndefined();
+      },
+      undefined,
+      { signed: { module: signedInPath, enabled: true, settings: { answer: true } } },
+    );
+  });
+
+  test("an install answer leaves signedIn out while the new harness is off", async () => {
+    const run = fakeInstall(
+      "http-signed",
+      "signed",
+      "1.0.0",
+      `export { default } from ${JSON.stringify(signedInPath)};`,
+    );
+    await withRig(async (rig) => {
+      const response = await call(rig, "POST", { install: "http-signed@1.0.0", confirmed: true });
+      expect(response.status).toBe(200);
+      const plugin = ((await response.json()) as { plugin: Row }).plugin;
+      expect(plugin).toMatchObject({ name: "signed", enabled: false });
+      expect(plugin.signedIn).toBeUndefined();
+    }, run);
+  });
 
   test("disable and enable change the config the command line reads, and are recorded", async () => {
     await withRig(async (rig) => {

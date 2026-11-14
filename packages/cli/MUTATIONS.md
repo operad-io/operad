@@ -275,3 +275,10 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0465-M2 | packages/cli/src/main.ts | the plugin list no longer asked the registry for a harness's `signedIn`, so `/v1/plugins` left the field out | `plugins over HTTP > GET /v1/plugins carries a harness's signedIn answer, and leaves it out when it cannot tell` |
+
+## T-0472 — signedIn on the plugin switch
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0472-M4 | packages/cli/src/main.ts | a switch answer no longer carried an enabled harness's signedIn | `plugins over HTTP > a switch answers a harness's signedIn while it is enabled, and leaves it out when disabled` |
+| T-0472-M5 | packages/cli/src/main.ts | signedIn was asked for a disabled harness, so its switch answer carried an answer it should not | `plugins over HTTP > a switch answers a harness's signedIn while it is enabled, and leaves it out when disabled` |
