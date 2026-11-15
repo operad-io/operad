@@ -1,6 +1,6 @@
 # operad-chat-commands：chat 里的 `/` 命令
 
-- 状态：decided（命令机制和第一批的 `/model`、`/effort`、`/close`、`/help`、`/stop`、`/retry`、`/status` 已落地；Telegram 的菜单、`/start` 和选项按钮已落地（决定 10，见 ADR 0037 D7）；第二批和待决问题见文末）
+- 状态：decided（命令机制和第一批的 `/model`、`/effort`、`/close`、`/help`、`/stop`、`/retry`、`/status` 已落地；TUI 的 `/` 列表和 Telegram 的菜单、`/start`、选项按钮已落地（决定 3、10，见 ADR 0037 D7、D8、D9）；第二批和待决问题见文末）
 - 涉及 ADR：0013（动作）、0026、0027、0028（chat）、0033（Telegram）、0037（chat 命令）
 - 涉及：`operad-conversation.md`（待决 5：上下文费用）、`operad-telegram.md`、`operad-bot.md`（待决 5、7：skills）
 - 来源：2026-11-15 对 OpenClaw、Hermes Agent、Orca、Conductor、Vibe Kanban、Kimaki 的调研和 owner 的讨论

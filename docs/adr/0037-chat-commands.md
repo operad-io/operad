@@ -45,3 +45,7 @@ A command whose one argument is a choice (an `enum` in the action's schema, such
 ### D8: `/status` says where the chat stands and what it has used
 
 `chat:status` is a command action. It reads the chat's facts only, costs no tokens and works while a reply is being written. In a few short lines it shows the agent, the model and effort in force, whether a reply is being written and since when, how many messages wait, the cost and token usage of the session so far, and the usage of the last reply. When the reply records its timings, the last reply line also shows its time to first output. A number an agent did not report, such as a cost, is said to be unknown and is never shown as 0. It is a command and leaves one transcript line like every other command.
+
+### D9: The TUI lists a chat's commands in its input
+
+On a chat's page, `/` opens its input with the commands listed from the same action declarations: the name typed after the slash, the one-line description, and the arguments the command takes, a choice showing its options. The list filters as the person types. Choosing a command fills the line; it does not run the action. Sending the line goes through `chat:send` like any text, so the same declaration decides whether it is a command. A line that names no command is sent as written. The `:` palette keeps listing every action; elsewhere `/` keeps its key meaning.

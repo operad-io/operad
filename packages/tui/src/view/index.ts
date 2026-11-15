@@ -15,6 +15,7 @@ import {
 import type { RowMark } from "@operad-io/engine";
 import { allowedText } from "../args.ts";
 import { confirmText, entryDetail, matchPositions, paletteEntries, settingText, type TuiPaletteEntry } from "../actions.ts";
+import { commandEntries } from "../commands.ts";
 import { chunksOfLine } from "../markdown.ts";
 import {
   TUI_PALETTE,
@@ -831,6 +832,22 @@ function inputContent(state: TuiState, palette: TuiPalette): StyledText | undefi
     return styled(chunks);
   }
   if (input.kind === "note") {
+    if (input.commandMenu !== undefined) {
+      const entries = commandEntries(state);
+      const chunks: TextChunk[] = [
+        chunk(`${input.action} · note${input.required ? " (required)" : ""}\n`, palette.accent, TextAttributes.BOLD),
+      ];
+      entries.forEach((entry, at) => {
+        chunks.push(chunk(at === input.commandMenu?.cursor ? "❯ " : "  ", palette.accent));
+        chunks.push(chunk(entry.slash, at === input.commandMenu?.cursor ? palette.accent : palette.text));
+        if (entry.hint !== "") chunks.push(chunk(`  ${entry.hint}`, palette.weak));
+        if (entry.description !== "") chunks.push(chunk(`  ${entry.description}`, palette.weak));
+        chunks.push(chunk("\n"));
+      });
+      chunks.push(chunk(`${input.text}${bar}\n`, palette.text));
+      chunks.push(chunk("enter picks · esc cancels", palette.weak));
+      return styled(chunks);
+    }
     const chunks: TextChunk[] = [
       chunk(`${input.action} · note${input.required ? " (required)" : ""}\n`, palette.accent, TextAttributes.BOLD),
       chunk(`${input.text}${bar}\n`, palette.text),
@@ -983,7 +1000,9 @@ function inputLines(state: TuiState): number {
     const body = field?.kind === "pick" ? field.options.length + 1 : 2;
     return 3 + (setting.description === undefined ? 0 : 1) + body;
   }
-  if (input?.kind === "note") return input.text.split("\n").length + 2;
+  if (input?.kind === "note") {
+    return input.text.split("\n").length + 2 + (input.commandMenu === undefined ? 0 : commandEntries(state).length + 1);
+  }
   if (input?.kind === "palette") {
     const entries = paletteEntries(state);
     return entries.length === 0 ? 3 : 2 + paletteDisplayLines(entries).length;
