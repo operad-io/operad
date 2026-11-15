@@ -462,3 +462,10 @@ the row fields.
 |---|---|---|---|
 | T-0489-M1 | packages/tui/src/events.ts | the per-line limit was removed, so an over-long line parsed as an event | `TuiEvents size limits > a line past the limit drops the stream and the client reconnects` |
 | T-0489-M2 | packages/tui/src/events.ts | the per-block limit was removed, so an over-long block parsed as an event | `TuiEvents size limits > a block past the limit drops the stream and the client reconnects` |
+
+## T-0502 — a split line ending is not content
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0502-M1 | packages/tui/src/events.ts | the tail's block limit counted the line ending that may still be arriving, so a block exactly at its limit was rejected when the chunks split its terminator | `TuiEvents size limits > an event at the limit parses when its line ending is split across chunks` |
+| T-0502-M2 | packages/tui/src/events.ts | a carriage return that may still be part of a line ending was counted as line content before its line feed arrived, so a line exactly at its limit was rejected | `TuiEvents size limits > an event at the limit parses when its line ending is split across chunks`, `TuiEvents size limits > a block at the limit parses when it arrives in many small chunks` |

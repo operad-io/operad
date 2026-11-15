@@ -124,19 +124,87 @@ interface SseBlock {
 }
 
 /**
- * Throws when a block, or any one of its lines, is past its limit: a stream
- * that never ends a line or a block is broken, not an event.
+ * The unfinished block of one connection. A block ends at the line ending that
+ * ends an empty line, and every character is looked at once as it arrives, so a
+ * chunk costs what it adds and never the tail it is appended to.
  */
-function guardBlockSize(block: string): void {
-  if (block.length > MAX_EVENT_BLOCK_CHARS) {
-    throw new Error(
-      `an event block is longer than ${MAX_EVENT_BLOCK_CHARS} characters`,
-    );
-  }
-  for (const line of block.split(/\r?\n/)) {
-    if (line.length > MAX_EVENT_LINE_CHARS) {
+class BlockTail {
+  /** The characters of the unfinished block that arrived in earlier chunks. */
+  private readonly pieces: string[] = [];
+  /** The characters {@link pieces} hold. */
+  private length = 0;
+  /** The characters of the line still being received, its ending excluded. */
+  private lineLength = 0;
+  /** Whether the last character is a carriage return that awaits its line feed. */
+  private carriage = false;
+  /** The length of the line ending that ended the last line of this block. */
+  private ending = 0;
+
+  /** Adds one chunk; every block it completes goes to `onBlock` in order. */
+  push(chunk: string, onBlock: (block: string) => void): void {
+    let start = 0;
+    for (let i = 0; i < chunk.length; i += 1) {
+      const code = chunk.charCodeAt(i);
+      if (code === 13) {
+        // Two carriage returns in a row: the first one was content.
+        if (this.carriage) this.lineLength += 1;
+        this.carriage = true;
+        continue;
+      }
+      if (code !== 10) {
+        // A carriage return not followed by a line feed is content too.
+        if (this.carriage) {
+          this.lineLength += 1;
+          this.carriage = false;
+        }
+        this.lineLength += 1;
+        if (this.lineLength > MAX_EVENT_LINE_CHARS) {
+          throw new Error(
+            `a line of the event stream is longer than ${MAX_EVENT_LINE_CHARS} characters`,
+          );
+        }
+        continue;
+      }
+      const ending = this.carriage ? 2 : 1;
+      if (this.lineLength > 0 || this.ending === 0) {
+        // The line had content, or no line ended before it: no block ends here.
+        this.ending = ending;
+        this.lineLength = 0;
+        this.carriage = false;
+        continue;
+      }
+      // An empty line after a line ending ends the block, which drops both.
+      const before = this.pieces.join("") + chunk.slice(start, i + 1);
+      const block = before.slice(0, before.length - (this.ending + ending));
+      this.pieces.length = 0;
+      this.length = 0;
+      this.ending = 0;
+      this.lineLength = 0;
+      this.carriage = false;
+      start = i + 1;
+      if (block.length > MAX_EVENT_BLOCK_CHARS) {
+        throw new Error(
+          `an event block is longer than ${MAX_EVENT_BLOCK_CHARS} characters`,
+        );
+      }
+      onBlock(block);
+    }
+    if (start < chunk.length) {
+      this.pieces.push(chunk.slice(start));
+      this.length += chunk.length - start;
+    }
+    // A line ending that ends the tail may be the first half of a terminator
+    // split across chunks, so it does not count against the block's limit.
+    const possibleEnding = this.carriage
+      ? this.lineLength === 0
+        ? this.ending + 1
+        : 1
+      : this.lineLength === 0
+        ? this.ending
+        : 0;
+    if (this.length - possibleEnding > MAX_EVENT_BLOCK_CHARS) {
       throw new Error(
-        `a line of the event stream is longer than ${MAX_EVENT_LINE_CHARS} characters`,
+        `an event block is longer than ${MAX_EVENT_BLOCK_CHARS} characters`,
       );
     }
   }
@@ -325,16 +393,15 @@ export class TuiEvents implements AsyncIterableIterator<TuiEvent> {
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
-    let buffer = "";
+    const tail = new BlockTail();
     let delivered = false;
     try {
       while (!this.closed) {
         const read = await reader.read();
         if (read.done) break;
-        buffer += decoder.decode(read.value, { stream: true });
-        const drained = this.drain(buffer);
-        buffer = drained.remaining;
-        delivered = delivered || drained.delivered;
+        tail.push(decoder.decode(read.value, { stream: true }), (block) => {
+          if (this.handleBlock(block)) delivered = true;
+        });
       }
     } finally {
       await reader.cancel().catch(() => undefined);
@@ -342,27 +409,6 @@ export class TuiEvents implements AsyncIterableIterator<TuiEvent> {
     // The stream is meant to stay open: an end that was not asked for is a loss.
     if (!this.closed) throw new Error("the event stream ended");
     return delivered;
-  }
-
-  /**
-   * Consumes every complete block and returns the unfinished tail. A block or
-   * line past its limit throws: the stream is broken and reconnects.
-   */
-  private drain(buffer: string): { remaining: string; delivered: boolean } {
-    let remaining = buffer;
-    let delivered = false;
-    for (;;) {
-      const match = /\r?\n\r?\n/.exec(remaining);
-      if (match === null) break;
-      const block = remaining.slice(0, match.index);
-      remaining = remaining.slice(match.index + match[0].length);
-      guardBlockSize(block);
-      if (this.handleBlock(block)) delivered = true;
-    }
-    // The tail is one unfinished block: it obeys the same limits, so a server
-    // that keeps sending without a blank line cannot grow the buffer past them.
-    guardBlockSize(remaining);
-    return { remaining, delivered };
   }
 
   /** Handles one block; true when it yielded an event. */

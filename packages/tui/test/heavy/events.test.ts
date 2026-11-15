@@ -502,6 +502,77 @@ describe("TuiEvents size limits", () => {
     }
   });
 
+  test("an event at the limit parses when its line ending is split across chunks", async () => {
+    const line = dataLine(MAX_EVENT_LINE_CHARS);
+    const block = blockOf(MAX_EVENT_BLOCK_CHARS, "at");
+    const events = new TuiEvents({
+      url: "http://127.0.0.1:1",
+      token: "t",
+      // The carriage returns that end the event arrive without their line feeds.
+      fetch: async () =>
+        responseOf([`${line.line}\r`, "\n\r\n", `${block}\r`, "\n\r", "\n"]),
+      wait: async () => undefined,
+    });
+    try {
+      expect(take(await events.next())).toEqual({ kind: "change", id: line.id });
+      expect(take(await events.next())).toEqual({ kind: "change", id: "at" });
+    } finally {
+      events.stop();
+    }
+  });
+
+  test("an event parses wherever a chunk boundary splits it", async () => {
+    const payload = `id: s-1\ndata: {"id":"one"}\r\n\r\n`;
+    for (let cut = 1; cut < payload.length; cut += 1) {
+      const events = new TuiEvents({
+        url: "http://127.0.0.1:1",
+        token: "t",
+        fetch: async () => responseOf([payload.slice(0, cut), payload.slice(cut)]),
+        wait: async () => undefined,
+      });
+      try {
+        expect(take(await events.next())).toEqual({ kind: "change", id: "one" });
+      } finally {
+        events.stop();
+      }
+    }
+  });
+
+  test("a carriage return with no line feed after it is content, not a line ending", async () => {
+    const events = new TuiEvents({
+      url: "http://127.0.0.1:1",
+      token: "t",
+      fetch: async () =>
+        responseOf([": a\r", "b\ndata: {\"id\":\"one\"}\r\n\r\n"]),
+      wait: async () => undefined,
+    });
+    try {
+      expect(take(await events.next())).toEqual({ kind: "change", id: "one" });
+    } finally {
+      events.stop();
+    }
+  });
+
+  test("a block at the limit parses when it arrives in many small chunks", async () => {
+    const block = blockOf(MAX_EVENT_BLOCK_CHARS, "chunked");
+    const payload = `${block}\r\n\r\n`;
+    const chunks: string[] = [];
+    for (let at = 0; at < payload.length; at += 64 * 1024) {
+      chunks.push(payload.slice(at, at + 64 * 1024));
+    }
+    const events = new TuiEvents({
+      url: "http://127.0.0.1:1",
+      token: "t",
+      fetch: async () => responseOf(chunks),
+      wait: async () => undefined,
+    });
+    try {
+      expect(take(await events.next())).toEqual({ kind: "change", id: "chunked" });
+    } finally {
+      events.stop();
+    }
+  });
+
   test("a line past the limit drops the stream and the client reconnects", async () => {
     const past = dataLine(MAX_EVENT_LINE_CHARS + 1).line;
     const seen: (string | null)[] = [];
