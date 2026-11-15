@@ -1311,7 +1311,7 @@ describe("operad with the dev plugin", () => {
     expect(metrics.out).toContain("No attempts yet.");
     const diff = await run(home, repository, ["show", taskId, "--section", "diff"]);
     expect(diff.code).toBe(0);
-    expect(diff.out).toContain("No diff");
+    expect(diff.out).toContain("The branch of this task is gone, so there is no diff to show.");
   });
 
   test("lists name the repository once more than one is registered", async () => {
