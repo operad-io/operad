@@ -1,13 +1,13 @@
 # operad-chat-commands：chat 里的 `/` 命令
 
-- 状态：decided（命令机制和第一批的 `/model`、`/effort`、`/close`、`/help`、`/stop`、`/retry`、`/status` 已落地；TUI 的 `/` 列表和 Telegram 的菜单、`/start`、选项按钮已落地（决定 3、10，见 ADR 0037 D7、D8、D9）；第二批和待决问题见文末）
+- 状态：decided（命令机制和第一批的 `/model`、`/effort`、`/close`、`/help`、`/stop`、`/retry`、`/status` 已落地；运行中普通消息的插话已落地（原决定 12，见 ADR 0037 D9）；TUI 的 `/` 列表和 Telegram 的菜单、`/start`、选项按钮已落地（决定 3、10，见 ADR 0037 D7、D8、D10）；第二批和待决问题见文末）
 - 涉及 ADR：0013（动作）、0026、0027、0028（chat）、0033（Telegram）、0037（chat 命令）
 - 涉及：`operad-conversation.md`（待决 5：上下文费用）、`operad-telegram.md`、`operad-bot.md`（待决 5、7：skills）
 - 来源：2026-11-15 对 OpenClaw、Hermes Agent、Orca、Conductor、Vibe Kanban、Kimaki 的调研和 owner 的讨论
 
 ## 背景
 
-命令就是动作、命令不进模型、结果在 chat 里留一行，已经落地（ADR 0037）：`/model`、`/effort`、`/close`、`/help`、`/stop`、`/retry`、`/status` 可用，`/usr/local 是什么` 这样的消息照常送给模型。运行中发来的普通消息的插话，以及第二批尚未做。
+命令就是动作、命令不进模型、结果在 chat 里留一行，已经落地（ADR 0037）：`/model`、`/effort`、`/close`、`/help`、`/stop`、`/retry`、`/status` 可用，`/usr/local 是什么` 这样的消息照常送给模型。运行中发来的普通消息的插话已经落地（见 ADR 0037 D9）；第二批尚未做。
 
 对手的共同做法：命令由宿主执行、不进模型；一份命令表生成各端的菜单；命令集小；运行中有停止和插话。
 
@@ -21,7 +21,6 @@
 9. **不做**：聊天里改配置、权限、名单、插件，重启，跑 shell，子 agent 管理，把外部 agent 绑到当前聊天。这些归命令行和设置页。
 10. **Telegram**：已落地，见 ADR 0037 D7（命令名只用小写字母、数字、下划线；启动时和集合变化时注册成菜单；有选项的参数没给时回一排按钮；只有名单里的人能执行）。
 11. **用词（owner 批准）**：stop、status、help、retry、new、compact、btw、name、whoami、diff。model、effort、close 是已有的词。
-12. **运行中发来的普通消息默认插话**（owner 2026-11-15）：插进正在写的这一轮，在当前这批工具调用之后送给 agent，不中断、不另起一轮；不加 `/steer` 这个词。不能插话的 agent（radian）照旧排到下一轮。要打断用 `/stop`。
 
 ## 待决问题
 

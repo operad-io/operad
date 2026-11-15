@@ -8,10 +8,11 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { AskTimeoutError, attachmentDir, isRecord, messageOf, safeFileName, type AskOutcome, type AskRequest, type JsonValue, type PluginStepResult, type RunObject, type StepAsker, type StepContext, type UsageTokens } from "@operad-io/engine";
-import { emptyFold, foldLines, maskSecrets, type FoldEntry, type FoldState } from "@operad-io/harness-process";
+import { emptyFold, foldLines, maskSecrets, type FoldEntry, type FoldState, type MessageInbox } from "@operad-io/harness-process";
 import {
   allEntries,
   allMessages,
+  attachmentsOf,
   chatFacts,
   IMAGE_TYPES,
   chatData,
@@ -564,6 +565,50 @@ function failureOf(result: PluginStepResult): { readonly reason: string; readonl
   };
 }
 
+/**
+ * The inbox a chat passes to a harness that takes messages mid-run. It keeps
+ * what arrives until the harness listens, then hands everything on in order,
+ * and remembers only the messages the harness actually took. A message still
+ * waiting when the run ends is left for the next round.
+ */
+interface ReplyInbox {
+  readonly inbox: MessageInbox;
+  send(id: string, text: string): void;
+  /** The ids of the messages handed to the harness, in arrival order. */
+  readonly handed: readonly string[];
+  close(): void;
+}
+
+function replyInbox(): ReplyInbox {
+  let listener: ((text: string) => void) | undefined;
+  const waiting: { readonly id: string; readonly text: string }[] = [];
+  const handed: string[] = [];
+  const hand = (message: { readonly id: string; readonly text: string }): void => {
+    handed.push(message.id);
+    listener?.(message.text);
+  };
+  return {
+    inbox: {
+      listen(next) {
+        listener = next;
+        for (const message of waiting.splice(0)) hand(message);
+        return () => {
+          if (listener === next) listener = undefined;
+        };
+      },
+    },
+    send(id, text) {
+      if (listener === undefined) waiting.push({ id, text });
+      else hand({ id, text });
+    },
+    handed,
+    close() {
+      listener = undefined;
+      waiting.length = 0;
+    },
+  };
+}
+
 /** Runs one round of an answer; see the file's comment. */
 export async function runReply(ctx: StepContext, params: unknown): Promise<PluginStepResult> {
   const object = ctx.object;
@@ -573,8 +618,8 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
   const stored = await ctx.store.get(CHAT_TYPE, object.id);
   if (stored === undefined) return failed("object", `there is no chat ${object.id}`);
   const chat = chatData(stored.data);
-  const messages = allMessages(ctx.store, object.id);
-  const pending = unanswered(messages);
+  let messages = allMessages(ctx.store, object.id);
+  let pending = unanswered(messages);
   if (pending.length === 0) {
     // A run that stopped after recording a reply still owes the chat its model and cost.
     await syncChat(ctx, object.id, undefined);
@@ -605,6 +650,29 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
     return failedReply(ctx, object.id, why.reason, why.message);
   }
   const live = settled;
+
+  // A harness that takes messages mid-run is handed each ordinary message that
+  // arrives while this round runs, after the tool calls already running. A
+  // message with an attachment waits for the next round: the mid-run inbox
+  // carries text, and its image or file reaches the agent as a first message does.
+  const midRun =
+    ctx.harnessCapabilities?.(chat.harness)?.takesMessagesMidRun === true ? replyInbox() : undefined;
+  let stopMidRun: (() => void) | undefined;
+  if (midRun !== undefined) {
+    const inbox = midRun;
+    const arrived = new Set<string>();
+    stopMidRun = ctx.store.subscribe(chatRef(object.id), {}, (fact) => {
+      if (fact.type !== MESSAGE_FACT) return;
+      const data = fact.data;
+      if (data.role !== "user" || typeof data.id !== "string" || typeof data.text !== "string") return;
+      arrived.add(data.id);
+      if (attachmentsOf(data.attachments).length === 0) inbox.send(data.id, data.text);
+    });
+    // A message that came between the first read and this subscription is in
+    // the facts now. It is delivered, not also put into the prompt.
+    messages = allMessages(ctx.store, object.id);
+    pending = unanswered(messages).filter((message) => !arrived.has(message.id));
+  }
 
   const resumed = isRecord(params) ? params : {};
   const session =
@@ -669,6 +737,13 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
     await ctx.facts.append({ type: RUN_FACT, object: chatRef(object.id), data: { runId: ctx.runId } });
   }
 
+  const closeMidRun = (): void => {
+    if (stopMidRun !== undefined) {
+      stopMidRun();
+      stopMidRun = undefined;
+    }
+    midRun?.close();
+  };
   let outcome: PluginStepResult;
   try {
     outcome = await runStep(
@@ -689,6 +764,7 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
         ...(live.skills.length === 0 ? {} : { skills: live.skills }),
         // Operad's own tools, so the agent never runs the `operad` command.
         operadTools: { home: ctx.home },
+        ...(midRun === undefined ? {} : { inbox: midRun.inbox }),
         ...(Object.keys(live.mcpServers).length === 0 ? {} : { mcpServers: live.mcpServers }),
         ...(session === undefined ? {} : { resumeSession: session }),
         ...(askAnswer === undefined ? {} : { askAnswer }),
@@ -706,9 +782,13 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
       },
     );
   } catch (error) {
+    closeMidRun();
     await recordEntries(ctx, object.id, folded, { stopped: true });
     return failedReply(ctx, object.id, "harness", messageOf(error));
   }
+  // From here on the harness can no longer take a message: one that arrives
+  // now stays unanswered and is answered by the next round.
+  closeMidRun();
 
   if (outcome.result === "waiting") {
     await recordEntries(ctx, object.id, folded, { stopped: true });
@@ -751,7 +831,7 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
     text,
     attachments: [],
     source: { kind: chat.harness, ref: null },
-    replyTo: pending.map((message) => message.id),
+    replyTo: [...pending.map((message) => message.id), ...(midRun?.handed ?? [])],
     runId: ctx.runId,
     ...(sessionId === undefined ? {} : { session: sessionId }),
     ...usage,
@@ -763,5 +843,6 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
   await syncChat(ctx, object.id, sessionId);
 
   const left = unanswered(allMessages(ctx.store, object.id));
-  return { result: left.length > 0 ? "more" : "done", data: { answered: pending.length, left: left.length } };
+  const answered = pending.length + (midRun?.handed.length ?? 0);
+  return { result: left.length > 0 ? "more" : "done", data: { answered, left: left.length } };
 }

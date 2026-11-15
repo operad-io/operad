@@ -20,6 +20,17 @@ describe("harness capabilities", () => {
     expect(() => registryOf(plugin)).not.toThrow();
   });
 
+  test("a harness declares that it takes messages mid-run, and the registry exposes it", () => {
+    const plugin = definePlugin({
+      name: "a",
+      kind: "harness",
+      version: "0.0.1",
+      capabilities: { takesMessagesMidRun: true },
+    });
+    expect(plugin.capabilities).toEqual({ takesMessagesMidRun: true });
+    expect(registryOf(plugin).loadedCapabilities()).toEqual({ a: { takesMessagesMidRun: true } });
+  });
+
   test("a capability only a harness has is refused on another kind", () => {
     expect(() =>
       registryOf(
@@ -34,7 +45,7 @@ describe("harness capabilities", () => {
   });
 
   test("an unknown capability and a non-boolean value are refused", () => {
-    for (const capabilities of [{ loadsSkills: "yes" }, { doesEverything: true }]) {
+    for (const capabilities of [{ loadsSkills: "yes" }, { takesMessagesMidRun: "yes" }, { doesEverything: true }]) {
       try {
         registryOf(
           definePlugin({
@@ -42,7 +53,7 @@ describe("harness capabilities", () => {
             kind: "harness",
             version: "0.0.1",
             // The test checks the validator's message for a value it does not know.
-            capabilities: capabilities as unknown as { loadsSkills?: boolean },
+            capabilities: capabilities as unknown as { loadsSkills?: boolean; takesMessagesMidRun?: boolean },
           }),
         );
         throw new Error("expected a PluginError");

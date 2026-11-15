@@ -619,6 +619,10 @@ describe("codex/agent: resume", () => {
   });
 });
 
+test("the codex plugin declares that it takes messages mid-run", () => {
+  expect(createCodexHarnessPlugin().capabilities).toEqual({ takesMessagesMidRun: true });
+});
+
 describe("codex/agent: a message from the host", () => {
   test("a message sent mid-run steers the turn", async () => {
     const env = await setup("steer");

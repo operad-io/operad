@@ -550,6 +550,8 @@ export interface StepContext extends PluginBaseContext {
   readonly harnessModels?: ((harness: string) => HarnessModels | undefined) | undefined;
   /** The efforts a loaded harness plugin declares; undefined when it is not loaded or declares none. */
   readonly harnessEfforts?: ((harness: string) => HarnessEfforts | undefined) | undefined;
+  /** What a loaded harness plugin declares it can do; undefined when it is not loaded. */
+  readonly harnessCapabilities?: ((harness: string) => HarnessCapabilities | undefined) | undefined;
   /**
    * Runs another loaded step in this run. The kernel offers it when a plugin
    * step delegates to a harness or another plugin; a direct call to a step's
@@ -855,6 +857,12 @@ export interface HarnessCapabilities {
    * skills by itself.
    */
   readonly loadsSkills?: boolean | undefined;
+  /**
+   * True when the agent takes a message while its run is going, after the tool
+   * calls already running. False or absent: the run cannot take one, so a
+   * message waits for the next run.
+   */
+  readonly takesMessagesMidRun?: boolean | undefined;
 }
 
 /** An action a plugin offers on an object type, or without one. */

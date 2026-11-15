@@ -185,3 +185,9 @@ setup it depends on, in the order they were recorded. The root
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0486-M7 | packages/harness/claude/src/index.ts | the step result did not carry its `timings` | `claude/agent > a scripted worker gives the time to its session line, to the first increment, and the whole step` |
+
+## T-0496 — claude takes messages mid-run
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0496-M5 | packages/harness/claude/src/index.ts | claude no longer declared `takesMessagesMidRun` | `claude/agent > the plugin declares that it loads skills itself` |

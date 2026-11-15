@@ -20,6 +20,7 @@ import {
   type ProjectSettingsDeclaration,
   type ActionContext,
   type ActionEnv,
+  type HarnessCapabilities,
   type HarnessEfforts,
   type HarnessModels,
   type ActionEvent,
@@ -1021,6 +1022,7 @@ export class PluginRegistry {
       stepLoaded: (name) => this.stepIndex.has(name),
       harnessModels: (name) => this.loadedModels()[name],
       harnessEfforts: (name) => this.loadedEfforts()[name],
+      harnessCapabilities: (name) => this.loadedCapabilities()[name],
       runStep: (nestedUse, nestedParams, nestedOptions) => {
         // Declarations must not drift: tests fail on a call the step did not
         // declare; production still runs it.
@@ -1110,6 +1112,15 @@ export class PluginRegistry {
     const found: Record<string, HarnessEfforts> = {};
     for (const item of this.plugins) {
       if (item.kind === "harness" && item.efforts !== undefined) found[item.name] = item.efforts;
+    }
+    return found;
+  }
+
+  /** What the loaded harness plugins declare they can do, by plugin name. */
+  loadedCapabilities(): Readonly<Record<string, HarnessCapabilities>> {
+    const found: Record<string, HarnessCapabilities> = {};
+    for (const item of this.plugins) {
+      if (item.kind === "harness") found[item.name] = item.capabilities ?? {};
     }
     return found;
   }
