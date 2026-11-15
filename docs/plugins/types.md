@@ -93,6 +93,7 @@ The types a plugin imports, by the page that explains them. The values these ent
 | `AgentStepParams` | The params every harness `agent` step accepts. | [harness](harness.md) |
 | `CostQuality` | A type of the plugin API; its fields are described on the page. | [harness](harness.md) |
 | `EndResult` | A type of the plugin API; its fields are described on the page. | [harness](harness.md) |
+| `HarnessCapabilities` | What a harness plugin's agent does itself. `loadsSkills` says it loads the skill directories the step gives, so the prompt needs no list of them. | [harness](harness.md) |
 | `HarnessEfforts` | The efforts a harness plugin declares: those a chat may pick, the one used when none is set, and the step argument that sets it (`--effort` when absent). | [harness](harness.md) |
 | `HarnessModels` | The models a harness plugin declares: those a chat may pick, and the one used when none is set. | [harness](harness.md) |
 | `PromptFlowParams` | The fixed params of every `<harness>:prompt` flow. | [harness](harness.md) |

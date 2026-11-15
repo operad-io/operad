@@ -147,3 +147,10 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0472-M9 | packages/harness/pi/src/auth-file.ts | the streaming redactor kept value strings, so a credential secret survived into the text | `reading an auth file's shape > keeps keys and structure, and never keeps a value string` |
+
+## T-0497 — only the skills the step gives are loaded
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0497-M3 | packages/harness/pi/src/worker.ts | the given skill directories were not passed to pi's resource loader | `only the skill directories given are loaded, and the session log names them` |
+| T-0497-M4 | packages/harness/pi/src/worker.ts | the session log no longer named the skills it loaded | `only the skill directories given are loaded, and the session log names them` |

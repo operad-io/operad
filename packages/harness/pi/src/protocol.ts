@@ -35,6 +35,8 @@ export interface WorkerInput {
   readonly secretValues?: readonly string[] | undefined;
   /** Images given to pi with the prompt, read from these files. */
   readonly images?: readonly ImageInput[] | undefined;
+  /** Skill directories to load; no other skills are discovered. */
+  readonly skills?: readonly string[] | undefined;
 }
 
 export interface WorkerUsage {
@@ -163,6 +165,11 @@ export function parseInput(value: unknown): ParsedInput {
   const images = parseImageInputs(value["images"]);
   if (typeof images === "string") return { ok: false, message: images };
 
+  const skills = value["skills"];
+  if (skills !== undefined && (!Array.isArray(skills) || !skills.every((v): v is string => typeof v === "string"))) {
+    return { ok: false, message: "skills must be an array of strings" };
+  }
+
   const access = value["access"];
   if (access !== undefined && !isRecord(access)) {
     return { ok: false, message: "access must be an object" };
@@ -190,6 +197,7 @@ export function parseInput(value: unknown): ParsedInput {
       operadTools: operadTools === undefined ? undefined : { home: String(operadTools["home"]) },
       secretValues,
       images: images.length === 0 ? undefined : images,
+      skills: skills === undefined || skills.length === 0 ? undefined : skills,
     },
   };
 }

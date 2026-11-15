@@ -261,6 +261,13 @@ interface Setup {
   readonly env: (script: FakeScript, extra?: Record<string, string>) => Record<string, string | undefined>;
 }
 
+/** Writes a skill directory with the Agent Skills frontmatter. */
+function writeSkill(dir: string, name: string): string {
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "SKILL.md"), `---\nname: ${name}\ndescription: Use ${name}.\n---\n\nSay ${name}.\n`);
+  return dir;
+}
+
 function setup(): Setup {
   const dir = tempDir();
   const cwd = join(dir, "work");
@@ -544,12 +551,69 @@ test("claude runs without setting sources, with manual permissions and the isola
     env: Record<string, string>;
   };
   expect(flagValue(spawned.args, "--setting-sources")).toBe("");
+  expect(flagValue(spawned.args, "--plugin-dir")).toBeUndefined();
   expect(flagValue(spawned.args, "--permission-mode")).toBe("default");
   expect(flagValue(spawned.args, "--permission-prompts")).toBe("host");
   expect(spawned.env["CLAUDE_CODE_DISABLE_AUTO_MEMORY"]).toBe("1");
   expect(spawned.env["CLAUDE_CODE_DISABLE_CLAUDE_MDS"]).toBe("1");
   expect(spawned.env["DISABLE_TELEMETRY"]).toBe("1");
   expect(spawned.env["DISABLE_ERROR_REPORTING"]).toBe("1");
+});
+
+test("a given skill is mounted as a plugin, only that one is loaded, and the plugin is removed at the end", async () => {
+  const s = setup();
+  const dir = dirname(s.recordFile);
+  const given = writeSkill(join(dir, "given"), "given-skill");
+  const home = join(dir, "home");
+  writeSkill(join(home, ".claude", "skills", "user-claude"), "user-claude");
+  writeSkill(join(home, ".agents", "skills", "user-agents"), "user-agents");
+
+  const child = new ProcessChild(FAKE_WORKER, s.env({ steps: done }, { HOME: home }), s.recordFile);
+  child.send(JSON.stringify({ ...s.input, skills: [given] }));
+  const run = await child.finish();
+
+  expect(run.exitCode).toBe(0);
+  expect(run.stderr).toContain("skills: given-skill");
+  expect(run.stderr).not.toContain("user-claude");
+  expect(run.stderr).not.toContain("user-agents");
+  const spawned = run.record.find((entry) => "spawn" in entry)?.["spawn"] as {
+    args: string[];
+    plugins: Array<{ dir: string; manifest: Record<string, unknown>; skills: string[] }>;
+  };
+  const pluginDir = flagValue(spawned.args, "--plugin-dir");
+  expect(pluginDir).toBeString();
+  expect(pluginDir).not.toContain(given);
+  expect(spawned.plugins).toHaveLength(1);
+  expect(spawned.plugins[0]).toMatchObject({
+    dir: pluginDir,
+    manifest: { name: "operad-skills", skills: ["./skills"] },
+    skills: ["given-skill"],
+  });
+  expect(existsSync(String(pluginDir))).toBe(false);
+});
+
+test("a skill without a readable SKILL.md or a name is skipped with one log line, not a failed step", async () => {
+  const s = setup();
+  const dir = dirname(s.recordFile);
+  const missing = join(dir, "missing");
+  mkdirSync(missing);
+  const unnamed = join(dir, "unnamed");
+  mkdirSync(unnamed);
+  writeFileSync(join(unnamed, "SKILL.md"), "---\ndescription: no name here\n---\n");
+
+  const child = new Child(s.env({ steps: done }), s.recordFile);
+  child.send(JSON.stringify({ ...s.input, skills: [missing, unnamed] }));
+  const run = await child.finish();
+
+  expect(run.exitCode).toBe(0);
+  expect(last(run)).toMatchObject({ result: "done" });
+  const notes = run.lines.filter((line) => line["type"] === "log").map((line) => String(line["text"]));
+  expect(notes).toContain(`skill ${missing}: SKILL.md cannot be read`);
+  expect(notes).toContain(`skill ${unnamed}: SKILL.md has no name`);
+  expect(run.stderr).toContain("SKILL.md cannot be read");
+  expect(run.stderr).toContain("SKILL.md has no name");
+  const spawned = run.record.find((entry) => "spawn" in entry)?.["spawn"] as { args: string[] };
+  expect(flagValue(spawned.args, "--plugin-dir")).toBeUndefined();
 });
 
 test("CLAUDE_CODE_OAUTH_TOKEN passes through unchanged and is written nowhere", async () => {
@@ -610,6 +674,8 @@ test("the input table: required fields, types and limits", () => {
   expect(message({ ...ok, access: "x" })).toBe("access must be an object");
   expect(message({ ...ok, access: { denyPaths: 3 } })).toContain("access.");
   expect(message({ ...ok, access: { denyPaths: ["/etc"] } })).toBe("ok");
+  expect(message({ ...ok, skills: "x" })).toBe("skills must be an array of strings");
+  expect(message({ ...ok, skills: ["/skills/one"] })).toBe("ok");
   expect(message({ ...ok, args: [] })).toBe("args is not an input field");
 });
 

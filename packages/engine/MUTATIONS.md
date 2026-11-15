@@ -942,3 +942,9 @@ the row fields.
 | T-0483-M4 | packages/engine/src/http/server.ts | `restart` left `resetFrom` at 0, so an id from before the break looked resumable and skipped the gap | `http server > reopens a source that throws, resets the open stream and lets a reconnect resume` |
 | T-0483-M5 | packages/engine/src/http/server.ts | the pump no longer awaited the restart delay, so a source that failed on every open was re-opened at once | `http server > a source that fails on every open backs off through the injected clock and resets once` |
 | T-0483-M6 | packages/engine/src/http/server.ts | `restart` notified a reset on every failure instead of once per outage, so clients re-read their state once per retry | `http server > a source that fails on every open backs off through the injected clock and resets once` |
+
+## T-0497 — a harness declares the capabilities it has
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0497-M1 | packages/engine/src/plugin/validate.ts | the capability check no longer refused a plugin of another kind | `harness capabilities > a capability only a harness has is refused on another kind` |
