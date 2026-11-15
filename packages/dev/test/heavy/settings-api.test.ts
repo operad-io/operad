@@ -65,8 +65,16 @@ describe("dev settings through operad settings", () => {
     expect(byName.get("dev.gate.commandTimeoutSecs")?.editable).toBe(true);
     expect(byName.get("dev.gate.stallSecs")?.editable).toBe(true);
     expect(byName.get("dev.gate.commands")?.editable).toBe(true);
-    expect(byName.get("dev.reviewer.fixLevel")).toMatchObject({ editable: true, confirm: true });
-    expect(byName.get("dev.review.default.fixLevel")).toMatchObject({ editable: true, confirm: true });
+    expect(byName.get("dev.reviewer.fixLevel")).toMatchObject({
+      title: "Reviewer rework threshold",
+      editable: true,
+      confirm: true,
+    });
+    expect(byName.get("dev.review.default.fixLevel")).toMatchObject({
+      title: "Rework threshold",
+      editable: true,
+      confirm: true,
+    });
     expect(byName.get("dev.autoDefault")).toMatchObject({ editable: true, confirm: true, default: "off" });
     expect(byName.get("dev.concurrency")?.default).toBeUndefined();
     expect(project.out).not.toContain("dev.dev.");

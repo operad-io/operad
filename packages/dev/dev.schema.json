@@ -486,7 +486,7 @@
           "exclusiveMinimum": 0
         },
         "fixLevel": {
-          "title": "Rework threshold",
+          "title": "Reviewer rework threshold",
           "description": "The lowest finding severity that fails the gate.",
           "type": "string",
           "enum": [

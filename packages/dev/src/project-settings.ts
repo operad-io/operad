@@ -193,7 +193,7 @@ export const DEV_PROJECT_SETTINGS: ProjectSettingsDeclaration = {
               },
               fixLevel: {
                 type: "string",
-                title: "Rework threshold",
+                title: "Reviewer rework threshold",
                 enum: ["critical", "major", "minor"],
                 default: "major",
                 editable: true,

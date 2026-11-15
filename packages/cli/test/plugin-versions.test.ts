@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { normalizeActionArgs, satisfiesRange } from "@operad-io/engine";
 
@@ -73,7 +73,53 @@ function untitled(schema: unknown): string[] {
   return missing;
 }
 
+/** The title of every property a schema titles, by its path; local `$ref`s are followed. */
+function titles(schema: unknown): ReadonlyMap<string, string> {
+  const found = new Map<string, string>();
+  const resolve = (node: unknown): unknown => {
+    let current = node;
+    while (isRecord(current) && typeof current.$ref === "string" && current.$ref.startsWith("#/")) {
+      let target: unknown = schema;
+      for (const part of current.$ref.slice(2).split("/")) {
+        target = isRecord(target) ? target[part] : undefined;
+      }
+      current = target;
+    }
+    return current;
+  };
+  const walk = (node: unknown, path: string): void => {
+    const current = resolve(node);
+    if (!isRecord(current) || !isRecord(current.properties)) return;
+    for (const [name, child] of Object.entries(current.properties)) {
+      const here = path === "" ? name : `${path}.${name}`;
+      const target = resolve(child);
+      if (!isRecord(target)) continue;
+      if (typeof target.title === "string" && target.title.trim() !== "") found.set(here, target.title);
+      walk(target, here);
+    }
+  };
+  walk(schema, "");
+  return found;
+}
+
 const shipped = (await Promise.all(pluginDirs().map(load))).filter((plugin): plugin is Shipped => plugin !== undefined);
+
+function pluginNamed(name: string): Shipped {
+  const found = shipped.find((plugin) => plugin.name === name);
+  if (found === undefined) throw new Error(`no shipped plugin named ${name}`);
+  return found;
+}
+
+function pluginSettings(plugin: Shipped): unknown {
+  if (plugin.settings === undefined) throw new Error(`plugin ${plugin.name} declares no settings`);
+  return plugin.settings;
+}
+
+function projectFileSchema(plugin: Shipped, name: string): unknown {
+  const file = (plugin.projectSettings?.files ?? []).find((entry) => entry.name === name);
+  if (file === undefined) throw new Error(`plugin ${plugin.name} declares no ${name} project file`);
+  return file.schema;
+}
 
 describe("plugin versions", () => {
   test("every plugin package is found", () => {
@@ -96,6 +142,52 @@ describe("plugin versions", () => {
         const schema = normalizeActionArgs(file.schema, `${plugin.name}.${file.name ?? "project"}: settings`);
         expect(untitled(schema), `${plugin.name}.${file.name ?? "project"}`).toEqual([]);
       }
+    }
+  });
+
+  test("a plugin's settings have distinct titles", () => {
+    for (const plugin of shipped) {
+      const seen = new Map<string, string>();
+      const duplicates: string[] = [];
+      const schemas: { readonly name: string; readonly schema: unknown }[] = [];
+      if (plugin.settings !== undefined) schemas.push({ name: `${plugin.name}.settings`, schema: plugin.settings });
+      for (const file of plugin.projectSettings?.files ?? []) {
+        schemas.push({ name: `${plugin.name}.${file.name ?? "project"}`, schema: file.schema });
+      }
+      for (const { name, schema } of schemas) {
+        for (const [path, title] of titles(schema)) {
+          const previous = seen.get(title);
+          if (previous === undefined) seen.set(title, `${name}.${path}`);
+          else duplicates.push(`"${title}" is at ${previous} and ${name}.${path}`);
+        }
+      }
+      expect(duplicates, plugin.name).toEqual([]);
+    }
+  });
+
+  test("the schema files a package ships carry the titles its plugin declares", () => {
+    const dev = pluginNamed("dev");
+    const cases: readonly {
+      readonly file: string;
+      readonly schema: unknown;
+      // The read-only list of repository flows is derived, not part of dev.json.
+      readonly skip: readonly string[];
+    }[] = [
+      { file: join(packages, "dev", "dev.schema.json"), schema: projectFileSchema(dev, "dev"), skip: ["flowList"] },
+      { file: join(packages, "review-grading", "review.schema.json"), schema: projectFileSchema(dev, "review"), skip: [] },
+      { file: join(packages, "bot", "bot.schema.json"), schema: pluginSettings(pluginNamed("bot")), skip: [] },
+      { file: join(packages, "telegram", "telegram.schema.json"), schema: pluginSettings(pluginNamed("telegram")), skip: [] },
+    ];
+    for (const item of cases) {
+      const declared = titles(item.schema);
+      const inFile = titles(JSON.parse(readFileSync(item.file, "utf8")) as unknown);
+      const wrong: string[] = [];
+      for (const [path, title] of declared) {
+        if (item.skip.includes(path)) continue;
+        const found = inFile.get(path);
+        if (found !== title) wrong.push(`${path}: expected "${title}", found ${found === undefined ? "none" : `"${found}"`}`);
+      }
+      expect(wrong, basename(item.file)).toEqual([]);
     }
   });
 
