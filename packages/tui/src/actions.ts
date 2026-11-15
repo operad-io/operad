@@ -4,9 +4,12 @@
  * state; the shell sends the request this code leaves in `actionRequest`.
  */
 
+export * from "./commands.ts";
+
 import type { ViewAction, ViewRow } from "@operad-io/engine";
 import { argFields, narrowField, parseArg, type ArgField } from "./args.ts";
 import type { TuiSetting, TuiTypeInfo } from "./client.ts";
+import { chatCommands, commandEntries, commandText, filterCommands } from "./commands.ts";
 import { sanitize } from "./sanitize.ts";
 import type { TuiAnswer, TuiBinding, TuiInput, TuiState } from "./state.ts";
 import { graphemes } from "./wrap.ts";
@@ -426,7 +429,7 @@ export function settingValue(text: string, type?: string | undefined): unknown {
   }
 }
 
-function commandEntries(state: TuiState): readonly TuiPaletteEntry[] {
+function tuiCommandEntries(state: TuiState): readonly TuiPaletteEntry[] {
   const make = (
     name: string,
     title: string,
@@ -513,7 +516,7 @@ export function paletteEntries(state: TuiState): readonly TuiPaletteEntry[] {
       .map((item) => item.entry);
   const all = [
     ...rank(actions),
-    ...rank(commandEntries(state)),
+    ...rank(tuiCommandEntries(state)),
     ...rank(settingEntries(state)),
     ...rank(settingsObjectEntries(state)),
   ];
@@ -836,6 +839,37 @@ export function dropLast(text: string): string {
   return all.join("");
 }
 
+function noteMenu(cursor: number): { commandMenu: { cursor: number }; commands: { cursor: number } } {
+  const menu = { cursor };
+  return { commandMenu: menu, commands: menu };
+}
+
+/**
+ * A note's text after a key: a line that starts with `/` and still names a
+ * command shows the chat's commands, filtered by what follows the slash. Any
+ * other text keeps the note as it is.
+ */
+function withNoteText(
+  state: TuiState,
+  input: Extract<TuiInput, { readonly kind: "note" }>,
+  text: string,
+): TuiState {
+  const base = { ...input, text, commandMenu: undefined, commands: undefined };
+  if (state.object === undefined || !text.startsWith("/") || /\s/.test(text)) {
+    return { ...state, input: base };
+  }
+  const commands = chatCommands(state.object.actions, state.object.row);
+  if (filterCommands(text.slice(1), commands).length === 0) return { ...state, input: base };
+  return { ...state, input: { ...base, ...noteMenu(0) } };
+}
+
+function closeNoteMenu(
+  state: TuiState,
+  input: Extract<TuiInput, { readonly kind: "note" }>,
+): TuiState {
+  return { ...state, input: { ...input, commandMenu: undefined, commands: undefined } };
+}
+
 /** A key arrives while the palette, a note or a confirmation is open. */
 export function inputKey(
   state: TuiState,
@@ -863,7 +897,11 @@ export function inputKey(
       confirmed: true,
     });
   }
-  if (escape) return { ...state, input: undefined };
+  if (escape) {
+    return input.kind === "note" && input.commandMenu !== undefined
+      ? closeNoteMenu(state, input)
+      : { ...state, input: undefined };
+  }
   if (input.kind === "answer") return answerKey(state, input, key, enter);
   if (input.kind === "setting") return settingKey(state, input, event, key, enter);
   if (input.kind === "args") return argsKey(state, input, event, key, enter);
@@ -897,9 +935,37 @@ export function inputKey(
       ? state
       : { ...state, input: { ...input, query: input.query + text, cursor: 0 } };
   }
-  // A note: Enter sends, Shift-Enter or Ctrl-J adds a line.
+  // A note: Enter sends, Shift-Enter or Ctrl-J adds a line. While a line that
+  // starts with `/` names a command, the list takes the arrows and Enter picks.
   const newline = (enter && event.shift === true) || (event.ctrl === true && (key === "j" || key === "linefeed")) || key === "linefeed";
-  if (newline) return { ...state, input: { ...input, text: `${input.text}\n` } };
+  if (newline) return withNoteText(state, input, `${input.text}\n`);
+  if (input.commandMenu !== undefined) {
+    const entries = commandEntries(state);
+    const down = key === "down" || key === "arrowdown" || (event.ctrl === true && (key === "n" || key === "j"));
+    const up = key === "up" || key === "arrowup" || (event.ctrl === true && (key === "p" || key === "k"));
+    if (down || up) {
+      const cursor = Math.min(
+        Math.max(0, input.commandMenu.cursor + (down ? 1 : -1)),
+        Math.max(0, entries.length - 1),
+      );
+      return { ...state, input: { ...input, ...noteMenu(cursor) } };
+    }
+    if (enter) {
+      const chosen = entries[Math.min(input.commandMenu.cursor, entries.length - 1)];
+      // A line that matches no command is an ordinary message, sent as written.
+      if (chosen !== undefined) {
+        return {
+          ...state,
+          input: {
+            ...input,
+            text: commandText(chosen),
+            commandMenu: undefined,
+            commands: undefined,
+          },
+        };
+      }
+    }
+  }
   if (enter) {
     const note = input.text;
     if (note.trim() === "" && input.required) return withNotice(state, "a note is required");
@@ -922,9 +988,9 @@ export function inputKey(
       ...(input.args === undefined ? {} : { args: input.args }),
     });
   }
-  if (key === "backspace") return { ...state, input: { ...input, text: dropLast(input.text) } };
+  if (key === "backspace") return withNoteText(state, input, dropLast(input.text));
   const text = event.ctrl === true || event.meta === true ? undefined : typed(event);
-  return text === undefined ? state : { ...state, input: { ...input, text: input.text + text } };
+  return text === undefined ? state : withNoteText(state, input, input.text + text);
 }
 
 /**

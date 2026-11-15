@@ -469,3 +469,13 @@ the row fields.
 |---|---|---|---|
 | T-0502-M1 | packages/tui/src/events.ts | the tail's block limit counted the line ending that may still be arriving, so a block exactly at its limit was rejected when the chunks split its terminator | `TuiEvents size limits > an event at the limit parses when its line ending is split across chunks` |
 | T-0502-M2 | packages/tui/src/events.ts | a carriage return that may still be part of a line ending was counted as line content before its line feed arrived, so a line exactly at its limit was rejected | `TuiEvents size limits > an event at the limit parses when its line ending is split across chunks`, `TuiEvents size limits > a block at the limit parses when it arrives in many small chunks` |
+
+## T-0495 — a chat's input lists its commands on `/`
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0495-M1 | packages/tui/src/commands.ts | the command list was emptied, so a chat's input showed none of the actions that declare a command | `a chat's input lists its commands on / > the list is every action that declares a command, with its description and hint` |
+| T-0495-M2 | packages/tui/src/commands.ts | the typed word was ignored, so every command stayed in the list | `a chat's input lists its commands on / > typing after the slash filters the list and the arrows move in it` |
+| T-0495-M3 | packages/tui/src/commands.ts | the argument hint was left empty, so a choice parameter did not show its options | `a chat's input lists its commands on / > a choice parameter shows its options; choosing the command fills the input` |
+| T-0495-M4 | packages/tui/src/actions.ts | Enter on a line that starts with `/` was swallowed, so a path-like word with no command was not sent | `a chat's input lists its commands on / > a path-like word with no command is sent as written` |
+| T-0495-M5 | packages/tui/src/view/index.ts | the note input did not draw the command list, so its names, descriptions and choices were missing | `a chat's input lists its commands on / > the open list is drawn with its names, descriptions and choices` |
