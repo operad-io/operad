@@ -247,6 +247,27 @@ describe("a command in a Telegram chat", () => {
     await w.close();
   });
 
+  test("a command before any chat opens one, as a first message does", async () => {
+    const w = await world({ users: [42] });
+    const api = new FakeApi();
+    const { source } = rig(w, api);
+
+    api.updates = [update(100, 42, 555, "/help")];
+    await source.poll();
+    const chats = (await w.store.list(CHAT_TYPE)).objects;
+    expect(chats).toHaveLength(1);
+    const chat = chats[0];
+    if (chat === undefined) throw new Error("no chat was opened");
+    expect(chatData(chat.data).channels).toEqual([telegramChannel(555)]);
+    // The command's text does not title the chat it opens.
+    expect(chatData(chat.data).title).toBe("Telegram");
+    expect(api.sent).toHaveLength(1);
+    expect(api.sent[0]?.text).toContain("What you can type with");
+    // The chat exists now, so the menu follows it.
+    expect(api.menus).toHaveLength(1);
+    await w.close();
+  });
+
   test("a name with the bot after it is the plain command, and what it returns comes back", async () => {
     const w = await world({ users: [42] });
     const api = new FakeApi();

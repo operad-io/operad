@@ -98,3 +98,4 @@ the row fields.
 | T-0494-M8 | packages/telegram/src/commands.ts | after a tap the message named the first choice instead of the one picked | `a command in a Telegram chat > without its one choice it answers with the choices, one page at a time, and a tap runs it` |
 | T-0494-M9 | packages/telegram/src/source.ts | what a typed command returned was not sent back to Telegram | `a command in a Telegram chat > a name with the bot after it is the plain command, and what it returns comes back` |
 | T-0494-M10 | packages/telegram/src/commands.ts | a tap from a user not in the `users` list ran the command | `a command in a Telegram chat > a tap from an unlisted user counts for nothing` |
+| T-0494-M11 | packages/telegram/src/source.ts | a command's text titled the chat it opened, so `/help` became a chat called `/help` | `a command in a Telegram chat > a command before any chat opens one, as a first message does` |
