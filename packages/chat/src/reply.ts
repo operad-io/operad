@@ -488,21 +488,21 @@ async function recordEntries(
   }
 }
 
-/** The user's words for the internal names a provider's message may use. */
+/**
+ * The user's word for a provider's internal name. Only `harness` is rewritten:
+ * `run`, `step`, `flow` and `fact` are also ordinary English, and a provider's
+ * "run out of quota" must stay as it said it.
+ */
 const PLAIN_WORDS: Readonly<Record<string, readonly [string, string]>> = {
   harness: ["agent", "agents"],
-  step: ["reply", "replies"],
-  run: ["reply", "replies"],
-  flow: ["reply", "replies"],
-  fact: ["record", "records"],
 };
 
 /** Replaces an internal word in a provider's message with the word a person reads. */
 function plainWords(text: string): string {
-  return text.replace(/\b(harness|step|run|flow|fact)(s?)\b/gi, (word, base: string, plural: string) => {
+  return text.replace(/\b(harness)(es)?\b/gi, (word, base: string, plural: string | undefined) => {
     const pair = PLAIN_WORDS[base.toLowerCase()];
     if (pair === undefined) return word;
-    const replacement = plural.length > 0 ? pair[1] : pair[0];
+    const replacement = plural === undefined ? pair[0] : pair[1];
     return word[0] === word[0]?.toUpperCase() ? `${replacement[0]?.toUpperCase() ?? ""}${replacement.slice(1)}` : replacement;
   });
 }
@@ -516,8 +516,9 @@ export function replyFailureLine(message: string, secrets: readonly string[]): s
 
 /**
  * Records a failure as one entry after the last person's message. A rerun of
- * the same attempt finds the same line and does not add another; a new message
- * after it starts a new attempt, whose failure is recorded too.
+ * the same attempt finds the attempt's failure and does not add another, even
+ * when the provider words it differently; a new message after it starts a new
+ * attempt, whose failure is recorded too.
  */
 async function recordFailure(ctx: StepContext, chat: string, message: string): Promise<void> {
   const text = replyFailureLine(message, await secretValues(ctx));
@@ -526,7 +527,7 @@ async function recordFailure(ctx: StepContext, chat: string, message: string): P
     if (item.role === "user") lastUser = Math.max(lastUser, item.sequence);
   }
   const already = allEntries(ctx.store, chat).some(
-    (entry) => entry.kind === "failure" && entry.sequence > lastUser && entry.text === text,
+    (entry) => entry.kind === "failure" && entry.sequence > lastUser,
   );
   if (already) return;
   const data: EntryData = { runId: ctx.runId, kind: "failure", text };

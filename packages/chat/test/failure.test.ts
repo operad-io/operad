@@ -67,15 +67,17 @@ describe("a failed reply", () => {
   test("uses the person's words for the internal names a provider's message carries", async () => {
     const r = await rig(() => ({
       result: "failed",
-      data: { reason: "exit", message: "the harness run was cancelled by step 3; its fact flow stopped" },
+      data: { reason: "exit", message: "the harness run ran out of quota at step 3; its fact flow stopped" },
     }));
     const chat = await r.chat();
     await r.say(chat, "hello");
     await r.round(chat);
 
     const text = failuresOf(r, chat)[0]?.text ?? "";
-    expect(text).toBe("The reply failed: the agent reply was cancelled by reply 3; its record reply stopped");
-    expect(text).not.toMatch(/\b(?:harness|step|run|flow|fact)\b/i);
+    // `harness` is operad's word; `run`, `step`, `flow` and `fact` are also
+    // ordinary English and stay as the provider said them.
+    expect(text).toBe("The reply failed: the agent run ran out of quota at step 3; its fact flow stopped");
+    expect(text).not.toMatch(/\bharness\b/i);
   });
 
   test("cuts a long provider message to one line", async () => {
@@ -101,13 +103,20 @@ describe("a failed reply", () => {
   });
 
   test("does not gain a second line when the step runs again", async () => {
-    const r = await rig(() => modelError);
+    let attempt = 0;
+    const r = await rig(() => {
+      attempt += 1;
+      return attempt === 1
+        ? modelError
+        : { result: "failed" as const, data: { reason: "model_error", message: "503: the provider is overloaded" } };
+    });
     const chat = await r.chat();
     await r.say(chat, "hello");
     expect((await r.round(chat)).result).toBe("failed");
     expect((await r.round(chat)).result).toBe("failed");
 
     expect(failuresOf(r, chat)).toHaveLength(1);
+    expect(failuresOf(r, chat)[0]?.text).toBe("The reply failed: 429: usage limit reached");
     const markdown = await transcript(r, chat);
     expect(markdown.split("The reply failed: 429: usage limit reached")).toHaveLength(2);
   });

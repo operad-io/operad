@@ -100,3 +100,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0498-M4 | packages/harness/radian/src/index.ts | the `skills` param was read but the prompt kept only the step's text | `radian/agent > given skills are listed in the prompt with their description and path, never their body` |
+
+## T-0504 — the session line is written when radian starts
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0504-M1 | packages/harness/radian/src/index.ts | the `session` line waited for radian's first output instead of being written at its start | `radian/agent > the session line is written before radian's first output` |

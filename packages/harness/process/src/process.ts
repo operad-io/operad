@@ -142,6 +142,11 @@ export interface AgentRunOptions {
     reply: (text: string) => void,
   ) => void | Promise<void>;
   /**
+   * Called once the command has started and before any of its output is read:
+   * a harness with no session handshake writes its ready line here.
+   */
+  readonly onStart?: (() => void) | undefined;
+  /**
    * Classifies one complete stdout line. A line that starts a tool call pauses
    * the stall timer until a line that ends it arrives; the wall limit still
    * runs. Without a classifier no line counts as a tool call.
@@ -355,6 +360,9 @@ export async function runAgent(
   }
 
   trackRoot(child.pid);
+  // Before the first line is read: a harness with no session handshake is as
+  // ready as it will say, so its ready line must not wait for its first output.
+  options.onStart?.();
   let sentinelExited = false;
   const failed = new Promise<string>((resolve) => {
     child.once("error", (error) => resolve(messageOf(error)));

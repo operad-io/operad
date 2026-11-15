@@ -381,8 +381,6 @@ async function tailOf(
   if (runId === undefined || chat.harness.length === 0 || ctx.runTimes === undefined) return undefined;
   const times = await ctx.runTimes(runId);
   if (times === undefined || times.endedAt !== null) return undefined;
-  const read = foldLogTail(agentLogPath(ctx.store.root, chat.harness, runId));
-  if (read === undefined) return undefined;
   const secrets = await secretValues(ctx);
   const said = new Set<string>();
   const called = new Set<string>();
@@ -395,6 +393,14 @@ async function tailOf(
     if (entry?.kind === "tool" && entry.callId !== undefined) called.add(entry.callId);
     else if (entry?.text !== undefined) said.add(entry.text.trim());
   }
+  // The read drops a finished entry the facts already hold, so a long run does
+  // not keep them all in the saved fold.
+  const held = (entry: FoldEntry): boolean => {
+    if (entry.kind === "tool") return called.has(maskSecrets(entry.callId, secrets));
+    return said.has(maskSecrets(entry.text, secrets).trim());
+  };
+  const read = foldLogTail(agentLogPath(ctx.store.root, chat.harness, runId), held);
+  if (read === undefined) return undefined;
   const fresh = (text: string): string | undefined => {
     const masked = maskSecrets(text, secrets);
     return masked.trim().length === 0 || said.has(masked.trim()) ? undefined : masked;
@@ -402,6 +408,8 @@ async function tailOf(
   const lines: string[] = [];
   // A finished entry is shown until the facts hold it; then `said` and `called` drop it.
   for (const entry of read.state.entries) {
+    // Radian gives no text or thinking increments; its chats show tool lines only.
+    if (chat.harness === "radian" && entry.kind !== "tool") continue;
     if (entry.kind === "tool") {
       if (called.has(maskSecrets(entry.callId, secrets))) continue;
       const markdown = entryMarkdown(

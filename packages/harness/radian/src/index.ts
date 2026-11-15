@@ -308,13 +308,7 @@ interface ParsedResult {
 }
 
 /** Reads the closing `Result` record of radian's JSONL, or undefined. */
-function parseResult(line: string): ParsedResult | undefined {
-  let value: unknown;
-  try {
-    value = JSON.parse(line);
-  } catch {
-    return undefined;
-  }
+function resultValue(value: unknown): ParsedResult | undefined {
   if (!isRecord(value) || value.type !== "Result") return undefined;
 
   const counts = isRecord(value.usage) ? (value.usage as RawCounts) : {};
@@ -718,8 +712,19 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
           const command = radianArgs(cwd, args, promptWithNote, resumeSession, mcpConfig, hookConfig);
           const jsonl = new JsonlLog(ctx.logger, defaults.clock, defaults.now);
           let result: ParsedResult | undefined;
-          let ready = false;
           const openTools = new Map<string, { at: number; name: string }>();
+          // radian has no session handshake: the prompt is handed to the
+          // process at its start, so its session is ready then, not at its
+          // first output (which may wait for the model).
+          const writeSession = (): void => {
+            const session = jsonl.stamp(JSON.stringify({
+              type: "session",
+              ...(resumeSession === undefined ? {} : { sessionId: resumeSession }),
+            }));
+            timings.record(session.value, session.at);
+            void jsonl.pushStamped(session);
+            deliverLine(ctx.receiver, session.text, logSecrets);
+          };
 
           const outcome = await runAgent({
             command: commandName,
@@ -731,27 +736,14 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
             signal: ctx.signal,
             clock: defaults.clock,
             toolEvent: radianToolEvent,
+            onStart: writeSession,
             onLine(line) {
-              let writing: Promise<void> | undefined;
-              // radian has no session handshake: its first line is the point
-              // where the prompt has been taken and the model is about to run.
-              if (!ready) {
-                ready = true;
-                const session = jsonl.stamp(JSON.stringify({
-                  type: "session",
-                  ...(resumeSession === undefined ? {} : { sessionId: resumeSession }),
-                }));
-                timings.line(session);
-                writing = jsonl.push(session);
-                deliverLine(ctx.receiver, session, logSecrets);
-              }
               const logged = radianLogLine(line, defaults.now, openTools, cwd, logProfile, logSecrets);
               const received = jsonl.stamp(logged);
-              timings.line(received);
-              const pending = jsonl.push(received);
-              if (pending !== undefined) writing = pending;
-              deliverLine(ctx.receiver, received, logSecrets);
-              const parsed = parseResult(line);
+              timings.record(received.value, received.at);
+              const writing = jsonl.pushStamped(received);
+              deliverLine(ctx.receiver, received.text, logSecrets);
+              const parsed = resultValue(received.value);
               if (parsed !== undefined) result = parsed;
               return writing;
             },

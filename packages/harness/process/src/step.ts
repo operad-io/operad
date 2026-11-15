@@ -123,6 +123,14 @@ export async function directoryError(cwd: string): Promise<string | undefined> {
   }
 }
 
+/** Reads a worker's `result` value, or undefined when it is another line. */
+export function resultValue<Result extends AgentWorkerResult>(value: unknown): Result | undefined {
+  if (!isRecord(value) || value.type !== "result") return undefined;
+  const name = value.result;
+  if (name !== "done" && name !== "failed" && name !== "cancelled") return undefined;
+  return value as unknown as Result;
+}
+
 /** Reads a `result` line of the worker, or undefined for any other line. */
 export function parseResult<Result extends AgentWorkerResult>(line: string): Result | undefined {
   let value: unknown;
@@ -131,10 +139,7 @@ export function parseResult<Result extends AgentWorkerResult>(line: string): Res
   } catch {
     return undefined;
   }
-  if (!isRecord(value) || value.type !== "result") return undefined;
-  const name = value.result;
-  if (name !== "done" && name !== "failed" && name !== "cancelled") return undefined;
-  return value as unknown as Result;
+  return resultValue<Result>(value);
 }
 
 const UNAVAILABLE = /\b429\b|\b(?:503|529)\b|overloaded|rate[ _-]?limit|too many requests/i;

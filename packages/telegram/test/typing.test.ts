@@ -257,6 +257,34 @@ describe("the typing indicator", () => {
     await f.stop();
   });
 
+  test("starts again when a rerun after a failure is writing", async () => {
+    const f = await setup();
+    f.client.running.set(f.chat, true);
+    await f.sender.syncChat(f.chat);
+    expect(f.api.chatActions).toHaveLength(1);
+
+    await f.w.ctx.facts.append({
+      type: ENTRY_FACT,
+      object: chatRef(f.chat),
+      data: { runId: "run-failure", kind: "failure", text: "The reply failed: boom" },
+    });
+    await f.sender.syncChat(f.chat);
+    f.clock.advance(TYPING_INTERVAL_MS * 3);
+    await nextTurn();
+    expect(f.api.chatActions).toHaveLength(1);
+
+    // The step runs again and writes a new entry after the failure.
+    await f.w.ctx.facts.append({
+      type: ENTRY_FACT,
+      object: chatRef(f.chat),
+      data: { runId: "run-failure", kind: "text", text: "writing again" },
+    });
+    await f.sender.syncChat(f.chat);
+    await f.api.until(() => f.api.chatActions.length >= 2);
+    expect(f.api.chatActions).toHaveLength(2);
+    await f.stop();
+  });
+
   test("starts when the client's events name a running chat, and stop ends it", async () => {
     const f = await setup();
     f.client.running.set(f.chat, true);

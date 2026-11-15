@@ -333,12 +333,17 @@ describe("the progress message of a reply", () => {
     f.client.tail = "partial";
     await f.progress.syncChat(f.chat);
     await f.api.until(() => f.api.sent.length >= 1);
+    await f.progress.settled();
     const progressId = 9_000 + f.api.sent.length;
 
     await appendFailure(f, "The reply failed: boom");
     await f.progress.syncChat(f.chat);
     expect(f.api.sent.map((request) => request.text)).toEqual(["partial", "The reply failed: boom"]);
     expect(f.api.deleted[0]).toMatchObject({ chatId: 555, messageId: progressId });
+    // A look left for the interval must not bring the progress message back.
+    f.clock.advance(PROGRESS_INTERVAL_MS);
+    await nextTurn();
+    expect(f.api.sent.map((request) => request.text)).toEqual(["partial", "The reply failed: boom"]);
     await f.stop();
   });
 
@@ -357,6 +362,23 @@ describe("the progress message of a reply", () => {
 
     f.client.running.set(f.chat, false);
     await f.progress.syncChat(f.chat);
+    expect(f.api.sent).toHaveLength(1);
+    expect(f.api.deleted[0]).toMatchObject({ chatId: 555, messageId: progressId });
+    await f.stop();
+  });
+
+  test("a cancelled run deletes the progress message without another event", async () => {
+    const f = await setup();
+    f.client.tail = "partial";
+    await f.progress.syncChat(f.chat);
+    await f.api.until(() => f.api.sent.length >= 1);
+    const progressId = 9_000 + f.api.sent.length;
+
+    // The run is cancelled and sends no event: only the interval looks again.
+    f.client.tail = undefined;
+    f.client.running.set(f.chat, false);
+    f.clock.advance(PROGRESS_INTERVAL_MS);
+    await f.api.until(() => f.api.deleted.length >= 1);
     expect(f.api.sent).toHaveLength(1);
     expect(f.api.deleted[0]).toMatchObject({ chatId: 555, messageId: progressId });
     await f.stop();
