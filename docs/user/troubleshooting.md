@@ -76,7 +76,8 @@ for what waits, and `operad history <id>` for what a run did.
 | `the token was rotated: run the TUI again or pass --token` | Same, in the terminal client. | Run the client again, or pass the new token. |
 | `pair prints the token and needs a terminal; pass --show-token to print it anyway` | `pair` refuses to write the token to a pipe. | Run it in a terminal, or pass `--show-token` only where that is safe. |
 | `pair needs "http.enabled" in config.json` | HTTP is off. | Set `http.enabled` to `true` and restart `serve`. |
-| `http.listen has only loopback addresses, which a phone cannot reach; add one or pass --url` | The app cannot reach a loopback address. | Add a private or Tailscale address to `http.listen`, or pass `--url`. |
+| `http.listen has only loopback addresses, which a phone cannot reach; add one or pass --url` | The app cannot reach a loopback address. | Add a private address to `http.listen`, or serve HTTPS over Tailscale and pass its `https://<machine>.<tailnet>.ts.net` name with `--url`; see [Tailscale](tailscale.md). |
+| `the server cannot be reached at http://100.x.y.z:<port>` when the address is a Tailscale one | The app does not reach a plain HTTP Tailscale address, even when `serve` listens on it. | Serve HTTPS with `tailscale serve` and pair with the `https://<machine>.<tailnet>.ts.net` name; see [Tailscale](tailscale.md). |
 | `http.port is 0; set a port in config.json or pass --url` | The chosen port is dynamic. | Set a fixed `http.port`, or pass `--url`. |
 | `--url must be an http or https URL` | The scheme is missing or wrong. | Use `http://…` or `https://…`. |
 | `--url must be an http or https URL without credentials or a query` | The URL carries a user, password, query or fragment. | Pass only the base URL. |
