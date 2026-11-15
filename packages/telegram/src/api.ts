@@ -78,6 +78,15 @@ export interface EditMessageRequest {
   readonly chatId: number;
   readonly messageId: number;
   readonly text: string;
+  /** `HTML` when the text is already Telegram HTML; absent for plain text. */
+  readonly parseMode?: "HTML" | undefined;
+  readonly signal?: AbortSignal | undefined;
+}
+
+/** One message to remove. */
+export interface DeleteMessageRequest {
+  readonly chatId: number;
+  readonly messageId: number;
   readonly signal?: AbortSignal | undefined;
 }
 
@@ -124,6 +133,8 @@ export interface BotApi {
   sendMessage(request: SendMessageRequest): Promise<number>;
   /** Replaces a message's text and removes its inline keyboard. */
   editMessage(request: EditMessageRequest): Promise<void>;
+  /** Removes one message. */
+  deleteMessage(request: DeleteMessageRequest): Promise<void>;
   /** Tells Telegram the tap was seen, with a short note for the person. */
   answerCallback(request: AnswerCallbackRequest): Promise<void>;
   /** Shows what the bot is doing in a chat, such as that it is typing. */
@@ -263,9 +274,17 @@ export function createBotApi(options: BotApiOptions): BotApi {
           chat_id: input.chatId,
           message_id: input.messageId,
           text: input.text,
+          ...(input.parseMode === undefined ? {} : { parse_mode: input.parseMode }),
           reply_markup: { inline_keyboard: [] },
           link_preview_options: { is_disabled: true },
         },
+        input.signal,
+      );
+    },
+    async deleteMessage(input) {
+      await post(
+        "deleteMessage",
+        { chat_id: input.chatId, message_id: input.messageId },
         input.signal,
       );
     },

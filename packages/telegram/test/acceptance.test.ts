@@ -31,6 +31,7 @@ import {
   writeOffset,
   type AnswerCallbackRequest,
   type BotApi,
+  type DeleteMessageRequest,
   type EditMessageRequest,
   type GetUpdatesRequest,
   type SendChatActionRequest,
@@ -51,6 +52,7 @@ class LongPollApi implements BotApi {
   private readonly waiting: (() => void)[] = [];
   readonly sent: (SendMessageRequest & { readonly messageId: number })[] = [];
   readonly edits: EditMessageRequest[] = [];
+  readonly deleted: DeleteMessageRequest[] = [];
   readonly callbacks: AnswerCallbackRequest[] = [];
   readonly chatActions: SendChatActionRequest[] = [];
   private readonly watchers: (() => void)[] = [];
@@ -82,6 +84,11 @@ class LongPollApi implements BotApi {
 
   async editMessage(request: EditMessageRequest): Promise<void> {
     this.edits.push(request);
+    this.changed();
+  }
+
+  async deleteMessage(request: DeleteMessageRequest): Promise<void> {
+    this.deleted.push(request);
     this.changed();
   }
 
