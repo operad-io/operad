@@ -90,8 +90,10 @@ unknown, not refused.
 
 ## Model choices and signed-in
 
-- `models` asks the app-server's `model/list` in a short-lived child and keeps
-  the answer for 30 s. The default is the model Codex marks `isDefault`. A chat
+- `models` asks the app-server's `model/list` in a short-lived child in the
+  background and keeps the answer for 30 s; an empty answer is retried after
+  2 s. The synchronous listing read only returns the cache, so a slow Codex does
+  not hold up `serve`. The default is the model Codex marks `isDefault`. A chat
   may pick any of them; a worker step still gets its `--model` or the setting.
 - `signedIn` still uses `codex login status` (kept for 30 s). It is already
   cheap and does not start an app-server; `account/read` over a fresh app-server

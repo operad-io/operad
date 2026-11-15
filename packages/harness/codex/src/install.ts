@@ -17,8 +17,15 @@ const PROBE_TIMEOUT_MS = 30_000;
 /** How long `codex login status` may take when a client asks for the login state. */
 export const SIGNED_IN_PROBE_TIMEOUT_MS = 10_000;
 
-/** How long a model list from the app-server is kept. */
+/** How long a non-empty model list from the app-server is kept. */
 export const MODELS_CACHE_MS = 30_000;
+
+/**
+ * How soon an empty model list is tried again. An empty answer is not kept for
+ * `MODELS_CACHE_MS`: a Codex that was missing or busy at the last read gets
+ * another chance soon.
+ */
+export const MODELS_EMPTY_RETRY_MS = 2_000;
 
 /** The probe that speaks enough app-server to read the model list. */
 const MODELS_PROBE = fileURLToPath(new URL("./models-probe.ts", import.meta.url));
@@ -211,11 +218,16 @@ interface ModelsCache {
 }
 
 const modelsCache = new Map<string, ModelsCache>();
+const modelsLoading = new Map<string, Promise<HarnessModels>>();
 
 /** What a probe of the app-server's model list prints: id and whether it is the default. */
 interface ModelChoice {
   readonly id: string;
   readonly isDefault: boolean;
+}
+
+function emptyModels(): HarnessModels {
+  return { list: [], default: null };
 }
 
 function parseModels(stdout: string): readonly ModelChoice[] {
@@ -239,35 +251,79 @@ function parseModels(stdout: string): readonly ModelChoice[] {
 }
 
 /** Asks a short-lived app-server for its model list; empty when it cannot answer. */
-function probeModels(command: readonly string[]): HarnessModels {
+async function probeModels(command: readonly string[]): Promise<HarnessModels> {
+  let child: ReturnType<typeof Bun.spawn>;
   try {
-    const ran = Bun.spawnSync([process.execPath, MODELS_PROBE, ...command], {
+    child = Bun.spawn([process.execPath, MODELS_PROBE, ...command], {
       stdin: "ignore",
       env: { ...process.env },
       stdout: "pipe",
-      stderr: "pipe",
-      timeout: PROBE_TIMEOUT_MS,
+      stderr: "ignore",
     });
-    if (ran.exitCode !== 0) return { list: [], default: null };
-    const choices = parseModels(ran.stdout.toString("utf8"));
+  } catch {
+    return emptyModels();
+  }
+  const timer = setTimeout(() => {
+    child.kill("SIGKILL");
+  }, PROBE_TIMEOUT_MS);
+  try {
+    const stream = child.stdout;
+    if (!(stream instanceof ReadableStream)) {
+      await child.exited;
+      return emptyModels();
+    }
+    const [stdout, exitCode] = await Promise.all([
+      new Response(stream).text(),
+      child.exited,
+    ]);
+    if (exitCode !== 0) return emptyModels();
+    const choices = parseModels(stdout);
     const list = choices.map((choice) => choice.id);
     const fallback = choices.find((choice) => choice.isDefault)?.id ?? list[0] ?? null;
     return { list, default: fallback };
   } catch {
-    return { list: [], default: null };
+    return emptyModels();
+  } finally {
+    clearTimeout(timer);
+    if (child.exitCode === null) child.kill("SIGKILL");
   }
 }
 
 /**
- * The `model` choices a chat may pick, read from the app-server's own
- * `model/list` (the same list the user's Codex shows). Kept for a short time
- * because this runs a process; an app-server that cannot answer gives none.
+ * Refreshes the `model` choices from the app-server's own `model/list` (the
+ * same list the user's Codex shows). The read is asynchronous so a slow or
+ * missing Codex never holds up `serve`; concurrent reads share one probe.
+ */
+export function refreshCodexModels(command: readonly string[], at: number = Date.now()): Promise<HarnessModels> {
+  const key = command.join("\u0000");
+  const pending = modelsLoading.get(key);
+  if (pending !== undefined) return pending;
+  const loading = probeModels(command)
+    .then((value) => {
+      modelsCache.set(key, { at, value });
+      return value;
+    })
+    .finally(() => {
+      modelsLoading.delete(key);
+    });
+  modelsLoading.set(key, loading);
+  return loading;
+}
+
+function fresh(kept: ModelsCache, now: number): boolean {
+  const ttl = kept.value.list.length === 0 ? MODELS_EMPTY_RETRY_MS : MODELS_CACHE_MS;
+  return now - kept.at < ttl;
+}
+
+/**
+ * The `model` choices a chat may pick, from the cache. A missing or stale cache
+ * is refreshed in the background; this call returns the last answer (or none)
+ * at once, so it never blocks the event loop.
  */
 export function codexModels(command: readonly string[], now: number = Date.now()): HarnessModels {
   const key = command.join("\u0000");
   const kept = modelsCache.get(key);
-  if (kept !== undefined && now - kept.at < MODELS_CACHE_MS) return kept.value;
-  const value = probeModels(command);
-  modelsCache.set(key, { at: now, value });
-  return value;
+  if (kept !== undefined && fresh(kept, now)) return kept.value;
+  void refreshCodexModels(command, now).catch(() => undefined);
+  return kept?.value ?? emptyModels();
 }

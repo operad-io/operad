@@ -1,7 +1,8 @@
 /**
  * Reads `model/list` from a `codex app-server` and prints the choices as JSON:
- * `[{ id, isDefault }]`. Run by `codexModels` in a short-lived child because a
- * harness's `models` answer is read synchronously. Not imported by the plugin.
+ * `[{ id, isDefault }]`. Run by `refreshCodexModels` in a short-lived child in
+ * the background; the synchronous `models` answer only reads the cache. Not
+ * imported by the plugin.
  */
 
 import { spawn } from "node:child_process";

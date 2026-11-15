@@ -359,6 +359,20 @@ async function runTurn(): Promise<void> {
   finish();
 }
 
+async function respondModels(id: unknown): Promise<void> {
+  const marker = process.env.FAKE_CODEX_MODELS_MARKER;
+  if (marker !== undefined) writeFileSync(marker, String(process.pid));
+  await waitForRelease(process.env.FAKE_CODEX_MODELS_RELEASE);
+  const data =
+    process.env.FAKE_CODEX_MODELS === "empty"
+      ? []
+      : [
+          { id: "gpt-fake", model: "gpt-fake", displayName: "Fake", hidden: false, isDefault: true },
+          { id: "gpt-other", model: "gpt-other", displayName: "Other", hidden: false, isDefault: false },
+        ];
+  respond(id, { data, nextCursor: null });
+}
+
 function handle(message: Record<string, unknown>): void {
   if (recordPath !== undefined) appendFileSync(recordPath, `${JSON.stringify(message)}\n`);
   const { id, method } = message;
@@ -385,13 +399,7 @@ function handle(message: Record<string, unknown>): void {
     case "initialized":
       return;
     case "model/list":
-      respond(id, {
-        data: [
-          { id: "gpt-fake", model: "gpt-fake", displayName: "Fake", hidden: false, isDefault: true },
-          { id: "gpt-other", model: "gpt-other", displayName: "Other", hidden: false, isDefault: false },
-        ],
-        nextCursor: null,
-      });
+      void respondModels(id);
       return;
     case "thread/start":
       if (mode === "auth") {
