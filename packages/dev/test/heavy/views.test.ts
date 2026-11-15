@@ -662,6 +662,66 @@ describe("dev views", () => {
     expect(section.markdown).not.toContain("fatal:");
   });
 
+  test("a merged task whose change was already on main says it merged, without showing main's own change", async () => {
+    const root = await tempRoot();
+    const repositoryPath = await makeGitRepository(root);
+    const store = storeAt(root);
+    const repository = await addRepository(store, { path: repositoryPath });
+    const plan = await addPlan(store, { repository, slug: "p", title: "P", request: "r" });
+    const task = await addTask(store, { plan: plan.id, slug: "one", title: "One", brief: "b" });
+    await commitIn(repositoryPath, "main-only.txt", "already there\n", "main change");
+    const base = gitOrThrow(repositoryPath, ["rev-parse", "HEAD"]);
+    const stored = taskData((await getTask(store, task.id)).data);
+    await store.put(
+      "task",
+      task.id,
+      {
+        ...stored,
+        phase: "merged",
+        attempt: {
+          number: 1,
+          run: "run-1",
+          branch: `work/${bareId(task.id)}`,
+          integration: { result: "merged", candidate: base, base },
+        },
+      },
+      "test:already-on-main",
+    );
+
+    const section = (await taskViews.load(
+      { store } as never,
+      await getTask(store, task.id),
+      "diff",
+      {},
+    )) as { markdown: string };
+    expect(section.markdown).toBe("_Merged._");
+    expect(section.markdown).not.toContain("main-only.txt");
+  });
+
+  test("a proposed or ready task whose branch is missing says so, without naming its refs", async () => {
+    for (const phase of ["proposed", "ready"] as const) {
+      const root = await tempRoot();
+      const repositoryPath = await makeGitRepository(root);
+      const store = storeAt(root);
+      const repository = await addRepository(store, { path: repositoryPath });
+      const plan = await addPlan(store, { repository, slug: "p", title: "P", request: "r" });
+      const task = await addTask(store, { plan: plan.id, slug: "one", title: "One", brief: "b" });
+      if (phase === "ready") await setTaskPhase(store, task.id, "ready");
+
+      const section = (await taskViews.load(
+        { store } as never,
+        await getTask(store, task.id),
+        "diff",
+        {},
+      )) as { markdown: string };
+      expect(section.markdown).toBe(
+        "_The branch of this task is not here, so there is no diff to show._",
+      );
+      expect(section.markdown).not.toContain("work/");
+      expect(section.markdown).not.toContain("origin/");
+    }
+  });
+
   test("the metrics summary has at most four columns, a row per attempt and a total", async () => {
     const root = await tempRoot();
     const repositoryPath = await makeGitRepository(root);
