@@ -932,3 +932,19 @@ the row fields.
 |---|---|---|---|
 | T-0484-M1 | packages/engine/src/views/uploads.ts | `findAttachment` stopped checking that the resolved file is inside the resolved attachment root, so a link out of the root was served | `http server > file arguments > a file link out of the attachment root is refused, while a normal file beside it serves`, `http server > file arguments > a directory link out of the attachment root is refused` |
 | T-0484-M2 | packages/engine/src/views/uploads.ts | `findAttachment` compared the resolved file with the unresolved attachment root, so a root reached through a link was refused | `http server > file arguments > the attachment root may itself be reached through a link` |
+## T-0483 — an event source that fails or ends restarts instead of going silent
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0483-M1 | packages/engine/src/http/server.ts | `restart` stayed false after the source threw, so the pump stopped instead of re-opening it | `http server > reopens a source that throws, resets the open stream and lets a reconnect resume` |
+| T-0483-M2 | packages/engine/src/http/server.ts | a source that ended normally was not re-opened | `http server > reopens a source that ends early and keeps sending changes after the reset` |
+| T-0483-M3 | packages/engine/src/http/server.ts | `notify` called every subscriber without catching, so one throwing callback stopped delivery to the others | `http server > a subscriber callback that throws is dropped without stopping another` |
+| T-0483-M4 | packages/engine/src/http/server.ts | `restart` left `resetFrom` at 0, so an id from before the break looked resumable and skipped the gap | `http server > reopens a source that throws, resets the open stream and lets a reconnect resume` |
+| T-0483-M5 | packages/engine/src/http/server.ts | the pump no longer awaited the restart delay, so a source that failed on every open was re-opened at once | `http server > a source that fails on every open backs off through the injected clock and resets once` |
+| T-0483-M6 | packages/engine/src/http/server.ts | `restart` notified a reset on every failure instead of once per outage, so clients re-read their state once per retry | `http server > a source that fails on every open backs off through the injected clock and resets once` |
+
+## T-0497 — a harness declares the capabilities it has
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0497-M1 | packages/engine/src/plugin/validate.ts | the capability check no longer refused a plugin of another kind | `harness capabilities > a capability only a harness has is refused on another kind` |

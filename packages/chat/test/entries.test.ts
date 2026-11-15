@@ -243,10 +243,10 @@ describe("chat entries", () => {
     const chat = await r.chat();
     await r.say(chat, "hello");
     expect((await r.round(chat)).result).toBe("failed");
-    const once = allEntries(r.store, chat);
+    const once = allEntries(r.store, chat).filter((entry) => entry.kind !== "failure");
     expect(once).toHaveLength(3);
     expect((await r.round(chat)).result).toBe("done");
-    const twice = allEntries(r.store, chat);
+    const twice = allEntries(r.store, chat).filter((entry) => entry.kind !== "failure");
     expect(twice).toHaveLength(once.length);
     expect(twice.filter((entry) => entry.kind === "tool")).toHaveLength(1);
     expect(twice.filter((entry) => entry.kind === "text" || entry.kind === "thinking")).toHaveLength(2);

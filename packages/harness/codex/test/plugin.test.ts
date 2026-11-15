@@ -19,11 +19,17 @@ import {
   waitForPid,
   type ManualClock,
 } from "../../process/test/support.ts";
-import { CANCEL_GRACE_MS, SESSION_MODE, createCodexHarnessPlugin, failureOf } from "../src/index.ts";
+import {
+  APPROVAL_POLICY,
+  CANCEL_GRACE_MS,
+  SANDBOX_MODE,
+  createCodexHarnessPlugin,
+  failureOf,
+} from "../src/index.ts";
 
 afterAll(cleanupTempRoots);
 
-const FAKE = fileURLToPath(new URL("./fake-codex-acp.ts", import.meta.url));
+const FAKE = fileURLToPath(new URL("./fake-codex-app-server.ts", import.meta.url));
 
 const restores: Array<() => void> = [];
 afterEach(() => {
@@ -97,6 +103,12 @@ function methods(env: TestEnv): string[] {
   return sent(env).flatMap((message) => (typeof message.method === "string" ? [message.method] : []));
 }
 
+function paramsOf(env: TestEnv, method: string): Record<string, unknown>[] {
+  return sent(env)
+    .filter((message) => message.method === method)
+    .map((message) => (message.params ?? {}) as Record<string, unknown>);
+}
+
 async function logLines(result: PluginStepResult): Promise<Record<string, unknown>[]> {
   const text = await Bun.file(String(dataOf(result).log)).text();
   return text
@@ -129,51 +141,49 @@ function runAgent(
 }
 
 describe("codex/agent: a prompt run", () => {
-  test("a prompt runs to the end over ACP and the tool calls are in the log", async () => {
+  test("a prompt runs to the end over app-server and the tool calls are in the log", async () => {
     const env = await setup("done");
     const result = await runAgent(env, { prompt: "hello", cwd: env.root });
     expect(result.result).toBe("done");
     const data = dataOf(result);
-    expect(data.sessionId).toBe("fake-session-1");
+    expect(data.sessionId).toBe("fake-thread-1");
     expect(data.finalMessage).toBe("all done (1 blocks)");
     expect(data.exitCode).toBe(0);
 
-    // The conversation the client had with the agent.
-    expect(methods(env)).toEqual([
-      "initialize",
-      "session/new",
-      "session/set_config_option",
-      "session/prompt",
-    ]);
-    const messages = sent(env);
-    expect((messages[0]?.params as Record<string, unknown>).protocolVersion).toBe(1);
-    expect((messages[1]?.params as Record<string, unknown>).cwd).toBe(env.root);
-    // Codex's own sandbox stays on: workspace-write, not agent-full-access.
-    expect(SESSION_MODE).toBe("workspace-write");
-    expect(messages[2]?.params).toEqual({ sessionId: "fake-session-1", configId: "mode", value: "workspace-write" });
-    expect(messages[3]?.params).toEqual({ sessionId: "fake-session-1", prompt: [{ type: "text", text: "hello" }] });
+    expect(methods(env)).toEqual(["initialize", "initialized", "thread/start", "turn/start"]);
+    const start = paramsOf(env, "thread/start")[0];
+    expect(start?.cwd).toBe(env.root);
+    expect(start?.approvalPolicy).toBe(APPROVAL_POLICY);
+    expect(start?.approvalsReviewer).toBe("user");
+    expect(start?.sandbox).toBe(SANDBOX_MODE);
+    const turn = paramsOf(env, "turn/start")[0];
+    expect(turn?.threadId).toBe("fake-thread-1");
+    expect(turn?.input).toEqual([{ type: "text", text: "hello", text_elements: [] }]);
 
-    // Every tool call is logged: start, an output head, end; a failure has its first error line.
     const lines = await logLines(result);
     const starts = lines.filter((line) => line.type === "tool_execution_start");
     expect(starts.map((line) => [line.toolCallId, line.toolName, line.input])).toEqual([
       ["t1", "bash", "make test"],
       ["t2", "edit", "/w/a.ts"],
+      ["t3", "bash", "false"],
       ["img1", "image_gen", "Image generation"],
     ]);
     expect(starts[0]?.at).toBe(1000);
     const outputs = lines.filter((line) => line.type === "tool_output");
     expect(outputs[0]).toMatchObject({ type: "tool_output", toolCallId: "t1", text: "all green\nsecond line" });
-    expect(lines[0]).toMatchObject({ type: "session", sessionId: "fake-session-1" });
+    expect(outputs.find((line) => line.toolCallId === "t2")?.text).toBe("changed /w/a.ts");
+    expect(outputs.find((line) => line.toolCallId === "t3")?.text).toBe("could not write\nmore");
+    expect(lines[0]).toMatchObject({ type: "session", sessionId: "fake-thread-1" });
     expect(lines.every((line) => typeof line.receivedAt === "number")).toBe(true);
     const ends = lines.filter((line) => line.type === "tool_execution_end");
     expect(ends.map((line) => [line.toolCallId, line.isError, line.error])).toEqual([
       ["t1", false, undefined],
-      ["t2", true, "could not write"],
+      ["t2", false, undefined],
+      ["t3", true, "could not write"],
       ["img1", false, undefined],
     ]);
     expect(lines.filter((line) => line.type === "thinking_delta")).toHaveLength(1);
-    expect(lines.filter((line) => line.type === "text_delta").map((line) => line.text)).toEqual(["starting. ", "all ", "done (1 blocks)"]);
+    expect(lines.filter((line) => line.type === "text_delta").map((line) => line.text).join("")).toContain("all done (1 blocks)");
     expect(lines.at(-2)?.type).toBe("message_end");
     expect(lines.at(-1)?.type).toBe("result");
   });
@@ -206,18 +216,12 @@ describe("codex/agent: a prompt run", () => {
     });
   });
 
-  test("--model and --effort become session settings after the mode, and other args are refused", async () => {
+  test("--model and --effort become thread and turn settings, and other args are refused", async () => {
     const env = await setup("done");
     const result = await runAgent(env, { prompt: "hi", cwd: env.root, args: ["--model", "gpt-5.5", "--effort", "high"] });
     expect(result.result).toBe("done");
-    const settings = sent(env)
-      .filter((message) => message.method === "session/set_config_option")
-      .map((message) => [(message.params as Record<string, unknown>).configId, (message.params as Record<string, unknown>).value]);
-    expect(settings).toEqual([
-      ["mode", "workspace-write"],
-      ["model", "gpt-5.5"],
-      ["reasoning_effort", "high"],
-    ]);
+    expect(paramsOf(env, "thread/start")[0]?.model).toBe("gpt-5.5");
+    expect(paramsOf(env, "turn/start")[0]?.effort).toBe("high");
 
     const refused = await runAgent(env, { prompt: "hi", cwd: env.root, args: ["--sandbox", "none"] });
     expect(refused.result).toBe("failed");
@@ -225,15 +229,33 @@ describe("codex/agent: a prompt run", () => {
     expect(String(dataOf(refused).message)).toContain('unknown entry "--sandbox"');
   });
 
-  test("an image is sent with the prompt as an image block", async () => {
+  test("operad's tools and mounted servers reach Codex as mcp_servers config", async () => {
+    const env = await setup("done");
+    const result = await runAgent(env, {
+      prompt: "hello",
+      cwd: env.root,
+      operadTools: { home: env.root },
+      mcpServers: { extra: { command: "/bin/extra", args: ["--serve"] } },
+    });
+    expect(result.result).toBe("done");
+    const config = paramsOf(env, "thread/start")[0]?.config as { mcp_servers?: Record<string, unknown> } | undefined;
+    const servers = config?.mcp_servers ?? {};
+    expect(Object.keys(servers).sort()).toEqual(["extra", "operad"]);
+    expect(servers.operad).toMatchObject({ env: { OPERAD_HOME: env.root } });
+    expect(servers.extra).toEqual({ command: "/bin/extra", args: ["--serve"] });
+  });
+
+  test("an image is sent with the prompt as a local image", async () => {
     const env = await setup("done");
     const png = join(env.root, "ref.png");
     writeFileSync(png, "not really a png");
     const result = await runAgent(env, { prompt: "look", cwd: env.root, images: [{ path: png, mediaType: "image/png" }] });
     expect(result.result).toBe("done");
-    const prompt = sent(env).find((message) => message.method === "session/prompt");
-    const blocks = (prompt?.params as { prompt: Record<string, unknown>[] }).prompt;
-    expect(blocks[1]).toEqual({ type: "image", data: Buffer.from("not really a png").toString("base64"), mimeType: "image/png" });
+    const turn = paramsOf(env, "turn/start")[0];
+    expect(turn?.input).toEqual([
+      { type: "text", text: "look", text_elements: [] },
+      { type: "localImage", path: png },
+    ]);
   });
 });
 
@@ -256,7 +278,6 @@ describe("codex/agent: image generations", () => {
 
   test("silence while an image generation is open is not a stall", async () => {
     const env = await setup("silent-image");
-    // The step logs a tool call's start after the stall timer was paused for it.
     let opened: () => void = () => undefined;
     const toolOpen = new Promise<void>((resolve) => {
       opened = resolve;
@@ -267,7 +288,6 @@ describe("codex/agent: image generations", () => {
       { runId: "run-1", receiver: (line) => (line.includes("tool_execution_start") ? opened() : undefined) },
     );
     await toolOpen;
-    // Twice the stall limit passes with no line and no stop: the generation is open.
     expect(env.clock.fireBetween(FLUSH_MS, 2_000)).toBe(0);
     writeFileSync(env.release, "settle");
     const result = await running;
@@ -296,15 +316,15 @@ describe("codex/agent: permissions", () => {
     const line = readFileSync(env.record, "utf8")
       .split("\n")
       .filter((text) => text.includes("permissionResponse"))
-      .map((text) => JSON.parse(text) as { permissionResponse: { outcome: unknown } })[0];
-    return line?.permissionResponse.outcome;
+      .map((text) => JSON.parse(text) as { permissionResponse: { decision?: unknown } })[0];
+    return line?.permissionResponse.decision;
   }
 
-  test("without a rule the call is allowed once, never always", async () => {
+  test("without a rule the call is allowed once, never for the session", async () => {
     const env = await setup("permission");
     const result = await runAgent(env, { prompt: "x", cwd: env.root });
     expect(result.result).toBe("done");
-    expect(permissionOutcome(env)).toEqual({ outcome: "selected", optionId: "approve" });
+    expect(permissionOutcome(env)).toBe("accept");
     expect(dataOf(result).finalMessage).toBe("it ran");
   });
 
@@ -312,11 +332,10 @@ describe("codex/agent: permissions", () => {
     const env = await setup("permission");
     const result = await runAgent(env, { prompt: "x", cwd: env.root }, { access: { denyCommands: ["rm -rf"] } });
     expect(result.result).toBe("done");
-    expect(permissionOutcome(env)).toEqual({ outcome: "selected", optionId: "deny" });
+    expect(permissionOutcome(env)).toBe("decline");
     expect(dataOf(result).finalMessage).toBe("it was refused");
     const lines = await logLines(result);
     expect(lines.some((line) => line.type === "blocked" && line.toolName === "bash")).toBe(true);
-    // The refused call's own error text is not kept in the log.
     const end = lines.find((line) => line.type === "tool_execution_end" && line.toolCallId === "p1");
     expect(end?.isError).toBe(true);
     expect(end?.error).toBeUndefined();
@@ -328,19 +347,19 @@ describe("codex/agent: permissions", () => {
     const env = await setup("permission-network");
     const result = await runAgent(env, { prompt: "x", cwd: env.root }, { access: { denyCommands: ["curl"] } });
     expect(result.result).toBe("done");
-    expect(permissionOutcome(env)).toEqual({ outcome: "selected", optionId: "approve" });
+    expect(permissionOutcome(env)).toBe("accept");
   });
 
   test("a network request that carries a command is judged as that command", async () => {
     const env = await setup("permission-network", { vars: { FAKE_CODEX_COMMAND: "curl https://example.com" } });
     await runAgent(env, { prompt: "x", cwd: env.root }, { access: { denyCommands: ["curl"] } });
-    expect(permissionOutcome(env)).toEqual({ outcome: "selected", optionId: "deny" });
+    expect(permissionOutcome(env)).toBe("decline");
   });
 
-  test("a path the profile denies is rejected for an edit", async () => {
+  test("a path the profile denies is rejected for a file change", async () => {
     const env = await setup("permission-edit", { vars: { FAKE_CODEX_PATH: "/etc/passwd" } });
     await runAgent(env, { prompt: "x", cwd: env.root }, { access: { denyPaths: ["/etc"] } });
-    expect(permissionOutcome(env)).toEqual({ outcome: "selected", optionId: "deny" });
+    expect(permissionOutcome(env)).toBe("decline");
   });
 
   test("a one-time grant lets the refused call through once, through the host", async () => {
@@ -362,7 +381,7 @@ describe("codex/agent: permissions", () => {
     );
     expect(result.result).toBe("done");
     expect(used).toEqual(["w1"]);
-    expect(permissionOutcome(env)).toEqual({ outcome: "selected", optionId: "approve" });
+    expect(permissionOutcome(env)).toBe("accept");
   });
 
   test("a grant the host refuses to use does not let the call through", async () => {
@@ -375,7 +394,7 @@ describe("codex/agent: permissions", () => {
         asker: { ask: () => Promise.reject(new Error("no")), useGrant: () => Promise.resolve(false) },
       },
     );
-    expect(permissionOutcome(env)).toEqual({ outcome: "selected", optionId: "deny" });
+    expect(permissionOutcome(env)).toBe("decline");
   });
 
   test("a call that must ask goes to a person; allow_once lets it through", async () => {
@@ -397,7 +416,7 @@ describe("codex/agent: permissions", () => {
     );
     expect(result.result).toBe("done");
     expect(asked).toEqual(["Run this command? rm -rf build"]);
-    expect(permissionOutcome(env)).toEqual({ outcome: "selected", optionId: "approve" });
+    expect(permissionOutcome(env)).toBe("accept");
   });
 
   test("a person who refuses leaves the call rejected", async () => {
@@ -410,7 +429,7 @@ describe("codex/agent: permissions", () => {
         asker: { ask: () => Promise.resolve({ kind: "answered", answer: { choice: "reject_once" } }), useGrant: () => Promise.resolve(false) },
       },
     );
-    expect(permissionOutcome(env)).toEqual({ outcome: "selected", optionId: "deny" });
+    expect(permissionOutcome(env)).toBe("decline");
   });
 
   test("the step declares what it applies and that it can resume", async () => {
@@ -437,7 +456,7 @@ describe("codex/agent: model errors", () => {
     });
   });
 
-  test("a model codex-acp does not offer is an unavailable model error", async () => {
+  test("a model the app-server does not offer is an unavailable model error", async () => {
     const env = await setup("bad-model");
     const result = await runAgent(env, { prompt: "x", cwd: env.root, args: ["--model", "gpt-nope"] });
     expect(result.result).toBe("failed");
@@ -460,16 +479,22 @@ describe("codex/agent: model errors", () => {
   });
 
   test("the error info maps to the kinds dev and pool act on", () => {
-    const error = (info: unknown, stage: "prompt" | "session" = "prompt") =>
-      ({ kind: "error", stage, error: { code: -32603, message: "Internal error", data: { message: "m", codexErrorInfo: info } }, sessionId: null }) as const;
+    const error = (info: string, status = "failed") =>
+      ({
+        kind: "stopped",
+        stopReason: status,
+        usage: null,
+        sessionId: "s",
+        error: { code: 0, message: "m", data: { message: "m", codexErrorInfo: info } },
+      }) as const;
     expect(failureOf(error("rateLimitExceeded"), undefined).modelError).toEqual({ kind: "usage_limit" });
     expect(failureOf(error("serverOverloaded"), undefined).modelError).toEqual({ kind: "unavailable" });
-    expect(failureOf(error({ httpConnectionFailed: {} }), undefined).modelError).toEqual({ kind: "protocol" });
+    expect(failureOf(error("httpConnectionFailed"), undefined).modelError).toEqual({ kind: "protocol" });
   });
 });
 
 describe("codex/agent: cancel", () => {
-  test("a cancel sends session/cancel and the step is interrupted when codex-acp answers", async () => {
+  test("a cancel sends turn/interrupt and the step is interrupted when the server answers", async () => {
     const env = await setup("cancel");
     const controller = new AbortController();
     const running = runAgent(env, { prompt: "x", cwd: env.root }, { signal: controller.signal });
@@ -478,11 +503,11 @@ describe("codex/agent: cancel", () => {
     const result = await running;
     expect(result.result).toBe("interrupted");
     expect(dataOf(result).reason).toBe("cancelled");
-    expect(methods(env)).toContain("session/cancel");
+    expect(methods(env)).toContain("turn/interrupt");
     await waitForGone(pid);
   });
 
-  test("an agent that ignores the cancel is ended after the grace", async () => {
+  test("a server that ignores the interrupt is ended after the grace", async () => {
     const manual = manualClock();
     let armed: () => void = () => undefined;
     const waitArmed = new Promise<void>((resolve) => {
@@ -529,39 +554,72 @@ describe("codex/agent: cancel", () => {
 });
 
 describe("codex/agent: resume", () => {
-  test("a resumed run loads the session instead of opening one, and what it replays is not this run's", async () => {
+  test("a resumed run resumes the thread, and what it replays is not this run's", async () => {
     const env = await setup("done");
     const result = await runAgent(env, { prompt: "go on", cwd: env.root, resumeSession: "old-session" });
     expect(result.result).toBe("done");
-    expect(methods(env)).toEqual(["initialize", "session/load", "session/set_config_option", "session/prompt"]);
-    const load = sent(env).find((message) => message.method === "session/load");
-    expect(load?.params).toEqual({ sessionId: "old-session", cwd: env.root, mcpServers: [] });
-    // A resumed run continues the session it was given.
+    expect(methods(env)).toEqual(["initialize", "initialized", "thread/resume", "turn/start"]);
+    const resume = paramsOf(env, "thread/resume")[0];
+    expect(resume?.threadId).toBe("old-session");
+    expect(resume?.cwd).toBe(env.root);
     expect(dataOf(result).sessionId).toBe("old-session");
-    // The replayed image generation and message are not in the log and not counted.
     const lines = await logLines(result);
     expect(JSON.stringify(lines)).not.toContain("an earlier message");
     expect(lines.some((line) => line.toolCallId === "old1")).toBe(false);
     expect(dataOf(result).imageGenCalls).toBe(1);
   });
 
-  test("an agent without session/load cannot resume: the step fails and says why", async () => {
+  test("a thread that cannot be resumed fails with session_missing", async () => {
     const env = await setup("no-load");
     const result = await runAgent(env, { prompt: "go on", cwd: env.root, resumeSession: "old-session" });
     expect(result.result).toBe("failed");
     expect(dataOf(result).reason).toBe("session_missing");
-    expect(methods(env)).not.toContain("session/prompt");
+    expect(methods(env)).not.toContain("turn/start");
+  });
+});
+
+describe("codex/agent: a message from the host", () => {
+  test("a message sent mid-run steers the turn", async () => {
+    const env = await setup("steer");
+    let listener: (text: string) => void = () => undefined;
+    const inbox = {
+      listen(handler: (text: string) => void) {
+        listener = handler;
+        return () => {
+          listener = () => undefined;
+        };
+      },
+      begin() {
+        // The test sends after the turn started.
+      },
+    };
+    const running = runAgent(env, { prompt: "x", cwd: env.root, inbox });
+    await waitForFile(env.marker);
+    listener("please stop");
+    const result = await running;
+    expect(result.result).toBe("done");
+    expect(dataOf(result).finalMessage).toBe("heard: please stop");
+    expect(methods(env)).toContain("turn/steer");
+  });
+});
+
+describe("codex/agent: an app-server that exits early", () => {
+  test("a process that exits without a turn result fails with no_result", async () => {
+    const env = await setup("exited-early");
+    const result = await runAgent(env, { prompt: "x", cwd: env.root });
+    expect(result.result).toBe("failed");
+    expect(dataOf(result).reason).toBe("no_result");
   });
 });
 
 describe("codex check", () => {
-  test("reports the codex-acp and codex versions and the login", async () => {
+  test("reports the codex version, the app-server command and the login", async () => {
     const env = await setup("done");
     const checks = await env.registry.checks();
     const check = checks.find((item) => item.plugin === "codex");
     expect(check?.ok).toBe(true);
-    expect(check?.message).toContain("codex-acp 9.9.9");
     expect(check?.message).toContain("codex 9.9.9");
+    expect(check?.message).toContain("app-server");
     expect(check?.message).toContain("login ChatGPT");
   });
 
@@ -572,11 +630,26 @@ describe("codex check", () => {
     expect(check?.message).toContain("not logged in");
   });
 
-  test("refuses when codex-acp cannot start", async () => {
+  test("refuses an installed Codex that is too old", async () => {
+    const env = await setup("done", { vars: { FAKE_CODEX_VERSION: "0.100.0" } });
+    const check = (await env.registry.checks()).find((item) => item.plugin === "codex");
+    expect(check?.ok).toBe(false);
+    expect(check?.message).toContain("too old");
+    expect(check?.message).toContain("0.166.0");
+  });
+
+  test("refuses a Codex with no app-server", async () => {
+    const env = await setup("no-app-server");
+    const check = (await env.registry.checks()).find((item) => item.plugin === "codex");
+    expect(check?.ok).toBe(false);
+    expect(check?.message).toContain("no app-server");
+  });
+
+  test("refuses a command that cannot start", async () => {
     const env = await setup("done", { settings: { command: [process.execPath, join(tempRootless(), "missing.ts")] } });
     const check = (await env.registry.checks()).find((item) => item.plugin === "codex");
     expect(check?.ok).toBe(false);
-    expect(check?.message).toContain("cannot start");
+    expect(check?.message).toContain("app-server");
   });
 });
 

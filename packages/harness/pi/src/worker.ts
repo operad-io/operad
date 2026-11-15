@@ -25,6 +25,7 @@ import { openMcpTools, type McpTools } from "@operad-io/mcp";
 import {
   maskSecrets,
   messageText,
+  readGivenSkills,
   readImage,
   toolOutputLines,
   type CallAnswer,
@@ -318,6 +319,15 @@ export async function runWorker(
     return EXIT_FAILED;
   }
 
+  // A line for the step log and for the free-text stderr: a skill that cannot
+  // be used is skipped, never a failed run.
+  const note = (text: string): void => {
+    io.log(text);
+    io.line({ type: "log", text });
+  };
+  const given = readGivenSkills(input.skills ?? []);
+  for (const skip of given.skipped) note(`skill ${skip.path}: ${skip.reason}`);
+
   // pi is the user's own install: found at start, never bundled.
   let pi: Awaited<ReturnType<typeof loadPi>>;
   try {
@@ -431,13 +441,19 @@ export async function runWorker(
     agentDir: input.agentDir,
     settingsManager,
     noExtensions: true,
+    // No discovery: the only skills are the directories this step gave.
     noSkills: true,
+    ...(given.skills.length === 0 ? {} : { additionalSkillPaths: given.skills.map((skill) => skill.path) }),
     noPromptTemplates: true,
     noThemes: true,
     noContextFiles: true,
     extensionFactories: [{ name: "operad", factory: operadExtension, hidden: true }],
   });
   await resourceLoader.reload();
+  if ((input.skills ?? []).length > 0) {
+    const names = resourceLoader.getSkills().skills.map((skill) => skill.name);
+    note(`skills: ${names.length === 0 ? "none" : names.join(", ")}`);
+  }
 
   // Operad's tools, as pi's own custom tools; each call runs against the home.
   let operad: McpTools | undefined;

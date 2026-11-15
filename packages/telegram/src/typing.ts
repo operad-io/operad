@@ -8,11 +8,11 @@
  * events, not a detail page per event. It reads a bound chat's channels from
  * the plugin's store, as the reply side does. Telegram shows the indicator for
  * about five seconds, so it is sent again while the reply is written; it stops
- * when the reply is recorded, even if its run goes on. A failed send is logged
- * once and is not written to history.
+ * when the reply or a failure line is recorded, even if its run goes on. A
+ * failed send is logged once and is not written to history.
  */
 
-import { CHAT_TYPE, allMessages, chatData, unanswered } from "@operad-io/chat";
+import { CHAT_TYPE, allEntries, allMessages, chatData, unanswered } from "@operad-io/chat";
 import { messageOf, type ClientApi, type SourceContext } from "@operad-io/engine";
 import type { BotApi } from "./api.ts";
 import { telegramChatsOf } from "./replies.ts";
@@ -226,7 +226,15 @@ export class TypingSender {
       }
       // The reply is recorded on the chat before its run ends. Once it answers
       // every message, writing is over even if the run goes on.
-      if (unanswered(allMessages(this.ctx.store, chat.chatId)).length === 0) {
+      const messages = allMessages(this.ctx.store, chat.chatId);
+      let lastUser = 0;
+      for (const message of messages) {
+        if (message.role === "user") lastUser = Math.max(lastUser, message.sequence);
+      }
+      const failed = allEntries(this.ctx.store, chat.chatId).some(
+        (entry) => entry.kind === "failure" && entry.sequence > lastUser,
+      );
+      if (unanswered(messages).length === 0 || failed) {
         await this.stopTyping(chat.chatId);
         continue;
       }

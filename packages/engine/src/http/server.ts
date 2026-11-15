@@ -110,44 +110,160 @@ export interface EventEntry {
   readonly id: string;
 }
 
+type HubEvent =
+  | { readonly kind: "change"; readonly entry: EventEntry }
+  | { readonly kind: "reset" };
+
+type HubListener = (event: HubEvent) => void;
+type HubFailure = ((error: unknown) => void) | undefined;
+
+/** The first delay before the hub re-opens a source that failed or ended. */
+export const DEFAULT_EVENT_RETRY_MIN_MS = 250;
+
+/** The longest such delay; the hub keeps retrying at this pace. */
+export const DEFAULT_EVENT_RETRY_MAX_MS = 5_000;
+
+/** The restart delay: double each failure, never past the cap. */
+export function eventRetryDelay(
+  attempt: number,
+  minMs = DEFAULT_EVENT_RETRY_MIN_MS,
+  maxMs = DEFAULT_EVENT_RETRY_MAX_MS,
+): number {
+  const low = Math.max(0, minMs);
+  const high = Math.max(low, maxMs);
+  const step = Math.min(Math.max(0, Math.trunc(attempt)), 30);
+  return Math.min(high, low * 2 ** step);
+}
+
+/** Waits before a retry; unref'd so a stopped hub does not hold the process up. */
+function waitForRestart(ms: number): Promise<void> {
+  return new Promise<void>((resolve) => {
+    (setTimeout(resolve, ms) as { unref?: () => void }).unref?.();
+  });
+}
+
+export interface EventHubOptions {
+  /** Waits `ms` before re-opening a failed source; tests inject it. */
+  readonly wait?: ((ms: number) => Promise<void>) | undefined;
+  readonly retryMinMs?: number | undefined;
+  readonly retryMaxMs?: number | undefined;
+}
+
 /** The bounded stream of ids every event client resumes from. */
 export class EventHub {
   private readonly entries: EventEntry[] = [];
   private readonly max: number;
-  private readonly listeners = new Set<(entry: EventEntry) => void>();
-  private readonly iterator: AsyncIterator<ViewEvent>;
+  private readonly listeners = new Map<HubListener, HubFailure>();
+  private readonly events: () => AsyncIterable<ViewEvent>;
+  private readonly onLog: (message: string) => void;
+  private iterator: AsyncIterator<ViewEvent> | undefined;
   /** Random once per process: an id from another boot never resumes here. */
   private readonly bootId = randomBytes(8).toString("hex");
   private seq = 0;
+  /** The first id after the last source restart; older ids cannot resume. */
+  private resetFrom = 0;
+  /** Whether this outage already told the open streams to reset. */
+  private resetAnnounced = false;
+  private readonly wait: (ms: number) => Promise<void>;
+  private readonly retryMinMs: number;
+  private readonly retryMaxMs: number;
   private stopped = false;
 
   constructor(
-    events: AsyncIterable<ViewEvent>,
+    events: () => AsyncIterable<ViewEvent>,
     max: number,
     onLog: (message: string) => void,
+    options: EventHubOptions = {},
   ) {
     this.max = Math.max(1, max);
-    this.iterator = events[Symbol.asyncIterator]();
-    void this.pump(onLog);
+    this.events = events;
+    this.onLog = onLog;
+    this.wait = options.wait ?? waitForRestart;
+    this.retryMinMs = options.retryMinMs ?? DEFAULT_EVENT_RETRY_MIN_MS;
+    this.retryMaxMs = options.retryMaxMs ?? DEFAULT_EVENT_RETRY_MAX_MS;
+    void this.pump();
   }
 
-  private async pump(onLog: (message: string) => void): Promise<void> {
-    try {
-      while (!this.stopped) {
-        const next = await this.iterator.next();
-        if (next.done) break;
-        this.seq += 1;
-        const entry: EventEntry = {
-          seq: this.seq,
-          event: `${this.bootId}-${this.seq}`,
-          id: next.value.id,
-        };
-        this.entries.push(entry);
-        if (this.entries.length > this.max) this.entries.shift();
-        for (const listener of [...this.listeners]) listener(entry);
+  /**
+   * Reads the source to its end, then re-opens it. A source that fails or ends
+   * at once on every open waits longer each time, up to the cap, so it cannot
+   * spin through the event loop; a delivered event starts the wait over.
+   */
+  private async pump(): Promise<void> {
+    let attempt = 0;
+    while (!this.stopped) {
+      let failure: unknown;
+      let ended = false;
+      try {
+        const iterator = this.events()[Symbol.asyncIterator]();
+        this.iterator = iterator;
+        while (!this.stopped) {
+          const next = await iterator.next();
+          if (next.done) {
+            ended = true;
+            break;
+          }
+          attempt = 0;
+          this.publish(next.value);
+        }
+      } catch (error) {
+        failure = error;
       }
-    } catch (error) {
-      if (!this.stopped) onLog(`http events: ${messageOf(error)}`);
+      if (this.stopped) return;
+      const delay = eventRetryDelay(attempt, this.retryMinMs, this.retryMaxMs);
+      attempt += 1;
+      this.onLog(
+        ended
+          ? `http events: the source ended; re-opening it in ${delay} ms`
+          : `http events: ${messageOf(failure)}; re-opening it in ${delay} ms`,
+      );
+      this.restart();
+      await this.wait(delay);
+    }
+  }
+
+  private publish(value: ViewEvent): void {
+    this.resetAnnounced = false;
+    this.seq += 1;
+    const entry: EventEntry = {
+      seq: this.seq,
+      event: `${this.bootId}-${this.seq}`,
+      id: value.id,
+    };
+    this.entries.push(entry);
+    if (this.entries.length > this.max) this.entries.shift();
+    this.notify({ kind: "change", entry });
+  }
+
+  /**
+   * A source that failed or ended cannot replay what happened while it was
+   * gone. Open streams get a reset, and no id from before the break resumes.
+   */
+  private restart(): void {
+    this.resetFrom = this.seq + 1;
+    this.entries.length = 0;
+    // Repeated failures without a change in between carry no new gap, so one
+    // reset per outage is enough; repeating it would make every client re-read
+    // its state once per retry.
+    if (this.resetAnnounced) return;
+    this.resetAnnounced = true;
+    this.notify({ kind: "reset" });
+  }
+
+  /** One failing subscriber is dropped; it does not stop the others. */
+  private notify(event: HubEvent): void {
+    for (const [listener, fail] of [...this.listeners]) {
+      try {
+        listener(event);
+      } catch (error) {
+        this.listeners.delete(listener);
+        this.onLog(`http events: a subscriber failed: ${messageOf(error)}`);
+        try {
+          fail?.(error);
+        } catch (failure) {
+          this.onLog(`http events: a subscriber could not be closed: ${messageOf(failure)}`);
+        }
+      }
     }
   }
 
@@ -162,6 +278,7 @@ export class EventHub {
     if (parsed === undefined || parsed.bootId !== this.bootId) {
       return { reset: true, replay: [] };
     }
+    if (parsed.seq < this.resetFrom) return { reset: true, replay: [] };
     const oldest = this.entries[0]?.seq;
     const latest = this.entries.at(-1)?.seq;
     if (oldest === undefined || latest === undefined) {
@@ -176,8 +293,8 @@ export class EventHub {
     };
   }
 
-  subscribe(listener: (entry: EventEntry) => void): () => void {
-    this.listeners.add(listener);
+  subscribe(listener: HubListener, onFailure?: (error: unknown) => void): () => void {
+    this.listeners.set(listener, onFailure);
     return () => {
       this.listeners.delete(listener);
     };
@@ -185,7 +302,7 @@ export class EventHub {
 
   stop(): void {
     this.stopped = true;
-    void this.iterator.return?.();
+    void this.iterator?.return?.();
   }
 }
 
@@ -398,7 +515,10 @@ export function eventResponse(
       const snapshot = hub.snapshot(resumeFrom);
       if (snapshot.reset) push(RESET_EVENT);
       else for (const entry of snapshot.replay) push(formatEvent(entry));
-      unsubscribe = hub.subscribe((entry) => push(formatEvent(entry)));
+      unsubscribe = hub.subscribe((event) => {
+        if (event.kind === "reset") push(RESET_EVENT);
+        else push(formatEvent(event.entry));
+      }, finish);
       untrack = track(token, finish);
       // An immediate comment flushes the response headers; the client then has
       // a stream even when nothing changes for a while.
@@ -886,10 +1006,18 @@ export async function startHttpServer(
   const token = await ensureHttpToken(options.home);
 
   const onLog = options.onLog ?? (() => undefined);
+  const wait =
+    options.wait ??
+    ((ms: number) =>
+      new Promise<void>((resolve) => {
+        // Unref'd: a stop that finished in time must not keep the process up.
+        (setTimeout(resolve, ms) as { unref?: () => void }).unref?.();
+      }));
   const hub = new EventHub(
-    options.views.events(),
+    () => options.views.events(),
     options.maxEventIds ?? DEFAULT_MAX_EVENT_IDS,
     onLog,
+    { wait },
   );
   const streams = new StreamRegistry();
   const uploads = new Uploads({
@@ -906,13 +1034,6 @@ export async function startHttpServer(
   const handler = createHandler(options, uploads, hub, streams, onLog);
   const servers: { readonly address: string; readonly server: ReturnType<typeof Bun.serve> }[] = [];
   const listener = options.listener ?? Bun.serve;
-  const wait =
-    options.wait ??
-    ((ms: number) =>
-      new Promise<void>((resolve) => {
-        // Unref'd: a stop that finished in time must not keep the process up.
-        (setTimeout(resolve, ms) as { unref?: () => void }).unref?.();
-      }));
   const stopTimeoutMs = options.stopTimeoutMs ?? DEFAULT_STOP_TIMEOUT_MS;
 
   /**

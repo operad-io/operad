@@ -430,6 +430,24 @@ describe("pi/agent", () => {
     expect(type?.resumable).toBe(true);
   });
 
+  test("the plugin declares that it loads skills itself", () => {
+    const plugin = createPiHarnessPlugin();
+    expect(plugin.capabilities).toEqual({ loadsSkills: true });
+  });
+
+  test("the skill directories of the step reach the worker's stdin", async () => {
+    const env = await setup("done");
+    const skills = [join(env.root, "skills", "one"), join(env.root, "skills", "two")];
+    await runAgent(env, { prompt: "hello", cwd: env.root, skills });
+    expect(recorded(env).skills).toEqual(skills);
+  });
+
+  test("without skills, no skills field is sent", async () => {
+    const env = await setup("done");
+    await runAgent(env, { prompt: "hello", cwd: env.root });
+    expect("skills" in recorded(env)).toBe(false);
+  });
+
   test("a message the host sends through the inbox reaches the program as a message line", async () => {
     const env = await setup("message");
     const handlers: Array<(text: string) => void> = [];

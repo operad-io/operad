@@ -71,6 +71,13 @@ interface Run {
   exitCode: number;
 }
 
+/** Writes a skill directory with the Agent Skills frontmatter. */
+function writeSkill(dir: string, name: string): string {
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "SKILL.md"), `---\nname: ${name}\ndescription: Use ${name}.\n---\n\nSay ${name}.\n`);
+  return dir;
+}
+
 class ProcessChild {
   readonly #process: Bun.Subprocess<"pipe", "pipe", "pipe">;
   readonly #stderrText: Promise<string>;
@@ -300,6 +307,60 @@ test("a prompt that ends writes the lines in order and a Result with usage, cost
   expect(Object.keys(result).sort()).toEqual(["cost", "finalMessage", "result", "sessionId", "type", "usage"]);
 });
 
+test("only the skill directories given are loaded, and the session log names them", async () => {
+  const s = setup();
+  const given = writeSkill(join(s.dir, "given-skill"), "given-skill");
+  writeSkill(join(s.home, ".agents", "skills", "agents-skill"), "agents-skill");
+  writeSkill(join(s.home, ".claude", "skills", "claude-skill"), "claude-skill");
+  writeSkill(join(s.home, ".pi", "agent", "skills", "pi-skill"), "pi-skill");
+
+  const contextFile = join(s.dir, "contexts.jsonl");
+  const run = await runFakeProcess(
+    s,
+    [{ text: "ok" }],
+    { ...s.input, skills: [given] },
+    { FAKE_CONTEXT_FILE: contextFile },
+  );
+
+  expect(run.exitCode).toBe(0);
+  expect(last(run)).toMatchObject({ result: "done", finalMessage: "ok" });
+  expect(run.stderr).toContain("skills: given-skill");
+  const context = readFileSync(contextFile, "utf8");
+  expect(context).toContain("<name>given-skill</name>");
+  for (const name of ["agents-skill", "claude-skill", "pi-skill"]) {
+    expect(run.stderr).not.toContain(name);
+    expect(context).not.toContain(name);
+  }
+});
+
+test("a skill without a readable SKILL.md or a name is skipped with one log line, not a failed step", async () => {
+  const s = setup();
+  const missing = join(s.dir, "missing");
+  mkdirSync(missing);
+  const unnamed = join(s.dir, "unnamed");
+  mkdirSync(unnamed);
+  writeFileSync(join(unnamed, "SKILL.md"), "---\ndescription: no name here\n---\n");
+
+  const run = await runFake(s, [{ text: "ok" }], { ...s.input, skills: [missing, unnamed] });
+
+  expect(run.exitCode).toBe(0);
+  expect(last(run)).toMatchObject({ result: "done", finalMessage: "ok" });
+  const notes = run.lines.filter((line) => line["type"] === "log").map((line) => String(line["text"]));
+  expect(notes).toContain(`skill ${missing}: SKILL.md cannot be read`);
+  expect(notes).toContain(`skill ${unnamed}: SKILL.md has no name`);
+  expect(run.stderr).toContain("SKILL.md cannot be read");
+  expect(run.stderr).toContain("SKILL.md has no name");
+  expect(notes).toContain("skills: none");
+});
+
+test("without skills no skill is loaded and no skill line is added", async () => {
+  const s = setup();
+  const run = await runFake(s, [{ text: "ok" }]);
+  expect(run.exitCode).toBe(0);
+  expect(run.stderr).not.toContain("skills:");
+  expect(run.lines.some((line) => line["type"] === "log")).toBe(false);
+});
+
 test("usage and cost are summed over every message_end, with a tool call between", async () => {
   const s = setup();
   const note = join(s.dir, "note.txt");
@@ -520,6 +581,7 @@ const INVALID: Array<[string, (input: Record<string, unknown>) => unknown]> = [
   ["resumeSession", (input) => ({ ...input, resumeSession: 7 })],
   ["model", (input) => ({ ...input, model: "no-slash" })],
   ["thinkingLevel", (input) => ({ ...input, thinkingLevel: "loud" })],
+  ["skills", (input) => ({ ...input, skills: "x" })],
   ["access", (input) => ({ ...input, access: "deny" })],
 ];
 

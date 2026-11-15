@@ -10,8 +10,9 @@ humans and is never parsed.
 
 pi does no discovery here: the only extension is operad's inline one, settings
 are in memory, and every path pi uses comes from the input (`agentDir`,
-`sessionDir`, `authPath`, `modelsPath`). Nothing under the user's `~/.pi` is
-read unless the input names it.
+`sessionDir`, `authPath`, `modelsPath`, `skills`). Nothing under the user's
+`~/.pi`, `~/.agents/skills`, `.agents/skills` or `.pi/skills` is read unless the
+input names it; with `skills` pi loads exactly those directories.
 
 ## Installing pi
 
@@ -50,6 +51,7 @@ this table.
 | `resumeSession` | string, non-empty | no | session file path from an earlier `Result.sessionId`; the prompt is sent into it |
 | `model` | string `provider/id` | no | model to use; absent means pi's own default |
 | `thinkingLevel` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max` | no | reasoning level; absent means pi's default |
+| `skills` | array of strings | no | skill directories to load, each with a `SKILL.md`; nothing else is discovered. A directory whose `SKILL.md` cannot be read or has no name is skipped with one `log` line, not a failed run. Absent: no skills |
 | `access` | object | no | the access profile; `denyPaths` and `denyCommands` (arrays of strings) are enforced in the `tool_call` hook by `@operad-io/access-match`, other fields are ignored; absent means nothing is denied |
 
 An invalid object (not JSON, not an object, a required field missing or of the
@@ -75,6 +77,7 @@ The host adds `receivedAt` (epoch milliseconds) to every line it writes to the s
 | `text_end` | `text` | the full text of a finished assistant message, after its increments |
 | `thinking_end` | `text` | the full text of a finished thinking block, after its increments |
 | `blocked` | `toolName`, `reason` | the access matcher refused a tool call; the call does not run: its `tool_execution_end` has `isError: true` and the model gets `reason` as the tool result. The run continues |
+| `log` | `text` | a line for the step log that neither the model nor the fold reads: a skipped skill, or the names of the skills loaded (`skills: <name>, <name>`, or `skills: none`) |
 | `agent_settled` | `aborted` (boolean) | pi has stopped for good (not `agent_end`, after which pi may continue) |
 | `result` | see below | always the last line |
 

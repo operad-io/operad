@@ -39,6 +39,8 @@ export type SharedLine =
       readonly error?: string;
     }
   | { readonly type: "blocked"; readonly toolName: string; readonly reason: string }
+  /** A line for the step log that neither the model nor the fold reads. */
+  | { readonly type: "log"; readonly text: string }
   /**
    * The program asks to use up a one-time permission before it lets a call
    * through. The host writes the fact and answers on stdin with a

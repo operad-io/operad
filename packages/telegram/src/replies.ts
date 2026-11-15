@@ -1,20 +1,21 @@
 /**
  * The reply side of the Telegram plugin: every new assistant message of a chat
- * bound to a Telegram chat is sent to that chat, once.
+ * bound to a Telegram chat, and the line that says a reply failed, is sent to
+ * that chat once.
  *
  * It wakes on the client API's `events()`, which names a chat whenever it
- * changes. What it then reads, the chat's bindings and its messages with their
- * ids and roles, the client API does not give (a row has no channels; the
- * transcript section is rendered Markdown with no message ids), so those two
- * reads stay on the plugin's store. What was sent
- * is recorded in the plugin's own file, per message and per chunk, so a restart
- * sends neither a sent message again nor skips one written while the process was
- * down. A send that fails is retried on the injected wait; a send that gives up
- * is recorded as a `send_failed` event of the plugin and is not tried again. Only replies are sent,
- * never the tool calls (ADR 0033 D7).
+ * changes. What it then reads, the chat's bindings and its messages and failure
+ * entries, the client API does not give (a row has no channels; the transcript
+ * section is rendered Markdown with no message ids), so those reads stay on the
+ * plugin's store. What was sent is recorded in the plugin's own file, per item
+ * and per chunk, so a restart sends neither a sent item again nor skips one
+ * written while the process was down. A send that fails is retried on the
+ * injected wait; a send that gives up is recorded as a `send_failed` event of the
+ * plugin and is not tried again. Only replies and failure lines are sent, never
+ * the tool calls (ADR 0033 D7).
  */
 
-import { CHAT_TYPE, allMessages, chatData, type Message } from "@operad-io/chat";
+import { CHAT_TYPE, allEntries, allMessages, chatData } from "@operad-io/chat";
 import { messageOf, type SourceContext } from "@operad-io/engine";
 import { BotApiError, type BotApi } from "./api.ts";
 import { telegramChunks, type TelegramChunk } from "./format.ts";
@@ -41,6 +42,14 @@ export interface ReplySenderOptions {
   readonly clock?: (() => number) | undefined;
   readonly wait: (ms: number, signal: AbortSignal) => Promise<void>;
   readonly retry?: RetryPolicy | undefined;
+}
+
+/** One thing to send: a reply, or the line that says a reply failed. */
+interface Outgoing {
+  readonly id: string;
+  readonly at: number;
+  readonly sequence: number;
+  readonly text: string;
 }
 
 /** The Telegram chat ids a chat is bound to. */
@@ -130,7 +139,7 @@ export class ReplySender {
     await Promise.all(ids.map((id) => this.sweepChat(id)));
   }
 
-  /** Sends the unsent assistant messages of one chat; one sweep of a chat runs at a time. */
+  /** Sends the unsent replies and failure lines of one chat; one sweep of a chat runs at a time. */
   sweepChat(chatId: string): Promise<void> {
     const previous = this.queues.get(chatId) ?? Promise.resolve();
     const run = previous.then(() => this.sweep(chatId));
@@ -149,20 +158,31 @@ export class ReplySender {
     const targets = telegramChatsOf(chatData(stored.data).channels);
     const target = targets[0];
     if (target === undefined) return;
+    const outgoing: Outgoing[] = [];
     for (const message of allMessages(this.ctx.store, chatId)) {
+      if (message.role !== "assistant") continue;
+      outgoing.push({ id: message.id, at: message.at, sequence: message.sequence, text: message.text });
+    }
+    // A failed reply has no assistant message; its one failure entry is sent too.
+    for (const entry of allEntries(this.ctx.store, chatId)) {
+      if (entry.kind !== "failure" || entry.text === undefined) continue;
+      outgoing.push({ id: `failure:${entry.sequence}`, at: entry.at, sequence: entry.sequence, text: entry.text });
+    }
+    outgoing.sort((left, right) => left.sequence - right.sequence);
+    for (const item of outgoing) {
       if (this.stopped) return;
-      if (message.role !== "assistant" || message.at < this.state.since) continue;
-      const key = `${chatId}/${message.id}`;
+      if (item.at < this.state.since) continue;
+      const key = `${chatId}/${item.id}`;
       const record = this.state.sent[key];
       if (record?.done === true) continue;
-      await this.send(chatId, key, message, target, record);
+      await this.send(chatId, key, item, target, record);
     }
   }
 
   private async send(
     chatId: string,
     key: string,
-    message: Message,
+    message: Outgoing,
     target: number,
     record: SentRecord | undefined,
   ): Promise<void> {
@@ -226,7 +246,7 @@ export class ReplySender {
    * after a crash records it once. It is the plugin's own record; nothing is
    * written into the chat's messages or entries, which are the chat plugin's.
    */
-  private async giveUp(chatId: string, message: Message, sent: number, total: number, tries: number, error: unknown): Promise<void> {
+  private async giveUp(chatId: string, message: Outgoing, sent: number, total: number, tries: number, error: unknown): Promise<void> {
     const part = total > 1 ? ` (part ${sent + 1} of ${total})` : "";
     const text = `could not send the reply${part}; gave up after ${tries} ${tries === 1 ? "try" : "tries"}: ${messageOf(error)}`;
     await this.ctx.logger.write(`reply ${message.id} of chat ${chatId}: ${text}`);

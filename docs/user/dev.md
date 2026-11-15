@@ -447,7 +447,7 @@ The four differ in these ways:
 - `claude`: runs your own `claude` through the Claude Agent SDK, with the login `claude` already has. A step is one foreground turn.
 - `pi`: finds the pi library you installed from the `pi` on `PATH` and loads it in a child process. It needs a pi of version 1.5.0 or newer.
 - `radian`: runs `radian exec` in the directory. radian cannot let through a one-time permission, so a profile that carries one is refused for it. It is the fallback default when the home enables no harness.
-- `codex`: starts your `codex-acp` and talks to it over ACP, with your Codex login. It is off until `operad plugin enable codex`. Codex's own sandbox stays on and limits writes to the worktree, and the access profile is asked only about what leaves the sandbox. A subscription login gives no cost, so `costMicros` is `null`.
+- `codex`: starts your `codex app-server` and speaks Codex's own JSON-RPC, with your Codex login. It is off until `operad plugin enable codex`. Codex's own sandbox stays on and limits writes to the worktree, and Codex is set to ask operad about what leaves it; the access profile answers those command and file-change requests. A subscription login gives no cost, so `costMicros` is `null`.
 
 The time limits and the per-model limit are in the sections that follow.
 
@@ -500,23 +500,32 @@ as failed with the reason that it was cancelled.
 
 ### The `codex` settings
 
-`codex` runs the user's own Codex through `codex-acp`. It is not in the default
-config: turn it on with `operad plugin enable codex`. operad brings no
-`codex-acp` of its own: put `codex-acp` (`bun add -g @agentclientprotocol/codex-acp`)
-and `bun` on `PATH`, and run `codex login` once; operad uses your own Codex login.
-`operad plugin check codex` reports the versions and the login kind, and says what
-to do when `codex-acp` cannot start or Codex is not logged in. Its settings are in
-the `codex` section of `config.json`:
+`codex` runs the user's own Codex through `codex app-server`, Codex's own
+JSON-RPC interface. It is not in the default config: turn it on with
+`operad plugin enable codex`. operad brings no Codex of its own: put `codex` on
+`PATH` (the client was built against codex-cli `0.166.0`; an older one is
+refused) and run `codex login` once; operad uses your own Codex login.
+`operad plugin check codex` reports the Codex version, the app-server command and
+the login kind, and says what to do when the installed Codex has no app-server,
+is too old, or is not logged in. Its settings are in the `codex` section of
+`config.json`:
 
 | Setting | Type | Default | What it does |
 |---|---|---|---|
-| `codex.model` | string | Codex's own | The model; the step's `--model` wins. |
+| `codex.model` | string | Codex's own | The model; the step's `--model` wins. A chat may pick from the app-server's own model list. |
 | `codex.effort` | `minimal`, `low`, `medium`, `high`, `xhigh` | Codex's own | The reasoning effort; the step's `--effort` wins. |
-| `codex.command` | array of strings | the `bun` and the `codex-acp` of `PATH` | The program and arguments that start codex-acp. |
+| `codex.command` | array of strings | the `bun` and the `codex` of `PATH`, then `app-server` | The program and arguments that start the app-server. |
 | `codex.wallTimeSecs` | number, 1 to 28500 | `3600` | The longest one run may take. |
 | `codex.stallSecs` | number, 1 or more | `600` | How long a run may be silent while no tool call is open. An image generation counts as an open tool call. |
 | `codex.concurrency` | object, model name to integer | `{}` | The limit described above. |
 | `codex.concurrency.<name>` | integer, 1 or more | none | How many runs of the model `<name>` may go at once. |
+
+Codex's own sandbox stays on (`workspace-write`) and its approval policy asks
+instead of deciding (`on-request`, reviewer `user`). A command or file change
+that leaves the sandbox comes to operad, which answers through the same access
+profile and questions as the other harnesses. A command that runs inside the
+sandbox is not asked about, so a deny rule does not see it; the sandbox is the
+bound there.
 
 ### The `pi` settings
 

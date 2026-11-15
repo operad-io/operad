@@ -336,6 +336,9 @@ export function withAttachmentReads(
 /** How much of a tool call's output a fact keeps; the rest goes to a file. */
 export const TOOL_OUTPUT_FACT_BYTES = 4 * 1024;
 
+/** The longest failure line a transcript shows; the provider's message is cut to this. */
+export const REPLY_FAILURE_MAX = 300;
+
 /** Cuts text to a byte count without splitting a character. */
 function cutUtf8(text: string, maxBytes: number): string {
   const bytes = new TextEncoder().encode(text);
@@ -485,6 +488,71 @@ async function recordEntries(
   }
 }
 
+/** The user's words for the internal names a provider's message may use. */
+const PLAIN_WORDS: Readonly<Record<string, readonly [string, string]>> = {
+  harness: ["agent", "agents"],
+  step: ["reply", "replies"],
+  run: ["reply", "replies"],
+  flow: ["reply", "replies"],
+  fact: ["record", "records"],
+};
+
+/** Replaces an internal word in a provider's message with the word a person reads. */
+function plainWords(text: string): string {
+  return text.replace(/\b(harness|step|run|flow|fact)(s?)\b/gi, (word, base: string, plural: string) => {
+    const pair = PLAIN_WORDS[base.toLowerCase()];
+    if (pair === undefined) return word;
+    const replacement = plural.length > 0 ? pair[1] : pair[0];
+    return word[0] === word[0]?.toUpperCase() ? `${replacement[0]?.toUpperCase() ?? ""}${replacement.slice(1)}` : replacement;
+  });
+}
+
+/** One plain line saying a reply failed, with the provider's message masked and cut short. */
+export function replyFailureLine(message: string, secrets: readonly string[]): string {
+  const detail = plainWords(maskSecrets(message, secrets).replace(/\s+/g, " ").trim());
+  const line = detail.length === 0 ? "The reply failed." : `The reply failed: ${detail}`;
+  return line.length <= REPLY_FAILURE_MAX ? line : `${line.slice(0, REPLY_FAILURE_MAX - 1)}…`;
+}
+
+/**
+ * Records a failure as one entry after the last person's message. A rerun of
+ * the same attempt finds the same line and does not add another; a new message
+ * after it starts a new attempt, whose failure is recorded too.
+ */
+async function recordFailure(ctx: StepContext, chat: string, message: string): Promise<void> {
+  const text = replyFailureLine(message, await secretValues(ctx));
+  let lastUser = 0;
+  for (const item of allMessages(ctx.store, chat)) {
+    if (item.role === "user") lastUser = Math.max(lastUser, item.sequence);
+  }
+  const already = allEntries(ctx.store, chat).some(
+    (entry) => entry.kind === "failure" && entry.sequence > lastUser && entry.text === text,
+  );
+  if (already) return;
+  const data: EntryData = { runId: ctx.runId, kind: "failure", text };
+  await ctx.facts.append({ type: ENTRY_FACT, object: chatRef(chat), data });
+}
+
+/** Ends a reply as failed, after recording why in the chat. */
+async function failedReply(
+  ctx: StepContext,
+  chat: string,
+  reason: string,
+  message: string,
+): Promise<PluginStepResult> {
+  await recordFailure(ctx, chat, message);
+  return failed(reason, message);
+}
+
+/** The reason and message a failed step result carries. */
+function failureOf(result: PluginStepResult): { readonly reason: string; readonly message: string } {
+  const data = isRecord(result.data) ? result.data : {};
+  return {
+    reason: typeof data.reason === "string" ? data.reason : "harness",
+    message: typeof data.message === "string" ? data.message : `the agent ended "${result.result}"`,
+  };
+}
+
 /** Runs one round of an answer; see the file's comment. */
 export async function runReply(ctx: StepContext, params: unknown): Promise<PluginStepResult> {
   const object = ctx.object;
@@ -503,25 +571,28 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
   }
 
   const runStep = ctx.runStep;
-  if (runStep === undefined) return failed("host", "the kernel did not offer a way to run the agent");
+  if (runStep === undefined) return failedReply(ctx, object.id, "host", "the agent could not be started");
   const use = `${chat.harness}/agent`;
   if (ctx.stepLoaded !== undefined && !ctx.stepLoaded(use)) {
-    return failed("harness", `the agent "${chat.harness}" is not loaded`);
+    return failedReply(ctx, object.id, "harness", `the agent "${chat.harness}" is not loaded`);
   }
 
   // A model the agent cannot take fails the reply by name; it never falls back.
   if (chat.model !== undefined && ctx.harnessModels?.(chat.harness)?.list.includes(chat.model) !== true) {
-    return failed("model", `the agent "${chat.harness}" cannot use the model "${chat.model}"`);
+    return failedReply(ctx, object.id, "model", `the agent "${chat.harness}" cannot use the model "${chat.model}"`);
   }
   // The same for an effort: the agent's list is the only one that can take it.
   const efforts = ctx.harnessEfforts?.(chat.harness);
   if (chat.effort !== undefined && efforts?.list.includes(chat.effort) !== true) {
-    return failed("effort", `the agent "${chat.harness}" cannot use the effort "${chat.effort}"`);
+    return failedReply(ctx, object.id, "effort", `the agent "${chat.harness}" cannot use the effort "${chat.effort}"`);
   }
   const effortFlag = efforts?.flag ?? (chat.harness === "pi" ? "--thinking" : "--effort");
 
   const settled = await liveSettings(ctx, chat, object, runStep);
-  if ("result" in settled) return settled;
+  if ("result" in settled) {
+    const why = failureOf(settled);
+    return failedReply(ctx, object.id, why.reason, why.message);
+  }
   const live = settled;
 
   const resumed = isRecord(params) ? params : {};
@@ -625,7 +696,7 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
     );
   } catch (error) {
     await recordEntries(ctx, object.id, folded, { stopped: true });
-    return failed("harness", messageOf(error));
+    return failedReply(ctx, object.id, "harness", messageOf(error));
   }
 
   if (outcome.result === "waiting") {
@@ -644,19 +715,14 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
   }
   if (outcome.result !== "done") {
     await recordEntries(ctx, object.id, folded, { stopped: true });
-    return {
-      result: "failed",
-      data: {
-        reason: typeof data.reason === "string" ? data.reason : "harness",
-        message: typeof data.message === "string" ? data.message : `the agent ended "${outcome.result}"`,
-      },
-    };
+    const why = failureOf(outcome);
+    return failedReply(ctx, object.id, why.reason, why.message);
   }
   const said = typeof data.finalMessage === "string" ? data.finalMessage.trim() : "";
   const text = maskSecrets(said, await secretValues(ctx));
   if (text.length === 0) {
     await recordEntries(ctx, object.id, folded, { stopped: true });
-    return failed("empty", "the agent gave no reply");
+    return failedReply(ctx, object.id, "empty", "the agent gave no reply");
   }
   const sessionId = typeof data.sessionId === "string" && data.sessionId.length > 0 ? data.sessionId : undefined;
 
