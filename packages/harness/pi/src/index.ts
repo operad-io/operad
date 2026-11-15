@@ -379,6 +379,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
     version: pkg.version,
     models: piModels,
     efforts: PI_EFFORTS,
+    capabilities: { loadsSkills: true },
     signedIn: async (settings) => {
       const authPath = expandHome(
         typeof settings.authPath === "string" ? settings.authPath : DEFAULT_AUTH_PATH,
@@ -515,6 +516,10 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
           await mkdir(sessionDir, { recursive: true });
 
           const operadTools = operadToolsOf(input.operadTools ?? flow.operadTools);
+          const skills = stringListParam(
+            input.skills === undefined ? flow.skills : input.skills,
+            `${at}: params.skills`,
+          );
           const storeSecrets = await secretValuesOf(ctx.secrets);
           const allowAlways = personStarted(ctx.trigger);
           if (allowAlways && isRecord(rawAskAnswer) && rawAskAnswer["choice"] === ALLOW_ALWAYS) {
@@ -551,6 +556,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
             ...(imageInputsOf(input.images ?? flow.images).length === 0
               ? {}
               : { images: imageInputsOf(input.images ?? flow.images) }),
+            ...(skills.length === 0 ? {} : { skills }),
             ...(runAccess === undefined ? {} : { access: runAccess }),
             ...(storeSecrets.length === 0 ? {} : { secretValues: storeSecrets }),
           };

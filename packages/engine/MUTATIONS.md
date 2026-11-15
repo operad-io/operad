@@ -925,3 +925,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0479-M1 | packages/engine/src/config/config.ts | `DEFAULT_HTTP.port` kept the old default instead of 8765 | `operad config > a missing config means sqlite at <home>/store/log.sqlite`, `operad config > reads http options and applies their defaults` |
+
+## T-0497 — a harness declares the capabilities it has
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0497-M1 | packages/engine/src/plugin/validate.ts | the capability check no longer refused a plugin of another kind | `harness capabilities > a capability only a harness has is refused on another kind` |

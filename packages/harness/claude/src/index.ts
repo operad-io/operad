@@ -272,6 +272,7 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
     version: pkg.version,
     models: CLAUDE_MODELS,
     efforts: CLAUDE_EFFORTS,
+    capabilities: { loadsSkills: true },
     signedIn: (settings) => claudeSignedInCached(settings),
     settings: PLUGIN_SETTINGS,
     steps: [
@@ -366,6 +367,10 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
           if (cwdProblem !== undefined) return refuse("cwd", cwdProblem);
 
           const operadTools = operadToolsOf(input.operadTools ?? flow.operadTools);
+          const skills = stringListParam(
+            input.skills === undefined ? flow.skills : input.skills,
+            `${at}: params.skills`,
+          );
           const mcpServers = mountedServersOf(input.mcpServers ?? flow.mcpServers);
           const images = imageInputsOf(input.images ?? flow.images);
           const claudeCommand = optionalText(ctx.settings.command, `${at}: settings.command`);
@@ -402,6 +407,7 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
             ...(operadTools === undefined ? {} : { operadTools }),
             ...(mcpServers === undefined ? {} : { mcpServers }),
             ...(images.length === 0 ? {} : { images }),
+            ...(skills.length === 0 ? {} : { skills }),
             ...(runAccess === undefined ? {} : { access: runAccess }),
             ...(storeSecrets.length === 0 ? {} : { secretValues: storeSecrets }),
           };

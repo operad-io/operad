@@ -96,3 +96,9 @@ and the row fields.
 | T-0378-M5 | packages/harness/process/src/acp.ts | the updates `session/load` replays were handed over as the prompt's | `codex/agent: resume > a resumed run loads the session instead of opening one, and what it replays is not this run's` |
 | T-0378-M8 | packages/harness/process/src/acp.ts | an allowed call was answered with the `allow_always` option | `codex/agent: permissions > without a rule the call is allowed once, never always` |
 | T-0378-M15 | packages/harness/process/src/acp.ts | a new session's id was read only on a resume | `AcpClient > initialize, session/new, the settings, then the prompt, in that order` |
+
+## T-0497 — skills the step gives
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0497-M2 | packages/harness/process/src/skills.ts | a SKILL.md with no name was given a fallback name instead of being skipped | `readGivenSkills > skips an unreadable SKILL.md, a missing name and an unsafe name, with a reason each` |

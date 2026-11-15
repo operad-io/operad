@@ -19,6 +19,7 @@ import {
   type ActionTypeDefinition,
   type AskRequest,
   type CommandDefinition,
+  type HarnessCapabilities,
   type HarnessEfforts,
   type HarnessModels,
   type KeyBindings,
@@ -73,6 +74,7 @@ export interface NormalizedPlugin {
     | ((settings: Readonly<Record<string, JsonValue>>) => HarnessModels)
     | undefined;
   readonly efforts: HarnessEfforts | undefined;
+  readonly capabilities: HarnessCapabilities;
   readonly signedIn:
     | ((settings: Readonly<Record<string, JsonValue>>) => MaybePromise<boolean | undefined>)
     | undefined;
@@ -796,6 +798,7 @@ export function normalizePlugin(raw: unknown, index: number): NormalizedPlugin {
     enforces: normalizeEnforces(raw.enforces, `${at}: enforces`) ?? [],
     models: normalizeModels(raw.models, kind, at),
     efforts: normalizeEfforts(raw.efforts, kind, at),
+    capabilities: normalizeCapabilities(raw.capabilities, kind, at),
     signedIn: normalizeSignedIn(raw.signedIn, kind, at),
     requires: normalizeRequires(raw.requires, at),
   };
@@ -835,6 +838,25 @@ function normalizeEfforts(value: unknown, kind: string, at: string): HarnessEffo
     default: levels.fallback,
     ...(typeof flag === "string" ? { flag } : {}),
   };
+}
+
+/** A harness plugin's declared capabilities: what its agent does itself. */
+function normalizeCapabilities(value: unknown, kind: string, at: string): HarnessCapabilities {
+  if (value === undefined) return {};
+  if (kind !== "harness") {
+    throw new PluginError(`${at}: capabilities: only a harness plugin declares capabilities`);
+  }
+  if (!isRecord(value)) throw new PluginError(`${at}: capabilities: must be an object`);
+  for (const key of Object.keys(value)) {
+    if (key !== "loadsSkills") {
+      throw new PluginError(`${at}: capabilities.${key}: not a capability`);
+    }
+  }
+  const loadsSkills = value["loadsSkills"];
+  if (loadsSkills !== undefined && typeof loadsSkills !== "boolean") {
+    throw new PluginError(`${at}: capabilities.loadsSkills: must be a boolean`);
+  }
+  return loadsSkills === true ? { loadsSkills: true } : {};
 }
 
 /** A harness plugin's `signedIn` hook: true, false, or undefined when it cannot tell. */

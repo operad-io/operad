@@ -27,10 +27,15 @@ import {
   maskSecrets,
   messageText,
   OPERAD_SERVER,
+  readGivenSkills,
   readImage,
   serverCommand,
   toolOutputLines,
+  type GivenSkill,
 } from "@operad-io/harness-process";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { findClaude } from "./claude-install.ts";
 import {
   DEFAULT_BASH_TIMEOUT_SECS,
@@ -153,6 +158,40 @@ export const DISALLOWED_TOOLS: readonly string[] = [
   "TaskStop",
 ];
 
+/** The name the temporary plugin mounts operad's skills under. */
+export const SKILLS_PLUGIN = "operad-skills";
+
+interface SkillPlugin {
+  readonly dir: string;
+  readonly names: readonly string[];
+}
+
+/**
+ * The SDK's `skills` option filters skills it discovered; it cannot add a
+ * directory. A local plugin can, so the given skill directories are mounted
+ * as links in a plugin under the worker's own temporary directory. Nothing is
+ * written into a skill directory or the repository, and the whole temporary
+ * plugin is removed when the run ends.
+ */
+function buildSkillPlugin(skills: readonly GivenSkill[]): SkillPlugin {
+  const dir = mkdtempSync(join(tmpdir(), "operad-claude-skills-"));
+  try {
+    mkdirSync(join(dir, ".claude-plugin"), { recursive: true });
+    mkdirSync(join(dir, "skills"), { recursive: true });
+    writeFileSync(
+      join(dir, ".claude-plugin", "plugin.json"),
+      `${JSON.stringify({ name: SKILLS_PLUGIN, version: "0.1.0", skills: ["./skills"] }, null, 2)}\n`,
+    );
+    for (const skill of skills) {
+      symlinkSync(skill.path, join(dir, "skills", skill.name), "dir");
+    }
+    return { dir, names: skills.map((skill) => skill.name) };
+  } catch (error) {
+    rmSync(dir, { recursive: true, force: true });
+    throw error;
+  }
+}
+
 /** Where the program writes. Lines are written whole, in order. */
 export interface WorkerIo {
   line(line: WorkerLine): void;
@@ -264,6 +303,19 @@ export async function runWorker(
   const profile: AccessProfile = read.ok ? read.profile : {};
   const now = hooks.now ?? Date.now;
   const secrets = input.secretValues ?? [];
+
+  // A line for the step log and for the free-text stderr: a skill that cannot
+  // be used is skipped, never a failed run.
+  const note = (text: string): void => {
+    io.log(text);
+    io.line({ type: "log", text });
+  };
+  const given = readGivenSkills(input.skills ?? []);
+  for (const skip of given.skipped) note(`skill ${skip.path}: ${skip.reason}`);
+  const skillPlugin = given.skills.length === 0 ? undefined : buildSkillPlugin(given.skills);
+  const removeSkillPlugin = (): void => {
+    if (skillPlugin !== undefined) rmSync(skillPlugin.dir, { recursive: true, force: true });
+  };
 
   // Increments are grouped: one line per stream at most every 100 ms, with the
   // part still open written before the next line of any kind.
@@ -492,6 +544,14 @@ export async function runWorker(
     canUseTool,
     abortController: controller,
     disallowedTools: [...DISALLOWED_TOOLS],
+    ...(skillPlugin === undefined
+      ? {}
+      : {
+          plugins: [{ type: "local" as const, path: skillPlugin.dir }],
+          // Keep the built-in and user listings out of this run's context: only
+          // the skills mounted above are enabled.
+          skills: skillPlugin.names.map((name) => `${SKILLS_PLUGIN}:${name}`),
+        }),
     env: {
       ...(hooks.env ?? process.env),
       ...ISOLATION_ENV,
@@ -557,7 +617,14 @@ export async function runWorker(
       parent_tool_use_id: null,
     };
   })();
-  const session = query({ prompt: images.length === 0 ? input.prompt : first, options });
+  let session: ReturnType<typeof query>;
+  try {
+    session = query({ prompt: images.length === 0 ? input.prompt : first, options });
+  } catch (error) {
+    removeSkillPlugin();
+    io.line(failure("model_error", error instanceof Error ? error.message : String(error)));
+    return EXIT_FAILED;
+  }
   // A message the host sends mid-run goes to claude as one more user turn,
   // queued behind the tool call that is running.
   io.onMessage?.((text) => {
@@ -592,6 +659,7 @@ export async function runWorker(
           }
           if (message.subtype === "init") {
             io.log(`claude ${message.claude_code_version}`);
+            if (skillPlugin !== undefined) note(`skills: ${skillPlugin.names.join(", ")}`);
             writeLine({
               type: "session",
               claudeVersion: message.claude_code_version,
@@ -668,6 +736,7 @@ export async function runWorker(
   // so a cancelled or failed partial reply does not lose its last characters.
   const finish = (line: WorkerResult, code: number): number => {
     flushDelta(true);
+    removeSkillPlugin();
     io.line(line);
     return code;
   };
