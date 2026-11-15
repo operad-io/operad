@@ -10,3 +10,9 @@ Rows whose mutation broke code in `packages/review-grading/`. The root
 | T-0059-M3 | packages/review-grading/src/index.ts | the flow's own entry was never looked up | `readReviewGrading > a flow entry alone works without a default` |
 | T-0059-M4 | packages/review-grading/src/index.ts | a missing file was read instead of giving an empty grading | `readReviewGrading > a missing file gives an empty grading` |
 | T-0315-M3 | packages/review-grading/src/index.ts | `strictestFixLevel` sorted the levels the other way, so the weakest configured level won | `strictestFixLevel > the lowest threshold in the default or any flow wins` |
+
+## T-0476 — the shipped schema keeps the plugin's title
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0476-M2 | packages/review-grading/review.schema.json | the shipped schema gave `fixLevel` a different title from the plugin's setting, so the file disagreed with what clients show | `plugin versions > the schema files a package ships carry the titles its plugin declares` (packages/cli/test/plugin-versions.test.ts) |

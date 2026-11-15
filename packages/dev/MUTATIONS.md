@@ -1282,3 +1282,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0474-M1 | packages/dev/src/steps.ts | `mainFirst` took only the merged file's extras and ignored the lines the task appended, so a task table header identical to main's was dropped | `dev/worktree > a merge keeps a task section whose table lines are also in main's section` |
+
+## T-0476 — distinct setting titles and shipped schema files
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0476-M1 | packages/dev/src/project-settings.ts | dev.json's `reviewer.fixLevel` took the review file's "Rework threshold" title again | `plugin versions > a plugin's settings have distinct titles` (packages/cli/test/plugin-versions.test.ts) |
