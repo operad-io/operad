@@ -48,3 +48,12 @@ recorded. The root [MUTATIONS.md](../../../MUTATIONS.md) explains the format and
 | T-0490-M15 | packages/harness/codex/src/app-server.ts | the MCP servers were dropped from the thread's config | `codex/agent: a prompt run > operad's tools and mounted servers reach Codex as mcp_servers config` |
 | T-0490-M16 | packages/harness/codex/src/install.ts | the synchronous models read no longer started a background refresh, so the list stayed empty | `what a chat may pick > the model list comes from the app-server without blocking the listing read` |
 | T-0490-M17 | packages/harness/codex/src/install.ts | an empty model list was kept for the full 30 s cache instead of the short retry | `what a chat may pick > an empty answer is tried again after the short retry, not kept for 30s` |
+
+## T-0503 — follow-ups on the app-server client
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0503-M1 | packages/harness/codex/src/models-probe.ts | the probe's timeout answered with a choice instead of an empty list | `what a chat may pick > a probe whose app-server never answers gives up at its timeout and stops it` |
+| T-0503-M2 | packages/harness/codex/src/models-probe.ts | an app-server that exited before answering was taken as a choice instead of no list | `what a chat may pick > a probe whose app-server exits before answering gives none` |
+| T-0503-M3 | packages/harness/codex/src/models-probe.ts | an error answer to `model/list` was taken as a choice instead of no list | `what a chat may pick > a probe whose app-server answers the model list with an error gives none` |
+| T-0503-M4 | packages/harness/codex/src/app-server.ts | a legacy `execCommandApproval`/`applyPatchApproval` deny answered with the string `denied` instead of Codex's `ReviewDecision` `{ denied: { rejection } }` | `codex/agent: permissions > the legacy command approval answers with Codex's ReviewDecision`, `codex/agent: permissions > the legacy patch approval is judged by the paths it changes` |

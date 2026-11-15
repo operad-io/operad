@@ -2,7 +2,7 @@ import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { chmodSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { cleanupTempRoots, tempRoot, waitForFile } from "../../process/test/support.ts";
+import { cleanupTempRoots, tempRoot, waitForFile, waitForGone, waitForPid } from "../../process/test/support.ts";
 import { CODEX_EFFORTS, createCodexHarnessPlugin } from "../src/index.ts";
 import {
   MODELS_EMPTY_RETRY_MS,
@@ -118,6 +118,34 @@ describe("what a chat may pick", () => {
       list: ["gpt-fake", "gpt-other"],
       default: "gpt-fake",
     });
+  });
+
+  test("a probe whose app-server never answers gives up at its timeout and stops it", async () => {
+    const root = await tempRoot();
+    const marker = join(root, "models-silent-marker");
+    const command = [process.execPath, FAKE, "models-silent"];
+    setEnv("FAKE_CODEX_MODELS", "silent");
+    setEnv("FAKE_CODEX_MODELS_MARKER", marker);
+    setEnv("OPERAD_CODEX_MODELS_TIMEOUT_MS", "200");
+    expect(await refreshCodexModels(command, 2_000)).toEqual({ list: [], default: null });
+    const pid = await waitForPid(marker);
+    await waitForGone(pid);
+  });
+
+  test("a probe whose app-server answers the model list with an error gives none", async () => {
+    const command = [process.execPath, FAKE, "models-error"];
+    setEnv("FAKE_CODEX_MODELS", "error");
+    // Longer than the test: only the answer can end the probe in time.
+    setEnv("OPERAD_CODEX_MODELS_TIMEOUT_MS", "60000");
+    expect(await refreshCodexModels(command, 3_000)).toEqual({ list: [], default: null });
+  });
+
+  test("a probe whose app-server exits before answering gives none", async () => {
+    const command = [process.execPath, FAKE, "models-exit"];
+    setEnv("FAKE_CODEX_MODELS", "exit");
+    // Longer than the test: only the exit can end the probe in time.
+    setEnv("OPERAD_CODEX_MODELS_TIMEOUT_MS", "60000");
+    expect(await refreshCodexModels(command, 4_000)).toEqual({ list: [], default: null });
   });
 
   test("efforts are codex's own; a step still names one with --effort", () => {

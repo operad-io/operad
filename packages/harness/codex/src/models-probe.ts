@@ -14,6 +14,14 @@ if (program === undefined) {
   process.exit(2);
 }
 
+/** How long the app-server has to answer `model/list`; a test shortens it. */
+const DEFAULT_TIMEOUT_MS = 8_000;
+
+function timeoutFrom(value: string | undefined): number {
+  const found = Number(value);
+  return Number.isFinite(found) && found > 0 ? found : DEFAULT_TIMEOUT_MS;
+}
+
 const child = spawn(program, argv.slice(1), { stdio: ["pipe", "pipe", "ignore"] });
 let buffered = "";
 let finished = false;
@@ -28,7 +36,7 @@ function finish(value: unknown): void {
   });
 }
 
-const timer = setTimeout(() => finish([]), 8_000);
+const timer = setTimeout(() => finish([]), timeoutFrom(process.env.OPERAD_CODEX_MODELS_TIMEOUT_MS));
 
 function send(message: Record<string, unknown>): void {
   child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", ...message })}\n`);
