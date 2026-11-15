@@ -128,13 +128,13 @@ export const PLUGIN_SETTINGS = {
   properties: {
     model: {
       type: "string" as const,
-      title: "Agent model",
+      title: "Model",
       minLength: 1,
       description: "The model name claude takes (such as opus or sonnet); unset uses claude's default.",
     },
     effort: {
       type: "string" as const,
-      title: "Reasoning effort",
+      title: "Effort",
       enum: EFFORT_LEVELS,
       description: "The reasoning effort; unset uses claude's default.",
     },

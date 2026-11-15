@@ -190,7 +190,7 @@ const PLUGIN_SETTINGS = {
   properties: {
     model: {
       type: "string" as const,
-      title: "Agent model",
+      title: "Model",
       minLength: 3,
       description: "The model as provider/id; unset uses pi's default model.",
     },
@@ -203,7 +203,7 @@ const PLUGIN_SETTINGS = {
     },
     thinkingLevel: {
       type: "string" as const,
-      title: "Reasoning level",
+      title: "Effort",
       enum: THINKING_LEVELS,
       description: "The reasoning level; unset uses pi's default.",
     },

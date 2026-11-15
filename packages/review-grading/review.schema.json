@@ -22,14 +22,14 @@
           "description": "What each severity means, given to the reviewer verbatim.",
           "type": "object",
           "properties": {
-            "critical": { "type": "string", "title": "Critical meaning" },
-            "major": { "type": "string", "title": "Major meaning" },
-            "minor": { "type": "string", "title": "Minor meaning" }
+            "critical": { "type": "string", "title": "Critical level" },
+            "major": { "type": "string", "title": "Major level" },
+            "minor": { "type": "string", "title": "Minor level" }
           },
           "additionalProperties": false
         },
         "rules": {
-          "title": "Grading rules",
+          "title": "Review rules",
           "description": "Rules for grading, given to the reviewer verbatim.",
           "type": "array",
           "items": { "type": "string" }

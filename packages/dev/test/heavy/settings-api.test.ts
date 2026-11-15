@@ -53,6 +53,13 @@ describe("dev settings through operad settings", () => {
       editable: true,
       confirm: false,
     });
+    expect(byName.get("dev.autoDefault")?.title).toBe("Auto for new plans");
+    expect(byName.get("dev.flowList")?.title).toBe("Flows");
+    expect(byName.get("dev.reviewer.use")?.title).toBe("Reviewer");
+    expect(byName.get("dev.review.default.levels.critical")?.title).toBe("Critical level");
+    expect(byName.get("dev.review.default.levels.major")?.title).toBe("Major level");
+    expect(byName.get("dev.review.default.levels.minor")?.title).toBe("Minor level");
+    expect(byName.get("dev.review.default.rules")?.title).toBe("Review rules");
     expect(byName.get("dev.reviewer.use")?.description).toContain("reviews a task");
     expect(byName.get("dev.reviewer.timeoutSecs")?.editable).toBe(true);
     expect(byName.get("dev.gate.commandTimeoutSecs")?.editable).toBe(true);

@@ -376,7 +376,7 @@
       "type": "object",
       "properties": {
         "use": {
-          "title": "Reviewing agent",
+          "title": "Reviewer",
           "description": "The harness step, such as claude/agent; unset uses the first enabled harness in the home (radian, claude, pi, codex), or radian/agent when none is enabled.",
           "type": "string",
           "minLength": 1
@@ -593,7 +593,7 @@
       "default": 2
     },
     "autoDefault": {
-      "title": "New plan auto level",
+      "title": "Auto for new plans",
       "description": "The auto level a new plan starts at: off waits for you to start tasks, run starts them by itself, merge also merges a task whose review passed.",
       "enum": ["off", "run", "merge"],
       "default": "off"

@@ -29,7 +29,7 @@ export const TELEGRAM_SETTINGS: ActionArgsSchema = {
     },
     pending: {
       type: "array",
-      title: "Pending forwarding",
+      title: "Forward pending",
       items: { type: "string", minLength: 1 },
       default: [],
       description:

@@ -102,7 +102,7 @@ export const DEV_PROJECT_SETTINGS: ProjectSettingsDeclaration = {
           },
           autoDefault: {
             type: "string",
-            title: "New plan auto level",
+            title: "Auto for new plans",
             enum: ["off", "run", "merge"],
             default: "off",
             editable: true,
@@ -125,7 +125,7 @@ export const DEV_PROJECT_SETTINGS: ProjectSettingsDeclaration = {
           },
           flowList: {
             type: "array",
-            title: "Flow list",
+            title: "Flows",
             items: { type: "object" },
             description:
               "Every flow of the repository, read only: its name, where it comes from (dev.json, typescript or built-in), its stages for a dev.json flow or the built-in default, the steps dev reads for a TypeScript flow, or why dev refuses the file.",
@@ -166,7 +166,7 @@ export const DEV_PROJECT_SETTINGS: ProjectSettingsDeclaration = {
             properties: {
               use: {
                 type: "string",
-                title: "Reviewing agent",
+                title: "Reviewer",
                 minLength: 1,
                 default: "radian/agent",
                 editable: true,
@@ -220,7 +220,7 @@ export const DEV_PROJECT_SETTINGS: ProjectSettingsDeclaration = {
                 properties: {
                   critical: {
                     type: "string",
-                    title: "Critical meaning",
+                    title: "Critical level",
                     editable: true,
                     confirm: true,
                     description:
@@ -228,7 +228,7 @@ export const DEV_PROJECT_SETTINGS: ProjectSettingsDeclaration = {
                   },
                   major: {
                     type: "string",
-                    title: "Major meaning",
+                    title: "Major level",
                     editable: true,
                     confirm: true,
                     description:
@@ -236,7 +236,7 @@ export const DEV_PROJECT_SETTINGS: ProjectSettingsDeclaration = {
                   },
                   minor: {
                     type: "string",
-                    title: "Minor meaning",
+                    title: "Minor level",
                     editable: true,
                     confirm: true,
                     description:
@@ -246,7 +246,7 @@ export const DEV_PROJECT_SETTINGS: ProjectSettingsDeclaration = {
               },
               rules: {
                 type: "array",
-                title: "Grading rules",
+                title: "Review rules",
                 items: { type: "string" },
                 editable: true,
                 confirm: true,

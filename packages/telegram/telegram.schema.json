@@ -21,7 +21,7 @@
     },
     "pending": {
       "type": "array",
-      "title": "Pending forwarding",
+      "title": "Forward pending",
       "items": { "type": "string", "minLength": 1 },
       "default": [],
       "description": "The plugins whose pending items are also sent to Telegram, such as [\"dev\"]. Items of a chat bound to Telegram are always sent."

@@ -111,13 +111,13 @@ export const PLUGIN_SETTINGS = {
   properties: {
     model: {
       type: "string" as const,
-      title: "Agent model",
+      title: "Model",
       minLength: 1,
       description: "The model name codex takes; unset uses Codex's own default.",
     },
     effort: {
       type: "string" as const,
-      title: "Reasoning effort",
+      title: "Effort",
       enum: EFFORT_LEVELS,
       description: "The reasoning effort; unset uses Codex's own default.",
     },
