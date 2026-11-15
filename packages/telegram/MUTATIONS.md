@@ -65,3 +65,10 @@ the row fields.
 | T-0451-M4 | packages/telegram/src/typing.ts | the periodic check was not started, so an indicator whose run-end event was lost kept renewing | `the typing indicator > stops when a run ends without an event, as the periodic check sees it` |
 | T-0451-M5 | packages/telegram/src/typing.ts | a run that stopped running left the indicator going | `the typing indicator > stops when a reply run ends without recording a reply` |
 | T-0451-M6 | packages/telegram/src/typing.ts | the event iterator took the engine's `ViewEvent`, a name on the plugin docs allow list, so a plugin package imported it | `scripts/test/plugin-docs.test.ts > the plugin docs > a name a plugin package imports is never on the allow list` |
+
+## T-0485 — a failed reply is shown
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0485-M1 | packages/telegram/src/replies.ts | the reply side ignored failure entries, so Telegram never got the line | `sending a reply > a failed reply is sent once as a message, in order with the replies` |
+| T-0485-M2 | packages/telegram/src/typing.ts | a failure after the last person's message did not end typing, so the indicator started again | `the typing indicator > stops when a failed reply is recorded, even while its run goes on` |

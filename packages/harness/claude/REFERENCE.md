@@ -19,7 +19,11 @@ The login is the one `claude` already has; the worker passes no credential. A
 `claude` runs with `settingSources: []`, `permissionMode: 'default'`,
 `permissionPrompts: 'host'`, the `claude_code` system prompt preset with nothing
 appended and the SDK's default tools. `canUseTool` is the only permission
-surface. These names are set in its environment: `CLAUDE_CODE_DISABLE_AUTO_MEMORY`,
+surface. The SDK's `skills` option only filters skills claude already
+discovered, so the skill directories the step gives are mounted as one local
+plugin under the worker's own temporary directory; its `skills` filter names
+only that plugin's skills, and the directory is removed when the step ends. No
+user or project skill from `~/.claude/skills` or `.agents/skills` loads. These names are set in its environment: `CLAUDE_CODE_DISABLE_AUTO_MEMORY`,
 `CLAUDE_CODE_DISABLE_CLAUDE_MDS`, `DISABLE_TELEMETRY`, `DISABLE_ERROR_REPORTING`
 (all `1`), and `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`, so no command moves to the
 background. A run is one foreground turn: the tools that only schedule or wait for
@@ -51,6 +55,7 @@ the table is refused, not ignored.
 | `mcpServers` | object, name to `{ command, args }` | no | other MCP servers claude starts, by name (a bot's servers, each behind the bot plugin's guard, which holds their secrets). Their tools are judged by the profile's `allowMcp`: a tool not listed asks first. Absent: none |
 | `secretValues` | array of strings | no | the values of the plugin's operad secrets; a log line shows `***` where one appears. Never written anywhere |
 | `images` | array of `{ path, mediaType }` | no | image files (`image/png`, `image/jpeg`, `image/gif`, `image/webp`) sent with the prompt as image blocks of the one user message. Absent: the prompt goes as text |
+| `skills` | array of strings | no | skill directories to load, each with a `SKILL.md`; nothing else is discovered. A directory whose `SKILL.md` cannot be read or has no name is skipped with one `log` line, not a failed run. Absent: no skill plugin and no `skills` filter |
 | `access` | object | no | the access profile; `denyPaths` and `denyCommands` are enforced in `canUseTool` by `@operad-io/access-match`, `grants` are one-time permissions, other fields are ignored; absent means nothing is denied |
 | `maxTurns` | positive integer | no | SDK `maxTurns`; absent means no limit |
 | `budgetUsd` | positive number | no | SDK `maxBudgetUsd`; absent means none |
@@ -75,6 +80,7 @@ One JSON object per line, flushed per line, each with a `type`:
 | `tool_execution_end` | `toolCallId`, `toolName`, `isError`, `durationMs`, `error` (optional) | a tool call ended (`PostToolUse`, `PostToolUseFailure`, or a refusal). `durationMs` is how long the call took, measured from its start line. `error` is the first line of the error (at most 300 characters) when `isError` is true; the rest of the error stays out of the log |
 | `tool_output` | `toolCallId`, `text` | what a successful tool call printed, written before its `tool_execution_end`: Bash's stdout and stderr, a Read file's content, or another tool's text result. A `text` is at most 64 KiB of UTF-8; a longer output is written as consecutive lines with the same `toolCallId`, so joining them gives the whole output. A failed call writes no `tool_output`; its `error` is on the end line |
 | `blocked` | `toolName`, `reason` | `canUseTool` refused a call; its `tool_execution_end` has `isError: true`; the run continues |
+| `log` | `text` | a line for the step log that the fold does not read: a skipped skill, or the names of the skills loaded (`skills: <name>, <name>`) |
 | `rate_limit` | `status`, `rateLimitType` (or null), `resetsAt` (or null) | claude reported its rate limit state |
 | `grant_use` | `id`, `waitId` | asks the host to use up a one-time permission; answered on stdin by `{"type":"grant_ack","id":n,"used":true\|false}` |
 | `ask_call` | `id`, `kind`, `value`, `tool` (path questions), `shown`, `session` | asks the host to ask a person whether one call may run (`askCommands`); answered on stdin by `{"type":"ask_ack","id":n,"decision":"allow"\|"deny"\|"stop"}` |

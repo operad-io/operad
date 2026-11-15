@@ -2,7 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CHAT_TYPE, MESSAGE_FACT, allMessages, chatRef } from "@operad-io/chat";
+import { CHAT_TYPE, ENTRY_FACT, MESSAGE_FACT, allMessages, chatRef } from "@operad-io/chat";
 import { Secret, type ClientApi, type SourceContext, type ViewEvent } from "@operad-io/engine";
 import { fakeClock, type FakeClock } from "@operad-io/engine/testing";
 import {
@@ -232,6 +232,24 @@ describe("the typing indicator", () => {
 
     // A failed or cancelled run has no reply message; the client says it ended.
     f.client.running.set(f.chat, false);
+    await f.sender.syncChat(f.chat);
+    f.clock.advance(TYPING_INTERVAL_MS * 3);
+    await nextTurn();
+    expect(f.api.chatActions).toHaveLength(1);
+    await f.stop();
+  });
+
+  test("stops when a failed reply is recorded, even while its run goes on", async () => {
+    const f = await setup();
+    f.client.running.set(f.chat, true);
+    await f.sender.syncChat(f.chat);
+    expect(f.api.chatActions).toHaveLength(1);
+
+    await f.w.ctx.facts.append({
+      type: ENTRY_FACT,
+      object: chatRef(f.chat),
+      data: { runId: "run-failure", kind: "failure", text: "The reply failed: boom" },
+    });
     await f.sender.syncChat(f.chat);
     f.clock.advance(TYPING_INTERVAL_MS * 3);
     await nextTurn();

@@ -35,3 +35,7 @@ The `chat` plugin does not understand a harness's log lines. The lines a harness
 ### D6: A rerun does not duplicate
 
 An entry a rerun step produces again is deduplicated by call id, and the final reply is still recorded as a fact first (ADR 0026 D3).
+
+### D7: A failed reply is recorded and shown, once
+
+When a reply ends `failed`, the chat records one more entry, kind `failure`, and no reply message. Its text is one plain line that says the reply failed and why: the provider's message, masked with `secretValues` and cut to a sensible length. The `transcript` section shows that line after the person's message for every harness. A channel bound to the chat sends it once as a message. A rerun of the step does not record the same failure again. A reply that is interrupted or waiting is not a failure and gets no such line.
