@@ -2,26 +2,68 @@
  * The commands a read-only working directory lets run. Anything not recognised
  * here is not read-only: the allowlist is the rule, so a new way to write a file
  * never needs a new pattern. A command is read-only only when every part of it
- * (split at `|`, `;`, `&&`, `||`, `&`, newlines) is, and it has no output
- * redirection, no substitution and no inline code.
+ * (split at `|`, `;`, `&&`, `||`, `&`, newlines) is, and it has no redirection
+ * that writes a file, no substitution and no inline code.
  */
 
 import { scan, baseName } from "./command.ts";
 
 /** Programs that only read, whatever their arguments (the ones with a writing option are checked below). */
-const PLAIN = new Set(["ls", "cat", "head", "tail", "wc", "grep", "rg", "pwd", "stat", "file", "du", "tree", "which", "true"]);
+const PLAIN = new Set([
+  "ls", "cat", "head", "tail", "wc", "grep", "rg", "pwd", "stat", "file", "du", "tree", "which", "true",
+  "cd", "echo", "printf", "sort", "cut", "tr", "basename", "dirname", "realpath", "readlink", "date", "jq", "diff", "cmp",
+]);
 
 /** Options of an otherwise reading program that write or run something. */
 const WRITING_OPTIONS: Readonly<Record<string, RegExp>> = {
   tree: /^-[a-zA-Z]*o|^--output/,
   rg: /^--pre(=|$)|^--hostname-bin|^--search-zip$|^-z$/,
   grep: /^--output/,
+  printf: /^-[^-]*v/,
+  sort: /^-[^-]*o|^--output/,
+  date: /^-[^-]*s|^--set/,
+  jq: /^-[^-]*i|^--in-place|^--output/,
+  diff: /^-[^-]*o|^--output/,
 };
 
 const GIT_READ = new Set(["status", "log", "diff", "show", "blame", "rev-parse", "ls-files", "ls-tree", "shortlog", "describe", "cat-file", "grep"]);
 const GIT_WRITING_OPTION = /^--output|^--ext-diff|^--textconv|^-o$|^--open-files-in-pager|^-O/;
 const FIND_WRITING = new Set(["-exec", "-execdir", "-ok", "-okdir", "-delete", "-fprint", "-fprint0", "-fprintf", "-fls"]);
 const SED_SCRIPT = /^\d*(?:,(?:\d+|\$))?p$/;
+
+/** A redirection that writes nowhere: to `/dev/null`, or one file descriptor onto another. */
+const HARMLESS_FD_DUP = new Set(["2>&1", "1>&2"]);
+const OUTPUT_REDIRECT = /^(?:(\d+|&)?)(>>?)(.*)$/;
+const INPUT_REDIRECT = new Set(["<", "<<", "<<<"]);
+
+/**
+ * The words without the redirections that write nowhere, or undefined when one
+ * of them writes a file. A separated `> /dev/null` is two words; a glued
+ * `2>/dev/null` is one.
+ */
+function withoutWritingRedirections(words: readonly string[]): readonly string[] | undefined {
+  const rest: string[] = [];
+  for (let index = 0; index < words.length; index += 1) {
+    const word = words[index] ?? "";
+    if (!word.includes(">")) {
+      // An input redirect reads a file; it writes nothing. Drop it and its target.
+      if (INPUT_REDIRECT.has(word)) index += 1;
+      else if (word.startsWith("<") && !word.startsWith("<(")) continue;
+      else rest.push(word);
+      continue;
+    }
+    if (HARMLESS_FD_DUP.has(word)) continue;
+    const match = OUTPUT_REDIRECT.exec(word);
+    if (match === null) return undefined;
+    const glued = match[3] ?? "";
+    if (glued.startsWith("&")) return undefined;
+    const target = glued.length > 0 ? glued : words[index + 1];
+    if (target === undefined) return undefined;
+    if (glued.length === 0) index += 1;
+    if (target !== "/dev/null") return undefined;
+  }
+  return rest;
+}
 
 function gitIsReadOnly(words: readonly string[]): boolean {
   const sub = words[1];
@@ -33,15 +75,18 @@ function gitIsReadOnly(words: readonly string[]): boolean {
 }
 
 function partIsReadOnly(words: readonly string[]): boolean {
-  const first = words[0];
+  const plain = withoutWritingRedirections(words);
+  if (plain === undefined) return false;
+  const first = plain[0];
   if (first === undefined) return true;
   const program = baseName(first);
-  const args = words.slice(1);
-  if (words.some((word) => word.includes(">"))) return false;
+  const args = plain.slice(1);
+  if (program === "env") return args.length === 0;
+  if (program === "uniq") return args.filter((word) => !word.startsWith("-")).length <= 1;
   if (PLAIN.has(program)) return !args.some((word) => WRITING_OPTIONS[program]?.test(word) === true);
   switch (program) {
     case "git":
-      return gitIsReadOnly(words);
+      return gitIsReadOnly(plain);
     case "find":
       return !args.some((word) => FIND_WRITING.has(word));
     case "sed": {

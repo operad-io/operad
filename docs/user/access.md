@@ -58,7 +58,9 @@ command.
 
 `readOnly` makes the call's working directory read-only: a write or edit there
 asks, and a `bash` command asks unless it is on the short list of commands that
-only read. A deny still wins.
+only read. `cd <dir>` may start a reading command, and a redirection that writes
+nowhere (`2>/dev/null`, `2>&1`) is allowed; a redirect to a file still asks. A
+deny still wins.
 
 `readPaths` lets a read reach a directory under an ancestor in `denyPaths`. It
 does not allow a write: a write there asks.
