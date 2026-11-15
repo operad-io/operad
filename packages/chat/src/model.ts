@@ -3,7 +3,15 @@
 import { randomUUID } from "node:crypto";
 import { statSync } from "node:fs";
 import { basename, extname } from "node:path";
-import type { ActionArgSchema, AgentTimings, JsonValue, ObjectRef, ObjectStore, PluginFact } from "@operad-io/engine";
+import type {
+  ActionArgSchema,
+  AgentTimings,
+  JsonValue,
+  ObjectRef,
+  ObjectStore,
+  PluginFact,
+  UsageTokens,
+} from "@operad-io/engine";
 import { isRecord, storedType, stringList } from "@operad-io/engine";
 
 /** The object type of a chat. */
@@ -94,6 +102,8 @@ export interface ChatData {
   readonly costMicros?: number | undefined;
   /** How far to trust `costMicros`: the least exact of the replies counted. */
   readonly costQuality?: CostQuality | undefined;
+  /** The tokens the replies used so far; absent while no reply reported any. */
+  readonly tokens?: UsageTokens | undefined;
 }
 
 /** How far to trust a cost: the harness's own words. */
@@ -273,6 +283,8 @@ export interface MessageData {
   /** An assistant message: what it cost in millionths of a dollar, when reported. */
   readonly costMicros?: number | undefined;
   readonly costQuality?: CostQuality | undefined;
+  /** An assistant message: the tokens it used, when the harness reported them. */
+  readonly tokens?: UsageTokens | undefined;
   /** An assistant message: how long the step took to start, to its first line, and in all. */
   readonly timings?: AgentTimings | undefined;
 }
@@ -367,6 +379,7 @@ export function commandOfFact(fact: PluginFact): Command | undefined {
 
 /** The chat fields of a stored object, with the lists defaulted. */
 export function chatData(data: Readonly<Record<string, unknown>>): ChatData {
+  const tokens = usageTokensOf(data.tokens);
   return {
     ...data,
     harness: typeof data.harness === "string" ? data.harness : "",
@@ -383,6 +396,7 @@ export function chatData(data: Readonly<Record<string, unknown>>): ChatData {
     ...(typeof data.lastModel === "string" && data.lastModel.length > 0 ? { lastModel: data.lastModel } : {}),
     ...(typeof data.costMicros === "number" && Number.isFinite(data.costMicros) ? { costMicros: data.costMicros } : {}),
     ...(isCostQuality(data.costQuality) ? { costQuality: data.costQuality } : {}),
+    ...(tokens === undefined ? {} : { tokens }),
   };
 }
 
@@ -423,19 +437,41 @@ export function agentLine(chat: ChatData): string {
     .join(" · ");
 }
 
-/** The model, cost and quality a harness's `usage` reports; each only when it did. */
+/** The four token counts of a usage, when all are known and at least one is not zero. */
+function usageTokensOf(value: unknown): UsageTokens | undefined {
+  if (!isRecord(value)) return undefined;
+  const count = (key: string): number | undefined => {
+    const found = value[key];
+    return typeof found === "number" && Number.isInteger(found) && found >= 0 ? found : undefined;
+  };
+  const input = count("input");
+  const output = count("output");
+  const cacheread = count("cacheread");
+  const cachewrite = count("cachewrite");
+  if (input === undefined || output === undefined || cacheread === undefined || cachewrite === undefined) {
+    return undefined;
+  }
+  // A harness that reports no token counts gives all four as zero.
+  if (input === 0 && output === 0 && cacheread === 0 && cachewrite === 0) return undefined;
+  return { input, output, cacheread, cachewrite };
+}
+
+/** The model, tokens, cost and quality a harness's `usage` reports; each only when it did. */
 export function usageOf(value: unknown): {
   readonly model?: string;
   readonly costMicros?: number;
   readonly costQuality?: CostQuality;
+  readonly tokens?: UsageTokens;
 } {
   if (!isRecord(value)) return {};
   const micros = value.costMicros;
   const known = typeof micros === "number" && Number.isFinite(micros);
+  const tokens = usageTokensOf(value.tokens);
   return {
     ...(typeof value.model === "string" && value.model.length > 0 ? { model: value.model } : {}),
     ...(known ? { costMicros: micros } : {}),
     ...(known ? { costQuality: isCostQuality(value.costQuality) ? value.costQuality : "estimated" } : {}),
+    ...(tokens === undefined ? {} : { tokens }),
   };
 }
 
@@ -551,6 +587,7 @@ function messageOfFact(fact: PluginFact): Message | undefined {
   const from = isRecord(data.from) ? data.from : {};
   const source = isRecord(data.source) ? data.source : {};
   const timings = timingsOf(data.timings);
+  const tokens = usageTokensOf(data.tokens);
   return {
     id: data.id,
     role: data.role,
@@ -570,6 +607,7 @@ function messageOfFact(fact: PluginFact): Message | undefined {
     ...(typeof data.model === "string" && data.model.length > 0 ? { model: data.model } : {}),
     ...(typeof data.costMicros === "number" && Number.isFinite(data.costMicros) ? { costMicros: data.costMicros } : {}),
     ...(isCostQuality(data.costQuality) ? { costQuality: data.costQuality } : {}),
+    ...(tokens === undefined ? {} : { tokens }),
     ...(timings === undefined ? {} : { timings }),
     at: fact.at,
     sequence: fact.sequence,
@@ -685,6 +723,64 @@ export function latestRunOf(facts: readonly PluginFact[]): string | undefined {
     }
   }
   return found;
+}
+
+/** A reply run that is being written: its run id and when it began. */
+export interface WritingReply {
+  readonly runId: string;
+  readonly since: number;
+}
+
+/**
+ * The reply being written, if one is. The latest `chat.run` fact starts an
+ * attempt; a failure entry, a stopped half reply or a successful `/stop` for
+ * that run ends it. A reply for that run with no messages still unanswered also
+ * ends it; with messages unanswered the flow is going round again. The answer
+ * reads the chat's facts, so it works while the reply runs and costs no tokens.
+ */
+export function writingReply(
+  facts: readonly PluginFact[],
+  messages: readonly Message[],
+  entries: readonly Entry[],
+): WritingReply | undefined {
+  let runId: string | undefined;
+  let since: number | undefined;
+  let started = -1;
+  for (const fact of facts) {
+    if (fact.type === RUN_FACT && typeof fact.data.runId === "string" && fact.data.runId.length > 0) {
+      runId = fact.data.runId;
+      since = fact.at;
+      started = fact.sequence;
+    }
+  }
+  if (runId === undefined || since === undefined) return undefined;
+  const ended = entries.some(
+    (entry) => (entry.kind === "failure" || entry.kind === "stopped") && entry.runId === runId,
+  );
+  const stopped = facts.some((fact) => {
+    if (fact.sequence <= started) return false;
+    const command = commandOfFact(fact);
+    return (
+      command !== undefined &&
+      command.ok &&
+      command.command === "/stop" &&
+      command.outcome.startsWith("stopped the reply")
+    );
+  });
+  if (ended || stopped) return undefined;
+  const replied = messages.some((message) => message.role === "assistant" && message.runId === runId);
+  // The flow goes round again while messages arrived during the reply: a reply
+  // for this run with messages still unanswered is the next round, not an end.
+  if (!replied || unanswered(messages).length > 0) return { runId, since };
+  return undefined;
+}
+
+/** The time from a reply's start to its first output, when its timings hold both parts. */
+export function firstOutputMs(timings: AgentTimings | undefined): number | undefined {
+  if (timings === undefined || timings.startToReadyMs === null || timings.readyToFirstMs === null) {
+    return undefined;
+  }
+  return timings.startToReadyMs + timings.readyToFirstMs;
 }
 
 /** How the last attempt at a reply ended: a normal reply, a failure, a stopped half reply, or none yet. */

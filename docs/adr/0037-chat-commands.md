@@ -26,7 +26,7 @@ The command and its outcome are one `chat.command` fact: who typed it, the line 
 
 ### D4: `/help` lists the chat's commands
 
-`chat:help` is a command action. It lists every command this chat has, each under the name it is typed by, with the one-line description from the same action declaration. `/model`, `/effort`, `/close`, `/stop`, `/retry` and `/help` are declared as commands.
+`chat:help` is a command action. It lists every command this chat has, each under the name it is typed by, with the one-line description from the same action declaration. `/model`, `/effort`, `/close`, `/stop`, `/retry`, `/status` and `/help` are declared as commands.
 
 ### D5: `/stop` stops the reply being written
 
@@ -41,3 +41,7 @@ The command and its outcome are one `chat.command` fact: who typed it, the line 
 A command is typed into a Telegram chat as any other text, with the bot's name allowed after the command's name (`/model@operad_bot sonnet` is `/model sonnet`), and its text reaches `chat:send`, so the `chat` plugin still handles every command. The plugin registers the chat's commands with `setMyCommands` at start and again when the set changes: the name typed after `/` and the one-line description from the same action declaration. A name Telegram's menu cannot take (lowercase letters, digits and underscores, at most 32 characters) is left out and logged; it still runs when typed. Telegram's own `/start` gets a short greeting that points at `/help` and starts nothing. A command typed before the person has a chat opens one on the bot, as a first message does, so `/help` works from the start.
 
 A command whose one argument is a choice (an `enum` in the action's schema, such as `/model` and `/effort`) sent without it answers with the choices as an inline keyboard, paged when they do not fit, instead of running. A tap runs the command as `/<name> <choice>` through `chat:send`; the keyboard goes and the message is edited to `chosen: <choice>`, as an answered pending item's message is edited to `answered: <choice>`. What a typed command returns is sent to the Telegram chat in a reply's shape. Only a listed user's command runs, as with a message: one from anyone else is dropped without a reply.
+
+### D8: `/status` says where the chat stands and what it has used
+
+`chat:status` is a command action. It reads the chat's facts only, costs no tokens and works while a reply is being written. In a few short lines it shows the agent, the model and effort in force, whether a reply is being written and since when, how many messages wait, the cost and token usage of the session so far, and the usage of the last reply. When the reply records its timings, the last reply line also shows its time to first output. A number an agent did not report, such as a cost, is said to be unknown and is never shown as 0. It is a command and leaves one transcript line like every other command.

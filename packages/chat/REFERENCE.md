@@ -13,8 +13,10 @@ whether it is closed. Its ids are `C-0001` upward. Messages are not fields: each
 is a `chat.message` fact on the chat (who, when, text, attachment paths, the
 source and its reference). An assistant message also names the messages it answers
 (`replyTo`), the run it belongs to (`runId`), the session after it and, when its
-harness reported them, the step's three durations (`timings`: start to ready,
-ready to first increment, and the whole step). Closing a
+harness reported them, the token usage (`tokens`) and the step's three durations
+(`timings`: start to ready, ready to first increment, and the whole step). The
+chat carries the cost (`costMicros`, with `costQuality`) and tokens summed from
+its replies. Closing a
 chat appends a `chat.closed` fact and marks the object closed; the messages stay
 in its transcript.
 
@@ -92,6 +94,15 @@ before the reply begins does not answer twice. The failed or stopped attempt
 stays in the record and the new reply continues the chat's session. When the
 last reply finished normally, or the last attempt neither failed nor stopped, it
 refuses with a line saying so and starts nothing.
+
+## `chat:status <chat>`
+
+Reads the chat's facts and nothing else: it costs no tokens and works while a
+reply is being written. It returns a few short lines: the agent, the model and
+effort in force, whether a reply is being written and since when, how many
+messages wait, the session's cost and token usage, and the last reply's cost,
+token usage and, when its `timings` hold both parts, its time to first output.
+A number an agent did not report is `unknown`, never 0.
 
 ## `chat:model <chat> --model <name>`
 
