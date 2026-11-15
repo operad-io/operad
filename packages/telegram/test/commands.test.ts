@@ -6,12 +6,18 @@ import { join } from "node:path";
 import { CHAT_TYPE, COMMAND_FACT, allMessages, chatData } from "@operad-io/chat";
 import { definePlugin } from "@operad-io/engine";
 import {
+  BotApiError,
+  COMMAND_STATE_MAX,
   CommandSender,
+  readCommands,
   START_GREETING,
+  telegramCommandsPath,
   TELEGRAM_COMMAND_NAME,
   TelegramSource,
   stripBotName,
   telegramChannel,
+  writeCommands,
+  type SentCommand,
 } from "../src/index.ts";
 import {
   FakeApi,
@@ -76,6 +82,24 @@ function extraPlugin(available: () => boolean) {
         on: CHAT_TYPE,
         command: "An extra command.",
         when: () => available(),
+        run: () => "done",
+      },
+    ],
+  });
+}
+
+/** A plugin whose command description is longer than Telegram takes. */
+function longDescriptionPlugin() {
+  return definePlugin({
+    name: "long",
+    kind: "domain",
+    version: "0.0.0",
+    actions: [
+      {
+        name: "long",
+        on: CHAT_TYPE,
+        command: "x".repeat(300),
+        when: () => true,
         run: () => "done",
       },
     ],
@@ -195,6 +219,19 @@ describe("the bot's command menu", () => {
     expect(log).toContain("a_name_that_is_longer_than_telegram_takes");
     expect(log).toContain("Shout");
     expect(log).toContain("left out of the menu");
+    await w.close();
+  });
+
+  test("cuts a long command description to what Telegram takes", async () => {
+    const w = await world({ users: [42], plugins: [longDescriptionPlugin()] });
+    const api = new FakeApi();
+    const commands = new CommandSender(w.ctx, { api });
+    await boundOnly(w, api);
+
+    await commands.refresh();
+    const description = api.menus[0]?.find((command) => command.command === "long")?.description;
+    expect(description?.length).toBeLessThanOrEqual(256);
+    expect(description?.endsWith("…")).toBe(true);
     await w.close();
   });
 });
@@ -337,6 +374,77 @@ describe("a command in a Telegram chat", () => {
     // A chat opened by /start would be a chat with no message; none is opened.
     expect((await w.store.list(CHAT_TYPE)).objects).toHaveLength(0);
     expect(await w.log.runs()).toHaveLength(0);
+    await w.close();
+  });
+
+  test("what a command returns goes again as plain text when Telegram refuses its markup", async () => {
+    const w = await world({ users: [42] });
+    const api = new FakeApi();
+    const { source } = rig(w, api);
+    await bound(w, api, source);
+
+    api.beforeSend = (request, count) => {
+      if (count === 1 && request.parseMode === "HTML") {
+        throw new BotApiError("can't parse entities", { retryable: false, badMarkup: true });
+      }
+    };
+    api.updates = [update(100, 42, 555, "/help")];
+    await source.poll();
+    expect(api.sent).toHaveLength(1);
+    expect(api.sent[0]?.parseMode).toBeUndefined();
+    expect(api.sent[0]?.text).toContain("What you can type with");
+    await w.close();
+  });
+
+  test("a choice keyboard survives a restart so its buttons still work", async () => {
+    const w = await world({ users: [42], models: MODELS });
+    const api = new FakeApi();
+    const { source } = rig(w, api);
+    const chat = await bound(w, api, source);
+
+    api.updates = [update(100, 42, 555, "/model")];
+    await source.poll();
+    expect(api.sent).toHaveLength(1);
+
+    const restarted = new CommandSender(w.ctx, { api });
+    const sourceAgain = new TelegramSource(w.ctx, { api, commands: restarted });
+    api.updates = [tap(101, 42, 555, 9_001, "c:0")];
+    await sourceAgain.poll();
+    expect(api.edits).toHaveLength(1);
+    expect(api.edits[0]?.text).toEndWith("chosen: m0");
+    const stored = await w.store.get(CHAT_TYPE, chat);
+    expect(chatData(stored?.data ?? {}).model).toBe("m0");
+    await w.close();
+  });
+
+  test("the keyboard state file keeps only the newest answered keyboards", async () => {
+    const w = await world({ users: [42], models: MODELS });
+    const api = new FakeApi();
+    const { source } = rig(w, api);
+    const chat = await bound(w, api, source);
+    const old: Record<string, SentCommand> = {};
+    for (let index = 0; index < COMMAND_STATE_MAX + 10; index += 1) {
+      old[`${index}/1`] = {
+        chatId: chat,
+        target: index,
+        messageId: 1,
+        text: "old",
+        name: "model",
+        choices: ["m0", "m1"],
+        page: 0,
+        chosen: index % 2 === 0 ? "m0" : "m1",
+      };
+    }
+    writeCommands(w.home, old);
+
+    const restarted = new CommandSender(w.ctx, { api });
+    const sourceAgain = new TelegramSource(w.ctx, { api, commands: restarted });
+    api.updates = [update(100, 42, 555, "/model")];
+    await sourceAgain.poll();
+    const written = JSON.parse(readFileSync(telegramCommandsPath(w.home), "utf8")) as Record<string, unknown>;
+    expect(Object.keys(written)).toHaveLength(COMMAND_STATE_MAX);
+    const kept = readCommands(w.home);
+    expect(kept["555/9001"]).toBeDefined();
     await w.close();
   });
 
