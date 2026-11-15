@@ -57,6 +57,18 @@ again: tightening access or adding a skill applies to the next reply of the same
 chat. A bot taken out of the settings, or one that cannot be used, fails the
 reply; it is never answered from an older copy.
 
+## `bot:create <bot> --name <name> --agent <agent>`
+
+Creates a new bot with exactly the skills and MCP servers chosen. The model,
+effort and speaker are optional. A known skill is chosen by name from the ones
+another bot mounts and the ones in `~/.agents/skills`; a path may be given
+instead. An MCP server is chosen from the ones a person already approved on
+another bot and is copied with its command, pinned version, tools, digest and
+secret names, without a second question. Nothing is inherited from `default`;
+with no skills or servers chosen the new bot has none. The name is checked like
+any bot name and an existing one is refused. The result opens the new bot and
+names any secrets its servers need before they start.
+
 ## A bot changes itself only through a proposal
 
 A bot does not write its skills or `config.json`. Its access profile denies

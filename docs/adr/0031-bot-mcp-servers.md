@@ -31,3 +31,7 @@ Content an MCP server returns is material, not instructions (ADR 0009). Calls to
 ### D6: Secrets reach the server only at its start
 
 Only the names of the environment variables a server needs are kept; a value is used once to start the server and read its tool list, then dropped. Each value is stored as a plugin secret and reaches the server only at its start, in the server's environment: not in the transcript, not in the agent's environment, not in the settings the harness is given.
+
+### D7: An approved server is copied to another bot without a second question
+
+A new bot may choose a server a person already approved on another bot. Its entry is copied as it is: the command, the pinned version, the tools, the digest and the secret names. Nothing about the server changed, so it is not proposed again and the person is not asked a second time. The creation result names the secrets the server needs to start. A server no person approved is not offered; it goes through registering and its review (D2).

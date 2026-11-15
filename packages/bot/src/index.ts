@@ -13,7 +13,7 @@ import pkg from "../package.json" with { type: "json" };
 import { mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { CHAT_TYPE, agentConditionals, type AgentChoices, chatData, createChat, sendMessage, startingEffort, startingModel, titleFromMessage } from "@operad-io/chat";
-import { definePlugin, isRecord, type ActionArgsSchema, type ActionTypeDefinition, type JsonValue, type ObjectRow, type ObjectStore, type ObjectViews, type PluginStepResult, type SectionContent, type StepContext, type StoredObject } from "@operad-io/engine";
+import { definePlugin, isRecord, type ActionArgSchema, type ActionArgsSchema, type ActionTypeDefinition, type JsonValue, type ObjectRow, type ObjectStore, type ObjectViews, type PluginStepResult, type SectionContent, type StepContext, type StoredObject } from "@operad-io/engine";
 import {
   BOT_SETTINGS,
   DEFAULT_BOT,
@@ -25,6 +25,7 @@ import {
   skillName,
   type ResolvedBot,
 } from "./bot.ts";
+import { createBot, knownMcpServers, knownSkills } from "./create.ts";
 import { ingestReports, runMcpCommand } from "./mcp-proposals.ts";
 import {
   PROPOSAL_TYPE,
@@ -214,6 +215,157 @@ function chatArgs(
   };
 }
 
+/** The skill choices: a known skill by name, or a path such as `/...`, `~/...` or `skills/...`. */
+function skillItem(known: readonly { readonly name: string }[]): ActionArgSchema {
+  const branches: ActionArgSchema[] = [];
+  const names = [...new Set(known.map((skill) => skill.name))].sort();
+  if (names.length > 0) {
+    branches.push({
+      type: "string",
+      enum: names,
+      description: "A skill another bot already mounts, or one in ~/.agents/skills.",
+    });
+  }
+  branches.push({
+    type: "string",
+    pattern: "^(?:.*[/\\\\].*|~.*)$",
+    description: "A path to a skill, a directory of skills, or a .agents directory.",
+  });
+  return branches.length === 1 ? (branches[0] as ActionArgSchema) : { oneOf: branches };
+}
+
+/** The arguments of `bot:create`, with the choices this home knows now. */
+function createArgs(
+  home: string | undefined,
+  harnesses: readonly string[],
+  models: readonly string[],
+  efforts: readonly string[],
+  agents: readonly AgentChoices[],
+): ActionArgsSchema {
+  const skills = home === undefined ? [] : knownSkills(home);
+  const servers = home === undefined ? [] : knownMcpServers(home);
+  const first = harnesses[0];
+  return {
+    type: "object",
+    description: "Creates a bot with exactly the skills and MCP servers chosen for it.",
+    properties: {
+      name: {
+        type: "string",
+        description:
+          "The new bot's name, used for its directory under ~/.operad/bot; lowercase letters, digits, - and _.",
+      },
+      agent: {
+        type: "string",
+        ...(harnesses.length === 0 ? {} : { enum: [...harnesses] }),
+        ...(first === undefined ? {} : { default: first }),
+        description: "The agent a new chat of this bot starts with.",
+      },
+      model: {
+        type: "string",
+        ...(models.length === 0 ? {} : { enum: [...models] }),
+        description: "The model a new chat starts with; one the chosen agent lists. Left out: the agent's default.",
+      },
+      effort: {
+        type: "string",
+        ...(efforts.length === 0 ? {} : { enum: [...efforts] }),
+        description: "The effort a new chat starts with; one the chosen agent lists. Left out: the agent's default.",
+      },
+      speaker: {
+        type: "string",
+        minLength: 1,
+        description: "How this bot's chats label the model's messages; left out: the chat plugin's speaker.",
+      },
+      skills: {
+        type: "array",
+        items: skillItem(skills),
+        description:
+          "The skills exactly this bot has. A known skill is chosen by name, or a path is given; without it the bot has none. A path that is a directory of skills gives every skill inside it.",
+      },
+      mcpServers: {
+        type: "array",
+        items: { type: "string", ...(servers.length === 0 ? {} : { enum: servers.map((server) => server.key) }) },
+        description:
+          "MCP servers a person already approved on another bot, copied with their pin and digest. Without it the bot has none; a new server goes through bot mcp.",
+      },
+    },
+    required: ["name", "agent"],
+    ...(agents.length === 0 ? {} : { allOf: agentConditionals(agents) }),
+    additionalProperties: false,
+  };
+}
+
+const createAction: ActionTypeDefinition = {
+  name: "create",
+  on: BOT_TYPE,
+  args: createArgs(undefined, [], [], [], []),
+  argsFor: (_object, env) =>
+    createArgs(
+      env.home,
+      env.harnesses ?? [],
+      [...new Set((env.harnesses ?? []).flatMap((name) => env.models?.[name]?.list ?? []))],
+      [...new Set((env.harnesses ?? []).flatMap((name) => env.efforts?.[name]?.list ?? []))],
+      (env.harnesses ?? []).map((name) => ({
+        name,
+        models: env.models?.[name],
+        efforts: env.efforts?.[name],
+        preferredModel: null,
+        preferredEffort: null,
+      })),
+    ),
+  when: (state, env) => state.removed !== true && (env.harnesses ?? []).length > 0,
+  async why(object, env) {
+    if (object.data.removed === true) return `bot ${object.id} is no longer in the settings`;
+    if ((env.harnesses ?? []).length === 0) return "no agent is loaded; load one to create a bot";
+    return undefined;
+  },
+  async run(ctx, args) {
+    const input = args as {
+      readonly name?: string;
+      readonly agent?: string;
+      readonly model?: string;
+      readonly effort?: string;
+      readonly speaker?: string;
+      readonly skills?: readonly string[];
+      readonly mcpServers?: readonly string[];
+    };
+    const name = input.name ?? "";
+    const agent = input.agent ?? "";
+    if (!ctx.harnesses.includes(agent)) {
+      throw new BotError(
+        `agent "${agent}" is not loaded; the loaded ones are: ${ctx.harnesses.join(", ") || "none"}`,
+      );
+    }
+    try {
+      if (input.model !== undefined) startingModel(agent, ctx.models?.[agent], input.model);
+      if (input.effort !== undefined) startingEffort(agent, ctx.efforts?.[agent], input.effort);
+    } catch (error) {
+      throw new BotError(error instanceof Error ? error.message : String(error));
+    }
+    const created = await createBot(
+      ctx.store,
+      ctx.home,
+      {
+        name,
+        agent,
+        ...(input.model === undefined ? {} : { model: input.model }),
+        ...(input.effort === undefined ? {} : { effort: input.effort }),
+        ...(input.speaker === undefined ? {} : { speaker: input.speaker }),
+        ...(input.skills === undefined ? {} : { skills: input.skills }),
+        ...(input.mcpServers === undefined ? {} : { mcpServers: input.mcpServers }),
+      },
+      { cwd: ctx.cwd },
+    );
+    await syncBots(ctx.store, ctx.home, ctx.settings);
+    const secrets =
+      created.secrets.length === 0
+        ? ""
+        : `; its MCP servers need ${created.secrets
+            .map((secret) => `${secret} (operad secret set bot ${secret})`)
+            .join(", ")}`;
+    return { text: `created bot "${name}"${secrets}`, opens: `${BOT_TYPE}:${name}` };
+  },
+};
+
 const chatAction: ActionTypeDefinition = {
   name: "chat",
   on: BOT_TYPE,
@@ -372,7 +524,7 @@ export function createBotPlugin() {
       },
     ],
     steps: [{ name: "settings", results: ["done", "failed"], run: runSettings }],
-    actions: [chatAction, ...proposalActions],
+    actions: [chatAction, createAction, ...proposalActions],
     commands: [
       {
         name: "skill",
@@ -402,6 +554,7 @@ export function createBotPlugin() {
 export default createBotPlugin();
 
 export * from "./bot.ts";
+export * from "./create.ts";
 export * from "./proposals.ts";
 export * from "./mcp.ts";
 export * from "./mcp-proposals.ts";
