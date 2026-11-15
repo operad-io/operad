@@ -342,7 +342,6 @@ const createAction: ActionTypeDefinition = {
       throw new BotError(error instanceof Error ? error.message : String(error));
     }
     const created = await createBot(
-      ctx.store,
       ctx.home,
       {
         name,
