@@ -484,3 +484,11 @@ the row fields.
 | T-0495-M8 | packages/tui/src/actions.ts | the arrows in the command list did not stop at its first and last entry | `a chat's input lists its commands on / > the arrows move in the list and stop at its ends` |
 | T-0495-M9 | packages/tui/src/actions.ts | Enter ran the chat's send action instead of filling the line with the chosen command | `a chat's input lists its commands on / > Enter fills the line with the chosen command and does not run it` |
 | T-0495-M10 | packages/tui/src/commands.ts | a clashing short name was given to both actions instead of keeping it for the chat plugin and prefixing the other | `a chat's input lists its commands on / > a clashing short name keeps it for the chat plugin and gives the other its plugin name` |
+
+## T-0506 — chat command follow-ups
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0506-M1 | packages/tui/src/state.ts | `/` opened the first note action instead of the chat's send action | `a chat's input lists its commands on / > / opens chat:send even when another note action is declared first` |
+| T-0506-M2 | packages/tui/src/commands.ts | the list still matched a loose subsequence instead of only a command's prefix | `a chat's input lists its commands on / > typing after the slash filters the list and the arrows move in it` |
+| T-0506-M3 | packages/tui/src/actions.ts | Enter filled the line again even when it already spelled the chosen command | `a chat's input lists its commands on / > Enter sends a line that already spells the chosen command` |

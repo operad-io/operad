@@ -47,17 +47,6 @@ export interface CommandStateSource {
 /** The actions and row a command list is built from: a state, an object or the actions alone. */
 export type ChatCommandSource = readonly ViewAction[] | CommandActions | CommandStateSource;
 
-/** One command as it was typed: the name and the rest of the line. */
-export interface ParsedChatCommand {
-  readonly name: string;
-  /** The line as typed, without surrounding whitespace. */
-  readonly text: string;
-  /** What follows the name, without the whitespace that separated it. */
-  readonly rest: string;
-}
-
-const COMMAND = /^\/([A-Za-z0-9_-]+)(?:\s+([\s\S]*))?$/;
-
 function isActionList(source: ChatCommandSource): source is readonly ViewAction[] {
   return Array.isArray(source);
 }
@@ -75,7 +64,7 @@ function sourceOf(
 }
 
 /** Does this action declare that a chat may type it after a slash? */
-export function isCommand(action: ViewAction): boolean {
+function isCommand(action: ViewAction): boolean {
   return typeof action.command === "string" && action.command.trim().length > 0;
 }
 
@@ -134,45 +123,15 @@ export function chatCommands(source: ChatCommandSource, row?: ViewRow | undefine
   });
 }
 
-/** The same list under the name a caller may look for. */
-export const commandsOf = chatCommands;
-export const commandActions = chatCommands;
-
-/** The command a chat has by this typed name, or undefined. */
-export function findCommand(
-  commands: readonly TuiChatCommand[],
-  name: string,
-): TuiChatCommand | undefined {
-  const wanted = name.replace(/^\//, "");
-  return commands.find((command) => command.name === wanted);
-}
-
-/** A message that is a command, or undefined when it is an ordinary message. */
-export function parseCommand(text: string): ParsedChatCommand | undefined {
-  const match = COMMAND.exec(text);
-  const name = match?.[1];
-  if (name === undefined) return undefined;
-  return { name, text: text.trim(), rest: match?.[2] ?? "" };
-}
-
 function queryOf(text: string): string {
   const withoutSlash = text.trimStart().replace(/^\//, "");
   return (withoutSlash.split(/\s+/)[0] ?? "").toLowerCase();
 }
 
-/** How a command's name matches a typed word: prefix first, then a run, then a subsequence. */
+/** How a command's name matches a typed word: only a prefix keeps it in the list. */
 function rank(query: string, name: string): number | undefined {
   if (query === "") return 0;
-  const text = name.toLowerCase();
-  if (text.startsWith(query)) return 0;
-  if (text.includes(query)) return 1;
-  let at = 0;
-  for (const char of query) {
-    at = text.indexOf(char, at);
-    if (at < 0) return undefined;
-    at += 1;
-  }
-  return 2;
+  return name.toLowerCase().startsWith(query) ? 0 : undefined;
 }
 
 /** The commands a filtered word keeps, best match first and declaration order on a tie. */
@@ -189,10 +148,6 @@ export function filterCommands(
     .sort((a, b) => a.rank - b.rank || a.order - b.order)
     .map((item) => item.command);
 }
-
-/** The same filter under the names a caller may look for. */
-export const matchingCommands = filterCommands;
-export const filterCommandEntries = filterCommands;
 
 function textOf(source: CommandStateSource): string {
   const input = source.input as { readonly kind?: unknown; readonly text?: unknown } | undefined;
@@ -216,36 +171,9 @@ export function commandEntries(
   return [];
 }
 
-/** The same list under the names a caller may look for. */
-export const slashEntries = commandEntries;
-export const commandsFor = commandEntries;
-export const listCommands = commandEntries;
-
 /** What choosing a command puts in the input: its slash name, and a space when it takes arguments. */
 export function commandText(command: TuiChatCommand): string {
   return command.fields.length > 0 ? `${command.slash} ` : command.slash;
-}
-
-/** The same fill under the names a caller may look for. */
-export const fillCommand = commandText;
-export const commandFill = commandText;
-export const commandLine = commandText;
-
-/** The command the list's cursor is on. */
-export function chosenCommand(state: CommandStateSource): TuiChatCommand | undefined {
-  const input = state.input;
-  if (typeof input !== "object" || input === null) return undefined;
-  const menu = (input as { readonly commandMenu?: { readonly cursor: number } | undefined }).commandMenu;
-  if (menu === undefined) return undefined;
-  const entries = commandEntries(state);
-  return entries[Math.min(Math.max(0, menu.cursor), entries.length - 1)];
-}
-
-/** Is the input showing the list of commands now? */
-export function commandMenuOpen(
-  state: { readonly input?: { readonly commandMenu?: unknown } | undefined },
-): boolean {
-  return state.input?.commandMenu !== undefined;
 }
 
 /** The options of a command's first choice, if it has one. */
@@ -258,26 +186,9 @@ export function commandOptions(
   return first?.kind === "pick" ? first.options : [];
 }
 
-export const optionsOf = commandOptions;
-
-/** One command's arguments, in the order they are typed. */
-export function commandFields(
-  command: TuiChatCommand | ViewAction,
-  row?: ViewRow | undefined,
-): readonly ArgField[] {
-  return "fields" in command ? command.fields : argFields(command, row);
-}
-
-export const commandArgs = commandFields;
-export const argsOfCommand = commandFields;
-
 /** One command's argument hint. */
 export function commandHint(command: TuiChatCommand | ViewAction, row?: ViewRow | undefined): string {
   if ("fields" in command) return command.hint;
   return argumentHint(argFields(command, row));
 }
 
-export const argumentHintOf = commandHint;
-export const argsHint = commandHint;
-export const hintOf = commandHint;
-export const commandUsage = commandHint;

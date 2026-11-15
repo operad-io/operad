@@ -46,7 +46,6 @@ import {
 } from "./actions.ts";
 import { chatCommands } from "./commands.ts";
 
-export * from "./commands.ts";
 
 /** The two terminal themes the view knows. */
 export type TuiTheme = "light" | "dark";
@@ -2191,7 +2190,7 @@ function handleKey(
   if (key === "/" && !shift && state.object !== undefined) {
     const commands = chatCommands(state.object.actions, state.object.row);
     const send = state.object.actions.find(
-      (action) => action.note !== undefined && action.creates === undefined,
+      (action) => action.plugin === "chat" && action.action === "send",
     );
     if (commands.length > 0 && send !== undefined) {
       const opened = startAction(state, send.name);
