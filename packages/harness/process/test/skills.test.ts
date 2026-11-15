@@ -30,6 +30,12 @@ describe("skillName", () => {
     expect(skillName("Say this.\n")).toBeUndefined();
     expect(skillName("---\ndescription: x\n---\n")).toBeUndefined();
   });
+
+  test("reads a block scalar name as well, and ends at the block", () => {
+    expect(skillName("---\nname: |\n  blocked\n---\n")).toBe("blocked");
+    expect(skillName("---\nname: >-\n  folded\n  name\n---\n")).toBe("folded name");
+    expect(skillName("---\nname: |\n---\n")).toBeUndefined();
+  });
 });
 
 describe("skillDescription", () => {
@@ -38,6 +44,25 @@ describe("skillDescription", () => {
     expect(skillDescription("---\nname: one\ndescription: 'does it'\n---\n")).toBe("does it");
     expect(skillDescription("---\nname: one\n---\n")).toBeUndefined();
     expect(skillDescription("---\nname: one\ndescription: >-\n  does the\n  thing\n---\n")).toBe("does the thing");
+  });
+
+  test("reads literal and folded block scalars, chomping and a comment after the indicator", () => {
+    expect(skillDescription("---\nname: one\ndescription: |\n  first line\n  second line\n---\n")).toBe(
+      "first line\nsecond line",
+    );
+    expect(skillDescription("---\nname: one\ndescription: |-\n  first\n  second\n---\n")).toBe("first\nsecond");
+    expect(skillDescription("---\nname: one\ndescription: >+\n  first\n\n  second\n---\n")).toBe(
+      "first\nsecond",
+    );
+    expect(skillDescription("---\nname: one\ndescription: | # a comment\n  first\n---\n")).toBe("first");
+    expect(skillDescription("---\nname: one\ndescription: |\n---\n")).toBeUndefined();
+  });
+
+  test("a quoted description keeps a # inside it, and an unquoted one ends at a comment", () => {
+    expect(skillDescription('---\nname: one\ndescription: "uses # in text"\n---\n')).toBe("uses # in text");
+    expect(skillDescription("---\nname: one\ndescription: 'uses # too'\n---\n")).toBe("uses # too");
+    expect(skillDescription('---\nname: one\ndescription: "quoted" # comment\n---\n')).toBe("quoted");
+    expect(skillDescription("---\nname: one\ndescription: plain # comment\n---\n")).toBe("plain");
   });
 });
 

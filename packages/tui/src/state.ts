@@ -44,6 +44,9 @@ import {
   type TuiCommand,
   pageActions,
 } from "./actions.ts";
+import { chatCommands } from "./commands.ts";
+
+export * from "./commands.ts";
 
 /** The two terminal themes the view knows. */
 export type TuiTheme = "light" | "dark";
@@ -205,6 +208,10 @@ export type TuiInput =
       /** The action asks to confirm after the note. */
       readonly confirm: boolean;
       readonly args?: Readonly<Record<string, unknown>> | undefined;
+      /** A line starting with `/` is listing the chat's commands; the cursor is in that list. */
+      readonly commandMenu?: { readonly cursor: number } | undefined;
+      /** The same list, for a caller that reads this name. */
+      readonly commands?: { readonly cursor: number } | undefined;
     }
   | {
       /** One choice of a pending question is being chosen. */
@@ -2179,6 +2186,19 @@ function handleKey(
     if (isKey(key, "home")) return to(0);
     if (isKey(key, "end")) return to(bottom);
     return state;
+  }
+  // On a chat, `/` opens its input already listing the commands a line may type.
+  if (key === "/" && !shift && state.object !== undefined) {
+    const commands = chatCommands(state.object.actions, state.object.row);
+    const send = state.object.actions.find(
+      (action) => action.note !== undefined && action.creates === undefined,
+    );
+    if (commands.length > 0 && send !== undefined) {
+      const opened = startAction(state, send.name);
+      if (opened.input?.kind === "note") {
+        return inputKey(opened, opened.input, { key: "/", text: "/" });
+      }
+    }
   }
   if (isKey(key, "t") && (state.object?.children?.rows.length ?? 0) > 0) {
     const childLayout: TuiChildLayout = state.childLayout === "tree" ? "list" : "tree";

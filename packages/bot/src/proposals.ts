@@ -37,8 +37,9 @@ import {
   BOT_SETTINGS,
   BOT_TYPE,
   BotError,
+  listedSkills,
   readBots,
-  resolveBot,
+  workingDirectory,
   type BotSettings,
   type McpServerSettings,
 } from "./bot.ts";
@@ -158,33 +159,37 @@ function existingSkillPath(
 ): string | undefined {
   const written = readBots(home)[bot];
   if (written === undefined) return undefined;
-  for (const path of resolveBot(home, bot, written).skills) {
+  for (const path of mountedSkills(home, bot, written)) {
     const expected = basename(path);
-    const marker = /^name:\s*(\S+)/m.exec(readFileSync(join(path, "SKILL.md"), "utf8"))?.[1];
+    let marker: string | undefined;
+    try {
+      marker = /^name:\s*(\S+)/m.exec(readFileSync(join(path, "SKILL.md"), "utf8"))?.[1];
+    } catch {
+      // A listed skill that vanished is skipped, like one that was never there.
+      continue;
+    }
     if (expected === name || marker === name) return path;
   }
   return undefined;
 }
 
-function resolveBotFromSettings(
-  home: string,
-  bot: string,
-  settings: BotSettings,
-): { readonly cwd: string } {
-  try {
-    return resolveBot(home, bot, settings);
-  } catch (error) {
-    if (error instanceof BotError) throw error;
-    throw error;
+/** The skills a bot's written paths mount now; a path with nothing to mount is skipped. */
+function mountedSkills(home: string, bot: string, settings: BotSettings): string[] {
+  const cwd = workingDirectory(home, bot, settings);
+  const found: string[] = [];
+  for (const listed of settings.skills ?? []) {
+    for (const path of listedSkills(listed, cwd).directories) {
+      if (!found.includes(resolve(path))) found.push(resolve(path));
+    }
   }
+  return found;
 }
 
 /** The directory a new skill of this bot goes into. */
 export function newSkillPath(home: string, bot: string): string {
   const written = readBots(home)[bot];
   if (written === undefined) throw new BotError(`there is no bot "${bot}"`);
-  const cwd = resolveBotFromSettings(home, bot, written).cwd;
-  return join(cwd, "skills");
+  return join(workingDirectory(home, bot, written), "skills");
 }
 
 function pathInside(path: string, directory: string): boolean {
@@ -540,10 +545,10 @@ export async function readBotsFile(home: string): Promise<Record<string, unknown
   return isRecord(bots) ? { ...bots } : {};
 }
 
-/** Writes the whole `bots` map, keeping the rest of config.json. */
-export async function writeBotsFile(
+/** Reads, changes and writes the `bots` map under one lock, keeping the rest of config.json. */
+async function changeBotsFile(
   home: string,
-  bots: Readonly<Record<string, unknown>>,
+  change: (bots: Record<string, unknown>) => Record<string, unknown>,
 ): Promise<void> {
   const file = configPath(home);
   await withLockFile(`${file}.lock`, async () => {
@@ -567,10 +572,27 @@ export async function writeBotsFile(
           ? { ...current }
           : {};
     const settings = isRecord(entry.settings) ? entry.settings : {};
-    plugins.bot = { ...entry, settings: { ...settings, bots } };
+    const bots = isRecord(settings.bots) ? { ...settings.bots } : {};
+    plugins.bot = { ...entry, settings: { ...settings, bots: change(bots) } };
     parsed.plugins = plugins;
     await writeFileAtomic(file, `${JSON.stringify(parsed, null, 2)}\n`);
   });
+}
+
+/** Writes the whole `bots` map, keeping the rest of config.json. */
+export async function writeBotsFile(
+  home: string,
+  bots: Readonly<Record<string, unknown>>,
+): Promise<void> {
+  await changeBotsFile(home, () => bots);
+}
+
+/** Changes the `bots` map under the config lock, so two writers do not drop each other's change. */
+export async function updateBotsFile(
+  home: string,
+  change: (bots: Record<string, unknown>) => Record<string, unknown>,
+): Promise<void> {
+  await changeBotsFile(home, change);
 }
 
 export function validateBots(bots: Readonly<Record<string, unknown>>): void {
@@ -680,34 +702,42 @@ function applySkill(skill: NonNullable<ProposalData["skill"]>): void {
 }
 
 async function applySettings(home: string, bot: string, after: Readonly<Record<string, JsonValue>>): Promise<void> {
-  const bots = { ...(await readBotsFile(home)), [bot]: after };
-  validateBots(bots);
-  await writeBotsFile(home, bots);
+  await updateBotsFile(home, (bots) => {
+    const next = { ...bots, [bot]: after };
+    validateBots(next);
+    return next;
+  });
 }
 
 async function applyMcp(home: string, bot: string, change: McpChange): Promise<void> {
-  const bots = await readBotsFile(home);
-  const raw = isRecord(bots[bot]) ? bots[bot] : {};
-  const servers = isRecord(raw.mcpServers) ? raw.mcpServers : {};
-  bots[bot] = { ...raw, mcpServers: { ...servers, [change.server]: change.after } };
-  validateBots(bots);
-  await writeBotsFile(home, bots);
+  await updateBotsFile(home, (bots) => {
+    const raw = isRecord(bots[bot]) ? bots[bot] : {};
+    const servers = isRecord(raw.mcpServers) ? raw.mcpServers : {};
+    const next = {
+      ...bots,
+      [bot]: { ...raw, mcpServers: { ...servers, [change.server]: change.after } },
+    };
+    validateBots(next);
+    return next;
+  });
 }
 
 async function ensureSkillListed(home: string, bot: string, path: string): Promise<void> {
   const written = readBots(home)[bot];
   if (written === undefined) throw new BotError(`there is no bot "${bot}"`);
-  if (resolveBot(home, bot, written).skills.some((item) => resolve(item) === resolve(path))) {
+  if (mountedSkills(home, bot, written).some((item) => resolve(item) === resolve(path))) {
     return;
   }
-  const bots = await readBotsFile(home);
-  const raw = isRecord(bots[bot]) ? bots[bot] : (written as unknown as Record<string, unknown>);
-  const skills = Array.isArray(raw.skills)
-    ? raw.skills.filter((item): item is string => typeof item === "string")
-    : [];
-  bots[bot] = { ...raw, skills: [...skills, path] };
-  validateBots(bots);
-  await writeBotsFile(home, bots);
+  await updateBotsFile(home, (bots) => {
+    const raw = isRecord(bots[bot]) ? bots[bot] : {};
+    const skills = Array.isArray(raw.skills)
+      ? raw.skills.filter((item): item is string => typeof item === "string")
+      : [];
+    if (skills.some((item) => resolve(item) === resolve(path))) return bots;
+    const next = { ...bots, [bot]: { ...raw, skills: [...skills, path] } };
+    validateBots(next);
+    return next;
+  });
 }
 
 /** Applies a pending proposal. A proposal already decided is left as it is. */

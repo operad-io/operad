@@ -34,6 +34,70 @@ export interface GivenSkills {
 /** A name the Agent Skills format allows and a file name can hold. */
 const SKILL_NAME = /^[a-z0-9][a-z0-9-]*$/;
 
+/** A one-line frontmatter value, with its quotes and an inline comment read. */
+function inlineValue(raw: string): string | undefined {
+  let value = raw.trim();
+  const quote = value[0];
+  if (quote === '"' || quote === "'") {
+    const close = value.lastIndexOf(quote);
+    const rest = close > 0 ? value.slice(close + 1).trim() : "";
+    if (close > 0 && (rest.length === 0 || rest.startsWith("#"))) {
+      value = value.slice(1, close);
+      return value.length === 0 ? undefined : value;
+    }
+  }
+  const comment = value.search(/\s#/);
+  if (comment !== -1) value = value.slice(0, comment).trimEnd();
+  if (
+    value.length >= 2 &&
+    ((value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'")))
+  ) {
+    value = value.slice(1, -1);
+  }
+  return value.length === 0 ? undefined : value;
+}
+
+/** A block scalar's lines, ended by the frontmatter's closing `---` or an unindented line. */
+function blockLines(lines: readonly string[], index: number): string[] {
+  const parts: string[] = [];
+  for (let next = index + 1; next < lines.length; next += 1) {
+    const entry = lines[next] ?? "";
+    if (entry.trim() === "---") break;
+    if (entry.trim().length === 0) {
+      parts.push("");
+      continue;
+    }
+    if (!/^\s/.test(entry)) break;
+    parts.push(entry.trim());
+  }
+  while (parts.at(-1) === "") parts.pop();
+  while (parts[0] === "") parts.shift();
+  return parts;
+}
+
+/** A block scalar as one value: `|` keeps its lines, `>` folds them. */
+function blockValue(parts: readonly string[], indicator: string): string | undefined {
+  let value: string;
+  if (indicator.startsWith("|")) {
+    value = parts.join("\n").trim();
+  } else {
+    const folded: string[] = [];
+    let paragraph: string[] = [];
+    for (const part of parts) {
+      if (part.length === 0) {
+        if (paragraph.length > 0) folded.push(paragraph.join(" "));
+        paragraph = [];
+      } else {
+        paragraph.push(part);
+      }
+    }
+    if (paragraph.length > 0) folded.push(paragraph.join(" "));
+    value = folded.join("\n").trim();
+  }
+  return value.length === 0 ? undefined : value;
+}
+
 /** One field of a `SKILL.md` frontmatter, or undefined when it has none. */
 function frontmatterValue(content: string, key: string): string | undefined {
   const text = content.charCodeAt(0) === 0xfeff ? content.slice(1) : content;
@@ -45,33 +109,10 @@ function frontmatterValue(content: string, key: string): string | undefined {
     if (line.trim() === "---") return undefined;
     const match = pattern.exec(line);
     if (match === null) continue;
-    let value = (match[1] ?? "").trim();
-    const comment = value.search(/\s#/);
-    if (comment !== -1) value = value.slice(0, comment).trimEnd();
-    if (/^[>|][+-]?$/.test(value)) {
-      const parts: string[] = [];
-      for (let next = index + 1; next < lines.length; next += 1) {
-        const entry = lines[next] ?? "";
-        if (entry.trim() === "---") break;
-        if (entry.trim().length === 0) {
-          parts.push("");
-          continue;
-        }
-        if (!/^\s/.test(entry)) break;
-        parts.push(entry.trim());
-      }
-      const joined = value.startsWith(">") ? parts.join(" ") : parts.join("\n");
-      const folded = joined.replace(/\s+/g, " ").trim();
-      return folded.length === 0 ? undefined : folded;
-    }
-    if (
-      value.length >= 2 &&
-      ((value.startsWith('"') && value.endsWith('"')) ||
-        (value.startsWith("'") && value.endsWith("'")))
-    ) {
-      value = value.slice(1, -1);
-    }
-    return value.length === 0 ? undefined : value;
+    const raw = (match[1] ?? "").trim();
+    const block = /^([>|][+-]?)(?:\s+#.*)?$/.exec(raw);
+    if (block !== null) return blockValue(blockLines(lines, index), block[1] ?? "");
+    return inlineValue(raw);
   }
   return undefined;
 }

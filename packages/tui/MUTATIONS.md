@@ -469,3 +469,18 @@ the row fields.
 |---|---|---|---|
 | T-0502-M1 | packages/tui/src/events.ts | the tail's block limit counted the line ending that may still be arriving, so a block exactly at its limit was rejected when the chunks split its terminator | `TuiEvents size limits > an event at the limit parses when its line ending is split across chunks` |
 | T-0502-M2 | packages/tui/src/events.ts | a carriage return that may still be part of a line ending was counted as line content before its line feed arrived, so a line exactly at its limit was rejected | `TuiEvents size limits > an event at the limit parses when its line ending is split across chunks`, `TuiEvents size limits > a block at the limit parses when it arrives in many small chunks` |
+
+## T-0495 — a chat's input lists its commands on `/`
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0495-M1 | packages/tui/src/commands.ts | the command list was emptied, so a chat's input showed none of the actions that declare a command | `a chat's input lists its commands on / > the list is every action that declares a command, with its description and hint` |
+| T-0495-M2 | packages/tui/src/commands.ts | the typed word was ignored, so every command stayed in the list | `a chat's input lists its commands on / > typing after the slash filters the list and the arrows move in it` |
+| T-0495-M3 | packages/tui/src/commands.ts | the argument hint was left empty, so a choice parameter did not show its options | `a chat's input lists its commands on / > a choice parameter shows its options; choosing the command fills the input` |
+| T-0495-M4 | packages/tui/src/actions.ts | Enter on a line that starts with `/` was swallowed, so a path-like word with no command was not sent | `a chat's input lists its commands on / > a path-like word with no command is sent as written` |
+| T-0495-M5 | packages/tui/src/view/index.ts | the note input did not draw the command list, so its names, descriptions and choices were missing | `a chat's input lists its commands on / > the open list is drawn with its names, descriptions and choices` |
+| T-0495-M6 | packages/tui/src/state.ts | `/` on a chat page did not open the chat input with the command list | `a chat's input lists its commands on / > the list is every action that declares a command, with its description and hint` |
+| T-0495-M7 | packages/tui/src/actions.ts | escape closed the whole note input instead of only its command list | `a chat's input lists its commands on / > escape closes only the list; another escape closes the input` |
+| T-0495-M8 | packages/tui/src/actions.ts | the arrows in the command list did not stop at its first and last entry | `a chat's input lists its commands on / > the arrows move in the list and stop at its ends` |
+| T-0495-M9 | packages/tui/src/actions.ts | Enter ran the chat's send action instead of filling the line with the chosen command | `a chat's input lists its commands on / > Enter fills the line with the chosen command and does not run it` |
+| T-0495-M10 | packages/tui/src/commands.ts | a clashing short name was given to both actions instead of keeping it for the chat plugin and prefixing the other | `a chat's input lists its commands on / > a clashing short name keeps it for the chat plugin and gives the other its plugin name` |

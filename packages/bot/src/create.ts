@@ -7,7 +7,6 @@
 
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import type { ObjectStore } from "@operad-io/engine";
 import {
   BotError,
   DEFAULT_BOT,
@@ -23,7 +22,7 @@ import {
   type McpServerSettings,
 } from "./bot.ts";
 import { secretName } from "./mcp.ts";
-import { readBotsFile, validateBots, writeBotsFile } from "./proposals.ts";
+import { updateBotsFile, validateBots } from "./proposals.ts";
 
 /** One skill this home already knows, by the name a bot page shows. */
 export interface SkillChoice {
@@ -157,7 +156,6 @@ export interface CreatedBot {
  * approved it. No setting comes from `default`.
  */
 export async function createBot(
-  _store: ObjectStore,
   home: string,
   input: CreateBotInput,
   options: CreateBotOptions = {},
@@ -167,7 +165,7 @@ export async function createBot(
   const bots = readBots(home);
   if (bots[input.name] !== undefined) throw new BotError(`there is already a bot "${input.name}"`);
 
-  const known = knownSkillsFor(home, options.userHome);
+  const known = knownSkills(home, options.userHome);
   const byName = new Map<string, SkillChoice>();
   const byPath = new Map<string, SkillChoice>();
   for (const skill of known) {
@@ -214,20 +212,19 @@ export async function createBot(
   // Refuse a result that could not be used now, such as a skill that vanished.
   resolveBot(home, input.name, settings as BotSettings);
 
-  const written = await readBotsFile(home);
-  written[input.name] = settings;
-  validateBots(written);
-  await writeBotsFile(home, written);
+  await updateBotsFile(home, (written) => {
+    if (written[input.name] !== undefined) {
+      throw new BotError(`there is already a bot "${input.name}"`);
+    }
+    const next = { ...written, [input.name]: settings };
+    validateBots(next);
+    return next;
+  });
 
   const secrets: string[] = [];
   for (const [server, entry] of Object.entries(servers)) {
     for (const variable of entry.secrets ?? []) secrets.push(secretName(server, variable));
   }
   return { settings: settings as BotSettings, secrets };
-}
-
-/** The known skills, spelled for the local names to avoid shadowing the argument. */
-function knownSkillsFor(home: string, userHome: string | undefined): readonly SkillChoice[] {
-  return userHome === undefined ? knownSkills(home) : knownSkills(home, userHome);
 }
 
