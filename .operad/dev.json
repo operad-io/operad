@@ -10,7 +10,7 @@
         "--model",
         "opencode-go/deepseek-v4.1-flash"
       ],
-      "count": 3,
+      "count": 2,
       "stallSecs": 900,
       "wallTimeSecs": 7200
     }
