@@ -30,6 +30,7 @@ import { telegramChunks } from "./format.ts";
 import { telegramSettings, type TelegramSettings } from "./settings.ts";
 import { boundChats } from "./source.ts";
 import {
+  pruneCommands,
   readCommands,
   writeCommands,
   type CommandState,
@@ -328,7 +329,7 @@ export class CommandSender implements CommandResponder {
   }
 
   private remember(key: string, sent: SentCommand): void {
-    this.state = { ...this.state, [key]: sent };
+    this.state = pruneCommands({ ...this.state, [key]: sent });
     writeCommands(this.ctx.home, this.state);
   }
 

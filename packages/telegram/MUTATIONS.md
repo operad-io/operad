@@ -107,3 +107,14 @@ the row fields.
 | T-0494-M10 | packages/telegram/src/commands.ts | a tap from a user not in the `users` list ran the command | `a command in a Telegram chat > a tap from an unlisted user counts for nothing` |
 | T-0494-M11 | packages/telegram/src/source.ts | a command's text titled the chat it opened, so `/help` became a chat called `/help` | `a command in a Telegram chat > a command before any chat opens one, as a first message does` |
 | T-0494-M12 | packages/telegram/src/commands.ts | the menu's event watcher ignored every client event, so a command gained or lost while the bot ran never reached Telegram | `the bot's command menu > follows the client's events and registers again when a command appears or goes` |
+
+## T-0506 — chat command follow-ups
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0506-M1 | packages/telegram/src/commands.ts | the keyboard state grew without a bound, so every answered keyboard stayed in `commands.json` | `a command in a Telegram chat > the keyboard state file keeps only the newest answered keyboards` |
+| T-0506-M2 | packages/telegram/src/commands.ts | markup Telegram refused was not sent again as plain text | `a command in a Telegram chat > what a command returns goes again as plain text when Telegram refuses its markup` |
+| T-0506-M3 | packages/telegram/src/commands.ts | a restarted command side forgot the keyboards it had sent | `a command in a Telegram chat > a choice keyboard survives a restart so its buttons still work` |
+| T-0506-M4 | packages/telegram/src/commands.ts | a long description was sent whole instead of cut to Telegram's limit | `the bot's command menu > cuts a long command description to what Telegram takes` |
+| T-0506-M5 | packages/telegram/src/commands.ts | the menu's event watcher did not register again after a client change | `the bot's command menu > follows the client's events and registers again when a command appears or goes` (timed out) |
+| T-0506-M6 | packages/telegram/src/commands.ts | the page after the first had no « button back | `a command in a Telegram chat > without its one choice it answers with the choices, one page at a time, and a tap runs it` |

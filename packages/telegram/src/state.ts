@@ -257,6 +257,30 @@ function commandOf(value: unknown): SentCommand | undefined {
   };
 }
 
+/** How many choice keyboards the state file keeps; older answered ones are dropped. */
+export const COMMAND_STATE_MAX = 100;
+
+/** A bounded command state: unanswered keyboards first, then the newest answered ones. */
+export function pruneCommands(
+  state: CommandState,
+  keep = COMMAND_STATE_MAX,
+): CommandState {
+  const entries = Object.entries(state);
+  if (entries.length <= keep) return state;
+  const open = entries.filter(([, command]) => command.chosen === undefined).slice(-keep);
+  const chosen = entries.filter(([, command]) => command.chosen !== undefined);
+  const room = Math.max(0, keep - open.length);
+  const kept = new Set([
+    ...open.map(([key]) => key),
+    ...chosen.slice(-room).map(([key]) => key),
+  ]);
+  const bounded: Record<string, SentCommand> = {};
+  for (const [key, command] of entries) {
+    if (kept.has(key)) bounded[key] = command;
+  }
+  return bounded;
+}
+
 /** The recorded choice keyboards; empty when the file is missing or unusable. */
 export function readCommands(home: string): CommandState {
   let parsed: unknown;
@@ -271,7 +295,7 @@ export function readCommands(home: string): CommandState {
     const command = commandOf(value);
     if (command !== undefined) commands[key] = command;
   }
-  return commands;
+  return pruneCommands(commands);
 }
 
 /** Records the choice keyboards, replacing the file whole. */

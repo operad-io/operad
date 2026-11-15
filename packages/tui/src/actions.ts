@@ -4,7 +4,6 @@
  * state; the shell sends the request this code leaves in `actionRequest`.
  */
 
-export * from "./commands.ts";
 
 import type { ViewAction, ViewRow } from "@operad-io/engine";
 import { argFields, narrowField, parseArg, type ArgField } from "./args.ts";
@@ -952,13 +951,15 @@ export function inputKey(
     }
     if (enter) {
       const chosen = entries[Math.min(input.commandMenu.cursor, entries.length - 1)];
-      // A line that matches no command is an ordinary message, sent as written.
-      if (chosen !== undefined) {
+      // A line that already spells the chosen command is sent now, not filled
+      // again; a line that matches no command is sent as written.
+      const filled = chosen === undefined ? undefined : commandText(chosen);
+      if (filled !== undefined && filled !== input.text) {
         return {
           ...state,
           input: {
             ...input,
-            text: commandText(chosen),
+            text: filled,
             commandMenu: undefined,
             commands: undefined,
           },

@@ -4,11 +4,13 @@
  * `dev` hands a harness step an object under `params.inbox` with one method,
  * `listen(handler)`. The handler gets each message the host sends, in order,
  * including the ones sent before it listened; the returned function stops
- * listening. A harness that can take a message mid-run listens and passes the
- * text on; one that cannot ignores the field and the run goes on without it.
+ * listening. The handler answers false when the run can no longer take the
+ * message, so the host does not count it as taken. A harness that can take a
+ * message mid-run listens and passes the text on; one that cannot ignores the
+ * field and the run goes on without it.
  */
 export interface MessageInbox {
-  listen(handler: (text: string) => void): () => void;
+  listen(handler: (text: string) => boolean | void): () => void;
   /**
    * Tells the host the run has begun and how long it may last, in
    * milliseconds, so it can time what it says from the run's own start.

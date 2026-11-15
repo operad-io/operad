@@ -124,6 +124,7 @@ export async function rig(
       active.controller.abort();
       return true;
     },
+    onRunActive: (runId) => active?.runId === runId,
   });
   let runs = 0;
   return {

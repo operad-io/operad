@@ -589,7 +589,9 @@ export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
           if (inbox !== undefined) {
             const queued: string[] = [];
             stopInbox = inbox.listen((message) => {
+              if (server.finished) return false;
               if (!server.steer(message)) queued.push(message);
+              return true;
             });
             inbox.begin?.(wallTimeSecs * 1000);
             void server.started.then(() => {

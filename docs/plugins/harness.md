@@ -70,7 +70,7 @@ A harness plugin declares what a chat may pick:
 
 Actions read them from `ctx.models[<plugin>]` and `ctx.efforts[<plugin>]`; `argsFor` uses them to build the [per-agent `if`/`then` choices](actions.md#per-agent-choices-with-if-and-then). A non-harness plugin that declares `models` is refused: `models: only a harness plugin declares models`.
 
-A chat reads `capabilities.takesMessagesMidRun` through `ctx.harnessCapabilities`; a step reads the inbox the chat passes in its params with `inboxOf(params)` from `@operad-io/harness-process`. `claude`, `pi` and `codex` declare it; `radian` does not.
+A chat reads `capabilities.takesMessagesMidRun` through `ctx.harnessCapabilities`; a step reads the inbox the chat passes in its params with `inboxOf(params)` from `@operad-io/harness-process`. The listener answers false when the run can no longer take a message, so the host does not count it as taken. `claude`, `pi` and `codex` declare it; `radian` does not.
 
 ## Skills
 

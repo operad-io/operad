@@ -12,6 +12,8 @@ import { emptyFold, foldLines, maskSecrets, type FoldEntry, type FoldState, type
 import {
   allEntries,
   allMessages,
+  ANSWER_FACT,
+  answeredOfFact,
   attachmentsOf,
   chatFacts,
   IMAGE_TYPES,
@@ -48,15 +50,19 @@ async function syncChat(ctx: StepContext, id: string, session: string | undefine
   if (session !== undefined) next.session = session;
   let micros: number | undefined;
   let quality: CostQuality | undefined;
+  let costMissing = false;
   let tokens: UsageTokens | undefined;
+  let tokensMissing = false;
   for (const message of allMessages(ctx.store, id)) {
     if (message.role !== "assistant") continue;
     if (message.model !== undefined) next.lastModel = message.model;
-    if (message.costMicros !== undefined) {
+    if (message.costMicros === undefined) costMissing = true;
+    else {
       micros = (micros ?? 0) + message.costMicros;
       quality = worseQuality(quality, message.costQuality);
     }
-    if (message.tokens !== undefined) {
+    if (message.tokens === undefined) tokensMissing = true;
+    else {
       tokens = {
         input: (tokens?.input ?? 0) + message.tokens.input,
         output: (tokens?.output ?? 0) + message.tokens.output,
@@ -65,9 +71,13 @@ async function syncChat(ctx: StepContext, id: string, session: string | undefine
       };
     }
   }
-  if (micros !== undefined) next.costMicros = micros;
-  if (quality !== undefined) next.costQuality = quality;
+  if (micros !== undefined) {
+    next.costMicros = micros;
+    next.costQuality = costMissing ? worseQuality(quality, "incomplete") : quality;
+  }
   if (tokens !== undefined) next.tokens = tokens;
+  if (tokens !== undefined && tokensMissing) next.tokensIncomplete = true;
+  else if (tokens !== undefined) delete next.tokensIncomplete;
   if (JSON.stringify(next) !== JSON.stringify(fresh.data)) {
     await ctx.store.put(CHAT_TYPE, id, next, "step:chat/reply");
   }
@@ -545,6 +555,23 @@ async function recordFailure(ctx: StepContext, chat: string, message: string): P
   await ctx.facts.append({ type: ENTRY_FACT, object: chatRef(chat), data });
 }
 
+/**
+ * Records messages an attempt took before it ended without a reply message, so
+ * a later round does not give them to the agent again.
+ */
+async function recordTaken(ctx: StepContext, chat: string, runId: string, ids: readonly string[]): Promise<void> {
+  if (ids.length === 0) return;
+  const facts = chatFacts(ctx.store, chat);
+  const seen = new Set(facts.flatMap((fact) => answeredOfFact(fact)));
+  const fresh = ids.filter((id) => !seen.has(id));
+  if (fresh.length === 0) return;
+  await ctx.facts.append({
+    type: ANSWER_FACT,
+    object: chatRef(chat),
+    data: { runId, ids: fresh },
+  });
+}
+
 /** Ends a reply as failed, after recording why in the chat. */
 async function failedReply(
   ctx: StepContext,
@@ -580,12 +607,12 @@ interface ReplyInbox {
 }
 
 function replyInbox(): ReplyInbox {
-  let listener: ((text: string) => void) | undefined;
+  let listener: ((text: string) => boolean | void) | undefined;
   const waiting: { readonly id: string; readonly text: string }[] = [];
   const handed: string[] = [];
   const hand = (message: { readonly id: string; readonly text: string }): void => {
+    if (listener?.(message.text) === false) return;
     handed.push(message.id);
-    listener?.(message.text);
   };
   return {
     inbox: {
@@ -619,7 +646,7 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
   if (stored === undefined) return failed("object", `there is no chat ${object.id}`);
   const chat = chatData(stored.data);
   let messages = allMessages(ctx.store, object.id);
-  let pending = unanswered(messages);
+  let pending = unanswered(messages, chatFacts(ctx.store, object.id));
   if (pending.length === 0) {
     // A run that stopped after recording a reply still owes the chat its model and cost.
     await syncChat(ctx, object.id, undefined);
@@ -671,7 +698,7 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
     // A message that came between the first read and this subscription is in
     // the facts now. It is delivered, not also put into the prompt.
     messages = allMessages(ctx.store, object.id);
-    pending = unanswered(messages).filter((message) => !arrived.has(message.id));
+    pending = unanswered(messages, chatFacts(ctx.store, object.id)).filter((message) => !arrived.has(message.id));
   }
 
   const resumed = isRecord(params) ? params : {};
@@ -784,6 +811,7 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
   } catch (error) {
     closeMidRun();
     await recordEntries(ctx, object.id, folded, { stopped: true });
+    await recordTaken(ctx, object.id, ctx.runId, midRun?.handed ?? []);
     return failedReply(ctx, object.id, "harness", messageOf(error));
   }
   // From here on the harness can no longer take a message: one that arrives
@@ -792,6 +820,7 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
 
   if (outcome.result === "waiting") {
     await recordEntries(ctx, object.id, folded, { stopped: true });
+    await recordTaken(ctx, object.id, ctx.runId, midRun?.handed ?? []);
     return { result: "waiting", ...(outcome.data === undefined ? {} : { data: outcome.data }) };
   }
   const data = isRecord(outcome.data) ? outcome.data : {};
@@ -802,10 +831,12 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
   }
   if (outcome.result === "interrupted") {
     await recordEntries(ctx, object.id, folded, { stopped: true });
+    await recordTaken(ctx, object.id, ctx.runId, midRun?.handed ?? []);
     return { result: "interrupted", data };
   }
   if (outcome.result !== "done") {
     await recordEntries(ctx, object.id, folded, { stopped: true });
+    await recordTaken(ctx, object.id, ctx.runId, midRun?.handed ?? []);
     const why = failureOf(outcome);
     return failedReply(ctx, object.id, why.reason, why.message);
   }
@@ -813,6 +844,7 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
   const text = maskSecrets(said, await secretValues(ctx));
   if (text.length === 0) {
     await recordEntries(ctx, object.id, folded, { stopped: true });
+    await recordTaken(ctx, object.id, ctx.runId, midRun?.handed ?? []);
     return failedReply(ctx, object.id, "empty", "the agent gave no reply");
   }
   const sessionId = typeof data.sessionId === "string" && data.sessionId.length > 0 ? data.sessionId : undefined;
@@ -842,7 +874,7 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
   // The chat's own reference follows; read again, so a change made meanwhile stays.
   await syncChat(ctx, object.id, sessionId);
 
-  const left = unanswered(allMessages(ctx.store, object.id));
+  const left = unanswered(allMessages(ctx.store, object.id), chatFacts(ctx.store, object.id));
   const answered = pending.length + (midRun?.handed.length ?? 0);
   return { result: left.length > 0 ? "more" : "done", data: { answered, left: left.length } };
 }

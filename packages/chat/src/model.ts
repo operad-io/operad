@@ -26,6 +26,12 @@ export const ENTRY_FACT = "chat.entry";
 /** The fact type of a reply run that began on a chat: the run id, so a view can find the step's log. */
 export const RUN_FACT = "chat.run";
 
+/** The fact type of a run a `/stop` cancelled, so status and retry need not read the command's words. */
+export const STOP_FACT = "chat.stop";
+
+/** The fact type of messages an attempt took, when no reply message can name them. */
+export const ANSWER_FACT = "chat.answered";
+
 /** How a tool call ended. */
 export type ToolResult = "done" | "failed" | "blocked" | "denied";
 
@@ -104,6 +110,8 @@ export interface ChatData {
   readonly costQuality?: CostQuality | undefined;
   /** The tokens the replies used so far; absent while no reply reported any. */
   readonly tokens?: UsageTokens | undefined;
+  /** True when some replies reported no tokens, so `tokens` is a partial total. */
+  readonly tokensIncomplete?: true | undefined;
 }
 
 /** How far to trust a cost: the harness's own words. */
@@ -329,6 +337,48 @@ export interface Entry extends EntryData {
   readonly sequence: number;
 }
 
+/** What a stop fact holds: the reply run the command cancelled, and who stopped it. */
+export interface StopData {
+  readonly [key: string]: unknown;
+  readonly runId: string;
+  readonly by: { readonly via: string; readonly id: string };
+}
+
+/** The stop a fact records, or undefined for another fact. */
+export function stopOfFact(fact: PluginFact): StopData | undefined {
+  if (fact.type !== STOP_FACT) return undefined;
+  const data = fact.data;
+  if (typeof data.runId !== "string" || data.runId.length === 0) return undefined;
+  const from = isRecord(data.by) ? data.by : {};
+  return {
+    runId: data.runId,
+    by: {
+      via: typeof from.via === "string" ? from.via : "",
+      id: typeof from.id === "string" ? from.id : "",
+    },
+  };
+}
+
+/** The run a stop fact cancelled after a sequence, newest first, or undefined. */
+export function stoppedRunAfter(
+  facts: readonly PluginFact[],
+  after: number,
+): string | undefined {
+  let found: string | undefined;
+  for (const fact of facts) {
+    if (fact.sequence <= after) continue;
+    const stop = stopOfFact(fact);
+    if (stop !== undefined) found = stop.runId;
+  }
+  return found;
+}
+
+/** The ids a `chat.answered` fact records as taken by one run. */
+export function answeredOfFact(fact: PluginFact): readonly string[] {
+  if (fact.type !== ANSWER_FACT || !Array.isArray(fact.data.ids)) return [];
+  return fact.data.ids.filter((id): id is string => typeof id === "string" && id.length > 0);
+}
+
 /** What a close fact holds: who closed the chat. */
 export interface ClosedData {
   readonly [key: string]: unknown;
@@ -397,6 +447,7 @@ export function chatData(data: Readonly<Record<string, unknown>>): ChatData {
     ...(typeof data.costMicros === "number" && Number.isFinite(data.costMicros) ? { costMicros: data.costMicros } : {}),
     ...(isCostQuality(data.costQuality) ? { costQuality: data.costQuality } : {}),
     ...(tokens === undefined ? {} : { tokens }),
+    ...(data.tokensIncomplete === true ? { tokensIncomplete: true as const } : {}),
   };
 }
 
@@ -759,19 +810,13 @@ export function writingReply(
   );
   const stopped = facts.some((fact) => {
     if (fact.sequence <= started) return false;
-    const command = commandOfFact(fact);
-    return (
-      command !== undefined &&
-      command.ok &&
-      command.command === "/stop" &&
-      command.outcome.startsWith("stopped the reply")
-    );
+    return stopOfFact(fact)?.runId === runId;
   });
   if (ended || stopped) return undefined;
   const replied = messages.some((message) => message.role === "assistant" && message.runId === runId);
   // The flow goes round again while messages arrived during the reply: a reply
   // for this run with messages still unanswered is the next round, not an end.
-  if (!replied || unanswered(messages).length > 0) return { runId, since };
+  if (!replied || unanswered(messages, facts).length > 0) return { runId, since };
   return undefined;
 }
 
@@ -817,13 +862,23 @@ export function lastReplyOutcome(
   return { kind, ...(runId === undefined ? {} : { runId }) };
 }
 
-/** The person's messages no assistant message answers yet, oldest first. */
-export function unanswered(messages: readonly Message[]): readonly Message[] {
+/**
+ * The person's messages no assistant message answers yet, oldest first. A
+ * `chat.answered` fact also answers messages an attempt took before it ended
+ * without a reply message.
+ */
+export function unanswered(
+  messages: readonly Message[],
+  facts: readonly PluginFact[] = [],
+): readonly Message[] {
   const answered = new Set<string>();
   for (const message of messages) {
     if (message.role === "assistant") {
       for (const id of message.replyTo ?? []) answered.add(id);
     }
+  }
+  for (const fact of facts) {
+    for (const id of answeredOfFact(fact)) answered.add(id);
   }
   return messages.filter((message) => message.role === "user" && !answered.has(message.id));
 }

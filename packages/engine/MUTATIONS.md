@@ -991,3 +991,10 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0496-M4 | packages/engine/src/plugin/validate.ts | the capability check still knew only `loadsSkills`, so `takesMessagesMidRun` was refused | `harness capabilities > a harness declares that it takes messages mid-run, and the registry exposes it` |
+
+## T-0506 — an action knows which actions are available, and the run control says a run ended
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0506-M1 | packages/engine/src/plugin/registry.ts | the actions an action receives were all marked available, so `/help` listed unavailable commands | `commands in chat:send > /help leaves out a command that is unavailable now` |
+| T-0506-M2 | packages/engine/src/plugin/registry.ts | the run control's `active` always said it could not tell, so a crashed run was still called writing | `chat:status > a run a crash left without an ending entry is not called writing` |

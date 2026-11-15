@@ -110,9 +110,9 @@ describe("a chat's input lists its commands on /", () => {
     const empty = press(input(), "/", ...typeText("zzz"));
     expect(commandEntries(empty)).toEqual([]);
     const both = press(input(), "/", ...typeText("e"));
-    expect(names(commandEntries(both))).toEqual(["effort", "model", "help"]);
+    expect(names(commandEntries(both))).toEqual(["effort"]);
     const moved = press(both, "down");
-    expect(moved.input?.kind === "note" && moved.input.commandMenu?.cursor).toBe(1);
+    expect(moved.input?.kind === "note" && moved.input.commandMenu?.cursor).toBe(0);
   });
 
   test("the arrows move in the list and stop at its ends", () => {
@@ -144,6 +144,26 @@ describe("a chat's input lists its commands on /", () => {
       id: "chat:one",
       note: "/stop",
     });
+  });
+
+  test("Enter sends a line that already spells the chosen command", () => {
+    const state = press(input(), "/", ...typeText("stop"), "enter");
+    expect(state.actionRequest).toEqual({
+      action: "chat:send",
+      id: "chat:one",
+      note: "/stop",
+    });
+  });
+
+  test("/ opens chat:send even when another note action is declared first", () => {
+    const OTHER_NOTE = action("chat:other", {
+      args: { type: "object", properties: { note: NOTE }, additionalProperties: false },
+      note: "note",
+    });
+    const state = press(opened([OTHER_NOTE, SEND, ...ACTIONS.slice(1)]), "/");
+    expect(state.input?.kind).toBe("note");
+    expect(state.input?.kind === "note" && state.input.action).toBe("chat:send");
+    expect(state.input?.kind === "note" && state.input.text).toBe("/");
   });
 
   test("a clashing short name keeps it for the chat plugin and gives the other its plugin name", () => {

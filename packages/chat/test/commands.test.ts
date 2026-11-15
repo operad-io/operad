@@ -130,6 +130,74 @@ describe("commands in chat:send", () => {
     expect(r.events).toEqual([]);
   });
 
+  test("number, integer and boolean arguments are positional and coerced", async () => {
+    const typed = definePlugin({
+      name: "typed",
+      kind: "domain",
+      version: "0.0.0",
+      actions: [
+        {
+          name: "typed",
+          on: CHAT_TYPE,
+          command: "Take typed values.",
+          args: {
+            type: "object",
+            properties: {
+              count: { type: "integer" },
+              ratio: { type: "number" },
+              flag: { type: "boolean" },
+              words: { type: "string" },
+            },
+            required: ["count", "ratio", "flag", "words"],
+            additionalProperties: false,
+          },
+          when: () => true,
+          run: (_ctx, args) => {
+            const input = args as {
+              readonly count: number;
+              readonly ratio: number;
+              readonly flag: boolean;
+              readonly words: string;
+            };
+            return `${typeof input.count}:${input.count}|${typeof input.ratio}:${input.ratio}|${typeof input.flag}:${input.flag}|${input.words}`;
+          },
+        },
+      ],
+    });
+    const r = await rig(() => reply("x"), MODELS, EFFORTS, "fake", [typed]);
+    const chat = await r.chat();
+
+    const sent = await send(r, chat, "/typed 3 2.5 true hello world");
+    expect(sent.value).toBe("number:3|number:2.5|boolean:true|hello world");
+    expect(commandFacts(r, chat)[0]).toMatchObject({ command: "/typed 3 2.5 true hello world", ok: true });
+  });
+
+  test("leading whitespace before the slash still starts a command", async () => {
+    const r = await rig(() => reply("x"), MODELS, EFFORTS);
+    const chat = await r.chat({ model: "small", effort: "low", effortDefault: "low" });
+
+    const sent = await send(r, chat, "  /model large");
+    expect(sent.value).toContain("large");
+    expect(await model(r, chat)).toBe("large");
+    expect(allMessages(r.store, chat)).toEqual([]);
+    expect(commandFacts(r, chat)[0]).toMatchObject({ command: "/model large", ok: true });
+  });
+
+  test("/help leaves out a command that is unavailable now", async () => {
+    const r = await rig(() => reply("x"));
+    const chat = await r.chat();
+
+    const help = await send(r, chat, "/help");
+    const listed = String(help.value)
+      .split("\n")
+      .map((line: string) => /^- `\/([^`]+)`/.exec(line)?.[1])
+      .filter((name: string | undefined): name is string => name !== undefined)
+      .sort();
+    expect(listed).toEqual(["close", "help", "retry", "status", "stop"]);
+    expect(String(help.value)).not.toContain("`/model`");
+    expect(String(help.value)).not.toContain("`/effort`");
+  });
+
   test("a command runs at once while a reply is being written and starts no reply", async () => {
     let markStarted: () => void = () => undefined;
     const entered = new Promise<void>((resolve) => {

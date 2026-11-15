@@ -308,10 +308,11 @@ export async function runAgent(
   const clock = options.clock ?? systemClock;
   let resetStallForLine: () => void = () => {};
   let onLineOverflow: () => void = () => {};
-  const reply = (text: string): void => {
+  const reply = (text: string): boolean => {
     const pipe = child.stdin;
-    if (options.interactive !== true || pipe === null || pipe.destroyed) return;
+    if (options.interactive !== true || pipe === null || pipe.destroyed) return false;
     pipe.write(`${text}\n`);
+    return true;
   };
   let toolCalls = 0;
   let onToolActivity: (activity: ToolEvent) => void = () => {};
@@ -526,7 +527,8 @@ export async function runAgent(
     options.inbox === undefined
       ? undefined
       : options.inbox.listen((text) => {
-          if (!finished) reply(messageLine(text));
+          if (finished) return false;
+          return reply(messageLine(text));
         });
   if (options.wallMs > 0) options.inbox?.begin?.(options.wallMs);
 

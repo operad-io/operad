@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { CHAT_TYPE } from "../src/index.ts";
+import { CHAT_TYPE, chatRef, RUN_FACT } from "../src/index.ts";
 import { cleanupRoots, reply, rig } from "./support.ts";
 
 afterAll(cleanupRoots);
@@ -97,6 +97,27 @@ describe("chat:status", () => {
     expect(text).not.toContain("$0.00");
   });
 
+  test("a session that mixes reported and unreported usage says the totals are partial", async () => {
+    let count = 0;
+    const r = await rig(
+      () => {
+        count += 1;
+        return count === 1 ? usageReply(10, 5, 100_000, "exact")() : reply("hi");
+      },
+      MODELS,
+      EFFORTS,
+    );
+    const chat = await r.chat();
+    await r.say(chat, "one");
+    await r.round(chat);
+    await r.say(chat, "two");
+    await r.round(chat);
+
+    const text = String((await send(r, chat, "/status")).value);
+    expect(text).toContain("Cost: ≥$0.10 · at least 10 in / 5 out tokens");
+    expect(text).toContain("Last reply: cost unknown · tokens unknown");
+  });
+
   test("an agent that reports no usage leaves both costs and tokens unknown", async () => {
     const r = await rig(() => reply("hi"), MODELS, EFFORTS);
     const chat = await r.chat();
@@ -106,6 +127,24 @@ describe("chat:status", () => {
     const text = String((await send(r, chat, "/status")).value);
     expect(text).toContain("Cost: unknown · tokens unknown");
     expect(text).toContain("Last reply: cost unknown · tokens unknown");
+  });
+
+  test("a run a crash left without an ending entry is not called writing", async () => {
+    const r = await rig(() => reply("x"), MODELS, EFFORTS);
+    const chat = await r.chat();
+    await r.say(chat, "hello");
+    // A crash left the run fact and the unanswered message, but no failure or
+    // stopped entry; the host says the run is gone.
+    await r.store.append({
+      type: RUN_FACT,
+      object: chatRef(chat),
+      cause: "test",
+      data: { runId: "run-crashed" },
+    });
+
+    const text = String((await send(r, chat, "/status")).value);
+    expect(text).toContain("Reply: not writing");
+    expect(text).toContain("Waiting: 1 message");
   });
 
   test("works while a reply is being written and says since when and how many wait", async () => {
