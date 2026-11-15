@@ -7,7 +7,7 @@
 
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { AskTimeoutError, attachmentDir, isRecord, messageOf, safeFileName, type AskOutcome, type AskRequest, type JsonValue, type PluginStepResult, type RunObject, type StepAsker, type StepContext } from "@operad-io/engine";
+import { AskTimeoutError, attachmentDir, isRecord, messageOf, safeFileName, type AskOutcome, type AskRequest, type JsonValue, type PluginStepResult, type RunObject, type StepAsker, type StepContext, type UsageTokens } from "@operad-io/engine";
 import { emptyFold, foldLines, maskSecrets, type FoldEntry, type FoldState } from "@operad-io/harness-process";
 import {
   allEntries,
@@ -47,6 +47,7 @@ async function syncChat(ctx: StepContext, id: string, session: string | undefine
   if (session !== undefined) next.session = session;
   let micros: number | undefined;
   let quality: CostQuality | undefined;
+  let tokens: UsageTokens | undefined;
   for (const message of allMessages(ctx.store, id)) {
     if (message.role !== "assistant") continue;
     if (message.model !== undefined) next.lastModel = message.model;
@@ -54,9 +55,18 @@ async function syncChat(ctx: StepContext, id: string, session: string | undefine
       micros = (micros ?? 0) + message.costMicros;
       quality = worseQuality(quality, message.costQuality);
     }
+    if (message.tokens !== undefined) {
+      tokens = {
+        input: (tokens?.input ?? 0) + message.tokens.input,
+        output: (tokens?.output ?? 0) + message.tokens.output,
+        cacheread: (tokens?.cacheread ?? 0) + message.tokens.cacheread,
+        cachewrite: (tokens?.cachewrite ?? 0) + message.tokens.cachewrite,
+      };
+    }
   }
   if (micros !== undefined) next.costMicros = micros;
   if (quality !== undefined) next.costQuality = quality;
+  if (tokens !== undefined) next.tokens = tokens;
   if (JSON.stringify(next) !== JSON.stringify(fresh.data)) {
     await ctx.store.put(CHAT_TYPE, id, next, "step:chat/reply");
   }

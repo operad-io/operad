@@ -1,7 +1,7 @@
 /** The chat plugin: a long conversation with an agent, and how a message is answered. */
 
 import pkg from "../package.json" with { type: "json" };
-import { defineFlow, definePlugin, type ActionArgsSchema, type ActionContext, type ActionTypeDefinition } from "@operad-io/engine";
+import { defineFlow, definePlugin, type ActionArgsSchema, type ActionContext, type ActionTypeDefinition, type UsageTokens } from "@operad-io/engine";
 import {
   CHAT_FILTERS,
   CHAT_SOURCES,
@@ -15,7 +15,9 @@ import {
   CLOSED_FACT,
   COMMAND_FACT,
   commandOfFact,
+  costText,
   EFFORT_FACT,
+  firstOutputMs,
   lastReplyOutcome,
   latestRunOf,
   MESSAGE_EVENT,
@@ -24,11 +26,15 @@ import {
   MODEL_FACT,
   newMessageId,
   unanswered,
+  writingReply,
+  type ChatData,
   type ClosedData,
   type CommandData,
   type EffortChangedData,
+  type Message,
   type ModelChangedData,
   type MessageData,
+  type WritingReply,
 } from "./model.ts";
 import { runReply } from "./reply.ts";
 import { chatCommands, findCommand, helpText, parseCommand, runCommand } from "./command.ts";
@@ -364,6 +370,90 @@ const stopAction: ActionTypeDefinition = {
   },
 };
 
+/** A token count: whole below 10k, then in k with one decimal. */
+function tokenCount(count: number): string {
+  return count < 10_000 ? String(count) : `${(count / 1000).toFixed(1)}k`;
+}
+
+/** The token usage part of a status line, or that no agent reported it. */
+function statusTokens(tokens: UsageTokens | undefined): string {
+  if (tokens === undefined) return "tokens unknown";
+  return `${tokenCount(tokens.input)} in / ${tokenCount(tokens.output)} out tokens`;
+}
+
+/** A short duration for a reply's first output. */
+function statusDuration(ms: number): string {
+  if (ms < 1000) return "<1s";
+  const secs = ms / 1000;
+  if (secs < 60) return `${secs.toFixed(1)}s`;
+  const total = Math.round(secs);
+  const minutes = Math.floor(total / 60);
+  return minutes < 60
+    ? `${minutes}m${String(total % 60).padStart(2, "0")}s`
+    : `${Math.floor(minutes / 60)}h${String(minutes % 60).padStart(2, "0")}m`;
+}
+
+/** When a running reply began, in UTC, to the second. */
+function statusClock(at: number): string {
+  return new Date(at).toISOString().slice(0, 19).replace("T", " ");
+}
+
+/** What `/status` says: a few lines read from the chat's record alone. */
+function statusText(
+  chat: ChatData,
+  messages: readonly Message[],
+  writing: WritingReply | undefined,
+): string {
+  const last = [...messages].reverse().find((message) => message.role === "assistant");
+  const model = chat.model ?? chat.lastModel;
+  const effort = chat.effort ?? chat.effortDefault;
+  const waiting = unanswered(messages).length;
+  const first = firstOutputMs(last?.timings);
+  const lastUsage =
+    last === undefined
+      ? []
+      : [
+          last.costMicros === undefined
+            ? "cost unknown"
+            : costText(last.costMicros, last.costQuality),
+          statusTokens(last.tokens),
+          ...(first === undefined ? [] : [`first output ${statusDuration(first)}`]),
+        ];
+  return [
+    `Agent: ${chat.harness}`,
+    `Model: ${model ?? "unknown"}`,
+    `Effort: ${effort ?? "unknown"}`,
+    `Reply: ${writing === undefined ? "not writing" : `writing since ${statusClock(writing.since)}`}`,
+    `Waiting: ${waiting} ${waiting === 1 ? "message" : "messages"}`,
+    `Cost: ${chat.costMicros === undefined ? "unknown" : costText(chat.costMicros, chat.costQuality)} · ${statusTokens(chat.tokens)}`,
+    `Last reply: ${last === undefined ? "none" : lastUsage.join(" · ")}`,
+  ].join("\n");
+}
+
+const statusAction: ActionTypeDefinition = {
+  name: "status",
+  on: CHAT_TYPE,
+  command: "Show where this chat stands and what it has used.",
+  when: (state) => !chatData(state).closed,
+  why: (object) =>
+    chatData(object.data).closed ? `${object.id} is closed; there is no status to show` : undefined,
+  async run(ctx) {
+    const stored = await ctx.store.get(CHAT_TYPE, ctx.object.id);
+    if (stored === undefined) throw new Error(`there is no chat ${ctx.object.id}`);
+    if (chatData(stored.data).closed) {
+      throw new Error(`chat ${ctx.object.id} is closed; there is no status to show`);
+    }
+    const facts = chatFacts(ctx.store, ctx.object.id);
+    const messages = allMessages(ctx.store, ctx.object.id);
+    const entries = allEntries(ctx.store, ctx.object.id);
+    return statusText(
+      chatData(stored.data),
+      messages,
+      writingReply(facts, messages, entries),
+    );
+  },
+};
+
 const retryAction: ActionTypeDefinition = {
   name: "retry",
   on: CHAT_TYPE,
@@ -478,7 +568,7 @@ export function createChatPlugin() {
       object: "$event.object",
       mode: "auto" as const,
     })),
-    actions: [sendAction, modelAction, effortAction, stopAction, retryAction, closeAction, helpAction],
+    actions: [sendAction, modelAction, effortAction, stopAction, retryAction, statusAction, closeAction, helpAction],
     views: { [CHAT_TYPE]: chatViews },
   });
 }

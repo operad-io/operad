@@ -200,3 +200,13 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 | T-0492-M4 | packages/chat/src/views.ts | a stopped half reply was shown without the stopped mark | `chat:stop and chat:retry > stop during text keeps the half-written reply, marked stopped, and says what happens to later messages` |
 | T-0492-M5 | packages/chat/src/index.ts | a retry right after a stop waited for the stopped entry instead of following the successful stop line | `chat:stop and chat:retry > retry after a stop answers again on the same session, keeps the stopped reply, and a rerun adds no entry` |
 | T-0492-M6 | packages/chat/src/index.ts | `chat:stop` asked the run control to cancel a run id that was not the chat's latest | `chat:stop and chat:retry > stop during text keeps the half-written reply, marked stopped, and says what happens to later messages` |
+
+## T-0493 — `/status`
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0493-M1 | packages/chat/src/index.ts | `chat:status` was not declared as an action, so `/status` stayed an ordinary message | `chat:status > shows each line: agent, model, effort, reply, waiting, session usage and the last reply` |
+| T-0493-M2 | packages/chat/src/index.ts | an unknown cost was shown as `$0.00` instead of `unknown` | `chat:status > an unknown cost is said to be unknown, never shown as zero` |
+| T-0493-M3 | packages/chat/src/model.ts | `writingReply` always returned undefined, so status said it was not writing | `chat:status > works while a reply is being written and says since when and how many wait` |
+| T-0493-M4 | packages/chat/src/reply.ts | the chat did not keep the tokens its replies used, so the session's token usage was unknown | `chat:status > shows each line: agent, model, effort, reply, waiting, session usage and the last reply` |
+| T-0493-M5 | packages/chat/src/model.ts | the last reply's stored timings were not turned into a time to first output | `chat:status > shows each line: agent, model, effort, reply, waiting, session usage and the last reply` |

@@ -54,11 +54,12 @@ A chat has these actions:
 | `chat:effort` | `effort` | Changes the effort the next reply uses, from the agent's list; prints `chat <id> now uses effort <effort>; the next reply uses it`. |
 | `chat:stop` | none | Stops the reply being written. What was written stays in the transcript, marked stopped. Messages that arrived meanwhile stay unanswered and no new reply starts by itself; prints that and points to `/retry`. With no reply running it says so and changes nothing. The client's button word is **Stop**. |
 | `chat:retry` | none | Answers the last message again after a reply failed or was stopped. The failed or stopped attempt stays in the record and the agent's session continues. After a normal reply it refuses and starts nothing. |
+| `chat:status` | none | Shows the agent, the model and effort in force, whether a reply is being written and since when, how many messages wait, the session's cost and token usage, and the last reply's usage and time to first output. It reads only, costs no tokens and works while a reply is being written. An agent that reports no cost leaves it `unknown`. |
 | `chat:close` | none; asks to confirm | Records `chat.closed` and ends the chat. Prints `closed <id>`. The transcript stays readable; no other action appears. |
 
 A line that starts with `/` and names one of the chat's actions runs that action
 instead of going to the agent: `/model sonnet`, `/effort high`, `/stop`, `/retry`,
-`/close`, `/help`.
+`/status`, `/close`, `/help`.
 The rest of the line is the action's arguments, in the order its fields are
 declared; one field takes the whole rest, and with more than one the last field
 takes what is left. A `/xxx` that names no action, or a slash later in the line,
