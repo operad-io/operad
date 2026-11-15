@@ -321,6 +321,7 @@ describe("the telegram source", () => {
         return 1;
       },
       async editMessage(): Promise<void> {},
+      async deleteMessage(): Promise<void> {},
       async answerCallback(): Promise<void> {},
       async sendChatAction(): Promise<void> {},
     };

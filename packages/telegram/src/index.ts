@@ -12,6 +12,7 @@ import { definePlugin, type SourceHandle } from "@operad-io/engine";
 import { createBotApi, type BotApi } from "./api.ts";
 import { TELEGRAM_SETTINGS, TOKEN_SECRET } from "./settings.ts";
 import { PendingSender } from "./pending.ts";
+import { ProgressSender } from "./progress.ts";
 import { ReplySender } from "./replies.ts";
 import { TelegramSource, delay } from "./source.ts";
 import { TypingSender } from "./typing.ts";
@@ -48,13 +49,21 @@ export function createTelegramPlugin(options: TelegramPluginOptions = {}) {
         wait,
         ...(options.intervalMs === undefined ? {} : { intervalMs: options.intervalMs }),
       }).start();
-      const replies = new ReplySender(ctx, { api, wait }).start();
+      const replySender = new ReplySender(ctx, { api, wait });
+      const replies = replySender.start();
+      const progress = new ProgressSender(ctx, {
+        api,
+        replies: replySender,
+        ...(options.clock === undefined ? {} : { clock: options.clock }),
+        wait,
+      }).start();
       const source = new TelegramSource(ctx, { api, pending }).start();
       const sent = pending.start();
       return {
         stop: async () => {
           await source.stop();
           await typing.stop();
+          await progress.stop();
           await replies.stop();
           await sent.stop();
         },
@@ -68,6 +77,7 @@ export default createTelegramPlugin();
 export * from "./api.ts";
 export * from "./format.ts";
 export * from "./pending.ts";
+export * from "./progress.ts";
 export * from "./replies.ts";
 export * from "./settings.ts";
 export * from "./source.ts";

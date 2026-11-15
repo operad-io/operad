@@ -167,3 +167,12 @@ export function telegramChunks(markdown: string, limit = CHUNK_TARGET): readonly
   }
   return out;
 }
+
+/**
+ * The one message a reply's progress shows: the end of a text longer than
+ * Telegram takes, reduced like a reply. A fence left open is closed, so a
+ * half-written code block never breaks the edit.
+ */
+export function telegramProgress(markdown: string): TelegramChunk | undefined {
+  return telegramChunks(markdown, TELEGRAM_MAX_CHARS).at(-1);
+}

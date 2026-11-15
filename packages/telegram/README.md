@@ -56,7 +56,17 @@ The event does **not** show in `operad history` of the chat or in the chat's His
 section: those list only the chat's runs and the actions people ran on it, and read
 no source event. Showing it there needs a kernel change. What was sent is kept in `<home>/telegram/sent.json`,
 so a restart neither resends a reply nor skips one written while it was down.
-Replies from before the plugin first ran are not sent. Tool calls are not sent.
+Replies from before the plugin first ran are not sent.
+
+While a reply is written, one progress message per reply is edited to the
+transcript's unfinished part: the text so far and the tool calls in progress.
+It changes at most once every two seconds and only when the text changed; a
+long text shows its end within Telegram's 4096 characters, reduced like a reply
+so an open code fence is closed. When the reply is recorded, the final reply is
+sent as new message(s) and the progress message is deleted. A failed progress
+edit never stops the final reply. The progress message id is kept in
+`<home>/telegram/progress.json`, so a restart deletes a message a killed `serve`
+left behind.
 
 ## What waits for a person
 

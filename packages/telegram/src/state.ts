@@ -203,3 +203,59 @@ export function writePending(home: string, state: PendingState): void {
   writeFileSync(temporary, `${JSON.stringify(state)}\n`, "utf8");
   renameSync(temporary, path);
 }
+
+/** One progress message a reply is shown in: where it lives and what it last said. */
+export interface ProgressRecord {
+  /** The Telegram chat the message is in. */
+  readonly target: number;
+  /** The Telegram `message_id` to edit and to delete when the reply ends. */
+  readonly messageId: number;
+  /** The reduced Markdown that was last sent, so an unchanged text is not edited. */
+  readonly text: string;
+}
+
+/** The progress messages still alive, by the chat they belong to. */
+export type ProgressState = Readonly<Record<string, ProgressRecord>>;
+
+/** The file the progress messages are recorded in. */
+export function telegramProgressPath(home: string): string {
+  return join(telegramStateDirectory(home), "progress.json");
+}
+
+function progressOf(value: unknown): ProgressRecord | undefined {
+  if (
+    !isRecord(value) ||
+    typeof value.target !== "number" ||
+    typeof value.messageId !== "number" ||
+    typeof value.text !== "string"
+  ) {
+    return undefined;
+  }
+  return { target: value.target, messageId: value.messageId, text: value.text };
+}
+
+/** The recorded progress messages; empty when the file is missing or unusable. */
+export function readProgress(home: string): ProgressState {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(telegramProgressPath(home), "utf8"));
+  } catch {
+    return {};
+  }
+  if (!isRecord(parsed)) return {};
+  const found: Record<string, ProgressRecord> = {};
+  for (const [key, value] of Object.entries(parsed)) {
+    const record = progressOf(value);
+    if (record !== undefined) found[key] = record;
+  }
+  return found;
+}
+
+/** Records the progress messages, replacing the file whole. */
+export function writeProgress(home: string, state: ProgressState): void {
+  const path = telegramProgressPath(home);
+  mkdirSync(dirname(path), { recursive: true });
+  const temporary = `${path}.${process.pid}.tmp`;
+  writeFileSync(temporary, `${JSON.stringify(state)}\n`, "utf8");
+  renameSync(temporary, path);
+}

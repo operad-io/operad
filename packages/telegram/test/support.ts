@@ -30,6 +30,7 @@ import { SQLITE_FILE_NAME } from "../../engine/src/log/sqlite.ts";
 import type {
   AnswerCallbackRequest,
   BotApi,
+  DeleteMessageRequest,
   EditMessageRequest,
   GetUpdatesRequest,
   SendChatActionRequest,
@@ -65,11 +66,22 @@ export class FakeApi implements BotApi {
     this.beforeSend?.(request, this.attempts);
     this.sent.push(request);
     this.sentNow?.();
+    this.changed();
     return 9_000 + this.sent.length;
   }
 
   /** Every edit of a message, in order. */
   readonly edits: EditMessageRequest[] = [];
+  /** How many edits were tried, including ones `beforeEdit` refused. */
+  editAttempts = 0;
+  /** Called before each edit; throw to fail it. */
+  beforeEdit: ((request: EditMessageRequest, count: number) => void) | undefined;
+  /** Every message deleted, in order. */
+  readonly deleted: DeleteMessageRequest[] = [];
+  /** How many deletions were tried, including ones `beforeDelete` refused. */
+  deleteAttempts = 0;
+  /** Called before each deletion; throw to fail it. */
+  beforeDelete: ((request: DeleteMessageRequest, count: number) => void) | undefined;
   /** Every answer to a button tap, in order. */
   readonly callbacks: AnswerCallbackRequest[] = [];
   /** Every typing indicator, in order. */
@@ -97,7 +109,17 @@ export class FakeApi implements BotApi {
   }
 
   async editMessage(request: EditMessageRequest): Promise<void> {
+    this.editAttempts += 1;
+    this.beforeEdit?.(request, this.editAttempts);
     this.edits.push(request);
+    this.changed();
+  }
+
+  async deleteMessage(request: DeleteMessageRequest): Promise<void> {
+    this.deleteAttempts += 1;
+    this.beforeDelete?.(request, this.deleteAttempts);
+    this.deleted.push(request);
+    this.changed();
   }
 
   async answerCallback(request: AnswerCallbackRequest): Promise<void> {
