@@ -128,6 +128,7 @@ describe("the show Markdown", () => {
             note: "why",
             noteRequired: true,
             confirm: true,
+            command: "Drop the item.",
             args: { type: "object", properties: { why: { type: "string" } } },
           }),
         ],
@@ -152,6 +153,7 @@ describe("the show Markdown", () => {
     expect(shown).toContain("- `demo:drop` (d)");
     expect(shown).toContain('  - note: `why` (required)');
     expect(shown).toContain("  - confirm: yes");
+    expect(shown).toContain("  - command: Drop the item.");
     expect(shown).toContain("    ```json");
     expect(shown).toContain('"why"');
     expect(shown).toContain("## Owner actions");

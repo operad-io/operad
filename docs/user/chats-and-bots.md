@@ -54,6 +54,19 @@ A chat has these actions:
 | `chat:effort` | `effort` | Changes the effort the next reply uses, from the agent's list; prints `chat <id> now uses effort <effort>; the next reply uses it`. |
 | `chat:close` | none; asks to confirm | Records `chat.closed` and ends the chat. Prints `closed <id>`. The transcript stays readable; no other action appears. |
 
+A line that starts with `/` and names one of the chat's actions runs that action
+instead of going to the agent: `/model sonnet`, `/effort high`, `/close`, `/help`.
+The rest of the line is the action's arguments, in the order its fields are
+declared; one field takes the whole rest, and with more than one the last field
+takes what is left. A `/xxx` that names no action, or a slash later in the line,
+is an ordinary message. `/close` asks for the action's confirmation: `/close`
+alone does nothing and says to send `/close yes`. `/help` lists the actions this
+chat accepts, each with its one-line description. Every attempt leaves one entry
+in the transcript, naming who typed it, the line and what happened or why it was
+refused; that entry is not a message, so the agent never sees it. A command runs
+at once while a reply is being written and does not start a reply of its own.
+A command works from every client because `chat:send` handles it.
+
 A message is an event: source `ios`, `telegram`, `cli`, `tui` or `other`, key is
 the message id, object is the chat. The `chat` plugin's own rule starts
 `chat:reply` for these sources automatically; a rule of yours in `triggers.json`

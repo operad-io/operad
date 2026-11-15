@@ -960,3 +960,11 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0502-M4 | packages/engine/src/http/server.ts | a delivered event reset the backoff, so a source that delivers one event and then dies on every open retried at the minimum | `http server > a source that fails on every open backs off through the injected clock and resets once` |
+## T-0491 — chat commands as actions
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0491-M5 | packages/engine/src/plugin/registry.ts | `command` was left out of the action list, so a client had no description or menu entry | `an action that a chat may run as a command > its one-line description is in the action list, and an empty one is refused` |
+| T-0491-M6 | packages/engine/src/plugin/registry.ts | `runActionChecked` ran an action that asks to confirm without the `yes` | `an action that a chat may run as a command > runActionChecked checks availability, arguments and confirmation before it records anything` |
+| T-0491-M12 | packages/engine/src/plugin/registry.ts | `command: true` did not take the args description or action name, so the action had no command line | `an action that a chat may run as a command > command true takes its line from the args description, else the action name` |
+| T-0491-M13 | packages/engine/src/plugin/validate.ts | the `command` check no longer refused a blank description | `an action that a chat may run as a command > its one-line description is in the action list, and an empty one is refused` |

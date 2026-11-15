@@ -36,6 +36,9 @@ export const EFFORT_FACT = "chat.effort";
 /** The fact type of a chat that was closed. */
 export const CLOSED_FACT = "chat.closed";
 
+/** The fact type of one command a person typed in a chat, and how it went. */
+export const COMMAND_FACT = "chat.command";
+
 /** The list filters of chats: closed ones are hidden unless asked for. */
 export const CHAT_FILTERS = [
   { name: "open", default: true, states: ["open"] },
@@ -316,6 +319,48 @@ export interface Entry extends EntryData {
 export interface ClosedData {
   readonly [key: string]: unknown;
   readonly by: { readonly via: string; readonly id: string };
+}
+
+/** What a command fact holds: who typed it, the command and how it went. */
+export interface CommandData {
+  readonly [key: string]: unknown;
+  readonly from: { readonly via: string; readonly id: string };
+  /** The command as typed, starting with `/`. */
+  readonly command: string;
+  /** What happened, or why it was refused. */
+  readonly outcome: string;
+  readonly ok: boolean;
+}
+
+/** One command with when its fact was recorded. */
+export interface Command extends CommandData {
+  readonly at: number;
+  readonly sequence: number;
+}
+
+/** The command a fact records, or undefined for another fact. */
+export function commandOfFact(fact: PluginFact): Command | undefined {
+  if (fact.type !== COMMAND_FACT) return undefined;
+  const data = fact.data;
+  if (
+    typeof data.command !== "string" ||
+    typeof data.outcome !== "string" ||
+    typeof data.ok !== "boolean"
+  ) {
+    return undefined;
+  }
+  const from = isRecord(data.from) ? data.from : {};
+  return {
+    from: {
+      via: typeof from.via === "string" ? from.via : "",
+      id: typeof from.id === "string" ? from.id : "",
+    },
+    command: data.command,
+    outcome: data.outcome,
+    ok: data.ok,
+    at: fact.at,
+    sequence: fact.sequence,
+  };
 }
 
 /** The chat fields of a stored object, with the lists defaulted. */

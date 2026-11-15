@@ -43,6 +43,32 @@ client (`ios`, `telegram`, `cli`; any other client counts as `cli`), keyed by th
 message id and about the chat. Three default rules start `chat:reply` with `auto`
 on that event. A closed chat refuses the action and adds no message.
 
+## Commands in a chat
+
+An action with `command` set to a one-line description can be typed after `/`.
+`chat:model`, `chat:effort`, `chat:close` and `chat:help` declare it, so
+`/model sonnet`, `/effort high`, `/close` and `/help` work in every chat. The
+name is the action name after the colon. When another plugin gives a chat an
+action with the same short name, `chat` keeps the short name and the other is
+`/<plugin>_<action>`.
+
+`chat:send` checks the whole message: when it starts with `/` and names a
+command this chat has, it runs that action with the rest as arguments and
+records no message for the agent. A `/xxx` that names no command, or a slash
+later in the message, is an ordinary message. Arguments are positional in the
+order the action declares its fields: one field takes the rest of the line, and
+with more than one the last takes what is left. An action that asks to confirm
+runs only when the rest of the line is `yes`, so `/close` asks for `/close yes`.
+A command runs at once while a reply is being written, does not wait for it and
+does not start one.
+
+Every command appends one `chat.command` fact: who typed it, the line as typed,
+the outcome or the refusal, and whether it ran. The transcript shows it as one
+entry; it is not a `chat.message`, so `promptFor` and the agent never see it.
+
+`/help` lists this chat's commands with the one-line description from each
+declaration, under the name the chat types it by.
+
 ## `chat:model <chat> --model <name>`
 
 Changes the model the chat's next reply uses. The argument is one of the models the chat's agent lists (its plugin declares them); a closed chat, or an agent that lists none, does not offer the action. A `chat.model` fact records who changed it, from what and to what. A chat whose model its agent cannot take fails the reply with a message naming the model; it never falls back to another one.

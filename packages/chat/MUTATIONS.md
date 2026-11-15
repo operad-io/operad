@@ -165,3 +165,17 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 | T-0485-M4 | packages/chat/src/views.ts | a radian chat hid the failure line with its text and thinking entries | `a failed reply > shows the failure line in a radian chat too` |
 | T-0485-M5 | packages/chat/src/reply.ts | a long provider message was not cut, so the failure line could grow without limit | `a failed reply > cuts a long provider message to one line` |
 | T-0485-M6 | packages/chat/src/reply.ts | the failure line kept the provider message's internal words (`harness`, `run`, `step`, `flow`, `fact`) | `a failed reply > uses the person's words for the internal names a provider's message carries` |
+
+## T-0491 — chat commands as actions
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0491-M1 | packages/chat/src/index.ts | `chat:send` never parsed a command, so every slash line stayed a model message | `commands in chat:send > a known command runs its action, records no model message, and leaves one line` |
+| T-0491-M2 | packages/chat/src/command.ts | the clash rule kept the short name for the other plugin instead of `chat` | `commands in chat:send > the chat plugin keeps a clashing short name and another plugin gets its own` |
+| T-0491-M3 | packages/chat/src/command.ts | a bare command with `confirm` ran without the `yes` the action asks for | `commands in chat:send > a command that asks to confirm runs only with yes` |
+| T-0491-M4 | packages/chat/src/views.ts | command facts were not rendered, so the transcript lost the line | `commands in chat:send > the transcript shows the command line and the outcome` |
+| T-0491-M7 | packages/chat/src/command.ts | `chatCommands` kept actions that declared no command, so `/help` listed actions that are not commands | `commands in chat:send > /help lists exactly the commands this chat has` |
+| T-0491-M8 | packages/chat/src/command.ts | `argsOf` let the last field take only its own word instead of the rest of the line | `commands in chat:send > more than one argument is positional and the last takes the rest of the line` |
+| T-0491-M9 | packages/chat/src/command.ts | a refused or invalid argument was thrown instead of becoming a refusal line, so nothing was recorded | `commands in chat:send > a missing or wrong argument is refused in a line and changes nothing` |
+| T-0491-M10 | packages/chat/src/command.ts | `findCommand` fell back to the first command, so an unknown `/xxx` ran an action instead of staying a message | `commands in chat:send > an unknown slash and a slash inside the text are ordinary messages` |
+| T-0491-M11 | packages/chat/src/index.ts | a command also recorded a model message and sent its event while a reply was running | `commands in chat:send > a command runs at once while a reply is being written and starts no reply` |

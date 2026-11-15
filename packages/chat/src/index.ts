@@ -10,6 +10,7 @@ import {
   chatData,
   chatRef,
   CLOSED_FACT,
+  COMMAND_FACT,
   EFFORT_FACT,
   MESSAGE_EVENT,
   MESSAGE_FACT,
@@ -17,11 +18,13 @@ import {
   MODEL_FACT,
   newMessageId,
   type ClosedData,
+  type CommandData,
   type EffortChangedData,
   type ModelChangedData,
   type MessageData,
 } from "./model.ts";
 import { runReply } from "./reply.ts";
+import { chatCommands, findCommand, helpText, parseCommand, runCommand } from "./command.ts";
 import { chatViews } from "./views.ts";
 
 /** How many rounds one reply run may take before it stops (each round is one visit). */
@@ -147,10 +150,25 @@ const sendAction: ActionTypeDefinition = {
       readonly attachments?: readonly string[];
     };
     const files = input.attachments ?? [];
-    if ((input.note ?? "").trim().length === 0 && files.length === 0) {
+    const text = input.note ?? "";
+    if (text.trim().length === 0 && files.length === 0) {
       throw new Error("a message needs text or an attachment; pass --note <text>");
     }
-    return sendMessage(ctx, ctx.object.id, input.note ?? "", input.ref, files);
+    // A command is text alone: attachments mean a message, never a command.
+    const parsed = files.length === 0 ? parseCommand(text) : undefined;
+    const command = parsed === undefined ? undefined : findCommand(chatCommands(ctx.actions ?? []), parsed.name);
+    if (parsed !== undefined && command !== undefined) {
+      const result = await runCommand(ctx, command, parsed.rest);
+      const data: CommandData = {
+        from: { via: ctx.actor.via, id: ctx.actor.id },
+        command: parsed.text,
+        outcome: result.outcome,
+        ok: result.ok,
+      };
+      await ctx.facts.append({ type: COMMAND_FACT, object: chatRef(ctx.object.id), data });
+      return result.outcome;
+    }
+    return sendMessage(ctx, ctx.object.id, text, input.ref, files);
   },
 };
 
@@ -173,6 +191,7 @@ function modelArgs(models: readonly string[]): ActionArgsSchema {
 const modelAction: ActionTypeDefinition = {
   name: "model",
   on: CHAT_TYPE,
+  command: "Change the model the next reply uses.",
   args: modelArgs([]),
   argsFor: (object, env) => modelArgs(env.models?.[chatData(object.data).harness]?.list ?? []),
   when: (state, env) =>
@@ -236,6 +255,7 @@ function effortArgs(efforts: readonly string[]): ActionArgsSchema {
 const effortAction: ActionTypeDefinition = {
   name: "effort",
   on: CHAT_TYPE,
+  command: "Change the effort the next reply uses.",
   args: effortArgs([]),
   argsFor: (object, env) => effortArgs(env.efforts?.[chatData(object.data).harness]?.list ?? []),
   when: (state, env) =>
@@ -294,6 +314,7 @@ const effortAction: ActionTypeDefinition = {
 const closeAction: ActionTypeDefinition = {
   name: "close",
   on: CHAT_TYPE,
+  command: "Close this chat.",
   confirm: true,
   ends: true,
   when: (state) => !chatData(state).closed,
@@ -313,6 +334,18 @@ const closeAction: ActionTypeDefinition = {
       await ctx.store.put(CHAT_TYPE, ctx.object.id, { ...fresh.data, closed: true }, "action:chat/close");
     }
     return `closed ${ctx.object.id}`;
+  },
+};
+
+const helpAction: ActionTypeDefinition = {
+  name: "help",
+  on: CHAT_TYPE,
+  command: "What you can type with `/`.",
+  when: (state) => !chatData(state).closed,
+  why: (object) =>
+    chatData(object.data).closed ? `${object.id} is closed; it takes no commands` : undefined,
+  run(ctx) {
+    return helpText(chatCommands(ctx.actions ?? []));
   },
 };
 
@@ -361,7 +394,7 @@ export function createChatPlugin() {
       object: "$event.object",
       mode: "auto" as const,
     })),
-    actions: [sendAction, modelAction, effortAction, closeAction],
+    actions: [sendAction, modelAction, effortAction, closeAction, helpAction],
     views: { [CHAT_TYPE]: chatViews },
   });
 }
@@ -369,6 +402,7 @@ export function createChatPlugin() {
 export default createChatPlugin();
 
 export * from "./model.ts";
+export * from "./command.ts";
 export * from "./reply.ts";
 export * from "./views.ts";
 export * from "./tail.ts";

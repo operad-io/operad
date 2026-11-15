@@ -40,6 +40,7 @@ import {
   type ObjectRef,
   type StoredObject,
   type ObjectTypeDefinition,
+  type RunObject,
   type RunLookup,
   type ObjectViews,
   type KeyBindings,
@@ -171,6 +172,8 @@ export interface ActionInfo {
   readonly note?: string | undefined;
   readonly noteRequired: boolean;
   readonly confirm: boolean;
+  /** The one-line description when a chat may run this action as a command. */
+  readonly command?: string | undefined;
   /** The action ends the object, so a main key or button never runs it. */
   readonly ends?: boolean | undefined;
   /** The object type the action creates; a client lists it where that type is created. */
@@ -414,6 +417,12 @@ export class PluginRegistry {
       }
       for (const action of plugin.actions) {
         const note = noteInfo(action.args);
+        const command =
+          typeof action.command === "string"
+            ? action.command
+            : action.command === true
+              ? action.args?.description?.trim() || action.name
+              : undefined;
         actionInfos.push({
           plugin: plugin.name,
           action: action.name,
@@ -423,6 +432,7 @@ export class PluginRegistry {
           ...(note.name === undefined ? {} : { note: note.name }),
           noteRequired: note.required,
           confirm: action.confirm === true,
+          ...(command === undefined ? {} : { command }),
           ...(action.ends === true ? { ends: true } : {}),
           ...(action.creates === undefined ? {} : { creates: action.creates }),
         });
@@ -1132,6 +1142,57 @@ export class PluginRegistry {
     };
   }
 
+  /**
+   * Runs another action on an object with the checks a person's action gets
+   * (availability, arguments, confirmation), but without a note or files. An
+   * action that forwards a person's text to another uses it; `yes` answers a
+   * confirmation. The action's own check runs before anything is recorded.
+   */
+  async runActionChecked(
+    name: string,
+    args: unknown,
+    options: {
+      readonly object: RunObject;
+      readonly actor: Actor;
+      readonly yes?: boolean | undefined;
+      readonly cwd?: string | undefined;
+    },
+  ): Promise<ActionRun> {
+    const object = options.object;
+    const found = this.findAction(name, object.type);
+    const env = this.actionEnv();
+    let holds: unknown;
+    try {
+      holds = await found.action.when(object.data, env);
+    } catch (error) {
+      throw new PluginError(
+        `action "${found.plugin.name}:${found.action.name}" cannot run now: ${messageOf(error)}`,
+      );
+    }
+    if (holds !== true) {
+      throw new PluginError(
+        `action "${found.plugin.name}:${found.action.name}" cannot run now`,
+      );
+    }
+    const schema =
+      found.action.argsFor?.(object, env) ?? found.action.args;
+    const personArgs = validateActionArgs(
+      schema,
+      args,
+      `action "${found.plugin.name}:${found.action.name}"`,
+    );
+    if (found.action.confirm === true && options.yes !== true) {
+      throw new PluginError(
+        `action "${found.plugin.name}:${found.action.name}" needs confirmation`,
+      );
+    }
+    return this.runAction(`${found.plugin.name}/${found.action.name}`, personArgs, {
+      object,
+      actor: options.actor,
+      ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+    });
+  }
+
   /** Runs an action, by `plugin/action` or a unique plain name. */
   async runAction(
     name: string,
@@ -1194,6 +1255,21 @@ export class PluginRegistry {
       harnesses: this.loadedHarnesses(),
       models: this.loadedModels(),
       efforts: this.loadedEfforts(),
+      actions:
+        object === undefined
+          ? []
+          : this.actionInfos.filter((info) => info.on === object.type),
+      ...(object === undefined
+        ? {}
+        : {
+            act: (name: string, args: unknown, actOptions?: { readonly yes?: boolean | undefined }) =>
+              this.runActionChecked(name, args, {
+                object,
+                actor,
+                ...(actOptions?.yes === undefined ? {} : { yes: actOptions.yes }),
+                ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+              }),
+          }),
       ...(this.onEvent === undefined
         ? {}
         : { emit: this.actionEmitter(found.plugin.name) }),

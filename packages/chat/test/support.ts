@@ -96,6 +96,7 @@ export async function rig(
   models?: Levels,
   levelOrHarness?: (Levels & { readonly flag?: string }) | string,
   harness = "fake",
+  extraPlugins: readonly unknown[] = [],
 ): Promise<Rig> {
   const efforts = typeof levelOrHarness === "string" ? undefined : levelOrHarness;
   const name = typeof levelOrHarness === "string" ? levelOrHarness : harness;
@@ -104,7 +105,7 @@ export async function rig(
   const calls: Call[] = [];
   const events: TriggerEvent[] = [];
   const store = new MemoryPluginStore({ root: join(root, "store") });
-  const registry = new PluginRegistry([createChatPlugin(), fakeHarness(name, script, calls, models, efforts)], {
+  const registry = new PluginRegistry([createChatPlugin(), fakeHarness(name, script, calls, models, efforts), ...extraPlugins], {
     home: join(root, "home"),
     cwd: root,
     store,
