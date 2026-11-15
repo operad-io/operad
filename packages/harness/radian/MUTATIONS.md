@@ -94,3 +94,4 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0486-M4 | packages/harness/radian/src/index.ts | the step wrote no `session` line before radian's first output | `radian/agent > a receiver gets each line the step writes to its log, as it is logged` |
+| T-0486-M9 | packages/harness/radian/src/index.ts | the step result was returned without its `timings` | `radian/agent > a scripted run gives the time to its session line, to the first tool line, and the whole step` |

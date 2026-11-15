@@ -183,6 +183,20 @@ describe("radian/agent", () => {
     expect(text).not.toContain("SECRET OUTPUT");
   });
 
+  test("a scripted run gives the time to its session line, to the first tool line, and the whole step", async () => {
+    const times = [1_000, 2_000];
+    const env = await setup("timed", { now: () => times.shift() ?? 9_000 });
+    const result = await runAgent(env, { prompt: "hello", cwd: env.root });
+    expect(result.result).toBe("done");
+    const data = dataOf(result);
+    expect(data.timings).toEqual({
+      startToReadyMs: 1_000,
+      readyToFirstMs: 7_000,
+      totalMs: 8_000,
+    });
+    expect(data.durationMs).toBe(8_000);
+  });
+
   test("a secret of the operad store is masked in the logged command", () => {
     const line = JSON.stringify({ type: "ToolExecutionStarted", toolCallId: "t1", toolName: "Bash", input: { command: "curl store-secret-9" } });
     const out = radianLogLine(line, () => 5, new Map(), "/work", {}, ["store-secret-9"]);

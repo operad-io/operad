@@ -50,7 +50,12 @@ interface TestEnv {
 
 async function setup(
   mode: string,
-  options: { readonly settings?: Record<string, unknown>; readonly clock?: ManualClock; readonly vars?: Record<string, string> } = {},
+  options: {
+    readonly settings?: Record<string, unknown>;
+    readonly clock?: ManualClock;
+    readonly vars?: Record<string, string>;
+    readonly now?: (() => number) | undefined;
+  } = {},
 ): Promise<TestEnv> {
   const root = await tempRoot();
   const record = join(root, "record.jsonl");
@@ -63,7 +68,11 @@ async function setup(
   for (const [name, value] of Object.entries(options.vars ?? {})) setEnv(name, value);
 
   const clock = options.clock ?? manualClock();
-  const plugin = createCodexHarnessPlugin({ clock, now: () => 1000, codex: [process.execPath, FAKE] });
+  const plugin = createCodexHarnessPlugin({
+    clock,
+    now: options.now ?? (() => 1000),
+    codex: [process.execPath, FAKE],
+  });
   const registry = new PluginRegistry([plugin], {
     home: root,
     cwd: root,
@@ -167,6 +176,20 @@ describe("codex/agent: a prompt run", () => {
     expect(lines.filter((line) => line.type === "text_delta").map((line) => line.text)).toEqual(["starting. ", "all ", "done (1 blocks)"]);
     expect(lines.at(-2)?.type).toBe("message_end");
     expect(lines.at(-1)?.type).toBe("result");
+  });
+
+  test("a scripted run gives the time to its session line, to the first increment, and the whole step", async () => {
+    const times = [1_000, 2_000];
+    const env = await setup("done", { now: () => times.shift() ?? 9_000 });
+    const result = await runAgent(env, { prompt: "hello", cwd: env.root });
+    expect(result.result).toBe("done");
+    const data = dataOf(result);
+    expect(data.timings).toEqual({
+      startToReadyMs: 1_000,
+      readyToFirstMs: 7_000,
+      totalMs: 8_000,
+    });
+    expect(data.durationMs).toBe(8_000);
   });
 
   test("the usage has the token counts and an unknown cost, never 0", async () => {
