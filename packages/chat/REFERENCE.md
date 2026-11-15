@@ -33,10 +33,13 @@ the same failure line again.
 
 Each reply run also records a `chat.run` fact with its run id, so the transcript
 can find the log of the step that runs the agent. While that run lasts, the
-`transcript` section returns a `tail`: the text and thinking being written and
-the tool calls that started and did not end, read from the appended part of that
-log, with secrets masked. It also returns `mark`, and a read with `after: <mark>`
-returns only what was recorded later.
+`transcript` section returns a `tail`: the text and thinking being written, the
+tool calls that started and did not end, and a finished entry until the same
+read can show its fact, all read from the appended part of that log, with secrets
+masked. An entry leaves the tail only when its fact is visible in `markdown`, so
+the reply never disappears between its last log line and its fact. It also
+returns `mark`, and a read with `after: <mark>` returns only what was recorded
+later.
 
 ## `chat:send <chat> --note <text>`
 
