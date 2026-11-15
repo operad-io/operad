@@ -231,9 +231,16 @@ export class TypingSender {
       for (const message of messages) {
         if (message.role === "user") lastUser = Math.max(lastUser, message.sequence);
       }
-      const failed = allEntries(this.ctx.store, chat.chatId).some(
-        (entry) => entry.kind === "failure" && entry.sequence > lastUser,
-      );
+      // A rerun after a failure writes new entries; only a failure that is
+      // still the last thing after the person's message means writing is over.
+      const entries = allEntries(this.ctx.store, chat.chatId);
+      let lastEntry = 0;
+      let lastFailure = 0;
+      for (const entry of entries) {
+        lastEntry = Math.max(lastEntry, entry.sequence);
+        if (entry.kind === "failure") lastFailure = Math.max(lastFailure, entry.sequence);
+      }
+      const failed = lastFailure > lastUser && lastFailure === lastEntry;
       if (unanswered(messages).length === 0 || failed) {
         await this.stopTyping(chat.chatId);
         continue;

@@ -183,6 +183,23 @@ describe("radian/agent", () => {
     expect(text).not.toContain("SECRET OUTPUT");
   });
 
+  test("the session line is written before radian's first output", async () => {
+    const env = await setup("gated");
+    const got: string[] = [];
+    const running = env.registry.runStep("radian/agent", { prompt: "hello", cwd: env.root }, {
+      runId: "run-gated",
+      receiver: (line) => got.push(line),
+    });
+    // The worker has started and is waiting to write its first line.
+    await waitForFile(env.marker);
+    const sessionFirst = got.length > 0 && (JSON.parse(got[0] ?? "{}") as { type?: unknown }).type === "session";
+    writeFileSync(env.release, "go");
+    const result = await running;
+    expect(result.result).toBe("done");
+    expect(sessionFirst).toBe(true);
+    expect((JSON.parse(got[0] ?? "{}") as { type?: unknown }).type).toBe("session");
+  });
+
   test("a scripted run gives the time to its session line, to the first tool line, and the whole step", async () => {
     const times = [1_000, 2_000];
     const env = await setup("timed", { now: () => times.shift() ?? 9_000 });

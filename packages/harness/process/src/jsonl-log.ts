@@ -16,28 +16,35 @@ export const FLUSH_MS = 250;
 /** The field every logged line carries: when the host received it, in epoch milliseconds. */
 export const RECEIVED_AT = "receivedAt";
 
-function receivedAtOf(line: string): number | undefined {
+/** The parsed line when it is one JSON object; undefined for anything else. */
+function objectOf(line: string): Record<string, unknown> | undefined {
   let value: unknown;
   try {
     value = JSON.parse(line);
   } catch {
     return undefined;
   }
-  if (!isRecord(value)) return undefined;
-  const at = value[RECEIVED_AT];
+  return isRecord(value) ? value : undefined;
+}
+
+/** The receipt time already on a parsed line, when it has one. */
+function receivedAtOf(value: Record<string, unknown> | undefined): number | undefined {
+  const at = value?.[RECEIVED_AT];
   return typeof at === "number" && Number.isFinite(at) ? at : undefined;
 }
 
 /** A line with its receipt time; a line that is not a JSON object is left as it is. */
 export function withReceivedAt(line: string, at: number): string {
-  let value: unknown;
-  try {
-    value = JSON.parse(line);
-  } catch {
-    return line;
-  }
-  if (!isRecord(value) || receivedAtOf(line) !== undefined) return line;
+  const value = objectOf(line);
+  if (value === undefined || receivedAtOf(value) !== undefined) return line;
   return JSON.stringify({ ...value, [RECEIVED_AT]: at });
+}
+
+/** A line as the host logs it, with the parse kept so a caller need not do it again. */
+export interface StampedLine {
+  readonly text: string;
+  readonly value: Record<string, unknown> | undefined;
+  readonly at: number;
 }
 
 export class JsonlLog {
@@ -55,9 +62,22 @@ export class JsonlLog {
     this.now = now;
   }
 
-  /** The line as the host logs it: a JSON object gets `receivedAt` once. */
-  stamp(line: string): string {
-    return receivedAtOf(line) === undefined ? withReceivedAt(line, this.now()) : line;
+  /**
+   * The line as the host logs it: a JSON object gets `receivedAt` once. The
+   * parsed object and the receipt time come back too, so the caller need not
+   * parse the line again for its timings or its result.
+   */
+  stamp(line: string): StampedLine {
+    const value = objectOf(line);
+    const existing = receivedAtOf(value);
+    const at = existing ?? this.now();
+    if (value === undefined || existing !== undefined) return { text: line, value, at };
+    return { text: JSON.stringify({ ...value, [RECEIVED_AT]: at }), value, at };
+  }
+
+  /** Adds one line the caller already stamped. */
+  pushStamped(stamped: StampedLine): Promise<void> | undefined {
+    return this.add(stamped.text);
   }
 
   /**
@@ -66,7 +86,11 @@ export class JsonlLog {
    * memory. Before that it returns nothing.
    */
   push(line: string): Promise<void> | undefined {
-    this.buffer += `${this.stamp(line)}\n`;
+    return this.add(this.stamp(line).text);
+  }
+
+  private add(line: string): Promise<void> | undefined {
+    this.buffer += `${line}\n`;
     if (this.buffer.length >= FLUSH_CHARS) return this.flush();
     // A short buffer is written within FLUSH_MS of its first line.
     if (this.timer === undefined) {

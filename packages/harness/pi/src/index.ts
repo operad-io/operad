@@ -48,7 +48,7 @@ import {
   type UsageSource,
   directoryError,
   optionalText,
-  parseResult,
+  resultValue,
   parseStepFlags,
   personStarted,
   readAlwaysAllow,
@@ -596,12 +596,12 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
             toolEvent: (line) => piToolEvent(line) ?? askToolEvent(line),
             async onLine(line, reply) {
               const received = jsonl.stamp(line);
-              timings.line(received);
-              await answerGrant(received, (waitId) => ctx.useGrant(waitId), reply);
-              await asker.handle(received, reply);
-              const writing = jsonl.push(received);
-              deliverLine(ctx.receiver, received, storeSecrets);
-              const parsed = parseResult<WorkerResult>(received);
+              timings.record(received.value, received.at);
+              await answerGrant(received.text, (waitId) => ctx.useGrant(waitId), reply);
+              await asker.handle(received.text, reply);
+              const writing = jsonl.pushStamped(received);
+              deliverLine(ctx.receiver, received.text, storeSecrets);
+              const parsed = resultValue<WorkerResult>(received.value);
               if (parsed !== undefined) result = parsed;
               return writing;
             },

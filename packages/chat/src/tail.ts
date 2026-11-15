@@ -8,7 +8,7 @@
 
 import { closeSync, fstatSync, openSync, readSync } from "node:fs";
 import { join } from "node:path";
-import { emptyFold, foldLines, type FoldState } from "@operad-io/harness-process";
+import { emptyFold, foldLines, type FoldEntry, type FoldState } from "@operad-io/harness-process";
 
 /** How many bytes one read call takes from the file. */
 export const TAIL_READ_CHUNK = 1024 * 1024;
@@ -56,10 +56,14 @@ const saved = new Map<string, Saved>();
  * call for the path; undefined when there is no file. A file that is shorter
  * than what was read, or is another file, is read again from its start. A line
  * still being written is kept as it is and completed by the next call. Finished
- * entries are kept too: a view drops the ones its facts already hold, and shows
- * the rest, so text or a call never leaves the tail before its fact is visible.
+ * entries are kept until `held` says the caller's facts hold them, so text or a
+ * call never leaves the tail before its fact is visible, and a long run does not
+ * keep every entry it ever finished.
  */
-export function foldLogTail(path: string): TailRead | undefined {
+export function foldLogTail(
+  path: string,
+  held?: (entry: FoldEntry) => boolean,
+): TailRead | undefined {
   let fd: number;
   try {
     fd = openSync(path, "r");
@@ -94,6 +98,10 @@ export function foldLogTail(path: string): TailRead | undefined {
       }
       state = foldLines(values, state);
       pending = pending.subarray(end + 1);
+    }
+    if (held !== undefined) {
+      const entries = state.entries.filter((entry) => !held(entry));
+      if (entries.length !== state.entries.length) state = { ...state, entries };
     }
     saved.delete(path);
     saved.set(path, { dev: stat.dev, ino: stat.ino, offset: position, pending, state });

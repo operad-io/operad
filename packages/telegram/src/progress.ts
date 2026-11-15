@@ -232,12 +232,23 @@ export class ProgressSender {
     if (section.mark !== undefined) this.marks.set(chatId, section.mark);
     const tail = section.tail;
     if (tail === undefined || tail.trim().length === 0) {
-      if (chat.messageId !== undefined && !(await this.running(chatId))) await this.finish(chatId, chat, false);
+      if (chat.messageId !== undefined) {
+        // A cancelled run may send no event at all: look again while it says
+        // the run still goes on, and delete the message once it has ended.
+        if (await this.running(chatId)) this.later(chatId, chat);
+        else await this.finish(chatId, chat, false);
+      }
       return;
     }
     const chunk = telegramProgress(tail);
-    if (chunk === undefined) return;
-    if (chat.messageId !== undefined && chat.text === chunk.html) return;
+    if (chunk === undefined) {
+      this.later(chatId, chat);
+      return;
+    }
+    if (chat.messageId !== undefined && chat.text === chunk.html) {
+      this.later(chatId, chat);
+      return;
+    }
 
     const now = this.clock();
     if (chat.messageId !== undefined && now < chat.nextAt) {
@@ -245,6 +256,13 @@ export class ProgressSender {
       return;
     }
     await this.apply(chatId, chat, target, chunk);
+    this.later(chatId, chat);
+  }
+
+  /** Looks again after the interval while a progress message is on the chat. */
+  private later(chatId: string, chat: ChatProgress): void {
+    if (chat.messageId === undefined) return;
+    this.schedule(chatId, chat, this.intervalMs);
   }
 
   /** Whether the client still says a run works on the chat. */
@@ -263,7 +281,9 @@ export class ProgressSender {
     chat.timer = timer;
     void this.wait(Math.max(0, ms), timer.signal).then(
       () => {
-        if (chat.timer === timer) chat.timer = undefined;
+        // A canceled timer is not a wake: its chat was already pumped or stopped.
+        if (chat.timer !== timer) return;
+        chat.timer = undefined;
         if (this.stopped) return;
         chat.dirty = true;
         this.pump(chatId);

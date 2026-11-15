@@ -68,3 +68,5 @@ recorded. The root [MUTATIONS.md](../../../MUTATIONS.md) explains the format and
 | T-0503-M2 | packages/harness/codex/src/models-probe.ts | an app-server that exited before answering was taken as a choice instead of no list | `what a chat may pick > a probe whose app-server exits before answering gives none` |
 | T-0503-M3 | packages/harness/codex/src/models-probe.ts | an error answer to `model/list` was taken as a choice instead of no list | `what a chat may pick > a probe whose app-server answers the model list with an error gives none` |
 | T-0503-M4 | packages/harness/codex/src/app-server.ts | a legacy `execCommandApproval`/`applyPatchApproval` deny answered with the string `denied` instead of Codex's `ReviewDecision` `{ denied: { rejection } }` | `codex/agent: permissions > the legacy command approval answers with Codex's ReviewDecision`, `codex/agent: permissions > the legacy patch approval is judged by the paths it changes` |
+
+| T-0486-M5 | packages/harness/codex/src/index.ts | the app-server start wrote no `session` line after the thread opened | `codex/agent: a prompt run > a prompt runs to the end over app-server and the tool calls are in the log` |

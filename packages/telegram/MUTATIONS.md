@@ -83,3 +83,11 @@ the row fields.
 | T-0488-M9 | packages/telegram/src/progress.ts | a progress message was sent before any text or tool call | `the progress message of a reply > nothing is sent before the first text, and an unfinished code fence is closed` |
 | T-0488-M10 | packages/telegram/src/progress.ts | a run that ended without recording a reply left its progress message behind | `the progress message of a reply > a stopped reply deletes the progress message once the client says the run ended` |
 | T-0488-M11 | packages/telegram/src/progress.ts | a failure entry after the last person's message did not finish the progress message | `the progress message of a reply > a failed reply sends its failure line as a new message, then deletes the progress message` |
+
+## T-0504 — typing after a failure and a cancelled progress message
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0504-M1 | packages/telegram/src/typing.ts | typing stopped on any failure after the person's message, so a rerun's new writing did not restart it | `the typing indicator > starts again when a rerun after a failure is writing` |
+| T-0504-M2 | packages/telegram/src/progress.ts | no look was scheduled after a progress message was sent, so a cancelled run left it without another event | `the progress message of a reply > a cancelled run deletes the progress message without another event` |
+| T-0504-M3 | packages/telegram/src/progress.ts | a canceled timer woke the chat again, so finishing a failed reply sent the progress message a second time | `the progress message of a reply > a failed reply sends its failure line as a new message, then deletes the progress message` |

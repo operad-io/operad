@@ -492,10 +492,10 @@ export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
           let writing: Promise<void> | undefined;
           const writeLine = (line: string): void => {
             const received = jsonl.stamp(line);
-            timings.line(received);
-            const pending = jsonl.push(received);
+            timings.record(received.value, received.at);
+            const pending = jsonl.pushStamped(received);
             if (pending !== undefined) writing = pending;
-            deliverLine(ctx.receiver, received, storeSecrets);
+            deliverLine(ctx.receiver, received.text, storeSecrets);
           };
           let client: AppServerClient | undefined;
           const log = new CodexLog({

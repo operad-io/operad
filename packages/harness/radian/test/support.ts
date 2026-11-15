@@ -244,6 +244,19 @@ if (mode === "done") {
   process.exit(0);
 }
 
+if (mode === "gated") {
+  if (marker) writeFileSync(marker, String(process.pid));
+  const release = process.env.FAKE_RADIAN_RELEASE;
+  if (release) {
+    while (!existsSync(release)) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+  }
+  line({ type: "journal", event: "TurnStarted" });
+  line(result());
+  process.exit(0);
+}
+
 if (mode === "incomplete" || mode === "estimated") {
   line(result({ cost: { micros: 900, incomplete: mode === "incomplete", estimated: mode === "estimated" } }));
   process.exit(0);
