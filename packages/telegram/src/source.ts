@@ -16,10 +16,12 @@ import {
   MESSAGE_EVENT,
   allMessages,
   chatData,
+  parseCommand,
   titleFromMessage,
 } from "@operad-io/chat";
 import { messageOf, type SourceContext, type SourceHandle } from "@operad-io/engine";
 import type { BotApi, TelegramMessage, TelegramUpdate } from "./api.ts";
+import { stripBotName, type CommandResponder } from "./commands.ts";
 import type { PendingResponder } from "./pending.ts";
 import { telegramSettings } from "./settings.ts";
 import { readOffset, writeOffset } from "./state.ts";
@@ -60,12 +62,36 @@ export interface TelegramSourceOptions {
   readonly wait?: ((ms: number, signal: AbortSignal) => Promise<void>) | undefined;
   /** Takes the taps on pending items' buttons and the replies to their messages. */
   readonly pending?: PendingResponder | undefined;
+  /** Takes a command's text, the greeting `/start` and the taps on a command's choices. */
+  readonly commands?: CommandResponder | undefined;
 }
 
 /** One bound chat and whether it still takes messages. */
-interface BoundChat {
+export interface BoundChat {
   readonly id: string;
   readonly closed: boolean;
+}
+
+/** Every chat bound to Telegram, or to one channel, newest first. */
+export async function boundChats(
+  ctx: Pick<SourceContext, "store">,
+  channel?: string,
+): Promise<readonly BoundChat[]> {
+  const found: BoundChat[] = [];
+  let cursor: string | undefined;
+  do {
+    const page = await ctx.store.list(CHAT_TYPE, {
+      ...(cursor === undefined ? {} : { cursor }),
+    });
+    for (const object of page.objects) {
+      const data = chatData(object.data);
+      if (channel !== undefined && !data.channels.includes(channel)) continue;
+      if (channel === undefined && data.channels.length === 0) continue;
+      found.push({ id: object.id, closed: data.closed });
+    }
+    cursor = page.next;
+  } while (cursor !== undefined);
+  return found.sort((left, right) => right.id.localeCompare(left.id));
 }
 
 /** The message text the source reads: text, else a caption. */
@@ -96,6 +122,7 @@ export class TelegramSource {
   private readonly wait: (ms: number, signal: AbortSignal) => Promise<void>;
   private readonly controller = new AbortController();
   private readonly pending: PendingResponder | undefined;
+  private readonly commands: CommandResponder | undefined;
   private readonly users: readonly number[];
   private readonly bot: string;
 
@@ -107,6 +134,7 @@ export class TelegramSource {
     this.pollIntervalMs = options.pollIntervalMs ?? 1_000;
     this.wait = options.wait ?? delay;
     this.pending = options.pending;
+    this.commands = options.commands;
     const settings = telegramSettings(ctx.settings);
     this.users = settings.users;
     this.bot = settings.bot;
@@ -167,8 +195,10 @@ export class TelegramSource {
   private async handle(update: TelegramUpdate): Promise<void> {
     const key = String(update.update_id);
     if (update.callback_query !== undefined) {
-      // A tap is handled by the pending side; either way it is recorded once.
+      // A tap is handled by the pending side or the command side; either way
+      // it is recorded once.
       await this.pending?.handleCallback(update.callback_query);
+      await this.commands?.handleCallback(update.callback_query);
       await this.record(key);
       return;
     }
@@ -180,10 +210,20 @@ export class TelegramSource {
     const summary = summaryOf(message);
     const from = message.from?.id;
     const listed = from !== undefined && this.users.includes(from);
-    const text = messageText(message);
+    const raw = messageText(message);
     // A group, a channel, an unlisted sender or a message with no text is
-    // recorded and stops there: no chat, no reply, nothing started.
-    if (message.chat.type !== "private" || !listed || text === undefined) {
+    // recorded and stops there: no chat, no reply, nothing started. A command
+    // from anyone else is dropped the same way, without a reply.
+    if (message.chat.type !== "private" || !listed || raw === undefined) {
+      await this.record(key, undefined, summary);
+      return;
+    }
+    // `/model@operad_bot sonnet` is `/model sonnet`.
+    const text = stripBotName(raw);
+
+    // Telegram's own `/start` is a greeting that points at `/help`; it never
+    // starts a reply and never needs a chat.
+    if (this.commands !== undefined && (await this.commands.greet(text, message.chat.id))) {
       await this.record(key, undefined, summary);
       return;
     }
@@ -215,12 +255,37 @@ export class TelegramSource {
     }
 
     const open = bound.find((chat) => !chat.closed);
-    const chatId = open?.id ?? (await this.openBoundChat(channel, text, from));
-    await this.ctx.client.act("chat:send", chatId, {
+    const parsed = parseCommand(text);
+    // A chat opened by a command is not titled by the command's text.
+    const title = parsed === undefined ? text : undefined;
+    const chatId = open?.id ?? (await this.openBoundChat(channel, title, from));
+    const command =
+      parsed === undefined || this.commands === undefined
+        ? undefined
+        : await this.commands.command(chatId, parsed.name);
+    // A command that takes one choice and was sent without it answers with
+    // its choices instead of running; a tap runs it as `/<name> <choice>`.
+    if (
+      command !== undefined &&
+      this.commands !== undefined &&
+      (await this.commands.offer(command, text, chatId, message.chat.id))
+    ) {
+      await this.record(key, chatId, summary);
+      await this.commands.refresh(chatId);
+      return;
+    }
+    const result = await this.ctx.client.act("chat:send", chatId, {
       args: { note: text, ref: key },
       actor: { via: TELEGRAM_SOURCE, id: String(from) },
     });
+    // What a command returned is the answer the person who typed it sees; an
+    // ordinary message's "sent ..." is not sent back.
+    if (command !== undefined) {
+      const outcome = typeof result.value === "string" && result.value.trim().length > 0 ? result.value : "done";
+      await this.commands?.say(message.chat.id, outcome);
+    }
     await this.record(key, chatId, summary);
+    if (command !== undefined || open === undefined) await this.commands?.refresh(chatId);
   }
 
   private async record(key: string, chatId?: string, summary?: string): Promise<void> {
@@ -235,20 +300,8 @@ export class TelegramSource {
   }
 
   /** Every chat bound to this channel, newest first. */
-  private async boundChats(channel: string): Promise<readonly BoundChat[]> {
-    const found: BoundChat[] = [];
-    let cursor: string | undefined;
-    do {
-      const page = await this.ctx.store.list(CHAT_TYPE, {
-        ...(cursor === undefined ? {} : { cursor }),
-      });
-      for (const object of page.objects) {
-        const data = chatData(object.data);
-        if (data.channels.includes(channel)) found.push({ id: object.id, closed: data.closed });
-      }
-      cursor = page.next;
-    } while (cursor !== undefined);
-    return found.sort((left, right) => right.id.localeCompare(left.id));
+  private boundChats(channel: string): Promise<readonly BoundChat[]> {
+    return boundChats(this.ctx, channel);
   }
 
   /** The message already written for this update on a chat, if any. */
@@ -262,9 +315,9 @@ export class TelegramSource {
     return found === undefined ? undefined : { id: found.id, chatId };
   }
 
-  private async openBoundChat(channel: string, text: string, userId: number): Promise<string> {
+  private async openBoundChat(channel: string, text: string | undefined, userId: number): Promise<string> {
     const opened = await this.ctx.client.act("bot:chat", this.bot, {
-      args: { title: titleFromMessage(text) ?? "Telegram", channels: [channel] },
+      args: { title: (text === undefined ? undefined : titleFromMessage(text)) ?? "Telegram", channels: [channel] },
       actor: { via: TELEGRAM_SOURCE, id: String(userId) },
     });
     if (opened.opens === undefined || !opened.opens.startsWith("chat:")) {

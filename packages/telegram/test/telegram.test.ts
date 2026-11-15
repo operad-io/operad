@@ -324,6 +324,7 @@ describe("the telegram source", () => {
       async deleteMessage(): Promise<void> {},
       async answerCallback(): Promise<void> {},
       async sendChatAction(): Promise<void> {},
+      async setMyCommands(): Promise<void> {},
     };
     const telegram = new TelegramSource(w.ctx, {
       api,

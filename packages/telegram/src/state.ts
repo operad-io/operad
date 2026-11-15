@@ -204,6 +204,85 @@ export function writePending(home: string, state: PendingState): void {
   renameSync(temporary, path);
 }
 
+/** One command sent without its one choice, as it waits for a tap. */
+export interface SentCommand {
+  /** The operad chat the command runs on. */
+  readonly chatId: string;
+  /** The Telegram chat the keyboard is in. */
+  readonly target: number;
+  readonly messageId: number;
+  /** The text as sent; "chosen: X" is added to it. */
+  readonly text: string;
+  /** The command's name, without the slash. */
+  readonly name: string;
+  /** The choices, in order, as the action's schema lists them. */
+  readonly choices: readonly string[];
+  /** The page of choices the keyboard shows now. */
+  readonly page: number;
+  /** The choice the command ran with; set once the message was changed. */
+  readonly chosen?: string | undefined;
+}
+
+/** What the command side remembers, by the Telegram chat and message of each keyboard. */
+export type CommandState = Readonly<Record<string, SentCommand>>;
+
+/** The file the choice keyboards are recorded in. */
+export function telegramCommandsPath(home: string): string {
+  return join(telegramStateDirectory(home), "commands.json");
+}
+
+function commandOf(value: unknown): SentCommand | undefined {
+  if (
+    !isRecord(value) ||
+    typeof value.chatId !== "string" ||
+    typeof value.target !== "number" ||
+    typeof value.messageId !== "number" ||
+    typeof value.text !== "string" ||
+    typeof value.name !== "string" ||
+    typeof value.page !== "number" ||
+    !Array.isArray(value.choices)
+  ) {
+    return undefined;
+  }
+  const choices = value.choices.filter((choice): choice is string => typeof choice === "string");
+  return {
+    chatId: value.chatId,
+    target: value.target,
+    messageId: value.messageId,
+    text: value.text,
+    name: value.name,
+    choices,
+    page: Number.isInteger(value.page) && value.page >= 0 ? value.page : 0,
+    ...(typeof value.chosen === "string" ? { chosen: value.chosen } : {}),
+  };
+}
+
+/** The recorded choice keyboards; empty when the file is missing or unusable. */
+export function readCommands(home: string): CommandState {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(telegramCommandsPath(home), "utf8"));
+  } catch {
+    return {};
+  }
+  if (!isRecord(parsed)) return {};
+  const commands: Record<string, SentCommand> = {};
+  for (const [key, value] of Object.entries(parsed)) {
+    const command = commandOf(value);
+    if (command !== undefined) commands[key] = command;
+  }
+  return commands;
+}
+
+/** Records the choice keyboards, replacing the file whole. */
+export function writeCommands(home: string, state: CommandState): void {
+  const path = telegramCommandsPath(home);
+  mkdirSync(dirname(path), { recursive: true });
+  const temporary = `${path}.${process.pid}.tmp`;
+  writeFileSync(temporary, `${JSON.stringify(state)}\n`, "utf8");
+  renameSync(temporary, path);
+}
+
 /** One progress message a reply is shown in: where it lives and what it last said. */
 export interface ProgressRecord {
   /** The Telegram chat the message is in. */

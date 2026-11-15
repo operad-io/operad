@@ -31,11 +31,13 @@ import {
   writeOffset,
   type AnswerCallbackRequest,
   type BotApi,
+  type BotCommand,
   type DeleteMessageRequest,
   type EditMessageRequest,
   type GetUpdatesRequest,
   type SendChatActionRequest,
   type SendMessageRequest,
+  type SetMyCommandsRequest,
   type TelegramUpdate,
 } from "../src/index.ts";
 import { createTelegramWorld, replyUpdate, tap, update, type TelegramWorld } from "./support.ts";
@@ -99,6 +101,13 @@ class LongPollApi implements BotApi {
 
   async sendChatAction(request: SendChatActionRequest): Promise<void> {
     this.chatActions.push(request);
+    this.changed();
+  }
+
+  readonly menus: (readonly BotCommand[])[] = [];
+
+  async setMyCommands(request: SetMyCommandsRequest): Promise<void> {
+    this.menus.push(request.commands);
     this.changed();
   }
 

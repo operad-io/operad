@@ -91,3 +91,19 @@ the row fields.
 | T-0504-M1 | packages/telegram/src/typing.ts | typing stopped on any failure after the person's message, so a rerun's new writing did not restart it | `the typing indicator > starts again when a rerun after a failure is writing` |
 | T-0504-M2 | packages/telegram/src/progress.ts | no look was scheduled after a progress message was sent, so a cancelled run left it without another event | `the progress message of a reply > a cancelled run deletes the progress message without another event` |
 | T-0504-M3 | packages/telegram/src/progress.ts | a canceled timer woke the chat again, so finishing a failed reply sent the progress message a second time | `the progress message of a reply > a failed reply sends its failure line as a new message, then deletes the progress message` |
+## T-0494 — the command menu, `/start` and choice buttons
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0494-M1 | packages/telegram/src/commands.ts | the menu was never given to Telegram, so a started plugin registered nothing | `the bot's command menu > is registered at start and again when the set of commands changes` |
+| T-0494-M2 | packages/telegram/src/commands.ts | a command name Telegram's menu does not take was registered anyway | `the bot's command menu > leaves out a name Telegram does not take and says so` |
+| T-0494-M3 | packages/telegram/src/commands.ts | the bot's name after a command was kept, so `/help@bot` was an ordinary message | `a command in a Telegram chat > a name with the bot after it is the plain command, and what it returns comes back` |
+| T-0494-M4 | packages/telegram/src/commands.ts | `/start` was not answered with the greeting that points at `/help` | `a command in a Telegram chat > /start gets a greeting that points at /help and starts no chat` |
+| T-0494-M5 | packages/telegram/src/source.ts | a command from an unlisted sender opened a chat and ran | `a command in a Telegram chat > a command from an unlisted sender is dropped without a reply` |
+| T-0494-M6 | packages/telegram/src/commands.ts | a command with one choice sent without it ran instead of answering with buttons | `a command in a Telegram chat > without its one choice it answers with the choices, one page at a time, and a tap runs it` |
+| T-0494-M7 | packages/telegram/src/commands.ts | every page showed the first page's choices | `a command in a Telegram chat > without its one choice it answers with the choices, one page at a time, and a tap runs it` |
+| T-0494-M8 | packages/telegram/src/commands.ts | after a tap the message named the first choice instead of the one picked | `a command in a Telegram chat > without its one choice it answers with the choices, one page at a time, and a tap runs it` |
+| T-0494-M9 | packages/telegram/src/source.ts | what a typed command returned was not sent back to Telegram | `a command in a Telegram chat > a name with the bot after it is the plain command, and what it returns comes back` |
+| T-0494-M10 | packages/telegram/src/commands.ts | a tap from a user not in the `users` list ran the command | `a command in a Telegram chat > a tap from an unlisted user counts for nothing` |
+| T-0494-M11 | packages/telegram/src/source.ts | a command's text titled the chat it opened, so `/help` became a chat called `/help` | `a command in a Telegram chat > a command before any chat opens one, as a first message does` |
+| T-0494-M12 | packages/telegram/src/commands.ts | the menu's event watcher ignored every client event, so a command gained or lost while the bot ran never reached Telegram | `the bot's command menu > follows the client's events and registers again when a command appears or goes` |
