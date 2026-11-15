@@ -10,7 +10,7 @@ A chat starts in one of two places: from a repository, to work on that repositor
 
 ### D1: Two kinds of chat, by where they start
 
-- A **repository chat** is created by the `dev` action `dev:chat` on a repository. Its parent is the repository, its working directory is the repository, and its agent and access profile are read from the repository's `dev.json`. It is for discussing the repository, opening plans and tasks and looking at runs.
+- A **repository chat** is created by the `dev` action `dev:chat` on a repository. Its parent is the repository, its working directory is the repository, and its agent, access profile and skills are read from the repository's `dev.json`. It is for discussing the repository, opening plans and tasks and looking at runs.
 - A **bot chat** is created by the `bot` plugin's action `bot:chat` on a bot. Its parent is that bot, and its working directory, skills and access profile come from the bot.
 
 Creating is an action on the parent object whose parameters are the agent (an enum of the loaded harness plugins, defaulting to the one `dev.json` or the bot names), the model, the effort and a title, drawn by the client's ordinary parameter form. The kernel gains no type-level action and no new object. Continuing an old chat is opening it and using `chat:send`.
@@ -34,3 +34,7 @@ A client starts a chat by choosing a parent (a bot or a repository) and an agent
 ### D6: One chat can have several channels
 
 A channel conversation (such as a Telegram chat, ADR 0033) bound to an operad chat sends its messages into that chat, and replies go back to the channel the message came from; every client sees all of it. By default there is one operad chat per (channel, chat) pair, created on the default bot. A chat created in the app is bound to no channel.
+
+### D7: A repository chat reads the repository's skills
+
+A repository's `dev.json` lists the skill directories its chats read, relative to the repository, defaulting to `.agents/skills`; an empty list gives them none. A path that leaves the repository is refused. A directory of skills, or a `.agents` directory, expands as for a bot (ADR 0030 D1), so a repository with `.agents/skills` needs no setting. The chat reads them at every reply, from the main clone while it is read-only and from its own worktree once it has one, so a skill changed on a branch is the one that branch's chat uses. The agent may read a skill directory but not change it; changing a skill is changing the repository and goes through the chat's worktree and a task like any other change. Task workers do not get these skills.
