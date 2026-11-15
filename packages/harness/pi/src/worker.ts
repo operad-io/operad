@@ -616,6 +616,13 @@ export async function runWorker(
   };
   cancel.addEventListener("abort", onCancel, { once: true });
 
+  // The session is ready and the prompt is about to go to the model.
+  io.line({
+    type: "session",
+    sessionId: session.sessionFile ?? null,
+    ...(input.model === undefined ? {} : { model: input.model }),
+  });
+
   try {
     if (!cancelled) {
       try {

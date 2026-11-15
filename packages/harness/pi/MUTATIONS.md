@@ -154,3 +154,10 @@ the row fields.
 |---|---|---|---|
 | T-0497-M3 | packages/harness/pi/src/worker.ts | the given skill directories were not passed to pi's resource loader | `only the skill directories given are loaded, and the session log names them` |
 | T-0497-M4 | packages/harness/pi/src/worker.ts | the session log no longer named the skills it loaded | `only the skill directories given are loaded, and the session log names them` |
+
+## T-0486 — the session line and the step's durations
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0486-M3 | packages/harness/pi/src/worker.ts | the worker wrote no `session` line before the prompt | `a prompt that ends writes the lines in order and a Result with usage, cost and sessionId` |
+| T-0486-M8 | packages/harness/pi/src/index.ts | the step result was returned without its `timings` | `pi/agent > a scripted worker gives the time to its session line, to the first increment, and the whole step` |

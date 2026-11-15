@@ -48,7 +48,11 @@ interface TestEnv {
   readonly release: string;
 }
 
-async function setup(mode: string, settings?: Readonly<Record<string, unknown>>): Promise<TestEnv> {
+async function setup(
+  mode: string,
+  settings?: Readonly<Record<string, unknown>>,
+  options: { readonly now?: (() => number) | undefined } = {},
+): Promise<TestEnv> {
   const root = await tempRoot();
   const record = join(root, "record.json");
   const marker = join(root, "marker");
@@ -59,7 +63,12 @@ async function setup(mode: string, settings?: Readonly<Record<string, unknown>>)
   setEnv("FAKE_CLAUDE_RELEASE", release);
 
   const clock = manualClock();
-  const plugin = createClaudeHarnessPlugin({ clock, command: process.execPath, args: [FAKE] });
+  const plugin = createClaudeHarnessPlugin({
+    clock,
+    command: process.execPath,
+    args: [FAKE],
+    ...(options.now === undefined ? {} : { now: options.now }),
+  });
   const registry = new PluginRegistry([plugin], {
     home: root,
     cwd: root,
@@ -98,6 +107,7 @@ describe("claude/agent", () => {
     });
     const logged = (await Bun.file(String(dataOf(withReceiver).log)).text()).split("\n").filter((l) => l.length > 0);
     expect(got).toEqual(logged);
+    expect(logged.every((l) => typeof (JSON.parse(l) as { receivedAt?: unknown }).receivedAt === "number")).toBe(true);
     expect(got.map((l) => (JSON.parse(l) as { type: string }).type)).toEqual([
       "tool_execution_start",
       "tool_execution_end",
@@ -107,7 +117,13 @@ describe("claude/agent", () => {
     const without = await runAgent(env, { prompt: "hello", cwd: env.root }, { runId: "run-2" });
     expect(without.result).toBe("done");
     const again = (await Bun.file(String(dataOf(without).log)).text()).split("\n").filter((l) => l.length > 0);
-    expect(again).toEqual(logged);
+    const withoutReceivedAt = (lines: readonly string[]): unknown[] =>
+      lines.map((line) => {
+        const value = JSON.parse(line) as Record<string, unknown>;
+        delete value.receivedAt;
+        return value;
+      });
+    expect(withoutReceivedAt(again)).toEqual(withoutReceivedAt(logged));
   });
 
   test("a receiver gets a line with the operad secrets masked", async () => {
@@ -131,6 +147,26 @@ describe("claude/agent", () => {
       },
     });
     expect(result.result).toBe("done");
+  });
+
+  test("a scripted worker gives the time to its session line, to the first increment, and the whole step", async () => {
+    const times = [1_000, 2_000, 3_000, 6_000, 7_000];
+    const env = await setup("timed", undefined, { now: () => times.shift() ?? 7_000 });
+    const result = await runAgent(env, { prompt: "hello", cwd: env.root });
+    expect(result.result).toBe("done");
+    const data = dataOf(result);
+    expect(data.timings).toEqual({
+      startToReadyMs: 1_000,
+      readyToFirstMs: 1_000,
+      totalMs: 6_000,
+    });
+    expect(data.durationMs).toBe(6_000);
+    const lines = readFileSync(String(data.log), "utf8")
+      .split("\n")
+      .filter((line) => line.length > 0)
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(lines[0]?.type).toBe("session");
+    expect(lines.every((line) => typeof line.receivedAt === "number")).toBe(true);
   });
 
   test("a done run has the facts of pi/agent: session, final message, usage, log", async () => {

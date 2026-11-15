@@ -279,12 +279,13 @@ test("a prompt that ends writes the lines in order and a Result with usage, cost
   const run = await runFake(s, [{ text: "ANSWER", cost: 0.0015 }]);
 
   expect(run.exitCode).toBe(0);
-  expect(kinds(run)).toEqual(["text_delta", "text_end", "message_end", "agent_settled", "result"]);
-  expect(run.lines[0]).toEqual({ type: "text_delta", text: "ANSW" });
+  expect(kinds(run)).toEqual(["session", "text_delta", "text_end", "message_end", "agent_settled", "result"]);
+  expect(run.lines[0]).toMatchObject({ type: "session", sessionId: expect.any(String), model: "fake/fake-model" });
+  expect(run.lines[1]).toEqual({ type: "text_delta", text: "ANSW" });
   // The increment that was still grouped when the message ended is left to the
   // full text, so the two are the message's text.
-  expect(run.lines[1]).toEqual({ type: "text_end", text: "ANSWER" });
-  expect(run.lines[2]).toEqual({
+  expect(run.lines[2]).toEqual({ type: "text_end", text: "ANSWER" });
+  expect(run.lines[3]).toEqual({
     type: "message_end",
     role: "assistant",
     text: "ANSWER",
@@ -292,7 +293,7 @@ test("a prompt that ends writes the lines in order and a Result with usage, cost
     usage: { input: 12, output: 6, cache_read: 3, cache_write: 2 },
     cost: { total: 0.0015 },
   });
-  expect(run.lines[3]).toEqual({ type: "agent_settled", aborted: false });
+  expect(run.lines[4]).toEqual({ type: "agent_settled", aborted: false });
 
   const result = last(run);
   expect(result["result"]).toBe("done");
@@ -370,6 +371,7 @@ test("usage and cost are summed over every message_end, with a tool call between
   ]);
 
   expect(kinds(run)).toEqual([
+    "session",
     "message_end",
     "tool_execution_start",
     "tool_output",
@@ -1143,9 +1145,10 @@ test("thinking streams as increments and ends with the full block, which message
   const run = await runFake(s, [{ thinking: "THINKING", text: "" }]);
 
   expect(run.exitCode).toBe(0);
-  expect(kinds(run)).toEqual(["thinking_delta", "thinking_end", "message_end", "agent_settled", "result"]);
-  expect(run.lines[0]).toEqual({ type: "thinking_delta", text: "THIN" });
-  expect(run.lines[1]).toEqual({ type: "thinking_end", text: "THINKING" });
+  expect(kinds(run)).toEqual(["session", "thinking_delta", "thinking_end", "message_end", "agent_settled", "result"]);
+  expect(run.lines[0]).toMatchObject({ type: "session" });
+  expect(run.lines[1]).toEqual({ type: "thinking_delta", text: "THIN" });
+  expect(run.lines[2]).toEqual({ type: "thinking_end", text: "THINKING" });
   const ended = run.lines.find((line) => line["type"] === "message_end");
   expect(ended).toMatchObject({ type: "message_end", role: "assistant" });
   expect(ended?.["text"]).toBeUndefined();

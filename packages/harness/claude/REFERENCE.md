@@ -68,6 +68,8 @@ wrong type, an unknown field) writes one `Result` line with `result: "failed"`,
 
 One JSON object per line, flushed per line, each with a `type`:
 
+The host adds `receivedAt` (epoch milliseconds) to every line it writes to the step's log.
+
 | type | other fields | meaning |
 |---|---|---|
 | `session` | `claudeVersion`, `apiKeySource`, `model` | claude started a session; written once, first. `apiKeySource` says which credential it uses: `none` for a subscription login, `ANTHROPIC_API_KEY` when that variable is set in the environment |

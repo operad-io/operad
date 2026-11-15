@@ -3,7 +3,7 @@
 import { randomUUID } from "node:crypto";
 import { statSync } from "node:fs";
 import { basename, extname } from "node:path";
-import type { ActionArgSchema, JsonValue, ObjectRef, ObjectStore, PluginFact } from "@operad-io/engine";
+import type { ActionArgSchema, AgentTimings, JsonValue, ObjectRef, ObjectStore, PluginFact } from "@operad-io/engine";
 import { isRecord, storedType, stringList } from "@operad-io/engine";
 
 /** The object type of a chat. */
@@ -273,6 +273,8 @@ export interface MessageData {
   /** An assistant message: what it cost in millionths of a dollar, when reported. */
   readonly costMicros?: number | undefined;
   readonly costQuality?: CostQuality | undefined;
+  /** An assistant message: how long the step took to start, to its first line, and in all. */
+  readonly timings?: AgentTimings | undefined;
 }
 
 /** One message with when it was recorded. */
@@ -437,6 +439,22 @@ export function usageOf(value: unknown): {
   };
 }
 
+/** The timings a harness's step data reports; undefined when it has none or not a whole one. */
+export function timingsOf(value: unknown): AgentTimings | undefined {
+  if (!isRecord(value)) return undefined;
+  const total = value.totalMs;
+  if (typeof total !== "number" || !Number.isFinite(total)) return undefined;
+  const duration = (key: string): number | null => {
+    const at = value[key];
+    return typeof at === "number" && Number.isFinite(at) ? at : null;
+  };
+  return {
+    startToReadyMs: duration("startToReadyMs"),
+    readyToFirstMs: duration("readyToFirstMs"),
+    totalMs: total,
+  };
+}
+
 const QUALITY_ORDER: readonly CostQuality[] = ["exact", "estimated", "incomplete"];
 
 /** The less exact of two qualities; an absent one counts for the other. */
@@ -532,6 +550,7 @@ function messageOfFact(fact: PluginFact): Message | undefined {
   if (data.role !== "user" && data.role !== "assistant") return undefined;
   const from = isRecord(data.from) ? data.from : {};
   const source = isRecord(data.source) ? data.source : {};
+  const timings = timingsOf(data.timings);
   return {
     id: data.id,
     role: data.role,
@@ -551,6 +570,7 @@ function messageOfFact(fact: PluginFact): Message | undefined {
     ...(typeof data.model === "string" && data.model.length > 0 ? { model: data.model } : {}),
     ...(typeof data.costMicros === "number" && Number.isFinite(data.costMicros) ? { costMicros: data.costMicros } : {}),
     ...(isCostQuality(data.costQuality) ? { costQuality: data.costQuality } : {}),
+    ...(timings === undefined ? {} : { timings }),
     at: fact.at,
     sequence: fact.sequence,
   };

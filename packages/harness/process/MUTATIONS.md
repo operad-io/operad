@@ -102,3 +102,10 @@ and the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0497-M2 | packages/harness/process/src/skills.ts | a SKILL.md with no name was given a fallback name instead of being skipped | `readGivenSkills > skips an unreadable SKILL.md, a missing name and an unsafe name, with a reason each` |
+
+## T-0486 — the time of each log line and the step's durations
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0486-M1 | packages/harness/process/src/jsonl-log.ts | `stamp` returned the line unchanged, so no log line carried the host's receipt time | `jsonl log > every JSON line carries the time the host received it` |
+| T-0486-M2 | packages/harness/process/src/timings.ts | the `session` line was read but did not mark the ready time | `StepTimings > it measures the step to the session line, from there to the first increment, and in all` |

@@ -179,3 +179,8 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 | T-0491-M9 | packages/chat/src/command.ts | a refused or invalid argument was thrown instead of becoming a refusal line, so nothing was recorded | `commands in chat:send > a missing or wrong argument is refused in a line and changes nothing` |
 | T-0491-M10 | packages/chat/src/command.ts | `findCommand` fell back to the first command, so an unknown `/xxx` ran an action instead of staying a message | `commands in chat:send > an unknown slash and a slash inside the text are ordinary messages` |
 | T-0491-M11 | packages/chat/src/index.ts | a command also recorded a model message and sent its event while a reply was running | `commands in chat:send > a command runs at once while a reply is being written and starts no reply` |
+## T-0486 — a reply keeps the step's durations
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0486-M6 | packages/chat/src/reply.ts | the reply fact did not keep the step's `timings` with its usage | `chat/reply > the reply fact keeps the step's three durations with the usage` |

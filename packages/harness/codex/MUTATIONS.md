@@ -48,3 +48,10 @@ recorded. The root [MUTATIONS.md](../../../MUTATIONS.md) explains the format and
 | T-0490-M15 | packages/harness/codex/src/app-server.ts | the MCP servers were dropped from the thread's config | `codex/agent: a prompt run > operad's tools and mounted servers reach Codex as mcp_servers config` |
 | T-0490-M16 | packages/harness/codex/src/install.ts | the synchronous models read no longer started a background refresh, so the list stayed empty | `what a chat may pick > the model list comes from the app-server without blocking the listing read` |
 | T-0490-M17 | packages/harness/codex/src/install.ts | an empty model list was kept for the full 30 s cache instead of the short retry | `what a chat may pick > an empty answer is tried again after the short retry, not kept for 30s` |
+
+## T-0486 — the session line and the step's durations
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0486-M5 | packages/harness/codex/src/index.ts | the ACP ready callback wrote no `session` line | `codex/agent: a prompt run > a prompt runs to the end over ACP and the tool calls are in the log` |
+| T-0486-M10 | packages/harness/codex/src/index.ts | the step result was returned without its `timings` | `codex/agent: a prompt run > a scripted run gives the time to its session line, to the first increment, and the whole step` |

@@ -56,7 +56,12 @@ interface TestEnv {
 
 async function setup(
   mode: string,
-  options: { readonly settings?: Record<string, unknown>; readonly clock?: ManualClock; readonly vars?: Record<string, string> } = {},
+  options: {
+    readonly settings?: Record<string, unknown>;
+    readonly clock?: ManualClock;
+    readonly vars?: Record<string, string>;
+    readonly now?: (() => number) | undefined;
+  } = {},
 ): Promise<TestEnv> {
   const root = await tempRoot();
   const record = join(root, "record.jsonl");
@@ -69,7 +74,11 @@ async function setup(
   for (const [name, value] of Object.entries(options.vars ?? {})) setEnv(name, value);
 
   const clock = options.clock ?? manualClock();
-  const plugin = createCodexHarnessPlugin({ clock, now: () => 1000, codex: [process.execPath, FAKE] });
+  const plugin = createCodexHarnessPlugin({
+    clock,
+    now: options.now ?? (() => 1000),
+    codex: [process.execPath, FAKE],
+  });
   const registry = new PluginRegistry([plugin], {
     home: root,
     cwd: root,
@@ -161,9 +170,11 @@ describe("codex/agent: a prompt run", () => {
     ]);
     expect(starts[0]?.at).toBe(1000);
     const outputs = lines.filter((line) => line.type === "tool_output");
-    expect(outputs[0]).toEqual({ type: "tool_output", toolCallId: "t1", text: "all green\nsecond line" });
+    expect(outputs[0]).toMatchObject({ type: "tool_output", toolCallId: "t1", text: "all green\nsecond line" });
     expect(outputs.find((line) => line.toolCallId === "t2")?.text).toBe("changed /w/a.ts");
     expect(outputs.find((line) => line.toolCallId === "t3")?.text).toBe("could not write\nmore");
+    expect(lines[0]).toMatchObject({ type: "session", sessionId: "fake-thread-1" });
+    expect(lines.every((line) => typeof line.receivedAt === "number")).toBe(true);
     const ends = lines.filter((line) => line.type === "tool_execution_end");
     expect(ends.map((line) => [line.toolCallId, line.isError, line.error])).toEqual([
       ["t1", false, undefined],
@@ -175,6 +186,20 @@ describe("codex/agent: a prompt run", () => {
     expect(lines.filter((line) => line.type === "text_delta").map((line) => line.text).join("")).toContain("all done (1 blocks)");
     expect(lines.at(-2)?.type).toBe("message_end");
     expect(lines.at(-1)?.type).toBe("result");
+  });
+
+  test("a scripted run gives the time to its session line, to the first increment, and the whole step", async () => {
+    const times = [1_000, 2_000];
+    const env = await setup("done", { now: () => times.shift() ?? 9_000 });
+    const result = await runAgent(env, { prompt: "hello", cwd: env.root });
+    expect(result.result).toBe("done");
+    const data = dataOf(result);
+    expect(data.timings).toEqual({
+      startToReadyMs: 1_000,
+      readyToFirstMs: 7_000,
+      totalMs: 8_000,
+    });
+    expect(data.durationMs).toBe(8_000);
   });
 
   test("the usage has the token counts and an unknown cost, never 0", async () => {

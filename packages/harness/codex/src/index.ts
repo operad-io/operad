@@ -46,9 +46,11 @@ import {
   secs,
   serverCommand,
   standardUsage,
+  StepTimings,
   stringListParam,
   systemClock,
   text,
+  withTimings,
   type AgentWorkerResult,
   type CallAnswer,
   type Clock,
@@ -353,6 +355,7 @@ export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
         }),
         async run(ctx: StepContext, params: unknown): Promise<PluginStepResult> {
           const at = "codex/agent";
+          const timings = new StepTimings(now);
           const input = paramsObject(params, at);
           const flow = isRecord(ctx.params) ? ctx.params : {};
 
@@ -372,7 +375,8 @@ export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
           const early: UsageSource = { harness: HARNESS, model: knownModel ?? null };
           const refuse = async (reason: string, message: string): Promise<PluginStepResult> => {
             const log = await ctx.logger.write(message);
-            return {
+            const timing = timings.finish();
+            return withTimings({
               result: "failed",
               data: {
                 reason,
@@ -383,11 +387,11 @@ export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
                 finalMessage: null,
                 usage: standardUsage(early, undefined, null),
                 log,
-                durationMs: 0,
+                durationMs: timing.totalMs,
                 stderr: [message],
                 imageGenCalls: 0,
               },
-            };
+            }, timing);
           };
           if (typeof flags === "string") return refuse("invalid_args", `${at}: ${flags}`);
 
@@ -464,8 +468,7 @@ export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
           const read = readProfile(runAccess ?? {});
           const profile: AccessProfile = read.ok ? read.profile : {};
 
-          const started = Date.now();
-          const jsonl = new JsonlLog(ctx.logger, clock);
+          const jsonl = new JsonlLog(ctx.logger, clock, now);
           const stopper = new AbortController();
           const endRun = (): void => stopper.abort();
 
@@ -483,9 +486,11 @@ export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
           // A full buffer makes the line reader wait for the disk.
           let writing: Promise<void> | undefined;
           const writeLine = (line: string): void => {
-            const pending = jsonl.push(line);
+            const received = jsonl.stamp(line);
+            timings.line(received);
+            const pending = jsonl.push(received);
             if (pending !== undefined) writing = pending;
-            deliverLine(ctx.receiver, line, storeSecrets);
+            deliverLine(ctx.receiver, received, storeSecrets);
           };
           let client: AppServerClient | undefined;
           const log = new CodexLog({
@@ -565,6 +570,11 @@ export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
             },
           });
           client = server;
+          // The thread is open and the turn is about to be asked for.
+          void server.started.then(() => {
+            const opened = server.sessionId;
+            if (opened !== null) writeLine(JSON.stringify({ type: "session", sessionId: opened }));
+          });
 
           // A message from the host steers the turn. A message that arrives
           // before the turn is asked for waits for `started`.
@@ -699,19 +709,20 @@ export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
           // signal that did it is not the agent's.
           const settled =
             end === undefined ? outcome : { ...outcome, exitCode: 0, signal: null, cancelled: false };
+          const timing = timings.finish();
           const stepResult = resultFor(
             { harness: HARNESS, model: model ?? null },
             settled,
             result,
             ctx.logger.path,
-            Date.now() - started,
+            timing.totalMs,
             { wallTimeSecs, stallSecs },
             program,
           );
-          return {
+          return withTimings({
             ...stepResult,
             data: { ...(stepResult.data ?? {}), imageGenCalls: log.imageGenerations, stopReason: end?.kind === "stopped" ? end.stopReason : null },
-          };
+          }, timing);
         },
       },
     ],

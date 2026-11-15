@@ -52,6 +52,8 @@ import {
   deliverLine,
   modelLimit,
   standardUsage,
+  StepTimings,
+  withTimings,
   type UsageSource,
   runAgent,
   systemClock,
@@ -293,6 +295,7 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
         }),
         async run(ctx: StepContext, params: unknown): Promise<PluginStepResult> {
           const at = "claude/agent";
+          const timings = new StepTimings(now);
           const input = paramsObject(params, at);
           const flow = isRecord(ctx.params) ? ctx.params : {};
 
@@ -317,7 +320,8 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
           const early: UsageSource = { harness: HARNESS, model: knownModel ?? null };
           const refuse = async (reason: string, message: string): Promise<PluginStepResult> => {
             const log = await ctx.logger.write(message);
-            return {
+            const timing = timings.finish();
+            return withTimings({
               result: "failed",
               data: {
                 reason,
@@ -328,10 +332,10 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
                 finalMessage: null,
                 usage: standardUsage(early, undefined, null),
                 log,
-                durationMs: 0,
+                durationMs: timing.totalMs,
                 stderr: [message],
               },
-            };
+            }, timing);
           };
           if (typeof flags === "string") return refuse("invalid_args", `${at}: ${flags}`);
 
@@ -413,8 +417,7 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
           };
 
           const inbox = inboxOf(params);
-          const started = Date.now();
-          const jsonl = new JsonlLog(ctx.logger, clock);
+          const jsonl = new JsonlLog(ctx.logger, clock, now);
           let result: WorkerResult | undefined;
           // Ends the program when a question about a call runs out of grace.
           const stopper = new AbortController();
@@ -442,11 +445,13 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
             clock,
             toolEvent: (line) => claudeToolEvent(line) ?? askToolEvent(line),
             async onLine(line, reply) {
-              await answerGrant(line, (waitId) => ctx.useGrant(waitId), reply);
-              await asker.handle(line, reply);
-              const writing = jsonl.push(line);
-              deliverLine(ctx.receiver, line, storeSecrets);
-              const parsed = parseResult<WorkerResult>(line);
+              const received = jsonl.stamp(line);
+              timings.line(received);
+              await answerGrant(received, (waitId) => ctx.useGrant(waitId), reply);
+              await asker.handle(received, reply);
+              const writing = jsonl.push(received);
+              deliverLine(ctx.receiver, received, storeSecrets);
+              const parsed = parseResult<WorkerResult>(received);
               if (parsed !== undefined) result = parsed;
               return writing;
             },
@@ -459,16 +464,18 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
           const unanswered = asker.stopped();
           if (unanswered !== undefined && !ctx.signal.aborted) throw unanswered.error;
 
-          return resultFor(
+          const timing = timings.finish();
+          const stepResult = resultFor(
             // The step's own model, else the one claude reports having used.
             { harness: HARNESS, model: model ?? result?.model ?? null },
             outcome,
             result,
             ctx.logger.path,
-            Date.now() - started,
+            timing.totalMs,
             { wallTimeSecs, stallSecs },
             command,
           );
+          return withTimings(stepResult, timing);
         },
       },
     ],

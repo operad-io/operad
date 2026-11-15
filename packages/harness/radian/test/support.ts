@@ -225,6 +225,13 @@ if (mode === "tool-detail") {
   process.exit(0);
 }
 
+if (mode === "timed") {
+  line({ type: "journal", event: "TurnStarted" });
+  line({ type: "ToolExecutionStarted", toolCallId: "t1", toolName: "Bash", input: { command: "ls" } });
+  line(result());
+  process.exit(0);
+}
+
 if (mode === "secret-line") {
   line({ type: "journal", event: "Said", text: "the key is store-secret-9" });
   line(result());

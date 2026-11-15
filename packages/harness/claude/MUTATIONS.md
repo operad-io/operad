@@ -179,3 +179,9 @@ setup it depends on, in the order they were recorded. The root
 |---|---|---|---|
 | T-0497-M5 | packages/harness/claude/src/worker.ts | the temporary skill plugin was not passed to the SDK | `a given skill is mounted as a plugin, only that one is loaded, and the plugin is removed at the end` |
 | T-0497-M6 | packages/harness/claude/src/worker.ts | the temporary skill plugin was left on disk when the run ended | `a given skill is mounted as a plugin, only that one is loaded, and the plugin is removed at the end` |
+
+## T-0486 — the step's durations
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0486-M7 | packages/harness/claude/src/index.ts | the step result did not carry its `timings` | `claude/agent > a scripted worker gives the time to its session line, to the first increment, and the whole step` |

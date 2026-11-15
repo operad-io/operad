@@ -32,6 +32,12 @@ function failed(reason: string, message: string): Record<string, unknown> {
 }
 
 switch (mode) {
+  case "timed":
+    line({ type: "session", sessionId: "fake-session" });
+    line({ type: "text_delta", text: "hello" });
+    line(result({ finalMessage: "hello" }));
+    process.exit(0);
+    break;
   case "tools":
     line({ type: "tool_execution_start", toolCallId: "t1", toolName: "Bash", at: 5, input: "make test" });
     line({ type: "tool_execution_end", toolCallId: "t1", toolName: "Bash", isError: false, durationMs: 7 });

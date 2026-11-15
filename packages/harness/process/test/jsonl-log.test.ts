@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { PluginLogger } from "@operad-io/engine";
-import { FLUSH_CHARS, FLUSH_MS, JsonlLog } from "../src/jsonl-log.ts";
+import { FLUSH_CHARS, FLUSH_MS, JsonlLog, RECEIVED_AT } from "../src/jsonl-log.ts";
 import { manualClock, type ManualClock } from "./support.ts";
 
 interface BlockingLogger {
@@ -68,6 +68,27 @@ describe("jsonl log", () => {
     gate.release();
     await ending;
     expect(ended).toBe(true);
+  });
+
+  test("every JSON line carries the time the host received it", async () => {
+    const writes: string[] = [];
+    let now = 1_000;
+    const log = new JsonlLog({
+      path: "/log",
+      async write(text) {
+        writes.push(text);
+        return "/log";
+      },
+    }, undefined, () => now);
+
+    log.push(JSON.stringify({ type: "text_delta", text: "a" }));
+    now = 1_250;
+    log.push(JSON.stringify({ type: "text_delta", text: "b" }));
+    await log.end();
+
+    const lines = writes.join("").trim().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(lines.map((line) => line[RECEIVED_AT])).toEqual([1_000, 1_250]);
+    expect(lines.map((line) => line["text"])).toEqual(["a", "b"]);
   });
 
   test("lines reach the log in order", async () => {

@@ -43,6 +43,8 @@ import {
   deliverLine,
   modelLimit,
   standardUsage,
+  StepTimings,
+  withTimings,
   type UsageSource,
   directoryError,
   optionalText,
@@ -407,6 +409,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
         }),
         async run(ctx: StepContext, params: unknown): Promise<PluginStepResult> {
           const at = "pi/agent";
+          const timings = new StepTimings(now);
           const input = paramsObject(params, at);
           const flow = isRecord(ctx.params) ? ctx.params : {};
 
@@ -433,7 +436,8 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
           if (typeof flags === "string") {
             const message = `${at}: ${flags}`;
             const log = await ctx.logger.write(message);
-            return {
+            const timing = timings.finish();
+            return withTimings({
               result: "failed",
               data: {
                 reason: "invalid_args",
@@ -444,10 +448,10 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
                 finalMessage: null,
                 usage: standardUsage(early, undefined, null),
                 log,
-                durationMs: 0,
+                durationMs: timing.totalMs,
                 stderr: [message],
               },
-            };
+            }, timing);
           }
           const resumeSession = optionalText(
             input.resumeSession ?? flow.resumeSession,
@@ -494,7 +498,8 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
           const cwdProblem = await directoryError(cwd);
           if (cwdProblem !== undefined) {
             const log = await ctx.logger.write(cwdProblem);
-            return {
+            const timing = timings.finish();
+            return withTimings({
               result: "failed",
               data: {
                 reason: "cwd",
@@ -505,10 +510,10 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
                 finalMessage: null,
                 usage: standardUsage(early, undefined, null),
                 log,
-                durationMs: 0,
+                durationMs: timing.totalMs,
                 stderr: [cwdProblem],
               },
-            };
+            }, timing);
           }
 
           const agentDir = join(ctx.home, "harness", "pi");
@@ -562,8 +567,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
           };
 
           const inbox = inboxOf(params);
-          const started = Date.now();
-          const jsonl = new JsonlLog(ctx.logger, clock);
+          const jsonl = new JsonlLog(ctx.logger, clock, now);
           let result: WorkerResult | undefined;
           // Ends the program when a question about a call runs out of grace.
           const stopper = new AbortController();
@@ -591,11 +595,13 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
             clock,
             toolEvent: (line) => piToolEvent(line) ?? askToolEvent(line),
             async onLine(line, reply) {
-              await answerGrant(line, (waitId) => ctx.useGrant(waitId), reply);
-              await asker.handle(line, reply);
-              const writing = jsonl.push(line);
-              deliverLine(ctx.receiver, line, storeSecrets);
-              const parsed = parseResult<WorkerResult>(line);
+              const received = jsonl.stamp(line);
+              timings.line(received);
+              await answerGrant(received, (waitId) => ctx.useGrant(waitId), reply);
+              await asker.handle(received, reply);
+              const writing = jsonl.push(received);
+              deliverLine(ctx.receiver, received, storeSecrets);
+              const parsed = parseResult<WorkerResult>(received);
               if (parsed !== undefined) result = parsed;
               return writing;
             },
@@ -608,15 +614,17 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
           const unanswered = asker.stopped();
           if (unanswered !== undefined && !ctx.signal.aborted) throw unanswered.error;
 
-          return resultFor(
+          const timing = timings.finish();
+          const stepResult = resultFor(
             { harness: "pi", model: model ?? null },
             outcome,
             result,
             ctx.logger.path,
-            Date.now() - started,
+            timing.totalMs,
             { wallTimeSecs, stallSecs },
             command,
           );
+          return withTimings(stepResult, timing);
         },
       },
     ],

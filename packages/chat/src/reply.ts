@@ -28,6 +28,7 @@ import {
   unanswered,
   usageOf,
   worseQuality,
+  timingsOf,
   CHAT_TYPE,
   type EntryData,
   type Message,
@@ -726,6 +727,7 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
   const sessionId = typeof data.sessionId === "string" && data.sessionId.length > 0 ? data.sessionId : undefined;
 
   const usage = usageOf(data.usage);
+  const timings = timingsOf(data.timings);
 
   await recordEntries(ctx, object.id, folded, { finalText: text, stopped: false });
 
@@ -742,6 +744,7 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
     runId: ctx.runId,
     ...(sessionId === undefined ? {} : { session: sessionId }),
     ...usage,
+    ...(timings === undefined ? {} : { timings }),
   };
   await ctx.facts.append({ type: MESSAGE_FACT, object: chatRef(object.id), data: reply });
 
