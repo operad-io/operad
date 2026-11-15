@@ -489,6 +489,40 @@ describe("runner", () => {
     }
   });
 
+  test("cancelRun says whether it ended an active run", async () => {
+    const run = await setup("ask");
+    try {
+      const runner = new Runner({
+        log: run.log,
+        flow: run.flow,
+        runId: run.runId,
+        registry: run.registry,
+        lockRoot: join(run.root, "store"),
+        object: { type: "job", id: "1" },
+      });
+      expect(await runner.run()).toBe("waiting");
+      expect(
+        await cancelRun({
+          log: run.log,
+          flow: (name) => run.registry.flow(name)?.flow,
+          runId: run.runId,
+          source: "cli",
+        }),
+      ).toBe(true);
+      expect((await readState(run.log, run.runId)).endedStatus).toBe("cancelled");
+      expect(
+        await cancelRun({
+          log: run.log,
+          flow: (name) => run.registry.flow(name)?.flow,
+          runId: run.runId,
+          source: "cli",
+        }),
+      ).toBe(false);
+    } finally {
+      await run.close();
+    }
+  });
+
   test("cancelling a run that never started ends it, even with no flow loaded", async () => {
     const run = await setup("simple");
     try {
@@ -496,18 +530,30 @@ describe("runner", () => {
       expect((await readState(run.log, run.runId)).status).toBe("idle");
       expect((await readState(run.log, missing.runId)).status).toBe("idle");
 
-      await cancelRun({
-        log: run.log,
-        flow: (name) => run.registry.flow(name)?.flow,
-        runId: run.runId,
-        source: "cli",
-      });
-      await cancelRun({
-        log: run.log,
-        flow: (name) => run.registry.flow(name)?.flow,
-        runId: missing.runId,
-        source: "cli",
-      });
+      expect(
+        await cancelRun({
+          log: run.log,
+          flow: (name) => run.registry.flow(name)?.flow,
+          runId: run.runId,
+          source: "cli",
+        }),
+      ).toBe(true);
+      expect(
+        await cancelRun({
+          log: run.log,
+          flow: (name) => run.registry.flow(name)?.flow,
+          runId: missing.runId,
+          source: "cli",
+        }),
+      ).toBe(true);
+      expect(
+        await cancelRun({
+          log: run.log,
+          flow: (name) => run.registry.flow(name)?.flow,
+          runId: run.runId,
+          source: "cli",
+        }),
+      ).toBe(false);
 
       for (const runId of [run.runId, missing.runId]) {
         const state = await readState(run.log, runId);

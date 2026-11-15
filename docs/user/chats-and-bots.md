@@ -22,7 +22,7 @@ The plugins are deliberately cautious. A chat on a repository is read-only until
 
 1. A chat is opened by a plugin: `dev:chat` on a repository, `bot:chat` on a bot. The agent is chosen then and does not change; the model and effort can be changed later with `chat:model` and `chat:effort`.
 2. `chat:send` records a message. A message is an event whose source is `ios`, `telegram`, `cli`, `tui` or `other`, and the `chat` plugin's own rule starts `chat:reply` for it (see [Chats](#chats)).
-3. `chat:reply` takes the messages that no reply answers yet from the chat's own record, continues the agent's session, and records the reply. If messages arrived meanwhile it goes round again, at most 20 rounds. Without `operad serve` the message is only recorded and is answered when `serve` runs.
+3. `chat:reply` takes the messages that no reply answers yet from the chat's own record, continues the agent's session, and records the reply. If messages arrived meanwhile it goes round again, at most 20 rounds. Without `operad serve` the message is only recorded and is answered when `serve` runs. A reply being written can be stopped; its half-written text stays in the transcript, and `/retry` answers the last message again after a failed or stopped reply.
 4. While the agent works, the `transcript` section shows the messages, tool calls and the unfinished text of the current reply.
 5. Each tool call is checked against the chat's access profile (see [Access](access.md)). For a bot chat the profile is the default profile plus the bot's own `access` settings; the bot's settings are read again at every reply (see [Bots](#bots)).
 6. A chat on a repository starts in the main clone as read-only. A write, or a command that is not known to only read, becomes the worktree question; on yes, `dev` opens `work/chat-<id>` and the chat works there.
@@ -52,10 +52,13 @@ A chat has these actions:
 | `chat:send` | `note`, `attachments` (uploaded file refs), `ref` | Records a message and starts the reply. The message may be only attachments. Prints `sent <message id>`; with no `serve` it prints `recorded <id>; it is answered when operad serve runs`. A closed chat refuses it. |
 | `chat:model` | `model` | Changes the model the next reply uses. The model must be one the chat's agent lists; prints `chat <id> now uses <model>; the next reply uses it`. |
 | `chat:effort` | `effort` | Changes the effort the next reply uses, from the agent's list; prints `chat <id> now uses effort <effort>; the next reply uses it`. |
+| `chat:stop` | none | Stops the reply being written. What was written stays in the transcript, marked stopped. Messages that arrived meanwhile stay unanswered and no new reply starts by itself; prints that and points to `/retry`. With no reply running it says so and changes nothing. The client's button word is **Stop**. |
+| `chat:retry` | none | Answers the last message again after a reply failed or was stopped. The failed or stopped attempt stays in the record and the agent's session continues. After a normal reply it refuses and starts nothing. |
 | `chat:close` | none; asks to confirm | Records `chat.closed` and ends the chat. Prints `closed <id>`. The transcript stays readable; no other action appears. |
 
 A line that starts with `/` and names one of the chat's actions runs that action
-instead of going to the agent: `/model sonnet`, `/effort high`, `/close`, `/help`.
+instead of going to the agent: `/model sonnet`, `/effort high`, `/stop`, `/retry`,
+`/close`, `/help`.
 The rest of the line is the action's arguments, in the order its fields are
 declared; one field takes the whole rest, and with more than one the last field
 takes what is left. A `/xxx` that names no action, or a slash later in the line,

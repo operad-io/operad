@@ -1,13 +1,13 @@
 # operad-chat-commands：chat 里的 `/` 命令
 
-- 状态：decided（命令机制和第一批的 `/model`、`/effort`、`/close`、`/help` 已落地；其余未做，待决问题见文末）
+- 状态：decided（命令机制和第一批的 `/model`、`/effort`、`/close`、`/help`、`/stop`、`/retry` 已落地；`/status`、第二批和待决问题见文末）
 - 涉及 ADR：0013（动作）、0026、0027、0028（chat）、0033（Telegram）、0037（chat 命令）
 - 涉及：`operad-conversation.md`（待决 5：上下文费用）、`operad-telegram.md`、`operad-bot.md`（待决 5、7：skills）
 - 来源：2026-11-15 对 OpenClaw、Hermes Agent、Orca、Conductor、Vibe Kanban、Kimaki 的调研和 owner 的讨论
 
 ## 背景
 
-命令就是动作、命令不进模型、结果在 chat 里留一行，已经落地（ADR 0037）：`/model`、`/effort`、`/close`、`/help` 可用，`/usr/local 是什么` 这样的消息照常送给模型。chat 还不能停掉正在写的回复，运行中发的消息排到下一轮；命令的第一批其余部分和第二批尚未做。
+命令就是动作、命令不进模型、结果在 chat 里留一行，已经落地（ADR 0037）：`/model`、`/effort`、`/close`、`/help`、`/stop`、`/retry` 可用，`/usr/local 是什么` 这样的消息照常送给模型。运行中发来的普通消息的插话，以及 `/status` 和第二批尚未做。
 
 对手的共同做法：命令由宿主执行、不进模型；一份命令表生成各端的菜单；命令集小；运行中有停止和插话。
 
@@ -15,7 +15,7 @@
 
 （决定 1 至 4 与 `/help` 已落地，见 ADR 0037。）
 
-5. **第一批其余**：`/stop`（停掉正在写的回复，已写的部分按"已停止"留下）、`/status`（agent、模型、effort、是否在写、累计费用和用量）、`/retry`（重新回答最后一条消息，用于失败或被停掉的回复）。
+5. **第一批其余**：`/status`（agent、模型、effort、是否在写、累计费用和用量）。
 6. **第二批**：`/new`（从这里重新开始一个会话，记录留着）、`/compact`（压缩上下文）、`/btw`（旁问：用当前上下文回答，不打断正在写的回复，不进记录）、`/name`（改标题）、bot 的 skills 成为 `/名字`。
 7. **只在 Telegram**：`/whoami`（显示发送者的 id，配名单用）；显示工具调用和 thinking 的开关，等进度消息（T-0488）做完再定形式。
 8. **只在仓库 chat**：`/diff`（这个 chat 的 worktree 里改了什么）。
@@ -32,4 +32,4 @@
 
 ## 验收
 
-回复写到一半发 `/stop`，回复停下，已写的部分留着；发 `/retry` 重新回答；发 `/status` 看到费用；这些也在各端留一行，模型的上下文里没有它们。
+发 `/status` 看到费用；结果也在各端留一行，模型的上下文里没有它。
