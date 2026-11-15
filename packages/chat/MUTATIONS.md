@@ -154,3 +154,14 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0363-M20 | packages/chat/src/tail.ts | the saved offset stopped after the last complete line, so a partial line was read again at every poll | `chat transcript: after, mark and tail > a large unfinished line is read once, not at every poll` |
+
+## T-0485 — a failed reply is shown
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0485-M1 | packages/chat/src/reply.ts | `recordFailure` appended no entry, so a failed reply left no line | `a failed reply > leaves one line after the person's message, saying what failed and why` |
+| T-0485-M2 | packages/chat/src/reply.ts | the failure line did not mask the provider's message with `secretValues` | `a failed reply > masks the provider's message before it enters the chat` |
+| T-0485-M3 | packages/chat/src/reply.ts | `recordFailure` skipped no failure already after the last person's message, so a rerun added a second line | `a failed reply > does not gain a second line when the step runs again` |
+| T-0485-M4 | packages/chat/src/views.ts | a radian chat hid the failure line with its text and thinking entries | `a failed reply > shows the failure line in a radian chat too` |
+| T-0485-M5 | packages/chat/src/reply.ts | a long provider message was not cut, so the failure line could grow without limit | `a failed reply > cuts a long provider message to one line` |
+| T-0485-M6 | packages/chat/src/reply.ts | the failure line kept the provider message's internal words (`harness`, `run`, `step`, `flow`, `fact`) | `a failed reply > uses the person's words for the internal names a provider's message carries` |
