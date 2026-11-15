@@ -79,6 +79,9 @@ It finds or starts the server like this:
 - Without `--token`, the token is the one `operad pair` reads from
   `$OPERAD_HOME/secrets/http.json`. `operad pair --show-token` prints it.
 
+To use the terminal client from another computer over a Tailscale network, see
+[Tailscale](tailscale.md#the-terminal-client).
+
 | Input | Type | Default | Allowed values |
 |---|---|---|---|
 | `--url` | string | `http://<first http.listen address>:<http.port>`, which is `http://127.0.0.1:8765` with no `http` section | An `http` or `https` URL without credentials, a query or a fragment. |
