@@ -147,6 +147,8 @@ export interface EventHubOptions {
   readonly wait?: ((ms: number) => Promise<void>) | undefined;
   readonly retryMinMs?: number | undefined;
   readonly retryMaxMs?: number | undefined;
+  /** The clock; a source that stayed open at least the longest wait is healthy. */
+  readonly clock?: (() => number) | undefined;
 }
 
 /** The bounded stream of ids every event client resumes from. */
@@ -167,6 +169,9 @@ export class EventHub {
   private readonly wait: (ms: number) => Promise<void>;
   private readonly retryMinMs: number;
   private readonly retryMaxMs: number;
+  /** An open at least this long counts as healthy and starts the wait over. */
+  private readonly healthyMs: number;
+  private readonly clock: () => number;
   private stopped = false;
 
   constructor(
@@ -181,19 +186,24 @@ export class EventHub {
     this.wait = options.wait ?? waitForRestart;
     this.retryMinMs = options.retryMinMs ?? DEFAULT_EVENT_RETRY_MIN_MS;
     this.retryMaxMs = options.retryMaxMs ?? DEFAULT_EVENT_RETRY_MAX_MS;
+    this.healthyMs = Math.max(Math.max(0, this.retryMinMs), this.retryMaxMs);
+    this.clock = options.clock ?? Date.now;
     void this.pump();
   }
 
   /**
    * Reads the source to its end, then re-opens it. A source that fails or ends
    * at once on every open waits longer each time, up to the cap, so it cannot
-   * spin through the event loop; a delivered event starts the wait over.
+   * spin through the event loop; only a source that stayed open at least as
+   * long as the longest wait starts over, so one that hands over an event and
+   * dies on every open keeps backing off instead of retrying at the minimum.
    */
   private async pump(): Promise<void> {
     let attempt = 0;
     while (!this.stopped) {
       let failure: unknown;
       let ended = false;
+      const openedAt = this.clock();
       try {
         const iterator = this.events()[Symbol.asyncIterator]();
         this.iterator = iterator;
@@ -203,13 +213,13 @@ export class EventHub {
             ended = true;
             break;
           }
-          attempt = 0;
           this.publish(next.value);
         }
       } catch (error) {
         failure = error;
       }
       if (this.stopped) return;
+      if (this.clock() - openedAt >= this.healthyMs) attempt = 0;
       const delay = eventRetryDelay(attempt, this.retryMinMs, this.retryMaxMs);
       attempt += 1;
       this.onLog(
@@ -1006,13 +1016,7 @@ export async function startHttpServer(
   const token = await ensureHttpToken(options.home);
 
   const onLog = options.onLog ?? (() => undefined);
-  const wait =
-    options.wait ??
-    ((ms: number) =>
-      new Promise<void>((resolve) => {
-        // Unref'd: a stop that finished in time must not keep the process up.
-        (setTimeout(resolve, ms) as { unref?: () => void }).unref?.();
-      }));
+  const wait = options.wait ?? waitForRestart;
   const hub = new EventHub(
     () => options.views.events(),
     options.maxEventIds ?? DEFAULT_MAX_EVENT_IDS,

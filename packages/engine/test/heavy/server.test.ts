@@ -1226,14 +1226,61 @@ describe("http server", () => {
     }
   });
 
+  test("a source whose events() throws is re-opened instead of leaving the hub dead", async () => {
+    let opens = 0;
+    const logs: string[] = [];
+    const source = (): AsyncIterable<ViewEvent> => {
+      opens += 1;
+      if (opens === 1) throw new Error("the source is not there");
+      let sent = false;
+      return {
+        [Symbol.asyncIterator](): AsyncIterator<ViewEvent> {
+          return {
+            next: (): Promise<IteratorResult<ViewEvent>> => {
+              if (sent) return Promise.resolve({ done: true, value: undefined });
+              sent = true;
+              return Promise.resolve({ done: false, value: { id: "later" } });
+            },
+          };
+        },
+      };
+    };
+    let markSeen = (_id: string): void => undefined;
+    const seen = new Promise<string>((resolve) => {
+      markSeen = resolve;
+    });
+    const hub = new EventHub(source, 10, (message) => logs.push(message), {
+      wait: async () => undefined,
+    });
+    const unsubscribe = hub.subscribe((event) => {
+      if (event.kind !== "change") return;
+      hub.stop();
+      markSeen(event.entry.id);
+    });
+    try {
+      expect(await seen).toBe("later");
+      expect(opens).toBe(2);
+      expect(logs.some((line) => line.includes("the source is not there"))).toBe(true);
+    } finally {
+      unsubscribe();
+      hub.stop();
+    }
+  });
+
   test("a source that fails on every open backs off through the injected clock and resets once", async () => {
     let opens = 0;
     let up = false;
+    let now = 0;
     let failNow = (): void => undefined;
-    let markArmed = (): void => undefined;
-    const armed = new Promise<void>((resolve) => {
-      markArmed = resolve;
-    });
+    let arms = 0;
+    const armWaiters = new Set<{ readonly count: number; readonly resolve: () => void }>();
+    /** Resolves once the `count`-th open has delivered its change and waits again. */
+    const armAt = (count: number): Promise<void> => {
+      if (arms >= count) return Promise.resolve();
+      return new Promise<void>((resolve) => {
+        armWaiters.add({ count, resolve });
+      });
+    };
     const source = (): AsyncIterable<ViewEvent> => {
       opens += 1;
       for (const waiter of [...openWaiters]) {
@@ -1243,19 +1290,26 @@ describe("http server", () => {
       }
       let sent = false;
       return {
-        [Symbol.asyncIterator]: (): AsyncIterator<ViewEvent> => ({
-          next: (): Promise<IteratorResult<ViewEvent>> => {
-            if (!up) return Promise.reject(new Error("the source is down"));
-            if (!sent) {
-              sent = true;
-              return Promise.resolve({ done: false, value: { id: "recovered" } });
-            }
-            markArmed();
-            return new Promise<IteratorResult<ViewEvent>>((_resolve, reject) => {
-              failNow = () => reject(new Error("the source broke after all"));
-            });
-          },
-        }),
+        [Symbol.asyncIterator](): AsyncIterator<ViewEvent> {
+          return {
+            next: (): Promise<IteratorResult<ViewEvent>> => {
+              if (!up) return Promise.reject(new Error("the source is down"));
+              if (!sent) {
+                sent = true;
+                return Promise.resolve({ done: false, value: { id: "recovered" } });
+              }
+              arms += 1;
+              for (const waiter of [...armWaiters]) {
+                if (arms < waiter.count) continue;
+                armWaiters.delete(waiter);
+                waiter.resolve();
+              }
+              return new Promise<IteratorResult<ViewEvent>>((_resolve, reject) => {
+                failNow = () => reject(new Error("the source broke after all"));
+              });
+            },
+          };
+        },
       };
     };
 
@@ -1296,6 +1350,7 @@ describe("http server", () => {
     const logs: string[] = [];
     const hub = new EventHub(source, 10, (message) => logs.push(message), {
       wait,
+      clock: () => now,
       retryMinMs: 10,
       retryMaxMs: 40,
     });
@@ -1325,16 +1380,29 @@ describe("http server", () => {
       expect(kinds).toEqual(["reset"]);
       expect(logs.some((line) => line.includes("re-opening it in 40 ms"))).toBe(true);
 
-      // A source that delivers a change starts the wait over at the minimum.
+      // A source that hands over one change and dies at once is still failing:
+      // it keeps backing off, capped at the longest wait.
       up = true;
       releases.shift()?.();
       await changed;
       expect(kinds).toEqual(["reset", "change"]);
-      await armed;
+      await armAt(1);
+      failNow();
+      expect(await step(delays.length + 1)).toBe("wait");
+      expect(delays.at(-1)).toBe(40);
+      expect(kinds).toEqual(["reset", "change", "reset"]);
+
+      // A source that stayed open past the longest wait is healthy: the next
+      // failure starts the wait over at the minimum.
+      releases.shift()?.();
+      await openAt(opens + 1);
+      await armAt(2);
+      now += 100;
       failNow();
       expect(await step(delays.length + 1)).toBe("wait");
       expect(delays.at(-1)).toBe(10);
-      expect(kinds).toEqual(["reset", "change", "reset"]);
+      expect(kinds).toEqual(["reset", "change", "reset", "change", "reset"]);
+      expect(opens).toBe(7);
     } finally {
       unsubscribe();
       hub.stop();
@@ -1880,6 +1948,32 @@ describe("http server", () => {
 
         const leak = await api(h, "/v1/attachments/item/one/linked/secret.txt");
         expect(leak.status).toBe(404);
+      } finally {
+        await h.close();
+      }
+    });
+
+    test("a link inside the root serves the type of the name it was asked under", async () => {
+      const h = await makeHarness();
+      try {
+        const target = join(h.home, "attachments", "item", "two", "ref");
+        mkdirSync(target, { recursive: true });
+        writeFileSync(join(target, "data.bin"), "BYTES");
+        writeFileSync(join(target, ".meta.json"), JSON.stringify({ name: "data.bin", type: "application/pdf", size: 5 }));
+
+        const dir = join(h.home, "attachments", "item", "one", "ref");
+        mkdirSync(dir, { recursive: true });
+        writeFileSync(join(dir, ".meta.json"), JSON.stringify({ name: "link.bin", type: "image/png", size: 5 }));
+        symlinkSync(join(target, "data.bin"), join(dir, "link.bin"));
+        symlinkSync(join(target, ".meta.json"), join(dir, "sneaky"));
+
+        const linked = await api(h, "/v1/attachments/item/one/ref/link.bin");
+        expect(linked.status).toBe(200);
+        expect(linked.headers.get("content-type")).toBe("image/png");
+        expect(await linked.text()).toBe("BYTES");
+
+        // A link that names the metadata of another directory is still refused.
+        expect((await api(h, "/v1/attachments/item/one/ref/sneaky")).status).toBe(404);
       } finally {
         await h.close();
       }
