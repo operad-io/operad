@@ -26,4 +26,12 @@ The command and its outcome are one `chat.command` fact: who typed it, the line 
 
 ### D4: `/help` lists the chat's commands
 
-`chat:help` is a command action. It lists every command this chat has, each under the name it is typed by, with the one-line description from the same action declaration. `/model`, `/effort`, `/close` and `/help` are declared as commands.
+`chat:help` is a command action. It lists every command this chat has, each under the name it is typed by, with the one-line description from the same action declaration. `/model`, `/effort`, `/close`, `/stop`, `/retry` and `/help` are declared as commands.
+
+### D5: `/stop` stops the reply being written
+
+`chat:stop` cancels the reply run of this chat through the plugin's run control. What was written so far stays as a `stopped` entry (ADR 0027 D2), shown as stopped. Messages that arrived during the reply stay unanswered and no new reply starts by itself; the command's line says so and says `/retry` answers the last message. With no reply running it says so and changes nothing. The run control reports whether it cancelled a run, so a plugin can tell those two cases without a second run lookup; the kernel gains no new concept. The action is a command and appears in the chat's actions; its button word is "Stop".
+
+### D6: `/retry` answers the last message after a failed or stopped reply
+
+`chat:retry` starts a reply again when the last attempt failed or was stopped. The failed or stopped attempt stays in the record, and the new reply continues the chat's session. When the last reply finished normally, or the last attempt neither failed nor stopped, it refuses with a line saying so and starts nothing. A retry of one attempt starts one reply, so repeating the command before that reply begins does not answer twice. It is a command and appears in the chat's actions.

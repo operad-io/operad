@@ -11,8 +11,7 @@
 
 ## 决定（已定，还没做）
 
-1. **仓库层**：仓库里的 `.agents/skills/` 给这个仓库的 chat 用，仓库里有这个目录就自动加载，不用设置；仓库的设置可以改成别的目录或清空。
-2. **MCP 不做目录。** bot 的 MCP 服务器照 ADR 0031 登记在 operad 的配置里，登记要确认、钉版本，由 operad 交给 agent。
+1. **MCP 不做目录。** bot 的 MCP 服务器照 ADR 0031 登记在 operad 的配置里，登记要确认、钉版本，由 operad 交给 agent。
 
 ## 待决问题
 
@@ -22,4 +21,4 @@
 
 ## 验收
 
-`default` bot 的设置列 `~/.agents/skills`；agent 改不了 skill 目录里的文件；`~/.claude/skills` 里的 skill 没有出现在任何 chat 里；在 operad 仓库放一个 `.agents/skills/x/SKILL.md`，这个仓库的 chat 自动能用它，别的仓库的 chat 不能。
+`default` bot 的设置列 `~/.agents/skills`；agent 改不了 skill 目录里的文件；`~/.claude/skills` 里的 skill 没有出现在任何 chat 里。

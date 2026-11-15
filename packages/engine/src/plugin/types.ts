@@ -425,8 +425,12 @@ export type Answer = (choice: string, note?: string) => MaybePromise<void>;
 
 /** What a plugin may ask the kernel to do with a run it owns. */
 export interface RunControl {
-  /** Cancels a run through the kernel; an ended run is left alone. */
-  cancel(runId: string, flow?: FlowDefinition): MaybePromise<void>;
+  /**
+   * Cancels a run through the kernel; an ended run is left alone. True when
+   * this cancelled an active run, so a plugin can tell it from a run that had
+   * already ended; a host that does not report says nothing.
+   */
+  cancel(runId: string, flow?: FlowDefinition): MaybePromise<boolean | void>;
 }
 
 /** The result of one plugin's optional `check`. */

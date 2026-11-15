@@ -974,6 +974,12 @@ the row fields.
 |---|---|---|---|
 | T-0503-M5 | packages/engine/src/plugin/load.ts | `loadPluginRegistry` no longer read the models once, so a lazy harness's first list came from its cache only | `loadPluginRegistry > reads each harness's model list once during the load` |
 
+## T-0492 — the run control says whether it cancelled
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0492-M1 | packages/engine/src/runner/cancel.ts | `cancelRun` reported `false` after it cancelled an active run | `runner > cancelRun says whether it ended an active run` |
+
 ## T-0501 — an action's schema can read the home
 
 | id | file | mutation | failing test |

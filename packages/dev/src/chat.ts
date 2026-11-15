@@ -6,17 +6,23 @@
  */
 
 import { CHAT_TYPE, agentConditionals, type AgentChoices, chatData, createChat, sendMessage, startingEffort, startingModel, titleFromMessage } from "@operad-io/chat";
-import type {
-  ActionArgsSchema,
-  ActionTypeDefinition,
-  JsonValue,
-  ObjectStore,
-  PluginStepResult,
-  StepContext,
+import {
+  isRecord,
+  type ActionArgsSchema,
+  type ActionTypeDefinition,
+  type JsonValue,
+  type ObjectStore,
+  type PluginStepResult,
+  type StepContext,
 } from "@operad-io/engine";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
+import { basename, join, resolve } from "node:path";
 import { DevError, DevRefusal, repositoryData, type RepositoryData } from "./model.ts";
-import { readDevSettings } from "./settings.ts";
+import {
+  assertInsideRepository,
+  readDevSettings,
+  type DevSettings,
+} from "./settings.ts";
 import { isRegistered, prepareWorktree, workBranch, worktreePath } from "./steps.ts";
 
 /**
@@ -38,9 +44,92 @@ export const CHAT_ACCESS: Readonly<Record<string, JsonValue>> = {
   denyCommands: ["operad"],
 };
 
+/** The step a repository chat calls at every reply to read its skills and access. */
+export const CHAT_SETTINGS_STEP = "dev/chat_settings";
+
 /** The directory name and branch suffix of a chat's worktree. */
 export function chatWorktreeName(chatId: string): string {
   return `chat-${chatId}`;
+}
+
+interface ChatSkillList {
+  /** The skill directories given to the agent. */
+  readonly directories: string[];
+  /** The directories a listed path names, denied for writing. */
+  readonly roots: string[];
+}
+
+function isDirectory(path: string): boolean {
+  try {
+    return statSync(path).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function hasSkill(path: string): boolean {
+  try {
+    return statSync(join(path, "SKILL.md")).isFile();
+  } catch {
+    return false;
+  }
+}
+
+function added(list: string[], path: string): void {
+  const normal = resolve(path);
+  if (!list.includes(normal)) list.push(normal);
+}
+
+/** The skills directly inside a directory: each child that holds a SKILL.md. */
+function skillsInside(parent: string): string[] {
+  if (!isDirectory(parent)) return [];
+  return readdirSync(parent, { withFileTypes: true })
+    .map((entry) => join(parent, entry.name))
+    .filter((path) => hasSkill(path))
+    .sort((left, right) => left.localeCompare(right));
+}
+
+/**
+ * The skills a repository gives its chats at `base` (the main clone or the
+ * chat's worktree), read now. A path may be a skill itself, a directory of
+ * skills (such as `.agents/skills`), or a `.agents` directory, whose `skills`
+ * directory is read the same way. Every skill directly inside is included, so
+ * one added later is read at the next reply.
+ */
+export function repositoryChatSkills(settings: DevSettings, base: string): ChatSkillList {
+  const directories: string[] = [];
+  const roots: string[] = [];
+  settings.skills.forEach((written, index) => {
+    const path = resolve(base, written);
+    assertInsideRepository(base, path, `skills[${index}]`);
+    if (hasSkill(path)) {
+      added(roots, path);
+      added(directories, path);
+      return;
+    }
+    const agents = isDirectory(path) && basename(path) === ".agents";
+    const parent = agents ? join(path, "skills") : path;
+    if (isDirectory(path)) added(roots, parent);
+    for (const skill of skillsInside(parent)) added(directories, skill);
+  });
+  return { directories, roots };
+}
+
+/**
+ * The access profile of a repository chat. In the main clone its skills may be
+ * read but not changed; in its own worktree they are repository files the chat
+ * changes like any other, and the change reaches main through a task.
+ */
+export function chatAccess(skillPaths: readonly string[], readOnly: boolean): Record<string, JsonValue> {
+  const denyPaths = Array.isArray(CHAT_ACCESS.denyPaths) ? [...CHAT_ACCESS.denyPaths] : [];
+  const protectedPaths = readOnly ? skillPaths : [];
+  for (const path of protectedPaths) if (!denyPaths.includes(path)) denyPaths.push(path);
+  return {
+    ...CHAT_ACCESS,
+    readOnly,
+    denyPaths,
+    ...(protectedPaths.length === 0 ? {} : { readPaths: [...protectedPaths] }),
+  };
 }
 
 /**
@@ -154,6 +243,13 @@ const chatAction: ActionTypeDefinition = {
       throw new DevRefusal(error instanceof Error ? error.message : String(error));
     }
     const effortDefault = ctx.efforts[harness]?.default ?? undefined;
+    const settings = await readDevSettings(repository.path);
+    let skills: ChatSkillList;
+    try {
+      skills = repositoryChatSkills(settings, repository.path);
+    } catch (error) {
+      throw new DevRefusal(error instanceof Error ? error.message : String(error));
+    }
     const id = await createChat(
       ctx.store,
       {
@@ -163,7 +259,9 @@ const chatAction: ActionTypeDefinition = {
         ...(effort === undefined ? {} : { effort }),
         ...(effort === undefined || effortDefault === undefined ? {} : { effortDefault }),
         cwd: repository.path,
-        access: CHAT_ACCESS,
+        access: chatAccess(skills.roots, true),
+        skills: skills.directories,
+        refresh: CHAT_SETTINGS_STEP,
         title:
           input.title ??
           (input.message === undefined ? undefined : titleFromMessage(input.message)) ??
@@ -181,6 +279,49 @@ export const chatActions: readonly ActionTypeDefinition[] = [chatAction];
 
 function failed(message: string): PluginStepResult {
   return { result: "failed", data: { message } };
+}
+
+/**
+ * Step `dev/chat_settings`: the skills and access of a repository chat as they
+ * are now. The reply calls it every time, so a skill added, changed or removed
+ * is read at the next reply, from the main clone while the chat is read-only
+ * and from its worktree once it has one.
+ */
+export async function runChatSettings(ctx: StepContext, params: unknown): Promise<PluginStepResult> {
+  const chatId = isRecord(params) && typeof params.chat === "string" ? params.chat : undefined;
+  const stored = chatId === undefined ? undefined : await ctx.store.get(CHAT_TYPE, chatId);
+  if (stored === undefined) return failed("there is no such chat");
+  const chat = chatData(stored.data);
+  const parent = typeof chat.parent === "string" ? chat.parent : "";
+  const name = parent.startsWith("repo:") ? parent.slice("repo:".length) : undefined;
+  if (name === undefined) {
+    return failed(`chat ${chatId} is not a chat about a repository`);
+  }
+  const repoObject = await ctx.store.get("repo", name);
+  if (repoObject === undefined) return failed(`there is no repository "${name}"`);
+  const repository = repositoryData(repoObject.data);
+  let settings;
+  try {
+    settings = await readDevSettings(repository.path);
+  } catch (error) {
+    return failed(error instanceof Error ? error.message : String(error));
+  }
+  const cwd = chat.cwd.length > 0 ? chat.cwd : repository.path;
+  const hasWorktree = typeof stored.data.worktree === "object" && stored.data.worktree !== null;
+  let skills: ChatSkillList;
+  try {
+    skills = repositoryChatSkills(settings, cwd);
+  } catch (error) {
+    return failed(error instanceof Error ? error.message : String(error));
+  }
+  return {
+    result: "done",
+    data: {
+      cwd,
+      access: chatAccess(skills.roots, !hasWorktree),
+      skills: [...skills.directories],
+    },
+  };
 }
 
 /**
@@ -223,11 +364,22 @@ export async function runChatWorktree(ctx: StepContext): Promise<PluginStepResul
   if (typeof fresh.data.worktree === "object" && fresh.data.worktree !== null) {
     return { result: "done", data: { moved: false } };
   }
-  const access = chatData(fresh.data).access;
+  let skills: ChatSkillList;
+  try {
+    skills = repositoryChatSkills(settings, path);
+  } catch (error) {
+    return failed(error instanceof Error ? error.message : String(error));
+  }
   await ctx.store.put(
     CHAT_TYPE,
     object.id,
-    { ...fresh.data, cwd: path, access: { ...access, readOnly: false }, worktree: { path, branch } },
+    {
+      ...fresh.data,
+      cwd: path,
+      access: chatAccess(skills.roots, false),
+      skills: [...skills.directories],
+      worktree: { path, branch },
+    },
     "step:dev/chat_worktree",
   );
   return { result: "done", data: { moved: true, path, branch } };
