@@ -28,10 +28,15 @@ digits, `-` and `_`. Fields: `cwd`, `harness` (the default agent), `skills`,
   can tighten it, never loosen it. Everything in the operad home except `bot/` is
   in `denyPaths` (what is there now, and `store`, `secrets`, `config.json`), so
   the fact log, secrets and the token are out of reach. The bot's skill
-  directories, and `<cwd>/skills`, are in `denyPaths` too: the agent proposes a
-  skill through operad's tools and never writes one itself.
-- **Skills**: directories with a `SKILL.md`, given to the agent as `skills` in
-  its step params. A missing `SKILL.md` fails the reply and names the directory.
+  directories, and `<cwd>/skills`, are in `denyPaths` for writing and in
+  `readPaths` for reading: the agent can read a skill but proposes a change
+  through operad's tools and never writes one itself.
+- **Skills**: a directory with a `SKILL.md`, given to the agent as `skills` in
+  its step params. A listed directory whose direct subdirectories each hold a
+  `SKILL.md` (such as `~/.agents/skills`) gives every one of them, and a
+  `.agents` directory (such as `~/.agents`) gives the skills in its `skills`
+  directory. Every skill is read again at each reply, so one added later is
+  included. A missing `SKILL.md` fails the reply and names the directory.
 - **Speaker**: how a chat of this bot labels the model's messages in its
   transcript; without it, the chat plugin's `speaker` is used.
 

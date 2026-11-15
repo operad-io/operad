@@ -10,7 +10,7 @@ Generated steps and conversations run agents that can read files and run command
 
 ### D1: The access profile is operad's own JSON
 
-It is a JSON document with a Schema, attached to a flow, a conversation or a repository's settings. It holds lists of denied and asked-about paths and commands. The kernel does not interpret it; it hands it to the harness step (ADR 0010 D3).
+It is a JSON document with a Schema, attached to a flow, a conversation or a repository's settings. It holds lists of denied and asked-about paths and commands, and of paths a read may reach under a denied directory (`readPaths`); a write there stays denied. The kernel does not interpret it; it hands it to the harness step (ADR 0010 D3).
 
 ### D2: Enforcement belongs to the harness plugin
 
