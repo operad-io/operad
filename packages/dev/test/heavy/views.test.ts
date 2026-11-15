@@ -506,6 +506,162 @@ describe("dev views", () => {
     expect(page2.next).toBeUndefined();
   });
 
+  test("a merged task shows the change its merge brought after its branch is deleted", async () => {
+    const root = await tempRoot();
+    const remote = await makeRemote(root);
+    const store = storeAt(root);
+    const repository = await addRepository(store, { path: remote.repository, name: "repository" });
+    const plan = await addPlan(store, { repository, slug: "p", title: "P", request: "r" });
+    const task = await addTask(store, { plan: plan.id, slug: "one", title: "One", brief: "b" });
+    const branch = `work/${bareId(task.id)}`;
+    gitOrThrow(remote.repository, ["checkout", "-q", "-b", branch]);
+    await commitIn(remote.repository, "merged.txt", "from the task\n", "task change");
+    gitOrThrow(remote.repository, ["checkout", "-q", "main"]);
+    gitOrThrow(remote.repository, [
+      "-c",
+      "user.name=test",
+      "-c",
+      "user.email=test@example.com",
+      "merge",
+      "--no-ff",
+      "-m",
+      `Merge ${branch} (task)`,
+      branch,
+    ]);
+    const sha = gitOrThrow(remote.repository, ["rev-parse", "HEAD"]);
+    const base = gitOrThrow(remote.repository, ["rev-parse", "HEAD^1"]);
+    gitOrThrow(remote.repository, ["branch", "-D", branch]);
+    const stored = taskData((await getTask(store, task.id)).data);
+    await store.put(
+      "task",
+      task.id,
+      {
+        ...stored,
+        phase: "merged",
+        attempt: {
+          number: 1,
+          run: "run-1",
+          branch,
+          integration: { result: "merged", candidate: sha, base },
+        },
+      },
+      "test:merged",
+    );
+
+    const section = (await taskViews.load(
+      { store } as never,
+      await getTask(store, task.id),
+      "diff",
+      {},
+    )) as { markdown: string };
+    expect(section.markdown).toContain("merged.txt");
+    expect(section.markdown).toContain("+from the task");
+    expect(section.markdown).not.toContain("fatal:");
+  });
+
+  test("a merged task whose commit is not here says it merged, with a GitHub link", async () => {
+    const root = await tempRoot();
+    const repositoryPath = await makeGitRepository(root);
+    gitOrThrow(repositoryPath, [
+      "remote",
+      "set-url",
+      "origin",
+      "git@github.com:operad-io/example.git",
+    ]);
+    const store = storeAt(root);
+    const repository = await addRepository(store, { path: repositoryPath });
+    const plan = await addPlan(store, { repository, slug: "p", title: "P", request: "r" });
+    const task = await addTask(store, { plan: plan.id, slug: "one", title: "One", brief: "b" });
+    const sha = "0123456789abcdef0123456789abcdef01234567";
+    const stored = taskData((await getTask(store, task.id)).data);
+    await store.put(
+      "task",
+      task.id,
+      {
+        ...stored,
+        phase: "merged",
+        attempt: {
+          number: 1,
+          run: "run-1",
+          branch: `work/${bareId(task.id)}`,
+          integration: { result: "merged", candidate: sha },
+        },
+      },
+      "test:merged",
+    );
+
+    const section = (await taskViews.load(
+      { store } as never,
+      await getTask(store, task.id),
+      "diff",
+      {},
+    )) as { markdown: string };
+    expect(section.markdown).toBe(
+      `_Merged as [0123456](https://github.com/operad-io/example/commit/${sha})._`,
+    );
+    expect(section.markdown).not.toContain("fatal:");
+  });
+
+  test("a merged task with no recorded merge commit says it merged, without git's error", async () => {
+    const root = await tempRoot();
+    const repositoryPath = await makeGitRepository(root);
+    const store = storeAt(root);
+    const repository = await addRepository(store, { path: repositoryPath });
+    const plan = await addPlan(store, { repository, slug: "p", title: "P", request: "r" });
+    const task = await addTask(store, { plan: plan.id, slug: "one", title: "One", brief: "b" });
+    const stored = taskData((await getTask(store, task.id)).data);
+    await store.put(
+      "task",
+      task.id,
+      {
+        ...stored,
+        phase: "merged",
+        attempt: { number: 1, run: "run-1", branch: `work/${bareId(task.id)}` },
+      },
+      "test:merged",
+    );
+
+    const section = (await taskViews.load(
+      { store } as never,
+      await getTask(store, task.id),
+      "diff",
+      {},
+    )) as { markdown: string };
+    expect(section.markdown).toBe("_Merged._");
+    expect(section.markdown).not.toContain("fatal:");
+  });
+
+  test("a cancelled task whose branch is gone says so, without git's error", async () => {
+    const root = await tempRoot();
+    const repositoryPath = await makeGitRepository(root);
+    const store = storeAt(root);
+    const repository = await addRepository(store, { path: repositoryPath });
+    const plan = await addPlan(store, { repository, slug: "p", title: "P", request: "r" });
+    const task = await addTask(store, { plan: plan.id, slug: "one", title: "One", brief: "b" });
+    const stored = taskData((await getTask(store, task.id)).data);
+    await store.put(
+      "task",
+      task.id,
+      {
+        ...stored,
+        phase: "cancelled",
+        attempt: { number: 1, run: "run-1", branch: `work/${bareId(task.id)}` },
+      },
+      "test:cancelled",
+    );
+
+    const section = (await taskViews.load(
+      { store } as never,
+      await getTask(store, task.id),
+      "diff",
+      {},
+    )) as { markdown: string };
+    expect(section.markdown).toBe(
+      "_The branch of this task is gone, so there is no diff to show._",
+    );
+    expect(section.markdown).not.toContain("fatal:");
+  });
+
   test("the metrics summary has at most four columns, a row per attempt and a total", async () => {
     const root = await tempRoot();
     const repositoryPath = await makeGitRepository(root);

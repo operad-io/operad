@@ -755,7 +755,8 @@ async function answerSection(
 }
 
 /* ---------------------------------------------------------------------------
- * Diff: the task branch against main, one page per file when it is long.
+ * Diff: the task branch against main, one page per file when it is long. A
+ * merged task shows what its merge commit brought; its branch is gone by then.
  * ------------------------------------------------------------------------- */
 
 /** A diff longer than this many characters is paged by file. */
@@ -763,6 +764,84 @@ export const DIFF_PAGE_CHARS = 60_000;
 
 function fence(diff: string): string {
   return `\`\`\`\`diff\n${diff.trimEnd()}\n\`\`\`\``;
+}
+
+/** The commit whose change a merged task brought, when dev recorded one. */
+function mergedCommitOf(task: TaskData): string | undefined {
+  const integration = task.attempt?.integration;
+  if (
+    integration === undefined ||
+    integration === null ||
+    (integration.result !== undefined && integration.result !== "merged")
+  ) {
+    return undefined;
+  }
+  const candidate = integration.candidate;
+  if (typeof candidate !== "string" || !/^[0-9a-f]{7,64}$/i.test(candidate)) return undefined;
+  // `already on main` records main itself when no commit carries the change.
+  if (integration.base === candidate) return undefined;
+  return candidate;
+}
+
+/** A GitHub-style remote's web page for a commit, when the remote names one. */
+function commitWebUrl(repositoryPath: string, remote: string, sha: string): string | undefined {
+  const configured = git(repositoryPath, ["remote", "get-url", remote]);
+  if (!configured.ok || configured.out.length === 0) return undefined;
+  const text = configured.out.trim();
+  let host: string;
+  let path: string;
+  if (text.includes("://")) {
+    let url: URL;
+    try {
+      url = new URL(text);
+    } catch {
+      return undefined;
+    }
+    if (
+      url.protocol !== "https:" &&
+      url.protocol !== "http:" &&
+      url.protocol !== "ssh:" &&
+      url.protocol !== "git:"
+    ) {
+      return undefined;
+    }
+    host = url.hostname;
+    path = url.pathname;
+  } else {
+    const match = /^(?:[^@/]+@)?([^/:]+):(.+)$/.exec(text);
+    if (match === null) return undefined;
+    host = match[1] ?? "";
+    path = match[2] ?? "";
+  }
+  if (host !== "github.com" && !host.startsWith("github.") && !host.endsWith(".github.com")) {
+    return undefined;
+  }
+  const parts = path
+    .replace(/^\/+/, "")
+    .replace(/\/+$/, "")
+    .replace(/\.git$/, "")
+    .split("/")
+    .filter((part) => part.length > 0);
+  const owner = parts[0];
+  const name = parts[1];
+  if (owner === undefined || name === undefined) return undefined;
+  return `https://${host}/${owner}/${name}/commit/${sha}`;
+}
+
+/** What a merged task says when its own change cannot be shown. */
+function mergedMarkdown(repositoryPath: string, remote: string, sha: string | undefined): string {
+  if (sha === undefined) return "_Merged._";
+  const short = sha.slice(0, 7);
+  const url = commitWebUrl(repositoryPath, remote, sha);
+  return url === undefined ? `_Merged as ${short}._` : `_Merged as [${short}](${url})._`;
+}
+
+/** True when the task's branch is still in the repository, here or on its remote. */
+function branchIsThere(repositoryPath: string, remote: string, branch: string): boolean {
+  return (
+    git(repositoryPath, ["show-ref", "--verify", "--quiet", `refs/heads/${branch}`]).ok ||
+    git(repositoryPath, ["show-ref", "--verify", "--quiet", `refs/remotes/${remote}/${branch}`]).ok
+  );
 }
 
 async function diffSection(
@@ -781,13 +860,38 @@ async function diffSection(
   const settings = await readDevSettings(repository.path);
   const branch = task.attempt?.branch ?? workBranch(task.worktree ?? bareId(object.id));
   const main = `${settings.remote}/${settings.mainBranch}`;
-  const range = `${main}...${branch}`;
-  const stat = git(repository.path, ["diff", "--stat", range], true);
-  if (!stat.ok) {
-    return { markdown: `_No diff: ${stat.err || `cannot compare ${branch} with ${main}`}._` };
+  const merged = task.phase === "merged";
+  const recorded = merged ? mergedCommitOf(task) : undefined;
+  let range: string;
+  let fallback: string;
+  if (merged) {
+    if (recorded === undefined) return { markdown: "_Merged._" };
+    const resolved = git(repository.path, [
+      "rev-parse",
+      "--verify",
+      "--quiet",
+      `${recorded}^{commit}`,
+    ]);
+    const sha = resolved.ok && resolved.out.length > 0 ? resolved.out : recorded;
+    const parent = resolved.ok
+      ? git(repository.path, ["rev-parse", "--verify", "--quiet", `${sha}^1`])
+      : undefined;
+    if (parent === undefined || !parent.ok || parent.out.length === 0) {
+      return { markdown: mergedMarkdown(repository.path, settings.remote, sha) };
+    }
+    range = `${sha}^1..${sha}`;
+    fallback = mergedMarkdown(repository.path, settings.remote, sha);
+  } else {
+    if (task.phase === "cancelled" && !branchIsThere(repository.path, settings.remote, branch)) {
+      return { markdown: "_The branch of this task is gone, so there is no diff to show._" };
+    }
+    range = `${main}...${branch}`;
+    fallback = `_No diff: cannot compare ${branch} with ${main}._`;
   }
+  const stat = git(repository.path, ["diff", "--stat", range], true);
+  if (!stat.ok) return { markdown: fallback };
   if (stat.out.length === 0) {
-    return { markdown: `_${branch} has no changes against ${main}._` };
+    return { markdown: merged ? fallback : `_${branch} has no changes against ${main}._` };
   }
   const whole = git(repository.path, ["diff", range]);
   if (whole.out.length <= DIFF_PAGE_CHARS && cursor === undefined) {

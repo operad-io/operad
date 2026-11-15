@@ -1288,3 +1288,10 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0476-M1 | packages/dev/src/project-settings.ts | dev.json's `reviewer.fixLevel` took the review file's "Rework threshold" title again | `plugin versions > a plugin's settings have distinct titles` (packages/cli/test/plugin-versions.test.ts) |
+
+## T-0478 — a merged task's diff
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0478-M1 | packages/dev/src/views.ts | the diff ignored the task's merged phase and compared the deleted branch again | `dev views > a merged task shows the change its merge brought after its branch is deleted` |
+| T-0478-M2 | packages/dev/src/views.ts | a cancelled task with no branch was diffed anyway instead of saying the branch is gone | `dev views > a cancelled task whose branch is gone says so, without git's error` |
