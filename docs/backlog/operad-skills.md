@@ -16,8 +16,8 @@ bot 的设置可以列 skill 目录，`chat:reply` 每次回复都把它们传�
 1. **目录用标准的，交给 agent 是明确的，由设置决定。** skill 是带 `SKILL.md` 的目录，位置用 `.agents/skills` 这个通用布局；哪个 agent 拿到哪些 skill 只由 operad 的设置决定，agent 不自动发现任何目录（用户的 `~/.claude/skills`、`~/.agents/skills` 不会自己进来）。
 2. **每个 agent 用它自己的方式加载同一份 skill。** harness 声明它能不能原生加载 skill：能的（claude、pi）由 worker 用原生入口加载列出的目录，只有名字和描述常驻上下文；不能的（ACP 一类）由 operad 在提示里放一份清单（名字、描述、路径），agent 用读文件的工具去读。
 3. **skill 目录对 agent 只读。** 能读才能用；改动仍然只走提议和人的确认（ADR 0030 D4）。脚本由 agent 在自己的 shell 里按访问档运行，operad 不执行（ADR 0030 D7）。
-4. **bot 的设置可以列一个父目录**（如 `~/.agents/skills`），等于它里面的每个 skill；以后往里加的 skill 不再经过确认，因为那是用户自己的目录。也可以像今天一样逐个列。
-5. **仓库层**：仓库里的 `.agents/skills/` 给这个仓库的 chat 用，由仓库的设置决定（默认就是这个目录，可以改或清空）。
+4. **选一个目录就自动加载它里面的全部。** bot 的设置可以列一个 skill 的父目录（如 `~/.agents/skills`），也可以直接列 `.agents` 目录（如 `~/.agents`，等于它的 `skills/`）；里面的每个 skill 都加载，以后往里加的也自动加载，不再经过确认，因为那是用户自己的目录。也可以像今天一样逐个列。
+5. **仓库层**：仓库里的 `.agents/skills/` 给这个仓库的 chat 用，仓库里有这个目录就自动加载，不用设置；仓库的设置可以改成别的目录或清空。
 6. **MCP 不做目录。** bot 的 MCP 服务器照 ADR 0031 登记在 operad 的配置里，登记要确认、钉版本，由 operad 交给 agent。
 
 ## 待决问题
