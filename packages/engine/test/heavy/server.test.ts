@@ -1147,7 +1147,9 @@ describe("http server", () => {
   test("reopens a source that throws, resets the open stream and lets a reconnect resume", async () => {
     const source = new ControlledSource();
     const logs: string[] = [];
-    const hub = new EventHub(source.source, 10, (message) => logs.push(message));
+    const hub = new EventHub(source.source, 10, (message) => logs.push(message), {
+      wait: async () => undefined,
+    });
     const connected = openSse(hubStream(hub));
     let resumed: SseReader | undefined;
     try {
@@ -1187,7 +1189,9 @@ describe("http server", () => {
   test("reopens a source that ends early and keeps sending changes after the reset", async () => {
     const source = new ControlledSource();
     const logs: string[] = [];
-    const hub = new EventHub(source.source, 10, (message) => logs.push(message));
+    const hub = new EventHub(source.source, 10, (message) => logs.push(message), {
+      wait: async () => undefined,
+    });
     const connected = openSse(hubStream(hub));
     let resumed: SseReader | undefined;
     try {
@@ -1218,6 +1222,122 @@ describe("http server", () => {
       await resumed?.cancel();
       await connected.cancel();
       hub.stop();
+    }
+  });
+
+  test("a source that fails on every open backs off through the injected clock and resets once", async () => {
+    let opens = 0;
+    let up = false;
+    let failNow = (): void => undefined;
+    let markArmed = (): void => undefined;
+    const armed = new Promise<void>((resolve) => {
+      markArmed = resolve;
+    });
+    const source = (): AsyncIterable<ViewEvent> => {
+      opens += 1;
+      for (const waiter of [...openWaiters]) {
+        if (opens < waiter.count) continue;
+        openWaiters.delete(waiter);
+        waiter.resolve();
+      }
+      let sent = false;
+      return {
+        [Symbol.asyncIterator]: (): AsyncIterator<ViewEvent> => ({
+          next: (): Promise<IteratorResult<ViewEvent>> => {
+            if (!up) return Promise.reject(new Error("the source is down"));
+            if (!sent) {
+              sent = true;
+              return Promise.resolve({ done: false, value: { id: "recovered" } });
+            }
+            markArmed();
+            return new Promise<IteratorResult<ViewEvent>>((_resolve, reject) => {
+              failNow = () => reject(new Error("the source broke after all"));
+            });
+          },
+        }),
+      };
+    };
+
+    const openWaiters = new Set<{ readonly count: number; readonly resolve: () => void }>();
+    const openAt = (count: number): Promise<void> => {
+      if (opens >= count) return Promise.resolve();
+      return new Promise<void>((resolve) => {
+        openWaiters.add({ count, resolve });
+      });
+    };
+    const delays: number[] = [];
+    const releases: (() => void)[] = [];
+    const waitStarters = new Set<{ readonly count: number; readonly resolve: () => void }>();
+    const wait = (ms: number): Promise<void> => {
+      delays.push(ms);
+      for (const waiter of [...waitStarters]) {
+        if (delays.length < waiter.count) continue;
+        waitStarters.delete(waiter);
+        waiter.resolve();
+      }
+      return new Promise<void>((resolve) => {
+        releases.push(resolve);
+      });
+    };
+    const waitStart = (count: number): Promise<void> => {
+      if (delays.length >= count) return Promise.resolve();
+      return new Promise<void>((resolve) => {
+        waitStarters.add({ count, resolve });
+      });
+    };
+    /** Either the `target`-th wait is requested, or the hub re-opened without waiting. */
+    const step = async (target: number): Promise<"wait" | "open"> =>
+      Promise.race([
+        waitStart(target).then(() => "wait" as const),
+        openAt(opens + 1).then(() => "open" as const),
+      ]);
+
+    const logs: string[] = [];
+    const hub = new EventHub(source, 10, (message) => logs.push(message), {
+      wait,
+      retryMinMs: 10,
+      retryMaxMs: 40,
+    });
+    const kinds: string[] = [];
+    let markChanged = (): void => undefined;
+    const changed = new Promise<void>((resolve) => {
+      markChanged = resolve;
+    });
+    const unsubscribe = hub.subscribe((event) => {
+      kinds.push(event.kind);
+      if (event.kind === "change") markChanged();
+    });
+    try {
+      // The first open failed. Nothing re-opens it until the backoff is over.
+      expect(await step(1)).toBe("wait");
+      expect(delays).toEqual([10]);
+      expect(opens).toBe(1);
+
+      // Each further failure waits twice as long, capped at 40 ms.
+      for (const expected of [[10, 20], [10, 20, 40], [10, 20, 40, 40], [10, 20, 40, 40, 40]]) {
+        releases.shift()?.();
+        await openAt(opens + 1);
+        expect(await step(expected.length)).toBe("wait");
+        expect(delays).toEqual(expected);
+      }
+      // Five failures in one outage reset the clients once, not five times.
+      expect(kinds).toEqual(["reset"]);
+      expect(logs.some((line) => line.includes("re-opening it in 40 ms"))).toBe(true);
+
+      // A source that delivers a change starts the wait over at the minimum.
+      up = true;
+      releases.shift()?.();
+      await changed;
+      expect(kinds).toEqual(["reset", "change"]);
+      await armed;
+      failNow();
+      expect(await step(delays.length + 1)).toBe("wait");
+      expect(delays.at(-1)).toBe(10);
+      expect(kinds).toEqual(["reset", "change", "reset"]);
+    } finally {
+      unsubscribe();
+      hub.stop();
+      for (const release of releases.splice(0)) release();
     }
   });
 

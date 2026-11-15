@@ -117,6 +117,38 @@ type HubEvent =
 type HubListener = (event: HubEvent) => void;
 type HubFailure = ((error: unknown) => void) | undefined;
 
+/** The first delay before the hub re-opens a source that failed or ended. */
+export const DEFAULT_EVENT_RETRY_MIN_MS = 250;
+
+/** The longest such delay; the hub keeps retrying at this pace. */
+export const DEFAULT_EVENT_RETRY_MAX_MS = 5_000;
+
+/** The restart delay: double each failure, never past the cap. */
+export function eventRetryDelay(
+  attempt: number,
+  minMs = DEFAULT_EVENT_RETRY_MIN_MS,
+  maxMs = DEFAULT_EVENT_RETRY_MAX_MS,
+): number {
+  const low = Math.max(0, minMs);
+  const high = Math.max(low, maxMs);
+  const step = Math.min(Math.max(0, Math.trunc(attempt)), 30);
+  return Math.min(high, low * 2 ** step);
+}
+
+/** Waits before a retry; unref'd so a stopped hub does not hold the process up. */
+function waitForRestart(ms: number): Promise<void> {
+  return new Promise<void>((resolve) => {
+    (setTimeout(resolve, ms) as { unref?: () => void }).unref?.();
+  });
+}
+
+export interface EventHubOptions {
+  /** Waits `ms` before re-opening a failed source; tests inject it. */
+  readonly wait?: ((ms: number) => Promise<void>) | undefined;
+  readonly retryMinMs?: number | undefined;
+  readonly retryMaxMs?: number | undefined;
+}
+
 /** The bounded stream of ids every event client resumes from. */
 export class EventHub {
   private readonly entries: EventEntry[] = [];
@@ -130,54 +162,68 @@ export class EventHub {
   private seq = 0;
   /** The first id after the last source restart; older ids cannot resume. */
   private resetFrom = 0;
+  /** Whether this outage already told the open streams to reset. */
+  private resetAnnounced = false;
+  private readonly wait: (ms: number) => Promise<void>;
+  private readonly retryMinMs: number;
+  private readonly retryMaxMs: number;
   private stopped = false;
 
   constructor(
     events: () => AsyncIterable<ViewEvent>,
     max: number,
     onLog: (message: string) => void,
+    options: EventHubOptions = {},
   ) {
     this.max = Math.max(1, max);
     this.events = events;
     this.onLog = onLog;
+    this.wait = options.wait ?? waitForRestart;
+    this.retryMinMs = options.retryMinMs ?? DEFAULT_EVENT_RETRY_MIN_MS;
+    this.retryMaxMs = options.retryMaxMs ?? DEFAULT_EVENT_RETRY_MAX_MS;
     void this.pump();
   }
 
+  /**
+   * Reads the source to its end, then re-opens it. A source that fails or ends
+   * at once on every open waits longer each time, up to the cap, so it cannot
+   * spin through the event loop; a delivered event starts the wait over.
+   */
   private async pump(): Promise<void> {
+    let attempt = 0;
     while (!this.stopped) {
-      let iterator: AsyncIterator<ViewEvent>;
+      let failure: unknown;
+      let ended = false;
       try {
-        iterator = this.events()[Symbol.asyncIterator]();
-      } catch (error) {
-        if (!this.stopped) this.onLog(`http events: ${messageOf(error)}`);
-        return;
-      }
-      this.iterator = iterator;
-      let restart = false;
-      try {
+        const iterator = this.events()[Symbol.asyncIterator]();
+        this.iterator = iterator;
         while (!this.stopped) {
           const next = await iterator.next();
           if (next.done) {
-            if (!this.stopped) {
-              this.onLog("http events: the source ended; re-opening it");
-              restart = true;
-            }
+            ended = true;
             break;
           }
+          attempt = 0;
           this.publish(next.value);
         }
       } catch (error) {
-        if (!this.stopped) {
-          this.onLog(`http events: ${messageOf(error)}`);
-          restart = true;
-        }
+        failure = error;
       }
-      if (!restart || this.stopped) return;
+      if (this.stopped) return;
+      const delay = eventRetryDelay(attempt, this.retryMinMs, this.retryMaxMs);
+      attempt += 1;
+      this.onLog(
+        ended
+          ? `http events: the source ended; re-opening it in ${delay} ms`
+          : `http events: ${messageOf(failure)}; re-opening it in ${delay} ms`,
+      );
       this.restart();
+      await this.wait(delay);
     }
   }
 
   private publish(value: ViewEvent): void {
+    this.resetAnnounced = false;
     this.seq += 1;
     const entry: EventEntry = {
       seq: this.seq,
@@ -196,6 +242,11 @@ export class EventHub {
   private restart(): void {
     this.resetFrom = this.seq + 1;
     this.entries.length = 0;
+    // Repeated failures without a change in between carry no new gap, so one
+    // reset per outage is enough; repeating it would make every client re-read
+    // its state once per retry.
+    if (this.resetAnnounced) return;
+    this.resetAnnounced = true;
     this.notify({ kind: "reset" });
   }
 
@@ -955,10 +1006,18 @@ export async function startHttpServer(
   const token = await ensureHttpToken(options.home);
 
   const onLog = options.onLog ?? (() => undefined);
+  const wait =
+    options.wait ??
+    ((ms: number) =>
+      new Promise<void>((resolve) => {
+        // Unref'd: a stop that finished in time must not keep the process up.
+        (setTimeout(resolve, ms) as { unref?: () => void }).unref?.();
+      }));
   const hub = new EventHub(
     () => options.views.events(),
     options.maxEventIds ?? DEFAULT_MAX_EVENT_IDS,
     onLog,
+    { wait },
   );
   const streams = new StreamRegistry();
   const uploads = new Uploads({
@@ -975,13 +1034,6 @@ export async function startHttpServer(
   const handler = createHandler(options, uploads, hub, streams, onLog);
   const servers: { readonly address: string; readonly server: ReturnType<typeof Bun.serve> }[] = [];
   const listener = options.listener ?? Bun.serve;
-  const wait =
-    options.wait ??
-    ((ms: number) =>
-      new Promise<void>((resolve) => {
-        // Unref'd: a stop that finished in time must not keep the process up.
-        (setTimeout(resolve, ms) as { unref?: () => void }).unref?.();
-      }));
   const stopTimeoutMs = options.stopTimeoutMs ?? DEFAULT_STOP_TIMEOUT_MS;
 
   /**
