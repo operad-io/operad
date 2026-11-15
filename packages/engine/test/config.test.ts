@@ -139,7 +139,7 @@ describe("operad config", () => {
     expect(config).toEqual({
       plugins: [],
       store: { backend: "sqlite", path: join(home, "store", "log.sqlite") },
-      http: { enabled: true, port: 7480, listen: ["127.0.0.1"] },
+      http: { enabled: true, port: 8765, listen: ["127.0.0.1"] },
       notify: { command: null, on: ["waiting"] },
       mcp: { ...DEFAULT_MCP, actions: [...DEFAULT_MCP.actions] },
       ask: { graceSecs: 600 },
@@ -380,7 +380,7 @@ describe("operad config", () => {
     await Bun.write(join(home, "config.json"), JSON.stringify({ http: {} }));
     expect((await readConfig(home)).http).toEqual({
       enabled: true,
-      port: 7480,
+      port: 8765,
       listen: ["127.0.0.1"],
     });
 

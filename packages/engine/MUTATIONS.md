@@ -919,3 +919,9 @@ the row fields.
 |---|---|---|---|
 | T-0475-M1 | packages/engine/src/plugin/action-schema.ts | a schema's `title` was dropped while normalizing, so a plugin's title never reached the registry | `http server > GET and POST /v1/settings list, change and refuse settings` |
 | T-0475-M2 | packages/engine/src/views/settings.ts | a listed setting left the schema's `title` out, so `/v1/settings` carried no title | `http server > GET and POST /v1/settings list, change and refuse settings` |
+
+## T-0479 — the default HTTP port
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0479-M1 | packages/engine/src/config/config.ts | `DEFAULT_HTTP.port` kept the old default instead of 8765 | `operad config > a missing config means sqlite at <home>/store/log.sqlite`, `operad config > reads http options and applies their defaults` |

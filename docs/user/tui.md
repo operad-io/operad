@@ -51,7 +51,7 @@ It finds or starts the server like this:
   nothing is ever started.
 - Without `--url`, the URL is `http://<address>:<port>` for the first entry of
   `http.listen` and `http.port` in `config.json`; with no `http` section it is
-  `http://127.0.0.1:7480`.
+  `http://127.0.0.1:8765`.
 - It asks that address for `/v1/types`. If a `serve` answers, it goes on.
 - If nothing answers and no `serve` holds this home, it starts `operad serve`
   for this `OPERAD_HOME`, prints `starting operad serve (log: <path>)`, waits up
@@ -81,13 +81,13 @@ It finds or starts the server like this:
 
 | Input | Type | Default | Allowed values |
 |---|---|---|---|
-| `--url` | string | `http://<first http.listen address>:<http.port>`, which is `http://127.0.0.1:7480` with no `http` section | An `http` or `https` URL without credentials, a query or a fragment. |
+| `--url` | string | `http://<first http.listen address>:<http.port>`, which is `http://127.0.0.1:8765` with no `http` section | An `http` or `https` URL without credentials, a query or a fragment. |
 | `--no-start` | flag | off | Never start `operad serve`, even when none answers. |
 | `--theme` | string | `theme` in `$OPERAD_HOME/tui.json`, else `auto` | `auto`, `light`, `dark`, `terminal`, a family or a shipped theme (see Themes), or the name of a theme file of your own. Beats `tui.json` for this session. |
 | `--token` | string | The token in `$OPERAD_HOME/secrets/http.json` | The bearer token of the running `serve`. |
 | `OPERAD_HOME` | environment variable | `~/.operad` | The directory holding `config.json`, `secrets/http.json`, `serve.lock` and the `serve.log` a started `serve` writes. |
 | `http.listen` | array of strings in `config.json` | `["127.0.0.1"]` | IP literals `serve` may listen on; the first one is the default TUI address. |
-| `http.port` | integer in `config.json` | `7480` | `0` to `65535`; the TUI needs the port `serve` actually uses, so `0` needs `--url`. |
+| `http.port` | integer in `config.json` | `8765` | `0` to `65535`; the TUI needs the port `serve` actually uses, so `0` needs `--url`. |
 
 ## The tui.json file
 

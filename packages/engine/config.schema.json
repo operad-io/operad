@@ -69,7 +69,8 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 65535,
-          "default": 7480
+          "default": 8765,
+          "description": "The port serve binds on every address it listens on. The default is 8765; 0 asks the system for a port."
         },
         "listen": {
           "type": "array",

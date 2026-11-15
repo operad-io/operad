@@ -219,7 +219,8 @@ function start(client: TailClient): {
     height: 24,
     theme: "dark",
     clock,
-    url: "http://127.0.0.1:7480",
+    // An explicit, non-default port: the shell only displays this URL.
+    url: "http://127.0.0.1:9000",
   });
   return { client, events, view, clock, shell };
 }
