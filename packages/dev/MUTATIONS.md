@@ -1288,3 +1288,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0476-M1 | packages/dev/src/project-settings.ts | dev.json's `reviewer.fixLevel` took the review file's "Rework threshold" title again | `plugin versions > a plugin's settings have distinct titles` (packages/cli/test/plugin-versions.test.ts) |
+
+## T-0480 — a new task is offered only the plan's open tasks
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0480-M1 | packages/dev/src/create-actions.ts | the task action's `after` enum listed every task of the plan again, finished ones included | `dev:plan and dev:task > the task action offers only the plan's tasks that are not finished` |
