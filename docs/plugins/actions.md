@@ -53,7 +53,7 @@ actions: [
 
 `env` holds `store` (read it, never write), `harnesses` (the loaded harness plugins), `models` and `efforts` (by plugin name).
 
-The context of an action on an object also carries `actions` (the actions declared on that type, with their `command` descriptions) and `act(name, args, { yes })`, which runs another action on the same object with the same availability, argument and confirmation checks. A chat's `send` action uses them to run the command a person typed; `yes` answers an action that asks to confirm.
+The context of an action on an object also carries `actions` (the actions declared on that type, with their `command` descriptions and whether each is available now) and `act(name, args, { yes })`, which runs another action on the same object with the same availability, argument and confirmation checks. A chat's `send` action uses them to run the command a person typed; `yes` answers an action that asks to confirm.
 A field named `note` is refused: `actions[<i>]: note: is no longer a field; declare a string property with role "note" in args`.
 
 What `run` returns is the line a person reads, or nothing. An action that creates an object returns `{ text, opens }` (exactly those two string keys), where `opens` is the object as `type:id`; the kernel passes it on through `POST /v1/act` and the MCP `act` tool and a client may open that page. An `opens` that names no existing object is not passed on, and the log says why. See [What an action returns](index.md#what-an-action-returns).

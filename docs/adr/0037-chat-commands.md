@@ -16,7 +16,7 @@ The rest of the line is the action's arguments, positional in the order the acti
 
 ### D2: `chat:send` runs a command instead of recording a message
 
-When the whole message starts with `/` and names a command this chat has, `chat:send` runs that action and records no `chat.message`; no message event starts a reply. An unknown `/xxx`, or a slash inside the text, is an ordinary message. A command works from every source because it is handled in `chat:send`, not in a client.
+When the message, ignoring leading whitespace, starts with `/` and names a command this chat has, `chat:send` runs that action and records no `chat.message`; no message event starts a reply. An unknown `/xxx`, or a slash inside the text, is an ordinary message. A command works from every source because it is handled in `chat:send`, not in a client.
 
 A command runs at once while a reply is being written: it does not wait for the reply and does not start one.
 
@@ -26,11 +26,11 @@ The command and its outcome are one `chat.command` fact: who typed it, the line 
 
 ### D4: `/help` lists the chat's commands
 
-`chat:help` is a command action. It lists every command this chat has, each under the name it is typed by, with the one-line description from the same action declaration. `/model`, `/effort`, `/close`, `/stop`, `/retry`, `/status` and `/help` are declared as commands.
+`chat:help` is a command action. It lists every command this chat can run now, each under the name it is typed by, with the one-line description from the same action declaration. `/model`, `/effort`, `/close`, `/stop`, `/retry`, `/status` and `/help` are declared as commands.
 
 ### D5: `/stop` stops the reply being written
 
-`chat:stop` cancels the reply run of this chat through the plugin's run control. What was written so far stays as a `stopped` entry (ADR 0027 D2), shown as stopped. Messages that arrived during the reply stay unanswered and no new reply starts by itself; the command's line says so and says `/retry` answers the last message. With no reply running it says so and changes nothing. The run control reports whether it cancelled a run, so a plugin can tell those two cases without a second run lookup; the kernel gains no new concept. The action is a command and appears in the chat's actions; its button word is "Stop".
+`chat:stop` cancels the reply run of this chat through the plugin's run control. What was written so far stays as a `stopped` entry (ADR 0027 D2), shown as stopped. Messages that arrived during the reply stay unanswered and no new reply starts by itself; the command's line says so and says `/retry` answers the last message. With no reply running it says so and changes nothing. The run control reports whether it cancelled a run, so a plugin can tell those two cases without a second run lookup; the kernel gains no new concept. A successful stop records a `chat.stop` fact naming the cancelled run, so `/retry` and `/status` do not read the command's words. The action is a command and appears in the chat's actions; its button word is "Stop".
 
 ### D6: `/retry` answers the last message after a failed or stopped reply
 
@@ -44,11 +44,11 @@ A command whose one argument is a choice (an `enum` in the action's schema, such
 
 ### D8: `/status` says where the chat stands and what it has used
 
-`chat:status` is a command action. It reads the chat's facts only, costs no tokens and works while a reply is being written. In a few short lines it shows the agent, the model and effort in force, whether a reply is being written and since when, how many messages wait, the cost and token usage of the session so far, and the usage of the last reply. When the reply records its timings, the last reply line also shows its time to first output. A number an agent did not report, such as a cost, is said to be unknown and is never shown as 0. It is a command and leaves one transcript line like every other command.
+`chat:status` is a command action. It reads the chat's facts and asks the run control whether the latest run is still active, so a run a crash left is not called writing; it costs no tokens and works while a reply is being written. In a few short lines it shows the agent, the model and effort in force, whether a reply is being written and since when, how many messages wait, the cost and token usage of the session so far, and the usage of the last reply. When the reply records its timings, the last reply line also shows its time to first output. A number an agent did not report, such as a cost, is said to be unknown and is never shown as 0. When some replies reported a number and others did not, the session total is marked partial: `≥` for a cost and "at least" for tokens. It is a command and leaves one transcript line like every other command.
 
 ### D9: An ordinary message sent during a reply is interjected
 
-A message that is not a command and arrives while a reply is being written is handed to the agent in that same reply, after the tool calls already running. It does not interrupt the reply and does not start another round. The agent is given it only when its harness declares `takesMessagesMidRun`; an agent that does not (radian) leaves the message unanswered for the next round, as before. A message with an attachment also waits for the next round, where its images and files reach the agent as a first message's do; the mid-run inbox carries text only. A message is never delivered to the agent as a command: `/stop` and the other commands still run at once and never enter the reply. The message is recorded where it was sent and is marked answered by the reply it was given to; one the reply ended before the agent took waits for the next round, so it is neither lost nor answered twice. There is no `/steer` command.
+A message that is not a command and arrives while a reply is being written is handed to the agent in that same reply, after the tool calls already running. It does not interrupt the reply and does not start another round. The agent is given it only when its harness declares `takesMessagesMidRun`; an agent that does not (radian) leaves the message unanswered for the next round, as before. A message with an attachment also waits for the next round, where its images and files reach the agent as a first message's do; the mid-run inbox carries text only. A message is never delivered to the agent as a command: `/stop` and the other commands still run at once and never enter the reply. The message is recorded where it was sent and is marked answered by an attempt that took it, even when that attempt then ends waiting, fails or is stopped; one the reply ended before the agent took it waits for the next round, so it is neither lost nor answered twice. A harness reports whether it could still take the message, so one the run ended before queuing is not counted as taken. There is no `/steer` command.
 
 ### D10: The TUI lists a chat's commands in its input
 
