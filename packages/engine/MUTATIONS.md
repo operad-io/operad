@@ -979,3 +979,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0492-M1 | packages/engine/src/runner/cancel.ts | `cancelRun` reported `false` after it cancelled an active run | `runner > cancelRun says whether it ended an active run` |
+
+## T-0501 — an action's schema can read the home
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0501-M7 | packages/engine/src/plugin/registry.ts | `actionEnv` no longer gave the action checks the operad home, so the creation choices could not be read | `bot:create offers what the home already knows > the skill and server choices are the ones the bots and the standard directory know` |
