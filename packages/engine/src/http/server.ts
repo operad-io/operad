@@ -110,44 +110,109 @@ export interface EventEntry {
   readonly id: string;
 }
 
+type HubEvent =
+  | { readonly kind: "change"; readonly entry: EventEntry }
+  | { readonly kind: "reset" };
+
+type HubListener = (event: HubEvent) => void;
+type HubFailure = ((error: unknown) => void) | undefined;
+
 /** The bounded stream of ids every event client resumes from. */
 export class EventHub {
   private readonly entries: EventEntry[] = [];
   private readonly max: number;
-  private readonly listeners = new Set<(entry: EventEntry) => void>();
-  private readonly iterator: AsyncIterator<ViewEvent>;
+  private readonly listeners = new Map<HubListener, HubFailure>();
+  private readonly events: () => AsyncIterable<ViewEvent>;
+  private readonly onLog: (message: string) => void;
+  private iterator: AsyncIterator<ViewEvent> | undefined;
   /** Random once per process: an id from another boot never resumes here. */
   private readonly bootId = randomBytes(8).toString("hex");
   private seq = 0;
+  /** The first id after the last source restart; older ids cannot resume. */
+  private resetFrom = 0;
   private stopped = false;
 
   constructor(
-    events: AsyncIterable<ViewEvent>,
+    events: () => AsyncIterable<ViewEvent>,
     max: number,
     onLog: (message: string) => void,
   ) {
     this.max = Math.max(1, max);
-    this.iterator = events[Symbol.asyncIterator]();
-    void this.pump(onLog);
+    this.events = events;
+    this.onLog = onLog;
+    void this.pump();
   }
 
-  private async pump(onLog: (message: string) => void): Promise<void> {
-    try {
-      while (!this.stopped) {
-        const next = await this.iterator.next();
-        if (next.done) break;
-        this.seq += 1;
-        const entry: EventEntry = {
-          seq: this.seq,
-          event: `${this.bootId}-${this.seq}`,
-          id: next.value.id,
-        };
-        this.entries.push(entry);
-        if (this.entries.length > this.max) this.entries.shift();
-        for (const listener of [...this.listeners]) listener(entry);
+  private async pump(): Promise<void> {
+    while (!this.stopped) {
+      let iterator: AsyncIterator<ViewEvent>;
+      try {
+        iterator = this.events()[Symbol.asyncIterator]();
+      } catch (error) {
+        if (!this.stopped) this.onLog(`http events: ${messageOf(error)}`);
+        return;
       }
-    } catch (error) {
-      if (!this.stopped) onLog(`http events: ${messageOf(error)}`);
+      this.iterator = iterator;
+      let restart = false;
+      try {
+        while (!this.stopped) {
+          const next = await iterator.next();
+          if (next.done) {
+            if (!this.stopped) {
+              this.onLog("http events: the source ended; re-opening it");
+              restart = true;
+            }
+            break;
+          }
+          this.publish(next.value);
+        }
+      } catch (error) {
+        if (!this.stopped) {
+          this.onLog(`http events: ${messageOf(error)}`);
+          restart = true;
+        }
+      }
+      if (!restart || this.stopped) return;
+      this.restart();
+    }
+  }
+
+  private publish(value: ViewEvent): void {
+    this.seq += 1;
+    const entry: EventEntry = {
+      seq: this.seq,
+      event: `${this.bootId}-${this.seq}`,
+      id: value.id,
+    };
+    this.entries.push(entry);
+    if (this.entries.length > this.max) this.entries.shift();
+    this.notify({ kind: "change", entry });
+  }
+
+  /**
+   * A source that failed or ended cannot replay what happened while it was
+   * gone. Open streams get a reset, and no id from before the break resumes.
+   */
+  private restart(): void {
+    this.resetFrom = this.seq + 1;
+    this.entries.length = 0;
+    this.notify({ kind: "reset" });
+  }
+
+  /** One failing subscriber is dropped; it does not stop the others. */
+  private notify(event: HubEvent): void {
+    for (const [listener, fail] of [...this.listeners]) {
+      try {
+        listener(event);
+      } catch (error) {
+        this.listeners.delete(listener);
+        this.onLog(`http events: a subscriber failed: ${messageOf(error)}`);
+        try {
+          fail?.(error);
+        } catch (failure) {
+          this.onLog(`http events: a subscriber could not be closed: ${messageOf(failure)}`);
+        }
+      }
     }
   }
 
@@ -162,6 +227,7 @@ export class EventHub {
     if (parsed === undefined || parsed.bootId !== this.bootId) {
       return { reset: true, replay: [] };
     }
+    if (parsed.seq < this.resetFrom) return { reset: true, replay: [] };
     const oldest = this.entries[0]?.seq;
     const latest = this.entries.at(-1)?.seq;
     if (oldest === undefined || latest === undefined) {
@@ -176,8 +242,8 @@ export class EventHub {
     };
   }
 
-  subscribe(listener: (entry: EventEntry) => void): () => void {
-    this.listeners.add(listener);
+  subscribe(listener: HubListener, onFailure?: (error: unknown) => void): () => void {
+    this.listeners.set(listener, onFailure);
     return () => {
       this.listeners.delete(listener);
     };
@@ -185,7 +251,7 @@ export class EventHub {
 
   stop(): void {
     this.stopped = true;
-    void this.iterator.return?.();
+    void this.iterator?.return?.();
   }
 }
 
@@ -398,7 +464,10 @@ export function eventResponse(
       const snapshot = hub.snapshot(resumeFrom);
       if (snapshot.reset) push(RESET_EVENT);
       else for (const entry of snapshot.replay) push(formatEvent(entry));
-      unsubscribe = hub.subscribe((entry) => push(formatEvent(entry)));
+      unsubscribe = hub.subscribe((event) => {
+        if (event.kind === "reset") push(RESET_EVENT);
+        else push(formatEvent(event.entry));
+      }, finish);
       untrack = track(token, finish);
       // An immediate comment flushes the response headers; the client then has
       // a stream even when nothing changes for a while.
@@ -887,7 +956,7 @@ export async function startHttpServer(
 
   const onLog = options.onLog ?? (() => undefined);
   const hub = new EventHub(
-    options.views.events(),
+    () => options.views.events(),
     options.maxEventIds ?? DEFAULT_MAX_EVENT_IDS,
     onLog,
   );

@@ -338,6 +338,99 @@ async function readUntilDone(
   return ended;
 }
 
+type SourceItem =
+  | { readonly kind: "event"; readonly id: string }
+  | { readonly kind: "error"; readonly error: Error }
+  | { readonly kind: "end" };
+
+/** An event source a test can push to, fail or end, and reopen like the hub does. */
+class ControlledSource {
+  private readonly items: SourceItem[] = [];
+  private waiter: (() => void) | undefined;
+  private openCount = 0;
+  private readonly openedWaiters = new Set<{
+    readonly count: number;
+    readonly resolve: () => void;
+  }>();
+
+  readonly source = (): AsyncIterable<ViewEvent> => {
+    this.openCount += 1;
+    this.settleOpened();
+    return {
+      [Symbol.asyncIterator]: (): AsyncIterator<ViewEvent> => ({
+        next: () => this.next(),
+        return: async () => {
+          this.items.push({ kind: "end" });
+          this.wake();
+          return { done: true, value: undefined };
+        },
+      }),
+    };
+  };
+
+  push(id: string): void {
+    this.items.push({ kind: "event", id });
+    this.wake();
+  }
+
+  fail(error: Error): void {
+    this.items.push({ kind: "error", error });
+    this.wake();
+  }
+
+  end(): void {
+    this.items.push({ kind: "end" });
+    this.wake();
+  }
+
+  waitForOpens(count: number): Promise<void> {
+    if (this.openCount >= count) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      this.openedWaiters.add({ count, resolve });
+    });
+  }
+
+  private settleOpened(): void {
+    for (const waiter of [...this.openedWaiters]) {
+      if (this.openCount < waiter.count) continue;
+      this.openedWaiters.delete(waiter);
+      waiter.resolve();
+    }
+  }
+
+  private async next(): Promise<IteratorResult<ViewEvent>> {
+    while (this.items.length === 0) {
+      await new Promise<void>((resolve) => {
+        this.waiter = resolve;
+      });
+    }
+    const item = this.items.shift();
+    if (item === undefined) return { done: true, value: undefined };
+    if (item.kind === "error") throw item.error;
+    if (item.kind === "end") return { done: true, value: undefined };
+    return { done: false, value: { id: item.id } };
+  }
+
+  private wake(): void {
+    const resume = this.waiter;
+    this.waiter = undefined;
+    resume?.();
+  }
+}
+
+function hubStream(hub: EventHub, lastId?: string): Response {
+  const headers: Record<string, string> =
+    lastId === undefined ? {} : { "last-event-id": lastId };
+  return eventResponse(
+    new Request("http://localhost/v1/events", { headers }),
+    hub,
+    DEFAULT_KEEP_ALIVE_MS,
+    100,
+    "a-token",
+    () => () => undefined,
+  );
+}
+
 function seed(h: Harness, id: string, data: Record<string, unknown>): void {
   h.store.put("item", id, data, "seed");
 }
@@ -1051,6 +1144,118 @@ describe("http server", () => {
     }
   });
 
+  test("reopens a source that throws, resets the open stream and lets a reconnect resume", async () => {
+    const source = new ControlledSource();
+    const logs: string[] = [];
+    const hub = new EventHub(source.source, 10, (message) => logs.push(message));
+    const connected = openSse(hubStream(hub));
+    let resumed: SseReader | undefined;
+    try {
+      source.push("first");
+      const [first] = await connected.next();
+      const firstId = first?.id;
+      expect(firstId).toBeDefined();
+      if (firstId === undefined) return;
+
+      source.fail(new Error("the source broke"));
+      const [reset] = await connected.next();
+      expect(reset?.event).toBe("reset");
+      expect(reset?.data).toBe("{}");
+      await source.waitForOpens(2);
+
+      source.push("second");
+      const [later] = await connected.next();
+      expect(later?.data).toBe(JSON.stringify({ id: "second" }));
+
+      // The break left a gap after `first`, so even with later events kept,
+      // that old id cannot resume without missing what happened in between.
+      resumed = openSse(hubStream(hub, firstId));
+      const [resumeReset] = await resumed.next();
+      expect(resumeReset?.event).toBe("reset");
+
+      source.push("third");
+      const [resumedLater] = await resumed.next();
+      expect(resumedLater?.data).toBe(JSON.stringify({ id: "third" }));
+      expect(logs.some((line) => line.includes("the source broke"))).toBe(true);
+    } finally {
+      await resumed?.cancel();
+      await connected.cancel();
+      hub.stop();
+    }
+  });
+
+  test("reopens a source that ends early and keeps sending changes after the reset", async () => {
+    const source = new ControlledSource();
+    const logs: string[] = [];
+    const hub = new EventHub(source.source, 10, (message) => logs.push(message));
+    const connected = openSse(hubStream(hub));
+    let resumed: SseReader | undefined;
+    try {
+      source.push("first");
+      const [first] = await connected.next();
+      const firstId = first?.id;
+      expect(firstId).toBeDefined();
+      if (firstId === undefined) return;
+
+      source.end();
+      const [reset] = await connected.next();
+      expect(reset?.event).toBe("reset");
+      await source.waitForOpens(2);
+
+      source.push("second");
+      const [later] = await connected.next();
+      expect(later?.data).toBe(JSON.stringify({ id: "second" }));
+
+      resumed = openSse(hubStream(hub, firstId));
+      const [resumeReset] = await resumed.next();
+      expect(resumeReset?.event).toBe("reset");
+
+      source.push("third");
+      const [resumedLater] = await resumed.next();
+      expect(resumedLater?.data).toBe(JSON.stringify({ id: "third" }));
+      expect(logs.some((line) => line.includes("the source ended"))).toBe(true);
+    } finally {
+      await resumed?.cancel();
+      await connected.cancel();
+      hub.stop();
+    }
+  });
+
+  test("a subscriber callback that throws is dropped without stopping another", async () => {
+    const source = new ControlledSource();
+    const logs: string[] = [];
+    const hub = new EventHub(source.source, 10, (message) => logs.push(message));
+    const connected = openSse(hubStream(hub));
+    let markFailed: ((error: unknown) => void) | undefined;
+    const failure = new Promise<unknown>((resolve) => {
+      markFailed = resolve;
+    });
+    const seenByBad: string[] = [];
+    const unsubscribe = hub.subscribe(
+      (event) => {
+        if (event.kind === "change") seenByBad.push(event.entry.id);
+        throw new Error("the subscriber broke");
+      },
+      (error) => markFailed?.(error),
+    );
+    try {
+      source.push("first");
+      const [first] = await connected.next();
+      expect(first?.data).toBe(JSON.stringify({ id: "first" }));
+      expect(await failure).toBeInstanceOf(Error);
+
+      source.push("second");
+      const [second] = await connected.next();
+      expect(second?.data).toBe(JSON.stringify({ id: "second" }));
+      expect(seenByBad).toEqual(["first"]);
+      expect(logs.some((line) => line.includes("a subscriber failed"))).toBe(true);
+    } finally {
+      unsubscribe();
+      await connected.cancel();
+      hub.stop();
+    }
+  });
+
   test("ends a client that stops reading instead of growing without bound", async () => {
     let pushed = (): void => undefined;
     const allPushed = new Promise<void>((resolve) => {
@@ -1062,7 +1267,7 @@ describe("http server", () => {
       }
       pushed();
     }
-    const hub = new EventHub(feed(), 2, () => undefined);
+    const hub = new EventHub(() => feed(), 2, () => undefined);
     try {
       const response = eventResponse(
         new Request("http://localhost/v1/events"),

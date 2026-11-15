@@ -925,3 +925,12 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0479-M1 | packages/engine/src/config/config.ts | `DEFAULT_HTTP.port` kept the old default instead of 8765 | `operad config > a missing config means sqlite at <home>/store/log.sqlite`, `operad config > reads http options and applies their defaults` |
+
+## T-0483 — an event source that fails or ends restarts instead of going silent
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0483-M1 | packages/engine/src/http/server.ts | `restart` stayed false after the source threw, so the pump stopped instead of re-opening it | `http server > reopens a source that throws, resets the open stream and lets a reconnect resume` |
+| T-0483-M2 | packages/engine/src/http/server.ts | a source that ended normally was not re-opened | `http server > reopens a source that ends early and keeps sending changes after the reset` |
+| T-0483-M3 | packages/engine/src/http/server.ts | `notify` called every subscriber without catching, so one throwing callback stopped delivery to the others | `http server > a subscriber callback that throws is dropped without stopping another` |
+| T-0483-M4 | packages/engine/src/http/server.ts | `restart` left `resetFrom` at 0, so an id from before the break looked resumable and skipped the gap | `http server > reopens a source that throws, resets the open stream and lets a reconnect resume` |
