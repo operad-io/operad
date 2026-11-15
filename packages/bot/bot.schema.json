@@ -29,7 +29,7 @@
               "type": "string",
               "minLength": 1
             },
-            "description": "Directories with a SKILL.md, given to the agent at every reply. A relative path is under the working directory."
+            "description": "Skills given to the agent at every reply; the agent may read them but not change them. A path may be a directory with a SKILL.md, a directory whose direct subdirectories each have one (such as ~/.agents/skills), or a .agents directory (such as ~/.agents), whose skills directory is read the same way. Every skill directly inside such a directory is loaded, including one added later. A relative path is under the working directory."
           },
           "model": {
             "type": "string",

@@ -126,6 +126,25 @@ describe("the tool table", () => {
     expect((await decideAccess({ denyCommands: ["rm"] }, "Bash", { command: 3 }, CWD)).allow).toBe(false);
   });
 
+  test("a skill under denyPaths is readable through readPaths, and a write to it is refused", async () => {
+    const skill = "/home/me/.agents/skills/brain";
+    const profile: AccessProfile = { denyPaths: [skill], readPaths: [skill] };
+    expect(await decideAccess(profile, "Read", { file_path: `${skill}/SKILL.md` }, CWD)).toEqual({ allow: true });
+    expect(await decideAccess(profile, "Grep", { pattern: "x", path: skill }, CWD)).toEqual({ allow: true });
+    expect(await decideAccess(profile, "Bash", { command: `cat ${skill}/SKILL.md` }, CWD)).toEqual({ allow: true });
+    for (const [name, input] of [
+      ["Write", { file_path: `${skill}/SKILL.md`, content: "changed" }],
+      ["Edit", { file_path: `${skill}/SKILL.md`, old_string: "a", new_string: "b" }],
+      ["Bash", { command: `printf x > ${skill}/SKILL.md` }],
+      ["Bash", { command: `rm ${skill}/SKILL.md` }],
+      ["Bash", { command: `mv ${skill}/SKILL.md ${skill}/old.md` }],
+    ] as const) {
+      const verdict = await decideAccess(profile, name, input, CWD);
+      expect(verdict.allow).toBe(false);
+      expect(verdict.allow === false ? verdict.reason : "").toContain(skill);
+    }
+  });
+
   test("Glob and Grep with no path search the working directory and are allowed", async () => {
     expect(await decideAccess({ denyPaths: ["/etc"] }, "Grep", { pattern: "x" }, CWD)).toEqual({ allow: true });
     expect(await decideAccess({ denyPaths: ["/etc"] }, "Glob", { pattern: "*" }, CWD)).toEqual({ allow: true });

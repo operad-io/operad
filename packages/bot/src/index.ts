@@ -22,6 +22,7 @@ import {
   readBots,
   repositoryPaths,
   resolveBot,
+  skillName,
   type ResolvedBot,
 } from "./bot.ts";
 import { ingestReports, runMcpCommand } from "./mcp-proposals.ts";
@@ -313,8 +314,10 @@ function botMarkdown(object: StoredObject): string {
   if (typeof data.cwd === "string") lines.push(`Working directory: ${data.cwd}`);
   if (typeof data.harness === "string") lines.push(`Default agent: ${data.harness}`);
   if (typeof data.speaker === "string") lines.push(`Speaker: ${data.speaker}`);
-  const skills = Array.isArray(data.skills) ? data.skills : [];
-  lines.push(skills.length === 0 ? "No skills." : `Skills: ${skills.join(", ")}`);
+  const skills = Array.isArray(data.skills)
+    ? data.skills.filter((path): path is string => typeof path === "string")
+    : [];
+  lines.push(skills.length === 0 ? "No skills." : `Skills: ${skills.map(skillName).join(", ")}`);
   const servers = Array.isArray(data.mcpServers) ? data.mcpServers : [];
   if (servers.length > 0) {
     lines.push(

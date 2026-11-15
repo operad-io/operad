@@ -7,7 +7,7 @@
 
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import { MCP_REPORT_DIR } from "./mcp-constants.ts";
 import { configPath, isRecord, prepareSettings, type ActionArgsSchema, type JsonValue, type ObjectStore } from "@operad-io/engine";
 
@@ -51,7 +51,7 @@ export const BOT_SETTINGS: ActionArgsSchema = {
             type: "array",
             items: { type: "string", minLength: 1 },
             description:
-              "Directories with a SKILL.md, given to the agent at every reply. A relative path is under the working directory.",
+              "Skills given to the agent at every reply; the agent may read them but not change them. A path may be a directory with a SKILL.md, a directory whose direct subdirectories each have one (such as ~/.agents/skills), or a .agents directory (such as ~/.agents), whose skills directory is read the same way. Every skill directly inside such a directory is loaded, including one added later. A relative path is under the working directory.",
           },
           model: {
             type: "string",
@@ -297,13 +297,16 @@ export function accessFor(
   settings: BotSettings,
   repositories: readonly string[] = [],
   skillPaths: readonly string[] = [],
+  readPaths: readonly string[] = [],
 ): Record<string, JsonValue> {
   const access = defaultAccess(home);
   // A repository is reached through operad's tools (dev's verbs), never by
   // touching its files, so its path is denied to the agent. Skill directories
   // are changed only through a proposal a person confirms, so they are denied
-  // to the agent too (the harness still receives their paths as skills).
+  // for writing too; `readPaths` lets the agent read them without lifting the
+  // deny (the harness still receives their paths as skills).
   access.denyPaths = appended(access.denyPaths, [...repositories, ...skillPaths]);
+  if (readPaths.length > 0) access.readPaths = appended(access.readPaths, readPaths);
   const own = settings.access ?? {};
   for (const field of ["denyPaths", "denyCommands", "askCommands", "askPaths"] as const) {
     access[field] = appended(access[field], own[field]);
@@ -314,16 +317,83 @@ export function accessFor(
   return access;
 }
 
-/** The skill directories of a bot, checked now. */
-function skillDirectories(settings: BotSettings, cwd: string): string[] {
-  return (settings.skills ?? []).map((written) => {
+function isDirectory(path: string): boolean {
+  try {
+    return statSync(path).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function hasSkill(path: string): boolean {
+  try {
+    return statSync(join(path, "SKILL.md")).isFile();
+  } catch {
+    return false;
+  }
+}
+
+function added(list: string[], path: string): void {
+  const normal = resolve(path);
+  if (!list.includes(normal)) list.push(normal);
+}
+
+/** The skills directly inside a directory: each child that holds a SKILL.md. */
+function skillsInside(parent: string): string[] {
+  if (!isDirectory(parent)) return [];
+  return readdirSync(parent, { withFileTypes: true })
+    .map((entry) => join(parent, entry.name))
+    .filter((path) => hasSkill(path))
+    .sort((left, right) => left.localeCompare(right));
+}
+
+interface SkillList {
+  /** The skill directories given to the agent. */
+  readonly directories: string[];
+  /** The directories a listed path names, denied for writing. */
+  readonly roots: string[];
+}
+
+/**
+ * The skills a bot lists, read now. A path may be a skill itself, a directory
+ * of skills (such as `~/.agents/skills`), or a `.agents` directory (such as
+ * `~/.agents`), whose `skills` directory is read the same way. Every skill
+ * directly inside is included, so one added later is read at the next reply.
+ */
+function skillList(settings: BotSettings, cwd: string): SkillList {
+  const directories: string[] = [];
+  const roots: string[] = [];
+  for (const written of settings.skills ?? []) {
     const path = expand(written, cwd);
-    const file = join(path, "SKILL.md");
-    if (!existsSync(file) || !statSync(file).isFile()) {
-      throw new BotError(`skill "${written}": there is no SKILL.md in ${path}`);
+    if (hasSkill(path)) {
+      added(roots, path);
+      added(directories, path);
+      continue;
     }
-    return path;
-  });
+    const agents = isDirectory(path) && basename(path) === ".agents";
+    const parent = agents ? join(path, "skills") : path;
+    if (isDirectory(path)) added(roots, parent);
+    const inside = skillsInside(parent);
+    if (inside.length > 0) {
+      for (const skill of inside) added(directories, skill);
+      continue;
+    }
+    // A `.agents` directory may get its first skill after the setting is written.
+    if (agents) continue;
+    throw new BotError(`skill "${written}": there is no SKILL.md in ${path}`);
+  }
+  return { directories, roots };
+}
+
+/** The name a skill's SKILL.md gives, else its directory name. */
+export function skillName(path: string): string {
+  try {
+    const found = /^name:\s*(\S+)/m.exec(readFileSync(join(path, "SKILL.md"), "utf8"))?.[1];
+    if (found !== undefined) return found.replace(/^["']|["']$/g, "");
+  } catch {
+    // A page can still name a skill whose SKILL.md cannot be read.
+  }
+  return basename(path);
 }
 
 /** The working directory of a bot; refused when it would put the operad home in reach. */
@@ -370,7 +440,9 @@ export function resolveBot(
   repositories: readonly string[] = [],
 ): ResolvedBot {
   const cwd = workingDirectory(home, name, settings);
-  const skills = skillDirectories(settings, cwd);
+  const list = skillList(settings, cwd);
+  const skills = list.directories;
+  const skillPaths = [...list.roots, join(cwd, "skills")];
   return {
     name,
     cwd,
@@ -379,7 +451,7 @@ export function resolveBot(
     effort: settings.effort ?? null,
     skills,
     speaker: settings.speaker ?? null,
-    access: accessFor(home, settings, repositories, [...skills, join(cwd, "skills")]),
+    access: accessFor(home, settings, repositories, skillPaths, skillPaths),
     mcpServers: settings.mcpServers ?? {},
   };
 }

@@ -16,7 +16,6 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import {
   configPath,
@@ -151,12 +150,6 @@ function fileOf(files: readonly SkillFile[], path: string): SkillFile | undefine
   return files.find((file) => file.path === path);
 }
 
-function expandPath(path: string, base: string): string {
-  if (path === "~") return homedir();
-  if (path.startsWith("~/")) return join(homedir(), path.slice(2));
-  return isAbsolute(path) ? resolve(path) : resolve(base, path);
-}
-
 /** The skill directory a bot already mounts under this name, if any. */
 function existingSkillPath(
   home: string,
@@ -165,13 +158,9 @@ function existingSkillPath(
 ): string | undefined {
   const written = readBots(home)[bot];
   if (written === undefined) return undefined;
-  const cwd = resolveBotFromSettings(home, bot, written).cwd;
-  for (const skill of written.skills ?? []) {
-    const path = expandPath(skill, cwd);
+  for (const path of resolveBot(home, bot, written).skills) {
     const expected = basename(path);
-    const marker = existsSync(join(path, "SKILL.md"))
-      ? /^name:\s*(\S+)/m.exec(readFileSync(join(path, "SKILL.md"), "utf8"))?.[1]
-      : undefined;
+    const marker = /^name:\s*(\S+)/m.exec(readFileSync(join(path, "SKILL.md"), "utf8"))?.[1];
     if (expected === name || marker === name) return path;
   }
   return undefined;
