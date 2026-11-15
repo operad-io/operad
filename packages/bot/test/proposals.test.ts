@@ -183,6 +183,53 @@ describe("a bot changes a skill loaded from a listed directory", () => {
     expect(readFileSync(join(skill, "SKILL.md"), "utf8")).toContain("new text");
     expect(existsSync(join(r.home, "bot", "reader", "skills", "brain"))).toBe(false);
   });
+
+  test("a listed path that is missing or empty is skipped, and the mounted skill is still found", async () => {
+    const r = await rig({ reader: {} });
+    const parent = join(r.root, "skills");
+    const skill = join(parent, "brain");
+    mkdirSync(skill, { recursive: true });
+    writeFileSync(join(skill, "SKILL.md"), "---\nname: brain\n---\nold text\n");
+    const empty = join(r.root, "empty");
+    mkdirSync(empty);
+    writeConfig(r.home, { reader: { skills: [join(r.root, "gone"), empty, parent] } });
+
+    await r.command(
+      "bot",
+      "skill",
+      ["reader", "brain"],
+      skillInput("---\nname: brain\n---\nnew text\n"),
+    );
+    const id = (await r.registry.standing())[0]?.object?.id;
+    if (id === undefined) throw new Error("no proposal item");
+    const views = createViews({ registry: r.registry, store: r.store, onLog: () => undefined });
+    try {
+      const review = await views.section(`${PROPOSAL_TYPE}:${id}`, "review", undefined, { full: true });
+      expect(review.markdown).toContain(`Directory: ${skill}`);
+    } finally {
+      views.close();
+    }
+  });
+
+  test("a new skill still goes under the bot's skills when another listed path is missing", async () => {
+    const r = await rig({ reader: {} });
+    writeConfig(r.home, { reader: { skills: [join(r.root, "gone")] } });
+    const target = join(r.home, "bot", "reader", "skills", "fresh");
+
+    await r.command(
+      "bot",
+      "skill",
+      ["reader", "fresh"],
+      skillInput("---\nname: fresh\n---\nnew skill\n"),
+    );
+    const id = (await r.registry.standing())[0]?.object?.id;
+    if (id === undefined) throw new Error("no proposal item");
+    await r.act(PROPOSAL_TYPE, id, "bot/approve");
+    expect(readFileSync(join(target, "SKILL.md"), "utf8")).toContain("new skill");
+    expect(botConfig(r.home).reader).toEqual({
+      skills: [join(r.root, "gone"), target],
+    });
+  });
 });
 
 describe("a bot proposes settings", () => {

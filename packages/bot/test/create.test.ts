@@ -201,6 +201,15 @@ describe("creating a bot with chosen skills and MCP servers", () => {
     expect(String(run.value)).toContain("operad secret set bot notes.TOKEN");
   });
 
+  test("two creates at once keep both new bots", async () => {
+    const r = await rig();
+    await Promise.all([
+      createBot(r.home, { name: "first", agent: "claude" }),
+      createBot(r.home, { name: "second", agent: "claude" }),
+    ]);
+    expect(Object.keys(readBots(r.home)).sort()).toEqual(["default", "first", "second"]);
+  });
+
   test("a path may be given instead of a known skill, and the path stays the setting", async () => {
     const r = await rig();
     const parent = join(r.root, "chosen");
@@ -222,7 +231,7 @@ describe("refusals while creating a bot", () => {
     await expect(create(r, { name: "odd", agent: "claude", mcpServers: ["calendar"] })).rejects.toThrow(/calendar/);
     expect(readBots(r.home).odd).toBeUndefined();
     await expect(
-      createBot(r.store, r.home, { name: "odd", agent: "claude", mcpServers: ["calendar"] }),
+      createBot(r.home, { name: "odd", agent: "claude", mcpServers: ["calendar"] }),
     ).rejects.toThrow("is not approved on another bot");
   });
 
@@ -232,7 +241,7 @@ describe("refusals while creating a bot", () => {
     expect(readBots(r.home).reader).toEqual({ harness: "pi" });
     await expect(create(r, { name: "default", agent: "claude" })).rejects.toThrow('there is already a bot "default"');
     await expect(create(r, { name: "Bad", agent: "claude" })).rejects.toThrow(/name is lowercase letters/);
-    await expect(createBot(r.store, r.home, { name: "../escape", agent: "claude" })).rejects.toThrow(
+    await expect(createBot(r.home, { name: "../escape", agent: "claude" })).rejects.toThrow(
       /name is lowercase letters/,
     );
     expect(readBots(r.home)["../escape"]).toBeUndefined();

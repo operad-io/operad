@@ -124,3 +124,10 @@ and the row fields.
 | T-0504-M1 | packages/harness/process/src/timings.ts | `INCREMENT_LINES` omitted `text_end`, so it could not be the first increment | `StepTimings first increment > each kind of increment can be the first one` |
 | T-0504-M2 | packages/harness/process/src/timings.ts | a `message_end` with no text counted as the first increment | `StepTimings first increment > a message_end with no text is not an increment, and a later one is` |
 | T-0504-M3 | packages/harness/process/src/timings.ts | a first increment before the session gave a negative wait instead of null | `StepTimings first increment > an increment before the session leaves the wait to the first increment absent` |
+
+## T-0505 — skills follow-ups
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0505-M2 | packages/harness/process/src/skills.ts | a quoted description was cut at a ` #` inside the quotes, like a comment | `skillDescription > a quoted description keeps a # inside it, and an unquoted one ends at a comment` |
+| T-0505-M3 | packages/harness/process/src/skills.ts | a literal block scalar folded its lines like a folded one | `skillDescription > reads literal and folded block scalars, chomping and a comment after the indicator` |

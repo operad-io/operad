@@ -106,3 +106,10 @@ changes for bots, in the order they were recorded. The root
 | T-0501-M10 | packages/bot/src/index.ts | `bot:create` no longer checked the model and effort against the chosen agent's lists | `refusals while creating a bot > a model or effort the chosen agent does not list is refused by name` |
 | T-0501-M11 | packages/bot/src/index.ts | a bot page no longer showed its skills and MCP servers | `creating a bot with chosen skills and MCP servers > two of three known skills and one of two approved servers are exactly what it gets` |
 | T-0501-M12 | packages/bot/src/create.ts | a skill given as a path was ignored instead of read from that directory | `creating a bot with chosen skills and MCP servers > a path may be given instead of a known skill, and the path stays the setting` |
+
+## T-0505 — skills follow-ups
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0505-M1 | packages/bot/src/proposals.ts | a missing or empty listed skill path stopped a proposal instead of being skipped | `a bot changes a skill loaded from a listed directory > a listed path that is missing or empty is skipped, and the mounted skill is still found` |
+| T-0505-M4 | packages/bot/src/create.ts | creating a bot read the bot map before the lock, so two creates at once dropped one | `creating a bot with chosen skills and MCP servers > two creates at once keep both new bots` |
