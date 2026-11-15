@@ -98,6 +98,8 @@ describe("a chat's input lists its commands on /", () => {
     // `/` on the chat page opens the same list without a key first.
     const direct = press(opened(), "/");
     expect(direct.input?.kind).toBe("note");
+    expect(direct.input?.kind === "note" && direct.input.text).toBe("/");
+    expect(direct.input?.kind === "note" && direct.input.commandMenu?.cursor).toBe(0);
     expect(names(commandEntries(direct))).toEqual(["model", "effort", "stop", "help"]);
   });
 
@@ -111,6 +113,51 @@ describe("a chat's input lists its commands on /", () => {
     expect(names(commandEntries(both))).toEqual(["effort", "model", "help"]);
     const moved = press(both, "down");
     expect(moved.input?.kind === "note" && moved.input.commandMenu?.cursor).toBe(1);
+  });
+
+  test("the arrows move in the list and stop at its ends", () => {
+    let state = press(input(), "/");
+    for (let step = 0; step < 9; step += 1) state = press(state, "down");
+    expect(state.input?.kind === "note" && state.input.commandMenu?.cursor).toBe(3);
+    for (let step = 0; step < 9; step += 1) state = press(state, "up");
+    expect(state.input?.kind === "note" && state.input.commandMenu?.cursor).toBe(0);
+  });
+
+  test("escape closes only the list; another escape closes the input", () => {
+    const listed = press(input(), "/", ...typeText("mod"));
+    expect(listed.input?.kind === "note" && listed.input.commandMenu).toBeDefined();
+    const closed = press(listed, "escape");
+    expect(closed.input?.kind).toBe("note");
+    expect(closed.input?.kind === "note" && closed.input.text).toBe("/mod");
+    expect(closed.input?.kind === "note" && closed.input.commandMenu).toBeUndefined();
+    expect(press(closed, "escape").input).toBeUndefined();
+  });
+
+  test("Enter fills the line with the chosen command and does not run it", () => {
+    const listed = press(input(), "/", ...typeText("sto"));
+    const filled = press(listed, "enter");
+    expect(filled.actionRequest).toBeUndefined();
+    expect(filled.input?.kind === "note" && filled.input.text).toBe("/stop");
+    expect(filled.input?.kind === "note" && filled.input.commandMenu).toBeUndefined();
+    expect(press(filled, "enter").actionRequest).toEqual({
+      action: "chat:send",
+      id: "chat:one",
+      note: "/stop",
+    });
+  });
+
+  test("a clashing short name keeps it for the chat plugin and gives the other its plugin name", () => {
+    const other = action("other:model", { command: "Another model." });
+    const alpha = action("alpha:stop", { command: "Alpha stop." });
+    const beta = action("beta:stop", { command: "Beta stop." });
+    expect(chatCommands([MODEL, other]).map((command) => command.name)).toEqual([
+      "model",
+      "other_model",
+    ]);
+    expect(chatCommands([alpha, beta]).map((command) => command.name)).toEqual([
+      "alpha_stop",
+      "beta_stop",
+    ]);
   });
 
   test("a choice parameter shows its options; choosing the command fills the input", () => {
