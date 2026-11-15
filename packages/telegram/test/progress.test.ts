@@ -2,7 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CHAT_TYPE, MESSAGE_FACT, chatRef } from "@operad-io/chat";
+import { CHAT_TYPE, ENTRY_FACT, MESSAGE_FACT, chatRef } from "@operad-io/chat";
 import { Secret, type ClientApi, type SectionOptions, type SourceContext, type ViewEvent } from "@operad-io/engine";
 import { fakeClock, type FakeClock } from "@operad-io/engine/testing";
 import {
@@ -25,6 +25,8 @@ afterAll(async () => {
 /** A client the test drives: the tail the transcript gives, and a way to wake the watcher. */
 class ProgressClient implements ClientApi {
   tail: string | undefined;
+  /** Whether the client says a run works; false unless a test says otherwise. */
+  readonly running = new Map<string, boolean>();
   /** The `after` marks the progress side read with, in order. */
   readonly afters: (string | undefined)[] = [];
   private mark = 0;
@@ -50,7 +52,10 @@ class ProgressClient implements ClientApi {
   }
 
   list: ClientApi["list"] = (type, options) => this.views.list(type, options);
-  get: ClientApi["get"] = (id) => this.views.get(id);
+  get: ClientApi["get"] = async (id) => {
+    const object = await this.views.get(id);
+    return { ...object, row: { ...object.row, running: this.running.get(id) ?? false } };
+  };
 
   section: ClientApi["section"] = async (_id, sectionId, _cursor, options?: SectionOptions) => {
     this.afters.push(options?.after);
@@ -177,6 +182,15 @@ async function appendReply(f: Fixture, text: string): Promise<void> {
       attachments: [],
       source: { kind: "agent", ref: null },
     },
+  });
+}
+
+/** Records why the chat's reply failed. */
+async function appendFailure(f: Fixture, text: string): Promise<void> {
+  await f.w.ctx.facts.append({
+    type: ENTRY_FACT,
+    object: chatRef(f.chat),
+    data: { runId: "run-progress-failure", kind: "failure", text },
   });
 }
 
@@ -310,6 +324,40 @@ describe("the progress message of a reply", () => {
     f.client.announce(f.chat);
     await f.api.until(() => f.api.deleted.length >= 1);
     expect(f.api.sent.map((request) => request.text)).toEqual(["partial", "the answer"]);
+    expect(f.api.deleted[0]).toMatchObject({ chatId: 555, messageId: progressId });
+    await f.stop();
+  });
+
+  test("a failed reply sends its failure line as a new message, then deletes the progress message", async () => {
+    const f = await setup();
+    f.client.tail = "partial";
+    await f.progress.syncChat(f.chat);
+    await f.api.until(() => f.api.sent.length >= 1);
+    const progressId = 9_000 + f.api.sent.length;
+
+    await appendFailure(f, "The reply failed: boom");
+    await f.progress.syncChat(f.chat);
+    expect(f.api.sent.map((request) => request.text)).toEqual(["partial", "The reply failed: boom"]);
+    expect(f.api.deleted[0]).toMatchObject({ chatId: 555, messageId: progressId });
+    await f.stop();
+  });
+
+  test("a stopped reply deletes the progress message once the client says the run ended", async () => {
+    const f = await setup();
+    f.client.tail = "partial";
+    await f.progress.syncChat(f.chat);
+    await f.api.until(() => f.api.sent.length >= 1);
+    const progressId = 9_000 + f.api.sent.length;
+
+    // The tail is gone, but the run still works: the progress message stays.
+    f.client.tail = undefined;
+    f.client.running.set(f.chat, true);
+    await f.progress.syncChat(f.chat);
+    expect(f.api.deleted).toHaveLength(0);
+
+    f.client.running.set(f.chat, false);
+    await f.progress.syncChat(f.chat);
+    expect(f.api.sent).toHaveLength(1);
     expect(f.api.deleted[0]).toMatchObject({ chatId: 555, messageId: progressId });
     await f.stop();
   });
