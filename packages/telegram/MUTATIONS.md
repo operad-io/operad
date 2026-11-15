@@ -99,3 +99,4 @@ the row fields.
 | T-0494-M9 | packages/telegram/src/source.ts | what a typed command returned was not sent back to Telegram | `a command in a Telegram chat > a name with the bot after it is the plain command, and what it returns comes back` |
 | T-0494-M10 | packages/telegram/src/commands.ts | a tap from a user not in the `users` list ran the command | `a command in a Telegram chat > a tap from an unlisted user counts for nothing` |
 | T-0494-M11 | packages/telegram/src/source.ts | a command's text titled the chat it opened, so `/help` became a chat called `/help` | `a command in a Telegram chat > a command before any chat opens one, as a first message does` |
+| T-0494-M12 | packages/telegram/src/commands.ts | the menu's event watcher ignored every client event, so a command gained or lost while the bot ran never reached Telegram | `the bot's command menu > follows the client's events and registers again when a command appears or goes` |

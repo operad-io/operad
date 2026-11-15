@@ -123,7 +123,7 @@ describe("the bot's command menu", () => {
     const menu = commands.start();
     await menu.ready;
     expect(api.menus).toHaveLength(1);
-    expect(names(api.menus[0])).toEqual(["model", "effort", "close", "help", "extra"]);
+    expect(names(api.menus[0])).toEqual(["model", "effort", "stop", "retry", "close", "help", "extra"]);
     expect(api.menus[0]?.find((command) => command.command === "model")?.description).toBe(
       "Change the model the next reply uses.",
     );
@@ -135,7 +135,41 @@ describe("the bot's command menu", () => {
     available = false;
     await commands.refresh();
     expect(api.menus).toHaveLength(2);
-    expect(names(api.menus[1])).toEqual(["model", "effort", "close", "help"]);
+    expect(names(api.menus[1])).toEqual(["model", "effort", "stop", "retry", "close", "help"]);
+
+    await menu.stop();
+    await w.close();
+  });
+
+  test("follows the client's events and registers again when a command appears or goes", async () => {
+    let available = true;
+    const w = await world({
+      users: [42],
+      efforts: { list: ["low", "high"], default: "low" },
+      plugins: [extraPlugin(() => available)],
+      follow: true,
+    });
+    const api = new FakeApi();
+    const commands = new CommandSender(w.ctx, { api });
+    const chat = await boundOnly(w, api);
+    const menu = commands.start();
+    await menu.ready;
+    expect(api.menus).toHaveLength(1);
+    expect(names(api.menus[0])).toContain("extra");
+
+    const stored = await w.store.get(CHAT_TYPE, chat);
+    if (stored === undefined) throw new Error("the chat is gone");
+    // The test calls no refresh: the client's event is what moves the menu.
+    available = false;
+    await w.store.put(CHAT_TYPE, chat, { ...stored.data, title: "one" }, "test");
+    await api.until(() => api.menus.length === 2);
+    expect(names(api.menus[1])).not.toContain("extra");
+
+    // A command that comes back moves it again.
+    available = true;
+    await w.store.put(CHAT_TYPE, chat, { ...stored.data, title: "two" }, "test");
+    await api.until(() => api.menus.length === 3);
+    expect(names(api.menus[2])).toContain("extra");
 
     await menu.stop();
     await w.close();
@@ -154,7 +188,7 @@ describe("the bot's command menu", () => {
 
     await commands.refresh();
     expect(api.menus).toHaveLength(1);
-    expect(names(api.menus[0])).toEqual(["model", "effort", "close", "help"]);
+    expect(names(api.menus[0])).toEqual(["model", "effort", "stop", "retry", "close", "help"]);
     for (const name of names(api.menus[0])) expect(TELEGRAM_COMMAND_NAME.test(name)).toBe(true);
 
     const log = readFileSync(join(w.storeRoot, "logs", "telegram", "source.log"), "utf8");
