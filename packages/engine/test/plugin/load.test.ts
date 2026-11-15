@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { chmodSync } from "node:fs";
+import { chmodSync, readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -13,6 +13,9 @@ const noDefault = fileURLToPath(
 );
 const throws = fileURLToPath(
   new URL("../fixtures/flows/throws.ts", import.meta.url),
+);
+const lazyModels = fileURLToPath(
+  new URL("../fixtures/plugins/lazy-models.ts", import.meta.url),
 );
 
 async function homeWithConfig(config: unknown): Promise<{
@@ -48,6 +51,34 @@ describe("loadPluginRegistry", () => {
       storeRoot,
     });
     expect(registry.names()).toEqual([]);
+  });
+
+  test("reads each harness's model list once during the load", async () => {
+    const root = await tempRoot();
+    const { home, configPath, storeRoot } = await homeWithConfig({
+      plugins: { "lazy-models": { module: lazyModels, settings: { note: "warmed" } } },
+    });
+    const reads = join(root, "models-reads");
+    const previous = process.env.OPERAD_TEST_MODELS_READS;
+    process.env.OPERAD_TEST_MODELS_READS = reads;
+    try {
+      const registry = await loadPluginRegistry({
+        home,
+        configPath,
+        storeRoot,
+        onLog: () => undefined,
+      });
+      // The load read it once with the config's settings; a later read is
+      // the client's, not the first one.
+      expect(readFileSync(reads, "utf8").trim().split("\n")).toEqual(["warmed"]);
+      expect(registry.loadedModels()).toEqual({
+        "lazy-models": { list: ["warmed"], default: "warmed" },
+      });
+      expect(readFileSync(reads, "utf8").trim().split("\n")).toEqual(["warmed", "warmed"]);
+    } finally {
+      if (previous === undefined) delete process.env.OPERAD_TEST_MODELS_READS;
+      else process.env.OPERAD_TEST_MODELS_READS = previous;
+    }
   });
 
   test("names the config file when it is not valid JSON", async () => {
