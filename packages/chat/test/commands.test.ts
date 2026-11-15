@@ -97,6 +97,39 @@ describe("commands in chat:send", () => {
   });
 
 
+  test("more than one argument is positional and the last takes the rest of the line", async () => {
+    const pair = definePlugin({
+      name: "pair",
+      kind: "domain",
+      version: "0.0.0",
+      actions: [
+        {
+          name: "pair",
+          on: CHAT_TYPE,
+          command: "Pair two values.",
+          args: {
+            type: "object",
+            properties: { first: { type: "string" }, second: { type: "string" } },
+            required: ["first", "second"],
+            additionalProperties: false,
+          },
+          when: () => true,
+          run: (_ctx, args) => {
+            const input = args as { readonly first: string; readonly second: string };
+            return `${input.first}|${input.second}`;
+          },
+        },
+      ],
+    });
+    const r = await rig(() => reply("x"), MODELS, EFFORTS, "fake", [pair]);
+    const chat = await r.chat();
+
+    const sent = await send(r, chat, "/pair a b c");
+    expect(sent.value).toBe("a|b c");
+    expect(allMessages(r.store, chat)).toEqual([]);
+    expect(r.events).toEqual([]);
+  });
+
   test("a command runs at once while a reply is being written and starts no reply", async () => {
     let markStarted: () => void = () => undefined;
     const entered = new Promise<void>((resolve) => {
