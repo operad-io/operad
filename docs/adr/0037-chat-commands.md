@@ -27,3 +27,9 @@ The command and its outcome are one `chat.command` fact: who typed it, the line 
 ### D4: `/help` lists the chat's commands
 
 `chat:help` is a command action. It lists every command this chat has, each under the name it is typed by, with the one-line description from the same action declaration. `/model`, `/effort`, `/close` and `/help` are declared as commands.
+
+### D5: Telegram shows the commands as a menu and a choice as buttons
+
+A command is typed into a Telegram chat as any other text, with the bot's name allowed after the command's name (`/model@operad_bot sonnet` is `/model sonnet`), and its text reaches `chat:send`, so the `chat` plugin still handles every command. The plugin registers the chat's commands with `setMyCommands` at start and again when the set changes: the name typed after `/` and the one-line description from the same action declaration. A name Telegram's menu cannot take (lowercase letters, digits and underscores, at most 32 characters) is left out and logged; it still runs when typed. Telegram's own `/start` gets a short greeting that points at `/help` and starts nothing.
+
+A command whose one argument is a choice (an `enum` in the action's schema, such as `/model` and `/effort`) sent without it answers with the choices as an inline keyboard, paged when they do not fit, instead of running. A tap runs the command as `/<name> <choice>` through `chat:send`; the keyboard goes and the message is edited to `chosen: <choice>`, as an answered pending item's message is edited to `answered: <choice>`. What a typed command returns is sent to the Telegram chat in a reply's shape. Only a listed user's command runs, as with a message: one from anyone else is dropped without a reply.

@@ -81,10 +81,35 @@ A user whose id is in `telegram.users`, writing in a private chat with the bot:
   to such an item is an ordinary message to the chat.
 - Answers the items of the plugins in `telegram.pending`. With `["dev"]` the
   `dev` plugin's merge and confirm items are answerable from Telegram.
+- Types a command, such as `/model sonnet`, `/effort high`, `/close` or
+  `/help`. It runs at once, leaves one entry in the chat's transcript, and never
+  reaches the agent. A command that takes one choice answers with buttons when
+  it is sent without one.
 
 Everyone else can do nothing. A message from a user who is not listed, and every
 message in a group, is recorded and answered with nothing: no chat opens and
 nothing starts. A tap from an unlisted user counts for nothing.
+
+## Commands
+
+Telegram shows the chat's commands under the message box: the name to type and
+the one line the action declares. The list follows the chat; when the chat is
+closed, no command is available, and a new chat brings the list back. A command
+whose name Telegram's menu does not take (lowercase letters, digits and
+underscores, at most 32 characters) is left out of the menu and still runs when
+it is typed.
+
+A command is typed like any other text, and `/model@your_bot sonnet` is the same
+as `/model sonnet`. Telegram's own `/start` answers with a short greeting that
+points at `/help`; it never reaches the agent.
+
+A command that takes one choice, such as `/model` or `/effort`, sent without the
+choice answers with a button for each one instead of running. When there are
+more choices than fit, `«` and `»` open the other pages. Tapping one runs the
+command with that choice, the buttons go, and the message ends
+`chosen: <choice>`. What a typed command returns is sent back as a message, so
+`/help` lists the commands and `/close yes` says the chat is closed. Only a
+listed user's command runs; one from anyone else is dropped without a reply.
 
 ## What is sent
 
@@ -96,6 +121,7 @@ nothing starts. A tap from an unlisted user counts for nothing.
 - The typing indicator. While a reply of a chat bound to Telegram is being
   written, that Telegram chat shows the bot as typing; it stops when the reply or
   a failure line is recorded, or the reply ends, fails or is cancelled.
+- What a command returned, and the greeting `/start` answers with.
 - The progress of a reply, as one message that is edited. Once the agent has
   written its first text or started a tool call, that message shows what it has
   written so far and the tool calls still running. It changes at most once every

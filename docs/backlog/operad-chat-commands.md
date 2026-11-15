@@ -1,6 +1,6 @@
 # operad-chat-commands：chat 里的 `/` 命令
 
-- 状态：decided（命令机制和第一批的 `/model`、`/effort`、`/close`、`/help` 已落地；其余未做，待决问题见文末）
+- 状态：decided（命令机制和第一批的 `/model`、`/effort`、`/close`、`/help` 已落地；Telegram 的菜单、`/start` 和选项按钮已落地（决定 10，见 ADR 0037 D5）；其余未做，待决问题见文末）
 - 涉及 ADR：0013（动作）、0026、0027、0028（chat）、0033（Telegram）、0037（chat 命令）
 - 涉及：`operad-conversation.md`（待决 5：上下文费用）、`operad-telegram.md`、`operad-bot.md`（待决 5、7：skills）
 - 来源：2026-11-15 对 OpenClaw、Hermes Agent、Orca、Conductor、Vibe Kanban、Kimaki 的调研和 owner 的讨论
@@ -20,7 +20,7 @@
 7. **只在 Telegram**：`/whoami`（显示发送者的 id，配名单用）；显示工具调用和 thinking 的开关，等进度消息（T-0488）做完再定形式。
 8. **只在仓库 chat**：`/diff`（这个 chat 的 worktree 里改了什么）。
 9. **不做**：聊天里改配置、权限、名单、插件，重启，跑 shell，子 agent 管理，把外部 agent 绑到当前聊天。这些归命令行和设置页。
-10. **Telegram**：命令名只用小写字母、数字、下划线；启动时注册成菜单；有选项的参数没给时回一排按钮；只有名单里的人能执行。
+10. **Telegram**：已落地，见 ADR 0037 D5（命令名只用小写字母、数字、下划线；启动时和集合变化时注册成菜单；有选项的参数没给时回一排按钮；只有名单里的人能执行）。
 11. **用词（owner 批准）**：stop、status、help、retry、new、compact、btw、name、whoami、diff。model、effort、close 是已有的词。
 12. **运行中发来的普通消息默认插话**（owner 2026-11-15）：插进正在写的这一轮，在当前这批工具调用之后送给 agent，不中断、不另起一轮；不加 `/steer` 这个词。不能插话的 agent（radian）照旧排到下一轮。要打断用 `/stop`。
 
