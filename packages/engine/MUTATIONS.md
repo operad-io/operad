@@ -954,3 +954,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0502-M3 | packages/engine/src/views/uploads.ts | `findAttachment` read the type beside the link's target instead of beside the name the request asked for, so a link served a name and a type that describe two different files | `http server > file arguments > a link inside the root serves the type of the name it was asked under` |
+
+## T-0502 — a source that dies young keeps backing off
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0502-M4 | packages/engine/src/http/server.ts | a delivered event reset the backoff, so a source that delivers one event and then dies on every open retried at the minimum | `http server > a source that fails on every open backs off through the injected clock and resets once` |
