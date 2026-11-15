@@ -18,6 +18,7 @@ import {
   planData,
   repositoryData,
   taskData,
+  TASK_FINAL_STATES,
   type RepositoryData,
 } from "./model.ts";
 import { flowNamesOf } from "./project-flows.ts";
@@ -171,7 +172,11 @@ const taskAction: ActionTypeDefinition = {
     const repository = repositoryNow(env.store, plan.repository);
     return taskArgs(
       flowChoices(repository),
-      tasksOfPlanNow(env.store, plan.repository, id).map((task) => bareId(task.id)),
+      tasksOfPlanNow(env.store, plan.repository, id)
+        .filter(
+          (task) => !TASK_FINAL_STATES.includes(taskData(task.data).phase),
+        )
+        .map((task) => bareId(task.id)),
     );
   },
   when: () => true,

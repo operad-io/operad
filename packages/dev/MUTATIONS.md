@@ -1306,3 +1306,8 @@ the row fields.
 |---|---|---|---|
 | T-0481-M1 | packages/dev/src/views.ts | `mergedCommitOf` compared an already-on-main candidate with itself, showing main's own change instead of `_Merged._` | `dev views > a merged task whose change was already on main says it merged, without showing main's own change` |
 | T-0481-M2 | packages/dev/src/views.ts | only a cancelled task checked for its missing branch, so a proposed or ready task named the branch and main in a no-diff sentence | `dev views > a proposed or ready task whose branch is missing says so, without naming its refs` |
+## T-0480 — a new task is offered only the plan's open tasks
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0480-M1 | packages/dev/src/create-actions.ts | the task action's `after` enum listed every task of the plan again, finished ones included | `dev:plan and dev:task > the task action offers only the plan's tasks that are not finished` |
