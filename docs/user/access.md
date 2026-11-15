@@ -80,9 +80,10 @@ The home entries are absolute, so a home other than `~/.operad` is covered too.
 The bot's own working directory under `~/.operad/bot` is the one part of the
 home the agent may use. The path of a repository `dev` knows, and the path of a
 bot's skill directories, are added to `denyPaths`: the agent reaches a
-repository through `dev`'s actions, not by touching its files. A bot's own
-`access` lists are appended to these, and its `access.readOnly` can turn the
-working directory read-only.
+repository through `dev`'s actions, not by touching its files. The skill
+directories are also in `readPaths`, so the agent reads them; a write there is
+still refused. A bot's own `access` lists are appended to these, and its
+`access.readOnly` can turn the working directory read-only.
 
 A rule is a pattern of words; `*` matches any characters in a word. `-rf`
 matches the same single-dash letters in any order, and `…` adds no condition.

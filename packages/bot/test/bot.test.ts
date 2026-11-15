@@ -106,6 +106,23 @@ describe("bots", () => {
     }
   });
 
+  test("a bot's page shows each skill's name, not only its path", async () => {
+    const r = await rig({ reader: {} });
+    const skill = join(r.root, "folder");
+    mkdirSync(skill, { recursive: true });
+    writeFileSync(join(skill, "SKILL.md"), "---\nname: brain\n---\n");
+    writeConfig(r.home, { reader: { skills: [skill] } });
+    await syncBots(r.store, r.home, { bots: { reader: { skills: [skill] } } });
+    const views = createViews({ registry: r.registry, store: r.store, onLog: () => undefined });
+    try {
+      const page = await views.section("bot:reader", "bot");
+      expect(page.markdown).toContain("Skills: brain");
+      expect(page.markdown).not.toContain(skill);
+    } finally {
+      views.close();
+    }
+  });
+
   test("each bot is one row in lists, the default one too, and a removed one is marked", async () => {
     const r = await rig({ reader: {} });
     const views = createViews({ registry: r.registry, store: r.store, onLog: () => undefined });
@@ -169,6 +186,81 @@ describe("the default access profile", () => {
     expect(tightened.denyCommands).toEqual(base.denyCommands);
     expect(tightened.readOnly).toBe(true);
     expect(resolveBot(r.home, "plain", { access: { readOnly: false } }).access.readOnly).toBeUndefined();
+  });
+});
+
+describe("skills", () => {
+  test("a skill is readable but cannot be written, edited or removed", async () => {
+    const r = await rig({ reader: {} });
+    const skill = join(r.root, "skills", "brain");
+    mkdirSync(skill, { recursive: true });
+    writeFileSync(join(skill, "SKILL.md"), "---\nname: brain\n---\n");
+    writeConfig(r.home, { reader: { skills: [skill] } });
+    await syncBots(r.store, r.home, { bots: { reader: { skills: [skill] } } });
+    const chat = await r.open("reader");
+    await r.say(chat, "hi");
+    await r.reply(chat);
+    const access = accessOf(r.calls[0]?.access);
+    const cwd = join(r.home, "bot", "reader");
+    const home = join(r.root, "user");
+    const file = join(skill, "SKILL.md");
+    expect(match(access, { tool: "read", input: { path: file }, cwd }, { home }).allow).toBe(true);
+    expect(match(access, { tool: "read", input: { path: join(skill, "scripts", "run.sh") }, cwd }, { home }).allow).toBe(true);
+    expect(match(access, { tool: "bash", input: { command: `cat ${file}` }, cwd }, { home }).allow).toBe(true);
+    for (const call of [
+      { tool: "write", input: { path: file } },
+      { tool: "edit", input: { path: file } },
+      { tool: "bash", input: { command: `printf x > ${file}` } },
+      { tool: "bash", input: { command: `rm ${file}` } },
+      { tool: "bash", input: { command: `mv ${file} ${join(skill, "old.md")}` } },
+    ]) {
+      const verdict = match(access, { ...call, cwd }, { home });
+      expect(verdict.allow).toBe(false);
+      expect(verdict.allow === false ? verdict.ask : true).not.toBe(true);
+      expect(verdict.allow === false ? verdict.reason : "").toContain("denyPaths");
+    }
+  });
+
+  test("a listed parent directory loads every skill directly inside it, including one added later", async () => {
+    const r = await rig({ reader: {} });
+    const parent = join(r.root, "skills");
+    const brain = join(parent, "brain");
+    mkdirSync(brain, { recursive: true });
+    writeFileSync(join(brain, "SKILL.md"), "---\nname: brain\n---\n");
+    writeConfig(r.home, { reader: { skills: [parent] } });
+    await syncBots(r.store, r.home, { bots: { reader: { skills: [parent] } } });
+    const chat = await r.open("reader");
+    await r.say(chat, "one");
+    await r.reply(chat);
+    expect(r.calls[0]?.params.skills).toEqual([brain]);
+
+    const later = join(parent, "later");
+    mkdirSync(later, { recursive: true });
+    writeFileSync(join(later, "SKILL.md"), "---\nname: later\n---\n");
+    await r.say(chat, "two");
+    await r.reply(chat);
+    expect(r.calls[1]?.params.skills).toEqual([brain, later]);
+  });
+
+  test("a listed .agents directory loads the skills directly inside its skills directory, including one added later", async () => {
+    const r = await rig({ reader: {} });
+    const agents = join(r.root, "home", ".agents");
+    const brain = join(agents, "skills", "brain");
+    mkdirSync(brain, { recursive: true });
+    writeFileSync(join(brain, "SKILL.md"), "---\nname: brain\n---\n");
+    writeConfig(r.home, { reader: { skills: [agents] } });
+    await syncBots(r.store, r.home, { bots: { reader: { skills: [agents] } } });
+    const chat = await r.open("reader");
+    await r.say(chat, "one");
+    await r.reply(chat);
+    expect(r.calls[0]?.params.skills).toEqual([brain]);
+
+    const later = join(agents, "skills", "later");
+    mkdirSync(later, { recursive: true });
+    writeFileSync(join(later, "SKILL.md"), "---\nname: later\n---\n");
+    await r.say(chat, "two");
+    await r.reply(chat);
+    expect(r.calls[1]?.params.skills).toEqual([brain, later]);
   });
 });
 
@@ -452,6 +544,7 @@ describe("a reply reads the bot again", () => {
     const result = await r.reply(id);
     expect(result.result).toBe("failed");
     expect(String(result.data?.message)).toContain("there is no SKILL.md");
+    expect(String(result.data?.message)).toContain(join(r.root, "nothing"));
     expect(r.calls).toHaveLength(0);
   });
 

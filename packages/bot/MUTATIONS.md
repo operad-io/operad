@@ -78,3 +78,15 @@ changes for bots, in the order they were recorded. The root
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0475-M4 | packages/bot/src/bot.ts | the `bots` setting lost its title, so a schema row a client shows had none | `plugin versions > every setting a client shows has a short title` (packages/cli/test/plugin-versions.test.ts) |
+
+## T-0499 — bot skills are readable, and a listed directory loads its skills
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0499-M1 | packages/bot/src/bot.ts | a skill directory was denied for reading too: its paths were not added to `readPaths` | `skills > a skill is readable but cannot be written, edited or removed` |
+| T-0499-M2 | packages/bot/src/bot.ts | a skill directory was no longer denied for writing, so a write asked instead of being refused | `skills > a skill is readable but cannot be written, edited or removed` |
+| T-0499-M3 | packages/bot/src/bot.ts | a listed parent directory no longer loaded the skills directly inside it | `skills > a listed parent directory loads every skill directly inside it, including one added later` |
+| T-0499-M4 | packages/bot/src/bot.ts | a listed `.agents` directory no longer read its `skills` directory | `skills > a listed .agents directory loads the skills directly inside its skills directory, including one added later` |
+| T-0499-M5 | packages/bot/src/index.ts | a bot's page showed skill paths instead of skill names | `bots > a bot's page shows each skill's name, not only its path` |
+| T-0499-M6 | packages/bot/src/proposals.ts | approving a skill no longer added it to the bot's skills | `a bot proposes a skill > it is one pending item, shows SKILL.md and the files with scripts apart, and applies at the next reply` |
+| T-0499-M7 | packages/bot/src/proposals.ts | a change targeted a new skill under `<cwd>/skills` instead of the skill already mounted through a listed parent | `a bot changes a skill loaded from a listed directory > the skill it already mounts under that name is the one the proposal targets` |

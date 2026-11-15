@@ -150,6 +150,41 @@ describe("a bot proposes a skill", () => {
   });
 });
 
+describe("a bot changes a skill loaded from a listed directory", () => {
+  test("the skill it already mounts under that name is the one the proposal targets", async () => {
+    const r = await rig({ reader: {} });
+    const parent = join(r.root, "skills");
+    const skill = join(parent, "brain");
+    mkdirSync(skill, { recursive: true });
+    writeFileSync(join(skill, "SKILL.md"), "---\nname: brain\n---\nold text\n");
+    writeConfig(r.home, { reader: { skills: [parent] } });
+    await syncBots(r.store, r.home, { bots: { reader: { skills: [parent] } } });
+
+    await r.command(
+      "bot",
+      "skill",
+      ["reader", "brain"],
+      skillInput("---\nname: brain\n---\nnew text\n"),
+    );
+    const item = (await r.registry.standing())[0];
+    const id = item?.object?.id;
+    if (id === undefined) throw new Error("no proposal item");
+    const views = createViews({ registry: r.registry, store: r.store, onLog: () => undefined });
+    try {
+      const review = await views.section(`${PROPOSAL_TYPE}:${id}`, "review", undefined, { full: true });
+      expect(review.markdown).toContain(`Directory: ${skill}`);
+      expect(review.markdown).toContain("-old text");
+      expect(review.markdown).toContain("+new text");
+    } finally {
+      views.close();
+    }
+
+    await r.act(PROPOSAL_TYPE, id, "bot/approve");
+    expect(readFileSync(join(skill, "SKILL.md"), "utf8")).toContain("new text");
+    expect(existsSync(join(r.home, "bot", "reader", "skills", "brain"))).toBe(false);
+  });
+});
+
 describe("a bot proposes settings", () => {
   test("the item shows before and after; approve applies them at the next reply; reject leaves them", async () => {
     const r = await rig();

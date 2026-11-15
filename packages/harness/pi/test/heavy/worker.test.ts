@@ -451,6 +451,33 @@ test("a read of a denied path is blocked; an allowed read runs", async () => {
   expect(last(run)).toMatchObject({ result: "done", finalMessage: "finished" });
 });
 
+test("a skill under denyPaths is readable through readPaths, and a write to it is blocked", async () => {
+  const s = setup();
+  const skill = join(s.dir, "skill");
+  mkdirSync(skill);
+  const file = join(skill, "SKILL.md");
+  writeFileSync(file, "original\n");
+  const run = await runFake(
+    s,
+    [
+      { text: "", toolCall: { name: "read", arguments: { path: file } } },
+      { text: "", toolCall: { name: "write", arguments: { path: file, content: "changed\n" } } },
+      { text: "finished" },
+    ],
+    { ...s.input, access: { denyPaths: [skill], readPaths: [skill] } },
+  );
+
+  expect(run.lines.filter((line) => line["type"] === "blocked")).toEqual([
+    { type: "blocked", toolName: "write", reason: "refused by the access profile" },
+  ]);
+  expect(run.lines.filter((line) => line["type"] === "tool_execution_end")).toMatchObject([
+    { toolName: "read", isError: false },
+    { toolName: "write", isError: true, error: "refused by the access profile" },
+  ]);
+  expect(readFileSync(file, "utf8")).toBe("original\n");
+  expect(last(run)).toMatchObject({ result: "done", finalMessage: "finished" });
+});
+
 test("without a profile nothing is blocked", async () => {
   const s = setup();
   const run = await runFake(s, [
