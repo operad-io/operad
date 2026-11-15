@@ -388,6 +388,21 @@ describe("codex/agent: permissions", () => {
     expect(permissionOutcome(env)).toBe("decline");
   });
 
+  test("the legacy command approval answers with Codex's ReviewDecision", async () => {
+    const allowed = await setup("permission-legacy", { vars: { FAKE_CODEX_COMMAND: "make test" } });
+    expect((await runAgent(allowed, { prompt: "x", cwd: allowed.root })).result).toBe("done");
+    expect(permissionOutcome(allowed)).toBe("approved");
+    const denied = await setup("permission-legacy", { vars: { FAKE_CODEX_COMMAND: "rm -rf build" } });
+    expect((await runAgent(denied, { prompt: "x", cwd: denied.root }, { access: { denyCommands: ["rm -rf"] } })).result).toBe("done");
+    expect(permissionOutcome(denied)).toEqual({ denied: { rejection: "the access profile refused this call" } });
+  });
+
+  test("the legacy patch approval is judged by the paths it changes", async () => {
+    const env = await setup("permission-legacy-edit", { vars: { FAKE_CODEX_PATH: "/etc/passwd" } });
+    await runAgent(env, { prompt: "x", cwd: env.root }, { access: { denyPaths: ["/etc"] } });
+    expect(permissionOutcome(env)).toEqual({ denied: { rejection: "the access profile refused this call" } });
+  });
+
   test("a one-time grant lets the refused call through once, through the host", async () => {
     const env = await setup("permission");
     const used: string[] = [];

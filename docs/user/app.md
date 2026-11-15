@@ -174,9 +174,11 @@ already recorded, so reopening the chat does not lose them and a restart of
 
 Sending is `chat:send` with `note` and the uploaded attachments. The app sends
 the message, records it and starts the reply; a chat that is closed refuses the
-message and says so. Closing a chat asks for confirmation (`chat:close`) and
-keeps the transcript readable, but the chat takes no more messages and offers no
-other actions.
+message and says so. **Stop** (`chat:stop`) stops a reply being written and keeps
+what was written so far; **Retry** (`chat:retry`) answers the last message again
+after a failed or stopped reply. Closing a chat asks for confirmation
+(`chat:close`) and keeps the transcript readable, but the chat takes no more
+messages and offers no other actions.
 
 ### A repository chat is read-only
 

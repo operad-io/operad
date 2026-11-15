@@ -200,7 +200,9 @@ function entryMarkdown(entry: Entry | FoldEntry, speaker: string, harness: strin
       .join("\n");
   }
   const said = flat(entry.text);
-  return said.length === 0 ? undefined : `**${speaker}:** ${said}`;
+  if (said.length === 0) return undefined;
+  const body = `**${speaker}:** ${said}`;
+  return entry.kind === "stopped" ? `${body}\n\n*stopped*` : body;
 }
 
 function allFacts(ctx: ViewContext, ref: ObjectRef): readonly PluginFact[] {

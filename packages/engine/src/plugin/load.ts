@@ -245,7 +245,7 @@ export async function loadPluginRegistry(
   }
 
   const keys = await readKeysFile(options.keysPath ?? keysPathFor(home));
-  return new PluginRegistry(definitions, {
+  const registry = new PluginRegistry(definitions, {
     ...options,
     home,
     keys: options.keys ?? keys,
@@ -253,4 +253,13 @@ export async function loadPluginRegistry(
     settings: options.settings ?? settings,
     disabled: options.disabled ?? config.disabled,
   });
+  // A harness may fill its model list in the background; read each list once
+  // here so a client that asks just after the load already has it. A list that
+  // cannot be read is left for the next read, not made a load error.
+  try {
+    registry.loadedModels();
+  } catch (error) {
+    onLog(messageOf(error));
+  }
+  return registry;
 }

@@ -105,6 +105,8 @@ export async function rig(
   const calls: Call[] = [];
   const events: TriggerEvent[] = [];
   const store = new MemoryPluginStore({ root: join(root, "store") });
+  /** The round a stop can cancel, with the signal its step waits on. */
+  let active: { readonly runId: string; readonly controller: AbortController } | undefined;
   const registry = new PluginRegistry([createChatPlugin(), fakeHarness(name, script, calls, models, efforts), ...extraPlugins], {
     home: join(root, "home"),
     cwd: root,
@@ -112,6 +114,11 @@ export async function rig(
     onLog: () => undefined,
     onEvent: (event) => {
       events.push(event);
+    },
+    onCancelRun: (runId) => {
+      if (active?.runId !== runId) return false;
+      active.controller.abort();
+      return true;
     },
   });
   let runs = 0;
@@ -157,13 +164,21 @@ export async function rig(
       const object = await store.get("chat", chat);
       if (object === undefined) throw new Error("no chat");
       runs += 1;
-      return registry.runStep("chat/reply", params, {
-        runId: `run-${runs}`,
-        object: { type: "chat", id: chat, data: object.data },
-        params: null,
-        ...(asker === undefined ? {} : { asker }),
-        ...(onEmit === undefined ? {} : { emit: (_plugin: string, event: StepEvent) => onEmit(event) }),
-      });
+      const runId = `run-${runs}`;
+      const controller = new AbortController();
+      active = { runId, controller };
+      try {
+        return await registry.runStep("chat/reply", params, {
+          runId,
+          object: { type: "chat", id: chat, data: object.data },
+          params: null,
+          signal: controller.signal,
+          ...(asker === undefined ? {} : { asker }),
+          ...(onEmit === undefined ? {} : { emit: (_plugin: string, event: StepEvent) => onEmit(event) }),
+        });
+      } finally {
+        if (active?.runId === runId) active = undefined;
+      }
     },
   };
 }

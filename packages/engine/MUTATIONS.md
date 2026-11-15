@@ -968,3 +968,14 @@ the row fields.
 | T-0491-M6 | packages/engine/src/plugin/registry.ts | `runActionChecked` ran an action that asks to confirm without the `yes` | `an action that a chat may run as a command > runActionChecked checks availability, arguments and confirmation before it records anything` |
 | T-0491-M12 | packages/engine/src/plugin/registry.ts | `command: true` did not take the args description or action name, so the action had no command line | `an action that a chat may run as a command > command true takes its line from the args description, else the action name` |
 | T-0491-M13 | packages/engine/src/plugin/validate.ts | the `command` check no longer refused a blank description | `an action that a chat may run as a command > its one-line description is in the action list, and an empty one is refused` |
+## T-0503 — a harness's model list is read when the plugins load
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0503-M5 | packages/engine/src/plugin/load.ts | `loadPluginRegistry` no longer read the models once, so a lazy harness's first list came from its cache only | `loadPluginRegistry > reads each harness's model list once during the load` |
+
+## T-0492 — the run control says whether it cancelled
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0492-M1 | packages/engine/src/runner/cancel.ts | `cancelRun` reported `false` after it cancelled an active run | `runner > cancelRun says whether it ended an active run` |

@@ -8,10 +8,14 @@
  * the `silent-image` and `steer` modes wait for); `FAKE_CODEX_VERSION` (what
  * `--version` prints); `FAKE_CODEX_LOGIN` (`out`: `login status` exits 1);
  * `FAKE_CODEX_COMMAND` and `FAKE_CODEX_PATH` (the call a permission mode asks
- * about).
+ * about); `FAKE_CODEX_MODELS` (`empty`: no choices; `silent`: no answer to
+ * `model/list`; `error`: an error answer; `exit`: the process exits when
+ * asked); `FAKE_CODEX_MODELS_MARKER` and `FAKE_CODEX_MODELS_RELEASE` (the
+ * model-list probe's pid, and the file a non-empty answer waits for).
  *
  * Modes: `done`, `images` (two image generations), `permission`,
- * `permission-network`, `permission-edit`, `usage-limit`, `bad-model`,
+ * `permission-network`, `permission-edit`, `permission-legacy`,
+ * `permission-legacy-edit`, `usage-limit`, `bad-model`,
  * `bad-effort`, `auth`, `cancel`, `cancel-ignored`, `silent-image`, `steer`,
  * `no-load` (a resume fails), `silent` (no line after the turn starts),
  * `exited-early` (the process exits after the turn starts), `no-app-server`
@@ -174,6 +178,57 @@ function finish(): void {
 }
 
 async function permissionTurn(): Promise<void> {
+  if (mode === "permission-legacy" || mode === "permission-legacy-edit") {
+    // The names Codex used before the item notifications.
+    const legacyEdit = mode === "permission-legacy-edit";
+    const command = process.env.FAKE_CODEX_COMMAND ?? "rm -rf build";
+    const path = process.env.FAKE_CODEX_PATH ?? "/etc/passwd";
+    if (legacyEdit) {
+      const item = fileItem(path, "inProgress");
+      notify("item/started", { threadId: SESSION, turnId: TURN, startedAtMs: Date.now(), item });
+      const response = await ask("applyPatchApproval", {
+        conversationId: SESSION,
+        callId: "t2",
+        fileChanges: { [path]: { type: "update", move_path: null, diff: "changed" } },
+        reason: null,
+        grantRoot: null,
+      });
+      if (recordPath !== undefined) appendFileSync(recordPath, `${JSON.stringify({ permissionResponse: response.result })}\n`);
+      const decision = (response.result as { decision?: unknown } | undefined)?.decision;
+      const allowed = decision === "approved";
+      notify("item/completed", {
+        threadId: SESSION,
+        turnId: TURN,
+        completedAtMs: Date.now(),
+        item: fileItem(path, allowed ? "completed" : "declined"),
+      });
+      agentDelta("m1", allowed ? "it ran" : "it was refused");
+    } else {
+      const item = commandItem("p1", command, "inProgress", null, null);
+      notify("item/started", { threadId: SESSION, turnId: TURN, startedAtMs: Date.now(), item });
+      const response = await ask("execCommandApproval", {
+        conversationId: SESSION,
+        callId: "p1",
+        approvalId: "a1",
+        command: [command],
+        cwd: "/w",
+        reason: null,
+        parsedCmd: [],
+      });
+      if (recordPath !== undefined) appendFileSync(recordPath, `${JSON.stringify({ permissionResponse: response.result })}\n`);
+      const decision = (response.result as { decision?: unknown } | undefined)?.decision;
+      const allowed = decision === "approved";
+      notify("item/completed", {
+        threadId: SESSION,
+        turnId: TURN,
+        completedAtMs: Date.now(),
+        item: commandItem("p1", command, allowed ? "completed" : "declined", allowed ? "ran" : "declined by the user", allowed ? 0 : null),
+      });
+      agentDelta("m1", allowed ? "it ran" : "it was refused");
+    }
+    finish();
+    return;
+  }
   const edit = mode === "permission-edit";
   const network = mode === "permission-network";
   if (edit) {
@@ -316,6 +371,8 @@ async function runTurn(): Promise<void> {
     case "permission":
     case "permission-network":
     case "permission-edit":
+    case "permission-legacy":
+    case "permission-legacy-edit":
       await permissionTurn();
       return;
     default:
@@ -363,8 +420,15 @@ async function respondModels(id: unknown): Promise<void> {
   const marker = process.env.FAKE_CODEX_MODELS_MARKER;
   if (marker !== undefined) writeFileSync(marker, String(process.pid));
   await waitForRelease(process.env.FAKE_CODEX_MODELS_RELEASE);
+  const kind = process.env.FAKE_CODEX_MODELS;
+  if (kind === "silent") return;
+  if (kind === "exit") process.exit(1);
+  if (kind === "error") {
+    fail(id, "model list is unavailable");
+    return;
+  }
   const data =
-    process.env.FAKE_CODEX_MODELS === "empty"
+    kind === "empty"
       ? []
       : [
           { id: "gpt-fake", model: "gpt-fake", displayName: "Fake", hidden: false, isDefault: true },

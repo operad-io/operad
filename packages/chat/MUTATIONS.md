@@ -164,7 +164,7 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 | T-0485-M3 | packages/chat/src/reply.ts | `recordFailure` skipped no failure already after the last person's message, so a rerun added a second line | `a failed reply > does not gain a second line when the step runs again` |
 | T-0485-M4 | packages/chat/src/views.ts | a radian chat hid the failure line with its text and thinking entries | `a failed reply > shows the failure line in a radian chat too` |
 | T-0485-M5 | packages/chat/src/reply.ts | a long provider message was not cut, so the failure line could grow without limit | `a failed reply > cuts a long provider message to one line` |
-| T-0485-M6 | packages/chat/src/reply.ts | the failure line kept the provider message's internal word `harness` instead of the person's `agent` | `a failed reply > uses the person's words for the internal names a provider's message carries` |
+| T-0485-M6 | packages/chat/src/reply.ts | the failure line kept the provider message's internal words (`harness`, `run`, `step`, `flow`, `fact`) | `a failed reply > uses the person's words for the internal names a provider's message carries` |
 
 ## T-0491 — chat commands as actions
 
@@ -190,6 +190,18 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0487-M1 | packages/chat/src/tail.ts | `foldLogTail` dropped finished entries again, so text and a finished call left the tail before their facts were visible | `chat transcript: after, mark and tail > the reply text stays in the tail until its fact is visible, then moves to the markdown` (also the finished tool call test) |
+## T-0492 — stopping and retrying a chat reply
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0492-M1 | packages/chat/src/index.ts | `chat:stop` treated a run that had already ended as the running reply | `chat:stop and chat:retry > stop with no reply running says so and changes nothing` |
+| T-0492-M2 | packages/chat/src/index.ts | `chat:retry` answered again after a normal reply instead of refusing | `chat:stop and chat:retry > retry refuses after a normal reply and starts nothing` |
+| T-0492-M3 | packages/chat/src/model.ts | the last reply outcome read a failure entry as no reply outcome | `chat:stop and chat:retry > retry after a failure answers again on the same session, and keeps the failed attempt` |
+| T-0492-M4 | packages/chat/src/views.ts | a stopped half reply was shown without the stopped mark | `chat:stop and chat:retry > stop during text keeps the half-written reply, marked stopped, and says what happens to later messages` |
+| T-0492-M5 | packages/chat/src/index.ts | a retry right after a stop waited for the stopped entry instead of following the successful stop line | `chat:stop and chat:retry > retry after a stop answers again on the same session, keeps the stopped reply, and a rerun adds no entry` |
+| T-0492-M6 | packages/chat/src/index.ts | `chat:stop` asked the run control to cancel a run id that was not the chat's latest | `chat:stop and chat:retry > stop during text keeps the half-written reply, marked stopped, and says what happens to later messages` |
+
+| T-0485-M6 | packages/chat/src/reply.ts | the failure line kept the provider message's internal word `harness` instead of the person's `agent` | `a failed reply > uses the person's words for the internal names a provider's message carries` |
 
 ## T-0504 — a rerun's failure and the tail's kept entries
 
