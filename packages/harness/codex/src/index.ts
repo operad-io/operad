@@ -334,6 +334,7 @@ export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
       }
     },
     efforts: CODEX_EFFORTS,
+    capabilities: { takesMessagesMidRun: true },
     signedIn: (_settings: Readonly<Record<string, unknown>>) => codexSignedInCached(),
     settings: PLUGIN_SETTINGS,
     steps: [

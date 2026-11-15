@@ -381,7 +381,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
     version: pkg.version,
     models: piModels,
     efforts: PI_EFFORTS,
-    capabilities: { loadsSkills: true },
+    capabilities: { loadsSkills: true, takesMessagesMidRun: true },
     signedIn: async (settings) => {
       const authPath = expandHome(
         typeof settings.authPath === "string" ? settings.authPath : DEFAULT_AUTH_PATH,

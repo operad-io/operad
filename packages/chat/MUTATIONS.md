@@ -220,3 +220,11 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 | T-0493-M3 | packages/chat/src/model.ts | `writingReply` always returned undefined, so status said it was not writing | `chat:status > works while a reply is being written and says since when and how many wait` |
 | T-0493-M4 | packages/chat/src/reply.ts | the chat did not keep the tokens its replies used, so the session's token usage was unknown | `chat:status > shows each line: agent, model, effort, reply, waiting, session usage and the last reply` |
 | T-0493-M5 | packages/chat/src/model.ts | the last reply's stored timings were not turned into a time to first output | `chat:status > shows each line: agent, model, effort, reply, waiting, session usage and the last reply` |
+
+## T-0496 — a message during a reply is interjected
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0496-M1 | packages/chat/src/reply.ts | the reply tested the mid-run capability backwards, so it passed no inbox | `a message that arrives while a chat reply is being written > during text it is delivered once, marked answered by that reply and not answered again`, `a message that arrives while a chat reply is being written > during a tool call it is delivered once, after the call, and not answered again` |
+| T-0496-M2 | packages/chat/src/reply.ts | the reply did not name the messages it took mid-run in `replyTo`, so a next round answered them again | `a message that arrives while a chat reply is being written > during text it is delivered once, marked answered by that reply and not answered again`, `a message that arrives while a chat reply is being written > during a tool call it is delivered once, after the call, and not answered again` |
+| T-0496-M3 | packages/chat/src/reply.ts | the inbox counted a message as taken before the harness listened, so a message the worker never got was marked answered | `a message that arrives while a chat reply is being written > a message the worker does not take before the reply ends waits for the next round` |

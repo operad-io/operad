@@ -985,3 +985,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0501-M7 | packages/engine/src/plugin/registry.ts | `actionEnv` no longer gave the action checks the operad home, so the creation choices could not be read | `bot:create offers what the home already knows > the skill and server choices are the ones the bots and the standard directory know` |
+
+## T-0496 — a harness says it takes messages mid-run
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0496-M4 | packages/engine/src/plugin/validate.ts | the capability check still knew only `loadsSkills`, so `takesMessagesMidRun` was refused | `harness capabilities > a harness declares that it takes messages mid-run, and the registry exposes it` |

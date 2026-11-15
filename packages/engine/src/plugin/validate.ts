@@ -858,15 +858,19 @@ function normalizeCapabilities(value: unknown, kind: string, at: string): Harnes
   }
   if (!isRecord(value)) throw new PluginError(`${at}: capabilities: must be an object`);
   for (const key of Object.keys(value)) {
-    if (key !== "loadsSkills") {
+    if (key !== "loadsSkills" && key !== "takesMessagesMidRun") {
       throw new PluginError(`${at}: capabilities.${key}: not a capability`);
     }
   }
-  const loadsSkills = value["loadsSkills"];
-  if (loadsSkills !== undefined && typeof loadsSkills !== "boolean") {
-    throw new PluginError(`${at}: capabilities.loadsSkills: must be a boolean`);
+  const result: { loadsSkills?: boolean; takesMessagesMidRun?: boolean } = {};
+  for (const key of ["loadsSkills", "takesMessagesMidRun"] as const) {
+    const capability = value[key];
+    if (capability !== undefined && typeof capability !== "boolean") {
+      throw new PluginError(`${at}: capabilities.${key}: must be a boolean`);
+    }
+    if (capability === true) result[key] = true;
   }
-  return loadsSkills === true ? { loadsSkills: true } : {};
+  return result;
 }
 
 /** A harness plugin's `signedIn` hook: true, false, or undefined when it cannot tell. */

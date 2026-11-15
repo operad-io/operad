@@ -432,7 +432,7 @@ describe("pi/agent", () => {
 
   test("the plugin declares that it loads skills itself", () => {
     const plugin = createPiHarnessPlugin();
-    expect(plugin.capabilities).toEqual({ loadsSkills: true });
+    expect(plugin.capabilities).toEqual({ loadsSkills: true, takesMessagesMidRun: true });
   });
 
   test("the skill directories of the step reach the worker's stdin", async () => {
