@@ -22,6 +22,15 @@ export const BOT_DIR = "bot";
 
 const NAME = /^[a-z0-9][a-z0-9_-]*$/;
 
+/** Refuses a name that cannot be a bot's directory under the bot home. */
+export function validateBotName(name: string): void {
+  if (!NAME.test(name)) {
+    throw new BotError(
+      `bot "${name}": a name is lowercase letters, digits, "-" and "_", and starts with a letter or digit`,
+    );
+  }
+}
+
 /** The JSON Schema of the `bot` section (also shipped as `bot.schema.json`). */
 export const BOT_SETTINGS: ActionArgsSchema = {
   type: "object",
@@ -209,11 +218,7 @@ export function readBots(
   const bots = isRecord(settings.bots) ? settings.bots : {};
   const found: Record<string, BotSettings> = {};
   for (const [name, value] of Object.entries(bots)) {
-    if (!NAME.test(name)) {
-      throw new BotError(
-        `bot "${name}": a name is lowercase letters, digits, "-" and "_", and starts with a letter or digit`,
-      );
-    }
+    validateBotName(name);
     found[name] = value as BotSettings;
   }
   if (found[DEFAULT_BOT] === undefined) found[DEFAULT_BOT] = {};
@@ -224,6 +229,11 @@ function expand(path: string, base: string): string {
   if (path === "~") return homedir();
   if (path.startsWith("~/")) return join(homedir(), path.slice(2));
   return isAbsolute(path) ? resolve(path) : resolve(base, path);
+}
+
+/** A path as the bot reads it: `~`, an absolute path, or one under `base`. */
+export function expandPath(path: string, base: string): string {
+  return expand(path, base);
 }
 
 function within(path: string, directory: string): boolean {
@@ -345,6 +355,22 @@ function skillsInside(parent: string): string[] {
     .map((entry) => join(parent, entry.name))
     .filter((path) => hasSkill(path))
     .sort((left, right) => left.localeCompare(right));
+}
+
+/** What one written skill path names now, without refusing one that is merely empty. */
+export interface ListedSkills {
+  /** The skill directories directly inside it, or itself when it holds a SKILL.md. */
+  readonly directories: string[];
+  /** True when the path is a `.agents` directory, whose `skills` directory is read. */
+  readonly agents: boolean;
+}
+
+/** Reads a written skill path: a skill, a directory of skills, or a `.agents` directory. */
+export function listedSkills(written: string, cwd: string): ListedSkills {
+  const path = expand(written, cwd);
+  if (hasSkill(path)) return { directories: [path], agents: false };
+  const agents = isDirectory(path) && basename(path) === ".agents";
+  return { directories: skillsInside(agents ? join(path, "skills") : path), agents };
 }
 
 interface SkillList {

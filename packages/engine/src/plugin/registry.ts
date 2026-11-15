@@ -1136,6 +1136,7 @@ export class PluginRegistry {
   actionEnv(): ActionEnv {
     return {
       store: this.store,
+      home: this.home,
       harnesses: this.loadedHarnesses(),
       models: this.loadedModels(),
       efforts: this.loadedEfforts(),

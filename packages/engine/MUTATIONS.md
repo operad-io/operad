@@ -973,3 +973,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0503-M5 | packages/engine/src/plugin/load.ts | `loadPluginRegistry` no longer read the models once, so a lazy harness's first list came from its cache only | `loadPluginRegistry > reads each harness's model list once during the load` |
+
+## T-0501 — an action's schema can read the home
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0501-M7 | packages/engine/src/plugin/registry.ts | `actionEnv` no longer gave the action checks the operad home, so the creation choices could not be read | `bot:create offers what the home already knows > the skill and server choices are the ones the bots and the standard directory know` |

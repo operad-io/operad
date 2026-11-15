@@ -90,3 +90,14 @@ changes for bots, in the order they were recorded. The root
 | T-0499-M5 | packages/bot/src/index.ts | a bot's page showed skill paths instead of skill names | `bots > a bot's page shows each skill's name, not only its path` |
 | T-0499-M6 | packages/bot/src/proposals.ts | approving a skill no longer added it to the bot's skills | `a bot proposes a skill > it is one pending item, shows SKILL.md and the files with scripts apart, and applies at the next reply` |
 | T-0499-M7 | packages/bot/src/proposals.ts | a change targeted a new skill under `<cwd>/skills` instead of the skill already mounted through a listed parent | `a bot changes a skill loaded from a listed directory > the skill it already mounts under that name is the one the proposal targets` |
+
+## T-0501 — a bot created with only the skills and MCP servers chosen
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0501-M1 | packages/bot/src/create.ts | `~/.agents/skills` was no longer offered among the known skills | `bot:create offers what the home already knows > the skill and server choices are the ones the bots and the standard directory know` |
+| T-0501-M2 | packages/bot/src/create.ts | the chosen skills were written as an empty list | `creating a bot with chosen skills and MCP servers > two of three known skills and one of two approved servers are exactly what it gets` |
+| T-0501-M3 | packages/bot/src/create.ts | a copied MCP server lost its pinned version and digest | `creating a bot with chosen skills and MCP servers > a copied server keeps its pin, tools and digest, and starts without a new approval` |
+| T-0501-M4 | packages/bot/src/create.ts | a server that was never approved was copied from the first known one instead of being refused | `refusals while creating a bot > a server that was never approved is refused and nothing is written` |
+| T-0501-M5 | packages/bot/src/create.ts | a bot with no chosen skills inherited `default`'s | `creating a bot with chosen skills and MCP servers > nothing chosen means no skills and no servers, and nothing comes from default` |
+| T-0501-M6 | packages/bot/src/create.ts | the copied servers' secret names were no longer reported in the result | `creating a bot with chosen skills and MCP servers > the result names the secrets the copied servers need` |
