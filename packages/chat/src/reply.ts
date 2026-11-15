@@ -8,7 +8,19 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { AskTimeoutError, attachmentDir, isRecord, messageOf, safeFileName, type AskOutcome, type AskRequest, type JsonValue, type PluginStepResult, type RunObject, type StepAsker, type StepContext, type UsageTokens } from "@operad-io/engine";
-import { emptyFold, foldLines, maskSecrets, type FoldEntry, type FoldState, type MessageInbox } from "@operad-io/harness-process";
+import {
+  appendAlwaysAllow,
+  alwaysAllowEntry,
+  emptyFold,
+  foldLines,
+  maskSecrets,
+  personStarted,
+  readAlwaysAllow,
+  type AlwaysAllowEntry,
+  type FoldEntry,
+  type FoldState,
+  type MessageInbox,
+} from "@operad-io/harness-process";
 import {
   allEntries,
   allMessages,
@@ -98,8 +110,31 @@ export const WORKTREE_CALL_LIMIT = 120;
 export const READ_ONLY_REFUSAL =
   "The call was refused because this chat is read-only. Answer in the chat or use read-only commands.";
 
-/** The answers to the worktree question. */
-export const WORKTREE_CHOICES = ["yes", "no"] as const;
+/** The answers to the worktree question: the permission words, then the worktree offer. */
+export const WORKTREE_ALLOW_ONCE = "Allow once";
+export const WORKTREE_ALLOW_ALWAYS = "Always allow";
+export const WORKTREE_DENY = "Deny";
+export const WORKTREE_YES = "Open a worktree";
+export const WORKTREE_CHOICES = [WORKTREE_ALLOW_ONCE, WORKTREE_ALLOW_ALWAYS, WORKTREE_DENY, WORKTREE_YES] as const;
+
+type WorktreeAnswer = "allow_once" | "allow_always" | "deny" | "worktree";
+
+/** The action a worktree answer asks for; the older yes/no and the internal names still answer. */
+function worktreeAnswer(choice: string | undefined): WorktreeAnswer {
+  switch (choice) {
+    case WORKTREE_ALLOW_ONCE:
+    case "allow_once":
+      return "allow_once";
+    case WORKTREE_ALLOW_ALWAYS:
+    case "allow_always":
+      return "allow_always";
+    case WORKTREE_YES:
+    case "yes":
+      return "worktree";
+    default:
+      return "deny";
+  }
+}
 
 /** The event a "yes" sends; the plugin that owns the working directory acts on it. */
 export const WORKTREE_EVENT = "chat.worktree";
@@ -173,15 +208,79 @@ function worktreeResume(request: AskRequest, call: WorktreeCall | undefined): Js
             value: call.value,
             ...(call.tool === undefined ? {} : { tool: call.tool }),
           },
+          // Either permission answer gives the late call its one-time permission.
+          ...(session === null
+            ? {}
+            : {
+                grant: {
+                  kind: call.kind,
+                  value: call.value,
+                  choice: WORKTREE_ALLOW_ONCE,
+                  choices: [WORKTREE_ALLOW_ONCE, WORKTREE_ALLOW_ALWAYS],
+                  ...(call.kind === "path" && call.tool !== undefined ? { tool: call.tool } : {}),
+                },
+              }),
         }),
   };
 }
 
+/** Whether a user-layer entry covers this exact call and working directory. */
+function remembered(entry: AlwaysAllowEntry, call: WorktreeCall, cwd: string): boolean {
+  return (
+    entry.cwd === cwd &&
+    entry.kind === call.kind &&
+    entry.value === call.value &&
+    (call.kind === "command" || entry.tool === call.tool)
+  );
+}
+
+/** Reads the user layer, logging a file that had to be treated as empty. */
+async function userLayer(ctx: StepContext): Promise<readonly AlwaysAllowEntry[]> {
+  const found = await readAlwaysAllow(ctx.home);
+  if (found.problem !== undefined) await ctx.logger.write(found.problem);
+  return found.entries;
+}
+
+/** Writes an `Always allow` answer to the user layer; a failure still lets this call run. */
+async function rememberAlways(ctx: StepContext, call: WorktreeCall, cwd: string): Promise<void> {
+  try {
+    await appendAlwaysAllow(ctx.home, alwaysAllowEntry(call, cwd));
+  } catch (error) {
+    await ctx.logger.write(
+      `Always allow could not be written to the user access file: ${error instanceof Error ? error.message : String(error)}; this call runs once`,
+    );
+  }
+}
+
+/** The full call from the grants a late answer brings, when the kernel made one. */
+function callFromGrants(access: JsonValue): WorktreeCall | undefined {
+  if (!isRecord(access) || !Array.isArray(access["grants"])) return undefined;
+  for (const value of access["grants"]) {
+    if (!isRecord(value)) continue;
+    const kind = value["kind"];
+    const call = value["value"];
+    if ((kind !== "command" && kind !== "path") || typeof call !== "string" || call.length === 0) continue;
+    const tool = value["tool"];
+    return { kind, value: call, ...(typeof tool === "string" ? { tool } : {}) };
+  }
+  return undefined;
+}
+
+/** The call a late answer names in the worktree question, when no grant carries it. */
+function callFromQuestion(prompt: string): WorktreeCall | undefined {
+  const command = /^The agent wants to run `([\s\S]+)` in this read-only chat\. Open a worktree for it\?$/.exec(prompt);
+  if (command?.[1] !== undefined && command[1].length > 0) return { kind: "command", value: command[1] };
+  const path = /^The agent wants to (write|edit) `([\s\S]+)` in this read-only chat\. Open a worktree for it\?$/.exec(prompt);
+  if (path?.[1] !== undefined && path[2] !== undefined && path[2].length > 0) {
+    return { kind: "path", value: path[2], tool: path[1] };
+  }
+  return undefined;
+}
+
 /**
  * Whether a harness question is about a call in the working directory: a
- * path write or edit, or a shell command. A read-only chat lets no such call
- * through on a one-time permission (the profile already let the read-only ones
- * run), so each becomes the worktree question.
+ * path write or edit, or a shell command. A read-only chat asks the worktree
+ * question for each, with the permission answers and the worktree offer.
  */
 export function isWriteQuestion(request: AskRequest): boolean {
   const resume = request.resume;
@@ -200,18 +299,26 @@ function failed(reason: string, message: string): PluginStepResult {
 
 /**
  * The asker a read-only chat's harness gets: a question about writing a file
- * becomes the worktree question and never a one-time permission; any other
- * question goes where it would have gone.
+ * becomes the worktree question, which may let this call run once, remember it
+ * with Always allow, refuse it, or open a worktree; any other question goes
+ * where it would have gone.
  */
-function readOnlyAsker(ctx: StepContext, onYes: () => Promise<void>): StepAsker {
+function readOnlyAsker(ctx: StepContext, cwd: string, onYes: () => Promise<void>): StepAsker {
+  const person = personStarted(ctx.trigger);
   return {
     async ask(request): Promise<AskOutcome> {
       const write = isWriteQuestion(request);
       const call = write ? worktreeCall(request) : undefined;
+      // An entry from an earlier Always allow lifts the question in any chat a person started.
+      if (person && call !== undefined && (await userLayer(ctx)).some((entry) => remembered(entry, call, cwd))) {
+        return { kind: "answered", answer: { choice: "allow_once" } };
+      }
       const shaped: AskRequest = write
         ? {
             prompt: call === undefined ? WORKTREE_QUESTION : worktreeQuestion(call),
-            choices: [...WORKTREE_CHOICES],
+            choices: person
+              ? [...WORKTREE_CHOICES]
+              : [WORKTREE_ALLOW_ONCE, WORKTREE_DENY, WORKTREE_YES],
             ...(request.resume === undefined ? {} : { resume: worktreeResume(request, call) }),
             ...(request.onTimeout === undefined ? {} : { onTimeout: request.onTimeout }),
             ...(request.graceSecs === undefined ? {} : { graceSecs: request.graceSecs }),
@@ -220,16 +327,22 @@ function readOnlyAsker(ctx: StepContext, onYes: () => Promise<void>): StepAsker 
       try {
         const answer = await ctx.ask(shaped);
         if (shaped === request) return { kind: "answered", answer };
-        if (answer.choice === "yes") await onYes();
-        // The call itself is never let through in the main clone. A no says why.
-        return {
-          kind: "answered",
-          answer: {
-            choice: "reject_once",
-            ...(answer.choice === "yes" ? {} : { note: READ_ONLY_REFUSAL }),
-            ...(answer.actor === undefined ? {} : { actor: answer.actor }),
-          },
-        };
+        const action = worktreeAnswer(answer.choice);
+        const actor = answer.actor === undefined ? {} : { actor: answer.actor };
+        if (action === "allow_once") {
+          return { kind: "answered", answer: { choice: "allow_once", ...actor } };
+        }
+        if (action === "allow_always" && person) {
+          if (call !== undefined) await rememberAlways(ctx, call, cwd);
+          return { kind: "answered", answer: { choice: "allow_always", ...actor } };
+        }
+        if (action === "worktree") {
+          await onYes();
+          // Opening a worktree keeps the call itself out of the main clone.
+          return { kind: "answered", answer: { choice: "reject_once", ...actor } };
+        }
+        // Deny refuses as no did, and says why.
+        return { kind: "answered", answer: { choice: "reject_once", note: READ_ONLY_REFUSAL, ...actor } };
       } catch (error) {
         if (error instanceof AskTimeoutError) {
           return {
@@ -237,6 +350,7 @@ function readOnlyAsker(ctx: StepContext, onYes: () => Promise<void>): StepAsker 
             waitId: error.waitId,
             prompt: error.prompt,
             choices: error.choices,
+            ...(shaped.resume === undefined ? {} : { resume: shaped.resume }),
           };
         }
         throw error;
@@ -707,7 +821,7 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
   const readOnly = live.access.readOnly === true;
   let worktreeAsked = 0;
   const asker = readOnly
-    ? readOnlyAsker(ctx, async () => {
+    ? readOnlyAsker(ctx, live.cwd, async () => {
         worktreeAsked += 1;
         await ctx.emit({
           type: WORKTREE_EVENT,
@@ -717,33 +831,66 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
       })
     : undefined;
 
-  // A "yes" that came back after the wait (the grace had passed) is the same
-  // answer as one given live. A "no" carries the same refusal a live answer gets.
+  // An answer that came back after the wait (the grace had passed) is the same
+  // answer as one given live.
   const late = answeredQuestion(params);
   const lateWorktree = readOnly && late !== undefined && isWorktreeQuestion(late.prompt);
-  if (lateWorktree && late.choice === "yes") {
+  const lateAction = lateWorktree && late !== undefined ? worktreeAnswer(late.choice) : undefined;
+  const lateCall = lateWorktree ? callFromGrants(ctx.access) ?? callFromQuestion(late?.prompt ?? "") : undefined;
+  if (lateAction === "worktree") {
     await ctx.emit({
       type: WORKTREE_EVENT,
       key: `${ctx.runId}:late`,
       object: `${CHAT_TYPE}:${object.id}`,
     });
   }
+  if (lateAction === "allow_always" && lateCall !== undefined && personStarted(ctx.trigger)) {
+    await rememberAlways(ctx, lateCall, live.cwd);
+  }
   const askAnswer =
-    lateWorktree && late.choice !== "yes"
-      ? {
-          prompt: late.prompt,
-          choice: late.choice,
-          note: late.note === undefined ? READ_ONLY_REFUSAL : `${READ_ONLY_REFUSAL}\n${late.note}`,
-        }
-      : resumed.askAnswer;
+    lateAction === undefined
+      ? resumed.askAnswer
+      : {
+          prompt: late?.prompt ?? "",
+          choice:
+            lateAction === "allow_once"
+              ? "allow_once"
+              : lateAction === "allow_always"
+                ? "allow_always"
+                : "reject_once",
+          ...(lateAction === "deny"
+            ? { note: late?.note === undefined ? READ_ONLY_REFUSAL : `${READ_ONLY_REFUSAL}\n${late.note}` }
+            : {}),
+        };
 
   // The files sent with a message: images as input where the harness takes
   // them, every file as a path, and the chat's own attachment directory open to reads.
   const directory = attachmentDir(ctx.home, CHAT_TYPE, object.id);
   const images = imagesOf(pending, chat.harness, directory);
-  const access = messages.some((message) => message.attachments.length > 0)
+  const base = messages.some((message) => message.attachments.length > 0)
     ? withAttachmentReads(live.access, directory)
     : live.access;
+  // A late Allow once is for this run alone; a late Always allow also wrote the user layer.
+  const lateEntry =
+    (lateAction === "allow_once" || lateAction === "allow_always") && lateCall !== undefined
+      ? alwaysAllowEntry(lateCall, live.cwd)
+      : undefined;
+  const existing = Array.isArray(base.alwaysAllow) ? base.alwaysAllow : [];
+  const access =
+    lateEntry === undefined
+      ? base
+      : {
+          ...base,
+          alwaysAllow: [
+            ...existing,
+            {
+              kind: lateEntry.kind,
+              value: lateEntry.value,
+              cwd: lateEntry.cwd,
+              ...(lateEntry.tool === undefined ? {} : { tool: lateEntry.tool }),
+            },
+          ],
+        };
 
   // The harness hands each log line over as it writes it; the fold keeps what
   // is finished and what is still being written. None of this is stored until

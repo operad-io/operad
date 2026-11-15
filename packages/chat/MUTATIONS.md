@@ -241,3 +241,12 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 | T-0506-M6 | packages/chat/src/index.ts | `/status` ignored the run control saying the latest run had ended | `chat:status > a run a crash left without an ending entry is not called writing` |
 | T-0506-M7 | packages/chat/src/reply.ts | the inbox counted a message as taken even when the harness said it could no longer take it | `a message that arrives while a chat reply is being written > a message the worker says it can no longer take waits for the next round` |
 | T-0506-M8 | packages/chat/src/reply.ts | an attempt that failed or stopped did not record the mid-run messages it took as answered | `a message that arrives while a chat reply is being written > a message delivered before a failure is answered, so the next round does not repeat it` |
+
+## T-0507 — the read-only worktree question offers Always allow
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0507-M4 | packages/chat/src/reply.ts | `Always allow` did not write the exact call and working directory to the user layer | `a read-only chat > Always allow writes the exact command and cwd, and the same command is not asked again` |
+| T-0507-M5 | packages/chat/src/reply.ts | the read-only asker no longer read the user layer, so an always-allowed call asked again | `a read-only chat > Always allow writes the exact command and cwd, and the same command is not asked again` |
+| T-0507-M6 | packages/chat/src/reply.ts | the worktree question kept the old `yes`/`no` instead of the approved words and the worktree offer | `a read-only chat > the question offers the approved words in order, then the worktree offer` |
+| T-0507-M8 | packages/chat/src/reply.ts | `Deny` was read as an approving answer instead of a refusal | `a read-only chat > Deny refuses the call as no did, writes nothing, and opens no worktree` |

@@ -152,13 +152,17 @@ The agent gets `operadTools: { home }`, so it calls operad through MCP tools and
 never through a shell.
 
 In a chat whose access profile is `readOnly`, an agent question about a
-command, a write or an edit becomes the worktree question (`yes`/`no`) and
-never a one-time permission. The question names the call: the command, or the
-path and whether it is a write or an edit; a long command is cut, and the ask
-keeps the whole call. A `yes` sends the event `chat.worktree`; the plugin that
-owns the working directory acts on it (`dev` opens `work/chat-<id>`). A `no`
-tells the agent the call was refused because the chat is read-only, and that it
-should answer in the chat or use read-only commands.
+command, a write or an edit becomes the worktree question. Its choices are
+`Allow once`, `Always allow`, `Deny` and the worktree offer: `Allow once` runs
+this call only, `Always allow` writes the exact call and working directory to
+the user layer (ADR 0025 D7) and runs it, `Deny` refuses it, and the worktree
+offer sends the event `chat.worktree`, which the plugin that owns the working
+directory acts on (`dev` opens `work/chat-<id>`). A run no person's message
+started is offered no `Always allow` and reads no user layer. The question names
+the call: the command, or the path and whether it is a write or an edit; a long
+command is cut, and the ask keeps the whole call. A `Deny` tells the agent the
+call was refused because the chat is read-only, and that it should answer in the
+chat or use read-only commands.
 
 ## The `transcript` section
 

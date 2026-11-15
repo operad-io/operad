@@ -25,7 +25,7 @@ The plugins are deliberately cautious. A chat on a repository is read-only until
 3. `chat:reply` takes the messages that no reply answers yet from the chat's own record, continues the agent's session, and records the reply. A message sent while the reply is being written is given to the agent in that same reply when its agent takes messages mid-run (`claude`, `pi`, `codex`); otherwise, or when it has an attachment, it waits for the next round. If messages are still waiting it goes round again, at most 20 rounds. Without `operad serve` the message is only recorded and is answered when `serve` runs. A reply being written can be stopped; its half-written text stays in the transcript, and `/retry` answers the last message again after a failed or stopped reply.
 4. While the agent works, the `transcript` section shows the messages, tool calls and the unfinished text of the current reply.
 5. Each tool call is checked against the chat's access profile (see [Access](access.md)). For a bot chat the profile is the default profile plus the bot's own `access` settings; the bot's settings are read again at every reply (see [Bots](#bots)).
-6. A chat on a repository starts in the main clone as read-only. A write, or a command that is not known to only read, becomes the worktree question; on yes, `dev` opens `work/chat-<id>` and the chat works there.
+6. A chat on a repository starts in the main clone as read-only. A write, or a command that is not known to only read, becomes the worktree question, which offers Allow once, Always allow, Deny and opening a worktree; the worktree offer has `dev` open `work/chat-<id>` and the chat works there.
 7. When a bot proposes a skill, a settings change or an MCP server (`operad bot skill`, `bot setting`, `bot mcp`), a `bot-proposal` object waits in Pending. `bot:approve` applies it and `bot:reject` drops it (see [Bot objects and proposals](#bot-objects-and-proposals)).
 8. `chat:close` records `chat.closed`; the transcript stays readable and `chat:send` is refused.
 
@@ -100,12 +100,14 @@ repository works in the main clone, read-only: a shell command runs there only
 when it is on a short list of commands that only read (`git status`, `ls`,
 `cat`, `grep`, `sed -n`, `bun test`, ...); every other command, and every write
 or edit, becomes the worktree question, which names the command or the path.
-When the agent wants to change code it asks whether to open a worktree. A no
-tells the agent the call was refused because the chat is read-only, and that it
-should answer in the chat or use read-only commands. On yes, `dev` opens
-`work/chat-<id>` and the chat works there from then on, once; the main clone
-stays read-only. The worktree's changes reach main only through a task that
-points at it, through the normal gate and integrate.
+The question offers Allow once (this call only), Always allow (the exact call
+and working directory go into `access-user.json`, so it is not asked again in
+any chat), Deny, and opening a worktree. Deny tells the agent the call was
+refused because the chat is read-only, and that it should answer in the chat or
+use read-only commands. The worktree offer has `dev` open `work/chat-<id>`, and
+the chat works there from then on, once; the main clone otherwise stays
+read-only. The worktree's changes reach main only through a task that points at
+it, through the normal gate and integrate.
 
 Attachments are files a client uploaded (`POST /v1/uploads`), stored under the
 chat's attachment directory in the operad home. A message may be only files.

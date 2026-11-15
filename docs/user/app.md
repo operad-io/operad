@@ -186,12 +186,14 @@ A chat on a repository works in the main clone, read-only. A shell command runs
 there only when it is on the short list of commands that only read (`git
 status`, `ls`, `cat`, `grep`, `sed -n`, `bun test`, ...); every other command,
 and every write or edit, becomes a question that names the command or the path.
-When the agent wants to change code it asks whether to open a worktree. A no
-tells the agent that the call was refused because the chat is read-only and
-that it should answer in the chat or use read-only commands. On yes, `dev` opens
-`work/chat-<id>` and the chat works there from then on, once; the main clone
-stays read-only. The worktree's changes reach main only through a task that
-points at it, through the normal gate and integrate.
+The question offers **Allow once** (this call only), **Always allow** (writes
+the exact call and working directory to `access-user.json`, so it is not asked
+again in any chat), **Deny**, and opening a worktree. Deny tells the agent that
+the call was refused because the chat is read-only and that it should answer in
+the chat or use read-only commands. The worktree offer opens `work/chat-<id>`
+and the chat works there from then on, once; the main clone otherwise stays
+read-only. The worktree's changes reach main only through a task that points at
+it, through the normal gate and integrate.
 
 ### A bot chat
 

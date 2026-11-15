@@ -495,6 +495,8 @@ export type AskOutcome =
       readonly waitId: string;
       readonly prompt: string;
       readonly choices: readonly string[];
+      /** What the step needs to carry on later, when the asker shaped it; the request's own resume otherwise. */
+      readonly resume?: JsonValue | undefined;
     };
 
 /**
