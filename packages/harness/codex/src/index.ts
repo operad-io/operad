@@ -40,6 +40,7 @@ import {
   optionalText,
   parseStepFlags,
   personStarted,
+  promptWithSkills,
   readAlwaysAllow,
   resultFor,
   runAgent,
@@ -360,9 +361,13 @@ export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
           const flow = isRecord(ctx.params) ? ctx.params : {};
 
           const prompt = text(input.prompt ?? flow.prompt, `${at}: params.prompt`);
+          const skills = stringListParam(
+            input.skills === undefined ? flow.skills : input.skills,
+            `${at}: params.skills`,
+          );
           const note = eventNote(ctx.trigger);
           const rawAskAnswer = input.askAnswer ?? flow.askAnswer;
-          const promptText = [prompt, note, askNote(rawAskAnswer)]
+          const promptText = [promptWithSkills(prompt, skills), note, askNote(rawAskAnswer)]
             .filter((part): part is string => part !== undefined)
             .join("\n\n");
           const cwd = text(input.cwd ?? flow.cwd, `${at}: params.cwd`);

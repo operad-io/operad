@@ -36,6 +36,7 @@ import {
   operadToolsOf,
   mountedServersOf,
   optionalText,
+  promptWithSkills,
   secs,
   serverCommand,
   standardUsage,
@@ -603,9 +604,13 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
           const flow = isRecord(ctx.params) ? ctx.params : {};
 
           const prompt = text(input.prompt ?? flow.prompt, `${at}: params.prompt`);
+          const skills = stringListParam(
+            input.skills === undefined ? flow.skills : input.skills,
+            `${at}: params.skills`,
+          );
           const note = eventNote(ctx.trigger);
           const answerNote = askNote(input.askAnswer ?? flow.askAnswer);
-          const promptWithNote = [prompt, note, answerNote]
+          const promptWithNote = [promptWithSkills(prompt, skills), note, answerNote]
             .filter((part): part is string => part !== undefined)
             .join("\n\n");
           const cwd = text(input.cwd ?? flow.cwd, `${at}: params.cwd`);

@@ -13,6 +13,8 @@ export interface AgentStepParams {
   readonly prompt: string;
   readonly cwd: string;
   readonly args?: readonly string[] | undefined;
+  /** Skill directories the agent is given; a harness that cannot load them lists them in the prompt. */
+  readonly skills?: readonly string[] | undefined;
   /** The wall time the agent may run, in seconds. */
   readonly wallTimeSecs?: number | undefined;
   /** How long the agent may go without a new output line, in seconds. */
@@ -26,6 +28,8 @@ export interface PromptFlowParams {
   readonly prompt: string;
   readonly cwd: string;
   readonly args?: readonly string[] | undefined;
+  /** Skill directories the agent is given; a harness that cannot load them lists them in the prompt. */
+  readonly skills?: readonly string[] | undefined;
 }
 
 /** The result names a harness `agent` step declares: a subset of `EndResult`. */

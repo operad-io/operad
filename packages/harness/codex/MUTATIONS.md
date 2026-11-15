@@ -55,3 +55,8 @@ recorded. The root [MUTATIONS.md](../../../MUTATIONS.md) explains the format and
 |---|---|---|---|
 | T-0486-M5 | packages/harness/codex/src/index.ts | the ACP ready callback wrote no `session` line | `codex/agent: a prompt run > a prompt runs to the end over ACP and the tool calls are in the log` |
 | T-0486-M10 | packages/harness/codex/src/index.ts | the step result was returned without its `timings` | `codex/agent: a prompt run > a scripted run gives the time to its session line, to the first increment, and the whole step` |
+## T-0498 — skills in the prompt for a harness that cannot load them
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0498-M5 | packages/harness/codex/src/index.ts | the `skills` param was read but the prompt kept only the step's text | `codex/agent: a prompt run > given skills are listed in the prompt with their description and path, never their body` |
