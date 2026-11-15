@@ -28,4 +28,4 @@ The command line, the `:` palette of the TUI and the settings page of iOS all go
 
 The user-visible words are "settings" (the commands `operad settings` and `operad settings set`), and the group names of the TUI `:` palette: actions, tui, settings.
 
-Each setting a plugin declares has a short `title` in its schema, and clients show it above the description. Titles are the plugin's user-visible words. The owner approved the shipped plugins' titles on 2026-11-14 (for example "Tasks at once", "Auto for new plans", "Model", "Effort", "Forward pending"); a new setting's title needs the owner's approval like any new word, and a test fails when a shipped plugin's setting has no title.
+Each setting a plugin declares has a short `title` in its schema, and clients show it above the description. Titles are the plugin's user-visible words. The owner approved the shipped plugins' titles (for example "Tasks at once", "Auto for new plans", "Model", "Effort", "Forward pending"); a new setting's title needs the owner's approval like any new word, and a test fails when a shipped plugin's setting has no title.
