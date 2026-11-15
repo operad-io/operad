@@ -70,3 +70,9 @@ recorded. The root [MUTATIONS.md](../../../MUTATIONS.md) explains the format and
 | T-0503-M4 | packages/harness/codex/src/app-server.ts | a legacy `execCommandApproval`/`applyPatchApproval` deny answered with the string `denied` instead of Codex's `ReviewDecision` `{ denied: { rejection } }` | `codex/agent: permissions > the legacy command approval answers with Codex's ReviewDecision`, `codex/agent: permissions > the legacy patch approval is judged by the paths it changes` |
 
 | T-0486-M5 | packages/harness/codex/src/index.ts | the app-server start wrote no `session` line after the thread opened | `codex/agent: a prompt run > a prompt runs to the end over app-server and the tool calls are in the log` |
+
+## T-0506 — an inbox listener says whether it took the message
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0506-M1 | packages/harness/codex/src/index.ts | the inbox listener steered a message but reported no result, so the host could not tell it was taken | `codex/agent: a message from the host > a message sent mid-run steers the turn` |

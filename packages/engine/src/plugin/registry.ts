@@ -130,6 +130,8 @@ export interface PluginRegistryOptions {
   readonly onCancelRun?:
     | ((runId: string, flow?: FlowDefinition) => MaybePromise<boolean | void>)
     | undefined;
+  /** Tells whether a run has not ended, for a plugin that reports on it. */
+  readonly onRunActive?: ((runId: string) => MaybePromise<boolean | void>) | undefined;
   /** The specifier each definition was loaded from, aligned with it. */
   readonly sources?: readonly (string | undefined)[] | undefined;
   /** The raw config section of each plugin, keyed by plugin name. */
@@ -179,6 +181,12 @@ export interface ActionInfo {
   readonly ends?: boolean | undefined;
   /** The object type the action creates; a client lists it where that type is created. */
   readonly creates?: string | undefined;
+  /**
+   * Whether the action's `when` holds for this object now. Set on the actions
+   * an action receives; absent on the list a client reads, which already holds
+   * only the available actions.
+   */
+  readonly available?: boolean | undefined;
 }
 
 /** Where a key binding came from. */
@@ -234,6 +242,9 @@ export class PluginRegistry {
   private readonly onCancelRun:
     | ((runId: string, flow?: FlowDefinition) => MaybePromise<boolean | void>)
     | undefined;
+  private readonly onRunActive:
+    | ((runId: string) => MaybePromise<boolean | void>)
+    | undefined;
   private readonly rules: readonly TriggerRule[];
   private readonly onEvent: ((event: TriggerEvent) => MaybePromise<void>) | undefined;
   private readonly onSourceEvent:
@@ -273,6 +284,7 @@ export class PluginRegistry {
     this.onStartRun = options.onStartRun;
     this.onAnswer = options.onAnswer;
     this.onCancelRun = options.onCancelRun;
+    this.onRunActive = options.onRunActive;
     this.rules = options.rules ?? [];
     this.onSourceEvent = options.onSourceEvent;
     this.onEvent = options.onEvent;
@@ -1267,10 +1279,7 @@ export class PluginRegistry {
       harnesses: this.loadedHarnesses(),
       models: this.loadedModels(),
       efforts: this.loadedEfforts(),
-      actions:
-        object === undefined
-          ? []
-          : this.actionInfos.filter((info) => info.on === object.type),
+      actions: object === undefined ? [] : await this.actionInfosFor(object),
       ...(object === undefined
         ? {}
         : {
@@ -1753,6 +1762,27 @@ export class PluginRegistry {
     return count === undefined ? this.starts.splice(0) : this.starts.splice(0, count);
   }
 
+  /** The actions declared on an object's type, each with whether it is available now. */
+  private async actionInfosFor(object: RunObject): Promise<readonly ActionInfo[]> {
+    const env = this.actionEnv();
+    const holding = new Set<string>();
+    for (const { plugin, action } of this.actionsFor(object.type)) {
+      let holds: unknown;
+      try {
+        holds = await action.when(object.data, env);
+      } catch (error) {
+        this.log(
+          `plugin "${plugin.name}": action "${action.name}": when failed: ${messageOf(error)}`,
+        );
+        continue;
+      }
+      if (holds === true) holding.add(`${plugin.name}:${action.name}`);
+    }
+    return this.actionInfos
+      .filter((info) => info.on === object.type)
+      .map((info) => ({ ...info, available: holding.has(info.name) }));
+  }
+
   private actionsFor(
     type: string,
   ): readonly {
@@ -1912,10 +1942,15 @@ export class PluginRegistry {
 
   private runControl(): RunControl {
     const onCancelRun = this.onCancelRun;
+    const onRunActive = this.onRunActive;
     return {
       cancel: async (runId, flow) => {
         if (onCancelRun !== undefined) return await onCancelRun(runId, flow);
         return false;
+      },
+      active: async (runId) => {
+        if (onRunActive !== undefined) return await onRunActive(runId);
+        return undefined;
       },
     };
   }

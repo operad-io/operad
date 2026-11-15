@@ -299,7 +299,8 @@ describe("runAgent with an inbox", () => {
   test("a message sent while the command runs is written to its stdin as a message line, and the listener is dropped at the end", async () => {
     const lines: string[] = [];
     let stopped = 0;
-    let send: (text: string) => void = () => undefined;
+    let send: (text: string) => boolean | void = () => undefined;
+    const taken: (boolean | void)[] = [];
     const began: number[] = [];
     const inbox = {
       begin(limitMs: number): void {
@@ -324,10 +325,11 @@ describe("runAgent with an inbox", () => {
       signal: new AbortController().signal,
       onLine(line) {
         lines.push(line);
-        if (line.includes("ready")) send("wrap up");
+        if (line.includes("ready")) taken.push(send("wrap up"));
       },
     });
     expect(outcome.exitCode).toBe(0);
+    expect(taken).toEqual([true]);
     expect(lines.map((line) => JSON.parse(line))).toEqual([
       { ready: true },
       { got: JSON.stringify({ type: "message", text: "wrap up" }) },

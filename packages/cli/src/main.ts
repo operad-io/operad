@@ -446,6 +446,7 @@ export async function openContext(
         graph,
         source: "cli",
       }),
+    onRunActive: async (runId) => (await log.runs({ active: true })).some((run) => run.runId === runId),
   }).catch((error: unknown) => {
     // A retry opens again: what this attempt opened must not stay open.
     for (const close of [() => closePluginStore(store), () => log.close()]) {

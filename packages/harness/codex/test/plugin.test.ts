@@ -626,9 +626,9 @@ test("the codex plugin declares that it takes messages mid-run", () => {
 describe("codex/agent: a message from the host", () => {
   test("a message sent mid-run steers the turn", async () => {
     const env = await setup("steer");
-    let listener: (text: string) => void = () => undefined;
+    let listener: (text: string) => boolean | void = () => undefined;
     const inbox = {
-      listen(handler: (text: string) => void) {
+      listen(handler: (text: string) => boolean | void) {
         listener = handler;
         return () => {
           listener = () => undefined;
@@ -640,7 +640,7 @@ describe("codex/agent: a message from the host", () => {
     };
     const running = runAgent(env, { prompt: "x", cwd: env.root, inbox });
     await waitForFile(env.marker);
-    listener("please stop");
+    expect(listener("please stop")).toBe(true);
     const result = await running;
     expect(result.result).toBe("done");
     expect(dataOf(result).finalMessage).toBe("heard: please stop");

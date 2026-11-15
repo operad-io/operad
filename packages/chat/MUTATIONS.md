@@ -228,3 +228,16 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 | T-0496-M1 | packages/chat/src/reply.ts | the reply tested the mid-run capability backwards, so it passed no inbox | `a message that arrives while a chat reply is being written > during text it is delivered once, marked answered by that reply and not answered again`, `a message that arrives while a chat reply is being written > during a tool call it is delivered once, after the call, and not answered again` |
 | T-0496-M2 | packages/chat/src/reply.ts | the reply did not name the messages it took mid-run in `replyTo`, so a next round answered them again | `a message that arrives while a chat reply is being written > during text it is delivered once, marked answered by that reply and not answered again`, `a message that arrives while a chat reply is being written > during a tool call it is delivered once, after the call, and not answered again` |
 | T-0496-M3 | packages/chat/src/reply.ts | the inbox counted a message as taken before the harness listened, so a message the worker never got was marked answered | `a message that arrives while a chat reply is being written > a message the worker does not take before the reply ends waits for the next round` |
+
+## T-0506 — chat command follow-ups
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0506-M1 | packages/chat/src/command.ts | `parseCommand` stopped matching a message with leading whitespace before the slash | `commands in chat:send > leading whitespace before the slash still starts a command` |
+| T-0506-M2 | packages/chat/src/command.ts | `/help` kept listing commands whose `when` does not hold now | `commands in chat:send > /help leaves out a command that is unavailable now` |
+| T-0506-M3 | packages/chat/src/command.ts | number and integer arguments stayed text instead of being coerced | `commands in chat:send > number, integer and boolean arguments are positional and coerced` |
+| T-0506-M4 | packages/chat/src/index.ts | a successful stop recorded no `chat.stop` fact, so a retry right after it found no stopped attempt | `chat:stop and chat:retry > retry after a stop answers again on the same session, keeps the stopped reply, and a rerun adds no entry` |
+| T-0506-M5 | packages/chat/src/reply.ts | a reply that reported no cost was not counted as missing, so a mixed session showed a whole total | `chat:status > a session that mixes reported and unreported usage says the totals are partial` |
+| T-0506-M6 | packages/chat/src/index.ts | `/status` ignored the run control saying the latest run had ended | `chat:status > a run a crash left without an ending entry is not called writing` |
+| T-0506-M7 | packages/chat/src/reply.ts | the inbox counted a message as taken even when the harness said it could no longer take it | `a message that arrives while a chat reply is being written > a message the worker says it can no longer take waits for the next round` |
+| T-0506-M8 | packages/chat/src/reply.ts | an attempt that failed or stopped did not record the mid-run messages it took as answered | `a message that arrives while a chat reply is being written > a message delivered before a failure is answered, so the next round does not repeat it` |

@@ -431,6 +431,11 @@ export interface RunControl {
    * already ended; a host that does not report says nothing.
    */
   cancel(runId: string, flow?: FlowDefinition): MaybePromise<boolean | void>;
+  /**
+   * Whether the run still exists and has not ended. Undefined when the host
+   * cannot tell. A status view uses it to stop calling a crashed run writing.
+   */
+  active(runId: string): MaybePromise<boolean | void>;
 }
 
 /** The result of one plugin's optional `check`. */

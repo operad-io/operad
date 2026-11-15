@@ -131,3 +131,9 @@ and the row fields.
 |---|---|---|---|
 | T-0505-M2 | packages/harness/process/src/skills.ts | a quoted description was cut at a ` #` inside the quotes, like a comment | `skillDescription > a quoted description keeps a # inside it, and an unquoted one ends at a comment` |
 | T-0505-M3 | packages/harness/process/src/skills.ts | a literal block scalar folded its lines like a folded one | `skillDescription > reads literal and folded block scalars, chomping and a comment after the indicator` |
+
+## T-0506 — an inbox listener says whether it took the message
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0506-M1 | packages/harness/process/src/process.ts | the inbox listener wrote a message but reported no result, so the host could not tell it was taken | `runAgent with an inbox > a message sent while the command runs is written to its stdin as a message line, and the listener is dropped at the end` |

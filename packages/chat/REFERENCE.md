@@ -16,9 +16,9 @@ source and its reference). An assistant message also names the messages it answe
 harness reported them, the token usage (`tokens`) and the step's three durations
 (`timings`: start to ready, ready to first increment, and the whole step). The
 chat carries the cost (`costMicros`, with `costQuality`) and tokens summed from
-its replies. Closing a
-chat appends a `chat.closed` fact and marks the object closed; the messages stay
-in its transcript.
+its replies; a total missing some replies is marked incomplete for the cost and
+for the tokens. Closing a chat appends a `chat.closed` fact and marks the object
+closed; the messages stay in its transcript.
 
 What the agent did during an answer is recorded too, as `chat.entry` facts with
 the same `runId` as the reply: intermediate text, thinking, a tool call (its call
@@ -59,9 +59,9 @@ name is the action name after the colon. When another plugin gives a chat an
 action with the same short name, `chat` keeps the short name and the other is
 `/<plugin>_<action>`.
 
-`chat:send` checks the whole message: when it starts with `/` and names a
-command this chat has, it runs that action with the rest as arguments and
-records no message for the agent. A `/xxx` that names no command, or a slash
+`chat:send` checks the whole message: when it starts with `/` after leading
+whitespace and names a command this chat has, it runs that action with the rest
+as arguments and records no message for the agent. A `/xxx` that names no command, or a slash
 later in the message, is an ordinary message. Arguments are positional in the
 order the action declares its fields: one field takes the rest of the line, and
 with more than one the last takes what is left. An action that asks to confirm
@@ -73,17 +73,19 @@ Every command appends one `chat.command` fact: who typed it, the line as typed,
 the outcome or the refusal, and whether it ran. The transcript shows it as one
 entry; it is not a `chat.message`, so `promptFor` and the agent never see it.
 
-`/help` lists this chat's commands with the one-line description from each
-declaration, under the name the chat types it by.
+`/help` lists this chat's commands that can run now, with the one-line
+description from each declaration, under the name the chat types it by.
 
 ## `chat:stop <chat>`
 
 Stops the reply being written. It asks the plugin's run control to cancel the
 run of the chat's latest `chat.run` fact; the control says whether it cancelled
-an active run. What was written so far is recorded by the interrupted path as a
-`stopped` entry and shown as stopped. Messages that arrived during the reply stay
-unanswered and no new reply starts by itself; the command line says so and says
-`/retry` answers the last message. With no reply running, or with one that had
+an active run, and a successful stop records a `chat.stop` fact naming the run.
+What was written so far is recorded by the interrupted path as a `stopped` entry
+and shown as stopped. Messages that arrived during the reply and were not handed
+to the agent stay unanswered and no new reply starts by itself; those it took
+stay answered. The command line says so and says `/retry` answers the last
+message. With no reply running, or with one that had
 already ended, it says so and changes nothing. Its button word is **Stop**.
 
 ## `chat:retry <chat>`
@@ -97,12 +99,14 @@ refuses with a line saying so and starts nothing.
 
 ## `chat:status <chat>`
 
-Reads the chat's facts and nothing else: it costs no tokens and works while a
-reply is being written. It returns a few short lines: the agent, the model and
+Reads the chat's facts and asks the run control whether the latest run is still
+active, so a run a crash left is not called writing. It costs no tokens and works
+while a reply is being written. It returns a few short lines: the agent, the model and
 effort in force, whether a reply is being written and since when, how many
 messages wait, the session's cost and token usage, and the last reply's cost,
 token usage and, when its `timings` hold both parts, its time to first output.
-A number an agent did not report is `unknown`, never 0.
+A number an agent did not report is `unknown`, never 0. When some replies
+reported a number and others did not, a session total is marked partial.
 
 ## `chat:model <chat> --model <name>`
 
@@ -136,9 +140,12 @@ reply is being written is handed to the agent at once, after the tool calls
 already running, and the reply's `replyTo` names it, so that reply answers it and
 no next round does. A message with an attachment waits for the next round, where
 its images and files reach the agent as a first message's do; the inbox carries
-text only. A message that arrives after the harness has returned stays
-unanswered and the next round answers it. An agent without the capability
-(`radian`) gets no inbox and keeps the next-round behaviour. A command is never
+text only. A message the attempt took is recorded as answered even when the
+attempt ends waiting, fails or is stopped; a harness answers false when it can
+no longer take a message, so one the run ended before queuing waits. A message
+that arrives after the harness has returned stays unanswered and the next round
+answers it. An agent without the capability (`radian`) gets no inbox and keeps
+the next-round behaviour. A command is never
 a message fact, so it is never handed to the agent.
 
 The agent gets `operadTools: { home }`, so it calls operad through MCP tools and

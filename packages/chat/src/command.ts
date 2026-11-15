@@ -24,11 +24,11 @@ export interface CommandOutcome {
   readonly ok: boolean;
 }
 
-const COMMAND = /^\/([A-Za-z0-9_-]+)(?:\s+([\s\S]*))?$/;
+const COMMAND = /^\s*\/([A-Za-z0-9_-]+)(?:\s+([\s\S]*))?$/;
 
 /**
- * The command a message is, or undefined when it is an ordinary message. The
- * whole message must start with `/`; a slash later, or an unknown name, leaves
+ * The command a message is, or undefined when it is an ordinary message. Leading
+ * whitespace is ignored; a slash later in the text, or an unknown name, leaves
  * it a message.
  */
 export function parseCommand(text: string): ParsedCommand | undefined {
@@ -164,11 +164,13 @@ export async function runCommand(
   }
 }
 
-/** What `/help` says: every command this chat has, with its own description. */
+/** What `/help` says: every command this chat can run now, with its own description. */
 export function helpText(commands: readonly ChatCommand[]): string {
-  const lines = commands.map(
-    (command) =>
-      `- \`/${command.name}\` — ${(command.info.command ?? "").replace(/\s+/g, " ").trim()}`,
-  );
+  const lines = commands
+    .filter((command) => command.info.available !== false)
+    .map(
+      (command) =>
+        `- \`/${command.name}\` — ${(command.info.command ?? "").replace(/\s+/g, " ").trim()}`,
+    );
   return [`What you can type with \`/\` here:`, ...lines].join("\n");
 }

@@ -1,7 +1,7 @@
 /** The chat plugin: a long conversation with an agent, and how a message is answered. */
 
 import pkg from "../package.json" with { type: "json" };
-import { defineFlow, definePlugin, type ActionArgsSchema, type ActionContext, type ActionTypeDefinition, type UsageTokens } from "@operad-io/engine";
+import { defineFlow, definePlugin, type ActionArgsSchema, type ActionContext, type ActionTypeDefinition, type PluginFact, type UsageTokens } from "@operad-io/engine";
 import {
   CHAT_FILTERS,
   CHAT_SOURCES,
@@ -14,7 +14,6 @@ import {
   chatRef,
   CLOSED_FACT,
   COMMAND_FACT,
-  commandOfFact,
   costText,
   EFFORT_FACT,
   firstOutputMs,
@@ -25,6 +24,8 @@ import {
   attachmentOf,
   MODEL_FACT,
   newMessageId,
+  STOP_FACT,
+  stoppedRunAfter,
   unanswered,
   writingReply,
   type ChatData,
@@ -34,6 +35,7 @@ import {
   type Message,
   type ModelChangedData,
   type MessageData,
+  type StopData,
   type WritingReply,
 } from "./model.ts";
 import { runReply } from "./reply.ts";
@@ -366,6 +368,11 @@ const stopAction: ActionTypeDefinition = {
     if (ctx.runs === undefined) throw new Error("this client cannot stop a reply");
     const stopped = await ctx.runs.cancel(runId);
     if (stopped !== true) return "no reply is running";
+    const data: StopData = {
+      runId,
+      by: { via: ctx.actor.via, id: ctx.actor.id },
+    };
+    await ctx.facts.append({ type: STOP_FACT, object: chatRef(ctx.object.id), data });
     return "stopped the reply; what was written stays in the transcript. Messages that arrived meanwhile are not answered by themselves; send /retry to answer the last message";
   },
 };
@@ -376,9 +383,9 @@ function tokenCount(count: number): string {
 }
 
 /** The token usage part of a status line, or that no agent reported it. */
-function statusTokens(tokens: UsageTokens | undefined): string {
+function statusTokens(tokens: UsageTokens | undefined, incomplete = false): string {
   if (tokens === undefined) return "tokens unknown";
-  return `${tokenCount(tokens.input)} in / ${tokenCount(tokens.output)} out tokens`;
+  return `${incomplete ? "at least " : ""}${tokenCount(tokens.input)} in / ${tokenCount(tokens.output)} out tokens`;
 }
 
 /** A short duration for a reply's first output. */
@@ -402,12 +409,13 @@ function statusClock(at: number): string {
 function statusText(
   chat: ChatData,
   messages: readonly Message[],
+  facts: readonly PluginFact[],
   writing: WritingReply | undefined,
 ): string {
   const last = [...messages].reverse().find((message) => message.role === "assistant");
   const model = chat.model ?? chat.lastModel;
   const effort = chat.effort ?? chat.effortDefault;
-  const waiting = unanswered(messages).length;
+  const waiting = unanswered(messages, facts).length;
   const first = firstOutputMs(last?.timings);
   const lastUsage =
     last === undefined
@@ -425,7 +433,7 @@ function statusText(
     `Effort: ${effort ?? "unknown"}`,
     `Reply: ${writing === undefined ? "not writing" : `writing since ${statusClock(writing.since)}`}`,
     `Waiting: ${waiting} ${waiting === 1 ? "message" : "messages"}`,
-    `Cost: ${chat.costMicros === undefined ? "unknown" : costText(chat.costMicros, chat.costQuality)} · ${statusTokens(chat.tokens)}`,
+    `Cost: ${chat.costMicros === undefined ? "unknown" : costText(chat.costMicros, chat.costQuality)} · ${statusTokens(chat.tokens, chat.tokensIncomplete === true)}`,
     `Last reply: ${last === undefined ? "none" : lastUsage.join(" · ")}`,
   ].join("\n");
 }
@@ -446,10 +454,16 @@ const statusAction: ActionTypeDefinition = {
     const facts = chatFacts(ctx.store, ctx.object.id);
     const messages = allMessages(ctx.store, ctx.object.id);
     const entries = allEntries(ctx.store, ctx.object.id);
+    const writing = writingReply(facts, messages, entries);
+    // A run a crash left without a failure or stopped entry is not writing.
+    // A host that cannot tell leaves the fact-only answer as it was.
+    const latest = latestRunOf(facts);
+    const alive = latest === undefined ? undefined : await ctx.runs?.active?.(latest);
     return statusText(
       chatData(stored.data),
       messages,
-      writingReply(facts, messages, entries),
+      facts,
+      alive === false ? undefined : writing,
     );
   },
 };
@@ -466,27 +480,17 @@ const retryAction: ActionTypeDefinition = {
     if (stored === undefined) throw new Error(`there is no chat ${ctx.object.id}`);
     if (chatData(stored.data).closed) throw new Error(`chat ${ctx.object.id} is closed; there is nothing to retry`);
     const messages = allMessages(ctx.store, ctx.object.id);
-    const pending = unanswered(messages);
     const facts = chatFacts(ctx.store, ctx.object.id);
+    const pending = unanswered(messages, facts);
     let last = lastReplyOutcome(messages, allEntries(ctx.store, ctx.object.id));
-    // A stop records the line before the reply's own stopping finishes. The
-    // successful stop line is enough to retry at once, without waiting for the
-    // stopped half reply to enter the record.
+    // A stop records its fact before the reply's own stopping finishes. That
+    // fact is enough to retry at once, without waiting for the stopped half
+    // reply to enter the record.
     const lastUser = [...messages].reverse().find((message) => message.role === "user");
     if (last.kind !== "failed" && last.kind !== "stopped" && lastUser !== undefined) {
-      const stopped = facts
-        .map(commandOfFact)
-        .find(
-          (item) =>
-            item !== undefined &&
-            item.ok &&
-            item.command === "/stop" &&
-            item.outcome.startsWith("stopped the reply") &&
-            item.sequence > lastUser.sequence,
-        );
-      if (stopped !== undefined) {
-        const runId = latestRunOf(facts);
-        last = { kind: "stopped", ...(runId === undefined ? {} : { runId }) };
+      const stoppedRun = stoppedRunAfter(facts, lastUser.sequence);
+      if (stoppedRun !== undefined) {
+        last = { kind: "stopped", runId: stoppedRun };
       }
     }
     if (pending.length === 0) throw new Error("the last reply finished normally; there is nothing to retry");

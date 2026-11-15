@@ -2,7 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { attachmentDir } from "@operad-io/engine";
-import { allMessages, unanswered } from "../src/index.ts";
+import { allMessages, chatFacts, unanswered } from "../src/index.ts";
 import { cleanupRoots, reply, rig } from "./support.ts";
 
 afterAll(cleanupRoots);
@@ -10,7 +10,7 @@ afterAll(cleanupRoots);
 type Rig = Awaited<ReturnType<typeof rig>>;
 
 interface Inbox {
-  listen(handler: (text: string) => void): () => void;
+  listen(handler: (text: string) => boolean | void): () => void;
 }
 
 function latch(): { readonly promise: Promise<void>; open(): void } {
@@ -239,6 +239,134 @@ describe("a message that arrives while a chat reply is being written", () => {
     expect(two.result).toBe("done");
     expect(r.calls.map((call) => call.params.prompt)).toEqual(["first", "second"]);
     expect(unanswered(allMessages(r.store, chat))).toEqual([]);
+  });
+
+  test("a message the worker says it can no longer take waits for the next round", async () => {
+    let chat = "";
+    const listening = latch();
+    const release = latch();
+    const r = await rig(
+      async (_ctx, call) => {
+        if (r.calls.length === 1) {
+          const inbox = call.params.inbox as Inbox | undefined;
+          if (inbox === undefined) throw new Error("the harness was given no inbox");
+          const stop = inbox.listen(() => false);
+          listening.open();
+          await release.promise;
+          stop();
+          return reply("first answer");
+        }
+        return reply("second answer");
+      },
+      undefined,
+      "fake",
+      "fake",
+      [],
+      { takesMessagesMidRun: true },
+    );
+    chat = await r.chat();
+    await r.say(chat, "first");
+
+    const round = r.round(chat);
+    await listening.promise;
+    await r.say(chat, "second");
+    release.open();
+    expect((await round).result).toBe("more");
+    expect(assistantReplyTo(r, chat)[0]).toHaveLength(1);
+
+    expect((await r.round(chat)).result).toBe("done");
+    expect(r.calls.map((call) => call.params.prompt)).toEqual(["first", "second"]);
+    expect(unanswered(allMessages(r.store, chat), chatFacts(r.store, chat))).toEqual([]);
+  });
+
+  test("a message delivered before a failure is answered, so the next round does not repeat it", async () => {
+    let chat = "";
+    let delivered = false;
+    const r = await rig(
+      async (_ctx, call) => {
+        if (r.calls.length === 1) {
+          const message = nextInboxMessage(call.params);
+          await r.say(chat, "second");
+          await message;
+          delivered = true;
+          return { result: "failed", data: { reason: "harness", message: "boom" } };
+        }
+        return reply("second answer");
+      },
+      undefined,
+      "fake",
+      "fake",
+      [],
+      { takesMessagesMidRun: true },
+    );
+    chat = await r.chat();
+    await r.say(chat, "first");
+
+    expect((await r.round(chat)).result).toBe("failed");
+    expect(delivered).toBe(true);
+    const left = unanswered(allMessages(r.store, chat), chatFacts(r.store, chat));
+    expect(left.map((message) => message.text)).toEqual(["first"]);
+
+    expect((await r.round(chat)).result).toBe("done");
+    expect(r.calls[1]?.params.prompt).toBe("first");
+  });
+
+  test("a message delivered before a stop is answered, so a retry does not repeat it", async () => {
+    let chat = "";
+    const r = await rig(
+      async (_ctx, call) => {
+        if (r.calls.length === 1) {
+          const message = nextInboxMessage(call.params);
+          await r.say(chat, "second");
+          await message;
+          return { result: "interrupted", data: { reason: "cancelled", message: "stopped" } };
+        }
+        return reply("second answer");
+      },
+      undefined,
+      "fake",
+      "fake",
+      [],
+      { takesMessagesMidRun: true },
+    );
+    chat = await r.chat();
+    await r.say(chat, "first");
+
+    expect((await r.round(chat)).result).toBe("interrupted");
+    const left = unanswered(allMessages(r.store, chat), chatFacts(r.store, chat));
+    expect(left.map((message) => message.text)).toEqual(["first"]);
+
+    expect((await r.round(chat)).result).toBe("done");
+    expect(r.calls[1]?.params.prompt).toBe("first");
+  });
+
+  test("a message delivered before a wait is answered, so the resumed reply does not repeat it", async () => {
+    let chat = "";
+    const r = await rig(
+      async (_ctx, call) => {
+        if (r.calls.length === 1) {
+          const message = nextInboxMessage(call.params);
+          await r.say(chat, "second");
+          await message;
+          return { result: "waiting", data: { reason: "asked", message: "waiting for an answer" } };
+        }
+        return reply("second answer");
+      },
+      undefined,
+      "fake",
+      "fake",
+      [],
+      { takesMessagesMidRun: true },
+    );
+    chat = await r.chat();
+    await r.say(chat, "first");
+
+    expect((await r.round(chat)).result).toBe("waiting");
+    const left = unanswered(allMessages(r.store, chat), chatFacts(r.store, chat));
+    expect(left.map((message) => message.text)).toEqual(["first"]);
+
+    expect((await r.round(chat)).result).toBe("done");
+    expect(r.calls[1]?.params.prompt).toBe("first");
   });
 
   test("a message with an image waits for the next round, where the image reaches the agent as an image", async () => {

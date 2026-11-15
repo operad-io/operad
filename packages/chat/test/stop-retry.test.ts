@@ -122,6 +122,14 @@ describe("chat:stop and chat:retry", () => {
     expect(stoppedReply.value).toContain("stopped the reply");
     expect((await round).result).toBe("interrupted");
     expect(allMessages(r.store, chat).filter((message) => message.role === "assistant")).toHaveLength(0);
+    // The call never finished, so it is not a finished entry, and no text was
+    // written to mark stopped; the reply itself is no longer being written.
+    const entries = allEntries(r.store, chat);
+    expect(entries.filter((entry) => entry.kind === "tool")).toHaveLength(0);
+    expect(entries.filter((entry) => entry.kind === "stopped")).toHaveLength(0);
+    expect(await transcript(r, chat)).not.toContain("*stopped*");
+    const status = await command(r, chat, "/status");
+    expect(String(status.value)).toContain("Reply: not writing");
     expect(commands(r, chat)[0]).toMatchObject({ command: "/stop", ok: true });
   });
 
