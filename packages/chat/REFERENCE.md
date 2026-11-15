@@ -30,8 +30,8 @@ why, with the provider's message masked and cut to a sensible length. Increments
 are not stored. Output longer than 4 KB goes to a file under the chat's own
 directory (under `attachments/chat/<id>/tool-output/`), and secret values are
 masked before a fact or a file is written. A rerun skips a tool call whose id was
-already recorded, does not add the same unfinished text again, and does not add
-the same failure line again.
+already recorded, does not add the same unfinished text again, and does not add a
+second failure line for the same unanswered messages.
 
 Each reply run also records a `chat.run` fact with its run id, so the transcript
 can find the log of the step that runs the agent. While that run lasts, the

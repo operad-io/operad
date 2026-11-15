@@ -201,6 +201,16 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 | T-0492-M5 | packages/chat/src/index.ts | a retry right after a stop waited for the stopped entry instead of following the successful stop line | `chat:stop and chat:retry > retry after a stop answers again on the same session, keeps the stopped reply, and a rerun adds no entry` |
 | T-0492-M6 | packages/chat/src/index.ts | `chat:stop` asked the run control to cancel a run id that was not the chat's latest | `chat:stop and chat:retry > stop during text keeps the half-written reply, marked stopped, and says what happens to later messages` |
 
+| T-0485-M6 | packages/chat/src/reply.ts | the failure line kept the provider message's internal word `harness` instead of the person's `agent` | `a failed reply > uses the person's words for the internal names a provider's message carries` |
+
+## T-0504 — a rerun's failure and the tail's kept entries
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0504-M1 | packages/chat/src/reply.ts | `recordFailure` compared the failure text again, so a rerun with another message added a second line | `a failed reply > does not gain a second line when the step runs again` |
+| T-0504-M2 | packages/chat/src/reply.ts | `plainWords` rewrote `run` in "run out of quota" to `reply`, garbling the provider's message | `a failed reply > uses the person's words for the internal names a provider's message carries` |
+| T-0504-M3 | packages/chat/src/tail.ts | `foldLogTail` kept a finished entry its facts already held, so a long run kept every entry | `chat transcript: after, mark and tail > a finished entry the facts already hold leaves the saved fold` |
+
 ## T-0493 — `/status`
 
 | id | file | mutation | failing test |

@@ -116,3 +116,11 @@ and the row fields.
 | T-0498-M1 | packages/harness/process/src/skills.ts | `promptWithSkills` ignored `loadsSkills` and gave a capable harness the list | `promptWithSkills > a harness that loads skills itself gets no list` |
 | T-0498-M2 | packages/harness/process/src/skills.ts | the skill list was not cut at `MAX_PROMPT_SKILLS` | `promptWithSkills > the list stops at the skill cap and says how many are left out` |
 | T-0498-M3 | packages/harness/process/src/skills.ts | a long description was listed whole instead of cut at `MAX_PROMPT_DESCRIPTION_CHARS` | `promptWithSkills > a long description is cut at the description cap` |
+
+## T-0504 — the first increment rule
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0504-M1 | packages/harness/process/src/timings.ts | `INCREMENT_LINES` omitted `text_end`, so it could not be the first increment | `StepTimings first increment > each kind of increment can be the first one` |
+| T-0504-M2 | packages/harness/process/src/timings.ts | a `message_end` with no text counted as the first increment | `StepTimings first increment > a message_end with no text is not an increment, and a later one is` |
+| T-0504-M3 | packages/harness/process/src/timings.ts | a first increment before the session gave a negative wait instead of null | `StepTimings first increment > an increment before the session leaves the wait to the first increment absent` |

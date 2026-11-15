@@ -541,7 +541,7 @@ export async function readBotsFile(home: string): Promise<Record<string, unknown
 }
 
 /** Writes the whole `bots` map, keeping the rest of config.json. */
-async function writeBotsFile(
+export async function writeBotsFile(
   home: string,
   bots: Readonly<Record<string, unknown>>,
 ): Promise<void> {

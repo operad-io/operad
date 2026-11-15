@@ -73,13 +73,15 @@ export interface InlineButton {
   readonly data: string;
 }
 
-/** A message's new text; its inline keyboard goes. */
+/** A message's new text and what it offers; a new keyboard replaces the old one. */
 export interface EditMessageRequest {
   readonly chatId: number;
   readonly messageId: number;
   readonly text: string;
   /** `HTML` when the text is already Telegram HTML; absent for plain text. */
   readonly parseMode?: "HTML" | undefined;
+  /** The new inline keyboard; absent removes the one the message has. */
+  readonly keyboard?: readonly (readonly InlineButton[])[] | undefined;
   readonly signal?: AbortSignal | undefined;
 }
 
@@ -94,6 +96,20 @@ export interface DeleteMessageRequest {
 export interface AnswerCallbackRequest {
   readonly callbackId: string;
   readonly text?: string | undefined;
+  readonly signal?: AbortSignal | undefined;
+}
+
+/** One command of a bot's menu. */
+export interface BotCommand {
+  /** The name typed after `/`: lowercase letters, digits and underscores, at most 32 characters. */
+  readonly command: string;
+  /** The one line shown beside the name. */
+  readonly description: string;
+}
+
+/** The menu of a bot. */
+export interface SetMyCommandsRequest {
+  readonly commands: readonly BotCommand[];
   readonly signal?: AbortSignal | undefined;
 }
 
@@ -131,8 +147,10 @@ export interface BotApi {
   getUpdates(request: GetUpdatesRequest): Promise<readonly TelegramUpdate[]>;
   /** Sends one text message; returns its Telegram `message_id`. */
   sendMessage(request: SendMessageRequest): Promise<number>;
-  /** Replaces a message's text and removes its inline keyboard. */
+  /** Replaces a message's text; its inline keyboard goes, or becomes the one given. */
   editMessage(request: EditMessageRequest): Promise<void>;
+  /** Sets the bot's command menu. */
+  setMyCommands(request: SetMyCommandsRequest): Promise<void>;
   /** Removes one message. */
   deleteMessage(request: DeleteMessageRequest): Promise<void>;
   /** Tells Telegram the tap was seen, with a short note for the person. */
@@ -229,6 +247,13 @@ function updateOf(value: unknown): TelegramUpdate | undefined {
   };
 }
 
+/** The Bot API's inline keyboard for rows of buttons. */
+function keyboardMarkup(
+  keyboard: readonly (readonly InlineButton[])[] | undefined,
+): readonly (readonly { readonly text: string; readonly callback_data: string }[])[] {
+  return (keyboard ?? []).map((row) => row.map((button) => ({ text: button.text, callback_data: button.data })));
+}
+
 /** The Bot API over `fetch`; no runtime package is needed. */
 export function createBotApi(options: BotApiOptions): BotApi {
   const token = options.token.reveal();
@@ -275,9 +300,16 @@ export function createBotApi(options: BotApiOptions): BotApi {
           message_id: input.messageId,
           text: input.text,
           ...(input.parseMode === undefined ? {} : { parse_mode: input.parseMode }),
-          reply_markup: { inline_keyboard: [] },
+          reply_markup: { inline_keyboard: keyboardMarkup(input.keyboard) },
           link_preview_options: { is_disabled: true },
         },
+        input.signal,
+      );
+    },
+    async setMyCommands(input) {
+      await post(
+        "setMyCommands",
+        { commands: input.commands.map((command) => ({ command: command.command, description: command.description })) },
         input.signal,
       );
     },
@@ -347,15 +379,7 @@ export function createBotApi(options: BotApiOptions): BotApi {
         chat_id: input.chatId,
         text: input.text,
         ...(input.parseMode === undefined ? {} : { parse_mode: input.parseMode }),
-        ...(input.keyboard === undefined
-          ? {}
-          : {
-              reply_markup: {
-                inline_keyboard: input.keyboard.map((row) =>
-                  row.map((button) => ({ text: button.text, callback_data: button.data })),
-                ),
-              },
-            }),
+        ...(input.keyboard === undefined ? {} : { reply_markup: { inline_keyboard: keyboardMarkup(input.keyboard) } }),
         link_preview_options: { is_disabled: true },
       };
       let response: Response;

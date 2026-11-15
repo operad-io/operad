@@ -125,6 +125,19 @@ written in `config.json` under `plugins.bot.settings`; the `default` bot exists
 even when it is not written. The section is read at every use, so an edit
 applies to the next reply without a restart.
 
+A bot is created by the `bot:create` action on an existing bot. It takes the
+new bot's `name` and `agent`, optionally its `model`, `effort` and `speaker`,
+and the skills and MCP servers to give it. The skills offered are the ones
+another bot already mounts and the skills in `~/.agents/skills` when it exists;
+a path may be given instead. The MCP servers offered are the ones a person
+already approved on another bot: each is copied with its pin, tools, digest and
+secret names, and is not asked about again. The new bot has exactly what was
+chosen; nothing is inherited from `default`, and one that chooses none has no
+skills and no servers. A name is checked like any bot name, and an existing one
+is refused. The result opens the new bot, and names the secrets a copied server
+needs before it starts. The page of the new bot shows its skills by name and its
+MCP servers.
+
 | Key | Type | Default | Allowed values | When it takes effect |
 |---|---|---|---|---|
 | `bot.bots` | object | `{ "default": {} }` | One entry per bot name | Read when a bot is resolved, every reply. A bot removed from the map is marked removed and its chats stop answering. |

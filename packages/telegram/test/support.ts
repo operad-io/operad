@@ -30,11 +30,13 @@ import { SQLITE_FILE_NAME } from "../../engine/src/log/sqlite.ts";
 import type {
   AnswerCallbackRequest,
   BotApi,
+  BotCommand,
   DeleteMessageRequest,
   EditMessageRequest,
   GetUpdatesRequest,
   SendChatActionRequest,
   SendMessageRequest,
+  SetMyCommandsRequest,
   TelegramUpdate,
 } from "../src/api.ts";
 import { TELEGRAM_SETTINGS } from "../src/settings.ts";
@@ -84,6 +86,8 @@ export class FakeApi implements BotApi {
   beforeDelete: ((request: DeleteMessageRequest, count: number) => void) | undefined;
   /** Every answer to a button tap, in order. */
   readonly callbacks: AnswerCallbackRequest[] = [];
+  /** Every command menu the bot was given, in order. */
+  readonly menus: (readonly BotCommand[])[] = [];
   /** Every typing indicator, in order. */
   readonly chatActions: SendChatActionRequest[] = [];
   /** Called before each chat action; throw to fail it. */
@@ -124,6 +128,11 @@ export class FakeApi implements BotApi {
 
   async answerCallback(request: AnswerCallbackRequest): Promise<void> {
     this.callbacks.push(request);
+  }
+
+  async setMyCommands(request: SetMyCommandsRequest): Promise<void> {
+    this.menus.push(request.commands);
+    this.changed();
   }
 
   async sendChatAction(request: SendChatActionRequest): Promise<void> {
@@ -181,13 +190,17 @@ export function replyUpdate(updateId: number, userId: number, chatId: number, te
 }
 
 /** The harness a chat opens with; it answers nothing (no runner runs in these tests). */
-function fakeHarness(agent: AgentScript | undefined) {
+function fakeHarness(
+  agent: AgentScript | undefined,
+  models: readonly string[],
+  efforts: { readonly list: readonly string[]; readonly default: string | null },
+) {
   return definePlugin({
     name: "test-agent",
     kind: "harness",
     version: "0.0.0",
-    models: { list: ["test-model"], default: "test-model" },
-    efforts: { list: [], default: null },
+    models: { list: [...models], default: models[0] ?? null },
+    efforts: { list: [...efforts.list], default: efforts.default },
     ...(agent === undefined
       ? {}
       : {
@@ -237,6 +250,10 @@ export interface WorldOptions {
   readonly agent?: AgentScript | undefined;
   /** More plugins loaded beside the chat and bot plugins, such as `dev`. */
   readonly plugins?: readonly unknown[] | undefined;
+  /** The models the harness lists; one when absent. */
+  readonly models?: readonly string[] | undefined;
+  /** The efforts the harness lists; none when absent. */
+  readonly efforts?: { readonly list: readonly string[]; readonly default: string | null } | undefined;
 }
 
 /** Builds the world a source runs in; the caller owns and removes `root`. */
@@ -254,7 +271,11 @@ export async function createTelegramWorld(options: WorldOptions): Promise<Telegr
   const store = new SqlitePluginStore({ root: storeRoot, clock });
   const log = openLog({ backend: "sqlite", path: join(storeRoot, SQLITE_FILE_NAME), follow: false });
   let kernel: Kernel | undefined;
-  const registry = new PluginRegistry([createChatPlugin(), createBotPlugin(), fakeHarness(options.agent), ...(options.plugins ?? [])], {
+  const registry = new PluginRegistry([createChatPlugin(), createBotPlugin(), fakeHarness(
+      options.agent,
+      options.models ?? ["test-model"],
+      options.efforts ?? { list: [], default: null },
+    ), ...(options.plugins ?? [])], {
     home,
     cwd: options.root,
     store,

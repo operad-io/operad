@@ -821,6 +821,8 @@ export interface ActionArgsSchema extends ActionArgSchema {
 /** What an action's checks may read: the object store, never write. */
 export interface ActionEnv {
   readonly store: ObjectStore;
+  /** The operad home; an action's choices may be in its settings. */
+  readonly home?: string | undefined;
   /** The harness plugins loaded now; the kernel always sets it. */
   readonly harnesses?: readonly string[] | undefined;
   /** The models each loaded harness plugin declares, by plugin name. */

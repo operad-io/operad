@@ -66,9 +66,9 @@ wrong type, an unknown field) writes one `Result` line with `result: "failed"`,
 
 ## stdout
 
-One JSON object per line, flushed per line, each with a `type`:
-
 The host adds `receivedAt` (epoch milliseconds) to every line it writes to the step's log.
+
+One JSON object per line, flushed per line, each with a `type`:
 
 | type | other fields | meaning |
 |---|---|---|

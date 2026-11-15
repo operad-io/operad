@@ -43,10 +43,14 @@ export class StepTimings {
     } catch {
       return;
     }
+    this.record(value, receivedAtOf(value) ?? this.now());
+  }
+
+  /** Takes a line the host already parsed, with the time it received it. */
+  record(value: unknown, at: number): void {
     if (!isRecord(value)) return;
     const type = value["type"];
     if (typeof type !== "string") return;
-    const at = receivedAtOf(value) ?? this.now();
     if (type === READY_LINE) {
       if (this.readyAt === undefined) this.readyAt = at;
       return;

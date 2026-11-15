@@ -180,6 +180,8 @@ describe("chat transcript: after, mark and tail", () => {
         start("t1", "Bash", "ls", 1_000),
         { type: "text_delta", text: "quiet words" },
         { type: "thinking_delta", text: "quiet thought" },
+        { type: "text_end", text: "finished quiet words" },
+        { type: "thinking_end", text: "finished quiet thought" },
       ],
       "radian",
     );
@@ -380,6 +382,63 @@ describe("chat transcript: after, mark and tail", () => {
     appendFileSync(path, line.slice(10));
     expect(foldLogTail(path)?.state.text).toBe("wholewhole");
     expect(foldLogTail(path)?.state.text).toBe("wholewhole");
+  });
+
+  test("a line's receivedAt does not change the fold", async () => {
+    const r = await rig(() => reply("x"));
+    const plain = text([{ type: "text_end", text: "same words" }, { type: "message_end", role: "assistant" }]);
+    const stamped = text([
+      { type: "text_end", text: "same words", receivedAt: 1_000 },
+      { type: "message_end", role: "assistant", receivedAt: 1_100 },
+    ]);
+    const plainPath = logIn(r, "run-no-received-at");
+    const stampedPath = logIn(r, "run-received-at");
+    writeFileSync(plainPath, plain);
+    writeFileSync(stampedPath, stamped);
+    expect(foldLogTail(stampedPath)?.state).toEqual(foldLogTail(plainPath)?.state);
+  });
+
+  test("a finished entry the facts already hold leaves the saved fold", async () => {
+    const r = await rig(() => reply("x"));
+    const chat = await r.chat();
+    const run = "run-pruned-entry";
+    const path = logIn(r, run);
+    writeFileSync(
+      path,
+      text([
+        start("t1", "Bash", "ls -la", 1_000),
+        { type: "tool_execution_end", toolCallId: "t1", toolName: "Bash", isError: false, durationMs: 1_200 },
+      ]),
+    );
+    await r.store.append({
+      type: RUN_FACT,
+      object: { type: "chat", id: chat },
+      cause: "test",
+      data: { runId: run },
+    });
+    expect((await view(r, chat)).tail).toContain("tool Bash");
+    expect(foldLogTail(path)?.state.entries).toHaveLength(1);
+
+    await r.store.append({
+      type: ENTRY_FACT,
+      object: { type: "chat", id: chat },
+      cause: "test",
+      data: {
+        runId: run,
+        kind: "tool",
+        callId: "t1",
+        toolName: "Bash",
+        input: "ls -la",
+        result: "done",
+        startedAt: 1_000,
+        durationMs: 1_200,
+        output: null,
+        error: null,
+      },
+    });
+    expect((await view(r, chat)).tail).toBeUndefined();
+    // The fact holds the entry, so the fold no longer keeps it for the whole run.
+    expect(foldLogTail(path)?.state.entries).toHaveLength(0);
   });
 
   test("a large unfinished line is read once, not at every poll", async () => {
