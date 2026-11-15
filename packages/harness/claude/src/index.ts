@@ -128,32 +128,38 @@ export const PLUGIN_SETTINGS = {
   properties: {
     model: {
       type: "string" as const,
+      title: "Model",
       minLength: 1,
       description: "The model name claude takes (such as opus or sonnet); unset uses claude's default.",
     },
     effort: {
       type: "string" as const,
+      title: "Effort",
       enum: EFFORT_LEVELS,
       description: "The reasoning effort; unset uses claude's default.",
     },
     command: {
       type: "string" as const,
+      title: "Claude command",
       minLength: 1,
       default: DEFAULT_CLAUDE_COMMAND,
       description: "The claude command: a name on PATH or a path.",
     },
     maxTurns: {
       type: "integer" as const,
+      title: "Turn limit",
       minimum: 1,
       description: "The most turns one run may take; unset means no limit.",
     },
     budgetUsd: {
       type: "number" as const,
+      title: "Spending limit",
       minimum: 0.01,
       description: "The most one run may spend, in US dollars; unset means no limit. For API-key logins.",
     },
     bashTimeoutSecs: {
       type: "integer" as const,
+      title: "Bash timeout",
       minimum: 1,
       default: DEFAULT_BASH_TIMEOUT_SECS,
       description:
@@ -161,6 +167,7 @@ export const PLUGIN_SETTINGS = {
     },
     wallTimeSecs: {
       type: "number" as const,
+      title: "Run time limit",
       minimum: 1,
       maximum: MAX_WALL_TIME_SECS,
       default: DEFAULT_WALL_TIME_SECS,
@@ -168,6 +175,7 @@ export const PLUGIN_SETTINGS = {
     },
     stallSecs: {
       type: "number" as const,
+      title: "Stall limit",
       minimum: 1,
       default: DEFAULT_STALL_SECS,
       description: "How long an agent may be silent while no tool call is open.",

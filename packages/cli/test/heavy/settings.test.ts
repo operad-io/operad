@@ -69,7 +69,7 @@ describe("operad settings", () => {
     const { home } = await makeHome();
     const text = await operad(home, "settings");
     expect(text.code).toBe(0);
-    expect(text.out).toContain("global  demo.limit  3  default 2  editable  Items at once.");
+    expect(text.out).toContain("global  demo.limit  3  default 2  editable  Limit items  Items at once.");
     expect(text.out).toContain("global  demo.mode  \"a\"  default \"a\"  editable,confirm");
     expect(text.out).toContain("global  demo.fixed  \"x\"  default \"x\"  read-only");
     expect(text.out).toContain("alpha  demo.review.level  \"low\"");
@@ -78,6 +78,12 @@ describe("operad settings", () => {
     const parsed = JSON.parse(json.out) as { name: string; scope: string }[];
     expect(parsed.map((item) => item.name)).toEqual(["demo.review.level"]);
     expect(parsed[0]?.scope).toBe("alpha");
+
+    const titled = JSON.parse((await operad(home, "settings", "--json")).out) as {
+      name: string;
+      title?: string;
+    }[];
+    expect(titled.find((item) => item.name === "demo.limit")?.title).toBe("Limit items");
 
     const missing = await operad(home, "settings", "--repo", "beta");
     expect(missing.code).toBe(1);

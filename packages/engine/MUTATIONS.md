@@ -912,3 +912,10 @@ the row fields.
 | T-0472-M1 | packages/engine/src/views/presentation.ts | a targetless action with a file argument skipped the refusal and ran with the reference unstored | `an action that targets no object > refuses a file argument, because there is no object to store it under` |
 | T-0472-M2 | packages/engine/src/views/presentation.ts | a targetless action whose when was false lost its action name from the refusal | `an action that targets no object > says it cannot run now when its when is false` |
 | T-0472-M3 | packages/engine/src/plugin/validate.ts | two targetless actions with one name reported a plain duplicate instead of saying they target no object | `loading targetless actions > refuses two actions with one name that both target no object` |
+
+## T-0475 — settings titles reach clients
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0475-M1 | packages/engine/src/plugin/action-schema.ts | a schema's `title` was dropped while normalizing, so a plugin's title never reached the registry | `http server > GET and POST /v1/settings list, change and refuse settings` |
+| T-0475-M2 | packages/engine/src/views/settings.ts | a listed setting left the schema's `title` out, so `/v1/settings` carried no title | `http server > GET and POST /v1/settings list, change and refuse settings` |

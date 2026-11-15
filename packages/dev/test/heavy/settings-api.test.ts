@@ -35,7 +35,7 @@ describe("dev settings through operad settings", () => {
     const { home, repository, name } = await setup();
     const global = await run(home, repository, ["settings"]);
     expect(global.code).toBe(0);
-    expect(global.out).toContain("global  dev.checks  2  default 2  editable  How many checks");
+    expect(global.out).toContain("global  dev.checks  2  default 2  editable  Checks at once  How many checks");
 
     const project = await run(home, repository, ["settings", "--repo", name, "--json"]);
     expect(project.code).toBe(0);
@@ -43,11 +43,23 @@ describe("dev settings through operad settings", () => {
       name: string;
       editable: boolean;
       confirm: boolean;
+      title?: string;
       description?: string;
       default?: unknown;
     }[];
     const byName = new Map(items.map((item) => [item.name, item]));
-    expect(byName.get("dev.concurrency")).toMatchObject({ editable: true, confirm: false });
+    expect(byName.get("dev.concurrency")).toMatchObject({
+      title: "Tasks at once",
+      editable: true,
+      confirm: false,
+    });
+    expect(byName.get("dev.autoDefault")?.title).toBe("Auto for new plans");
+    expect(byName.get("dev.flowList")?.title).toBe("Flows");
+    expect(byName.get("dev.reviewer.use")?.title).toBe("Reviewer");
+    expect(byName.get("dev.review.default.levels.critical")?.title).toBe("Critical level");
+    expect(byName.get("dev.review.default.levels.major")?.title).toBe("Major level");
+    expect(byName.get("dev.review.default.levels.minor")?.title).toBe("Minor level");
+    expect(byName.get("dev.review.default.rules")?.title).toBe("Review rules");
     expect(byName.get("dev.reviewer.use")?.description).toContain("reviews a task");
     expect(byName.get("dev.reviewer.timeoutSecs")?.editable).toBe(true);
     expect(byName.get("dev.gate.commandTimeoutSecs")?.editable).toBe(true);
@@ -59,6 +71,7 @@ describe("dev settings through operad settings", () => {
     expect(byName.get("dev.concurrency")?.default).toBeUndefined();
     expect(project.out).not.toContain("dev.dev.");
     for (const item of items) {
+      expect(item.title).toBeTruthy();
       expect(item.description).toBeTruthy();
       // dev.flowList is the one read-only setting: the flows a client reads.
       expect(item.editable).toBe(item.name !== "dev.flowList");

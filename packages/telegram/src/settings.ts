@@ -14,6 +14,7 @@ export const TELEGRAM_SETTINGS: ActionArgsSchema = {
   properties: {
     users: {
       type: "array",
+      title: "Allowed users",
       items: { type: "integer", minimum: 1 },
       default: [],
       description:
@@ -21,12 +22,14 @@ export const TELEGRAM_SETTINGS: ActionArgsSchema = {
     },
     bot: {
       type: "string",
+      title: "Default bot",
       minLength: 1,
       default: DEFAULT_BOT,
       description: "The bot a chat is opened on when a listed user writes first.",
     },
     pending: {
       type: "array",
+      title: "Forward pending",
       items: { type: "string", minLength: 1 },
       default: [],
       description:

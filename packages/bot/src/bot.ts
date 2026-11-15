@@ -28,6 +28,7 @@ export const BOT_SETTINGS: ActionArgsSchema = {
   properties: {
     bots: {
       type: "object",
+      title: "Bots",
       editable: true,
       description:
         "The bots, by name. `default` exists even when it is not written here.",

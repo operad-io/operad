@@ -22,18 +22,20 @@
           "description": "What each severity means, given to the reviewer verbatim.",
           "type": "object",
           "properties": {
-            "critical": { "type": "string" },
-            "major": { "type": "string" },
-            "minor": { "type": "string" }
+            "critical": { "type": "string", "title": "Critical level" },
+            "major": { "type": "string", "title": "Major level" },
+            "minor": { "type": "string", "title": "Minor level" }
           },
           "additionalProperties": false
         },
         "rules": {
+          "title": "Review rules",
           "description": "Rules for grading, given to the reviewer verbatim.",
           "type": "array",
           "items": { "type": "string" }
         },
         "fixLevel": {
+          "title": "Rework threshold",
           "description": "The lowest severity that fails a review. Wins over dev.json's reviewer.fixLevel.",
           "enum": ["critical", "major", "minor"]
         }

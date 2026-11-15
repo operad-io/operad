@@ -282,3 +282,9 @@ the row fields.
 |---|---|---|---|
 | T-0472-M4 | packages/cli/src/main.ts | a switch answer no longer carried an enabled harness's signedIn | `plugins over HTTP > a switch answers a harness's signedIn while it is enabled, and leaves it out when disabled` |
 | T-0472-M5 | packages/cli/src/main.ts | signedIn was asked for a disabled harness, so its switch answer carried an answer it should not | `plugins over HTTP > a switch answers a harness's signedIn while it is enabled, and leaves it out when disabled` |
+
+## T-0475 — settings titles in the command line
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0475-M3 | packages/cli/src/main.ts | `operad settings` printed a setting's description without its title | `operad settings > lists every setting, as text and as JSON` |

@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { satisfiesRange } from "@operad-io/engine";
+import { normalizeActionArgs, satisfiesRange } from "@operad-io/engine";
 
 const packages = join(dirname(dirname(dirname(fileURLToPath(import.meta.url)))));
 
@@ -26,6 +26,10 @@ interface Shipped {
   readonly version: string;
   readonly packageVersion: string;
   readonly requires: { readonly plugins?: Readonly<Record<string, string>> } | undefined;
+  readonly settings: unknown;
+  readonly projectSettings: {
+    readonly files?: readonly { readonly name?: string; readonly schema?: unknown }[];
+  } | undefined;
 }
 
 async function load(dir: string): Promise<Shipped | undefined> {
@@ -35,7 +39,38 @@ async function load(dir: string): Promise<Shipped | undefined> {
   if (plugin === undefined || typeof plugin.name !== "string" || typeof plugin.version !== "string" || plugin.kind === undefined) {
     return undefined;
   }
-  return { name: plugin.name, version: plugin.version, packageVersion: manifest.version, requires: plugin.requires };
+  return {
+    name: plugin.name,
+    version: plugin.version,
+    packageVersion: manifest.version,
+    requires: plugin.requires,
+    settings: plugin.settings,
+    projectSettings: plugin.projectSettings,
+  };
+}
+
+function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** The settable rows of a settings schema that have no title, by their path. */
+function untitled(schema: unknown): string[] {
+  const missing: string[] = [];
+  const walk = (node: Readonly<Record<string, unknown>>, path: string): void => {
+    if (!isRecord(node.properties)) return;
+    for (const [name, child] of Object.entries(node.properties)) {
+      if (!isRecord(child)) continue;
+      const here = path === "" ? name : `${path}.${name}`;
+      // A group is walked into; every other property is a row a client shows.
+      if (isRecord(child.properties) && child.editable !== true) {
+        walk(child, here);
+        continue;
+      }
+      if (typeof child.title !== "string" || child.title.trim() === "") missing.push(here);
+    }
+  };
+  if (isRecord(schema)) walk(schema, "");
+  return missing;
 }
 
 const shipped = (await Promise.all(pluginDirs().map(load))).filter((plugin): plugin is Shipped => plugin !== undefined);
@@ -50,6 +85,19 @@ describe("plugin versions", () => {
       expect(plugin.version).toBe(plugin.packageVersion);
     });
   }
+
+  test("every setting a client shows has a short title", () => {
+    for (const plugin of shipped) {
+      if (plugin.settings !== undefined) {
+        const schema = normalizeActionArgs(plugin.settings, `${plugin.name}: settings`);
+        expect(untitled(schema), `${plugin.name}.settings`).toEqual([]);
+      }
+      for (const file of plugin.projectSettings?.files ?? []) {
+        const schema = normalizeActionArgs(file.schema, `${plugin.name}.${file.name ?? "project"}: settings`);
+        expect(untitled(schema), `${plugin.name}.${file.name ?? "project"}`).toEqual([]);
+      }
+    }
+  });
 
   test("every plugin's requirements are met by the versions in this workspace", () => {
     const versions = new Map(shipped.map((plugin) => [plugin.name, plugin.packageVersion]));

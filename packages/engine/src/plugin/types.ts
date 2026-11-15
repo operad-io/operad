@@ -755,9 +755,11 @@ export type ActionArgType =
  * One property of an action's arguments. It is the JSON Schema subset the
  * kernel validates: `type`, `enum`, `minimum`, `maximum`, `minLength`,
  * `maxLength`, `items`, `properties`, `required`, `additionalProperties` (`false` or a schema for the other fields),
- * `description` and `role`.
+ * `title`, `description` and `role`.
  */
 export interface ActionArgSchema {
+  /** A short name a client shows for this field. */
+  readonly title?: string | undefined;
   readonly type?: ActionArgType | undefined;
   readonly enum?: readonly (string | number | boolean)[] | undefined;
   readonly minimum?: number | undefined;

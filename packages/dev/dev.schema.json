@@ -156,6 +156,7 @@
       "deprecated": true
     },
     "concurrency": {
+      "title": "Tasks at once",
       "description": "A cap on running tasks across every pool together. Each pool has its own cap: the sum of the counts of its workers, or the pool's own concurrency when that is smaller. This cap never raises a pool's cap; when the file does not set it, the pools' caps alone decide.",
       "type": "integer",
       "minimum": 1
@@ -284,18 +285,21 @@
       "type": "object",
       "properties": {
         "commands": {
+          "title": "Check commands",
           "description": "The commands the verify step runs, in order, in a detached checkout of the task commit.",
           "type": "array",
           "items": { "$ref": "#/$defs/checkCommand" },
           "default": []
         },
         "commandTimeoutSecs": {
+          "title": "Check timeout",
           "description": "The longest one gate command may run, in seconds.",
           "type": "number",
           "exclusiveMinimum": 0,
           "default": 1800
         },
         "stallSecs": {
+          "title": "Check stall limit",
           "description": "How long a gate command, or an integration key command, may write nothing before dev stops its process group, in seconds. A stalled command fails the check with reason \"stall\" and goes to the worker; it is not rerun and is not a \"not the code\" wait. Unset turns the limit off.",
           "type": "number",
           "exclusiveMinimum": 0
@@ -372,11 +376,13 @@
       "type": "object",
       "properties": {
         "use": {
+          "title": "Reviewer",
           "description": "The harness step, such as claude/agent; unset uses the first enabled harness in the home (radian, claude, pi, codex), or radian/agent when none is enabled.",
           "type": "string",
           "minLength": 1
         },
         "args": {
+          "title": "Reviewer arguments",
           "description": "Extra arguments the harness step passes to its command.",
           "type": "array",
           "items": {
@@ -468,6 +474,7 @@
           ]
         },
         "timeoutSecs": {
+          "title": "Review timeout",
           "description": "The longest a review may run, in seconds.",
           "type": "number",
           "exclusiveMinimum": 0,
@@ -479,6 +486,7 @@
           "exclusiveMinimum": 0
         },
         "fixLevel": {
+          "title": "Rework threshold",
           "description": "The lowest finding severity that fails the gate.",
           "type": "string",
           "enum": [
@@ -585,6 +593,7 @@
       "default": 2
     },
     "autoDefault": {
+      "title": "Auto for new plans",
       "description": "The auto level a new plan starts at: off waits for you to start tasks, run starts them by itself, merge also merges a task whose review passed.",
       "enum": ["off", "run", "merge"],
       "default": "off"
@@ -606,6 +615,7 @@
       }
     },
     "flows": {
+      "title": "Custom flows",
       "description": "The repository's own flows, by name. An absent map runs the built-in default. A flow is an ordered list of stages; dev adds the worktree at the start and integrate and cleanup at the end. A plan or task chooses a flow with --flow, and a flow with no review skips review. A flow whose last stage is not human goes straight to integrate after it passes.",
       "type": "object",
       "additionalProperties": { "$ref": "#/$defs/flow" }

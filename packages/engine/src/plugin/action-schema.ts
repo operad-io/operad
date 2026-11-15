@@ -115,6 +115,11 @@ function normalizeSchema(
     throw new Error(`${at}.type: must be one of ${[...TYPES].join(", ")}`);
   }
 
+  const title = value.title;
+  if (title !== undefined && typeof title !== "string") {
+    throw new Error(`${at}.title: must be a string`);
+  }
+
   const description = value.description;
   if (description !== undefined && typeof description !== "string") {
     throw new Error(`${at}.description: must be a string`);
@@ -262,6 +267,7 @@ function normalizeSchema(
     ...(items === undefined ? {} : { items }),
     ...(additional === undefined ? {} : { additionalProperties: additional }),
     ...(value.default === undefined ? {} : { default: value.default }),
+    ...(title === undefined ? {} : { title }),
     ...(description === undefined ? {} : { description }),
     ...(role === "note" ? { role } : {}),
     ...(format === "file" ? { format } : {}),

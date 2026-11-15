@@ -35,6 +35,8 @@ export interface SettingInfo {
   readonly scope: string;
   readonly value?: JsonValue | undefined;
   readonly default?: JsonValue | undefined;
+  /** The short name the schema gives the setting. */
+  readonly title?: string | undefined;
   readonly description?: string | undefined;
   /** The schema's type and allowed values, so a client can offer a choice list. */
   readonly type?: string | undefined;
@@ -368,6 +370,7 @@ function infoOf(place: Place, leaf: Leaf, section: unknown): SettingInfo {
     ...(leaf.schema.default === undefined
       ? {}
       : { default: leaf.schema.default as JsonValue }),
+    ...(leaf.schema.title === undefined ? {} : { title: leaf.schema.title }),
     ...(leaf.schema.description === undefined
       ? {}
       : { description: leaf.schema.description }),

@@ -59,7 +59,7 @@ and `operad help` print the whole table.
 | `operad secret set <plugin> <name>` | none | Reads the value from the terminal without echo, or the first line of stdin, and stores it. Prints `secret "<name>" set for plugin "<plugin>"`; the value is never printed. |
 | `operad secret list <plugin>` | none | Prints the secret names of one plugin, one per line, never a value. Prints `no secrets for plugin "<plugin>"`. |
 | `operad secret delete <plugin> <name>` | none | Deletes one secret. Prints `secret "<name>" deleted for plugin "<plugin>"`. |
-| `operad settings` | `--repo <name>`, `--json` | Lists every setting: scope, name, value, default, `editable` or `read-only`, whether it asks to confirm, and its description. |
+| `operad settings` | `--repo <name>`, `--json` | Lists every setting: scope, name, value, default, `editable` or `read-only`, whether it asks to confirm, its title and its description. |
 | `operad settings set <name> <value>` | `--repo <name>`, `--yes` | Changes one setting. The value is JSON when it parses, otherwise a plain string. A setting that asks to confirm needs `--yes`. Prints `<name> = <value>`. For a setting that holds a map, such as `bot.bots`, the name may go deeper (`bot.bots.<name>` or `bot.bots.<name>.<field>`) to change one entry and keep the others; the same rules apply, and `null` removes the entry. |
 | `operad http token rotate` | none | Replaces the bearer token at once. Prints `http token rotated`. |
 | `operad pair` | `--url <url>`, `--show-token` | Shows the address and token for the app as a QR code; see [Pairing](app.md#pairing-the-app). |

@@ -11,6 +11,7 @@ import { isRecord } from "@operad-io/engine";
 /** The settings schema property both harnesses declare for `concurrency`. */
 export const CONCURRENCY_SETTING = {
   type: "object" as const,
+  title: "Runs at once",
   additionalProperties: {
     type: "integer" as const,
     minimum: 1,

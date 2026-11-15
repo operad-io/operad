@@ -72,3 +72,9 @@ changes for bots, in the order they were recorded. The root
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0411-M1 | packages/bot/src/index.ts | bot required chat `>=0.0.1`, which also accepts a future chat 0.1.0 | `plugin versions > no requirement accepts a future incompatible version of the plugin it names` (packages/cli/test/plugin-versions.test.ts) |
+
+## T-0475 — every setting needs a title
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0475-M4 | packages/bot/src/bot.ts | the `bots` setting lost its title, so a schema row a client shows had none | `plugin versions > every setting a client shows has a short title` (packages/cli/test/plugin-versions.test.ts) |

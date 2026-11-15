@@ -66,6 +66,7 @@ A client may change a setting (`operad settings set`, the app's settings view) w
 | `editable: true` | A client may change this setting. Without it: `setting "<name>" cannot be changed here` |
 | `confirm: true` | The change needs the person's confirmation: `setting "<name>" needs confirmation` until it is given |
 | `default` | Shown as the default and used for the value when the file has none |
+| `title` | A short name shown as the setting's heading |
 | `description` | Shown beside the setting |
 | `enum` | A client offers a pick list |
 

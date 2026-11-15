@@ -328,6 +328,7 @@ export function createChatPlugin() {
       properties: {
         speaker: {
           type: "string",
+          title: "Speaker name",
           minLength: 1,
           default: "Operad Bot",
           editable: true,
