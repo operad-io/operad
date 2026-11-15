@@ -126,8 +126,7 @@ describe("what a chat may pick", () => {
     const command = [process.execPath, FAKE, "models-silent"];
     setEnv("FAKE_CODEX_MODELS", "silent");
     setEnv("FAKE_CODEX_MODELS_MARKER", marker);
-    setEnv("OPERAD_CODEX_MODELS_TIMEOUT_MS", "200");
-    expect(await refreshCodexModels(command, 2_000)).toEqual({ list: [], default: null });
+    expect(await refreshCodexModels(command, 2_000, 200)).toEqual({ list: [], default: null });
     const pid = await waitForPid(marker);
     await waitForGone(pid);
   });
@@ -136,16 +135,14 @@ describe("what a chat may pick", () => {
     const command = [process.execPath, FAKE, "models-error"];
     setEnv("FAKE_CODEX_MODELS", "error");
     // Longer than the test: only the answer can end the probe in time.
-    setEnv("OPERAD_CODEX_MODELS_TIMEOUT_MS", "60000");
-    expect(await refreshCodexModels(command, 3_000)).toEqual({ list: [], default: null });
+    expect(await refreshCodexModels(command, 3_000, 60_000)).toEqual({ list: [], default: null });
   });
 
   test("a probe whose app-server exits before answering gives none", async () => {
     const command = [process.execPath, FAKE, "models-exit"];
     setEnv("FAKE_CODEX_MODELS", "exit");
     // Longer than the test: only the exit can end the probe in time.
-    setEnv("OPERAD_CODEX_MODELS_TIMEOUT_MS", "60000");
-    expect(await refreshCodexModels(command, 4_000)).toEqual({ list: [], default: null });
+    expect(await refreshCodexModels(command, 4_000, 60_000)).toEqual({ list: [], default: null });
   });
 
   test("efforts are codex's own; a step still names one with --effort", () => {

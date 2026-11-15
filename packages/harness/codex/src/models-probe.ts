@@ -7,14 +7,9 @@
 
 import { spawn } from "node:child_process";
 
-const argv = process.argv.slice(2);
-const program = argv[0];
-if (program === undefined) {
-  process.stdout.write("[]\n");
-  process.exit(2);
-}
+const args = process.argv.slice(2);
 
-/** How long the app-server has to answer `model/list`; a test shortens it. */
+/** How long the app-server has to answer `model/list`. */
 const DEFAULT_TIMEOUT_MS = 8_000;
 
 function timeoutFrom(value: string | undefined): number {
@@ -22,7 +17,20 @@ function timeoutFrom(value: string | undefined): number {
   return Number.isFinite(found) && found > 0 ? found : DEFAULT_TIMEOUT_MS;
 }
 
-const child = spawn(program, argv.slice(1), { stdio: ["pipe", "pipe", "ignore"] });
+// The caller passes its timeout as `--timeout-ms <ms>` before the command.
+let timeoutMs = DEFAULT_TIMEOUT_MS;
+if (args[0] === "--timeout-ms") {
+  timeoutMs = timeoutFrom(args[1]);
+  args.splice(0, 2);
+}
+
+const program = args[0];
+if (program === undefined) {
+  process.stdout.write("[]\n");
+  process.exit(2);
+}
+
+const child = spawn(program, args.slice(1), { stdio: ["pipe", "pipe", "ignore"] });
 let buffered = "";
 let finished = false;
 
@@ -36,7 +44,7 @@ function finish(value: unknown): void {
   });
 }
 
-const timer = setTimeout(() => finish([]), timeoutFrom(process.env.OPERAD_CODEX_MODELS_TIMEOUT_MS));
+const timer = setTimeout(() => finish([]), timeoutMs);
 
 function send(message: Record<string, unknown>): void {
   child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", ...message })}\n`);
