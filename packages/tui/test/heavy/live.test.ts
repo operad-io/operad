@@ -169,7 +169,8 @@ function start(configure: (client: CountingClient) => void = () => undefined) {
     height: 30,
     theme: "dark",
     clock,
-    url: "http://127.0.0.1:7480",
+    // An explicit, non-default port: the shell only displays this URL.
+    url: "http://127.0.0.1:9000",
   });
   return { client, events, view, clock, shell };
 }
@@ -310,7 +311,7 @@ describe("live updates in the shell", () => {
     await s.view.until((state) => state.connection === "unreachable");
     expect(titles(s.shell.state)).toEqual(["A"]);
     const line = statusText(s.shell.state) ?? "";
-    expect(line).toContain("http://127.0.0.1:7480");
+    expect(line).toContain("http://127.0.0.1:9000");
     expect(line).toContain("is `operad serve` running?");
 
     const calls = (): number => s.client.pendingCalls;

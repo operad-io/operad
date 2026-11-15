@@ -50,7 +50,8 @@ async function makeHome(http: Record<string, unknown>): Promise<string> {
   return home;
 }
 
-const LAN = { enabled: true, port: 7480, listen: ["127.0.0.1", "192.168.1.20"] };
+// 9000 is an explicit, non-default port: the test shows the config's port reaches the URL.
+const LAN = { enabled: true, port: 9000, listen: ["127.0.0.1", "192.168.1.20"] };
 
 describe("operad pair", () => {
   test("prints the url, the token and a QR code that decodes to the pairing link", async () => {
@@ -58,17 +59,17 @@ describe("operad pair", () => {
     const output = capture();
     expect(await main(["pair"], { home, io: output.io, isTTY: true })).toBe(0);
     const text = output.text();
-    expect(text).toContain("url http://192.168.1.20:7480\n");
+    expect(text).toContain("url http://192.168.1.20:9000\n");
     expect(text).toContain(`token ${TOKEN}\n`);
 
     const decoded = decode(matrixFromRender(text));
     expect(decoded.text).toBe(
-      `operad://pair?url=${encodeURIComponent("http://192.168.1.20:7480")}&token=${TOKEN}`,
+      `operad://pair?url=${encodeURIComponent("http://192.168.1.20:9000")}&token=${TOKEN}`,
     );
   });
 
   test("--url names the address, such as a Tailscale HTTPS name", async () => {
-    const home = await makeHome({ enabled: true, port: 7480, listen: ["127.0.0.1"] });
+    const home = await makeHome({ enabled: true, listen: ["127.0.0.1"] });
     const output = capture();
     expect(
       await main(["pair", "--url", "https://mac.tail1234.ts.net/"], {
@@ -107,9 +108,9 @@ describe("operad pair", () => {
     ).toBe(0);
     expect(output.text()).toBe(
       [
-        "url http://192.168.1.20:7480",
+        "url http://192.168.1.20:9000",
         `token ${TOKEN}`,
-        `link operad://pair?url=${encodeURIComponent("http://192.168.1.20:7480")}&token=${TOKEN}`,
+        `link operad://pair?url=${encodeURIComponent("http://192.168.1.20:9000")}&token=${TOKEN}`,
         "",
       ].join("\n"),
     );
@@ -127,12 +128,12 @@ describe("operad pair", () => {
 
   test("refuses when http is off, when only loopback is listened on, and a bad --url", async () => {
     const off = capture();
-    const offHome = await makeHome({ enabled: false, port: 7480, listen: ["192.168.1.20"] });
+    const offHome = await makeHome({ enabled: false, listen: ["192.168.1.20"] });
     expect(await main(["pair"], { home: offHome, io: off.io, isTTY: true })).toBe(2);
     expect(off.errors()).toContain("http.enabled");
 
     const loop = capture();
-    const loopHome = await makeHome({ enabled: true, port: 7480, listen: ["127.0.0.1"] });
+    const loopHome = await makeHome({ enabled: true, listen: ["127.0.0.1"] });
     expect(await main(["pair"], { home: loopHome, io: loop.io, isTTY: true })).toBe(2);
     expect(loop.errors()).toContain("--url");
 
@@ -148,7 +149,7 @@ describe("operad pair", () => {
 
   test("with no http section pair is on by default: loopback only, so it asks for --url", async () => {
     const home = await makeHome({});
-    // `{}` still means the defaults: enabled, 127.0.0.1, port 7480.
+    // `{}` still means the defaults: enabled, 127.0.0.1, port 8765.
     const plain = capture();
     expect(await main(["pair"], { home, io: plain.io, isTTY: true })).toBe(2);
     expect(plain.errors()).toContain("http.listen has only loopback");

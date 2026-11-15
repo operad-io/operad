@@ -34,7 +34,8 @@ describe("startWithRetry", () => {
     const value = await startWithRetry(
       async () => {
         tries += 1;
-        if (tries < 3) throw new Error("Failed to start server. Is port 7480 in use?");
+        // An explicit, non-default port: the retry only reads the error's message.
+        if (tries < 3) throw new Error("Failed to start server. Is port 9000 in use?");
         return "up";
       },
       { retryMs: 1_000, stepMs: 100, now: c.now, wait: c.wait },

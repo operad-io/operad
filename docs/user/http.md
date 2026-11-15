@@ -24,9 +24,9 @@ The app and the terminal client run on a different device or in a different proc
 
 | Key | Type | Default | Allowed values | When it takes effect | Wrong value |
 |---|---|---|---|---|---|
-| `http` | object | `{ "enabled": true, "port": 7480, "listen": ["127.0.0.1"] }` | an object with the keys below; a missing section means these defaults | At every command start; `serve` binds when it starts and after a reload | Refused: `http: must be an object` |
+| `http` | object | `{ "enabled": true, "port": 8765, "listen": ["127.0.0.1"] }` | an object with the keys below; a missing section means these defaults | At every command start; `serve` binds when it starts and after a reload | Refused: `http: must be an object` |
 | `http.enabled` | boolean | `true` | `true` or `false` | When `serve` starts; a reload opens or closes the interface with the new value | Refused: `http.enabled: must be a boolean` |
-| `http.port` | integer | `7480` | `0` to `65535`; `0` asks the system for a port | When `serve` binds; after a reload it binds the new port | Refused: `http.port: must be an integer from 0 to 65535` |
+| `http.port` | integer | `8765` | `0` to `65535`; `0` asks the system for a port | When `serve` binds; after a reload it binds the new port | Refused: `http.port: must be an integer from 0 to 65535` |
 | `http.listen` | array of strings | `["127.0.0.1"]` | at least one non-empty IP literal: loopback, RFC 1918, link-local or Tailscale; a wildcard and every other address are refused | When `serve` binds; after a reload it binds the new addresses | Refused: `http.listen: must be an array of IP addresses`, `http.listen: needs at least one address`, `http.listen: "<address>" is not an IP address`, `http.listen: "<address>" is a wildcard address; name each address to listen on`, or `http.listen: "<address>" is not a loopback, private, link-local or Tailscale address` |
 
 An unknown key inside `http` is ignored; only the keys above are read. Each
@@ -36,7 +36,7 @@ address (`169.254.0.0/16`, `fe80::/10`) or a Tailscale address
 (`100.64.0.0/10`, `fd7a:115c:a1e0::/48`). It refuses a wildcard (`0.0.0.0` or
 `::`) and every other address, before it opens a port, naming the entry. The
 default listens on the machine only. A config with no `http` section means
-`enabled` true, port `7480`, `listen` `["127.0.0.1"]`. An `http` section without
+`enabled` true, port `8765`, `listen` `["127.0.0.1"]`. An `http` section without
 `enabled` turns the interface on, on the addresses in `listen`. A Tailscale
 address in `listen` serves a client that accepts plain HTTP; the phone app does
 not, so over Tailscale it needs the HTTPS name that `tailscale serve` gives
@@ -57,7 +57,7 @@ recorded as `http`; it is never recorded as `cli`.
 `serve` prints one line per address it listens on:
 
 ```text
-http http://127.0.0.1:7480
+http http://127.0.0.1:8765
 ```
 
 A second `operad serve` for a home that already has one exits with code 4 before it

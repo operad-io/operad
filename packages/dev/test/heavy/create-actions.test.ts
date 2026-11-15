@@ -12,9 +12,15 @@ import {
   startHttpServer,
   storeRootOf,
 } from "@operad-io/engine";
-import { addRepository, cancelPlan, removeRepository } from "../../src/service.ts";
+import { addRepository, cancelPlan, removeRepository, setTaskPhase } from "../../src/service.ts";
 import { bareId, planData, taskData } from "../../src/model.ts";
-import { cleanupTempRoots, guardLockHandles, makeGitRepository, tempRoot } from "../support.ts";
+import {
+  cleanupTempRoots,
+  guardLockHandles,
+  makeGitRepository,
+  runInProcess,
+  tempRoot,
+} from "../support.ts";
 
 afterAll(cleanupTempRoots);
 guardLockHandles();
@@ -272,6 +278,92 @@ describe("dev:plan and dev:task", () => {
       const taskAction = actionOf(plan, "dev:task");
       expect(taskAction.args?.properties?.flow?.enum).toEqual(["default", "quick"]);
       expect(taskAction.args?.properties?.after?.items?.enum).toEqual(["T-0001-one"]);
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  test("the task action offers only the plan's tasks that are not finished", async () => {
+    const fixture = await setup();
+    try {
+      await act(fixture, {
+        action: "dev:plan",
+        id: "repo:repo",
+        confirmed: true,
+        args: { title: "Work", slug: "work" },
+      });
+      for (const [title, slug] of [
+        ["Merged", "merged"],
+        ["Cancelled", "cancelled"],
+        ["Running", "running"],
+      ] as const) {
+        const made = await act(fixture, {
+          action: "dev:task",
+          id: "plan:repo/P-0001-work",
+          args: { title, slug },
+        });
+        expect(made.status).toBe(200);
+      }
+      await setTaskPhase(fixture.store, "repo/T-0001-merged", "merged");
+      await setTaskPhase(fixture.store, "repo/T-0002-cancelled", "cancelled");
+      await setTaskPhase(fixture.store, "repo/T-0003-running", "running");
+
+      const plan = await object(fixture, "plan:repo/P-0001-work");
+      const taskAction = actionOf(plan, "dev:task");
+      expect(taskAction.args?.properties?.after?.items?.enum).toEqual([
+        "T-0003-running",
+      ]);
+
+      await setTaskPhase(fixture.store, "repo/T-0003-running", "merged");
+      const finished = await object(fixture, "plan:repo/P-0001-work");
+      const after = actionOf(finished, "dev:task").args?.properties?.after;
+      expect(after).toBeDefined();
+      expect(after?.items?.enum).toEqual([]);
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  test("operad task add --after still accepts a merged task", async () => {
+    const fixture = await setup();
+    try {
+      await act(fixture, {
+        action: "dev:plan",
+        id: "repo:repo",
+        confirmed: true,
+        args: { title: "Work", slug: "work" },
+      });
+      const first = await act(fixture, {
+        action: "dev:task",
+        id: "plan:repo/P-0001-work",
+        args: { title: "First", slug: "first" },
+      });
+      expect(first.status).toBe(200);
+      await setTaskPhase(fixture.store, "repo/T-0001-first", "merged");
+
+      const added = await runInProcess(
+        fixture.home,
+        fixture.path,
+        [
+          "task",
+          "add",
+          "--plan",
+          "P-0001-work",
+          "--slug",
+          "second",
+          "--title",
+          "Second",
+          "--after",
+          "T-0001-first",
+        ],
+        "brief\n",
+      );
+      expect(added.code).toBe(0);
+      expect(added.out.trim()).toBe("T-0002-second");
+      const second = taskData(
+        (await fixture.store.get("task", "repo/T-0002-second"))?.data ?? {},
+      );
+      expect(second.after).toEqual(["repo/T-0001-first"]);
     } finally {
       await fixture.close();
     }

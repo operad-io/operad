@@ -882,8 +882,13 @@ async function diffSection(
     range = `${sha}^1..${sha}`;
     fallback = mergedMarkdown(repository.path, settings.remote, sha);
   } else {
-    if (task.phase === "cancelled" && !branchIsThere(repository.path, settings.remote, branch)) {
-      return { markdown: "_The branch of this task is gone, so there is no diff to show._" };
+    if (!branchIsThere(repository.path, settings.remote, branch)) {
+      return {
+        markdown:
+          task.phase === "cancelled"
+            ? "_The branch of this task is gone, so there is no diff to show._"
+            : "_The branch of this task is not here, so there is no diff to show._",
+      };
     }
     range = `${main}...${branch}`;
     fallback = `_No diff: cannot compare ${branch} with ${main}._`;

@@ -87,7 +87,7 @@ describe("ensureServer", () => {
         wait: noWait,
         lockHeld: () => false,
       });
-      expect(url).toBe("http://127.0.0.1:7480");
+      expect(url).toBe("http://127.0.0.1:8765");
       expect(logs).toEqual([join(home, "serve.log")]);
       expect(lines).toEqual([`starting operad serve (log: ${join(home, "serve.log")})`]);
     } finally {
@@ -195,7 +195,8 @@ describe("ensureServer", () => {
         home,
         fetch: async () => { throw new Error("refused"); },
         spawn: (log) => {
-          writeFileSync(log, "operad: Failed to start server. Is port 7480 in use?\n");
+          // An explicit, non-default port: the test only reads the error's words.
+          writeFileSync(log, "operad: Failed to start server. Is port 9000 in use?\n");
           return { exited: Promise.resolve(1) };
         },
         wait: noWait,
@@ -345,7 +346,7 @@ describe("ensureServer: races and bounds", () => {
         },
       };
       const [a, b] = await Promise.all([ensureServer(common), ensureServer(common)]);
-      expect(a).toBe("http://127.0.0.1:7480");
+      expect(a).toBe("http://127.0.0.1:8765");
       expect(b).toBe(a);
       expect(spawned).toBe(2);
     } finally {
