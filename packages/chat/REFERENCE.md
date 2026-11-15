@@ -130,6 +130,17 @@ are some its result is `more` and the flow runs it again. The flow's `maxVisits`
 (20) ends a loop that never catches up. A question that ran out of grace ends the
 step `waiting`; the answer comes back with the session.
 
+When the chat's agent declares `capabilities.takesMessagesMidRun` (`claude`,
+`pi`, `codex`), the step passes it an inbox. A message that arrives while the
+reply is being written is handed to the agent at once, after the tool calls
+already running, and the reply's `replyTo` names it, so that reply answers it and
+no next round does. A message with an attachment waits for the next round, where
+its images and files reach the agent as a first message's do; the inbox carries
+text only. A message that arrives after the harness has returned stays
+unanswered and the next round answers it. An agent without the capability
+(`radian`) gets no inbox and keeps the next-round behaviour. A command is never
+a message fact, so it is never handed to the agent.
+
 The agent gets `operadTools: { home }`, so it calls operad through MCP tools and
 never through a shell.
 

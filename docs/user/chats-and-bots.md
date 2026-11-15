@@ -22,7 +22,7 @@ The plugins are deliberately cautious. A chat on a repository is read-only until
 
 1. A chat is opened by a plugin: `dev:chat` on a repository, `bot:chat` on a bot. The agent is chosen then and does not change; the model and effort can be changed later with `chat:model` and `chat:effort`.
 2. `chat:send` records a message. A message is an event whose source is `ios`, `telegram`, `cli`, `tui` or `other`, and the `chat` plugin's own rule starts `chat:reply` for it (see [Chats](#chats)).
-3. `chat:reply` takes the messages that no reply answers yet from the chat's own record, continues the agent's session, and records the reply. If messages arrived meanwhile it goes round again, at most 20 rounds. Without `operad serve` the message is only recorded and is answered when `serve` runs. A reply being written can be stopped; its half-written text stays in the transcript, and `/retry` answers the last message again after a failed or stopped reply.
+3. `chat:reply` takes the messages that no reply answers yet from the chat's own record, continues the agent's session, and records the reply. A message sent while the reply is being written is given to the agent in that same reply when its agent takes messages mid-run (`claude`, `pi`, `codex`); otherwise, or when it has an attachment, it waits for the next round. If messages are still waiting it goes round again, at most 20 rounds. Without `operad serve` the message is only recorded and is answered when `serve` runs. A reply being written can be stopped; its half-written text stays in the transcript, and `/retry` answers the last message again after a failed or stopped reply.
 4. While the agent works, the `transcript` section shows the messages, tool calls and the unfinished text of the current reply.
 5. Each tool call is checked against the chat's access profile (see [Access](access.md)). For a bot chat the profile is the default profile plus the bot's own `access` settings; the bot's settings are read again at every reply (see [Bots](#bots)).
 6. A chat on a repository starts in the main clone as read-only. A write, or a command that is not known to only read, becomes the worktree question; on yes, `dev` opens `work/chat-<id>` and the chat works there.
@@ -76,8 +76,11 @@ the message id, object is the chat. The `chat` plugin's own rule starts
 `chat:reply` for these sources automatically; a rule of yours in `triggers.json`
 with the same source and type replaces it. The reply reads the messages no reply
 answers yet from the chat's own record, continues the agent session, records the
-reply, and goes round again while new messages came in meanwhile (at most 20
-rounds). After a restart a reply that was already recorded is not given twice.
+reply, and goes round again while new messages still wait (at most 20 rounds).
+An ordinary message sent during the reply is given to an agent that takes
+messages mid-run in the same reply; a command still runs at once and never
+reaches the agent. After a restart a reply that was already recorded is not
+given twice.
 
 The `transcript` section is live: it shows user messages, the agent's
 intermediate text, `Thinking`, tool calls with their result, duration and a short

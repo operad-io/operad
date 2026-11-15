@@ -66,9 +66,11 @@ A harness plugin declares what a chat may pick:
 |---|---|---|
 | `models` | `{ list, default }` or a function of the settings | The models a chat may pick (an empty list: none can be chosen) and the one used when none is set. A function is called with the plugin's settings each time the list is read, so a harness can ask the agent itself |
 | `efforts` | `{ list, default, flag? }` | The same for effort, and the step argument that sets it (`--effort` when `flag` is absent) |
-| `capabilities` | `{ loadsSkills? }` | What the agent does itself. `loadsSkills: true` says it loads the skill directories the step gives, so the prompt needs no list of them; any other harness gets the list of [Skills](#skills) |
+| `capabilities` | `{ loadsSkills?, takesMessagesMidRun? }` | What the agent does itself. `loadsSkills: true` says it loads the skill directories the step gives, so the prompt needs no list of them; any other harness gets the list of [Skills](#skills). `takesMessagesMidRun: true` says it takes a message while its run is going, so a chat hands one to it through the inbox after the tool calls already running; any other harness gets no inbox and the message waits for the next run |
 
 Actions read them from `ctx.models[<plugin>]` and `ctx.efforts[<plugin>]`; `argsFor` uses them to build the [per-agent `if`/`then` choices](actions.md#per-agent-choices-with-if-and-then). A non-harness plugin that declares `models` is refused: `models: only a harness plugin declares models`.
+
+A chat reads `capabilities.takesMessagesMidRun` through `ctx.harnessCapabilities`; a step reads the inbox the chat passes in its params with `inboxOf(params)` from `@operad-io/harness-process`. `claude`, `pi` and `codex` declare it; `radian` does not.
 
 ## Skills
 
