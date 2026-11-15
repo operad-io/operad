@@ -56,9 +56,10 @@ Scan this in the operad app:
 ```
 
 The URL is `http://<address>:<port>` for the first non-loopback entry of
-`http.listen`. Pass `--url <base url>` to name another address, such as a
-Tailscale HTTPS name (`operad pair --url https://mac.tail1234.ts.net`); it must
-be an `http` or `https` URL without credentials or a query. The QR code encodes
+`http.listen`. Pass `--url <base url>` to name another address, such as the
+HTTPS name that `tailscale serve` gives on a Tailscale network (`operad pair
+--url https://mac.tail1234.ts.net`; see [Tailscale](tailscale.md)); it must be
+an `http` or `https` URL without credentials or a query. The QR code encodes
 `operad://pair?url=<url>&token=<token>`. It needs `http.enabled` true, and with no
 `--url` an address in `http.listen` that is not loopback. With the default `http`
 values, `pair` says that `http.listen` has only loopback addresses and asks for
@@ -73,9 +74,12 @@ opened with it.
 
 The app reaches only addresses `serve` may listen on: loopback, a private
 (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), link-local or Tailscale
-address. A phone on the same network uses the private address; a phone elsewhere
-uses Tailscale or `--url`. The token is required on every request; a missing or
-old token is `401`, and the app says the token was rotated.
+address. A phone on the same network uses the private address. A phone elsewhere
+needs the HTTPS name that `tailscale serve` gives, passed with `--url` (see
+[Tailscale](tailscale.md)); the app does not reach a plain
+`http://100.x.y.z:<port>` Tailscale address, even when `serve` listens on it.
+The token is required on every request; a missing or old token is `401`, and
+the app says the token was rotated.
 
 ## Tabs
 

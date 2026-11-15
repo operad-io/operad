@@ -37,7 +37,10 @@ address (`169.254.0.0/16`, `fe80::/10`) or a Tailscale address
 `::`) and every other address, before it opens a port, naming the entry. The
 default listens on the machine only. A config with no `http` section means
 `enabled` true, port `7480`, `listen` `["127.0.0.1"]`. An `http` section without
-`enabled` turns the interface on, on the addresses in `listen`.
+`enabled` turns the interface on, on the addresses in `listen`. A Tailscale
+address in `listen` serves a client that accepts plain HTTP; the phone app does
+not, so over Tailscale it needs the HTTPS name that `tailscale serve` gives
+(see [Tailscale](tailscale.md)).
 
 The first `operad serve` with `http.enabled` true (the default) creates one bearer token, 32 random
 bytes in base64url, in `secrets/http.json`. Every request must carry
