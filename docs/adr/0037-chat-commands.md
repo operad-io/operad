@@ -35,3 +35,7 @@ The command and its outcome are one `chat.command` fact: who typed it, the line 
 ### D6: `/retry` answers the last message after a failed or stopped reply
 
 `chat:retry` starts a reply again when the last attempt failed or was stopped. The failed or stopped attempt stays in the record, and the new reply continues the chat's session. When the last reply finished normally, or the last attempt neither failed nor stopped, it refuses with a line saying so and starts nothing. A retry of one attempt starts one reply, so repeating the command before that reply begins does not answer twice. It is a command and appears in the chat's actions.
+
+### D7: `/status` says where the chat stands and what it has used
+
+`chat:status` is a command action. It reads the chat's facts only, costs no tokens and works while a reply is being written. In a few short lines it shows the agent, the model and effort in force, whether a reply is being written and since when, how many messages wait, the cost and token usage of the session so far, and the usage of the last reply. When the reply records its timings, the last reply line also shows its time to first output. A number an agent did not report, such as a cost, is said to be unknown and is never shown as 0. It is a command and leaves one transcript line like every other command.
