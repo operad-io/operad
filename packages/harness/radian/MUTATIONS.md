@@ -88,3 +88,9 @@ the row fields.
 | T-0465-M5 | packages/harness/radian/src/index.ts | `hasCredential` counted an empty credentials object as a stored credential | `radian's signedIn answer > is false when the credentials file holds none` |
 | T-0465-M14 | packages/harness/radian/src/index.ts | a missing credentials file answered absent instead of false | `radian's signedIn answer > is absent when the file cannot be read, and false when it is missing` |
 | T-0465-M15 | packages/harness/radian/src/index.ts | a malformed credentials file answered false instead of absent | `radian's signedIn answer > is absent when the file cannot be read, and false when it is missing` |
+
+## T-0498 — skills in the prompt for a harness that cannot load them
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0498-M4 | packages/harness/radian/src/index.ts | the `skills` param was read but the prompt kept only the step's text | `radian/agent > given skills are listed in the prompt with their description and path, never their body` |

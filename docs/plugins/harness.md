@@ -41,6 +41,7 @@ The params of every `agent` step (`AgentStepParams`):
 | `prompt` | string | required | What the agent is asked |
 | `cwd` | string | required | Where it works |
 | `args` | list of strings | none | Extra arguments for the agent's command; a harness refuses one it does not know with the reason `invalid_args` |
+| `skills` | list of strings | none | Skill directories for the agent; a harness that does not declare `loadsSkills` gets their names, descriptions and `SKILL.md` paths in the prompt (see [Skills](#skills)) |
 | `wallTimeSecs` | number | the harness setting | The wall time the agent may run |
 | `stallSecs` | number | the harness setting | How long it may go without a new output line |
 | `resumeSession` | string | none | Continue an earlier session instead of starting one |
