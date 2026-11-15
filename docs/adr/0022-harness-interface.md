@@ -10,7 +10,9 @@ operad lists and drives sessions of any coding agent on the machine and starts t
 
 ### D1: The harness interface is operad's own
 
-A harness is a plugin of kind `harness` with a name, a way of starting, a connection kind (`sdk` or `acp`) and declared capabilities (resume, usage, tool-set limits, permission mode, conversation view, cancel). A one-off task run and an interactive session run use the same declaration. A new kind needs only its declaration and the connection code, and `operad plugin check` runs the harness contract.
+A harness is a plugin of kind `harness` with a name, a way of starting, a connection kind (`sdk` or `acp`) and declared capabilities (resume, usage, tool-set limits, permission mode, conversation view, cancel, loading skills itself). A one-off task run and an interactive session run use the same declaration. A new kind needs only its declaration and the connection code, and `operad plugin check` runs the harness contract.
+
+A capability is declared for the agent, not assumed by a step. `loadsSkills` says the agent loads the skill directories the step gives it; a harness that does not declare it needs those skills in another form.
 
 ### D2: Two reference connections
 

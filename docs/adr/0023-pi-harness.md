@@ -18,7 +18,7 @@ The plugin has two halves. The hub-side `agent` step only starts `bun <worker.ts
 
 ### D3: The pi in the child does not discover
 
-The child uses an explicit `resourceLoader` carrying only operad's own inline extension (no user extensions, skills, prompt templates, themes or context files), `SettingsManager.inMemory()`, and `agentDir` set to `~/.operad/harness/pi/` with session files under `~/.operad/harness/pi/sessions/`. The principle is the same as Claude's `settingSources: []`: a harness's behaviour is decided by operad's declaration, not by the user's personal configuration.
+The child uses an explicit `resourceLoader` carrying only operad's own inline extension (no user extensions, prompt templates, themes or context files). Its skills are exactly the directories the step gives, passed as `additionalSkillPaths`; `noSkills` stays on, so nothing under `~/.pi`, `~/.agents/skills`, `.agents/skills` or `.pi/skills` is discovered. It uses `SettingsManager.inMemory()`, and `agentDir` set to `~/.operad/harness/pi/` with session files under `~/.operad/harness/pi/sessions/`. The session log names the skills loaded. The principle is the same as Claude's `settingSources: []`: a harness's behaviour is decided by operad's declaration, not by the user's personal configuration.
 
 ### D4: Credentials are the user's own pi login
 
