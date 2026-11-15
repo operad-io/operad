@@ -184,3 +184,9 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0486-M6 | packages/chat/src/reply.ts | the reply fact did not keep the step's `timings` with its usage | `chat/reply > the reply fact keeps the step's three durations with the usage` |
+
+## T-0487 — the reply text has no gap at the end
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0487-M1 | packages/chat/src/tail.ts | `foldLogTail` dropped finished entries again, so text and a finished call left the tail before their facts were visible | `chat transcript: after, mark and tail > the reply text stays in the tail until its fact is visible, then moves to the markdown` (also the finished tool call test) |

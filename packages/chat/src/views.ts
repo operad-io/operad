@@ -12,7 +12,7 @@ import type {
   ViewContext,
   ViewSection,
 } from "@operad-io/engine";
-import { maskSecrets } from "@operad-io/harness-process";
+import { maskSecrets, type FoldEntry } from "@operad-io/harness-process";
 import { secretValues } from "./reply.ts";
 import { foldLogTail, agentLogPath } from "./tail.ts";
 import { agentLine, attachmentsOf, chatData, chatRef, COMMAND_FACT, commandOfFact, ENTRY_FACT, entryOfFact, IMAGE_TYPES, latestRunOf, MESSAGE_FACT, modelAndCost, type Attachment, type Command, type Entry, type Message } from "./model.ts";
@@ -154,8 +154,17 @@ function firstLine(text: string | null | undefined): string | undefined {
   return line === undefined || line.length === 0 ? undefined : line;
 }
 
+/** What a tool line shows, whether it comes from a fact or from the log. */
+interface ShownTool {
+  readonly toolName?: string | undefined;
+  readonly durationMs?: number | undefined;
+  readonly input?: string | null | undefined;
+  readonly result?: string | undefined;
+  readonly error?: string | null | undefined;
+}
+
 /** One tool call as a log line: what ran, how long it took and how it ended. */
-function toolMarkdown(entry: Entry): string {
+function toolMarkdown(entry: ShownTool): string {
   const name = entry.toolName ?? "tool";
   const took = entry.durationMs === undefined ? "" : ` ${seconds(entry.durationMs)}`;
   const input = entry.input === undefined || entry.input === null ? "" : flat(entry.input);
@@ -174,7 +183,7 @@ function toolMarkdown(entry: Entry): string {
 }
 
 /** One finished part of an answer as Markdown lines; tool output is never shown. */
-function entryMarkdown(entry: Entry, speaker: string, harness: string): string | undefined {
+function entryMarkdown(entry: Entry | FoldEntry, speaker: string, harness: string): string | undefined {
   // A failure line is shown for every harness; it is already one plain line.
   if (entry.kind === "failure") {
     const said = flat(entry.text ?? "");
@@ -356,9 +365,10 @@ function clock(at: number): string {
 }
 
 /**
- * What the running reply has written and not finished, as Markdown, or
- * undefined when no reply runs. It is read from the end of the log of the
- * step that runs the agent. What the facts already hold is not repeated.
+ * What the running reply has written and the facts do not hold yet, as
+ * Markdown, or undefined when no reply runs. It is read from the end of the log
+ * of the step that runs the agent. A finished entry stays here until the fact
+ * that holds it is visible to the same read, so the text never has a gap.
  */
 async function tailOf(
   ctx: ViewContext,
@@ -390,6 +400,28 @@ async function tailOf(
     return masked.trim().length === 0 || said.has(masked.trim()) ? undefined : masked;
   };
   const lines: string[] = [];
+  // A finished entry is shown until the facts hold it; then `said` and `called` drop it.
+  for (const entry of read.state.entries) {
+    if (entry.kind === "tool") {
+      if (called.has(maskSecrets(entry.callId, secrets))) continue;
+      const markdown = entryMarkdown(
+        {
+          ...entry,
+          toolName: maskSecrets(entry.toolName, secrets),
+          input: entry.input === null ? null : maskSecrets(entry.input, secrets),
+          error: entry.error === null ? null : maskSecrets(entry.error, secrets),
+        },
+        speaker,
+        chat.harness,
+      );
+      if (markdown !== undefined) lines.push(markdown);
+      continue;
+    }
+    const text = fresh(entry.text);
+    if (text === undefined) continue;
+    const markdown = entryMarkdown({ ...entry, text }, speaker, chat.harness);
+    if (markdown !== undefined) lines.push(markdown);
+  }
   // Radian gives no text or thinking increments; its chats show the tool lines only.
   if (chat.harness !== "radian") {
     const thinking = fresh(read.state.thinking);
