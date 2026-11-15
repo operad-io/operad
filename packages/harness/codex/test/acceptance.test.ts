@@ -1,7 +1,8 @@
 /**
- * A run against the real codex-acp and the user's own Codex login. It uses a
- * little of the plan's quota, so it runs only when `OPERAD_CODEX_ACCEPTANCE`
- * is set; every other test uses the fake in `fake-codex-acp.ts`.
+ * A run against the real `codex app-server` and the user's own Codex login. It
+ * uses a little of the plan's quota, so it runs only when
+ * `OPERAD_CODEX_ACCEPTANCE` is set; every other test uses the fake in
+ * `fake-codex-app-server.ts`.
  */
 
 import { afterAll, describe, expect, test } from "bun:test";
@@ -12,7 +13,7 @@ import { createCodexHarnessPlugin } from "../src/index.ts";
 
 afterAll(cleanupTempRoots);
 
-describe("the real codex-acp", () => {
+describe("the real codex app-server", () => {
   test.skipIf(process.env.OPERAD_CODEX_ACCEPTANCE === undefined)(
     "a prompt runs to the end with the default command and an unknown cost",
     async () => {

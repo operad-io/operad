@@ -1,9 +1,9 @@
 /**
- * The codex harness: one `agent` step that starts the user's `codex-acp` and
- * talks ACP to it (ADR 0022 D2, D8), plus the
- * `codex:prompt` flow. The step has the params, result names and facts of
- * `pi/agent` and `claude/agent`, so a flow changes harness by changing `use`.
- * The ACP client is `AcpClient` of `@operad-io/harness-process`; `runAgent`
+ * The codex harness: one `agent` step that starts the user's own
+ * `codex app-server` and speaks its JSON-RPC over stdio (ADR 0022 D3, D8),
+ * plus the `codex:prompt` flow. The step has the params, result names and
+ * facts of `pi/agent` and `claude/agent`, so a flow changes harness by
+ * changing `use`. The client is this package's `AppServerClient`; `runAgent`
  * owns the process, the wall time and the stall limit.
  */
 
@@ -19,7 +19,6 @@ import {
 } from "@operad-io/engine";
 import {
   ALLOW_ALWAYS,
-  AcpClient,
   accessWithAlwaysAllow,
   alwaysAllowFromGrant,
   appendAlwaysAllow,
@@ -31,6 +30,7 @@ import {
   eventNote,
   flagValue,
   imageInputsOf,
+  inboxOf,
   JsonlLog,
   mountedServersOf,
   modelErrorOf,
@@ -41,7 +41,6 @@ import {
   parseStepFlags,
   personStarted,
   readAlwaysAllow,
-  readImage,
   resultFor,
   runAgent,
   secs,
@@ -50,16 +49,20 @@ import {
   stringListParam,
   systemClock,
   text,
-  type AcpEnd,
-  type AcpError,
   type AgentWorkerResult,
   type CallAnswer,
   type Clock,
   type UsageSource,
 } from "@operad-io/harness-process";
 import { decideAccess, type JudgedCall } from "./access.ts";
-import { codexCommand, codexSignedIn, commandOf, inspectCodex } from "./install.ts";
-import { CodexLog } from "./log.ts";
+import {
+  AppServerClient,
+  type AppServerEnd,
+  type AppServerError,
+  type AppServerMcpServer,
+} from "./app-server.ts";
+import { CODEX_FLOOR, codexCommand, codexModels, codexSignedIn, commandOf, inspectCodex } from "./install.ts";
+import { CodexLog, toolNameOf } from "./log.ts";
 
 /** How long an agent may run before the step stops it. */
 export const DEFAULT_WALL_TIME_SECS = 3600;
@@ -80,29 +83,36 @@ export const MAX_WALL_TIME_SECS = STEP_TIMEOUT_SECS - 300;
 /** How long the answer of `codex login status` is kept before it is asked again. */
 export const SIGNED_IN_CACHE_MS = 30_000;
 
-/** How long codex-acp has to answer `session/cancel` before the step ends it. */
+/** How long `codex app-server` has to answer `turn/interrupt` before the step ends it. */
 export const CANCEL_GRACE_MS = 10_000;
 
 /** The name the plugin goes by in usage and limit keys. */
 const HARNESS = "codex";
 
-/** The reasoning efforts Codex knows; codex-acp refuses one the chosen model does not support. */
+/** The reasoning efforts Codex knows; a model the chosen model does not support refuses it. */
 export const EFFORT_LEVELS = ["minimal", "low", "medium", "high", "xhigh"] as const;
 
 /**
- * The codex-acp session mode a run uses. `workspace-write` is Codex's own
- * sandbox with write access to the task's worktree (the session's `cwd`) and
- * no access outside it. Its network is off, but Codex asks before it leaves
- * the sandbox: a command that needs the network arrives as a permission
- * request, and the access profile answers it (a request for the network is
- * allowed once, since the task needs it). The other modes are not used:
- * `read-only` cannot write the worktree, `agent` lets Codex's own reviewer
- * answer instead of the profile, and `agent-full-access` turns the sandbox off.
+ * The sandbox a run uses. `workspace-write` is Codex's own sandbox with write
+ * access to the task's worktree (the thread's `cwd`) and no access outside it.
+ * Its network is off, but Codex asks before it leaves the sandbox: a command
+ * that needs the network arrives as an approval request, and the access
+ * profile answers it (a request for the network is allowed once, since the
+ * task needs it). `read-only` cannot write the worktree; `danger-full-access`
+ * turns the sandbox off.
  */
-export const SESSION_MODE = "workspace-write";
+export const SANDBOX_MODE = "workspace-write";
 
-/** The models and efforts a chat may pick with this agent: none; codex is a worker, not a chat harness. */
-export const CODEX_MODELS = { list: [], default: null } as const;
+/**
+ * The approval policy that makes Codex ask operad instead of deciding:
+ * `on-request` sends a request when Codex wants to leave its sandbox or needs
+ * more permission, and `approvalsReviewer: "user"` routes it to this client
+ * rather than Codex's own reviewer. `never` would let Codex decide, and `auto_review`
+ * would put a subagent in the access profile's place.
+ */
+export const APPROVAL_POLICY = "on-request";
+
+/** The efforts a chat may pick with this agent: none; Codex's own default is used. */
 export const CODEX_EFFORTS = { list: [], default: null, flag: "--effort" } as const;
 
 /** The settings a config.json section may set for this plugin. */
@@ -127,7 +137,7 @@ export const PLUGIN_SETTINGS = {
       minItems: 1,
       items: { type: "string" as const, minLength: 1 },
       description:
-        "The program and arguments that start codex-acp, such as [\"/opt/homebrew/bin/bun\", \"/Users/me/.bun/bin/codex-acp\"]. Unset runs the bun of PATH on the codex-acp of PATH.",
+        "The program and arguments that start codex app-server, such as [\"codex\", \"app-server\"]. Unset finds the codex of PATH and starts its app-server.",
     },
     wallTimeSecs: {
       type: "number" as const,
@@ -161,8 +171,8 @@ export interface CodexHarnessOptions {
   readonly codex?: readonly string[] | undefined;
 }
 
-/** The codex-acp error info of an error: a string, or the key of an object. */
-function errorInfo(error: AcpError): string | undefined {
+/** The Codex error info of an error: a string, or the key of an object. */
+function errorInfo(error: AppServerError): string | undefined {
   const data = error.data;
   if (!isRecord(data)) return undefined;
   const info = data["codexErrorInfo"];
@@ -171,62 +181,86 @@ function errorInfo(error: AcpError): string | undefined {
   return undefined;
 }
 
-function errorText(error: AcpError): string {
+function errorText(error: AppServerError): string {
   const data = error.data;
   if (isRecord(data) && typeof data["message"] === "string" && data["message"].length > 0) return data["message"];
   return error.message;
 }
 
-/** How one ACP error ends the step: the reason, the message and, for a model that cannot serve, the model error. */
+/** How one app-server error ends the step: the reason, the message and, for a model that cannot serve, the model error. */
 export interface Failure {
   readonly reason: string;
   readonly message: string;
   readonly modelError?: { readonly kind: string };
 }
 
-/**
- * Maps an error of codex-acp to the step's failure. An exhausted ChatGPT quota
- * (`usageLimitExceeded`, a rate limit) is `usage_limit` and an unavailable
- * model (a model the session refuses, an overloaded service) is `unavailable`,
- * the model errors dev's `retry_wait` and pool's fallbacks act on.
- */
-export function failureOf(end: Extract<AcpEnd, { kind: "error" }>, model: string | undefined): Failure {
-  const info = errorInfo(end.error);
-  const message = errorText(end.error);
-  if (end.error.code === -32000) {
-    return { reason: "not_logged_in", message: "Codex is not logged in; run `codex login` first" };
-  }
-  if (info === "usageLimitExceeded" || info === "rateLimitExceeded") {
+/** The model error of an app-server error kind, or undefined when it is not a model error. */
+function modelFailure(info: string | undefined, message: string): Failure | undefined {
+  if (info === "usageLimitExceeded" || info === "rateLimitExceeded" || info === "contextWindowExceeded" || info === "sessionBudgetExceeded") {
     return { reason: "model_error", message, modelError: { kind: "usage_limit" } };
   }
-  if (info === "serverOverloaded") {
+  if (
+    info === "serverOverloaded" ||
+    info === "modelNotFound" ||
+    info === "flexUnavailable" ||
+    info === "policyCapacityUnavailable"
+  ) {
     return { reason: "model_error", message, modelError: { kind: "unavailable" } };
   }
-  if (end.stage === "config") {
-    if (end.configId === "model") {
+  if (info === "unauthorized") {
+    return { reason: "not_logged_in", message: "Codex is not logged in; run `codex login` first" };
+  }
+  return undefined;
+}
+
+/**
+ * Maps an app-server failure to the step's failure. An exhausted ChatGPT quota
+ * (`usageLimitExceeded`, a rate limit) is `usage_limit` and an unavailable
+ * model (a model the server refuses, an overloaded service) is `unavailable`,
+ * the model errors dev's `retry_wait` and pool's fallbacks act on.
+ */
+export function failureOf(end: AppServerEnd, model: string | undefined): Failure {
+  if (end.kind === "error") {
+    const info = errorInfo(end.error);
+    const message = errorText(end.error);
+    const mapped = modelFailure(info, message);
+    if (mapped !== undefined) {
+      if (mapped.reason === "model_error" && end.stage === "session" && model !== undefined) {
+        return { ...mapped, message: `Codex does not offer the model ${model}: ${message}` };
+      }
+      return mapped;
+    }
+    if (end.stage === "session") {
+      if (/resume|thread|session/i.test(message)) return { reason: "session_missing", message };
+      return { reason: "protocol", message: `Codex failed to start a thread: ${message}` };
+    }
+    if (end.stage === "prompt") {
+      if (/effort|reasoning/i.test(message)) {
+        return { reason: "invalid_args", message: `Codex refused the reasoning effort: ${message}` };
+      }
+      const byText = modelErrorOf(message);
       return {
         reason: "model_error",
-        message: `codex-acp does not offer the model ${model ?? "asked for"}: ${message}`,
-        modelError: { kind: "unavailable" },
+        message,
+        modelError: { kind: String(byText["kind"]) },
       };
     }
-    if (end.configId === "reasoning_effort") {
-      return { reason: "invalid_args", message: `codex-acp refused the reasoning effort: ${message}` };
-    }
-    return { reason: "config", message: `codex-acp refused a session setting (${end.configId ?? "unknown"}): ${message}` };
+    return { reason: "protocol", message: `Codex failed at ${end.stage}: ${message}` };
   }
-  if (end.stage === "prompt") {
-    const mapped = modelErrorOf(message);
+  const error = end.error;
+  if (error !== null) {
+    const info = errorInfo(error);
+    const message = errorText(error);
+    const mapped = modelFailure(info, message);
+    if (mapped !== undefined) return mapped;
+    const byText = modelErrorOf(message);
     return {
       reason: "model_error",
       message,
-      modelError: { kind: String(mapped["kind"]) },
+      modelError: { kind: String(byText["kind"]) },
     };
   }
-  if (end.stage === "session" && /resume|load/i.test(message)) {
-    return { reason: "session_missing", message };
-  }
-  return { reason: "protocol", message: `codex-acp failed at ${end.stage}: ${message}` };
+  return { reason: "stop_reason", message: `Codex stopped the turn: ${end.stopReason}` };
 }
 
 /** Creates the codex harness plugin. */
@@ -287,7 +321,15 @@ export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
     name: HARNESS,
     kind: "harness",
     version: pkg.version,
-    models: CODEX_MODELS,
+    // The app-server's own model list, kept for a short time; a chat may pick
+    // any of them and the step's `--model` still wins.
+    models: (settings) => {
+      try {
+        return codexModels(commandOf(settings.command));
+      } catch {
+        return { list: [], default: null };
+      }
+    },
     efforts: CODEX_EFFORTS,
     signedIn: (_settings: Readonly<Record<string, unknown>>) => codexSignedInCached(),
     settings: PLUGIN_SETTINGS,
@@ -298,7 +340,7 @@ export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
         resumable: true,
         // `waiting`: a question about a call was not answered within the grace.
         results: ["done", "failed", "interrupted", "waiting"],
-        // Applied to the calls codex-acp asks permission for. Codex's own
+        // Applied to the calls the app-server asks operad about. Codex's own
         // sandbox runs the calls inside it without asking; those are bounded
         // by the sandbox, not by these rules.
         enforces: ["denyPaths", "denyCommands", "askCommands", "askPaths", "readPaths", "alwaysAllow"],
@@ -377,24 +419,26 @@ export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
 
           const operadTools = operadToolsOf(input.operadTools ?? flow.operadTools);
           const mounted = mountedServersOf(input.mcpServers ?? flow.mcpServers);
-          const mcpServers: Record<string, unknown>[] = [];
+          const mcpServers: AppServerMcpServer[] = [];
           if (operadTools !== undefined) {
             const server = serverCommand(operadTools);
             mcpServers.push({
               name: OPERAD_SERVER,
               command: server.command,
               args: [...server.args],
-              env: [{ name: "OPERAD_HOME", value: operadTools.home }],
+              env: { OPERAD_HOME: operadTools.home },
             });
           }
           for (const [name, server] of Object.entries(mounted ?? {})) {
-            mcpServers.push({ name, command: server.command, args: [...server.args], env: [] });
+            mcpServers.push({ name, command: server.command, args: [...server.args] });
           }
           const images = imageInputsOf(input.images ?? flow.images);
-          const imageBlocks: Record<string, unknown>[] = [];
+          const inputEntries: Record<string, unknown>[] = [
+            { type: "text", text: promptText, text_elements: [] },
+          ];
           for (const image of images) {
-            const read = await readImage(image);
-            imageBlocks.push({ type: "image", data: read.data, mimeType: read.mediaType });
+            // Codex reads the file itself; the harness sends the path.
+            inputEntries.push({ type: "localImage", path: image.path });
           }
 
           const storeSecrets = await secretValuesOf(ctx.secrets);
@@ -443,14 +487,14 @@ export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
             if (pending !== undefined) writing = pending;
             deliverLine(ctx.receiver, line, storeSecrets);
           };
-          let client: AcpClient | undefined;
+          let client: AppServerClient | undefined;
           const log = new CodexLog({
             write: writeLine,
             now,
             cwd,
             profile,
             secrets: storeSecrets,
-            active: () => client?.prompting === true,
+            active: () => client?.active === true,
           });
 
           const shown = (call: JudgedCall): string =>
@@ -490,42 +534,65 @@ export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
               });
             });
 
-          const acp = new AcpClient({
+          const server = new AppServerClient({
             cwd,
-            prompt: [{ type: "text", text: promptText }, ...imageBlocks],
+            prompt: inputEntries,
             ...(resumeSession === undefined ? {} : { resumeSession }),
-            config: [
-              { configId: "mode", value: SESSION_MODE },
-              ...(model === undefined ? [] : [{ configId: "model", value: model }]),
-              ...(effort === undefined ? [] : [{ configId: "reasoning_effort", value: effort }]),
-            ],
+            ...(model === undefined ? {} : { model }),
+            ...(effort === undefined ? {} : { effort }),
+            approvalPolicy: APPROVAL_POLICY,
+            sandbox: SANDBOX_MODE,
             ...(mcpServers.length === 0 ? {} : { mcpServers }),
             clientName: "operad",
-            onUpdate: (update) => log.handle(update),
+            clientVersion: pkg.version,
+            onNotification: (method, params) => log.handle(method, params),
             async onPermission(request) {
-              const decision = await decideAccess(profile, request.toolCall, cwd, {
+              const decision = await decideAccess(profile, request.method, request.params, request.item, cwd, {
                 useGrant: (waitId) => ctx.useGrant(waitId),
                 ask,
                 shown,
               });
-              if (!decision.allow) log.blocked(request.toolCall);
+              if (!decision.allow) {
+                const name =
+                  request.item !== undefined
+                    ? toolNameOf(request.item)
+                    : request.method === "item/fileChange/requestApproval" || request.method === "applyPatchApproval"
+                      ? "edit"
+                      : "bash";
+                log.blocked(request.toolCallId, name);
+              }
               return decision.allow;
             },
           });
-          client = acp;
+          client = server;
 
-          const state: { end: AcpEnd | undefined } = { end: undefined };
-          void acp.ended.then((value) => {
+          // A message from the host steers the turn. A message that arrives
+          // before the turn is asked for waits for `started`.
+          const inbox = inboxOf(params);
+          let stopInbox: (() => void) | undefined;
+          if (inbox !== undefined) {
+            const queued: string[] = [];
+            stopInbox = inbox.listen((message) => {
+              if (!server.steer(message)) queued.push(message);
+            });
+            inbox.begin?.(wallTimeSecs * 1000);
+            void server.started.then(() => {
+              for (const message of queued.splice(0)) server.steer(message);
+            });
+          }
+
+          const state: { end: AppServerEnd | undefined } = { end: undefined };
+          void server.ended.then((value) => {
             state.end = value;
             endRun();
           });
 
-          // A cancel asks codex-acp to stop the prompt and waits for its
-          // answer; an agent that does not answer within the grace is ended.
+          // A cancel asks the app-server to interrupt the turn and waits for
+          // its answer; a server that does not answer within the grace is ended.
           let graceTimer: unknown;
           const onAbort = (): void => {
-            if (acp.finished) return;
-            if (!acp.cancel()) {
+            if (server.finished) return;
+            if (!server.cancel()) {
               endRun();
               return;
             }
@@ -538,7 +605,7 @@ export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
             command: program,
             args: command.slice(1),
             cwd,
-            stdin: acp.first,
+            stdin: server.first,
             interactive: true,
             wallMs: wallTimeSecs * 1000,
             stallMs: stallSecs * 1000,
@@ -546,10 +613,11 @@ export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
             clock,
             toolEvent: (line) => log.toolEvent(line),
             onLine(line, reply) {
-              acp.handleLine(line, reply);
+              server.handleLine(line, reply);
               return writing;
             },
           });
+          stopInbox?.();
           ctx.signal.removeEventListener("abort", onAbort);
           if (graceTimer !== undefined) clock.clearTimeout(graceTimer);
 
@@ -562,7 +630,7 @@ export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
             throw unanswered.error;
           }
 
-          const sessionId = acp.sessionId ?? resumeSession ?? null;
+          const sessionId = server.sessionId ?? resumeSession ?? null;
           let result: AgentWorkerResult | undefined;
           const end = state.end;
           if (end !== undefined) {
@@ -576,15 +644,27 @@ export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
                 cache_write: usage?.cachedWriteTokens ?? undefined,
               };
               const closing = log.finalText.trim().length > 0 ? log.finalText : null;
-              const base = { type: "result" as const, sessionId: end.sessionId, usage: counts, cost: null, finalMessage: closing, model: model ?? null };
-              if (end.stopReason === "cancelled") result = { ...base, result: "cancelled" };
-              else if (end.stopReason === "end_turn") result = { ...base, result: "done" };
-              else {
+              const base = {
+                type: "result" as const,
+                sessionId: end.sessionId.length > 0 ? end.sessionId : sessionId,
+                usage: counts,
+                cost: null,
+                finalMessage: closing,
+                model: model ?? null,
+              };
+              if (end.stopReason === "interrupted") {
+                result = { ...base, result: "cancelled" };
+              } else if (end.stopReason === "completed") {
+                result = { ...base, result: "done" };
+              } else {
+                const failed = failureOf(end, model);
                 result = {
                   ...base,
                   result: "failed",
-                  reason: end.stopReason === "refusal" ? "refusal" : "stop_reason",
-                  message: `codex stopped the prompt: ${end.stopReason}`,
+                  finalMessage: null,
+                  reason: failed.reason,
+                  message: failed.message,
+                  ...(failed.modelError === undefined ? {} : { modelError: failed.modelError }),
                 };
               }
             } else {
@@ -615,7 +695,7 @@ export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
           }
           await jsonl.end();
 
-          // The run was ended on purpose once codex-acp had answered: the
+          // The run was ended on purpose once the app-server had answered: the
           // signal that did it is not the agent's.
           const settled =
             end === undefined ? outcome : { ...outcome, exitCode: 0, signal: null, cancelled: false };
@@ -647,9 +727,8 @@ export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
       const codex = options.codex ?? codexCommand(bun);
       const install = inspectCodex(command, codex);
       return (
-        `codex-acp ${install.acpVersion} (${command.join(" ")}); ` +
-        `codex ${install.codexVersion ?? "not found on PATH"}; ` +
-        `login ${install.login ?? "unknown"}`
+        `codex ${install.codexVersion ?? "not found on PATH"} (${command.join(" ")}; ` +
+        `app-server, built against ${CODEX_FLOOR}); login ${install.login ?? "unknown"}`
       );
     },
   });

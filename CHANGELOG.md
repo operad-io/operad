@@ -18,7 +18,7 @@ the same version.
   `radian`, `claude`, `pi`, `codex`, instead of always `radian/agent`. A new
   `.operad/dev.json` written by `operad dev repo add` leaves the worker out.
 - `codex` is still off until `operad plugin enable codex`; `init` does not look
-  for `codex-acp`.
+  for Codex.
 
 ## [0.1.1] - 2026-11-14
 
