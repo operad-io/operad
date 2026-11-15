@@ -4,6 +4,7 @@ import {
   readFileSync,
   readdirSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
@@ -1516,6 +1517,60 @@ describe("http server", () => {
         ]) {
           expect((await api(h, bad)).status).toBe(404);
         }
+      } finally {
+        await h.close();
+      }
+    });
+
+    test("a file link out of the attachment root is refused, while a normal file beside it serves", async () => {
+      const h = await makeHarness();
+      try {
+        const dir = join(h.home, "attachments", "item", "one", "ref");
+        mkdirSync(dir, { recursive: true });
+        writeFileSync(join(dir, "normal.txt"), "normal");
+        const outside = join(h.root, "outside.txt");
+        writeFileSync(outside, "secret");
+        symlinkSync(outside, join(dir, "leak.txt"));
+
+        const normal = await api(h, "/v1/attachments/item/one/ref/normal.txt");
+        expect(normal.status).toBe(200);
+        expect(await normal.text()).toBe("normal");
+
+        const leak = await api(h, "/v1/attachments/item/one/ref/leak.txt");
+        expect(leak.status).toBe(404);
+      } finally {
+        await h.close();
+      }
+    });
+
+    test("a directory link out of the attachment root is refused", async () => {
+      const h = await makeHarness();
+      try {
+        const outside = join(h.root, "outside-dir");
+        mkdirSync(outside, { recursive: true });
+        writeFileSync(join(outside, "secret.txt"), "secret");
+        const parent = join(h.home, "attachments", "item", "one");
+        mkdirSync(parent, { recursive: true });
+        symlinkSync(outside, join(parent, "linked"), "dir");
+
+        const leak = await api(h, "/v1/attachments/item/one/linked/secret.txt");
+        expect(leak.status).toBe(404);
+      } finally {
+        await h.close();
+      }
+    });
+
+    test("the attachment root may itself be reached through a link", async () => {
+      const h = await makeHarness();
+      try {
+        const stored = join(h.root, "real-attachments", "item", "one", "ref");
+        mkdirSync(stored, { recursive: true });
+        writeFileSync(join(stored, "normal.txt"), "normal");
+        symlinkSync(join(h.root, "real-attachments"), join(h.home, "attachments"), "dir");
+
+        const normal = await api(h, "/v1/attachments/item/one/ref/normal.txt");
+        expect(normal.status).toBe(200);
+        expect(await normal.text()).toBe("normal");
       } finally {
         await h.close();
       }
