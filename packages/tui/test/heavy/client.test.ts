@@ -367,7 +367,7 @@ describe("TuiClient", () => {
         }),
       );
       const found = await discoverServer({ home });
-      expect(found.url).toBe("http://127.0.0.1:7480");
+      expect(found.url).toBe("http://127.0.0.1:8765");
     } finally {
       await rm(root, { recursive: true, force: true });
     }

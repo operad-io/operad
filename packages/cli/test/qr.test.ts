@@ -25,7 +25,8 @@ describe("qr encoder", () => {
   });
 
   test("a pairing link decodes to itself", () => {
-    const link = `operad://pair?url=${encodeURIComponent("http://192.168.1.20:7480")}&token=${"A".repeat(43)}`;
+    // The port is an explicit, non-default one: the encoder only carries the link.
+    const link = `operad://pair?url=${encodeURIComponent("http://192.168.1.20:9000")}&token=${"A".repeat(43)}`;
     const matrix = encodeQr(link);
     const decoded = decode(matrix);
     expect(decoded.text).toBe(link);

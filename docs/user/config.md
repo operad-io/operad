@@ -97,7 +97,7 @@ nothing in this manual prints a secret.
     }
   },
   "store": { "backend": "sqlite", "path": "store/log.sqlite" },
-  "http": { "enabled": true, "port": 7480, "listen": ["127.0.0.1"] },
+  "http": { "enabled": true, "port": 8765, "listen": ["127.0.0.1"] },
   "notify": { "command": "sh ~/.operad/notify.sh", "on": ["waiting"] },
   "mcp": {
     "channel": { "notify": ["waiting", "ended", "loop"], "loopAfter": 3 },
@@ -113,7 +113,7 @@ nothing in this manual prints a secret.
 whose command is on `PATH`, in that order. When none is found it writes
 `radian`, and `operad init` fails with a message naming the three agents and how
 to install one. It writes the store at `store/log.sqlite`, `http` on at
-`127.0.0.1:7480`, notifications off, the `mcp.actions` and `mcp.confirmActions`
+`127.0.0.1:8765`, notifications off, the `mcp.actions` and `mcp.confirmActions`
 lists above and the ask grace of 600 seconds. All of it is written into the
 file; nothing in it is a hidden default. A home with no `config.json` at all
 has no plugins and allows no lead action.
@@ -149,7 +149,7 @@ plugin and the field.
 |---|---|---|---|---|---|
 | `plugins` | object, or an array of module names | `shell`, `chat`, `pool` and `dev`, plus the harness for each of `radian`, `claude` and `pi` found on `PATH` (`radian` when none is found) | plugin name to a module name, a path, or an options object | At every command start, and when a running `serve` reloads after a change | Refused: `plugins: must be an object of plugin options or an array of module names` |
 | `store` | object | sqlite at `<home>/store/log.sqlite` | the keys below | At every command start | Refused: `store: must be an object` |
-| `http` | object | on, port `7480`, `127.0.0.1` | the keys on [the HTTP page](http.md#the-http-section) | When `operad serve` starts; a reload when the new config loads | Refused: `http: must be an object`, or the field's own message |
+| `http` | object | on, port `8765`, `127.0.0.1` | the keys on [the HTTP page](http.md#the-http-section) | When `operad serve` starts; a reload when the new config loads | Refused: `http: must be an object`, or the field's own message |
 | `notify` | object | command `null`, `on` `["waiting"]` | the keys on [notifications](notifications.md) | When `operad serve` starts; a reload when the new config loads | Refused: `notify: must be an object`, or the field's own message |
 | `mcp` | object | the lists below | the keys below | When `operad mcp` starts | Refused: `mcp: must be an object`, or the field's own message |
 | `ask` | object | `{ "graceSecs": 600 }` | the keys below | When a step asks a person | Refused: `ask: must be an object`, or `ask.graceSecs: ...` |
@@ -158,6 +158,9 @@ The kernel reads `config.json` when a command starts. A running `serve` watches
 the file and reloads when the new file loads; when it does not load, the old
 configuration keeps running and the problem is logged. A one-shot command reads
 the file again on its next run.
+
+The default HTTP port changed to `8765`; a client paired at the old port must be
+paired again (the iOS app, the desktop remote).
 
 ### `plugins`
 

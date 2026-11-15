@@ -47,7 +47,7 @@ describes what the app does through the interface.
 `operad pair` shows what the app needs to reach this `serve`:
 
 ```text
-url http://192.168.1.20:7480
+url http://192.168.1.20:8765
 token <the token>
 
 Scan this in the operad app:

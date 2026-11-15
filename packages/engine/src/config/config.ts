@@ -42,10 +42,10 @@ export interface HttpConfig {
   readonly listen: readonly string[];
 }
 
-/** The HTTP defaults: on, port 7480, loopback only. */
+/** The HTTP defaults: on, port 8765, loopback only. */
 export const DEFAULT_HTTP: HttpConfig = {
   enabled: true,
-  port: 7480,
+  port: 8765,
   listen: ["127.0.0.1"],
 };
 

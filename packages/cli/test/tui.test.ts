@@ -63,7 +63,8 @@ describe("operad tui", () => {
     const output = capture();
     let seen: TuiCommand | undefined;
     const code = await main(
-      ["tui", "--url", "http://127.0.0.1:7480", "--token", "a-token"],
+      // 9000 is an explicit, non-default port: --url names the address exactly.
+      ["tui", "--url", "http://127.0.0.1:9000", "--token", "a-token"],
       {
         home: "/tmp/operad-tui-home",
         io: output.io,
@@ -77,7 +78,7 @@ describe("operad tui", () => {
     );
     expect(code).toBe(0);
     expect(seen?.home).toBe("/tmp/operad-tui-home");
-    expect(seen?.url).toBe("http://127.0.0.1:7480");
+    expect(seen?.url).toBe("http://127.0.0.1:9000");
     expect(seen?.token).toBe("a-token");
     expect(output.errors()).toContain("operad: a stream dropped");
   });
