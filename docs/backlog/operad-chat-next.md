@@ -12,7 +12,7 @@
 ## 值得做（按价值排）
 
 1. **任务的结果回到发起它的 chat。** bot 在 chat 里用 operad 的工具建了计划或任务之后，任务做完、卡住、等人确认时，那个 chat 收到一条消息（Telegram 绑定的 chat 也就收到）。今天这些只出现在待处理和任务页。出处：OpenClaw 的子 agent 做完在发起的聊天里报告；Orca 的协调者收到 worker 的完成和提问。要先定：哪些事件回报（等人、结束、转圈）；回报只是显示，还是也进模型的上下文让 bot 接着处理；chat 怎样记住它发起了哪些对象。
-2. **pi 的 chat 自动压缩上下文。** pi 的 worker 关掉了压缩（`packages/harness/pi/src/worker.ts`），chat 聊久了会撞上限，每轮也越来越贵。手动的 `/compact` 在命令第二批；这里是自动的一半：到一定比例时压缩，压缩前让 agent 先把要记的写下来（OpenClaw 约 75%，压缩前有一轮静默的记忆落盘）。和 `operad-conversation.md` 待决 5 一起定。
+2. **pi 的 chat 自动压缩上下文。** pi 的 worker 关掉了压缩（`packages/harness/pi/src/worker.ts`），chat 聊久了会撞上限，每轮也越来越贵。手动的 `/compact` 在命令第二批；这里是自动的一半：到一定比例时压缩，压缩前让 agent 先把要记的写下来（OpenClaw 约 75%，压缩前有一轮静默的记忆落盘）。和 `operad-conversation.md` 待决 5 一起定。落盘那一轮的约束可以照 OpenClaw：只许往当天的每日记录追加，其他文件只读，没东西可记就什么都不写，落盘失败不挡压缩（`research/2026-11-15-memory.md`）。
 3. **收到消息立刻有反应。** Telegram 上给人发来的消息加一个表情表示收到（OpenClaw 默认 👀），在第一个字出来之前就有反馈。只动 Telegram 插件。
 4. **等人的问题会提醒。** 过了宽限期的问题今天只留在待处理里，没有提醒也不过期（C-0016 的问题挂了三天）。隔一段时间在绑定的通道上再发一次；要不要过期、过期算什么（OpenClaw：30 分钟过期按拒绝）另定，lead 倾向只提醒。
 5. **通知只在该响的时候响。** 把"需要你处理"和"做完了"分成两类，人正在某个端上看这个 chat 时不推送（Claude Code Remote Control 的做法）。iOS 推送今天沿用旧通道，不区分。
@@ -28,6 +28,7 @@
 12. **导入在 operad 之外开的会话**（终端里的 Claude Code、pi）。`operad-conversation.md` 写了第一版不做。（Orca、Happy）
 13. **更多 agent**：OpenCode、Gemini CLI、Cursor 走现成的 ACP 客户端（`operad-harness.md` 待决 3）。
 14. **让 chat 的 worker 在回复后保温几分钟**，省掉每条消息的冷启动。等日志计时（T-0486）的数字出来再定。
+15. **chat 记录可以全文搜索。** 给 chat 记录建 SQLite FTS5 的索引，bot 能搜自己过去的对话（Hermes 的 `session_search` 是纯 FTS5，不过模型；Obelisk 用一个 skill 教 agent 现场写查询）。2026-11-15 的记忆调研（`research/2026-11-15-memory.md`）加的：原始记录可搜是 bot 记忆的地基，research consultant 认为它应该排在整理过的笔记之前；排序由 owner 和 lead 定。要先定：谁能搜哪些 chat（一个 bot 只搜自己的），被压缩掉的部分是否仍可搜。
 
 ## 不做
 

@@ -3,7 +3,7 @@
 - 状态：decided（场景与形状已定；已做的决定移入 ADR，本文件留未做的部分；第三方来源的接入细节未定）
 - 涉及 ADR：0030、0031、0011、0025、0032
 - 涉及：`operad-conversation.md`；`operad-sandbox.md`；`operad-channels.md`；`operad-plugins.md`；`operad-bot-mcp.md`
-- 来源：`operad.md`；owner 的使用场景；`research/2026-11-04-agent-autoloop.md`「拿来即用的场景模板」；`research/2026-11-05-noop.md`「决定、门禁、自治」
+- 来源：`operad.md`；owner 的使用场景；`research/2026-11-04-agent-autoloop.md`「拿来即用的场景模板」；`research/2026-11-05-noop.md`「决定、门禁、自治」；`research/2026-11-15-memory.md`（「记忆和知识库：提议」一节）
 
 ## 背景
 
@@ -27,6 +27,29 @@
 11. **chat 和 bot 的用户词**（来自 iOS 设计稿 `radian-ios/docs/design/operad/operad-ios-2026-11-11.html`）：`Allow once`、`Always allow`、`Deny`（工具调用和命令的许可，ADR 0025 D4；`Always allow` 的范围是发起它的 bot 或 repo）；`Continue`（原为费用上限到了以后继续；费用改成软提示后不再用于费用）、`Stop`（停下当前运行）；`I logged in`、`Log in again`（站点登录，`operad-bot-mcp.md` 决定 13、14；`I logged in` 只是提醒 bot 去看，不代替登录）；`repo`（chat 父对象类型的标签，和 `bot` 并列）；`period`（费用的统计周期）。`Review`、`approve`、`reject` 已在 ADR 0030 D4。说话人不是新词：harness 名（claude、pi、radian）只决定用哪个 agent，对话里显示的是 ADR 0026 D12 的称呼。
 12. **bot 页是这个 bot 的设置页**：上面是称呼、harness、模型、工作目录、本期花费和上限、技能、MCP 服务、登录过的站点；能直接改的项走设置接口（ADR 0017），技能和 MCP 服务的增加和更新走 `Review`。bot 页上没有 Chat 按钮，新建 chat 只从 chat 的入口进（ADR 0028 D5）。`bot` 不占自己的 tab，bot 列在设置下面（ADR 0018 D3）。
 
+## 记忆和知识库：提议（2026-11-15，owner 未定）
+
+上文第 2 条说"这个插件和记忆的管理以后单独设计"。这一节是那份设计的起点，出自 `research/2026-11-15-memory.md` 的调研，由 research consultant 提出。每一条都还不是决定；owner 定了的移到上面的"已定但还没做"。
+
+1. **记忆的布局是三层**，都在知识库里那个保留的命名空间下：
+   - 一个有上限的索引，每次运行都进上下文；
+   - 只追加的每日记录；
+   - 按需读的主题笔记，索引里一行一条指向它们。
+   用户给 bot 的长期指令单独一个文件，每次运行都加载。OpenClaw、Claude Code、NanoClaw、Letta、Anthropic 的文章都是这个形状。
+2. **必须遵守的规则不进记忆**。它们留在 bot 的说明和访问档里，改动走提议（ADR 0030 D4）。记忆只帮助回想；Codex、Copilot、Grok Bot 都这样分。
+3. **记忆只放查不到的**：偏好、纠正、验证过的规则。operad 里已经有的（计划、任务、历史）和知识库里已经有的笔记，存指针，不抄一份。
+4. **bot 当场写笔记，只给很轻的指引**：`brain` skill 告诉 bot 记忆是干什么用的，不规定怎么记。跑在较弱模型上的 bot 要有"先读记忆再回答"的提示。
+5. **`brain:review` 兼做记忆的整理**（细化上文第 3 条）。除了整理 `inbox/`、合并重复、提三条回看，再加：
+   - 对着 chat 记录核对记忆笔记，改掉写错和过期的；新的取代旧的，旧的留着并标明被取代，不直接删。
+   - 把索引保持在上限内：细节挪到主题笔记，索引留一行链接。
+   - 结果是一次 git 提交，卡上给差异的摘要。
+   - 一次改写丢掉太多旧条目就作废，退回只追加（OpenClaw 的规则；Hermes 没有这条，出过删掉四条长期规则的事故）。
+6. **先让原始记录可搜**：知识库和 chat 记录都建 SQLite FTS5 的全文索引，`brain` skill 教 bot 多换几种说法去搜、先搜再答。向量检索以后可选。chat 记录的搜索记在 `operad-chat-next.md` 第 15 条。
+7. **来源内容触发的写入要标来源**（细化上文第 5 条）。一次运行读过网页、来信、来源插件的条目之后写下的笔记，标为"来自不可信内容"，不进每次加载的索引，整理时也不提升。不做 OpenClaw 那种文件级的排除：知识库就是要让人和 Obsidian 直接改的，它的校验在人改过文件后会把整个文件永久排除。
+8. **`digest:run` 记下发过什么**（细化上文第 4 条）。下一天的 prompt 除了最近的反应，还带上最近发过的条目，避免重复推送。
+9. **范围按 bot**；多人场合（Telegram 群）不注入个人记忆。定时和事件发起的运行读它的 flow 需要的那部分，它写的东西按第 7 条处理。
+10. **压缩前先落盘**：见 `operad-chat-next.md` 第 2 条。
+
 ## 顺序
 
 `operad-conversation`（ask 闭环 → `chat` 基础插件加 `dev:chat` → `bot` 插件的 bot 对象加 `bot:chat` → app 的输入框）→ `operad-sandbox` 第一版的其余部分 → Telegram 通道 → `brain` 三个 flow → `digest`（先 `hn` 和 `rss`，再 `reddit`，`x` 看费用）。
@@ -40,6 +63,10 @@
 5. （bot 自己写的技能要人确认，见 ADR 0030 D4。）一个 bot 的 skills 目录由谁写：随 operad 装一份默认的 bot `SKILL.md`，还是第一次用时由 bot 自己按用户的描述写出来（ADR 0001 D1 的第六个要求）。
 6. 费用提示（上文第 7 条）的周期和默认的提示线（建议：按月，默认不设提示线，只显示花费）；设置里的字段名。
 7. 导入技能（上文第 9 条）的命令和确认页长什么样；技能存在 bot 的目录里还是可以几个 bot 共用一份。
+8. bot 写记忆要不要人批准。同类产品大多不问，问的有 Devin、CopilotKit 的 OpenBot、Obelisk。research consultant 倾向不问，靠 git 记录和 `brain:review` 的差异事后看。
+9. 全文索引（「记忆和知识库：提议」第 6 条）是否从知识库插件第一版就带。research consultant 倾向带。
+10. 记忆的索引在一个 chat 的会话里是否冻结。冻结能保住提示缓存（Hermes 的做法），代价是当场记的东西下个会话才生效。
+11. 记忆的整理多久跑一次：跟 `brain:review` 一样每天一次，还是按写入量触发。整理要花模型费用。
 
 ## 验收
 
