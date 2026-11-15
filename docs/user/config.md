@@ -338,15 +338,15 @@ including the ones `dev` starts; a change does not stop runs already going.
 
 ### `codex`
 
-The `codex` plugin runs the user's own Codex through `codex-acp`. Its step is
-`codex/agent`; how to set it up and the settings are on
+The `codex` plugin runs the user's own Codex through `codex app-server`. Its step
+is `codex/agent`; how to set it up and the settings are on
 [the dev page](dev.md#the-codex-settings).
 
 | Key | Type | Default | Allowed values | When it takes effect | Wrong value |
 |---|---|---|---|---|---|
-| `codex.model` | string | Codex's default | a model name codex-acp offers | When an agent step starts | Refused by the schema; a model codex-acp does not offer fails the step |
+| `codex.model` | string | Codex's default | a model name the app-server offers | When an agent step starts | Refused by the schema; a model the app-server does not offer fails the step |
 | `codex.effort` | string | Codex's default | `minimal`, `low`, `medium`, `high`, `xhigh` | When an agent step starts | Refused by the schema |
-| `codex.command` | array of strings | the `bun` and the `codex-acp` of `PATH` | the program and its arguments | When an agent step starts | Refused by the schema; a command that cannot start fails the plugin check |
+| `codex.command` | array of strings | the `bun` and the `codex` of `PATH`, then `app-server` | the program and its arguments | When an agent step starts | Refused by the schema; a command that cannot start fails the plugin check |
 | `codex.wallTimeSecs` | number | `3600` | `1` to `28500` seconds | When an agent step starts | Refused by the schema |
 | `codex.stallSecs` | number | `600` | `1` or more seconds | When an agent step starts | Refused by the schema |
 | `codex.concurrency` | object | `{}` | model name to a count of `1` or more | With the next agent step that starts | Refused by the schema; the count's key is named |

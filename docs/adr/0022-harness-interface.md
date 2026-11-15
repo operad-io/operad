@@ -21,7 +21,8 @@ A capability is declared for the agent, not assumed by a step. `loadsSkills` say
 ### D3: Which connection each harness uses
 
 - `claude` uses `@anthropic-ai/claude-agent-sdk` (`sdk`, ADR 0024); `pi` uses `@earendil-works/pi-coding-agent` (`sdk`, ADR 0023).
-- `radian` uses `radian acp`; `codex` uses `codex-acp`; other harnesses use their own ACP entry (`acp`).
+- `codex` speaks Codex's own `codex app-server` JSON-RPC over stdio. It is this harness's own connection, as `sdk` is for `claude` and `pi`, not a third reference connection (D2).
+- `radian` uses `radian acp`; other harnesses use their own ACP entry (`acp`). ACP stays for `radian` and for harnesses that only have an ACP entry.
 - The built-in command adapter stays as the fallback for tools that can only run once and cannot interact: the prompt goes in, the last message comes out, and the receipt is a JSON code block at the end of the message. It has no session face. A receipt holds at least `done`, `nothing`, `failed`, `needs_decision` or `waiting`, and `waiting` carries `wait_check`.
 
 ### D4: Permission requests are answered by operad
@@ -44,8 +45,8 @@ The plugin name is `claude`, `pi`, `radian` or `codex`: the `plugins.<name>` of 
 
 ### D8: The `codex` harness
 
-The plugin is `codex`, the package `@operad-io/harness-codex`, the step `codex/agent`, connection `acp` (D2). It starts the user's own `codex-acp`; the default command runs the `codex-acp` on `PATH` with the `bun` on `PATH`, because its `#!/usr/bin/env node` finds node only in some shells; the setting `command` changes it. The credential is the user's ChatGPT login of their own Codex, which operad does not touch (D6). The model can use Codex's own image generation.
+The plugin is `codex`, the package `@operad-io/harness-codex`, the step `codex/agent`. It speaks Codex's own `codex app-server` JSON-RPC over stdio: this harness's own connection, as `sdk` is for `claude` and `pi`, not a third reference connection (D2, D3). It starts the user's own `codex app-server`; the default command finds the `codex` of `PATH` and starts its `app-server`, and the setting `command` changes it. The credential is the user's ChatGPT login of their own Codex, which operad does not touch (D6). The model can use Codex's own image generation.
 
-- Usage: a subscription login has no money cost, so cost is recorded as unknown and does not block budget checks; each attempt records the number of image generation calls (the quota counts generations); each tool call from the `session/update` stream is recorded in the step log so a rework can look it up.
+- Usage: a subscription login has no money cost, so cost is recorded as unknown and does not block budget checks; each attempt records the number of image generation calls (the quota counts generations); each tool call from the app-server item stream is recorded in the step log so a rework can look it up.
 - Time: an image generation can take minutes without output, which is normal; the worker's `stallSecs` and `wallTimeSecs` set the limits, and the harness does not decide a stall of its own.
-- Sandbox: Codex's own sandbox cannot write `.git`, so a flow that uses it has its `work` stage set `commit` (ADR 0020 D9); it needs network access and write access to the task's working directory.
+- Sandbox and approvals: Codex's own sandbox stays on, and its approval policy and reviewer are set so Codex asks operad instead of deciding; the access profile answers each command and file-change request (D4). Codex's own sandbox cannot write `.git`, so a flow that uses it has its `work` stage set `commit` (ADR 0020 D9); it needs network access and write access to the task's working directory.
