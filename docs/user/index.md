@@ -17,6 +17,7 @@ operad is an open orchestration layer for coding agents. It runs an agent (radia
 - [tui](tui.md): the terminal client, its themes and its keys.
 - [app](app.md): pairing and the phone app.
 - [http](http.md): the `/v1` endpoints, events and errors.
+- [tailscale](tailscale.md): reaching `serve` over a Tailscale network, and the HTTPS name the phone app needs.
 - [mcp](mcp.md): the MCP server for a lead agent.
 - [chats-and-bots](chats-and-bots.md): chats with an agent, and bots.
 - [telegram](telegram.md): write to a bot and answer what waits for you from Telegram.
