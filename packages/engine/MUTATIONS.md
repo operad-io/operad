@@ -948,3 +948,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0497-M1 | packages/engine/src/plugin/validate.ts | the capability check no longer refused a plugin of another kind | `harness capabilities > a capability only a harness has is refused on another kind` |
+
+## T-0503 — a harness's model list is read when the plugins load
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0503-M5 | packages/engine/src/plugin/load.ts | `loadPluginRegistry` no longer read the models once, so a lazy harness's first list came from its cache only | `loadPluginRegistry > reads each harness's model list once during the load` |

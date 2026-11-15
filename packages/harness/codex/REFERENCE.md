@@ -93,8 +93,10 @@ unknown, not refused.
 - `models` asks the app-server's `model/list` in a short-lived child in the
   background and keeps the answer for 30 s; an empty answer is retried after
   2 s. The synchronous listing read only returns the cache, so a slow Codex does
-  not hold up `serve`. The default is the model Codex marks `isDefault`. A chat
-  may pick any of them; a worker step still gets its `--model` or the setting.
+  not hold up `serve`, and the list is read once when the plugins load so the
+  first client that asks after the start already has it. The default is the
+  model Codex marks `isDefault`. A chat may pick any of them; a worker step
+  still gets its `--model` or the setting.
 - `signedIn` still uses `codex login status` (kept for 30 s). It is already
   cheap and does not start an app-server; `account/read` over a fresh app-server
   took about twice as long on the owner's machine. Only the yes/no is exposed.
