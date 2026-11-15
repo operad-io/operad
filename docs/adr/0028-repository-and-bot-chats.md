@@ -21,7 +21,7 @@ A repository chat offers only agents that can stop a tool call before it begins 
 
 ### D3: A repository chat is read-only in the main clone
 
-A repository chat works in the main clone, read-only. When the agent decides it needs to change code, it asks through `ctx.ask` whether to open a worktree. If the answer is yes, `dev` opens a worktree on `work/chat-<id>`, and the chat's working directory moves there once (never again); that worktree is writable, and the main clone stays read-only. Changes in that worktree reach the main branch only through a task that this chat opened and that points at that worktree, by integrate; the hard rule of the project flows stands.
+A repository chat works in the main clone, read-only unless a person explicitly allows a call there. When the agent decides it needs to change code, it asks through `ctx.ask` about the call: `Allow once` runs this call in the main clone only, `Always allow` writes the exact command or path and working directory to the user layer (ADR 0025 D7) and runs it, `Deny` refuses it, and the worktree offer opens a worktree. If the person chooses the worktree offer, `dev` opens a worktree on `work/chat-<id>`, and the chat's working directory moves there once (never again); that worktree is writable, and the main clone stays read-only. Changes in that worktree reach the main branch only through a task that this chat opened and that points at that worktree, by integrate; the hard rule of the project flows stands.
 
 ### D4: A chat reaches operad through MCP tools, not the shell
 
