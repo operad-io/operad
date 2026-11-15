@@ -455,3 +455,10 @@ the row fields.
 | T-0382-M1 | packages/tui/src/app.ts | `wire` sent the bare id of the open object instead of `type:id` | `the TUI object app > a pending row opens by its typed id on the first request and every section request` |
 | T-0382-M2 | packages/tui/src/app.ts | the refetch of a change event skipped the pending and running rows' typed ids and sent the bare id | `the TUI object app > a change of an object only a pending row holds refetches it by its typed id` |
 | T-0382-M3 | packages/tui/src/app.ts | the typed-id lookup for a change event left out the settings-object list, so a closed settings object was refetched by its bare id | `objects under settings > a change event for a closed settings object refetches it by its typed id` |
+
+## T-0489 — limits on one event line and one event block
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0489-M1 | packages/tui/src/events.ts | the per-line limit was removed, so an over-long line parsed as an event | `TuiEvents size limits > a line past the limit drops the stream and the client reconnects` |
+| T-0489-M2 | packages/tui/src/events.ts | the per-block limit was removed, so an over-long block parsed as an event | `TuiEvents size limits > a block past the limit drops the stream and the client reconnects` |

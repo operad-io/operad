@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
+  MAX_EVENT_BLOCK_CHARS,
+  MAX_EVENT_LINE_CHARS,
   TuiEvents,
   TuiUnauthorizedError,
   retryDelay,
@@ -419,5 +421,142 @@ describe("TuiEvents", () => {
     expect(retryDelay(2, 250, 5_000)).toBe(1_000);
     expect(retryDelay(10, 250, 5_000)).toBe(5_000);
     expect(retryDelay(0, 100, 50)).toBe(100);
+  });
+});
+
+describe("TuiEvents size limits", () => {
+  const encoder = new TextEncoder();
+
+  /** One response whose body is these chunks, left open unless `close`. */
+  function responseOf(chunks: readonly string[], close = false): Response {
+    const bytes = chunks.map((chunk) => encoder.encode(chunk));
+    return new Response(
+      new ReadableStream({
+        start(controller) {
+          for (const chunk of bytes) controller.enqueue(chunk);
+          if (close) controller.close();
+        },
+      }),
+      { status: 200 },
+    );
+  }
+
+  /** A `data:` line of exactly `chars` characters, and the id it carries. */
+  function dataLine(chars: number): { line: string; id: string } {
+    const prefix = 'data: {"id":"';
+    const suffix = '"}';
+    const id = "a".repeat(chars - prefix.length - suffix.length);
+    return { line: `${prefix}${id}${suffix}`, id };
+  }
+
+  /** A block of exactly `chars` characters that carries one change of `id`. */
+  function blockOf(chars: number, id: string): string {
+    const head = `data: {"id":"${id}"}`;
+    // Each comment line and the newline before it: at most 4096 + 1 characters.
+    const lines = Math.ceil((chars - head.length) / 4_097);
+    const fillers = chars - head.length - lines;
+    if (fillers < lines) throw new Error("cannot build a block of that size");
+    const base = Math.floor(fillers / lines);
+    const extra = fillers - base * lines;
+    const parts = [head];
+    for (let i = 0; i < lines; i += 1) {
+      const width = base + (i < extra ? 1 : 0);
+      parts.push(":" + "a".repeat(width - 1));
+    }
+    const built = parts.join("\n");
+    if (built.length !== chars) throw new Error("the block has the wrong size");
+    return built;
+  }
+
+  test("a line at the limit and one just under it still parse", async () => {
+    const at = dataLine(MAX_EVENT_LINE_CHARS);
+    const under = dataLine(MAX_EVENT_LINE_CHARS - 1);
+    const events = new TuiEvents({
+      url: "http://127.0.0.1:1",
+      token: "t",
+      fetch: async () => responseOf([`${at.line}\n\n${under.line}\n\n`]),
+      wait: async () => undefined,
+    });
+    try {
+      expect(take(await events.next())).toEqual({ kind: "change", id: at.id });
+      expect(take(await events.next())).toEqual({ kind: "change", id: under.id });
+    } finally {
+      events.stop();
+    }
+  });
+
+  test("a block at the limit and one just under it still parse", async () => {
+    const at = blockOf(MAX_EVENT_BLOCK_CHARS, "at");
+    const under = blockOf(MAX_EVENT_BLOCK_CHARS - 1, "under");
+    const events = new TuiEvents({
+      url: "http://127.0.0.1:1",
+      token: "t",
+      fetch: async () => responseOf([`${at}\n\n${under}\n\n`]),
+      wait: async () => undefined,
+    });
+    try {
+      expect(take(await events.next())).toEqual({ kind: "change", id: "at" });
+      expect(take(await events.next())).toEqual({ kind: "change", id: "under" });
+    } finally {
+      events.stop();
+    }
+  });
+
+  test("a line past the limit drops the stream and the client reconnects", async () => {
+    const past = dataLine(MAX_EVENT_LINE_CHARS + 1).line;
+    const seen: (string | null)[] = [];
+    let attempts = 0;
+    const fetchImpl: FetchLike = async (_input, init) => {
+      attempts += 1;
+      seen.push(new Headers(init?.headers).get("last-event-id"));
+      if (attempts === 1) {
+        return responseOf([`id: s-1\ndata: {"id":"one"}\n\n${past}\n\n`]);
+      }
+      return responseOf(['id: s-2\ndata: {"id":"two"}\n\n']);
+    };
+    const events = new TuiEvents({
+      url: "http://127.0.0.1:1",
+      token: "t",
+      fetch: fetchImpl,
+      wait: async () => undefined,
+    });
+    try {
+      expect(take(await events.next())).toEqual({ kind: "change", id: "one" });
+      expect(take(await events.next()).kind).toBe("error");
+      expect(take(await events.next())).toEqual({ kind: "change", id: "two" });
+      expect(seen).toEqual([null, "s-1"]);
+      expect(attempts).toBe(2);
+    } finally {
+      events.stop();
+    }
+  });
+
+  test("a block past the limit drops the stream and the client reconnects", async () => {
+    const past = blockOf(MAX_EVENT_BLOCK_CHARS + 1, "oversized");
+    const seen: (string | null)[] = [];
+    let attempts = 0;
+    const fetchImpl: FetchLike = async (_input, init) => {
+      attempts += 1;
+      seen.push(new Headers(init?.headers).get("last-event-id"));
+      if (attempts === 1) {
+        return responseOf([`id: s-1\ndata: {"id":"one"}\n\n${past}\n\n`]);
+      }
+      return responseOf(['id: s-2\ndata: {"id":"two"}\n\n']);
+    };
+    const events = new TuiEvents({
+      url: "http://127.0.0.1:1",
+      token: "t",
+      fetch: fetchImpl,
+      wait: async () => undefined,
+    });
+    try {
+      expect(take(await events.next())).toEqual({ kind: "change", id: "one" });
+      expect(take(await events.next()).kind).toBe("error");
+      expect(take(await events.next())).toEqual({ kind: "change", id: "two" });
+      expect(seen).toEqual([null, "s-1"]);
+      expect(attempts).toBe(2);
+    } finally {
+      events.stop();
+    }
   });
 });
