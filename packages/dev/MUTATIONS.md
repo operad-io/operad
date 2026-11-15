@@ -1295,3 +1295,7 @@ the row fields.
 |---|---|---|---|
 | T-0478-M1 | packages/dev/src/views.ts | the diff ignored the task's merged phase and compared the deleted branch again | `dev views > a merged task shows the change its merge brought after its branch is deleted` |
 | T-0478-M2 | packages/dev/src/views.ts | a cancelled task with no branch was diffed anyway instead of saying the branch is gone | `dev views > a cancelled task whose branch is gone says so, without git's error` |
+| T-0478-M3 | packages/dev/src/views.ts | a merged task with no recorded merge commit got an empty section instead of `_Merged._` | `dev views > a merged task with no recorded merge commit says it merged, without git's error` |
+| T-0478-M4 | packages/dev/src/views.ts | the fallback dropped the recorded sha when the commit was not in the local repository, saying only `_Merged._` | `dev views > a merged task whose commit is not here says it merged, with a GitHub link` |
+| T-0478-M5 | packages/dev/src/views.ts | `mergedMarkdown` ignored the GitHub remote and showed the commit without a link | `dev views > a merged task whose commit is not here says it merged, with a GitHub link` |
+| T-0478-M6 | packages/dev/src/views.ts | `mergedMarkdown` used the full sha instead of the short one | `dev views > a merged task whose commit is not here says it merged, with a GitHub link` |
