@@ -210,3 +210,13 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 | T-0504-M1 | packages/chat/src/reply.ts | `recordFailure` compared the failure text again, so a rerun with another message added a second line | `a failed reply > does not gain a second line when the step runs again` |
 | T-0504-M2 | packages/chat/src/reply.ts | `plainWords` rewrote `run` in "run out of quota" to `reply`, garbling the provider's message | `a failed reply > uses the person's words for the internal names a provider's message carries` |
 | T-0504-M3 | packages/chat/src/tail.ts | `foldLogTail` kept a finished entry its facts already held, so a long run kept every entry | `chat transcript: after, mark and tail > a finished entry the facts already hold leaves the saved fold` |
+
+## T-0493 — `/status`
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0493-M1 | packages/chat/src/index.ts | `chat:status` was not declared as an action, so `/status` stayed an ordinary message | `chat:status > shows each line: agent, model, effort, reply, waiting, session usage and the last reply` |
+| T-0493-M2 | packages/chat/src/index.ts | an unknown cost was shown as `$0.00` instead of `unknown` | `chat:status > an unknown cost is said to be unknown, never shown as zero` |
+| T-0493-M3 | packages/chat/src/model.ts | `writingReply` always returned undefined, so status said it was not writing | `chat:status > works while a reply is being written and says since when and how many wait` |
+| T-0493-M4 | packages/chat/src/reply.ts | the chat did not keep the tokens its replies used, so the session's token usage was unknown | `chat:status > shows each line: agent, model, effort, reply, waiting, session usage and the last reply` |
+| T-0493-M5 | packages/chat/src/model.ts | the last reply's stored timings were not turned into a time to first output | `chat:status > shows each line: agent, model, effort, reply, waiting, session usage and the last reply` |
