@@ -39,8 +39,10 @@ import {
   secs,
   serverCommand,
   standardUsage,
+  StepTimings,
   stringListParam,
   text,
+  withTimings,
   type RawCost,
   type RawCounts,
   type UsageSource,
@@ -596,6 +598,7 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
         ),
         async run(ctx: StepContext, params: unknown): Promise<PluginStepResult> {
           const at = "radian/agent";
+          const timings = new StepTimings(defaults.now);
           const input = paramsObject(params, at);
           const flow = isRecord(ctx.params) ? ctx.params : {};
 
@@ -641,7 +644,8 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
           if (isRecord(ctx.access) && Array.isArray(ctx.access.grants) && ctx.access.grants.length > 0) {
             const message = `${at}: radian cannot enforce a one-time permission (no hook sees its tool calls); ask with pi, or without a grant`;
             const log = await ctx.logger.write(message);
-            return {
+            const timing = timings.finish();
+            return withTimings({
               result: "failed",
               data: {
                 reason: "grant_unsupported",
@@ -652,16 +656,17 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
                 finalMessage: null,
                 usage: standardUsage(who, undefined, null),
                 log,
-                durationMs: 0,
+                durationMs: timing.totalMs,
                 stderr: [message],
               },
-            };
+            }, timing);
           }
 
           const cwdProblem = await directoryError(cwd);
           if (cwdProblem !== undefined) {
             const log = await ctx.logger.write(cwdProblem);
-            return {
+            const timing = timings.finish();
+            return withTimings({
               result: "failed",
               data: {
                 reason: "cwd",
@@ -672,10 +677,10 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
                 finalMessage: null,
                 usage: standardUsage(who, undefined, null),
                 log,
-                durationMs: 0,
+                durationMs: timing.totalMs,
                 stderr: [cwdProblem],
               },
-            };
+            }, timing);
           }
 
           // Operad's tools: radian starts the server named in this file.
@@ -706,9 +711,9 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
             ? await writeHookConfig(`${ctx.logger.path}.hook`, logProfile)
             : undefined;
           const command = radianArgs(cwd, args, promptWithNote, resumeSession, mcpConfig, hookConfig);
-          const started = Date.now();
-          const jsonl = new JsonlLog(ctx.logger, defaults.clock);
+          const jsonl = new JsonlLog(ctx.logger, defaults.clock, defaults.now);
           let result: ParsedResult | undefined;
+          let ready = false;
           const openTools = new Map<string, { at: number; name: string }>();
 
           const outcome = await runAgent({
@@ -722,9 +727,25 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
             clock: defaults.clock,
             toolEvent: radianToolEvent,
             onLine(line) {
+              let writing: Promise<void> | undefined;
+              // radian has no session handshake: its first line is the point
+              // where the prompt has been taken and the model is about to run.
+              if (!ready) {
+                ready = true;
+                const session = jsonl.stamp(JSON.stringify({
+                  type: "session",
+                  ...(resumeSession === undefined ? {} : { sessionId: resumeSession }),
+                }));
+                timings.line(session);
+                writing = jsonl.push(session);
+                deliverLine(ctx.receiver, session, logSecrets);
+              }
               const logged = radianLogLine(line, defaults.now, openTools, cwd, logProfile, logSecrets);
-              const writing = jsonl.push(logged);
-              deliverLine(ctx.receiver, logged, logSecrets);
+              const received = jsonl.stamp(logged);
+              timings.line(received);
+              const pending = jsonl.push(received);
+              if (pending !== undefined) writing = pending;
+              deliverLine(ctx.receiver, received, logSecrets);
               const parsed = parseResult(line);
               if (parsed !== undefined) result = parsed;
               return writing;
@@ -741,25 +762,28 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
             outcome.exitCode === 0 &&
             result.sessionId !== resumeSession
           ) {
-            return {
+            const timing = timings.finish();
+            return withTimings({
               result: "failed",
-              data: failureData(who, outcome, result, ctx.logger.path, Date.now() - started, {
+              data: failureData(who, outcome, result, ctx.logger.path, timing.totalMs, {
                 reason: "session_missing",
                 message: `radian did not continue the session ${resumeSession}; it answered with ${result.sessionId ?? "no session"}`,
               }),
-            };
+            }, timing);
           }
 
-          return resultFor(
+          const timing = timings.finish();
+          const stepResult = resultFor(
             who,
             outcome,
             result,
             ctx.logger.path,
-            Date.now() - started,
+            timing.totalMs,
             wallTimeSecs,
             stallSecs,
             commandName,
           );
+          return withTimings(stepResult, timing);
         },
       },
     ],

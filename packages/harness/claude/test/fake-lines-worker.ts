@@ -30,6 +30,12 @@ function failed(reason: string, message: string, extra: Record<string, unknown> 
 }
 
 switch (mode) {
+  case "timed":
+    line({ type: "session", claudeVersion: "2.1.319", apiKeySource: "none", model: "claude-fake-1" });
+    line({ type: "text_delta", text: "hello" });
+    line(result({ finalMessage: "hello" }));
+    process.exit(0);
+    break;
   case "tools":
     line({ type: "tool_execution_start", toolCallId: "t1", toolName: "Bash", at: 5, input: "make test" });
     line({ type: "tool_execution_end", toolCallId: "t1", toolName: "Bash", isError: false, durationMs: 7 });

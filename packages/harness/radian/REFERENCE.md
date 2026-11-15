@@ -42,6 +42,9 @@ are in [the manual](../../../docs/user/dev.md#limiting-runs-of-one-model).
 
 ## The log's tool lines
 
+Every line the step writes carries `receivedAt` (epoch milliseconds). The step
+writes a `session` line before radian's first output; radian has no session
+handshake, so that first line is the point at which the prompt was taken.
 The step rewrites radian's `ToolExecutionStarted` and `ToolExecutionSettled`
 journal lines as `tool_execution_start` and `tool_execution_end`, the lines
 `claude` and `pi` write. The start carries `at` and `input`

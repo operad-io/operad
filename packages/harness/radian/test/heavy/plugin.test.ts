@@ -132,6 +132,8 @@ describe("radian/agent", () => {
     });
     const logged = (await Bun.file(String(dataOf(result).log)).text()).split("\n").filter((l) => l.length > 0);
     expect(got).toEqual(logged);
+    expect(logged.every((l) => typeof (JSON.parse(l) as { receivedAt?: unknown }).receivedAt === "number")).toBe(true);
+    expect((JSON.parse(got[0] ?? "{}") as { type?: unknown }).type).toBe("session");
     expect(got.some((l) => l.includes('"tool_execution_start"') && l.includes('"input":"token=*** make test"'))).toBe(true);
     expect(got.join("\n")).not.toContain("supersecret");
   });
@@ -160,7 +162,7 @@ describe("radian/agent", () => {
   });
 
   test("tool lines carry the command summary, the duration and an error's first line", async () => {
-    const times = [1_000, 73_000];
+    const times = [10, 20, 1_000, 30, 73_000, 40, 50, 60];
     const env = await setup("tool-detail", { now: () => times.shift() ?? 0 });
     const result = await runAgent(env, { prompt: "hello", cwd: env.root });
     const text = await Bun.file(String(dataOf(result).log)).text();
@@ -168,12 +170,13 @@ describe("radian/agent", () => {
       .split("\n")
       .filter((l) => l.includes("tool_execution"))
       .map((l) => JSON.parse(l) as Record<string, unknown>);
-    expect(records[0]).toEqual({
+    expect(records[0]).toMatchObject({
       type: "tool_execution_start",
       toolCallId: "t1",
       toolName: "Bash",
       at: 1_000,
       input: "token=*** make test",
+      receivedAt: 30,
     });
     expect(records[1]).toMatchObject({ type: "tool_execution_end", durationMs: 72_000, isError: true, error: "boom" });
     expect(text).not.toContain("supersecret");

@@ -89,6 +89,7 @@ The types a plugin imports, by the page that explains them. The values these ent
 | `WaitPersonStep` | Asks a person; the turn ends and the process holds nothing while waiting. | [flows](flows.md) |
 | `WaitStep` | Waits for a time or for a plugin step's exit to change. | [flows](flows.md) |
 | `AgentResultData` | What every harness `agent` step records as its facts. | [harness](harness.md) |
+| `AgentTimings` | The three durations of an agent step: start to ready, ready to first increment, and the whole step. | [harness](harness.md) |
 | `AgentResultName` | The result names a harness `agent` step declares: a subset of `EndResult`. | [harness](harness.md) |
 | `AgentStepParams` | The params every harness `agent` step accepts. | [harness](harness.md) |
 | `CostQuality` | A type of the plugin API; its fields are described on the page. | [harness](harness.md) |

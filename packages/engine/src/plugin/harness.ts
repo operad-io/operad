@@ -31,6 +31,16 @@ export interface PromptFlowParams {
 /** The result names a harness `agent` step declares: a subset of `EndResult`. */
 export type AgentResultName = Extract<EndResult, "done" | "failed" | "interrupted">;
 
+/** How long one agent step took to become ready, to its first increment and in all. */
+export interface AgentTimings {
+  /** From the step's start to the worker's `session` line; null when there was none. */
+  readonly startToReadyMs: number | null;
+  /** From the `session` line to the first text, thinking or tool line; null when there was none. */
+  readonly readyToFirstMs: number | null;
+  /** The whole step. */
+  readonly totalMs: number;
+}
+
 /** What every harness `agent` step records as its facts. */
 export interface AgentResultData {
   readonly exitCode: number | null;
@@ -42,6 +52,8 @@ export interface AgentResultData {
   /** The path of the JSONL file the harness wrote. */
   readonly log: string;
   readonly durationMs: number;
+  /** The three durations of the run, when the step measured them. */
+  readonly timings?: AgentTimings | undefined;
   /** Set on `failed`: which limit or condition ended the run. */
   readonly reason?: string | undefined;
   readonly message?: string | undefined;

@@ -147,3 +147,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0472-M9 | packages/harness/pi/src/auth-file.ts | the streaming redactor kept value strings, so a credential secret survived into the text | `reading an auth file's shape > keeps keys and structure, and never keeps a value string` |
+
+## T-0486 — the session line and the step's durations
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0486-M3 | packages/harness/pi/src/worker.ts | the worker wrote no `session` line before the prompt | `a prompt that ends writes the lines in order and a Result with usage, cost and sessionId` |

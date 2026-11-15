@@ -12,7 +12,9 @@ title, the agent's own session reference (never shown), bound channels, and
 whether it is closed. Its ids are `C-0001` upward. Messages are not fields: each
 is a `chat.message` fact on the chat (who, when, text, attachment paths, the
 source and its reference). An assistant message also names the messages it answers
-(`replyTo`), the run it belongs to (`runId`) and the session after it. Closing a
+(`replyTo`), the run it belongs to (`runId`), the session after it and, when its
+harness reported them, the step's three durations (`timings`: start to ready,
+ready to first increment, and the whole step). Closing a
 chat appends a `chat.closed` fact and marks the object closed; the messages stay
 in its transcript.
 

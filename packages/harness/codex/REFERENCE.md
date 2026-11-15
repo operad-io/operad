@@ -90,6 +90,7 @@ sandbox is the bound there, not the profile.
 - Each image generation (a tool call titled `Image generation`) is counted per
   attempt in `imageGenCalls` of the step result and of the closing `result`
   line of the log.
+- Every line of the step log carries `receivedAt` (epoch milliseconds). A `session` line is written once the ACP session is open and before the settings and the prompt.
 - Every tool call is in the step log as `tool_execution_start`, `tool_output`
   (the head, cut at 64 KB) and `tool_execution_end`; an assistant message is
   `text_delta` lines and a closing `message_end`; a refused call is a `blocked`

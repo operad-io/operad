@@ -19,5 +19,6 @@ export * from "./lines.ts";
 export * from "./operad-tools.ts";
 export * from "./process.ts";
 export * from "./step.ts";
+export * from "./timings.ts";
 export * from "./limit.ts";
 export * from "./usage.ts";

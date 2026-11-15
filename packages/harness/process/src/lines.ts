@@ -9,6 +9,16 @@
 export const TOOL_OUTPUT_CAP_BYTES = 64 * 1024;
 
 export type SharedLine =
+  /**
+   * Written once when the harness session is ready, before the prompt goes to
+   * the model. Every harness writes this line type, so a reader can time the
+   * wait for the worker apart from the wait for the model.
+   */
+  | {
+      readonly type: "session";
+      readonly sessionId?: string | null;
+      readonly model?: string | null;
+    }
   | {
       readonly type: "tool_execution_start";
       readonly toolCallId: string;

@@ -154,3 +154,9 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0363-M20 | packages/chat/src/tail.ts | the saved offset stopped after the last complete line, so a partial line was read again at every poll | `chat transcript: after, mark and tail > a large unfinished line is read once, not at every poll` |
+
+## T-0486 — a reply keeps the step's durations
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0486-M6 | packages/chat/src/reply.ts | the reply fact did not keep the step's `timings` with its usage | `chat/reply > the reply fact keeps the step's three durations with the usage` |

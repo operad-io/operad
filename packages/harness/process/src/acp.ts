@@ -90,6 +90,8 @@ export interface AcpClientOptions {
   readonly mcpServers?: readonly Readonly<Record<string, unknown>>[] | undefined;
   readonly clientName: string;
   readonly clientVersion?: string | undefined;
+  /** The session is open (or loaded) and the settings are about to be sent. */
+  readonly onReady?: ((sessionId: string) => void) | undefined;
   /** Each `session/update` of the running prompt, in order. */
   readonly onUpdate: (update: Readonly<Record<string, unknown>>) => void | Promise<void>;
   /** True lets the call run once; false refuses it. */
@@ -326,6 +328,8 @@ export class AcpClient {
           }
           this.session = sessionId;
         }
+        const ready = this.session;
+        if (ready !== null) this.options.onReady?.(ready);
         this.phase = "config";
         this.nextStage();
         return;

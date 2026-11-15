@@ -154,7 +154,9 @@ describe("codex/agent: a prompt run", () => {
     ]);
     expect(starts[0]?.at).toBe(1000);
     const outputs = lines.filter((line) => line.type === "tool_output");
-    expect(outputs[0]).toEqual({ type: "tool_output", toolCallId: "t1", text: "all green\nsecond line" });
+    expect(outputs[0]).toMatchObject({ type: "tool_output", toolCallId: "t1", text: "all green\nsecond line" });
+    expect(lines[0]).toMatchObject({ type: "session", sessionId: "fake-session-1" });
+    expect(lines.every((line) => typeof line.receivedAt === "number")).toBe(true);
     const ends = lines.filter((line) => line.type === "tool_execution_end");
     expect(ends.map((line) => [line.toolCallId, line.isError, line.error])).toEqual([
       ["t1", false, undefined],

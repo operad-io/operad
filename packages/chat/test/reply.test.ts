@@ -27,6 +27,27 @@ describe("chat/reply", () => {
     expect((await r.store.get("chat", chat))?.data.session).toBe("s-9");
   });
 
+  test("the reply fact keeps the step's three durations with the usage", async () => {
+    const timings = { startToReadyMs: 480, readyToFirstMs: 1_200, totalMs: 4_800 };
+    const r = await rig(() => ({
+      result: "done",
+      data: {
+        finalMessage: "timed answer",
+        sessionId: "s-timed",
+        usage: { model: "a-model", costMicros: 25, costQuality: "exact" },
+        timings,
+      },
+    }));
+    const chat = await r.chat();
+    await r.say(chat, "how long?");
+    await r.round(chat);
+    const messages = allMessages(r.store, chat);
+    const answer = messages.find((message) => message.role === "assistant");
+    expect(answer?.timings).toEqual(timings);
+    expect(answer?.model).toBe("a-model");
+    expect(answer?.costMicros).toBe(25);
+  });
+
   test("a rerun after the reply was recorded does not answer twice", async () => {
     const r = await rig(() => reply("once"));
     const chat = await r.chat();

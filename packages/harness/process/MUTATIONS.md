@@ -96,3 +96,10 @@ and the row fields.
 | T-0378-M5 | packages/harness/process/src/acp.ts | the updates `session/load` replays were handed over as the prompt's | `codex/agent: resume > a resumed run loads the session instead of opening one, and what it replays is not this run's` |
 | T-0378-M8 | packages/harness/process/src/acp.ts | an allowed call was answered with the `allow_always` option | `codex/agent: permissions > without a rule the call is allowed once, never always` |
 | T-0378-M15 | packages/harness/process/src/acp.ts | a new session's id was read only on a resume | `AcpClient > initialize, session/new, the settings, then the prompt, in that order` |
+
+## T-0486 — the time of each log line and the step's durations
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0486-M1 | packages/harness/process/src/jsonl-log.ts | `stamp` returned the line unchanged, so no log line carried the host's receipt time | `jsonl log > every JSON line carries the time the host received it` |
+| T-0486-M2 | packages/harness/process/src/timings.ts | the `session` line was read but did not mark the ready time | `StepTimings > it measures the step to the session line, from there to the first increment, and in all` |

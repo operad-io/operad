@@ -88,3 +88,9 @@ the row fields.
 | T-0465-M5 | packages/harness/radian/src/index.ts | `hasCredential` counted an empty credentials object as a stored credential | `radian's signedIn answer > is false when the credentials file holds none` |
 | T-0465-M14 | packages/harness/radian/src/index.ts | a missing credentials file answered absent instead of false | `radian's signedIn answer > is absent when the file cannot be read, and false when it is missing` |
 | T-0465-M15 | packages/harness/radian/src/index.ts | a malformed credentials file answered false instead of absent | `radian's signedIn answer > is absent when the file cannot be read, and false when it is missing` |
+
+## T-0486 — the session line and the step's durations
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0486-M4 | packages/harness/radian/src/index.ts | the step wrote no `session` line before radian's first output | `radian/agent > a receiver gets each line the step writes to its log, as it is logged` |

@@ -47,7 +47,10 @@ The params of every `agent` step (`AgentStepParams`):
 
 A harness takes a param from the step's `params` first and from the flow's own params (`ctx.params`) when the step has none, which is how `<harness>:prompt` flows work: `{ prompt, cwd, args? }` (`PromptFlowParams`).
 
-The data every `agent` step records (`AgentResultData`): `exitCode`, `signal`, `sessionId`, `finalMessage`, `usage`, `log` (the path of the JSONL file; never the output), `durationMs`, `stderr` (the last lines), and on `failed` `reason` and `message`.
+The data every `agent` step records (`AgentResultData`): `exitCode`, `signal`, `sessionId`, `finalMessage`, `usage`, `log` (the path of the JSONL file; never the output), `durationMs`, `timings`, `stderr` (the last lines), and on `failed` `reason` and `message`.
+`timings` holds three durations in milliseconds from the injected clock: `startToReadyMs` (the step's start to the worker's `session` line), `readyToFirstMs` (that line to the first text, thinking or tool line) and `totalMs` (the whole step). A duration whose line never came is `null`.
+
+Every line of the step's log carries `receivedAt`, the epoch milliseconds when the host received it. Every harness writes one `session` line when its session is ready and the prompt is about to go to the model. Readers of older logs that have neither field still fold them.
 `usage` has one shape for every harness (`Usage`): `harness`, `model`, `tokens` (`input`, `output`, `cacheread`, `cachewrite`), `costMicros` (`null` when unknown, `0` for a free run) and `costQuality` (`exact`, `estimated` or `incomplete` in `COST_QUALITIES`; `null` exactly when the cost is unknown). `validateUsage(value)` checks a value and names the first wrong field; `readUsage(data)` reads it back from a step's data, and still reads the old `usage` and `cost` fields of data written before the standard shape.
 
 ## The `<harness>:prompt` flow

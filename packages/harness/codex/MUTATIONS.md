@@ -26,3 +26,9 @@ recorded. The root [MUTATIONS.md](../../../MUTATIONS.md) explains the format and
 | T-0465-M6 | packages/harness/codex/src/install.ts | `codexSignedIn` answered true on any exit instead of only a zero one | `codex's signedIn answer > is false when codex login status exits non-zero` |
 | T-0465-M10 | packages/harness/codex/src/install.ts | a codex that could not start answered false instead of absent | `codex's signedIn answer > is absent when codex cannot be started` |
 | T-0465-M11 | packages/harness/codex/src/index.ts | removed the cache check, so `codex login status` ran on every read | `codex's signedIn answer > asks codex once per short cache period` |
+
+## T-0486 — the session line and the step's durations
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0486-M5 | packages/harness/codex/src/index.ts | the ACP ready callback wrote no `session` line | `codex/agent: a prompt run > a prompt runs to the end over ACP and the tool calls are in the log` |

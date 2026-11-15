@@ -172,3 +172,9 @@ setup it depends on, in the order they were recorded. The root
 | T-0472-M6 | packages/harness/claude/src/claude-install.ts | a failing exit with loggedIn true was returned as true instead of absent | `claude's signedIn answer > is absent when a failing exit contradicts loggedIn true` |
 | T-0472-M7 | packages/harness/claude/src/index.ts | two clients asking at once each started a probe because the pending answer was not shared | `claude's signedIn answer > two clients asking at once share one probe` |
 | T-0472-M8 | packages/harness/claude/src/claude-install.ts | the async lookup returned the symlink instead of the command's real path | `the claude command > the async lookup follows a symlink to the command's real path` |
+
+## T-0486 — the step's durations
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0486-M7 | packages/harness/claude/src/index.ts | the step result did not carry its `timings` | `claude/agent > a scripted worker gives the time to its session line, to the first increment, and the whole step` |

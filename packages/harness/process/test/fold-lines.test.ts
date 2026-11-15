@@ -127,6 +127,19 @@ describe("foldLines", () => {
     expect(foldLines(["x", null, 3, { type: "result" }, { type: "tool_execution_end" }]).entries).toEqual([]);
   });
 
+  test("a line's receivedAt does not change the fold, so old logs still read", () => {
+    const lines = [
+      { type: "text_delta", text: "I will " },
+      start("t1", "Bash", "ls"),
+      { type: "tool_output", toolCallId: "t1", text: "file" },
+      end("t1"),
+      { type: "message_end", role: "assistant", text: "I will" },
+    ];
+    const stamped = lines.map((line) => ({ ...(line as Record<string, unknown>), receivedAt: 12_345 }));
+    expect(foldLines(stamped)).toEqual(foldLines(lines));
+    expect(foldLines(lines)).toEqual(foldLines(stamped));
+  });
+
   test("one by one gives the same state as all at once, at every cut", () => {
     const lines = [
       { type: "thinking_delta", text: "hm" },

@@ -61,8 +61,11 @@ wrong type, an optional field of the wrong type) writes one `Result` line with
 One JSON object per line, flushed per line, each with a `type`. Only these
 types appear, in the order the run produces them:
 
+The host adds `receivedAt` (epoch milliseconds) to every line it writes to the step's log.
+
 | type | other fields | meaning |
 |---|---|---|
+| `session` | `sessionId` (string or null), `model` (optional) | the session is ready and the prompt is about to go to the model; written once, first |
 | `message_end` | `role` (`"assistant"`), `text` (optional: the first 300 characters of the message's text as one paragraph; thinking and tool calls left out), `stopReason` (string), `usage` (`{input, output, cache_read, cache_write}`, numbers), `cost` (`{total}` in USD, or `null` when pi gave no price) | an assistant message finished; only assistant messages are written |
 | `tool_execution_start` | `toolCallId`, `toolName`, `at`, `input` (optional) | a tool call began. `at` is the start time in epoch milliseconds. `input` says what ran: for `Bash` the command (one line, first 500 characters), for `Read`, `Edit` and `Write` the path, for another tool its main argument (path, pattern, query, URL or description) when it has one; absent otherwise. Never file contents or tool output. A command shows the values of leading environment assignments (`NAME=value`) as `NAME=***`, masks any value of the operad secret store or of a secret-named environment variable (`KEY`, `TOKEN`, `SECRET`, `PASS`, `PASSWORD`, `AUTH`, `CREDENTIAL`; 6 characters or more) as `***`, and shows `<command not shown: could not read it safely>` for a command it cannot read (an open quote, or a command or process substitution, heredoc or arithmetic in a leading assignment). A call the access profile denies shows `<tool> denied by the access profile`, never its arguments |
 | `tool_execution_end` | `toolCallId`, `toolName`, `isError`, `durationMs`, `error` (optional) | a tool call ended. `durationMs` is how long the call took, measured from its start line. `error` is the first line of the error (at most 300 characters) when `isError` is true; the rest of the error stays out of this line. A refused call writes no `tool_output` |
