@@ -50,3 +50,9 @@ The plugin is `codex`, the package `@operad-io/harness-codex`, the step `codex/a
 - Usage: a subscription login has no money cost, so cost is recorded as unknown and does not block budget checks; each attempt records the number of image generation calls (the quota counts generations); each tool call from the app-server item stream is recorded in the step log so a rework can look it up.
 - Time: an image generation can take minutes without output, which is normal; the worker's `stallSecs` and `wallTimeSecs` set the limits, and the harness does not decide a stall of its own.
 - Sandbox and approvals: Codex's own sandbox stays on, and its approval policy and reviewer are set so Codex asks operad instead of deciding; the access profile answers each command and file-change request (D4). Codex's own sandbox cannot write `.git`, so a flow that uses it has its `work` stage set `commit` (ADR 0020 D9); it needs network access and write access to the task's working directory.
+
+### D9: A harness that cannot load skills itself is told them in the prompt
+
+A step may give skill directories to a harness (ADR 0011 D2). A harness that declares `loadsSkills` loads them itself and its prompt is only the step's prompt. Any other harness gets a short list appended to the prompt: each skill's name, the description from its `SKILL.md` frontmatter and the path of that file, with one sentence to read the file before doing what it describes. A skill's body never enters the prompt.
+
+The list stays small: it carries at most a fixed number of skills and a fixed number of characters of each description, and says how many skills the cap left out. A directory whose `SKILL.md` or name cannot be read is left out, as D1 skips it for a harness that loads skills itself. The shared code of `@operad-io/harness-process` holds this, so a new harness gets it without writing its own.
