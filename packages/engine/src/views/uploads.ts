@@ -7,7 +7,7 @@
 
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { mkdir, open, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, open, readdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { isRecord } from "../util.ts";
 
@@ -90,7 +90,12 @@ export function attachmentUrl(home: string, path: string): string | undefined {
   return `/v1/attachments/${rel.split(sep).map(encodeURIComponent).join("/")}`;
 }
 
-/** The stored file a `/v1/attachments/<rel>` request names, with its type; undefined when there is none. */
+/**
+ * The stored file a `/v1/attachments/<rel>` request names, with its type;
+ * undefined when there is none. Both the root and the file are resolved, so a
+ * symbolic link whose target is outside the attachment directories is not
+ * served; a home that is itself reached through a link still works.
+ */
 export async function findAttachment(
   home: string,
   rel: readonly string[],
@@ -102,11 +107,14 @@ export async function findAttachment(
   const path = join(root, ...rel);
   if (!path.startsWith(`${root}${sep}`) || basename(path) === STORED_META) return undefined;
   try {
-    if (!(await stat(path)).isFile()) return undefined;
+    const realRoot = await realpath(root);
+    const realPath = await realpath(path);
+    if (!realPath.startsWith(`${realRoot}${sep}`) || basename(realPath) === STORED_META) return undefined;
+    if (!(await stat(realPath)).isFile()) return undefined;
+    return { path: realPath, type: storedType(realPath) ?? "application/octet-stream", name: basename(path) };
   } catch {
     return undefined;
   }
-  return { path, type: storedType(path) ?? "application/octet-stream", name: basename(path) };
 }
 
 export interface UploadsOptions {

@@ -926,6 +926,13 @@ the row fields.
 |---|---|---|---|
 | T-0479-M1 | packages/engine/src/config/config.ts | `DEFAULT_HTTP.port` kept the old default instead of 8765 | `operad config > a missing config means sqlite at <home>/store/log.sqlite`, `operad config > reads http options and applies their defaults` |
 
+## T-0484 — an attachment is served only from the real attachment root
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0484-M1 | packages/engine/src/views/uploads.ts | `findAttachment` stopped checking that the resolved file is inside the resolved attachment root, so a link out of the root was served | `http server > file arguments > a file link out of the attachment root is refused, while a normal file beside it serves`, `http server > file arguments > a directory link out of the attachment root is refused` |
+| T-0484-M2 | packages/engine/src/views/uploads.ts | `findAttachment` compared the resolved file with the unresolved attachment root, so a root reached through a link was refused | `http server > file arguments > the attachment root may itself be reached through a link` |
+
 ## T-0497 — a harness declares the capabilities it has
 
 | id | file | mutation | failing test |
