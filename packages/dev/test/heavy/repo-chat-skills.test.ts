@@ -202,7 +202,8 @@ describe("a repository's skills", () => {
     expect(r.calls[1]?.params.skills).toEqual([branchSkill]);
     expect(r.calls[1]?.params.skills).not.toEqual([mainSkill]);
     expect(r.calls[1]?.access.readOnly).toBe(false);
-    expect(r.calls[1]?.access.denyPaths).toContain(join(worktree, ".agents", "skills"));
+    expect(r.calls[1]?.access.denyPaths).not.toContain(join(worktree, ".agents", "skills"));
+    expect(r.calls[1]?.access.readPaths).toBeUndefined();
   });
 
   test("a path outside the repository is refused", async () => {

@@ -115,15 +115,20 @@ export function repositoryChatSkills(settings: DevSettings, base: string): ChatS
   return { directories, roots };
 }
 
-/** The access profile of a repository chat: its skills may be read, never changed. */
+/**
+ * The access profile of a repository chat. In the main clone its skills may be
+ * read but not changed; in its own worktree they are repository files the chat
+ * changes like any other, and the change reaches main through a task.
+ */
 export function chatAccess(skillPaths: readonly string[], readOnly: boolean): Record<string, JsonValue> {
   const denyPaths = Array.isArray(CHAT_ACCESS.denyPaths) ? [...CHAT_ACCESS.denyPaths] : [];
-  for (const path of skillPaths) if (!denyPaths.includes(path)) denyPaths.push(path);
+  const protectedPaths = readOnly ? skillPaths : [];
+  for (const path of protectedPaths) if (!denyPaths.includes(path)) denyPaths.push(path);
   return {
     ...CHAT_ACCESS,
     readOnly,
     denyPaths,
-    ...(skillPaths.length === 0 ? {} : { readPaths: [...skillPaths] }),
+    ...(protectedPaths.length === 0 ? {} : { readPaths: [...protectedPaths] }),
   };
 }
 
