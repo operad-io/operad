@@ -24,13 +24,13 @@
 9. **不做**：聊天里改配置、权限、名单、插件，重启，跑 shell，子 agent 管理，把外部 agent 绑到当前聊天。这些归命令行和设置页。
 10. **Telegram**：命令名只用小写字母、数字、下划线；启动时注册成菜单；有选项的参数没给时回一排按钮；只有名单里的人能执行。
 11. **用词（owner 批准）**：stop、status、help、retry、new、compact、btw、name、whoami、diff。model、effort、close 是已有的词。
+12. **运行中发来的普通消息默认插话**（owner 2026-11-15）：插进正在写的这一轮，在当前这批工具调用之后送给 agent，不中断、不另起一轮；不加 `/steer` 这个词。不能插话的 agent（radian）照旧排到下一轮。要打断用 `/stop`。
 
 ## 待决问题
 
-1. 运行中发来的普通消息：默认插进正在写的这一轮（在当前这批工具调用之后），还是排到下一轮。lead 建议默认插话，不加 `/steer` 这个词；owner 未明确答。两个 worker 都已支持插话，`chat:reply` 没有接。
-2. bot 的 `skills` 现在是否真的到了 agent 手里（`chat:reply` 传了参数，harness 一侧没找到读它的地方）。决定 6 的 skills 一项以它为前提。
-3. agent 自己上报的命令（Claude Agent SDK 的 `supportedCommands()`、ACP 的 `available_commands_update`）要不要出现在 `/` 菜单里。今天 chat 与用户自己的配置隔离，列表是空的；ADR 0027 D2 写了不记录"可用命令"。
-4. 带短 id 的文字审批兜底（Telegram 上按钮不可用时回 `allow <id>`），和 `operad-channels.md` 的卡片协议一起定。
+1. bot 的 `skills` 现在是否真的到了 agent 手里（`chat:reply` 传了参数，harness 一侧没找到读它的地方）。决定 6 的 skills 一项以它为前提。
+2. agent 自己上报的命令（Claude Agent SDK 的 `supportedCommands()`、ACP 的 `available_commands_update`）要不要出现在 `/` 菜单里。今天 chat 与用户自己的配置隔离，列表是空的；ADR 0027 D2 写了不记录"可用命令"。
+3. 带短 id 的文字审批兜底（Telegram 上按钮不可用时回 `allow <id>`），和 `operad-channels.md` 的卡片协议一起定。
 
 ## 验收
 
