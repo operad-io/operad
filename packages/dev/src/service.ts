@@ -67,7 +67,7 @@ import { DEFAULT_DEV_SETTINGS, DEV_SETTINGS_SCHEMA } from "./settings.ts";
 /** An optional way for the dev plugin to ask the kernel to cancel a run. */
 export interface DevRunControl {
   /** `flow` is the run's own graph, when the task stores one the loaded plugins lack. */
-  cancel(runId: string, flow?: FlowDefinition): Promise<void> | void;
+  cancel(runId: string, flow?: FlowDefinition): Promise<boolean | void> | boolean | void;
 }
 
 export interface ResolveRepositoryOptions {

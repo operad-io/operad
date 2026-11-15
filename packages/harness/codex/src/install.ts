@@ -14,6 +14,9 @@ import type { HarnessModels } from "@operad-io/engine";
 /** How long one probe may take. */
 const PROBE_TIMEOUT_MS = 30_000;
 
+/** How long the app-server inside the model probe has to answer `model/list`. */
+const MODELS_PROBE_TIMEOUT_MS = 8_000;
+
 /** How long `codex login status` may take when a client asks for the login state. */
 export const SIGNED_IN_PROBE_TIMEOUT_MS = 10_000;
 
@@ -251,10 +254,10 @@ function parseModels(stdout: string): readonly ModelChoice[] {
 }
 
 /** Asks a short-lived app-server for its model list; empty when it cannot answer. */
-async function probeModels(command: readonly string[]): Promise<HarnessModels> {
+async function probeModels(command: readonly string[], timeoutMs: number): Promise<HarnessModels> {
   let child: ReturnType<typeof Bun.spawn>;
   try {
-    child = Bun.spawn([process.execPath, MODELS_PROBE, ...command], {
+    child = Bun.spawn([process.execPath, MODELS_PROBE, "--timeout-ms", String(timeoutMs), ...command], {
       stdin: "ignore",
       env: { ...process.env },
       stdout: "pipe",
@@ -263,9 +266,10 @@ async function probeModels(command: readonly string[]): Promise<HarnessModels> {
   } catch {
     return emptyModels();
   }
+  // The backstop is above the probe's own timeout: it answers by then.
   const timer = setTimeout(() => {
     child.kill("SIGKILL");
-  }, PROBE_TIMEOUT_MS);
+  }, timeoutMs + PROBE_TIMEOUT_MS);
   try {
     const stream = child.stdout;
     if (!(stream instanceof ReadableStream)) {
@@ -294,11 +298,15 @@ async function probeModels(command: readonly string[]): Promise<HarnessModels> {
  * same list the user's Codex shows). The read is asynchronous so a slow or
  * missing Codex never holds up `serve`; concurrent reads share one probe.
  */
-export function refreshCodexModels(command: readonly string[], at: number = Date.now()): Promise<HarnessModels> {
+export function refreshCodexModels(
+  command: readonly string[],
+  at: number = Date.now(),
+  timeoutMs: number = MODELS_PROBE_TIMEOUT_MS,
+): Promise<HarnessModels> {
   const key = command.join("\u0000");
   const pending = modelsLoading.get(key);
   if (pending !== undefined) return pending;
-  const loading = probeModels(command)
+  const loading = probeModels(command, timeoutMs)
     .then((value) => {
       modelsCache.set(key, { at, value });
       return value;

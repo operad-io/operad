@@ -10,7 +10,7 @@ The plugin's `signedIn` answer, which `GET /v1/plugins` carries for clients, com
 
 ## Models
 
-The plugin's `model` choices come from the app-server's own `model/list`, read in the background and kept for a short time so a chat can offer the models Codex offers without blocking. A step's `--model` still wins.
+The plugin's `model` choices come from the app-server's own `model/list`, read in the background and kept for a short time so a chat can offer the models Codex offers without blocking. The list is read once when the plugins load, so the first client that asks after `serve` starts already has it. A step's `--model` still wins.
 
 ## Documentation
 

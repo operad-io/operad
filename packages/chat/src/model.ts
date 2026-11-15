@@ -687,6 +687,40 @@ export function latestRunOf(facts: readonly PluginFact[]): string | undefined {
   return found;
 }
 
+/** How the last attempt at a reply ended: a normal reply, a failure, a stopped half reply, or none yet. */
+export interface ReplyOutcome {
+  readonly kind: "normal" | "failed" | "stopped" | "none";
+  /** The reply run whose reply, failure or stopped half reply it was. */
+  readonly runId?: string | undefined;
+}
+
+/**
+ * The outcome of the last reply attempt. A normal reply, a failure entry and a
+ * stopped half reply are the ways an attempt can end; the newest of them wins,
+ * so a message that arrived after a stopped reply does not hide the stop.
+ */
+export function lastReplyOutcome(
+  messages: readonly Message[],
+  entries: readonly Entry[],
+): ReplyOutcome {
+  let kind: ReplyOutcome["kind"] = "none";
+  let runId: string | undefined;
+  let sequence = -1;
+  for (const message of messages) {
+    if (message.role !== "assistant" || message.sequence <= sequence) continue;
+    kind = "normal";
+    sequence = message.sequence;
+    runId = message.runId;
+  }
+  for (const entry of entries) {
+    if ((entry.kind !== "failure" && entry.kind !== "stopped") || entry.sequence <= sequence) continue;
+    kind = entry.kind === "failure" ? "failed" : "stopped";
+    sequence = entry.sequence;
+    runId = entry.runId;
+  }
+  return { kind, ...(runId === undefined ? {} : { runId }) };
+}
+
 /** The person's messages no assistant message answers yet, oldest first. */
 export function unanswered(messages: readonly Message[]): readonly Message[] {
   const answered = new Set<string>();
