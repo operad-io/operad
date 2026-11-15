@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   CHAT_TYPE,
+  ENTRY_FACT,
   MESSAGE_FACT,
   chatRef,
 } from "@operad-io/chat";
@@ -55,6 +56,14 @@ async function reply(w: TelegramWorld, chat: string, text: string, role: "assist
       attachments: [],
       source: { kind: "agent", ref: null },
     },
+  });
+}
+
+async function failure(w: TelegramWorld, chat: string, text: string): Promise<void> {
+  await w.ctx.facts.append({
+    type: ENTRY_FACT,
+    object: chatRef(chat),
+    data: { runId: "run-failure", kind: "failure", text },
   });
 }
 
@@ -181,6 +190,23 @@ describe("sending a reply", () => {
     await reply(w, chat, "second");
     await sender(w, api).sweepChat(chat);
     expect(api.sent.map((request) => request.text)).toEqual(["the <b>answer</b>", "second"]);
+    await w.close();
+  });
+
+  test("a failed reply is sent once as a message, in order with the replies", async () => {
+    const { w, chat } = await bound();
+    const api = new FakeApi();
+    await reply(w, chat, "the answer");
+    await failure(w, chat, "The reply failed: 429: usage limit reached");
+    await sender(w, api).sweepAll();
+    expect(api.sent.map((request) => request.text)).toEqual([
+      "the answer",
+      "The reply failed: 429: usage limit reached",
+    ]);
+
+    await sender(w, api).sweepAll();
+    await sender(w, api).sweepChat(chat);
+    expect(api.sent).toHaveLength(2);
     await w.close();
   });
 

@@ -165,11 +165,12 @@ The chat page is the `transcript` section plus the input box. Each user message
 shows its text, its attachments and who sent it (`ios`, `telegram`, `cli`, ...).
 The agent's reply and its process are shown as Markdown lines: intermediate
 text, `Thinking`, tool calls with their result, duration and a short output, and
-the final reply. Tool output is cut in the transcript; the full file is
-available to the agent from the chat's directory. A run that is still replying
-shows its unfinished text and thinking as a tail that updates; the finished
-entries are already recorded, so reopening the chat does not lose them and a
-restart of `serve` does not repeat them.
+the final reply. A reply that fails leaves one line saying it failed and why.
+Tool output is cut in the transcript; the full file is available to the agent
+from the chat's directory. A reply that is still being written shows its
+unfinished text and thinking as a tail that updates; the finished entries are
+already recorded, so reopening the chat does not lose them and a restart of
+`serve` does not repeat them.
 
 Sending is `chat:send` with `note` and the uploaded attachments. The app sends
 the message, records it and starts the reply; a chat that is closed refuses the

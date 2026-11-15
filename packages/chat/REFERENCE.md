@@ -20,11 +20,14 @@ What the agent did during an answer is recorded too, as `chat.entry` facts with
 the same `runId` as the reply: intermediate text, thinking, a tool call (its call
 id, name, input summary, result, start, duration, the first 4 KB of its output,
 the file holding the whole output and the first line of an error) and the
-half-written reply of a run that was stopped. Increments are not stored. Output
-longer than 4 KB goes to a file under the chat's own directory (under
-`attachments/chat/<id>/tool-output/`), and secret values are masked before a
-fact or a file is written. A rerun skips a tool call whose id was already recorded and does not add
-the same unfinished text again.
+half-written reply of a run that was stopped. A reply that fails records one
+`failure` entry instead of a reply: one plain line saying the reply failed and
+why, with the provider's message masked and cut to a sensible length. Increments
+are not stored. Output longer than 4 KB goes to a file under the chat's own
+directory (under `attachments/chat/<id>/tool-output/`), and secret values are
+masked before a fact or a file is written. A rerun skips a tool call whose id was
+already recorded, does not add the same unfinished text again, and does not add
+the same failure line again.
 
 Each reply run also records a `chat.run` fact with its run id, so the transcript
 can find the log of the step that runs the agent. While that run lasts, the
@@ -84,9 +87,10 @@ A live section that pages over the message and entry facts, so the command line,
 the TUI and the app show a chat with no client change. A turn's entries show
 before its reply: one line per tool call with what ran and how long it took, how
 a failed, blocked or denied call ended, the agent's text with its speaker, and
-thinking as a block quote. Tool output is not shown. Radian chats show the tool
-lines only. Pages count messages, and a turn's entries stay on the page of its
-reply.
+thinking as a block quote. A failed reply shows one line saying so and why, for
+every agent including radian. Tool output is not shown. Radian chats show the
+tool lines only otherwise. Pages count messages, and a turn's entries stay on
+the page of its reply.
 
 ## The speaker
 
