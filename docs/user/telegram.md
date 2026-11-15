@@ -96,20 +96,27 @@ nothing starts. A tap from an unlisted user counts for nothing.
 - The typing indicator. While a reply of a chat bound to Telegram is being
   written, that Telegram chat shows the bot as typing; it stops when the reply or
   a failure line is recorded, or the reply ends, fails or is cancelled.
+- The progress of a reply, as one message that is edited. Once the agent has
+  written its first text or started a tool call, that message shows what it has
+  written so far and the tool calls still running. It changes at most once every
+  two seconds, and only when the text changed; a long text shows its end. When
+  the reply is finished, the reply arrives as new messages (so the phone
+  notifies you once) and the progress message is deleted. A failed or stopped
+  reply removes it or replaces it with the failure line. Nothing is shown before
+  there is something to show, and a failed progress edit never keeps the reply
+  from arriving.
 - Each item waiting in a chat bound to Telegram, and each item of a plugin listed
   in `telegram.pending` (to every listed user). It is one message with a button for
   each choice. After an answer from anywhere (Telegram, the app, the command line)
   the buttons go and the message ends `answered: X`, X being the choice. A tap on an
   item that was already answered says so and changes nothing.
 
-Tool calls and the live text of a reply are not sent. The chat shows them in the
-app.
-
 ## Restarting
 
 The plugin keeps what it has read and sent under `<home>/telegram/`. If `serve` is
 stopped and started, no message is written twice, no reply is sent twice and none
-is skipped.
+is skipped. A progress message left by a stopped process is deleted on the next
+start.
 
 ## When it does not work
 
