@@ -101,7 +101,8 @@ it is typed.
 
 A command is typed like any other text, and `/model@your_bot sonnet` is the same
 as `/model sonnet`. Telegram's own `/start` answers with a short greeting that
-points at `/help`; it never reaches the agent.
+points at `/help`; it never reaches the agent. A command typed before you have a
+chat opens one, as a first message does.
 
 A command that takes one choice, such as `/model` or `/effort`, sent without the
 choice answers with a button for each one instead of running. When there are
