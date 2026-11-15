@@ -154,3 +154,12 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0363-M20 | packages/chat/src/tail.ts | the saved offset stopped after the last complete line, so a partial line was read again at every poll | `chat transcript: after, mark and tail > a large unfinished line is read once, not at every poll` |
+
+## T-0491 — chat commands as actions
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0491-M1 | packages/chat/src/index.ts | `chat:send` never parsed a command, so every slash line stayed a model message | `commands in chat:send > a known command runs its action, records no model message, and leaves one line` |
+| T-0491-M2 | packages/chat/src/command.ts | the clash rule kept the short name for the other plugin instead of `chat` | `commands in chat:send > the chat plugin keeps a clashing short name and another plugin gets its own` |
+| T-0491-M3 | packages/chat/src/command.ts | a bare command with `confirm` ran without the `yes` the action asks for | `commands in chat:send > a command that asks to confirm runs only with yes` |
+| T-0491-M4 | packages/chat/src/views.ts | command facts were not rendered, so the transcript lost the line | `commands in chat:send > the transcript shows the command line and the outcome` |

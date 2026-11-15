@@ -15,7 +15,7 @@ import type {
 import { maskSecrets } from "@operad-io/harness-process";
 import { secretValues } from "./reply.ts";
 import { foldLogTail, agentLogPath } from "./tail.ts";
-import { agentLine, attachmentsOf, chatData, chatRef, ENTRY_FACT, entryOfFact, IMAGE_TYPES, latestRunOf, MESSAGE_FACT, modelAndCost, type Attachment, type Entry, type Message } from "./model.ts";
+import { agentLine, attachmentsOf, chatData, chatRef, COMMAND_FACT, commandOfFact, ENTRY_FACT, entryOfFact, IMAGE_TYPES, latestRunOf, MESSAGE_FACT, modelAndCost, type Attachment, type Command, type Entry, type Message } from "./model.ts";
 
 /** How many messages of a chat one page of the transcript holds. */
 export const TRANSCRIPT_PAGE = 50;
@@ -44,6 +44,12 @@ function sections(): readonly ViewSection[] {
 
 function minute(at: number): string {
   return new Date(at).toISOString().slice(0, 16).replace("T", " ");
+}
+
+/** One command as a transcript entry: who, the command and how it went. */
+export function commandMarkdown(command: Command): string {
+  const via = command.from.via.length > 0 ? ` via ${command.from.via}` : "";
+  return `**you**${via} · ${minute(command.at)} — \`${command.command.replace(/`/g, "\\`")}\`\n\n${command.outcome}`;
 }
 
 /** A path as a Markdown link destination: spaces and parentheses are escaped. */
@@ -207,7 +213,7 @@ interface Chunk {
 function chunkOf(facts: readonly PluginFact[]): Chunk {
   return {
     facts,
-    messages: facts.filter((fact) => fact.type === MESSAGE_FACT).length,
+    messages: facts.filter((fact) => fact.type === MESSAGE_FACT || fact.type === COMMAND_FACT).length,
     last: facts.at(-1)?.sequence ?? 0,
   };
 }
@@ -251,7 +257,7 @@ function chunksOf(facts: readonly PluginFact[]): readonly Chunk[] {
       index = end;
       continue;
     }
-    if (fact.type === MESSAGE_FACT) chunks.push(chunkOf([fact]));
+    if (fact.type === MESSAGE_FACT || fact.type === COMMAND_FACT) chunks.push(chunkOf([fact]));
     index += 1;
   }
   return chunks;
@@ -310,6 +316,12 @@ function rendered(chunk: Chunk, speaker: string, home: string | undefined, harne
     lines = [];
   };
   for (const fact of chunk.facts) {
+    if (fact.type === COMMAND_FACT) {
+      flush();
+      const command = commandOfFact(fact);
+      if (command !== undefined) blocks.push(commandMarkdown(command));
+      continue;
+    }
     if (fact.type === ENTRY_FACT) {
       const entry = entryOfFact(fact);
       const markdown = entry === undefined ? undefined : entryMarkdown(entry, speaker, harness);

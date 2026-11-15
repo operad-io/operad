@@ -629,6 +629,13 @@ function normalizeActions(
       throw new PluginError(`${at}[${index}]: confirm: must be a boolean`);
     }
     if (
+      entry.command !== undefined &&
+      typeof entry.command !== "boolean" &&
+      (typeof entry.command !== "string" || entry.command.trim().length === 0)
+    ) {
+      throw new PluginError(`${at}[${index}]: command: must be a boolean or a non-empty string`);
+    }
+    if (
       entry.creates !== undefined &&
       (typeof entry.creates !== "string" || entry.creates.length === 0)
     ) {
@@ -640,6 +647,9 @@ function normalizeActions(
       ...(typeof entry.creates === "string" ? { creates: entry.creates } : {}),
       ...(args === undefined ? {} : { args }),
       ...(confirm === undefined ? {} : { confirm }),
+      ...(typeof entry.command === "string" || typeof entry.command === "boolean"
+        ? { command: entry.command }
+        : {}),
       ...(entry.ends === true ? { ends: true } : {}),
       when: entry.when as ActionTypeDefinition["when"],
       ...(typeof entry.rank === "function"

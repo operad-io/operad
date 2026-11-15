@@ -932,3 +932,10 @@ the row fields.
 |---|---|---|---|
 | T-0484-M1 | packages/engine/src/views/uploads.ts | `findAttachment` stopped checking that the resolved file is inside the resolved attachment root, so a link out of the root was served | `http server > file arguments > a file link out of the attachment root is refused, while a normal file beside it serves`, `http server > file arguments > a directory link out of the attachment root is refused` |
 | T-0484-M2 | packages/engine/src/views/uploads.ts | `findAttachment` compared the resolved file with the unresolved attachment root, so a root reached through a link was refused | `http server > file arguments > the attachment root may itself be reached through a link` |
+
+## T-0491 — chat commands as actions
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0491-M5 | packages/engine/src/plugin/registry.ts | `command` was left out of the action list, so a client had no description or menu entry | `an action that a chat may run as a command > its one-line description is in the action list, and an empty one is refused` |
+| T-0491-M6 | packages/engine/src/plugin/registry.ts | `runActionChecked` ran an action that asks to confirm without the `yes` | `an action that a chat may run as a command > runActionChecked checks availability, arguments and confirmation before it records anything` |

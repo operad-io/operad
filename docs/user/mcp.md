@@ -343,7 +343,7 @@ Result: the object
 `{ "id", "type", "link", "row", "sections", "actions", "ownerActions" }`.
 `row` is the list row. `sections` is the section directory. `actions` are the
 available actions the lead may run now, each with its `name`, `on`, `args` JSON
-Schema, `note` field name, `noteRequired` and `confirm`. `ownerActions` holds
+Schema, `note` field name, `noteRequired`, `confirm` and, when a chat can run it after `/`, its `command` description. `ownerActions` holds
 only the names of the available actions the lead may not run, including a
 `confirm: true` action that `mcp.confirmActions` does not name. The Markdown
 shows the row, the section directory, the allowed actions with their arguments,

@@ -1,4 +1,5 @@
 import type { ClientApi } from "../views/presentation.ts";
+import type { ActionInfo } from "./registry.ts";
 import type { FlowDefinition } from "../flow/types.ts";
 import type { KernelState } from "../kernel/types.ts";
 import type { Secret } from "../log/secret.ts";
@@ -859,6 +860,13 @@ export interface ActionTypeDefinition {
   /** The action asks for confirmation before it runs. */
   readonly confirm?: boolean | undefined;
   /**
+   * A one-line description when a chat may run this action as a `/<name>`
+   * command; its presence is what makes the action a chat command. `true` takes
+   * the description from the args schema's own `description`, else the action
+   * name. Absent when the action cannot be typed after a slash.
+   */
+  readonly command?: boolean | string | undefined;
+  /**
    * The action ends the object (a cancel). A client's main key or button never
    * picks it, even when it is the only action offered.
    */
@@ -949,6 +957,24 @@ export interface ActionContext extends PluginBaseContext {
   readonly efforts: Readonly<Record<string, HarnessEfforts>>;
   /** Sends an event through the kernel's rules; set when the host can route events. */
   readonly emit?: ((event: ActionEvent) => Promise<void>) | undefined;
+  /**
+   * The actions declared on this object's type, for an action that forwards a
+   * person's text to one of them (a chat command). Optional: a host that cannot
+   * run actions leaves it out.
+   */
+  readonly actions?: readonly ActionInfo[] | undefined;
+  /**
+   * Runs another action on the same object with the checks a client's `act`
+   * makes (`when`, the arguments, `confirm`); `yes` answers the confirmation.
+   * Optional: set when the host can run actions.
+   */
+  readonly act?:
+    | ((
+        name: string,
+        args: unknown,
+        options?: { readonly yes?: boolean | undefined } | undefined,
+      ) => Promise<ActionRun>)
+    | undefined;
   readonly runId: string | undefined;
   readonly object: RunObject;
   /** Who asked for the action: a person through a client. */
