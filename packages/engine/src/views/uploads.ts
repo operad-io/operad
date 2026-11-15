@@ -94,7 +94,10 @@ export function attachmentUrl(home: string, path: string): string | undefined {
  * The stored file a `/v1/attachments/<rel>` request names, with its type;
  * undefined when there is none. Both the root and the file are resolved, so a
  * symbolic link whose target is outside the attachment directories is not
- * served; a home that is itself reached through a link still works.
+ * served; a home that is itself reached through a link still works. The type
+ * comes from the `.meta.json` beside the name the request asked for, not from
+ * the directory a link points into, so the name, the type and the checks that
+ * keep `.meta.json` itself out all describe the same file.
  */
 export async function findAttachment(
   home: string,
@@ -111,7 +114,7 @@ export async function findAttachment(
     const realPath = await realpath(path);
     if (!realPath.startsWith(`${realRoot}${sep}`) || basename(realPath) === STORED_META) return undefined;
     if (!(await stat(realPath)).isFile()) return undefined;
-    return { path: realPath, type: storedType(realPath) ?? "application/octet-stream", name: basename(path) };
+    return { path: realPath, type: storedType(path) ?? "application/octet-stream", name: basename(path) };
   } catch {
     return undefined;
   }

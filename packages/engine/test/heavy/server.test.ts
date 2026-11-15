@@ -1885,6 +1885,32 @@ describe("http server", () => {
       }
     });
 
+    test("a link inside the root serves the type of the name it was asked under", async () => {
+      const h = await makeHarness();
+      try {
+        const target = join(h.home, "attachments", "item", "two", "ref");
+        mkdirSync(target, { recursive: true });
+        writeFileSync(join(target, "data.bin"), "BYTES");
+        writeFileSync(join(target, ".meta.json"), JSON.stringify({ name: "data.bin", type: "application/pdf", size: 5 }));
+
+        const dir = join(h.home, "attachments", "item", "one", "ref");
+        mkdirSync(dir, { recursive: true });
+        writeFileSync(join(dir, ".meta.json"), JSON.stringify({ name: "link.bin", type: "image/png", size: 5 }));
+        symlinkSync(join(target, "data.bin"), join(dir, "link.bin"));
+        symlinkSync(join(target, ".meta.json"), join(dir, "sneaky"));
+
+        const linked = await api(h, "/v1/attachments/item/one/ref/link.bin");
+        expect(linked.status).toBe(200);
+        expect(linked.headers.get("content-type")).toBe("image/png");
+        expect(await linked.text()).toBe("BYTES");
+
+        // A link that names the metadata of another directory is still refused.
+        expect((await api(h, "/v1/attachments/item/one/ref/sneaky")).status).toBe(404);
+      } finally {
+        await h.close();
+      }
+    });
+
     test("the attachment root may itself be reached through a link", async () => {
       const h = await makeHarness();
       try {
