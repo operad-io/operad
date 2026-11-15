@@ -8,7 +8,7 @@ import chatWorktreeFlow from "../flows/chat-worktree.flow.ts";
 import { actions } from "./actions.ts";
 import { runAnnounce } from "./announce.ts";
 import { checkDev } from "./check.ts";
-import { chatActions, runChatWorktree } from "./chat.ts";
+import { chatActions, runChatSettings, runChatWorktree } from "./chat.ts";
 import { commands } from "./commands.ts";
 import { creationActions } from "./create-actions.ts";
 import { runRework, runReview, runReviewDue, runVerify, runWorkDue } from "./gate.ts";
@@ -141,6 +141,12 @@ export function createDevPlugin() {
         name: "announce",
         results: ["done", "interrupted", "cancelled"],
         run: runAnnounce,
+      },
+      {
+        // The skills and access of a repository chat, read at every reply.
+        name: "chat_settings",
+        results: ["done", "failed"],
+        run: runChatSettings,
       },
       {
         // The worktree a chat asked for; git runs in the repository.

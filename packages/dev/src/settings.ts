@@ -47,6 +47,9 @@ export const DEV_SETTINGS_SCHEMA = "https://operad.io/schemas/dev.schema.json";
 /** The default location of a repository's worker brief. */
 export const WORKER_BRIEF_FILE = ".operad/worker-brief.md";
 
+/** The skill directories a repository gives its chats when it writes none. */
+export const DEFAULT_SKILLS: readonly string[] = [".agents/skills"];
+
 /** The harness step a repository uses when it names none and the home enables none. */
 export const DEFAULT_WORKER_USE = "radian/agent";
 
@@ -310,6 +313,12 @@ export interface DevSettings {
   readonly workers: ParsedWorkers;
   readonly workerBrief: string;
   /**
+   * The skill directories this repository's chats read, relative to the
+   * repository. A `.agents` directory is read through its `skills` directory.
+   * Empty gives the chats no skills.
+   */
+  readonly skills: readonly string[];
+  /**
    * Commands run in every checkout dev makes (the worker's worktree, the gate
    * checkout, the integration checkout) after it is created or moved to a new
    * commit and before a step uses it.
@@ -367,6 +376,7 @@ export const DEFAULT_DEV_SETTINGS: DevSettings = {
   },
   workers: legacyWorkers({ use: DEFAULT_WORKER_USE, args: [] }, 1),
   workerBrief: WORKER_BRIEF_FILE,
+  skills: DEFAULT_SKILLS,
   prepare: [],
   gate: {
     commands: [],
@@ -424,6 +434,7 @@ const KNOWN_FIELDS = new Set([
   "workers",
   "pools",
   "workerBrief",
+  "skills",
   "prepare",
   "gate",
   "check",
@@ -458,6 +469,16 @@ function repositoryRelativePath(value: unknown, field: string): string {
     throw new DevError(field, "must stay inside the repository");
   }
   return path;
+}
+
+/** A list of skill directories, each relative to the repository. */
+function repositorySkillList(value: unknown, field: string): readonly string[] {
+  if (!Array.isArray(value)) {
+    throw new DevError(field, "must be an array of strings");
+  }
+  return value.map((item, index) =>
+    repositoryRelativePath(item, `${field}[${index}]`),
+  );
 }
 
 /**
@@ -1314,6 +1335,10 @@ export function validateDevSettings(
       value.workerBrief === undefined
         ? DEFAULT_DEV_SETTINGS.workerBrief
         : nonEmptyString(value.workerBrief, "workerBrief"),
+    skills:
+      value.skills === undefined
+        ? DEFAULT_DEV_SETTINGS.skills
+        : repositorySkillList(value.skills, "skills"),
     prepare:
       value.prepare === undefined
         ? DEFAULT_DEV_SETTINGS.prepare
@@ -1388,6 +1413,13 @@ function settingsFromText(
     resolve(repositoryPath, settings.worktreeRoot),
     field,
   );
+  settings.skills.forEach((skill, index) => {
+    assertInsideRepository(
+      repositoryPath,
+      resolve(repositoryPath, skill),
+      `skills[${index}]`,
+    );
+  });
   for (const [name, flow] of Object.entries(settings.flows ?? {})) {
     flow.stages.forEach((stage, index) => {
       if (stage.stage !== "work" || stage.workerBrief === undefined) return;
