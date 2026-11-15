@@ -19,6 +19,28 @@ export const DEFAULT_RETRY_MIN_MS = 250;
 /** The longest delay between reconnects. */
 export const DEFAULT_RETRY_MAX_MS = 5_000;
 
+/**
+ * The most characters one line of the stream may hold, its line ending
+ * excluded.
+ *
+ * The server's lines are a field name and a short value: an `id:` of
+ * `<boot>-<seq>`, an `event:` name such as `reset`, or `data:` with
+ * `{"id":"<object>"}`. 64 KiB leaves room for an id far longer than any the
+ * server writes and still caps a broken line at a few pages. The check counts
+ * decoded characters, not bytes: the decoder has already run, and a character
+ * is at most four UTF-8 bytes, so the buffer stays bounded either way.
+ */
+export const MAX_EVENT_LINE_CHARS = 64 * 1024;
+
+/**
+ * The most characters one event block may hold.
+ *
+ * 1 MiB is the API's own request-body cap, so an event can never be larger
+ * than a body the server accepts. Real events carry one object id and are a
+ * few dozen bytes. Like the line limit, this counts decoded characters.
+ */
+export const MAX_EVENT_BLOCK_CHARS = 1024 * 1024;
+
 /** One object changed. */
 export interface TuiChangeEvent {
   readonly kind: "change";
@@ -99,6 +121,25 @@ interface SseBlock {
   readonly id: string | undefined;
   readonly event: string;
   readonly data: string;
+}
+
+/**
+ * Throws when a block, or any one of its lines, is past its limit: a stream
+ * that never ends a line or a block is broken, not an event.
+ */
+function guardBlockSize(block: string): void {
+  if (block.length > MAX_EVENT_BLOCK_CHARS) {
+    throw new Error(
+      `an event block is longer than ${MAX_EVENT_BLOCK_CHARS} characters`,
+    );
+  }
+  for (const line of block.split(/\r?\n/)) {
+    if (line.length > MAX_EVENT_LINE_CHARS) {
+      throw new Error(
+        `a line of the event stream is longer than ${MAX_EVENT_LINE_CHARS} characters`,
+      );
+    }
+  }
 }
 
 /** Reads one SSE block; a comment-only block is undefined. */
@@ -303,7 +344,10 @@ export class TuiEvents implements AsyncIterableIterator<TuiEvent> {
     return delivered;
   }
 
-  /** Consumes every complete block and returns the unfinished tail. */
+  /**
+   * Consumes every complete block and returns the unfinished tail. A block or
+   * line past its limit throws: the stream is broken and reconnects.
+   */
   private drain(buffer: string): { remaining: string; delivered: boolean } {
     let remaining = buffer;
     let delivered = false;
@@ -312,8 +356,12 @@ export class TuiEvents implements AsyncIterableIterator<TuiEvent> {
       if (match === null) break;
       const block = remaining.slice(0, match.index);
       remaining = remaining.slice(match.index + match[0].length);
+      guardBlockSize(block);
       if (this.handleBlock(block)) delivered = true;
     }
+    // The tail is one unfinished block: it obeys the same limits, so a server
+    // that keeps sending without a blank line cannot grow the buffer past them.
+    guardBlockSize(remaining);
     return { remaining, delivered };
   }
 
