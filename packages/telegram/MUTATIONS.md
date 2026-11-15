@@ -83,3 +83,18 @@ the row fields.
 | T-0488-M9 | packages/telegram/src/progress.ts | a progress message was sent before any text or tool call | `the progress message of a reply > nothing is sent before the first text, and an unfinished code fence is closed` |
 | T-0488-M10 | packages/telegram/src/progress.ts | a run that ended without recording a reply left its progress message behind | `the progress message of a reply > a stopped reply deletes the progress message once the client says the run ended` |
 | T-0488-M11 | packages/telegram/src/progress.ts | a failure entry after the last person's message did not finish the progress message | `the progress message of a reply > a failed reply sends its failure line as a new message, then deletes the progress message` |
+
+## T-0494 — the command menu, `/start` and choice buttons
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0494-M1 | packages/telegram/src/commands.ts | the menu was never given to Telegram, so a started plugin registered nothing | `the bot's command menu > is registered at start and again when the set of commands changes` |
+| T-0494-M2 | packages/telegram/src/commands.ts | a command name Telegram's menu does not take was registered anyway | `the bot's command menu > leaves out a name Telegram does not take and says so` |
+| T-0494-M3 | packages/telegram/src/commands.ts | the bot's name after a command was kept, so `/help@bot` was an ordinary message | `a command in a Telegram chat > a name with the bot after it is the plain command, and what it returns comes back` |
+| T-0494-M4 | packages/telegram/src/commands.ts | `/start` was not answered with the greeting that points at `/help` | `a command in a Telegram chat > /start gets a greeting that points at /help and starts no chat` |
+| T-0494-M5 | packages/telegram/src/source.ts | a command from an unlisted sender opened a chat and ran | `a command in a Telegram chat > a command from an unlisted sender is dropped without a reply` |
+| T-0494-M6 | packages/telegram/src/commands.ts | a command with one choice sent without it ran instead of answering with buttons | `a command in a Telegram chat > without its one choice it answers with the choices, one page at a time, and a tap runs it` |
+| T-0494-M7 | packages/telegram/src/commands.ts | every page showed the first page's choices | `a command in a Telegram chat > without its one choice it answers with the choices, one page at a time, and a tap runs it` |
+| T-0494-M8 | packages/telegram/src/commands.ts | after a tap the message named the first choice instead of the one picked | `a command in a Telegram chat > without its one choice it answers with the choices, one page at a time, and a tap runs it` |
+| T-0494-M9 | packages/telegram/src/source.ts | what a typed command returned was not sent back to Telegram | `a command in a Telegram chat > a name with the bot after it is the plain command, and what it returns comes back` |
+| T-0494-M10 | packages/telegram/src/commands.ts | a tap from a user not in the `users` list ran the command | `a command in a Telegram chat > a tap from an unlisted user counts for nothing` |
