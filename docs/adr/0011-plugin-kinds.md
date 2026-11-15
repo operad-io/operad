@@ -21,4 +21,4 @@ The core knows kinds, not names. Kind names appear only in developer documents; 
 
 ### D2: Skills are `SKILL.md`
 
-The skills that a bot and a flow use take the `SKILL.md` format of Agent Skills, so they interoperate with pi and Claude Code. operad only gives the text of a skill to an agent to read, and does not run code inside a skill directory. There is no skill market.
+The skills that a bot and a flow use take the `SKILL.md` format of Agent Skills, so they interoperate with pi and Claude Code. operad only gives the text of a skill to an agent to read, and does not run code inside a skill directory. There is no skill market. A harness that cannot load a `SKILL.md` itself is told the skill's name, description and the path of its `SKILL.md` in the prompt (ADR 0022 D9).

@@ -1,5 +1,5 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -256,6 +256,32 @@ describe("codex/agent: a prompt run", () => {
       { type: "text", text: "look", text_elements: [] },
       { type: "localImage", path: png },
     ]);
+  });
+
+  test("given skills are listed in the prompt with their description and path, never their body", async () => {
+    const env = await setup("done");
+    const dir = join(env.root, "skills", "weather");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, "SKILL.md"),
+      "---\nname: weather\ndescription: tells the forecast for a city\n---\n\nBody text the agent must read itself.\n",
+    );
+    const result = await runAgent(env, { prompt: "hello", cwd: env.root, skills: [dir] });
+    expect(result.result).toBe("done");
+    const turn = paramsOf(env, "turn/start")[0];
+    expect(turn?.input).toEqual([
+      {
+        type: "text",
+        text: [
+          "hello",
+          "",
+          "Read a skill's SKILL.md before doing what it describes.",
+          `- weather: tells the forecast for a city (SKILL.md at ${join(dir, "SKILL.md")})`,
+        ].join("\n"),
+        text_elements: [],
+      },
+    ]);
+    expect(JSON.stringify(turn?.input)).not.toContain("Body text the agent must read itself.");
   });
 });
 

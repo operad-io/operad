@@ -433,6 +433,28 @@ describe("radian/agent", () => {
     expect(type?.resumable).toBe(true);
   });
 
+  test("given skills are listed in the prompt with their description and path, never their body", async () => {
+    const env = await setup("done");
+    const dir = join(env.root, "skills", "weather");
+    await mkdir(dir, { recursive: true });
+    await writeFile(
+      join(dir, "SKILL.md"),
+      "---\nname: weather\ndescription: tells the forecast for a city\n---\n\nBody text the agent must read itself.\n",
+    );
+    const result = await runAgent(env, { prompt: "hello", cwd: env.root, skills: [dir] });
+    expect(result.result).toBe("done");
+    const record = JSON.parse(readFileSync(env.record, "utf8")) as { readonly prompt: string };
+    expect(record.prompt).toBe(
+      [
+        "hello",
+        "",
+        "Read a skill's SKILL.md before doing what it describes.",
+        `- weather: tells the forecast for a city (SKILL.md at ${join(dir, "SKILL.md")})`,
+      ].join("\n"),
+    );
+    expect(record.prompt).not.toContain("Body text the agent must read itself.");
+  });
+
   test("a resumed run that answers with another session fails as session_missing", async () => {
     const env = await setup("done");
     setEnv("FAKE_RADIAN_NEW_SESSION", "1");

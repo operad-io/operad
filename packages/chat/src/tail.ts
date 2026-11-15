@@ -55,8 +55,9 @@ const saved = new Map<string, Saved>();
  * The fold of a whole log file, reading only what was appended since the last
  * call for the path; undefined when there is no file. A file that is shorter
  * than what was read, or is another file, is read again from its start. A line
- * still being written is kept as it is and completed by the next call. Finished entries are not kept:
- * only the unfinished text, thinking and calls matter here.
+ * still being written is kept as it is and completed by the next call. Finished
+ * entries are kept too: a view drops the ones its facts already hold, and shows
+ * the rest, so text or a call never leaves the tail before its fact is visible.
  */
 export function foldLogTail(path: string): TailRead | undefined {
   let fd: number;
@@ -91,7 +92,7 @@ export function foldLogTail(path: string): TailRead | undefined {
           // Not one of ours.
         }
       }
-      state = { ...foldLines(values, state), entries: [] };
+      state = foldLines(values, state);
       pending = pending.subarray(end + 1);
     }
     saved.delete(path);

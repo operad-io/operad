@@ -109,3 +109,10 @@ and the row fields.
 |---|---|---|---|
 | T-0486-M1 | packages/harness/process/src/jsonl-log.ts | `stamp` returned the line unchanged, so no log line carried the host's receipt time | `jsonl log > every JSON line carries the time the host received it` |
 | T-0486-M2 | packages/harness/process/src/timings.ts | the `session` line was read but did not mark the ready time | `StepTimings > it measures the step to the session line, from there to the first increment, and in all` |
+## T-0498 — skills in the prompt for a harness that cannot load them
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0498-M1 | packages/harness/process/src/skills.ts | `promptWithSkills` ignored `loadsSkills` and gave a capable harness the list | `promptWithSkills > a harness that loads skills itself gets no list` |
+| T-0498-M2 | packages/harness/process/src/skills.ts | the skill list was not cut at `MAX_PROMPT_SKILLS` | `promptWithSkills > the list stops at the skill cap and says how many are left out` |
+| T-0498-M3 | packages/harness/process/src/skills.ts | a long description was listed whole instead of cut at `MAX_PROMPT_DESCRIPTION_CHARS` | `promptWithSkills > a long description is cut at the description cap` |

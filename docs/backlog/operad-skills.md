@@ -7,13 +7,12 @@
 
 ## 背景
 
-`chat:reply` 每次回复都把 bot 设置的 skill 目录传给 agent 进程。claude 和 pi 已声明它们自己加载 skill（ADR 0022、0023 D3、0024 D4）：只加载给定的目录，不自动发现 `~/.claude/skills`、`~/.agents/skills` 一类的位置，加载到的名字写进会话日志。skill 目录由访问档允许读、拒绝写；不能原生加载的 harness 还没有拿到同一份清单。
+`chat:reply` 每次回复都把 bot 设置的 skill 目录传给 agent 进程。claude 和 pi 已声明它们自己加载 skill（ADR 0022、0023 D3、0024 D4）：只加载给定的目录，不自动发现 `~/.claude/skills`、`~/.agents/skills` 一类的位置，加载到的名字写进会话日志。skill 目录由访问档允许读、拒绝写。
 
 ## 决定（已定，还没做）
 
-1. **不能原生加载的 harness 由 operad 在提示里放一份清单。** ACP 一类的 agent 没有原生入口；operad 把名字、描述和路径放进提示，agent 用读文件的工具去读。
-3. **MCP 不做目录。** bot 的 MCP 服务器照 ADR 0031 登记在 operad 的配置里，登记要确认、钉版本，由 operad 交给 agent。
-4. **可以建一个只带选定 skill 和 MCP 服务器的 bot**（owner 2026-11-15）。每个 bot 的 skill 列表和 MCP 服务器本来就是各自的；缺的是创建这一步：建 bot 时给名字、agent、模型，并从已有的里面选 skill（别的 bot 用着的、`~/.agents/skills` 里的）和 MCP 服务器（别的 bot 上已经确认过的）。没选的一概没有。选一个已确认过的 MCP 服务器是照原样复制它钉住的版本和工具摘要，不再问一次（lead 的建议，owner 未明确答）；全新的服务器仍走 ADR 0031 的确认。
+1. **MCP 不做目录。** bot 的 MCP 服务器照 ADR 0031 登记在 operad 的配置里，登记要确认、钉版本，由 operad 交给 agent。
+2. **可以建一个只带选定 skill 和 MCP 服务器的 bot**（owner 2026-11-15）。每个 bot 的 skill 列表和 MCP 服务器本来就是各自的；缺的是创建这一步：建 bot 时给名字、agent、模型，并从已有的里面选 skill（别的 bot 用着的、`~/.agents/skills` 里的）和 MCP 服务器（别的 bot 上已经确认过的）。没选的一概没有。选一个已确认过的 MCP 服务器是照原样复制它钉住的版本和工具摘要，不再问一次（lead 的建议，owner 未明确答）；全新的服务器仍走 ADR 0031 的确认。
 
 ## 待决问题
 
@@ -23,4 +22,4 @@
 
 ## 验收
 
-`default` bot 的设置列 `~/.agents/skills`；不能原生加载的 harness 在提示里看到同一份 skill 清单，并能用读文件的工具读它；agent 改不了 skill 目录里的文件；`~/.claude/skills` 里的 skill 没有出现在任何 chat 里。
+`default` bot 的设置列 `~/.agents/skills`；agent 改不了 skill 目录里的文件；`~/.claude/skills` 里的 skill 没有出现在任何 chat 里。

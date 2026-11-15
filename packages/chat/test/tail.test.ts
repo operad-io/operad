@@ -2,7 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { appendFileSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { SectionContent, StepContext, ViewContext } from "@operad-io/engine";
-import { agentLogPath, chatViews, foldLogTail, RUN_FACT } from "../src/index.ts";
+import { agentLogPath, chatViews, ENTRY_FACT, foldLogTail, MESSAGE_FACT, RUN_FACT } from "../src/index.ts";
 import { cleanupRoots, reply, rig } from "./support.ts";
 
 afterAll(cleanupRoots);
@@ -122,8 +122,6 @@ describe("chat transcript: after, mark and tail", () => {
   test("a tool call that started and did not end is one line with its start", async () => {
     const { during } = await whileRunning([
       start("t1", "Bash", "ls -la", Date.UTC(2026, 10, 12, 9, 5, 7)),
-      start("t2", "Read", "a.ts", Date.UTC(2026, 10, 12, 9, 5, 8)),
-      { type: "tool_execution_end", toolCallId: "t2", toolName: "Read", isError: false, durationMs: 5 },
     ]);
     expect(during.tail).toBe("tool Bash since 09:05:07 `ls -la`");
   });
@@ -197,6 +195,87 @@ describe("chat transcript: after, mark and tail", () => {
   const text = (lines: readonly Record<string, unknown>[]): string => lines.map((line) => `${JSON.stringify(line)}\n`).join("");
   const big = "y".repeat(1024);
   const ids = (path: string): string[] | undefined => foldLogTail(path)?.state.calls.map((call) => call.callId);
+
+  test("the reply text stays in the tail until its fact is visible, then moves to the markdown", async () => {
+    const r = await rig(() => reply("x"));
+    const chat = await r.chat();
+    const run = "run-text-gap";
+    writeFileSync(
+      logIn(r, run),
+      text([
+        { type: "text_end", text: "the whole reply" },
+        { type: "message_end", role: "assistant", text: "the whole reply" },
+      ]),
+    );
+    await r.store.append({
+      type: RUN_FACT,
+      object: { type: "chat", id: chat },
+      cause: "test",
+      data: { runId: run },
+    });
+    const before = await view(r, chat);
+    expect(before.markdown).not.toContain("the whole reply");
+    expect(before.tail).toContain("the whole reply");
+    await r.store.append({
+      type: MESSAGE_FACT,
+      object: { type: "chat", id: chat },
+      cause: "test",
+      data: {
+        id: "m-reply",
+        role: "assistant",
+        from: { via: "fake", id: "fake" },
+        text: "the whole reply",
+        attachments: [],
+        source: { kind: "fake", ref: null },
+        runId: run,
+      },
+    });
+    const after = await view(r, chat);
+    expect(after.markdown).toContain("the whole reply");
+    expect(after.tail ?? "").not.toContain("the whole reply");
+  });
+
+  test("a finished tool call stays in the tail until its fact is visible, then moves to the markdown", async () => {
+    const r = await rig(() => reply("x"));
+    const chat = await r.chat();
+    const run = "run-tool-gap";
+    writeFileSync(
+      logIn(r, run),
+      text([
+        start("t1", "Bash", "ls -la", 1_000),
+        { type: "tool_execution_end", toolCallId: "t1", toolName: "Bash", isError: false, durationMs: 1_200 },
+      ]),
+    );
+    await r.store.append({
+      type: RUN_FACT,
+      object: { type: "chat", id: chat },
+      cause: "test",
+      data: { runId: run },
+    });
+    const before = await view(r, chat);
+    expect(before.markdown).not.toContain("tool Bash");
+    expect(before.tail).toContain("tool Bash 1s `ls -la`");
+    await r.store.append({
+      type: ENTRY_FACT,
+      object: { type: "chat", id: chat },
+      cause: "test",
+      data: {
+        runId: run,
+        kind: "tool",
+        callId: "t1",
+        toolName: "Bash",
+        input: "ls -la",
+        result: "done",
+        startedAt: 1_000,
+        durationMs: 1_200,
+        output: null,
+        error: null,
+      },
+    });
+    const after = await view(r, chat);
+    expect(after.markdown).toContain("tool Bash 1s `ls -la`");
+    expect(after.tail ?? "").not.toContain("tool Bash");
+  });
 
   test("a text, thinking or tool call that began long ago is still whole", async () => {
     const r = await rig(() => reply("x"));
