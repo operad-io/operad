@@ -34,6 +34,8 @@ export interface WorkerInput {
   readonly secretValues?: readonly string[] | undefined;
   /** Images sent with the prompt, read from these files. */
   readonly images?: readonly ImageInput[] | undefined;
+  /** Skill directories to load; no other skills are discovered. */
+  readonly skills?: readonly string[] | undefined;
 }
 
 /** A gate such as a full test run must finish in the foreground; claude's own default is 120 s. */
@@ -145,6 +147,7 @@ export const INPUT_FIELDS = [
   "mcpServers",
   "secretValues",
   "images",
+  "skills",
 ] as const;
 
 const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -199,6 +202,11 @@ export function parseInput(value: unknown): ParsedInput {
   const images = parseImageInputs(value["images"]);
   if (typeof images === "string") return { ok: false, message: images };
 
+  const skills = value["skills"];
+  if (skills !== undefined && (!Array.isArray(skills) || !skills.every((v): v is string => typeof v === "string"))) {
+    return { ok: false, message: "skills must be an array of strings" };
+  }
+
   const maxTurns = value["maxTurns"];
   if (maxTurns !== undefined && (typeof maxTurns !== "number" || !Number.isInteger(maxTurns) || maxTurns < 1)) {
     return { ok: false, message: "maxTurns must be a positive integer" };
@@ -252,6 +260,7 @@ export function parseInput(value: unknown): ParsedInput {
       mcpServers,
       secretValues,
       images: images.length === 0 ? undefined : images,
+      skills: skills === undefined || skills.length === 0 ? undefined : skills,
     },
   };
 }

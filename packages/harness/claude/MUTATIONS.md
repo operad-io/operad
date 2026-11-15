@@ -172,3 +172,10 @@ setup it depends on, in the order they were recorded. The root
 | T-0472-M6 | packages/harness/claude/src/claude-install.ts | a failing exit with loggedIn true was returned as true instead of absent | `claude's signedIn answer > is absent when a failing exit contradicts loggedIn true` |
 | T-0472-M7 | packages/harness/claude/src/index.ts | two clients asking at once each started a probe because the pending answer was not shared | `claude's signedIn answer > two clients asking at once share one probe` |
 | T-0472-M8 | packages/harness/claude/src/claude-install.ts | the async lookup returned the symlink instead of the command's real path | `the claude command > the async lookup follows a symlink to the command's real path` |
+
+## T-0497 — only the skills the step gives are loaded
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0497-M5 | packages/harness/claude/src/worker.ts | the temporary skill plugin was not passed to the SDK | `a given skill is mounted as a plugin, only that one is loaded, and the plugin is removed at the end` |
+| T-0497-M6 | packages/harness/claude/src/worker.ts | the temporary skill plugin was left on disk when the run ended | `a given skill is mounted as a plugin, only that one is loaded, and the plugin is removed at the end` |

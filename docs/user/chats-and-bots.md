@@ -77,10 +77,12 @@ rounds). After a restart a reply that was already recorded is not given twice.
 
 The `transcript` section is live: it shows user messages, the agent's
 intermediate text, `Thinking`, tool calls with their result, duration and a short
-output, and the final reply. Tool output is cut in the transcript; the full output
-is in a file in the chat's directory. A run that is still replying shows its
-unfinished text and thinking as a `tail`; `mark` and `after` let a client append
-only the finished part (see [Reading a section](http.md#reading-a-section)).
+output, and the final reply. A reply that fails leaves one line saying it failed
+and why, so a failure is not mistaken for a slow reply. Tool output is cut in the
+transcript; the full output is in a file in the chat's directory. A reply that is
+still being written shows its unfinished text and thinking as a `tail`; `mark`
+and `after` let a client append only the finished part (see
+[Reading a section](http.md#reading-a-section)).
 The records do not depend on the agent's own session files, so a cleaned or
 compacted session does not erase the chat's history; the agent's context still
 belongs to the agent, which continues its own session.

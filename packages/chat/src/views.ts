@@ -175,6 +175,11 @@ function toolMarkdown(entry: Entry): string {
 
 /** One finished part of an answer as Markdown lines; tool output is never shown. */
 function entryMarkdown(entry: Entry, speaker: string, harness: string): string | undefined {
+  // A failure line is shown for every harness; it is already one plain line.
+  if (entry.kind === "failure") {
+    const said = flat(entry.text ?? "");
+    return said.length === 0 ? undefined : said;
+  }
   // Radian gives no text or thinking increments; its chats show the tool lines only.
   if (entry.kind !== "tool" && harness === "radian") return undefined;
   if (entry.kind === "tool") return toolMarkdown(entry);

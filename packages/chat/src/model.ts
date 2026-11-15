@@ -21,8 +21,8 @@ export const RUN_FACT = "chat.run";
 /** How a tool call ended. */
 export type ToolResult = "done" | "failed" | "blocked" | "denied";
 
-/** The kinds of part an answer is recorded as. */
-export type EntryKind = "text" | "thinking" | "tool" | "stopped";
+/** The kinds of part an answer is recorded as; `failure` is why a reply did not arrive. */
+export type EntryKind = "text" | "thinking" | "tool" | "stopped" | "failure";
 
 /** The event type a new message is: its source is `ios`, `telegram`, `cli`, `tui` or `other`. */
 export const MESSAGE_EVENT = "message";
@@ -565,7 +565,7 @@ export function entryOfFact(fact: PluginFact): Entry | undefined {
   const data = fact.data;
   if (typeof data.runId !== "string" || data.runId.length === 0) return undefined;
   const kind = data.kind;
-  if (kind !== "text" && kind !== "thinking" && kind !== "tool" && kind !== "stopped") return undefined;
+  if (kind !== "text" && kind !== "thinking" && kind !== "tool" && kind !== "stopped" && kind !== "failure") return undefined;
   const entryKind: EntryKind = kind;
   const base = { runId: data.runId, kind: entryKind, at: fact.at, sequence: fact.sequence };
   if (entryKind === "tool") {

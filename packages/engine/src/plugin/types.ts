@@ -841,6 +841,16 @@ export interface HarnessEfforts {
   readonly flag?: string | undefined;
 }
 
+/** What a harness plugin's agent does itself, from ADR 0022's capability list. */
+export interface HarnessCapabilities {
+  /**
+   * True when the agent loads the skill directories the step gives it, so the
+   * prompt needs no list of them. False or absent: the harness does not load
+   * skills by itself.
+   */
+  readonly loadsSkills?: boolean | undefined;
+}
+
 /** An action a plugin offers on an object type, or without one. */
 export interface ActionTypeDefinition {
   readonly name: string;
@@ -1204,6 +1214,8 @@ export interface PluginShape {
     | undefined;
   /** A harness plugin: the efforts a chat may pick (empty list: none can be chosen). */
   readonly efforts?: HarnessEfforts | undefined;
+  /** A harness plugin: what its agent does itself. */
+  readonly capabilities?: HarnessCapabilities | undefined;
   /**
    * A harness plugin: whether its agent is signed in now. `true` or `false`
    * when it can tell, `undefined` when it cannot; only that answer is exposed,

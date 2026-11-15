@@ -12,7 +12,8 @@
  */
 
 import { EventEmitter } from "node:events";
-import { appendFileSync } from "node:fs";
+import { appendFileSync, readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import type { SpawnOptions, SpawnedProcess } from "@anthropic-ai/claude-agent-sdk";
 import { isRecord } from "@operad-io/engine";
@@ -224,6 +225,30 @@ class FakeProcess extends EventEmitter implements SpawnedProcess {
   }
 }
 
+/** The plugin directories a spawn's arguments name, and what each mounts at that moment. */
+function pluginDirs(args: readonly string[]): Array<Record<string, unknown>> {
+  const dirs: string[] = [];
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index] ?? "";
+    if (arg === "--plugin-dir") {
+      const value = args[index + 1];
+      if (value !== undefined) dirs.push(value);
+    } else if (arg.startsWith("--plugin-dir=")) {
+      dirs.push(arg.slice("--plugin-dir=".length));
+    } else if (arg.startsWith("--plugin-dir-no-mcp=")) {
+      dirs.push(arg.slice("--plugin-dir-no-mcp=".length));
+    }
+  }
+  return dirs.map((dir) => {
+    try {
+      const manifest = JSON.parse(readFileSync(join(dir, ".claude-plugin", "plugin.json"), "utf8")) as unknown;
+      return { dir, manifest, skills: readdirSync(join(dir, "skills")).sort() };
+    } catch (error) {
+      return { dir, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+}
+
 /** A `spawnClaudeCodeProcess` that starts the fake. */
 export function fakeSpawn(
   script: FakeScript,
@@ -234,6 +259,7 @@ export function fakeSpawn(
     record(recordFile, {
       spawn: {
         args: options.args,
+        plugins: pluginDirs(options.args),
         env: Object.fromEntries(
           Object.entries(options.env).filter(([key]) => /^(CLAUDE_CODE_|DISABLE_|ANTHROPIC_|BASH_|HOME$)/.test(key)),
         ),
