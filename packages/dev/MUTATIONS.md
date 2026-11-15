@@ -1311,3 +1311,13 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0480-M1 | packages/dev/src/create-actions.ts | the task action's `after` enum listed every task of the plan again, finished ones included | `dev:plan and dev:task > the task action offers only the plan's tasks that are not finished` |
+
+## T-0500 — repository chat skills
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0500-M1 | packages/dev/src/chat.ts | `repositoryChatSkills` found the listed directories but added none of the skills inside them | `a repository's skills > \`.agents/skills\` gives its own chat the skill, and another repository's chat none` |
+| T-0500-M2 | packages/dev/src/chat.ts | the reply refresh always read the main clone, never the chat's worktree | `a repository's skills > a worktree chat reads the worktree's copy, not the main clone's` |
+| T-0500-M3 | packages/dev/src/settings.ts | a skill path was accepted as written instead of being checked as relative to the repository | `a repository's skills > a path outside the repository is refused` |
+| T-0500-M4 | packages/dev/src/chat.ts | a chat's access profile did not deny its skill directories for writing | `a repository's skills > \`.agents/skills\` gives its own chat the skill, and another repository's chat none` |
+| T-0500-M5 | packages/dev/src/chat.ts | a worktree chat still denied writing its skill directories instead of changing them like other repository files | `a repository's skills > a worktree chat reads the worktree's copy, not the main clone's` |
