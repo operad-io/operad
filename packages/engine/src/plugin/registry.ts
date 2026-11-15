@@ -127,7 +127,7 @@ export interface PluginRegistryOptions {
     | undefined;
   /** Cancels one run when a plugin action asks; the kernel writes the input. */
   readonly onCancelRun?:
-    | ((runId: string, flow?: FlowDefinition) => MaybePromise<void>)
+    | ((runId: string, flow?: FlowDefinition) => MaybePromise<boolean | void>)
     | undefined;
   /** The specifier each definition was loaded from, aligned with it. */
   readonly sources?: readonly (string | undefined)[] | undefined;
@@ -231,7 +231,7 @@ export class PluginRegistry {
       ) => MaybePromise<void>)
     | undefined;
   private readonly onCancelRun:
-    | ((runId: string, flow?: FlowDefinition) => MaybePromise<void>)
+    | ((runId: string, flow?: FlowDefinition) => MaybePromise<boolean | void>)
     | undefined;
   private readonly rules: readonly TriggerRule[];
   private readonly onEvent: ((event: TriggerEvent) => MaybePromise<void>) | undefined;
@@ -1902,7 +1902,8 @@ export class PluginRegistry {
     const onCancelRun = this.onCancelRun;
     return {
       cancel: async (runId, flow) => {
-        if (onCancelRun !== undefined) await onCancelRun(runId, flow);
+        if (onCancelRun !== undefined) return await onCancelRun(runId, flow);
+        return false;
       },
     };
   }

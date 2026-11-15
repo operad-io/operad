@@ -71,6 +71,25 @@ entry; it is not a `chat.message`, so `promptFor` and the agent never see it.
 `/help` lists this chat's commands with the one-line description from each
 declaration, under the name the chat types it by.
 
+## `chat:stop <chat>`
+
+Stops the reply being written. It asks the plugin's run control to cancel the
+run of the chat's latest `chat.run` fact; the control says whether it cancelled
+an active run. What was written so far is recorded by the interrupted path as a
+`stopped` entry and shown as stopped. Messages that arrived during the reply stay
+unanswered and no new reply starts by itself; the command line says so and says
+`/retry` answers the last message. With no reply running, or with one that had
+already ended, it says so and changes nothing. Its button word is **Stop**.
+
+## `chat:retry <chat>`
+
+Answers the last message again when the last attempt failed or was stopped: it
+sends one message event, keyed by that attempt's run id, so a repeated command
+before the reply begins does not answer twice. The failed or stopped attempt
+stays in the record and the new reply continues the chat's session. When the
+last reply finished normally, or the last attempt neither failed nor stopped, it
+refuses with a line saying so and starts nothing.
+
 ## `chat:model <chat> --model <name>`
 
 Changes the model the chat's next reply uses. The argument is one of the models the chat's agent lists (its plugin declares them); a closed chat, or an agent that lists none, does not offer the action. A `chat.model` fact records who changed it, from what and to what. A chat whose model its agent cannot take fails the reply with a message naming the model; it never falls back to another one.
@@ -116,7 +135,8 @@ the TUI and the app show a chat with no client change. A turn's entries show
 before its reply: one line per tool call with what ran and how long it took, how
 a failed, blocked or denied call ended, the agent's text with its speaker, and
 thinking as a block quote. A failed reply shows one line saying so and why, for
-every agent including radian. Tool output is not shown. Radian chats show the
+every agent including radian. A stopped half reply is shown as stopped. Tool
+output is not shown. Radian chats show the
 tool lines only otherwise. Pages count messages, and a turn's entries stay on
 the page of its reply.
 

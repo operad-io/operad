@@ -17,19 +17,22 @@ export interface CancelRunOptions {
   readonly clock?: (() => number) | undefined;
 }
 
-/** Ends a run as cancelled; an unknown or ended run is left alone. */
-export async function cancelRun(options: CancelRunOptions): Promise<void> {
+/**
+ * Ends a run as cancelled; an unknown or ended run is left alone. True when
+ * this ended an active run, so a caller can tell that from one that had ended.
+ */
+export async function cancelRun(options: CancelRunOptions): Promise<boolean> {
   const { log, runId } = options;
   const runs = await log.runs();
   const run = runs.find((candidate) => candidate.runId === runId);
-  if (run === undefined) return;
+  if (run === undefined) return false;
   const state = await readState(log, runId);
-  if (state.status === "ended") return;
+  if (state.status === "ended") return false;
   // A run that never took its first step has no flow to answer through; its
   // cancel still ends it, so it leaves the running view.
   if (state.status === "idle") {
     await endRunDirectly(log, runId, "cancelled", "cancel");
-    return;
+    return true;
   }
   const flow =
     options.graph !== undefined && options.graph.name === run.flow
@@ -48,4 +51,5 @@ export async function cancelRun(options: CancelRunOptions): Promise<void> {
     options.source,
     `cancel:${runId}`,
   );
+  return true;
 }

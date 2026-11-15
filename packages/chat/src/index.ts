@@ -7,16 +7,23 @@ import {
   CHAT_SOURCES,
   OTHER_SOURCE,
   CHAT_TYPE,
+  allEntries,
+  allMessages,
   chatData,
+  chatFacts,
   chatRef,
   CLOSED_FACT,
   COMMAND_FACT,
+  commandOfFact,
   EFFORT_FACT,
+  lastReplyOutcome,
+  latestRunOf,
   MESSAGE_EVENT,
   MESSAGE_FACT,
   attachmentOf,
   MODEL_FACT,
   newMessageId,
+  unanswered,
   type ClosedData,
   type CommandData,
   type EffortChangedData,
@@ -337,6 +344,83 @@ const closeAction: ActionTypeDefinition = {
   },
 };
 
+const stopAction: ActionTypeDefinition = {
+  name: "stop",
+  on: CHAT_TYPE,
+  command: "Stop the reply being written.",
+  when: (state) => !chatData(state).closed,
+  why: (object) =>
+    chatData(object.data).closed ? `${object.id} is closed; there is no reply to stop` : undefined,
+  async run(ctx) {
+    const stored = await ctx.store.get(CHAT_TYPE, ctx.object.id);
+    if (stored === undefined) throw new Error(`there is no chat ${ctx.object.id}`);
+    if (chatData(stored.data).closed) throw new Error(`chat ${ctx.object.id} is closed; there is no reply to stop`);
+    const runId = latestRunOf(chatFacts(ctx.store, ctx.object.id));
+    if (runId === undefined) return "no reply is running";
+    if (ctx.runs === undefined) throw new Error("this client cannot stop a reply");
+    const stopped = await ctx.runs.cancel(runId);
+    if (stopped !== true) return "no reply is running";
+    return "stopped the reply; what was written stays in the transcript. Messages that arrived meanwhile are not answered by themselves; send /retry to answer the last message";
+  },
+};
+
+const retryAction: ActionTypeDefinition = {
+  name: "retry",
+  on: CHAT_TYPE,
+  command: "Answer the last message again after a reply failed or was stopped.",
+  when: (state) => !chatData(state).closed,
+  why: (object) =>
+    chatData(object.data).closed ? `${object.id} is closed; there is nothing to retry` : undefined,
+  async run(ctx) {
+    const stored = await ctx.store.get(CHAT_TYPE, ctx.object.id);
+    if (stored === undefined) throw new Error(`there is no chat ${ctx.object.id}`);
+    if (chatData(stored.data).closed) throw new Error(`chat ${ctx.object.id} is closed; there is nothing to retry`);
+    const messages = allMessages(ctx.store, ctx.object.id);
+    const pending = unanswered(messages);
+    const facts = chatFacts(ctx.store, ctx.object.id);
+    let last = lastReplyOutcome(messages, allEntries(ctx.store, ctx.object.id));
+    // A stop records the line before the reply's own stopping finishes. The
+    // successful stop line is enough to retry at once, without waiting for the
+    // stopped half reply to enter the record.
+    const lastUser = [...messages].reverse().find((message) => message.role === "user");
+    if (last.kind !== "failed" && last.kind !== "stopped" && lastUser !== undefined) {
+      const stopped = facts
+        .map(commandOfFact)
+        .find(
+          (item) =>
+            item !== undefined &&
+            item.ok &&
+            item.command === "/stop" &&
+            item.outcome.startsWith("stopped the reply") &&
+            item.sequence > lastUser.sequence,
+        );
+      if (stopped !== undefined) {
+        const runId = latestRunOf(facts);
+        last = { kind: "stopped", ...(runId === undefined ? {} : { runId }) };
+      }
+    }
+    if (pending.length === 0) throw new Error("the last reply finished normally; there is nothing to retry");
+    if (last.kind === "normal") throw new Error("the last reply finished normally; there is nothing to retry");
+    if (last.kind !== "failed" && last.kind !== "stopped") {
+      throw new Error("the last reply has not failed or stopped; there is nothing to retry");
+    }
+    if (ctx.emit === undefined) {
+      throw new Error("the reply cannot be started here; operad serve is not running");
+    }
+    const known = CHAT_SOURCES.find((name) => name === ctx.actor.via);
+    const source = known ?? OTHER_SOURCE;
+    // One retry per failed or stopped attempt: a repeated command starts no second reply.
+    const key = last.runId === undefined ? newMessageId() : `retry:${last.runId}`;
+    await ctx.emit({
+      source,
+      type: MESSAGE_EVENT,
+      key,
+      object: `${CHAT_TYPE}:${ctx.object.id}`,
+    });
+    return "retrying the last message";
+  },
+};
+
 const helpAction: ActionTypeDefinition = {
   name: "help",
   on: CHAT_TYPE,
@@ -394,7 +478,7 @@ export function createChatPlugin() {
       object: "$event.object",
       mode: "auto" as const,
     })),
-    actions: [sendAction, modelAction, effortAction, closeAction, helpAction],
+    actions: [sendAction, modelAction, effortAction, stopAction, retryAction, closeAction, helpAction],
     views: { [CHAT_TYPE]: chatViews },
   });
 }
