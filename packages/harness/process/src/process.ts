@@ -28,6 +28,7 @@ import {
   markerEnv,
   newKeptWorkerSlot,
   readKeptWorkers,
+  readKeptWorkersInHome,
   stopKeptWorker,
   keptWorkerArgument,
   waitForChange,
@@ -1007,7 +1008,7 @@ async function runKeptFresh(
     // Two replies can finish at once in one home: the cap holds after the
     // record is there too, not only before a worker is started.
     const max = keep.max ?? MAX_KEPT_WORKERS;
-    const kept = [...readKeptWorkers(keep.home, keep.name)]
+    const kept = [...readKeptWorkersInHome(keep.home)]
       .sort((left, right) => left.lastUsedAt - right.lastUsedAt);
     while (kept.length > max && kept.length > 0) {
       const idle = kept.find((record) => record.busy !== true) ?? kept[0];
@@ -1069,7 +1070,7 @@ async function runKeptAgent(options: AgentRunOptions, keep: KeptRunOptions): Pro
 
   // A new worker is the fourth only after the one idle longest has ended.
   const max = keep.max ?? MAX_KEPT_WORKERS;
-  const remaining = [...readKeptWorkers(keep.home, keep.name)]
+  const remaining = [...readKeptWorkersInHome(keep.home)]
     .sort((left, right) => left.lastUsedAt - right.lastUsedAt);
   while (remaining.length >= max && remaining.length > 0) {
     const idle = remaining.find((record) => record.busy !== true) ?? remaining[0];
