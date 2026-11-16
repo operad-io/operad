@@ -302,6 +302,23 @@ describe("pi/agent", () => {
     expect("access" in input).toBe(false);
   });
 
+  test("the own-settings switch reaches the worker only when it is on", async () => {
+    const on = await setup("done");
+    await runAgent(on, { prompt: "hello", cwd: on.root, useOwnSettings: true });
+    expect(recorded(on).useOwnSettings).toBe(true);
+
+    const off = await setup("done");
+    await runAgent(off, { prompt: "hello", cwd: off.root, useOwnSettings: false });
+    expect("useOwnSettings" in recorded(off)).toBe(false);
+    const absent = await setup("done");
+    await runAgent(absent, { prompt: "hello", cwd: absent.root });
+    expect("useOwnSettings" in recorded(absent)).toBe(false);
+
+    await expect(runAgent(on, { prompt: "hello", cwd: on.root, useOwnSettings: "yes" })).rejects.toThrow(
+      /useOwnSettings/,
+    );
+  });
+
   test("an effort from a chat reaches the worker as pi's thinking level", async () => {
     const env = await setup("done", { thinkingLevel: "low" });
     await runAgent(env, { prompt: "hello", cwd: env.root, effort: "xhigh" });

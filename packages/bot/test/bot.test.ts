@@ -591,6 +591,16 @@ describe("a reply reads the bot again", () => {
     expect(r.calls[0]?.params.useOwnSettings).toBeUndefined();
   });
 
+  test("a bot whose agent is pi passes the own-settings switch on", async () => {
+    const r = await rig({ reader: { harness: "pi", useOwnSettings: true } });
+    await syncBots(r.store, r.home, {});
+    const id = await r.open("reader");
+    await r.say(id, "hi");
+    const result = await r.reply(id);
+    expect(result.result).toBe("done");
+    expect(r.calls[0]?.params.useOwnSettings).toBe(true);
+  });
+
   test("a bot's speaker is read again when a transcript is drawn", async () => {
     const r = await rig({ reader: {} });
     await syncBots(r.store, r.home, {});

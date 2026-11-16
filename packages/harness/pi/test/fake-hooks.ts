@@ -10,6 +10,8 @@
  * - `FAKE_CONTEXT_FILE`: each call's messages are appended to it, one JSON
  *   line per call.
  * - `FAKE_CLOCK_STEP`: every reading of the clock moves on by this many milliseconds.
+ * - `FAKE_RESOURCES_FILE`: each run's settings and resource loader options are
+ *   appended to it, one JSON object per run.
  *
  * `log` gets `fake-stream-started` when a call begins.
  */
@@ -68,5 +70,16 @@ export function fakeHooks(
     return value;
   };
 
-  return { registerProviders: (runtime) => provider.register(runtime), ...(step > 0 ? { now } : {}) };
+  const resourcesFile = env["FAKE_RESOURCES_FILE"];
+  return {
+    registerProviders: (runtime) => provider.register(runtime),
+    ...(step > 0 ? { now } : {}),
+    ...(resourcesFile === undefined
+      ? {}
+      : {
+          observeResources: (seen) => {
+            appendFileSync(resourcesFile, `${JSON.stringify(seen)}\n`);
+          },
+        }),
+  };
 }

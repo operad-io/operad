@@ -531,6 +531,10 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
             input.skills === undefined ? flow.skills : input.skills,
             `${at}: params.skills`,
           );
+          const ownSettings = input.useOwnSettings ?? flow.useOwnSettings;
+          if (ownSettings !== undefined && typeof ownSettings !== "boolean") {
+            throw new Error(`${at}: params.useOwnSettings: must be a boolean`);
+          }
           const storeSecrets = await secretValuesOf(ctx.secrets);
           const allowAlways = personStarted(ctx.trigger);
           if (allowAlways && isRecord(rawAskAnswer) && rawAskAnswer["choice"] === ALLOW_ALWAYS) {
@@ -568,6 +572,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
               ? {}
               : { images: imageInputsOf(input.images ?? flow.images) }),
             ...(skills.length === 0 ? {} : { skills }),
+            ...(ownSettings === true ? { useOwnSettings: true } : {}),
             ...(runAccess === undefined ? {} : { access: runAccess }),
             ...(storeSecrets.length === 0 ? {} : { secretValues: storeSecrets }),
           };
