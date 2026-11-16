@@ -1200,9 +1200,7 @@ describe("dev scheduling", () => {
       expect(pending).toHaveLength(1);
       const item = pending[0];
       if (item === undefined) throw new Error("no pending item");
-      expect(item.prompt).toContain(
-        "the run stopped during work; reject to run it again",
-      );
+      expect(item.prompt).toBe("The run stopped during work.");
       expect(
         item.actions.map((action) => `${action.plugin}:${action.action}`),
       ).toContain("dev:reject");
