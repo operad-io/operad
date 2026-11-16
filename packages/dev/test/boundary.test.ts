@@ -31,11 +31,13 @@ function treeOf(name: string): Map<string, string> {
 }
 
 /** What the dev plugin's source may not say: the way this repository builds and tests itself. */
+const DEV_CLAUDE_FILE = /\bCLAUDE\.md/;
+
 const DEV_FORBIDDEN: readonly RegExp[] = [
   /\bbun /,
   /\bbun\.lock/,
   /\bscripts\//,
-  /\bCLAUDE\.md/,
+  DEV_CLAUDE_FILE,
   /\bpackages\//,
 ];
 
@@ -58,7 +60,11 @@ function withoutComments(text: string): string {
 export function devViolations(files: ReadonlyMap<string, string>): string[] {
   const found: string[] = [];
   for (const [file, text] of files) {
-    for (const pattern of DEV_FORBIDDEN) if (pattern.test(text)) found.push(`${file}: ${pattern.source}`);
+    for (const pattern of DEV_FORBIDDEN) {
+      // A repository chat names its agent instruction files; no other dev source does.
+      if (pattern === DEV_CLAUDE_FILE && file === "packages/dev/src/chat.ts") continue;
+      if (pattern.test(text)) found.push(`${file}: ${pattern.source}`);
+    }
   }
   return found;
 }
@@ -90,6 +96,9 @@ describe("the kernel boundary", () => {
     for (const text of ["run('bun test')", "bun.lock", "a/scripts/x", "read CLAUDE.md", "packages/dev"]) {
       expect(devViolations(sample(text))).toHaveLength(1);
     }
+    expect(
+      devViolations(new Map([["packages/dev/src/chat.ts", "read CLAUDE.md"]])),
+    ).toEqual([]);
     expect(devViolations(sample("bundle, bunch, the scripts directory"))).toEqual([]);
     for (const text of ['const a = "shell";', "const a = 'dev';", 'run("dev:plan")', "x = `pool`"]) {
       expect(engineViolations(sample(text))).toHaveLength(1);

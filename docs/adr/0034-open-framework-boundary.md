@@ -34,7 +34,7 @@ The configuration names a plugin's module by its current name. The engine does n
 
 ### D5: A test keeps the boundary
 
-The non-test source of `packages/dev/src` contains none of `bun `, `bun.lock`, `scripts/`, `CLAUDE.md`, `packages/`. The non-test source of the engine contains no plugin name that ships with operad and no `<plugin>:` action name.
+The non-test source of `packages/dev/src` contains none of `bun `, `bun.lock`, `scripts/`, `packages/`. The name `CLAUDE.md` appears only in `packages/dev/src/chat.ts`, where a repository chat names its agent instruction files (ADR 0028 D8); no other dev source names it. The non-test source of the engine contains no plugin name that ships with operad and no `<plugin>:` action name.
 
 ### D6: The boundary is shown with a repository that does not use Bun
 
