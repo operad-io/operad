@@ -277,6 +277,25 @@ describe("a read-only chat", () => {
       "The agent wants to write `/repo/a.ts` in this read-only chat. Open a worktree for it?",
     );
     expect(asked[0]?.choices).toEqual([...WORKTREE_CHOICES]);
+    expect(asked[0]?.choiceInfo).toEqual({
+      [WORKTREE_ALLOW_ONCE]: {
+        label: WORKTREE_ALLOW_ONCE,
+        hint: "Run this call once in the main clone.",
+        role: "primary",
+      },
+      [WORKTREE_ALLOW_ALWAYS]: {
+        label: WORKTREE_ALLOW_ALWAYS,
+        hint: "Allow this exact call in every chat.",
+      },
+      [WORKTREE_DENY]: {
+        label: WORKTREE_DENY,
+        hint: "Refuse this call.",
+      },
+      [WORKTREE_YES]: {
+        label: WORKTREE_YES,
+        hint: "Move this chat to a writable worktree.",
+      },
+    });
     // The full call stays on the ask for the history and a late answer.
     expect(asked[0]?.resume).toMatchObject({ session: "s-w", call: { kind: "path", value: "/repo/a.ts", tool: "write" } });
     // The agent's call is refused whatever the person said.
@@ -448,17 +467,21 @@ describe("a read-only chat", () => {
   });
 
   test("a no sends nothing, and a question that is not about a call goes through unchanged", async () => {
-    const asked: string[] = [];
+    const asked: AskRequest[] = [];
     const r = await rig(async (ctx: StepContext) => {
       await ctx.ask(writeAsk);
-      await ctx.ask({ prompt: "Which branch?", choices: ["a", "b"] });
+      await ctx.ask({
+        prompt: "Which branch?",
+        choices: ["a", "b"],
+        choiceInfo: { a: { label: "A", role: "primary" }, b: { label: "B" } },
+      });
       return reply("done");
     });
     const chat = await r.chat({ access: { readOnly: true } });
     await r.say(chat, "go");
     const asker = {
-      async ask(request: { prompt: string }) {
-        asked.push(request.prompt);
+      async ask(request: AskRequest) {
+        asked.push(request);
         return { kind: "answered" as const, answer: { choice: isWorktreeQuestion(request.prompt) ? "no" : "allow_once" } };
       },
       async useGrant() {
@@ -467,10 +490,14 @@ describe("a read-only chat", () => {
     };
     const emitted: string[] = [];
     expect((await r.round(chat, {}, asker, (event) => emitted.push(event.type))).result).toBe("done");
-    expect(asked).toEqual([
+    expect(asked.map((request) => request.prompt)).toEqual([
       "The agent wants to write `/repo/a.ts` in this read-only chat. Open a worktree for it?",
       "Which branch?",
     ]);
+    expect(asked[1]?.choiceInfo).toEqual({
+      a: { label: "A", role: "primary" },
+      b: { label: "B" },
+    });
     expect(emitted).toEqual([]);
   });
 

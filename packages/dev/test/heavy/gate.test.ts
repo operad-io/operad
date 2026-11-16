@@ -3099,6 +3099,7 @@ describe("the dev flow", () => {
       expect(nextOf(step.id)).toEqual({
         done: "wait",
         interrupted: "wait",
+        waiting: "wait",
         cancelled: "end_cancelled",
       });
     }

@@ -1,5 +1,6 @@
 /** The shapes `@operad-io/engine/testing` takes and returns. */
 
+import type { ChoiceInfo } from "../plugin/types.ts";
 import type { FlowDefinition } from "../flow/types.ts";
 import type { Fact } from "../log/types.ts";
 import type { JsonValue } from "../log/types.ts";
@@ -62,6 +63,7 @@ export interface FlowWait {
   readonly id: string;
   readonly prompt: string;
   readonly choices: readonly string[];
+  readonly choiceInfo?: Readonly<Record<string, ChoiceInfo>> | undefined;
 }
 
 /** One run, as it stood when `runFlow`, `answer` or `resume` returned. */

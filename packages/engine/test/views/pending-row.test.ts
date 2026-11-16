@@ -90,6 +90,39 @@ async function waitOn(log: LogBackend, object: string): Promise<void> {
   ]);
 }
 
+describe("pending items carry a question's choice info", () => {
+  test("a flow wait's info is in the item, and a wait without it is unchanged", async () => {
+    const e = await env();
+    e.store.put("item", "one", { title: "First" }, "seed");
+    const run = await e.log.startRun("demo-flow", "item:one");
+    const choiceInfo = {
+      yes: { label: "Yes", hint: "Do it.", role: "primary" as const },
+      no: { label: "No", role: "destructive" as const },
+    };
+    await e.log.append(run.runId, 0, [
+      {
+        kind: "waiting_for_person",
+        payload: {
+          waitId: "wait:1",
+          step: "ask",
+          prompt: "Approve?",
+          choices: ["yes", "no"],
+          choiceInfo,
+          waitKind: "step",
+          effectId: null,
+        },
+        cause: "test",
+      },
+    ]);
+    e.store.put("item", "two", { title: "Second" }, "seed");
+    await waitOn(e.log, "item:two");
+    const items = await listPending(e.log, e.registry, undefined, e.views);
+    expect(items.find((item) => item.waitId === "wait:1")?.choiceInfo).toEqual(choiceInfo);
+    const plain = items.find((item) => item.waitId !== "wait:1");
+    expect(plain).not.toHaveProperty("choiceInfo");
+  });
+});
+
 describe("pending items carry their object's row", () => {
   test("the row is the one the list shows, with the run flags", async () => {
     const e = await env();

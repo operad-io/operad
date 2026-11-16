@@ -6,6 +6,7 @@
  * drift apart.
  */
 
+import type { ChoiceInfo } from "@operad-io/engine";
 import { isIntegrating, type ReviewRecord, type TaskData } from "./model.ts";
 
 /** The actions a person wait answers. */
@@ -38,6 +39,50 @@ export function waitChoices(
 ): readonly WaitAction[] {
   const accepts = WAIT_ACCEPTS[wait];
   return hasReverify ? accepts : accepts.filter((action) => action !== "reverify");
+}
+
+/** What each task wait choice is, apart from whether merge is the recommended one. */
+const WAIT_CHOICE_INFO: Readonly<Record<WaitAction, ChoiceInfo>> = {
+  merge: {
+    label: "Merge",
+    hint: "Merge the task's changes into main.",
+  },
+  rework: {
+    label: "Rework",
+    hint: "Send the task back to the agent with your note.",
+    // dev:rework refuses an empty note, so a client must ask for one.
+    note: "required",
+  },
+  reverify: {
+    label: "Check again",
+    hint: "Run the checks and the review again.",
+  },
+  reject: {
+    label: "Reject",
+    hint: "Discard the task's changes.",
+    role: "destructive",
+  },
+};
+
+/**
+ * What the offered choices say. `primary` marks merge as the recommended answer;
+ * a wait after a failed check, failed work or no change leaves it out.
+ */
+export function waitChoiceInfo(
+  choices: readonly string[],
+  primary: boolean,
+): Readonly<Record<string, ChoiceInfo>> {
+  const info: Record<string, ChoiceInfo> = {};
+  for (const choice of choices) {
+    if (!(WAIT_ACTIONS as readonly string[]).includes(choice)) continue;
+    const action = choice as WaitAction;
+    const copy = WAIT_CHOICE_INFO[action];
+    info[choice] =
+      action === "merge" && primary
+        ? { ...copy, role: "primary" }
+        : copy;
+  }
+  return info;
 }
 
 /**

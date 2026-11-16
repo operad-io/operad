@@ -1652,6 +1652,9 @@ describe("http server", () => {
       seed(h, "two", { title: "Second", state: "new" });
 
       const waiting = await h.log.startRun("demo-flow", "item:one");
+      const choiceInfo = {
+        yes: { label: "Yes", hint: "Approve it.", role: "primary" },
+      };
       await h.log.append(waiting.runId, 0, [
         {
           kind: "waiting_for_person",
@@ -1660,6 +1663,7 @@ describe("http server", () => {
             step: "ask",
             prompt: "Approve?",
             choices: ["yes"],
+            choiceInfo,
             waitKind: "step",
             effectId: null,
           },
@@ -1675,6 +1679,7 @@ describe("http server", () => {
         waitId?: string;
         prompt: string;
         choices: string[];
+        choiceInfo?: Record<string, unknown>;
         actions: { plugin: string; action: string }[];
       }[];
       expect(pendingItems).toHaveLength(1);
@@ -1686,6 +1691,7 @@ describe("http server", () => {
       expect(pendingItems[0]?.waitId).toBe("wait:1");
       expect(pendingItems[0]?.prompt).toBe("Approve?");
       expect(pendingItems[0]?.choices).toEqual(["yes"]);
+      expect(pendingItems[0]?.choiceInfo).toEqual(choiceInfo);
       expect(pendingItems[0]?.actions).toContainEqual({
         plugin: "webtest",
         action: "approve",

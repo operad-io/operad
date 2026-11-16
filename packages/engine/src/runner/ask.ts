@@ -22,6 +22,7 @@ import { StateError } from "./errors.ts";
 import type { Grant, KernelState } from "../kernel/types.ts";
 import { useGrant } from "./grants.ts";
 import { isRecord } from "../util.ts";
+import { choiceInfoJson, storedChoiceInfo, type ChoiceInfoMap } from "../plugin/choice-info.ts";
 
 /** How often a waiting step looks again when no change was announced. */
 const RECHECK_MS = 1000;
@@ -52,6 +53,7 @@ export interface AskRecord {
   readonly step: string | null;
   readonly prompt: string;
   readonly choices: readonly string[];
+  readonly choiceInfo: ChoiceInfoMap | undefined;
   readonly status: AskStatus;
   readonly answer: AskedAnswer | undefined;
 }
@@ -111,16 +113,18 @@ export async function scanAsks(
       ) {
         continue;
       }
+      const choices = Array.isArray(payload.choices)
+        ? payload.choices.filter(
+            (item): item is string => typeof item === "string",
+          )
+        : [];
       asks.set(waitId, {
         waitId,
         effectId: payload.effectId,
         step: typeof payload.step === "string" ? payload.step : null,
         prompt: payload.prompt,
-        choices: Array.isArray(payload.choices)
-          ? payload.choices.filter(
-              (item): item is string => typeof item === "string",
-            )
-          : [],
+        choices,
+        choiceInfo: storedChoiceInfo(payload.choiceInfo, choices),
         status: "open",
         answer: undefined,
       });
@@ -399,6 +403,7 @@ export class AskHost {
   ): Promise<AskOutcome> {
     const waitId = askWaitId(runId, effectId, n);
     const choices = [...(request.choices ?? [])];
+    const choiceInfo = storedChoiceInfo(request.choiceInfo, choices);
     const grace = narrowest(request.graceSecs, this.graceSecs);
 
     await appendWhen(this.log, runId, (asks) =>
@@ -413,6 +418,9 @@ export class AskHost {
                 step,
                 prompt: request.prompt,
                 choices,
+                ...(choiceInfo === undefined
+                  ? {}
+                  : { choiceInfo: choiceInfoJson(choiceInfo) }),
               },
             },
           ],
@@ -444,7 +452,15 @@ export class AskHost {
           };
         }
         if (record.status === "timed_out") {
-          return { kind: "timeout", waitId, prompt: record.prompt, choices };
+          return {
+            kind: "timeout",
+            waitId,
+            prompt: record.prompt,
+            choices,
+            ...(record.choiceInfo === undefined
+              ? {}
+              : { choiceInfo: record.choiceInfo }),
+          };
         }
         if (grace <= 0 || expired) {
           await appendWhen(this.log, runId, (asks) =>

@@ -318,3 +318,9 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 | T-0521-M1 | packages/chat/src/model.ts | the unanswered messages were joined with a blank line again, not as separate blocks | `a failed reply > the C-0021 history answers a new message after two empty failures` |
 | T-0521-M2 | packages/chat/src/reply.ts | an empty failure was marked taken only on the third in a row | `a failed reply > two empty failures in a row stop the oldest message from being sent a third time` |
 | T-0521-M3 | packages/chat/src/reply.ts | an empty reply with no usage still read `the agent gave no reply` | `a failed reply > an empty result that called no model says so, with the agent's own reason` |
+
+## T-0523 — the worktree question's answers say what they are
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0523-M1 | packages/chat/src/reply.ts | the worktree question was asked without its `choiceInfo` | `a read-only chat > a question about writing a file names the path and says it is a write` |

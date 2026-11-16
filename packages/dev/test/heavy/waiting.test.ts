@@ -5,14 +5,17 @@ import {
   Kernel,
   openLog,
   PluginRegistry,
+  type AskRequest,
   type StepEvent,
 } from "@operad-io/engine";
 import plugin from "../../src/index.ts";
 import {
+  waitingPrompt,
   waitingReason,
   waitingSummary,
   type AnnounceParams,
 } from "../../src/announce.ts";
+import { waitChoices } from "../../src/waits.ts";
 import { stepTestHooks } from "../../src/steps.ts";
 import { addPlan, addRepository, addTask, getTask } from "../../src/service.ts";
 import { taskData, type TaskAttempt, type TaskData } from "../../src/model.ts";
@@ -96,6 +99,34 @@ async function announce(
     },
   });
   return { result: found.result, events };
+}
+
+/** Runs the announce step with the question it hands to the wait. */
+async function announceQuestion(
+  fixture: Fixture,
+  params: AnnounceParams,
+): Promise<{ readonly result: string; readonly asked: readonly AskRequest[] }> {
+  const asked: AskRequest[] = [];
+  const found = await fixture.registry.runStep("dev/announce", params, {
+    runId: fixture.runId,
+    object: await getTask(fixture.store, fixture.task.id),
+    asker: {
+      useGrant: async () => false,
+      ask: async (request) => {
+        asked.push(request);
+        return {
+          kind: "timeout",
+          waitId: "w",
+          prompt: request.prompt,
+          choices: request.choices ?? [],
+          ...(request.choiceInfo === undefined
+            ? {}
+            : { choiceInfo: request.choiceInfo }),
+        };
+      },
+    },
+  });
+  return { result: found.result, asked };
 }
 
 async function receivedEvents(fixture: Fixture): Promise<number> {
@@ -343,6 +374,162 @@ describe("dev.waiting", () => {
       mode: "observe",
       object: "$event.object",
     });
+  });
+});
+
+describe("waitingPrompt", () => {
+  const task = (attempt: TaskAttempt): TaskData =>
+    ({
+      repository: "r",
+      plan: "p",
+      title: "t",
+      brief: "",
+      after: [],
+      phase: "waiting",
+      attempts: 1,
+      run: null,
+      attempt,
+    }) as TaskData;
+
+  test("it says the review's verdict and its highest finding", () => {
+    const reviewed = task({
+      number: 1,
+      review: {
+        result: "findings",
+        decision: "findings",
+        findings: [
+          { file: "a.ts", line: 5, severity: "minor", summary: "small", trigger: "t" },
+          { file: "b.ts", line: 9, severity: "critical", summary: "breaks", trigger: "always" },
+        ],
+      },
+      rework: { run: "r", source: "review", streak: 2, result: "ask", twice: true },
+    });
+    expect(
+      waitingPrompt({ reason: "review failed twice in a row" }, reviewed, "major"),
+    ).toContain("critical finding at b.ts:9: breaks");
+    expect(
+      waitingPrompt({ reason: "review findings" }, reviewed, "major"),
+    ).toBe("The review failed: critical finding at b.ts:9: breaks (always).");
+  });
+
+  test("it names a failed check, a failed merge, a timeout and no change", () => {
+    expect(
+      waitingPrompt(
+        { reason: "gate failed" },
+        task({ number: 1, verify: { result: "fail", command: "bun test" } }),
+        "major",
+      ),
+    ).toBe("The check failed: `bun test`.");
+    expect(
+      waitingPrompt(
+        { reason: "merge refused", detail: "push was refused" },
+        task({ number: 1 }),
+        "major",
+      ),
+    ).toBe("The merge failed: push was refused.");
+    expect(
+      waitingPrompt(
+        { reason: "work timed out", detail: "no output for 5 minutes" },
+        task({ number: 1 }),
+        "major",
+      ),
+    ).toBe("The worker timed out. no output for 5 minutes.");
+    expect(
+      waitingPrompt({ reason: "work did nothing" }, task({ number: 1 }), "major"),
+    ).toBe("The worker changed nothing.");
+    expect(
+      waitingPrompt({ reason: "ready to merge" }, task({ number: 1 }), "major"),
+    ).toContain("ready to merge");
+  });
+});
+
+describe("the question an announce step hands over", () => {
+  test("a failed work question says why, keeps the choices and names no primary", async () => {
+    const fixture = await setup();
+    try {
+      await becomeWaiting(fixture, {
+        attempts: 1,
+        attempt: { number: 1, run: "run-1", result: "nothing" },
+      });
+      const choices = [...waitChoices("person", true)];
+      const out = await announceQuestion(fixture, {
+        from: "work",
+        result: "nothing",
+        choices,
+      });
+      expect(out.result).toBe("waiting");
+      expect(out.asked[0]?.prompt).toBe("The worker changed nothing.");
+      expect(out.asked[0]?.choices).toEqual(choices);
+      expect(out.asked[0]?.choiceInfo?.merge?.role).toBeUndefined();
+      expect(out.asked[0]?.choiceInfo?.rework?.note).toBe("required");
+      expect(out.asked[0]?.choiceInfo?.reject?.role).toBe("destructive");
+    } finally {
+      await fixture.log.close();
+    }
+  });
+
+  test("a review that passed asks with merge as the primary choice", async () => {
+    const fixture = await setup();
+    try {
+      await becomeWaiting(fixture, {
+        attempts: 1,
+        attempt: {
+          number: 1,
+          run: "run-1",
+          verified: "abc123",
+          review: { result: "pass", sha: "abc123" },
+        },
+      });
+      const out = await announceQuestion(fixture, {
+        from: "review",
+        result: "pass",
+        choices: [...waitChoices("person", true)],
+      });
+      expect(out.result).toBe("waiting");
+      expect(out.asked[0]?.prompt).toContain("ready to merge");
+      expect(out.asked[0]?.choiceInfo?.merge?.role).toBe("primary");
+    } finally {
+      await fixture.log.close();
+    }
+  });
+
+  test("a review finding is in the question's reason", async () => {
+    const fixture = await setup();
+    try {
+      await becomeWaiting(fixture, {
+        attempts: 1,
+        reworkStreak: 2,
+        attempt: {
+          number: 1,
+          run: "run-1",
+          review: {
+            result: "findings",
+            decision: "findings",
+            findings: [
+              {
+                file: "a.ts",
+                line: 7,
+                severity: "major",
+                summary: "the cache is stale",
+                trigger: "after a rename",
+              },
+            ],
+          },
+          rework: { run: "run-1", source: "review", streak: 2, result: "ask" },
+        },
+      });
+      const out = await announceQuestion(fixture, {
+        from: "rework",
+        result: "ask",
+        choices: [...waitChoices("person", true)],
+      });
+      expect(out.asked[0]?.prompt).toBe(
+        "The review failed: major finding at a.ts:7: the cache is stale (after a rename).",
+      );
+      expect(out.asked[0]?.choiceInfo?.merge?.role).toBeUndefined();
+    } finally {
+      await fixture.log.close();
+    }
   });
 });
 

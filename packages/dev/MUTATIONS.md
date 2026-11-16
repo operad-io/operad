@@ -1345,3 +1345,10 @@ the row fields.
 | T-0513-M3 | packages/dev/src/chat.ts | the path list kept files inside a skill directory the chat already loads | `a repository chat's starting text > lists other agent files by tracked path, leaving out untracked files and loaded skills` |
 | T-0513-M4 | packages/dev/src/chat.ts | the worktree wording was replaced by the read-only wording | `a repository chat's starting text > names where it is and what is refused` |
 | T-0513-M5 | packages/dev/src/chat.ts | an instruction file that left the repository through a link was read | `a repository chat's starting text > skips a link that leaves the repository, for both the text and the path list` |
+
+## T-0523 — a task question says why it waits
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0523-M1 | packages/dev/src/waits.ts | merge was marked `primary` even when the wait was not the ready-to-merge question | `every task wait says what its choices are, and its prompt is the reason` |
+| T-0523-M2 | packages/dev/src/announce.ts | the no-change question returned the old list of choices instead of saying what changed | `the question an announce step hands over > a failed work question says why, keeps the choices and names no primary` |

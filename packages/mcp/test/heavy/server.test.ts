@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import {
   SqlitePluginStore,
   type ActionInfo,
+  type JsonValue,
   openConfigLog,
   readConfig,
   readState,
@@ -174,7 +175,12 @@ function putObject(
 async function addRun(
   home: string,
   object: string,
-  waiting: { readonly prompt: string } | undefined,
+  waiting:
+    | {
+        readonly prompt: string;
+        readonly choiceInfo?: Readonly<Record<string, JsonValue>> | undefined;
+      }
+    | undefined,
   choices: readonly string[] = ["yes"],
   flow = "demo-flow",
 ): Promise<string> {
@@ -197,6 +203,9 @@ async function addRun(
             step: "ask",
             prompt: waiting.prompt,
             choices: [...choices],
+            ...(waiting.choiceInfo === undefined
+              ? {}
+              : { choiceInfo: waiting.choiceInfo }),
             waitKind: "step",
             effectId: null,
           },
@@ -474,7 +483,10 @@ describe("operad mcp", () => {
     });
     seed(home, "one", { title: "First", state: "new", note: "$1" });
     seed(home, "two", { title: "Second", state: "open", mark: "integrating", badge: "#2" });
-    const waitingRun = await addRun(home, "item:one", { prompt: "Approve?" });
+    const choiceInfo = {
+      yes: { label: "Yes", hint: "Approve it.", role: "primary" },
+    };
+    const waitingRun = await addRun(home, "item:one", { prompt: "Approve?", choiceInfo });
     const runningRun = await addRun(home, "item:two", undefined);
     const child = openSession(home);
     try {
@@ -594,13 +606,16 @@ describe("operad mcp", () => {
       const pendingItems = structuredOf(pending).items as {
         runId: string;
         prompt: string;
+        choiceInfo?: Record<string, unknown>;
         actions: { plugin: string; action: string }[];
       }[];
       expect(pendingItems).toHaveLength(1);
       expect(pendingItems[0]).toMatchObject({
         runId: waitingRun,
         prompt: "Approve?",
+        choiceInfo,
       });
+      expect(textOf(pending)).toContain("  - yes: label Yes; Approve it.; primary");
       expect(pendingItems[0]?.actions.map((action) => `${action.plugin}:${action.action}`)).toContain(
         "demo:approve",
       );

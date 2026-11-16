@@ -1,6 +1,6 @@
 import type { EndStatus, Replay, StepKind } from "../flow/types.ts";
 import type { FactCause, JsonValue, NewFact } from "../log/types.ts";
-import type { Actor } from "../plugin/types.ts";
+import type { Actor, ChoiceInfo } from "../plugin/types.ts";
 
 /** The kinds of fact the kernel writes. */
 export type FactKind =
@@ -56,6 +56,7 @@ export interface NotifyPendingEffect {
   readonly step: string;
   readonly prompt: string;
   readonly choices: readonly string[];
+  readonly choiceInfo?: Readonly<Record<string, ChoiceInfo>> | undefined;
   readonly waitKind: WaitKind;
 }
 
@@ -200,6 +201,7 @@ export interface PendingWait {
   readonly step: string;
   readonly prompt: string;
   readonly choices: readonly string[];
+  readonly choiceInfo?: Readonly<Record<string, ChoiceInfo>> | undefined;
   readonly kind: WaitKind;
   readonly effectId: string | null;
   readonly ask?: AskedWait | undefined;
@@ -314,6 +316,7 @@ export interface WaitingForPersonPayload {
   readonly step: string;
   readonly prompt: string;
   readonly choices: string[];
+  readonly choiceInfo?: Readonly<Record<string, ChoiceInfo>> | undefined;
   readonly waitKind: WaitKind;
   readonly effectId: string | null;
   readonly ask?: AskedWait;

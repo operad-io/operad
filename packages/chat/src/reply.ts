@@ -7,7 +7,7 @@
 
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { AskTimeoutError, attachmentDir, isRecord, messageOf, safeFileName, type AskOutcome, type AskRequest, type JsonValue, type PluginStepResult, type RunObject, type StepAsker, type StepContext, type UsageTokens } from "@operad-io/engine";
+import { AskTimeoutError, attachmentDir, isRecord, messageOf, safeFileName, type AskOutcome, type AskRequest, type ChoiceInfo, type JsonValue, type PluginStepResult, type RunObject, type StepAsker, type StepContext, type UsageTokens } from "@operad-io/engine";
 import {
   appendAlwaysAllow,
   alwaysAllowEntry,
@@ -123,6 +123,39 @@ export const WORKTREE_ALLOW_ALWAYS = "Always allow";
 export const WORKTREE_DENY = "Deny";
 export const WORKTREE_YES = "Open a worktree";
 export const WORKTREE_CHOICES = [WORKTREE_ALLOW_ONCE, WORKTREE_ALLOW_ALWAYS, WORKTREE_DENY, WORKTREE_YES] as const;
+
+/** What each worktree answer is, keyed by the words an answer sends. */
+const WORKTREE_CHOICE_INFO: Readonly<Record<string, ChoiceInfo>> = {
+  [WORKTREE_ALLOW_ONCE]: {
+    label: WORKTREE_ALLOW_ONCE,
+    hint: "Run this call once in the main clone.",
+    role: "primary",
+  },
+  [WORKTREE_ALLOW_ALWAYS]: {
+    label: WORKTREE_ALLOW_ALWAYS,
+    hint: "Allow this exact call in every chat.",
+  },
+  [WORKTREE_DENY]: {
+    label: WORKTREE_DENY,
+    hint: "Refuse this call.",
+  },
+  [WORKTREE_YES]: {
+    label: WORKTREE_YES,
+    hint: "Move this chat to a writable worktree.",
+  },
+};
+
+/** The worktree question's information for just the choices it offers here. */
+export function worktreeChoiceInfo(
+  choices: readonly string[] = WORKTREE_CHOICES,
+): Readonly<Record<string, ChoiceInfo>> {
+  const info: Record<string, ChoiceInfo> = {};
+  for (const choice of choices) {
+    const entry = WORKTREE_CHOICE_INFO[choice];
+    if (entry !== undefined) info[choice] = entry;
+  }
+  return info;
+}
 
 type WorktreeAnswer = "allow_once" | "allow_always" | "deny" | "worktree";
 
@@ -339,12 +372,14 @@ function readOnlyAsker(
       if (person && call !== undefined && (await userLayer(ctx)).some((entry) => remembered(entry, call, cwd))) {
         return { kind: "answered", answer: { choice: "allow_once" } };
       }
+      const choices = person
+        ? [...WORKTREE_CHOICES]
+        : [WORKTREE_ALLOW_ONCE, WORKTREE_DENY, WORKTREE_YES];
       const shaped: AskRequest = write
         ? {
             prompt: call === undefined ? WORKTREE_QUESTION : worktreeQuestion(call),
-            choices: person
-              ? [...WORKTREE_CHOICES]
-              : [WORKTREE_ALLOW_ONCE, WORKTREE_DENY, WORKTREE_YES],
+            choices,
+            choiceInfo: worktreeChoiceInfo(choices),
             ...(request.resume === undefined ? {} : { resume: worktreeResume(request, call) }),
             ...(request.onTimeout === undefined ? {} : { onTimeout: request.onTimeout }),
             ...(request.graceSecs === undefined ? {} : { graceSecs: request.graceSecs }),

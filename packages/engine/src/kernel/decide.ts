@@ -15,6 +15,7 @@ import type {
   StepInterruptedPayload,
 } from "./types.ts";
 import { inputCause } from "./types.ts";
+import { storedChoiceInfo, type ChoiceInfoMap } from "../plugin/choice-info.ts";
 
 /** The default number of times a run may enter the same step. */
 export const DEFAULT_MAX_VISITS = 10;
@@ -60,6 +61,7 @@ interface AskedVia {
   readonly waitId: string;
   readonly prompt: string;
   readonly choices: readonly string[];
+  readonly choiceInfo: ChoiceInfoMap | undefined;
   readonly resume: JsonValue;
 }
 
@@ -162,6 +164,7 @@ function askedIn(result: string, data: unknown): AskedVia | undefined {
     waitId: record.waitId,
     prompt: record.prompt,
     choices,
+    choiceInfo: storedChoiceInfo(record.choiceInfo, choices),
     resume: (record.resume ?? null) as JsonValue,
   };
 }
@@ -351,6 +354,10 @@ export function decide(
             ? [...asked.choices]
             : own;
         const prompt = asked?.prompt ?? waitPrompt(step.params, via);
+        const choiceInfo = storedChoiceInfo(
+          asked?.choiceInfo ?? step.params.choiceInfo,
+          choices,
+        );
         push(
           "waiting_for_person",
           {
@@ -358,6 +365,7 @@ export function decide(
             step: step.id,
             prompt,
             choices,
+            ...(choiceInfo === undefined ? {} : { choiceInfo }),
             waitKind: "step",
             effectId: null,
             ...(asked === undefined || via === undefined
@@ -372,6 +380,7 @@ export function decide(
           step: step.id,
           prompt,
           choices,
+          ...(choiceInfo === undefined ? {} : { choiceInfo }),
           waitKind: "step",
         });
         return;

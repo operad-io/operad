@@ -362,11 +362,11 @@ count a rework. A round uses its fallback at most once, so a retry that finds th
 primary unavailable again waits rather than calling the fallback a second time.
 
 A round waits at most 6 times (about 90 minutes at the default). Then the task
-waits for a person with the note `review did not finish (model unavailable)`. A
+waits for a person, and its prompt says `review did not finish (model unavailable)`. A
 review that cannot fit another run in its three-hour step time does the same with
 `review did not finish (out of time)`. During the wait, merge, reject, rework and
 reverify are not offered. A review that times out is retried once with the same
-arguments; a second timeout waits for a person with the note
+arguments; a second timeout waits for a person, and its prompt says
 `review timed out twice`. A crash during a review resumes the same round and
 reuses the answer the reviewer already gave, so a fallback is not called twice.
 `operad history <task>` names the model that reviewed each round and why a

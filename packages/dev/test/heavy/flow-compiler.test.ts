@@ -71,6 +71,71 @@ test("the built-in default keeps today's ids and edges", () => {
   });
 });
 
+test("every task wait says what its choices are, and its prompt is the reason", () => {
+  const flow = compileDevFlow("dev", [
+    { stage: "work" },
+    { stage: "check" },
+    { stage: "review" },
+    { stage: "human" },
+  ]);
+  const waits = flow.steps.filter((step) => step.kind === "wait_person");
+  expect(waits.length).toBeGreaterThan(0);
+  for (const step of waits) {
+    if (step.kind !== "wait_person") continue;
+    const params = step.params as {
+      readonly prompt: string;
+      readonly choices: readonly string[];
+      readonly choiceInfo?: Readonly<Record<string, { readonly label?: string; readonly hint?: string; readonly role?: string; readonly note?: string }>>;
+    };
+    expect(params.choiceInfo, step.id).toBeDefined();
+    expect(Object.keys(params.choiceInfo ?? {}).sort(), step.id).toEqual([...params.choices].sort());
+    const merge = params.choiceInfo?.merge;
+    expect(merge?.label, step.id).toBe("Merge");
+    expect(merge?.hint, step.id).toBe("Merge the task's changes into main.");
+    expect(params.choiceInfo?.rework?.note, step.id).toBe("required");
+    expect(params.choiceInfo?.reject?.role, step.id).toBe("destructive");
+    if (params.choices.includes("reverify")) {
+      expect(params.choiceInfo?.reverify?.label, step.id).toBe("Check again");
+    }
+    expect(params.prompt).not.toContain("merge it");
+    if (step.id.startsWith("wait_review_")) {
+      expect(merge?.role, step.id).toBeUndefined();
+    }
+  }
+  const timeout = stepOf(flow.steps, "wait_review_timeout");
+  expect((timeout.params as { readonly prompt: string }).prompt).toBe(
+    "review timed out twice",
+  );
+  const unavailable = stepOf(flow.steps, "wait_review_unavailable");
+  expect((unavailable.params as { readonly prompt: string }).prompt).toBe(
+    "review did not finish (model unavailable)",
+  );
+  const outOfTime = stepOf(flow.steps, "wait_review_out_of_time");
+  expect((outOfTime.params as { readonly prompt: string }).prompt).toBe(
+    "review did not finish (out of time)",
+  );
+});
+
+test("a generated flow gives each of its waits the same choice info", () => {
+  const flow = compileDevFlow("mine", [
+    { stage: "work" },
+    { stage: "check" },
+    { stage: "review" },
+    { stage: "human" },
+  ]);
+  const waits = flow.steps.filter((step) => step.kind === "wait_person");
+  expect(waits.length).toBeGreaterThan(0);
+  for (const step of waits) {
+    expect(step.params).toMatchObject({
+      choiceInfo: {
+        merge: { label: "Merge" },
+        rework: { label: "Rework", note: "required" },
+        reject: { label: "Reject", role: "destructive" },
+      },
+    });
+  }
+});
+
 test("a flow with no review skips review", () => {
   const flow = compileDevFlow("quick", [
     { stage: "work" },

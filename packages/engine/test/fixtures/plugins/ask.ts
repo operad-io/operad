@@ -54,7 +54,14 @@ function flow(
       {
         id: "person",
         kind: "wait_person",
-        params: { prompt: "Waiting?", choices: ["yes", "no"] },
+        params: {
+          prompt: "Waiting?",
+          choices: ["yes", "no"],
+          choiceInfo: {
+            yes: { label: "Yes", hint: "Go ahead.", role: "primary" },
+            no: { label: "No", hint: "Stop here.", role: "destructive" },
+          },
+        },
         replay: "safe",
         next: { yes: "done", no: "done", interrupted: "done" },
       },
@@ -102,6 +109,13 @@ export default definePlugin({
           choices: Array.isArray(ctx.params.choices)
             ? ctx.params.choices.filter((item): item is string => typeof item === "string")
             : ["yes", "no"],
+          ...(isRecord(ctx.params.choiceInfo)
+            ? {
+                choiceInfo: ctx.params.choiceInfo as Readonly<
+                  Record<string, { label?: string; hint?: string; role?: "primary" | "destructive"; note?: "optional" | "required" }>
+                >,
+              }
+            : {}),
           ...(typeof ctx.params.graceSecs === "number"
             ? { graceSecs: ctx.params.graceSecs }
             : {}),

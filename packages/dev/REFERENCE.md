@@ -464,11 +464,11 @@ The waits are bounded. A round waits at most 6 times (`MAX_REVIEW_WAITS`); the f
 `reviewer.retrySecs` and each further wait doubles, up to 30 minutes (2, 4, 8, 16,
 30, 30 minutes at the default: about 90); the count is the number of primary runs
 of the round recorded as unavailable in the task, so a crash and a restart agree
-on it. The next unavailable run waits for a person with the note `review did not
+on it. The next unavailable run waits for a person, and its prompt says `review did not
 finish (model unavailable)`. The dev flow's visit limit is finite (10 plus one
 visit of each wait step per allowed work wait). One review step also has to end
 before its three-hour step timeout: a run that cannot fit in what is left is
-skipped, and the round waits for a person with the note `review did not finish
+skipped, and the round waits for a person, and its prompt says `review did not finish
 (out of time)`. While a review waits for its model, `merge`, `reject`, `rework`
 and `reverify` are not offered.
 
@@ -505,7 +505,7 @@ non-zero has reviewed: its report is used and a retry never deletes it. `dev:rev
 again with no runs from the old round.
 
 A review that times out runs once more with the same arguments. A second
-timeout waits for a person with the note `review timed out twice`. Neither an
+timeout waits for a person, and its prompt says `review timed out twice`. Neither an
 unavailable reviewer nor a timeout counts toward `maxAutoRework`: only a review
 that returns findings at or above `reviewer.fixLevel` does.
 

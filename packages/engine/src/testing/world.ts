@@ -246,7 +246,14 @@ async function snapshot(world: World, runId: string): Promise<FlowRun> {
     wait:
       state.wait === null || status !== "waiting_person"
         ? undefined
-        : { id: state.wait.id, prompt: state.wait.prompt, choices: state.wait.choices },
+        : {
+            id: state.wait.id,
+            prompt: state.wait.prompt,
+            choices: state.wait.choices,
+            ...(state.wait.choiceInfo === undefined
+              ? {}
+              : { choiceInfo: state.wait.choiceInfo }),
+          },
     facts,
     history,
     store: world.store,

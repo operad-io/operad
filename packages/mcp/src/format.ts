@@ -161,6 +161,16 @@ function pendingItemMarkdown(item: PendingItem): string[] {
   lines.push(`- waiting: ${item.prompt}`);
   if (item.choices.length > 0) {
     lines.push(`- choices: ${item.choices.join(", ")}`);
+    for (const choice of item.choices) {
+      const info = item.choiceInfo?.[choice];
+      if (info === undefined) continue;
+      const parts: string[] = [];
+      if (info.label !== undefined) parts.push(`label ${info.label}`);
+      if (info.hint !== undefined) parts.push(info.hint);
+      if (info.role !== undefined) parts.push(info.role);
+      if (info.note !== undefined) parts.push(`note ${info.note}`);
+      if (parts.length > 0) lines.push(`  - ${choice}: ${parts.join("; ")}`);
+    }
   }
   if (item.actions.length > 0) {
     lines.push(

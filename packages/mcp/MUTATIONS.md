@@ -96,3 +96,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0443-M1 | packages/mcp/src/server.ts | an otherwise valid params object was refused again when it carried keys | `operad mcp > accepts the parameters the MCP specification allows on ping and tools/list` |
+
+## T-0523 — the pending Markdown says what each choice is
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0523-M1 | packages/mcp/src/format.ts | the pending Markdown dropped each choice's label, hint, role and note | `the pending Markdown > writes one section per item, with its choices, actions, object and link` |

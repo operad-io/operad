@@ -200,6 +200,9 @@ export async function runStepWorker(
             ...(question.choices === undefined
               ? {}
               : { choices: [...question.choices] }),
+            ...(question.choiceInfo === undefined
+              ? {}
+              : { choiceInfo: question.choiceInfo }),
             ...(question.graceSecs === undefined
               ? {}
               : { graceSecs: question.graceSecs }),

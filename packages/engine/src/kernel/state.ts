@@ -178,6 +178,9 @@ export function evolve(state: KernelState, fact: NewFact): KernelState {
         step: payload.step,
         prompt: payload.prompt,
         choices: payload.choices,
+        ...(payload.choiceInfo === undefined
+          ? {}
+          : { choiceInfo: payload.choiceInfo }),
         kind: payload.waitKind,
         effectId: payload.effectId,
         ...(payload.ask === undefined ? {} : { ask: payload.ask }),
