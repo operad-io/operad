@@ -133,8 +133,20 @@ export function pageActions(actions: readonly ViewAction[]): readonly ViewAction
   return actions.filter((action) => action.creates === undefined);
 }
 
+/** The chat's stop action, while its reply is running. */
+export function stopAction(state: TuiState): ViewAction | undefined {
+  const object = state.object;
+  if (object?.type !== "chat" || !object.row.running) return undefined;
+  return pageActions(object.actions).find(
+    (action) => action.plugin === "chat" && action.action === "stop",
+  );
+}
+
 /** The first available action, the one the footer offers. */
 export function mainAction(state: TuiState): ViewAction | undefined {
+  // While a reply runs, its stop action is the one the main key offers.
+  const stop = stopAction(state);
+  if (stop !== undefined) return stop;
   // An action that ends the object is never the main one, even when it is alone.
   return pageActions(state.object?.actions ?? []).find((action) => action.ends !== true);
 }
@@ -798,6 +810,76 @@ function afterArgs(
   return send(state, { action, id, ...given });
 }
 
+/** How often `part` is in `text`; the same count the section takes before a send. */
+function countOf(text: string, part: string): number {
+  if (part === "") return 0;
+  let count = 0;
+  let at = 0;
+  for (;;) {
+    const found = text.indexOf(part, at);
+    if (found < 0) return count;
+    count += 1;
+    at = found + part.length;
+  }
+}
+
+/** Draws a chat message at the end of its transcript until the server's copy arrives. */
+function withOptimistic(
+  state: TuiState,
+  request: {
+    action: string;
+    id: string;
+    note?: string;
+    args?: Readonly<Record<string, unknown>>;
+    confirmed?: boolean;
+  },
+): TuiState {
+  const object = state.object;
+  const text = request.note;
+  const sending = object?.actions.some(
+    (action) => action.name === request.action && action.plugin === "chat" && action.action === "send",
+  );
+  if (
+    object?.type !== "chat" ||
+    sending !== true ||
+    text === undefined ||
+    text.trim() === "" ||
+    text.startsWith("/")
+  ) {
+    return state;
+  }
+  const section = object.sections.find((one) => one.id === "transcript");
+  if (section === undefined) return state;
+  const id = state.optimisticSeq;
+  const entry = { id, text, baseline: countOf(section.markdown, text) };
+  const sections = object.sections.map((one) =>
+    one.id === section.id
+      ? { ...one, optimistic: [...(one.optimistic ?? []), entry] }
+      : one,
+  );
+  return {
+    ...state,
+    optimisticSeq: id + 1,
+    object: { ...object, sections },
+    send: { objectId: object.id, sectionId: section.id, id },
+  };
+}
+
+/** The message a failed send drew is no longer on its way. */
+function dropOptimistic(state: TuiState): TuiState {
+  const sent = state.send;
+  const object = state.object;
+  if (sent === undefined || object === undefined || object.id !== sent.objectId) {
+    return state.send === undefined ? state : { ...state, send: undefined };
+  }
+  const sections = object.sections.map((section) =>
+    section.id === sent.sectionId && section.optimistic !== undefined
+      ? { ...section, optimistic: section.optimistic.filter((entry) => entry.id !== sent.id) }
+      : section,
+  );
+  return { ...state, object: { ...object, sections }, send: undefined };
+}
+
 function send(
   state: TuiState,
   request: {
@@ -808,7 +890,24 @@ function send(
     confirmed?: boolean;
   },
 ): TuiState {
-  return { ...state, input: undefined, acting: true, actionRequest: request };
+  const optimistic = withOptimistic(state, request);
+  // A note stays in its input, locked, until the server accepts it or refuses it.
+  const note =
+    optimistic.input?.kind === "note"
+      ? {
+          ...optimistic.input,
+          sending: true,
+          error: undefined,
+          commandMenu: undefined,
+          commands: undefined,
+        }
+      : undefined;
+  return {
+    ...optimistic,
+    ...(note === undefined ? { input: undefined } : { input: note }),
+    acting: true,
+    actionRequest: request,
+  };
 }
 
 /** `a`, or a bound key: the key that reached the reducer, as a label. */
@@ -843,23 +942,102 @@ function noteMenu(cursor: number): { commandMenu: { cursor: number }; commands: 
   return { commandMenu: menu, commands: menu };
 }
 
-/**
- * A note's text after a key: a line that starts with `/` and still names a
- * command shows the chat's commands, filtered by what follows the slash. Any
- * other text keeps the note as it is.
- */
-function withNoteText(
+type NoteInput = Extract<TuiInput, { readonly kind: "note" }>;
+
+function noteUnits(input: NoteInput): string[] {
+  return graphemes(input.text);
+}
+
+/** The cursor in a note, in display characters; the end for an older state. */
+function noteCursor(input: NoteInput): number {
+  const units = noteUnits(input);
+  const at = Math.trunc(input.cursor ?? units.length);
+  return Math.min(Math.max(0, Number.isFinite(at) ? at : units.length), units.length);
+}
+
+function clampAt(units: readonly string[], at: number): number {
+  return Math.min(Math.max(0, Math.trunc(at)), units.length);
+}
+
+/** The display indexes where the line around `at` starts and ends. */
+function lineBounds(units: readonly string[], at: number): { readonly start: number; readonly end: number } {
+  let start = at;
+  while (start > 0 && units[start - 1] !== "\n") start -= 1;
+  let end = at;
+  while (end < units.length && units[end] !== "\n") end += 1;
+  return { start, end };
+}
+
+function previousWord(units: readonly string[], at: number): number {
+  let index = at;
+  while (index > 0 && /\s/u.test(units[index - 1] ?? "")) index -= 1;
+  while (index > 0 && !/\s/u.test(units[index - 1] ?? "")) index -= 1;
+  return index;
+}
+
+function nextWord(units: readonly string[], at: number): number {
+  let index = at;
+  while (index < units.length && !/\s/u.test(units[index] ?? "")) index += 1;
+  while (index < units.length && /\s/u.test(units[index] ?? "")) index += 1;
+  return index;
+}
+
+function moveLine(units: readonly string[], at: number, delta: number): number {
+  const line = lineBounds(units, at);
+  const column = at - line.start;
+  if (delta < 0) {
+    if (line.start === 0) return 0;
+    const before = lineBounds(units, line.start - 1);
+    return Math.min(before.start + column, before.end);
+  }
+  if (line.end >= units.length) return units.length;
+  const after = lineBounds(units, line.end + 1);
+  return Math.min(after.start + column, after.end);
+}
+
+/** A note's text after an edit: the cursor stays where the person put it. */
+function withNoteEdit(
   state: TuiState,
-  input: Extract<TuiInput, { readonly kind: "note" }>,
+  input: NoteInput,
   text: string,
+  cursor: number,
+  menu = true,
 ): TuiState {
-  const base = { ...input, text, commandMenu: undefined, commands: undefined };
-  if (state.object === undefined || !text.startsWith("/") || /\s/.test(text)) {
+  const units = graphemes(text);
+  const at = clampAt(units, cursor);
+  const base = { ...input, text, cursor: at, error: undefined, commandMenu: undefined, commands: undefined };
+  if (!menu || state.object === undefined || !text.startsWith("/") || /\s/.test(text)) {
     return { ...state, input: base };
   }
   const commands = chatCommands(state.object.actions, state.object.row);
   if (filterCommands(text.slice(1), commands).length === 0) return { ...state, input: base };
   return { ...state, input: { ...base, ...noteMenu(0) } };
+}
+
+/** A note after text was inserted at the cursor. */
+function withNoteText(state: TuiState, input: NoteInput, text: string): TuiState {
+  return withNoteEdit(state, input, text, graphemes(text).length);
+}
+
+/** Pasted text as a note takes it: line breaks kept, other control bytes dropped. */
+function pasteText(text: string): string {
+  return text
+    .replace(/\r\n?/g, "\n")
+    .replace(/\t/g, "    ")
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "");
+}
+
+/** A paste reaches the note at its cursor; it never sends. */
+export function pasteInto(state: TuiState, text: string): TuiState {
+  const input = state.input;
+  if (input?.kind !== "note" || input.sending === true) return state;
+  const clean = pasteText(text);
+  if (clean === "") return state;
+  const units = noteUnits(input);
+  const at = noteCursor(input);
+  const added = graphemes(clean);
+  units.splice(at, 0, ...added);
+  return withNoteEdit(state, input, units.join(""), at + added.length);
 }
 
 function closeNoteMenu(
@@ -901,6 +1079,7 @@ export function inputKey(
       ? closeNoteMenu(state, input)
       : { ...state, input: undefined };
   }
+  if (input.kind === "note" && input.sending === true) return state;
   if (input.kind === "answer") return answerKey(state, input, key, enter);
   if (input.kind === "setting") return settingKey(state, input, event, key, enter);
   if (input.kind === "args") return argsKey(state, input, event, key, enter);
@@ -936,8 +1115,39 @@ export function inputKey(
   }
   // A note: Enter sends, Shift-Enter or Ctrl-J adds a line. While a line that
   // starts with `/` names a command, the list takes the arrows and Enter picks.
+  const units = noteUnits(input);
+  let at = noteCursor(input);
+  const move = (cursor: number): TuiState => ({
+    ...state,
+    input: { ...input, cursor: clampAt(units, cursor) },
+  });
+  const left = key === "left" || key === "arrowleft";
+  const right = key === "right" || key === "arrowright";
+  if (left || right) {
+    const word = event.meta === true || event.ctrl === true;
+    const cursor = word
+      ? left ? previousWord(units, at) : nextWord(units, at)
+      : at + (left ? -1 : 1);
+    return move(cursor);
+  }
+  if (key === "home" || (event.ctrl === true && key === "a")) return move(lineBounds(units, at).start);
+  if (key === "end" || (event.ctrl === true && key === "e")) return move(lineBounds(units, at).end);
+  if (key === "delete") {
+    if (at >= units.length) return state;
+    units.splice(at, 1);
+    return withNoteEdit(state, input, units.join(""), at);
+  }
+  if (key === "backspace") {
+    if (at === 0) return state;
+    units.splice(at - 1, 1);
+    return withNoteEdit(state, input, units.join(""), at - 1);
+  }
   const newline = (enter && event.shift === true) || (event.ctrl === true && (key === "j" || key === "linefeed")) || key === "linefeed";
-  if (newline) return withNoteText(state, input, `${input.text}\n`);
+  if (newline) {
+    const added = graphemes("\n");
+    units.splice(at, 0, ...added);
+    return withNoteEdit(state, input, units.join(""), at + added.length);
+  }
   if (input.commandMenu !== undefined) {
     const entries = commandEntries(state);
     const down = key === "down" || key === "arrowdown" || (event.ctrl === true && (key === "n" || key === "j"));
@@ -955,17 +1165,12 @@ export function inputKey(
       // again; a line that matches no command is sent as written.
       const filled = chosen === undefined ? undefined : commandText(chosen);
       if (filled !== undefined && filled !== input.text) {
-        return {
-          ...state,
-          input: {
-            ...input,
-            text: filled,
-            commandMenu: undefined,
-            commands: undefined,
-          },
-        };
+        return withNoteEdit(state, input, filled, graphemes(filled).length, false);
       }
     }
+  }
+  if (key === "up" || key === "arrowup" || key === "down" || key === "arrowdown") {
+    return move(moveLine(units, at, key === "up" || key === "arrowup" ? -1 : 1));
   }
   if (enter) {
     const note = input.text;
@@ -989,9 +1194,12 @@ export function inputKey(
       ...(input.args === undefined ? {} : { args: input.args }),
     });
   }
-  if (key === "backspace") return withNoteText(state, input, dropLast(input.text));
   const text = event.ctrl === true || event.meta === true ? undefined : typed(event);
-  return text === undefined ? state : withNoteText(state, input, input.text + text);
+  if (text === undefined) return state;
+  const added = graphemes(text);
+  at = noteCursor(input);
+  units.splice(at, 0, ...added);
+  return withNoteEdit(state, input, units.join(""), at + added.length);
 }
 
 /**
@@ -1000,8 +1208,19 @@ export function inputKey(
  * is dropped too.
  */
 export function actionFailed(state: TuiState, message: string): TuiState {
+  const line = refusalLine(message);
+  const cleared = dropOptimistic(state);
+  if (cleared.input?.kind === "note" && cleared.input.sending === true) {
+    return {
+      ...cleared,
+      input: { ...cleared.input, sending: false, error: line },
+      acting: false,
+      actionRequest: undefined,
+      answerRequest: undefined,
+    };
+  }
   return {
-    ...withNotice(state, refusalLine(message)),
+    ...withNotice(cleared, line),
     acting: false,
     actionRequest: undefined,
     answerRequest: undefined,

@@ -7,6 +7,7 @@
 import {
   CliRenderEvents,
   createCliRenderer,
+  decodePasteBytes,
   type CliRenderer,
 } from "@opentui/core";
 import type {
@@ -112,6 +113,8 @@ export interface TuiRunHooks {
     | ((options: EnsureServerOptions) => Promise<string>)
     | undefined;
   readonly fetch?: FetchLike | undefined;
+  /** Turns the terminal's bracketed paste on or off; a test can watch it. */
+  readonly pasteMode?: ((on: boolean) => void) | undefined;
 }
 
 /** One key press, as far as the reducer cares. */
@@ -191,6 +194,8 @@ export interface TuiShellDeps {
   readonly onFinish?: (() => void) | undefined;
   /** Spaces the live refetches and the retries; the real clock by default. */
   readonly clock?: TuiClock | undefined;
+  /** Turns the terminal's bracketed paste on while an input is open. */
+  readonly pasteMode?: ((on: boolean) => void) | undefined;
   /** The server's URL, named when it does not answer. */
   readonly url?: string | undefined;
   /**
@@ -222,6 +227,7 @@ export interface TuiThemes {
 export interface TuiShell {
   readonly state: TuiState;
   key(input: TuiKeyInput): void;
+  paste(text: string): void;
   resize(width: number, height: number): void;
   setTheme(theme: TuiTheme): void;
   /** Repaints after the theme files changed; `problem` is shown in the footer, none clears it. */
@@ -285,6 +291,7 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     themeCurrent: deps.themes?.current(),
   });
   let shownPreview: string | undefined;
+  let pasteOpen = false;
   let finished = false;
   let refreshAbort: AbortController | undefined;
   // The requests of the open object: its read and its section pages. They end
@@ -336,6 +343,10 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     objectRequests.clear();
     events?.stop();
     abort.abort();
+    if (pasteOpen) {
+      pasteOpen = false;
+      deps.pasteMode?.(false);
+    }
     try {
       deps.onFinish?.();
     } finally {
@@ -1392,6 +1403,11 @@ export function startShell(deps: TuiShellDeps): TuiShell {
           }, deps.followDelayMs ?? 150)
         : undefined;
     }
+    const inputOpen = state.input !== undefined;
+    if (inputOpen !== pasteOpen) {
+      pasteOpen = inputOpen;
+      deps.pasteMode?.(pasteOpen);
+    }
     view.render(state);
     if (state.quit) {
       finish();
@@ -1433,6 +1449,9 @@ export function startShell(deps: TuiShellDeps): TuiShell {
   return {
     get state(): TuiState {
       return state;
+    },
+    paste(text: string): void {
+      dispatch({ type: "paste", text });
     },
     key(input: TuiKeyInput): void {
       const sequence = input.sequence ?? "";
@@ -1531,6 +1550,23 @@ export async function runTui(options: TuiRunOptions = {}): Promise<number> {
   let shell: TuiShell | undefined;
   let code = 0;
   let stopThemeWatch: (() => void) | undefined;
+  let pasteOn = false;
+  const writePasteMode =
+    options.hooks?.pasteMode ??
+    ((on: boolean): void => {
+      // The mode is a terminal's; a redirected stream has no paste to bracket.
+      if (process.stdout.isTTY !== true) return;
+      try {
+        process.stdout.write(on ? "\u001b[?2004h" : "\u001b[?2004l");
+      } catch {
+        // A stream that cannot take the mode is no reason to stop the app.
+      }
+    });
+  const setPasteMode = (on: boolean): void => {
+    if (on === pasteOn) return;
+    pasteOn = on;
+    writePasteMode(on);
+  };
   const onAbort = (): void => shell?.stop();
   const onSignal = (): void => shell?.stop();
 
@@ -1582,6 +1618,7 @@ export async function runTui(options: TuiRunOptions = {}): Promise<number> {
       width: created.width,
       height: created.height,
       theme: themeOf(created, "dark"),
+      pasteMode: setPasteMode,
       childLayout,
       onChildLayout: (layout) => saveChildLayout(themeHome, layout),
       onFatal: (message) => {
@@ -1610,6 +1647,9 @@ export async function runTui(options: TuiRunOptions = {}): Promise<number> {
     created.keyInput.on("keypress", (key) => {
       guarded(() => started.key(key));
     });
+    created.keyInput.on("paste", (event) => {
+      guarded(() => started.paste(decodePasteBytes(event.bytes)));
+    });
     created.on(CliRenderEvents.RESIZE, () => {
       guarded(() => started.resize(created.width, created.height));
     });
@@ -1637,6 +1677,12 @@ export async function runTui(options: TuiRunOptions = {}): Promise<number> {
     try {
       shell?.stop();
       view?.destroy();
+    } catch (error) {
+      messages.push(messageOf(error));
+      code = 1;
+    }
+    try {
+      setPasteMode(false);
     } catch (error) {
       messages.push(messageOf(error));
       code = 1;
