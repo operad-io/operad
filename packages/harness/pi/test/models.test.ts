@@ -87,7 +87,7 @@ describe("the models pi declares", () => {
 
   test("loading the plugins does not start pi, and the kept file gives the list", async () => {
     const env = await fakePi(catalogueBody());
-    writeKept(env, ["kept/one"], 1_000);
+    writeKept(env, ["kept/one"], Date.now());
     const configPath = join(env.root, "config.json");
     writeFileSync(
       configPath,
