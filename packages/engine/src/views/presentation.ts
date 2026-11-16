@@ -9,13 +9,15 @@ import { objectLink } from "../http/link.ts";
 import type { LogBackend, RunInfo } from "../log/types.ts";
 import {
   followsChanges,
-  type FollowOptions,
+  resolveSubscriptionWatch,
+  type SubscriptionWatchOptions,
 } from "../platform/index.ts";
 import { runTimes } from "./running.ts";
 import type { PluginRegistry, ActionInfo } from "../plugin/registry.ts";
 import { rankOf, sortByRank, splitActionName } from "../plugin/registry.ts";
 import { messageOf } from "../plugin/errors.ts";
 import { createPluginLogger } from "../plugin/logger.ts";
+import { LiveLogWatch } from "./live-logs.ts";
 import { FileSecretStore } from "../plugin/secrets.ts";
 import {
   assertWhere,
@@ -227,7 +229,7 @@ export class ViewError extends Error {
   }
 }
 
-export interface ViewsOptions extends FollowOptions {
+export interface ViewsOptions extends SubscriptionWatchOptions {
   readonly registry: PluginRegistry;
   readonly store?: PluginStore | undefined;
   readonly log?: LogBackend | undefined;
@@ -606,6 +608,7 @@ export class Views {
     { readonly runId: string; readonly lastSeq: number; readonly end: ViewRunEnd | undefined }
   >();
   private readonly unsubscribe: (() => void)[] = [];
+  private readonly liveLogs: LiveLogWatch | undefined = undefined;
   private candidateSource: CandidateSource | undefined;
   private preparing: Promise<void> | undefined;
 
@@ -626,6 +629,7 @@ export class Views {
     this.uploads = new Uploads({ home: this.home, clock: this.clock });
 
     if (followsChanges(options)) {
+      const subscriptionWatch = resolveSubscriptionWatch(options);
       if (typeof this.store.subscribe === "function") {
         this.unsubscribe.push(
           this.store.subscribe((object) => this.publish(object.id)),
@@ -640,9 +644,26 @@ export class Views {
             if (parsed === undefined) return;
             if (parsed.type === "flow") return;
             this.publish(parsed.id, true);
+            // A step appends to its log between facts; look for a new run's log.
+            void this.liveLogs?.sync();
           }),
         );
       }
+      const log = this.log;
+      this.liveLogs =
+        log === undefined
+          ? undefined
+          : new LiveLogWatch({
+              storeRoot: this.store.root,
+              registry: this.registry,
+              store: this.store,
+              log,
+              watch: subscriptionWatch.watch,
+              repeat: subscriptionWatch.repeat,
+              pollMs: subscriptionWatch.pollMs,
+              onGrowth: (id) => this.publish(id, true),
+              onLog: this.onLog,
+            });
     }
   }
 
@@ -717,6 +738,7 @@ export class Views {
 
   /** Closes the change listeners this view opened. */
   close(): void {
+    this.liveLogs?.close();
     for (const unsubscribe of this.unsubscribe.splice(0)) unsubscribe();
     for (const timer of this.growthTimers.values()) clearTimeout(timer);
     this.growthTimers.clear();

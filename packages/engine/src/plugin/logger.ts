@@ -10,6 +10,20 @@ function segment(value: string): string {
     : cleaned;
 }
 
+/** The directory a plugin's runs write their step logs in: `<store>/logs/<plugin>/runs`. */
+function runLogsDirectory(storeRoot: string, plugin: string): string {
+  return join(storeRoot, "logs", segment(plugin), "runs");
+}
+
+/** One run's step-log directory: `<store>/logs/<plugin>/runs/<run>`. */
+export function runLogDirectory(
+  storeRoot: string,
+  plugin: string,
+  runId: string,
+): string {
+  return join(runLogsDirectory(storeRoot, plugin), segment(runId));
+}
+
 /**
  * A logger for one step, action, command or tick. It appends to a file under
  * `<store>/logs` and returns that path so the plugin can put it in a fact.
