@@ -1329,3 +1329,9 @@ the row fields.
 | T-0508-M4 | packages/dev/src/chat.ts | opening the worktree recorded no transcript line saying the chat moved | `dev/chat_worktree > a live yes says the chat moved, and asks for the same message to be answered there` |
 | T-0508-M5 | packages/dev/src/chat.ts | a live yes did not ask for the message to be answered again after opening the worktree | `dev/chat_worktree > a live yes says the chat moved, and asks for the same message to be answered there` |
 | T-0508-M7 | packages/dev/src/chat.ts | a late yes was treated like a live one, so it started a second reply | `dev/chat_worktree > a late yes opens the worktree once and starts no reply` |
+
+## T-0509 — late worktree marker
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0509-M6 | packages/dev/src/chat.ts | the late marker in the event data was ignored, so a late yes started a second reply | `dev/chat_worktree > a yes marked late in its event data opens the worktree and starts no reply` |

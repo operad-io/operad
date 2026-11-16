@@ -20,7 +20,7 @@ const WRITING_OPTIONS: Readonly<Record<string, RegExp>> = {
   rg: /^--pre(=|$)|^--hostname-bin|^--search-zip$|^-z$/,
   grep: /^--output/,
   printf: /^-[^-]*v/,
-  sort: /^-[^-]*o|^--output/,
+  sort: /^-[^-]*o|^--output|^--compress-program(=|$)/,
   date: /^-[^-]*s|^--set/,
   jq: /^-[^-]*i|^--in-place|^--output/,
   diff: /^-[^-]*o|^--output/,

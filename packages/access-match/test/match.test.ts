@@ -458,6 +458,7 @@ test("a redirection that writes nowhere is allowed, and any other is not", () =>
   ]) expect([command, isReadOnlyCommand(command)]).toEqual([command, true]);
   for (const command of [
     "ls > out.txt", "ls >out.txt", "ls 2> out.txt", "printf x > f", "echo hi > f", "sort -o x", "sort --output=x",
+    "sort --compress-program=./pack a.ts", "sort --compress-program ./pack a.ts",
     "ls 2>&3", "ls 3>&1", "ls &>out.txt", "uniq a b", "uniq -- a b", "printf -v x %s hi", "date -s now", "date --set=now",
     "jq -i . a.json", "jq --in-place . a.json", "diff --output=x a b", "env ls",
   ]) expect([command, isReadOnlyCommand(command)]).toEqual([command, false]);

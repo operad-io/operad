@@ -313,8 +313,15 @@ function failed(reason: string, message: string): PluginStepResult {
  * becomes the worktree question, which may let this call run once, remember it
  * with Always allow, refuse it, or open a worktree; any other question goes
  * where it would have gone.
+ *
+ * Choosing the worktree stops the harness at once through `stop`, even when it
+ * swallows the thrown stop: the reply that asked has ended (ADR 0028 D3).
  */
-function readOnlyAsker(ctx: StepContext, cwd: string, chosen: { run: boolean }): StepAsker {
+function readOnlyAsker(
+  ctx: StepContext,
+  cwd: string,
+  chosen: { run: boolean; readonly stop: AbortController },
+): StepAsker {
   const person = personStarted(ctx.trigger);
   return {
     async ask(request): Promise<AskOutcome> {
@@ -352,6 +359,7 @@ function readOnlyAsker(ctx: StepContext, cwd: string, chosen: { run: boolean }):
           // Opening a worktree keeps this call out of the main clone. The reply
           // ends here; the worktree flow starts the answer again there.
           chosen.run = true;
+          chosen.stop.abort();
           throw new WorktreeChosen();
         }
         // Deny refuses as no did, and says why.
@@ -832,8 +840,11 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
   const session =
     typeof resumed.resumeSession === "string" ? resumed.resumeSession : currentSession(chat, messages);
   const readOnly = live.access.readOnly === true;
-  const worktreeChosen = { run: false };
+  const worktreeChosen = { run: false, stop: new AbortController() };
   const asker = readOnly ? readOnlyAsker(ctx, live.cwd, worktreeChosen) : undefined;
+  // A worktree yes aborts `stop`, so the harness ends even if it swallows the
+  // stop error; the reply still ends `done` below.
+  const signal = readOnly ? AbortSignal.any([ctx.signal, worktreeChosen.stop.signal]) : ctx.signal;
 
   // An answer that came back after the wait (the grace had passed) is the same
   // answer as one given live.
@@ -964,7 +975,7 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
         params: ctx.params,
         access,
         ...(ctx.trigger === undefined ? {} : { trigger: ctx.trigger }),
-        signal: ctx.signal,
+        signal,
         receiver,
         ...(asker === undefined ? {} : { asker }),
       },
@@ -989,7 +1000,7 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
     await recordEntries(ctx, object.id, folded, { stopped: true });
     await ctx.emit({
       type: WORKTREE_EVENT,
-      key: `${ctx.runId}:open`,
+      key: "open",
       object: `${CHAT_TYPE}:${object.id}`,
     });
     return { result: "done", data: { worktree: true } };

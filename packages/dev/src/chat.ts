@@ -431,5 +431,8 @@ function lateWorktree(ctx: StepContext): boolean {
       // A missing or broken file is not the late marker; fall back to the key.
     }
   }
+  // The kernel scopes an emitted key as `<runId>:<key>`, so the reply's "late"
+  // arrives as `<runId>:late`. The data file is the primary marker; the key
+  // covers an event that carries no data.
   return ctx.trigger?.key.endsWith(":late") === true;
 }
