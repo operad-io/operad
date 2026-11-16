@@ -190,6 +190,7 @@ The types a plugin imports, by the page that explains them. The values these ent
 | `RunObject` | An object as a run sees it. | [views](views.md) |
 | `SectionContent` | The Markdown of one section, and where to continue when it is paged. | [views](views.md) |
 | `SectionPage` | One page of a long section, as the section API takes it. | [views](views.md) |
+| `SectionStatus` | What a live section says it is doing, and since when. | [views](views.md) |
 | `SectionReadOptions` | Where a section read starts; the plugin owns the meaning of the values. | [views](views.md) |
 | `StoredObject` | An object after it was stored, with the fact that produced this version. | [views](views.md) |
 | `TypeFilter` | One filter as a client sees it; `all` has no states. | [views](views.md) |

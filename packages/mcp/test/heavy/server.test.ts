@@ -575,6 +575,7 @@ describe("operad mcp", () => {
       const liveContent = structuredOf(live);
       expect(liveContent.mark).toBeString();
       expect(liveContent.tail).toBeString();
+      expect(liveContent.status).toEqual({ text: "Thinking", since: 1_700_000_000_000 });
       const liveDelta = await child.request(51, "tools/call", {
         name: "section",
         arguments: {
@@ -584,6 +585,7 @@ describe("operad mcp", () => {
         },
       });
       expect(structuredOf(liveDelta).delta).toBe(true);
+      expect(structuredOf(liveDelta).status).toEqual({ text: "Thinking", since: 1_700_000_000_000 });
 
       const pending = await child.request(6, "tools/call", {
         name: "pending",

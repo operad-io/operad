@@ -96,6 +96,7 @@ class TailClient implements TuiShellClient {
   markdown = "one";
   mark: string | undefined = "m1";
   tail: string | undefined = "tail one";
+  status: { readonly text: string; readonly since: number } | undefined;
   /** What a read with `after` answers as the delta. */
   delta = "two";
   /** What a read with `after` answers when the plugin ignored it. */
@@ -174,12 +175,14 @@ class TailClient implements TuiShellClient {
             markdown: this.delta,
             ...(this.mark === undefined ? {} : { mark: this.mark }),
             ...(this.tail === undefined ? {} : { tail: this.tail }),
+            ...(this.status === undefined ? {} : { status: this.status }),
             delta: true,
           }
         : {
             markdown: this.whole,
             ...(this.mark === undefined ? {} : { mark: this.mark }),
             ...(this.tail === undefined ? {} : { tail: this.tail }),
+            ...(this.status === undefined ? {} : { status: this.status }),
             delta: false,
           };
       if (this.holdAfter) return new Promise((resolve) => (this.heldAfter = resolve));
@@ -189,6 +192,7 @@ class TailClient implements TuiShellClient {
       markdown: this.markdown,
       ...(this.mark === undefined ? {} : { mark: this.mark }),
       ...(this.tail === undefined ? {} : { tail: this.tail }),
+      ...(this.status === undefined ? {} : { status: this.status }),
     };
     if (this.holdWhole) return new Promise((resolve) => (this.heldWhole = resolve));
     return Promise.resolve(content);
@@ -402,6 +406,25 @@ describe("a live section reads after its mark", () => {
 });
 
 describe("the tail is drawn after the content", () => {
+  test("the status is one weak line under the tail, with its elapsed time", async () => {
+    const s = start(new TailClient());
+    try {
+      await openLog(s);
+      s.client.status = { text: "Running Bash", since: 1_000 };
+      await changeAndRead(s);
+      const drawn = drawState(s.shell.state, "dark", 3_500).right;
+      expect(text(drawn)).toContain("Running Bash · 2.5s");
+      expect(coloursOf(drawn, "Running Bash")).toEqual([weak()]);
+
+      s.client.status = undefined;
+      await changeAndRead(s);
+      expect(text(drawState(s.shell.state, "dark", 3_500).right)).not.toContain("Running Bash");
+    } finally {
+      s.shell.stop();
+      await s.shell.done;
+    }
+  });
+
   test("it is drawn as Markdown in the weak colour, and nothing stays once it is gone", async () => {
     const s = start(new TailClient());
     try {

@@ -1023,6 +1023,12 @@ the row fields.
 |---|---|---|---|
 | T-0511-M6 | packages/engine/src/plugin/load.ts | the load read every harness's model list again instead of leaving it for the client | `loadPluginRegistry > does not read any harness's model list during the load` |
 
+## T-0514 — a section can carry a status
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0514-M1 | packages/engine/src/views/presentation.ts | a plugin's status was dropped instead of passed through | `presentation views > a read carries mark and tail, and after returns only what follows (T-0361)` |
+
 ## T-0515 — a chat's worker is kept between replies
 
 | id | file | mutation | failing test |

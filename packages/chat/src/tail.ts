@@ -8,7 +8,8 @@
 
 import { closeSync, fstatSync, openSync, readSync } from "node:fs";
 import { join } from "node:path";
-import { emptyFold, foldLines, type FoldEntry, type FoldState } from "@operad-io/harness-process";
+import { isRecord } from "@operad-io/engine";
+import { READY_LINE, emptyFold, foldLines, type FoldEntry, type FoldState } from "@operad-io/harness-process";
 
 /** How many bytes one read call takes from the file. */
 export const TAIL_READ_CHUNK = 1024 * 1024;
@@ -31,6 +32,10 @@ export function agentLogPath(storeRoot: string, harness: string, runId: string):
 export interface TailRead {
   readonly state: FoldState;
   readonly bytesRead: number;
+  /** When the last stamped line in the log was received, in epoch milliseconds. */
+  readonly lastAt?: number | undefined;
+  /** Whether the log has the ready line that says the agent session is open. */
+  readonly ready: boolean;
 }
 
 interface Saved {
@@ -41,6 +46,8 @@ interface Saved {
   /** The partial last line read so far, kept so it is not read again. */
   readonly pending: Buffer;
   readonly state: FoldState;
+  readonly lastAt: number | undefined;
+  readonly ready: boolean;
 }
 
 /**
@@ -78,6 +85,8 @@ export function foldLogTail(
     let pending = keep ? before.pending : Buffer.alloc(0);
     let bytesRead = 0;
     let position = keep ? before.offset : 0;
+    let lastAt = keep ? before.lastAt : undefined;
+    let ready = keep ? before.ready : false;
     while (position < stat.size) {
       const chunk = Buffer.allocUnsafe(Math.min(TAIL_READ_CHUNK, stat.size - position));
       const count = readSync(fd, chunk, 0, chunk.length, position);
@@ -90,11 +99,18 @@ export function foldLogTail(
       const values: unknown[] = [];
       for (const line of pending.subarray(0, end).toString("utf8").split("\n")) {
         if (line.length === 0) continue;
+        let value: unknown;
         try {
-          values.push(JSON.parse(line));
+          value = JSON.parse(line);
         } catch {
           // Not one of ours.
+          continue;
         }
+        values.push(value);
+        if (!isRecord(value)) continue;
+        const at = value["receivedAt"];
+        if (typeof at === "number" && Number.isFinite(at)) lastAt = at;
+        if (value["type"] === READY_LINE) ready = true;
       }
       state = foldLines(values, state);
       pending = pending.subarray(end + 1);
@@ -104,12 +120,12 @@ export function foldLogTail(
       if (entries.length !== state.entries.length) state = { ...state, entries };
     }
     saved.delete(path);
-    saved.set(path, { dev: stat.dev, ino: stat.ino, offset: position, pending, state });
+    saved.set(path, { dev: stat.dev, ino: stat.ino, offset: position, pending, state, lastAt, ready });
     for (const old of saved.keys()) {
       if (saved.size <= TAIL_CACHE_LOGS) break;
       saved.delete(old);
     }
-    return { state, bytesRead };
+    return { state, bytesRead, ...(lastAt === undefined ? {} : { lastAt }), ready };
   } finally {
     closeSync(fd);
   }

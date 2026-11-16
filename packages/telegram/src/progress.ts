@@ -5,9 +5,10 @@
  *
  * It wakes on the client API's `events()`, names a bound chat and reads its
  * transcript section with `after`, the way a client does (ADR 0019); the
- * unfinished `tail` is what it shows. The first text or tool call creates the
- * message, so typing alone is unchanged. Edits happen at most once every two
- * seconds per chat and only when the reduced Markdown changed. When the reply
+ * unfinished `tail` is what it shows, with a last line made from the section's
+ * `status` (what the reply is doing and for how long). The first status or tail
+ * creates the message. Edits happen at most once every two seconds per chat and
+ * only when the reduced Markdown changed. When the reply
  * is recorded, the reply side sends the final reply as new message(s) first and
  * this side deletes the progress message. A failed edit is only logged; it
  * never stops the final reply. What is remembered in `<home>/telegram/` is the
@@ -17,7 +18,7 @@
 import { CHAT_TYPE, TRANSCRIPT, allEntries, allMessages, chatData } from "@operad-io/chat";
 import { messageOf, type SourceContext } from "@operad-io/engine";
 import { BotApiError, type BotApi } from "./api.ts";
-import { telegramProgress, type TelegramChunk } from "./format.ts";
+import { progressStatusLine, telegramProgress, type TelegramChunk } from "./format.ts";
 import { telegramChatsOf } from "./replies.ts";
 import { delay } from "./source.ts";
 import { readProgress, writeProgress, type ProgressRecord, type ProgressState } from "./state.ts";
@@ -231,7 +232,9 @@ export class ProgressSender {
     });
     if (section.mark !== undefined) this.marks.set(chatId, section.mark);
     const tail = section.tail;
-    if (tail === undefined || tail.trim().length === 0) {
+    const status = section.status;
+    const statusLine = status === undefined ? undefined : progressStatusLine(status, this.clock());
+    if ((tail === undefined || tail.trim().length === 0) && statusLine === undefined) {
       if (chat.messageId !== undefined) {
         // A cancelled run may send no event at all: look again while it says
         // the run still goes on, and delete the message once it has ended.
@@ -240,7 +243,7 @@ export class ProgressSender {
       }
       return;
     }
-    const chunk = telegramProgress(tail);
+    const chunk = telegramProgress(tail ?? "", statusLine);
     if (chunk === undefined) {
       this.later(chatId, chat);
       return;

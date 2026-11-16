@@ -10,7 +10,7 @@ A chat shows its reply as it is written. This is done within the section interfa
 
 ### D1: A live section reads only what is new, with an unfinished tail
 
-The result of `load` can carry two more things: `mark`, an opaque position that says how far the finished content has gone; and `tail`, a Markdown text that is the part still changing (a reply and thinking being written, a running tool call in a chat), always the whole text as it is now. A client can read a section with `after: <mark>`; then `markdown` has only the content finished after that position, the client appends it to what it has, and replaces the old `tail` as a whole with the new one. Without `after`, one page is read as before, also carrying `mark` and `tail`, so a reconnect or coming back to the foreground needs only one re-read.
+The result of `load` can carry more things beside the page: `mark`, an opaque position that says how far the finished content has gone; `tail`, a Markdown text that is the part still changing (a reply and thinking being written, a running tool call in a chat), always the whole text as it is now; and `status` (D4). A client can read a section with `after: <mark>`; then `markdown` has only the content finished after that position, the client appends it to what it has, and replaces the old `tail` as a whole with the new one. Without `after`, one page is read as before, also carrying `mark` and `tail`, so a reconnect or coming back to the foreground needs only one re-read.
 
 ### D2: `events` does not change
 
@@ -18,4 +18,8 @@ The result of `load` can carry two more things: `mark`, an opaque position that 
 
 ### D3: Compatibility
 
-A client that does not know the two things works as before: it just does not see `tail`. The command line's `operad show --section` does not show `tail`.
+A client that does not know these things works as before: it just does not see `tail` or `status`. The command line's `operad show --section` does not show `tail` or `status`.
+
+### D4: A live section can say what it is doing
+
+The result of `load` may carry `status`, an object `{ "text": string, "since": number }` where `since` is a time in milliseconds since the epoch. The kernel passes it through as it passes `tail`: it does not read it, a client that does not know it works as before, and a change of it counts as growth of the object (announced under the same 250 ms limit as D2). It is served by the HTTP section read and by the MCP `section` tool. The text and its words belong to the plugin; the elapsed time beside it belongs to the client.

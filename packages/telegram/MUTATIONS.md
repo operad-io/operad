@@ -129,3 +129,9 @@ the row fields.
 | T-0512-M4 | packages/telegram/src/source.ts | the typing side was not told about an accepted message | `the typing indicator > starts as soon as a message is accepted, before its run is reported` (timed out) |
 | T-0512-M5 | packages/telegram/src/typing.ts | a chat whose run was not reported ended typing at once | `the typing indicator > starts as soon as a message is accepted, before its run is reported` (timed out) |
 | T-0512-M6 | packages/telegram/src/api.ts | `setMessageReaction` called the `sendMessage` method | `the Bot API reaction > sets one emoji reaction on the named message` |
+
+## T-0514 — a progress message carries the reply's status
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0514-M1 | packages/telegram/src/progress.ts | the status line was left off, so no progress message existed while the reply was starting | `the progress message of a reply > the progress message exists from the first status and ends with its line` (timed out) |

@@ -8,6 +8,7 @@ import type {
   PendingItem,
   RowMark,
   RunningItem,
+  SectionStatus,
   ViewListPage,
   ViewAction,
   ViewObject,
@@ -157,6 +158,8 @@ export interface TuiSection {
   readonly mark?: string | undefined;
   /** The part that is still changing: drawn after the content, in the weak colour. */
   readonly tail?: string | undefined;
+  /** What the live section is doing, drawn as one line under the tail. */
+  readonly status?: SectionStatus | undefined;
   /** Grows with each content change; an older answer is dropped. */
   readonly version: number;
 }
@@ -1162,9 +1165,9 @@ export function sectionTailLayout(
   return cachedLayout(key, section.version, section.tail, sectionWidth(state));
 }
 
-/** The rows a section takes on screen: its content, then its changing tail. */
+/** The rows a section takes on screen: its content, its changing tail and its status. */
 export function sectionLineCount(state: TuiState, section: TuiSection): number {
-  return sectionLayout(state, section).length + sectionTailLayout(state, section).length;
+  return sectionLayout(state, section).length + sectionTailLayout(state, section).length + (section.status === undefined ? 0 : 1);
 }
 
 /** The layout's fixed columns (0-based): the list, its divider, the object pane. */
@@ -1660,8 +1663,9 @@ function applySection(
       // makes the next refresh read the section whole, as before.
       mark: content.mark,
       // The answer's tail is the whole current tail; a page read that leaves it
-      // out keeps the one shown.
+      // out keeps the one shown. The status follows the same rule.
       tail: pageAppend && content.tail === undefined ? value.tail : content.tail,
+      status: pageAppend && content.status === undefined ? value.status : content.status,
       ...(content.pages === undefined ? {} : { toc: content.pages }),
       error: undefined,
       version: value.version + 1,

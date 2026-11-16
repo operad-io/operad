@@ -40,6 +40,7 @@ import {
   rowDetail,
   rowName,
   activeTab,
+  formatElapsed,
   LIST_HEAD,
   dividerX,
   listWidth,
@@ -567,6 +568,7 @@ function sectionContent(
   state: TuiState,
   section: TuiSection | undefined,
   palette: TuiPalette,
+  now: number,
 ): TextChunk[] {
   if (section === undefined) {
     return [chunk(state.object?.loading === true ? "loading…" : "no sections", palette.weak)];
@@ -577,10 +579,18 @@ function sectionContent(
   const viewport = sectionViewport(state);
   const content = sectionLayout(state, section);
   const tail = sectionTailLayout(state, section);
-  const total = content.length + tail.length;
+  const statusRows = section.status === undefined ? 0 : 1;
+  const total = content.length + tail.length + statusRows;
   const start = Math.min(Math.max(0, section.scroll), Math.max(0, total - 1));
   const chunks: TextChunk[] = [];
   for (let at = start; at < Math.min(start + viewport, total); at += 1) {
+    if (at >= content.length + tail.length) {
+      const status = section.status;
+      if (status !== undefined) {
+        chunks.push(chunk(`${status.text} · ${formatElapsed(now - status.since)}\n`, palette.weak));
+      }
+      continue;
+    }
     const line = at < content.length ? content[at] : tail[at - content.length];
     if (line === undefined) continue;
     chunks.push(...chunksOfLine(line, palette, at >= content.length), chunk("\n"));
@@ -588,7 +598,7 @@ function sectionContent(
   return chunks;
 }
 
-function objectContent(state: TuiState, palette: TuiPalette): StyledText {
+function objectContent(state: TuiState, palette: TuiPalette, now: number): StyledText {
   const object = state.object;
   if (object === undefined) {
     // An openable cursor row is on the way; a row that names no object, or an empty list, asks.
@@ -632,9 +642,9 @@ function objectContent(state: TuiState, palette: TuiPalette): StyledText {
   chunks.push(...sectionTabs(object, palette, width));
   chunks.push(
     ...(section === undefined
-      ? sectionContent(state, section, palette)
+      ? sectionContent(state, section, palette, now)
       : [
-          ...sectionContent(state, section, palette),
+          ...sectionContent(state, section, palette, now),
           ...sectionHint(section, section.following, palette, width),
         ]),
   );
@@ -1040,6 +1050,7 @@ function footerContent(state: TuiState, palette: TuiPalette): StyledText {
 export function drawState(
   state: TuiState,
   themeName: string | ThemeSelection = "auto",
+  now: number = Date.now(),
 ): TuiDrawing {
   const palette = paletteFor(state.theme, themeName);
   const tab = activeTab(state);
@@ -1060,7 +1071,7 @@ export function drawState(
       state.connection === "unreachable",
       palette,
     ),
-    right: objectContent(state, palette),
+    right: objectContent(state, palette, now),
     overlay: state.keys
       ? keyContent(state, palette)
       : (inputContent(state, palette) ?? confirmContent(state, palette)),

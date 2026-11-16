@@ -282,6 +282,16 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 | T-0513-M7 | packages/chat/src/reply.ts | a chat that moved working directory got no new place and kept the old text | `a repository chat's starting text > after the chat moves to its worktree, the next message gets the place alone, once` |
 | T-0513-M8 | packages/chat/src/reply.ts | the starting text was put before every message, not only the first | `a repository chat's starting text > goes before the first message, and not again in that session` |
 
+## T-0514 — a reply in progress says what it is doing
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0514-M1 | packages/chat/src/views.ts | Thinking was always answered as Starting | `a reply's status > Starting starts at the first unanswered message and lasts until the ready line` |
+| T-0514-M2 | packages/chat/src/tail.ts | the log's ready line was ignored, so the status stayed Starting | `a reply's status > Starting starts at the first unanswered message and lasts until the ready line` |
+| T-0514-M3 | packages/chat/src/views.ts | the newest open call was named instead of the oldest | `a reply's status > Running names the oldest call still going, since when it started` |
+| T-0514-M4 | packages/chat/src/views.ts | a failure no longer ended the status | `a reply's status > there is no status after a failure` |
+| T-0514-M5 | packages/chat/src/views.ts | an old assistant message without `replyTo` no longer answered the message before it, so an idle snapshot said Starting | `a reply's status > an old assistant message with no replyTo answers the message before it` |
+
 ## T-0515 — a chat's worker is kept between replies
 
 | id | file | mutation | failing test |

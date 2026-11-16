@@ -45,6 +45,7 @@ import type {
   PluginStore,
   StoredObject,
   RowMark,
+  SectionStatus,
   ViewContext,
 } from "../plugin/types.ts";
 import { ROW_BADGE_MAX, ROW_MARKS } from "../plugin/types.ts";
@@ -175,6 +176,11 @@ export interface ViewSectionContent {
    * cap never cuts it; it shortens the finished page instead.
    */
   readonly tail?: string | undefined;
+  /**
+   * What the live section is doing now, passed through from the plugin. The
+   * kernel does not read it; a client that does not know it ignores it.
+   */
+  readonly status?: SectionStatus | undefined;
   /**
    * Present on a read that asked with `after`: true when `markdown` holds only
    * what follows the mark, false when the plugin answered with a whole page
@@ -363,6 +369,15 @@ function pagesOf(value: unknown): readonly ViewSectionPage[] | undefined {
 
 function textOf(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
+}
+
+/** A plugin's status object, passed through whole when its two fields are there. */
+function statusOf(value: unknown): SectionStatus | undefined {
+  if (!isRecord(value)) return undefined;
+  const text = textOf(value.text);
+  const since = value.since;
+  if (text === undefined || typeof since !== "number" || !Number.isFinite(since)) return undefined;
+  return { text, since };
 }
 
 function objectKey(type: string, id: string): string {
@@ -1321,6 +1336,7 @@ export class Views {
         undefined,
         undefined,
         undefined,
+        undefined,
         options.full === true,
         after === undefined ? undefined : false,
       );
@@ -1395,6 +1411,7 @@ export class Views {
     const pages = isRecord(content) ? pagesOf(content.pages) : undefined;
     const rawMark = isRecord(content) ? textOf(content.mark) : undefined;
     const tail = isRecord(content) ? textOf(content.tail) : undefined;
+    const status = isRecord(content) ? statusOf(content.status) : undefined;
     // A plugin that ignored `after` answers with a whole page; only one that
     // says its answer is the delta may be appended to by a client.
     const honoured =
@@ -1410,6 +1427,7 @@ export class Views {
       next,
       mark,
       tail,
+      status,
       options.full === true,
       after === undefined ? undefined : honoured,
     );
@@ -1811,6 +1829,7 @@ export class Views {
     next: string | undefined,
     mark: string | undefined,
     tail: string | undefined,
+    status: SectionStatus | undefined,
     full: boolean,
     delta: boolean | undefined,
   ): ViewSectionContent {
@@ -1822,6 +1841,7 @@ export class Views {
       ...(next === undefined ? {} : { next }),
       ...(mark === undefined ? {} : { mark }),
       ...(shownTail === undefined ? {} : { tail: shownTail }),
+      ...(status === undefined ? {} : { status }),
       ...(delta === undefined ? {} : { delta }),
     });
     if (full) return result(markdown, tail);
