@@ -224,6 +224,39 @@ describe("the typing indicator", () => {
     await f.stop();
   });
 
+  test("starts as soon as a message is accepted, before its run is reported", async () => {
+    const root = await mkdtemp(join(tmpdir(), "telegram-typing-receipt-"));
+    roots.push(root);
+    const w = await createTelegramWorld({ root, users: [42] });
+    const api = new FakeApi();
+    const client = new EventClient(w.views);
+    const clock = fakeClock();
+    const sender = new TypingSender(
+      { ...w.ctx, client },
+      { api, clock: () => clock.now(), wait: clockWait(clock) },
+    );
+    const handle = sender.start();
+    await handle.ready;
+
+    api.updates = [update(100, 42, 555, "hello")];
+    await new TelegramSource(w.ctx, { api, typing: sender }).poll();
+    await api.until(() => api.chatActions.length >= 1);
+    expect(api.chatActions[0]).toMatchObject({ chatId: 555, action: "typing" });
+
+    // The row does not say running yet, and the indicator still goes on.
+    const chat = (await w.store.list(CHAT_TYPE)).objects[0]?.id;
+    if (chat === undefined) throw new Error("no chat was opened");
+    expect(client.running.get(chat) ?? false).toBe(false);
+    await sender.syncChat(chat);
+    clock.advance(TYPING_INTERVAL_MS);
+    await api.until(() => api.chatActions.length >= 2);
+    expect(api.chatActions).toHaveLength(2);
+
+    await handle.stop();
+    expect(clock.pending).toBe(0);
+    await w.close();
+  });
+
   test("stops when a reply run ends without recording a reply", async () => {
     const f = await setup();
     f.client.running.set(f.chat, true);

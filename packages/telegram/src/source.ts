@@ -32,6 +32,9 @@ export const UPDATE_EVENT = "update";
 /** The source of every event this plugin sends. */
 export const TELEGRAM_SOURCE = "telegram";
 
+/** The reaction that says a message was received. */
+export const RECEIVED_REACTION = "👀";
+
 /** The longest summary an update event carries. */
 const SUMMARY_MAX = 300;
 
@@ -52,6 +55,12 @@ export function delay(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
+/** What the source asks of the typing side: show an indicator on receipt. */
+export interface TypingResponder {
+  /** Starts the indicator for an accepted message before its run is reported. */
+  received(chatId: string, target: number): void;
+}
+
 export interface TelegramSourceOptions {
   readonly api: BotApi;
   readonly clock?: (() => number) | undefined;
@@ -64,6 +73,8 @@ export interface TelegramSourceOptions {
   readonly pending?: PendingResponder | undefined;
   /** Takes a command's text, the greeting `/start` and the taps on a command's choices. */
   readonly commands?: CommandResponder | undefined;
+  /** Shows typing as soon as an ordinary message is accepted. */
+  readonly typing?: TypingResponder | undefined;
 }
 
 /** One bound chat and whether it still takes messages. */
@@ -123,6 +134,7 @@ export class TelegramSource {
   private readonly controller = new AbortController();
   private readonly pending: PendingResponder | undefined;
   private readonly commands: CommandResponder | undefined;
+  private readonly typing: TypingResponder | undefined;
   private readonly users: readonly number[];
   private readonly bot: string;
 
@@ -135,6 +147,7 @@ export class TelegramSource {
     this.wait = options.wait ?? delay;
     this.pending = options.pending;
     this.commands = options.commands;
+    this.typing = options.typing;
     const settings = telegramSettings(ctx.settings);
     this.users = settings.users;
     this.bot = settings.bot;
@@ -278,6 +291,12 @@ export class TelegramSource {
       args: { note: text, ref: key },
       actor: { via: TELEGRAM_SOURCE, id: String(from) },
     });
+    // An ordinary message is acknowledged at once, before its run is reported.
+    // A command's outcome is its answer, so it gets neither a reaction nor typing.
+    if (command === undefined) {
+      this.typing?.received(chatId, message.chat.id);
+      await this.react(message);
+    }
     // What a command returned is the answer the person who typed it sees; an
     // ordinary message's "sent ..." is not sent back.
     if (command !== undefined) {
@@ -286,6 +305,22 @@ export class TelegramSource {
     }
     await this.record(key, chatId, summary);
     if (command !== undefined || open === undefined) await this.commands?.refresh(chatId);
+  }
+
+  /** Marks an accepted message as received; a refusal is logged once and changes nothing else. */
+  private async react(message: TelegramMessage): Promise<void> {
+    try {
+      await this.api.setMessageReaction({
+        chatId: message.chat.id,
+        messageId: message.message_id,
+        reaction: RECEIVED_REACTION,
+        signal: this.controller.signal,
+      });
+    } catch (error) {
+      await this.ctx.logger.write(
+        `could not react to message ${message.message_id}: ${messageOf(error)}`,
+      );
+    }
   }
 
   private async record(key: string, chatId?: string, summary?: string): Promise<void> {

@@ -118,3 +118,14 @@ the row fields.
 | T-0506-M4 | packages/telegram/src/commands.ts | a long description was sent whole instead of cut to Telegram's limit | `the bot's command menu > cuts a long command description to what Telegram takes` |
 | T-0506-M5 | packages/telegram/src/commands.ts | the menu's event watcher did not register again after a client change | `the bot's command menu > follows the client's events and registers again when a command appears or goes` (timed out) |
 | T-0506-M6 | packages/telegram/src/commands.ts | the page after the first had no « button back | `a command in a Telegram chat > without its one choice it answers with the choices, one page at a time, and a tap runs it` |
+
+## T-0512 — a Telegram message is acknowledged at once
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0512-M1 | packages/telegram/src/source.ts | an accepted message set no reaction | `the telegram source > an accepted message gets the eyes reaction on its Telegram message` |
+| T-0512-M2 | packages/telegram/src/source.ts | a command got the reaction too | `a command in a Telegram chat > a command gets no reaction` |
+| T-0512-M3 | packages/telegram/src/source.ts | a refused reaction escaped instead of being logged and leaving the message alone | `the telegram source > a refused reaction is logged once and changes nothing else` |
+| T-0512-M4 | packages/telegram/src/source.ts | the typing side was not told about an accepted message | `the typing indicator > starts as soon as a message is accepted, before its run is reported` (timed out) |
+| T-0512-M5 | packages/telegram/src/typing.ts | a chat whose run was not reported ended typing at once | `the typing indicator > starts as soon as a message is accepted, before its run is reported` (timed out) |
+| T-0512-M6 | packages/telegram/src/api.ts | `setMessageReaction` called the `sendMessage` method | `the Bot API reaction > sets one emoji reaction on the named message` |

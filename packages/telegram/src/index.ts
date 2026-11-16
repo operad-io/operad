@@ -45,12 +45,13 @@ export function createTelegramPlugin(options: TelegramPluginOptions = {}) {
       const wait = options.wait ?? delay;
       const pending = new PendingSender(ctx, { api });
       const commands = new CommandSender(ctx, { api });
-      const typing = new TypingSender(ctx, {
+      const typingSender = new TypingSender(ctx, {
         api,
         ...(options.clock === undefined ? {} : { clock: options.clock }),
         wait,
         ...(options.intervalMs === undefined ? {} : { intervalMs: options.intervalMs }),
-      }).start();
+      });
+      const typing = typingSender.start();
       const replySender = new ReplySender(ctx, { api, wait });
       const replies = replySender.start();
       const progress = new ProgressSender(ctx, {
@@ -59,7 +60,7 @@ export function createTelegramPlugin(options: TelegramPluginOptions = {}) {
         ...(options.clock === undefined ? {} : { clock: options.clock }),
         wait,
       }).start();
-      const source = new TelegramSource(ctx, { api, pending, commands }).start();
+      const source = new TelegramSource(ctx, { api, pending, commands, typing: typingSender }).start();
       const menu = commands.start();
       const sent = pending.start();
       return {

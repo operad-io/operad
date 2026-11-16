@@ -36,6 +36,7 @@ import type {
   GetUpdatesRequest,
   SendChatActionRequest,
   SendMessageRequest,
+  SetMessageReactionRequest,
   SetMyCommandsRequest,
   TelegramUpdate,
 } from "../src/api.ts";
@@ -70,6 +71,20 @@ export class FakeApi implements BotApi {
     this.sentNow?.();
     this.changed();
     return 9_000 + this.sent.length;
+  }
+
+  /** Every reaction set, in order. */
+  readonly reactions: SetMessageReactionRequest[] = [];
+  /** How many reactions were tried, including ones `beforeReaction` refused. */
+  reactionAttempts = 0;
+  /** Called before each reaction; throw to fail it. */
+  beforeReaction: ((request: SetMessageReactionRequest, count: number) => void) | undefined;
+
+  async setMessageReaction(request: SetMessageReactionRequest): Promise<void> {
+    this.reactionAttempts += 1;
+    this.beforeReaction?.(request, this.reactionAttempts);
+    this.reactions.push(request);
+    this.changed();
   }
 
   /** Every edit of a message, in order. */
