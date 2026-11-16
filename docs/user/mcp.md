@@ -395,7 +395,7 @@ Input:
 ```
 
 Result: `{ "items": [...] }`, the same list as `operad pending` and `GET /v1/pending`, with only the
-actions the lead may run now. A question carries `waitId`. Each item that is
+actions the lead may run now. A question carries `waitId` and may carry `choiceInfo`, keyed by a choice with optional `label`, `hint`, `role` and `note`. Each item that is
 about an object carries its `row`, as in `GET /v1/pending`. An action outside
 `mcp.actions`, or a `confirm: true` action that `mcp.confirmActions` does not
 name, is left out of both the structured content and the Markdown. The Markdown

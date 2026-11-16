@@ -13,7 +13,7 @@ description: Pending items and person waits: choices, answers, standing items, a
 | `candidate` | A trigger rule with `mode: "candidate"` | An event that would start a flow; its prompt is `would start <flow> on <object>` | The kernel actions `operad:start` and `operad:dismiss` |
 | `refused` | The kernel | An event routed to a flow that cannot start yet, with the reason as the prompt | Fix the cause; the item has no actions |
 
-Each item carries `runId` (a run id, a candidate's pending id, or `<plugin>:<id>` for a standing item), `flow`, `step`, `prompt`, `choices`, the `actions` that hold for its object (each `{ plugin, action }`, ranked), and when the item is about an object: `object` (`<type>:<id>`), `link` and the object's `row`.
+Each item carries `runId` (a run id, a candidate's pending id, or `<plugin>:<id>` for a standing item), `flow`, `step`, `prompt`, `choices`, the `actions` that hold for its object (each `{ plugin, action }`, ranked), and when the item is about an object: `object` (`<type>:<id>`), `link` and the object's `row`. A question may also carry `choiceInfo`, keyed by a choice string, with optional `label`, `hint`, `role` (`primary` or `destructive`) and `note` (`optional` or `required`) for each choice; see [asking](asking.md#asking-a-person-from-a-step).
 
 ## A wait for a person in a flow
 
@@ -30,7 +30,8 @@ Each item carries `runId` (a run id, a candidate's pending id, or `<plugin>:<id>
 | Param | Meaning |
 |---|---|
 | `prompt` | What the person reads. Non-empty. |
-| `choices` | The answers offered, as plain strings. Each choice is a result of the step and needs an edge in `next`; `interrupted` always needs one. A choice is both what the person picks and the name of the edge: there is no separate display label. |
+| `choices` | The answers offered, as plain strings. Each choice is a result of the step and needs an edge in `next`; `interrupted` always needs one. A choice is both what the person picks and the name of the edge. |
+| `choiceInfo` | Optional, keyed by a choice. `label` is what a client shows instead of the raw choice, `hint` says what choosing it does, `role` is `primary` or `destructive`, and `note` is `optional` or `required`. Keys must be choices; at most one is `primary`. |
 | `lateChoices` | Answers a timed-out step may hand over that this wait does not offer by itself. |
 | `note` | Shown when the step that led here was interrupted; `{step}` names that step. |
 

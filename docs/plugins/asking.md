@@ -11,11 +11,22 @@ A step can ask a person a question and carry on with the answer. The step calls
 const answer = await ctx.ask({
   prompt: "Delete the stale branch?",
   choices: ["yes", "no"],
+  choiceInfo: {
+    yes: { label: "Delete", hint: "Delete the branch now.", role: "primary" },
+    no: { label: "Keep", hint: "Leave the branch alone." },
+  },
   graceSecs: 120,
   onTimeout: "waiting",
   resume: { session: "abc" },
 });
 ```
+
+`choiceInfo` is optional. Its keys must be choices; at most one choice may have
+`role: "primary"`; any number may have `role: "destructive"`. `label` and `hint`
+are non-empty strings with a bounded length; `note` is `"optional"` or
+`"required"`. The kernel checks this before anyone is asked and otherwise only
+carries it to the pending view, HTTP and MCP. The choice string stays the value
+an answer sends.
 
 `ctx.ask` returns `{ choice, note, actor }`. The question shows up in
 `operad pending` and `GET /v1/pending` as one item, with the run's object and
