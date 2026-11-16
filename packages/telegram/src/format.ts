@@ -168,11 +168,32 @@ export function telegramChunks(markdown: string, limit = CHUNK_TARGET): readonly
   return out;
 }
 
+/** A duration as the progress line writes it, the same as the TUI's list. */
+export function progressElapsed(ms: number): string {
+  const value = Number.isFinite(ms) ? Math.max(0, ms) : 0;
+  if (value < 1000) return `${Math.floor(value)}ms`;
+  if (value < 60_000) return `${(value / 1000).toFixed(1)}s`;
+  const whole = Math.floor(value / 1000);
+  return `${Math.floor(whole / 60)}m ${whole % 60}s`;
+}
+
+/** The one line a progress message ends with: what the reply does and for how long. */
+export function progressStatusLine(status: { readonly text: string; readonly since: number }, now: number): string {
+  return `${status.text} · ${progressElapsed(now - status.since)}`;
+}
+
 /**
  * The one message a reply's progress shows: the end of a text longer than
- * Telegram takes, reduced like a reply. A fence left open is closed, so a
- * half-written code block never breaks the edit.
+ * Telegram takes, reduced like a reply, and the status line at its end. A
+ * fence left open is closed, so a half-written code block never breaks the edit.
  */
-export function telegramProgress(markdown: string): TelegramChunk | undefined {
-  return telegramChunks(markdown, TELEGRAM_MAX_CHARS).at(-1);
+export function telegramProgress(markdown: string, statusLine?: string): TelegramChunk | undefined {
+  const limit = statusLine === undefined ? TELEGRAM_MAX_CHARS : Math.max(64, TELEGRAM_MAX_CHARS - statusLine.length - 2);
+  const body = markdown.trim().length === 0 ? undefined : telegramChunks(markdown, limit).at(-1);
+  if (statusLine === undefined) return body;
+  const line = escapeHtml(statusLine);
+  return {
+    html: body === undefined ? line : `${body.html}\n\n${line}`,
+    plain: body === undefined ? statusLine : `${body.plain}\n\n${statusLine}`,
+  };
 }

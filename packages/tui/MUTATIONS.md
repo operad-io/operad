@@ -492,3 +492,9 @@ the row fields.
 | T-0506-M1 | packages/tui/src/state.ts | `/` opened the first note action instead of the chat's send action | `a chat's input lists its commands on / > / opens chat:send even when another note action is declared first` |
 | T-0506-M2 | packages/tui/src/commands.ts | the list still matched a loose subsequence instead of only a command's prefix | `a chat's input lists its commands on / > typing after the slash filters the list and the arrows move in it` |
 | T-0506-M3 | packages/tui/src/actions.ts | Enter filled the line again even when it already spelled the chosen command | `a chat's input lists its commands on / > Enter sends a line that already spells the chosen command` |
+
+## T-0514 — the TUI shows a section's status
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0514-M1 | packages/tui/src/view/index.ts | the status line was left out under the tail | `the tail is drawn after the content > the status is one weak line under the tail, with its elapsed time` |

@@ -128,6 +128,7 @@ export default definePlugin({
               markdown: linesBetween(1, logReads),
               mark: String(logReads),
               tail: `tail ${logReads}`,
+              status: { text: "Thinking", since: 1_700_000_000_000 },
             };
           }
           const start = Number.isInteger(from) && from >= 0 ? from : logReads;
@@ -135,6 +136,7 @@ export default definePlugin({
             markdown: linesBetween(start + 1, logReads),
             mark: String(logReads),
             tail: `tail ${logReads}`,
+            status: { text: "Thinking", since: 1_700_000_000_000 },
             delta: true,
           };
         }

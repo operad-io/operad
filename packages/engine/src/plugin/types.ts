@@ -131,6 +131,13 @@ export interface SectionReadOptions {
   readonly after?: string | undefined;
 }
 
+/** What a live section says it is doing, and since when. */
+export interface SectionStatus {
+  readonly text: string;
+  /** When the state named by `text` began, in milliseconds since the epoch. */
+  readonly since: number;
+}
+
 /** The Markdown of one section, and where to continue when it is paged. */
 export interface SectionContent {
   readonly markdown: string;
@@ -147,6 +154,11 @@ export interface SectionContent {
    * text, not only what changed since the last read.
    */
   readonly tail?: string | undefined;
+  /**
+   * What the live section is doing now; the kernel passes it through and
+   * never reads it. A client that does not know it ignores it.
+   */
+  readonly status?: SectionStatus | undefined;
   /**
    * `markdown` holds only what follows the requested `after`. Omit, or set
    * false, when the answer is a whole page; the kernel then tells the client

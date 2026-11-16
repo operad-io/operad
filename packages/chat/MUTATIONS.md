@@ -273,3 +273,12 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0511-M7 | packages/chat/src/reply.ts | a chat with a named model checked the old synchronous list instead of waiting for the first refresh | `the reply and the model > a first reply with a named model waits for the list, then passes by it` |
+
+## T-0514 — a reply in progress says what it is doing
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0514-M1 | packages/chat/src/views.ts | Thinking was always answered as Starting | `a reply's status > Starting starts at the first unanswered message and lasts until the ready line` |
+| T-0514-M2 | packages/chat/src/tail.ts | the log's ready line was ignored, so the status stayed Starting | `a reply's status > Starting starts at the first unanswered message and lasts until the ready line` |
+| T-0514-M3 | packages/chat/src/views.ts | the newest open call was named instead of the oldest | `a reply's status > Running names the oldest call still going, since when it started` |
+| T-0514-M4 | packages/chat/src/views.ts | a failure no longer ended the status | `a reply's status > there is no status after a failure` |
