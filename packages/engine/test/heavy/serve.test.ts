@@ -24,7 +24,13 @@ import {
   sleepUntilAborted,
   storeRootOf,
 } from "../../src/index.ts";
-import { markerEnv } from "../../src/platform/index.ts";
+import {
+  keptWorkerArgument,
+  markerEnv,
+  newKeptWorkerSlot,
+  removeKeptWorker,
+  writeKeptWorker,
+} from "../../src/platform/index.ts";
 import plugin from "../fixtures/plugins/runner.ts";
 import triggerPlugin from "../fixtures/plugins/trigger.ts";
 import { cleanupTempRoots, tempRoot } from "../plugin/support.ts";
@@ -192,6 +198,57 @@ describe("serve loop", () => {
     } finally {
       stale.kill("SIGKILL");
       kept.kill("SIGKILL");
+      await log.close();
+    }
+  });
+
+  test("serve start ends every kept worker of the home, even without a run marker", async () => {
+    const home = await makeHome();
+    const log = openConfigLog(home.config);
+    const registry = await loadPluginRegistry({
+      home: home.home,
+      store: new MemoryPluginStore({ root: home.storeRoot }),
+    });
+    const slot = newKeptWorkerSlot(home.home, "pi");
+    const kept = nodeSpawn(
+      process.execPath,
+      ["-e", "setTimeout(() => {}, 300000)", keptWorkerArgument(slot.token)],
+      { detached: true, stdio: "ignore" },
+    );
+    const pid = kept.pid;
+    if (pid === undefined) throw new Error("the kept worker did not start");
+    writeKeptWorker({
+      pid,
+      token: slot.token,
+      scope: "chat:C-1",
+      key: "same",
+      socket: slot.socket,
+      meta: slot.meta,
+      session: null,
+      startedAt: Date.now(),
+      lastUsedAt: Date.now(),
+    });
+    try {
+      const controller = new AbortController();
+      controller.abort();
+      await serve({
+        home: home.home,
+        log,
+        registry,
+        lockRoot: home.storeRoot,
+        signal: controller.signal,
+        spawnRun: () => undefined,
+        onLog: () => undefined,
+      });
+      const deadline = Date.now() + 5_000;
+      while ((kept.exitCode !== null ? false : kept.signalCode === null) && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      expect(kept.exitCode !== null || kept.signalCode !== null).toBe(true);
+      expect(existsSync(slot.meta)).toBe(false);
+    } finally {
+      if (kept.exitCode === null && kept.signalCode === null) kept.kill("SIGKILL");
+      removeKeptWorker(slot);
       await log.close();
     }
   });

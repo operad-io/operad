@@ -294,3 +294,4 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0515-M8 | packages/cli/src/serve-stop.ts | `serve stop` no longer ended the home's kept workers when no serve was running | `kept workers of the home end even when no serve is running` |
+| T-0515-M11 | packages/cli/src/main.ts | serve shutdown no longer ended the home's kept workers | `serve shutdown ends the home's kept workers` |
