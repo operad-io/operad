@@ -258,3 +258,12 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 | T-0508-M2 | packages/chat/src/reply.ts | a worktree yes returned a refusal and let the asking reply go on read-only | `a read-only chat > a yes ends the asking reply, leaves the message unanswered and sends the worktree event once` |
 | T-0508-M3 | packages/chat/src/reply.ts | a late worktree yes passed through to the harness and started another reply | `a read-only chat > a late yes opens the worktree without starting another reply` |
 | T-0508-M6 | packages/chat/src/views.ts | the worktree entry was drawn as the agent's own words instead of the one line saying the chat moved | `chat entries > the worktree line is shown as itself, not as the agent's words` |
+
+## T-0509 — late permission answers and a stopped worktree yes
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0509-M2 | packages/chat/src/reply.ts | a late `Allow once` added no one-time permission to the run's access profile | `a read-only chat > Allow once answered after the wait lets this run's call through and writes nothing` |
+| T-0509-M3 | packages/chat/src/reply.ts | a late `Always allow` wrote nothing to the user layer | `a read-only chat > Always allow answered after the wait writes the user layer and lets this run's call through` |
+| T-0509-M4 | packages/chat/src/reply.ts | a worktree yes no longer stopped the harness, so one that swallowed the stop could run more calls | `a read-only chat > a yes stops the agent at once even when the harness swallows the stop` |
+| T-0509-M5 | packages/chat/src/reply.ts | the normal worktree event key carried the run id and did not match the key the catch path emits | `a read-only chat > a yes stops the agent at once even when the harness swallows the stop` |

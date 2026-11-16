@@ -409,6 +409,44 @@ describe("a read-only chat", () => {
     expect(r.calls[0]?.params.askAnswer).toEqual({ prompt, choice: "reject_once", note: READ_ONLY_REFUSAL });
   });
 
+  test("Allow once answered after the wait lets this run's call through and writes nothing", async () => {
+    let access: unknown;
+    const r = await rig((ctx: StepContext) => {
+      access = ctx.access;
+      return reply("done");
+    });
+    const chat = await r.chat({ access: { readOnly: true } });
+    await r.say(chat, "go");
+    const prompt = "The agent wants to run `rm -r src` in this read-only chat. Open a worktree for it?";
+    const result = await r.round(chat, { resumeSession: "s", askAnswer: { prompt, choice: WORKTREE_ALLOW_ONCE } });
+    expect(result.result).toBe("done");
+    expect(r.calls[0]?.params.askAnswer).toEqual({ prompt, choice: "allow_once" });
+    expect(access).toMatchObject({
+      alwaysAllow: [{ kind: "command", value: "rm -r src", cwd: r.root }],
+    });
+    expect(await readAlwaysAllow(join(r.root, "home"))).toEqual({ entries: [] });
+  });
+
+  test("Always allow answered after the wait writes the user layer and lets this run's call through", async () => {
+    let access: unknown;
+    const r = await rig((ctx: StepContext) => {
+      access = ctx.access;
+      return reply("done");
+    });
+    const chat = await r.chat({ access: { readOnly: true } });
+    await r.say(chat, "go");
+    const prompt = "The agent wants to run `rm -r src` in this read-only chat. Open a worktree for it?";
+    const result = await r.round(chat, { resumeSession: "s", askAnswer: { prompt, choice: WORKTREE_ALLOW_ALWAYS } });
+    expect(result.result).toBe("done");
+    expect(r.calls[0]?.params.askAnswer).toEqual({ prompt, choice: "allow_always" });
+    expect(access).toMatchObject({
+      alwaysAllow: [{ kind: "command", value: "rm -r src", cwd: r.root }],
+    });
+    expect(await readAlwaysAllow(join(r.root, "home"))).toEqual({
+      entries: [{ kind: "command", value: "rm -r src", cwd: r.root }],
+    });
+  });
+
   test("a no sends nothing, and a question that is not about a call goes through unchanged", async () => {
     const asked: string[] = [];
     const r = await rig(async (ctx: StepContext) => {
@@ -474,11 +512,39 @@ describe("a read-only chat", () => {
         return false;
       },
     };
-    expect((await r.round(chat, {}, asker, (event) => emitted.push(event.type))).result).toBe("done");
+    expect((await r.round(chat, {}, asker, (event) => emitted.push(`${event.type} ${event.key}`))).result).toBe("done");
     expect(asked).toBe(1);
-    expect(emitted).toEqual([WORKTREE_EVENT]);
+    expect(emitted).toEqual([`${WORKTREE_EVENT} open`]);
     expect(allMessages(r.store, chat).filter((message) => message.role === "assistant")).toHaveLength(0);
     expect(unanswered(allMessages(r.store, chat)).map((message) => message.text)).toEqual(["change it"]);
+  });
+
+  test("a yes stops the agent at once even when the harness swallows the stop", async () => {
+    let abortedWhenSwallowed: boolean | undefined;
+    const r = await rig(async (ctx: StepContext) => {
+      try {
+        await ctx.ask(writeAsk);
+      } catch {
+        abortedWhenSwallowed = ctx.signal.aborted;
+      }
+      return reply("should not be used");
+    });
+    const chat = await r.chat({ access: { readOnly: true } });
+    await r.say(chat, "change it");
+    const emitted: string[] = [];
+    const asker = {
+      async ask() {
+        return { kind: "answered" as const, answer: { choice: WORKTREE_YES } };
+      },
+      async useGrant() {
+        return false;
+      },
+    };
+    const result = await r.round(chat, {}, asker, (event) => emitted.push(`${event.type} ${event.key}`));
+    expect(result).toMatchObject({ result: "done", data: { worktree: true } });
+    expect(abortedWhenSwallowed).toBe(true);
+    expect(emitted).toEqual([`${WORKTREE_EVENT} open`]);
+    expect(allMessages(r.store, chat).filter((message) => message.role === "assistant")).toHaveLength(0);
   });
 
   test("a late yes opens the worktree without starting another reply", async () => {
