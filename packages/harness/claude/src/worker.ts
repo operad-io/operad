@@ -258,6 +258,18 @@ function isSessionMissing(text: string): boolean {
   return /no conversation found/i.test(text);
 }
 
+/** What claude itself says about a turn that ended without text and without a model call. */
+function noAnswerReason(
+  final: { readonly subtype: string; readonly local_command?: string },
+  errors: readonly string[],
+): string {
+  const parts = [`the agent reported ${final.subtype}`];
+  if (errors.length > 0) parts.push(`errors: ${errors.join("; ")}`);
+  const command = typeof final.local_command === "string" ? final.local_command.trim() : "";
+  if (command.length > 0) parts.push(`it ran the local command ${command}`);
+  return parts.join("; ");
+}
+
 /**
  * Runs one prompt and returns the exit code. `cancel` is the SIGTERM signal;
  * the Result is written before the code is returned.
@@ -347,11 +359,21 @@ class PromptQueue implements AsyncIterable<SDKUserMessage> {
   }
 }
 
+/** Whether claude must take the text as written instead of dispatching it as its own command. */
+function leadingSlash(text: string): boolean {
+  return text.trimStart().startsWith("/");
+}
+
+function clientComposed(text: string): { readonly client_composed?: true } {
+  return leadingSlash(text) ? { client_composed: true } : {};
+}
+
 function userMessage(text: string): SDKUserMessage {
   return {
     type: "user" as const,
     message: { role: "user" as const, content: text },
     parent_tool_use_id: null,
+    ...clientComposed(text),
   };
 }
 
@@ -370,6 +392,7 @@ async function userMessageWithImages(input: WorkerInput): Promise<SDKUserMessage
       ],
     },
     parent_tool_use_id: null,
+    ...clientComposed(input.prompt),
   };
 }
 
@@ -592,7 +615,7 @@ class ClaudeSession {
         this.session = query({
           prompt:
             this.queue ??
-            ((input.images ?? []).length === 0
+            ((input.images ?? []).length === 0 && !leadingSlash(input.prompt)
               ? input.prompt
               : (async function* () {
                   yield await userMessageWithImages(input);
@@ -804,13 +827,27 @@ class ClaudeSession {
         code: EXIT_FAILED,
       };
     }
-    if (final.subtype === "success" && !final.is_error) {
-      return { line: { ...base, result: "done" }, code: 0 };
-    }
     const errors =
       "errors" in final && Array.isArray(final.errors)
         ? final.errors.filter((e): e is string => typeof e === "string")
         : [];
+    if (final.subtype === "success" && !final.is_error) {
+      // A reply with no text and no usage never reached the model, as a local
+      // command does. The reason is kept for the chat's failure line.
+      const emptyText = text === null || text.trim().length === 0;
+      const noUsage =
+        !hasModel &&
+        counts.input === 0 &&
+        counts.output === 0 &&
+        counts.cache_read === 0 &&
+        counts.cache_write === 0 &&
+        finite(final.total_cost_usd) === 0;
+      const reason = emptyText && noUsage ? noAnswerReason(final, errors) : undefined;
+      return {
+        line: { ...base, result: "done", ...(reason === undefined ? {} : { message: reason }) },
+        code: 0,
+      };
+    }
     const message =
       turn.modelError?.message ??
       (errors.length > 0

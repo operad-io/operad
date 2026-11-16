@@ -334,6 +334,10 @@ export interface EntryData {
   readonly outputTruncated?: boolean | undefined;
   /** The first line of the error, when the call failed. */
   readonly error?: string | null | undefined;
+  /** On `failure`: why the reply failed (`empty`, `model_error`, ...). */
+  readonly reason?: string | undefined;
+  /** On `failure`: the oldest message the failed reply was for. */
+  readonly messageId?: string | undefined;
 }
 
 /** One entry with when its fact was recorded. */
@@ -682,7 +686,14 @@ export function entryOfFact(fact: PluginFact): Entry | undefined {
   const kind = data.kind;
   if (kind !== "text" && kind !== "thinking" && kind !== "tool" && kind !== "stopped" && kind !== "failure" && kind !== "worktree") return undefined;
   const entryKind: EntryKind = kind;
-  const base = { runId: data.runId, kind: entryKind, at: fact.at, sequence: fact.sequence };
+  const base = {
+    runId: data.runId,
+    kind: entryKind,
+    at: fact.at,
+    sequence: fact.sequence,
+    ...(typeof data.reason === "string" ? { reason: data.reason } : {}),
+    ...(typeof data.messageId === "string" ? { messageId: data.messageId } : {}),
+  };
   if (entryKind === "tool") {
     if (typeof data.callId !== "string" || typeof data.toolName !== "string" || !isToolResult(data.result)) {
       return undefined;
@@ -917,15 +928,19 @@ function attachmentLines(message: Message, shown: ReadonlySet<string>): string {
   return `Attached files:\n${lines.join("\n")}`;
 }
 
+/** How {@link promptFor} separates one unanswered message from the next. */
+export const PROMPT_MESSAGE_SEPARATOR = "\n\n---\n\n";
+
 /**
- * The prompt for the messages to answer, built from facts alone. A message's
- * files follow its text as paths; `images` are the paths also given as image input.
+ * The prompt for the messages to answer, built from facts alone. Each message
+ * is its own block, so two messages never read as one; a message's files
+ * follow its text as paths, and `images` are the paths also given as image input.
  */
 export function promptFor(pending: readonly Message[], images: ReadonlySet<string> = new Set()): string {
   const parts = pending.map((message) =>
     [message.text, attachmentLines(message, images)].filter((part) => part.length > 0).join("\n\n"),
   );
-  return parts.join("\n\n");
+  return parts.join(PROMPT_MESSAGE_SEPARATOR);
 }
 
 /** One agent's choices for a new chat: what it lists, and what a chat starts with when none is asked for. */

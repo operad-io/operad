@@ -310,3 +310,11 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0517-M7 | packages/chat/src/reply.ts | the reply did not hand the bot's own-settings switch to the agent step | `a reply reads the bot again > the own-settings switch is off by default and reaches the agent when on` |
+
+## T-0521 — a failed chat reply does not poison the next one
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0521-M1 | packages/chat/src/model.ts | the unanswered messages were joined with a blank line again, not as separate blocks | `a failed reply > the C-0021 history answers a new message after two empty failures` |
+| T-0521-M2 | packages/chat/src/reply.ts | an empty failure was marked taken only on the third in a row | `a failed reply > two empty failures in a row stop the oldest message from being sent a third time` |
+| T-0521-M3 | packages/chat/src/reply.ts | an empty reply with no usage still read `the agent gave no reply` | `a failed reply > an empty result that called no model says so, with the agent's own reason` |

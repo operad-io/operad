@@ -26,7 +26,11 @@ id, name, input summary, result, start, duration, the first 4 KB of its output,
 the file holding the whole output and the first line of an error) and the
 half-written reply of a run that was stopped. A reply that fails records one
 `failure` entry instead of a reply: one plain line saying the reply failed and
-why, with the provider's message masked and cut to a sensible length. Increments
+why, with the provider's message masked and cut to a sensible length. A reply
+that ends with no text, no usage and no error ended without calling the model,
+and the line says that, with the agent's own reason when it gives one (for
+`claude`, the result's subtype, its errors and a local command the session ran).
+A failure entry keeps its reason and the oldest message the attempt was for. Increments
 are not stored. Output longer than 4 KB goes to a file under the chat's own
 directory (under `attachments/chat/<id>/tool-output/`), and secret values are
 masked before a fact or a file is written. A rerun skips a tool call whose id was
@@ -130,7 +134,13 @@ One step, `chat/reply`, and a loop in the flow. The step builds the prompt from
 the unanswered messages in the facts (never from the event), continues the
 chat's session, records the reply as a fact before it counts as done, updates the
 session reference and looks again for messages that arrived meanwhile: if there
-are some its result is `more` and the flow runs it again. The flow's `maxVisits`
+are some its result is `more` and the flow runs it again. Each unanswered message
+is its own block in the prompt, separated by a blank line and `---`, so two
+messages never read as one and a message that starts with `/` is text to the
+agent rather than one of its commands. A failed reply leaves its messages
+unanswered for the next reply, as ADR 0026 D14 says; an empty failure twice in a
+row for the same oldest message records that message as taken, so it is not sent
+a third time. The flow's `maxVisits`
 (20) ends a loop that never catches up. A question that ran out of grace ends the
 step `waiting`; the answer comes back with the session.
 

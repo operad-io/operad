@@ -353,6 +353,45 @@ test("a prompt that ends writes the lines in order and a Result with usage, cost
   expect(run.stdout.endsWith("\n")).toBe(true);
 });
 
+test("a prompt that starts with a slash reaches the model as text, never as one of claude's commands", async () => {
+  const s = setup();
+  s.input["prompt"] = "/clear";
+  const run = await runFake(s, {
+    steps: [{ say: systemInit() }, { say: result({ result: "" }) }],
+  });
+
+  expect(run.exitCode).toBe(0);
+  const sent = run.record.find((entry) => "user" in entry);
+  expect(sent).toMatchObject({
+    user: { role: "user", content: [{ type: "text", text: "/clear" }] },
+    clientComposed: true,
+  });
+});
+
+test("an empty result with no usage reports claude's subtype and the local command it ran", async () => {
+  const run = await runFake(setup(), {
+    steps: [
+      { say: systemInit() },
+      {
+        say: result({
+          result: "",
+          usage: { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+          modelUsage: {},
+          total_cost_usd: 0,
+          local_command: "/clear",
+        }),
+      },
+    ],
+  });
+
+  expect(run.exitCode).toBe(0);
+  expect(last(run)).toMatchObject({
+    result: "done",
+    finalMessage: "",
+    message: "the agent reported success; it ran the local command /clear",
+  });
+});
+
 test("cost quality is estimated for a subscription login and exact for an API key", async () => {
   const subscription = await runFake(setup(), { account: { subscriptionType: "Claude Max" }, steps: done });
   expect(last(subscription)["cost"]).toEqual({ micros: 12346, quality: "estimated" });

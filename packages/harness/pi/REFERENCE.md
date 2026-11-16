@@ -18,7 +18,10 @@ resource loader read the owner's pi directory (`getAgentDir()`, so
 `PI_CODING_AGENT_DIR` is respected) for settings, context files, user skills,
 prompt templates and extensions; the project's `.pi` resources stay untrusted.
 Session files remain under the input's `sessionDir`, and operad's compaction
-and retry settings stay off.
+and retry settings stay off. Every prompt goes to `session.prompt` with
+`expandPromptTemplates: false`, both the first and one the host sends mid-run,
+so a person's text that starts with `/` is never dispatched as one of pi's
+commands or expanded as one of the owner's prompt templates.
 
 ## Installing pi
 

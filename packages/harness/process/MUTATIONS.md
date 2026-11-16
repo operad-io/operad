@@ -160,3 +160,8 @@ and the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0520-M1 | packages/harness/process/src/process.ts | `keptRecordAppears` waited for the record path to exist instead of for the path to read as a record | `a kept record that is still empty is not ready, so the reply waits for the whole record` |
+## T-0521 — a leading slash in a message is text
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0521-M1 | packages/harness/process/src/step.ts | a done result dropped the reason the worker gave for answering with nothing | `resultFor > a done result keeps the reason the worker gave for answering with nothing` |

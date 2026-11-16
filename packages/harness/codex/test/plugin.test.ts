@@ -188,6 +188,15 @@ describe("codex/agent: a prompt run", () => {
     expect(lines.at(-1)?.type).toBe("result");
   });
 
+  test("a prompt that starts with a slash reaches the model as text, never as one of codex's commands", async () => {
+    const env = await setup("done");
+    const result = await runAgent(env, { prompt: "/clear hi", cwd: env.root });
+    expect(result.result).toBe("done");
+    expect(paramsOf(env, "turn/start")[0]?.input).toEqual([
+      { type: "text", text: "/clear hi", text_elements: [] },
+    ]);
+  });
+
   test("a scripted run gives the time to its session line, to the first increment, and the whole step", async () => {
     const times = [1_000, 2_000];
     const env = await setup("done", { now: () => times.shift() ?? 9_000 });
