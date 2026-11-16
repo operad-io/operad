@@ -80,6 +80,8 @@ export interface Rig {
     readonly model?: string;
     readonly effort?: string;
     readonly effortDefault?: string;
+    readonly refresh?: string;
+    readonly cwd?: string;
   }): Promise<string>;
   /** A person's message as a fact, without the event. */
   say(chat: string, text: string, attachments?: readonly unknown[]): Promise<string>;
@@ -141,12 +143,13 @@ export async function rig(
         store,
         {
           harness: name,
-          cwd: root,
+          cwd: extra?.cwd ?? root,
           title: "Test",
           ...(extra?.access === undefined ? {} : { access: extra.access }),
           ...(extra?.model === undefined ? {} : { model: extra.model }),
           ...(extra?.effort === undefined ? {} : { effort: extra.effort }),
           ...(extra?.effort === undefined || extra?.effortDefault === undefined ? {} : { effortDefault: extra.effortDefault }),
+          ...(extra?.refresh === undefined ? {} : { refresh: extra.refresh }),
         },
         "test",
       );

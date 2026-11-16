@@ -1335,3 +1335,13 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0509-M6 | packages/dev/src/chat.ts | the late marker in the event data was ignored, so a late yes started a second reply | `dev/chat_worktree > a yes marked late in its event data opens the worktree and starts no reply` |
+
+## T-0513 — a repository chat starts with its agent files
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0513-M1 | packages/dev/src/chat.ts | the instruction file preferred `CLAUDE.md` over `AGENTS.md` | `a repository chat's starting text > uses AGENTS.md, CLAUDE.md only without it, and a link to the other once` |
+| T-0513-M2 | packages/dev/src/chat.ts | a file over 32 KB was handed over whole, with no cut and no path line | `a repository chat's starting text > cuts a file over 32 KB at a line end and says where the whole file is` |
+| T-0513-M3 | packages/dev/src/chat.ts | the path list kept files inside a skill directory the chat already loads | `a repository chat's starting text > lists other agent files by tracked path, leaving out untracked files and loaded skills` |
+| T-0513-M4 | packages/dev/src/chat.ts | the worktree wording was replaced by the read-only wording | `a repository chat's starting text > names where it is and what is refused` |
+| T-0513-M5 | packages/dev/src/chat.ts | an instruction file that left the repository through a link was read | `a repository chat's starting text > skips a link that leaves the repository, for both the text and the path list` |

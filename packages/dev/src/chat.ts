@@ -30,14 +30,15 @@ import {
   type PluginStepResult,
   type StepContext,
 } from "@operad-io/engine";
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { basename, join, resolve } from "node:path";
+import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
+import { basename, join, relative, resolve, sep } from "node:path";
 import { DevError, DevRefusal, repositoryData, type RepositoryData } from "./model.ts";
 import {
   assertInsideRepository,
   readDevSettings,
   type DevSettings,
 } from "./settings.ts";
+import { git } from "./git.ts";
 import { isRegistered, prepareWorktree, workBranch, worktreePath } from "./steps.ts";
 
 /**
@@ -61,6 +62,184 @@ export const CHAT_ACCESS: Readonly<Record<string, JsonValue>> = {
 
 /** The step a repository chat calls at every reply to read its skills and access. */
 export const CHAT_SETTINGS_STEP = "dev/chat_settings";
+
+/** The most bytes of the repository's instruction file a chat starts with. */
+export const CHAT_CONTEXT_FILE_MAX_BYTES = 32 * 1024;
+
+/** The most other agent file paths a chat starts with. */
+export const CHAT_CONTEXT_PATH_MAX = 50;
+
+/** What a repository chat's first session starts with: its place, and the same words alone. */
+export interface RepositoryChatContext {
+  readonly [key: string]: unknown;
+  /** The place, the instructions and the other agent files. */
+  readonly text: string;
+  /** The place alone, for a chat that moved to its worktree after the text was built. */
+  readonly where: string;
+}
+
+function realPathOrUndefined(path: string): string | undefined {
+  try {
+    return realpathSync(path);
+  } catch {
+    return undefined;
+  }
+}
+
+function insideRoot(root: string, path: string): boolean {
+  const real = realPathOrUndefined(path);
+  return real !== undefined && (real === root || real.startsWith(`${root}${sep}`));
+}
+
+/** The instruction file at the root: `AGENTS.md`, else `CLAUDE.md`, never one outside through a link. */
+function instructionFile(base: string, root: string): { readonly path: string; readonly text: string } | undefined {
+  for (const name of ["AGENTS.md", "CLAUDE.md"] as const) {
+    const path = join(base, name);
+    const real = realPathOrUndefined(path);
+    if (real === undefined || (real !== root && !real.startsWith(`${root}${sep}`))) continue;
+    let isFile = false;
+    try {
+      isFile = statSync(real).isFile();
+    } catch {
+      continue;
+    }
+    if (!isFile) continue;
+    const bytes = readFileSync(real);
+    if (bytes.length <= CHAT_CONTEXT_FILE_MAX_BYTES) return { path, text: bytes.toString("utf8") };
+    // Cut at a character boundary and then at the last line end before the limit.
+    let end = CHAT_CONTEXT_FILE_MAX_BYTES;
+    while (end > 0 && ((bytes[end] ?? 0) & 0xc0) === 0x80) end -= 1;
+    let text = bytes.subarray(0, end).toString("utf8");
+    const lineEnd = text.lastIndexOf("\n");
+    if (lineEnd >= 0) text = text.slice(0, lineEnd);
+    const note = `The file was cut at 32 KB; the whole file is at ${path}.`;
+    return { path, text: text.length === 0 ? note : `${text}\n\n${note}` };
+  }
+  return undefined;
+}
+
+/** Every tracked `AGENTS.md` below the root, never the root's own and never one outside through a link. */
+function trackedAgentFiles(base: string, root: string): string[] {
+  const listed = git(base, ["ls-files", "-z"], { raw: true });
+  if (!listed.ok) return [];
+  const found: string[] = [];
+  for (const path of listed.out.split("\0")) {
+    if (path.length === 0 || path === "AGENTS.md" || basename(path) !== "AGENTS.md") continue;
+    const absolute = join(base, path);
+    if (!insideRoot(root, absolute)) continue;
+    const real = realPathOrUndefined(absolute);
+    if (real === undefined) continue;
+    try {
+      if (!statSync(real).isFile()) continue;
+    } catch {
+      continue;
+    }
+    found.push(absolute);
+  }
+  return found;
+}
+
+function insideSkill(path: string, skills: readonly string[]): boolean {
+  const real = realPathOrUndefined(path);
+  if (real === undefined) return false;
+  return skills.some((skill) => {
+    const base = realPathOrUndefined(skill);
+    return base !== undefined && (real === base || real.startsWith(`${base}${sep}`));
+  });
+}
+
+/** Every file under the root `.agents`, except those inside a skill directory the chat loads. */
+function agentFiles(base: string, root: string, skills: readonly string[]): string[] {
+  const start = join(base, ".agents");
+  if (!insideRoot(root, start)) return [];
+  const found: string[] = [];
+  const seen = new Set<string>();
+  const walk = (path: string): void => {
+    const real = realPathOrUndefined(path);
+    if (real === undefined || (real !== root && !real.startsWith(`${root}${sep}`))) return;
+    let isDirectory = false;
+    try {
+      isDirectory = statSync(real).isDirectory();
+    } catch {
+      return;
+    }
+    if (isDirectory) {
+      if (seen.has(real)) return;
+      seen.add(real);
+      let entries;
+      try {
+        entries = readdirSync(path, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const entry of entries) walk(join(path, entry.name));
+      return;
+    }
+    let isFile = false;
+    try {
+      isFile = statSync(real).isFile();
+    } catch {
+      return;
+    }
+    if (isFile && !insideSkill(path, skills)) found.push(path);
+  };
+  walk(start);
+  return found;
+}
+
+/** The other agent files a chat reads by path, relative to its working directory, with no duplicates. */
+function otherAgentFiles(base: string, root: string, skills: readonly string[]): string[] {
+  const absolute = new Set([...trackedAgentFiles(base, root), ...agentFiles(base, root, skills)]);
+  return [...absolute]
+    .map((path) => relative(base, path))
+    .sort((left, right) => left.localeCompare(right));
+}
+
+/**
+ * The text a repository chat's first session starts with: where it is, the
+ * repository's instruction file, and the paths of its other agent files. Built
+ * from the working directory the reply uses, so a worktree chat names its branch.
+ */
+export function repositoryChatContext(input: {
+  readonly repository: string;
+  readonly cwd: string;
+  readonly readOnly: boolean;
+  readonly branch?: string | undefined;
+  readonly skills: readonly string[];
+  readonly denyCommands: readonly string[];
+}): RepositoryChatContext {
+  const root = realPathOrUndefined(input.cwd) ?? resolve(input.cwd);
+  const where = [
+    `You are answering in an operad chat about the repository ${input.repository}, in ${input.cwd}.`,
+    input.readOnly
+      ? "This chat is read-only in the main clone. Commands that only read run at once; a call that changes a file asks the person first."
+      : `This chat works in its own worktree on the branch ${input.branch ?? "unknown"}. Changes reach main through a task, not by merging here.`,
+    ...(input.denyCommands.length === 0
+      ? []
+      : [`These commands are refused here: ${input.denyCommands.join(", ")}.`]),
+    ...(input.denyCommands.includes("operad")
+      ? ["Use the operad tools you were given to read plans, tasks and pending items."]
+      : []),
+  ].join("\n");
+  const parts = [where];
+  const instructions = instructionFile(input.cwd, root);
+  if (instructions !== undefined) {
+    parts.push(`The repository's instructions follow. Follow them.\n\n${instructions.text}`);
+  }
+  const files = otherAgentFiles(input.cwd, root, input.skills);
+  if (files.length > 0) {
+    const shown = files.slice(0, CHAT_CONTEXT_PATH_MAX);
+    const lines = [
+      "Other agent files in this repository; read the ones that apply to what you work on:",
+      ...shown,
+      ...(files.length > CHAT_CONTEXT_PATH_MAX
+        ? [`[${files.length - CHAT_CONTEXT_PATH_MAX} more files were left out.]`]
+        : []),
+    ];
+    parts.push(lines.join("\n"));
+  }
+  return { where, text: parts.join("\n\n") };
+}
 
 /** The event dev sends after a live worktree yes, so the chat answers the same message there. */
 export const CHAT_REPLY_EVENT = WORKTREE_REPLY_EVENT;
@@ -308,7 +487,7 @@ function failed(message: string): PluginStepResult {
 export async function runChatSettings(ctx: StepContext, params: unknown): Promise<PluginStepResult> {
   const chatId = isRecord(params) && typeof params.chat === "string" ? params.chat : undefined;
   const stored = chatId === undefined ? undefined : await ctx.store.get(CHAT_TYPE, chatId);
-  if (stored === undefined) return failed("there is no such chat");
+  if (stored === undefined || chatId === undefined) return failed("there is no such chat");
   const chat = chatData(stored.data);
   const parent = typeof chat.parent === "string" ? chat.parent : "";
   const name = parent.startsWith("repo:") ? parent.slice("repo:".length) : undefined;
@@ -332,12 +511,32 @@ export async function runChatSettings(ctx: StepContext, params: unknown): Promis
   } catch (error) {
     return failed(error instanceof Error ? error.message : String(error));
   }
+  const access = chatAccess(skills.roots, !hasWorktree);
+  const worktree = isRecord(stored.data.worktree) ? stored.data.worktree : {};
+  const branch =
+    hasWorktree
+      ? typeof worktree.branch === "string"
+        ? worktree.branch
+        : workBranch(chatWorktreeName(chatId))
+      : undefined;
+  const denyCommands = Array.isArray(access.denyCommands)
+    ? access.denyCommands.filter((command): command is string => typeof command === "string")
+    : [];
+  const context = repositoryChatContext({
+    repository: name,
+    cwd,
+    readOnly: !hasWorktree,
+    ...(branch === undefined ? {} : { branch }),
+    skills: skills.directories,
+    denyCommands,
+  });
   return {
     result: "done",
     data: {
       cwd,
-      access: chatAccess(skills.roots, !hasWorktree),
+      access,
       skills: [...skills.directories],
+      context,
     },
   };
 }

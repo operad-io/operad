@@ -55,11 +55,17 @@ import {
  * the model and the cost so far, summed from the replies recorded. Reading the
  * facts, not adding to the object, makes a rerun after a crash end in the same state.
  */
-async function syncChat(ctx: StepContext, id: string, session: string | undefined): Promise<void> {
+async function syncChat(
+  ctx: StepContext,
+  id: string,
+  session: string | undefined,
+  contextCwd?: string | undefined,
+): Promise<void> {
   const fresh = await ctx.store.get(CHAT_TYPE, id);
   if (fresh === undefined) return;
   const next: Record<string, unknown> = { ...fresh.data };
   if (session !== undefined) next.session = session;
+  if (contextCwd !== undefined) next.contextCwd = contextCwd;
   let micros: number | undefined;
   let quality: CostQuality | undefined;
   let costMissing = false;
@@ -430,6 +436,12 @@ export function imagesOf(pending: readonly Message[], harness: string, directory
   return images;
 }
 
+/** The text a chat's first session starts with: the whole text, and its place alone. */
+interface SessionContext {
+  readonly text: string;
+  readonly where: string;
+}
+
 /** What a chat's `refresh` step gives back. */
 interface Live {
   readonly cwd: string;
@@ -437,6 +449,21 @@ interface Live {
   readonly skills: readonly string[];
   /** Servers the harness starts for the agent, by name, each as a command. */
   readonly mcpServers: Readonly<Record<string, JsonValue>>;
+  /** A repository chat's starting text; a bot chat gives none. */
+  readonly context?: SessionContext | undefined;
+}
+
+function sessionContextOf(value: unknown): SessionContext | undefined {
+  if (!isRecord(value) || typeof value.text !== "string" || typeof value.where !== "string") return undefined;
+  return { text: value.text, where: value.where };
+}
+
+/** The text to put before this round's prompt: the whole text for a new session, its place after a move. */
+function contextFor(chat: ChatData, live: Live, session: string | undefined): string | undefined {
+  if (live.context === undefined) return undefined;
+  if (session === undefined) return live.context.text;
+  if (chat.contextCwd !== undefined && chat.contextCwd !== live.cwd) return live.context.where;
+  return undefined;
 }
 
 /**
@@ -468,11 +495,13 @@ async function liveSettings(
   if (typeof data.cwd !== "string" || data.cwd.length === 0 || !isRecord(data.access) || !Array.isArray(data.skills)) {
     return failed("settings", "the chat's settings came back in a shape the chat cannot use");
   }
+  const context = sessionContextOf(data.context);
   return {
     cwd: data.cwd,
     access: data.access as Record<string, JsonValue>,
     skills: data.skills.filter((item): item is string => typeof item === "string"),
     mcpServers: isRecord(data.mcpServers) ? (data.mcpServers as Record<string, JsonValue>) : {},
+    ...(context === undefined ? {} : { context }),
   };
 }
 
@@ -951,12 +980,14 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
     }
     midRun?.close();
   };
+  const context = contextFor(chat, live, session);
+  const prompt = promptFor(pending, new Set(images.map((image) => image.path)));
   let outcome: PluginStepResult;
   try {
     outcome = await runStep(
       use,
       {
-        prompt: promptFor(pending, new Set(images.map((image) => image.path))),
+        prompt: context === undefined ? prompt : `${context}\n\n${prompt}`,
         ...(images.length === 0 ? {} : { images }),
         cwd: live.cwd,
         ...(chat.model === undefined && chat.effort === undefined
@@ -1071,7 +1102,7 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
   await ctx.facts.append({ type: MESSAGE_FACT, object: chatRef(object.id), data: reply });
 
   // The chat's own reference follows; read again, so a change made meanwhile stays.
-  await syncChat(ctx, object.id, sessionId);
+  await syncChat(ctx, object.id, sessionId, live.context === undefined ? undefined : live.cwd);
 
   const left = unanswered(allMessages(ctx.store, object.id), chatFacts(ctx.store, object.id));
   const answered = pending.length + (midRun?.handed.length ?? 0);
