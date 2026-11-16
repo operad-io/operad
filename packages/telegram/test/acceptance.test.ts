@@ -37,6 +37,7 @@ import {
   type GetUpdatesRequest,
   type SendChatActionRequest,
   type SendMessageRequest,
+  type SetMessageReactionRequest,
   type SetMyCommandsRequest,
   type TelegramUpdate,
 } from "../src/index.ts";
@@ -82,6 +83,13 @@ class LongPollApi implements BotApi {
     this.sent.push({ ...request, messageId });
     this.changed();
     return messageId;
+  }
+
+  readonly reactions: SetMessageReactionRequest[] = [];
+
+  async setMessageReaction(request: SetMessageReactionRequest): Promise<void> {
+    this.reactions.push(request);
+    this.changed();
   }
 
   async editMessage(request: EditMessageRequest): Promise<void> {
