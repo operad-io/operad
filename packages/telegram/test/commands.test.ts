@@ -299,6 +299,20 @@ describe("a command in a Telegram chat", () => {
     await w.close();
   });
 
+  test("a command gets no reaction", async () => {
+    const w = await world({ users: [42] });
+    const api = new FakeApi();
+    const { source } = rig(w, api);
+    await bound(w, api, source);
+    expect(api.reactions).toHaveLength(1);
+    api.reactions.length = 0;
+
+    api.updates = [update(100, 42, 555, "/help")];
+    await source.poll();
+    expect(api.reactions).toHaveLength(0);
+    await w.close();
+  });
+
   test("a tap from an unlisted user counts for nothing", async () => {
     const w = await world({ users: [42], models: MODELS });
     const api = new FakeApi();

@@ -66,6 +66,15 @@ export interface SendMessageRequest {
   readonly signal?: AbortSignal | undefined;
 }
 
+/** One message to react to. */
+export interface SetMessageReactionRequest {
+  readonly chatId: number;
+  readonly messageId: number;
+  /** The emoji to set; `👀` is the only reaction this plugin sets. */
+  readonly reaction: string;
+  readonly signal?: AbortSignal | undefined;
+}
+
 /** One inline-keyboard button. */
 export interface InlineButton {
   readonly text: string;
@@ -147,6 +156,8 @@ export interface BotApi {
   getUpdates(request: GetUpdatesRequest): Promise<readonly TelegramUpdate[]>;
   /** Sends one text message; returns its Telegram `message_id`. */
   sendMessage(request: SendMessageRequest): Promise<number>;
+  /** Sets one emoji reaction on a message. */
+  setMessageReaction(request: SetMessageReactionRequest): Promise<void>;
   /** Replaces a message's text; its inline keyboard goes, or becomes the one given. */
   editMessage(request: EditMessageRequest): Promise<void>;
   /** Sets the bot's command menu. */
@@ -334,6 +345,17 @@ export function createBotApi(options: BotApiOptions): BotApi {
       await post(
         "sendChatAction",
         { chat_id: input.chatId, action: input.action },
+        input.signal,
+      );
+    },
+    async setMessageReaction(input) {
+      await post(
+        "setMessageReaction",
+        {
+          chat_id: input.chatId,
+          message_id: input.messageId,
+          reaction: [{ type: "emoji", emoji: input.reaction }],
+        },
         input.signal,
       );
     },

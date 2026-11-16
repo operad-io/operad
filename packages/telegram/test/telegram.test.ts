@@ -14,6 +14,8 @@ import {
 } from "@operad-io/engine";
 import { SqlitePluginStore } from "@operad-io/engine";
 import {
+  BotApiError,
+  RECEIVED_REACTION,
   TELEGRAM_SETTINGS,
   TOKEN_SECRET,
   TelegramSource,
@@ -78,6 +80,41 @@ describe("the telegram source", () => {
     expect(runs.map((run) => run.flow)).toEqual(["chat:reply"]);
     expect(runs[0]?.object).toBe(`chat:${chat.id}`);
     expect(readOffset(w.home)).toBe(101);
+    await w.close();
+  });
+
+  test("an accepted message gets the eyes reaction on its Telegram message", async () => {
+    const w = await world({ users: [42] });
+    const api = new FakeApi();
+    api.updates = [update(100, 42, 555, "hello")];
+    await source(w, api).poll();
+
+    expect(api.reactions).toHaveLength(1);
+    expect(api.reactions[0]).toMatchObject({ chatId: 555, messageId: 100, reaction: RECEIVED_REACTION });
+    expect(RECEIVED_REACTION).toBe("👀");
+    await w.close();
+  });
+
+  test("a refused reaction is logged once and changes nothing else", async () => {
+    const w = await world({ users: [42] });
+    const api = new FakeApi();
+    api.beforeReaction = () => {
+      throw new BotApiError("Bad Request: message can't be reacted to", { retryable: false });
+    };
+    api.updates = [update(100, 42, 555, "hello")];
+    await source(w, api).poll();
+
+    expect(api.reactionAttempts).toBe(1);
+    const chats = (await w.store.list(CHAT_TYPE)).objects;
+    expect(chats).toHaveLength(1);
+    const chat = chats[0];
+    if (chat === undefined) throw new Error("no chat was opened");
+    expect(allMessages(w.store, chat.id)).toHaveLength(1);
+    expect(await w.log.runs()).toHaveLength(1);
+    expect(updateInputs(await inputs(w), "100")).toHaveLength(1);
+    expect(readOffset(w.home)).toBe(101);
+    const log = readFileSync(join(w.storeRoot, "logs", "telegram", "source.log"), "utf8");
+    expect(log.match(/could not react to message 100/g)).toHaveLength(1);
     await w.close();
   });
 
@@ -320,6 +357,7 @@ describe("the telegram source", () => {
       async sendMessage(): Promise<number> {
         return 1;
       },
+      async setMessageReaction(): Promise<void> {},
       async editMessage(): Promise<void> {},
       async deleteMessage(): Promise<void> {},
       async answerCallback(): Promise<void> {},
@@ -338,6 +376,27 @@ describe("the telegram source", () => {
     expect(polls).toBe(1);
     handle.stop();
     await w.close();
+  });
+});
+
+describe("the Bot API reaction", () => {
+  test("sets one emoji reaction on the named message", async () => {
+    const calls: { url: string; init: RequestInit | undefined }[] = [];
+    const api = createBotApi({
+      token: new Secret("1:T"),
+      fetch: async (url, init) => {
+        calls.push({ url, init });
+        return new Response(JSON.stringify({ ok: true, result: true }), { status: 200 });
+      },
+    });
+    await api.setMessageReaction({ chatId: 555, messageId: 77, reaction: "👀" });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.url.endsWith("/setMessageReaction")).toBe(true);
+    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
+      chat_id: 555,
+      message_id: 77,
+      reaction: [{ type: "emoji", emoji: "👀" }],
+    });
   });
 });
 

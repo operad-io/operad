@@ -36,6 +36,8 @@ export interface TypingSenderOptions {
 interface Typing {
   readonly controller: AbortController;
   readonly loop: Promise<void>;
+  /** A run has been seen working on this chat since the indicator started. */
+  seenRunning: boolean;
 }
 
 export class TypingSender {
@@ -160,6 +162,12 @@ export class TypingSender {
     await Promise.all(ids.map((id) => this.syncChat(id)));
   }
 
+  /** Starts the indicator for an accepted message, before its run is reported. */
+  received(chatId: string, target: number): void {
+    if (this.stopped) return;
+    this.startTyping(chatId, target);
+  }
+
   /** Shows or stops the indicator of one chat, as the answer now stands. */
   syncChat(chatId: string): Promise<void> {
     this.wanted.add(chatId);
@@ -220,10 +228,6 @@ export class TypingSender {
     }
     for (const chat of bound) {
       if (this.stopped) return;
-      if (running.get(chat.chatId) !== true) {
-        await this.stopTyping(chat.chatId);
-        continue;
-      }
       // The reply is recorded on the chat before its run ends. Once it answers
       // every message, writing is over even if the run goes on.
       const messages = allMessages(this.ctx.store, chat.chatId);
@@ -245,7 +249,15 @@ export class TypingSender {
         await this.stopTyping(chat.chatId);
         continue;
       }
-      this.startTyping(chat.chatId, chat.target);
+      if (running.get(chat.chatId) === true) {
+        this.startTyping(chat.chatId, chat.target);
+        const active = this.active.get(chat.chatId);
+        if (active !== undefined) active.seenRunning = true;
+        continue;
+      }
+      // A message accepted before its run is reported keeps the indicator
+      // going. A run that was seen and has ended without a reply ends it.
+      if (this.active.get(chat.chatId)?.seenRunning === true) await this.stopTyping(chat.chatId);
     }
   }
 
@@ -278,7 +290,7 @@ export class TypingSender {
         if (this.active.get(chatId)?.controller === controller) this.active.delete(chatId);
       }
     })();
-    this.active.set(chatId, { controller, loop });
+    this.active.set(chatId, { controller, loop, seenRunning: false });
     this.loops.add(loop);
     void loop.then(
       () => this.loops.delete(loop),
