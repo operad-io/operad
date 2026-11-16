@@ -4,7 +4,7 @@
  */
 
 import { readProfile } from "@operad-io/access-match";
-import { parseImageInputs, type ImageInput, type SharedLine } from "@operad-io/harness-process";
+import { parseImageInputs, type ImageInput, type SharedLine, type WorkerKeep } from "@operad-io/harness-process";
 import { isRecord } from "@operad-io/engine";
 
 /** The longest one bash call may run when the settings do not say, in seconds. */
@@ -13,16 +13,7 @@ export const DEFAULT_BASH_TIMEOUT_SECS = 1800;
 export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 export type WorkerThinkingLevel = (typeof THINKING_LEVELS)[number];
 
-/** How a chat worker stays reachable for its next prompt. */
-export interface WorkerKeep {
-  readonly socket: string;
-  readonly meta: string;
-  readonly token: string;
-  readonly scope: string;
-  readonly key: string;
-  /** How long the worker stays after a reply before it ends itself. */
-  readonly timeoutMs: number;
-}
+export type { WorkerKeep } from "@operad-io/harness-process";
 
 /** What the program reads from stdin. */
 export interface WorkerInput {

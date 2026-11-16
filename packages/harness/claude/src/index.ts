@@ -34,6 +34,7 @@ import {
   askNote,
   flagValue,
   hasGrants,
+  keepKeyOf,
   directoryError,
   inboxOf,
   optionalText,
@@ -58,6 +59,7 @@ import {
   runAgent,
   systemClock,
   type Clock,
+  type KeptRunOptions,
   type ToolEvent,
 } from "@operad-io/harness-process";
 import { CLAUDE_FLOOR, DEFAULT_CLAUDE_COMMAND, claudeSignedIn, inspectClaude, sdkVersion } from "./claude-install.ts";
@@ -109,6 +111,12 @@ export interface ClaudeHarnessOptions {
   readonly args?: readonly string[] | undefined;
   /** The time now in milliseconds; defaults to `Date.now`. It ages the login cache. */
   readonly now?: (() => number) | undefined;
+  /** Test seam: how long a chat's worker is kept after a reply. */
+  readonly keepMs?: number | undefined;
+  /** Test seam: how long a kept worker may take to answer its first line. */
+  readonly keptFirstLineMs?: number | undefined;
+  /** Test seam: how many workers one home keeps. */
+  readonly maxKept?: number | undefined;
 }
 
 /** The models a chat may pick with this agent, and the one used when none is set. */
@@ -416,6 +424,20 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
             ...(storeSecrets.length === 0 ? {} : { secretValues: storeSecrets }),
           };
 
+          const keepRequested = input.keepWorker === true;
+          const keep: KeptRunOptions | undefined =
+            keepRequested && ctx.object !== undefined
+              ? {
+                  home: ctx.home,
+                  name: HARNESS,
+                  scope: `${ctx.object.type}:${ctx.object.id}`,
+                  key: keepKeyOf(stdin),
+                  ...(options.keepMs === undefined ? {} : { timeoutMs: options.keepMs }),
+                  ...(options.keptFirstLineMs === undefined ? {} : { firstLineMs: options.keptFirstLineMs }),
+                  ...(options.maxKept === undefined ? {} : { max: options.maxKept }),
+                }
+              : undefined;
+
           const inbox = inboxOf(params);
           const jsonl = new JsonlLog(ctx.logger, clock, now);
           let result: WorkerResult | undefined;
@@ -439,6 +461,7 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
             // The program may ask to use a one-time permission; it needs a reply.
             interactive: hasGrants(ctx.access) || canAsk(ctx.access) || inbox !== undefined,
             inbox,
+            ...(keep === undefined ? {} : { keep }),
             wallMs: wallTimeSecs * 1000,
             stallMs: stallSecs * 1000,
             signal: AbortSignal.any([ctx.signal, stopper.signal]),

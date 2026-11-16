@@ -298,3 +298,9 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 |---|---|---|---|
 | T-0515-M7 | packages/chat/src/index.ts | closing a chat left its kept worker running | `closing a chat ends its kept worker` |
 | T-0515-M9 | packages/chat/src/reply.ts | a pi reply no longer passed `keepWorker`, so its next message started a new worker | `a killed kept worker gives the next chat message a normal reply` |
+
+## T-0516 — a chat's claude worker is kept
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0516-M6 | packages/chat/src/reply.ts | a claude reply no longer passed `keepWorker`, so its next message started a new worker | `a claude chat keeps its worker between replies and closes it with the chat` |

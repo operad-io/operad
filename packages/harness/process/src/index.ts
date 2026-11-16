@@ -15,6 +15,7 @@ export * from "./images.ts";
 export * from "./inbox.ts";
 export * from "./fold-lines.ts";
 export * from "./jsonl-log.ts";
+export * from "./keep.ts";
 export * from "./lines.ts";
 export * from "./operad-tools.ts";
 export * from "./process.ts";

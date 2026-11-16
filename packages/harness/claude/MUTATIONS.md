@@ -191,3 +191,11 @@ setup it depends on, in the order they were recorded. The root
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0496-M5 | packages/harness/claude/src/index.ts | claude no longer declared `takesMessagesMidRun` | `claude/agent > the plugin declares that it loads skills itself` |
+
+## T-0516 — a chat's claude worker is kept
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0516-M3 | packages/harness/claude/src/worker.ts | a kept worker closed its SDK session after the first reply instead of keeping it | `a second message is answered by the same worker and the same claude` |
+| T-0516-M5 | packages/harness/claude/src/worker.ts | `canUseTool` judged every reply with no profile instead of the reply's own | `a kept worker receives this reply's grant, not the previous reply's` |
+| T-0516-M7 | packages/harness/claude/src/index.ts | the keep key was a constant, so a worker started with another model, effort, directory, profile, skills or MCP servers was reused | `each change of what the worker was started with ends it` |
