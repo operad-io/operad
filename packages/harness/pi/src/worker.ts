@@ -717,7 +717,7 @@ export async function runWorker(
   // the tool call that is running.
   io.onMessage?.((text) => {
     io.log("a message from the host is given to pi");
-    session.prompt(text, { streamingBehavior: "steer" }).catch((error: unknown) => {
+    session.prompt(text, { streamingBehavior: "steer", expandPromptTemplates: false }).catch((error: unknown) => {
       io.log(`a message to pi was not delivered: ${error instanceof Error ? error.message : String(error)}`);
     });
   });
@@ -740,12 +740,14 @@ export async function runWorker(
     if (!cancelled) {
       try {
         const images = await Promise.all((input.images ?? []).map((image) => readImage(image)));
-        await session.prompt(
-          input.prompt,
-          images.length === 0
-            ? undefined
-            : { images: images.map((image) => ({ type: "image" as const, data: image.data, mimeType: image.mediaType })) },
-        );
+        // The prompt is operad's text, not a line at pi's terminal: a leading
+        // `/` is never one of pi's commands or a prompt template.
+        await session.prompt(input.prompt, {
+          expandPromptTemplates: false,
+          ...(images.length === 0
+            ? {}
+            : { images: images.map((image) => ({ type: "image" as const, data: image.data, mimeType: image.mediaType })) }),
+        });
       } catch (error) {
         if (!cancelled) {
           return finish(

@@ -97,6 +97,7 @@ A harness may keep its child after a reply, so the next reply does not start it 
 | `keptWorkerArgument(token)` | The command-line argument a kept worker carries: `--operad-kept=<token>` |
 | `writeKeptWorker(record)` | Writes one record whole, with mode `0600`, so a reader sees the old record or the new one |
 | `removeKeptWorker(record)` | Removes a record and its socket; safe when they are already gone |
+| `readKeptWorker(meta)` | That one record, or `undefined` when the file is missing, still empty or otherwise not a record |
 | `readKeptWorkers(home, name)` | Every valid record of one harness in a home; a record that cannot be read is skipped |
 | `readKeptWorkersInHome(home)` | Every valid record of every harness in one home, which the shared limit of three counts |
 | `stopKeptWorker(record, options?)` | Asks a worker to stop over its socket, then signals only the process whose command line carries its token; removes the record |

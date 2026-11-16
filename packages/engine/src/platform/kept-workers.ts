@@ -146,6 +146,16 @@ function recordOf(path: string, value: unknown): KeptWorkerRecord | undefined {
   };
 }
 
+/** One record, or undefined when the file is missing, unreadable or not a record. */
+export function readKeptWorker(path: string): KeptWorkerRecord | undefined {
+  try {
+    return recordOf(path, JSON.parse(readFileSync(path, "utf8")));
+  } catch {
+    // A record another process is replacing, or one that is not ours.
+    return undefined;
+  }
+}
+
 /** Every record in one home's kept directory. A record that cannot be read is skipped. */
 export function readKeptWorkers(home: string, name: string): readonly KeptWorkerRecord[] {
   const dir = keptWorkerDirectory(home, name);
@@ -158,13 +168,8 @@ export function readKeptWorkers(home: string, name: string): readonly KeptWorker
   const found: KeptWorkerRecord[] = [];
   for (const entry of names) {
     if (!entry.endsWith(".json")) continue;
-    const path = join(dir, entry);
-    try {
-      const record = recordOf(path, JSON.parse(readFileSync(path, "utf8")));
-      if (record !== undefined) found.push(record);
-    } catch {
-      // A record another process is replacing, or one that is not ours.
-    }
+    const record = readKeptWorker(join(dir, entry));
+    if (record !== undefined) found.push(record);
   }
   return found;
 }
