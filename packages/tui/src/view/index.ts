@@ -888,8 +888,13 @@ function inputContent(state: TuiState, palette: TuiPalette): StyledText | undefi
       chunk(`${input.answer.prompt}\n`, palette.accent, TextAttributes.BOLD),
     ];
     input.answer.choices.forEach((choice, at) => {
+      const info = input.answer.choiceInfo?.[choice];
+      const label = info?.label ?? choice;
+      const colour =
+        info?.role === "destructive" ? palette.error : at === input.cursor ? palette.accent : palette.text;
       chunks.push(chunk(at === input.cursor ? "❯ " : "  ", palette.accent));
-      chunks.push(chunk(choice, at === input.cursor ? palette.accent : palette.text));
+      chunks.push(chunk(label, colour));
+      if (info?.hint !== undefined) chunks.push(chunk(`  ${info.hint}`, palette.weak));
       chunks.push(chunk("\n"));
     });
     chunks.push(chunk("j/k or arrows move · enter answers · esc cancels", palette.weak));

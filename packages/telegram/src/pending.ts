@@ -67,6 +67,31 @@ function itemKeyOf(key: string): string {
   return key.slice(0, key.lastIndexOf("/"));
 }
 
+/** An option with what the asker says about its choice. */
+interface BuiltOption {
+  readonly option: SentOption;
+  readonly info?: { readonly hint?: string | undefined; readonly role?: "primary" | "destructive" | undefined } | undefined;
+}
+
+/** Primary first, the other choices in their order, destructive last. */
+function orderedOptions(built: readonly BuiltOption[]): readonly BuiltOption[] {
+  const rank = (entry: BuiltOption): number =>
+    entry.info?.role === "primary" ? 0 : entry.info?.role === "destructive" ? 2 : 1;
+  return built
+    .map((entry, index) => ({ entry, index }))
+    .sort((left, right) => rank(left.entry) - rank(right.entry) || left.index - right.index)
+    .map(({ entry }) => entry);
+}
+
+/** The name a fact carries for an option: a raw choice or an action's own name. */
+function optionName(option: SentOption): string {
+  if (option.how === "choice") return option.choice ?? option.label;
+  if (option.how === "act" && option.action !== undefined) {
+    return option.action.slice(option.action.lastIndexOf(":") + 1);
+  }
+  return option.label;
+}
+
 export class PendingSender implements PendingResponder {
   private readonly ctx: SourceContext;
   private readonly api: BotApi;
@@ -194,35 +219,64 @@ export class PendingSender implements PendingResponder {
   private async build(item: PendingItem): Promise<{ readonly text: string; readonly options: readonly SentOption[] } | undefined> {
     const infos = await this.actionsOf(item);
     const names = item.choices.length > 0 ? item.choices : item.actions.map((action) => action.action);
-    const options: SentOption[] = [];
+    const built: BuiltOption[] = [];
+    const seen = new Set<string>();
     for (const name of names) {
-      if (options.some((option) => option.label === name)) continue;
+      if (seen.has(name)) continue;
+      seen.add(name);
+      const choiceInfo = item.choiceInfo?.[name];
       const action = item.actions.find((candidate) => candidate.action === name);
       if (action !== undefined && item.object !== undefined) {
         const info = infos.find((candidate) => candidate.plugin === action.plugin && candidate.action === action.action);
-        options.push({
-          label: name,
-          how: "act",
-          action: `${action.plugin}:${action.action}`,
-          ...(info?.noteRequired === true ? { note: true as const } : {}),
+        const note =
+          choiceInfo?.note === "required" || info?.noteRequired === true
+            ? "required"
+            : choiceInfo?.note === "optional"
+              ? "optional"
+              : undefined;
+        built.push({
+          info: choiceInfo,
+          option: {
+            label: choiceInfo?.label ?? name,
+            how: "act",
+            action: `${action.plugin}:${action.action}`,
+            ...(note === undefined ? {} : { note }),
+          },
         });
       } else if (item.waitId !== undefined && item.choices.length > 0) {
-        options.push({ label: name, how: "choice" });
+        built.push({
+          info: choiceInfo,
+          option: {
+            label: choiceInfo?.label ?? name,
+            how: "choice",
+            choice: name,
+            ...(choiceInfo?.note === undefined ? {} : { note: choiceInfo.note }),
+          },
+        });
       }
     }
-    if (options.length === 0 && item.waitId !== undefined) options.push({ label: "answer", how: "free", note: true });
-    if (options.length === 0) return undefined;
+    if (built.length === 0 && item.waitId !== undefined) {
+      built.push({ option: { label: "answer", how: "free", note: "required" } });
+    }
+    if (built.length === 0) return undefined;
+    const ordered = orderedOptions(built);
+    const options = ordered.map((entry) => entry.option);
 
     const lines: string[] = [];
     const title = item.row?.title;
     if (title !== undefined && title.length > 0 && !item.prompt.includes(title)) lines.push(title);
     lines.push(item.prompt);
+    for (const entry of ordered) {
+      if (entry.info?.hint !== undefined) lines.push(entry.info.hint);
+    }
     for (const option of options) {
-      if (option.note !== true) continue;
+      if (option.note === undefined) continue;
       lines.push(
         option.how === "free"
           ? "Reply to this message with your answer."
-          : `Reply to this message to ${option.label}; your reply is the note.`,
+          : option.note === "optional"
+            ? `Reply to this message to ${option.label} with a note; your reply is the note.`
+            : `Reply to this message to ${option.label}; your reply is the note.`,
       );
     }
     const text = lines.join("\n\n");
@@ -242,7 +296,7 @@ export class PendingSender implements PendingResponder {
   private async send(item: PendingItem, chatId: number, text: string, options: readonly SentOption[]): Promise<void> {
     const keyboard: InlineButton[][] = [];
     options.forEach((option, index) => {
-      if (option.note !== true) keyboard.push([{ text: option.label, data: buttonData(index) }]);
+      if (option.note !== "required") keyboard.push([{ text: option.label, data: buttonData(index) }]);
     });
     let messageId: number;
     try {
@@ -285,7 +339,8 @@ export class PendingSender implements PendingResponder {
           const action = fact.data.action;
           if (typeof action !== "string") continue;
           const name = action.slice(action.lastIndexOf("/") + 1);
-          if (sent.options.some((option) => option.label === name)) latest = name;
+          const matched = sent.options.find((option) => optionName(option) === name);
+          if (matched !== undefined) latest = matched.label;
         }
         cursor = page.next;
       } while (cursor !== undefined);
@@ -305,14 +360,18 @@ export class PendingSender implements PendingResponder {
     } catch {
       return undefined;
     }
-    const labels = sent.options.filter((option) => option.how === "choice").map((option) => option.label);
+    const choices = sent.options.flatMap((option) =>
+      option.how === "choice" ? [{ raw: option.choice ?? option.label, label: option.label }] : [],
+    );
     let chosen: string | undefined;
     for (const line of markdown.split("\n")) {
       const at = line.indexOf("you chose ");
       if (at < 0) continue;
       const rest = line.slice(at + "you chose ".length);
-      const found = labels.find((label) => rest.startsWith(label) && !/^\w/.test(rest.slice(label.length)));
-      if (found !== undefined) chosen = found;
+      const found = choices.find(
+        (choice) => rest.startsWith(choice.raw) && !/^\w/.test(rest.slice(choice.raw.length)),
+      );
+      if (found !== undefined) chosen = found.label;
     }
     return chosen;
   }
@@ -383,7 +442,7 @@ export class PendingSender implements PendingResponder {
       }
       const index = /^o:(\d+)$/.exec(callback.data ?? "")?.[1];
       const option = index === undefined ? undefined : sent.options[Number(index)];
-      if (option === undefined || option.note === true) {
+      if (option === undefined || option.note === "required") {
         await this.tell(callback.id, "this button is no longer valid");
         return true;
       }
@@ -409,7 +468,7 @@ export class PendingSender implements PendingResponder {
       const found = this.find(message.chat.id, to);
       if (found === undefined || !this.listed(message.from?.id)) return false;
       const { key, sent } = found;
-      const noted = sent.options.filter((option) => option.note === true);
+      const noted = sent.options.filter((option) => option.note !== undefined);
       // A reply to an item with nothing to say in a reply is an ordinary message.
       if (noted.length === 0) return false;
       const reply = (words: string): Promise<number> =>
@@ -460,7 +519,7 @@ export class PendingSender implements PendingResponder {
         await this.client.answer({
           runId: sent.runId,
           waitId: sent.waitId,
-          choice: option.how === "free" ? (note ?? "") : option.label,
+          choice: option.how === "free" ? (note ?? "") : option.choice ?? option.label,
           ...(option.how === "choice" && note !== undefined ? { note } : {}),
           actor,
         });
