@@ -2,6 +2,7 @@
 
 import pkg from "../package.json" with { type: "json" };
 import { definePlugin } from "@operad-io/engine";
+import { WORKTREE_EVENT } from "@operad-io/chat";
 import { PLAN_FILTERS, REPO_FILTERS, TASK_FILTERS } from "./model.ts";
 import devFlow from "../flows/dev.flow.ts";
 import chatWorktreeFlow from "../flows/chat-worktree.flow.ts";
@@ -185,7 +186,7 @@ export function createDevPlugin() {
       // A chat of a repository asked for a worktree and a person said yes.
       {
         source: "operad",
-        type: "chat.worktree",
+        type: WORKTREE_EVENT,
         start: { flow: "dev:chat-worktree" },
         object: "$event.object",
         mode: "auto",

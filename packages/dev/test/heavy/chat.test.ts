@@ -1,10 +1,19 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { PluginRegistry, Views, definePlugin, type CommandContext, type StoredObject, type TriggerEvent } from "@operad-io/engine";
-import { createChatPlugin, createChat, allMessages, CHAT_TYPE, titleFromMessage } from "@operad-io/chat";
+import { PluginRegistry, Views, definePlugin, type CommandContext, type StepEvent, type StoredObject, type TriggerEvent, type TriggerView } from "@operad-io/engine";
+import {
+  allEntries,
+  allMessages,
+  CHAT_TYPE,
+  createChat,
+  createChatPlugin,
+  titleFromMessage,
+  WORKTREE_EVENT,
+  WORKTREE_NOTE,
+} from "@operad-io/chat";
 import { createShellPlugin } from "@operad-io/shell";
-import { addPlan, addRepository, CHAT_HARNESSES, chatActions, commands, createDevPlugin, RADIAN_NOTE, taskData } from "../../src/index.ts";
+import { addPlan, addRepository, CHAT_HARNESSES, chatActions, CHAT_REPLY_EVENT, commands, createDevPlugin, RADIAN_NOTE, taskData } from "../../src/index.ts";
 import { git, makeRemote } from "../git-support.ts";
 import { cleanupTempRoots, guardLockHandles, storeAt, tempRoot } from "../support.ts";
 
@@ -273,6 +282,58 @@ describe("dev/chat_worktree", () => {
     expect(unchanged.data.cwd).toBe(path);
   });
 
+  test("a live yes says the chat moved, and asks for the same message to be answered there", async () => {
+    const r = await rig();
+    const id = await openChat(r);
+    const events: StepEvent[] = [];
+    const trigger: TriggerView = { source: "operad", key: `reply-run:open`, type: WORKTREE_EVENT, hops: 1 };
+    const result = await r.registry.runStep("dev/chat_worktree", {}, {
+      runId: "run-worktree",
+      object: { type: CHAT_TYPE, id, data: {} },
+      trigger,
+      emit: (_plugin, event) => {
+        events.push(event);
+      },
+    });
+    expect(result).toMatchObject({ result: "done", data: { moved: true } });
+    expect(events).toEqual([
+      { type: CHAT_REPLY_EVENT, key: `worktree:${id}`, object: `chat:${id}` },
+    ]);
+    expect(allEntries(r.store, id)).toEqual([
+      expect.objectContaining({ runId: "run-worktree", kind: "worktree", text: WORKTREE_NOTE }),
+    ]);
+  });
+
+  test("a late yes opens the worktree once and starts no reply", async () => {
+    const r = await rig();
+    const id = await openChat(r);
+    const events: StepEvent[] = [];
+    const trigger: TriggerView = { source: "operad", key: `reply-run:late`, type: WORKTREE_EVENT, hops: 1 };
+    const first = await r.registry.runStep("dev/chat_worktree", {}, {
+      runId: "run-worktree",
+      object: { type: CHAT_TYPE, id, data: {} },
+      trigger,
+      emit: (_plugin, event) => {
+        events.push(event);
+      },
+    });
+    expect(first).toMatchObject({ result: "done", data: { moved: true } });
+    expect(events).toEqual([]);
+    expect(allEntries(r.store, id)).toHaveLength(1);
+
+    const again = await r.registry.runStep("dev/chat_worktree", {}, {
+      runId: "run-worktree-2",
+      object: { type: CHAT_TYPE, id, data: {} },
+      trigger,
+      emit: (_plugin, event) => {
+        events.push(event);
+      },
+    });
+    expect(again).toMatchObject({ result: "done", data: { moved: false } });
+    expect(events).toEqual([]);
+    expect(allEntries(r.store, id)).toHaveLength(1);
+  });
+
   test("a chat that is not about a repository is refused", async () => {
     const r = await rig();
     const id = await createChat(r.store, { harness: "claude", cwd: r.root, title: "loose" }, "test");
@@ -284,13 +345,21 @@ describe("dev/chat_worktree", () => {
     expect((await must(r.store, CHAT_TYPE, id)).data.cwd).toBe(r.root);
   });
 
-  test("the plugin's rule starts the flow when a chat's worktree is said yes to", async () => {
+  test("the plugin's rules open the worktree on either yes, and answer again after a live one", async () => {
     const r = await rig();
-    const rule = r.registry
-      .triggerRules()
-      .map((entry) => entry.rule)
-      .find((candidate) => candidate.type === "chat.worktree");
-    expect(rule).toMatchObject({ source: "operad", start: { flow: "dev:chat-worktree" }, object: "$event.object", mode: "auto" });
+    const rules = r.registry.triggerRules().map((entry) => entry.rule);
+    expect(rules.find((candidate) => candidate.type === WORKTREE_EVENT)).toMatchObject({
+      source: "operad",
+      start: { flow: "dev:chat-worktree" },
+      object: "$event.object",
+      mode: "auto",
+    });
+    expect(rules.find((candidate) => candidate.type === CHAT_REPLY_EVENT)).toMatchObject({
+      source: "operad",
+      start: { flow: "chat:reply" },
+      object: "$event.object",
+      mode: "auto",
+    });
     expect(r.registry.flow("dev:chat-worktree")).toBeDefined();
     expect(r.registry.startProblem("dev:chat-worktree")).toBeUndefined();
   });

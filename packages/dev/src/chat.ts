@@ -5,7 +5,22 @@
  * changes reach main only through a task, through integrate.
  */
 
-import { CHAT_TYPE, agentConditionals, type AgentChoices, chatData, createChat, sendMessage, startingEffort, startingModel, titleFromMessage } from "@operad-io/chat";
+import {
+  CHAT_TYPE,
+  ENTRY_FACT,
+  WORKTREE_EVENT,
+  WORKTREE_NOTE,
+  WORKTREE_REPLY_EVENT,
+  agentConditionals,
+  type AgentChoices,
+  chatData,
+  chatRef,
+  createChat,
+  sendMessage,
+  startingEffort,
+  startingModel,
+  titleFromMessage,
+} from "@operad-io/chat";
 import {
   isRecord,
   type ActionArgsSchema,
@@ -15,7 +30,7 @@ import {
   type PluginStepResult,
   type StepContext,
 } from "@operad-io/engine";
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { DevError, DevRefusal, repositoryData, type RepositoryData } from "./model.ts";
 import {
@@ -46,6 +61,9 @@ export const CHAT_ACCESS: Readonly<Record<string, JsonValue>> = {
 
 /** The step a repository chat calls at every reply to read its skills and access. */
 export const CHAT_SETTINGS_STEP = "dev/chat_settings";
+
+/** The event dev sends after a live worktree yes, so the chat answers the same message there. */
+export const CHAT_REPLY_EVENT = WORKTREE_REPLY_EVENT;
 
 /** The directory name and branch suffix of a chat's worktree. */
 export function chatWorktreeName(chatId: string): string {
@@ -382,5 +400,36 @@ export async function runChatWorktree(ctx: StepContext): Promise<PluginStepResul
     },
     "step:dev/chat_worktree",
   );
+  // The transcript says where the chat moved, once. It is an entry of the
+  // worktree run, not of a reply, so it does not become the agent's words.
+  await ctx.facts.append({
+    type: ENTRY_FACT,
+    object: chatRef(object.id),
+    data: { runId: ctx.runId, kind: "worktree", text: WORKTREE_NOTE },
+  });
+  // A live yes ended the reply that asked; answer the same message again now
+  // that the chat is writable. A yes that came after the reply ended only
+  // opens the worktree, so it starts no reply.
+  if (ctx.trigger?.type === WORKTREE_EVENT && !lateWorktree(ctx)) {
+    await ctx.emit({
+      type: CHAT_REPLY_EVENT,
+      key: `worktree:${object.id}`,
+      object: `${CHAT_TYPE}:${object.id}`,
+    });
+  }
   return { result: "done", data: { moved: true, path, branch } };
+}
+
+/** Whether the event says its yes arrived after the asking reply had ended. */
+function lateWorktree(ctx: StepContext): boolean {
+  const path = ctx.trigger?.data;
+  if (path !== undefined) {
+    try {
+      const value: unknown = JSON.parse(readFileSync(path, "utf8"));
+      if (isRecord(value) && value.late === true) return true;
+    } catch {
+      // A missing or broken file is not the late marker; fall back to the key.
+    }
+  }
+  return ctx.trigger?.key.endsWith(":late") === true;
 }

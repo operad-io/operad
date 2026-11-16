@@ -15,7 +15,9 @@ import {
   WORKTREE_CHOICES,
   WORKTREE_DENY,
   WORKTREE_EVENT,
+  WORKTREE_REPLY_EVENT,
   WORKTREE_YES,
+  unanswered,
 } from "../src/index.ts";
 import { cleanupRoots, reply, rig } from "./support.ts";
 
@@ -74,13 +76,20 @@ describe("chat:send", () => {
     }
   });
 
-  test("the plugin's rules start chat:reply, automatically, for each source", async () => {
+  test("the plugin's rules start chat:reply, automatically, for each source and after a worktree opens", async () => {
     const r = await rig(() => reply("x"));
     const rules = r.registry.triggerRules().map((entry) => entry.rule);
-    expect(rules.map((rule) => rule.source).sort()).toEqual(["cli", "ios", "other", "telegram", "tui"]);
-    for (const rule of rules) {
+    const messages = rules.filter((rule) => rule.type === "message");
+    expect(messages.map((rule) => rule.source).sort()).toEqual(["cli", "ios", "other", "telegram", "tui"]);
+    for (const rule of messages) {
       expect(rule).toMatchObject({ type: "message", start: { flow: "chat:reply" }, mode: "auto", object: "$event.object" });
     }
+    expect(rules.find((rule) => rule.type === WORKTREE_REPLY_EVENT)).toMatchObject({
+      source: "operad",
+      start: { flow: "chat:reply" },
+      mode: "auto",
+      object: "$event.object",
+    });
   });
 
   test("an empty message is refused", async () => {
@@ -255,7 +264,7 @@ describe("a read-only chat", () => {
     const asker = {
       async ask(request: AskRequest) {
         asked.push(request);
-        return { kind: "answered" as const, answer: { choice: "yes" } };
+        return { kind: "answered" as const, answer: { choice: WORKTREE_DENY } };
       },
       async useGrant() {
         return false;
@@ -445,6 +454,49 @@ describe("a read-only chat", () => {
     };
     await r.round(chat, {}, asker, (event) => emitted.push(`${event.type} ${event.object}`));
     expect(emitted).toEqual([`${WORKTREE_EVENT} chat:${chat}`]);
+  });
+
+  test("a yes ends the asking reply, leaves the message unanswered and sends the worktree event once", async () => {
+    let asked = 0;
+    const r = await rig(async (ctx: StepContext) => {
+      asked += 1;
+      await ctx.ask(writeAsk);
+      return reply("should not be used");
+    });
+    const chat = await r.chat({ access: { readOnly: true } });
+    await r.say(chat, "change it");
+    const emitted: string[] = [];
+    const asker = {
+      async ask() {
+        return { kind: "answered" as const, answer: { choice: WORKTREE_YES } };
+      },
+      async useGrant() {
+        return false;
+      },
+    };
+    expect((await r.round(chat, {}, asker, (event) => emitted.push(event.type))).result).toBe("done");
+    expect(asked).toBe(1);
+    expect(emitted).toEqual([WORKTREE_EVENT]);
+    expect(allMessages(r.store, chat).filter((message) => message.role === "assistant")).toHaveLength(0);
+    expect(unanswered(allMessages(r.store, chat)).map((message) => message.text)).toEqual(["change it"]);
+  });
+
+  test("a late yes opens the worktree without starting another reply", async () => {
+    const r = await rig(() => reply("should not be used"));
+    const chat = await r.chat({ access: { readOnly: true } });
+    await r.say(chat, "change it");
+    const prompt = "The agent wants to run `rm -r src` in this read-only chat. Open a worktree for it?";
+    const emitted: string[] = [];
+    const result = await r.round(
+      chat,
+      { resumeSession: "s", askAnswer: { prompt, choice: WORKTREE_YES } },
+      undefined,
+      (event) => emitted.push(event.type),
+    );
+    expect(result).toMatchObject({ result: "done", data: { worktree: true } });
+    expect(r.calls).toHaveLength(0);
+    expect(emitted).toEqual([WORKTREE_EVENT]);
+    expect(unanswered(allMessages(r.store, chat)).map((message) => message.text)).toEqual(["change it"]);
   });
 
   test("the question offers the approved words in order, then the worktree offer", () => {

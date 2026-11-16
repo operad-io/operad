@@ -139,6 +139,17 @@ function worktreeAnswer(choice: string | undefined): WorktreeAnswer {
 /** The event a "yes" sends; the plugin that owns the working directory acts on it. */
 export const WORKTREE_EVENT = "chat.worktree";
 
+/** The event dev sends after opening a worktree, so the chat answers the same message there. */
+export const WORKTREE_REPLY_EVENT = "dev.chat_reply";
+
+/** Ends the asking reply when a person chooses the worktree; the caller opens it and starts the next reply. */
+class WorktreeChosen extends Error {
+  constructor() {
+    super("the chat now works in a worktree");
+    this.name = "WorktreeChosen";
+  }
+}
+
 /** The call a harness question asks about. */
 export interface WorktreeCall {
   readonly kind: "command" | "path";
@@ -303,10 +314,11 @@ function failed(reason: string, message: string): PluginStepResult {
  * with Always allow, refuse it, or open a worktree; any other question goes
  * where it would have gone.
  */
-function readOnlyAsker(ctx: StepContext, cwd: string, onYes: () => Promise<void>): StepAsker {
+function readOnlyAsker(ctx: StepContext, cwd: string, chosen: { run: boolean }): StepAsker {
   const person = personStarted(ctx.trigger);
   return {
     async ask(request): Promise<AskOutcome> {
+      if (chosen.run) throw new WorktreeChosen();
       const write = isWriteQuestion(request);
       const call = write ? worktreeCall(request) : undefined;
       // An entry from an earlier Always allow lifts the question in any chat a person started.
@@ -337,9 +349,10 @@ function readOnlyAsker(ctx: StepContext, cwd: string, onYes: () => Promise<void>
           return { kind: "answered", answer: { choice: "allow_always", ...actor } };
         }
         if (action === "worktree") {
-          await onYes();
-          // Opening a worktree keeps the call itself out of the main clone.
-          return { kind: "answered", answer: { choice: "reject_once", ...actor } };
+          // Opening a worktree keeps this call out of the main clone. The reply
+          // ends here; the worktree flow starts the answer again there.
+          chosen.run = true;
+          throw new WorktreeChosen();
         }
         // Deny refuses as no did, and says why.
         return { kind: "answered", answer: { choice: "reject_once", note: READ_ONLY_REFUSAL, ...actor } };
@@ -819,17 +832,8 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
   const session =
     typeof resumed.resumeSession === "string" ? resumed.resumeSession : currentSession(chat, messages);
   const readOnly = live.access.readOnly === true;
-  let worktreeAsked = 0;
-  const asker = readOnly
-    ? readOnlyAsker(ctx, live.cwd, async () => {
-        worktreeAsked += 1;
-        await ctx.emit({
-          type: WORKTREE_EVENT,
-          key: `${ctx.runId}:${worktreeAsked}`,
-          object: `${CHAT_TYPE}:${object.id}`,
-        });
-      })
-    : undefined;
+  const worktreeChosen = { run: false };
+  const asker = readOnly ? readOnlyAsker(ctx, live.cwd, worktreeChosen) : undefined;
 
   // An answer that came back after the wait (the grace had passed) is the same
   // answer as one given live.
@@ -838,11 +842,21 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
   const lateAction = lateWorktree && late !== undefined ? worktreeAnswer(late.choice) : undefined;
   const lateCall = lateWorktree ? callFromGrants(ctx.access) ?? callFromQuestion(late?.prompt ?? "") : undefined;
   if (lateAction === "worktree") {
+    // The reply that asked is already over. Open the worktree once, but do
+    // not start another reply for the same message. The harness is not run,
+    // so the mid-run inbox closes with this step.
+    if (stopMidRun !== undefined) {
+      stopMidRun();
+      stopMidRun = undefined;
+    }
+    midRun?.close();
     await ctx.emit({
       type: WORKTREE_EVENT,
-      key: `${ctx.runId}:late`,
+      key: "late",
       object: `${CHAT_TYPE}:${object.id}`,
+      data: { late: true },
     });
+    return { result: "done", data: { worktree: true } };
   }
   if (lateAction === "allow_always" && lateCall !== undefined && personStarted(ctx.trigger)) {
     await rememberAlways(ctx, lateCall, live.cwd);
@@ -957,9 +971,28 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
     );
   } catch (error) {
     closeMidRun();
+    if (worktreeChosen.run || error instanceof WorktreeChosen) {
+      await recordEntries(ctx, object.id, folded, { stopped: true });
+      await ctx.emit({
+        type: WORKTREE_EVENT,
+        key: "open",
+        object: `${CHAT_TYPE}:${object.id}`,
+      });
+      return { result: "done", data: { worktree: true } };
+    }
     await recordEntries(ctx, object.id, folded, { stopped: true });
     await recordTaken(ctx, object.id, ctx.runId, midRun?.handed ?? []);
     return failedReply(ctx, object.id, "harness", messageOf(error));
+  }
+  if (worktreeChosen.run) {
+    closeMidRun();
+    await recordEntries(ctx, object.id, folded, { stopped: true });
+    await ctx.emit({
+      type: WORKTREE_EVENT,
+      key: `${ctx.runId}:open`,
+      object: `${CHAT_TYPE}:${object.id}`,
+    });
+    return { result: "done", data: { worktree: true } };
   }
   // From here on the harness can no longer take a message: one that arrives
   // now stays unanswered and is answered by the next round.

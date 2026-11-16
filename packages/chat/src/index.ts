@@ -38,7 +38,7 @@ import {
   type StopData,
   type WritingReply,
 } from "./model.ts";
-import { runReply, WORKTREE_ALLOW_ALWAYS, WORKTREE_ALLOW_ONCE, WORKTREE_CHOICES, WORKTREE_DENY, WORKTREE_YES } from "./reply.ts";
+import { runReply, WORKTREE_ALLOW_ALWAYS, WORKTREE_ALLOW_ONCE, WORKTREE_CHOICES, WORKTREE_DENY, WORKTREE_REPLY_EVENT, WORKTREE_YES } from "./reply.ts";
 import { chatCommands, findCommand, helpText, parseCommand, runCommand } from "./command.ts";
 import { chatViews } from "./views.ts";
 
@@ -570,13 +570,24 @@ export function createChatPlugin() {
     flows: [replyFlow],
     // A message from a client or a channel is answered without anyone starting
     // the answer; a user rule for the same source and type replaces these.
-    rules: [...CHAT_SOURCES, OTHER_SOURCE].map((source) => ({
-      source,
-      type: MESSAGE_EVENT,
-      start: { flow: "chat:reply" },
-      object: "$event.object",
-      mode: "auto" as const,
-    })),
+    rules: [
+      ...[...CHAT_SOURCES, OTHER_SOURCE].map((source) => ({
+        source,
+        type: MESSAGE_EVENT,
+        start: { flow: "chat:reply" },
+        object: "$event.object",
+        mode: "auto" as const,
+      })),
+      // The plugin that owns the working directory opened the chat's worktree;
+      // answer the message that asked the worktree question again there.
+      {
+        source: "operad",
+        type: WORKTREE_REPLY_EVENT,
+        start: { flow: "chat:reply" },
+        object: "$event.object",
+        mode: "auto" as const,
+      },
+    ],
     actions: [sendAction, modelAction, effortAction, stopAction, retryAction, statusAction, closeAction, helpAction],
     views: { [CHAT_TYPE]: chatViews },
   });

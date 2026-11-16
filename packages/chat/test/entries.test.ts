@@ -5,8 +5,10 @@ import { MemoryPluginStore, type StepContext, type ViewContext } from "@operad-i
 import {
   allEntries,
   allMessages,
+  chatRef,
   chatViews,
   TOOL_OUTPUT_FACT_BYTES,
+  WORKTREE_NOTE,
 } from "../src/index.ts";
 import { cleanupRoots, reply, rig } from "./support.ts";
 
@@ -57,6 +59,20 @@ async function transcript(r: Rig, chat: string, cursor?: string): Promise<{ mark
 }
 
 describe("chat entries", () => {
+  test("the worktree line is shown as itself, not as the agent's words", async () => {
+    const r = await rig(() => reply("x"));
+    const chat = await r.chat();
+    await r.store.append({
+      type: "chat.entry",
+      object: chatRef(chat),
+      cause: "test",
+      data: { runId: "run-worktree", kind: "worktree", text: WORKTREE_NOTE },
+    });
+    const shown = await transcript(r, chat);
+    expect(shown.markdown).toContain(WORKTREE_NOTE);
+    expect(shown.markdown).not.toContain(`**Operad Bot:** ${WORKTREE_NOTE}`);
+  });
+
   test("the transcript is the same from old full chat snapshots as from changes", async () => {
     const id = "C-0001";
     const ref = { type: "chat", id };

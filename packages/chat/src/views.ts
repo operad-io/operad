@@ -189,6 +189,10 @@ function entryMarkdown(entry: Entry | FoldEntry, speaker: string, harness: strin
     const said = flat(entry.text ?? "");
     return said.length === 0 ? undefined : said;
   }
+  if (entry.kind === "worktree") {
+    const said = flat(entry.text ?? "");
+    return said.length === 0 ? undefined : said;
+  }
   // Radian gives no text or thinking increments; its chats show the tool lines only.
   if (entry.kind !== "tool" && harness === "radian") return undefined;
   if (entry.kind === "tool") return toolMarkdown(entry);

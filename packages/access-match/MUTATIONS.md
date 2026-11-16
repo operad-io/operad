@@ -121,3 +121,9 @@ and the row fields.
 | T-0507-M1 | packages/access-match/src/readonly.ts | `cd` was left off the reading programs, so a `cd <dir>` part was not read-only | `the two commands from C-0022 only read` |
 | T-0507-M2 | packages/access-match/src/readonly.ts | a redirect to a file was skipped like one to `/dev/null` instead of refusing the command | `a redirection that writes nowhere is allowed, and any other is not` |
 | T-0507-M3 | packages/access-match/src/readonly.ts | `printf -v` was no longer a writing option | `a redirection that writes nowhere is allowed, and any other is not` |
+
+## T-0508 — a worktree yes answers again, and git -C reads
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0508-M1 | packages/access-match/src/readonly.ts | `git -C <dir>` was refused before its reading subcommand was read | `commands that only read are on the read-only allowlist` (and `git -C still has its directory checked by the path rules`) |
