@@ -153,6 +153,7 @@ MCP servers.
 | `bot.bots.<name>` | object | `{}` | The keys below | One bot. A name is lowercase letters, digits, `-` and `_`, and starts with a letter or digit; any other name is `bot "<name>": a name is lowercase letters, digits, "-" and "_", and starts with a letter or digit`. |
 | `bot.bots.<name>.cwd` | string | `$OPERAD_HOME/bot` for `default`, `$OPERAD_HOME/bot/<name>` otherwise | A path | The working directory of the bot's chats. It must be inside `$OPERAD_HOME/bot` or outside the operad home; another path is refused when the bot is resolved. |
 | `bot.bots.<name>.harness` | string | the first loaded agent | A loaded agent name | The agent a new chat uses when it names none. An unloaded name is refused when a chat opens: `agent "<name>" is not loaded; the loaded ones are: …`. |
+| `bot.bots.<name>.useOwnSettings` | boolean | `false` | `true`, `false` | Every reply: when `true`, the bot's agent reads your own configuration of that agent (see [Using your own agent settings](#using-your-own-agent-settings)). The bot's access profile still refuses what it refuses. |
 | `bot.bots.<name>.skills` | array of strings | `[]` | A directory with a `SKILL.md`, a directory whose direct subdirectories each hold one (such as `~/.agents/skills`), or a `.agents` directory (such as `~/.agents`) whose `skills` directory is read that way; a relative path is under the working directory | Every reply; every skill directly inside a listed directory is given to the agent, including one added later, and the agent may read but not change it. A missing or unreadable skill is reported at the reply. |
 | `bot.bots.<name>.model` | string | the agent's default | A model the chat's agent lists | When a new chat starts; an unlisted model is refused by name. The chat can change it later with `chat:model`. |
 | `bot.bots.<name>.effort` | string | the agent's default | An effort the chat's agent lists | When a new chat starts; an unlisted effort is refused by name. The chat can change it later with `chat:effort`. |
@@ -183,6 +184,14 @@ The default access profile denies credentials and secrets (`~/.ssh`, `~/.gnupg`,
 as `sudo`, `operad`, `mkfs`, `dd`, `shutdown`, `pkill` and `killall`; it asks
 before `git push`, `brew install`, `npm install -g`, `pip install`, `osascript`
 and `open`. See [Access](access.md) for `access-user.json` and always allow.
+
+### Using your own agent settings
+
+A bot has `useOwnSettings`, titled **Use my own agent settings**, off by default. When it is on, the bot's agent reads your own configuration of that agent. For `claude` that is the settings from `~/.claude/settings.json`, project and local Claude settings, `CLAUDE.md` instruction files, auto memory, allow and deny rules, hooks, skills, commands, subagents, plugins and MCP servers. Telemetry, error reporting and background tasks stay off, and a reply is still one foreground turn. Other agents read their own configuration as they support the switch.
+
+The bot's access profile keeps the last word. Before any allow rule in your settings can approve a tool call, the call is judged in the `PreToolUse` hook the claude harness already runs: a path, command or read-only refusal of the profile denies it. A call the profile allows and your settings allow runs without a question; a call the profile says to ask is asked through operad as before. operad's own tools, the skills the bot lists, the MCP servers the bot lists and its log hooks stay; when both sides define a skill or an MCP server, operad's is the one used. The MCP servers in your own Claude configuration are available to the bot without the bot's MCP approval. With the switch off nothing changes.
+
+The switch is read at every reply. Hooks from your settings run on the bot's tool calls after it is on, including for messages that arrive from a channel such as Telegram; the bot's access profile is judged first.
 
 ### Bot objects and proposals
 

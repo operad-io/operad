@@ -35,3 +35,7 @@ Only the names of the environment variables a server needs are kept; a value is 
 ### D7: An approved server is copied to another bot without a second question
 
 A new bot may choose a server a person already approved on another bot. Its entry is copied as it is: the command, the pinned version, the tools, the digest and the secret names. Nothing about the server changed, so it is not proposed again and the person is not asked a second time. The creation result names the secrets the server needs to start. A server no person approved is not offered; it goes through registering and its review (D2).
+
+### D8: A bot that uses the owner's own agent settings already trusts those servers
+
+With `useOwnSettings` on (ADR 0030 D9), the MCP servers in the owner's Claude Code configuration are available to the bot without the approval D2 asks: the owner configured them for their own agent, and the switch is off by default. The servers the bot lists are still mounted as D5 to D7 say, and a name that both sides define is operad's. With the switch off nothing changes. The approval regime of D1 to D7 remains for every server registered through operad.

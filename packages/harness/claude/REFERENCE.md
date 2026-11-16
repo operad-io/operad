@@ -16,14 +16,27 @@ The login is the one `claude` already has; the worker passes no credential. A
 `CLAUDE_CODE_OAUTH_TOKEN` in the environment (from `claude setup-token`) reaches
 `claude` unchanged, and nothing is logged from the environment.
 
-`claude` runs with `settingSources: []`, `permissionMode: 'default'`,
+By default `claude` runs with `settingSources: []`, `permissionMode: 'default'`,
 `permissionPrompts: 'host'`, the `claude_code` system prompt preset with nothing
 appended and the SDK's default tools. `canUseTool` is the only permission
 surface. The SDK's `skills` option only filters skills claude already
 discovered, so the skill directories the step gives are mounted as one local
 plugin under the worker's own temporary directory; its `skills` filter names
 only that plugin's skills, and the directory is removed when the step ends. No
-user or project skill from `~/.claude/skills` or `.agents/skills` loads. These names are set in its environment: `CLAUDE_CODE_DISABLE_AUTO_MEMORY`,
+user or project skill from `~/.claude/skills` or `.agents/skills` loads.
+
+A bot may turn on `useOwnSettings` (ADR 0030 D9). Then the worker passes
+`settingSources: ['user', 'project', 'local']` and leaves
+`CLAUDE_CODE_DISABLE_AUTO_MEMORY` and `CLAUDE_CODE_DISABLE_CLAUDE_MDS` out, so the
+owner's settings, instruction files, memory, skills, commands, subagents, plugins
+and MCP servers load. `DISABLE_TELEMETRY`, `DISABLE_ERROR_REPORTING` and
+`CLAUDE_CODE_DISABLE_BACKGROUND_TASKS` stay `1`, the disallowed tools stay
+disallowed, and the bot's access profile is judged in `PreToolUse` before a user
+allow rule. When the step gives skills, the SDK's `skills` filter is `all`, so
+the owner's skills and the mounted operad plugin's skills both load; a name both
+sides define is operad's.
+
+By default these names are set in its environment: `CLAUDE_CODE_DISABLE_AUTO_MEMORY`,
 `CLAUDE_CODE_DISABLE_CLAUDE_MDS`, `DISABLE_TELEMETRY`, `DISABLE_ERROR_REPORTING`
 (all `1`), and `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`, so no command moves to the
 background. A run is one foreground turn: the tools that only schedule or wait for
@@ -56,6 +69,7 @@ the table is refused, not ignored.
 | `secretValues` | array of strings | no | the values of the plugin's operad secrets; a log line shows `***` where one appears. Never written anywhere |
 | `images` | array of `{ path, mediaType }` | no | image files (`image/png`, `image/jpeg`, `image/gif`, `image/webp`) sent with the prompt as image blocks of the one user message. Absent: the prompt goes as text |
 | `skills` | array of strings | no | skill directories to load, each with a `SKILL.md`; nothing else is discovered. A directory whose `SKILL.md` cannot be read or has no name is skipped with one `log` line, not a failed run. Absent: no skill plugin and no `skills` filter |
+| `useOwnSettings` | boolean | no | `true` loads the owner's own agent settings and leaves instruction-file and auto-memory isolation out; absent or `false` is the isolation above (ADR 0024 D4) |
 | `access` | object | no | the access profile; `denyPaths` and `denyCommands` are enforced in `canUseTool` by `@operad-io/access-match`, `grants` are one-time permissions, other fields are ignored; absent means nothing is denied |
 | `maxTurns` | positive integer | no | SDK `maxTurns`; absent means no limit |
 | `budgetUsd` | positive number | no | SDK `maxBudgetUsd`; absent means none |
@@ -81,7 +95,7 @@ One JSON object per line, flushed per line, each with a `type`:
 | `tool_execution_start` | `toolCallId`, `toolName`, `at`, `input` (optional) | a tool call began (the `PreToolUse` hook). `at` is the start time in epoch milliseconds. `input` says what ran: for `Bash` the command (one line, first 500 characters), for `Read`, `Edit` and `Write` the path, for another tool its main argument (path, pattern, query, URL or description) when it has one; absent otherwise. Never file contents or tool output. A command shows the values of leading environment assignments (`NAME=value`) as `NAME=***`, masks any value of the operad secret store or of a secret-named environment variable (`KEY`, `TOKEN`, `SECRET`, `PASS`, `PASSWORD`, `AUTH`, `CREDENTIAL`; 6 characters or more) as `***`, and shows `<command not shown: could not read it safely>` for a command it cannot read (an open quote, or a command or process substitution, heredoc or arithmetic in a leading assignment). A call the access profile denies shows `<tool> denied by the access profile`, never its arguments |
 | `tool_execution_end` | `toolCallId`, `toolName`, `isError`, `durationMs`, `error` (optional) | a tool call ended (`PostToolUse`, `PostToolUseFailure`, or a refusal). `durationMs` is how long the call took, measured from its start line. `error` is the first line of the error (at most 300 characters) when `isError` is true; the rest of the error stays out of the log |
 | `tool_output` | `toolCallId`, `text` | what a successful tool call printed, written before its `tool_execution_end`: Bash's stdout and stderr, a Read file's content, or another tool's text result. A `text` is at most 64 KiB of UTF-8; a longer output is written as consecutive lines with the same `toolCallId`, so joining them gives the whole output. A failed call writes no `tool_output`; its `error` is on the end line |
-| `blocked` | `toolName`, `reason` | `canUseTool` refused a call; its `tool_execution_end` has `isError: true`; the run continues |
+| `blocked` | `toolName`, `reason` | `canUseTool`, or the `PreToolUse` hook when the owner's settings are loaded, refused a call; its `tool_execution_end` has `isError: true`; the run continues |
 | `log` | `text` | a line for the step log that the fold does not read: a skipped skill, or the names of the skills loaded (`skills: <name>, <name>`) |
 | `rate_limit` | `status`, `rateLimitType` (or null), `resetsAt` (or null) | claude reported its rate limit state |
 | `grant_use` | `id`, `waitId` | asks the host to use up a one-time permission; answered on stdin by `{"type":"grant_ack","id":n,"used":true\|false}` |
@@ -212,9 +226,12 @@ The step declares `enforces: ["denyPaths", "denyCommands", "askCommands", "askPa
 and passes the run's profile to the worker. A profile that sets `askCommands` is
 accepted: a call it matches asks a person first (see "Asking about a call").
 
-The worker judges every call in `canUseTool` (`src/access.ts`). `access-match`
-knows lower-case tool names and the fields `command` and `path`, so one table
-maps claude's tools to them:
+The worker judges every call in `canUseTool` (`src/access.ts`). With
+`useOwnSettings` on, it also judges every call in the `PreToolUse` hook before any
+allow rule from the owner's settings can approve it; a refusal there denies the
+call, writes `blocked` and closes it. A grant or an ask is not a refusal and
+stays with `canUseTool`. `access-match` knows lower-case tool names and the
+fields `command` and `path`, so one table maps claude's tools to them:
 
 | claude tool | judged as | field read | field required |
 |---|---|---|---|
