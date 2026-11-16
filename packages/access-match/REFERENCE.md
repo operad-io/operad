@@ -125,14 +125,16 @@ Refused whatever the rules say, but only when the profile has at least one
 
 `isReadOnlyCommand` decides whether a `bash` command only reads, for a `readOnly`
 working directory and for the read side of `readPaths`. Every part must be
-known to read. `cd <dir>` is a reading part and moves the directory for the
-later parts, which are still checked one by one. Known reading programs include
+known to read. `cd <dir>` is a reading part; the path rules below read the
+relative words after a plain top-level `cd` against its target (see
+**Directory**). Known reading programs include
 `ls`, `cat`, `head`, `tail`, `wc`, `grep`, `rg`, `pwd`, `stat`, `file`, `du`,
 `tree`, `which`, `true`, `cd`, `echo`, `printf`, `sort`, `uniq`, `cut`, `tr`,
 `basename`, `dirname`, `realpath`, `readlink`, `date`, `env` with no arguments,
 `jq`, `diff`, `cmp`, `find`, `sed -n <range>p`, `git` read verbs, `bun test` and
-`bunx tsc --noEmit`; `printf -v`, `sort -o`, `date -s`, `jq -i` and the other
-writing options are refused. A redirection that writes nowhere (`>/dev/null`,
+`bunx tsc --noEmit`; `printf -v`, `sort -o` or `--compress-program`, `date -s`,
+`jq -i` and the other writing options are refused. A redirection that writes
+nowhere (`>/dev/null`,
 `2>/dev/null`, `&>/dev/null`, `2>&1`, `1>&2`) is allowed; any other redirection,
 a substitution or inline code makes the command not read-only. Anything else is
 not read-only, and the path rules still apply to every part, a `cd` target

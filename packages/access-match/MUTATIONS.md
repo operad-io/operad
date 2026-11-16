@@ -127,3 +127,9 @@ and the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0508-M1 | packages/access-match/src/readonly.ts | `git -C <dir>` was refused before its reading subcommand was read | `commands that only read are on the read-only allowlist` (and `git -C still has its directory checked by the path rules`) |
+
+## T-0509 — reading command and chat follow-ups
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0509-M1 | packages/access-match/src/readonly.ts | `sort --compress-program` was not a writing option, so a command that runs a program counted as reading | `a redirection that writes nowhere is allowed, and any other is not` |
