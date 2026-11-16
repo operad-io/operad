@@ -36,7 +36,10 @@ export const ANSWER_FACT = "chat.answered";
 export type ToolResult = "done" | "failed" | "blocked" | "denied";
 
 /** The kinds of part an answer is recorded as; `failure` is why a reply did not arrive. */
-export type EntryKind = "text" | "thinking" | "tool" | "stopped" | "failure";
+export type EntryKind = "text" | "thinking" | "tool" | "stopped" | "failure" | "worktree";
+
+/** What the transcript says when a repository chat moves into its worktree. */
+export const WORKTREE_NOTE = "This chat now works in a worktree.";
 
 /** The event type a new message is: its source is `ios`, `telegram`, `cli`, `tui` or `other`. */
 export const MESSAGE_EVENT = "message";
@@ -674,7 +677,7 @@ export function entryOfFact(fact: PluginFact): Entry | undefined {
   const data = fact.data;
   if (typeof data.runId !== "string" || data.runId.length === 0) return undefined;
   const kind = data.kind;
-  if (kind !== "text" && kind !== "thinking" && kind !== "tool" && kind !== "stopped" && kind !== "failure") return undefined;
+  if (kind !== "text" && kind !== "thinking" && kind !== "tool" && kind !== "stopped" && kind !== "failure" && kind !== "worktree") return undefined;
   const entryKind: EntryKind = kind;
   const base = { runId: data.runId, kind: entryKind, at: fact.at, sequence: fact.sequence };
   if (entryKind === "tool") {

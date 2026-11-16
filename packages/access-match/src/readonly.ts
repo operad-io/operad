@@ -66,9 +66,26 @@ function withoutWritingRedirections(words: readonly string[]): readonly string[]
 }
 
 function gitIsReadOnly(words: readonly string[]): boolean {
-  const sub = words[1];
+  // The options before the subcommand that read: `-C <dir>` chooses the
+  // directory, and `--no-pager` only stops git from running a pager. The
+  // directory stays in the words, so the path rules still check it.
+  let index = 1;
+  while (index < words.length) {
+    const word = words[index] ?? "";
+    if (word === "--no-pager") {
+      index += 1;
+      continue;
+    }
+    if (word === "-C") {
+      if (words[index + 1] === undefined) return false;
+      index += 2;
+      continue;
+    }
+    break;
+  }
+  const sub = words[index];
   if (sub === undefined || sub.startsWith("-")) return false;
-  const rest = words.slice(2);
+  const rest = words.slice(index + 1);
   if (sub === "branch") return rest.every((word) => ["--list", "-a", "-r", "-v", "-vv", "--show-current"].includes(word));
   if (!GIT_READ.has(sub)) return false;
   return !rest.some((word) => GIT_WRITING_OPTION.test(word));

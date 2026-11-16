@@ -1321,3 +1321,11 @@ the row fields.
 | T-0500-M3 | packages/dev/src/settings.ts | a skill path was accepted as written instead of being checked as relative to the repository | `a repository's skills > a path outside the repository is refused` |
 | T-0500-M4 | packages/dev/src/chat.ts | a chat's access profile did not deny its skill directories for writing | `a repository's skills > \`.agents/skills\` gives its own chat the skill, and another repository's chat none` |
 | T-0500-M5 | packages/dev/src/chat.ts | a worktree chat still denied writing its skill directories instead of changing them like other repository files | `a repository's skills > a worktree chat reads the worktree's copy, not the main clone's` |
+
+## T-0508 — a worktree yes answers again
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0508-M4 | packages/dev/src/chat.ts | opening the worktree recorded no transcript line saying the chat moved | `dev/chat_worktree > a live yes says the chat moved, and asks for the same message to be answered there` |
+| T-0508-M5 | packages/dev/src/chat.ts | a live yes did not ask for the message to be answered again after opening the worktree | `dev/chat_worktree > a live yes says the chat moved, and asks for the same message to be answered there` |
+| T-0508-M7 | packages/dev/src/chat.ts | a late yes was treated like a live one, so it started a second reply | `dev/chat_worktree > a late yes opens the worktree once and starts no reply` |

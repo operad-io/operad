@@ -250,3 +250,11 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 | T-0507-M5 | packages/chat/src/reply.ts | the read-only asker no longer read the user layer, so an always-allowed call asked again | `a read-only chat > Always allow writes the exact command and cwd, and the same command is not asked again` |
 | T-0507-M6 | packages/chat/src/reply.ts | the worktree question kept the old `yes`/`no` instead of the approved words and the worktree offer | `a read-only chat > the question offers the approved words in order, then the worktree offer` |
 | T-0507-M8 | packages/chat/src/reply.ts | `Deny` was read as an approving answer instead of a refusal | `a read-only chat > Deny refuses the call as no did, writes nothing, and opens no worktree` |
+
+## T-0508 — a worktree yes ends the asking reply
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0508-M2 | packages/chat/src/reply.ts | a worktree yes returned a refusal and let the asking reply go on read-only | `a read-only chat > a yes ends the asking reply, leaves the message unanswered and sends the worktree event once` |
+| T-0508-M3 | packages/chat/src/reply.ts | a late worktree yes passed through to the harness and started another reply | `a read-only chat > a late yes opens the worktree without starting another reply` |
+| T-0508-M6 | packages/chat/src/views.ts | the worktree entry was drawn as the agent's own words instead of the one line saying the chat moved | `chat entries > the worktree line is shown as itself, not as the agent's words` |

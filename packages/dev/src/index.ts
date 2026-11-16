@@ -2,13 +2,14 @@
 
 import pkg from "../package.json" with { type: "json" };
 import { definePlugin } from "@operad-io/engine";
+import { WORKTREE_EVENT } from "@operad-io/chat";
 import { PLAN_FILTERS, REPO_FILTERS, TASK_FILTERS } from "./model.ts";
 import devFlow from "../flows/dev.flow.ts";
 import chatWorktreeFlow from "../flows/chat-worktree.flow.ts";
 import { actions } from "./actions.ts";
 import { runAnnounce } from "./announce.ts";
 import { checkDev } from "./check.ts";
-import { chatActions, runChatSettings, runChatWorktree } from "./chat.ts";
+import { CHAT_REPLY_EVENT, chatActions, runChatSettings, runChatWorktree } from "./chat.ts";
 import { commands } from "./commands.ts";
 import { creationActions } from "./create-actions.ts";
 import { runRework, runReview, runReviewDue, runVerify, runWorkDue } from "./gate.ts";
@@ -185,8 +186,16 @@ export function createDevPlugin() {
       // A chat of a repository asked for a worktree and a person said yes.
       {
         source: "operad",
-        type: "chat.worktree",
+        type: WORKTREE_EVENT,
         start: { flow: "dev:chat-worktree" },
+        object: "$event.object",
+        mode: "auto",
+      },
+      // A live yes opened the worktree; answer the same message there.
+      {
+        source: "operad",
+        type: CHAT_REPLY_EVENT,
+        start: { flow: "chat:reply" },
         object: "$event.object",
         mode: "auto",
       },
