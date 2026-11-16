@@ -42,7 +42,7 @@ An extension of the owner runs in the worker process with the worker's operating
 
 The `tool_call` handler receives the access profile and judges each call with the shared `access-match` module (ADR 0025): `bash` commands are split along `&&`, `;` and `|` and each part matched; inline code (`bash -c`, `python -c`, `node -e`, `osascript -e`, `find -exec`, `xargs`) is refused outright; the paths that `read`, `write`, `edit` and `bash` touch are matched against the path rules. A refusal returns `{ block: true, reason }` and the log records a block. A profile that needs a field the harness does not enforce is refused at start, naming the field (ADR 0010 D3).
 
-The hook sees every tool call, including a tool an extension of the owner registered. A tool name the matcher does not know is refused while the profile has rules, because the profile cannot check it; operad's own tools stay outside those rules as they always did. This is the whole of what the profile can enforce for an extension: code the extension runs itself, at load or in a session-start handler, is not a tool call and can start its own process or network request before the hook exists.
+The hook sees every tool call, including a tool an extension of the owner registered. When the owner's settings are on, a tool name the matcher does not know is refused while the profile has rules, because the profile cannot check it; operad's own tools stay outside those rules as they always did. This is the whole of what the profile can enforce for an extension: code the extension runs itself, at load or in a session-start handler, is not a tool call and can start its own process or network request before the hook exists.
 
 ### D8: Asking a person happens in the handler
 
