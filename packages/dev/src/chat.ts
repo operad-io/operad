@@ -10,6 +10,7 @@ import {
   ENTRY_FACT,
   WORKTREE_EVENT,
   WORKTREE_NOTE,
+  WORKTREE_REPLY_EVENT,
   agentConditionals,
   type AgentChoices,
   chatData,
@@ -62,7 +63,7 @@ export const CHAT_ACCESS: Readonly<Record<string, JsonValue>> = {
 export const CHAT_SETTINGS_STEP = "dev/chat_settings";
 
 /** The event dev sends after a live worktree yes, so the chat answers the same message there. */
-export const CHAT_REPLY_EVENT = "dev.chat_reply";
+export const CHAT_REPLY_EVENT = WORKTREE_REPLY_EVENT;
 
 /** The directory name and branch suffix of a chat's worktree. */
 export function chatWorktreeName(chatId: string): string {

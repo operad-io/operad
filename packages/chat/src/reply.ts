@@ -139,6 +139,9 @@ function worktreeAnswer(choice: string | undefined): WorktreeAnswer {
 /** The event a "yes" sends; the plugin that owns the working directory acts on it. */
 export const WORKTREE_EVENT = "chat.worktree";
 
+/** The event dev sends after opening a worktree, so the chat answers the same message there. */
+export const WORKTREE_REPLY_EVENT = "dev.chat_reply";
+
 /** Ends the asking reply when a person chooses the worktree; the caller opens it and starts the next reply. */
 class WorktreeChosen extends Error {
   constructor() {

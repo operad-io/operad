@@ -9,7 +9,7 @@ import chatWorktreeFlow from "../flows/chat-worktree.flow.ts";
 import { actions } from "./actions.ts";
 import { runAnnounce } from "./announce.ts";
 import { checkDev } from "./check.ts";
-import { CHAT_REPLY_EVENT, chatActions, runChatSettings, runChatWorktree } from "./chat.ts";
+import { chatActions, runChatSettings, runChatWorktree } from "./chat.ts";
 import { commands } from "./commands.ts";
 import { creationActions } from "./create-actions.ts";
 import { runRework, runReview, runReviewDue, runVerify, runWorkDue } from "./gate.ts";
@@ -188,14 +188,6 @@ export function createDevPlugin() {
         source: "operad",
         type: WORKTREE_EVENT,
         start: { flow: "dev:chat-worktree" },
-        object: "$event.object",
-        mode: "auto",
-      },
-      // A live yes opened the worktree; answer the same message there.
-      {
-        source: "operad",
-        type: CHAT_REPLY_EVENT,
-        start: { flow: "chat:reply" },
         object: "$event.object",
         mode: "auto",
       },

@@ -15,6 +15,7 @@ import {
   WORKTREE_CHOICES,
   WORKTREE_DENY,
   WORKTREE_EVENT,
+  WORKTREE_REPLY_EVENT,
   WORKTREE_YES,
   unanswered,
 } from "../src/index.ts";
@@ -75,13 +76,20 @@ describe("chat:send", () => {
     }
   });
 
-  test("the plugin's rules start chat:reply, automatically, for each source", async () => {
+  test("the plugin's rules start chat:reply, automatically, for each source and after a worktree opens", async () => {
     const r = await rig(() => reply("x"));
     const rules = r.registry.triggerRules().map((entry) => entry.rule);
-    expect(rules.map((rule) => rule.source).sort()).toEqual(["cli", "ios", "other", "telegram", "tui"]);
-    for (const rule of rules) {
+    const messages = rules.filter((rule) => rule.type === "message");
+    expect(messages.map((rule) => rule.source).sort()).toEqual(["cli", "ios", "other", "telegram", "tui"]);
+    for (const rule of messages) {
       expect(rule).toMatchObject({ type: "message", start: { flow: "chat:reply" }, mode: "auto", object: "$event.object" });
     }
+    expect(rules.find((rule) => rule.type === WORKTREE_REPLY_EVENT)).toMatchObject({
+      source: "operad",
+      start: { flow: "chat:reply" },
+      mode: "auto",
+      object: "$event.object",
+    });
   });
 
   test("an empty message is refused", async () => {
