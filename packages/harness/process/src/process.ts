@@ -7,7 +7,7 @@
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { access, mkdtemp, open, rm } from "node:fs/promises";
-import { constants as fsConstants, existsSync } from "node:fs";
+import { constants as fsConstants } from "node:fs";
 import { connect, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { basename, delimiter, dirname, join } from "node:path";
@@ -27,6 +27,7 @@ import {
   lastLines,
   markerEnv,
   newKeptWorkerSlot,
+  readKeptWorker,
   readKeptWorkers,
   readKeptWorkersInHome,
   stopKeptWorker,
@@ -638,11 +639,23 @@ function emptyKeptOutcome(overrides: Partial<AgentRunOutcome>): AgentRunOutcome 
   };
 }
 
-/** Waits a bounded time for a kept worker to record that it is ready for the next reply. */
-async function keptRecordAppears(meta: string): Promise<void> {
-  const deadline = Date.now() + 1_000;
-  while (!existsSync(meta) && Date.now() < deadline) {
-    await waitForChange(dirname(meta), basename(meta), 25);
+/**
+ * Waits a bounded time for a kept worker to record that it is ready for the
+ * next reply. A file that exists but cannot be read as a record is not ready:
+ * a worker may create the file before it writes the record into it.
+ */
+export async function keptRecordAppears(
+  meta: string,
+  options: {
+    readonly now?: (() => number) | undefined;
+    readonly wait?: ((directory: string, entry: string, ms: number) => Promise<void>) | undefined;
+  } = {},
+): Promise<void> {
+  const now = options.now ?? Date.now;
+  const wait = options.wait ?? waitForChange;
+  const deadline = now() + 1_000;
+  while (readKeptWorker(meta) === undefined && now() < deadline) {
+    await wait(dirname(meta), basename(meta), 25);
   }
 }
 

@@ -154,3 +154,9 @@ and the row fields.
 | T-0516-M4 | packages/harness/process/src/keep.ts | a kept worker whose session ended was not told to leave, so it stayed after its `claude` was killed | `a kept bun worker and its claude end together, whichever is killed` |
 | T-0516-M8 | packages/harness/process/src/process.ts | the cap counted only workers of the same harness, so pi and claude could keep four in one home | `the limit of three is shared by pi and claude workers in one home` |
 | T-0516-M9 | packages/harness/process/src/keep.ts | `useGrant` was passed unbound, so the host's `useGrant` threw and every granted call was refused | `a kept worker receives this reply's grant, not the previous reply's` |
+
+## T-0520 — a kept record is readable before its reply returns
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0520-M1 | packages/harness/process/src/process.ts | `keptRecordAppears` waited for the record path to exist instead of for the path to read as a record | `a kept record that is still empty is not ready, so the reply waits for the whole record` |
