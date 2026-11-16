@@ -3,13 +3,14 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "n
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadPluginRegistry, MemoryPluginStore, PluginRegistry } from "@operad-io/engine";
-import { cleanupTempRoots, tempRoot } from "../../process/test/support.ts";
+import { cleanupTempRoots, tempRoot, waitForFile } from "../../process/test/support.ts";
 import {
   createPiHarnessPlugin,
   parsePiCatalogue,
   PI_LIST_CACHE_MS,
   piModelListPath,
 } from "../src/index.ts";
+import { refreshPiModelList } from "../src/model-list.ts";
 
 afterAll(cleanupTempRoots);
 
@@ -50,7 +51,7 @@ function catalogueBody(): string {
 function writeKept(env: Env, list: readonly string[], at: number): void {
   const path = piModelListPath(env.root);
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, JSON.stringify({ command: env.fake, at, list }));
+  writeFileSync(path, JSON.stringify({ at, list }));
 }
 
 function askedTimes(env: Env): number {
@@ -120,15 +121,22 @@ describe("the models pi declares", () => {
 
   test("a stale file starts one background refresh and later reads see the new list", async () => {
     const env = await fakePi(catalogueBody());
+    const releasePath = join(env.root, "release");
+    writeFileSync(
+      env.fake,
+      `#!/bin/sh\necho x >> "${env.asked}"\nwhile [ ! -f "${releasePath}" ]; do sleep 0.01; done\n${catalogueBody()}\n`,
+    );
     let at = 1_000;
     writeKept(env, ["old/one"], at);
     at += PI_LIST_CACHE_MS;
     const registry = registryFor(env, {}, { now: () => at });
     expect(registry.loadedModels().pi?.list).toEqual(["old/one"]);
     expect(registry.loadedModels().pi?.list).toEqual(["old/one"]);
-    const ready = await registry.loadedModelsReady();
-    expect(ready.pi?.list).toEqual(CATALOGUE);
-    expect(askedTimes(env)).toBe(1);
+    await waitForFile(env.asked);
+    // The stale rows answer at once, while the one refresh waits behind them.
+    expect((await registry.loadedModelsReady()).pi?.list).toEqual(["old/one"]);
+    writeFileSync(releasePath, "go");
+    await refreshPiModelList({ home: env.root, command: env.fake, now: () => at });
     expect(registry.loadedModels().pi?.list).toEqual(CATALOGUE);
     expect(askedTimes(env)).toBe(1);
   });
@@ -153,7 +161,9 @@ describe("the models pi declares", () => {
     const logs: string[] = [];
     const registry = registryFor(env, {}, { now: () => at, log: (message) => logs.push(message) });
     expect(registry.loadedModels().pi?.list).toEqual(["old/one"]);
+    await waitForFile(env.asked);
     expect((await registry.loadedModelsReady()).pi?.list).toEqual(["old/one"]);
+    await refreshPiModelList({ home: env.root, command: env.fake, now: () => at });
     expect(registry.loadedModels().pi?.list).toEqual(["old/one"]);
     expect(registry.loadedModels().pi?.list).toEqual(["old/one"]);
     expect(askedTimes(env)).toBe(1);

@@ -51,7 +51,6 @@ export function parsePiCatalogue(output: string): readonly string[] {
 /** What a file under the home holds: when it was read and the rows it held. */
 interface KeptList {
   readonly at: number;
-  readonly command: string;
   readonly list: readonly string[];
 }
 
@@ -76,12 +75,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function keptOf(value: unknown): KeptList | undefined {
   if (!isRecord(value)) return undefined;
   const at = value["at"];
-  const command = value["command"];
   const list = value["list"];
   if (typeof at !== "number" || !Number.isFinite(at) || at < 0) return undefined;
-  if (typeof command !== "string" || !Array.isArray(list)) return undefined;
+  if (!Array.isArray(list)) return undefined;
   if (!list.every((item): item is string => typeof item === "string")) return undefined;
-  return { at, command, list };
+  return { at, list };
 }
 
 /** The list the home keeps for this command, or undefined when there is none. */
@@ -89,8 +87,7 @@ export function readPiModelList(options: PiModelListOptions): KeptRead | undefin
   try {
     const value: unknown = JSON.parse(readFileSync(piModelListPath(options.home), "utf8"));
     const kept = keptOf(value);
-    if (kept === undefined || kept.command !== options.command) return undefined;
-    return { at: kept.at, list: kept.list };
+    return kept === undefined ? undefined : { at: kept.at, list: kept.list };
   } catch {
     return undefined;
   }
@@ -158,7 +155,7 @@ async function writeKept(
   const path = piModelListPath(options.home);
   const temporary = join(dirname(path), `.${MODEL_LIST_FILE}.${process.pid}.${randomUUID()}.tmp`);
   await mkdir(dirname(path), { recursive: true });
-  const kept: KeptList = { at, command: options.command, list };
+  const kept: KeptList = { at, list };
   await writeFile(temporary, `${JSON.stringify(kept)}\n`);
   await rename(temporary, path);
 }
@@ -213,9 +210,9 @@ export function piModelList(options: PiModelListOptions): readonly string[] {
 }
 
 /**
- * The kept list, waiting for one refresh when there is none yet. A list that
- * exists is returned at once (or after a refresh already in flight); a list
- * that is old starts its refresh but does not wait for it.
+ * The kept list, waiting for one refresh only when there is none yet. A list
+ * that exists is returned at once; an old one starts its refresh in the
+ * background and the kept rows answer meanwhile.
  */
 export async function piModelListReady(options: PiModelListOptions): Promise<readonly string[]> {
   const kept = readPiModelList(options);
@@ -223,8 +220,7 @@ export async function piModelListReady(options: PiModelListOptions): Promise<rea
     if (options.now() - kept.at >= PI_LIST_CACHE_MS) {
       void refreshPiModelList(options).catch(() => undefined);
     }
-    const pending = refreshing.get(keyOf(options));
-    return pending === undefined ? kept.list : await pending;
+    return kept.list;
   }
   return await refreshPiModelList(options);
 }
