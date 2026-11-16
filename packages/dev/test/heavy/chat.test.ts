@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { existsSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { PluginRegistry, Views, definePlugin, type CommandContext, type StepEvent, type StoredObject, type TriggerEvent, type TriggerView } from "@operad-io/engine";
 import {
@@ -330,6 +330,26 @@ describe("dev/chat_worktree", () => {
       },
     });
     expect(again).toMatchObject({ result: "done", data: { moved: false } });
+    expect(events).toEqual([]);
+    expect(allEntries(r.store, id)).toHaveLength(1);
+  });
+
+  test("a yes marked late in its event data opens the worktree and starts no reply", async () => {
+    const r = await rig();
+    const id = await openChat(r);
+    const data = join(r.root, "late.json");
+    writeFileSync(data, `${JSON.stringify({ late: true })}\n`);
+    const events: StepEvent[] = [];
+    const trigger: TriggerView = { source: "operad", key: "reply-run:other", type: WORKTREE_EVENT, hops: 1, data };
+    const result = await r.registry.runStep("dev/chat_worktree", {}, {
+      runId: "run-worktree",
+      object: { type: CHAT_TYPE, id, data: {} },
+      trigger,
+      emit: (_plugin, event) => {
+        events.push(event);
+      },
+    });
+    expect(result).toMatchObject({ result: "done", data: { moved: true } });
     expect(events).toEqual([]);
     expect(allEntries(r.store, id)).toHaveLength(1);
   });
