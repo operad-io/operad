@@ -38,12 +38,14 @@ export function fakeHarness(
   models?: Levels,
   efforts?: Levels & { readonly flag?: string },
   capabilities?: HarnessCapabilities,
+  modelsReady?: (() => Promise<Levels>) | undefined,
 ) {
   return definePlugin({
     name,
     kind: "harness",
     version: "0.0.0",
     ...(models === undefined ? {} : { models }),
+    ...(modelsReady === undefined ? {} : { modelsReady }),
     ...(efforts === undefined ? {} : { efforts }),
     ...(capabilities === undefined ? {} : { capabilities }),
     steps: [
@@ -101,6 +103,7 @@ export async function rig(
   harness = "fake",
   extraPlugins: readonly unknown[] = [],
   capabilities?: HarnessCapabilities,
+  modelsReady?: (() => Promise<Levels>) | undefined,
 ): Promise<Rig> {
   const efforts = typeof levelOrHarness === "string" ? undefined : levelOrHarness;
   const name = typeof levelOrHarness === "string" ? levelOrHarness : harness;
@@ -111,7 +114,7 @@ export async function rig(
   const store = new MemoryPluginStore({ root: join(root, "store") });
   /** The round a stop can cancel, with the signal its step waits on. */
   let active: { readonly runId: string; readonly controller: AbortController } | undefined;
-  const registry = new PluginRegistry([createChatPlugin(), fakeHarness(name, script, calls, models, efforts, capabilities), ...extraPlugins], {
+  const registry = new PluginRegistry([createChatPlugin(), fakeHarness(name, script, calls, models, efforts, capabilities, modelsReady), ...extraPlugins], {
     home: join(root, "home"),
     cwd: root,
     store,

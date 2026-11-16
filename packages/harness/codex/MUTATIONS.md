@@ -76,3 +76,9 @@ recorded. The root [MUTATIONS.md](../../../MUTATIONS.md) explains the format and
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0506-M1 | packages/harness/codex/src/index.ts | the inbox listener steered a message but reported no result, so the host could not tell it was taken | `codex/agent: a message from the host > a message sent mid-run steers the turn` |
+
+## T-0511 — a first read waits for codex's model list
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0511-M8 | packages/harness/codex/src/index.ts | `modelsReady` returned the empty cache instead of waiting for the refresh the cache was sharing | `what a chat may pick > a first read waits for the refresh the cache shares` |

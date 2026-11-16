@@ -253,13 +253,7 @@ export async function loadPluginRegistry(
     settings: options.settings ?? settings,
     disabled: options.disabled ?? config.disabled,
   });
-  // A harness may fill its model list in the background; read each list once
-  // here so a client that asks just after the load already has it. A list that
-  // cannot be read is left for the next read, not made a load error.
-  try {
-    registry.loadedModels();
-  } catch (error) {
-    onLog(messageOf(error));
-  }
+  // A harness reads its model list in the background; the load asks for none,
+  // so a client that asks just after it gets the list the home already keeps.
   return registry;
 }

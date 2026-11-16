@@ -1004,3 +1004,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0507-M7 | packages/engine/src/plugin/registry.ts | a timeout threw away the resume the asker shaped and used the original request's | `ctx.ask > an asker that shaped the question gives the wait its own resume` |
+
+## T-0511 — a load asks no harness for its model list
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0511-M6 | packages/engine/src/plugin/load.ts | the load read every harness's model list again instead of leaving it for the client | `loadPluginRegistry > does not read any harness's model list during the load` |

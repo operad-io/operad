@@ -104,6 +104,25 @@ describe("what a chat may pick", () => {
     expect(codexModels(command, 1_001)).toEqual({ list: ["gpt-fake", "gpt-other"], default: "gpt-fake" });
   });
 
+  test("a first read waits for the refresh the cache shares", async () => {
+    const root = await tempRoot();
+    const release = join(root, "models-ready-release");
+    const marker = join(root, "models-ready-marker");
+    const command = [process.execPath, FAKE, "models-nonblocking"];
+    setEnv("FAKE_CODEX_MODELS_RELEASE", release);
+    setEnv("FAKE_CODEX_MODELS_MARKER", marker);
+    const plugin = createCodexHarnessPlugin();
+    const ready = plugin.modelsReady;
+    if (ready === undefined) throw new Error("the codex plugin has no modelsReady");
+    const pending = ready({ command });
+    await waitForFile(marker);
+    writeFileSync(release, "go");
+    expect(await pending).toEqual({
+      list: ["gpt-fake", "gpt-other"],
+      default: "gpt-fake",
+    });
+  });
+
   test("an empty answer is tried again after the short retry, not kept for 30s", async () => {
     const root = await tempRoot();
     const marker = join(root, "models-empty-marker");

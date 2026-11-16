@@ -64,7 +64,7 @@ import {
   type AppServerError,
   type AppServerMcpServer,
 } from "./app-server.ts";
-import { CODEX_FLOOR, codexCommand, codexModels, codexSignedIn, commandOf, inspectCodex } from "./install.ts";
+import { CODEX_FLOOR, codexCommand, codexModels, codexSignedIn, commandOf, inspectCodex, refreshCodexModels } from "./install.ts";
 import { CodexLog, toolNameOf } from "./log.ts";
 
 /** How long an agent may run before the step stops it. */
@@ -329,6 +329,16 @@ export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
     models: (settings) => {
       try {
         return codexModels(commandOf(settings.command));
+      } catch {
+        return { list: [], default: null };
+      }
+    },
+    // A first reply may wait for the one refresh the cache already shares.
+    modelsReady: async (settings) => {
+      try {
+        const command = commandOf(settings.command);
+        const kept = codexModels(command);
+        return kept.list.length > 0 ? kept : await refreshCodexModels(command);
       } catch {
         return { list: [], default: null };
       }

@@ -796,8 +796,16 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
   }
 
   // A model the agent cannot take fails the reply by name; it never falls back.
-  if (chat.model !== undefined && ctx.harnessModels?.(chat.harness)?.list.includes(chat.model) !== true) {
-    return failedReply(ctx, object.id, "model", `the agent "${chat.harness}" cannot use the model "${chat.model}"`);
+  // A harness that has not read its list yet gets one refresh to answer, so a
+  // first reply is not refused only because the list was not there at load.
+  if (chat.model !== undefined) {
+    const models =
+      ctx.harnessModelsReady !== undefined
+        ? await ctx.harnessModelsReady(chat.harness)
+        : ctx.harnessModels?.(chat.harness);
+    if (models?.list.includes(chat.model) !== true) {
+      return failedReply(ctx, object.id, "model", `the agent "${chat.harness}" cannot use the model "${chat.model}"`);
+    }
   }
   // The same for an effort: the agent's list is the only one that can take it.
   const efforts = ctx.harnessEfforts?.(chat.harness);
