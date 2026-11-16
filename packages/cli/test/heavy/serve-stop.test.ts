@@ -5,6 +5,12 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { pidAlive } from "@operad-io/engine";
 import {
+  keptWorkerArgument,
+  newKeptWorkerSlot,
+  removeKeptWorker,
+  writeKeptWorker,
+} from "@operad-io/engine/platform";
+import {
   isServeCommand,
   parseStopTimeout,
   serveStop,
@@ -83,6 +89,43 @@ describe("operad serve stop", () => {
     const result = await operad(home, ["serve", "stop"]);
     expect(result.code).toBe(0);
     expect(result.out).toBe(`no operad serve runs for ${home}\n`);
+  });
+
+  test("kept workers of the home end even when no serve is running", async () => {
+    const { home } = await makeHome();
+    const slot = newKeptWorkerSlot(home, "pi");
+    const worker = Bun.spawn({
+      cmd: [process.execPath, "-e", "setInterval(() => undefined, 1000)", keptWorkerArgument(slot.token)],
+      detached: true,
+      stdin: "ignore",
+      stdout: "ignore",
+      stderr: "ignore",
+    });
+    worker.unref();
+    const pid = worker.pid;
+    writeKeptWorker({
+      pid,
+      token: slot.token,
+      scope: "chat:C-1",
+      key: "same",
+      socket: slot.socket,
+      meta: slot.meta,
+      session: null,
+      startedAt: Date.now(),
+      lastUsedAt: Date.now(),
+    });
+    try {
+      await serveStop({ home, timeoutSecs: 1, write: () => {} });
+      const deadline = Date.now() + 5_000;
+      while (pidAlive(pid) && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      expect(pidAlive(pid)).toBe(false);
+      expect(existsSync(slot.meta)).toBe(false);
+    } finally {
+      if (pidAlive(pid)) process.kill(-pid, "SIGKILL");
+      removeKeptWorker(slot);
+    }
   });
 
   test("a stale lock: says so, exits 0, signals nothing and leaves the file", async () => {

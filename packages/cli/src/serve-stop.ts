@@ -9,6 +9,7 @@
  */
 
 import { StateError, pidAlive, readLockPid, serveLockPath } from "@operad-io/engine";
+import { stopAllKeptWorkers } from "@operad-io/engine/platform";
 import { existsSync } from "node:fs";
 
 export const DEFAULT_STOP_TIMEOUT_SECS = 30;
@@ -55,6 +56,9 @@ export function parseStopTimeout(value: string): number {
 }
 
 export async function serveStop(options: ServeStopOptions): Promise<void> {
+  // Kept workers are not children of serve: end them here too, even when no
+  // serve is left to do it.
+  await stopAllKeptWorkers({ home: options.home });
   const path = serveLockPath(options.home);
   const isAlive = options.isAlive ?? pidAlive;
   const pid = readLockPid(path);

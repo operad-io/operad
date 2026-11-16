@@ -15,6 +15,7 @@ import { StepLimits } from "../runner/limits.ts";
 import { applyInput, objectKey, parseObjectKey, readState } from "../runner/service.ts";
 import { isBusy } from "../platform/index.ts";
 import { reapStale } from "../platform/step-reap.ts";
+import { stopAllKeptWorkers } from "../platform/kept-workers.ts";
 import { isRecord } from "../util.ts";
 
 export interface SpawnRunOptions {
@@ -463,6 +464,13 @@ export async function serve(options: ServeOptions): Promise<void> {
       });
     } catch (error) {
       options.onLog?.(`serve start: could not look for left-over processes: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    // A kept worker runs the code of the serve that started it: a serve that
+    // starts or takes over the home ends them all before serving new code.
+    try {
+      await stopAllKeptWorkers({ home: options.home });
+    } catch (error) {
+      options.onLog?.(`serve start: could not end kept workers: ${error instanceof Error ? error.message : String(error)}`);
     }
     while (!stopped) {
       inPass = true;

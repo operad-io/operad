@@ -281,3 +281,9 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 | T-0513-M6 | packages/chat/src/reply.ts | the first prompt left the starting text out | `a repository chat's starting text > goes before the first message, and not again in that session` |
 | T-0513-M7 | packages/chat/src/reply.ts | a chat that moved working directory got no new place and kept the old text | `a repository chat's starting text > after the chat moves to its worktree, the next message gets the place alone, once` |
 | T-0513-M8 | packages/chat/src/reply.ts | the starting text was put before every message, not only the first | `a repository chat's starting text > goes before the first message, and not again in that session` |
+
+## T-0515 — a chat's worker is kept between replies
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0515-M7 | packages/chat/src/index.ts | closing a chat left its kept worker running | `closing a chat ends its kept worker` |

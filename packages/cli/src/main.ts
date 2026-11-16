@@ -86,6 +86,7 @@ import {
   type ViewRow,
   type Views,
 } from "@operad-io/engine";
+import { stopAllKeptWorkers } from "@operad-io/engine/platform";
 import { ChannelTypeError, runMcpServer } from "@operad-io/mcp";
 import {
   guardBackgroundBusy,
@@ -1879,6 +1880,8 @@ async function commandServe(
     serveStage("stopping");
     watch?.stop();
     olderNotice.clear();
+    // A kept worker would keep running the code this serve loaded.
+    await stopAllKeptWorkers({ home: context.home }).catch(() => undefined);
     await notifier.stop();
     if (http !== undefined) {
       try {

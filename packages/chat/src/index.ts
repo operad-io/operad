@@ -2,6 +2,7 @@
 
 import pkg from "../package.json" with { type: "json" };
 import { defineFlow, definePlugin, type ActionArgsSchema, type ActionContext, type ActionTypeDefinition, type PluginFact, type UsageTokens } from "@operad-io/engine";
+import { stopKeptWorkers } from "@operad-io/engine/platform";
 import {
   CHAT_FILTERS,
   CHAT_SOURCES,
@@ -44,6 +45,15 @@ import { chatViews } from "./views.ts";
 
 /** How many rounds one reply run may take before it stops (each round is one visit). */
 export const REPLY_MAX_VISITS = 20;
+
+/** Ends the kept worker of a chat, if the agent keeps one. */
+async function endKeptWorker(home: string, chat: ChatData, id: string): Promise<void> {
+  await stopKeptWorkers({
+    home,
+    name: chat.harness,
+    filter: { scope: `${CHAT_TYPE}:${id}` },
+  });
+}
 
 /** The flow a message starts: answer, and go round again while messages came meanwhile. */
 export const replyFlow = defineFlow({
@@ -347,12 +357,14 @@ const closeAction: ActionTypeDefinition = {
     const closed: ClosedData = {
       by: { via: ctx.actor.via, id: ctx.actor.id },
     };
+    const chat = chatData(stored.data);
     await ctx.facts.append({ type: CLOSED_FACT, object: chatRef(ctx.object.id), data: closed });
     // Read again: a reply may have moved the session while the fact was written.
     const fresh = await ctx.store.get(CHAT_TYPE, ctx.object.id);
     if (fresh !== undefined && !chatData(fresh.data).closed) {
       await ctx.store.put(CHAT_TYPE, ctx.object.id, { ...fresh.data, closed: true }, "action:chat/close");
     }
+    await endKeptWorker(ctx.home, chat, ctx.object.id);
     return `closed ${ctx.object.id}`;
   },
 };
@@ -367,7 +379,8 @@ const stopAction: ActionTypeDefinition = {
   async run(ctx) {
     const stored = await ctx.store.get(CHAT_TYPE, ctx.object.id);
     if (stored === undefined) throw new Error(`there is no chat ${ctx.object.id}`);
-    if (chatData(stored.data).closed) throw new Error(`chat ${ctx.object.id} is closed; there is no reply to stop`);
+    const chat = chatData(stored.data);
+    if (chat.closed) throw new Error(`chat ${ctx.object.id} is closed; there is no reply to stop`);
     const runId = latestRunOf(chatFacts(ctx.store, ctx.object.id));
     if (runId === undefined) return "no reply is running";
     if (ctx.runs === undefined) throw new Error("this client cannot stop a reply");
@@ -378,6 +391,7 @@ const stopAction: ActionTypeDefinition = {
       by: { via: ctx.actor.via, id: ctx.actor.id },
     };
     await ctx.facts.append({ type: STOP_FACT, object: chatRef(ctx.object.id), data });
+    await endKeptWorker(ctx.home, chat, ctx.object.id);
     return "stopped the reply; what was written stays in the transcript. Messages that arrived meanwhile are not answered by themselves; send /retry to answer the last message";
   },
 };

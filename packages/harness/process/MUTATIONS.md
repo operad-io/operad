@@ -137,3 +137,10 @@ and the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0506-M1 | packages/harness/process/src/process.ts | the inbox listener wrote a message but reported no result, so the host could not tell it was taken | `runAgent with an inbox > a message sent while the command runs is written to its stdin as a message line, and the listener is dropped at the end` |
+
+## T-0515 — a chat's worker is kept between replies
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0515-M1 | packages/harness/process/src/process.ts | a kept worker that matched was never tried, so every reply started a new process | `a second message is answered by the same kept process` |
+| T-0515-M3 | packages/harness/process/src/process.ts | the fourth kept worker was allowed, because the cap check only ended one above the limit | `the fourth worker ends the one that has been idle longest` |

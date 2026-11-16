@@ -1022,3 +1022,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0511-M6 | packages/engine/src/plugin/load.ts | the load read every harness's model list again instead of leaving it for the client | `loadPluginRegistry > does not read any harness's model list during the load` |
+
+## T-0515 — a chat's worker is kept between replies
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0515-M5 | packages/engine/src/platform/kept-workers.ts | `stopAllKeptWorkers` returned before it ended any worker | `serve stop ends every kept worker` |
