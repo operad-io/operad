@@ -202,6 +202,13 @@ the same line into the run's log (`<store>/logs/runs/<run id>.out`) and waits fo
 the files to load. Settings files are read again at their next use; a change to
 them alone does not restart `serve`.
 
+A check does not run without end. When it does not finish in time (60 seconds
+for the fresh process that loads the code, 90 for the whole check) `serve`
+keeps the old code, prints `code changed (...) but the check did not finish; the
+old code keeps running: <why>`, and shows the item below. A change that was kept
+is offered again when the files change and, without a change, once every five
+minutes, so a check that failed once cannot leave `serve` on old code for good.
+
 While `serve` runs older code than the files on disk, `operad pending` shows one
 item: `serve runs older code than the files on disk: restart serve to load them
 (operad serve stop, then operad serve)`. It appears when the new code does not

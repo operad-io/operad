@@ -42,17 +42,21 @@ async function setup() {
   const listeners = new Set<(name: string | null) => void>();
   // The restart is deferred: the new code is not taken up.
   let answer: "reload" | "keep" = "keep";
+  // A check that does not finish, as one stuck on a child process does.
+  let hang = false;
   const watch = new CodeWatch({
     roots: [{ label: "code", path: code }],
     quietMs: 100,
     pollMs: 10_000,
+    checkTimeoutMs: 1_000,
     clock,
     watch: (_directory, onChange) => {
       listeners.add(onChange);
       return () => listeners.delete(onChange);
     },
     onOlder: notice.report,
-    onChange: async () => answer,
+    onChange: async () =>
+      hang ? new Promise<"reload" | "keep">(() => undefined) : answer,
   });
   watch.start();
   const settle = async (): Promise<void> => {
@@ -72,8 +76,13 @@ async function setup() {
     pending,
     lock,
     notice,
+    clock,
+    settle,
     setAnswer: (value: "reload" | "keep") => {
       answer = value;
+    },
+    hangCheck: () => {
+      hang = true;
     },
     close: async () => {
       watch.stop();
@@ -120,6 +129,21 @@ describe("serve runs older code than the files on disk", () => {
     writeFileSync(s.unloaded, "export const b = 2;\n");
     await s.touch();
     expect(await s.pending()).toEqual([]);
+    await s.close();
+  });
+
+  test("a check that does not finish still shows the item", async () => {
+    const s = await setup();
+    s.hangCheck();
+    writeFileSync(s.loaded, "export const a = 2;\n");
+    await s.touch();
+    // The check is stuck; it has not kept the old code yet.
+    expect(await s.pending()).toEqual([]);
+    s.clock.advance(1_000);
+    await s.settle();
+    const shown = await s.pending();
+    expect(shown).toHaveLength(1);
+    expect(shown[0]).toContain("serve runs older code");
     await s.close();
   });
 

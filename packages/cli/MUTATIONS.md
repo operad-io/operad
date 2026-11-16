@@ -295,3 +295,11 @@ the row fields.
 |---|---|---|---|
 | T-0515-M8 | packages/cli/src/serve-stop.ts | `serve stop` no longer ended the home's kept workers when no serve was running | `kept workers of the home end even when no serve is running` |
 | T-0515-M11 | packages/cli/src/main.ts | serve shutdown no longer ended the home's kept workers | `serve shutdown ends the home's kept workers` |
+
+## T-0522 — a load check that does not end is ended and reported
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0522-M4 | packages/cli/src/code-reload.ts | a probe that hit its limit reported `finished: true`, so a check with no verdict counted as "does not load" | `a load check > that does not end is ended and reported, not waited for` |
+| T-0522-M5 | packages/cli/src/main.ts | the serve's code watch was built without `onKept`, so a check that failed or did not finish said nothing on the error output | `the serve command's code watch > is given the change a restart already tried, a bounded check and a slow retry, and reports into the notice` |
+| T-0522-M6 | packages/cli/src/code-reload.ts | `probeLoad` waited for the child without end, as before the fix | `a serve picks up changed code > a load check that does not finish leaves the old code, says so, and the next change is still taken up` (the output held only `serving …` for 45 s, as the owner's serve did for twelve hours) |

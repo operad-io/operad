@@ -76,6 +76,24 @@ export default definePlugin({
 }
 
 /**
+ * A plugin whose module does not finish loading until the test writes `unhang`:
+ * the fresh process that checks the change never gets to an export.
+ */
+function stuckPluginSource(work: string): string {
+  return `
+import { definePlugin } from ${JSON.stringify(ENGINE)};
+import { waitForChange } from ${JSON.stringify(PLATFORM)};
+import { existsSync } from "node:fs";
+
+const WORK = ${JSON.stringify(work)};
+
+while (!existsSync(WORK + "/unhang")) await waitForChange(WORK, "unhang", 100);
+
+export default definePlugin({ name: "reloadflow", kind: "domain", version: "0.0.1" });
+`;
+}
+
+/**
  * A plugin that keeps the serve process alive after its stop and, on request,
  * reports the signal handlers the process has at that moment.
  */
@@ -399,6 +417,36 @@ describe("a serve picks up changed code", () => {
       await serve.exited;
     }
   }, 60_000);
+
+  test("a load check that does not finish leaves the old code, says so, and the next change is still taken up", async () => {
+    const s = await setup();
+    // A short limit, so the test sees the end of the stuck check.
+    s.env.OPERAD_RELOAD_PROBE_MS = "2000";
+    const serve = spawnOperad(s, ["serve"]);
+    const output = new Output(serve.stdout, serve.stderr);
+    try {
+      await output.until(/serving /);
+      const pid = readLockPid(join(s.home, "serve.lock"));
+
+      writeFileSync(s.plugin, stuckPluginSource(s.work));
+      await output.until(/the load check did not finish; the old code keeps running/);
+      expect(readLockPid(join(s.home, "serve.lock"))).toBe(pid);
+      expect(output.text).not.toContain("reloading:");
+      // The item that says serve runs older code than the disk is there.
+      await waitForFileNamed(join(s.home, "serve-older.json"));
+
+      // The watch is not stuck on that check: the next change is taken up.
+      writeFileSync(s.plugin, pluginSource("v2", s.work));
+      await output.until(/reloading: /);
+      await output.until(/serving /, 2);
+      expect(readLockPid(join(s.home, "serve.lock"))).not.toBe(pid);
+    } finally {
+      // Lets a load check an earlier run left waiting finish.
+      writeFileSync(join(s.work, "unhang"), "");
+      await stopServe(s);
+      await serve.exited;
+    }
+  }, 90_000);
 
   test("the older-code notice is cleared when serve starts and when it stops", async () => {
     const s = await setup();

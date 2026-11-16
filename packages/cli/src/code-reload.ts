@@ -14,9 +14,12 @@ import {
   newHashCache,
   codeRoots,
   pluginFile,
+  secondsOf,
   waitForCodeChange,
 } from "@operad-io/engine";
 import type { CodeFingerprint, CodeRoot } from "@operad-io/engine";
+import { systemClock } from "@operad-io/engine/platform";
+import type { Clock } from "@operad-io/engine/platform";
 import { basename, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -162,23 +165,76 @@ export function loadsAsWellAs(
 }
 
 /**
+ * What a load check found: the problems that did not load, or that the check
+ * itself did not finish, in which case the code was not judged at all.
+ */
+export interface LoadProbe {
+  readonly problems: readonly string[];
+  /** False when the check did not finish: its problems say why. */
+  readonly finished: boolean;
+}
+
+/** How long a load check may run before the old code is kept. */
+export const PROBE_TIMEOUT_MS = 60_000;
+
+export interface ProbeLoadOptions {
+  /** The command that loads the code; a test gives one that does not end. */
+  readonly command?: readonly string[] | undefined;
+  readonly timeoutMs?: number | undefined;
+  /** The timers of the limit; tests inject theirs. */
+  readonly clock?: Clock | undefined;
+}
+
+/**
  * Starts a fresh process that loads the code on disk and reports what did not
  * load, one line each. A process that cannot start reports that as the problem.
+ * A process that does not end is ended: a check that hangs has no verdict, and
+ * the watch that waits for it must not wait for good.
  */
-export async function probeLoad(home: string): Promise<string[]> {
+export async function probeLoad(
+  home: string,
+  options: ProbeLoadOptions = {},
+): Promise<LoadProbe> {
+  const clock = options.clock ?? systemClock;
+  const timeoutMs = options.timeoutMs ?? PROBE_TIMEOUT_MS;
   const child = Bun.spawn({
-    cmd: [process.execPath, CLI_ENTRY, "check-load"],
+    cmd: options.command === undefined ? [process.execPath, CLI_ENTRY, "check-load"] : [...options.command],
     cwd: home,
     env: { ...process.env, OPERAD_HOME: home },
     stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",
   });
-  const [code, out, err] = await Promise.all([
-    child.exited,
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-  ]);
+  const read = (async (): Promise<{ code: number; out: string; err: string }> => {
+    const [code, out, err] = await Promise.all([
+      child.exited,
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+    ]);
+    return { code, out, err };
+  })();
+  let timer: unknown;
+  const limit = new Promise<"timeout">((resolve) => {
+    timer = clock.setTimeout(() => resolve("timeout"), timeoutMs);
+  });
+  let outcome: { code: number; out: string; err: string } | "timeout";
+  try {
+    outcome = await Promise.race([read, limit]);
+  } finally {
+    clock.clearTimeout(timer);
+  }
+  if (outcome === "timeout") {
+    // This process started the child, so it may end it. A descendant that keeps
+    // the pipes open is not waited for either: the check has no verdict.
+    child.kill("SIGKILL");
+    void read.catch(() => undefined);
+    await child.exited.catch(() => undefined);
+    return {
+      problems: [`the load check did not finish within ${secondsOf(timeoutMs)}`],
+      finished: false,
+    };
+  }
+  const { code, out, err } = outcome;
   if (code !== 0) {
     const last = err
       .split("\n")
@@ -186,9 +242,12 @@ export async function probeLoad(home: string): Promise<string[]> {
       .filter((line) => line.length > 0)
       .slice(-3)
       .join(" ");
-    return [`operad does not start: ${last.length > 0 ? last : `exit ${code}`}`];
+    return {
+      problems: [`operad does not start: ${last.length > 0 ? last : `exit ${code}`}`],
+      finished: true,
+    };
   }
-  return out.split("\n").filter((line) => line.length > 0);
+  return { problems: out.split("\n").filter((line) => line.length > 0), finished: true };
 }
 
 export interface CodeCheckOptions {
@@ -197,6 +256,8 @@ export interface CodeCheckOptions {
   /** The problems this process had when it loaded. */
   readonly known: readonly string[];
   readonly onProblem: (message: string) => void;
+  /** How long the fresh process may take; defaults to `PROBE_TIMEOUT_MS`. */
+  readonly probeTimeoutMs?: number | undefined;
   /**
    * When set, a change that does not load is waited out instead of skipped:
    * the check does not return until the files load or match what the process
@@ -223,10 +284,16 @@ export function codeChecker(
       const seen = fingerprintCode(watched, options.snapshot.cache);
       const change = diffFingerprints(options.snapshot.baseline, current);
       if (change === undefined) return undefined;
-      const problems = await probeLoad(options.home);
-      if (loadsAsWellAs(problems, options.known)) return describeChange(change);
+      const probe = await probeLoad(options.home, {
+        timeoutMs: options.probeTimeoutMs,
+      });
+      if (probe.finished && loadsAsWellAs(probe.problems, options.known)) {
+        return describeChange(change);
+      }
       options.onProblem(
-        `code changed (${describeChange(change)}) but does not load; the old code keeps running: ${problems.join("; ")}`,
+        probe.finished
+          ? `code changed (${describeChange(change)}) but does not load; the old code keeps running: ${probe.problems.join("; ")}`
+          : `code changed (${describeChange(change)}) but the load check did not finish; the old code keeps running: ${probe.problems.join("; ")}`,
       );
       if (options.waitPollMs === undefined) return undefined;
       // A settings file that did not read may be fixed, so it wakes the wait

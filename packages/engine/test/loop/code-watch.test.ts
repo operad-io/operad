@@ -327,8 +327,8 @@ describe("a code watch", () => {
 
     writeFileSync(w.file, "export const a = 3;\n");
     w.events.fire();
-    // Only the fallback timer is set: the event did not start a quiet period.
-    expect(w.clock.pending).toBe(1);
+    // The fallback timer and the limit on the check that is still running.
+    expect(w.clock.pending).toBe(2);
     w.clock.advance(100);
     await settle();
     expect(w.changes).toHaveLength(1);
@@ -363,6 +363,200 @@ describe("a code watch", () => {
     await settle();
     expect(w.changes).toHaveLength(1);
     w.watch.stop();
+  });
+
+  test("a check that does not finish is given up: it says why, shows older code, and a later change is offered again", async () => {
+    const { root, file } = await project();
+    const clock = fakeClock();
+    const events = fakeWatch();
+    const changes: CodeChange[] = [];
+    const reasons: string[] = [];
+    const older: boolean[] = [];
+    let hang = true;
+    let release: (() => void) | undefined;
+    const watch = new CodeWatch({
+      roots: [{ label: "pkg", path: root }],
+      quietMs: 100,
+      pollMs: 10_000,
+      checkTimeoutMs: 1_000,
+      retryMs: 5_000,
+      clock,
+      watch: events.watch,
+      onOlder: (value) => older.push(value),
+      onKept: (_change, reason) => reasons.push(reason),
+      onChange: (change) => {
+        changes.push(change);
+        if (!hang) return Promise.resolve("keep");
+        return new Promise((resolve) => {
+          release = () => resolve("keep");
+        });
+      },
+    });
+    watch.start();
+    writeFileSync(file, "export const a = 2;\n");
+    events.fire();
+    clock.advance(100);
+    await settle();
+    expect(changes).toHaveLength(1);
+    // The check is still running, so nothing is said about the old code yet.
+    expect(reasons).toEqual([]);
+    expect(older).toEqual([]);
+
+    clock.advance(1_000);
+    await settle();
+    expect(reasons).toEqual(["the check did not finish within 1 s"]);
+    expect(older).toEqual([true]);
+
+    // The check that was given up finishes late: it changes nothing more.
+    release?.();
+    await settle();
+    expect(reasons).toHaveLength(1);
+
+    // A change that comes after the stuck check is still offered.
+    hang = false;
+    writeFileSync(file, "export const a = 3;\n");
+    events.fire();
+    clock.advance(100);
+    await settle();
+    expect(changes).toHaveLength(2);
+    watch.stop();
+    expect(clock.pending).toBe(0);
+  });
+
+  test("a check that fails says why and is offered again when the files change", async () => {
+    const { root, file } = await project();
+    const clock = fakeClock();
+    const events = fakeWatch();
+    const changes: CodeChange[] = [];
+    const reasons: string[] = [];
+    const older: boolean[] = [];
+    let fail = true;
+    const watch = new CodeWatch({
+      roots: [{ label: "pkg", path: root }],
+      quietMs: 100,
+      pollMs: 10_000,
+      clock,
+      watch: events.watch,
+      onOlder: (value) => older.push(value),
+      onKept: (_change, reason) => reasons.push(reason),
+      onChange: async (change) => {
+        changes.push(change);
+        if (fail) throw new Error("boom");
+        return "keep";
+      },
+    });
+    watch.start();
+    writeFileSync(file, "export const a = 2;\n");
+    events.fire();
+    clock.advance(100);
+    await settle();
+    expect(reasons).toEqual(["the check failed: boom"]);
+    expect(older).toEqual([true]);
+
+    fail = false;
+    writeFileSync(file, "export const a = 3;\n");
+    events.fire();
+    clock.advance(100);
+    await settle();
+    expect(changes).toHaveLength(2);
+    watch.stop();
+  });
+
+  test("a kept change is offered again on the slow timer with no file change", async () => {
+    const { root, file } = await project();
+    const clock = fakeClock();
+    const events = fakeWatch();
+    const changes: CodeChange[] = [];
+    const watch = new CodeWatch({
+      roots: [{ label: "pkg", path: root }],
+      quietMs: 100,
+      pollMs: 10_000,
+      retryMs: 1_000,
+      clock,
+      watch: events.watch,
+      onChange: async (change) => {
+        changes.push(change);
+        return "keep";
+      },
+    });
+    watch.start();
+    writeFileSync(file, "export const a = 2;\n");
+    events.fire();
+    clock.advance(100);
+    await settle();
+    expect(changes).toHaveLength(1);
+
+    // No event and no poll: only the slow timer offers the same files again.
+    clock.advance(1_000);
+    await settle();
+    expect(changes).toHaveLength(1);
+    clock.advance(100);
+    await settle();
+    expect(changes).toHaveLength(2);
+    watch.stop();
+  });
+
+  test("a watch started on files already tried offers them again on the slow timer", async () => {
+    const { root, file } = await project();
+    const roots = [{ label: "pkg", path: root }];
+    const baseline = fingerprintCode(roots);
+    writeFileSync(file, "export const a = 2;\n");
+    const clock = fakeClock();
+    const events = fakeWatch();
+    const changes: CodeChange[] = [];
+    const watch = new CodeWatch({
+      roots,
+      baseline,
+      declined: fingerprintCode(roots),
+      quietMs: 100,
+      pollMs: 10_000,
+      retryMs: 1_000,
+      clock,
+      watch: events.watch,
+      onChange: async (change) => {
+        changes.push(change);
+        return "keep";
+      },
+    });
+    watch.start();
+    clock.advance(10_000);
+    clock.advance(100);
+    await settle();
+    expect(changes).toHaveLength(0);
+    clock.advance(1_000);
+    clock.advance(100);
+    await settle();
+    expect(changes).toHaveLength(1);
+    watch.stop();
+  });
+
+  test("the timer finds files under a directory that git replaced, with no event", async () => {
+    const { root, file } = await project();
+    const clock = fakeClock();
+    const events = fakeWatch();
+    const changes: CodeChange[] = [];
+    const watch = new CodeWatch({
+      roots: [{ label: "pkg", path: root }],
+      quietMs: 100,
+      pollMs: 1_000,
+      clock,
+      watch: events.watch,
+      onChange: async (change) => {
+        changes.push(change);
+        return "keep";
+      },
+    });
+    watch.start();
+    // A merge that replaces the directory: the old watch loses its root and
+    // no event names the files that are there now.
+    rmSync(root, { recursive: true, force: true });
+    mkdirSync(join(root, "src"), { recursive: true });
+    writeFileSync(file, "export const a = 2;\n");
+    clock.advance(1_000);
+    clock.advance(100);
+    await settle();
+    expect(changes).toHaveLength(1);
+    watch.stop();
   });
 
   test("a settings file changing after a kept change is offered again", async () => {

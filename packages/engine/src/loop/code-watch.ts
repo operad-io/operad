@@ -14,6 +14,7 @@ import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { systemClock, watchDirectory } from "../platform/index.ts";
 import type { Clock } from "../platform/index.ts";
+import { messageOf } from "../plugin/errors.ts";
 
 /** A file or directory whose files count as code, under the name a log line uses. */
 export interface CodeRoot {
@@ -350,10 +351,38 @@ export interface CodeWatchOptions {
    */
   readonly onChange: CodeChangeHandler;
   /**
+   * How long a check may run before the watch keeps the old code and tries
+   * again later. Zero or less waits without end. Default 90 s.
+   */
+  readonly checkTimeoutMs?: number | undefined;
+  /**
+   * How often a kept change is offered again when no file changed: one bad
+   * moment must not leave the process on old code for good. Zero retries only
+   * at the next change. Default 5 min.
+   */
+  readonly retryMs?: number | undefined;
+  /**
+   * Called when a change is kept for a reason the handler could not report
+   * itself: the check failed, or it did not finish in `checkTimeoutMs`.
+   */
+  readonly onKept?: ((change: CodeChange, reason: string) => void) | undefined;
+  /**
    * Called when the process starts or stops running older code than the files
    * on disk: true once a change is on disk and the process has not taken it up.
    */
   readonly onOlder?: ((older: boolean) => void) | undefined;
+}
+
+/** How long a check may run before the watch keeps the old code by default. */
+export const DEFAULT_CHECK_TIMEOUT_MS = 90_000;
+
+/** How often a kept change is offered again by default. */
+export const DEFAULT_RETRY_MS = 300_000;
+
+/** A duration as the log line says it, in seconds. */
+export function secondsOf(ms: number): string {
+  const seconds = ms / 1_000;
+  return `${Number.isInteger(seconds) ? seconds : Math.round(seconds * 10) / 10} s`;
 }
 
 /** Watches code files and reports a change once, after a quiet period. */
@@ -365,6 +394,12 @@ export class CodeWatch {
   private readonly watchers = new Map<string, () => void>();
   private quiet: unknown;
   private poll: unknown;
+  /** The timer that ends a check that runs too long. */
+  private checkTimer: unknown;
+  /** The timer that offers a kept change again. */
+  private retry: unknown;
+  /** Set by the retry timer, so the next check offers the kept change again. */
+  private retryWanted = false;
   private busy = false;
   private closed = false;
   private older = false;
@@ -403,8 +438,26 @@ export class CodeWatch {
     this.closed = true;
     if (this.quiet !== undefined) this.clock.clearTimeout(this.quiet);
     if (this.poll !== undefined) this.clock.clearTimeout(this.poll);
+    if (this.checkTimer !== undefined) this.clock.clearTimeout(this.checkTimer);
+    this.checkTimer = undefined;
+    this.cancelRetry();
     for (const close of this.watchers.values()) close();
     this.watchers.clear();
+  }
+
+  private planRetry(): void {
+    const retryMs = this.options.retryMs ?? DEFAULT_RETRY_MS;
+    if (this.closed || retryMs <= 0 || this.retry !== undefined) return;
+    this.retry = this.clock.setTimeout(() => {
+      this.retry = undefined;
+      this.retryWanted = true;
+      this.schedule();
+    }, retryMs);
+  }
+
+  private cancelRetry(): void {
+    if (this.retry !== undefined) this.clock.clearTimeout(this.retry);
+    this.retry = undefined;
   }
 
   private setOlder(older: boolean): void {
@@ -445,10 +498,51 @@ export class CodeWatch {
     this.quiet = this.clock.setTimeout(() => {
       this.quiet = undefined;
       this.check().catch(() => {
-        // A handler that fails keeps the old code; the next change tries again.
+        // An unexpected failure keeps the old code; the next change or the
+        // slow timer tries again.
         this.busy = false;
       });
     }, this.options.quietMs);
+  }
+
+  /**
+   * Runs the handler, but not without end: a check that never finishes must
+   * not stop the watch. A failure or a timeout is a kept change with a reason.
+   */
+  private answerWithin(
+    change: CodeChange,
+  ): Promise<{ readonly answer: "reload" | "keep"; readonly reason?: string | undefined }> {
+    const timeoutMs = this.options.checkTimeoutMs ?? DEFAULT_CHECK_TIMEOUT_MS;
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = (value: { answer: "reload" | "keep"; reason?: string }): void => {
+        if (settled) return;
+        settled = true;
+        if (this.checkTimer !== undefined) this.clock.clearTimeout(this.checkTimer);
+        this.checkTimer = undefined;
+        resolve(value);
+      };
+      if (timeoutMs > 0) {
+        this.checkTimer = this.clock.setTimeout(() => {
+          finish({
+            answer: "keep",
+            reason: `the check did not finish within ${secondsOf(timeoutMs)}`,
+          });
+        }, timeoutMs);
+      }
+      let running: Promise<"reload" | "keep">;
+      try {
+        running = Promise.resolve(this.options.onChange(change));
+      } catch (error) {
+        finish({ answer: "keep", reason: `the check failed: ${messageOf(error)}` });
+        return;
+      }
+      running.then(
+        (answer) => finish({ answer }),
+        (error: unknown) =>
+          finish({ answer: "keep", reason: `the check failed: ${messageOf(error)}` }),
+      );
+    });
   }
 
   private async check(): Promise<void> {
@@ -458,28 +552,40 @@ export class CodeWatch {
     this.sync(current, settings);
     const change = diffFingerprints(this.baseline, current);
     if (change === undefined) {
+      this.retryWanted = false;
+      this.cancelRetry();
       this.setOlder(false);
       return;
     }
     if (
+      !this.retryWanted &&
       this.declined !== undefined &&
       diffFingerprints(this.declined.code, current) === undefined &&
       diffFingerprints(this.declined.settings, settings) === undefined
     ) {
+      // This change was tried and kept; the slow timer offers it again.
       this.setOlder(true);
+      this.planRetry();
       return;
     }
+    this.retryWanted = false;
+    this.cancelRetry();
     this.busy = true;
     let answer: "reload" | "keep" = "keep";
     try {
-      answer = await this.options.onChange(change);
+      const outcome = await this.answerWithin(change);
+      answer = outcome.answer;
+      if (outcome.reason !== undefined) this.options.onKept?.(change, outcome.reason);
     } finally {
       if (answer === "reload") {
         this.stop();
+      } else if (this.closed) {
+        this.busy = false;
       } else {
         this.declined = { code: current, settings };
         this.busy = false;
         this.setOlder(true);
+        this.planRetry();
       }
     }
   }
