@@ -15,9 +15,11 @@ import {
   readProfile,
   summarizeCall,
   type AccessProfile,
+  type Verdict,
 } from "@operad-io/access-match";
 import type {
   AgentSessionEvent,
+  DefaultResourceLoader as PiResourceLoader,
   ExtensionFactory,
   ModelRuntime,
 } from "@earendil-works/pi-coding-agent";
@@ -64,11 +66,33 @@ export { EXIT_CANCELLED, EXIT_FAILED, EXIT_INVALID_INPUT };
 /** Where the program writes. Lines are written whole, in order. */
 export type WorkerIo = SharedWorkerIo<WorkerLine>;
 
+/** What a run gives pi's settings and resource loader; the tests inspect it. */
+export interface SeenResources {
+  readonly settings: {
+    readonly compaction: boolean;
+    readonly retry: boolean;
+  };
+  readonly loader: {
+    readonly cwd: string;
+    readonly agentDir: string;
+    readonly noExtensions: boolean | undefined;
+    readonly noSkills: boolean | undefined;
+    readonly noPromptTemplates: boolean | undefined;
+    readonly noThemes: boolean | undefined;
+    readonly noContextFiles: boolean | undefined;
+    readonly additionalSkillPaths: readonly string[] | undefined;
+    readonly hasSkillsOverride: boolean;
+    readonly extensions: readonly string[];
+  };
+}
+
 export interface WorkerHooks {
   /** Registers extra model providers; the tests use it for the fake model. */
   registerProviders?(runtime: ModelRuntime): void;
   /** The clock for tool call times, in epoch milliseconds; the tests inject one. */
   now?: () => number;
+  /** Sees the settings and loader options of one run; the tests use it. */
+  observeResources?(seen: SeenResources): void;
 }
 
 /** The text of an assistant message, thinking and tool calls left out. */
@@ -312,7 +336,15 @@ export async function runWorker(
     io.line(failure("model_error", message));
     return EXIT_FAILED;
   }
-  const { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager } = pi;
+  const {
+    createAgentSession,
+    DefaultResourceLoader,
+    ModelRuntime,
+    SessionManager,
+    SettingsManager,
+    getAgentDir,
+    loadSkills,
+  } = pi;
 
   mkdirSync(input.agentDir, { recursive: true });
   mkdirSync(input.sessionDir, { recursive: true });
@@ -345,6 +377,48 @@ export async function runWorker(
   const access = readProfile(input.access ?? {});
   const profile: AccessProfile = access.ok ? access.profile : {};
   const blockedCalls = new Set<string>();
+  const ownSettings = input.useOwnSettings === true;
+  // Operad's own tools, by the names they take in pi; they are not the owner's
+  // to override and the profile leaves them to the MCP allow lists.
+  const operadToolNames = new Set<string>();
+  // The fields the access matcher reads for pi's own tools. A tool it cannot
+  // place is refused while a rule is set: an extension's tool would otherwise
+  // run a command or touch a path the profile never saw.
+  const TOOL_FIELDS: Readonly<Record<string, { readonly field: "command" | "path"; readonly required: boolean }>> = {
+    bash: { field: "command", required: true },
+    read: { field: "path", required: true },
+    write: { field: "path", required: true },
+    edit: { field: "path", required: true },
+    grep: { field: "path", required: false },
+    find: { field: "path", required: false },
+    ls: { field: "path", required: false },
+  };
+  const hasProfileRules = (candidate: AccessProfile): boolean =>
+    (candidate.denyPaths ?? []).length > 0 ||
+    (candidate.denyCommands ?? []).length > 0 ||
+    (candidate.askCommands ?? []).length > 0 ||
+    (candidate.askPaths ?? []).length > 0 ||
+    candidate.readOnly === true;
+  const judge = (name: string, toolInput: Readonly<Record<string, unknown>>): Verdict => {
+    if (operadToolNames.has(name)) return { allow: true };
+    const row = TOOL_FIELDS[name];
+    if (row === undefined) {
+      return ownSettings && hasProfileRules(profile)
+        ? {
+            allow: false,
+            reason: `tool "${name}" is not one the access profile can check; it is refused while the profile has rules`,
+          }
+        : { allow: true };
+    }
+    const value = row.field === "command" ? toolInput["command"] : toolInput["path"] ?? toolInput["file_path"];
+    if (ownSettings && row.required && (typeof value !== "string" || value.length === 0) && hasProfileRules(profile)) {
+      return {
+        allow: false,
+        reason: `tool "${name}" has no ${row.field}; it is refused while the profile has rules`,
+      };
+    }
+    return match(profile, { tool: name, input: toolInput, cwd: input.cwd });
+  };
   // What a late answer continues; known once the session exists.
   let sessionFile: string | null = null;
   const operadExtension: ExtensionFactory = (pi) => {
@@ -355,7 +429,7 @@ export async function runWorker(
         const bounded = boundedTimeout(Reflect.get(event.input, "timeout"), bashTimeoutSecs);
         if (bounded !== undefined) Reflect.set(event.input, "timeout", bounded);
       }
-      const verdict = match(profile, { tool: event.toolName, input: event.input, cwd: input.cwd });
+      const verdict = judge(event.toolName, event.input);
       if (verdict.allow) return undefined;
       // A one-time permission covers one exact call that would be refused. The
       // host writes the fact before it answers, so a crash after it cannot
@@ -405,24 +479,86 @@ export async function runWorker(
     });
   };
 
-  const settingsManager = SettingsManager.inMemory({
-    compaction: { enabled: false },
-    retry: { enabled: false },
-  });
-  const resourceLoader = new DefaultResourceLoader({
-    cwd: input.cwd,
-    agentDir: input.agentDir,
-    settingsManager,
-    noExtensions: true,
-    // No discovery: the only skills are the directories this step gave.
-    noSkills: true,
-    ...(given.skills.length === 0 ? {} : { additionalSkillPaths: given.skills.map((skill) => skill.path) }),
-    noPromptTemplates: true,
-    noThemes: true,
-    noContextFiles: true,
-    extensionFactories: [{ name: "operad", factory: operadExtension, hidden: true }],
-  });
+  // With the switch off the child is exactly the one it always was. With it
+  // on, pi's own settings and resources load from the owner's pi directory;
+  // the project is not trusted here, so only the owner's user layer and the
+  // context files pi finds from the working directory load.
+  const ownerAgentDir = ownSettings ? getAgentDir() : undefined;
+  const settingsManager =
+    ownerAgentDir === undefined
+      ? SettingsManager.inMemory({
+          compaction: { enabled: false },
+          retry: { enabled: false },
+        })
+      : SettingsManager.create(input.cwd, ownerAgentDir, { projectTrusted: false });
+  const givenSkills =
+    ownerAgentDir === undefined || given.skills.length === 0
+      ? undefined
+      : loadSkills({
+          cwd: input.cwd,
+          agentDir: ownerAgentDir,
+          skillPaths: given.skills.map((skill) => skill.path),
+          includeDefaults: false,
+        });
+  const extensionFactories = [{ name: "operad", factory: operadExtension, hidden: true }];
+  type LoaderOptions = ConstructorParameters<typeof PiResourceLoader>[0];
+  const loaderOptions: LoaderOptions =
+    ownerAgentDir === undefined
+      ? {
+          cwd: input.cwd,
+          agentDir: input.agentDir,
+          settingsManager,
+          noExtensions: true,
+          // No discovery: the only skills are the directories this step gave.
+          noSkills: true,
+          ...(given.skills.length === 0 ? {} : { additionalSkillPaths: given.skills.map((skill) => skill.path) }),
+          noPromptTemplates: true,
+          noThemes: true,
+          noContextFiles: true,
+          extensionFactories,
+        }
+      : {
+          cwd: input.cwd,
+          agentDir: ownerAgentDir,
+          settingsManager,
+          extensionFactories,
+          // A skill the bot lists wins a name clash with the owner's.
+          ...(givenSkills === undefined
+            ? {}
+            : {
+                skillsOverride: (base) => {
+                  const names = new Set(givenSkills.skills.map((skill) => skill.name));
+                  return {
+                    skills: [...givenSkills.skills, ...base.skills.filter((skill) => !names.has(skill.name))],
+                    diagnostics: [...givenSkills.diagnostics, ...base.diagnostics],
+                  };
+                },
+              }),
+        };
+  const resourceLoader = new DefaultResourceLoader(loaderOptions);
   await resourceLoader.reload();
+  // A chat's compaction and retry are operad's, not the owner's settings'.
+  settingsManager.applyOverrides({ compaction: { enabled: false }, retry: { enabled: false } });
+  const isolation = ownerAgentDir === undefined;
+  hooks.observeResources?.({
+    settings: {
+      compaction: settingsManager.getCompactionEnabled(),
+      retry: settingsManager.getRetryEnabled(),
+    },
+    loader: {
+      cwd: loaderOptions.cwd,
+      agentDir: loaderOptions.agentDir,
+      noExtensions: isolation ? true : undefined,
+      noSkills: isolation ? true : undefined,
+      noPromptTemplates: isolation ? true : undefined,
+      noThemes: isolation ? true : undefined,
+      noContextFiles: isolation ? true : undefined,
+      additionalSkillPaths:
+        isolation && given.skills.length > 0 ? given.skills.map((skill) => skill.path) : undefined,
+      hasSkillsOverride: !isolation && givenSkills !== undefined,
+      extensions: extensionFactories.map((entry) => entry.name),
+    },
+  });
   if ((input.skills ?? []).length > 0) {
     const names = resourceLoader.getSkills().skills.map((skill) => skill.name);
     note(`skills: ${names.length === 0 ? "none" : names.join(", ")}`);
@@ -441,19 +577,23 @@ export async function runWorker(
   const customTools =
     mcp === undefined
       ? undefined
-      : mcp.tools.map((tool) => ({
-          name: `operad_${tool.name}`,
-          label: `operad ${tool.name}`,
-          description: tool.description,
-          // The same JSON Schema the MCP server states; pi checks arguments against it.
-          parameters: { ...tool.inputSchema },
-          async execute(_id: string, params: Record<string, unknown>) {
-            const outcome = await mcp.call(tool.name, params);
-            const text = outcome.content.map((block) => block.text).join("\n");
-            if (outcome.isError === true) throw new Error(text);
-            return { content: [{ type: "text" as const, text }], details: outcome.structuredContent ?? {} };
-          },
-        }));
+      : mcp.tools.map((tool) => {
+          const name = `operad_${tool.name}`;
+          operadToolNames.add(name);
+          return {
+            name,
+            label: `operad ${tool.name}`,
+            description: tool.description,
+            // The same JSON Schema the MCP server states; pi checks arguments against it.
+            parameters: { ...tool.inputSchema },
+            async execute(_id: string, params: Record<string, unknown>) {
+              const outcome = await mcp.call(tool.name, params);
+              const text = outcome.content.map((block) => block.text).join("\n");
+              if (outcome.isError === true) throw new Error(text);
+              return { content: [{ type: "text" as const, text }], details: outcome.structuredContent ?? {} };
+            },
+          };
+        });
 
   const { session } = await createAgentSession({
     ...(customTools === undefined ? {} : { customTools }),

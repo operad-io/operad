@@ -181,3 +181,15 @@ the row fields.
 | T-0515-M2 | packages/harness/pi/src/index.ts | the keep key was a constant, so a worker started with another model, effort, directory, profile or skills was reused | `each change of what the worker was started with ends it` |
 | T-0515-M4 | packages/harness/pi/src/worker.ts | the kept worker's idle timer no longer ended the process | `a kept worker ends itself when the kept time runs out` |
 | T-0515-M6 | packages/harness/pi/src/worker.ts | a failed reply was kept as if it had ended done | `a failed reply does not keep its worker` |
+
+## T-0518 — a pi bot may use the owner's own settings
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0518-M1 | packages/harness/pi/src/worker.ts | the own-settings switch off also used pi's own agent directory, so the loader options were not today's | `the own-settings switch off gives today's loader options exactly` |
+| T-0518-M2 | packages/harness/pi/src/worker.ts | the own-settings switch on kept operad's `agentDir` for the resource loader, so the owner's context files, skills and extensions did not load | `the own-settings switch on loads a context file, a skill and an extension from the owner's pi directory` |
+| T-0518-M3 | packages/harness/pi/src/worker.ts | a tool name the profile did not know was allowed instead of refused, so an extension's tool ran a denied command | `an extension's tool cannot run a refused command or write a refused path` |
+| T-0518-M4 | packages/harness/pi/src/worker.ts | the bot's skills were not put before the owner's, so the owner's skill won a name clash | `a skill name both the bot and the owner's pi define is the bot's` |
+| T-0518-M5 | packages/harness/pi/src/index.ts | the step did not pass the own-settings switch to the worker | `pi/agent > the own-settings switch reaches the worker only when it is on` |
+| T-0518-M6 | packages/harness/pi/src/protocol.ts | `parseInput` accepted `useOwnSettings` but did not return it, so the worker ignored it | `the own-settings switch on loads a context file, a skill and an extension from the owner's pi directory` |
+| T-0518-M7 | packages/harness/pi/src/worker.ts | operad's compaction and retry overrides were not applied after the owner's settings loaded, so the owner's settings turned them on | `the own-settings switch on loads a context file, a skill and an extension from the owner's pi directory` |

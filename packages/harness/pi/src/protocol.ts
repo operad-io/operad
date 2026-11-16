@@ -37,8 +37,10 @@ export interface WorkerInput {
   readonly secretValues?: readonly string[] | undefined;
   /** Images given to pi with the prompt, read from these files. */
   readonly images?: readonly ImageInput[] | undefined;
-  /** Skill directories to load; no other skills are discovered. */
+  /** Skill directories to load; with the own-settings switch off, no other skills are discovered. */
   readonly skills?: readonly string[] | undefined;
+  /** Load the owner's own pi settings and resources (ADR 0023 D3); off unless true. */
+  readonly useOwnSettings?: boolean | undefined;
   /** Set by a chat reply: the worker may serve the next reply and then end itself. */
   readonly keep?: WorkerKeep | undefined;
 }
@@ -174,6 +176,11 @@ export function parseInput(value: unknown): ParsedInput {
     return { ok: false, message: "skills must be an array of strings" };
   }
 
+  const useOwnSettings = value["useOwnSettings"];
+  if (useOwnSettings !== undefined && typeof useOwnSettings !== "boolean") {
+    return { ok: false, message: "useOwnSettings must be a boolean" };
+  }
+
   const access = value["access"];
   if (access !== undefined && !isRecord(access)) {
     return { ok: false, message: "access must be an object" };
@@ -227,6 +234,7 @@ export function parseInput(value: unknown): ParsedInput {
       secretValues,
       images: images.length === 0 ? undefined : images,
       skills: skills === undefined || skills.length === 0 ? undefined : skills,
+      useOwnSettings,
       keep,
     },
   };

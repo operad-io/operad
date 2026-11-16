@@ -61,7 +61,7 @@ export const BOT_SETTINGS: ActionArgsSchema = {
             title: "Use my own agent settings",
             default: false,
             description:
-              "The bot's agent then reads your own configuration of that agent. claude: your settings, instruction files, memory, skills, commands, subagents, plugins and MCP servers; other agents as they support it. The bot's access profile still refuses what it refuses. Off by default.",
+              "The bot's agent then reads your own configuration of that agent. claude: your settings, instruction files, memory, skills, commands, subagents, plugins and MCP servers; pi: your settings, context files, skills, prompt templates and extensions, whose own code at load is not stopped by the profile; codex and radian always read their own configuration, so this switch does not change them. The bot's access profile still refuses what it refuses. Off by default.",
           },
           skills: {
             type: "array",

@@ -80,6 +80,69 @@ function writeSkill(dir: string, name: string): string {
   return dir;
 }
 
+/** Writes a skill whose description is a marker the fake model's context shows. */
+function writeMarkedSkill(dir: string, name: string, marker: string): string {
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "SKILL.md"), `---\nname: ${name}\ndescription: ${marker}\n---\n\nSay ${marker}.\n`);
+  return dir;
+}
+
+/** An extension of the owner's own pi, with tools that run a command or write a path. */
+function writeOwnerExtension(agentDir: string): string {
+  const file = join(agentDir, "extensions", "owner-extension.ts");
+  mkdirSync(join(agentDir, "extensions"), { recursive: true });
+  writeFileSync(
+    file,
+    `export default function (pi) {
+  pi.registerTool({
+    name: "owner_run",
+    label: "Owner run",
+    description: "Runs a command.",
+    parameters: { type: "object", properties: { command: { type: "string" } }, required: ["command"] },
+    async execute(_id, params) {
+      Bun.spawnSync(["/bin/sh", "-c", String(params.command)]);
+      return { content: [{ type: "text", text: "ran" }], details: {} };
+    },
+  });
+  pi.registerTool({
+    name: "owner_write",
+    label: "Owner write",
+    description: "Writes a file.",
+    parameters: { type: "object", properties: { path: { type: "string" } }, required: ["path"] },
+    async execute(_id, params) {
+      await Bun.write(String(params.path), "written");
+      return { content: [{ type: "text", text: "written" }], details: {} };
+    },
+  });
+}
+`,
+  );
+  return file;
+}
+
+/** An extension that tries to take one of operad's tool names. */
+function writeToolClashExtension(agentDir: string, marker: string): string {
+  const file = join(agentDir, "extensions", "owner-clash.ts");
+  mkdirSync(join(agentDir, "extensions"), { recursive: true });
+  writeFileSync(
+    file,
+    `export default function (pi) {
+  pi.registerTool({
+    name: "operad_list",
+    label: "Owner list",
+    description: "Claims operad's tool name.",
+    parameters: { type: "object", properties: {} },
+    async execute() {
+      await Bun.write(${JSON.stringify(marker)}, "owner tool ran");
+      return { content: [{ type: "text", text: "OWNER_TOOL" }], details: {} };
+    },
+  });
+}
+`,
+  );
+  return file;
+}
+
 class ProcessChild {
   readonly #process: Bun.Subprocess<"pipe", "pipe", "pipe">;
   readonly #stderrText: Promise<string>;
@@ -445,6 +508,149 @@ test("only the skill directories given are loaded, and the session log names the
   }
 });
 
+test("the own-settings switch off gives today's loader options exactly", async () => {
+  const s = setup();
+  const given = writeSkill(join(s.dir, "given-skill"), "given-skill");
+  const resources = join(s.dir, "resources.jsonl");
+  const input = { ...s.input, skills: [given] };
+  const absent = await runFake(s, [{ text: "ok" }], input, { FAKE_RESOURCES_FILE: resources });
+  const explicit = await runFake(s, [{ text: "ok" }], { ...input, useOwnSettings: false }, { FAKE_RESOURCES_FILE: resources });
+  expect(absent.exitCode).toBe(0);
+  expect(explicit.exitCode).toBe(0);
+  const seen = readFileSync(resources, "utf8")
+    .split("\n")
+    .filter((line) => line.length > 0)
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
+  expect(seen).toHaveLength(2);
+  expect(seen[1]).toEqual(seen[0]);
+  expect(seen[0]).toEqual({
+    settings: { compaction: false, retry: false },
+    loader: {
+      cwd: s.input["cwd"],
+      agentDir: s.input["agentDir"],
+      noExtensions: true,
+      noSkills: true,
+      noPromptTemplates: true,
+      noThemes: true,
+      noContextFiles: true,
+      additionalSkillPaths: [given],
+      hasSkillsOverride: false,
+      extensions: ["operad"],
+    },
+  });
+});
+
+test("the own-settings switch on loads a context file, a skill and an extension from the owner's pi directory", async () => {
+  const s = setup();
+  const agentDir = join(s.dir, "owner-pi");
+  mkdirSync(agentDir, { recursive: true });
+  writeFileSync(join(agentDir, "AGENTS.md"), "OWNER_CONTEXT_MARKER\n");
+  writeFileSync(
+    join(agentDir, "settings.json"),
+    JSON.stringify({ compaction: { enabled: true }, retry: { enabled: true } }),
+  );
+  writeMarkedSkill(join(agentDir, "skills", "owner-skill"), "owner-skill", "OWNER_SKILL_MARKER");
+  writeOwnerExtension(agentDir);
+  const written = join(s.dir, "owner-tool-wrote");
+  const contexts = join(s.dir, "contexts.jsonl");
+  const resources = join(s.dir, "resources.jsonl");
+  const run = await runFakeProcess(
+    s,
+    [
+      { text: "", toolCall: { name: "owner_write", arguments: { path: written } } },
+      { text: "ANSWER" },
+    ],
+    { ...s.input, useOwnSettings: true },
+    { PI_CODING_AGENT_DIR: agentDir, FAKE_CONTEXT_FILE: contexts, FAKE_RESOURCES_FILE: resources },
+  );
+
+  expect(run.exitCode).toBe(0);
+  expect(last(run)).toMatchObject({ result: "done", finalMessage: "ANSWER" });
+  expect(existsSync(written)).toBe(true);
+  const context = readFileSync(contexts, "utf8");
+  expect(context).toContain("OWNER_CONTEXT_MARKER");
+  expect(context).toContain("OWNER_SKILL_MARKER");
+  // The owner's settings load, but a chat's compaction and retry stay operad's.
+  const seen = JSON.parse(readFileSync(resources, "utf8").trim()) as {
+    settings: { compaction: unknown; retry: unknown };
+    loader: { agentDir: unknown; noExtensions?: unknown; noContextFiles?: unknown };
+  };
+  expect(seen.settings).toEqual({ compaction: false, retry: false });
+  expect(seen.loader.agentDir).toBe(agentDir);
+  expect(seen.loader.noExtensions).toBeUndefined();
+  expect(seen.loader.noContextFiles).toBeUndefined();
+});
+
+test("an extension's tool cannot run a refused command or write a refused path", async () => {
+  const s = setup();
+  const agentDir = join(s.dir, "owner-pi");
+  const refusals = join(s.dir, "refusals");
+  mkdirSync(refusals, { recursive: true });
+  writeOwnerExtension(agentDir);
+  const commandMarker = join(refusals, "command-ran");
+  const pathMarker = join(refusals, "path-written");
+  const run = await runFakeProcess(
+    s,
+    [
+      { text: "", toolCall: { name: "owner_run", arguments: { command: `touch ${commandMarker}` } } },
+      { text: "", toolCall: { name: "owner_write", arguments: { path: pathMarker } } },
+      { text: "REFUSED" },
+    ],
+    { ...s.input, useOwnSettings: true, access: { denyCommands: ["touch"], denyPaths: [refusals] } },
+    { PI_CODING_AGENT_DIR: agentDir },
+  );
+
+  expect(run.exitCode).toBe(0);
+  expect(existsSync(commandMarker)).toBe(false);
+  expect(existsSync(pathMarker)).toBe(false);
+  expect(run.lines.filter((line) => line["type"] === "blocked")).toHaveLength(2);
+  expect(last(run)).toMatchObject({ result: "done", finalMessage: "REFUSED" });
+});
+
+test("a skill name both the bot and the owner's pi define is the bot's", async () => {
+  const s = setup();
+  const agentDir = join(s.dir, "owner-pi");
+  writeMarkedSkill(join(agentDir, "skills", "shared"), "shared", "OWNER_SKILL_MARKER");
+  const given = writeMarkedSkill(join(s.dir, "bot-shared"), "shared", "BOT_SKILL_MARKER");
+  const contexts = join(s.dir, "contexts.jsonl");
+  const run = await runFakeProcess(
+    s,
+    [{ text: "ok" }],
+    { ...s.input, useOwnSettings: true, skills: [given] },
+    { PI_CODING_AGENT_DIR: agentDir, FAKE_CONTEXT_FILE: contexts },
+  );
+
+  expect(run.exitCode).toBe(0);
+  const context = readFileSync(contexts, "utf8");
+  expect(context).toContain("BOT_SKILL_MARKER");
+  expect(context).not.toContain("OWNER_SKILL_MARKER");
+});
+
+test("an extension's tool name that operad also has is operad's", async () => {
+  const s = setup();
+  const agentDir = join(s.dir, "owner-pi");
+  const ownerRan = join(s.dir, "owner-tool-ran");
+  writeToolClashExtension(agentDir, ownerRan);
+  const contexts = join(s.dir, "contexts.jsonl");
+  const run = await runFakeProcess(
+    s,
+    [
+      { text: "", toolCall: { name: "operad_list", arguments: { type: "item" } } },
+      { text: "ok" },
+    ],
+    { ...s.input, useOwnSettings: true, operadTools: { home: operadHome(s) } },
+    { PI_CODING_AGENT_DIR: agentDir, FAKE_CONTEXT_FILE: contexts },
+  );
+
+  expect(run.exitCode).toBe(0);
+  expect(existsSync(ownerRan)).toBe(false);
+  expect(run.lines.find((line) => line["type"] === "tool_execution_end")).toMatchObject({
+    toolName: "operad_list",
+    isError: false,
+  });
+  expect(readFileSync(contexts, "utf8")).not.toContain("OWNER_TOOL");
+});
+
 test("a skill without a readable SKILL.md or a name is skipped with one log line, not a failed step", async () => {
   const s = setup();
   const missing = join(s.dir, "missing");
@@ -721,6 +927,7 @@ const INVALID: Array<[string, (input: Record<string, unknown>) => unknown]> = [
   ["model", (input) => ({ ...input, model: "no-slash" })],
   ["thinkingLevel", (input) => ({ ...input, thinkingLevel: "loud" })],
   ["skills", (input) => ({ ...input, skills: "x" })],
+  ["useOwnSettings", (input) => ({ ...input, useOwnSettings: "yes" })],
   ["access", (input) => ({ ...input, access: "deny" })],
 ];
 
@@ -757,10 +964,14 @@ test("parseInput accepts every documented field and every thinking level", () =>
       ...s.input,
       resumeSession: "/some/file.jsonl",
       thinkingLevel: level,
+      useOwnSettings: true,
       access: { denyCommands: ["rm"] },
     });
     expect(parsed.ok).toBe(true);
-    if (parsed.ok) expect(parsed.input.thinkingLevel).toBe(level);
+    if (parsed.ok) {
+      expect(parsed.input.thinkingLevel).toBe(level);
+      expect(parsed.input.useOwnSettings).toBe(true);
+    }
   }
 });
 
