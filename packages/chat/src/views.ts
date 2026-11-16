@@ -387,6 +387,20 @@ interface Live {
 }
 
 /**
+ * The person's messages a reply still owes an answer. A reply recorded before
+ * `replyTo` existed answers every message before it, so an old snapshot that
+ * ends with an assistant message is not left looking unanswered.
+ */
+function statusPending(messages: readonly Message[], facts: readonly PluginFact[]): readonly Message[] {
+  const pending = unanswered(messages, facts);
+  if (pending.length === 0) return pending;
+  const legacy = messages.filter(
+    (message) => message.role === "assistant" && (message.replyTo === undefined || message.replyTo.length === 0),
+  );
+  return pending.filter((message) => !legacy.some((reply) => reply.sequence > message.sequence));
+}
+
+/**
  * What the reply is doing, or undefined when nothing of it is in progress. A
  * question waiting for the person, a failure, a stop and a chat whose messages
  * are all answered say nothing. Before the log has the ready line, the first
@@ -445,7 +459,7 @@ async function liveOf(
   const chat = chatData(object.data);
   const runId = latestRunOf(facts);
   const messages = facts.map(messageFrom).filter((message): message is Message => message !== undefined);
-  const pending = unanswered(messages, facts);
+  const pending = statusPending(messages, facts);
   const times = runId !== undefined && ctx.runTimes !== undefined ? await ctx.runTimes(runId) : undefined;
   let tail: string | undefined;
   let read: TailRead | undefined;

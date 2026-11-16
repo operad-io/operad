@@ -178,6 +178,26 @@ describe("a reply's status", () => {
     expect((await view(r, chat)).status).toBeUndefined();
   });
 
+  test("an old assistant message with no replyTo answers the message before it", async () => {
+    const r = await rig(() => reply("x"));
+    const chat = await r.chat();
+    await r.say(chat, "go");
+    await r.store.append({
+      type: MESSAGE_FACT,
+      object: chatRef(chat),
+      cause: "test",
+      data: {
+        id: "m-old-reply",
+        role: "assistant",
+        from: { via: "", id: "" },
+        text: "done",
+        attachments: [],
+        source: { kind: "", ref: null },
+      },
+    });
+    expect((await view(r, chat)).status).toBeUndefined();
+  });
+
   test("a read with after carries the same status", async () => {
     const r = await rig(() => reply("x"));
     const chat = await r.chat();

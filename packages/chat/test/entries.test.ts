@@ -118,6 +118,7 @@ describe("chat entries", () => {
     expect(oldView).toEqual(newView);
     expect(oldView.markdown).toContain("hello");
     expect(oldView.markdown).toContain("hi there");
+    expect(oldView.status).toBeUndefined();
   });
 
   test("a run records its text, thinking and tool calls with its run id, and leaves the final reply as the message", async () => {
