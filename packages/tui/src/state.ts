@@ -34,6 +34,7 @@ import {
   mainAction,
   mainKey,
   MAIN_KEY,
+  pasteInto,
   runKey,
   startAction,
   typed,
@@ -46,6 +47,7 @@ import {
   pageActions,
 } from "./actions.ts";
 import { chatCommands } from "./commands.ts";
+import { chatMarkdown, chatRuns, type ChatFoldRun } from "./chat.ts";
 
 
 /** The two terminal themes the view knows. */
@@ -128,6 +130,14 @@ export interface TuiChildren {
   readonly hiddenCancelled?: number | undefined;
 }
 
+/** A message the client drew before the server's copy arrived. */
+export interface TuiOptimistic {
+  readonly id: number;
+  readonly text: string;
+  /** How often the text was already in the content when it was sent. */
+  readonly baseline: number;
+}
+
 /** One section of the open object, with the content fetched so far. */
 export interface TuiSection {
   readonly id: string;
@@ -162,6 +172,10 @@ export interface TuiSection {
   readonly status?: SectionStatus | undefined;
   /** Grows with each content change; an older answer is dropped. */
   readonly version: number;
+  /** The thinking and tool runs this person opened; the rest stay folded. */
+  readonly folds?: readonly string[] | undefined;
+  /** Messages that are drawn at the end until the server's copy arrives. */
+  readonly optimistic?: readonly TuiOptimistic[] | undefined;
 }
 
 /** The object the right pane shows, or the one that fills a narrow screen. */
@@ -206,6 +220,12 @@ export type TuiInput =
       readonly action: string;
       readonly id: string;
       readonly text: string;
+      /** The cursor in `text`, in display characters; the end when unset. */
+      readonly cursor?: number | undefined;
+      /** The action is on its way; the text stays until the server answers. */
+      readonly sending?: boolean | undefined;
+      /** Why the server refused the text; it stays until the next edit. */
+      readonly error?: string | undefined;
       readonly required: boolean;
       /** The action asks to confirm after the note. */
       readonly confirm: boolean;
@@ -414,6 +434,8 @@ export interface TuiState {
   readonly followPending: boolean;
   /** Grows with each refresh; an answer to an older refresh is dropped. */
   readonly generation: number;
+  /** The next id for a message drawn before the server's copy. */
+  readonly optimisticSeq: number;
   /** The last failure to show in the footer; cleared by a good refresh. */
   readonly status?: string | undefined;
   /** The key bindings in force; a user binding beats a plugin default. */
@@ -436,6 +458,8 @@ export interface TuiState {
   readonly notice?: string | undefined;
   /** Set when an action must be sent; the caller clears it as it sends. */
   readonly actionRequest?: TuiActionRequest | undefined;
+  /** The message drawn before the server's copy, while its send is unanswered. */
+  readonly send?: { readonly objectId: string; readonly sectionId: string; readonly id: number } | undefined;
   /** Set when an answer must be sent; the caller clears it as it sends. */
   readonly answerRequest?: TuiAnswerRequest | undefined;
   /** The settings the palette lists, global and the open object's repository. */
@@ -552,6 +576,7 @@ export function initialState(options: TuiStateOptions = {}): TuiState {
     moveSeq: 0,
     followPending: false,
     generation: 0,
+    optimisticSeq: 0,
     bindings: [],
     recent: options.recent ?? [],
     settings: [],
@@ -728,6 +753,8 @@ export type TuiStateEvent =
       readonly ctrl?: boolean | undefined;
       readonly meta?: boolean | undefined;
     }
+  /** A bracketed paste, taken as text by the open input. */
+  | { readonly type: "paste"; readonly text: string }
   | {
       readonly type: "resize";
       readonly width: number;
@@ -1137,16 +1164,37 @@ export function markdownLineCount(
  * content version of each open object and width, and kept: scrolling and
  * drawing read the same rows without wrapping the text again.
  */
+export interface SectionLayoutOptions {
+  /** The moment that decides whether a chat header's date is today. */
+  readonly now?: number | undefined;
+  /** The zone a chat header's time is drawn in; the terminal's when unset. */
+  readonly timeZone?: string | undefined;
+}
+
+/** A chat's transcript is the one section whose lines the client rewrites. */
+function chatTranscript(state: TuiState, section: TuiSection): boolean {
+  return state.object?.type === "chat" && section.id === "transcript";
+}
+
 export function sectionLayout(
   state: TuiState,
   section: TuiSection,
+  options: SectionLayoutOptions = {},
 ): readonly LayoutLine[] {
   const object = state.object;
   const key = `${object?.version ?? 0}\u0000${object?.id ?? ""}\u0000${section.id}`;
+  const markdown = chatTranscript(state, section)
+    ? chatMarkdown(section.markdown, {
+        ...(options.now === undefined ? {} : { now: options.now }),
+        ...(options.timeZone === undefined ? {} : { timeZone: options.timeZone }),
+        ...(section.folds === undefined ? {} : { open: section.folds }),
+        prefix: "c",
+      })
+    : section.markdown;
   return cachedLayout(
     key,
     section.version,
-    section.markdown,
+    markdown,
     sectionWidth(state),
   );
 }
@@ -1158,11 +1206,23 @@ export function sectionLayout(
 export function sectionTailLayout(
   state: TuiState,
   section: TuiSection,
+  options: SectionLayoutOptions = {},
 ): readonly LayoutLine[] {
-  if (section.tail === undefined || section.tail === "") return [];
+  const sent = section.optimistic?.map((entry) => entry.text).join("\n\n") ?? "";
+  if ((section.tail === undefined || section.tail === "") && sent === "") return [];
   const object = state.object;
   const key = `${object?.version ?? 0}\u0000${object?.id ?? ""}\u0000${section.id}\u0000tail`;
-  return cachedLayout(key, section.version, section.tail, sectionWidth(state));
+  const tail =
+    section.tail !== undefined && section.tail !== "" && chatTranscript(state, section)
+      ? chatMarkdown(section.tail, {
+          ...(options.now === undefined ? {} : { now: options.now }),
+          ...(options.timeZone === undefined ? {} : { timeZone: options.timeZone }),
+          ...(section.folds === undefined ? {} : { open: section.folds }),
+          prefix: "t",
+        })
+      : (section.tail ?? "");
+  const markdown = sent === "" ? tail : joinMarkdown(tail, sent);
+  return cachedLayout(key, section.version, markdown, sectionWidth(state));
 }
 
 /** The rows a section takes on screen: its content, its changing tail and its status. */
@@ -1612,6 +1672,19 @@ export function joinMarkdown(before: string, after: string): string {
   return `${before.replace(/\n?$/, "\n")}${after}`;
 }
 
+/** How many times a message text appears in a transcript, without overlaps. */
+export function countOccurrences(text: string, part: string): number {
+  if (part === "") return 0;
+  let count = 0;
+  let at = 0;
+  for (;;) {
+    const found = text.indexOf(part, at);
+    if (found < 0) return count;
+    count += 1;
+    at = found + part.length;
+  }
+}
+
 function applySection(
   state: TuiState,
   objectId: string,
@@ -1662,6 +1735,10 @@ function applySection(
       // The answer's mark is the section's position now; a read that gives none
       // makes the next refresh read the section whole, as before.
       mark: content.mark,
+      // A copy the server wrote replaces the message drawn before it.
+      ...(value.optimistic === undefined
+        ? {}
+        : { optimistic: value.optimistic.filter((entry) => countOccurrences(markdown, entry.text) <= entry.baseline) }),
       // The answer's tail is the whole current tail; a page read that leaves it
       // out keeps the one shown. The status follows the same rule.
       tail: pageAppend && content.tail === undefined ? value.tail : content.tail,
@@ -2049,6 +2126,27 @@ function childKey(state: TuiState, key: string): TuiState | undefined {
   return undefined;
 }
 
+/** Enter on a chat transcript opens or closes the latest thinking and tool run. */
+function toggleChatFold(state: TuiState): TuiState | undefined {
+  const section = activeSection(state);
+  if (state.object?.type !== "chat" || section?.id !== "transcript") return undefined;
+  const runs = [
+    ...chatRuns(section.markdown, "c"),
+    ...chatRuns(section.tail ?? "", "t"),
+  ];
+  const chosen: ChatFoldRun | undefined = runs[runs.length - 1];
+  if (chosen === undefined) return undefined;
+  const open = section.folds ?? [];
+  const folds = open.includes(chosen.id)
+    ? open.filter((id) => id !== chosen.id)
+    : [...open, chosen.id];
+  return withSection(state, section.id, (value) => ({
+    ...value,
+    folds,
+    version: value.version + 1,
+  }));
+}
+
 /** Enter: opens the selected row; on the row that is already open, its next level. */
 function enter(state: TuiState): TuiState {
   const row = selectedRow(state);
@@ -2209,7 +2307,10 @@ function handleKey(
   }
   const inChildren = childKey(state, key);
   if (inChildren !== undefined) return inChildren;
-  if (isKey(key, "enter", "return")) return enter(state);
+  if (isKey(key, "enter", "return")) {
+    const folded = toggleChatFold(state);
+    return folded === undefined ? enter(state) : folded;
+  }
   if (isKey(key, "escape", "esc", "backspace")) {
     const back = goBack(state);
     if (back !== undefined) return back;
@@ -2930,6 +3031,8 @@ export function reduce(state: TuiState, event: TuiStateEvent): TuiState {
       };
     case "key":
       return handleKey(state, event);
+    case "paste":
+      return pasteInto(state, event.text);
     case "resize":
       return {
         ...state,
@@ -2992,6 +3095,10 @@ export function reduce(state: TuiState, event: TuiStateEvent): TuiState {
         acting: false,
         actionRequest: undefined,
         answerRequest: undefined,
+        send: undefined,
+        ...(state.input?.kind === "note" && state.input.sending === true
+          ? { input: undefined }
+          : {}),
       };
       return event.opens === undefined ? done : openNamed(done, event.opens);
     }
@@ -3067,7 +3174,7 @@ export function footerSegments(state: TuiState): readonly TuiFooterSegment[] {
   const object = state.object;
   const main = mainAction(state);
   if (object !== undefined && main !== undefined) {
-    add(mainKey(state), main.name);
+    add(mainKey(state), object.type === "chat" && main.action === "stop" ? "stop" : main.name);
     if (pageActions(object.actions).length > 1) add(":", "more");
   }
   const filtering = filterKeyApplies(state);
@@ -3130,7 +3237,10 @@ export const KEY_GROUPS: readonly (readonly (readonly [string, string])[])[] = [
   [
     ["↑↓ / j k", "move the row; on a narrow screen with an object open, scroll it"],
     ["g / G", "first or last row; on a narrow screen with an object open, its top or bottom"],
-    ["enter", "open the selected row (on a narrow screen); on the open row, move into its list; there, open the row"],
+    ["enter", "open the selected row (on a narrow screen); on the open row, move into its list; there, open the row; on a chat transcript, open or close its thinking and tool run"],
+    ["a", "the open object's first action; stop a chat's reply"],
+    ["/", "type in a chat's input, with its commands"],
+    [":", "the palette of actions, settings and views"],
   ],
   [
     ["PgUp PgDn / b space", "scroll the open section a page"],

@@ -498,3 +498,16 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0514-M1 | packages/tui/src/view/index.ts | the status line was left out under the tail | `the tail is drawn after the content > the status is one weak line under the tail, with its elapsed time` |
+
+## T-0519 — the terminal client's chat input and transcript
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0519-M1 | packages/tui/src/actions.ts | `send` closed the note input at once again, so a refused message lost its text | `a chat send that the server has not accepted > its input stays open with the text, a refusal shows there, and escape discards` |
+| T-0519-M2 | packages/tui/src/actions.ts | left and right no longer moved the note cursor, so text was inserted at the end | `the note input's cursor > left and right, home and end, ctrl-a and ctrl-e, and delete edit where the cursor is` |
+| T-0519-M3 | packages/tui/src/actions.ts | a paste was dropped instead of inserted into the note | `a paste into a chat's input > line breaks are text, not a send, and other control bytes are dropped` |
+| T-0519-M4 | packages/tui/src/app.ts | opening the input did not turn the terminal's bracketed paste on | `the terminal's bracketed paste > its bytes reach the open input, and the mode follows the input and the exit` |
+| T-0519-M5 | packages/tui/src/chat.ts | thinking and tool lines were no longer folded into one line | `a chat transcript folds its thinking and tool lines > a run is one line with its count and its last line, and enter opens it` |
+| T-0519-M6 | packages/tui/src/actions.ts | the running chat no longer offered its stop action as the main key | `stopping a reply > the footer offers the stop key and the key runs the stop action` |
+| T-0519-M7 | packages/tui/src/chat.ts | a message header kept the server's transport and UTC time | `a chat message header > shows who and the time in the terminal's zone, without the transport or today's date` |
+| T-0519-M8 | packages/tui/src/actions.ts | a sent message was not drawn before the server's copy arrived | `a message drawn before the server's copy > is weak at the end of the transcript until the copy replaces it, once` |
