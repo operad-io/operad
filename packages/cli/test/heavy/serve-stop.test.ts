@@ -5,6 +5,12 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { pidAlive } from "@operad-io/engine";
 import {
+  keptWorkerArgument,
+  newKeptWorkerSlot,
+  removeKeptWorker,
+  writeKeptWorker,
+} from "@operad-io/engine/platform";
+import {
   isServeCommand,
   parseStopTimeout,
   serveStop,
@@ -25,6 +31,15 @@ async function makeHome(): Promise<{ root: string; home: string; lock: string }>
 
 function writeLock(path: string, pid: number): void {
   writeFileSync(path, `${JSON.stringify({ pid, at: 1 })}\n`);
+}
+
+async function waitGone(pid: number, ms: number): Promise<boolean> {
+  const deadline = Date.now() + ms;
+  while (Date.now() < deadline) {
+    if (!pidAlive(pid)) return true;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  return !pidAlive(pid);
 }
 
 async function freePort(): Promise<number> {
@@ -84,6 +99,128 @@ describe("operad serve stop", () => {
     expect(result.code).toBe(0);
     expect(result.out).toBe(`no operad serve runs for ${home}\n`);
   });
+
+  test("kept workers of the home end even when no serve is running", async () => {
+    const { home } = await makeHome();
+    const slot = newKeptWorkerSlot(home, "pi");
+    const worker = Bun.spawn({
+      cmd: [process.execPath, "-e", "setInterval(() => undefined, 1000)", keptWorkerArgument(slot.token)],
+      detached: true,
+      stdin: "ignore",
+      stdout: "ignore",
+      stderr: "ignore",
+    });
+    worker.unref();
+    const pid = worker.pid;
+    writeKeptWorker({
+      pid,
+      token: slot.token,
+      scope: "chat:C-1",
+      key: "same",
+      socket: slot.socket,
+      meta: slot.meta,
+      session: null,
+      startedAt: Date.now(),
+      lastUsedAt: Date.now(),
+    });
+    try {
+      await serveStop({ home, timeoutSecs: 1, write: () => {} });
+      const deadline = Date.now() + 5_000;
+      while (pidAlive(pid) && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      expect(pidAlive(pid)).toBe(false);
+      expect(existsSync(slot.meta)).toBe(false);
+    } finally {
+      if (pidAlive(pid)) process.kill(-pid, "SIGKILL");
+      removeKeptWorker(slot);
+    }
+  });
+
+  test("serve shutdown ends the home's kept workers", async () => {
+    const { root, home } = await makeHome();
+    writeFileSync(
+      join(home, "config.json"),
+      JSON.stringify({
+        plugins: [],
+        store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
+        http: { enabled: false },
+      }),
+    );
+    const stoppedAtStart = newKeptWorkerSlot(home, "pi");
+    const first = Bun.spawn({
+      cmd: [process.execPath, "-e", "setInterval(() => undefined, 1000)", keptWorkerArgument(stoppedAtStart.token)],
+      detached: true,
+      stdin: "ignore",
+      stdout: "ignore",
+      stderr: "ignore",
+    });
+    first.unref();
+    const firstPid = first.pid;
+    writeKeptWorker({
+      pid: firstPid,
+      token: stoppedAtStart.token,
+      scope: "chat:C-start",
+      key: "same",
+      socket: stoppedAtStart.socket,
+      meta: stoppedAtStart.meta,
+      session: null,
+      startedAt: Date.now(),
+      lastUsedAt: Date.now(),
+    });
+    const serve = Bun.spawn({
+      cmd: [process.execPath, CLI_ENTRY, "serve"],
+      cwd: home,
+      env: { ...testEnv(), OPERAD_HOME: home },
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const keptAtStop = newKeptWorkerSlot(home, "pi");
+    let worker: Bun.Subprocess<"ignore", "ignore", "ignore"> | undefined;
+    try {
+      await until(serve, "serving");
+      // Serve's start sweep runs after its "serving" line: the first worker
+      // going proves that block is over before the second is made.
+      expect(await waitGone(firstPid, 5_000)).toBe(true);
+      worker = Bun.spawn({
+        cmd: [process.execPath, "-e", "setInterval(() => undefined, 1000)", keptWorkerArgument(keptAtStop.token)],
+        detached: true,
+        stdin: "ignore",
+        stdout: "ignore",
+        stderr: "ignore",
+      });
+      worker.unref();
+      const pid = worker.pid;
+      writeKeptWorker({
+        pid,
+        token: keptAtStop.token,
+        scope: "chat:C-stop",
+        key: "same",
+        socket: keptAtStop.socket,
+        meta: keptAtStop.meta,
+        session: null,
+        startedAt: Date.now(),
+        lastUsedAt: Date.now(),
+      });
+      serve.kill("SIGTERM");
+      await serve.exited;
+      expect(await waitGone(pid, 5_000)).toBe(true);
+      expect(existsSync(keptAtStop.meta)).toBe(false);
+    } finally {
+      if (serve.exitCode === null) {
+        serve.kill("SIGTERM");
+        await serve.exited;
+      }
+      for (const child of [first, worker]) {
+        if (child === undefined) continue;
+        const pid = child.pid;
+        if (pidAlive(pid)) process.kill(-pid, "SIGKILL");
+      }
+      removeKeptWorker(stoppedAtStart);
+      removeKeptWorker(keptAtStop);
+    }
+  }, 30_000);
 
   test("a stale lock: says so, exits 0, signals nothing and leaves the file", async () => {
     const { home, lock } = await makeHome();

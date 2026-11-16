@@ -36,6 +36,7 @@ import {
   eventNote,
   askNote,
   flagValue,
+  keepKeyOf,
   hasGrants,
   inboxOf,
   imageInputsOf,
@@ -61,6 +62,7 @@ import {
   runAgent,
   systemClock,
   type Clock,
+  type KeptRunOptions,
   type ToolEvent,
 } from "@operad-io/harness-process";
 import { authFileHasCredential } from "./auth-file.ts";
@@ -125,6 +127,12 @@ export interface PiHarnessOptions {
   readonly listTimeoutMs?: number | undefined;
   /** pi's settings file, where its default model is; defaults to `~/.pi/agent/settings.json`. */
   readonly piSettingsPath?: string | undefined;
+  /** Test seam: how long a chat's worker is kept after a reply. */
+  readonly keepMs?: number | undefined;
+  /** Test seam: how long a kept worker may take to answer its first line. */
+  readonly keptFirstLineMs?: number | undefined;
+  /** Test seam: how many workers one home keeps. */
+  readonly maxKept?: number | undefined;
 }
 
 /** pi's own default model, from its settings file; undefined when it names none. */
@@ -564,6 +572,23 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
             ...(storeSecrets.length === 0 ? {} : { secretValues: storeSecrets }),
           };
 
+          const keepRequested = input.keepWorker === true;
+          const keep: KeptRunOptions | undefined =
+            keepRequested && ctx.object !== undefined
+              ? {
+                  home: ctx.home,
+                  name: "pi",
+                  scope: `${ctx.object.type}:${ctx.object.id}`,
+                  key: keepKeyOf({
+                    ...stdin,
+                    mcpServers: input.mcpServers ?? flow.mcpServers,
+                  }),
+                  ...(options.keepMs === undefined ? {} : { timeoutMs: options.keepMs }),
+                  ...(options.keptFirstLineMs === undefined ? {} : { firstLineMs: options.keptFirstLineMs }),
+                  ...(options.maxKept === undefined ? {} : { max: options.maxKept }),
+                }
+              : undefined;
+
           const inbox = inboxOf(params);
           const jsonl = new JsonlLog(ctx.logger, clock, now);
           let result: WorkerResult | undefined;
@@ -587,6 +612,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
             // The program may ask to use a one-time permission; it needs a reply.
             interactive: hasGrants(ctx.access) || canAsk(ctx.access) || inbox !== undefined,
             inbox,
+            ...(keep === undefined ? {} : { keep }),
             wallMs: wallTimeSecs * 1000,
             stallMs: stallSecs * 1000,
             signal: AbortSignal.any([ctx.signal, stopper.signal]),

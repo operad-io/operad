@@ -1012,6 +1012,7 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
         // Operad's own tools, so the agent never runs the `operad` command.
         operadTools: { home: ctx.home },
         ...(midRun === undefined ? {} : { inbox: midRun.inbox }),
+        ...(chat.harness === "pi" || chat.harness === "claude" ? { keepWorker: true } : {}),
         ...(Object.keys(live.mcpServers).length === 0 ? {} : { mcpServers: live.mcpServers }),
         ...(live.useOwnSettings ? { useOwnSettings: true } : {}),
         ...(session === undefined ? {} : { resumeSession: session }),

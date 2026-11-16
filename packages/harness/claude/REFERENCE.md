@@ -22,7 +22,8 @@ appended and the SDK's default tools. `canUseTool` is the only permission
 surface. The SDK's `skills` option only filters skills claude already
 discovered, so the skill directories the step gives are mounted as one local
 plugin under the worker's own temporary directory; its `skills` filter names
-only that plugin's skills, and the directory is removed when the step ends. No
+only that plugin's skills, and the directory is removed when the worker ends (a
+kept worker keeps it until it is no longer kept). No
 user or project skill from `~/.claude/skills` or `.agents/skills` loads.
 
 A bot may turn on `useOwnSettings` (ADR 0030 D9). Then the worker passes
@@ -70,6 +71,7 @@ the table is refused, not ignored.
 | `images` | array of `{ path, mediaType }` | no | image files (`image/png`, `image/jpeg`, `image/gif`, `image/webp`) sent with the prompt as image blocks of the one user message. Absent: the prompt goes as text |
 | `skills` | array of strings | no | skill directories to load, each with a `SKILL.md`; nothing else is discovered. A directory whose `SKILL.md` cannot be read or has no name is skipped with one `log` line, not a failed run. Absent: no skill plugin and no `skills` filter |
 | `useOwnSettings` | boolean | no | `true` loads the owner's own agent settings and leaves instruction-file and auto-memory isolation out; absent or `false` is the isolation above (ADR 0024 D4) |
+| `keep` | object `{ socket, meta, token, scope, key, timeoutMs }` | no | the step sets this for a chat reply whose worker may stay: where it listens, its record, its token, the chat and the configuration hash, and how long it stays. A worker without it runs one reply and exits |
 | `access` | object | no | the access profile; `denyPaths` and `denyCommands` are enforced in `canUseTool` by `@operad-io/access-match`, `grants` are one-time permissions, other fields are ignored; absent means nothing is denied |
 | `maxTurns` | positive integer | no | SDK `maxTurns`; absent means no limit |
 | `budgetUsd` | positive number | no | SDK `maxBudgetUsd`; absent means none |

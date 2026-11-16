@@ -331,7 +331,8 @@ describe("actions in the reducer", () => {
       id: "item:one",
       note: "looks good\nship it",
     });
-    expect(state.input).toBeUndefined();
+    expect(state.input).toMatchObject({ kind: "note", text: "looks good\nship it", sending: true });
+    expect(reduce(state, { type: "action-done" }).input).toBeUndefined();
   });
 
   test("an optional note may be sent empty, and escape cancels", () => {
@@ -365,21 +366,22 @@ describe("actions in the reducer", () => {
     });
   });
 
-  test("a refusal shows the line without the status until the next key", () => {
+  test("a refusal stays in the note input without the status until the next send", () => {
     let state = press(opened(), "a", ...typeText("ok"), "enter");
     expect(state.acting).toBe(true);
     state = reduce(state, { type: "action-launched" });
     expect(state.actionRequest).toBeUndefined();
     const message = "item one: already approved by someone else";
     state = reduce(state, { type: "action-error", status: 409, message });
-    expect(noticeText(state)).toBe(message);
+    expect(state.input).toMatchObject({ kind: "note", text: "ok", error: message, sending: false });
+    expect(noticeText(state)).toBeUndefined();
     expect(state.acting).toBe(false);
     expect(footerText(state)).toContain("tuitest:approve");
-    expect(noticeText(press(state, "j"))).toBeUndefined();
+    expect(press(state, "escape").input).toBeUndefined();
   });
 
   test("a second action waits while one is on its way", () => {
-    const sent = press(opened(), "a", ...typeText("ok"), "enter");
+    const sent = press(opened([ACTIONS[3] as ViewAction]), "a");
     const second = press(sent, ":", ...typeText("ship"), "enter");
     expect(second.actionRequest).toEqual(sent.actionRequest);
     expect(noticeText(second)).toBe("the last action has not answered yet");

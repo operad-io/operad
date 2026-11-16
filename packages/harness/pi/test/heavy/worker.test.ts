@@ -14,6 +14,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { TOOL_OUTPUT_CAP_BYTES } from "@operad-io/harness-process";
 import { SqlitePluginStore } from "@operad-io/engine";
+import { newKeptWorkerSlot, readKeptWorkers, waitForChange } from "@operad-io/engine/platform";
+import { connect } from "node:net";
 import { parseInput, THINKING_LEVELS } from "../../src/protocol.ts";
 import { boundedTimeout, serveWorker } from "../../src/worker.ts";
 import { fakeHooks } from "../fake-hooks.ts";
@@ -273,6 +275,116 @@ function last(run: Run): Record<string, unknown> {
   if (line === undefined) throw new Error("the program wrote no line");
   return line;
 }
+
+/** Sends one input on a kept worker's socket and returns its lines up to the Result. */
+async function socketRun(socketPath: string, input: unknown): Promise<Array<Record<string, unknown>>> {
+  const socket = connect(socketPath);
+  const lines: Array<Record<string, unknown>> = [];
+  let buffer = "";
+  const done = new Promise<void>((resolve, reject) => {
+    socket.once("error", reject);
+    socket.on("data", (chunk: Uint8Array) => {
+      buffer += new TextDecoder().decode(chunk, { stream: true });
+      for (;;) {
+        const newline = buffer.indexOf("\n");
+        if (newline === -1) break;
+        const line = buffer.slice(0, newline);
+        buffer = buffer.slice(newline + 1);
+        if (line.length === 0) continue;
+        const value = JSON.parse(line) as Record<string, unknown>;
+        lines.push(value);
+        if (value["type"] === "result") {
+          socket.end();
+          resolve();
+          return;
+        }
+      }
+    });
+    socket.once("close", () => resolve());
+  });
+  await new Promise<void>((resolve, reject) => {
+    socket.once("connect", () => resolve());
+    socket.once("error", reject);
+  });
+  socket.write(`${JSON.stringify(input)}\n`);
+  await done;
+  return lines;
+}
+
+async function waitForRecord(meta: string): Promise<void> {
+  while (!existsSync(meta)) await waitForChange(join(meta, ".."), meta.split("/").at(-1) ?? "", 25);
+}
+
+test("a done reply may be kept, and the next prompt is answered by the same process", async () => {
+  const s = setup();
+  const slot = newKeptWorkerSlot(s.home, "pi");
+  const child = new ProcessChild(FAKE_WORKER, s.home, { FAKE_SCRIPT: JSON.stringify([{ text: "one" }, { text: "two" }]) });
+  child.sendLine(JSON.stringify({
+    ...s.input,
+    keep: { ...slot, scope: "chat:C-1", key: "same", timeoutMs: 5_000 },
+  }));
+  await waitForRecord(slot.meta);
+  const [record] = readKeptWorkers(s.home, "pi");
+  expect(record?.pid).toBeDefined();
+  expect(record?.session).toBeTruthy();
+  expect(statSync(slot.socket).mode & 0o777).toBe(0o600);
+
+  const second = await socketRun(slot.socket, { ...s.input, prompt: "second" });
+  expect(second.at(-1)).toMatchObject({ type: "result", result: "done", finalMessage: "two" });
+  expect(readKeptWorkers(s.home, "pi")[0]?.pid).toBe(record?.pid);
+
+  child.signal("SIGTERM");
+  const run = await child.finish();
+  expect([0, 143]).toContain(run.exitCode);
+});
+
+async function goneWithin(pid: number, ms: number): Promise<boolean> {
+  const deadline = Date.now() + ms;
+  while (Date.now() < deadline) {
+    try {
+      process.kill(pid, 0);
+    } catch {
+      return true;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  return false;
+}
+
+test("a kept worker ends itself when the kept time runs out", async () => {
+  const s = setup();
+  const slot = newKeptWorkerSlot(s.home, "pi");
+  const child = new ProcessChild(FAKE_WORKER, s.home, { FAKE_SCRIPT: JSON.stringify([{ text: "one" }]) });
+  child.sendLine(JSON.stringify({
+    ...s.input,
+    keep: { ...slot, scope: "chat:C-1", key: "same", timeoutMs: 200 },
+  }));
+  await waitForRecord(slot.meta);
+  const [record] = readKeptWorkers(s.home, "pi");
+  expect(record).toBeDefined();
+  const ended = await goneWithin(record?.pid ?? 0, 10_000);
+  if (!ended) child.signal("SIGTERM");
+  const run = await child.finish();
+  expect(ended).toBe(true);
+  expect(run.exitCode).toBe(0);
+  expect(existsSync(slot.meta)).toBe(false);
+  expect(readKeptWorkers(s.home, "pi")).toEqual([]);
+});
+
+test("a failed reply does not keep its worker", async () => {
+  const s = setup();
+  const slot = newKeptWorkerSlot(s.home, "pi");
+  const child = new ProcessChild(FAKE_WORKER, s.home, { FAKE_SCRIPT: JSON.stringify([]) });
+  child.sendLine(JSON.stringify({
+    ...s.input,
+    keep: { ...slot, scope: "chat:C-1", key: "same", timeoutMs: 5_000 },
+  }));
+  const run = await child.finish();
+  expect(run.exitCode).toBe(1);
+  expect(run.lines.at(-1)).toMatchObject({ type: "result", result: "failed" });
+  expect(existsSync(slot.meta)).toBe(false);
+  expect(readKeptWorkers(s.home, "pi")).toEqual([]);
+});
 
 test("a prompt that ends writes the lines in order and a Result with usage, cost and sessionId", async () => {
   const s = setup();

@@ -137,3 +137,20 @@ and the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0506-M1 | packages/harness/process/src/process.ts | the inbox listener wrote a message but reported no result, so the host could not tell it was taken | `runAgent with an inbox > a message sent while the command runs is written to its stdin as a message line, and the listener is dropped at the end` |
+
+## T-0515 — a chat's worker is kept between replies
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0515-M1 | packages/harness/process/src/process.ts | a kept worker that matched was never tried, so every reply started a new process | `a second message is answered by the same kept process` |
+| T-0515-M3 | packages/harness/process/src/process.ts | the fourth kept worker was allowed, because the cap check only ended one above the limit | `the fourth worker ends the one that has been idle longest` |
+
+## T-0516 — a chat's claude worker is kept
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0516-M1 | packages/harness/process/src/keep.ts | the kept worker's idle timer no longer ended the process | `the kept worker ends itself after the kept time` |
+| T-0516-M2 | packages/harness/process/src/keep.ts | the adapter was not closed when the kept worker ended, so the skill plugin stayed | `the skill plugin lives as long as the kept worker and is removed when it ends` |
+| T-0516-M4 | packages/harness/process/src/keep.ts | a kept worker whose session ended was not told to leave, so it stayed after its `claude` was killed | `a kept bun worker and its claude end together, whichever is killed` |
+| T-0516-M8 | packages/harness/process/src/process.ts | the cap counted only workers of the same harness, so pi and claude could keep four in one home | `the limit of three is shared by pi and claude workers in one home` |
+| T-0516-M9 | packages/harness/process/src/keep.ts | `useGrant` was passed unbound, so the host's `useGrant` threw and every granted call was refused | `a kept worker receives this reply's grant, not the previous reply's` |

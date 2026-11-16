@@ -23,12 +23,19 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { openMcpTools, type McpTools } from "@operad-io/mcp";
 import {
+  EXIT_CANCELLED,
+  EXIT_FAILED,
+  EXIT_INVALID_INPUT,
   maskSecrets,
-  messageText,
   readGivenSkills,
   readImage,
+  serveKeptWorker,
+  serveOne,
   toolOutputLines,
   type CallAnswer,
+  type WorkerAdapter,
+  type WorkerIo as SharedWorkerIo,
+  type WorkerPorts,
 } from "@operad-io/harness-process";
 import { findPi, loadPi } from "./pi-install.ts";
 import {
@@ -52,50 +59,16 @@ export function boundedTimeout(requested: unknown, limitSecs: number): number | 
   return undefined;
 }
 
-export const EXIT_FAILED = 1;
-export const EXIT_INVALID_INPUT = 2;
-export const EXIT_CANCELLED = 143;
+export { EXIT_CANCELLED, EXIT_FAILED, EXIT_INVALID_INPUT };
 
 /** Where the program writes. Lines are written whole, in order. */
-export interface WorkerIo {
-  line(line: WorkerLine): void;
-  /** Free text for humans; never parsed. */
-  log(text: string): void;
-  /**
-   * Asks the host to use up a one-time permission. True when it did and the
-   * call may run. Absent when the host cannot answer; no grant then applies.
-   */
-  useGrant?(waitId: string): Promise<boolean>;
-  /**
-   * Asks the host to ask a person whether one call may run, and resolves with
-   * the answer. Absent when the host cannot answer; a call that must ask is then
-   * refused.
-   */
-  ask?(call: {
-    readonly kind: "command" | "path";
-    readonly value: string;
-    readonly tool?: string;
-    readonly shown: string;
-    readonly session: string | null;
-  }): Promise<CallAnswer>;
-  /**
-   * Hands each message the host sends mid-run to `handler`, those that came
-   * before the call first. Absent when the host cannot send any.
-   */
-  onMessage?(handler: (text: string) => void): void;
-}
+export type WorkerIo = SharedWorkerIo<WorkerLine>;
 
 export interface WorkerHooks {
   /** Registers extra model providers; the tests use it for the fake model. */
   registerProviders?(runtime: ModelRuntime): void;
   /** The clock for tool call times, in epoch milliseconds; the tests inject one. */
   now?: () => number;
-}
-
-/** Where the program talks to the world; the process entry points them at stdout and stderr. */
-export interface WorkerPorts {
-  write(text: string): void;
-  log(text: string): void;
 }
 
 /** The text of an assistant message, thinking and tool calls left out. */
@@ -671,58 +644,31 @@ export async function runWorker(
   }
 }
 
-/**
- * Stdin as lines. The first line (or all of stdin when it has no newline) is the
- * input; later lines are the host's answers.
- */
-class StdinLines {
-  readonly #reader: AsyncIterator<Uint8Array>;
-  readonly #decoder = new TextDecoder();
-  #buffer = "";
-  #done = false;
+/** The adapter the shared worker process calls for pi's program. */
+function piAdapter(hooks: WorkerHooks): WorkerAdapter<WorkerInput> {
+  let session: string | null = null;
+  return {
+    parse: (text) => inputOf(text),
+    invalidInput: (message) => failure("invalid_input", message),
+    error: (message) => failure("model_error", message),
+    keep: (input) => input.keep,
+    session: () => session,
+    setSession: (next) => {
+      session = next;
+    },
+    run: (input, io, cancel) => runWorker(input, io as WorkerIo, cancel, hooks),
+  };
+}
 
-  constructor(stream: AsyncIterable<Uint8Array>) {
-    this.#reader = stream[Symbol.asyncIterator]();
+/** Reads the input of one reply; invalid JSON is a parse failure. */
+function inputOf(text: string): ReturnType<typeof parseInput> {
+  let decoded: unknown;
+  try {
+    decoded = JSON.parse(text);
+  } catch {
+    return { ok: false, message: "the input is not valid JSON" };
   }
-
-  /** Stops reading; a read that waits ends as if stdin had ended. */
-  close(): void {
-    void this.#reader.return?.()?.catch(() => undefined);
-  }
-
-  async #more(): Promise<boolean> {
-    if (this.#done) return false;
-    const chunk = await this.#reader.next();
-    if (chunk.done) {
-      this.#done = true;
-      this.#buffer += this.#decoder.decode();
-      return false;
-    }
-    this.#buffer += this.#decoder.decode(chunk.value, { stream: true });
-    return true;
-  }
-
-  /** The next line, or what is left at the end of stdin; undefined when nothing is. */
-  async next(): Promise<string | undefined> {
-    for (;;) {
-      const newline = this.#buffer.indexOf("\n");
-      if (newline !== -1) {
-        const line = this.#buffer.slice(0, newline);
-        this.#buffer = this.#buffer.slice(newline + 1);
-        if (line.trim().length === 0) continue;
-        return line;
-      }
-      if (!(await this.#more())) {
-        const rest = this.#buffer;
-        this.#buffer = "";
-        return rest.trim().length === 0 ? undefined : rest;
-      }
-    }
-  }
-
-  async first(): Promise<string> {
-    return (await this.next()) ?? "";
-  }
+  return parseInput(decoded);
 }
 
 /**
@@ -736,117 +682,22 @@ export async function serveWorker(
   cancel: AbortSignal,
   hooks: WorkerHooks = {},
 ): Promise<number> {
-  const write = ports.write;
-  const stdin = new StdinLines(stdinStream);
-  const waiting = new Map<number, (used: boolean) => void>();
-  const questions = new Map<number, (answer: CallAnswer) => void>();
-  let nextAsk = 1;
-  const early: string[] = [];
-  let onMessage: ((text: string) => void) | undefined;
-  let nextGrant = 1;
-  let hostGone = false;
-  const io: WorkerIo = {
-    line: (line) => write(`${JSON.stringify(line)}\n`),
-    onMessage: (handler) => {
-      onMessage = handler;
-      for (const text of early.splice(0)) handler(text);
-    },
-    log: (text) => ports.log(text),
-    useGrant: (waitId) =>
-      new Promise<boolean>((resolve) => {
-        if (hostGone) {
-          resolve(false);
-          return;
-        }
-        const id = nextGrant;
-        nextGrant += 1;
-        waiting.set(id, resolve);
-        write(`${JSON.stringify({ type: "grant_use", id, waitId })}\n`);
-      }),
-    ask: (call) =>
-      new Promise<CallAnswer>((resolve) => {
-        if (hostGone) {
-          resolve({ decision: "deny", reason: "the host is gone" });
-          return;
-        }
-        const id = nextAsk;
-        nextAsk += 1;
-        questions.set(id, (answer) => {
-          // The line that closes the question, so the host's stall timer runs again.
-          write(`${JSON.stringify({ type: "ask_resolved", id })}\n`);
-          resolve(answer);
-        });
-        write(`${JSON.stringify({ type: "ask_call", id, ...call })}\n`);
-      }),
-  };
-  let code: number;
-  try {
-    const text = await stdin.first();
-    let decoded: unknown;
-    let parsedOk = true;
-    try {
-      decoded = JSON.parse(text);
-    } catch {
-      parsedOk = false;
-    }
-    const parsed = parsedOk ? parseInput(decoded) : ({ ok: false, message: "the input is not valid JSON" } as const);
-    if (!parsed.ok) {
-      io.line(failure("invalid_input", parsed.message));
-      code = EXIT_INVALID_INPUT;
-    } else {
-      // Later stdin lines answer `grant_use` lines.
-      void (async () => {
-        for (;;) {
-          const line = await stdin.next();
-          if (line === undefined) break;
-          const said = messageText(line);
-          if (said !== undefined) {
-            if (onMessage === undefined) early.push(said);
-            else onMessage(said);
-            continue;
-          }
-          try {
-            const ack: unknown = JSON.parse(line);
-            if (typeof ack === "object" && ack !== null && Reflect.get(ack, "type") === "ask_ack") {
-              const id: unknown = Reflect.get(ack, "id");
-              const decision: unknown = Reflect.get(ack, "decision");
-              const reason: unknown = Reflect.get(ack, "reason");
-              if (typeof id === "number") {
-                questions.get(id)?.({
-                  decision: decision === "allow" || decision === "stop" ? decision : "deny",
-                  ...(typeof reason === "string" ? { reason } : {}),
-                });
-                questions.delete(id);
-              }
-            }
-            if (typeof ack === "object" && ack !== null && Reflect.get(ack, "type") === "grant_ack") {
-              const id: unknown = Reflect.get(ack, "id");
-              const used: unknown = Reflect.get(ack, "used");
-              if (typeof id === "number") {
-                waiting.get(id)?.(used === true);
-                waiting.delete(id);
-              }
-            }
-          } catch {
-            // Not a line the program understands; it is ignored.
-          }
-        }
-        // The host is gone: nothing more will be granted.
-        hostGone = true;
-        for (const resolve of waiting.values()) resolve(false);
-        waiting.clear();
-        for (const resolve of questions.values()) resolve({ decision: "deny", reason: "the host is gone" });
-        questions.clear();
-      })();
-      code = await runWorker(parsed.input, io, cancel, hooks);
-    }
-  } catch (error) {
-    io.log(error instanceof Error ? (error.stack ?? error.message) : String(error));
-    io.line(failure("model_error", error instanceof Error ? error.message : String(error)));
-    code = EXIT_FAILED;
-  }
-  stdin.close();
-  return code;
+  return serveOne(stdinStream, ports, cancel, piAdapter(hooks));
+}
+
+/**
+ * Runs the first reply from stdin and, when the reply was done and asked for
+ * keeping, serves later replies from a socket in the operad home. The worker's
+ * own timer ends it after the kept time; a failed, stopped or interrupted reply
+ * leaves no kept worker.
+ */
+export async function serveWorkerProcess(
+  stdinStream: AsyncIterable<Uint8Array>,
+  ports: WorkerPorts,
+  cancel: AbortSignal,
+  hooks: WorkerHooks = {},
+): Promise<number> {
+  return serveKeptWorker(stdinStream, ports, cancel, piAdapter(hooks));
 }
 
 /** The process entry: stdin in, stdout lines out, exit code out. */
@@ -868,7 +719,9 @@ export async function main(hooks: WorkerHooks = {}): Promise<never> {
 
   const controller = new AbortController();
   process.on("SIGTERM", () => controller.abort());
-  const code = await serveWorker(
+  process.stdout.on("error", () => undefined);
+  process.stderr.on("error", () => undefined);
+  const code = await serveWorkerProcess(
     Bun.stdin.stream(),
     {
       write: (text) => {

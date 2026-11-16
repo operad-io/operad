@@ -14,7 +14,7 @@ import {
 } from "@opentui/core";
 import type { RowMark } from "@operad-io/engine";
 import { allowedText } from "../args.ts";
-import { confirmText, entryDetail, matchPositions, paletteEntries, settingText, type TuiPaletteEntry } from "../actions.ts";
+import { confirmText, entryDetail, keyOf, matchPositions, paletteEntries, settingText, stopAction, type TuiPaletteEntry } from "../actions.ts";
 import { commandEntries } from "../commands.ts";
 import { chunksOfLine } from "../markdown.ts";
 import {
@@ -569,6 +569,7 @@ function sectionContent(
   section: TuiSection | undefined,
   palette: TuiPalette,
   now: number,
+  timeZone?: string | undefined,
 ): TextChunk[] {
   if (section === undefined) {
     return [chunk(state.object?.loading === true ? "loading…" : "no sections", palette.weak)];
@@ -577,8 +578,8 @@ function sectionContent(
     return [chunk(section.loading ? "loading…" : "not loaded", palette.weak)];
   }
   const viewport = sectionViewport(state);
-  const content = sectionLayout(state, section);
-  const tail = sectionTailLayout(state, section);
+  const content = sectionLayout(state, section, { now, ...(timeZone === undefined ? {} : { timeZone }) });
+  const tail = sectionTailLayout(state, section, { now, ...(timeZone === undefined ? {} : { timeZone }) });
   const statusRows = section.status === undefined ? 0 : 1;
   const total = content.length + tail.length + statusRows;
   const start = Math.min(Math.max(0, section.scroll), Math.max(0, total - 1));
@@ -598,7 +599,7 @@ function sectionContent(
   return chunks;
 }
 
-function objectContent(state: TuiState, palette: TuiPalette, now: number): StyledText {
+function objectContent(state: TuiState, palette: TuiPalette, now: number, timeZone?: string | undefined): StyledText {
   const object = state.object;
   if (object === undefined) {
     // An openable cursor row is on the way; a row that names no object, or an empty list, asks.
@@ -642,9 +643,9 @@ function objectContent(state: TuiState, palette: TuiPalette, now: number): Style
   chunks.push(...sectionTabs(object, palette, width));
   chunks.push(
     ...(section === undefined
-      ? sectionContent(state, section, palette, now)
+      ? sectionContent(state, section, palette, now, timeZone)
       : [
-          ...sectionContent(state, section, palette, now),
+          ...sectionContent(state, section, palette, now, timeZone),
           ...sectionHint(section, section.following, palette, width),
         ]),
   );
@@ -652,10 +653,17 @@ function objectContent(state: TuiState, palette: TuiPalette, now: number): Style
 }
 
 function keyContent(state: TuiState, palette: TuiPalette): StyledText {
-  const width = Math.max(...KEY_LIST.map(([key]) => displayWidth(key)));
+  const stop = stopAction(state);
+  const stopKey = stop === undefined ? undefined : keyOf(state.bindings, stop);
+  const groups = KEY_GROUPS.map((group) =>
+    group.map(([key, what]): readonly [string, string] =>
+      key === "a" && stopKey !== undefined && stopKey !== "a" ? [`a / ${stopKey}`, what] : [key, what],
+    ),
+  );
+  const width = Math.max(...groups.flat().map(([key]) => displayWidth(key)), ...KEY_LIST.map(([key]) => displayWidth(key)));
   const room = Math.max(1, overlayTextWidth(state) - 2 - width - 2);
   const lines: TextChunk[][] = [[chunk("keys\n", palette.accent, TextAttributes.BOLD)]];
-  KEY_GROUPS.forEach((group, at) => {
+  groups.forEach((group, at) => {
     if (at > 0) lines.push([chunk("\n")]);
     for (const [key, what] of group) {
       const pad = " ".repeat(Math.max(0, width - displayWidth(key)));
@@ -813,6 +821,14 @@ function nameRuns(
   return runs;
 }
 
+/** A note's text with the cursor bar where the next character goes. */
+function withBar(text: string, cursor: number | undefined, bar: string): string {
+  const units = graphemes(text);
+  const at = Math.min(Math.max(0, Math.trunc(cursor ?? units.length)), units.length);
+  units.splice(at, 0, bar);
+  return units.join("");
+}
+
 /** The palette or the note input, drawn in the box; undefined when neither is open. */
 function inputContent(state: TuiState, palette: TuiPalette): StyledText | undefined {
   const input = state.input;
@@ -854,13 +870,15 @@ function inputContent(state: TuiState, palette: TuiPalette): StyledText | undefi
         if (entry.description !== "") chunks.push(chunk(`  ${entry.description}`, palette.weak));
         chunks.push(chunk("\n"));
       });
-      chunks.push(chunk(`${input.text}${bar}\n`, palette.text));
+      chunks.push(chunk(`${withBar(input.text, input.cursor, bar)}\n`, palette.text));
+      if (input.error !== undefined) chunks.push(chunk(`${input.error}\n`, palette.error));
       chunks.push(chunk("enter picks · esc cancels", palette.weak));
       return styled(chunks);
     }
     const chunks: TextChunk[] = [
       chunk(`${input.action} · note${input.required ? " (required)" : ""}\n`, palette.accent, TextAttributes.BOLD),
-      chunk(`${input.text}${bar}\n`, palette.text),
+      chunk(`${withBar(input.text, input.cursor, bar)}\n`, palette.text),
+      ...(input.error === undefined ? [] : [chunk(`${input.error}\n`, palette.error)]),
       chunk("enter sends · shift-enter or ctrl-j adds a line · esc cancels", palette.weak),
     ];
     return styled(chunks);
@@ -1011,7 +1029,7 @@ function inputLines(state: TuiState): number {
     return 3 + (setting.description === undefined ? 0 : 1) + body;
   }
   if (input?.kind === "note") {
-    return input.text.split("\n").length + 2 + (input.commandMenu === undefined ? 0 : commandEntries(state).length + 1);
+    return input.text.split("\n").length + 2 + (input.error === undefined ? 0 : 1) + (input.commandMenu === undefined ? 0 : commandEntries(state).length + 1);
   }
   if (input?.kind === "palette") {
     const entries = paletteEntries(state);
@@ -1051,6 +1069,7 @@ export function drawState(
   state: TuiState,
   themeName: string | ThemeSelection = "auto",
   now: number = Date.now(),
+  timeZone?: string | undefined,
 ): TuiDrawing {
   const palette = paletteFor(state.theme, themeName);
   const tab = activeTab(state);
@@ -1071,7 +1090,7 @@ export function drawState(
       state.connection === "unreachable",
       palette,
     ),
-    right: objectContent(state, palette, now),
+    right: objectContent(state, palette, now, timeZone),
     overlay: state.keys
       ? keyContent(state, palette)
       : (inputContent(state, palette) ?? confirmContent(state, palette)),
@@ -1088,6 +1107,8 @@ export interface TuiView {
 export function createTuiView(
   ctx: CliRenderer,
   theme: string | ThemeSelection | (() => ThemeSelection) = "auto",
+  timeZone?: string | undefined,
+  now: () => number = Date.now,
 ): TuiView {
   const root = new BoxRenderable(ctx, {
     id: "operad-tui",
@@ -1194,7 +1215,7 @@ export function createTuiView(
       const themeName = typeof theme === "function" ? theme() : theme;
       const palette = paletteFor(state.theme, themeName);
       const wide = twoPane(state);
-      const drawing = drawState(state, themeName);
+      const drawing = drawState(state, themeName, now(), timeZone);
 
       header.content = drawing.header;
       headerRule.content = drawing.rule;

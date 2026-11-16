@@ -39,6 +39,8 @@ export type FakeStep =
 export interface FakeScript {
   readonly account?: Record<string, unknown>;
   readonly steps: readonly FakeStep[];
+  /** One script per user message, for a session kept across replies. */
+  readonly turns?: readonly (readonly FakeStep[])[];
 }
 
 type Json = Record<string, unknown>;
@@ -58,6 +60,7 @@ class FakeProcess extends EventEmitter implements SpawnedProcess {
   readonly #pending = new Map<string, (response: Json) => void>();
   #buffer = "";
   #started = false;
+  #turnIndex = 0;
   #nextRequest = 1;
 
   constructor(
@@ -161,11 +164,13 @@ class FakeProcess extends EventEmitter implements SpawnedProcess {
     if (type === "user" && !this.#started) {
       this.#started = true;
       record(this.recordFile, { user: message["message"] });
-      void this.#play();
+      void this.#play(this.script.turns?.[this.#turnIndex++] ?? this.script.steps);
     } else if (type === "user") {
-      // A message the host sent while the turn runs.
+      // A message the host sent while the turn runs, or the next kept reply.
       record(this.recordFile, { userLater: message["message"] });
       this.log("fake-claude-user-later\n");
+      const next = this.script.turns?.[this.#turnIndex++];
+      if (next !== undefined) void this.#play(next);
     }
   }
 
@@ -178,8 +183,8 @@ class FakeProcess extends EventEmitter implements SpawnedProcess {
     });
   }
 
-  async #play(): Promise<void> {
-    for (const step of this.script.steps) {
+  async #play(steps: readonly FakeStep[]): Promise<void> {
+    for (const step of steps) {
       if ("say" in step) {
         this.#write(step.say);
       } else if ("hook" in step) {

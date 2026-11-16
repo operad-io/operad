@@ -173,3 +173,11 @@ the row fields.
 | T-0511-M5 | packages/harness/pi/src/model-list.ts | the kept file was ignored, so a load had no list to read | `the models pi declares > loading the plugins does not start pi, and the kept file gives the list` |
 | T-0511-M9 | packages/harness/pi/src/model-list.ts | a stale kept list made `modelsReady` wait for the background refresh instead of answering from the kept rows | `the models pi declares > a stale file starts one background refresh and later reads see the new list` |
 | T-0511-M10 | packages/harness/pi/src/model-list.ts | the kept file was refused unless it also named the command, so a fresh list was ignored and pi was asked | `the models pi declares > loading the plugins does not start pi, and the kept file gives the list` |
+
+## T-0515 — a chat's worker is kept between replies
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0515-M2 | packages/harness/pi/src/index.ts | the keep key was a constant, so a worker started with another model, effort, directory, profile or skills was reused | `each change of what the worker was started with ends it` |
+| T-0515-M4 | packages/harness/pi/src/worker.ts | the kept worker's idle timer no longer ended the process | `a kept worker ends itself when the kept time runs out` |
+| T-0515-M6 | packages/harness/pi/src/worker.ts | a failed reply was kept as if it had ended done | `a failed reply does not keep its worker` |

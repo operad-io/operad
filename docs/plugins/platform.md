@@ -81,6 +81,30 @@ A step that asked for a worker can learn about it while it runs.
 | `reportWorkerPlaced(name)` | Said by the pool when it gave worker `name` a place |
 | `reportWorkerStarted()` | Said by a harness once the program that does the work is running |
 
+## Kept workers
+
+A harness may keep its child after a reply, so the next reply does not start it again. A kept worker has no run marker: it belongs to the home, not to the run that started it, and a record under the home is how another process finds and ends it. Only the owner can read the directory or open the socket; both are created with owner-only permissions.
+
+| Export | What it does |
+|---|---|
+| `KEPT_WORKER_MS` | `600000`: how long a kept worker stays after its reply when no other reply arrives |
+| `MAX_KEPT_WORKERS` | `3`: how many workers one home keeps; a fourth ends the one idle longest |
+| `KEPT_FIRST_LINE_MS` | `5000`: how long a kept worker may take to answer the first line of a new reply before it is given up |
+| `KEPT_STOP_GRACE_MS` | `500`: how long a worker gets to end after the stop request, before SIGKILL |
+| `KEPT_WORKER_FLAG` | `--operad-kept`: the command-line flag whose value is a worker's token, so a record's pid can be checked before it is signalled |
+| `keptWorkerDirectory(home, name)` | The directory one harness keeps its workers in: `<home>/harness/<name>/kept` |
+| `newKeptWorkerSlot(home, name)` | A new `{ dir, token, socket, meta }`; the directory is made with mode `0700` |
+| `keptWorkerArgument(token)` | The command-line argument a kept worker carries: `--operad-kept=<token>` |
+| `writeKeptWorker(record)` | Writes one record whole, with mode `0600`, so a reader sees the old record or the new one |
+| `removeKeptWorker(record)` | Removes a record and its socket; safe when they are already gone |
+| `readKeptWorkers(home, name)` | Every valid record of one harness in a home; a record that cannot be read is skipped |
+| `readKeptWorkersInHome(home)` | Every valid record of every harness in one home, which the shared limit of three counts |
+| `stopKeptWorker(record, options?)` | Asks a worker to stop over its socket, then signals only the process whose command line carries its token; removes the record |
+| `stopKeptWorkers({ home, name, filter?, clock? })` | Ends the workers of one harness that match `filter` (`scope`, `key`, `except`), oldest first |
+| `stopAllKeptWorkers({ home, clock? })` | Ends every kept worker of every harness in one home; `serve` start and stop use it so none runs older code |
+
+A record names the worker's `pid`, `token`, `scope` (the chat or other owner), `key` (what the worker was started with), `socket`, `meta`, `session`, `startedAt`, `lastUsedAt` and `busy`. A filter matches those fields.
+
 ## File locks
 
 Two kinds live here, and a plugin picks one instead of writing a third:

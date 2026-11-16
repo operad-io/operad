@@ -7,9 +7,10 @@
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { access, mkdtemp, open, rm } from "node:fs/promises";
-import { constants as fsConstants } from "node:fs";
+import { constants as fsConstants, existsSync } from "node:fs";
+import { connect, type Socket } from "node:net";
 import { tmpdir } from "node:os";
-import { delimiter, join } from "node:path";
+import { basename, delimiter, dirname, join } from "node:path";
 import { Readable } from "node:stream";
 import { messageLine, type MessageInbox } from "./inbox.ts";
 import {
@@ -18,9 +19,20 @@ import {
   createGroupStop,
   endStatus,
   exitFromStatus,
+  KILL_GRACE_MS,
+  KEPT_FIRST_LINE_MS,
+  KEPT_WORKER_MS,
+  MAX_KEPT_WORKERS,
   killProcessGroup,
   lastLines,
   markerEnv,
+  newKeptWorkerSlot,
+  readKeptWorkers,
+  readKeptWorkersInHome,
+  stopKeptWorker,
+  keptWorkerArgument,
+  waitForChange,
+  type KeptWorkerRecord,
   reportWorkerStarted,
   trackRoot,
   systemClock,
@@ -29,7 +41,7 @@ import {
   type Exit,
   type Startup,
 } from "@operad-io/engine/platform";
-import { messageOf } from "@operad-io/engine";
+import { isRecord, messageOf } from "@operad-io/engine";
 
 export { DRAIN_GRACE_MS, KILL_GRACE_MS, lastLines, systemClock, type Clock } from "@operad-io/engine/platform";
 
@@ -111,6 +123,23 @@ async function executable(path: string): Promise<boolean> {
   }
 }
 
+/** What a caller gives when a reply's worker may stay for the next reply. */
+export interface KeptRunOptions {
+  readonly home: string;
+  /** The harness name; its kept directory is under this home. */
+  readonly name: string;
+  /** The one conversation the worker answers, such as `chat:C-0022`. */
+  readonly scope: string;
+  /** What the worker was started with; a different key never reuses it. */
+  readonly key: string;
+  /** Test seam: the kept time; defaults to `KEPT_WORKER_MS`. */
+  readonly timeoutMs?: number | undefined;
+  /** Test seam: how long the first line may take; defaults to `KEPT_FIRST_LINE_MS`. */
+  readonly firstLineMs?: number | undefined;
+  /** Test seam: the most workers this home keeps; defaults to `MAX_KEPT_WORKERS`. */
+  readonly max?: number | undefined;
+}
+
 export interface AgentRunOptions {
   /** The command name or path, resolved on PATH when it names no directory. */
   readonly command: string;
@@ -129,6 +158,8 @@ export interface AgentRunOptions {
    * command runs. Needs `interactive`; without it nothing is written.
    */
   readonly inbox?: MessageInbox | undefined;
+  /** Set by a chat reply: keep this worker after a done reply and reuse it next time. */
+  readonly keep?: KeptRunOptions | undefined;
   readonly wallMs: number;
   readonly stallMs: number;
   readonly signal: AbortSignal;
@@ -283,6 +314,7 @@ async function readTail(path: string): Promise<string> {
 export async function runAgent(
   options: AgentRunOptions,
 ): Promise<AgentRunOutcome> {
+  if (options.keep !== undefined) return runKeptAgent(options, options.keep);
   const empty = (overrides: Partial<AgentRunOutcome>): AgentRunOutcome => ({
     exitCode: null,
     signal: null,
@@ -575,4 +607,476 @@ export async function runAgent(
     spawnError: undefined,
     stderrTail: tail,
   };
+}
+
+/** The result line of a worker as far as keeping cares: its name, or undefined. */
+function keptResultName(line: string): "done" | "failed" | "cancelled" | undefined {
+  let value: unknown;
+  try {
+    value = JSON.parse(line);
+  } catch {
+    return undefined;
+  }
+  if (typeof value !== "object" || value === null) return undefined;
+  if (Reflect.get(value, "type") !== "result") return undefined;
+  const name: unknown = Reflect.get(value, "result");
+  return name === "done" || name === "failed" || name === "cancelled" ? name : undefined;
+}
+
+function emptyKeptOutcome(overrides: Partial<AgentRunOutcome>): AgentRunOutcome {
+  return {
+    exitCode: null,
+    signal: null,
+    cancelled: false,
+    wall: false,
+    stall: false,
+    lineTooLong: false,
+    missing: false,
+    spawnError: undefined,
+    stderrTail: [],
+    ...overrides,
+  };
+}
+
+/** Waits a bounded time for a kept worker to record that it is ready for the next reply. */
+async function keptRecordAppears(meta: string): Promise<void> {
+  const deadline = Date.now() + 1_000;
+  while (!existsSync(meta) && Date.now() < deadline) {
+    await waitForChange(dirname(meta), basename(meta), 25);
+  }
+}
+
+/**
+ * Runs one reply through a worker kept from an earlier reply. Undefined means
+ * the worker was not reached or did not answer its first line; the caller then
+ * starts a new one, and the old worker has been ended.
+ */
+async function runKeptSocket(
+  record: KeptWorkerRecord,
+  options: AgentRunOptions,
+  keep: KeptRunOptions,
+  clock: Clock,
+): Promise<AgentRunOutcome | undefined> {
+  const firstLineMs = keep.firstLineMs ?? KEPT_FIRST_LINE_MS;
+  const socket: Socket = connect(record.socket);
+  const connected = await new Promise<boolean>((resolve) => {
+    let settled = false;
+    const finish = (ok: boolean): void => {
+      if (settled) return;
+      settled = true;
+      clock.clearTimeout(timer);
+      resolve(ok);
+    };
+    const timer = clock.setTimeout(() => finish(false), firstLineMs);
+    socket.once("connect", () => finish(true));
+    socket.once("error", () => finish(false));
+    socket.once("close", () => finish(false));
+  });
+  if (!connected) {
+    socket.destroy();
+    await stopKeptWorker(record, { clock });
+    return undefined;
+  }
+
+  let firstSeen = false;
+  let firstResolve: () => void = () => {};
+  const first = new Promise<void>((resolve) => {
+    firstResolve = resolve;
+  });
+  const firstTimer = clock.setTimeout(() => firstResolve(), firstLineMs);
+  let resultName: "done" | "failed" | "cancelled" | undefined;
+  let resultResolve: () => void = () => {};
+  const result = new Promise<void>((resolve) => {
+    resultResolve = resolve;
+  });
+  let closedResolve: () => void = () => {};
+  const closed = new Promise<void>((resolve) => {
+    closedResolve = resolve;
+  });
+  let finished = false;
+  let stoppingFor: "cancel" | "wall" | "stall" | "line" | undefined;
+  let toolCalls = 0;
+  let wallTimer: unknown;
+  let stallTimer: unknown;
+
+  const clearTimers = (): void => {
+    if (wallTimer !== undefined) clock.clearTimeout(wallTimer);
+    if (stallTimer !== undefined) clock.clearTimeout(stallTimer);
+    clock.clearTimeout(firstTimer);
+  };
+  const stopWorker = async (): Promise<void> => {
+    if (socket.destroyed) {
+      await stopKeptWorker(record, { clock });
+      return;
+    }
+    socket.destroy();
+    await stopKeptWorker(record, { clock });
+  };
+  const beginStop = (kind: "cancel" | "wall" | "stall" | "line"): void => {
+    if (finished || stoppingFor !== undefined) return;
+    stoppingFor = kind;
+    void stopWorker();
+  };
+  const resetStall = (): void => {
+    if (options.stallMs <= 0) return;
+    if (stallTimer !== undefined) clock.clearTimeout(stallTimer);
+    if (toolCalls > 0) return;
+    stallTimer = clock.setTimeout(() => beginStop("stall"), options.stallMs);
+  };
+  const onAbort = (): void => beginStop("cancel");
+  options.signal.addEventListener("abort", onAbort, { once: true });
+
+  const reply = (text: string): void => {
+    if (!socket.destroyed) socket.write(`${text}\n`);
+  };
+  const lines = new Lines(
+    async (line) => {
+      if (!firstSeen) {
+        firstSeen = true;
+        clock.clearTimeout(firstTimer);
+        firstResolve();
+      }
+      const activity = options.toolEvent?.(line);
+      if (activity === "tool-start") toolCalls += 1;
+      else if (activity === "tool-end") toolCalls = Math.max(0, toolCalls - 1);
+      resetStall();
+      await options.onLine(line, reply);
+      const name = keptResultName(line);
+      if (name !== undefined && resultName === undefined) {
+        resultName = name;
+        resultResolve();
+      }
+    },
+    () => beginStop("line"),
+  );
+  socket.once("close", () => {
+    closedResolve();
+    if (!firstSeen) firstResolve();
+  });
+  socket.once("error", () => {
+    closedResolve();
+    if (!firstSeen) firstResolve();
+  });
+  const drained = consume(socket, lines);
+
+  const stopListening =
+    options.inbox === undefined
+      ? undefined
+      : options.inbox.listen((text) => {
+          if (finished) return false;
+          reply(messageLine(text));
+          return true;
+        });
+  if (options.wallMs > 0) options.inbox?.begin?.(options.wallMs);
+  socket.write(`${options.stdin ?? ""}\n`);
+  options.onStart?.();
+  if (options.wallMs > 0) {
+    wallTimer = clock.setTimeout(() => beginStop("wall"), options.wallMs);
+  }
+  resetStall();
+
+  const started = await Promise.race<"line" | "closed">([
+    first.then(() => (firstSeen ? "line" : "closed")),
+    closed.then(() => "closed"),
+  ]);
+  if (started !== "line" || !firstSeen) {
+    finished = true;
+    clearTimers();
+    stopListening?.();
+    options.signal.removeEventListener("abort", onAbort);
+    await stopWorker();
+    socket.destroy();
+    await drained;
+    return undefined;
+  }
+
+  await Promise.race([result, closed]);
+  if (resultName === undefined && stoppingFor === undefined) {
+    // A close often arrives just before the last line has been handed over.
+    await drained;
+  }
+  finished = true;
+  stopListening?.();
+  clearTimers();
+  options.signal.removeEventListener("abort", onAbort);
+  socket.destroy();
+  await drained;
+
+  if (resultName === "done") {
+    return emptyKeptOutcome({ exitCode: 0 });
+  }
+  await stopKeptWorker(record, { clock });
+  if (resultName !== undefined) {
+    return emptyKeptOutcome({
+      exitCode: resultName === "failed" ? 1 : 143,
+      ...(stoppingFor === "cancel" ? { cancelled: true } : {}),
+      ...(stoppingFor === "wall" ? { wall: true } : {}),
+      ...(stoppingFor === "stall" ? { stall: true } : {}),
+      ...(stoppingFor === "line" ? { lineTooLong: true } : {}),
+    });
+  }
+  return emptyKeptOutcome({
+    ...(stoppingFor === "cancel" ? { cancelled: true } : {}),
+    ...(stoppingFor === "wall" ? { wall: true } : {}),
+    ...(stoppingFor === "stall" ? { stall: true } : {}),
+    ...(stoppingFor === "line" ? { lineTooLong: true } : {}),
+  });
+}
+
+/** Starts a new worker that will stay after a done reply. */
+async function runKeptFresh(
+  options: AgentRunOptions,
+  keep: KeptRunOptions,
+  clock: Clock,
+): Promise<AgentRunOutcome> {
+  const executablePath = await findCommand(options.command);
+  if (executablePath === undefined) return emptyKeptOutcome({ missing: true });
+  const slot = newKeptWorkerSlot(keep.home, keep.name);
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  // A kept worker is not a left-over of the run that started it: no run marker.
+  delete env["OPERAD_RUN"];
+  delete env["OPERAD_RUN_HOME"];
+
+  let child: ChildProcess;
+  try {
+    child = spawn(executablePath, [...options.args, keptWorkerArgument(slot.token)], {
+      cwd: options.cwd,
+      env,
+      detached: true,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+  } catch (error) {
+    return emptyKeptOutcome({ spawnError: messageOf(error) });
+  }
+  child.unref();
+
+  const stdout = child.stdout;
+  const stderr = child.stderr;
+  const stderrTail = new Tail(undefined);
+  let resultName: "done" | "failed" | "cancelled" | undefined;
+  let resultResolve: () => void = () => {};
+  const result = new Promise<void>((resolve) => {
+    resultResolve = resolve;
+  });
+  let exitedResolve: (exit: Exit) => void = () => {};
+  const exited = new Promise<Exit>((resolve) => {
+    exitedResolve = resolve;
+  });
+  let spawnResolve: (message: string) => void = () => {};
+  const spawnFailed = new Promise<string>((resolve) => {
+    spawnResolve = resolve;
+  });
+
+  let finished = false;
+  let stoppingFor: "cancel" | "wall" | "stall" | "line" | undefined;
+  let toolCalls = 0;
+  let wallTimer: unknown;
+  let stallTimer: unknown;
+  const clearTimers = (): void => {
+    if (wallTimer !== undefined) clock.clearTimeout(wallTimer);
+    if (stallTimer !== undefined) clock.clearTimeout(stallTimer);
+  };
+  const stopWorker = async (): Promise<void> => {
+    const pid = child.pid;
+    if (pid === undefined) return;
+    killProcessGroup(pid, "SIGTERM");
+    await clock.sleep(KILL_GRACE_MS);
+    killProcessGroup(pid, "SIGKILL");
+    await stopKeptWorker(
+      {
+        pid,
+        token: slot.token,
+        scope: keep.scope,
+        key: keep.key,
+        socket: slot.socket,
+        meta: slot.meta,
+        session: null,
+        startedAt: 0,
+        lastUsedAt: 0,
+      },
+      { clock },
+    );
+  };
+  const beginStop = (kind: "cancel" | "wall" | "stall" | "line"): void => {
+    if (finished || stoppingFor !== undefined) return;
+    stoppingFor = kind;
+    void stopWorker();
+  };
+  const resetStall = (): void => {
+    if (options.stallMs <= 0) return;
+    if (stallTimer !== undefined) clock.clearTimeout(stallTimer);
+    if (toolCalls > 0) return;
+    stallTimer = clock.setTimeout(() => beginStop("stall"), options.stallMs);
+  };
+  const onAbort = (): void => beginStop("cancel");
+  options.signal.addEventListener("abort", onAbort, { once: true });
+
+  const reply = (text: string): void => {
+    if (child.stdin !== null && !child.stdin.destroyed) child.stdin.write(`${text}\n`);
+  };
+  let outputDrained: Promise<void> = Promise.resolve();
+  if (stdout !== null) {
+    const lines = new Lines(
+      async (line) => {
+        const activity = options.toolEvent?.(line);
+        if (activity === "tool-start") toolCalls += 1;
+        else if (activity === "tool-end") toolCalls = Math.max(0, toolCalls - 1);
+        resetStall();
+        await options.onLine(line, reply);
+        const name = keptResultName(line);
+        if (name !== undefined && resultName === undefined) {
+          resultName = name;
+          resultResolve();
+        }
+      },
+      () => beginStop("line"),
+    );
+    outputDrained = consume(stdout, lines).then(() => lines.end());
+  }
+  const drainStderr =
+    stderr === null
+      ? Promise.resolve()
+      : (async () => {
+          const decoder = new TextDecoder();
+          try {
+            for await (const chunk of stderr) stderrTail.push(decoder.decode(chunk as Uint8Array, { stream: true }));
+          } catch {
+            // A process that failed to start has no stderr.
+          }
+        })();
+
+  child.once("error", (error) => spawnResolve(messageOf(error)));
+  child.once("exit", (code, signal) => exitedResolve({ code, signal }));
+  const stopListening =
+    options.inbox === undefined
+      ? undefined
+      : options.inbox.listen((text) => {
+          if (finished) return false;
+          reply(messageLine(text));
+          return true;
+        });
+  if (child.stdin !== null) child.stdin.on("error", () => undefined);
+  if (options.wallMs > 0) options.inbox?.begin?.(options.wallMs);
+  // The first input tells the worker where its socket and record are, so it can
+  // stay after this reply. A reused worker ignores this field.
+  let firstInput = options.stdin ?? "";
+  try {
+    const value: unknown = JSON.parse(firstInput);
+    if (isRecord(value)) {
+      firstInput = JSON.stringify({
+        ...value,
+        keep: {
+          socket: slot.socket,
+          meta: slot.meta,
+          token: slot.token,
+          scope: keep.scope,
+          key: keep.key,
+          timeoutMs: keep.timeoutMs ?? KEPT_WORKER_MS,
+        },
+      });
+    }
+  } catch {
+    // Not JSON: the worker will report invalid input as it always did.
+  }
+  reply(firstInput);
+  options.onStart?.();
+  if (options.wallMs > 0) {
+    wallTimer = clock.setTimeout(() => beginStop("wall"), options.wallMs);
+  }
+  resetStall();
+
+  const settled = await Promise.race<"result" | "exit" | "error">([
+    result.then(() => "result" as const),
+    exited.then(() => "exit" as const),
+    spawnFailed.then(() => "error" as const),
+  ]);
+  if (settled === "exit" && resultName === undefined) await outputDrained;
+  finished = true;
+  stopListening?.();
+  clearTimers();
+  options.signal.removeEventListener("abort", onAbort);
+
+  if (settled === "error") {
+    const spawnError = await spawnFailed;
+    await stopWorker();
+    return emptyKeptOutcome({ spawnError });
+  }
+
+  if (settled === "result" && resultName === "done") {
+    // The worker writes its record after the Result; the next message must find it.
+    await keptRecordAppears(slot.meta);
+    // Two replies can finish at once in one home: the cap holds after the
+    // record is there too, not only before a worker is started.
+    const max = keep.max ?? MAX_KEPT_WORKERS;
+    const kept = [...readKeptWorkersInHome(keep.home)]
+      .sort((left, right) => left.lastUsedAt - right.lastUsedAt);
+    while (kept.length > max && kept.length > 0) {
+      const idle = kept.find((record) => record.busy !== true) ?? kept[0];
+      if (idle === undefined) break;
+      await stopKeptWorker(idle, { clock });
+      kept.splice(kept.indexOf(idle), 1);
+    }
+    child.stdin?.destroy();
+    child.stdout?.destroy();
+    child.stderr?.destroy();
+    return emptyKeptOutcome({ exitCode: 0 });
+  }
+
+  const exit = settled === "exit" ? await exited : await Promise.race<Exit | undefined>([exited, Promise.resolve(undefined)]);
+  if (resultName !== undefined) {
+    child.stdin?.destroy();
+    child.stdout?.destroy();
+    child.stderr?.destroy();
+    await stopWorker();
+    return emptyKeptOutcome({
+      exitCode: resultName === "failed" ? 1 : 143,
+      ...(stoppingFor === "cancel" ? { cancelled: true } : {}),
+      ...(stoppingFor === "wall" ? { wall: true } : {}),
+      ...(stoppingFor === "stall" ? { stall: true } : {}),
+      ...(stoppingFor === "line" ? { lineTooLong: true } : {}),
+    });
+  }
+  await stopWorker();
+  await drainStderr;
+  return emptyKeptOutcome({
+    exitCode: exit?.code ?? null,
+    signal: exit?.signal ?? null,
+    ...(stoppingFor === "cancel" ? { cancelled: true } : {}),
+    ...(stoppingFor === "wall" ? { wall: true } : {}),
+    ...(stoppingFor === "stall" ? { stall: true } : {}),
+    ...(stoppingFor === "line" ? { lineTooLong: true } : {}),
+    stderrTail: stderrTail.lines(20),
+  });
+}
+
+/** Chooses, ends and starts kept workers for one reply. */
+async function runKeptAgent(options: AgentRunOptions, keep: KeptRunOptions): Promise<AgentRunOutcome> {
+  if (options.signal.aborted) return emptyKeptOutcome({ cancelled: true });
+  const clock = options.clock ?? systemClock;
+  const records = readKeptWorkers(keep.home, keep.name);
+  const sameScope = records.filter((record) => record.scope === keep.scope);
+  // A worker started with another model, effort, directory, profile or skills
+  // no longer holds; end it before this reply starts a new one.
+  for (const record of sameScope.filter((record) => record.key !== keep.key)) {
+    await stopKeptWorker(record, { clock });
+  }
+  const candidates = sameScope
+    .filter((record) => record.key === keep.key)
+    .sort((left, right) => right.lastUsedAt - left.lastUsedAt);
+  for (const record of candidates) {
+    const outcome = await runKeptSocket(record, options, keep, clock);
+    if (outcome !== undefined) return outcome;
+  }
+
+  // A new worker is the fourth only after the one idle longest has ended.
+  const max = keep.max ?? MAX_KEPT_WORKERS;
+  const remaining = [...readKeptWorkersInHome(keep.home)]
+    .sort((left, right) => left.lastUsedAt - right.lastUsedAt);
+  while (remaining.length >= max && remaining.length > 0) {
+    const idle = remaining.find((record) => record.busy !== true) ?? remaining[0];
+    if (idle === undefined) break;
+    await stopKeptWorker(idle, { clock });
+    remaining.splice(remaining.indexOf(idle), 1);
+  }
+  return runKeptFresh(options, keep, clock);
 }
