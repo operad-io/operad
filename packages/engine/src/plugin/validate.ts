@@ -21,6 +21,7 @@ import {
   type CommandDefinition,
   type HarnessCapabilities,
   type HarnessEfforts,
+  type HarnessModelContext,
   type HarnessModels,
   type KeyBindings,
   type MaybePromise,
@@ -71,7 +72,16 @@ export interface NormalizedPlugin {
   readonly enforces: readonly string[];
   readonly models:
     | HarnessModels
-    | ((settings: Readonly<Record<string, JsonValue>>) => HarnessModels)
+    | ((
+        settings: Readonly<Record<string, JsonValue>>,
+        context: HarnessModelContext,
+      ) => HarnessModels)
+    | undefined;
+  readonly modelsReady:
+    | ((
+        settings: Readonly<Record<string, JsonValue>>,
+        context: HarnessModelContext,
+      ) => MaybePromise<HarnessModels>)
     | undefined;
   readonly efforts: HarnessEfforts | undefined;
   readonly capabilities: HarnessCapabilities;
@@ -807,6 +817,7 @@ export function normalizePlugin(raw: unknown, index: number): NormalizedPlugin {
     projectSettings,
     enforces: normalizeEnforces(raw.enforces, `${at}: enforces`) ?? [],
     models: normalizeModels(raw.models, kind, at),
+    modelsReady: normalizeModelsReady(raw.modelsReady, kind, at),
     efforts: normalizeEfforts(raw.efforts, kind, at),
     capabilities: normalizeCapabilities(raw.capabilities, kind, at),
     signedIn: normalizeSignedIn(raw.signedIn, kind, at),
@@ -819,17 +830,39 @@ function normalizeModels(
   value: unknown,
   kind: string,
   at: string,
-): HarnessModels | ((settings: Readonly<Record<string, JsonValue>>) => HarnessModels) | undefined {
+): HarnessModels | ((settings: Readonly<Record<string, JsonValue>>, context: HarnessModelContext) => HarnessModels) | undefined {
   if (typeof value === "function") {
     if (kind !== "harness") throw new PluginError(`${at}: models: only a harness plugin declares models`);
-    const source = value as (settings: Readonly<Record<string, JsonValue>>) => unknown;
-    return (settings) => {
-      const levels = normalizeLevels(source(settings), kind, at, "models");
+    const source = value as (
+      settings: Readonly<Record<string, JsonValue>>,
+      context: HarnessModelContext,
+    ) => unknown;
+    return (settings, context) => {
+      const levels = normalizeLevels(source(settings, context), kind, at, "models");
       return levels === undefined ? { list: [], default: null } : { list: levels.list, default: levels.fallback };
     };
   }
   const levels = normalizeLevels(value, kind, at, "models");
   return levels === undefined ? undefined : { list: levels.list, default: levels.fallback };
+}
+
+/** A harness plugin's `modelsReady` hook: a list, possibly after waiting for one refresh. */
+function normalizeModelsReady(
+  value: unknown,
+  kind: string,
+  at: string,
+): ((settings: Readonly<Record<string, JsonValue>>, context: HarnessModelContext) => MaybePromise<HarnessModels>) | undefined {
+  if (value === undefined) return undefined;
+  if (kind !== "harness") throw new PluginError(`${at}: modelsReady: only a harness plugin declares modelsReady`);
+  if (typeof value !== "function") throw new PluginError(`${at}: modelsReady: must be a function`);
+  const source = value as (
+    settings: Readonly<Record<string, JsonValue>>,
+    context: HarnessModelContext,
+  ) => unknown;
+  return async (settings, context) => {
+    const levels = normalizeLevels(await source(settings, context), kind, at, "models");
+    return levels === undefined ? { list: [], default: null } : { list: levels.list, default: levels.fallback };
+  };
 }
 
 /**

@@ -19,6 +19,7 @@ import {
   paramsObject,
   defineFlow,
   definePlugin,
+  type HarnessModelContext,
   type PluginStepResult,
   type StepContext,
 } from "@operad-io/engine";
@@ -63,6 +64,11 @@ import {
   type ToolEvent,
 } from "@operad-io/harness-process";
 import { authFileHasCredential } from "./auth-file.ts";
+import {
+  PI_LIST_TIMEOUT_MS,
+  piModelList,
+  piModelListReady,
+} from "./model-list.ts";
 import { DEFAULT_PI_COMMAND, findPi, PI_FLOOR } from "./pi-install.ts";
 import {
   DEFAULT_BASH_TIMEOUT_SECS,
@@ -119,34 +125,6 @@ export interface PiHarnessOptions {
   readonly listTimeoutMs?: number | undefined;
   /** pi's settings file, where its default model is; defaults to `~/.pi/agent/settings.json`. */
   readonly piSettingsPath?: string | undefined;
-}
-
-/** How long `pi --list-models` may take before pi counts as not answering. */
-export const PI_LIST_TIMEOUT_MS = 10_000;
-
-/** How long a catalogue pi gave (or failed to give) is kept. */
-export const PI_LIST_CACHE_MS = 60_000;
-
-/**
- * The rows of `pi --list-models` as provider/id: the first two columns of each
- * row after the header row. Anything that is not such a row is skipped.
- */
-export function parsePiCatalogue(output: string): readonly string[] {
-  const found: string[] = [];
-  let header = false;
-  for (const line of output.split("\n")) {
-    const [provider, id] = line.trim().split(/\s+/);
-    if (provider === undefined || id === undefined) continue;
-    // Rows count only after the header; a status sentence has none.
-    if (provider === "provider" && id === "model") {
-      header = true;
-      continue;
-    }
-    if (!header) continue;
-    const name = `${provider}/${id}`;
-    if (!found.includes(name)) found.push(name);
-  }
-  return found;
 }
 
 /** pi's own default model, from its settings file; undefined when it names none. */
@@ -297,29 +275,14 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
   const piSettingsPath =
     options.piSettingsPath ?? join(homedir(), ".pi", "agent", "settings.json");
 
-  // What `pi --list-models` printed, by command, kept for a while. It is asked
-  // when the list is first needed, never at load, and prints nothing itself.
-  const catalogues = new Map<string, { readonly at: number; readonly list: readonly string[] }>();
-  function catalogue(piCommand: string): readonly string[] {
-    const kept = catalogues.get(piCommand);
-    if (kept !== undefined && now() - kept.at < PI_LIST_CACHE_MS) return kept.list;
-    let list: readonly string[] = [];
-    try {
-      const asked = Bun.spawnSync([piCommand, "--list-models"], {
-        stdin: "ignore",
-        stdout: "pipe",
-        stderr: "pipe",
-        timeout: listTimeoutMs,
-      });
-      if (asked.exitCode === 0 && !asked.exitedDueToTimeout) {
-        const out = asked.stdout.toString();
-        list = parsePiCatalogue(out.trim() === "" ? asked.stderr.toString() : out);
-      }
-    } catch {
-      list = [];
-    }
-    catalogues.set(piCommand, { at: now(), list });
-    return list;
+  function listOptions(piCommand: string, context: HarnessModelContext) {
+    return {
+      home: context.home,
+      command: piCommand,
+      now,
+      timeoutMs: listTimeoutMs,
+      log: context.log,
+    };
   }
 
   function stringList(value: unknown): readonly string[] | undefined {
@@ -328,11 +291,38 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
       : undefined;
   }
 
-  /** The models a chat may pick and the default among them. */
-  function piModels(settings: Readonly<Record<string, unknown>>): { list: readonly string[]; default: string | null } {
-    const command = typeof settings.command === "string" && settings.command !== "" ? settings.command : DEFAULT_PI_COMMAND;
+  function piCommandOf(settings: Readonly<Record<string, unknown>>): string {
+    return typeof settings.command === "string" && settings.command !== ""
+      ? settings.command
+      : DEFAULT_PI_COMMAND;
+  }
+
+  /** The models a chat may pick and the default among them, from the kept list. */
+  function piModels(
+    settings: Readonly<Record<string, unknown>>,
+    context: HarnessModelContext,
+  ): { list: readonly string[]; default: string | null } {
+    const command = piCommandOf(settings);
     const configured = stringList(settings.models);
-    const list = configured ?? catalogue(command);
+    const list = configured ?? piModelList(listOptions(command, context));
+    const wanted =
+      typeof settings.model === "string" && settings.model !== ""
+        ? settings.model
+        : piDefaultModel(piSettingsPath);
+    return { list, default: wanted !== undefined && list.includes(wanted) ? wanted : null };
+  }
+
+  /**
+   * The models a chat may pick, waiting for pi's first list when the home has
+   * none yet. A configured `models` setting asks nothing and wins as it always did.
+   */
+  async function piModelsReady(
+    settings: Readonly<Record<string, unknown>>,
+    context: HarnessModelContext,
+  ): Promise<{ list: readonly string[]; default: string | null }> {
+    const command = piCommandOf(settings);
+    const configured = stringList(settings.models);
+    const list = configured ?? (await piModelListReady(listOptions(command, context)));
     const wanted =
       typeof settings.model === "string" && settings.model !== ""
         ? settings.model
@@ -380,6 +370,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
     kind: "harness",
     version: pkg.version,
     models: piModels,
+    modelsReady: piModelsReady,
     efforts: PI_EFFORTS,
     capabilities: { loadsSkills: true, takesMessagesMidRun: true },
     signedIn: async (settings) => {
@@ -489,7 +480,14 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
           // A configured model pi does not list is reported once, here.
           const configured = stringList(ctx.settings.models);
           if (configured !== undefined && model !== undefined && configured.includes(model)) {
-            const listed = catalogue(piCommand ?? DEFAULT_PI_COMMAND);
+            const listed = piModelList(
+              listOptions(piCommand ?? DEFAULT_PI_COMMAND, {
+                home: ctx.home,
+                log: (message) => {
+                  void ctx.logger.write(message);
+                },
+              }),
+            );
             if (listed.length > 0 && !listed.includes(model)) {
               await ctx.logger.write(`pi/agent: the model "${model}" is in settings.models but pi does not list it`);
             }
@@ -645,3 +643,10 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
 }
 
 export default createPiHarnessPlugin();
+
+export {
+  PI_LIST_CACHE_MS,
+  PI_LIST_TIMEOUT_MS,
+  parsePiCatalogue,
+  piModelListPath,
+} from "./model-list.ts";

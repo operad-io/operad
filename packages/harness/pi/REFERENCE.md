@@ -201,7 +201,9 @@ pi runs with an agent directory of its own, `<operad home>/harness/pi`, empty of
 user configuration. Session files are in `<operad home>/harness/pi/sessions`
 (`~/.operad/harness/pi/sessions` by default), so the user's own `pi` command
 does not see them. The step's log, one JSON line per worker line, is in the
-store like every step log.
+store like every step log. The model list `pi --list-models` printed is kept in
+`<operad home>/harness/pi/model-list.json`; a read older than ten minutes starts
+one background refresh, and no process waits for that refresh at load.
 
 ### How the step ends
 

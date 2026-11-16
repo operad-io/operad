@@ -87,6 +87,55 @@ describe("the reply and the model", () => {
     await r.round(chat);
     expect(r.calls[0]?.params.args).toBeUndefined();
   });
+
+  test("a first reply with a named model waits for the list, then passes by it", async () => {
+    let release: (value: typeof MODELS) => void = () => undefined;
+    const waiting = new Promise<typeof MODELS>((resolve) => {
+      release = resolve;
+    });
+    let seen: () => void = () => undefined;
+    const started = new Promise<void>((resolve) => {
+      seen = resolve;
+    });
+    const r = await rig(
+      () => reply("ok"),
+      undefined,
+      undefined,
+      "fake",
+      [],
+      undefined,
+      async () => {
+        seen();
+        return await waiting;
+      },
+    );
+    const chat = await r.chat({ model: "large" });
+    await r.say(chat, "hi");
+    const round = r.round(chat);
+    await started;
+    expect(r.calls).toHaveLength(0);
+    release(MODELS);
+    expect((await round).result).toBe("done");
+    expect(r.calls[0]?.params.args).toEqual(["--model", "large"]);
+  });
+
+  test("a first reply waits for the list, then fails by name when it lacks the model", async () => {
+    const r = await rig(
+      () => reply("ok"),
+      undefined,
+      undefined,
+      "fake",
+      [],
+      undefined,
+      async () => ({ list: ["small"], default: "small" }),
+    );
+    const chat = await r.chat({ model: "huge" });
+    await r.say(chat, "hi");
+    const result = await r.round(chat);
+    expect(result.result).toBe("failed");
+    expect(JSON.stringify(result.data)).toContain("huge");
+    expect(r.calls).toHaveLength(0);
+  });
 });
 
 describe("startingModel", () => {

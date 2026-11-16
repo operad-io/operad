@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { chmodSync, readFileSync } from "node:fs";
+import { chmodSync, existsSync, readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -53,7 +53,7 @@ describe("loadPluginRegistry", () => {
     expect(registry.names()).toEqual([]);
   });
 
-  test("reads each harness's model list once during the load", async () => {
+  test("does not read any harness's model list during the load", async () => {
     const root = await tempRoot();
     const { home, configPath, storeRoot } = await homeWithConfig({
       plugins: { "lazy-models": { module: lazyModels, settings: { note: "warmed" } } },
@@ -68,13 +68,12 @@ describe("loadPluginRegistry", () => {
         storeRoot,
         onLog: () => undefined,
       });
-      // The load read it once with the config's settings; a later read is
-      // the client's, not the first one.
-      expect(readFileSync(reads, "utf8").trim().split("\n")).toEqual(["warmed"]);
+      // The load asks no harness for its list; the client's first read does.
+      expect(existsSync(reads)).toBe(false);
       expect(registry.loadedModels()).toEqual({
         "lazy-models": { list: ["warmed"], default: "warmed" },
       });
-      expect(readFileSync(reads, "utf8").trim().split("\n")).toEqual(["warmed", "warmed"]);
+      expect(readFileSync(reads, "utf8").trim().split("\n")).toEqual(["warmed"]);
     } finally {
       if (previous === undefined) delete process.env.OPERAD_TEST_MODELS_READS;
       else process.env.OPERAD_TEST_MODELS_READS = previous;

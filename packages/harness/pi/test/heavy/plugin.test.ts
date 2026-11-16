@@ -1,5 +1,5 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -15,7 +15,7 @@ import {
   type TriggerView,
 } from "@operad-io/engine";
 import { EVENT_NOTE_TEMPLATE, FLUSH_MS, modelErrorOf } from "@operad-io/harness-process";
-import { createPiHarnessPlugin, piToolEvent } from "../../src/index.ts";
+import { createPiHarnessPlugin, piModelListPath, piToolEvent } from "../../src/index.ts";
 import {
   cleanupTempRoots,
   manualClock,
@@ -845,10 +845,16 @@ describe("pi/agent with a configured model pi does not list", () => {
     chmodSync(fake, 0o755);
     const settings = { command: fake, models: ["zai/glm-5", "x/unlisted"] };
     const missing = await setup("done", { ...settings, model: "x/unlisted" });
+    const missingList = piModelListPath(missing.root);
+    mkdirSync(join(missingList, ".."), { recursive: true });
+    writeFileSync(missingList, JSON.stringify({ command: fake, at: Date.now(), list: ["zai/glm-5"] }));
     const result = await runAgent(missing, { prompt: "hello", cwd: missing.root });
     const text = readFileSync(String(dataOf(result).log), "utf8");
     expect(text.split("x/unlisted\" is in settings.models").length - 1).toBe(1);
     const listed = await setup("done", { ...settings, model: "zai/glm-5" });
+    const listedList = piModelListPath(listed.root);
+    mkdirSync(join(listedList, ".."), { recursive: true });
+    writeFileSync(listedList, JSON.stringify({ command: fake, at: Date.now(), list: ["zai/glm-5"] }));
     const ok = await runAgent(listed, { prompt: "hello", cwd: listed.root });
     expect(readFileSync(String(dataOf(ok).log), "utf8")).not.toContain("is in settings.models");
   });

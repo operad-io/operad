@@ -267,3 +267,9 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 | T-0509-M3 | packages/chat/src/reply.ts | a late `Always allow` wrote nothing to the user layer | `a read-only chat > Always allow answered after the wait writes the user layer and lets this run's call through` |
 | T-0509-M4 | packages/chat/src/reply.ts | a worktree yes no longer stopped the harness, so one that swallowed the stop could run more calls | `a read-only chat > a yes stops the agent at once even when the harness swallows the stop` |
 | T-0509-M5 | packages/chat/src/reply.ts | the normal worktree event key carried the run id and did not match the key the catch path emits | `a read-only chat > a yes stops the agent at once even when the harness swallows the stop` |
+
+## T-0511 — a first reply waits for the model list
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0511-M7 | packages/chat/src/reply.ts | a chat with a named model checked the old synchronous list instead of waiting for the first refresh | `the reply and the model > a first reply with a named model waits for the list, then passes by it` |

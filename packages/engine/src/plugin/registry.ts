@@ -22,6 +22,7 @@ import {
   type ActionEnv,
   type HarnessCapabilities,
   type HarnessEfforts,
+  type HarnessModelContext,
   type HarnessModels,
   type ActionEvent,
   type ActionRun,
@@ -1033,6 +1034,7 @@ export class PluginRegistry {
             limiter.report({ key, ...(ahead === undefined ? {} : { ahead }) }),
       stepLoaded: (name) => this.stepIndex.has(name),
       harnessModels: (name) => this.loadedModels()[name],
+      harnessModelsReady: (name) => this.loadedModelsReadyFor(name),
       harnessEfforts: (name) => this.loadedEfforts()[name],
       harnessCapabilities: (name) => this.loadedCapabilities()[name],
       runStep: (nestedUse, nestedParams, nestedOptions) => {
@@ -1108,15 +1110,57 @@ export class PluginRegistry {
     return this.plugins.filter((item) => item.kind === "harness").map((item) => item.name);
   }
 
+  private modelContext(): HarnessModelContext {
+    return { home: this.home, log: this.onLog };
+  }
+
   /** The models the loaded harness plugins declare, by plugin name. */
   loadedModels(): Readonly<Record<string, HarnessModels>> {
     const found: Record<string, HarnessModels> = {};
+    const context = this.modelContext();
     for (const item of this.plugins) {
       if (item.kind !== "harness" || item.models === undefined) continue;
       found[item.name] =
-        typeof item.models === "function" ? item.models(this.settingsFor(item.name)) : item.models;
+        typeof item.models === "function"
+          ? item.models(this.settingsFor(item.name), context)
+          : item.models;
     }
     return found;
+  }
+
+  /**
+   * The models the loaded harness plugins declare, waiting for a harness that
+   * has no kept list yet to read one. A plugin without `modelsReady` answers
+   * at once with its ordinary list.
+   */
+  async loadedModelsReady(): Promise<Readonly<Record<string, HarnessModels>>> {
+    const found: Record<string, HarnessModels> = {};
+    const context = this.modelContext();
+    for (const item of this.plugins) {
+      if (item.kind !== "harness") continue;
+      if (item.models === undefined && item.modelsReady === undefined) continue;
+      found[item.name] =
+        item.modelsReady !== undefined
+          ? await item.modelsReady(this.settingsFor(item.name), context)
+          : item.models !== undefined && typeof item.models === "function"
+            ? item.models(this.settingsFor(item.name), context)
+            : item.models ?? { list: [], default: null };
+    }
+    return found;
+  }
+
+  /** One harness's models, waiting for a first refresh when it needs one. */
+  async loadedModelsReadyFor(name: string): Promise<HarnessModels | undefined> {
+    const item = this.byName.get(name);
+    if (item === undefined || item.kind !== "harness") return undefined;
+    if (item.models === undefined && item.modelsReady === undefined) return undefined;
+    const context = this.modelContext();
+    if (item.modelsReady !== undefined) {
+      return await item.modelsReady(this.settingsFor(name), context);
+    }
+    return item.models !== undefined && typeof item.models === "function"
+      ? item.models(this.settingsFor(name), context)
+      : item.models ?? { list: [], default: null };
   }
 
   /** The efforts the loaded harness plugins declare, by plugin name. */

@@ -1016,3 +1016,9 @@ the row fields.
 | T-0510-M5 | packages/engine/src/views/live-logs.ts | a refresh no longer forgot a run that had ended | `a live log that grows without a fact > no event arrives after the run ended` |
 | T-0510-M6 | packages/engine/src/views/live-logs.ts | every active run was watched, whether or not its object had a live section | `a live log that grows without a fact > a run whose object has no live section is not watched` |
 | T-0510-M7 | packages/engine/src/views/presentation.ts | a run log change no longer asked the watcher to re-read the active runs | `a live log that grows without a fact > a run the log says ended is no longer watched, without the timer` |
+
+## T-0511 — a load asks no harness for its model list
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0511-M6 | packages/engine/src/plugin/load.ts | the load read every harness's model list again instead of leaving it for the client | `loadPluginRegistry > does not read any harness's model list during the load` |

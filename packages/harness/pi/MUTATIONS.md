@@ -161,3 +161,15 @@ the row fields.
 |---|---|---|---|
 | T-0486-M3 | packages/harness/pi/src/worker.ts | the worker wrote no `session` line before the prompt | `a prompt that ends writes the lines in order and a Result with usage, cost and sessionId` |
 | T-0486-M8 | packages/harness/pi/src/index.ts | the step result was returned without its `timings` | `pi/agent > a scripted worker gives the time to its session line, to the first increment, and the whole step` |
+
+## T-0511 — pi's model list never blocks a load
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0511-M1 | packages/harness/pi/src/model-list.ts | a first use with no kept list returned an empty list instead of waiting for one refresh | `the models pi declares > first use with no kept file waits for one refresh` |
+| T-0511-M2 | packages/harness/pi/src/model-list.ts | concurrent readers no longer shared one in-flight refresh | `the models pi declares > two readers at once start one refresh` |
+| T-0511-M3 | packages/harness/pi/src/model-list.ts | a failed refresh wrote an empty list over the previous one | `the models pi declares > a failed refresh keeps the old list and is logged once` |
+| T-0511-M4 | packages/harness/pi/src/model-list.ts | a stale kept list no longer started a background refresh | `the models pi declares > a stale file starts one background refresh and later reads see the new list` |
+| T-0511-M5 | packages/harness/pi/src/model-list.ts | the kept file was ignored, so a load had no list to read | `the models pi declares > loading the plugins does not start pi, and the kept file gives the list` |
+| T-0511-M9 | packages/harness/pi/src/model-list.ts | a stale kept list made `modelsReady` wait for the background refresh instead of answering from the kept rows | `the models pi declares > a stale file starts one background refresh and later reads see the new list` |
+| T-0511-M10 | packages/harness/pi/src/model-list.ts | the kept file was refused unless it also named the command, so a fresh list was ignored and pi was asked | `the models pi declares > loading the plugins does not start pi, and the kept file gives the list` |

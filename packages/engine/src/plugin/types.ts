@@ -555,6 +555,11 @@ export interface StepContext extends PluginBaseContext {
   readonly stepLoaded?: ((use: string) => boolean) | undefined;
   /** The models a loaded harness plugin declares; undefined when it is not loaded or declares none. */
   readonly harnessModels?: ((harness: string) => HarnessModels | undefined) | undefined;
+  /**
+   * The models a loaded harness plugin declares, waiting for one refresh when
+   * the plugin has no kept list yet. Undefined when it is not loaded or declares none.
+   */
+  readonly harnessModelsReady?: ((harness: string) => Promise<HarnessModels | undefined>) | undefined;
   /** The efforts a loaded harness plugin declares; undefined when it is not loaded or declares none. */
   readonly harnessEfforts?: ((harness: string) => HarnessEfforts | undefined) | undefined;
   /** What a loaded harness plugin declares it can do; undefined when it is not loaded. */
@@ -844,6 +849,14 @@ export interface ActionEnv {
 export interface HarnessModels {
   readonly list: readonly string[];
   readonly default: string | null;
+}
+
+/** What a harness's model hook may read besides its settings. */
+export interface HarnessModelContext {
+  /** The operad home: where a harness keeps the list it read. */
+  readonly home: string;
+  /** Where a background refresh reports a failure. */
+  readonly log: (message: string) => void;
 }
 
 /**
@@ -1231,7 +1244,20 @@ export interface PluginShape {
    */
   readonly models?:
     | HarnessModels
-    | ((settings: Readonly<Record<string, JsonValue>>) => HarnessModels)
+    | ((
+        settings: Readonly<Record<string, JsonValue>>,
+        context: HarnessModelContext,
+      ) => HarnessModels)
+    | undefined;
+  /**
+   * A harness plugin: the models a chat may pick, waiting for one refresh when
+   * no list is kept yet. The reply asks this before it refuses a stored model.
+   */
+  readonly modelsReady?:
+    | ((
+        settings: Readonly<Record<string, JsonValue>>,
+        context: HarnessModelContext,
+      ) => MaybePromise<HarnessModels>)
     | undefined;
   /** A harness plugin: the efforts a chat may pick (empty list: none can be chosen). */
   readonly efforts?: HarnessEfforts | undefined;
