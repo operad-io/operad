@@ -835,7 +835,6 @@ async function runKeptFresh(
   // A kept worker is not a left-over of the run that started it: no run marker.
   delete env["OPERAD_RUN"];
   delete env["OPERAD_RUN_HOME"];
-  env["OPERAD_KEPT"] = slot.token;
 
   let child: ChildProcess;
   try {
