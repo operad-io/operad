@@ -16,8 +16,8 @@ The `bot` section of `config.json` (`plugins.bot.settings`), checked against
 ```
 
 `default` exists even when it is not written. A bot name is lowercase letters,
-digits, `-` and `_`. Fields: `cwd`, `harness` (the default agent), `skills`,
-`speaker`, `access`.
+digits, `-` and `_`. Fields: `cwd`, `harness` (the default agent),
+`useOwnSettings`, `skills`, `speaker`, `access`.
 
 - **Working directory**: `~/.operad/bot/` for `default`, `~/.operad/bot/<name>`
   for another bot, created when missing. A `cwd` that is the operad home, holds
@@ -31,6 +31,14 @@ digits, `-` and `_`. Fields: `cwd`, `harness` (the default agent), `skills`,
   directories, and `<cwd>/skills`, are in `denyPaths` for writing and in
   `readPaths` for reading: the agent can read a skill but proposes a change
   through operad's tools and never writes one itself.
+- **Use my own agent settings**: `useOwnSettings` is off by default. With it
+  on, the bot's agent reads your own configuration of that agent. For `claude`
+  that is your settings, `CLAUDE.md` files, memory, skills, commands, subagents,
+  plugins and MCP servers. The bot's access profile still refuses what it
+  refuses, judged before any allow rule in your settings; operad's own tools,
+  the skills the bot lists, the MCP servers the bot lists and its log hooks
+  stay, and a name both sides define is operad's. It is changed like any other
+  bot setting, through a proposal.
 - **Skills**: a directory with a `SKILL.md`, given to the agent as `skills` in
   its step params. A listed directory whose direct subdirectories each hold a
   `SKILL.md` (such as `~/.agents/skills`) gives every one of them, and a

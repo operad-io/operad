@@ -56,6 +56,13 @@ export const BOT_SETTINGS: ActionArgsSchema = {
             minLength: 1,
             description: "The agent a new chat uses when it names none.",
           },
+          useOwnSettings: {
+            type: "boolean",
+            title: "Use my own agent settings",
+            default: false,
+            description:
+              "The bot's agent then reads your own configuration of that agent. claude: your settings, instruction files, memory, skills, commands, subagents, plugins and MCP servers; other agents as they support it. The bot's access profile still refuses what it refuses. Off by default.",
+          },
           skills: {
             type: "array",
             items: { type: "string", minLength: 1 },
@@ -157,6 +164,7 @@ export interface BotSettings {
   readonly mcpAllow?: readonly string[] | undefined;
   readonly cwd?: string;
   readonly harness?: string;
+  readonly useOwnSettings?: boolean | undefined;
   readonly model?: string;
   readonly effort?: string;
   readonly skills?: readonly string[];
@@ -169,6 +177,7 @@ export interface ResolvedBot {
   readonly name: string;
   readonly cwd: string;
   readonly harness: string | null;
+  readonly useOwnSettings: boolean;
   readonly model: string | null;
   readonly effort: string | null;
   /** Absolute directories, each with a SKILL.md. */
@@ -473,6 +482,7 @@ export function resolveBot(
     name,
     cwd,
     harness: settings.harness ?? null,
+    useOwnSettings: settings.useOwnSettings === true,
     model: settings.model ?? null,
     effort: settings.effort ?? null,
     skills,

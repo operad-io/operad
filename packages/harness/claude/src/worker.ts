@@ -18,14 +18,13 @@ import {
 } from "@anthropic-ai/claude-agent-sdk";
 import {
   firstErrorLine,
-  match,
   messageSummary,
   readProfile,
   REFUSED_IN_LOG,
   summarizeCall,
   type AccessProfile,
 } from "@operad-io/access-match";
-import { decideAccess, hasRules, translate, type CallAnswer } from "./access.ts";
+import { checkProfile, decideAccess, type CallAnswer } from "./access.ts";
 import {
   EXIT_CANCELLED,
   EXIT_FAILED,
@@ -152,6 +151,19 @@ export const ISOLATION_ENV: Readonly<Record<string, string>> = {
   // the turn would end and claude would go on by itself later.
   CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1",
 };
+
+/**
+ * The isolation variables that keep instruction files and auto memory off.
+ * A bot that uses the owner's own agent settings leaves these out; telemetry,
+ * error reporting and background tasks stay off.
+ */
+export const INSTRUCTION_ISOLATION_ENV: readonly string[] = [
+  "CLAUDE_CODE_DISABLE_AUTO_MEMORY",
+  "CLAUDE_CODE_DISABLE_CLAUDE_MDS",
+];
+
+/** The setting sources a bot that uses the owner's own agent settings loads. */
+export const OWN_SETTING_SOURCES = ["user", "project", "local"] as const;
 
 /**
  * Tools that only schedule or wait for work outside the turn. They are off, so
@@ -452,10 +464,21 @@ class ClaudeSession {
             env: { OPERAD_HOME: initial.operadTools.home },
           };
 
+    const childEnv: Record<string, string | undefined> = {
+      ...(hooks.env ?? process.env),
+      ...ISOLATION_ENV,
+      BASH_DEFAULT_TIMEOUT_MS: String((initial.bashTimeoutSecs ?? DEFAULT_BASH_TIMEOUT_SECS) * 1000),
+      BASH_MAX_TIMEOUT_MS: String((initial.bashTimeoutSecs ?? DEFAULT_BASH_TIMEOUT_SECS) * 1000),
+    };
+    if (initial.useOwnSettings === true) {
+      // Instruction files and auto memory are the owner's own; telemetry, error
+      // reporting and background tasks stay off.
+      for (const name of INSTRUCTION_ISOLATION_ENV) delete childEnv[name];
+    }
     this.options = {
       cwd: initial.cwd,
       pathToClaudeCodeExecutable: this.executable(initial),
-      settingSources: [],
+      settingSources: initial.useOwnSettings === true ? [...OWN_SETTING_SOURCES] : [],
       permissionMode: "default",
       permissionPrompts: "host",
       includePartialMessages: true,
@@ -467,14 +490,15 @@ class ClaudeSession {
         ? {}
         : {
             plugins: [{ type: "local" as const, path: this.skillPlugin.dir }],
-            skills: this.skillPlugin.names.map((name) => `${SKILLS_PLUGIN}:${name}`),
+            // The switch keeps operad's skills and adds the owner's own; a name
+            // both sides define is operad's because its plugin is the one mounted
+            // here. With the switch off, only the skills mounted above load.
+            skills:
+              initial.useOwnSettings === true
+                ? "all"
+                : this.skillPlugin.names.map((name) => `${SKILLS_PLUGIN}:${name}`),
           }),
-      env: {
-        ...(hooks.env ?? process.env),
-        ...ISOLATION_ENV,
-        BASH_DEFAULT_TIMEOUT_MS: String((initial.bashTimeoutSecs ?? DEFAULT_BASH_TIMEOUT_SECS) * 1000),
-        BASH_MAX_TIMEOUT_MS: String((initial.bashTimeoutSecs ?? DEFAULT_BASH_TIMEOUT_SECS) * 1000),
-      },
+      env: childEnv,
       hooks: {
         PreToolUse: [{ hooks: [this.toolHook("start")] }],
         PostToolUse: [{ hooks: [this.toolHook("end")] }],
@@ -935,14 +959,24 @@ class ClaudeSession {
 
   private deniedByProfile(turn: Turn, name: string, toolInput: unknown): { readonly rule?: string } | undefined {
     const record = typeof toolInput === "object" && toolInput !== null ? (toolInput as Record<string, unknown>) : {};
-    const translated = translate(name, record);
-    if (translated.kind === "inert") return undefined;
-    if (translated.kind === "mapped") {
-      const verdict = match(turn.profile, { tool: translated.tool, input: translated.input, cwd: turn.input.cwd });
-      if (verdict.allow || verdict.ask === true) return undefined;
-      return verdict.rule === undefined ? {} : { rule: verdict.rule };
+    const check = checkProfile(turn.profile, name, record, turn.input.cwd);
+    if (check.kind !== "refuse") return undefined;
+    return check.rule === undefined ? {} : { rule: check.rule };
+  }
+
+  // The profile's refusals for the `PreToolUse` hook. A read-only profile asks
+  // in `canUseTool` so a person can answer, but with the owner's settings on it
+  // is also a refusal that no user allow rule may pass: `{ readOnly: true }`
+  // through the same matcher says whether read-only is what stops the call.
+  private hookRefusal(turn: Turn, name: string, toolInput: unknown): { readonly reason: string } | undefined {
+    const record = typeof toolInput === "object" && toolInput !== null ? (toolInput as Record<string, unknown>) : {};
+    const check = checkProfile(turn.profile, name, record, turn.input.cwd);
+    if (check.kind === "refuse") return { reason: check.reason };
+    if (turn.profile.readOnly === true) {
+      const alone = checkProfile({ readOnly: true }, name, record, turn.input.cwd);
+      if (alone.kind !== "allow") return { reason: alone.reason };
     }
-    return hasRules(turn.profile) ? {} : undefined;
+    return undefined;
   }
 
   private startCall(turn: Turn, id: string, name: string, toolInput: unknown): void {
@@ -992,6 +1026,24 @@ class ClaudeSession {
       if (turn === undefined) return {};
       if (event.hook_event_name === "PreToolUse" && kind === "start") {
         this.startCall(turn, event.tool_use_id, event.tool_name, event.tool_input);
+        // A bot that loads the owner's settings may have an allow rule there.
+        // The profile is judged first, in this hook, so no such rule can let a
+        // call through that it refuses. A grant or an ask is not a refusal and
+        // stays with `canUseTool`.
+        if (turn.input.useOwnSettings === true) {
+          const refusal = this.hookRefusal(turn, event.tool_name, event.tool_input);
+          if (refusal !== undefined) {
+            this.writeLine(turn, { type: "blocked", toolName: event.tool_name, reason: REFUSED_IN_LOG });
+            this.endCall(turn, event.tool_use_id, event.tool_name, true, REFUSED_IN_LOG);
+            return {
+              hookSpecificOutput: {
+                hookEventName: "PreToolUse",
+                permissionDecision: "deny",
+                permissionDecisionReason: refusal.reason,
+              },
+            };
+          }
+        }
       } else if (event.hook_event_name === "PostToolUse" && kind === "end") {
         this.endCall(turn, event.tool_use_id, event.tool_name, false, undefined, event.tool_response);
       } else if (event.hook_event_name === "PostToolUseFailure" && kind === "failed") {

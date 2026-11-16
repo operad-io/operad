@@ -665,10 +665,15 @@ the same files your own `claude` uses. The `sessionId` a step records is the
 session's id; `claude --resume <id>`, run in the same working directory, continues
 that session by hand.
 
-**What claude is told.** claude runs without your settings, hooks, plugins, skills
-or `CLAUDE.md` files and without its automatic memory. The access profile
-(`denyPaths`, `denyCommands` and one-time permissions) is applied to its tool
-calls, and a call that `askCommands` matches asks a person first.
+**What claude is told.** In a repository chat, a task or a review, claude runs
+without your settings, hooks, plugins, skills or `CLAUDE.md` files and without
+its automatic memory. The access profile (`denyPaths`, `denyCommands` and
+one-time permissions) is applied to its tool calls, and a call that
+`askCommands` matches asks a person first. A bot can set `useOwnSettings` on
+(see [Chats and bots](chats-and-bots.md#using-your-own-agent-settings)); its
+claude then reads your own settings, `CLAUDE.md` files, memory, skills, commands,
+subagents, plugins and MCP servers, while the bot's access profile is still
+judged first and telemetry, error reporting and background tasks stay off.
 
 **Switch the worker and the reviewer.** In `.operad/dev.json` set `use` of a
 worker (or of `reviewer`) to `claude/agent`. claude reads only `--model <name>` and

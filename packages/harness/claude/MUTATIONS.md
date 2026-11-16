@@ -199,3 +199,14 @@ setup it depends on, in the order they were recorded. The root
 | T-0516-M3 | packages/harness/claude/src/worker.ts | a kept worker closed its SDK session after the first reply instead of keeping it | `a second message is answered by the same worker and the same claude` |
 | T-0516-M5 | packages/harness/claude/src/worker.ts | `canUseTool` judged every reply with no profile instead of the reply's own | `a kept worker receives this reply's grant, not the previous reply's` |
 | T-0516-M7 | packages/harness/claude/src/index.ts | the keep key was a constant, so a worker started with another model, effort, directory, profile, skills or MCP servers was reused | `each change of what the worker was started with ends it` |
+
+## T-0517 — a bot uses the owner's own agent settings
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0517-M1 | packages/harness/claude/src/worker.ts | the own-settings switch still passed `settingSources: []` | `the own-settings switch on loads every setting source and leaves the instruction isolation out` |
+| T-0517-M2 | packages/harness/claude/src/worker.ts | the own-settings switch left the auto-memory and instruction-file isolation variables in the environment | `the own-settings switch on loads every setting source and leaves the instruction isolation out` |
+| T-0517-M3 | packages/harness/claude/src/worker.ts | the `PreToolUse` hook no longer judged the access profile before a user allow rule | `with the own-settings switch on, the profile denies a call in PreToolUse before any user allow rule` |
+| T-0517-M4 | packages/harness/claude/src/index.ts | the step did not pass the own-settings switch to the worker | `claude/agent > the own-settings switch reaches the worker only when it is on` |
+| T-0517-M8 | packages/harness/claude/src/protocol.ts | `useOwnSettings` was no longer an input field, so the worker refused it as unknown | `the own-settings switch off is exactly today's options and environment` |
+| T-0517-M9 | packages/harness/claude/src/worker.ts | the `PreToolUse` hook did not treat a read-only profile as a refusal | `with the own-settings switch on, a read-only profile denies a write in PreToolUse` |

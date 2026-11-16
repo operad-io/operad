@@ -304,3 +304,9 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0516-M6 | packages/chat/src/reply.ts | a claude reply no longer passed `keepWorker`, so its next message started a new worker | `a claude chat keeps its worker between replies and closes it with the chat` |
+
+## T-0517 — a bot uses the owner's own agent settings
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0517-M7 | packages/chat/src/reply.ts | the reply did not hand the bot's own-settings switch to the agent step | `a reply reads the bot again > the own-settings switch is off by default and reaches the agent when on` |

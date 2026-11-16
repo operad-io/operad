@@ -209,7 +209,11 @@ class FakeProcess extends EventEmitter implements SpawnedProcess {
             ...(step.hook === "PostToolUseFailure" ? { error: step.output ?? "failed" } : {}),
           },
         });
-        record(this.recordFile, { hookReply: step.hook, subtype: reply["subtype"] });
+        record(this.recordFile, {
+          hookReply: step.hook,
+          subtype: reply["subtype"],
+          response: reply["response"] ?? null,
+        });
       } else if ("ask" in step) {
         const reply = await this.#request({
           subtype: "can_use_tool",

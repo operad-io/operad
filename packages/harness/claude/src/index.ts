@@ -383,6 +383,10 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
             input.skills === undefined ? flow.skills : input.skills,
             `${at}: params.skills`,
           );
+          const ownSettings = input.useOwnSettings ?? flow.useOwnSettings;
+          if (ownSettings !== undefined && typeof ownSettings !== "boolean") {
+            throw new Error(`${at}: params.useOwnSettings: must be a boolean`);
+          }
           const mcpServers = mountedServersOf(input.mcpServers ?? flow.mcpServers);
           const images = imageInputsOf(input.images ?? flow.images);
           const claudeCommand = optionalText(ctx.settings.command, `${at}: settings.command`);
@@ -420,6 +424,7 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
             ...(mcpServers === undefined ? {} : { mcpServers }),
             ...(images.length === 0 ? {} : { images }),
             ...(skills.length === 0 ? {} : { skills }),
+            ...(ownSettings === true ? { useOwnSettings: true } : {}),
             ...(runAccess === undefined ? {} : { access: runAccess }),
             ...(storeSecrets.length === 0 ? {} : { secretValues: storeSecrets }),
           };

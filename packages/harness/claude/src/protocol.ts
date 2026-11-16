@@ -36,6 +36,8 @@ export interface WorkerInput {
   readonly images?: readonly ImageInput[] | undefined;
   /** Skill directories to load; no other skills are discovered. */
   readonly skills?: readonly string[] | undefined;
+  /** Load the owner's own agent settings (ADR 0024 D4); off unless true. */
+  readonly useOwnSettings?: boolean | undefined;
   /** Set by a chat reply: the worker may serve the next reply and then end itself. */
   readonly keep?: WorkerKeep | undefined;
 }
@@ -152,6 +154,7 @@ export const INPUT_FIELDS = [
   "secretValues",
   "images",
   "skills",
+  "useOwnSettings",
   "keep",
 ] as const;
 
@@ -210,6 +213,11 @@ export function parseInput(value: unknown): ParsedInput {
   const skills = value["skills"];
   if (skills !== undefined && (!Array.isArray(skills) || !skills.every((v): v is string => typeof v === "string"))) {
     return { ok: false, message: "skills must be an array of strings" };
+  }
+
+  const useOwnSettings = value["useOwnSettings"];
+  if (useOwnSettings !== undefined && typeof useOwnSettings !== "boolean") {
+    return { ok: false, message: "useOwnSettings must be a boolean" };
   }
 
   const maxTurns = value["maxTurns"];
@@ -292,6 +300,7 @@ export function parseInput(value: unknown): ParsedInput {
       secretValues,
       images: images.length === 0 ? undefined : images,
       skills: skills === undefined || skills.length === 0 ? undefined : skills,
+      useOwnSettings,
       keep,
     },
   };

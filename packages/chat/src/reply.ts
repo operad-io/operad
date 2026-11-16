@@ -449,6 +449,8 @@ interface Live {
   readonly skills: readonly string[];
   /** Servers the harness starts for the agent, by name, each as a command. */
   readonly mcpServers: Readonly<Record<string, JsonValue>>;
+  /** Whether the agent reads the owner's own configuration of that agent. */
+  readonly useOwnSettings: boolean;
   /** A repository chat's starting text; a bot chat gives none. */
   readonly context?: SessionContext | undefined;
 }
@@ -477,7 +479,13 @@ async function liveSettings(
   object: RunObject,
   runStep: NonNullable<StepContext["runStep"]>,
 ): Promise<Live | PluginStepResult> {
-  const own: Live = { cwd: chat.cwd, access: chat.access, skills: chat.skills, mcpServers: {} };
+  const own: Live = {
+    cwd: chat.cwd,
+    access: chat.access,
+    skills: chat.skills,
+    mcpServers: {},
+    useOwnSettings: false,
+  };
   if (chat.refresh === undefined) return own;
   if (ctx.stepLoaded !== undefined && !ctx.stepLoaded(chat.refresh)) {
     return failed("settings", `"${chat.refresh}", which gives this chat's settings, is not loaded`);
@@ -501,6 +509,7 @@ async function liveSettings(
     access: data.access as Record<string, JsonValue>,
     skills: data.skills.filter((item): item is string => typeof item === "string"),
     mcpServers: isRecord(data.mcpServers) ? (data.mcpServers as Record<string, JsonValue>) : {},
+    useOwnSettings: data.useOwnSettings === true,
     ...(context === undefined ? {} : { context }),
   };
 }
@@ -1005,6 +1014,7 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
         ...(midRun === undefined ? {} : { inbox: midRun.inbox }),
         ...(chat.harness === "pi" || chat.harness === "claude" ? { keepWorker: true } : {}),
         ...(Object.keys(live.mcpServers).length === 0 ? {} : { mcpServers: live.mcpServers }),
+        ...(live.useOwnSettings ? { useOwnSettings: true } : {}),
         ...(session === undefined ? {} : { resumeSession: session }),
         ...(askAnswer === undefined ? {} : { askAnswer }),
       },

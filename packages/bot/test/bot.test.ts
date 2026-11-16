@@ -47,6 +47,13 @@ describe("bots", () => {
     expect(resolveBot(r.home, "elsewhere", { cwd: join(r.root, "work") }).cwd).toBe(join(r.root, "work"));
   });
 
+  test("using the owner's own agent settings is off unless the bot turns it on", async () => {
+    const r = await rig();
+    expect(resolveBot(r.home, "reader", {}).useOwnSettings).toBe(false);
+    expect(resolveBot(r.home, "reader", { useOwnSettings: true }).useOwnSettings).toBe(true);
+    expect(resolveBot(r.home, "reader", { useOwnSettings: false }).useOwnSettings).toBe(false);
+  });
+
   test("a working directory that is the operad home, holds it, or is inside it outside bot is refused", async () => {
     const r = await rig();
     for (const cwd of [r.home, r.root, join(r.home, "store"), join(r.home, "secrets")]) {
@@ -518,6 +525,20 @@ describe("a reply reads the bot again", () => {
     expect(access.denyPaths).toContain("~/private");
   });
 
+  test("the own-settings switch is off by default and reaches the agent when on", async () => {
+    const r = await rig({ reader: {} });
+    await syncBots(r.store, r.home, {});
+    const id = await r.open("reader");
+    await r.say(id, "one");
+    await r.reply(id);
+    expect(r.calls[0]?.params.useOwnSettings).toBeUndefined();
+
+    writeConfig(r.home, { reader: { useOwnSettings: true } });
+    await r.say(id, "two");
+    await r.reply(id);
+    expect(r.calls[1]?.params.useOwnSettings).toBe(true);
+  });
+
   test("a skill added to the bot is given at the next reply; none before", async () => {
     const r = await rig({ reader: {} });
     await syncBots(r.store, r.home, {});
@@ -558,6 +579,16 @@ describe("a reply reads the bot again", () => {
     expect(result.result).toBe("failed");
     expect(result.data).toMatchObject({ message: 'bot "reader" is no longer in the settings' });
     expect(r.calls).toHaveLength(0);
+  });
+
+  test("a bot whose agent is pi is unchanged: the switch is absent unless the bot sets it", async () => {
+    const r = await rig({ reader: { harness: "pi" } });
+    await syncBots(r.store, r.home, {});
+    const id = await r.open("reader");
+    await r.say(id, "hi");
+    const result = await r.reply(id);
+    expect(result.result).toBe("done");
+    expect(r.calls[0]?.params.useOwnSettings).toBeUndefined();
   });
 
   test("a bot's speaker is read again when a transcript is drawn", async () => {
