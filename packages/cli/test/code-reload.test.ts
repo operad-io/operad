@@ -19,6 +19,7 @@ import {
 import { fakeClock } from "../../engine/src/testing/index.ts";
 import { cleanupTempRoots, tempRoot } from "../../engine/test/plugin/support.ts";
 import {
+  probeLoad,
   serveSnapshots,
   listenForStop,
   loadsAsWellAs,
@@ -161,6 +162,38 @@ describe("plugin code in a serve snapshot", () => {
 });
 
 
+describe("a load check", () => {
+  test("that does not end is ended and reported, not waited for", async () => {
+    const home = await tempRoot();
+    const clock = fakeClock();
+    const probing = probeLoad(home, {
+      // A real process that never ends, as one that loads a module that never finishes.
+      command: [process.execPath, "-e", "setInterval(() => undefined, 1000)"],
+      timeoutMs: 1_000,
+      clock,
+    });
+    clock.advance(1_000);
+    const probe = await probing;
+    expect(probe.finished).toBe(false);
+    expect(probe.problems).toEqual(["the load check did not finish within 1 s"]);
+    expect(clock.pending).toBe(0);
+  }, 30_000);
+
+  test("that ends reports what did not load, one line each", async () => {
+    const home = await tempRoot();
+    const clock = fakeClock();
+    const probe = await probeLoad(home, {
+      command: [process.execPath, "-e", "console.log('plugin a: import failed')"],
+      timeoutMs: 10_000,
+      clock,
+    });
+    expect(probe.finished).toBe(true);
+    expect(probe.problems).toEqual(["plugin a: import failed"]);
+    expect(clock.pending).toBe(0);
+  }, 30_000);
+});
+
+
 describe("a serve restored after a restart could not listen", () => {
   /**
    * The wiring of `serve`: the process snapshots its code when it first serves,
@@ -297,13 +330,16 @@ describe("what a restored serve counts as loaded again", () => {
 });
 
 describe("the serve command's code watch", () => {
-  test("is given the change a restart already tried and reports into the notice", () => {
+  test("is given the change a restart already tried, a bounded check and a slow retry, and reports into the notice", () => {
     // Whether the restored serve reloads on the same change again is a matter of a poll that
     // finds nothing to do, which no event marks: the wiring is checked where the watch is built.
     const source = readFileSync(new URL("../src/main.ts", import.meta.url), "utf8");
     const build = /watch = new CodeWatch\(\{[\s\S]*?\n      \}\);/.exec(source)?.[0] ?? "";
     expect(build).toContain("declined: context.code.tried");
     expect(build).toContain("onOlder: olderNotice.report");
+    expect(build).toContain("checkTimeoutMs: envNumber(\"OPERAD_RELOAD_CHECK_MS\"");
+    expect(build).toContain("retryMs: envNumber(\"OPERAD_RELOAD_RETRY_MS\"");
+    expect(build).toContain("onKept:");
   });
 });
 

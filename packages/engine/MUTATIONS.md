@@ -1040,3 +1040,11 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0515-M10 | packages/engine/src/loop/serve.ts | serve start no longer ended the home's kept workers | `serve start ends every kept worker of the home, even without a run marker` |
+
+## T-0522 — a check that stops must not stop the watch
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0522-M1 | packages/engine/src/loop/code-watch.ts | `answerWithin` installed no limit, so a check that never finished held `busy` and the watch never looked again | `a code watch > a check that does not finish is given up: it says why, shows older code, and a later change is offered again` (and `serve runs older code than the files on disk > a check that does not finish still shows the item`) |
+| T-0522-M2 | packages/engine/src/loop/code-watch.ts | `planRetry` returned at once, so a kept change was offered again only when the files changed | `a code watch > a kept change is offered again on the slow timer with no file change` (and `a watch started on files already tried offers them again on the slow timer`) |
+| T-0522-M3 | packages/engine/src/loop/code-watch.ts | a handler that rejected was kept without a reason, so nothing said why the old code stayed | `a code watch > a check that fails says why and is offered again when the files change` |

@@ -44,6 +44,9 @@ import {
   openConfigLog,
   Notifier,
   CodeWatch,
+  DEFAULT_CHECK_TIMEOUT_MS,
+  DEFAULT_RETRY_MS,
+  describeChange,
   olderCodeNotice,
   ensureHttpToken,
   listenAddressKind,
@@ -97,6 +100,7 @@ import {
 import {
   BIND_FAILED_EXIT,
   codeChecker,
+  PROBE_TIMEOUT_MS,
   RELOAD_EXIT,
   superviseServe,
   listenForStop,
@@ -1832,6 +1836,7 @@ async function commandServe(
         home: context.home,
         snapshot: context.code,
         known: startProblems,
+        probeTimeoutMs: envNumber("OPERAD_RELOAD_PROBE_MS", PROBE_TIMEOUT_MS),
         onProblem: (message) => io.error(`operad: ${message}\n`),
       });
       watch = new CodeWatch({
@@ -1841,7 +1846,15 @@ async function commandServe(
         declined: context.code.tried,
         quietMs: envNumber("OPERAD_RELOAD_QUIET_MS", 1_000),
         pollMs: envNumber("OPERAD_RELOAD_POLL_MS", 5_000),
+        checkTimeoutMs: envNumber("OPERAD_RELOAD_CHECK_MS", DEFAULT_CHECK_TIMEOUT_MS),
+        retryMs: envNumber("OPERAD_RELOAD_RETRY_MS", DEFAULT_RETRY_MS),
         onOlder: olderNotice.report,
+        // A check that fails or does not finish keeps the old code; say so,
+        // once, and the slow timer tries it again.
+        onKept: (change, reason) =>
+          io.error(
+            `operad: code changed (${describeChange(change)}) but ${reason}; the old code keeps running\n`,
+          ),
         onChange: async () => {
           const what = await check();
           // A stop that came while the new code was tried is not started again.
