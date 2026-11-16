@@ -190,10 +190,12 @@ The question offers **Allow once** (this call only), **Always allow** (writes
 the exact call and working directory to `access-user.json`, so it is not asked
 again in any chat), **Deny**, and opening a worktree. Deny tells the agent that
 the call was refused because the chat is read-only and that it should answer in
-the chat or use read-only commands. The worktree offer opens `work/chat-<id>`
-and the chat works there from then on, once; the main clone otherwise stays
-read-only. The worktree's changes reach main only through a task that points at
-it, through the normal gate and integrate.
+the chat or use read-only commands. The worktree offer opens `work/chat-<id>`,
+ends the reply that asked and answers the same message again there, so the chat
+works there from then on, once; the main clone otherwise stays read-only. The
+transcript says `This chat now works in a worktree.` once. The worktree's changes
+reach main only through a task that points at it, through the normal gate and
+integrate.
 
 ### A bot chat
 

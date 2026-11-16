@@ -157,12 +157,15 @@ command, a write or an edit becomes the worktree question. Its choices are
 this call only, `Always allow` writes the exact call and working directory to
 the user layer (ADR 0025 D7) and runs it, `Deny` refuses it, and the worktree
 offer sends the event `chat.worktree`, which the plugin that owns the working
-directory acts on (`dev` opens `work/chat-<id>`). A run no person's message
-started is offered no `Always allow` and reads no user layer. The question names
-the call: the command, or the path and whether it is a write or an edit; a long
-command is cut, and the ask keeps the whole call. A `Deny` tells the agent the
-call was refused because the chat is read-only, and that it should answer in the
-chat or use read-only commands.
+directory acts on (`dev` opens `work/chat-<id>`). The reply that asked ends at
+once, and the same message is answered again in the worktree; a yes that comes
+after the reply has ended opens the worktree but starts no second reply. The
+transcript shows one line saying the chat now works in a worktree. A run no person's message started is offered no
+`Always allow` and reads no user layer. The question names the call: the command,
+or the path and whether it is a write or an edit; a long command is cut, and the
+ask keeps the whole call. A `Deny` tells the agent the call was refused because
+the chat is read-only, and that it should answer in the chat or use read-only
+commands.
 
 ## The `transcript` section
 
