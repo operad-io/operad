@@ -4,6 +4,8 @@
  * into one line. The server's Markdown is not changed; only these lines are.
  */
 
+import { layoutMarkdown } from "./layout.ts";
+
 /** One run of thinking and tool lines in a transcript. */
 export interface ChatFoldRun {
   /** Stable for one position in one part of a transcript. */
@@ -20,6 +22,13 @@ export interface ChatFoldRun {
   readonly lastAt: number;
 }
 
+/** Where one run's rows begin and end in the drawn transcript. */
+export interface ChatRunRows {
+  readonly run: ChatFoldRun;
+  readonly start: number;
+  readonly end: number;
+}
+
 export interface ChatMarkdownOptions {
   /** The moment that decides whether a header's date is today. */
   readonly now?: number | undefined;
@@ -31,6 +40,12 @@ export interface ChatMarkdownOptions {
   readonly fold?: boolean | undefined;
   /** The part of a transcript the run ids belong to: content or tail. */
   readonly prefix?: string | undefined;
+}
+
+/** One output line, with the run it belongs to when it is part of one. */
+interface ChatSegment {
+  readonly text: string;
+  readonly run?: ChatFoldRun | undefined;
 }
 
 const HEADER = /^\*\*([^*]+)\*\*(?: via ([^·]+?))? · (\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})(.*)$/;
@@ -146,9 +161,9 @@ export function chatRuns(markdown: string, prefix = "c"): readonly ChatFoldRun[]
   return runs;
 }
 
-/** A chat transcript's Markdown as the terminal draws it. */
-export function chatMarkdown(markdown: string, options: ChatMarkdownOptions = {}): string {
-  if (markdown === "") return markdown;
+/** The output lines of one part of a transcript, each with the run it belongs to. */
+function chatSegments(markdown: string, options: ChatMarkdownOptions): ChatSegment[] {
+  if (markdown === "") return [];
   const now = options.now ?? Date.now();
   const timeZone = options.timeZone;
   const open = new Set(options.open ?? []);
@@ -158,27 +173,69 @@ export function chatMarkdown(markdown: string, options: ChatMarkdownOptions = {}
   const source = lines.map((line, at) =>
     code[at] === true ? line : headerLine(line, now, timeZone),
   );
-  if (options.fold === false) return source.join("\n");
+  if (options.fold === false) return source.map((text) => ({ text }));
   const runs = chatRuns(markdown, prefix);
-  if (runs.length === 0) return source.join("\n");
+  if (runs.length === 0) return source.map((text) => ({ text }));
   const byStart = new Map(runs.map((run) => [run.start, run]));
-  const out: string[] = [];
+  const segments: ChatSegment[] = [];
   let at = 0;
   while (at < source.length) {
     const run = byStart.get(at);
     if (run === undefined) {
-      out.push(source[at] ?? "");
+      segments.push({ text: source[at] ?? "" });
       at += 1;
       continue;
     }
     if (open.has(run.id)) {
-      out.push(...source.slice(run.start, run.end));
+      for (let line = run.start; line < run.end; line += 1) {
+        segments.push({ text: source[line] ?? "", run });
+      }
     } else {
-      out.push(`${run.count} · ${run.last}`);
+      segments.push({ text: `${run.count} · ${run.last}`, run });
       // The blank lines after the last line keep the next message apart.
-      out.push(...source.slice(run.lastAt + 1, run.end));
+      for (let line = run.lastAt + 1; line < run.end; line += 1) {
+        segments.push({ text: source[line] ?? "" });
+      }
     }
     at = run.end;
   }
-  return out.join("\n");
+  return segments;
+}
+
+/** A chat transcript's Markdown as the terminal draws it. */
+export function chatMarkdown(markdown: string, options: ChatMarkdownOptions = {}): string {
+  return chatSegments(markdown, options).map((segment) => segment.text).join("\n");
+}
+
+/** Rows a prefix takes when the next line is appended, without trimming its blanks. */
+function rowsThrough(lines: readonly string[], width: number): number {
+  const text = `${lines.join("\n")}\nSENTINEL`;
+  return layoutMarkdown(text, width).length - 1;
+}
+
+/** Where each run's rows lie in one drawn part of a transcript. */
+export function chatRunRows(
+  markdown: string,
+  options: ChatMarkdownOptions & { readonly width: number },
+): readonly ChatRunRows[] {
+  const segments = chatSegments(markdown, options);
+  const seen: ChatRunRows[] = [];
+  const prefix: string[] = [];
+  let at = 0;
+  while (at < segments.length) {
+    const run = segments[at]?.run;
+    if (run === undefined) {
+      prefix.push(segments[at]?.text ?? "");
+      at += 1;
+      continue;
+    }
+    const start = rowsThrough(prefix, options.width);
+    let end = at;
+    while (end < segments.length && segments[end]?.run?.id === run.id) end += 1;
+    const through = [...prefix, ...segments.slice(at, end).map((segment) => segment.text)];
+    seen.push({ run, start, end: rowsThrough(through, options.width) });
+    prefix.push(...segments.slice(at, end).map((segment) => segment.text));
+    at = end;
+  }
+  return seen;
 }

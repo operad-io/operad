@@ -219,6 +219,44 @@ describe("a chat transcript folds its thinking and tool lines", () => {
     expect(right(state)).toContain("3 · tool Bash 3s ls");
   });
 
+  test("the run at the selected line opens, not always the latest one", () => {
+    const two = "> first thought\n\ntool First 1s\n\nmiddle\n\n> second thought\n\ntool Second 2s";
+    let state = objectState({ markdown: two });
+    state = reduce(state, {
+      type: "section",
+      objectId: "chat:one",
+      sectionId: "transcript",
+      content: { markdown: two },
+    });
+    const folded = right(state);
+    expect(folded).toContain("2 · tool First 1s");
+    expect(folded).toContain("2 · tool Second 2s");
+
+    state = press(state, "enter");
+    const opened = right(state);
+    expect(opened).toContain("first thought");
+    expect(opened).toContain("First 1s");
+    expect(opened).not.toContain("2 · tool First 1s");
+    expect(opened).toContain("2 · tool Second 2s");
+  });
+
+  test("Enter still opens the selected row when another row is selected", () => {
+    let state = objectState({
+      markdown: "> first thought\n\ntool First 1s\n\n> second thought\n\ntool Second 2s",
+    });
+    state = reduce(state, {
+      type: "rows",
+      tabId: "plugin:chat",
+      rows: [ROW, { ...ROW, id: "chat:two", title: "Two" }],
+      replace: true,
+    });
+    state = press(state, "down");
+    expect(state.object?.source).toBe("chat:one");
+    state = press(state, "enter");
+    expect(state.objectRequest?.id).toBe("chat:two");
+    expect(state.object?.sections[0]?.folds).toBeUndefined();
+  });
+
   test("the unfinished part folds the same way, and its run opens too", () => {
     let state = objectState({ markdown: "hello", tail: TAIL });
     let drawn = right(state);

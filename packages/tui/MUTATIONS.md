@@ -511,3 +511,5 @@ the row fields.
 | T-0519-M6 | packages/tui/src/actions.ts | the running chat no longer offered its stop action as the main key | `stopping a reply > the footer offers the stop key and the key runs the stop action` |
 | T-0519-M7 | packages/tui/src/chat.ts | a message header kept the server's transport and UTC time | `a chat message header > shows who and the time in the terminal's zone, without the transport or today's date` |
 | T-0519-M8 | packages/tui/src/actions.ts | a sent message was not drawn before the server's copy arrived | `a message drawn before the server's copy > is weak at the end of the transcript until the copy replaces it, once` |
+| T-0519-M9 | packages/tui/src/state.ts | Enter chose the latest run instead of the run at the selected line | `a chat transcript folds its thinking and tool lines > the run at the selected line opens, not always the latest one` |
+| T-0519-M10 | packages/tui/src/state.ts | Enter folded the open chat even when the list cursor was on another row | `a chat transcript folds its thinking and tool lines > Enter still opens the selected row when another row is selected` |

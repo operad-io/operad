@@ -47,7 +47,7 @@ import {
   pageActions,
 } from "./actions.ts";
 import { chatCommands } from "./commands.ts";
-import { chatMarkdown, chatRuns, type ChatFoldRun } from "./chat.ts";
+import { chatMarkdown, chatRunRows } from "./chat.ts";
 
 
 /** The two terminal themes the view knows. */
@@ -2126,20 +2126,35 @@ function childKey(state: TuiState, key: string): TuiState | undefined {
   return undefined;
 }
 
-/** Enter on a chat transcript opens or closes the latest thinking and tool run. */
+/** Enter on a chat transcript opens or closes the run at the selected line. */
 function toggleChatFold(state: TuiState): TuiState | undefined {
+  const object = state.object;
   const section = activeSection(state);
-  if (state.object?.type !== "chat" || section?.id !== "transcript") return undefined;
-  const runs = [
-    ...chatRuns(section.markdown, "c"),
-    ...chatRuns(section.tail ?? "", "t"),
-  ];
-  const chosen: ChatFoldRun | undefined = runs[runs.length - 1];
-  if (chosen === undefined) return undefined;
+  if (object?.type !== "chat" || object.back !== undefined || section?.id !== "transcript") {
+    return undefined;
+  }
+  // Enter belongs to row navigation until the open row is the selected one.
+  if (selectedRow(state)?.id !== object.source) return undefined;
+  const width = sectionWidth(state);
   const open = section.folds ?? [];
-  const folds = open.includes(chosen.id)
-    ? open.filter((id) => id !== chosen.id)
-    : [...open, chosen.id];
+  const contentRows = sectionLayout(state, section).length;
+  const rows = [
+    ...chatRunRows(section.markdown, { open, width, prefix: "c" }),
+    ...chatRunRows(section.tail ?? "", { open, width, prefix: "t" }).map((entry) => ({
+      ...entry,
+      start: entry.start + contentRows,
+      end: entry.end + contentRows,
+    })),
+  ];
+  const at = section.scroll;
+  const chosen =
+    rows.find((entry) => at >= entry.start && at < entry.end) ??
+    rows.find((entry) => entry.start >= at) ??
+    rows[rows.length - 1];
+  if (chosen === undefined) return undefined;
+  const folds = open.includes(chosen.run.id)
+    ? open.filter((id) => id !== chosen.run.id)
+    : [...open, chosen.run.id];
   return withSection(state, section.id, (value) => ({
     ...value,
     folds,
