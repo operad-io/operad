@@ -9,7 +9,6 @@
 
 import pkg from "../package.json" with { type: "json" };
 import { secretValuesOf } from "@operad-io/access-match";
-import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -37,6 +36,7 @@ import {
   eventNote,
   askNote,
   flagValue,
+  keepKeyOf,
   hasGrants,
   inboxOf,
   imageInputsOf,
@@ -112,34 +112,6 @@ export function piToolEvent(line: string): ToolEvent | undefined {
   if (value.type === "tool_execution_start") return "tool-start";
   if (value.type === "tool_execution_end") return "tool-end";
   return undefined;
-}
-
-/** A stable JSON value: object keys sorted, arrays in order. */
-function canonical(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(canonical);
-  if (isRecord(value)) {
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort()
-        .map((key) => [key, canonical(value[key])]),
-    );
-  }
-  return value;
-}
-
-/**
- * What a worker is started with, apart from this reply: a worker started with
- * another model, effort, directory, access profile, skills or MCP servers is
- * not the same worker. One-time grants are per reply and are sent each time,
- * so they do not name the worker.
- */
-function keepKeyOf(config: Record<string, unknown>): string {
-  const { prompt: _prompt, images: _images, resumeSession: _resume, ...rest } = config;
-  const access = isRecord(rest["access"]) ? { ...rest["access"] } : rest["access"];
-  if (isRecord(access)) delete access["grants"];
-  return createHash("sha256")
-    .update(JSON.stringify(canonical({ ...rest, access })))
-    .digest("hex");
 }
 
 /** What a test injects: the clock and the program the step starts. */

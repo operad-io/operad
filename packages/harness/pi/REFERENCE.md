@@ -52,6 +52,7 @@ this table.
 | `model` | string `provider/id` | no | model to use; absent means pi's own default |
 | `thinkingLevel` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max` | no | reasoning level; absent means pi's default |
 | `skills` | array of strings | no | skill directories to load, each with a `SKILL.md`; nothing else is discovered. A directory whose `SKILL.md` cannot be read or has no name is skipped with one `log` line, not a failed run. Absent: no skills |
+| `keep` | object `{ socket, meta, token, scope, key, timeoutMs }` | no | the step sets this for a chat reply whose worker may stay: where it listens, its record, its token, the chat and the configuration hash, and how long it stays. A worker without it runs one reply and exits |
 | `access` | object | no | the access profile; `denyPaths` and `denyCommands` (arrays of strings) are enforced in the `tool_call` hook by `@operad-io/access-match`, other fields are ignored; absent means nothing is denied |
 
 An invalid object (not JSON, not an object, a required field missing or of the

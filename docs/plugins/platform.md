@@ -98,6 +98,7 @@ A harness may keep its child after a reply, so the next reply does not start it 
 | `writeKeptWorker(record)` | Writes one record whole, with mode `0600`, so a reader sees the old record or the new one |
 | `removeKeptWorker(record)` | Removes a record and its socket; safe when they are already gone |
 | `readKeptWorkers(home, name)` | Every valid record of one harness in a home; a record that cannot be read is skipped |
+| `readKeptWorkersInHome(home)` | Every valid record of every harness in one home, which the shared limit of three counts |
 | `stopKeptWorker(record, options?)` | Asks a worker to stop over its socket, then signals only the process whose command line carries its token; removes the record |
 | `stopKeptWorkers({ home, name, filter?, clock? })` | Ends the workers of one harness that match `filter` (`scope`, `key`, `except`), oldest first |
 | `stopAllKeptWorkers({ home, clock? })` | Ends every kept worker of every harness in one home; `serve` start and stop use it so none runs older code |

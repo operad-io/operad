@@ -4,7 +4,7 @@
  */
 
 import { readProfile } from "@operad-io/access-match";
-import { parseImageInputs, type ImageInput, type SharedLine } from "@operad-io/harness-process";
+import { parseImageInputs, type ImageInput, type SharedLine, type WorkerKeep } from "@operad-io/harness-process";
 import { isRecord } from "@operad-io/engine";
 import { mountedServersOf } from "@operad-io/harness-process";
 
@@ -36,7 +36,11 @@ export interface WorkerInput {
   readonly images?: readonly ImageInput[] | undefined;
   /** Skill directories to load; no other skills are discovered. */
   readonly skills?: readonly string[] | undefined;
+  /** Set by a chat reply: the worker may serve the next reply and then end itself. */
+  readonly keep?: WorkerKeep | undefined;
 }
+
+export type { WorkerKeep } from "@operad-io/harness-process";
 
 /** A gate such as a full test run must finish in the foreground; claude's own default is 120 s. */
 export const DEFAULT_BASH_TIMEOUT_SECS = 1800;
@@ -148,6 +152,7 @@ export const INPUT_FIELDS = [
   "secretValues",
   "images",
   "skills",
+  "keep",
 ] as const;
 
 const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -243,6 +248,32 @@ export function parseInput(value: unknown): ParsedInput {
     if (!profile.ok) return { ok: false, message: `access.${profile.message}` };
   }
 
+  const keepValue = value["keep"];
+  let keep: WorkerKeep | undefined;
+  if (keepValue !== undefined) {
+    if (!isRecord(keepValue)) return { ok: false, message: "keep must be an object" };
+    const fields: Record<string, string> = {};
+    for (const field of ["socket", "meta", "token", "scope", "key"] as const) {
+      const found = keepValue[field];
+      if (typeof found !== "string" || found.length === 0) {
+        return { ok: false, message: `keep.${field} must be a non-empty string` };
+      }
+      fields[field] = found;
+    }
+    const timeoutMs = keepValue["timeoutMs"];
+    if (typeof timeoutMs !== "number" || !Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+      return { ok: false, message: "keep.timeoutMs must be a positive number" };
+    }
+    keep = {
+      socket: fields.socket ?? "",
+      meta: fields.meta ?? "",
+      token: fields.token ?? "",
+      scope: fields.scope ?? "",
+      key: fields.key ?? "",
+      timeoutMs,
+    };
+  }
+
   return {
     ok: true,
     input: {
@@ -261,6 +292,7 @@ export function parseInput(value: unknown): ParsedInput {
       secretValues,
       images: images.length === 0 ? undefined : images,
       skills: skills === undefined || skills.length === 0 ? undefined : skills,
+      keep,
     },
   };
 }

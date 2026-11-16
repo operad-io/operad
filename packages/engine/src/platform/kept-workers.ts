@@ -169,6 +169,18 @@ export function readKeptWorkers(home: string, name: string): readonly KeptWorker
   return found;
 }
 
+/** Every kept worker of every harness in one home. */
+export function readKeptWorkersInHome(home: string): readonly KeptWorkerRecord[] {
+  const root = join(home, "harness");
+  let names: string[];
+  try {
+    names = readdirSync(root);
+  } catch {
+    return [];
+  }
+  return names.flatMap((name) => readKeptWorkers(home, name));
+}
+
 /** True when `pid` is still the kept worker named by `token`, not a reused pid. */
 async function isWorkerProcess(pid: number, token: string): Promise<boolean> {
   const wanted = keptWorkerArgument(token);
