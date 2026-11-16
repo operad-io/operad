@@ -512,6 +512,31 @@ describe("ctx.ask", () => {
     }
   });
 
+  test("an asker that shaped the question gives the wait its own resume", async () => {
+    const env = await setup("memory");
+    try {
+      const shaped = { session: "s-shaped", call: { kind: "command", value: "rm -r src" } };
+      const asker = {
+        useGrant: async () => false,
+        ask: async () => ({
+          kind: "timeout" as const,
+          waitId: "w",
+          prompt: "The agent wants to run `rm -r src` in this read-only chat. Open a worktree for it?",
+          choices: ["Allow once", "Deny"],
+          resume: shaped,
+        }),
+      };
+      const result = await env.registry.runStep(
+        "ask/question",
+        {},
+        { runId: "shaped-run", asker, params: { name: "shaped", dir: env.dir } },
+      );
+      expect(result).toMatchObject({ result: "waiting", data: { resume: shaped } });
+    } finally {
+      await env.close();
+    }
+  });
+
   test("a grace above the timer limit is refused", async () => {
     const env = await setup("memory");
     try {

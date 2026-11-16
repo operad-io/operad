@@ -22,7 +22,9 @@ import {
   MESSAGE_FACT,
   newMessageId,
   WORKTREE_CHOICES,
+  WORKTREE_DENY,
   WORKTREE_QUESTION,
+  WORKTREE_YES,
 } from "../../src/index.ts";
 import { cleanupTempRoots, tempRoot } from "../../../engine/test/plugin/support.ts";
 
@@ -213,7 +215,7 @@ describe("answering a chat's worktree question", () => {
       const answered = await fetch(`${open.base}/v1/answer`, {
         method: "POST",
         headers: { ...auth, "content-type": "application/json" },
-        body: JSON.stringify({ runId: open.runId, waitId, choice: "no" }),
+        body: JSON.stringify({ runId: open.runId, waitId, choice: WORKTREE_DENY }),
       });
       expect(answered.status).toBe(200);
       expect(await open.running).toBe("ended");
@@ -226,7 +228,7 @@ describe("answering a chat's worktree question", () => {
       const stale = await fetch(`${open.base}/v1/answer`, {
         method: "POST",
         headers: { ...auth, "content-type": "application/json" },
-        body: JSON.stringify({ runId: open.runId, waitId, choice: "yes" }),
+        body: JSON.stringify({ runId: open.runId, waitId, choice: WORKTREE_YES }),
       });
       expect(stale.status).toBe(409);
       const refused = (await stale.json()) as { error?: { message?: string } };

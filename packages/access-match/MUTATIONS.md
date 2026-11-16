@@ -113,3 +113,11 @@ and the row fields.
 |---|---|---|---|
 | T-0366-M1 | packages/access-match/src/index.ts | `match` ignored the `alwaysAllow` entry for an asked command | `an always-allowed command lets the exact command and cwd through without asking` |
 | T-0366-M14 | packages/access-match/src/index.ts | the early MCP return ignored an `alwaysAllow` command entry, so an unlisted MCP tool asked again | `an always-allowed command entry lets the exact MCP tool in the same cwd through` |
+
+## T-0507 — reading commands and never-written redirects
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0507-M1 | packages/access-match/src/readonly.ts | `cd` was left off the reading programs, so a `cd <dir>` part was not read-only | `the two commands from C-0022 only read` |
+| T-0507-M2 | packages/access-match/src/readonly.ts | a redirect to a file was skipped like one to `/dev/null` instead of refusing the command | `a redirection that writes nowhere is allowed, and any other is not` |
+| T-0507-M3 | packages/access-match/src/readonly.ts | `printf -v` was no longer a writing option | `a redirection that writes nowhere is allowed, and any other is not` |

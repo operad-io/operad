@@ -998,3 +998,9 @@ the row fields.
 |---|---|---|---|
 | T-0506-M1 | packages/engine/src/plugin/registry.ts | the actions an action receives were all marked available, so `/help` listed unavailable commands | `commands in chat:send > /help leaves out a command that is unavailable now` |
 | T-0506-M2 | packages/engine/src/plugin/registry.ts | the run control's `active` always said it could not tell, so a crashed run was still called writing | `chat:status > a run a crash left without an ending entry is not called writing` |
+
+## T-0507 — a shaped question keeps its own resume
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0507-M7 | packages/engine/src/plugin/registry.ts | a timeout threw away the resume the asker shaped and used the original request's | `ctx.ask > an asker that shaped the question gives the wait its own resume` |

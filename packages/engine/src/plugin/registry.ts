@@ -994,7 +994,7 @@ export class PluginRegistry {
         waitId: outcome.waitId,
         prompt: outcome.prompt,
         choices: outcome.choices,
-        resume: request.resume ?? null,
+        resume: outcome.resume ?? request.resume ?? null,
       });
     };
     const useGrant = async (waitId: string): Promise<boolean> => {

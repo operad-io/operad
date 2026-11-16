@@ -38,7 +38,7 @@ import {
   type StopData,
   type WritingReply,
 } from "./model.ts";
-import { runReply } from "./reply.ts";
+import { runReply, WORKTREE_ALLOW_ALWAYS, WORKTREE_ALLOW_ONCE, WORKTREE_CHOICES, WORKTREE_DENY, WORKTREE_YES } from "./reply.ts";
 import { chatCommands, findCommand, helpText, parseCommand, runCommand } from "./command.ts";
 import { chatViews } from "./views.ts";
 
@@ -71,11 +71,16 @@ export const replyFlow = defineFlow({
       kind: "wait_person",
       params: {
         prompt: "The agent asked a question.",
-        choices: ["allow_once", "reject_once", "yes", "no"],
-          lateChoices: ["allow_always"],
+        choices: [...WORKTREE_CHOICES],
+        // The older yes/no and the internal names still answer an item opened before this.
+        lateChoices: ["allow_once", "allow_always", "reject_once", "yes", "no"],
       },
       replay: "safe",
       next: {
+        [WORKTREE_ALLOW_ONCE]: "reply",
+        [WORKTREE_ALLOW_ALWAYS]: "reply",
+        [WORKTREE_DENY]: "reply",
+        [WORKTREE_YES]: "reply",
         allow_once: "reply",
         allow_always: "reply",
         reject_once: "reply",

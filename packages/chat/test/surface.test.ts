@@ -2,15 +2,20 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createViews, type AskRequest, type JsonValue, type StepContext, type ViewContext } from "@operad-io/engine";
+import { readAlwaysAllow } from "@operad-io/harness-process";
 import {
   allMessages,
   chatViews,
   isWorktreeQuestion,
   READ_ONLY_REFUSAL,
   TRANSCRIPT_PAGE,
+  WORKTREE_ALLOW_ALWAYS,
+  WORKTREE_ALLOW_ONCE,
   WORKTREE_CALL_LIMIT,
   WORKTREE_CHOICES,
+  WORKTREE_DENY,
   WORKTREE_EVENT,
+  WORKTREE_YES,
 } from "../src/index.ts";
 import { cleanupRoots, reply, rig } from "./support.ts";
 
@@ -385,14 +390,14 @@ describe("a read-only chat", () => {
     expect(READ_ONLY_REFUSAL).toContain("Answer in the chat or use read-only commands");
   });
 
-  test("a no answered after the wait gives the agent the same refusal", async () => {
+  test("a Deny answered after the wait gives the agent the same refusal", async () => {
     const r = await rig(() => reply("done"));
     const chat = await r.chat({ access: { readOnly: true } });
     await r.say(chat, "go");
     const prompt = "The agent wants to run `ls` in this read-only chat. Open a worktree for it?";
     const result = await r.round(chat, { resumeSession: "s", askAnswer: { prompt, choice: "no" } });
     expect(result.result).toBe("done");
-    expect(r.calls[0]?.params.askAnswer).toEqual({ prompt, choice: "no", note: READ_ONLY_REFUSAL });
+    expect(r.calls[0]?.params.askAnswer).toEqual({ prompt, choice: "reject_once", note: READ_ONLY_REFUSAL });
   });
 
   test("a no sends nothing, and a question that is not about a call goes through unchanged", async () => {
@@ -422,7 +427,7 @@ describe("a read-only chat", () => {
     expect(emitted).toEqual([]);
   });
 
-  test("a yes sends the worktree event, about the chat", async () => {
+  test("the worktree offer sends the event, about the chat", async () => {
     const emitted: string[] = [];
     const r = await rig(async (ctx: StepContext) => {
       await ctx.ask(writeAsk);
@@ -432,7 +437,7 @@ describe("a read-only chat", () => {
     await r.say(chat, "change");
     const asker = {
       async ask() {
-        return { kind: "answered" as const, answer: { choice: "yes" } };
+        return { kind: "answered" as const, answer: { choice: WORKTREE_YES } };
       },
       async useGrant() {
         return false;
@@ -440,5 +445,104 @@ describe("a read-only chat", () => {
     };
     await r.round(chat, {}, asker, (event) => emitted.push(`${event.type} ${event.object}`));
     expect(emitted).toEqual([`${WORKTREE_EVENT} chat:${chat}`]);
+  });
+
+  test("the question offers the approved words in order, then the worktree offer", () => {
+    expect([...WORKTREE_CHOICES]).toEqual(["Allow once", "Always allow", "Deny", "Open a worktree"]);
+  });
+
+  const commandAsk: AskRequest = {
+    prompt: "Run this command? rm -r src",
+    choices: ["allow_once", "allow_always", "reject_once"],
+    resume: {
+      session: "s-c",
+      grant: { kind: "command", value: "rm -r src", choice: "allow_once", choices: ["allow_once", "allow_always"] },
+    },
+  };
+
+  /** A read-only chat whose agent asks about the same command every round. */
+  async function commandChat() {
+    const asked: AskRequest[] = [];
+    const r = await rig(async (ctx: StepContext) => {
+      await ctx.ask(commandAsk);
+      return reply("done");
+    });
+    const chat = await r.chat({ access: { readOnly: true } });
+    return { r, chat, asked };
+  }
+
+  test("Always allow writes the exact command and cwd, and the same command is not asked again", async () => {
+    const { r, chat, asked } = await commandChat();
+    await r.say(chat, "go");
+    let answers = 0;
+    const asker = {
+      async ask(request: AskRequest) {
+        asked.push(request);
+        answers += 1;
+        return { kind: "answered" as const, answer: { choice: WORKTREE_ALLOW_ALWAYS } };
+      },
+      async useGrant() {
+        return false;
+      },
+    };
+    expect((await r.round(chat, {}, asker)).result).toBe("done");
+    expect(asked).toHaveLength(1);
+    expect(asked[0]?.prompt).toBe(
+      "The agent wants to run `rm -r src` in this read-only chat. Open a worktree for it?",
+    );
+    expect(asked[0]?.choices).toEqual([...WORKTREE_CHOICES]);
+    expect(await readAlwaysAllow(join(r.root, "home"))).toEqual({
+      entries: [{ kind: "command", value: "rm -r src", cwd: r.root }],
+    });
+
+    // The same command in the same directory runs again without a question.
+    await r.say(chat, "go again");
+    expect((await r.round(chat, {}, asker)).result).toBe("done");
+    expect(asked).toHaveLength(1);
+    expect(answers).toBe(1);
+  });
+
+  test("Allow once runs this call only and writes nothing to the user layer", async () => {
+    const { r, chat, asked } = await commandChat();
+    await r.say(chat, "go");
+    const asker = {
+      async ask(request: AskRequest) {
+        asked.push(request);
+        return { kind: "answered" as const, answer: { choice: WORKTREE_ALLOW_ONCE } };
+      },
+      async useGrant() {
+        return false;
+      },
+    };
+    expect((await r.round(chat, {}, asker)).result).toBe("done");
+    expect(await readAlwaysAllow(join(r.root, "home"))).toEqual({ entries: [] });
+    // The next identical call is a new question.
+    await r.say(chat, "go again");
+    expect((await r.round(chat, {}, asker)).result).toBe("done");
+    expect(asked).toHaveLength(2);
+    expect(await readAlwaysAllow(join(r.root, "home"))).toEqual({ entries: [] });
+  });
+
+  test("Deny refuses the call as no did, writes nothing, and opens no worktree", async () => {
+    let seen: { readonly choice: string | undefined; readonly note?: string | undefined } | undefined;
+    const r = await rig(async (ctx: StepContext) => {
+      seen = await ctx.ask(commandAsk);
+      return reply("done");
+    });
+    const chat = await r.chat({ access: { readOnly: true } });
+    await r.say(chat, "go");
+    const emitted: string[] = [];
+    const asker = {
+      async ask() {
+        return { kind: "answered" as const, answer: { choice: WORKTREE_DENY } };
+      },
+      async useGrant() {
+        return false;
+      },
+    };
+    expect((await r.round(chat, {}, asker, (event) => emitted.push(event.type))).result).toBe("done");
+    expect(seen).toEqual({ choice: "reject_once", note: READ_ONLY_REFUSAL });
+    expect(emitted).toEqual([]);
+    expect(await readAlwaysAllow(join(r.root, "home"))).toEqual({ entries: [] });
   });
 });

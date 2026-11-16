@@ -432,7 +432,34 @@ test("commands that only read are on the read-only allowlist", () => {
     "git status", "git log --oneline -5", "git diff HEAD~1", "git show abc", "git blame a.ts", "git branch --list", "ls -la src",
     "cat a.ts | head -5 | wc -l", "grep -rn foo src", "rg foo", "find . -name '*.ts'", "sed -n 1,5p a.ts", "sed -n 3p a.ts",
     "bun test packages/x", "bunx tsc --noEmit", "git status && git log | head", "pwd",
+    "echo done", "printf '%s\\n' x", "sort a.ts", "uniq -c a.ts", "cut -f1 a.ts", "tr a b", "basename src/a.ts",
+    "dirname src/a.ts", "realpath src/a.ts", "readlink src/a.ts", "date", "env", "jq . a.json", "diff a.ts b.ts", "cmp a.ts b.ts",
   ]) expect([command, isReadOnlyCommand(command)]).toEqual([command, true]);
+});
+
+test("the two commands from C-0022 only read", () => {
+  for (const command of [
+    "cd /Users/hai/Code/tkrs && ls && git log --oneline -5",
+    'cd /Users/hai/Code/tkrs && grep -rni "codex" --include=* -l . 2>/dev/null | head -50',
+  ]) expect([command, isReadOnlyCommand(command)]).toEqual([command, true]);
+});
+
+test("a cd only changes the directory; the parts after it are still checked one by one", () => {
+  expect(isReadOnlyCommand("cd /tmp && ls -la")).toBe(true);
+  expect(isReadOnlyCommand("cd x && rm y")).toBe(false);
+  expect(isReadOnlyCommand("cd x && cat a > b")).toBe(false);
+});
+
+test("a redirection that writes nowhere is allowed, and any other is not", () => {
+  for (const command of [
+    "ls >/dev/null", "ls 2>/dev/null", "ls 2> /dev/null", "ls &>/dev/null", "ls &> /dev/null", "ls >>/dev/null",
+    "ls 2>&1", "ls 1>&2", "ls nope 2>&1 | head", "sort a.ts >/dev/null", "echo hi 2>/dev/null",
+  ]) expect([command, isReadOnlyCommand(command)]).toEqual([command, true]);
+  for (const command of [
+    "ls > out.txt", "ls >out.txt", "ls 2> out.txt", "printf x > f", "echo hi > f", "sort -o x", "sort --output=x",
+    "ls 2>&3", "ls 3>&1", "ls &>out.txt", "uniq a b", "uniq -- a b", "printf -v x %s hi", "date -s now", "date --set=now",
+    "jq -i . a.json", "jq --in-place . a.json", "diff --output=x a b", "env ls",
+  ]) expect([command, isReadOnlyCommand(command)]).toEqual([command, false]);
 });
 
 test("everything else is not read-only: redirects, tee, sed -i, cp, mv, git writes, a pipeline whose last stage writes", () => {
