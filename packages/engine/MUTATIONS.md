@@ -1005,6 +1005,18 @@ the row fields.
 |---|---|---|---|
 | T-0507-M7 | packages/engine/src/plugin/registry.ts | a timeout threw away the resume the asker shaped and used the original request's | `ctx.ask > an asker that shaped the question gives the wait its own resume` |
 
+## T-0510 — a live tail announces growth without a fact
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0510-M1 | packages/engine/src/views/live-logs.ts | the watch callback no longer announced the run's object | `a live log that grows without a fact > an appended line announces the run's object` |
+| T-0510-M2 | packages/engine/src/views/presentation.ts | the watcher announced growth without the rate limit, so every append was an event | `a live log that grows without a fact > many appends in one window give one event, and the last when it ends` |
+| T-0510-M3 | packages/engine/src/views/live-logs.ts | `close` no longer stopped the watch and the fallback timer | `a live log that grows without a fact > closing the views stops the watch and the fallback check` |
+| T-0510-M4 | packages/engine/src/views/live-logs.ts | a run directory that did not exist yet was recorded as watched, so it was never retried | `a live log that grows without a fact > a run with no log directory is picked up when it appears` |
+| T-0510-M5 | packages/engine/src/views/live-logs.ts | a refresh no longer forgot a run that had ended | `a live log that grows without a fact > no event arrives after the run ended` |
+| T-0510-M6 | packages/engine/src/views/live-logs.ts | every active run was watched, whether or not its object had a live section | `a live log that grows without a fact > a run whose object has no live section is not watched` |
+| T-0510-M7 | packages/engine/src/views/presentation.ts | a run log change no longer asked the watcher to re-read the active runs | `a live log that grows without a fact > a run the log says ended is no longer watched, without the timer` |
+
 ## T-0511 — a load asks no harness for its model list
 
 | id | file | mutation | failing test |
