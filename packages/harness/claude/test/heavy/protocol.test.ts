@@ -560,6 +560,126 @@ test("claude runs without setting sources, with manual permissions and the isola
   expect(spawned.env["DISABLE_ERROR_REPORTING"]).toBe("1");
 });
 
+test("the own-settings switch on loads every setting source and leaves the instruction isolation out", async () => {
+  const s = setup();
+  s.input["useOwnSettings"] = true;
+  const run = await runFake(s, { steps: done });
+
+  const spawned = run.record.find((entry) => "spawn" in entry)?.["spawn"] as {
+    args: string[];
+    env: Record<string, string>;
+  };
+  expect(flagValue(spawned.args, "--setting-sources")).toBe("user,project,local");
+  expect(spawned.env["CLAUDE_CODE_DISABLE_AUTO_MEMORY"]).toBeUndefined();
+  expect(spawned.env["CLAUDE_CODE_DISABLE_CLAUDE_MDS"]).toBeUndefined();
+  expect(spawned.env["DISABLE_TELEMETRY"]).toBe("1");
+  expect(spawned.env["DISABLE_ERROR_REPORTING"]).toBe("1");
+  expect(spawned.env["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"]).toBe("1");
+});
+
+test("the own-settings switch off is exactly today's options and environment", async () => {
+  const explicit = setup();
+  explicit.input["useOwnSettings"] = false;
+  const off = await runFake(explicit, { steps: done });
+  const absent = await runFake(setup(), { steps: done });
+  const spawnOf = (run: Run): unknown => run.record.find((entry) => "spawn" in entry)?.["spawn"];
+
+  expect(spawnOf(off)).toEqual(spawnOf(absent));
+  const spawned = spawnOf(off) as {
+    args: string[];
+    env: Record<string, string>;
+  };
+  expect(flagValue(spawned.args, "--setting-sources")).toBe("");
+  expect(spawned.env["CLAUDE_CODE_DISABLE_AUTO_MEMORY"]).toBe("1");
+  expect(spawned.env["CLAUDE_CODE_DISABLE_CLAUDE_MDS"]).toBe("1");
+});
+
+test("with the own-settings switch on, the profile denies a call in PreToolUse before any user allow rule", async () => {
+  const s = setup();
+  s.input["useOwnSettings"] = true;
+  s.input["access"] = { denyCommands: ["rm"] };
+  const run = await runFake(s, {
+    steps: [
+      { say: systemInit() },
+      { hook: "PreToolUse", toolName: "Bash", toolUseId: "tool-1", input: { command: "rm -rf build" } },
+      { say: result() },
+    ],
+  });
+
+  expect(run.exitCode).toBe(0);
+  const hook = run.record.find((entry) => "hookReply" in entry);
+  expect(hook).toMatchObject({
+    response: {
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        permissionDecision: "deny",
+      },
+    },
+  });
+  const response: unknown = hook?.["response"];
+  const output: unknown =
+    typeof response === "object" && response !== null ? Reflect.get(response, "hookSpecificOutput") : undefined;
+  const reason: unknown =
+    typeof output === "object" && output !== null ? Reflect.get(output, "permissionDecisionReason") : undefined;
+  expect(String(reason)).toContain('denyCommands rule "rm"');
+  expect(run.record.some((entry) => "askReply" in entry)).toBe(false);
+  expect(kinds(run)).toContain("blocked");
+  expect(run.lines.find((line) => line["type"] === "blocked")).toMatchObject({
+    toolName: "Bash",
+    reason: "refused by the access profile",
+  });
+  expect(run.lines.find((line) => line["type"] === "tool_execution_end")).toMatchObject({
+    toolCallId: "tool-1",
+    isError: true,
+  });
+});
+
+test("with the own-settings switch on, a read-only profile denies a write in PreToolUse", async () => {
+  const s = setup();
+  s.input["useOwnSettings"] = true;
+  s.input["access"] = { readOnly: true };
+  const file = join(String(s.input["cwd"]), "notes.md");
+  const run = await runFake(s, {
+    steps: [
+      { say: systemInit() },
+      { hook: "PreToolUse", toolName: "Write", toolUseId: "tool-1", input: { file_path: file, content: "x" } },
+      { say: result() },
+    ],
+  });
+
+  const hook = run.record.find((entry) => "hookReply" in entry);
+  expect(hook).toMatchObject({
+    response: {
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        permissionDecision: "deny",
+      },
+    },
+  });
+  expect(run.record.some((entry) => "askReply" in entry)).toBe(false);
+  expect(kinds(run)).toContain("blocked");
+  expect(run.lines.find((line) => line["type"] === "tool_execution_end")).toMatchObject({
+    toolCallId: "tool-1",
+    isError: true,
+  });
+});
+
+test("with the own-settings switch on, a call the profile allows runs without a question", async () => {
+  const s = setup();
+  s.input["useOwnSettings"] = true;
+  s.input["access"] = { denyCommands: ["rm"] };
+  const run = await runFake(s, {
+    steps: [
+      { say: systemInit() },
+      { ask: { toolName: "Bash", toolUseId: "tool-1", input: { command: "ls -la" } } },
+      { say: result() },
+    ],
+  });
+
+  expect(answerOf(run)["behavior"]).toBe("allow");
+  expect(kinds(run)).not.toContain("blocked");
+});
+
 test("a given skill is mounted as a plugin, only that one is loaded, and the plugin is removed at the end", async () => {
   const s = setup();
   const dir = dirname(s.recordFile);
@@ -1450,6 +1570,22 @@ test("a command that askCommands matches writes an ask_call with the command and
   expect(kinds(run).indexOf("ask_call")).toBeLessThan(kinds(run).indexOf("ask_resolved"));
   expect(kinds(run).indexOf("ask_resolved")).toBeLessThan(kinds(run).indexOf("message_end"));
   expect(last(run)).toMatchObject({ result: "done" });
+});
+
+test("with the own-settings switch on, a call the profile says to ask still asks through operad", async () => {
+  const s = setup();
+  s.input["access"] = ASKING;
+  s.input["useOwnSettings"] = true;
+  const child = new Child(s.env({ steps: ASK_PUSH }), s.recordFile);
+  child.sendLine(JSON.stringify(s.input));
+  const call = await child.untilLine("ask_call");
+  expect(call).toMatchObject({ type: "ask_call", kind: "command", value: "git push origin main" });
+  if (call !== undefined) child.sendLine(JSON.stringify({ type: "ask_ack", id: call["id"], decision: "allow" }));
+  child.endInput();
+  const run = await child.finish();
+
+  expect(answerOf(run)["behavior"]).toBe("allow");
+  expect(kinds(run)).not.toContain("blocked");
 });
 
 test("a refused question denies the call with the reason and the run goes on", async () => {

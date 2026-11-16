@@ -291,3 +291,9 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 | T-0514-M3 | packages/chat/src/views.ts | the newest open call was named instead of the oldest | `a reply's status > Running names the oldest call still going, since when it started` |
 | T-0514-M4 | packages/chat/src/views.ts | a failure no longer ended the status | `a reply's status > there is no status after a failure` |
 | T-0514-M5 | packages/chat/src/views.ts | an old assistant message without `replyTo` no longer answered the message before it, so an idle snapshot said Starting | `a reply's status > an old assistant message with no replyTo answers the message before it` |
+
+## T-0517 — a bot uses the owner's own agent settings
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0517-M7 | packages/chat/src/reply.ts | the reply did not hand the bot's own-settings switch to the agent step | `a reply reads the bot again > the own-settings switch is off by default and reaches the agent when on` |

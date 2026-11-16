@@ -45,6 +45,7 @@ function rowOf(bot: ResolvedBot): Record<string, JsonValue> {
     name: bot.name,
     cwd: bot.cwd,
     harness: bot.harness,
+    useOwnSettings: bot.useOwnSettings,
     model: bot.model,
     effort: bot.effort,
     skills: [...bot.skills],
@@ -451,7 +452,13 @@ export async function runSettings(ctx: StepContext, params: unknown): Promise<Pl
     }
     return {
       result: "done",
-      data: { cwd: bot.cwd, access: bot.access, skills: [...bot.skills], mcpServers },
+      data: {
+        cwd: bot.cwd,
+        access: bot.access,
+        skills: [...bot.skills],
+        mcpServers,
+        useOwnSettings: bot.useOwnSettings,
+      },
     };
   } catch (error) {
     return { result: "failed", data: { message: error instanceof Error ? error.message : String(error) } };

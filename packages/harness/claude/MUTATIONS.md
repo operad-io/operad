@@ -191,3 +191,14 @@ setup it depends on, in the order they were recorded. The root
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0496-M5 | packages/harness/claude/src/index.ts | claude no longer declared `takesMessagesMidRun` | `claude/agent > the plugin declares that it loads skills itself` |
+
+## T-0517 — a bot uses the owner's own agent settings
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0517-M1 | packages/harness/claude/src/worker.ts | the own-settings switch still passed `settingSources: []` | `the own-settings switch on loads every setting source and leaves the instruction isolation out` |
+| T-0517-M2 | packages/harness/claude/src/worker.ts | the own-settings switch left the auto-memory and instruction-file isolation variables in the environment | `the own-settings switch on loads every setting source and leaves the instruction isolation out` |
+| T-0517-M3 | packages/harness/claude/src/worker.ts | the `PreToolUse` hook no longer judged the access profile before a user allow rule | `with the own-settings switch on, the profile denies a call in PreToolUse before any user allow rule` |
+| T-0517-M4 | packages/harness/claude/src/index.ts | the step did not pass the own-settings switch to the worker | `claude/agent > the own-settings switch reaches the worker only when it is on` |
+| T-0517-M8 | packages/harness/claude/src/protocol.ts | `useOwnSettings` was no longer an input field, so the worker refused it as unknown | `the own-settings switch off is exactly today's options and environment` |
+| T-0517-M9 | packages/harness/claude/src/worker.ts | the `PreToolUse` hook did not treat a read-only profile as a refusal | `with the own-settings switch on, a read-only profile denies a write in PreToolUse` |

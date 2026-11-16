@@ -15,14 +15,13 @@ import {
 } from "@anthropic-ai/claude-agent-sdk";
 import {
   firstErrorLine,
-  match,
   messageSummary,
   readProfile,
   REFUSED_IN_LOG,
   summarizeCall,
   type AccessProfile,
 } from "@operad-io/access-match";
-import { decideAccess, hasRules, translate, type CallAnswer } from "./access.ts";
+import { checkProfile, decideAccess, type CallAnswer } from "./access.ts";
 import {
   maskSecrets,
   messageText,
@@ -143,6 +142,19 @@ export const ISOLATION_ENV: Readonly<Record<string, string>> = {
   // the turn would end and claude would go on by itself later.
   CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1",
 };
+
+/**
+ * The isolation variables that keep instruction files and auto memory off.
+ * A bot that uses the owner's own agent settings leaves these out; telemetry,
+ * error reporting and background tasks stay off.
+ */
+export const INSTRUCTION_ISOLATION_ENV: readonly string[] = [
+  "CLAUDE_CODE_DISABLE_AUTO_MEMORY",
+  "CLAUDE_CODE_DISABLE_CLAUDE_MDS",
+];
+
+/** The setting sources a bot that uses the owner's own agent settings loads. */
+export const OWN_SETTING_SOURCES = ["user", "project", "local"] as const;
 
 /**
  * Tools that only schedule or wait for work outside the turn. They are off, so
@@ -421,19 +433,27 @@ export async function runWorker(
   // Tool calls that have started and not ended; a refused call ends here too,
   // so the host never sees a call stay open.
   const open = new Map<string, { readonly name: string; readonly startedAt: number }>();
-  // The same translation `decideAccess` uses, so a tool the summary does not
-  // know by name (NotebookEdit, MultiEdit) is still judged as its access-match tool.
+  // The same check `canUseTool` uses, so a tool the summary does not know by
+  // name (NotebookEdit, MultiEdit) is still judged as its access-match tool.
   const deniedByProfile = (name: string, toolInput: unknown): { readonly rule?: string } | undefined => {
     const record = typeof toolInput === "object" && toolInput !== null ? (toolInput as Record<string, unknown>) : {};
-    const translated = translate(name, record);
-    if (translated.kind === "inert") return undefined;
-    if (translated.kind === "mapped") {
-      const verdict = match(profile, { tool: translated.tool, input: translated.input, cwd: input.cwd });
-      // A call that asks is not refused: it is shown as itself.
-      if (verdict.allow || verdict.ask === true) return undefined;
-      return verdict.rule === undefined ? {} : { rule: verdict.rule };
+    const check = checkProfile(profile, name, record, input.cwd);
+    if (check.kind !== "refuse") return undefined;
+    return check.rule === undefined ? {} : { rule: check.rule };
+  };
+  // The profile's refusals for the `PreToolUse` hook. A read-only profile asks
+  // in `canUseTool` so a person can answer, but with the owner's settings on it
+  // is also a refusal that no user allow rule may pass: `{ readOnly: true }`
+  // through the same matcher says whether read-only is what stops the call.
+  const hookRefusal = (name: string, toolInput: unknown): { readonly reason: string } | undefined => {
+    const record = typeof toolInput === "object" && toolInput !== null ? (toolInput as Record<string, unknown>) : {};
+    const check = checkProfile(profile, name, record, input.cwd);
+    if (check.kind === "refuse") return { reason: check.reason };
+    if (profile.readOnly === true) {
+      const alone = checkProfile({ readOnly: true }, name, record, input.cwd);
+      if (alone.kind !== "allow") return { reason: alone.reason };
     }
-    return hasRules(profile) ? {} : undefined;
+    return undefined;
   };
   const startCall = (id: string, name: string, toolInput: unknown): void => {
     if (open.has(id)) return;
@@ -476,6 +496,24 @@ export async function runWorker(
     async (event) => {
       if (event.hook_event_name === "PreToolUse" && kind === "start") {
         startCall(event.tool_use_id, event.tool_name, event.tool_input);
+        // A bot that loads the owner's settings may have an allow rule there.
+        // The profile is judged first, in this hook, so no such rule can let a
+        // call through that it refuses. A grant or an ask is not a refusal and
+        // stays with `canUseTool`.
+        if (input.useOwnSettings === true) {
+          const refusal = hookRefusal(event.tool_name, event.tool_input);
+          if (refusal !== undefined) {
+            writeLine({ type: "blocked", toolName: event.tool_name, reason: REFUSED_IN_LOG });
+            endCall(event.tool_use_id, event.tool_name, true, REFUSED_IN_LOG);
+            return {
+              hookSpecificOutput: {
+                hookEventName: "PreToolUse",
+                permissionDecision: "deny",
+                permissionDecisionReason: refusal.reason,
+              },
+            };
+          }
+        }
       } else if (event.hook_event_name === "PostToolUse" && kind === "end") {
         endCall(event.tool_use_id, event.tool_name, false, undefined, event.tool_response);
       } else if (event.hook_event_name === "PostToolUseFailure" && kind === "failed") {
@@ -533,10 +571,22 @@ export async function runWorker(
           env: { OPERAD_HOME: input.operadTools.home },
         };
   const stderrTail: string[] = [];
+  const childEnv: Record<string, string | undefined> = {
+    ...(hooks.env ?? process.env),
+    ...ISOLATION_ENV,
+    // Both limits, so a gate runs in the foreground instead of being moved on.
+    BASH_DEFAULT_TIMEOUT_MS: String((input.bashTimeoutSecs ?? DEFAULT_BASH_TIMEOUT_SECS) * 1000),
+    BASH_MAX_TIMEOUT_MS: String((input.bashTimeoutSecs ?? DEFAULT_BASH_TIMEOUT_SECS) * 1000),
+  };
+  if (input.useOwnSettings === true) {
+    // Instruction files and auto memory are the owner's own; telemetry, error
+    // reporting and background tasks stay off.
+    for (const name of INSTRUCTION_ISOLATION_ENV) delete childEnv[name];
+  }
   const options: Options = {
     cwd: input.cwd,
     pathToClaudeCodeExecutable: executable,
-    settingSources: [],
+    settingSources: input.useOwnSettings === true ? [...OWN_SETTING_SOURCES] : [],
     permissionMode: "default",
     permissionPrompts: "host",
     includePartialMessages: true,
@@ -548,17 +598,15 @@ export async function runWorker(
       ? {}
       : {
           plugins: [{ type: "local" as const, path: skillPlugin.dir }],
-          // Keep the built-in and user listings out of this run's context: only
-          // the skills mounted above are enabled.
-          skills: skillPlugin.names.map((name) => `${SKILLS_PLUGIN}:${name}`),
+          // The switch keeps operad's skills and adds the owner's own; a name
+          // both sides define is operad's because its plugin is the one mounted
+          // here. With the switch off, only the skills mounted above load.
+          skills:
+            input.useOwnSettings === true
+              ? "all"
+              : skillPlugin.names.map((name) => `${SKILLS_PLUGIN}:${name}`),
         }),
-    env: {
-      ...(hooks.env ?? process.env),
-      ...ISOLATION_ENV,
-      // Both limits, so a gate runs in the foreground instead of being moved on.
-      BASH_DEFAULT_TIMEOUT_MS: String((input.bashTimeoutSecs ?? DEFAULT_BASH_TIMEOUT_SECS) * 1000),
-      BASH_MAX_TIMEOUT_MS: String((input.bashTimeoutSecs ?? DEFAULT_BASH_TIMEOUT_SECS) * 1000),
-    },
+    env: childEnv,
     hooks: {
       PreToolUse: [{ hooks: [toolHook("start")] }],
       PostToolUse: [{ hooks: [toolHook("end")] }],

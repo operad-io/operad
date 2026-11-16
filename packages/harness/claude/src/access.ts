@@ -96,6 +96,84 @@ export function translate(name: string, input: Readonly<Record<string, unknown>>
   return row.required ? { kind: "missing", field: row.from } : { kind: "mapped", tool: row.tool, input: {} };
 }
 
+/** What the profile says about one call, before any grant or person is asked. */
+export type ProfileCheck =
+  | { readonly kind: "allow" }
+  | {
+      readonly kind: "grant";
+      readonly waitId: string;
+      readonly reason: string;
+      /** The same call also matches an ask rule; without a grant it would ask. */
+      readonly question?: CallQuestion | undefined;
+    }
+  | {
+      readonly kind: "ask";
+      readonly reason: string;
+      readonly question: CallQuestion;
+    }
+  | {
+      readonly kind: "refuse";
+      readonly reason: string;
+      /** The profile rule that refused, as the profile wrote it. */
+      readonly rule?: string | undefined;
+    };
+
+/**
+ * The profile's own verdict for one call: the one matcher `canUseTool` uses
+ * and the `PreToolUse` hook applies before a user setting's allow rule can.
+ * A grant is not a pass yet (the host may not use it up) and an ask is not a
+ * refusal; only `refuse` is final.
+ */
+export function checkProfile(
+  profile: AccessProfile,
+  name: string,
+  input: Readonly<Record<string, unknown>>,
+  cwd: string,
+): ProfileCheck {
+  const translated = translate(name, input, profile.allowMcp !== undefined);
+  if (translated.kind === "inert") return { kind: "allow" };
+  if (translated.kind === "unmapped") {
+    if (!hasRules(profile)) return { kind: "allow" };
+    return {
+      kind: "refuse",
+      reason: `tool "${name}" is not one the access profile can check; it is refused while denyPaths or denyCommands is set`,
+    };
+  }
+  if (translated.kind === "missing") {
+    if (!hasRules(profile)) return { kind: "allow" };
+    return {
+      kind: "refuse",
+      reason: `tool "${name}" has no ${translated.field}; it is refused while denyPaths or denyCommands is set`,
+    };
+  }
+
+  const call = { tool: translated.tool, input: translated.input, cwd };
+  const verdict = match(profile, call);
+  if (verdict.allow) return { kind: "allow" };
+  const question: CallQuestion | undefined =
+    verdict.ask === true
+      ? { kind: verdict.kind, value: verdict.value, ...(verdict.tool === undefined ? {} : { tool: verdict.tool }) }
+      : undefined;
+  // A one-time permission covers one exact call that would be refused. The
+  // host writes the fact before it answers, so a crash after it cannot give
+  // the permission twice.
+  const grant = findGrant(profile, call);
+  if (grant !== undefined) {
+    return {
+      kind: "grant",
+      waitId: grant.waitId,
+      reason: verdict.reason,
+      ...(question === undefined ? {} : { question }),
+    };
+  }
+  if (question !== undefined) return { kind: "ask", reason: verdict.reason, question };
+  return {
+    kind: "refuse",
+    reason: verdict.reason,
+    ...(verdict.rule === undefined ? {} : { rule: verdict.rule }),
+  };
+}
+
 export type AccessDecision =
   | { readonly allow: true }
   | {
@@ -120,49 +198,42 @@ export async function decideAccess(
   useGrant?: (waitId: string) => Promise<boolean>,
   ask?: (question: CallQuestion) => Promise<CallAnswer>,
 ): Promise<AccessDecision> {
-  const translated = translate(name, input, profile.allowMcp !== undefined);
-  if (translated.kind === "inert") return { allow: true };
-  if (translated.kind === "unmapped") {
-    if (!hasRules(profile)) return { allow: true };
-    return {
-      allow: false,
-      reason: `tool "${name}" is not one the access profile can check; it is refused while denyPaths or denyCommands is set`,
-    };
+  const check = checkProfile(profile, name, input, cwd);
+  if (check.kind === "allow") return { allow: true };
+  if (check.kind === "grant") {
+    if (useGrant !== undefined) {
+      let used = false;
+      try {
+        used = await useGrant(check.waitId);
+      } catch {
+        used = false;
+      }
+      if (used) return { allow: true };
+    }
+    if (check.question !== undefined && ask !== undefined) {
+      return askFor(ask, check.question, check.reason);
+    }
+    return { allow: false, reason: check.reason };
   }
-  if (translated.kind === "missing") {
-    if (!hasRules(profile)) return { allow: true };
-    return {
-      allow: false,
-      reason: `tool "${name}" has no ${translated.field}; it is refused while denyPaths or denyCommands is set`,
-    };
+  if (check.kind === "ask") {
+    if (ask === undefined) return { allow: false, reason: check.reason };
+    return askFor(ask, check.question, check.reason);
   }
+  return { allow: false, reason: check.reason };
+}
 
-  const call = { tool: translated.tool, input: translated.input, cwd };
-  const verdict = match(profile, call);
-  if (verdict.allow) return { allow: true };
-  // A one-time permission covers one exact call that would be refused. The
-  // host writes the fact before it answers, so a crash after it cannot give
-  // the permission twice.
-  const grant = findGrant(profile, call);
-  if (grant !== undefined && useGrant !== undefined) {
-    let used = false;
-    try {
-      used = await useGrant(grant.waitId);
-    } catch {
-      used = false;
-    }
-    if (used) return { allow: true };
+async function askFor(
+  ask: (question: CallQuestion) => Promise<CallAnswer>,
+  question: CallQuestion,
+  reason: string,
+): Promise<AccessDecision> {
+  let answer: CallAnswer;
+  try {
+    answer = await ask(question);
+  } catch {
+    answer = { decision: "deny", reason: "the question could not be asked" };
   }
-  if (verdict.ask === true && ask !== undefined) {
-    let answer: CallAnswer;
-    try {
-      answer = await ask({ kind: verdict.kind, value: verdict.value, ...(verdict.tool === undefined ? {} : { tool: verdict.tool }) });
-    } catch {
-      answer = { decision: "deny", reason: "the question could not be asked" };
-    }
-    if (answer.decision === "allow") return { allow: true };
-    if (answer.decision === "stop") return { allow: false, reason: "waiting for an answer", stop: true };
-    return { allow: false, reason: `${verdict.reason}; ${answer.reason ?? "a person refused it"}` };
-  }
-  return { allow: false, reason: verdict.reason };
+  if (answer.decision === "allow") return { allow: true };
+  if (answer.decision === "stop") return { allow: false, reason: "waiting for an answer", stop: true };
+  return { allow: false, reason: `${reason}; ${answer.reason ?? "a person refused it"}` };
 }

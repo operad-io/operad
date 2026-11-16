@@ -233,6 +233,16 @@ describe("claude/agent", () => {
     });
   });
 
+  test("the own-settings switch reaches the worker only when it is on", async () => {
+    const on = await setup("done");
+    await runAgent(on, { prompt: "hello", cwd: on.root, useOwnSettings: true });
+    expect(recorded(on).useOwnSettings).toBe(true);
+
+    const off = await setup("done");
+    await runAgent(off, { prompt: "hello", cwd: off.root, useOwnSettings: false });
+    expect(recorded(off)).not.toHaveProperty("useOwnSettings");
+  });
+
   test("unset settings are not sent, so claude uses its defaults; the command defaults to claude and Bash to 1800 s", async () => {
     const env = await setup("done");
     await runAgent(env, { prompt: "hello", cwd: env.root });

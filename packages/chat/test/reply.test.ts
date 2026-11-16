@@ -18,6 +18,8 @@ describe("chat/reply", () => {
     // The agent gets operad's tools of the home it runs in, not a shell command.
     expect(r.calls[0]?.params.operadTools).toEqual({ home: join(r.root, "home") });
     expect(r.calls[0]?.params.cwd).toBe(r.root);
+    // A repository chat does not load the owner's own agent settings.
+    expect(r.calls[0]?.params.useOwnSettings).toBeUndefined();
     const messages = allMessages(r.store, chat);
     expect(messages.map((message) => [message.role, message.text])).toEqual([
       ["user", "hello"],

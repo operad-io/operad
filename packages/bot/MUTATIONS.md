@@ -113,3 +113,10 @@ changes for bots, in the order they were recorded. The root
 |---|---|---|---|
 | T-0505-M1 | packages/bot/src/proposals.ts | a missing or empty listed skill path stopped a proposal instead of being skipped | `a bot changes a skill loaded from a listed directory > a listed path that is missing or empty is skipped, and the mounted skill is still found` |
 | T-0505-M4 | packages/bot/src/create.ts | creating a bot read the bot map before the lock, so two creates at once dropped one | `creating a bot with chosen skills and MCP servers > two creates at once keep both new bots` |
+
+## T-0517 — a bot uses the owner's own agent settings
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0517-M5 | packages/bot/src/bot.ts | resolving a bot always said the own-settings switch was off | `bots > using the owner's own agent settings is off unless the bot turns it on` |
+| T-0517-M6 | packages/bot/src/index.ts | `bot/settings` did not return the own-settings switch | `a reply reads the bot again > the own-settings switch is off by default and reaches the agent when on` |

@@ -36,6 +36,8 @@ export interface WorkerInput {
   readonly images?: readonly ImageInput[] | undefined;
   /** Skill directories to load; no other skills are discovered. */
   readonly skills?: readonly string[] | undefined;
+  /** Load the owner's own agent settings (ADR 0024 D4); off unless true. */
+  readonly useOwnSettings?: boolean | undefined;
 }
 
 /** A gate such as a full test run must finish in the foreground; claude's own default is 120 s. */
@@ -148,6 +150,7 @@ export const INPUT_FIELDS = [
   "secretValues",
   "images",
   "skills",
+  "useOwnSettings",
 ] as const;
 
 const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -207,6 +210,11 @@ export function parseInput(value: unknown): ParsedInput {
     return { ok: false, message: "skills must be an array of strings" };
   }
 
+  const useOwnSettings = value["useOwnSettings"];
+  if (useOwnSettings !== undefined && typeof useOwnSettings !== "boolean") {
+    return { ok: false, message: "useOwnSettings must be a boolean" };
+  }
+
   const maxTurns = value["maxTurns"];
   if (maxTurns !== undefined && (typeof maxTurns !== "number" || !Number.isInteger(maxTurns) || maxTurns < 1)) {
     return { ok: false, message: "maxTurns must be a positive integer" };
@@ -261,6 +269,7 @@ export function parseInput(value: unknown): ParsedInput {
       secretValues,
       images: images.length === 0 ? undefined : images,
       skills: skills === undefined || skills.length === 0 ? undefined : skills,
+      useOwnSettings,
     },
   };
 }

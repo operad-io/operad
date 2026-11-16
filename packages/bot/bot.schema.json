@@ -23,6 +23,12 @@
             "minLength": 1,
             "description": "The agent a new chat uses when it names none."
           },
+          "useOwnSettings": {
+            "type": "boolean",
+            "title": "Use my own agent settings",
+            "default": false,
+            "description": "The bot's agent then reads your own configuration of that agent. claude: your settings, instruction files, memory, skills, commands, subagents, plugins and MCP servers; other agents as they support it. The bot's access profile still refuses what it refuses. Off by default."
+          },
           "skills": {
             "type": "array",
             "items": {
