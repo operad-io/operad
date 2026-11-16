@@ -25,6 +25,7 @@ afterAll(async () => {
 /** A client the test drives: the tail the transcript gives, and a way to wake the watcher. */
 class ProgressClient implements ClientApi {
   tail: string | undefined;
+  status: { readonly text: string; readonly since: number } | undefined;
   /** Whether the client says a run works; false unless a test says otherwise. */
   readonly running = new Map<string, boolean>();
   /** The `after` marks the progress side read with, in order. */
@@ -66,6 +67,7 @@ class ProgressClient implements ClientApi {
       markdown: "",
       mark,
       ...(this.tail === undefined ? {} : { tail: this.tail }),
+      ...(this.status === undefined ? {} : { status: this.status }),
     };
   };
 
@@ -267,6 +269,31 @@ describe("the progress message of a reply", () => {
     await f.progress.syncChat(f.chat);
     await f.api.until(() => f.api.edits.length >= 2);
     expect(f.api.edits[1]?.text).toBe("fourth");
+    await f.stop();
+  });
+
+  test("the progress message exists from the first status and ends with its line", async () => {
+    const f = await setup();
+    f.client.status = { text: "Starting", since: 0 };
+    await f.progress.syncChat(f.chat);
+    await f.api.until(() => f.api.sent.length >= 1);
+    expect(f.api.sent[0]?.text).toBe("Starting · 0ms");
+    await f.stop();
+  });
+
+  test("the status line comes after the tail and its elapsed time follows the clock", async () => {
+    const f = await setup();
+    f.client.tail = "partial";
+    f.client.status = { text: "Running Bash", since: 0 };
+    await f.progress.syncChat(f.chat);
+    await f.api.until(() => f.api.sent.length >= 1);
+    expect(f.api.sent[0]?.text).toBe("partial\n\nRunning Bash · 0ms");
+
+    f.clock.advance(PROGRESS_INTERVAL_MS);
+    f.client.status = { text: "Thinking", since: 1_000 };
+    await f.progress.syncChat(f.chat);
+    await f.api.until(() => f.api.edits.length >= 1);
+    expect(f.api.edits[0]?.text).toBe("partial\n\nThinking · 1.0s");
     await f.stop();
   });
 

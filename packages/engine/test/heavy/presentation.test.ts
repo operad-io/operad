@@ -533,6 +533,7 @@ describe("presentation views", () => {
     const first = await views.section("item:one", "log");
     expect(first.markdown).toBe("line 1");
     expect(first.tail).toBe("tail 1");
+    expect(first.status).toEqual({ text: "Thinking", since: 1_700_000_000_000 });
     expect(first.mark).toBeString();
     const second = await views.section("item:one", "log");
     expect(second.markdown).toBe("line 1\nline 2");
@@ -545,8 +546,14 @@ describe("presentation views", () => {
     });
     expect(delta.markdown).toBe("line 2");
     expect(delta.tail).toBe("tail 2");
+    expect(delta.status).toEqual({ text: "Thinking", since: 1_700_000_000_000 });
     expect(delta.mark).toBe(second.mark);
     expect(delta.delta).toBe(true);
+
+    // A client written before status existed reads the same answer as before.
+    const oldStyle = (content: { readonly markdown: string; readonly tail?: string | undefined }): string =>
+      `${content.markdown}/${content.tail ?? ""}`;
+    expect(oldStyle(first)).toBe("line 1/tail 1");
 
     views.close();
     await log.close();

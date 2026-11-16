@@ -53,13 +53,14 @@ export default definePlugin({
         }
         if (sectionId === "live") {
           if (after === undefined) {
-            return { markdown: "line 1", mark: "1", tail: "tail 1" };
+            return { markdown: "line 1", mark: "1", tail: "tail 1", status: { text: "Thinking", since: 1_700_000_000_000 } };
           }
           const next = Number(after) + 1;
           return {
             markdown: `line ${next}`,
             mark: String(next),
             tail: `tail ${next}`,
+            status: { text: "Thinking", since: 1_700_000_000_000 },
             delta: true,
           };
         }

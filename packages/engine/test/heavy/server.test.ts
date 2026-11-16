@@ -611,6 +611,7 @@ describe("http server", () => {
       expect(liveBody).toMatchObject({
         markdown: "line 1",
         tail: "tail 1",
+        status: { text: "Thinking", since: 1_700_000_000_000 },
       });
       expect(typeof liveBody.mark).toBe("string");
       const delta = await api(
@@ -620,6 +621,7 @@ describe("http server", () => {
       expect(await json(delta)).toMatchObject({
         markdown: "line 2",
         tail: "tail 2",
+        status: { text: "Thinking", since: 1_700_000_000_000 },
         delta: true,
       });
       const badMark = await api(h, "/v1/objects/one/sections/live?after=nope");

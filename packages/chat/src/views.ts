@@ -15,7 +15,8 @@ import type {
 import { maskSecrets, type FoldEntry } from "@operad-io/harness-process";
 import { secretValues } from "./reply.ts";
 import { foldLogTail, agentLogPath } from "./tail.ts";
-import { agentLine, attachmentsOf, chatData, chatRef, COMMAND_FACT, commandOfFact, ENTRY_FACT, entryOfFact, IMAGE_TYPES, latestRunOf, MESSAGE_FACT, modelAndCost, type Attachment, type Command, type Entry, type Message } from "./model.ts";
+import { agentLine, attachmentsOf, chatData, chatRef, COMMAND_FACT, commandOfFact, ENTRY_FACT, entryOfFact, IMAGE_TYPES, latestRunOf, MESSAGE_FACT, modelAndCost, stopOfFact, unanswered, type Attachment, type Command, type Entry, type Message } from "./model.ts";
+import type { TailRead } from "./tail.ts";
 
 /** How many messages of a chat one page of the transcript holds. */
 export const TRANSCRIPT_PAGE = 50;
@@ -126,6 +127,9 @@ function messageFrom(fact: {
     ...(typeof data.costMicros === "number" && Number.isFinite(data.costMicros) ? { costMicros: data.costMicros } : {}),
     ...(data.costQuality === "exact" || data.costQuality === "estimated" || data.costQuality === "incomplete"
       ? { costQuality: data.costQuality }
+      : {}),
+    ...(Array.isArray(data.replyTo)
+      ? { replyTo: data.replyTo.filter((id): id is string => typeof id === "string") }
       : {}),
     at: fact.at,
     sequence: fact.sequence,
@@ -370,86 +374,169 @@ function clock(at: number): string {
   return new Date(at).toISOString().slice(11, 19);
 }
 
+/** What a live transcript says the reply is doing, and since when. */
+interface SectionStatus {
+  readonly text: string;
+  readonly since: number;
+}
+
+/** The changing part of a transcript: its tail and what the reply is doing. */
+interface Live {
+  readonly tail?: string | undefined;
+  readonly status?: SectionStatus | undefined;
+}
+
+/**
+ * The person's messages a reply still owes an answer. A reply recorded before
+ * `replyTo` existed answers every message before it, so an old snapshot that
+ * ends with an assistant message is not left looking unanswered.
+ */
+function statusPending(messages: readonly Message[], facts: readonly PluginFact[]): readonly Message[] {
+  const pending = unanswered(messages, facts);
+  if (pending.length === 0) return pending;
+  const legacy = messages.filter(
+    (message) => message.role === "assistant" && (message.replyTo === undefined || message.replyTo.length === 0),
+  );
+  return pending.filter((message) => !legacy.some((reply) => reply.sequence > message.sequence));
+}
+
+/**
+ * What the reply is doing, or undefined when nothing of it is in progress. A
+ * question waiting for the person, a failure, a stop and a chat whose messages
+ * are all answered say nothing. Before the log has the ready line, the first
+ * message still unanswered is what the reply waits on.
+ */
+function statusOf(
+  facts: readonly PluginFact[],
+  pending: readonly Message[],
+  runId: string | undefined,
+  times: Awaited<ReturnType<NonNullable<ViewContext["runTimes"]>>>,
+  read: TailRead | undefined,
+  called: ReadonlySet<string>,
+  secrets: readonly string[],
+): SectionStatus | undefined {
+  const newest = pending.at(-1);
+  if (newest === undefined) return undefined;
+  const last = times?.segments.at(-1);
+  if (last?.person === true && last.to === null) return undefined;
+  // A failure or stop after the newest message that still waits ends the
+  // reply for it. A message that came later starts another reply.
+  let ended = -1;
+  if (runId !== undefined) {
+    for (const fact of facts) {
+      const entry = entryOfFact(fact);
+      if (entry !== undefined && (entry.kind === "failure" || entry.kind === "stopped") && entry.runId === runId) {
+        ended = Math.max(ended, entry.sequence);
+      }
+      if (stopOfFact(fact)?.runId === runId) ended = Math.max(ended, fact.sequence);
+    }
+  }
+  if (ended >= newest.sequence) return undefined;
+  const endedAt = times?.endedAt;
+  if (endedAt !== null && endedAt !== undefined && newest.at <= endedAt) return undefined;
+  const first = pending[0] ?? newest;
+  if (read === undefined || !read.ready) return { text: "Starting", since: first.at };
+  const open = read.state.calls.find((call) => !called.has(maskSecrets(call.callId, secrets)));
+  if (open !== undefined) {
+    return { text: `Running ${maskSecrets(open.toolName, secrets)}`, since: open.at };
+  }
+  return { text: "Thinking", since: read.lastAt ?? times?.startedAt ?? first.at };
+}
+
 /**
  * What the running reply has written and the facts do not hold yet, as
  * Markdown, or undefined when no reply runs. It is read from the end of the log
  * of the step that runs the agent. A finished entry stays here until the fact
- * that holds it is visible to the same read, so the text never has a gap.
+ * that holds it is visible to the same read, so the text never has a gap. The
+ * same read gives the status beside it.
  */
-async function tailOf(
+async function liveOf(
   ctx: ViewContext,
   object: StoredObject,
   facts: readonly PluginFact[],
   speaker: string,
-): Promise<string | undefined> {
+): Promise<Live> {
   const chat = chatData(object.data);
   const runId = latestRunOf(facts);
-  if (runId === undefined || chat.harness.length === 0 || ctx.runTimes === undefined) return undefined;
-  const times = await ctx.runTimes(runId);
-  if (times === undefined || times.endedAt !== null) return undefined;
-  const secrets = await secretValues(ctx);
-  const said = new Set<string>();
-  const called = new Set<string>();
-  for (const fact of facts) {
-    if (fact.data.runId !== runId) continue;
-    if (fact.type === MESSAGE_FACT && fact.data.role === "assistant" && typeof fact.data.text === "string") {
-      said.add(fact.data.text.trim());
+  const messages = facts.map(messageFrom).filter((message): message is Message => message !== undefined);
+  const pending = statusPending(messages, facts);
+  const times = runId !== undefined && ctx.runTimes !== undefined ? await ctx.runTimes(runId) : undefined;
+  let tail: string | undefined;
+  let read: TailRead | undefined;
+  let called: ReadonlySet<string> = new Set<string>();
+  let secrets: readonly string[] = [];
+  if (runId !== undefined && chat.harness.length > 0 && ctx.runTimes !== undefined && times !== undefined && times.endedAt === null) {
+    secrets = await secretValues(ctx);
+    const said = new Set<string>();
+    const calls = new Set<string>();
+    for (const fact of facts) {
+      if (fact.data.runId !== runId) continue;
+      if (fact.type === MESSAGE_FACT && fact.data.role === "assistant" && typeof fact.data.text === "string") {
+        said.add(fact.data.text.trim());
+      }
+      const entry = fact.type === ENTRY_FACT ? entryOfFact(fact) : undefined;
+      if (entry?.kind === "tool" && entry.callId !== undefined) calls.add(entry.callId);
+      else if (entry?.text !== undefined) said.add(entry.text.trim());
     }
-    const entry = fact.type === ENTRY_FACT ? entryOfFact(fact) : undefined;
-    if (entry?.kind === "tool" && entry.callId !== undefined) called.add(entry.callId);
-    else if (entry?.text !== undefined) said.add(entry.text.trim());
-  }
-  // The read drops a finished entry the facts already hold, so a long run does
-  // not keep them all in the saved fold.
-  const held = (entry: FoldEntry): boolean => {
-    if (entry.kind === "tool") return called.has(maskSecrets(entry.callId, secrets));
-    return said.has(maskSecrets(entry.text, secrets).trim());
-  };
-  const read = foldLogTail(agentLogPath(ctx.store.root, chat.harness, runId), held);
-  if (read === undefined) return undefined;
-  const fresh = (text: string): string | undefined => {
-    const masked = maskSecrets(text, secrets);
-    return masked.trim().length === 0 || said.has(masked.trim()) ? undefined : masked;
-  };
-  const lines: string[] = [];
-  // A finished entry is shown until the facts hold it; then `said` and `called` drop it.
-  for (const entry of read.state.entries) {
-    // Radian gives no text or thinking increments; its chats show tool lines only.
-    if (chat.harness === "radian" && entry.kind !== "tool") continue;
-    if (entry.kind === "tool") {
-      if (called.has(maskSecrets(entry.callId, secrets))) continue;
-      const markdown = entryMarkdown(
-        {
-          ...entry,
-          toolName: maskSecrets(entry.toolName, secrets),
-          input: entry.input === null ? null : maskSecrets(entry.input, secrets),
-          error: entry.error === null ? null : maskSecrets(entry.error, secrets),
-        },
-        speaker,
-        chat.harness,
-      );
-      if (markdown !== undefined) lines.push(markdown);
-      continue;
+    called = calls;
+    // The read drops a finished entry the facts already hold, so a long run does
+    // not keep them all in the saved fold.
+    const held = (entry: FoldEntry): boolean => {
+      if (entry.kind === "tool") return calls.has(maskSecrets(entry.callId, secrets));
+      return said.has(maskSecrets(entry.text, secrets).trim());
+    };
+    read = foldLogTail(agentLogPath(ctx.store.root, chat.harness, runId), held);
+    if (read !== undefined) {
+      const fresh = (text: string): string | undefined => {
+        const masked = maskSecrets(text, secrets);
+        return masked.trim().length === 0 || said.has(masked.trim()) ? undefined : masked;
+      };
+      const lines: string[] = [];
+      // A finished entry is shown until the facts hold it; then `said` and `called` drop it.
+      for (const entry of read.state.entries) {
+        // Radian gives no text or thinking increments; its chats show tool lines only.
+        if (chat.harness === "radian" && entry.kind !== "tool") continue;
+        if (entry.kind === "tool") {
+          if (calls.has(maskSecrets(entry.callId, secrets))) continue;
+          const markdown = entryMarkdown(
+            {
+              ...entry,
+              toolName: maskSecrets(entry.toolName, secrets),
+              input: entry.input === null ? null : maskSecrets(entry.input, secrets),
+              error: entry.error === null ? null : maskSecrets(entry.error, secrets),
+            },
+            speaker,
+            chat.harness,
+          );
+          if (markdown !== undefined) lines.push(markdown);
+          continue;
+        }
+        const text = fresh(entry.text);
+        if (text === undefined) continue;
+        const markdown = entryMarkdown({ ...entry, text }, speaker, chat.harness);
+        if (markdown !== undefined) lines.push(markdown);
+      }
+      // Radian gives no text or thinking increments; its chats show the tool lines only.
+      if (chat.harness !== "radian") {
+        const thinking = fresh(read.state.thinking);
+        if (thinking !== undefined) lines.push(thinking.split(/\r?\n/).map((line) => `> ${line}`).join("\n"));
+        const text = fresh(read.state.text);
+        if (text !== undefined) lines.push(`**${speaker}:** ${flat(text)}`);
+      }
+      for (const call of read.state.calls) {
+        if (calls.has(maskSecrets(call.callId, secrets))) continue;
+        const input = call.input === null ? "" : flat(maskSecrets(call.input, secrets));
+        const what = input.length === 0 ? "" : ` ${inlineCode(input.length <= 160 ? input : `${input.slice(0, 159)}…`)}`;
+        lines.push(`tool ${maskSecrets(call.toolName, secrets)} since ${clock(call.at)}${what}`);
+      }
+      tail = lines.length === 0 ? undefined : lines.join("\n\n");
     }
-    const text = fresh(entry.text);
-    if (text === undefined) continue;
-    const markdown = entryMarkdown({ ...entry, text }, speaker, chat.harness);
-    if (markdown !== undefined) lines.push(markdown);
   }
-  // Radian gives no text or thinking increments; its chats show the tool lines only.
-  if (chat.harness !== "radian") {
-    const thinking = fresh(read.state.thinking);
-    if (thinking !== undefined) lines.push(thinking.split(/\r?\n/).map((line) => `> ${line}`).join("\n"));
-    const text = fresh(read.state.text);
-    if (text !== undefined) lines.push(`**${speaker}:** ${flat(text)}`);
-  }
-  for (const call of read.state.calls) {
-    if (called.has(maskSecrets(call.callId, secrets))) continue;
-    const input = call.input === null ? "" : flat(maskSecrets(call.input, secrets));
-    const what = input.length === 0 ? "" : ` ${inlineCode(input.length <= 160 ? input : `${input.slice(0, 159)}…`)}`;
-    lines.push(`tool ${maskSecrets(call.toolName, secrets)} since ${clock(call.at)}${what}`);
-  }
-  return lines.length === 0 ? undefined : lines.join("\n\n");
+  const status = statusOf(facts, pending, runId, times, read, called, secrets);
+  return {
+    ...(tail === undefined ? {} : { tail }),
+    ...(status === undefined ? {} : { status }),
+  };
 }
 
 async function load(
@@ -463,7 +550,7 @@ async function load(
   const chat = chatData(object.data);
   const speaker = await speakerOf(ctx, object);
   const facts = allFacts(ctx, ref);
-  const tail = await tailOf(ctx, object, facts, speaker);
+  const live = await liveOf(ctx, object, facts, speaker);
   const since = markAfter(options.after);
   if (since !== undefined) {
     // Only what was recorded after the mark, in the same Markdown as a full read.
@@ -473,7 +560,7 @@ async function load(
       markdown: blocks.join("\n\n---\n\n"),
       mark: markOf(Math.max(since, chunks.at(-1)?.last ?? 0)),
       delta: true,
-      ...(tail === undefined ? {} : { tail }),
+      ...live,
     };
   }
   const pages = pagesOf(ref, chunksOf(facts));
@@ -499,7 +586,7 @@ async function load(
     mark: markOf(selected?.chunks.at(-1)?.last ?? 0),
     ...(nextPage?.cursor === undefined ? {} : { next: nextPage.cursor }),
     ...(toc.length > 1 ? { pages: toc } : {}),
-    ...(tail === undefined ? {} : { tail }),
+    ...live,
   };
 }
 
