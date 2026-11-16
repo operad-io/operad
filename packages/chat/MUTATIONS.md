@@ -273,3 +273,11 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0511-M7 | packages/chat/src/reply.ts | a chat with a named model checked the old synchronous list instead of waiting for the first refresh | `the reply and the model > a first reply with a named model waits for the list, then passes by it` |
+
+## T-0513 — a repository chat starts with its agent files
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0513-M6 | packages/chat/src/reply.ts | the first prompt left the starting text out | `a repository chat's starting text > goes before the first message, and not again in that session` |
+| T-0513-M7 | packages/chat/src/reply.ts | a chat that moved working directory got no new place and kept the old text | `a repository chat's starting text > after the chat moves to its worktree, the next message gets the place alone, once` |
+| T-0513-M8 | packages/chat/src/reply.ts | the starting text was put before every message, not only the first | `a repository chat's starting text > goes before the first message, and not again in that session` |

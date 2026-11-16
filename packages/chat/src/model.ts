@@ -90,6 +90,8 @@ export interface ChatData {
   readonly closed: boolean;
   /** The harness's own reference to its conversation; never shown. */
   readonly session?: string | null | undefined;
+  /** The working directory the session's starting text was built for; never shown. */
+  readonly contextCwd?: string | undefined;
   /** The channels (`telegram:<chat>`) whose messages land here. */
   readonly channels: readonly string[];
   /**
@@ -443,6 +445,7 @@ export function chatData(data: Readonly<Record<string, unknown>>): ChatData {
     closed: data.closed === true,
     channels: stringList(data.channels),
     ...(typeof data.refresh === "string" && data.refresh.length > 0 ? { refresh: data.refresh } : {}),
+    ...(typeof data.contextCwd === "string" && data.contextCwd.length > 0 ? { contextCwd: data.contextCwd } : {}),
     ...(typeof data.model === "string" && data.model.length > 0 ? { model: data.model } : {}),
     ...(typeof data.effort === "string" && data.effort.length > 0 ? { effort: data.effort } : {}),
     ...(typeof data.effortDefault === "string" && data.effortDefault.length > 0 ? { effortDefault: data.effortDefault } : {}),
