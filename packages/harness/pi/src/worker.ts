@@ -5,7 +5,8 @@
  * object per line to stdout, the last a Result. `README.md` holds the tables.
  */
 
-import { existsSync, mkdirSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, rmSync } from "node:fs";
+import { createServer } from "node:net";
 import {
   findGrant,
   firstErrorLine,
@@ -30,11 +31,13 @@ import {
   toolOutputLines,
   type CallAnswer,
 } from "@operad-io/harness-process";
+import { removeKeptWorker, writeKeptWorker } from "@operad-io/engine/platform";
 import { findPi, loadPi } from "./pi-install.ts";
 import {
   DEFAULT_BASH_TIMEOUT_SECS,
   parseInput,
   type FailureReason,
+  type ParsedInput,
   type WorkerInput,
   type WorkerLine,
   type WorkerResult,
@@ -725,6 +728,174 @@ class StdinLines {
   }
 }
 
+/** One line channel of a worker: stdin for the first reply, a socket for a kept one. */
+class Channel {
+  readonly io: WorkerIo;
+  private readonly lines: StdinLines;
+  private readonly waiting = new Map<number, (used: boolean) => void>();
+  private readonly questions = new Map<number, (answer: CallAnswer) => void>();
+  private readonly early: string[] = [];
+  private readonly onGone: (() => void) | undefined;
+  private onMessage: ((text: string) => void) | undefined;
+  private nextAsk = 1;
+  private nextGrant = 1;
+  private hostGone = false;
+  private started = false;
+
+  constructor(
+    stream: AsyncIterable<Uint8Array>,
+    ports: WorkerPorts,
+    onGone?: (() => void) | undefined,
+  ) {
+    this.lines = new StdinLines(stream);
+    this.onGone = onGone;
+    const write = ports.write;
+    this.io = {
+      line: (line) => write(`${JSON.stringify(line)}\n`),
+      onMessage: (handler) => {
+        this.onMessage = handler;
+        for (const text of this.early.splice(0)) handler(text);
+      },
+      log: (text) => ports.log(text),
+      useGrant: (waitId) =>
+        new Promise<boolean>((resolve) => {
+          if (this.hostGone) {
+            resolve(false);
+            return;
+          }
+          const id = this.nextGrant;
+          this.nextGrant += 1;
+          this.waiting.set(id, resolve);
+          write(`${JSON.stringify({ type: "grant_use", id, waitId })}\n`);
+        }),
+      ask: (call) =>
+        new Promise<CallAnswer>((resolve) => {
+          if (this.hostGone) {
+            resolve({ decision: "deny", reason: "the host is gone" });
+            return;
+          }
+          const id = this.nextAsk;
+          this.nextAsk += 1;
+          this.questions.set(id, (answer) => {
+            // The line that closes the question, so the host's stall timer runs again.
+            write(`${JSON.stringify({ type: "ask_resolved", id })}\n`);
+            resolve(answer);
+          });
+          write(`${JSON.stringify({ type: "ask_call", id, ...call })}\n`);
+        }),
+    };
+  }
+
+  /** The first line, read before the host may send answers or messages. */
+  next(): Promise<string | undefined> {
+    return this.lines.next();
+  }
+
+  /** Starts taking the host's later lines. */
+  start(): void {
+    if (this.started) return;
+    this.started = true;
+    void this.#read();
+  }
+
+  close(): void {
+    this.lines.close();
+    this.#gone();
+  }
+
+  async #read(): Promise<void> {
+    for (;;) {
+      const line = await this.lines.next();
+      if (line === undefined) break;
+      const said = messageText(line);
+      if (said !== undefined) {
+        if (this.onMessage === undefined) this.early.push(said);
+        else this.onMessage(said);
+        continue;
+      }
+      try {
+        const ack: unknown = JSON.parse(line);
+        if (typeof ack === "object" && ack !== null && Reflect.get(ack, "type") === "ask_ack") {
+          const id: unknown = Reflect.get(ack, "id");
+          const decision: unknown = Reflect.get(ack, "decision");
+          const reason: unknown = Reflect.get(ack, "reason");
+          if (typeof id === "number") {
+            this.questions.get(id)?.({
+              decision: decision === "allow" || decision === "stop" ? decision : "deny",
+              ...(typeof reason === "string" ? { reason } : {}),
+            });
+            this.questions.delete(id);
+          }
+        }
+        if (typeof ack === "object" && ack !== null && Reflect.get(ack, "type") === "grant_ack") {
+          const id: unknown = Reflect.get(ack, "id");
+          const used: unknown = Reflect.get(ack, "used");
+          if (typeof id === "number") {
+            this.waiting.get(id)?.(used === true);
+            this.waiting.delete(id);
+          }
+        }
+      } catch {
+        // Not a line the program understands; it is ignored.
+      }
+    }
+    this.#gone();
+  }
+
+  #gone(): void {
+    if (this.hostGone) return;
+    this.hostGone = true;
+    for (const resolve of this.waiting.values()) resolve(false);
+    this.waiting.clear();
+    for (const resolve of this.questions.values()) resolve({ decision: "deny", reason: "the host is gone" });
+    this.questions.clear();
+    this.onGone?.();
+  }
+}
+
+/** Reads the input of one reply from a channel; undefined when it is not valid JSON. */
+function inputOf(text: string): ParsedInput {
+  let decoded: unknown;
+  try {
+    decoded = JSON.parse(text);
+  } catch {
+    return { ok: false, message: "the input is not valid JSON" };
+  }
+  return parseInput(decoded);
+}
+
+/** The last Result a worker wrote, so the keep loop can decide whether to stay. */
+class Capture implements WorkerIo {
+  private last: WorkerResult | undefined;
+
+  constructor(private readonly inner: WorkerIo) {}
+
+  get result(): WorkerResult | undefined {
+    return this.last;
+  }
+
+  line(line: WorkerLine): void {
+    if (line.type === "result") this.last = line;
+    this.inner.line(line);
+  }
+
+  log(text: string): void {
+    this.inner.log(text);
+  }
+
+  useGrant(waitId: string): Promise<boolean> {
+    return this.inner.useGrant?.(waitId) ?? Promise.resolve(false);
+  }
+
+  ask(call: Parameters<NonNullable<WorkerIo["ask"]>>[0]): Promise<CallAnswer> {
+    return this.inner.ask?.(call) ?? Promise.resolve({ decision: "deny", reason: "the host cannot ask" });
+  }
+
+  onMessage(handler: (text: string) => void): void {
+    this.inner.onMessage?.(handler);
+  }
+}
+
 /**
  * The program without the process around it: reads the input and the host's
  * answers from `stdin`, writes lines through `ports`, and returns the exit
@@ -736,117 +907,233 @@ export async function serveWorker(
   cancel: AbortSignal,
   hooks: WorkerHooks = {},
 ): Promise<number> {
-  const write = ports.write;
-  const stdin = new StdinLines(stdinStream);
-  const waiting = new Map<number, (used: boolean) => void>();
-  const questions = new Map<number, (answer: CallAnswer) => void>();
-  let nextAsk = 1;
-  const early: string[] = [];
-  let onMessage: ((text: string) => void) | undefined;
-  let nextGrant = 1;
-  let hostGone = false;
-  const io: WorkerIo = {
-    line: (line) => write(`${JSON.stringify(line)}\n`),
-    onMessage: (handler) => {
-      onMessage = handler;
-      for (const text of early.splice(0)) handler(text);
-    },
-    log: (text) => ports.log(text),
-    useGrant: (waitId) =>
-      new Promise<boolean>((resolve) => {
-        if (hostGone) {
-          resolve(false);
-          return;
-        }
-        const id = nextGrant;
-        nextGrant += 1;
-        waiting.set(id, resolve);
-        write(`${JSON.stringify({ type: "grant_use", id, waitId })}\n`);
-      }),
-    ask: (call) =>
-      new Promise<CallAnswer>((resolve) => {
-        if (hostGone) {
-          resolve({ decision: "deny", reason: "the host is gone" });
-          return;
-        }
-        const id = nextAsk;
-        nextAsk += 1;
-        questions.set(id, (answer) => {
-          // The line that closes the question, so the host's stall timer runs again.
-          write(`${JSON.stringify({ type: "ask_resolved", id })}\n`);
-          resolve(answer);
-        });
-        write(`${JSON.stringify({ type: "ask_call", id, ...call })}\n`);
-      }),
-  };
+  const channel = new Channel(stdinStream, ports);
   let code: number;
   try {
-    const text = await stdin.first();
-    let decoded: unknown;
-    let parsedOk = true;
-    try {
-      decoded = JSON.parse(text);
-    } catch {
-      parsedOk = false;
-    }
-    const parsed = parsedOk ? parseInput(decoded) : ({ ok: false, message: "the input is not valid JSON" } as const);
+    const text = await channel.next();
+    const parsed = inputOf(text ?? "");
     if (!parsed.ok) {
-      io.line(failure("invalid_input", parsed.message));
+      channel.io.line(failure("invalid_input", parsed.message));
       code = EXIT_INVALID_INPUT;
     } else {
-      // Later stdin lines answer `grant_use` lines.
-      void (async () => {
-        for (;;) {
-          const line = await stdin.next();
-          if (line === undefined) break;
-          const said = messageText(line);
-          if (said !== undefined) {
-            if (onMessage === undefined) early.push(said);
-            else onMessage(said);
-            continue;
-          }
-          try {
-            const ack: unknown = JSON.parse(line);
-            if (typeof ack === "object" && ack !== null && Reflect.get(ack, "type") === "ask_ack") {
-              const id: unknown = Reflect.get(ack, "id");
-              const decision: unknown = Reflect.get(ack, "decision");
-              const reason: unknown = Reflect.get(ack, "reason");
-              if (typeof id === "number") {
-                questions.get(id)?.({
-                  decision: decision === "allow" || decision === "stop" ? decision : "deny",
-                  ...(typeof reason === "string" ? { reason } : {}),
-                });
-                questions.delete(id);
-              }
-            }
-            if (typeof ack === "object" && ack !== null && Reflect.get(ack, "type") === "grant_ack") {
-              const id: unknown = Reflect.get(ack, "id");
-              const used: unknown = Reflect.get(ack, "used");
-              if (typeof id === "number") {
-                waiting.get(id)?.(used === true);
-                waiting.delete(id);
-              }
-            }
-          } catch {
-            // Not a line the program understands; it is ignored.
-          }
-        }
-        // The host is gone: nothing more will be granted.
-        hostGone = true;
-        for (const resolve of waiting.values()) resolve(false);
-        waiting.clear();
-        for (const resolve of questions.values()) resolve({ decision: "deny", reason: "the host is gone" });
-        questions.clear();
-      })();
-      code = await runWorker(parsed.input, io, cancel, hooks);
+      channel.start();
+      code = await runWorker(parsed.input, channel.io, cancel, hooks);
     }
   } catch (error) {
-    io.log(error instanceof Error ? (error.stack ?? error.message) : String(error));
-    io.line(failure("model_error", error instanceof Error ? error.message : String(error)));
+    channel.io.log(error instanceof Error ? (error.stack ?? error.message) : String(error));
+    channel.io.line(failure("model_error", error instanceof Error ? error.message : String(error)));
     code = EXIT_FAILED;
   }
-  stdin.close();
+  channel.close();
   return code;
+}
+
+/**
+ * Runs the first reply from stdin and, when the reply was done and asked for
+ * keeping, serves later replies from a socket in the operad home. The worker's
+ * own timer ends it after the kept time; a failed, stopped or interrupted reply
+ * leaves no kept worker.
+ */
+export async function serveWorkerProcess(
+  stdinStream: AsyncIterable<Uint8Array>,
+  ports: WorkerPorts,
+  cancel: AbortSignal,
+  hooks: WorkerHooks = {},
+): Promise<number> {
+  const channel = new Channel(stdinStream, ports);
+  let code: number;
+  try {
+    const text = await channel.next();
+    const parsed = inputOf(text ?? "");
+    if (!parsed.ok) {
+      channel.io.line(failure("invalid_input", parsed.message));
+      code = EXIT_INVALID_INPUT;
+    } else {
+      channel.start();
+      const capture = new Capture(channel.io);
+      code = await runWorker(parsed.input, capture, cancel, hooks);
+      channel.close();
+      const keep = parsed.input.keep;
+      const result = capture.result;
+      if (keep !== undefined && result?.result === "done") {
+        return await serveKept(keep, result.sessionId, ports, cancel, hooks);
+      }
+    }
+  } catch (error) {
+    channel.io.log(error instanceof Error ? (error.stack ?? error.message) : String(error));
+    channel.io.line(failure("model_error", error instanceof Error ? error.message : String(error)));
+    code = EXIT_FAILED;
+  }
+  channel.close();
+  return code;
+}
+
+/** The kept part of a worker's life: one socket, one reply at a time, its own timer. */
+async function serveKept(
+  keep: NonNullable<WorkerInput["keep"]>,
+  firstSession: string | null,
+  ports: WorkerPorts,
+  cancel: AbortSignal,
+  hooks: WorkerHooks,
+): Promise<number> {
+  const startedAt = Date.now();
+  let session = firstSession;
+  let lastUsedAt = startedAt;
+  let busy = false;
+  let stopping = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let server: ReturnType<typeof createServer> | undefined;
+
+  const record = () => ({
+    pid: process.pid,
+    token: keep.token,
+    scope: keep.scope,
+    key: keep.key,
+    socket: keep.socket,
+    meta: keep.meta,
+    session,
+    startedAt,
+    lastUsedAt,
+    ...(busy ? { busy: true } : {}),
+  });
+  const save = (): void => {
+    try {
+      writeKeptWorker(record());
+    } catch {
+      // A record that cannot be written means the next reply starts a new worker.
+    }
+  };
+  const shutdown = (code: number): void => {
+    if (stopping) return;
+    stopping = true;
+    if (timer !== undefined) clearTimeout(timer);
+    timer = undefined;
+    server?.close();
+    removeKeptWorker({ meta: keep.meta, socket: keep.socket });
+    process.exit(code);
+  };
+  const idle = (): void => {
+    if (stopping) return;
+    if (timer !== undefined) clearTimeout(timer);
+    timer = setTimeout(() => shutdown(0), keep.timeoutMs);
+  };
+
+  rmSync(keep.meta, { force: true });
+  rmSync(keep.socket, { force: true });
+
+  const handle = async (socket: import("node:net").Socket): Promise<void> => {
+    if (stopping) {
+      socket.destroy();
+      return;
+    }
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      timer = undefined;
+    }
+    const connection = new AbortController();
+    const channel = new Channel(
+      socket,
+      {
+        write: (text) => {
+          if (!socket.destroyed) socket.write(text);
+        },
+        log: ports.log,
+      },
+      () => connection.abort(),
+    );
+    try {
+      const first = await channel.next();
+      if (first === undefined) {
+        channel.close();
+        idle();
+        return;
+      }
+      let command: unknown;
+      try {
+        command = JSON.parse(first);
+      } catch {
+        command = undefined;
+      }
+      if (
+        typeof command === "object" &&
+        command !== null &&
+        Reflect.get(command, "type") === "stop"
+      ) {
+        channel.close();
+        socket.end();
+        shutdown(0);
+        return;
+      }
+      const parsed = parseInput(command);
+      if (!parsed.ok) {
+        channel.io.line(failure("invalid_input", parsed.message));
+        channel.close();
+        socket.end();
+        idle();
+        return;
+      }
+      busy = true;
+      save();
+      channel.start();
+      const capture = new Capture(channel.io);
+      let code = EXIT_FAILED;
+      try {
+        code = await runWorker(
+          parsed.input,
+          capture,
+          AbortSignal.any([cancel, connection.signal]),
+          hooks,
+        );
+      } catch (error) {
+        channel.io.log(error instanceof Error ? (error.stack ?? error.message) : String(error));
+        channel.io.line(failure("model_error", error instanceof Error ? error.message : String(error)));
+      }
+      channel.close();
+      if (!socket.destroyed) socket.end();
+      busy = false;
+      lastUsedAt = Date.now();
+      const result = capture.result;
+      if (result?.result === "done") {
+        session = result.sessionId;
+        save();
+        idle();
+      } else {
+        shutdown(code);
+      }
+    } catch (error) {
+      ports.log(error instanceof Error ? (error.stack ?? error.message) : String(error));
+      channel.close();
+      socket.destroy();
+      idle();
+    }
+  };
+
+  let chain: Promise<void> = Promise.resolve();
+  server = createServer((socket) => {
+    chain = chain.then(
+      () => handle(socket),
+      () => handle(socket),
+    );
+  });
+  await new Promise<void>((resolve, reject) => {
+    if (server === undefined) {
+      reject(new Error("the kept worker has no server"));
+      return;
+    }
+    server.once("error", reject);
+    server.listen(keep.socket, () => resolve());
+  });
+  chmodSync(keep.socket, 0o600);
+  save();
+  idle();
+  cancel.addEventListener(
+    "abort",
+    () => {
+      if (!busy) shutdown(EXIT_CANCELLED);
+    },
+    { once: true },
+  );
+  return await new Promise<number>(() => undefined);
 }
 
 /** The process entry: stdin in, stdout lines out, exit code out. */
@@ -868,7 +1155,9 @@ export async function main(hooks: WorkerHooks = {}): Promise<never> {
 
   const controller = new AbortController();
   process.on("SIGTERM", () => controller.abort());
-  const code = await serveWorker(
+  process.stdout.on("error", () => undefined);
+  process.stderr.on("error", () => undefined);
+  const code = await serveWorkerProcess(
     Bun.stdin.stream(),
     {
       write: (text) => {

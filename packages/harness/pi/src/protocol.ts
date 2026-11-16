@@ -13,6 +13,17 @@ export const DEFAULT_BASH_TIMEOUT_SECS = 1800;
 export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 export type WorkerThinkingLevel = (typeof THINKING_LEVELS)[number];
 
+/** How a chat worker stays reachable for its next prompt. */
+export interface WorkerKeep {
+  readonly socket: string;
+  readonly meta: string;
+  readonly token: string;
+  readonly scope: string;
+  readonly key: string;
+  /** How long the worker stays after a reply before it ends itself. */
+  readonly timeoutMs: number;
+}
+
 /** What the program reads from stdin. */
 export interface WorkerInput {
   readonly prompt: string;
@@ -37,6 +48,8 @@ export interface WorkerInput {
   readonly images?: readonly ImageInput[] | undefined;
   /** Skill directories to load; no other skills are discovered. */
   readonly skills?: readonly string[] | undefined;
+  /** Set by a chat reply: the worker may serve the next reply and then end itself. */
+  readonly keep?: WorkerKeep | undefined;
 }
 
 export interface WorkerUsage {
@@ -179,6 +192,31 @@ export function parseInput(value: unknown): ParsedInput {
     if (!profile.ok) return { ok: false, message: `access.${profile.message}` };
   }
 
+  const keepValue = value["keep"];
+  let keep: WorkerKeep | undefined;
+  if (keepValue !== undefined) {
+    if (!isRecord(keepValue)) return { ok: false, message: "keep must be an object" };
+    // The keep fields are all required strings; the timeout is a positive number.
+    const fields: Record<string, string> = {};
+    for (const field of ["socket", "meta", "token", "scope", "key"] as const) {
+      const found = keepValue[field];
+      if (typeof found !== "string" || found.length === 0) return { ok: false, message: `keep.${field} must be a non-empty string` };
+      fields[field] = found;
+    }
+    const timeoutMs = keepValue["timeoutMs"];
+    if (typeof timeoutMs !== "number" || !Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+      return { ok: false, message: "keep.timeoutMs must be a positive number" };
+    }
+    keep = {
+      socket: fields.socket ?? "",
+      meta: fields.meta ?? "",
+      token: fields.token ?? "",
+      scope: fields.scope ?? "",
+      key: fields.key ?? "",
+      timeoutMs,
+    };
+  }
+
   return {
     ok: true,
     input: {
@@ -198,6 +236,7 @@ export function parseInput(value: unknown): ParsedInput {
       secretValues,
       images: images.length === 0 ? undefined : images,
       skills: skills === undefined || skills.length === 0 ? undefined : skills,
+      keep,
     },
   };
 }

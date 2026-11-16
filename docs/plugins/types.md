@@ -115,6 +115,9 @@ The types a plugin imports, by the page that explains them. The values these ent
 | `LineOutcome` | A type of the plugin API; its fields are described on the page. | [platform](platform.md) |
 | `LineRunOptions` | A type of the plugin API; its fields are described on the page. | [platform](platform.md) |
 | `LockFileOptions` | What a waiter may inject: the clock, how it waits, and where a log goes. | [platform](platform.md) |
+| `KeptWorkerFilter` | What a kept worker must match to be ended: a scope, a key, or a record to leave alone. | [platform](platform.md) |
+| `KeptWorkerRecord` | One kept worker as its home records it: pid, token, scope, key, socket, record path, session and idle times. | [platform](platform.md) |
+| `KeptWorkerSlot` | The directory, token, socket and record path a new kept worker is given. | [platform](platform.md) |
 | `MachineLoad` | The 1-minute load average and the number of cores. | [platform](platform.md) |
 | `MarkedProcess` | A live process that carries a marker. | [platform](platform.md) |
 | `ProcessLister` | Lists the user's live processes that carry a marker. | [platform](platform.md) |

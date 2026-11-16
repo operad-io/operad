@@ -1028,3 +1028,15 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0514-M1 | packages/engine/src/views/presentation.ts | a plugin's status was dropped instead of passed through | `presentation views > a read carries mark and tail, and after returns only what follows (T-0361)` |
+
+## T-0515 — a chat's worker is kept between replies
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0515-M5 | packages/engine/src/platform/kept-workers.ts | `stopAllKeptWorkers` returned before it ended any worker | `serve stop ends every kept worker` |
+
+## T-0515 — a serve start ends kept workers
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0515-M10 | packages/engine/src/loop/serve.ts | serve start no longer ended the home's kept workers | `serve start ends every kept worker of the home, even without a run marker` |
