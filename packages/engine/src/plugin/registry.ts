@@ -78,6 +78,7 @@ import type {
   TriggerRule,
 } from "../trigger/types.ts";
 import { askGraceOf, collectStepTypes, grantRequestProblem, narrowerOf, noteInfo, normalizePlugin, parseObjectKeyMaybe, splitActionName, validateFlows, validatePluginSet, validateRuleFlows, type LoadedPlugin } from "./validate.ts";
+import { choiceInfoJson, choiceInfoProblem, normalizeChoiceInfo } from "./choice-info.ts";
 import { isRecord } from "../util.ts";
 
 export { splitActionName };
@@ -941,6 +942,14 @@ export class PluginRegistry {
           `step "${use}": ask: choices: must be a list of strings`,
         );
       }
+      const choices = request.choices ?? [];
+      const infoProblem = choiceInfoProblem(request.choiceInfo, choices);
+      if (infoProblem !== undefined) {
+        throw new PluginError(
+          `step "${use}": ask: choiceInfo: ${infoProblem}`,
+        );
+      }
+      const choiceInfo = normalizeChoiceInfo(request.choiceInfo, choices);
       if (
         request.onTimeout !== undefined &&
         request.onTimeout !== "waiting" &&
@@ -984,7 +993,11 @@ export class PluginRegistry {
       }
       const graceSecs = narrowerOf(request.graceSecs, askGraceOf(params));
       const outcome = await options.asker.ask(
-        { ...request, ...(graceSecs === undefined ? {} : { graceSecs }) },
+        {
+          ...request,
+          ...(choiceInfo === undefined ? {} : { choiceInfo }),
+          ...(graceSecs === undefined ? {} : { graceSecs }),
+        },
         options.signal,
       );
       if (outcome.kind === "answered") return outcome.answer;
@@ -995,6 +1008,9 @@ export class PluginRegistry {
         waitId: outcome.waitId,
         prompt: outcome.prompt,
         choices: outcome.choices,
+        ...(outcome.choiceInfo === undefined && choiceInfo === undefined
+          ? {}
+          : { choiceInfo: outcome.choiceInfo ?? choiceInfo }),
         resume: outcome.resume ?? request.resume ?? null,
       });
     };
@@ -1078,6 +1094,9 @@ export class PluginRegistry {
           waitId: error.waitId,
           prompt: error.prompt,
           choices: [...error.choices],
+          ...(error.choiceInfo === undefined
+            ? {}
+            : { choiceInfo: choiceInfoJson(error.choiceInfo) }),
           resume: error.resume ?? null,
         },
       };
@@ -1613,6 +1632,7 @@ export class PluginRegistry {
           runId: run.runId,
           prompt: run.prompt,
           choices: run.choices,
+          ...(run.choiceInfo === undefined ? {} : { choiceInfo: run.choiceInfo }),
           object: {
             type: run.object.type,
             id: run.object.id,
@@ -1631,6 +1651,7 @@ export class PluginRegistry {
         runId: run.runId,
         prompt: run.prompt,
         choices: run.choices,
+        ...(run.choiceInfo === undefined ? {} : { choiceInfo: run.choiceInfo }),
         object,
         actions,
       });

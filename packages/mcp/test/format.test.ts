@@ -213,6 +213,10 @@ describe("the pending Markdown", () => {
     const text = pendingMarkdown([
       item({
         choices: ["yes", "no"],
+        choiceInfo: {
+          yes: { label: "Yes", hint: "Go on.", role: "primary", note: "optional" },
+          no: { label: "No", hint: "Stop here.", role: "destructive" },
+        },
         actions: [
           { plugin: "demo", action: "approve" },
           { plugin: "demo", action: "drop" },
@@ -227,6 +231,8 @@ describe("the pending Markdown", () => {
     expect(text).toContain("- step: ask");
     expect(text).toContain("- waiting: Approve?");
     expect(text).toContain("- choices: yes, no");
+    expect(text).toContain("  - yes: label Yes; Go on.; primary; note optional");
+    expect(text).toContain("  - no: label No; Stop here.; destructive");
     expect(text).toContain("- actions: demo:approve, demo:drop");
     expect(text).toContain("- object: `item:one`");
     expect(text).toContain("- link: https://example.com/item/one");

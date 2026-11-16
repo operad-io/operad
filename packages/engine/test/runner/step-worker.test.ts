@@ -165,7 +165,15 @@ describe("step worker in this process", () => {
     const ask = await port.next("ask");
     expect(ask).toMatchObject({
       kind: "ask",
-      request: { prompt: "Go?", choices: ["yes", "no"], graceSecs: 5 },
+      request: {
+        prompt: "Go?",
+        choices: ["yes", "no"],
+        choiceInfo: {
+          yes: { label: "Go", hint: "Continue.", role: "primary" },
+          no: { label: "Stop", role: "destructive" },
+        },
+        graceSecs: 5,
+      },
     });
     port.send({
       kind: "ask-result",

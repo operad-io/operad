@@ -36,3 +36,9 @@ The kernel records a wait-for-person fact carrying the step's effect id. The ans
 ### D5: `onTimeout`
 
 The default behaviour after a timeout, `onTimeout`, is `waiting` (it requires the harness to be able to resume) or `reject_once` (the only choice for a harness that cannot resume, decided by the descriptor file, which a user cannot override).
+
+### D6: A choice may say what it is
+
+A question may carry `choiceInfo`, keyed by a choice string. Each value may hold `label` (what a button shows instead of the raw choice), `hint` (one sentence saying what choosing it does), `role` (`"primary"` for the one the asker recommends, `"destructive"` for one that cannot be undone) and `note` (`"optional"` or `"required"`). At most one choice is `primary`; any number may be `destructive`. Every key must be one of the question's choices.
+
+`choiceInfo` is accepted wherever choices are given: on `ctx.ask`, on a flow's `wait_person` step, and on a question a harness passes on. The kernel checks the keys, the roles and the bounds of the strings before anyone is asked, then only carries the value: into the wait's record, the pending view, the HTTP pending read, the MCP `pending` tool and a channel event. The choice string itself remains the value an answer sends. A question without `choiceInfo` reads exactly as before, and the kernel gives no choice a meaning of its own.

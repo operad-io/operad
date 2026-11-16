@@ -140,7 +140,7 @@ export function createDevPlugin() {
       },
       {
         name: "announce",
-        results: ["done", "interrupted", "cancelled"],
+        results: ["done", "waiting", "interrupted", "cancelled"],
         run: runAnnounce,
       },
       {

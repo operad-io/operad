@@ -7,6 +7,7 @@ import {
   type StepTypeRegistry,
 } from "./types.ts";
 import { isRecord } from "../util.ts";
+import { choiceInfoProblem } from "../plugin/choice-info.ts";
 
 /** A flow is not usable; the message names the flow, step and field. */
 export class FlowError extends Error {
@@ -116,6 +117,10 @@ function checkStep(
       const lateChoices = params.lateChoices ?? [];
       if (!isStringArray(lateChoices)) {
         throw new FlowError(at("params.lateChoices: must be an array of strings"));
+      }
+      const infoProblem = choiceInfoProblem(params.choiceInfo, choices);
+      if (infoProblem !== undefined) {
+        throw new FlowError(at(`params.choiceInfo: ${infoProblem}`));
       }
       if (
         params.note !== undefined &&

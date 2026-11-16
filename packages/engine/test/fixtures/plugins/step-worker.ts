@@ -47,6 +47,10 @@ export default definePlugin({
           const answer = await ctx.ask({
             prompt: "Go?",
             choices: ["yes", "no"],
+            choiceInfo: {
+              yes: { label: "Go", hint: "Continue.", role: "primary" },
+              no: { label: "Stop", role: "destructive" },
+            },
             graceSecs: 5,
           });
           return { result: "answered", data: { choice: answer.choice ?? null } };

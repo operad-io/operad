@@ -5,7 +5,7 @@ import { objectLink } from "../http/link.ts";
 import type { LogBackend, RunInfo } from "../log/types.ts";
 import type { PluginRegistry } from "../plugin/registry.ts";
 import type { Views, ViewRow } from "./presentation.ts";
-import type { PendingActionView } from "../plugin/types.ts";
+import type { ChoiceInfo, PendingActionView } from "../plugin/types.ts";
 import { answerableAsks, scanAsks } from "../runner/ask.ts";
 import { parseObjectKey, readState } from "../runner/service.ts";
 import type { RefusedStart, TriggerCandidate } from "../trigger/types.ts";
@@ -26,6 +26,8 @@ export interface PendingItem {
   readonly step: string | null;
   readonly prompt: string;
   readonly choices: readonly string[];
+  /** What each choice is, when the question said; see `ChoiceInfo`. */
+  readonly choiceInfo?: Readonly<Record<string, ChoiceInfo>> | undefined;
   /**
    * The question's wait id, which an answer quotes. Absent when the item asks
    * nothing (a candidate or a standing item).
@@ -77,6 +79,9 @@ export async function listPending(
           step: state.step,
           prompt: open.prompt,
           choices: open.choices,
+          ...(open.choiceInfo === undefined
+            ? {}
+            : { choiceInfo: open.choiceInfo }),
           waitId: open.waitId,
           actions: await actionsFor(registry, log, run),
           kind: "run",
@@ -99,6 +104,9 @@ export async function listPending(
       step: state.step,
       prompt: state.wait.prompt,
       choices: state.wait.choices,
+      ...(state.wait.choiceInfo === undefined
+        ? {}
+        : { choiceInfo: state.wait.choiceInfo }),
       waitId: state.wait.id,
       actions,
       kind: "run",

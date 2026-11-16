@@ -500,4 +500,54 @@ describe("validateFlow", () => {
     );
     expect(error.message).toContain("maxVisits");
   });
+  test("accepts choice info keyed by the choices, with one primary", () => {
+    const flow = validateFlow({
+      name: "info",
+      entry: "ask",
+      steps: [
+        {
+          ...waitPerson("ask", { yes: "done", no: "done", interrupted: "done" }),
+          params: {
+            prompt: "Continue?",
+            choices: ["yes", "no"],
+            choiceInfo: {
+              yes: { label: "Yes", hint: "Go on.", role: "primary", note: "optional" },
+              no: { label: "No", role: "destructive" },
+            },
+          },
+        },
+        endStep("done"),
+      ],
+    });
+    expect(flow.steps[0]?.params).toMatchObject({
+      choiceInfo: { yes: { role: "primary" }, no: { role: "destructive" } },
+    });
+  });
+
+  test("refuses choice info that names no choice, two primaries or a long label", () => {
+    const withInfo = (choiceInfo: unknown) =>
+      errorOf(() =>
+        validateFlow({
+          name: "info",
+          entry: "ask",
+          steps: [
+            {
+              ...waitPerson("ask", { yes: "done", no: "done", interrupted: "done" }),
+              params: { prompt: "Continue?", choices: ["yes", "no"], choiceInfo },
+            },
+            endStep("done"),
+          ],
+        }),
+      );
+    expect(withInfo({ maybe: { label: "Maybe" } }).message).toContain(
+      "params.choiceInfo: choiceInfo.maybe: must name one of the choices",
+    );
+    expect(
+      withInfo({ yes: { role: "primary" }, no: { role: "primary" } }).message,
+    ).toContain('at most one choice may have the role "primary"');
+    expect(withInfo({ yes: { label: "x".repeat(81) } }).message).toContain(
+      "params.choiceInfo: choiceInfo.yes.label: must be at most 80 characters",
+    );
+  });
+
 });

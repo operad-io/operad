@@ -8,7 +8,8 @@
 
 import type { PluginStepResult, StepContext } from "@operad-io/engine";
 import { messageOf } from "@operad-io/engine";
-import type { TaskData } from "./model.ts";
+import type { ReviewFinding, TaskData } from "./model.ts";
+import { WAIT_ACTIONS, waitChoiceInfo, type WaitAction } from "./waits.ts";
 import {
   cancelledStep,
   claimAllows,
@@ -24,6 +25,8 @@ export const WAITING_EVENT = "dev.waiting";
 export interface AnnounceParams {
   readonly from: string;
   readonly result: string;
+  /** The choices the wait that follows offers; present when this step asks for it. */
+  readonly choices?: readonly string[] | undefined;
 }
 
 /** Why a task waits: the short reason for the key, and what to add to the line. */
@@ -41,7 +44,12 @@ function paramsOf(params: unknown): AnnounceParams {
       : {};
   const from = typeof record.from === "string" ? record.from : "";
   const result = typeof record.result === "string" ? record.result : "";
-  return { from, result };
+  const choices =
+    Array.isArray(record.choices) &&
+    record.choices.every((choice): choice is string => typeof choice === "string")
+      ? record.choices
+      : undefined;
+  return { from, result, ...(choices === undefined ? {} : { choices }) };
 }
 
 /** The step a repair run says stopped, from the line the worktree step wrote. */
@@ -145,6 +153,111 @@ export function waitingReason(
   }
 }
 
+function severityRank(severity: string): number {
+  if (severity === "critical") return 3;
+  if (severity === "major") return 2;
+  if (severity === "minor") return 1;
+  return 0;
+}
+
+/** The most serious finding of the review that is at or above the fix level. */
+function highestFinding(
+  task: TaskData,
+  fixLevel: string | undefined,
+): ReviewFinding | undefined {
+  const findings = (task.attempt?.review?.findings ?? []).filter(
+    (finding) =>
+      finding.preExisting !== true &&
+      finding.pre_existing !== true &&
+      (fixLevel === undefined ||
+        severityRank(finding.severity) >= severityRank(fixLevel)),
+  );
+  return [...findings].sort(
+    (left, right) =>
+      severityRank(right.severity) - severityRank(left.severity) ||
+      left.file.localeCompare(right.file) ||
+      left.line - right.line,
+  )[0];
+}
+
+function findingSentence(finding: ReviewFinding): string {
+  const trigger = finding.trigger.trim();
+  return `${finding.severity} finding at ${finding.file}:${finding.line}: ${finding.summary}${
+    trigger.length === 0 ? "" : ` (${trigger})`
+  }`;
+}
+
+/**
+ * Why the task waits, in one or two plain sentences. It reads the task's own
+ * record for the review's highest finding, the failed check's command and the
+ * integration's reason; the choice list is never part of a prompt.
+ */
+export function waitingPrompt(
+  found: WaitingReason,
+  task: TaskData,
+  fixLevel: string | undefined,
+): string {
+  const attempt = task.attempt;
+  const finding = highestFinding(task, fixLevel);
+  if (found.reason === "ready to merge") {
+    return "The checks and the review passed; the task is ready to merge.";
+  }
+  if (found.reason === "work did nothing") {
+    return "The worker changed nothing.";
+  }
+  if (found.reason === "work timed out") {
+    return `The worker timed out.${found.detail === undefined ? "" : ` ${found.detail}.`}`;
+  }
+  if (found.reason === "work failed") {
+    return `The worker failed${found.detail === undefined ? "" : `: ${found.detail}`}.`;
+  }
+  if (found.reason === "conflict") {
+    return "The worker's changes conflict with main.";
+  }
+  if (found.reason === "review timed out twice") {
+    return "review timed out twice";
+  }
+  if (found.reason === "review did not finish") {
+    return `review did not finish${found.detail === undefined ? "" : ` (${found.detail})`}`;
+  }
+  if (found.reason === "review failed twice in a row") {
+    return `The review failed twice in a row.${
+      finding === undefined ? "" : ` Highest finding: ${findingSentence(finding)}.`
+    }`;
+  }
+  if (found.reason === "review findings" || found.reason === "rework limit") {
+    const source = attempt?.rework?.source;
+    if (source === "review" || (source === undefined && attempt?.review !== undefined)) {
+      return finding === undefined
+        ? "The review failed."
+        : `The review failed: ${findingSentence(finding)}.`;
+    }
+    const command = attempt?.verify?.command;
+    return typeof command !== "string" || command.length === 0
+      ? `The check failed${attempt?.verify?.message === undefined ? "." : `: ${attempt.verify.message}.`}`
+      : `The check failed: \`${command}\`.`;
+  }
+  if (found.reason === "gate failed") {
+    const command = attempt?.verify?.command;
+    return typeof command !== "string" || command.length === 0
+      ? `The check failed${attempt?.verify?.message === undefined ? "." : `: ${attempt.verify.message}.`}`
+      : `The check failed: \`${command}\`.`;
+  }
+  if (found.reason === "merge refused") {
+    return `The merge failed${found.detail === undefined ? "" : `: ${found.detail}`}.`;
+  }
+  if (found.reason === "no verified commit") {
+    return "The task has no verified commit to merge.";
+  }
+  if (found.reason === "dependency cancelled") {
+    return "A task this one waits for was cancelled.";
+  }
+  if (found.reason.startsWith("run stopped during ")) {
+    return `The run stopped during ${found.reason.slice("run stopped during ".length)}.`;
+  }
+  return `${found.reason.charAt(0).toUpperCase()}${found.reason.slice(1)}.`;
+}
+
 /** One line a person reads: the task, why it waits, and the detail if any. */
 export function waitingSummary(taskId: string, found: WaitingReason): string {
   const detail = found.detail === undefined ? "" : ` (${found.detail})`;
@@ -212,6 +325,30 @@ export async function runAnnounce(
     } catch (error) {
       await ctx.logger.write(`could not mark the task waiting: ${messageOf(error)}`);
     }
+  }
+  // The wait that follows asks the person. It carries this task's own reason
+  // and choice information; asking with no grace hands the question over to
+  // the wait step at once, keeping one item and one wait id.
+  const choices = edge.choices;
+  if (choices !== undefined && choices.length > 0) {
+    const actions = choices.filter((choice): choice is WaitAction =>
+      (WAIT_ACTIONS as readonly string[]).includes(choice),
+    );
+    await ctx.ask({
+      prompt: waitingPrompt(
+        found,
+        context.task,
+        context.settings.reviewer.fixLevel,
+      ),
+      choices,
+      choiceInfo: waitChoiceInfo(
+        actions,
+        found.reason === "ready to merge",
+      ),
+      graceSecs: 0,
+      onTimeout: "waiting",
+      resume: null,
+    });
   }
   // A stopped run keeps its result, so the wait can say which step stopped.
   return {

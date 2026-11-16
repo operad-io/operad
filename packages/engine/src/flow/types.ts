@@ -1,3 +1,5 @@
+import type { ChoiceInfo } from "../plugin/types.ts";
+
 /** How a step behaves when a run resumes after a crash. */
 export type Replay = "safe" | "unsafe";
 
@@ -54,6 +56,8 @@ export interface WaitPersonStep extends StepBase {
   readonly params: {
     readonly prompt: string;
     readonly choices: readonly string[];
+    /** What each choice is, keyed by the choice string an answer sends. */
+    readonly choiceInfo?: Readonly<Record<string, ChoiceInfo>> | undefined;
     /**
      * Answers a timed-out step may hand over that this wait does not offer by
      * itself. They need an edge in `next`, and are shown only when the step

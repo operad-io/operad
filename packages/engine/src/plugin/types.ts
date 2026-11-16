@@ -460,11 +460,29 @@ export interface PluginCheck {
 /** The longest grace, in seconds, a timer can hold (2^31-1 ms, rounded down). */
 export const MAX_ASK_GRACE_SECS = 2_147_483;
 
+/** What one choice of a question says about itself. */
+export interface ChoiceInfo {
+  /** What a client shows instead of the raw choice. */
+  readonly label?: string | undefined;
+  /** One sentence saying what choosing this does. */
+  readonly hint?: string | undefined;
+  /** The asker recommends `primary`; `destructive` cannot be undone. */
+  readonly role?: "primary" | "destructive" | undefined;
+  /** Whether the answer may or must carry a note. */
+  readonly note?: "optional" | "required" | undefined;
+}
+
 /** What a step asks a person with `ctx.ask`. */
 export interface AskRequest {
   readonly prompt: string;
   /** The answers offered; none means a free note only. */
   readonly choices?: readonly string[] | undefined;
+  /**
+   * What each choice is, keyed by the choice string an answer sends. The keys
+   * must be choices; at most one is `primary`. The kernel checks it and carries
+   * it to every read of the question.
+   */
+  readonly choiceInfo?: Readonly<Record<string, ChoiceInfo>> | undefined;
   /**
    * How long to wait for the answer, in seconds, while the step goes on
    * waiting. The narrowest of this, the step's `askGraceSecs` param and the
@@ -496,6 +514,7 @@ export interface AskWaitingData {
   readonly waitId: string;
   readonly prompt: string;
   readonly choices: readonly string[];
+  readonly choiceInfo?: Readonly<Record<string, ChoiceInfo>> | undefined;
   readonly resume: JsonValue;
 }
 
@@ -507,6 +526,7 @@ export type AskOutcome =
       readonly waitId: string;
       readonly prompt: string;
       readonly choices: readonly string[];
+      readonly choiceInfo?: Readonly<Record<string, ChoiceInfo>> | undefined;
       /** What the step needs to carry on later, when the asker shaped it; the request's own resume otherwise. */
       readonly resume?: JsonValue | undefined;
     };
@@ -1356,6 +1376,7 @@ export interface WaitingRun {
   readonly object: ObjectRef;
   readonly prompt?: string | undefined;
   readonly choices?: readonly string[] | undefined;
+  readonly choiceInfo?: Readonly<Record<string, ChoiceInfo>> | undefined;
   /**
    * When the run last recorded anything. A run whose object is not in the store
    * takes this as the time of its placeholder object, so an age shown for it
@@ -1375,6 +1396,7 @@ export interface PendingEntry {
   readonly runId: string;
   readonly prompt: string | undefined;
   readonly choices: readonly string[] | undefined;
+  readonly choiceInfo?: Readonly<Record<string, ChoiceInfo>> | undefined;
   readonly object: StoredObject;
   readonly actions: readonly PendingActionView[];
 }

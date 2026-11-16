@@ -9,7 +9,7 @@ import { type FlowDefinition, type StepShape } from "@operad-io/engine";
 import { createHash } from "node:crypto";
 import type { CheckCommand } from "./settings.ts";
 import { DEV_MAX_VISITS } from "./timeouts.ts";
-import { WAIT_STEPS, waitChoices } from "./waits.ts";
+import { WAIT_STEPS, waitChoiceInfo, waitChoices } from "./waits.ts";
 
 /** The worker stage: the harness changes the task branch. */
 export interface WorkStage {
@@ -121,6 +121,7 @@ function waitPerson(
   choices: readonly string[],
   next: Edge,
   note?: string,
+  primary = true,
 ): StepShape {
   return {
     id,
@@ -128,6 +129,7 @@ function waitPerson(
     params: {
       prompt,
       choices,
+      choiceInfo: waitChoiceInfo(choices, primary),
       ...(note === undefined ? {} : { note }),
     },
     replay: "safe",
@@ -143,13 +145,27 @@ const END_FAILED = end("end_failed", "failed");
 const END_CANCELLED = end("end_cancelled", "cancelled");
 const END_DONE = end("end_done", "done");
 
-/** The edges of an announcement step: a done stop goes to `wait`. */
-function announce(id: string, from: string, result: string, wait: string): StepShape {
+/**
+ * The edges of an announcement step: a stop, or the question it hands over,
+ * goes to `wait`.
+ */
+function announce(
+  id: string,
+  from: string,
+  result: string,
+  wait: string,
+  choices: readonly string[],
+): StepShape {
   return plugin(
     id,
     "dev/announce",
-    { from, result },
-    { done: wait, interrupted: wait, cancelled: "end_cancelled" },
+    { from, result, choices },
+    {
+      done: wait,
+      interrupted: wait,
+      waiting: wait,
+      cancelled: "end_cancelled",
+    },
   );
 }
 
@@ -260,6 +276,7 @@ function defaultSteps(
 ): StepShape[] {  const check = stages[1] as CheckStage;
   const review = stages[2] as ReviewStage;
   const work = stages[0] as WorkStage;
+  const choices = waitChoices("person", true);
   return [
     { ...WORKTREE, params: { use: "dev/worktree", params: worktreeParams(work) }, next: { ...(WORKTREE.next as Edge) } },
     { ...REVERIFY, next: { ...(REVERIFY.next as Edge) } },
@@ -303,7 +320,7 @@ function defaultSteps(
     }),
     waitPerson(
       WAIT_STEPS["review-timeout"],
-      "The task is waiting for you: merge it or reject it.\n\nreview timed out twice",
+      "review timed out twice",
       waitChoices("review-timeout", true),
       {
         merge: "integrate",
@@ -312,10 +329,11 @@ function defaultSteps(
         interrupted: "end_cancelled",
       },
       "review timed out twice",
+      false,
     ),
     waitPerson(
       WAIT_STEPS["review-unavailable"],
-      "The task is waiting for you: merge it or reject it.\n\nreview did not finish (model unavailable)",
+      "review did not finish (model unavailable)",
       waitChoices("review-unavailable", true),
       {
         merge: "integrate",
@@ -325,10 +343,11 @@ function defaultSteps(
         interrupted: "end_cancelled",
       },
       "review did not finish (model unavailable)",
+      false,
     ),
     waitPerson(
       WAIT_STEPS["review-out-of-time"],
-      "The task is waiting for you: merge it or reject it.\n\nreview did not finish (out of time)",
+      "review did not finish (out of time)",
       waitChoices("review-out-of-time", true),
       {
         merge: "integrate",
@@ -337,6 +356,7 @@ function defaultSteps(
         interrupted: "end_cancelled",
       },
       "review did not finish (out of time)",
+      false,
     ),
     plugin("rework", "dev/rework", {}, {
       again: "worktree",
@@ -418,23 +438,23 @@ function defaultSteps(
       "announce_work_environment",
       "retry_work_wait",
     ),
-    announce("announce_worktree_environment", "worktree", "environment", "wait"),
-    announce("announce_reverify_environment", "reverify", "environment", "wait"),
-    announce("announce_work_environment", "work", "environment", "wait"),
-    announce("announce_blocked", "worktree", "blocked", "wait"),
-    announce("announce_worktree_stopped", "worktree", "interrupted", "wait"),
-    announce("announce_reverify_stopped", "reverify", "interrupted", "wait"),
-    announce("announce_nothing", "work", "nothing", "wait"),
-    announce("announce_work_failed", "work", "failed", "wait"),
-    announce("announce_work_stopped", "work", "interrupted", "wait"),
-    announce("announce_verify_not_code", "verify", "not_code", "wait"),
-    announce("announce_ready", "review", "pass", "wait"),
-    announce("announce_review_failed", "review", "failed", "wait"),
-    announce("announce_rework", "rework", "ask", "wait"),
-    announce("announce_integrate", "integrate", "failed", "wait"),
+    announce("announce_worktree_environment", "worktree", "environment", "wait", choices),
+    announce("announce_reverify_environment", "reverify", "environment", "wait", choices),
+    announce("announce_work_environment", "work", "environment", "wait", choices),
+    announce("announce_blocked", "worktree", "blocked", "wait", choices),
+    announce("announce_worktree_stopped", "worktree", "interrupted", "wait", choices),
+    announce("announce_reverify_stopped", "reverify", "interrupted", "wait", choices),
+    announce("announce_nothing", "work", "nothing", "wait", choices),
+    announce("announce_work_failed", "work", "failed", "wait", choices),
+    announce("announce_work_stopped", "work", "interrupted", "wait", choices),
+    announce("announce_verify_not_code", "verify", "not_code", "wait", choices),
+    announce("announce_ready", "review", "pass", "wait", choices),
+    announce("announce_review_failed", "review", "failed", "wait", choices),
+    announce("announce_rework", "rework", "ask", "wait", choices),
+    announce("announce_integrate", "integrate", "failed", "wait", choices),
     waitPerson(
       WAIT_STEPS.person,
-      "The task is waiting for you: merge it, reject it, or verify and review it again.",
+      "The task is waiting for you.",
       waitChoices("person", true),
       {
         merge: "integrate",
@@ -652,10 +672,10 @@ function generatedSteps(
             `announce_${id}_environment`,
             `retry_${id}_wait`,
           ),
-          announce(`announce_${id}_environment`, id, "environment", waitId),
-          announce(`announce_${id}_nothing`, id, "nothing", waitId),
-          announce(`announce_${id}_failed`, id, "failed", waitId),
-          announce(`announce_${id}_stopped`, id, "interrupted", waitId),
+          announce(`announce_${id}_environment`, id, "environment", waitId, choices),
+          announce(`announce_${id}_nothing`, id, "nothing", waitId, choices),
+          announce(`announce_${id}_failed`, id, "failed", waitId, choices),
+          announce(`announce_${id}_stopped`, id, "interrupted", waitId, choices),
         );
         break;
       }
@@ -670,13 +690,13 @@ function generatedSteps(
               not_code: `announce_${id}_not_code`,
               cancelled: "end_cancelled",
             }),
-            announce(`announce_${id}_not_code`, id, "not_code", waitId),
+            announce(`announce_${id}_not_code`, id, "not_code", waitId, choices),
             plugin(`rework_${id}`, "dev/rework", {}, {
               again: target,
               ask: `announce_rework_${id}`,
               cancelled: "end_cancelled",
             }),
-            announce(`announce_rework_${id}`, `rework_${id}`, "ask", waitId),
+            announce(`announce_rework_${id}`, `rework_${id}`, "ask", waitId, choices),
           );
         } else {
           steps.push(
@@ -686,7 +706,7 @@ function generatedSteps(
               not_code: `announce_${id}_not_code`,
               cancelled: "end_cancelled",
             }),
-            announce(`announce_${id}_not_code`, id, "not_code", waitId),
+            announce(`announce_${id}_not_code`, id, "not_code", waitId, choices),
           );
         }
         break;
@@ -715,7 +735,7 @@ function generatedSteps(
           }),
           waitPerson(
             `${WAIT_STEPS["review-timeout"]}_${id}`,
-            "The task is waiting for you: merge it or reject it.\n\nreview timed out twice",
+            "review timed out twice",
             waitChoices("review-timeout", hasReverify),
             {
               merge: "integrate",
@@ -724,10 +744,11 @@ function generatedSteps(
               interrupted: "end_cancelled",
             },
             "review timed out twice",
+            false,
           ),
           waitPerson(
             `${WAIT_STEPS["review-unavailable"]}_${id}`,
-            "The task is waiting for you: merge it or reject it.\n\nreview did not finish (model unavailable)",
+            "review did not finish (model unavailable)",
             waitChoices("review-unavailable", hasReverify),
             {
               merge: "integrate",
@@ -737,10 +758,11 @@ function generatedSteps(
               interrupted: "end_cancelled",
             },
             "review did not finish (model unavailable)",
+            false,
           ),
           waitPerson(
             `${WAIT_STEPS["review-out-of-time"]}_${id}`,
-            "The task is waiting for you: merge it or reject it.\n\nreview did not finish (out of time)",
+            "review did not finish (out of time)",
             waitChoices("review-out-of-time", hasReverify),
             {
               merge: "integrate",
@@ -749,8 +771,9 @@ function generatedSteps(
               interrupted: "end_cancelled",
             },
             "review did not finish (out of time)",
+            false,
           ),
-          announce(`announce_review_failed_${id}`, id, "failed", waitId),
+          announce(`announce_review_failed_${id}`, id, "failed", waitId, choices),
         );
         if (target !== undefined) {
           steps.push(
@@ -759,11 +782,11 @@ function generatedSteps(
               ask: `announce_rework_${id}`,
               cancelled: "end_cancelled",
             }),
-            announce(`announce_rework_${id}`, `rework_${id}`, "ask", waitId),
+            announce(`announce_rework_${id}`, `rework_${id}`, "ask", waitId, choices),
           );
         }
         if (passedTo !== next) {
-          steps.push(announce(`announce_ready_${id}`, id, "pass", next));
+          steps.push(announce(`announce_ready_${id}`, id, "pass", next, choices));
         }
         break;
       }
@@ -771,7 +794,7 @@ function generatedSteps(
         steps.push(
           waitPerson(
             item.id,
-            "The task is waiting for you: merge it, reject it, or verify and review it again.",
+            "The task is waiting for you.",
             choices,
             {
               merge: next,
@@ -789,18 +812,18 @@ function generatedSteps(
   }
 
   steps.push(
-    announce("announce_blocked", "worktree", "blocked", waitId),
-    announce("announce_worktree_environment", "worktree", "environment", waitId),
-    announce("announce_worktree_stopped", "worktree", "interrupted", waitId),
+    announce("announce_blocked", "worktree", "blocked", waitId, choices),
+    announce("announce_worktree_environment", "worktree", "environment", waitId, choices),
+    announce("announce_worktree_stopped", "worktree", "interrupted", waitId, choices),
     ...(hasReverify
       ? [
-          announce("announce_reverify_environment", "reverify", "environment", waitId),
-          announce("announce_reverify_stopped", "reverify", "interrupted", waitId),
+          announce("announce_reverify_environment", "reverify", "environment", waitId, choices),
+          announce("announce_reverify_stopped", "reverify", "interrupted", waitId, choices),
         ]
       : []),
     waitPerson(
       waitId,
-      "The task is waiting for you: merge it, reject it, or verify and review it again.",
+      "The task is waiting for you.",
       choices,
       {
         merge: "integrate",
@@ -818,7 +841,7 @@ function generatedSteps(
       failed: "announce_integrate",
       cancelled: "end_cancelled",
     }),
-    announce("announce_integrate", "integrate", "failed", waitId),
+    announce("announce_integrate", "integrate", "failed", waitId, choices),
     plugin("cleanup", "dev/cleanup", {}, {
       done: "end_done",
       cancelled: "end_cancelled",

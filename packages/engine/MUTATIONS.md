@@ -1048,3 +1048,10 @@ the row fields.
 | T-0522-M1 | packages/engine/src/loop/code-watch.ts | `answerWithin` installed no limit, so a check that never finished held `busy` and the watch never looked again | `a code watch > a check that does not finish is given up: it says why, shows older code, and a later change is offered again` (and `serve runs older code than the files on disk > a check that does not finish still shows the item`) |
 | T-0522-M2 | packages/engine/src/loop/code-watch.ts | `planRetry` returned at once, so a kept change was offered again only when the files changed | `a code watch > a kept change is offered again on the slow timer with no file change` (and `a watch started on files already tried offers them again on the slow timer`) |
 | T-0522-M3 | packages/engine/src/loop/code-watch.ts | a handler that rejected was kept without a reason, so nothing said why the old code stayed | `a code watch > a check that fails says why and is offered again when the files change` |
+
+## T-0523 — a question's choices say what they are
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0523-M1 | packages/engine/src/views/pending.ts | the pending item no longer carried the wait's `choiceInfo` | `pending items carry a question's choice info > a flow wait's info is in the item, and a wait without it is unchanged` |
+| T-0523-M2 | packages/engine/src/plugin/choice-info.ts | a `choiceInfo` key that was not a choice was accepted | `choice info validation > a key that is not a choice is refused by name` |

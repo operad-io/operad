@@ -1,3 +1,5 @@
+import type { ChoiceInfo } from "./types.ts";
+
 /** A plugin cannot be loaded or used; the message names the plugin and field. */
 export class PluginError extends Error {
   constructor(message: string, options?: ErrorOptions) {
@@ -47,12 +49,14 @@ export class AskTimeoutError extends Error {
   readonly waitId: string;
   readonly prompt: string;
   readonly choices: readonly string[];
+  readonly choiceInfo: Readonly<Record<string, ChoiceInfo>> | undefined;
   readonly resume: unknown;
 
   constructor(question: {
     readonly waitId: string;
     readonly prompt: string;
     readonly choices: readonly string[];
+    readonly choiceInfo?: Readonly<Record<string, ChoiceInfo>> | undefined;
     readonly resume: unknown;
   }) {
     super(`nobody answered "${question.prompt}" in time`);
@@ -60,6 +64,7 @@ export class AskTimeoutError extends Error {
     this.waitId = question.waitId;
     this.prompt = question.prompt;
     this.choices = question.choices;
+    this.choiceInfo = question.choiceInfo;
     this.resume = question.resume;
   }
 }

@@ -28,7 +28,7 @@ Each step has `id`, `kind`, `params`, `replay` (`"safe"` or `"unsafe"`) and `nex
 | `kind` | `params` | Results (the keys of `next`) |
 |---|---|---|
 | `plugin` | `{ use: "<plugin>/<step>", params: <JSON> }`; `params` must be present, `{}` when the step takes none | The step type's `results`, plus `interrupted` when `replay` is `"unsafe"`. An edge `waiting` must lead to a `wait_person` step |
-| `wait_person` | `{ prompt, choices, lateChoices?, note? }` | Each of `choices`, each of `lateChoices`, and `interrupted` |
+| `wait_person` | `{ prompt, choices, choiceInfo?, lateChoices?, note? }` | Each of `choices`, each of `lateChoices`, and `interrupted` |
 | `wait` | `{ afterSecs }` or `{ check: "<plugin>/<step>", params? }`; exactly one of the two | `ready`, `interrupted` |
 | `end` | `{ status: "done" \| "failed" \| "cancelled" }` | none: the step has no `next` |
 
@@ -36,6 +36,7 @@ Each step has `id`, `kind`, `params`, `replay` (`"safe"` or `"unsafe"`) and `nex
 |---|---|---|---|
 | `prompt` | string | Non-empty | `params.prompt: must be a non-empty string` |
 | `choices` | list of strings | The answers offered; each is a result of the step, so each needs an edge in `next` | `params.choices: must be an array of strings` |
+| `choiceInfo` | object | Optional, keyed by a choice: `{ label?, hint?, role?, note? }`, as in [Asking](asking.md). Its keys must be choices and at most one may be `primary` | `params.choiceInfo: ...` names the choice and field |
 | `lateChoices` | list of strings | Answers a timed-out step may hand over that this wait does not offer by itself; each needs an edge and is shown only when the step that asked hands one over | `params.lateChoices: must be an array of strings` |
 | `note` | string | Non-empty. Shown when the step that led here was interrupted; `{step}` names that step | `params.note: must be a non-empty string` |
 | `afterSecs` | number | Zero or more, finite | `params.afterSecs: must be zero or more seconds` |

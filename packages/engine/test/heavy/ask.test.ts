@@ -268,6 +268,37 @@ for (const mode of ["memory", "file"] as const) {
       }
     }, 30_000);
 
+    test("a question's choice info reaches the wait, the pending view and the log", async () => {
+      const env = await setup(mode);
+      try {
+        const choiceInfo = {
+          yes: {
+            label: "Go ahead",
+            hint: "Run it now.",
+            role: "primary" as const,
+            note: "optional" as const,
+          },
+          no: { label: "Stop", hint: "Leave it alone.", role: "destructive" as const },
+        };
+        const id = await env.create("ask-wait", "info", { choiceInfo });
+        const timer = new FakeTimer();
+        const run = env.runner(id, timer).run();
+        const waitId = await env.opened(id);
+        await timer.armed();
+        timer.fire();
+        expect(await run).toBe("waiting");
+
+        const state = await readState(env.log, id);
+        expect(state.wait?.choiceInfo).toEqual(choiceInfo);
+        const pending = await listPending(env.log, env.registry);
+        expect(pending[0]?.choiceInfo).toEqual(choiceInfo);
+        const opened = (await facts(env.log, id)).find((fact) => fact.kind === "ask_opened");
+        expect(opened?.payload).toMatchObject({ waitId, choiceInfo });
+      } finally {
+        await env.close();
+      }
+    }, 30_000);
+
     test("an answer after the timeout goes through the flow wait with one item", async () => {
       const env = await setup(mode);
       try {
@@ -833,4 +864,66 @@ describe("ctx.ask survives a crash", () => {
       await env.close();
     }
   }, 60_000);
+});
+
+
+describe("choice info validation", () => {
+  const asker = {
+    useGrant: async () => false,
+    ask: async () => {
+      throw new Error("the question must not be asked");
+    },
+  };
+
+  test("a key that is not a choice is refused by name", async () => {
+    const env = await setup("memory");
+    try {
+      await expect(
+        env.registry.runStep("ask/question", {}, {
+          runId: "bad-info",
+          asker,
+          params: {
+            name: "bad",
+            dir: env.dir,
+            choiceInfo: { maybe: { label: "Maybe" } },
+          },
+        }),
+      ).rejects.toThrow(/choiceInfo\.maybe: must name one of the choices/);
+    } finally {
+      await env.close();
+    }
+  });
+
+  test("two primary choices and a long label are refused", async () => {
+    const env = await setup("memory");
+    try {
+      await expect(
+        env.registry.runStep("ask/question", {}, {
+          runId: "bad-primary",
+          asker,
+          params: {
+            name: "primary",
+            dir: env.dir,
+            choiceInfo: {
+              yes: { role: "primary" },
+              no: { role: "primary" },
+            },
+          },
+        }),
+      ).rejects.toThrow(/at most one choice may have the role "primary"/);
+      await expect(
+        env.registry.runStep("ask/question", {}, {
+          runId: "bad-label",
+          asker,
+          params: {
+            name: "label",
+            dir: env.dir,
+            choiceInfo: { yes: { label: "x".repeat(81) } },
+          },
+        }),
+      ).rejects.toThrow(/choiceInfo\.yes\.label: must be at most 80 characters/);
+    } finally {
+      await env.close();
+    }
+  });
 });
