@@ -513,3 +513,12 @@ the row fields.
 | T-0519-M8 | packages/tui/src/actions.ts | a sent message was not drawn before the server's copy arrived | `a message drawn before the server's copy > is weak at the end of the transcript until the copy replaces it, once` |
 | T-0519-M9 | packages/tui/src/state.ts | Enter chose the latest run instead of the run at the selected line | `a chat transcript folds its thinking and tool lines > the run at the selected line opens, not always the latest one` |
 | T-0519-M10 | packages/tui/src/state.ts | Enter folded the open chat even when the list cursor was on another row | `a chat transcript folds its thinking and tool lines > Enter still opens the selected row when another row is selected` |
+
+## T-0524 — a question's choices say what they are
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0524-M1 | packages/tui/src/actions.ts | the choice list opened on the first choice instead of the primary one | `a question whose choices say what they are > each line shows its label and hint, the primary is selected, and a destructive line is in the error colour` |
+| T-0524-M2 | packages/tui/src/view/index.ts | a destructive choice was drawn in the text colour, not the error colour | `a question whose choices say what they are > each line shows its label and hint, the primary is selected, and a destructive line is in the error colour` |
+| T-0524-M3 | packages/tui/src/actions.ts | a choice with a note answered at once instead of opening the note input | `a question whose choices say what they are > a choice whose note is required opens the note input before it answers` and `... a choice whose note is optional offers the note input and answers without one on Enter` |
+| T-0524-M4 | packages/tui/src/view/index.ts | a choice's line left out its hint | `a question whose choices say what they are > each line shows its label and hint, the primary is selected, and a destructive line is in the error colour` |

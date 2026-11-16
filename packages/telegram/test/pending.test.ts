@@ -31,7 +31,7 @@ function actionInfo(plugin: string, action: string, noteRequired: boolean): View
 class StubClient {
   items: PendingItem[] = [];
   readonly acts: { name: string; id: string | undefined; note?: string | undefined; actor: unknown }[] = [];
-  readonly answers: { runId: string; waitId: string; choice: string; actor: unknown }[] = [];
+  readonly answers: { runId: string; waitId: string; choice: string; note?: string | undefined; actor: unknown }[] = [];
   /** Refuse every act and answer, as the client does for an item already answered. */
   refuse = false;
   /** What the history section of a chat reads. */
@@ -86,7 +86,13 @@ class StubClient {
       },
       answer: async (options) => {
         if (this.refuse) throw new ViewError("not-available", "already answered");
-        this.answers.push({ runId: options.runId, waitId: options.waitId, choice: options.choice, actor: options.actor });
+        this.answers.push({
+          runId: options.runId,
+          waitId: options.waitId,
+          choice: options.choice,
+          note: options.note,
+          actor: options.actor,
+        });
         this.items = this.items.filter((item) => item.waitId !== options.waitId);
       },
     };
@@ -331,6 +337,133 @@ describe("pending items go to Telegram", () => {
       [555, "answered: allow"],
       [42, "answered: allow"],
     ]);
+    await w.close();
+  });
+
+
+  test("choice info labels the buttons, orders primary first and destructive last, and lists each hint", async () => {
+    const { w, api, chat, client, sender, source } = await setup();
+    client.items = [
+      item({
+        runId: "r1",
+        waitId: "w1",
+        flow: "chat",
+        prompt: "Delete the branch?",
+        choices: ["deny", "keep", "allow", "discard"],
+        object: `chat:${chat}`,
+        choiceInfo: {
+          allow: { label: "Allow once", hint: "Run this call once in the main clone.", role: "primary" },
+          keep: { label: "Keep", hint: "Leave the branch alone." },
+          deny: { label: "Deny", hint: "Refuse this call.", role: "destructive" },
+          discard: { label: "Discard", hint: "Throw the branch away.", role: "destructive" },
+        },
+      }),
+    ];
+    await sender.sync();
+    const sent = api.sent[0];
+    expect(sent?.keyboard?.map((row) => row.map((button) => button.text))).toEqual([
+      ["Allow once"],
+      ["Keep"],
+      ["Deny"],
+      ["Discard"],
+    ]);
+    expect(sent?.text).toContain("Run this call once in the main clone.");
+    expect(sent?.text).toContain("Leave the branch alone.");
+    expect(sent?.text).toContain("Refuse this call.");
+    expect(sent?.text).toContain("Throw the branch away.");
+    // The callback still sends the raw choice, not its label.
+    api.updates = [tap(400, 42, 555, 9_001, "o:0")];
+    await source.poll();
+    expect(client.answers).toEqual([{ runId: "r1", waitId: "w1", choice: "allow", actor: { via: "telegram", id: "42" } }]);
+    expect(api.edits[0]?.text).toEndWith("answered: Allow once");
+    await w.close();
+  });
+
+  test("a choice whose note is required has no button and is answered by replying", async () => {
+    const { w, api, chat, client, sender, source } = await setup();
+    client.items = [
+      item({
+        runId: "r1",
+        waitId: "w1",
+        flow: "chat",
+        prompt: "Send it back?",
+        choices: ["merge", "rework"],
+        object: `chat:${chat}`,
+        choiceInfo: {
+          merge: { label: "Merge" },
+          rework: { label: "Rework", hint: "Send the task back to the agent.", note: "required" },
+        },
+      }),
+    ];
+    await sender.sync();
+    const sent = api.sent[0];
+    expect(sent?.keyboard?.map((row) => row.map((button) => button.text))).toEqual([["Merge"]]);
+    expect(sent?.text).toContain("Reply to this message to Rework; your reply is the note.");
+
+    api.updates = [replyUpdate(300, 42, 555, "the tests fail", 9_001)];
+    await source.poll();
+    expect(client.answers).toEqual([
+      { runId: "r1", waitId: "w1", choice: "rework", note: "the tests fail", actor: { via: "telegram", id: "42" } },
+    ]);
+    expect(api.edits[0]?.text).toEndWith("answered: Rework");
+    await w.close();
+  });
+
+  test("a choice whose note is optional answers at once, and a reply instead adds the note", async () => {
+    const { w, api, chat, client, sender, source } = await setup();
+    client.items = [
+      item({
+        runId: "r1",
+        waitId: "w1",
+        flow: "chat",
+        prompt: "Merge it?",
+        choices: ["merge"],
+        object: `chat:${chat}`,
+        choiceInfo: { merge: { label: "Merge", note: "optional" } },
+      }),
+    ];
+    await sender.sync();
+    const sent = api.sent[0];
+    expect(sent?.keyboard?.map((row) => row.map((button) => button.text))).toEqual([["Merge"]]);
+    expect(sent?.text).toContain("Reply to this message to Merge with a note; your reply is the note.");
+
+    api.updates = [tap(400, 42, 555, 9_001, "o:0")];
+    await source.poll();
+    expect(client.answers).toEqual([{ runId: "r1", waitId: "w1", choice: "merge", actor: { via: "telegram", id: "42" } }]);
+
+    client.items = [
+      item({
+        runId: "r2",
+        waitId: "w2",
+        flow: "chat",
+        prompt: "Merge the other one?",
+        choices: ["merge"],
+        object: `chat:${chat}`,
+        choiceInfo: { merge: { label: "Merge", note: "optional" } },
+      }),
+    ];
+    await sender.sync();
+    api.updates = [replyUpdate(301, 42, 555, "looks good", 9_002)];
+    await source.poll();
+    expect(client.answers.at(-1)).toEqual({
+      runId: "r2",
+      waitId: "w2",
+      choice: "merge",
+      note: "looks good",
+      actor: { via: "telegram", id: "42" },
+    });
+    await w.close();
+  });
+
+  test("a question without choice info draws the raw choices and no hint lines", async () => {
+    const { w, api, chat, client, sender } = await setup();
+    client.items = [
+      item({ runId: "r1", waitId: "w1", flow: "chat", prompt: "Run rm?", choices: ["allow", "deny"], object: `chat:${chat}` }),
+    ];
+    await sender.sync();
+    const sent = api.sent[0];
+    expect(sent?.keyboard?.map((row) => row.map((button) => button.text))).toEqual([["allow"], ["deny"]]);
+    expect(sent?.text).toBe("Run rm?");
     await w.close();
   });
 

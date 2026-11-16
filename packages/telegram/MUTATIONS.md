@@ -135,3 +135,12 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0514-M1 | packages/telegram/src/progress.ts | the status line was left off, so no progress message existed while the reply was starting | `the progress message of a reply > the progress message exists from the first status and ends with its line` (timed out) |
+
+## T-0524 — a question's choices say what they are
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0524-M1 | packages/telegram/src/pending.ts | a choice's button showed the raw choice instead of its label | `pending items go to Telegram > choice info labels the buttons, orders primary first and destructive last, and lists each hint` |
+| T-0524-M2 | packages/telegram/src/pending.ts | the buttons kept the question's order instead of primary first and destructive last | `pending items go to Telegram > choice info labels the buttons, orders primary first and destructive last, and lists each hint` |
+| T-0524-M3 | packages/telegram/src/pending.ts | the message listed no choice's hint under the prompt | `pending items go to Telegram > choice info labels the buttons, orders primary first and destructive last, and lists each hint` |
+| T-0524-M4 | packages/telegram/src/pending.ts | a choice's note was dropped, so a required-note choice got a button and a reply no longer carried the note | `pending items go to Telegram > a choice whose note is required has no button and is answered by replying` and `... a choice whose note is optional answers at once, and a reply instead adds the note` |

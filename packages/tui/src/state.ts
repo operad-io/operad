@@ -5,6 +5,7 @@
  */
 
 import type {
+  ChoiceInfo,
   PendingItem,
   RowMark,
   RunningItem,
@@ -76,6 +77,8 @@ export interface TuiAnswer {
   readonly waitId: string;
   readonly prompt: string;
   readonly choices: readonly string[];
+  /** What each choice says about itself; see `ChoiceInfo`. */
+  readonly choiceInfo?: Readonly<Record<string, ChoiceInfo>> | undefined;
 }
 
 /** One line of a list, in the words the view renders. */
@@ -230,6 +233,8 @@ export type TuiInput =
       /** The action asks to confirm after the note. */
       readonly confirm: boolean;
       readonly args?: Readonly<Record<string, unknown>> | undefined;
+      /** The note answers this pending question's choice instead of an action. */
+      readonly answer?: { readonly answer: TuiAnswer; readonly choice: string } | undefined;
       /** A line starting with `/` is listing the chat's commands; the cursor is in that list. */
       readonly commandMenu?: { readonly cursor: number } | undefined;
       /** The same list, for a caller that reads this name. */
@@ -847,6 +852,7 @@ function answerOfPending(item: PendingItem): TuiAnswer | undefined {
     waitId: item.waitId,
     prompt: item.prompt,
     choices: item.choices,
+    ...(item.choiceInfo === undefined ? {} : { choiceInfo: item.choiceInfo }),
   };
 }
 

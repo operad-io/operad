@@ -699,26 +699,43 @@ export function startAction(
   return afterArgs(closed, action.name, object.id, {}, note, action.confirm);
 }
 
-/** Opens the choice list of a pending question. */
+/** Opens the choice list of a pending question, on the choice the asker recommends. */
 export function startAnswer(state: TuiState, answer: TuiAnswer): TuiState {
   const closed: TuiState = { ...state, input: undefined };
   if (state.acting) return withNotice(closed, "the last change has not answered yet");
+  const primary = answer.choices.findIndex((choice) => answer.choiceInfo?.[choice]?.role === "primary");
   return {
     ...closed,
-    input: { kind: "answer", answer, cursor: 0 },
+    input: { kind: "answer", answer, cursor: primary < 0 ? 0 : primary },
   };
 }
 
+/** The words a choice's line shows: the asker's label, or the raw choice. */
+function choiceLabel(answer: TuiAnswer, choice: string): string {
+  return answer.choiceInfo?.[choice]?.label ?? choice;
+}
+
 /** Sends the chosen answer and closes the choice list. */
-function sendAnswer(state: TuiState, answer: TuiAnswer, choice: string): TuiState {
+function sendAnswer(state: TuiState, answer: TuiAnswer, choice: string, note?: string): TuiState {
+  const locked =
+    state.input?.kind === "note"
+      ? {
+          ...state.input,
+          sending: true,
+          error: undefined,
+          commandMenu: undefined,
+          commands: undefined,
+        }
+      : undefined;
   return {
     ...state,
-    input: undefined,
+    ...(locked === undefined ? { input: undefined } : { input: locked }),
     acting: true,
     answerRequest: {
       runId: answer.runId,
       waitId: answer.waitId,
       choice,
+      ...(note === undefined || note === "" ? {} : { note }),
     },
   };
 }
@@ -741,7 +758,21 @@ function answerKey(
   }
   if (!enter) return state;
   const choice = input.answer.choices[input.cursor];
-  return choice === undefined ? state : sendAnswer(state, input.answer, choice);
+  if (choice === undefined) return state;
+  const info = input.answer.choiceInfo?.[choice];
+  if (info?.note === undefined) return sendAnswer(state, input.answer, choice);
+  return {
+    ...state,
+    input: {
+      kind: "note",
+      action: choiceLabel(input.answer, choice),
+      id: input.answer.waitId,
+      text: "",
+      required: info.note === "required",
+      confirm: false,
+      answer: { answer: input.answer, choice },
+    },
+  };
 }
 
 type ArgsInput = Extract<TuiInput, { readonly kind: "args" }>;
@@ -1175,6 +1206,9 @@ export function inputKey(
   if (enter) {
     const note = input.text;
     if (note.trim() === "" && input.required) return withNotice(state, "a note is required");
+    if (input.answer !== undefined) {
+      return sendAnswer(state, input.answer.answer, input.answer.choice, note);
+    }
     if (input.confirm) {
       return {
         ...state,

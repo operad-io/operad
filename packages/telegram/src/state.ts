@@ -107,10 +107,12 @@ export interface SentOption {
   readonly label: string;
   /** `act` runs an action, `choice` answers one of the question's choices, `free` takes any text. */
   readonly how: "act" | "choice" | "free";
+  /** The raw choice an answer sends; `label` when unset. */
+  readonly choice?: string | undefined;
   /** The action's `<plugin>:<action>` for `act`. */
   readonly action?: string | undefined;
-  /** The action needs a note, so it is answered by replying. */
-  readonly note?: true | undefined;
+  /** The answer needs a note, or may carry one, so a reply to the message is a note. */
+  readonly note?: "required" | "optional" | undefined;
 }
 
 /** One pending item as it was sent to one Telegram chat. */
@@ -141,11 +143,17 @@ export function telegramPendingPath(home: string): string {
 function optionOf(value: unknown): SentOption | undefined {
   if (!isRecord(value) || typeof value.label !== "string") return undefined;
   if (value.how !== "act" && value.how !== "choice" && value.how !== "free") return undefined;
+  const note = value.note === true || value.note === "required"
+    ? "required"
+    : value.note === "optional"
+      ? "optional"
+      : undefined;
   return {
     label: value.label,
     how: value.how,
+    ...(typeof value.choice === "string" ? { choice: value.choice } : {}),
     ...(typeof value.action === "string" ? { action: value.action } : {}),
-    ...(value.note === true ? { note: true as const } : {}),
+    ...(note === undefined ? {} : { note }),
   };
 }
 
