@@ -85,6 +85,7 @@ Each entry's `id` is what a client passes back to `load`.
 | `pages` | list of `{ label, cursor? }` | A table of contents, one entry per page; the first page's cursor is absent. An entry without a text `label` is dropped |
 | `mark` | string | An opaque position the *finished* content goes to. The kernel wraps it so it is used only for the section and object that made it, and a client passes it back as `after` |
 | `tail` | string | The part that is still changing, as Markdown: always its **whole current text**, not what changed since the last read |
+| `status` | `{ text: string, since: number }` | What the live section is doing now, and since when in epoch milliseconds. The kernel passes it through without reading it; a client that does not know it ignores it |
 | `delta` | boolean | `true` when `markdown` holds only what follows the requested `after`. Leave it out when the answer is a whole page: the kernel then tells the client to replace instead of appending |
 
 ### The size cap, the timeout and the rate
@@ -99,7 +100,7 @@ Each entry's `id` is what a client passes back to `load`.
 
 ### Reading only what is new: `mark`, `tail` and `after`
 
-A section that grows (an agent's transcript) is read in two parts so a client does not fetch it all again: the *finished* content, which only grows at the end, and the *tail*, which still changes.
+A section that grows (an agent's transcript) is read in two parts so a client does not fetch it all again: the *finished* content, which only grows at the end, and the *tail*, which still changes. A live section may also carry a `status` beside them; a change of it counts as growth.
 
 1. The first read has no `after`. The plugin returns the finished content as `markdown`, a `mark` that says where it ends, and the changing part as `tail`.
 2. The client keeps the finished text and shows the tail after it. On the next read it sends the `mark` as `after`.
