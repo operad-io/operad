@@ -193,3 +193,9 @@ the row fields.
 | T-0518-M5 | packages/harness/pi/src/index.ts | the step did not pass the own-settings switch to the worker | `pi/agent > the own-settings switch reaches the worker only when it is on` |
 | T-0518-M6 | packages/harness/pi/src/protocol.ts | `parseInput` accepted `useOwnSettings` but did not return it, so the worker ignored it | `the own-settings switch on loads a context file, a skill and an extension from the owner's pi directory` |
 | T-0518-M7 | packages/harness/pi/src/worker.ts | operad's compaction and retry overrides were not applied after the owner's settings loaded, so the owner's settings turned them on | `the own-settings switch on loads a context file, a skill and an extension from the owner's pi directory` |
+
+## T-0521 — a leading slash in a message is text
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0521-M1 | packages/harness/pi/src/worker.ts | the prompt expanded prompt templates, so `/clear` ran the owner's template | `a prompt that starts with a slash reaches the model as text, not as a prompt template` |

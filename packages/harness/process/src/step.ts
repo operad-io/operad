@@ -184,6 +184,7 @@ export function agentData(
     signal: outcome.signal,
     sessionId: result?.sessionId ?? null,
     finalMessage: result?.finalMessage ?? null,
+    ...(result?.message === undefined ? {} : { message: result.message }),
     usage: standardUsage(who, result?.usage, cost),
     log,
     durationMs,

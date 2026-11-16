@@ -87,6 +87,14 @@ function writeMarkedSkill(dir: string, name: string, marker: string): string {
   return dir;
 }
 
+/** A prompt template of the owner's own pi, which pi would otherwise run as `/name`. */
+function writeOwnerPrompt(agentDir: string, name: string, text: string): string {
+  const file = join(agentDir, "prompts", `${name}.md`);
+  mkdirSync(join(agentDir, "prompts"), { recursive: true });
+  writeFileSync(file, `---\ndescription: A template called ${name}.\n---\n\n${text}\n`);
+  return file;
+}
+
 /** An extension of the owner's own pi, with tools that run a command or write a path. */
 function writeOwnerExtension(agentDir: string): string {
   const file = join(agentDir, "extensions", "owner-extension.ts");
@@ -579,6 +587,24 @@ test("the own-settings switch on loads a context file, a skill and an extension 
   expect(seen.loader.agentDir).toBe(agentDir);
   expect(seen.loader.noExtensions).toBeUndefined();
   expect(seen.loader.noContextFiles).toBeUndefined();
+});
+
+test("a prompt that starts with a slash reaches the model as text, not as a prompt template", async () => {
+  const s = setup();
+  const agentDir = join(s.dir, "owner-pi");
+  writeOwnerPrompt(agentDir, "clear", "TEMPLATE_MARKER ${@}");
+  const contexts = join(s.dir, "contexts.jsonl");
+  const run = await runFakeProcess(
+    s,
+    [{ text: "ok" }],
+    { ...s.input, prompt: "/clear hi", useOwnSettings: true },
+    { PI_CODING_AGENT_DIR: agentDir, FAKE_CONTEXT_FILE: contexts },
+  );
+
+  expect(run.exitCode).toBe(0);
+  const context = readFileSync(contexts, "utf8");
+  expect(context).toContain("/clear hi");
+  expect(context).not.toContain("TEMPLATE_MARKER");
 });
 
 test("an extension's tool cannot run a refused command or write a refused path", async () => {

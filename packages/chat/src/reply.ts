@@ -32,6 +32,7 @@ import {
   chatData,
   type ChatData,
   type CostQuality,
+  type Entry,
   chatRef,
   currentSession,
   ENTRY_FACT,
@@ -709,23 +710,83 @@ export function replyFailureLine(message: string, secrets: readonly string[]): s
 }
 
 /**
- * Records a failure as one entry after the last person's message. A rerun of
- * the same attempt finds the attempt's failure and does not add another, even
- * when the provider words it differently; a new message after it starts a new
- * attempt, whose failure is recorded too.
+ * Why an empty reply ended, in plain words. A reply with no text but with usage
+ * reached the model; one with neither ended without calling it, and the agent's
+ * own message is the reason it gives.
  */
-async function recordFailure(ctx: StepContext, chat: string, message: string): Promise<void> {
+function emptyReplyMessage(data: Readonly<Record<string, unknown>>): string {
+  const usage = usageOf(data.usage);
+  if (usage.tokens !== undefined || usage.costMicros !== undefined) return "the agent gave no reply";
+  const ended = "the agent ended without answering and without calling the model";
+  const reason = typeof data.message === "string" ? data.message.replace(/\s+/g, " ").trim() : "";
+  return reason.length === 0 ? ended : `${ended} (${reason})`;
+}
+
+/** How many empty failures in a row after `after` are for `oldest`; another failure or a stop ends the run. */
+function emptyFailureStreak(entries: readonly Entry[], after: number, oldest: string): number {
+  let count = 0;
+  for (const entry of entries) {
+    if (entry.sequence <= after) continue;
+    if (entry.kind === "stopped") {
+      count = 0;
+    } else if (entry.kind === "failure") {
+      if (entry.reason === "empty" && entry.messageId === oldest) count += 1;
+      else count = 0;
+    }
+  }
+  return count;
+}
+
+/**
+ * Records a failure as one entry after the last person's message or reply. A
+ * rerun of the same attempt finds the attempt's failure and does not add
+ * another, even when the provider words it differently; a new message after it
+ * starts a new attempt, whose failure is recorded too.
+ *
+ * An empty failure twice in a row for the same oldest message marks that
+ * message taken, so a message the agent never answers is not sent forever. A
+ * retry of the same attempt is not a second reply, but an attempt a rerun only
+ * left its first failure line for still counts.
+ */
+async function recordFailure(
+  ctx: StepContext,
+  chat: string,
+  reason: string,
+  message: string,
+  oldest?: string | undefined,
+): Promise<void> {
   const text = replyFailureLine(message, await secretValues(ctx));
   let lastUser = 0;
+  let lastReply = 0;
   for (const item of allMessages(ctx.store, chat)) {
     if (item.role === "user") lastUser = Math.max(lastUser, item.sequence);
+    else lastReply = Math.max(lastReply, item.sequence);
   }
-  const already = allEntries(ctx.store, chat).some(
-    (entry) => entry.kind === "failure" && entry.sequence > lastUser,
+  const after = Math.max(lastUser, lastReply);
+  const failures = allEntries(ctx.store, chat).filter(
+    (entry) => entry.kind === "failure" && entry.sequence > after,
   );
-  if (already) return;
-  const data: EntryData = { runId: ctx.runId, kind: "failure", text };
-  await ctx.facts.append({ type: ENTRY_FACT, object: chatRef(chat), data });
+  const already = failures.length > 0;
+  const sameAttempt = failures.some((entry) => entry.runId === ctx.runId);
+  if (!already) {
+    const data: EntryData = {
+      runId: ctx.runId,
+      kind: "failure",
+      text,
+      reason,
+      ...(oldest === undefined ? {} : { messageId: oldest }),
+    };
+    await ctx.facts.append({ type: ENTRY_FACT, object: chatRef(chat), data });
+  }
+  if (reason !== "empty" || oldest === undefined) return;
+  let streak = emptyFailureStreak(allEntries(ctx.store, chat), lastReply, oldest);
+  // A retry leaves the first attempt's one failure line in place. The attempt
+  // still counts, so the second empty reply for the same message marks it.
+  if (already && !sameAttempt) {
+    const last = failures.at(-1);
+    streak = last?.reason === "empty" && last.messageId === oldest ? streak + 1 : 1;
+  }
+  if (streak >= 2) await recordTaken(ctx, chat, ctx.runId, [oldest]);
 }
 
 /**
@@ -751,8 +812,9 @@ async function failedReply(
   chat: string,
   reason: string,
   message: string,
+  oldest?: string | undefined,
 ): Promise<PluginStepResult> {
-  await recordFailure(ctx, chat, message);
+  await recordFailure(ctx, chat, reason, message, oldest);
   return failed(reason, message);
 }
 
@@ -827,10 +889,11 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
   }
 
   const runStep = ctx.runStep;
-  if (runStep === undefined) return failedReply(ctx, object.id, "host", "the agent could not be started");
+  const oldest = pending[0]?.id;
+  if (runStep === undefined) return failedReply(ctx, object.id, "host", "the agent could not be started", oldest);
   const use = `${chat.harness}/agent`;
   if (ctx.stepLoaded !== undefined && !ctx.stepLoaded(use)) {
-    return failedReply(ctx, object.id, "harness", `the agent "${chat.harness}" is not loaded`);
+    return failedReply(ctx, object.id, "harness", `the agent "${chat.harness}" is not loaded`, oldest);
   }
 
   // A model the agent cannot take fails the reply by name; it never falls back.
@@ -842,20 +905,20 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
         ? await ctx.harnessModelsReady(chat.harness)
         : ctx.harnessModels?.(chat.harness);
     if (models?.list.includes(chat.model) !== true) {
-      return failedReply(ctx, object.id, "model", `the agent "${chat.harness}" cannot use the model "${chat.model}"`);
+      return failedReply(ctx, object.id, "model", `the agent "${chat.harness}" cannot use the model "${chat.model}"`, oldest);
     }
   }
   // The same for an effort: the agent's list is the only one that can take it.
   const efforts = ctx.harnessEfforts?.(chat.harness);
   if (chat.effort !== undefined && efforts?.list.includes(chat.effort) !== true) {
-    return failedReply(ctx, object.id, "effort", `the agent "${chat.harness}" cannot use the effort "${chat.effort}"`);
+    return failedReply(ctx, object.id, "effort", `the agent "${chat.harness}" cannot use the effort "${chat.effort}"`, oldest);
   }
   const effortFlag = efforts?.flag ?? (chat.harness === "pi" ? "--thinking" : "--effort");
 
   const settled = await liveSettings(ctx, chat, object, runStep);
   if ("result" in settled) {
     const why = failureOf(settled);
-    return failedReply(ctx, object.id, why.reason, why.message);
+    return failedReply(ctx, object.id, why.reason, why.message, oldest);
   }
   const live = settled;
 
@@ -1043,7 +1106,7 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
     }
     await recordEntries(ctx, object.id, folded, { stopped: true });
     await recordTaken(ctx, object.id, ctx.runId, midRun?.handed ?? []);
-    return failedReply(ctx, object.id, "harness", messageOf(error));
+    return failedReply(ctx, object.id, "harness", messageOf(error), oldest);
   }
   if (worktreeChosen.run) {
     closeMidRun();
@@ -1079,14 +1142,14 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
     await recordEntries(ctx, object.id, folded, { stopped: true });
     await recordTaken(ctx, object.id, ctx.runId, midRun?.handed ?? []);
     const why = failureOf(outcome);
-    return failedReply(ctx, object.id, why.reason, why.message);
+    return failedReply(ctx, object.id, why.reason, why.message, oldest);
   }
   const said = typeof data.finalMessage === "string" ? data.finalMessage.trim() : "";
   const text = maskSecrets(said, await secretValues(ctx));
   if (text.length === 0) {
     await recordEntries(ctx, object.id, folded, { stopped: true });
     await recordTaken(ctx, object.id, ctx.runId, midRun?.handed ?? []);
-    return failedReply(ctx, object.id, "empty", "the agent gave no reply");
+    return failedReply(ctx, object.id, "empty", emptyReplyMessage(data), oldest);
   }
   const sessionId = typeof data.sessionId === "string" && data.sessionId.length > 0 ? data.sessionId : undefined;
 

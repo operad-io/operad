@@ -33,8 +33,10 @@ only the protocol.
 `initialize`, then the `initialized` notification, then `thread/start` with
 `cwd` set to the task's worktree (`thread/resume` for `resumeSession`; a thread
 that cannot be resumed fails the step with `session_missing`), then
-`turn/start` with the prompt. A turn ends with `turn/completed` and its status
-`completed`, `interrupted` or `failed`. The session id a step stores is the
+`turn/start` with the prompt as `UserInput` text. A turn ends with
+`turn/completed` and its status `completed`, `interrupted` or `failed`. The
+prompt is text to the model, so a person's text that starts with `/` is never
+one of the app-server's own commands. The session id a step stores is the
 thread id `thread/start` returns.
 
 - The model goes to `thread/start`/`thread/resume`; the reasoning effort goes to

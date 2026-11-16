@@ -89,7 +89,7 @@ describe("chat/reply", () => {
     await r.say(chat, "one");
     await r.say(chat, "two");
     await r.round(chat);
-    expect(r.calls[0]?.params.prompt).toBe("one\n\ntwo");
+    expect(r.calls[0]?.params.prompt).toBe("one\n\n---\n\ntwo");
   });
 
   test("the session after the last reply wins over a stale reference on the chat", async () => {

@@ -163,11 +163,11 @@ class FakeProcess extends EventEmitter implements SpawnedProcess {
     }
     if (type === "user" && !this.#started) {
       this.#started = true;
-      record(this.recordFile, { user: message["message"] });
+      record(this.recordFile, { user: message["message"], clientComposed: message["client_composed"] === true });
       void this.#play(this.script.turns?.[this.#turnIndex++] ?? this.script.steps);
     } else if (type === "user") {
       // A message the host sent while the turn runs, or the next kept reply.
-      record(this.recordFile, { userLater: message["message"] });
+      record(this.recordFile, { userLater: message["message"], clientComposed: message["client_composed"] === true });
       this.log("fake-claude-user-later\n");
       const next = this.script.turns?.[this.#turnIndex++];
       if (next !== undefined) void this.#play(next);

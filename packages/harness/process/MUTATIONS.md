@@ -154,3 +154,9 @@ and the row fields.
 | T-0516-M4 | packages/harness/process/src/keep.ts | a kept worker whose session ended was not told to leave, so it stayed after its `claude` was killed | `a kept bun worker and its claude end together, whichever is killed` |
 | T-0516-M8 | packages/harness/process/src/process.ts | the cap counted only workers of the same harness, so pi and claude could keep four in one home | `the limit of three is shared by pi and claude workers in one home` |
 | T-0516-M9 | packages/harness/process/src/keep.ts | `useGrant` was passed unbound, so the host's `useGrant` threw and every granted call was refused | `a kept worker receives this reply's grant, not the previous reply's` |
+
+## T-0521 — a leading slash in a message is text
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0521-M1 | packages/harness/process/src/step.ts | a done result dropped the reason the worker gave for answering with nothing | `resultFor > a done result keeps the reason the worker gave for answering with nothing` |

@@ -18,8 +18,11 @@ The login is the one `claude` already has; the worker passes no credential. A
 
 By default `claude` runs with `settingSources: []`, `permissionMode: 'default'`,
 `permissionPrompts: 'host'`, the `claude_code` system prompt preset with nothing
-appended and the SDK's default tools. `canUseTool` is the only permission
-surface. The SDK's `skills` option only filters skills claude already
+appended and the SDK's default tools. A user message whose text begins with `/`
+is sent with `client_composed: true`, so a leading `/` reaches the model as text
+and never dispatches one of claude's own commands; every other prompt is sent as
+before, so claude's own turn-start context still loads. `canUseTool` is the only
+permission surface. The SDK's `skills` option only filters skills claude already
 discovered, so the skill directories the step gives are mounted as one local
 plugin under the worker's own temporary directory; its `skills` filter names
 only that plugin's skills, and the directory is removed when the worker ends (a
@@ -117,7 +120,7 @@ One JSON object per line, flushed per line, each with a `type`:
 | `finalMessage` | string or null | the result's `result` text |
 | `model` | string or null | the first key of the result's `modelUsage` |
 | `reason` | string | on `failed`: `invalid_input`, `session_missing` (claude has no such session) or `model_error` (also: claude is not installed, or it ended with no result) |
-| `message` | string | on `failed`: human text |
+| `message` | string | on `failed`: human text; on `done` with no text and no usage: why claude ended without calling the model (its subtype, any errors, and a local command it ran) |
 | `modelError` | `{kind: "usage_limit", message, rateLimitType, resetsAt}` | on `failed`, when claude reported a rejected rate limit |
 
 A result with `is_error`, or any subtype but `success` (`error_max_turns`,

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { modelErrorOf, parseResult, parseStepFlags } from "../src/index.ts";
+import { modelErrorOf, parseResult, parseStepFlags, resultFor, type AgentWorkerResult } from "../src/index.ts";
 
 // Moved from packages/harness/claude/test/heavy/plugin.test.ts.
 describe("modelErrorOf", () => {
@@ -35,6 +35,42 @@ describe("parseStepFlags", () => {
     const dashed = { ...spec, dashValues: true, modelProblem: () => "named" };
     expect(parseStepFlags(["--model", "--effort"], dashed)).toBe("named");
     expect(parseStepFlags(["--model"], dashed)).toBe('args: "--model" has no value');
+  });
+});
+
+describe("resultFor", () => {
+  test("a done result keeps the reason the worker gave for answering with nothing", () => {
+    const outcome = {
+      exitCode: 0,
+      signal: null,
+      cancelled: false,
+      wall: false,
+      stall: false,
+      lineTooLong: false,
+      missing: false,
+      spawnError: undefined,
+      stderrTail: [],
+    };
+    const worker: AgentWorkerResult = {
+      type: "result",
+      result: "done",
+      sessionId: "s",
+      usage: {},
+      cost: null,
+      finalMessage: "",
+      message: "the agent reported success; it ran the local command /clear",
+    };
+    const step = resultFor(
+      { harness: "fake", model: null },
+      outcome,
+      worker,
+      "/tmp/log",
+      1,
+      { wallTimeSecs: 1, stallSecs: 1 },
+      "fake",
+    );
+    expect(step.result).toBe("done");
+    expect(step.data).toMatchObject({ message: "the agent reported success; it ran the local command /clear" });
   });
 });
 

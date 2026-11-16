@@ -2,7 +2,17 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ViewContext } from "@operad-io/engine";
-import { allEntries, allMessages, chatViews, createChat, REPLY_FAILURE_MAX, type Entry } from "../src/index.ts";
+import {
+  allEntries,
+  allMessages,
+  answeredOfFact,
+  chatFacts,
+  chatViews,
+  createChat,
+  REPLY_FAILURE_MAX,
+  unanswered,
+  type Entry,
+} from "../src/index.ts";
 import { cleanupRoots, reply, rig } from "./support.ts";
 
 afterAll(cleanupRoots);
@@ -133,7 +143,9 @@ describe("a failed reply", () => {
     const empty = await r.chat();
     await r.say(empty, "empty");
     expect((await r.round(empty)).result).toBe("failed");
-    expect(failuresOf(r, empty)[0]?.text).toBe("The reply failed: the agent gave no reply");
+    expect(failuresOf(r, empty)[0]?.text).toBe(
+      "The reply failed: the agent ended without answering and without calling the model",
+    );
 
     const exit = await r.chat();
     await r.say(exit, "exit");
@@ -149,6 +161,68 @@ describe("a failed reply", () => {
     expect((await r.round(settings)).result).toBe("failed");
     expect(failuresOf(r, settings)[0]?.text).toContain("The reply failed:");
     expect(allMessages(r.store, settings).filter((message) => message.role === "assistant")).toHaveLength(0);
+  });
+
+  test("an empty result that called no model says so, with the agent's own reason", async () => {
+    const r = await rig(() => ({
+      result: "done" as const,
+      data: {
+        finalMessage: "",
+        sessionId: "s-1",
+        usage: { tokens: { input: 0, output: 0, cacheread: 0, cachewrite: 0 }, costMicros: null },
+        message: "the agent reported success; it ran the local command /clear",
+      },
+    }));
+    const chat = await r.chat();
+    await r.say(chat, "/clear");
+    expect((await r.round(chat)).result).toBe("failed");
+
+    const text = failuresOf(r, chat)[0]?.text ?? "";
+    expect(text).toBe(
+      "The reply failed: the agent ended without answering and without calling the model (the agent reported success; it ran the local command /clear)",
+    );
+    expect(text).not.toMatch(/\b(harness|run|step|fact)\b/);
+  });
+
+  test("two empty failures in a row stop the oldest message from being sent a third time", async () => {
+    let attempt = 0;
+    const r = await rig(() => {
+      attempt += 1;
+      return attempt <= 2 ? reply("") : reply("an answer");
+    });
+    const chat = await r.chat();
+    const only = await r.say(chat, "/clear");
+
+    expect((await r.round(chat)).result).toBe("failed");
+    expect((await r.round(chat)).result).toBe("failed");
+    expect(chatFacts(r.store, chat).flatMap(answeredOfFact)).toEqual([only]);
+    expect(failuresOf(r, chat)).toHaveLength(1);
+
+    await r.say(chat, "hi");
+    expect((await r.round(chat)).result).toBe("done");
+    expect(r.calls[2]?.params.prompt).toBe("hi");
+  });
+
+  test("the C-0021 history answers a new message after two empty failures", async () => {
+    let attempt = 0;
+    const r = await rig(() => {
+      attempt += 1;
+      return attempt <= 2 ? reply("") : reply("the answer");
+    });
+    const chat = await r.chat();
+    const clear = await r.say(chat, "/clear");
+    expect((await r.round(chat)).result).toBe("failed");
+
+    await r.say(chat, "hi");
+    expect((await r.round(chat)).result).toBe("failed");
+    expect(r.calls[1]?.params.prompt).toBe("/clear\n\n---\n\nhi");
+    expect(chatFacts(r.store, chat).flatMap(answeredOfFact)).toEqual([clear]);
+
+    await r.say(chat, "hello");
+    const result = await r.round(chat);
+    expect(result.result).toBe("done");
+    expect(r.calls[2]?.params.prompt).toBe("hi\n\n---\n\nhello");
+    expect(unanswered(allMessages(r.store, chat), chatFacts(r.store, chat))).toEqual([]);
   });
 
   test("is not recorded for a reply that is interrupted or waiting", async () => {
