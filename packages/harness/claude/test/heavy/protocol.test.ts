@@ -354,6 +354,22 @@ test("a prompt that ends writes the lines in order and a Result with usage, cost
   expect(run.stdout.endsWith("\n")).toBe(true);
 });
 
+test("a model whose window claude's list does not know leaves the window out", async () => {
+  const s = setup();
+  s.input["model"] = "mystery-model";
+  const run = await runFake(s, {
+    steps: [
+      { say: systemInit() },
+      { say: assistant("m1", "answer", { input_tokens: 7, cache_read_input_tokens: 2, cache_creation_input_tokens: 1 }) },
+      { say: result() },
+    ],
+  });
+
+  const line = last(run);
+  expect(line["context"]).toEqual({ used: 10 });
+  expect(line["context"]).not.toHaveProperty("window");
+});
+
 test("the context is the last model call's prompt, not the sum, with the model's window", async () => {
   const s = setup();
   s.input["model"] = "sonnet";

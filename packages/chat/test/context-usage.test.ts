@@ -85,6 +85,22 @@ describe("a chat's context usage", () => {
     }
   });
 
+  test("a model whose window the agent does not know leaves the window out", async () => {
+    const r = await rig(() => answer("s-1", "small", 40), { list: ["small"], default: "small" });
+    const chat = await r.chat({ model: "small" });
+    await r.say(chat, "hello");
+    await r.round(chat);
+
+    const views = new Views({ registry: r.registry, store: r.store, onLog: () => undefined });
+    try {
+      const object = await views.get(`${CHAT_TYPE}:${chat}`);
+      expect(object.context).toEqual({ used: 40, model: "small" });
+      expect(object.context).not.toHaveProperty("window");
+    } finally {
+      views.close();
+    }
+  });
+
   test("a harness that reports no context leaves it out of the reply and the view", async () => {
     const r = await rig(() => ({
       result: "done",
