@@ -5,6 +5,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { createChatPlugin } from "@operad-io/chat";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { PluginRegistry } from "@operad-io/engine";
@@ -51,7 +52,7 @@ describe("this repository's dev.json with the pi worker", () => {
     const root = await tempRoot();
     const registry = new PluginRegistry(
       [
-        createDevPlugin(),
+        createChatPlugin(), createDevPlugin(),
         createShellPlugin(),
         (await plugin("../../harness/pi/src/index.ts")).default,
       ],
@@ -75,7 +76,7 @@ describe("this repository's dev.json with the pi worker", () => {
 
   test("without the plugin enabled the same step name does not resolve", async () => {
     const root = await tempRoot();
-    const registry = new PluginRegistry([createDevPlugin(), createShellPlugin()], {
+    const registry = new PluginRegistry([createChatPlugin(), createDevPlugin(), createShellPlugin()], {
       home: root,
       cwd: root,
       store: storeAt(root),
@@ -101,7 +102,7 @@ describe("this repository's dev.json with the claude worker", () => {
     const root = await tempRoot();
     const registry = new PluginRegistry(
       [
-        createDevPlugin(),
+        createChatPlugin(), createDevPlugin(),
         createShellPlugin(),
         (await plugin("../../harness/claude/src/index.ts")).default,
       ],

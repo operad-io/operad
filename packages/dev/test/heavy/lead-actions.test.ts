@@ -3,6 +3,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PluginRegistry } from "@operad-io/engine";
+import { createChatPlugin } from "@operad-io/chat";
 import plugin from "../../src/index.ts";
 import {
   addPlan,
@@ -59,7 +60,7 @@ async function setup(failAnswer = false) {
   const root = await tempRoot();
   const repositoryPath = await makeGitRepository(root);
   const store = storeAt(root);
-  const registry = new PluginRegistry([plugin], {
+  const registry = new PluginRegistry([createChatPlugin(), plugin], {
     store,
     storeRoot: store.root,
     onAnswer: async (_runId, choice, note) => {

@@ -124,6 +124,32 @@ test("a write waits for another process's write transaction and succeeds after i
   store.close();
 });
 
+test("a poll whose database is removed while it queries does nothing", () => {
+  const file = tempFile();
+  const store = new SqlitePluginStore({ root: join(file, ".."), file });
+  try {
+    const real = store["db"];
+    const vanishing = new Proxy(real, {
+      get(target, property, receiver) {
+        if (property === "query") {
+          return () => {
+            rmSync(file, { force: true });
+            throw Object.assign(new Error("disk I/O error"), {
+              code: "SQLITE_IOERR",
+            });
+          };
+        }
+        const value: unknown = Reflect.get(target, property, receiver);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    (store as unknown as { db: Database }).db = vanishing;
+    expect(() => (store as unknown as { pollFacts(): void }).pollFacts()).not.toThrow();
+  } finally {
+    store.close();
+  }
+});
+
 test("a poll that meets a busy store skips its turn instead of throwing", () => {
   const file = tempFile();
   const store = new SqlitePluginStore({ root: join(file, ".."), file });

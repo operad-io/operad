@@ -333,3 +333,10 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 | T-0525-M6 | packages/chat/src/reply.ts | the reply handed the harness the chat's profile without its level | `chat:access > the next reply uses the changed level, and the history says who changed it and to what` |
 | T-0525-M7 | packages/chat/src/reply.ts | an agent that declares no level was called instead of refusing the reply | `a chat whose agent cannot carry the level > the reply is refused at its start, names the level, and the agent is never called` |
 | T-0525-M8 | packages/chat/src/views.ts | the row never showed a level that differed from the starting one | `chat:access > the row leaves the starting level out and shows a choice` |
+
+## T-0526 — a level change asks the owning plugin first
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0526-M3 | packages/chat/src/index.ts | `chat:access` no longer ran the chat's `accessAction` before it recorded the level | `a repository chat's access level > /access edits opens work/chat-<id>, moves the chat there, and a write passes without a question` (and `/access full does the same`) |
+| T-0526-M4 | packages/chat/src/index.ts | `chat:access` recorded the level before the `accessAction` could refuse it | `a repository chat's access level > a worktree that cannot be opened leaves the level unchanged and says why` |

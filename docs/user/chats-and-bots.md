@@ -135,7 +135,13 @@ Every chat has an access level: `plan`, `ask`, `edits` or `full`. `/access
 <level>` changes it, or `operad chat:access <chat> --level <level>`; the level
 is recorded on the chat and every later reply uses it, across restarts and
 clients. A repository chat starts at `plan` (read-only) and a bot chat at
-`ask`. The row shows the level when it is not the chat's starting level.
+`ask`. The row shows the level when it is not the chat's starting level. A
+repository chat that still works in the main clone and is raised to `edits` or
+`full` first opens `work/chat-<id>` and moves there; if the worktree cannot be
+opened the level stays as it was and the command says why. A chat already in its
+worktree applies the level there. `plan` and `ask` never open a worktree, and
+`ask` in the main clone keeps the worktree question for a write. A bot chat at
+any level works in the bot's own directory, with no worktree.
 
 | Level | What runs without asking |
 |---|---|

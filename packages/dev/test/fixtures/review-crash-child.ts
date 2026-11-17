@@ -12,6 +12,7 @@ import {
   type PluginStepResult,
 } from "@operad-io/engine";
 import { createDevPlugin, reviewTestHooks } from "../../src/index.ts";
+import { createChatPlugin } from "@operad-io/chat";
 
 const [storeRoot, repository, taskKey, runId, crash, callLog] =
   process.argv.slice(2);
@@ -89,7 +90,7 @@ reviewTestHooks.afterRunSaved = (run) => {
 };
 
 const store = new SqlitePluginStore({ root: storeRoot });
-const registry = new PluginRegistry([createDevPlugin(), reviewer], {
+const registry = new PluginRegistry([createChatPlugin(), createDevPlugin(), reviewer], {
   home: storeRoot,
   cwd: repository,
   store,

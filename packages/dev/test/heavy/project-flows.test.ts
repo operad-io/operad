@@ -1,4 +1,5 @@
 import { afterAll, expect, test } from "bun:test";
+import { createChatPlugin } from "@operad-io/chat";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -84,7 +85,7 @@ test("a ready task of a plan that names a TS flow starts it", async () => {
   await confirmPlan(store, plan.id);
   schedulerTestHooks.write = () => undefined;
   const registry = new PluginRegistry(
-    [createDevPlugin(), createPoolPlugin(), createShellPlugin()],
+    [createChatPlugin(), createDevPlugin(), createPoolPlugin(), createShellPlugin()],
     { home: root, cwd: path, store, storeRoot: store.root },
   );
   await registry.tick();
@@ -146,7 +147,7 @@ test("a name defined in dev.json and as a TS file is refused, and plan add says 
   expect(found.refused.get("mine")).toContain('flow "mine" is defined in dev.json and in .operad/flows/mine.flow.ts');
   const store = storeAt(root);
   await addRepository(store, { path, name: "repo" });
-  const registry = new PluginRegistry([createDevPlugin()], {
+  const registry = new PluginRegistry([createChatPlugin(), createDevPlugin()], {
     home: root,
     cwd: path,
     store,
@@ -183,7 +184,7 @@ test("--flow default is refused when a TS default flow clashes with dev.json", a
   const { root, path } = await repositoryWith({ "default.flow.ts": flowFile() }, devJson);
   const store = storeAt(root);
   await addRepository(store, { path, name: "repo" });
-  const registry = new PluginRegistry([createDevPlugin()], { home: root, cwd: path, store, storeRoot: store.root });
+  const registry = new PluginRegistry([createChatPlugin(), createDevPlugin()], { home: root, cwd: path, store, storeRoot: store.root });
   await expect(
     registry.runCommand(
       ["dev", "plan", "add", "--slug", "p", "--title", "P", "--flow", "default"],

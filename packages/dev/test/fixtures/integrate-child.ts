@@ -12,6 +12,7 @@
 import { SqlitePluginStore, PluginRegistry } from "@operad-io/engine";
 import { createShellPlugin } from "@operad-io/shell";
 import { createDevPlugin, integrateTestHooks } from "../../src/index.ts";
+import { createChatPlugin } from "@operad-io/chat";
 
 const [storeRoot, repository, taskKey, runId, point = "push", step = "dev/integrate", nth = "1"] =
   process.argv.slice(2);
@@ -56,7 +57,7 @@ if (point === "push") {
 }
 
 const store = new SqlitePluginStore({ root: storeRoot });
-const registry = new PluginRegistry([createDevPlugin(), createShellPlugin()], {
+const registry = new PluginRegistry([createChatPlugin(), createDevPlugin(), createShellPlugin()], {
   home: process.env.OPERAD_TEST_HOME ?? storeRoot,
   cwd: repository,
   store,

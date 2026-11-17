@@ -1,7 +1,7 @@
 /** The chat plugin: a long conversation with an agent, and how a message is answered. */
 
 import pkg from "../package.json" with { type: "json" };
-import { defineFlow, definePlugin, type ActionArgsSchema, type ActionContext, type ActionTypeDefinition, type PluginFact, type UsageTokens } from "@operad-io/engine";
+import { defineFlow, definePlugin, isRecord, type ActionArgsSchema, type ActionContext, type ActionTypeDefinition, type PluginFact, type UsageTokens } from "@operad-io/engine";
 import { ACCESS_LEVELS, isAccessLevel, type AccessLevel } from "@operad-io/access-match";
 import { stopKeptWorkers } from "@operad-io/engine/platform";
 import {
@@ -14,6 +14,7 @@ import {
   chatData,
   chatFacts,
   chatRef,
+  ACCESS_ACTION_REQUEST,
   ACCESS_FACT,
   CLOSED_FACT,
   COMMAND_FACT,
@@ -386,6 +387,33 @@ function accessArgs(): ActionArgsSchema {
   };
 }
 
+/**
+ * Prepares a change of the level in the plugin that owns what the level applies
+ * to: a repository chat opens its worktree before it becomes writable. The
+ * action is marked on the in-memory chat only while it is called, so no client
+ * offers it. An action that cannot prepare the change refuses it, so the level
+ * stays as it was.
+ */
+async function prepareAccess(
+  ctx: ActionContext,
+  chat: ChatData,
+  chatId: string,
+  level: AccessLevel,
+): Promise<void> {
+  if (chat.accessAction === undefined) return;
+  if (ctx.act === undefined) {
+    throw new Error(`chat ${chatId} cannot change its access here`);
+  }
+  const original = ctx.object.data;
+  const marked: Record<string, unknown> = { ...original, [ACCESS_ACTION_REQUEST]: true };
+  Object.defineProperty(ctx.object, "data", { value: marked, configurable: true, writable: true });
+  try {
+    await ctx.act(chat.accessAction, { level });
+  } finally {
+    Object.defineProperty(ctx.object, "data", { value: original, configurable: true, writable: true });
+  }
+}
+
 const accessAction: ActionTypeDefinition = {
   name: "access",
   on: CHAT_TYPE,
@@ -405,6 +433,7 @@ const accessAction: ActionTypeDefinition = {
     }
     const from = chat.accessLevel ?? chat.accessDefault ?? "ask";
     if (from === level) return `chat ${ctx.object.id} already uses access level ${level}`;
+    await prepareAccess(ctx, chat, ctx.object.id, level);
     const changed: AccessChangedData = {
       by: { via: ctx.actor.via, id: ctx.actor.id },
       from,

@@ -509,6 +509,29 @@ describe("bot:chat", () => {
   });
 });
 
+describe("a bot chat's access level", () => {
+  test("/access edits writes in the bot's own directory, and opens no worktree", async () => {
+    const r = await rig({ reader: {} });
+    await syncBots(r.store, r.home, {});
+    const id = await r.open("reader");
+    const before = chatData((await r.store.get(CHAT_TYPE, id))?.data ?? {});
+    expect(before.accessAction).toBeUndefined();
+
+    await r.act("chat", id, "chat/access", { level: "edits" });
+    const changed = chatData((await r.store.get(CHAT_TYPE, id))?.data ?? {});
+    expect(changed.cwd).toBe(before.cwd);
+    expect(changed.accessLevel).toBe("edits");
+    expect(changed.accessAction).toBeUndefined();
+
+    await r.say(id, "write a note");
+    expect((await r.reply(id)).result).toBe("done");
+    expect(r.calls[0]?.cwd).toBe(before.cwd);
+    const access = accessOf(r.calls[0]?.access);
+    expect(access.level).toBe("edits");
+    expect(match(access, { tool: "write", input: { path: join(changed.cwd, "note.md") }, cwd: changed.cwd }, { home: r.home }).allow).toBe(true);
+  });
+});
+
 describe("a reply reads the bot again", () => {
   test("tightening the access profile applies to the next reply of the same chat", async () => {
     const r = await rig({ reader: {} });

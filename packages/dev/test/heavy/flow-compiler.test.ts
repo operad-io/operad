@@ -1,4 +1,5 @@
 import { afterAll, expect, test } from "bun:test";
+import { createChatPlugin } from "@operad-io/chat";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
@@ -300,7 +301,7 @@ test("a ready task starts the repository's default flow by its registered name",
   );
   schedulerTestHooks.write = () => undefined;
   const registry = new PluginRegistry(
-    [createDevPlugin(), createPoolPlugin(), createShellPlugin()],
+    [createChatPlugin(), createDevPlugin(), createPoolPlugin(), createShellPlugin()],
     { home: root, cwd: repositoryPath, store, storeRoot: store.root },
   );
   await registry.tick();
@@ -350,7 +351,7 @@ test("a plan's flow selects a named repository flow", async () => {
   );
   schedulerTestHooks.write = () => undefined;
   const registry = new PluginRegistry(
-    [createDevPlugin(), createPoolPlugin(), createShellPlugin()],
+    [createChatPlugin(), createDevPlugin(), createPoolPlugin(), createShellPlugin()],
     { home: root, cwd: repositoryPath, store, storeRoot: store.root },
   );
   await registry.tick();
@@ -369,7 +370,7 @@ test("plan add --flow and task add --flow store the choice and refuse an unknown
     join(repositoryPath, ".operad", "dev.json"),
     JSON.stringify({ flows: { quick: { stages } } }),
   );
-  const registry = new PluginRegistry([createDevPlugin()], {
+  const registry = new PluginRegistry([createChatPlugin(), createDevPlugin()], {
     home: root,
     cwd: repositoryPath,
     store,
@@ -433,7 +434,7 @@ test("changing dev.json leaves a running attempt on the graph it started with", 
     join(repositoryPath, ".operad", "dev.json"),
     JSON.stringify({ flows: { default: { stages: firstStages } } }),
   );
-  const registry = new PluginRegistry([createDevPlugin()], {
+  const registry = new PluginRegistry([createChatPlugin(), createDevPlugin()], {
     home: root,
     cwd: repositoryPath,
     store,

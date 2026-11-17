@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { createChat } from "@operad-io/chat";
+import { createChat, createChatPlugin } from "@operad-io/chat";
 import { PluginRegistry } from "@operad-io/engine";
 import {
   addRepository,
@@ -168,7 +168,7 @@ describe("dev/chat_settings and the starting text", () => {
     track(repo, "AGENTS.md");
     const store = storeAt(root);
     await addRepository(store, { path: repo, name: "repository" });
-    const registry = new PluginRegistry([createDevPlugin()], {
+    const registry = new PluginRegistry([createChatPlugin(), createDevPlugin()], {
       home: root,
       cwd: repo,
       store,

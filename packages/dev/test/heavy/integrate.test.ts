@@ -1,5 +1,6 @@
 import { listAll } from "../../src/model.ts";
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
+import { createChatPlugin } from "@operad-io/chat";
 import {
   chmodSync,
   existsSync,
@@ -177,7 +178,7 @@ async function fixture(options: FixtureOptions = {}): Promise<Fixture> {
   }
   await confirmPlan(store, plan.id);
   const registry = new PluginRegistry(
-    [createDevPlugin(), createShellPlugin()],
+    [createChatPlugin(), createDevPlugin(), createShellPlugin()],
     { home: root, cwd: remote.repository, store },
   );
   const prepareTask = async (
@@ -276,7 +277,7 @@ async function autoMergeScheduler(state: Fixture): Promise<SchedulerState> {
   const answers: { readonly runId: string; readonly choice: string }[] = [];
   const lines: string[] = [];
   schedulerTestHooks.write = (line) => lines.push(line);
-  const scheduler = new PluginRegistry([createDevPlugin()], {
+  const scheduler = new PluginRegistry([createChatPlugin(), createDevPlugin()], {
     home: state.root,
     cwd: state.remote.repository,
     store: state.store,
@@ -805,7 +806,7 @@ describe("dev/integrate", () => {
     // Recover in a fresh registry: the step reads the candidate it saved and
     // asks the remote instead of pushing the same commit again.
     const store = new SqlitePluginStore({ root: state.store.root });
-    const registry = new PluginRegistry([createDevPlugin()], {
+    const registry = new PluginRegistry([createChatPlugin(), createDevPlugin()], {
       home: state.root,
       cwd: state.remote.repository,
       store,
@@ -850,7 +851,7 @@ async function killedAt(
 
 /** A registry that has never seen the run, like a restarted process. */
 function freshRegistry(state: Fixture): PluginRegistry {
-  return new PluginRegistry([createDevPlugin(), createShellPlugin()], {
+  return new PluginRegistry([createChatPlugin(), createDevPlugin(), createShellPlugin()], {
     home: state.root,
     cwd: state.remote.repository,
     store: new SqlitePluginStore({ root: state.store.root }),

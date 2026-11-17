@@ -4,6 +4,7 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { PluginRegistry } from "@operad-io/engine";
 import poolPlugin from "@operad-io/pool";
+import { createChatPlugin } from "@operad-io/chat";
 import plugin from "../../src/index.ts";
 import {
   addPlan,
@@ -37,7 +38,7 @@ async function setup(flows?: Record<string, unknown>) {
   const root = await tempRoot();
   const repositoryPath = await makeGitRepository(root);
   const store = storeAt(root);
-  const registry = new PluginRegistry([plugin, poolPlugin, createShellPlugin()], {
+  const registry = new PluginRegistry([createChatPlugin(), plugin, poolPlugin, createShellPlugin()], {
     home: root,
     cwd: repositoryPath,
     store,

@@ -206,6 +206,7 @@ async function fixture(options: {
       {
         plugins: {
           shell: { module: "@operad-io/shell" },
+          chat: { module: "@operad-io/chat" },
           dev: { module: "@operad-io/dev" },
           pool: { module: "@operad-io/pool" },
           "harness-fake": { module: FAKE_HARNESS },

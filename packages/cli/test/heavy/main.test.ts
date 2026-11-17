@@ -42,6 +42,9 @@ const shellPluginPath = fileURLToPath(
 const devPluginPath = fileURLToPath(
   new URL("../../../dev/src/index.ts", import.meta.url),
 );
+const chatPluginPath = fileURLToPath(
+  new URL("../../../chat/src/index.ts", import.meta.url),
+);
 
 function runGit(cwd: string, args: readonly string[]): void {
   const result = Bun.spawnSync({
@@ -198,7 +201,7 @@ describe("operad command", () => {
     writeFileSync(
       join(home, "config.json"),
       JSON.stringify({
-        plugins: { dev: { module: devPluginPath } },
+        plugins: { chat: { module: chatPluginPath }, dev: { module: devPluginPath } },
         store: { backend: "sqlite", path: join(storeRoot, "log.sqlite") },
       }),
     );
@@ -271,6 +274,7 @@ describe("operad command", () => {
 
   test("repo add refuses a directory with no remote and writes nothing", async () => {
     const { root, home } = await makeNamedHome({
+      chat: { module: chatPluginPath },
       dev: { module: devPluginPath },
     });
     const noRemote = join(root, "no-remote");
@@ -298,6 +302,7 @@ describe("operad command", () => {
 
   test("flows shows a flow that cannot start, and why, on its line", async () => {
     const { home } = await makeNamedHome({
+      chat: { module: chatPluginPath },
       dev: { module: devPluginPath },
       pool: { module: poolPluginPath, enabled: false },
       shell: { module: shellPluginPath },

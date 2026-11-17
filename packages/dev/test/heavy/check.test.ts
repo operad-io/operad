@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
+import { createChatPlugin } from "@operad-io/chat";
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import { PluginRegistry } from "@operad-io/engine";
@@ -78,7 +79,7 @@ function registryAt(
   store: ReturnType<typeof storeAt>,
   repositoryPath: string,
 ): PluginRegistry {
-  return new PluginRegistry([createDevPlugin()], {
+  return new PluginRegistry([createChatPlugin(), createDevPlugin()], {
     home: root,
     cwd: repositoryPath,
     store,
@@ -252,7 +253,7 @@ describe("dev init check", () => {
 
   test("no registered repository passes with a note", async () => {
     const { root, repositoryPath } = await setup();
-    const registry = new PluginRegistry([createDevPlugin()], {
+    const registry = new PluginRegistry([createChatPlugin(), createDevPlugin()], {
       home: root,
       cwd: repositoryPath,
       store: storeAt(root),
