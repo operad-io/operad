@@ -173,7 +173,10 @@ test("a kept worker receives this reply's access, not the previous one's", async
   expect(second.result).toBe("done");
   expect(records(env)[0]?.pid).toBe(pid);
   const seen = inputs(env);
-  expect(seen[1]?.["access"]).toMatchObject({ denyCommands: ["same"], grants: [grant] });
+  const access = seen[1]?.["access"] as { readonly denyCommands?: readonly string[]; readonly grants?: unknown };
+  expect(access.denyCommands).toContain("same");
+  expect(access.denyCommands).toContain("sudo");
+  expect(access.grants).toEqual([grant]);
   await stopAllKeptWorkers({ home: env.root });
 });
 
