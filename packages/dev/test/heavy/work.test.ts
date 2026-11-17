@@ -1,5 +1,6 @@
 import { createPoolPlugin } from "@operad-io/pool";
 import { FilePlaces } from "@operad-io/pool";
+import { match, withDefaultAccess, type AccessProfile } from "@operad-io/access-match";
 import { afterAll, describe, expect, test } from "bun:test";
 import { createChatPlugin } from "@operad-io/chat";
 import {
@@ -85,6 +86,7 @@ function fakeHarness(record: string) {
               cwd: input.cwd,
               args,
               resumeSession: input.resumeSession ?? null,
+              access: ctx.access,
             }),
           );
           if (mode === "throw") throw new Error("the fake harness crashed");
@@ -346,10 +348,12 @@ function runWork(
 function readRecord(state: Fixture): {
   readonly prompt: string;
   readonly cwd: string;
+  readonly access: AccessProfile;
 } {
   return JSON.parse(readFileSync(state.record, "utf8")) as {
     readonly prompt: string;
     readonly cwd: string;
+    readonly access: AccessProfile;
   };
 }
 
@@ -360,6 +364,29 @@ async function taskDataOf(state: Fixture) {
 }
 
 describe("dev/work", () => {
+  test("a task worker keeps the default's denies, not its asks", async () => {
+    const state = await fixture("nothing");
+    await runWork(state);
+    const { access, cwd } = readRecord(state);
+    expect(access.defaultAsks).toBe(false);
+    const profile = withDefaultAccess(access);
+    expect(profile.denyPaths).toContain("~/.ssh");
+    expect(profile.denyCommands).toContain("sudo");
+    expect(profile.askCommands).toBeUndefined();
+    expect(profile.askPaths).toBeUndefined();
+
+    const home = join(state.root, "home");
+    const call = (command: string) =>
+      match(profile, { tool: "bash", input: { command }, cwd }, { home });
+    expect(call("python3 - <<'PY'\nprint(1)\nPY").ask).toBeUndefined();
+    expect(call('bash -c "echo hi"').ask).toBeUndefined();
+    for (const command of ["sudo ls", "cat ~/.ssh/id_ed25519"]) {
+      const verdict = call(command);
+      expect(verdict.allow).toBe(false);
+      expect(verdict.ask).toBeUndefined();
+    }
+  });
+
   test("beforeAttempt merge-main merges the latest main; none leaves it alone", async () => {
     const merged = await fixture("nothing");
     await advanceMain(merged.remote, "main.txt", "from main\n", "main moves");
