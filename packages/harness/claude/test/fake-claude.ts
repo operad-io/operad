@@ -265,6 +265,9 @@ export function fakeSpawn(
   log: (text: string) => void = (text) => void process.stderr.write(text),
 ): (options: SpawnOptions) => SpawnedProcess {
   return (options) => {
+    // The worker's pid outlives its kept record, which can expire before a slow
+    // reply returns; a test that waits for the worker to end still needs it.
+    record(recordFile, { workerPid: process.pid });
     record(recordFile, {
       spawn: {
         args: options.args,
