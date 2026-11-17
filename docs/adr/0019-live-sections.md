@@ -10,7 +10,7 @@ A chat shows its reply as it is written. This is done within the section interfa
 
 ### D1: A live section reads only what is new, with an unfinished tail
 
-The result of `load` can carry more things beside the page: `mark`, an opaque position that says how far the finished content has gone; `tail`, a Markdown text that is the part still changing (a reply and thinking being written, a running tool call in a chat), always the whole text as it is now; and `status` (D4). A client can read a section with `after: <mark>`; then `markdown` has only the content finished after that position, the client appends it to what it has, and replaces the old `tail` as a whole with the new one. Without `after`, one page is read as before, also carrying `mark` and `tail`, so a reconnect or coming back to the foreground needs only one re-read.
+The result of `load` can carry more things beside the page: `mark`, an opaque position that says how far the finished content has gone; `tail`, a Markdown text that is the part still changing (a reply and thinking being written, a running tool call in a chat), always the whole text as it is now; `status` (D4); and `context` (D5). A client can read a section with `after: <mark>`; then `markdown` has only the content finished after that position, the client appends it to what it has, and replaces the old `tail` as a whole with the new one. Without `after`, one page is read as before, also carrying `mark` and `tail`, so a reconnect or coming back to the foreground needs only one re-read.
 
 ### D2: `events` does not change
 
@@ -23,3 +23,7 @@ A client that does not know these things works as before: it just does not see `
 ### D4: A live section can say what it is doing
 
 The result of `load` may carry `status`, an object `{ "text": string, "since": number }` where `since` is a time in milliseconds since the epoch. The kernel passes it through as it passes `tail`: it does not read it, a client that does not know it works as before, and a change of it counts as growth of the object (announced under the same 250 ms limit as D2). It is served by the HTTP section read and by the MCP `section` tool. The text and its words belong to the plugin; the elapsed time beside it belongs to the client.
+
+### D5: A section can carry numbers beside its text
+
+`load` may return `context`, the same `{ used, window?, model? }` a detail page can carry (ADR 0014 D1). The kernel passes it through on every read, including a read with `after`, and does not read it. A chat's `transcript` uses it for how full the agent's context is (ADR 0026 D16); a client that does not know it works as before.

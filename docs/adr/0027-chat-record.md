@@ -39,3 +39,7 @@ An entry a rerun step produces again is deduplicated by call id, and the final r
 ### D7: A failed reply is recorded and shown, once
 
 When a reply ends `failed`, the chat records one more entry, kind `failure`, and no reply message. Its text is one plain line that says the reply failed and why: the provider's message, masked with `secretValues` and cut to a sensible length. When the provider gives no message because the agent ended without answering and without calling the model, the line says that instead, with the agent's own reason when it gives one (ADR 0026 D14). The `transcript` section shows that line after the person's message for every harness. A channel bound to the chat sends it once as a message. A rerun of the step does not record the same failure again. A reply that is interrupted or waiting is not a failure and gets no such line.
+
+### D8: A reply records the context it ended with
+
+An assistant message carries `context: { used, window? }` beside its usage. `used` is the last model call's input plus its cache read and cache write, as the harness parsed it; it is not the sum over the reply's calls. `window` is the model's context window when the harness's model list gives one. A harness that cannot tell leaves `used` out, and an unknown window is left out; neither is ever guessed. The chat's view reads this from the last finished reply (ADR 0026 D16).
