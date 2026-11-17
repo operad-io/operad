@@ -124,3 +124,5 @@ command or MCP call as an ask, and the host turns it into the pending item of
 D10. The harness flows that carry a question to a later `wait_person` keep their
 existing permission choices; a question answered while the step is alive uses
 `send_once`.
+
+What was looked at: the Telegram senders (replies, commands, pending items, progress) are a source plugin, not a step or action, and every target is a chat that a listed owner user opened with operad, so they are owner channels and not outward. A bot proposal writes only local files, and only after a person approves it. A chat reply goes to the chat's own bound channels, also owner channels. `shell/command` and `shell/check` declare `reachesOutside` and guard each line; `dev/integrate` declares it and guards its push with the repository and main branch as the target. The paths that still start a process without the profile — `shell/probe`, the other git and editor commands of `dev`, and a bot's MCP server start — are listed in `docs/backlog/operad-sandbox.md`.
