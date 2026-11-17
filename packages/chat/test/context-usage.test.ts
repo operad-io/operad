@@ -11,7 +11,7 @@ const MODELS = {
   windows: { small: 100_000, large: 200_000 },
 } as const;
 
-function answer(sessionId: string, model: string, used: number): PluginStepResult {
+function replyWithContext(sessionId: string, model: string, used: number): PluginStepResult {
   return {
     result: "done",
     data: {
@@ -30,7 +30,7 @@ function answer(sessionId: string, model: string, used: number): PluginStepResul
 
 describe("a chat's context usage", () => {
   test("the reply records the last call's context and the model's window, and the view shows both", async () => {
-    const r = await rig(() => answer("s-1", "small", 25_059), MODELS);
+    const r = await rig(() => replyWithContext("s-1", "small", 25_059), MODELS);
     const chat = await r.chat({ model: "small" });
     await r.say(chat, "hello");
     await r.round(chat);
@@ -55,7 +55,7 @@ describe("a chat's context usage", () => {
     let count = 0;
     const r = await rig(() => {
       count += 1;
-      return answer(`s-${count}`, "small", count === 1 ? 1_000 : 2_000);
+      return replyWithContext(`s-${count}`, "small", count === 1 ? 1_000 : 2_000);
     }, MODELS);
     const chat = await r.chat({ model: "small" });
     await r.say(chat, "one");
@@ -86,7 +86,7 @@ describe("a chat's context usage", () => {
   });
 
   test("a model whose window the agent does not know leaves the window out", async () => {
-    const r = await rig(() => answer("s-1", "small", 40), { list: ["small"], default: "small" });
+    const r = await rig(() => replyWithContext("s-1", "small", 40), { list: ["small"], default: "small" });
     const chat = await r.chat({ model: "small" });
     await r.say(chat, "hello");
     await r.round(chat);
