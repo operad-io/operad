@@ -26,6 +26,7 @@ afterAll(cleanupTempRoots);
 guardLockHandles();
 
 const PLUGIN = fileURLToPath(new URL("../../src/index.ts", import.meta.url));
+const CHAT = fileURLToPath(new URL("../../../chat/src/index.ts", import.meta.url));
 
 interface Rig {
   readonly home: string;
@@ -42,7 +43,7 @@ async function withRig(body: (rig: Rig) => Promise<void>): Promise<void> {
   writeFileSync(
     join(home, "config.json"),
     `${JSON.stringify({
-      plugins: [PLUGIN],
+      plugins: [CHAT, PLUGIN],
       store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
     })}\n`,
   );

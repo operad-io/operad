@@ -282,6 +282,7 @@ describe("dogfood end to end", () => {
           {
             plugins: {
               shell: { module: "@operad-io/shell" },
+              chat: { module: "@operad-io/chat" },
               dev: { module: "@operad-io/dev" },
               "harness-fake": { module: FAKE_HARNESS },
             },

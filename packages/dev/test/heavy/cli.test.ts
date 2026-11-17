@@ -33,6 +33,7 @@ guardLockHandles();
 
 const CLI_ENTRY = fileURLToPath(new URL("../../../cli/bin/operad.ts", import.meta.url));
 const PLUGIN = fileURLToPath(new URL("../../src/index.ts", import.meta.url));
+const CHAT = fileURLToPath(new URL("../../../chat/src/index.ts", import.meta.url));
 const POOL = fileURLToPath(new URL("../../../pool/src/index.ts", import.meta.url));
 const SHELL = fileURLToPath(new URL("../../../shell/src/index.ts", import.meta.url));
 
@@ -48,7 +49,7 @@ async function setup(): Promise<{
     join(home, "config.json"),
     `${JSON.stringify(
       {
-        plugins: [PLUGIN, POOL, SHELL],
+        plugins: [CHAT, PLUGIN, POOL, SHELL],
         store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
       },
       null,

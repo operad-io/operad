@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
+import { createChatPlugin } from "@operad-io/chat";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -34,6 +35,7 @@ guardLockHandles();
 
 const ENGINE = fileURLToPath(new URL("../../../engine/src/index.ts", import.meta.url));
 const PLUGIN = fileURLToPath(new URL("../../src/index.ts", import.meta.url));
+const CHAT = fileURLToPath(new URL("../../../chat/src/index.ts", import.meta.url));
 const POOL = fileURLToPath(new URL("../../../pool/src/index.ts", import.meta.url));
 const SHELL = fileURLToPath(new URL("../../../shell/src/index.ts", import.meta.url));
 
@@ -58,7 +60,7 @@ async function setup(devJson: object = {}) {
   writeFileSync(
     join(home, "config.json"),
     `${JSON.stringify({
-      plugins: [PLUGIN, POOL, SHELL],
+      plugins: [CHAT, PLUGIN, POOL, SHELL],
       store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
     })}\n`,
   );
@@ -78,7 +80,7 @@ async function setup(devJson: object = {}) {
   const store = storeAt(root);
   await addRepository(store, { path, name: "repo" });
   const registry = new PluginRegistry(
-    [createDevPlugin(), createPoolPlugin(), createShellPlugin()],
+    [createChatPlugin(), createDevPlugin(), createPoolPlugin(), createShellPlugin()],
     { home: root, cwd: path, store, storeRoot: store.root },
   );
   const options: SettingsOptions = { registry, store, home: root };
@@ -255,7 +257,7 @@ describe("dev.flows and dev.flowList in settings", () => {
     writeFileSync(
       join(home, "config.json"),
       `${JSON.stringify({
-        plugins: [PLUGIN, POOL, SHELL],
+        plugins: [CHAT, PLUGIN, POOL, SHELL],
         store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
         http: { enabled: true, port: 0, listen: ["127.0.0.1"] },
       })}\n`,

@@ -1,5 +1,6 @@
 import { createPoolPlugin, FilePlaces } from "@operad-io/pool";
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
+import { createChatPlugin } from "@operad-io/chat";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -184,7 +185,7 @@ async function fixture(modes: Mode[], extra: Record<string, unknown> = {}, runMs
   const task = await addTask(store, { plan: plan.id, slug: "task", title: "Task", brief: "Write the files." });
   const seen: Seen[] = [];
   const registry = new PluginRegistry(
-    [createDevPlugin(), createPoolPlugin(), fakeHarness(modes, seen, runMs)],
+    [createChatPlugin(), createDevPlugin(), createPoolPlugin(), fakeHarness(modes, seen, runMs)],
     { home: root, cwd: remote.repository, store },
   );
   const object = { type: "task", id: task.id, data: {} };

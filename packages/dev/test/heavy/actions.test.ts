@@ -2,6 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { PluginRegistry } from "@operad-io/engine";
+import { createChatPlugin } from "@operad-io/chat";
 import plugin from "../../src/index.ts";
 import { integrationQueueDirectory } from "../../src/integration-queue.ts";
 import {
@@ -48,7 +49,7 @@ async function setup(
   const root = await tempRoot();
   const repositoryPath = await makeGitRepository(root);
   const store = storeAt(root);
-  const registry = new PluginRegistry([plugin], {
+  const registry = new PluginRegistry([createChatPlugin(), plugin], {
     store,
     storeRoot: store.root,
     ...(onCancelRun === undefined ? {} : { onCancelRun }),
@@ -478,7 +479,7 @@ describe("dev actions", () => {
     const root = await tempRoot();
     const repositoryPath = await makeGitRepository(root);
     const store = storeAt(root);
-    const registry = new PluginRegistry([plugin], { store, storeRoot: store.root, home: root });
+    const registry = new PluginRegistry([createChatPlugin(), plugin], { store, storeRoot: store.root, home: root });
     const repository = await addRepository(store, { path: repositoryPath });
     const plan = await addPlan(store, { repository, slug: "work", title: "Work" });
     const one = await addTask(store, { plan: plan.id, slug: "one", title: "One" });

@@ -13,6 +13,7 @@ import {
   type KernelState,
   type LogBackend,
 } from "@operad-io/engine";
+import { createChatPlugin } from "@operad-io/chat";
 import plugin from "../../src/index.ts";
 import { addPlan, addRepository, addTask, cancelTask, getTask } from "../../src/service.ts";
 import { taskData } from "../../src/model.ts";
@@ -40,7 +41,7 @@ async function world() {
   const plan = await addPlan(store, { repository, slug: "p", title: "P", request: "r" });
   const task = await addTask(store, { plan: plan.id, slug: "one", title: "One", brief: "b" });
   const stored = taskData((await getTask(store, task.id)).data);
-  const registry = new PluginRegistry([plugin], {
+  const registry = new PluginRegistry([createChatPlugin(), plugin], {
     home: root,
     cwd: repositoryPath,
     store,

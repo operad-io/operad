@@ -1,6 +1,7 @@
 import { createPoolPlugin } from "@operad-io/pool";
 import { FilePlaces } from "@operad-io/pool";
 import { afterAll, describe, expect, test } from "bun:test";
+import { createChatPlugin } from "@operad-io/chat";
 import {
   existsSync,
   mkdirSync,
@@ -297,7 +298,7 @@ async function fixture(
     ].join("\n"),
   });
   const plugins = [
-    createDevPlugin(),
+    createChatPlugin(), createDevPlugin(),
     createPoolPlugin(),
     fakeHarness(record),
     ...(options.plugins ?? []),

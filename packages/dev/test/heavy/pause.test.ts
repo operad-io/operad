@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { PluginRegistry } from "@operad-io/engine";
 import poolPlugin from "@operad-io/pool";
 import { createShellPlugin } from "@operad-io/shell";
+import { createChatPlugin } from "@operad-io/chat";
 import plugin from "../../src/index.ts";
 import {
   addPlan,
@@ -40,7 +41,7 @@ async function setup() {
   const remote = await makeRemote(root);
   const store = storeAt(root);
   const cancelled: string[] = [];
-  const registry = new PluginRegistry([plugin, poolPlugin, createShellPlugin()], {
+  const registry = new PluginRegistry([createChatPlugin(), plugin, poolPlugin, createShellPlugin()], {
     home: root,
     cwd: remote.repository,
     store,

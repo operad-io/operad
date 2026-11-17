@@ -1,5 +1,6 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { PluginRegistry, Views, type ObjectData } from "@operad-io/engine";
+import { createChatPlugin } from "@operad-io/chat";
 import plugin from "../../src/index.ts";
 import { addPlan, addRepository, addTask, getPlan, getTask } from "../../src/service.ts";
 import { planData, planState, taskData } from "../../src/model.ts";
@@ -14,7 +15,7 @@ const ENDING = ["cancel"];
 async function setup() {
   const root = await tempRoot();
   const store = storeAt(root);
-  const registry = new PluginRegistry([plugin], { store, storeRoot: store.root });
+  const registry = new PluginRegistry([createChatPlugin(), plugin], { store, storeRoot: store.root });
   const repository = await addRepository(store, { path: await makeGitRepository(root) });
   const plan = await addPlan(store, { repository, slug: "work", title: "Work" });
   const task = await addTask(store, { plan: plan.id, slug: "one", title: "One" });

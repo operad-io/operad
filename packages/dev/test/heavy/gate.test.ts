@@ -2,6 +2,7 @@ import { listAll } from "../../src/model.ts";
 import type { ReviewSettingsUsed } from "../../src/rework.ts";
 import { chmodSync } from "node:fs";
 import { afterAll, afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { createChatPlugin } from "@operad-io/chat";
 import {
   appendFileSync,
   existsSync,
@@ -621,7 +622,7 @@ async function fixture(options: FixtureOptions = {}): Promise<Fixture> {
   });
   const registry = new PluginRegistry(
     [
-      createDevPlugin(),
+      createChatPlugin(), createDevPlugin(),
       shellWithTrueShortcut(
         options.clock === undefined ? {} : { clock: options.clock },
       ),
@@ -747,7 +748,7 @@ describe("dev/verify", () => {
     const home = await osTempRoot();
     writeFileSync(
       join(home, "config.json"),
-      JSON.stringify({ plugins: { dev: fileURLToPath(new URL("../../src/index.ts", import.meta.url)) } }),
+      JSON.stringify({ plugins: { chat: fileURLToPath(new URL("../../../chat/src/index.ts", import.meta.url)), dev: fileURLToPath(new URL("../../src/index.ts", import.meta.url)) } }),
     );
     const cli = fileURLToPath(new URL("../../../cli/bin/operad.ts", import.meta.url));
     const set = Bun.spawn({
@@ -1971,7 +1972,7 @@ describe("dev/review hardening", () => {
     writeFileSync(path, JSON.stringify(settings));
     const registry = new PluginRegistry(
       [
-        createDevPlugin(),
+        createChatPlugin(), createDevPlugin(),
         createShellPlugin(),
         await loadRadianHarness(),
         state.reviewer.plugin,
@@ -2005,7 +2006,7 @@ describe("dev/review hardening", () => {
     expect(state.reviewer.calls).toHaveLength(1);
 
     await setTaskPhase(state.store, state.taskKey, "waiting");
-    const registry = new PluginRegistry([createDevPlugin()], {
+    const registry = new PluginRegistry([createChatPlugin(), createDevPlugin()], {
       home: state.root,
       cwd: state.remote.repository,
       store: state.store,
@@ -2073,7 +2074,7 @@ describe("dev/review hardening", () => {
           restarted = true;
           // A restart: a new registry reads the count from the task's facts.
           registry = new PluginRegistry(
-            [createDevPlugin(), createShellPlugin(), state.reviewer.plugin],
+            [createChatPlugin(), createDevPlugin(), createShellPlugin(), state.reviewer.plugin],
             { home: state.root, cwd: state.remote.repository, store: state.store },
           );
         }
@@ -2248,7 +2249,7 @@ describe("dev/review crash recovery", () => {
     // process, as serve would after a crash.
     const store = new SqlitePluginStore({ root: state.store.root });
     const reviewer = fakeReviewer({ callLog });
-    const registry = new PluginRegistry([createDevPlugin(), reviewer.plugin], {
+    const registry = new PluginRegistry([createChatPlugin(), createDevPlugin(), reviewer.plugin], {
       home: state.root,
       cwd: state.remote.repository,
       store,
@@ -2368,7 +2369,7 @@ describe("dev/review crash before the store copy", () => {
 
     const store = new SqlitePluginStore({ root: state.store.root });
     const reviewer = fakeReviewer({ callLog });
-    const registry = new PluginRegistry([createDevPlugin(), reviewer.plugin], {
+    const registry = new PluginRegistry([createChatPlugin(), createDevPlugin(), reviewer.plugin], {
       home: state.root,
       cwd: state.remote.repository,
       store,
@@ -2683,7 +2684,7 @@ describe("dev/review report in the workspace", () => {
     try {
       const store = new SqlitePluginStore({ root: state.store.root });
       const reviewer = fakeReviewer({ callLog });
-      const registry = new PluginRegistry([createDevPlugin(), reviewer.plugin], {
+      const registry = new PluginRegistry([createChatPlugin(), createDevPlugin(), reviewer.plugin], {
         home: state.root,
         cwd: state.remote.repository,
         store,
@@ -3000,7 +3001,7 @@ describe("the dev flow", () => {
     const root = await tempRoot();
     const remote = await makeRemote(root);
     const store = storeAt(root);
-    const registry = new PluginRegistry([createDevPlugin()], {
+    const registry = new PluginRegistry([createChatPlugin(), createDevPlugin()], {
       home: root,
       cwd: remote.repository,
       store,
@@ -3113,7 +3114,7 @@ describe("the dev flow", () => {
     const root = await tempRoot();
     const remote = await makeRemote(root);
     const store = storeAt(root);
-    const registry = new PluginRegistry([createDevPlugin()], {
+    const registry = new PluginRegistry([createChatPlugin(), createDevPlugin()], {
       home: root,
       cwd: remote.repository,
       store,
@@ -3768,7 +3769,7 @@ describe("dev/review rework rounds", () => {
     writeFileSync(promptFile, `${recorded}\nRECORDED-MARK\n`);
     const store = new SqlitePluginStore({ root: round.state.store.root });
     const reviewer = fakeReviewer({});
-    const registry = new PluginRegistry([createDevPlugin(), reviewer.plugin], {
+    const registry = new PluginRegistry([createChatPlugin(), createDevPlugin(), reviewer.plugin], {
       home: round.state.root,
       cwd: round.state.remote.repository,
       store,

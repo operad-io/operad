@@ -43,6 +43,9 @@ const treePluginPath = fileURLToPath(
 const devPluginPath = fileURLToPath(
   new URL("../../../dev/src/index.ts", import.meta.url),
 );
+const chatPluginPath = fileURLToPath(
+  new URL("../../../chat/src/index.ts", import.meta.url),
+);
 const kernelCommandPluginPath = fileURLToPath(
   new URL("../fixtures/kernel-command.ts", import.meta.url),
 );
@@ -118,7 +121,7 @@ async function makeDevHome(
   writeFileSync(
     join(home, "config.json"),
     JSON.stringify({
-      plugins: [devPluginPath],
+      plugins: [chatPluginPath, devPluginPath],
       store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
       mcp: {
         actions: ["dev:rework", "dev:reverify", "dev:reject", "dev:priority", "dev:concurrency", "chat:close"],

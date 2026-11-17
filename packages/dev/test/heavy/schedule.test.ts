@@ -19,6 +19,7 @@ import {
   type RunLookup,
 } from "@operad-io/engine";
 import poolPlugin from "@operad-io/pool";
+import { createChatPlugin } from "@operad-io/chat";
 import plugin from "../../src/index.ts";
 import {
   addPlan,
@@ -98,7 +99,7 @@ async function setup(
   const store = storeAt(root);
   const answers: { readonly runId: string; readonly choice: string }[] = [];
   const cancelled: string[] = [];
-  const registry = new PluginRegistry([plugin, poolPlugin, createShellPlugin()], {
+  const registry = new PluginRegistry([createChatPlugin(), plugin, poolPlugin, createShellPlugin()], {
     home: root,
     cwd: repositoryPath,
     store,
@@ -1090,7 +1091,7 @@ describe("dev scheduling", () => {
 
       // The normal task action reaches the run: the wait has an answer handler.
       const answers: string[] = [];
-      const answering = new PluginRegistry([plugin, poolPlugin, createShellPlugin()], {
+      const answering = new PluginRegistry([createChatPlugin(), plugin, poolPlugin, createShellPlugin()], {
         home: fixture.root,
         cwd: fixture.repositoryPath,
         store: fixture.store,
@@ -1142,7 +1143,7 @@ describe("dev scheduling", () => {
 
       let registry: PluginRegistry;
       const answers: { readonly runId: string; readonly choice: string }[] = [];
-      registry = new PluginRegistry([plugin, poolPlugin, createShellPlugin()], {
+      registry = new PluginRegistry([createChatPlugin(), plugin, poolPlugin, createShellPlugin()], {
         home: fixture.root,
         cwd: fixture.repositoryPath,
         store: fixture.store,
@@ -1572,7 +1573,7 @@ describe("dev scheduling", () => {
     // Another process opens its own store on the same files; passes of one
     // store never overlap, so the race between processes needs a second one.
     const otherStore = storeAt(fixture.root);
-    const other = new PluginRegistry([plugin, poolPlugin, createShellPlugin()], {
+    const other = new PluginRegistry([createChatPlugin(), plugin, poolPlugin, createShellPlugin()], {
       home: fixture.root,
       cwd: fixture.repositoryPath,
       store: otherStore,

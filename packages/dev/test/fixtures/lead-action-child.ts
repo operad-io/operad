@@ -7,6 +7,7 @@
 import { appendFileSync } from "node:fs";
 import { SqlitePluginStore, PluginRegistry } from "@operad-io/engine";
 import { createDevPlugin } from "../../src/index.ts";
+import { createChatPlugin } from "@operad-io/chat";
 
 const [storeRoot, repository, taskKey, action, argsJson, answersPath] =
   process.argv.slice(2);
@@ -24,7 +25,7 @@ if (
 }
 
 const store = new SqlitePluginStore({ root: storeRoot });
-const registry = new PluginRegistry([createDevPlugin()], {
+const registry = new PluginRegistry([createChatPlugin(), createDevPlugin()], {
   home: storeRoot,
   cwd: repository,
   store,

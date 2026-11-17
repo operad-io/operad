@@ -7,6 +7,7 @@ import { cleanupTempRoots, makeGitRepository, runInProcess, tempRoot } from "../
 afterAll(cleanupTempRoots);
 
 const PLUGIN = fileURLToPath(new URL("../../src/index.ts", import.meta.url));
+const CHAT = fileURLToPath(new URL("../../../chat/src/index.ts", import.meta.url));
 const POOL = fileURLToPath(new URL("../../../pool/src/index.ts", import.meta.url));
 const SHELL = fileURLToPath(new URL("../../../shell/src/index.ts", import.meta.url));
 
@@ -19,7 +20,7 @@ async function setup() {
   writeFileSync(
     join(home, "config.json"),
     JSON.stringify({
-      plugins: { dev: PLUGIN, pool: POOL, shell: SHELL },
+      plugins: { chat: CHAT, dev: PLUGIN, pool: POOL, shell: SHELL },
       store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
     }),
   );

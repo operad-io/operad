@@ -1,5 +1,6 @@
 import { createPoolPlugin } from "@operad-io/pool";
 import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { createChatPlugin } from "@operad-io/chat";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -146,7 +147,7 @@ async function run(options: {
     ],
   });
   const registry = new PluginRegistry(
-    [createDevPlugin(), createPoolPlugin(), createShellPlugin(), worker, reviewer] as never,
+    [createChatPlugin(), createDevPlugin(), createPoolPlugin(), createShellPlugin(), worker, reviewer] as never,
     { home: root, cwd: remote.repository, store },
   );
   const log = openLog({ backend: "sqlite", path: join(root, "log", "log.sqlite") });

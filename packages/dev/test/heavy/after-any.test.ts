@@ -2,6 +2,7 @@ import { createShellPlugin } from "@operad-io/shell";
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { PluginRegistry } from "@operad-io/engine";
 import poolPlugin from "@operad-io/pool";
+import { createChatPlugin } from "@operad-io/chat";
 import plugin from "../../src/index.ts";
 import {
   addPlan,
@@ -36,7 +37,7 @@ async function setup() {
   const store = storeAt(root);
   const mainPath = await makeGitRepository(root, "main-repo");
   const otherPath = await makeGitRepository(root, "operad");
-  const registry = new PluginRegistry([plugin, poolPlugin, createShellPlugin()], {
+  const registry = new PluginRegistry([createChatPlugin(), plugin, poolPlugin, createShellPlugin()], {
     home: root,
     cwd: mainPath,
     store,
