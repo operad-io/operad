@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { match } from "@operad-io/access-match";
 import { CHAT_TYPE, createChatPlugin } from "@operad-io/chat";
 import {
   PluginRegistry,
@@ -248,6 +249,35 @@ describe("a repository's skills", () => {
 });
 
 describe("a repository chat's access level", () => {
+  test("at full it still refuses credentials and sudo, and asks before git push", async () => {
+    const r = await rig();
+    const path = await repository(r, "tight");
+    const id = await openChat(r, "tight");
+
+    await sendAccess(r, id, "full");
+    const stored = (await chat(r, id)).data.access as Record<string, JsonValue>;
+    const home = join(r.root, "user");
+    const worktree = join(path, ".operad-worktrees", `chat-${id}`);
+    expect(match(stored, { tool: "read", input: { path: "~/.ssh/id_ed25519" }, cwd: worktree }, { home }).allow).toBe(false);
+    expect(match(stored, { tool: "bash", input: { command: "sudo ls" }, cwd: worktree }, { home }).allow).toBe(false);
+    expect(match(stored, { tool: "bash", input: { command: "git push origin main" }, cwd: worktree }, { home })).toMatchObject({
+      allow: false,
+      ask: true,
+    });
+    expect(match(stored, { tool: "bash", input: { command: "operad dev list" }, cwd: worktree }, { home }).allow).toBe(false);
+
+    await reply(r, id);
+    const call = r.calls[0];
+    if (call === undefined) throw new Error("the harness was not called");
+    const cwd = call.cwd ?? worktree;
+    expect(match(call.access, { tool: "read", input: { path: "~/.ssh/id_ed25519" }, cwd }, { home }).allow).toBe(false);
+    expect(match(call.access, { tool: "bash", input: { command: "sudo ls" }, cwd }, { home }).allow).toBe(false);
+    expect(match(call.access, { tool: "bash", input: { command: "git push origin main" }, cwd }, { home })).toMatchObject({
+      allow: false,
+      ask: true,
+    });
+  });
+
   test("/access edits opens work/chat-<id>, moves the chat there, and a write passes without a question", async () => {
     const r = await rig();
     const path = await repository(r, "edits");

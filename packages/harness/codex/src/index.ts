@@ -8,7 +8,7 @@
  */
 
 import pkg from "../package.json" with { type: "json" };
-import { readProfile, secretValuesOf, summarizeCall, type AccessProfile } from "@operad-io/access-match";
+import { readProfile, secretValuesOf, summarizeCall, withDefaultAccess, type AccessProfile } from "@operad-io/access-match";
 import {
   isRecord,
   paramsObject,
@@ -461,10 +461,12 @@ export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
             inputEntries.push({ type: "localImage", path: image.path });
           }
 
+          // A generated step that names no profile still starts from the default.
+          const access = withDefaultAccess(ctx.access as AccessProfile | undefined);
           const storeSecrets = await secretValuesOf(ctx.secrets);
           const allowAlways = personStarted(ctx.trigger);
           if (allowAlways && isRecord(rawAskAnswer) && rawAskAnswer["choice"] === ALLOW_ALWAYS) {
-            const entry = alwaysAllowFromGrant(ctx.access, cwd);
+            const entry = alwaysAllowFromGrant(access, cwd);
             if (entry !== undefined) {
               try {
                 await appendAlwaysAllow(ctx.home, entry);
@@ -475,11 +477,11 @@ export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
               }
             }
           }
-          let runAccess = accessWithAlwaysAllow(ctx.access, [], false);
+          let runAccess = accessWithAlwaysAllow(access, [], false);
           if (allowAlways) {
             const user = await readAlwaysAllow(ctx.home);
             if (user.problem !== undefined) await ctx.logger.write(user.problem);
-            runAccess = accessWithAlwaysAllow(ctx.access, user.entries, true);
+            runAccess = accessWithAlwaysAllow(access, user.entries, true);
           }
           const read = readProfile(runAccess ?? {});
           const profile: AccessProfile = read.ok ? read.profile : {};

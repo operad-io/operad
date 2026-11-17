@@ -242,3 +242,9 @@ setup it depends on, in the order they were recorded. The root
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0530-M3 | packages/harness/claude/src/index.ts | a claude model declared only vision, not the reasoning and tools it knows | `the models claude declares > every model is anthropic, with vision, reasoning and tools` |
+
+## T-0532 — the built-in default access profile
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0532-M5 | packages/harness/claude/src/index.ts | a step with no access profile passed none to the worker instead of the built-in default | `claude/agent > a step a flow generates with no profile gets the default` |

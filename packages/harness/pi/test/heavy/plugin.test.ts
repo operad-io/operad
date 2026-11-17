@@ -299,7 +299,10 @@ describe("pi/agent", () => {
     expect(input.agentDir).toBe(join(env.root, "harness", "pi"));
     expect(input.sessionDir).toBe(join(env.root, "harness", "pi", "sessions"));
     expect("resumeSession" in input).toBe(false);
-    expect("access" in input).toBe(false);
+    // A step a flow generates may name no profile; it still gets the default.
+    const access = input.access as { readonly denyPaths?: readonly string[]; readonly denyCommands?: readonly string[] };
+    expect(access.denyPaths).toContain("~/.ssh");
+    expect(access.denyCommands).toContain("sudo");
   });
 
   test("the own-settings switch reaches the worker only when it is on", async () => {
@@ -521,14 +524,17 @@ describe("pi/agent", () => {
     });
   });
 
-  test("the run's access profile is passed to the worker", async () => {
+  test("the run's access profile is passed to the worker, tightened with the default", async () => {
     const env = await setup("done");
     await env.registry.runStep(
       "pi/agent",
       { prompt: "hello", cwd: env.root },
       { runId: "run-access", access: { denyCommands: ["rm"] } },
     );
-    expect(recorded(env).access).toEqual({ denyCommands: ["rm"] });
+    const access = recorded(env).access as { readonly denyPaths?: readonly string[]; readonly denyCommands?: readonly string[] };
+    expect(access.denyCommands).toContain("rm");
+    expect(access.denyCommands).toContain("sudo");
+    expect(access.denyPaths).toContain("~/.ssh");
   });
 
   test("a worker Result of failed is a failure that names the reason", async () => {

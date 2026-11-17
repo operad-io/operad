@@ -220,7 +220,7 @@ describe("claude/agent", () => {
       bashTimeoutSecs: 900,
     });
     await runAgent(env, { prompt: "hello", cwd: env.root });
-    const input = recorded(env);
+    const { access, ...input } = recorded(env);
     expect(input).toEqual({
       bashTimeoutSecs: 900,
       prompt: "hello",
@@ -231,6 +231,7 @@ describe("claude/agent", () => {
       maxTurns: 7,
       budgetUsd: 2.5,
     });
+    expect((access as { readonly denyPaths?: readonly string[] }).denyPaths).toContain("~/.ssh");
   });
 
   test("the own-settings switch reaches the worker only when it is on", async () => {
@@ -246,7 +247,9 @@ describe("claude/agent", () => {
   test("unset settings are not sent, so claude uses its defaults; the command defaults to claude and Bash to 1800 s", async () => {
     const env = await setup("done");
     await runAgent(env, { prompt: "hello", cwd: env.root });
-    expect(recorded(env)).toEqual({ prompt: "hello", cwd: env.root, command: "claude", bashTimeoutSecs: 1800 });
+    const { access, ...input } = recorded(env);
+    expect(input).toEqual({ prompt: "hello", cwd: env.root, command: "claude", bashTimeoutSecs: 1800 });
+    expect((access as { readonly denyCommands?: readonly string[] }).denyCommands).toContain("sudo");
   });
 
   test("--model and --effort in args reach the worker and win over the settings", async () => {
@@ -435,14 +438,26 @@ describe("claude/agent", () => {
     expect(stopped).toBe(1);
   });
 
-  test("the run's access profile is passed to the worker", async () => {
+  test("the run's access profile is passed to the worker, tightened with the default", async () => {
     const env = await setup("done");
     await env.registry.runStep(
       "claude/agent",
       { prompt: "hello", cwd: env.root },
       { runId: "run-access", access: { denyCommands: ["rm"] } },
     );
-    expect(recorded(env).access).toEqual({ denyCommands: ["rm"] });
+    const access = recorded(env).access as { readonly denyPaths?: readonly string[]; readonly denyCommands?: readonly string[] };
+    expect(access.denyCommands).toContain("rm");
+    expect(access.denyCommands).toContain("sudo");
+    expect(access.denyPaths).toContain("~/.ssh");
+  });
+
+  test("a step a flow generates with no profile gets the default", async () => {
+    const env = await setup("done");
+    await runAgent(env, { prompt: "hello", cwd: env.root });
+    const access = recorded(env).access as { readonly denyPaths?: readonly string[]; readonly denyCommands?: readonly string[] };
+    expect(access.denyPaths).toContain("~/.ssh");
+    expect(access.denyCommands).toContain("sudo");
+    expect(access.denyCommands).toContain("git push --force*");
   });
 
   test("a worker Result of failed is a failure that names the reason", async () => {

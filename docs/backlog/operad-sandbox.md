@@ -12,12 +12,12 @@
 ## 已定，尚未做或未核实
 
 1. 访问档的字段里还有 `cwd`、`outside: "read" | "none"`、`network: "none" | "all" | [host, …]`；这几项代码里没有对应，未做。
-2. **内置一份默认访问档**，所有对话和生成的步骤默认用它，用户只能收紧或显式换掉：
+2. **内置一份默认访问档**，所有对话和生成的步骤默认用它，用户只能收紧或显式换掉（已做：默认档在 `@operad-io/access-match`，见 ADR 0025 D9；`network` 一项仍未做）：
    - `denyPaths`：`~/.ssh`、`~/.gnupg`、`~/.aws`、`~/.config/gh`、`~/.operad`（当前运行自己的目录除外）、`~/.radian` 的凭据、`~/Library/Keychains`、浏览器的 profile 目录、`.git/config` 与 `.git/hooks`；
    - `denyCommands`：`sudo`、`su`、`rm -rf /`、`rm -rf ~`、`mkfs`、`dd`、`diskutil`、`shutdown`、`reboot`、`launchctl`、`crontab -r`、`git push --force*`、`git push --delete`、`curl … | sh`、`wget … | sh`、对不是自己起的进程的 `kill`、`pkill`、`killall`；
    - `askCommands`：`git push`、cwd 内的 `rm -r`、`brew install`、`npm install -g`、`pip install`、`osascript`、`open`、任何对 `~/.zshrc` 和 `~/.*profile` 的写；
    - `network`：对话默认 `all`；生成的步骤默认 `none`，由 flow 显式给主机列表。
-   （bot 一侧已有按此写的默认档，全局的一份未做。）
+   （bot 一侧和仓库对话按此收紧，生成的步骤由 harness 补上默认档。）
 3. 没人答一个询问时，按 `askTimeoutSecs` 超时后拒绝一次。（未核实代码里有这个设置。）
 4. **不是人当场发起的运行更严**：一个运行如果不是由人在这个对话里的一句话发起的（定时、webhook、来信、别的事件），它对外写的动作一律先问，或者只存草稿等人发：发消息、发邮件、发帖、`git push`、对外部服务的写调用。询问照 ADR 0025 D4 成为待处理项。这类运行里对话里的 `allow_always` 不算数（按对象的授权见下）。来由：Hermes 的定时任务默认拒绝，Rakazo 对 webhook 发起的运行更严，Grok Bot 后台发邮件只存草稿；Grok Bot 上只该读推文的 bot 发了帖，也出在后台运行。（`research/2026-11-11-grok-bot.md`）
    - **什么算对外**（2026-11-17 owner 定）：发给 owner 自己的通道不算对外，白名单里的目标也不算；其余都算对外。白名单写在访问档里（字段形状未定），列通道里的会话、邮箱地址、仓库等目标；owner 自己的通道默认在里面，不用另写。所以每天的 digest 发到 owner 自己的 Telegram 不问；发给别人、发帖、`git push`、对外部服务的写调用，要么先问，要么只存草稿。

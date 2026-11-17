@@ -12,7 +12,7 @@ import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { mapRadianCall } from "./refusal.ts";
 export { radianRefusal } from "./refusal.ts";
-import { firstErrorLine, match, readProfile, secretValuesOf, summarizeCall, type AccessProfile } from "@operad-io/access-match";
+import { firstErrorLine, match, readProfile, secretValuesOf, summarizeCall, withDefaultAccess, type AccessProfile } from "@operad-io/access-match";
 import {
   isRecord,
   paramsObject,
@@ -629,7 +629,9 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
               ? defaults.command
               : text(ctx.settings.command, `${at}: settings.command`);
 
-          const readAccess = readProfile(ctx.access ?? {});
+          // A generated step that names no profile still starts from the default.
+          const access = withDefaultAccess(ctx.access as AccessProfile | undefined);
+          const readAccess = readProfile(access);
           const logSecrets = await secretValuesOf(ctx.secrets);
           const logProfile: AccessProfile = readAccess.ok ? readAccess.profile : {};
 
@@ -640,7 +642,7 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
 
           // radian has no hook that sees a tool call, so it cannot let one
           // call through and no other: a one-time permission is refused.
-          if (isRecord(ctx.access) && Array.isArray(ctx.access.grants) && ctx.access.grants.length > 0) {
+          if (isRecord(access) && Array.isArray(access.grants) && access.grants.length > 0) {
             const message = `${at}: radian cannot enforce a one-time permission (no hook sees its tool calls); ask with pi, or without a grant`;
             const log = await ctx.logger.write(message);
             const timing = timings.finish();

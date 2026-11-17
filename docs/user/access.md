@@ -12,7 +12,7 @@ command another way is outside what it can see.
 
 ## Why it exists
 
-An agent can run shell commands and edit files, and you will not read every call before it runs. An access profile lets you write down in advance which paths and commands are refused, which ask a person first, and which run freely. The default profile covers the common cases: credentials, the operad home, destructive commands, and a few commands that change the machine.
+An agent can run shell commands and edit files, and you will not read every call before it runs. An access profile lets you write down in advance which paths and commands are refused, which ask a person first, and which run freely. The default profile covers the common cases: credentials, destructive commands, and a few commands that change the machine; a bot adds its operad home.
 
 The profile is a guard rail, not a boundary. It matches the text of a call and cannot see what a program does once it runs, so it makes no claim to stop everything. For commands that hide what they run, such as `bash -c`, it asks or refuses instead of guessing.
 
@@ -27,12 +27,12 @@ The profile is a guard rail, not a boundary. It matches the text of a call and c
 
 ## The profile
 
-A profile is a JSON object. A bot's profile is its [bot settings](config.md#bot)
-merged with the default below; a flow's profile is given to the steps that
-declare they enforce its fields. The matcher applies this order: **deny wins
-over ask, and ask wins over allow**. A call that matches a deny is refused
-whatever an ask rule says; a call that only matches an ask rule asks a person;
-every other call is allowed.
+A profile is a JSON object. Every chat and every generated step starts from the
+built-in default below. A bot's [settings](config.md#bot), a repository chat and
+a flow's profile add to it; none removes a default deny or ask. The matcher
+applies this order: **deny wins over ask, and ask wins over allow**. A call that
+matches a deny is refused whatever an ask rule says; a call that only matches an
+ask rule asks a person; every other call is allowed.
 
 | Key | Type | Default | Allowed values | When it takes effect | Wrong value |
 |---|---|---|---|---|---|
@@ -76,25 +76,34 @@ does not allow a write: a write there asks.
 
 ## The default profile
 
-The default profile is what a bot starts from. Its lists are added to the lists
-a bot writes; a bot can tighten them, never loosen them.
+The default profile lives in `@operad-io/access-match` and is what every chat and
+every generated step starts from. A bot, a repository or a flow can add to its
+lists and turn `readOnly` on, never remove one. The access level is composed
+after those additions, so `full` keeps these rules too.
 
 | List | Entries |
 |---|---|
-| `denyPaths` | `~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.config/gh`, `~/.radian`, `~/Library/Keychains`, `~/Library/Application Support/Google/Chrome`, `~/Library/Application Support/Firefox`, `~/Library/Safari`, `.git/config`, `.git/hooks`, and every entry of the operad home except the bot's own directory (the names there now, and `store`, `secrets`, `config.json` and the MCP report directory) |
-| `denyCommands` | `operad`, `sudo`, `su`, `rm -rf /`, `rm -rf ~`, `mkfs`, `dd`, `diskutil`, `shutdown`, `reboot`, `launchctl`, `crontab -r`, `git push --force*`, `git push --delete`, `curl … \| sh`, `wget … \| sh`, `pkill`, `killall` |
+| `denyPaths` | `~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.config/gh`, `~/.radian`, `~/Library/Keychains`, `~/Library/Application Support/Google/Chrome`, `~/Library/Application Support/Firefox`, `~/Library/Safari`, `.git/config`, `.git/hooks` |
+| `denyCommands` | `sudo`, `su`, `rm -rf /`, `rm -rf ~`, `mkfs`, `dd`, `diskutil`, `shutdown`, `reboot`, `launchctl`, `crontab -r`, `git push --force*`, `git push --delete`, `curl … \| sh`, `wget … \| sh`, `pkill`, `killall` |
 | `askCommands` | `git push`, `brew install`, `npm install -g`, `pip install`, `osascript`, `open` |
 | `askPaths` | `~/.zshrc`, `~/.*profile` |
 | `readPaths`, `readOnly`, `allowMcp`, `level` | absent |
 
-The home entries are absolute, so a home other than `~/.operad` is covered too.
-The bot's own working directory under `~/.operad/bot` is the one part of the
-home the agent may use. The path of a repository `dev` knows, and the path of a
-bot's skill directories, are added to `denyPaths`: the agent reaches a
-repository through `dev`'s actions, not by touching its files. The skill
-directories are also in `readPaths`, so the agent reads them; a write there is
-still refused. A bot's own `access` lists are appended to these, and its
-`access.readOnly` can turn the working directory read-only.
+A bot adds the operad home and the `operad` command: every entry of the home
+except the bot's own directory is denied (the names there now, and `store`,
+`secrets`, `config.json` and the MCP report directory), so a home other than
+`~/.operad` is covered too. The bot's own working directory under
+`~/.operad/bot` is the one part of the home the agent may use. The path of a
+repository `dev` knows, and the path of a bot's skill directories, are added to
+`denyPaths`: the agent reaches a repository through `dev`'s actions, not by
+touching its files. The skill directories are also in `readPaths`, so the agent
+reads them; a write there is still refused. A bot's own `access` lists are
+appended to these, and its `access.readOnly` can turn the working directory
+read-only.
+
+A repository chat adds `operad` to `denyCommands` and starts read-only in the
+main clone, with its skill directories read-only there. A generated step that
+names no profile gets the default unchanged; a flow that names one adds to it.
 
 A rule is a pattern of words; `*` matches any characters in a word. `-rf`
 matches the same single-dash letters in any order, and `…` adds no condition.

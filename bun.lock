@@ -72,6 +72,7 @@
       "name": "@operad-io/dev",
       "version": "0.1.1",
       "dependencies": {
+        "@operad-io/access-match": "workspace:*",
         "@operad-io/chat": "workspace:*",
         "@operad-io/engine": "workspace:*",
         "@operad-io/pool": "workspace:*",

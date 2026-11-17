@@ -94,3 +94,9 @@ recorded. The root [MUTATIONS.md](../../../MUTATIONS.md) explains the format and
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0530-M6 | packages/harness/codex/src/install.ts | a model's `input` and `reasoning` no longer became vision and reasoning capabilities | `what a chat may pick > the model list comes from the app-server without blocking the listing read` |
+
+## T-0532 — the built-in default access profile
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0532-M7 | packages/harness/codex/src/index.ts | a step with no access profile judged calls without the built-in default | `codex/agent: permissions > a step a flow generates with no profile still gets the default` |

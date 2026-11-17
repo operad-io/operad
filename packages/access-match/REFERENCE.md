@@ -35,7 +35,7 @@ the `home` option). `test/match.test.ts` follows the tables below.
 | `level` | `plan`, `ask`, `edits` or `full`, optional | a chat's access level. It adds asks to the profile and never removes a deny or a rule: `plan` is `readOnly`; `ask` asks about every write and every command not known to only read; `edits` lets a write inside the working directory pass and asks about a write outside it and a command not known to only read; `full` adds no ask. The profile's own `askCommands`, `askPaths` and `readOnly` still hold |
 | `readPaths` | array of paths, optional | directories the agent may read although `denyPaths` covers an ancestor: a read tool (`read`, `grep`, `find`, `ls`) or a `bash` command that only reads may touch a path under one. A write there asks (the entries count as `askPaths`); every other denied path stays denied |
 | `allowMcp` | string[], optional | MCP tools that run without asking, as `<server>.<tool>` or `<server>.*`. The field's presence (even empty) puts MCP tools under the profile: a call with `tool: "mcp"` and `input: { server, tool }` that is not listed counts as a write and asks (`kind: "command"`, value `mcp <server>.<tool>`), per the MCP-tool rule in `docs/backlog/operad-sandbox.md`, not in an ADR yet. When the field is absent, MCP tools are not under the profile and are allowed |
-| `askCommands` | string[], optional | rules in the shape of `denyCommands`; a `bash` command part that matches one of these asks a person (ADR 0025 D1; the built-in default profile that fills `askCommands` is still in `docs/backlog/operad-sandbox.md`). Writes to shell profiles are `askPaths` |
+| `askCommands` | string[], optional | rules in the shape of `denyCommands`; a `bash` command part that matches one of these asks a person (ADR 0025 D1). Writes to shell profiles are `askPaths` |
 
 | `alwaysAllow` | `{ kind: "command" \| "path", value, cwd, tool? }[]`, optional | calls a person answered `allow_always` for. A command entry is the exact command text and cwd; a path entry is the tool, the path and cwd. Such a call is allowed when it would otherwise ask. A deny still wins, and a harness leaves the entries out of a run no person's message started (ADR 0025 D3, D4 and D7; the background-run rule is still in `docs/backlog/operad-sandbox.md`) |
 
@@ -50,6 +50,24 @@ lets the call run, and match the call as usual when it cannot.
 Other fields of the access profile (`cwd`, `outside`, `network`) are not read
 here. `readProfile(value)` checks an untrusted object
 and names the field at fault.
+
+## The built-in default
+
+`defaultAccess()` is the profile every chat and every generated step starts
+from: the credential and keychain paths, `.git/config` and `.git/hooks` in
+`denyPaths`; `sudo`, `su`, destructive disk and shutdown commands,
+`git push --force*`, `git push --delete`, `curl … | sh`, `wget … | sh`,
+`pkill` and `killall` in `denyCommands`; `git push`, `brew install`,
+`npm install -g`, `pip install`, `osascript` and `open` in `askCommands`; and
+`~/.zshrc` and `~/.*profile` in `askPaths` (ADR 0025 D9).
+
+`withDefaultAccess(profile)` returns that default with the profile's rules
+appended to the four lists and `readOnly` turned on when either side has it.
+Nothing in the profile removes a default deny or ask. `withAccessLevel` uses it
+before composing a chat's level, so every level, `full` included, keeps the
+default's rules. A bot adds the operad home and command, and a repository chat
+adds its qualification, in their plugins; the default itself stays free of a
+home or a plugin.
 
 ## Call
 
@@ -125,8 +143,9 @@ Refused whatever the rules say, but only when the profile has at least one
 ## Access levels
 
 `withAccessLevel(profile, level)` composes a chat's level into its profile. It
-sets `level` and, for `plan`, `readOnly: true`. `match` then adds the level's
-asks after every deny and after the profile's own asks:
+first tightens the profile with `defaultAccess()`, then sets `level` and, for
+`plan`, `readOnly: true`. `match` then adds the level's asks after every deny
+and after the profile's own asks:
 
 | level | write inside the working directory | write outside it | command not known to only read |
 |---|---|---|---|

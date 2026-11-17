@@ -22,6 +22,7 @@ import {
   startingModel,
   titleFromMessage,
 } from "@operad-io/chat";
+import { defaultAccess } from "@operad-io/access-match";
 import {
   isRecord,
   modelIds,
@@ -57,7 +58,11 @@ export const CHAT_HARNESSES = ["claude", "pi"] as const;
 export const RADIAN_NOTE =
   "radian is not offered as an agent here: it cannot stop a tool call before it starts and cannot continue a session in another directory, so it cannot keep the main clone read-only or move to a worktree; use it for a bot chat.";
 
-/** The access profile of a chat in the main clone: read-only, and no secrets. */
+/**
+ * What a repository chat adds to the built-in default: read-only in the main
+ * clone, and no operad command. The default already holds the credential paths
+ * and the dangerous commands, so the chat keeps them at every level.
+ */
 export const CHAT_ACCESS: Readonly<Record<string, JsonValue>> = {
   readOnly: true,
   denyPaths: ["~/.ssh", "~/.gnupg", "~/.aws", "~/.config/gh"],
@@ -326,15 +331,27 @@ export function repositoryChatSkills(settings: DevSettings, base: string): ChatS
  * changes like any other, and the change reaches main through a task.
  */
 export function chatAccess(skillPaths: readonly string[], readOnly: boolean): Record<string, JsonValue> {
-  const denyPaths = Array.isArray(CHAT_ACCESS.denyPaths) ? [...CHAT_ACCESS.denyPaths] : [];
+  const base = defaultAccess();
+  const denyPaths = [...(base.denyPaths ?? [])];
+  for (const path of stringList(CHAT_ACCESS.denyPaths)) if (!denyPaths.includes(path)) denyPaths.push(path);
+  const denyCommands = [...(base.denyCommands ?? [])];
+  for (const command of stringList(CHAT_ACCESS.denyCommands)) {
+    if (!denyCommands.includes(command)) denyCommands.push(command);
+  }
   const protectedPaths = readOnly ? skillPaths : [];
   for (const path of protectedPaths) if (!denyPaths.includes(path)) denyPaths.push(path);
   return {
-    ...CHAT_ACCESS,
-    readOnly,
     denyPaths,
+    denyCommands,
+    askCommands: [...(base.askCommands ?? [])],
+    askPaths: [...(base.askPaths ?? [])],
+    readOnly,
     ...(protectedPaths.length === 0 ? {} : { readPaths: [...protectedPaths] }),
   };
+}
+
+function stringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : [];
 }
 
 /**

@@ -201,7 +201,7 @@ describe("a chat's access level", () => {
     plan: { name: "Write", input: { file_path: `${CWD}/a.ts`, content: "x" }, allowed: false },
     ask: { name: "Write", input: { file_path: "/tmp/a.ts", content: "x" }, allowed: false },
     edits: { name: "Write", input: { file_path: `${CWD}/a.ts`, content: "x" }, allowed: true },
-    full: { name: "Bash", input: { command: "git push origin main" }, allowed: true },
+    full: { name: "Bash", input: { command: "ls" }, allowed: true },
   };
 
   for (const level of ["plan", "ask", "edits", "full"] as const) {
@@ -215,8 +215,8 @@ describe("a chat's access level", () => {
       });
       expect(verdict).toEqual({ allow: true });
       expect(asked.length).toBe(call.allowed ? 0 : 1);
-      // A level below full also refuses an unchecked tool a deny cannot see.
-      if (level !== "full") expect(hasRules(profile)).toBe(true);
+      // The default's deny and ask rules hold at every level, full included.
+      expect(hasRules(profile)).toBe(true);
     });
   }
 });

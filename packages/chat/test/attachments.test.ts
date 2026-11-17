@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { defaultAccess } from "@operad-io/access-match";
 import { attachmentDir, type StepContext } from "@operad-io/engine";
 import {
   allMessages,
@@ -157,7 +158,7 @@ describe("chat/reply with attachments", () => {
     await r.round(chat);
     const profile = seen[0] as Record<string, unknown>;
     expect(profile.readPaths).toEqual([mine]);
-    expect(profile.denyPaths).toEqual(denied);
+    expect(profile.denyPaths).toEqual([...(defaultAccess().denyPaths ?? []), ...denied]);
   });
 
   test("a chat with no attachments keeps its profile as it is", async () => {
@@ -169,7 +170,7 @@ describe("chat/reply with attachments", () => {
     const chat = await r.chat({ access: { denyPaths: ["/x"] } });
     await r.say(chat, "plain");
     await r.round(chat);
-    expect(seen[0]).toEqual({ denyPaths: ["/x"], level: "ask" });
+    expect(seen[0]).toEqual({ ...defaultAccess(), denyPaths: [...(defaultAccess().denyPaths ?? []), "/x"], level: "ask" });
     expect(withAttachmentReads({}, "/d")).toEqual({ readPaths: ["/d"] });
     expect(promptFor([])).toBe("");
   });
