@@ -1,5 +1,6 @@
 import { afterAll, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { PluginRegistry } from "@operad-io/engine";
 import { createPoolPlugin } from "@operad-io/pool";
@@ -452,4 +453,14 @@ test("changing dev.json leaves a running attempt on the graph it started with", 
   // The attempt's graph still resolves, and the new settings added a new one.
   expect(registry.flow(first.name)?.flow.steps.some((step) => step.id.startsWith("review"))).toBe(false);
   expect(registry.flow(secondName)?.flow.steps.some((step) => step.id.startsWith("review"))).toBe(true);
+});
+
+test("a flow's name follows its compiled graph, so a dev that compiles other steps names it anew", () => {
+  const stages: readonly DevStage[] = [{ stage: "work" }, { stage: "check" }, { stage: "human" }];
+  const graph = compileDevFlow("", stages, { gradingName: "default" });
+  const hash = createHash("sha1")
+    .update(JSON.stringify({ entry: graph.entry, maxVisits: graph.maxVisits, steps: graph.steps }))
+    .digest("hex")
+    .slice(0, 12);
+  expect(flowNameFor("repo", "default", { stages })).toBe(`dev/repo/default/${hash}`);
 });

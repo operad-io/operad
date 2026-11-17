@@ -207,12 +207,17 @@ passes the same names to `dev/work`, `dev/verify` and `dev/review`.
 The built-in flow keeps the name `dev`, so runs and history from before
 projects could set flows keep working. A repository's flow is registered under
 `dev/<repository>/<flow>/<hash>`, where the hash is the first 12 hex digits of
-the SHA-1 of its stages. Two repositories may therefore use the same flow name,
-and a changed `flows` entry gets a new name instead of replacing a graph a
-running attempt still uses. A start records the graph on the task; every tick
-declares the graphs of the tasks it finds, and a declared graph is kept in the
+the SHA-1 of its compiled graph. Two repositories may therefore use the same
+flow name, and a changed `flows` entry, or a dev that compiles the same stages
+to other steps, gets a new name instead of replacing a graph a running attempt
+still uses. A start records the graph on the task; every tick declares the
+graphs of the repository's open tasks, and a declared graph is kept in the
 store so the run's own process finds it, so a fresh process resumes a running
-attempt on the graph it started with.
+attempt on the graph it started with. A recorded graph that today's steps
+refuse, such as one from an older dev that lacks an edge for a result a step
+has since gained, is reported once for its task and skipped: the repository's
+other tasks are still scheduled, and the task's next start uses the
+repository's flow.
 
 ### Writing a flow in TypeScript
 

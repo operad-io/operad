@@ -1380,12 +1380,11 @@ export async function claimTaskStart(
     const next: TaskData = {
       ...rest,
       ...(options.oldestPlanSlot === true ? { oldestPlanSlot: true } : {}),
+      // The recorded graph follows the flow the start uses: a built-in flow
+      // records none, so a refused graph an older dev wrote is not kept.
       ...(options.flow === undefined
         ? {}
-        : {
-            flowName: options.flow.name,
-            ...(options.flow.graph === undefined ? {} : { flowGraph: options.flow.graph }),
-          }),
+        : { flowName: options.flow.name, flowGraph: options.flow.graph }),
       phase: "running",
       run: null,
       brief: appendChange(latest.brief, "running"),

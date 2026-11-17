@@ -1778,3 +1778,68 @@ describe("a scheduler line prints once", () => {
     expect(claims.filter(Boolean)).toHaveLength(1);
   });
 });
+
+/**
+ * A graph as an older dev recorded it: its announcements have no edge for
+ * `waiting`, a result `dev/announce` gained later, so today's steps refuse it.
+ */
+function olderGraph(name: string): ReturnType<typeof compileDevFlow> {
+  const graph = compileDevFlow(name, [
+    { stage: "work" },
+    { stage: "check" },
+    { stage: "review" },
+    { stage: "human" },
+  ]);
+  return {
+    ...graph,
+    steps: graph.steps.map((step) => {
+      const params = step.params as { readonly use?: unknown } | undefined;
+      if (params?.use !== "dev/announce" || step.next === undefined || step.next === null) {
+        return step;
+      }
+      return {
+        ...step,
+        next: Object.fromEntries(
+          Object.entries(step.next).filter(([result]) => result !== "waiting"),
+        ),
+      };
+    }),
+  };
+}
+
+describe("graphs an older dev recorded", () => {
+  test("a refused graph on a cancelled task does not stop the repository", async () => {
+    const fixture = await setup();
+    const plan = await makePlan(fixture, { slug: "plan", auto: "run" });
+    const old = await makeTask(fixture, plan.key, "old");
+    const next = await makeTask(fixture, plan.key, "next");
+    await confirm(fixture, plan.key);
+    const graph = olderGraph("dev/repo/default/older");
+    await putTask(fixture, old.key, { phase: "cancelled", flowName: graph.name, flowGraph: graph });
+
+    const started = await tick(fixture);
+    expect(started.map(startedId)).toEqual([next.key]);
+    expect(fixture.lines).toEqual([`${next.id} ready -> running`]);
+  });
+
+  test("a refused graph on an open task is said once and the task starts on the repository's flow", async () => {
+    const fixture = await setup();
+    const plan = await makePlan(fixture, { slug: "plan", auto: "run" });
+    const task = await makeTask(fixture, plan.key, "task");
+    await confirm(fixture, plan.key);
+    const graph = olderGraph("dev/repo/default/older");
+    await putTask(fixture, task.key, { flowName: graph.name, flowGraph: graph });
+
+    const started = await tick(fixture);
+    expect(started.map(startedId)).toEqual([task.key]);
+    expect(started[0]?.flow).toBe("dev");
+    const data = taskData((await getTask(fixture.store, task.key)).data);
+    expect(data.flowName).toBe("dev");
+    expect(data.flowGraph).toBeUndefined();
+    const refused = fixture.lines.filter((line) => line.includes("keeps no recorded flow"));
+    expect(refused).toHaveLength(1);
+    expect(refused[0]).toContain(`${task.id} keeps no recorded flow`);
+    expect(refused[0]).toContain('no edge for result "waiting"');
+    expect(fixture.lines).toContain(`${task.id} ready -> running`);
+  });
+});

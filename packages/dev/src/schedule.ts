@@ -166,11 +166,44 @@ function reportFlowProblem(
   );
 }
 
-/** Re-declares the graph every task started with, so a fresh process resumes it. */
+/** What the scheduler last said about each task whose recorded graph is refused. */
+const reportedStoredFlows = new Map<string, string>();
+
+/**
+ * Declares the graph a task started with. False when the task has none, or
+ * when today's steps refuse it: a graph recorded by an older dev may lack an
+ * edge for a result a step has since gained. The refusal is said once per
+ * task and reason, and only that task loses its recorded graph; the
+ * repository's other tasks are still scheduled.
+ */
+function declareStoredFlow(ctx: TickContext, object: StoredObject): boolean {
+  const graph = taskData(object.data).flowGraph;
+  if (graph === undefined) return false;
+  try {
+    ctx.declareFlow(graph);
+    reportedStoredFlows.delete(object.id);
+    return true;
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    if (reportedStoredFlows.get(object.id) !== reason) {
+      reportedStoredFlows.set(object.id, reason);
+      writeSchedulerLine(
+        `${bareId(object.id)} keeps no recorded flow: ${reason}; a new start uses the repository's flow`,
+      );
+    }
+    return false;
+  }
+}
+
+/**
+ * Re-declares the graph every open task started with, so a fresh process
+ * resumes it. A merged or cancelled task runs nothing again.
+ */
 function declareStoredFlows(ctx: TickContext, tasks: readonly StoredObject[]): void {
   for (const object of tasks) {
-    const graph = taskData(object.data).flowGraph;
-    if (graph !== undefined) ctx.declareFlow(graph);
+    const phase = taskData(object.data).phase;
+    if (phase === "merged" || phase === "cancelled") continue;
+    declareStoredFlow(ctx, object);
   }
 }
 
@@ -359,8 +392,11 @@ async function startOne(
   fallbackFlow: StartFlow = { name: DEFAULT_FLOW_NAME },
 ): Promise<boolean> {
   const stored = taskData(object.data);
+  // A recorded graph today's steps refuse cannot run; the start takes the
+  // repository's flow and records that one instead.
   const flow =
-    stored.flowName !== undefined
+    stored.flowName !== undefined &&
+    (stored.flowGraph === undefined || declareStoredFlow(ctx, object))
       ? { name: stored.flowName, graph: stored.flowGraph }
       : fallbackFlow;
   // A task that started before the repository's flow changed keeps the graph
@@ -511,7 +547,8 @@ async function reconcileTaskRuns(
     const plan = await ctx.store.get("plan", storeKey(task.repository, task.plan));
     const requested = task.flow ?? (plan === undefined ? undefined : planData(plan.data).flow);
     const selected =
-      task.flowName !== undefined
+      task.flowName !== undefined &&
+      (task.flowGraph === undefined || declareStoredFlow(ctx, object))
         ? { name: task.flowName, graph: task.flowGraph }
         : flowFor(flows, requested);
     if (selected === undefined) {
@@ -599,7 +636,7 @@ async function scheduleRepository(
   // and a graph recorded there is declared again below so a fresh process
   // resumes a running attempt on the graph it started with.
   const flows = await declareRepositoryFlows(ctx, repository, settings);
-  declareStoredFlows(ctx, initialTasks);
+  declareStoredFlows(ctx, tasksOf(initialTasks, repository.name));
 
   // Repair a run that ended without an edge, or one whose phase was left
   // behind, before the scheduler reads phases and starts anything else.

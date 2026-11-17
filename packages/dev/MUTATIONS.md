@@ -1352,3 +1352,12 @@ the row fields.
 |---|---|---|---|
 | T-0523-M1 | packages/dev/src/waits.ts | merge was marked `primary` even when the wait was not the ready-to-merge question | `every task wait says what its choices are, and its prompt is the reason` |
 | T-0523-M2 | packages/dev/src/announce.ts | the no-change question returned the old list of choices instead of saying what changed | `the question an announce step hands over > a failed work question says why, keeps the choices and names no primary` |
+
+## older-graph — a recorded graph an older dev wrote does not stop scheduling
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| older-graph-M1 | packages/dev/src/schedule.ts | the code before the fix: every task's recorded graph, of every repository and phase, declared with a refusal thrown | `graphs an older dev recorded > a refused graph on a cancelled task does not stop the repository` |
+| older-graph-M2 | packages/dev/src/schedule.ts | `startOne` kept a recorded graph today's steps refuse | `graphs an older dev recorded > a refused graph on an open task is said once and the task starts on the repository's flow` |
+| older-graph-M3 | packages/dev/src/service.ts | a start on a built-in flow kept the task's old recorded graph | `graphs an older dev recorded > a refused graph on an open task is said once and the task starts on the repository's flow` |
+| older-graph-M4 | packages/dev/src/flow-compiler.ts | the flow name hashed the stages, not the compiled graph | `a flow's name follows its compiled graph, so a dev that compiles other steps names it anew` |

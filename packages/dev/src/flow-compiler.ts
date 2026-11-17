@@ -81,8 +81,9 @@ export const DEFAULT_FLOW_NAME = "dev";
 
 /**
  * The registered name of a repository's own flow: the repository and flow make
- * it readable, and the stages' hash makes it unique, so two repositories may
- * use the same flow name and a changed flow gets a new name instead of
+ * it readable, and the hash of the compiled graph makes it unique, so two
+ * repositories may use the same flow name, and a changed flow or a dev that
+ * compiles the same stages to other steps gets a new name instead of
  * replacing a graph a running attempt still uses.
  */
 export function flowNameFor(
@@ -92,8 +93,11 @@ export function flowNameFor(
 ): string {
   const slug = (text: string): string =>
     text.replace(/[^A-Za-z0-9_-]+/g, "_").replace(/^_+|_+$/g, "") || "flow";
+  const graph = compileDevFlow("", spec.stages, { gradingName: flow });
   const hash = createHash("sha1")
-    .update(JSON.stringify(spec.stages))
+    .update(
+      JSON.stringify({ entry: graph.entry, maxVisits: graph.maxVisits, steps: graph.steps }),
+    )
     .digest("hex")
     .slice(0, 12);
   return `dev/${slug(repository)}/${slug(flow)}/${hash}`;
