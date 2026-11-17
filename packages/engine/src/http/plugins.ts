@@ -1,6 +1,6 @@
 /** The plugin list and switch a client of `serve` reaches; the home's plugin loading is the kernel's. */
 
-import type { Actor } from "../plugin/types.ts";
+import type { Actor, HarnessModels } from "../plugin/types.ts";
 
 /**
  * Where a plugin comes from: `builtin` is a package operad ships, `home` is
@@ -21,6 +21,11 @@ export interface PluginInfo {
    * `false`, absent when it cannot tell. Only the answer is exposed.
    */
   readonly signedIn?: boolean | undefined;
+  /**
+   * A loaded harness plugin's models, with what it knows about each one. A
+   * client that reads only `list` keeps working.
+   */
+  readonly models?: HarnessModels | undefined;
 }
 
 export interface PluginSwitchOptions {

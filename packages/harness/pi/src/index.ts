@@ -12,7 +12,7 @@ import { secretValuesOf } from "@operad-io/access-match";
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
-import { isAbsolute, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   isRecord,
@@ -20,6 +20,7 @@ import {
   defineFlow,
   definePlugin,
   type HarnessModelContext,
+  type HarnessModelInfo,
   type PluginStepResult,
   type StepContext,
 } from "@operad-io/engine";
@@ -68,6 +69,7 @@ import {
 import { authFileHasCredential } from "./auth-file.ts";
 import {
   PI_LIST_TIMEOUT_MS,
+  piModelInfo,
   piModelList,
   piModelListReady,
   piModelWindows,
@@ -284,13 +286,24 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
   const piSettingsPath =
     options.piSettingsPath ?? join(homedir(), ".pi", "agent", "settings.json");
 
-  function listOptions(piCommand: string, context: HarnessModelContext) {
+  function modelsPathOf(settings: Readonly<Record<string, unknown>>): string {
+    return typeof settings.modelsPath === "string" && settings.modelsPath !== ""
+      ? settings.modelsPath
+      : DEFAULT_MODELS_PATH;
+  }
+
+  function listOptions(
+    piCommand: string,
+    context: HarnessModelContext,
+    modelsPath: string = DEFAULT_MODELS_PATH,
+  ) {
     return {
       home: context.home,
       command: piCommand,
       now,
       timeoutMs: listTimeoutMs,
       log: context.log,
+      registryPath: join(dirname(expandHome(modelsPath)), "models-store.json"),
     };
   }
 
@@ -320,24 +333,45 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
     return Object.keys(windows).length === 0 ? undefined : windows;
   }
 
+  /** What pi's kept list says about the models this chat may pick. */
+  function infoOf(
+    options: ReturnType<typeof listOptions>,
+    list: readonly string[],
+  ): Readonly<Record<string, HarnessModelInfo>> | undefined {
+    const known = piModelInfo(options);
+    const info: Record<string, HarnessModelInfo> = {};
+    for (const model of list) {
+      const found = known[model];
+      if (found !== undefined) info[model] = found;
+    }
+    return Object.keys(info).length === 0 ? undefined : info;
+  }
+
   /** The models a chat may pick and the default among them, from the kept list. */
   function piModels(
     settings: Readonly<Record<string, unknown>>,
     context: HarnessModelContext,
-  ): { list: readonly string[]; default: string | null; windows?: Readonly<Record<string, number>> | undefined } {
+  ): {
+    list: readonly string[];
+    default: string | null;
+    windows?: Readonly<Record<string, number>> | undefined;
+    info?: Readonly<Record<string, HarnessModelInfo>> | undefined;
+  } {
     const command = piCommandOf(settings);
     const configured = stringList(settings.models);
-    const options = listOptions(command, context);
+    const options = listOptions(command, context, modelsPathOf(settings));
     const list = configured ?? piModelList(options);
     const wanted =
       typeof settings.model === "string" && settings.model !== ""
         ? settings.model
         : piDefaultModel(piSettingsPath);
     const windows = windowsOf(options, list);
+    const info = infoOf(options, list);
     return {
       list,
       default: wanted !== undefined && list.includes(wanted) ? wanted : null,
       ...(windows === undefined ? {} : { windows }),
+      ...(info === undefined ? {} : { info }),
     };
   }
 
@@ -348,20 +382,27 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
   async function piModelsReady(
     settings: Readonly<Record<string, unknown>>,
     context: HarnessModelContext,
-  ): Promise<{ list: readonly string[]; default: string | null; windows?: Readonly<Record<string, number>> | undefined }> {
+  ): Promise<{
+    list: readonly string[];
+    default: string | null;
+    windows?: Readonly<Record<string, number>> | undefined;
+    info?: Readonly<Record<string, HarnessModelInfo>> | undefined;
+  }> {
     const command = piCommandOf(settings);
     const configured = stringList(settings.models);
-    const options = listOptions(command, context);
+    const options = listOptions(command, context, modelsPathOf(settings));
     const list = configured ?? (await piModelListReady(options));
     const wanted =
       typeof settings.model === "string" && settings.model !== ""
         ? settings.model
         : piDefaultModel(piSettingsPath);
     const windows = windowsOf(options, list);
+    const info = infoOf(options, list);
     return {
       list,
       default: wanted !== undefined && list.includes(wanted) ? wanted : null,
       ...(windows === undefined ? {} : { windows }),
+      ...(info === undefined ? {} : { info }),
     };
   }
 
@@ -516,12 +557,18 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
           const configured = stringList(ctx.settings.models);
           if (configured !== undefined && model !== undefined && configured.includes(model)) {
             const listed = piModelList(
-              listOptions(piCommand ?? DEFAULT_PI_COMMAND, {
-                home: ctx.home,
-                log: (message) => {
-                  void ctx.logger.write(message);
+              listOptions(
+                piCommand ?? DEFAULT_PI_COMMAND,
+                {
+                  home: ctx.home,
+                  log: (message) => {
+                    void ctx.logger.write(message);
+                  },
                 },
-              }),
+                typeof ctx.settings.modelsPath === "string"
+                  ? ctx.settings.modelsPath
+                  : DEFAULT_MODELS_PATH,
+              ),
             );
             if (listed.length > 0 && !listed.includes(model)) {
               await ctx.logger.write(`pi/agent: the model "${model}" is in settings.models but pi does not list it`);
@@ -706,6 +753,9 @@ export {
   PI_LIST_CACHE_MS,
   PI_LIST_TIMEOUT_MS,
   parsePiCatalogue,
+  parsePiCatalogueModels,
   parsePiCatalogueRows,
+  parsePiRegistry,
+  piModelInfo,
   piModelListPath,
 } from "./model-list.ts";

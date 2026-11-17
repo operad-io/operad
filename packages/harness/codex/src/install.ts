@@ -9,7 +9,7 @@
 
 import { readFileSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import type { HarnessModels } from "@operad-io/engine";
+import type { HarnessModelCapability, HarnessModelInfo, HarnessModels } from "@operad-io/engine";
 
 /** How long one probe may take. */
 const PROBE_TIMEOUT_MS = 30_000;
@@ -223,11 +223,70 @@ interface ModelsCache {
 const modelsCache = new Map<string, ModelsCache>();
 const modelsLoading = new Map<string, Promise<HarnessModels>>();
 
-/** What a probe of the app-server's model list prints: id, whether it is the default, and any window. */
+/** What a probe of the app-server's model list prints: id, whether it is the default, and what it knows. */
 interface ModelChoice {
   readonly id: string;
   readonly isDefault: boolean;
   readonly contextWindow?: number | undefined;
+  readonly name?: string | undefined;
+  readonly provider?: string | undefined;
+  readonly capabilities?: readonly HarnessModelCapability[] | undefined;
+}
+
+function textField(record: Record<string, unknown>, ...names: readonly string[]): string | undefined {
+  for (const name of names) {
+    const value = record[name];
+    if (typeof value === "string" && value.length > 0) return value;
+  }
+  return undefined;
+}
+
+function capabilityFlag(record: Record<string, unknown>, name: string): boolean | undefined {
+  const capabilities = record["capabilities"];
+  if (typeof capabilities === "object" && capabilities !== null && !Array.isArray(capabilities)) {
+    const on = (capabilities as Record<string, unknown>)[name];
+    if (on === true) return true;
+    if (on === false) return false;
+  }
+  const direct = record[name];
+  if (typeof direct === "boolean") return direct;
+  return undefined;
+}
+
+function listField(record: Record<string, unknown>, ...names: readonly string[]): readonly string[] | undefined {
+  for (const name of names) {
+    const value = record[name];
+    if (Array.isArray(value) && value.every((item) => typeof item === "string")) {
+      return value as readonly string[];
+    }
+  }
+  return undefined;
+}
+
+function capabilitiesOf(record: Record<string, unknown>): readonly HarnessModelCapability[] | undefined {
+  const found: HarnessModelCapability[] = [];
+  const input = listField(record, "input", "inputModalities", "imageInput");
+  if (
+    input?.some((item) => item === "image" || item === "image_url" || item === "vision") === true ||
+    capabilityFlag(record, "vision") === true ||
+    record["supportsImages"] === true
+  ) {
+    found.push("vision");
+  }
+  if (capabilityFlag(record, "reasoning") === true || record["supportsReasoning"] === true) {
+    found.push("reasoning");
+  }
+  if (capabilityFlag(record, "tools") === true || record["supportsTools"] === true) {
+    found.push("tools");
+  }
+  if (
+    capabilityFlag(record, "web") === true ||
+    record["webSearch"] === true ||
+    record["supportsWebSearch"] === true
+  ) {
+    found.push("web");
+  }
+  return found.length === 0 ? undefined : found;
 }
 
 function emptyModels(): HarnessModels {
@@ -249,12 +308,18 @@ function parseModels(stdout: string): readonly ModelChoice[] {
     const id = record["id"];
     if (typeof id === "string" && id.length > 0) {
       const window = record["contextWindow"] ?? record["modelContextWindow"];
+      const name = textField(record, "displayName", "name");
+      const provider = textField(record, "provider", "modelProvider");
+      const capabilities = capabilitiesOf(record);
       choices.push({
         id,
         isDefault: record["isDefault"] === true,
         ...(typeof window === "number" && Number.isInteger(window) && window > 0
           ? { contextWindow: window }
           : {}),
+        ...(name === undefined ? {} : { name }),
+        ...(provider === undefined ? {} : { provider }),
+        ...(capabilities === undefined ? {} : { capabilities }),
       });
     }
   }
@@ -293,13 +358,29 @@ async function probeModels(command: readonly string[], timeoutMs: number): Promi
     const list = choices.map((choice) => choice.id);
     const fallback = choices.find((choice) => choice.isDefault)?.id ?? list[0] ?? null;
     const windows: Record<string, number> = {};
+    const info: Record<string, HarnessModelInfo> = {};
     for (const choice of choices) {
       if (choice.contextWindow !== undefined) windows[choice.id] = choice.contextWindow;
+      if (
+        choice.name !== undefined ||
+        choice.provider !== undefined ||
+        choice.contextWindow !== undefined ||
+        choice.capabilities !== undefined
+      ) {
+        info[choice.id] = {
+          id: choice.id,
+          ...(choice.name === undefined ? {} : { name: choice.name }),
+          ...(choice.provider === undefined ? {} : { provider: choice.provider }),
+          ...(choice.contextWindow === undefined ? {} : { window: choice.contextWindow }),
+          ...(choice.capabilities === undefined ? {} : { capabilities: choice.capabilities }),
+        };
+      }
     }
     return {
       list,
       default: fallback,
       ...(Object.keys(windows).length === 0 ? {} : { windows }),
+      ...(Object.keys(info).length === 0 ? {} : { info }),
     };
   } catch {
     return emptyModels();

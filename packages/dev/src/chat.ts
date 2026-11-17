@@ -24,9 +24,11 @@ import {
 } from "@operad-io/chat";
 import {
   isRecord,
+  modelIds,
   type ActionArgsSchema,
   type ActionContext,
   type ActionTypeDefinition,
+  type HarnessModelInfo,
   type JsonValue,
   type ObjectStore,
   type PluginBaseContext,
@@ -364,6 +366,7 @@ function chatArgs(
   models: readonly string[],
   efforts: readonly string[],
   agents: readonly AgentChoices[] = [],
+  info?: Readonly<Record<string, HarnessModelInfo>> | undefined,
 ): ActionArgsSchema {
   return {
     type: "object",
@@ -377,6 +380,7 @@ function chatArgs(
       model: {
         type: "string",
         ...(models.length === 0 ? {} : { enum: [...models] }),
+        ...(info === undefined ? {} : { info }),
         description: "The model the agent uses; one from that agent's list. The agent's default when left out. It can be changed later.",
       },
       effort: {
@@ -410,10 +414,15 @@ const chatAction: ActionTypeDefinition = {
   args: chatArgs([], []),
   argsFor: (_object, env) => {
     const offered = CHAT_HARNESSES.filter((name) => (env.harnesses ?? []).includes(name));
+    const info: Record<string, HarnessModelInfo> = {};
+    for (const name of offered) {
+      for (const [id, model] of Object.entries(env.models?.[name]?.info ?? {})) info[id] = model;
+    }
     return chatArgs(
-      [...new Set(offered.flatMap((name) => env.models?.[name]?.list ?? []))],
+      [...new Set(offered.flatMap((name) => modelIds(env.models?.[name])))],
       [...new Set(offered.flatMap((name) => env.efforts?.[name]?.list ?? []))],
       offered.map((name) => ({ name, models: env.models?.[name], efforts: env.efforts?.[name] })),
+      Object.keys(info).length === 0 ? undefined : info,
     );
   },
   when: (state) => repositoryData(state).removed !== true,

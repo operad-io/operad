@@ -9,6 +9,7 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { mkdir, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import type { HarnessModelCapability, HarnessModelInfo } from "@operad-io/engine";
 
 /** How long `pi --list-models` may take before pi counts as not answering. */
 export const PI_LIST_TIMEOUT_MS = 10_000;
@@ -26,10 +27,15 @@ export function piModelListPath(home: string): string {
   return join(home, "harness", "pi", MODEL_LIST_FILE);
 }
 
-/** One row of `pi --list-models`: the model's provider/id and its context window when the table gives one. */
+/** One row of `pi --list-models`: the model's provider/id and what its columns say. */
 export interface PiCatalogueRow {
+  /** The provider/id a chat stores. */
   readonly name: string;
+  /** A display name, when the table has a name column. */
+  readonly displayName?: string | undefined;
+  readonly provider?: string | undefined;
   readonly window?: number | undefined;
+  readonly capabilities?: readonly HarnessModelCapability[] | undefined;
 }
 
 /** A human token count from pi's table (`400K`, `1M`, `1.5M`) as a whole number. */
@@ -43,27 +49,58 @@ export function parsePiTokenCount(value: string | undefined): number | undefined
   return Math.round(tokens);
 }
 
-/** The rows of `pi --list-models`: provider/id, and the context column when it is a token count. */
-export function parsePiCatalogueRows(output: string): readonly PiCatalogueRow[] {
+const CAPABILITY_COLUMNS: readonly [string, HarnessModelCapability][] = [
+  ["thinking", "reasoning"],
+  ["images", "vision"],
+  ["tools", "tools"],
+  ["web", "web"],
+];
+
+/** The rows of `pi --list-models`, with every column whose header names it. */
+export function parsePiCatalogueModels(output: string): readonly PiCatalogueRow[] {
   const found: PiCatalogueRow[] = [];
   const names = new Set<string>();
-  let header = false;
+  let header: readonly string[] | undefined;
   for (const line of output.split("\n")) {
-    const [provider, id, context] = line.trim().split(/\s+/);
-    if (provider === undefined || id === undefined) continue;
-    // Rows count only after the header; a status sentence has none.
-    if (provider === "provider" && id === "model") {
-      header = true;
+    const cells = line.trim().split(/\s+/);
+    const providerAt = cells.indexOf("provider");
+    const modelAt = cells.indexOf("model");
+    if (providerAt >= 0 && modelAt >= 0) {
+      header = cells.map((cell) => cell.toLowerCase());
       continue;
     }
-    if (!header) continue;
+    if (header === undefined) continue;
+    const at = (name: string): number => header?.indexOf(name) ?? -1;
+    const provider = cells[at("provider")] ?? cells[0];
+    const id = cells[at("model")] ?? cells[1];
+    if (provider === undefined || id === undefined || provider.length === 0 || id.length === 0) continue;
     const name = `${provider}/${id}`;
     if (names.has(name)) continue;
     names.add(name);
-    const window = parsePiTokenCount(context);
-    found.push(window === undefined ? { name } : { name, window });
+    const contextColumn = at("context");
+    const window = parsePiTokenCount(contextColumn >= 0 ? cells[contextColumn] : cells[2]);
+    const displayName = at("name") >= 0 ? cells[at("name")] : undefined;
+    const capabilities: HarnessModelCapability[] = [];
+    for (const [column, capability] of CAPABILITY_COLUMNS) {
+      const value = at(column) >= 0 ? cells[at(column)]?.toLowerCase() : undefined;
+      if (value === "yes" || value === "true" || value === "1") capabilities.push(capability);
+    }
+    found.push({
+      name,
+      ...(displayName === undefined || displayName.length === 0 ? {} : { displayName }),
+      provider,
+      ...(window === undefined ? {} : { window }),
+      ...(capabilities.length === 0 ? {} : { capabilities }),
+    });
   }
   return found;
+}
+
+/** The rows of `pi --list-models`: provider/id, and the context column when it is a token count. */
+export function parsePiCatalogueRows(output: string): readonly PiCatalogueRow[] {
+  return parsePiCatalogueModels(output).map((row) =>
+    row.window === undefined ? { name: row.name } : { name: row.name, window: row.window },
+  );
 }
 
 /**
@@ -71,7 +108,7 @@ export function parsePiCatalogueRows(output: string): readonly PiCatalogueRow[] 
  * row after the header row. Anything that is not such a row is skipped.
  */
 export function parsePiCatalogue(output: string): readonly string[] {
-  return parsePiCatalogueRows(output).map((row) => row.name);
+  return parsePiCatalogueModels(output).map((row) => row.name);
 }
 
 /** What a file under the home holds: when it was read, the rows and their windows. */
@@ -79,6 +116,7 @@ interface KeptList {
   readonly at: number;
   readonly list: readonly string[];
   readonly windows?: Readonly<Record<string, number>> | undefined;
+  readonly info?: Readonly<Record<string, HarnessModelInfo>> | undefined;
 }
 
 /** Where the list comes from and what a refresh may use. */
@@ -88,16 +126,121 @@ export interface PiModelListOptions {
   readonly now: () => number;
   readonly timeoutMs?: number | undefined;
   readonly log?: ((message: string) => void) | undefined;
+  /** pi's registry store, beside its models file; the display names come from it. */
+  readonly registryPath?: string | undefined;
 }
 
 interface KeptRead {
   readonly at: number;
   readonly list: readonly string[];
   readonly windows?: Readonly<Record<string, number>> | undefined;
+  readonly info?: Readonly<Record<string, HarnessModelInfo>> | undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+const MODEL_CAPABILITY_ORDER = ["vision", "reasoning", "tools", "web"] as const;
+
+function readCapabilities(value: unknown): readonly HarnessModelCapability[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const found: HarnessModelCapability[] = [];
+  for (const item of value) {
+    if (item === "vision" || item === "reasoning" || item === "tools" || item === "web") found.push(item);
+  }
+  return found.length === 0 ? undefined : found;
+}
+
+function readInfo(value: unknown): Readonly<Record<string, HarnessModelInfo>> | undefined {
+  if (!isRecord(value)) return undefined;
+  const info: Record<string, HarnessModelInfo> = {};
+  for (const [id, raw] of Object.entries(value)) {
+    if (!isRecord(raw)) continue;
+    const name = raw["name"];
+    const provider = raw["provider"];
+    const window = raw["window"];
+    const capabilities = readCapabilities(raw["capabilities"]);
+    info[id] = {
+      id,
+      ...(typeof name === "string" && name.length > 0 ? { name } : {}),
+      ...(typeof provider === "string" && provider.length > 0 ? { provider } : {}),
+      ...(typeof window === "number" && Number.isInteger(window) && window > 0 ? { window } : {}),
+      ...(capabilities === undefined ? {} : { capabilities }),
+    };
+  }
+  return Object.keys(info).length === 0 ? undefined : info;
+}
+
+/**
+ * What pi's registry store says about each model, by provider/id. A model's
+ * `name`, `reasoning` and its `input` list are the registry's own fields;
+ * nothing is guessed when one is absent.
+ */
+export function parsePiRegistry(value: unknown): Readonly<Record<string, HarnessModelInfo>> {
+  const info: Record<string, HarnessModelInfo> = {};
+  const add = (providerId: string, raw: unknown): void => {
+    if (!isRecord(raw)) return;
+    const id = raw["id"];
+    if (typeof id !== "string" || id.length === 0) return;
+    const provider =
+      typeof raw["provider"] === "string" && raw["provider"].length > 0 ? raw["provider"] : providerId;
+    if (provider.length === 0) return;
+    const name = raw["name"];
+    const window = raw["contextWindow"];
+    const capabilities: HarnessModelCapability[] = [];
+    const input = raw["input"];
+    if (Array.isArray(input) && input.includes("image")) capabilities.push("vision");
+    if (raw["reasoning"] === true) capabilities.push("reasoning");
+    const key = `${provider}/${id}`;
+    info[key] = {
+      id: key,
+      ...(typeof name === "string" && name.length > 0 ? { name } : {}),
+      provider,
+      ...(typeof window === "number" && Number.isInteger(window) && window > 0 ? { window } : {}),
+      ...(capabilities.length === 0 ? {} : { capabilities }),
+    };
+  };
+  if (!isRecord(value)) return info;
+  const providers = isRecord(value["providers"]) ? value["providers"] : value;
+  for (const [providerId, raw] of Object.entries(providers)) {
+    if (!isRecord(raw)) continue;
+    const models = raw["models"];
+    if (!Array.isArray(models)) continue;
+    for (const model of models) add(providerId, model);
+  }
+  return info;
+}
+
+function registryOf(options: PiModelListOptions): Readonly<Record<string, HarnessModelInfo>> {
+  if (options.registryPath === undefined) return {};
+  try {
+    return parsePiRegistry(JSON.parse(readFileSync(options.registryPath, "utf8")));
+  } catch {
+    return {};
+  }
+}
+
+function mergeInfo(base: HarnessModelInfo | undefined, found: HarnessModelInfo): HarnessModelInfo {
+  const capabilities = new Set<HarnessModelCapability>([
+    ...(base?.capabilities ?? []),
+    ...(found.capabilities ?? []),
+  ]);
+  return {
+    id: found.id,
+    ...(found.name !== undefined || base?.name !== undefined
+      ? { name: found.name ?? base?.name }
+      : {}),
+    ...(found.provider !== undefined || base?.provider !== undefined
+      ? { provider: found.provider ?? base?.provider }
+      : {}),
+    ...(found.window !== undefined || base?.window !== undefined
+      ? { window: found.window ?? base?.window }
+      : {}),
+    ...(capabilities.size === 0
+      ? {}
+      : { capabilities: MODEL_CAPABILITY_ORDER.filter((capability) => capabilities.has(capability)) }),
+  };
 }
 
 function keptOf(value: unknown): KeptList | undefined {
@@ -114,10 +257,12 @@ function keptOf(value: unknown): KeptList | undefined {
       if (typeof window === "number" && Number.isInteger(window) && window > 0) windows[name] = window;
     }
   }
+  const info = readInfo(value["info"]);
   return {
     at,
     list,
     ...(Object.keys(windows).length === 0 ? {} : { windows }),
+    ...(info === undefined ? {} : { info }),
   };
 }
 
@@ -132,6 +277,7 @@ export function readPiModelList(options: PiModelListOptions): KeptRead | undefin
           at: kept.at,
           list: kept.list,
           ...(kept.windows === undefined ? {} : { windows: kept.windows }),
+          ...(kept.info === undefined ? {} : { info: kept.info }),
         };
   } catch {
     return undefined;
@@ -183,7 +329,7 @@ async function probe(options: PiModelListOptions): Promise<readonly PiCatalogueR
       child.exited,
     ]);
     if (timedOut || exitCode !== 0) return undefined;
-    return parsePiCatalogueRows(out.trim() === "" ? err : out);
+    return parsePiCatalogueModels(out.trim() === "" ? err : out);
   } catch {
     return undefined;
   } finally {
@@ -201,13 +347,22 @@ async function writeKept(
   const temporary = join(dirname(path), `.${MODEL_LIST_FILE}.${process.pid}.${randomUUID()}.tmp`);
   await mkdir(dirname(path), { recursive: true });
   const windows: Record<string, number> = {};
+  const info: Record<string, HarnessModelInfo> = {};
   for (const row of rows) {
     if (row.window !== undefined) windows[row.name] = row.window;
+    info[row.name] = {
+      id: row.name,
+      ...(row.displayName === undefined ? {} : { name: row.displayName }),
+      ...(row.provider === undefined ? {} : { provider: row.provider }),
+      ...(row.window === undefined ? {} : { window: row.window }),
+      ...(row.capabilities === undefined ? {} : { capabilities: row.capabilities }),
+    };
   }
   const kept: KeptList = {
     at,
     list: rows.map((row) => row.name),
     ...(Object.keys(windows).length === 0 ? {} : { windows }),
+    ...(Object.keys(info).length === 0 ? {} : { info }),
   };
   await writeFile(temporary, `${JSON.stringify(kept)}\n`);
   await rename(temporary, path);
@@ -281,4 +436,18 @@ export async function piModelListReady(options: PiModelListOptions): Promise<rea
 /** The context windows of the kept model list, by provider/id; empty when none are kept. */
 export function piModelWindows(options: PiModelListOptions): Readonly<Record<string, number>> {
   return readPiModelList(options)?.windows ?? {};
+}
+
+/**
+ * What the kept model list and pi's registry say about each model, by
+ * provider/id; the kept list wins where both know a field. Empty when neither
+ * knows any model.
+ */
+export function piModelInfo(options: PiModelListOptions): Readonly<Record<string, HarnessModelInfo>> {
+  const kept = readPiModelList(options)?.info ?? {};
+  const registry = registryOf(options);
+  const info: Record<string, HarnessModelInfo> = {};
+  for (const [id, model] of Object.entries(registry)) info[id] = mergeInfo(undefined, model);
+  for (const [id, model] of Object.entries(kept)) info[id] = mergeInfo(info[id], { ...model, id });
+  return info;
 }

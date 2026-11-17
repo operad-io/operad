@@ -16,9 +16,59 @@ function load(plugin: ReturnType<typeof harness>) {
 }
 
 describe("a harness plugin's models", () => {
-  test("are offered to actions by plugin name", () => {
+  test("a bare string list still loads, and is offered to actions by plugin name", () => {
     const registry = load(harness({ list: ["a", "b"], default: "a" }));
     expect(registry.actionEnv().models).toEqual({ h: { list: ["a", "b"], default: "a" } });
+  });
+
+  test("a model may describe its id, name, provider, window and capabilities", () => {
+    const registry = load(
+      harness({
+        list: [
+          { id: "sonnet", name: "Sonnet", provider: "anthropic", window: 200_000, capabilities: ["vision", "reasoning", "tools"] },
+          "plain",
+        ],
+        default: "sonnet",
+      }),
+    );
+    expect(registry.loadedModels()).toEqual({
+      h: {
+        list: ["sonnet", "plain"],
+        default: "sonnet",
+        windows: { sonnet: 200_000 },
+        info: {
+          sonnet: {
+            id: "sonnet",
+            name: "Sonnet",
+            provider: "anthropic",
+            window: 200_000,
+            capabilities: ["vision", "reasoning", "tools"],
+          },
+        },
+      },
+    });
+  });
+
+  test("descriptions may sit in info by id, and a capability object is the same as its list", () => {
+    const registry = load(
+      harness({
+        list: ["a"],
+        default: null,
+        info: { a: { name: "A", provider: "p", vision: true, reasoning: true } },
+      }),
+    );
+    expect(registry.loadedModels().h?.info).toEqual({
+      a: { id: "a", name: "A", provider: "p", capabilities: ["vision", "reasoning"] },
+    });
+  });
+
+  test("an unknown capability, or a description of a model not in the list, is refused", () => {
+    expect(() =>
+      load(harness({ list: [{ id: "a", capabilities: ["sound"] }], default: null })),
+    ).toThrow(/capabilities/);
+    expect(() => load(harness({ list: ["a"], default: null, info: { b: { id: "b" } } }))).toThrow(
+      /must be one of the models in the list/,
+    );
   });
 
   test("a default outside the list is refused", () => {

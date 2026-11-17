@@ -6,13 +6,14 @@ import { basename, extname } from "node:path";
 import type {
   ActionArgSchema,
   AgentTimings,
+  HarnessModels,
   JsonValue,
   ObjectRef,
   ObjectStore,
   PluginFact,
   UsageTokens,
 } from "@operad-io/engine";
-import { isRecord, storedType, stringList } from "@operad-io/engine";
+import { isRecord, modelIds, storedType, stringList } from "@operad-io/engine";
 import { isAccessLevel, type AccessLevel } from "@operad-io/access-match";
 
 /** The object type of a chat. */
@@ -291,11 +292,11 @@ export function startingEffort(
  */
 export function startingModel(
   harness: string,
-  models: { readonly list: readonly string[]; readonly default: string | null } | undefined,
+  models: HarnessModels | undefined,
   asked: string | undefined,
   preferred?: string | undefined,
 ): string | undefined {
-  const list = models?.list ?? [];
+  const list = modelIds(models);
   const wanted = asked ?? preferred;
   if (wanted !== undefined) {
     if (!list.includes(wanted)) {
@@ -1052,7 +1053,7 @@ export function promptFor(pending: readonly Message[], images: ReadonlySet<strin
 /** One agent's choices for a new chat: what it lists, and what a chat starts with when none is asked for. */
 export interface AgentChoices {
   readonly name: string;
-  readonly models: { readonly list: readonly string[]; readonly default: string | null } | undefined;
+  readonly models: HarnessModels | undefined;
   readonly efforts: { readonly list: readonly string[]; readonly default: string | null } | undefined;
   /** A configured model (a bot's); it is the default only for the agent that lists it. */
   readonly preferredModel?: string | null | undefined;
@@ -1079,13 +1080,22 @@ export function agentConditionals(agents: readonly AgentChoices[]): ActionArgSch
     return { enum: [...list], ...(chosen === null || chosen === undefined ? {} : { default: chosen }) };
   };
   return agents.map((agent) => {
-    const model = pick(agent.models?.list ?? [], agent.preferredModel, agent.models?.default);
+    const list = modelIds(agent.models);
+    const model = pick(list, agent.preferredModel, agent.models?.default);
+    const info =
+      agent.models?.info === undefined
+        ? undefined
+        : Object.fromEntries(
+            Object.entries(agent.models.info).filter(([id]) => list.includes(id)),
+          );
     const effort = pick(agent.efforts?.list ?? [], agent.preferredEffort, agent.efforts?.default);
     return {
       if: { properties: { agent: { const: agent.name } }, required: ["agent"] },
       then: {
         properties: {
-          ...(Object.keys(model).length === 0 ? {} : { model: { type: "string", ...model } }),
+          ...(Object.keys(model).length === 0
+            ? {}
+            : { model: { type: "string", ...model, ...(info === undefined ? {} : { info }) } }),
           ...(Object.keys(effort).length === 0 ? {} : { effort: { type: "string", ...effort } }),
         },
       },

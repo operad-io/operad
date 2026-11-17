@@ -303,3 +303,9 @@ the row fields.
 | T-0522-M4 | packages/cli/src/code-reload.ts | a probe that hit its limit reported `finished: true`, so a check with no verdict counted as "does not load" | `a load check > that does not end is ended and reported, not waited for` |
 | T-0522-M5 | packages/cli/src/main.ts | the serve's code watch was built without `onKept`, so a check that failed or did not finish said nothing on the error output | `the serve command's code watch > is given the change a restart already tried, a bounded check and a slow retry, and reports into the notice` |
 | T-0522-M6 | packages/cli/src/code-reload.ts | `probeLoad` waited for the child without end, as before the fix | `a serve picks up changed code > a load check that does not finish leaves the old code, says so, and the next change is still taken up` (the output held only `serving …` for 45 s, as the owner's serve did for twelve hours) |
+
+## T-0530 — a harness describes each model it lists
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0530-M4 | packages/cli/src/main.ts | `GET /v1/plugins` left out a loaded harness's models | `plugins over HTTP > GET /v1/plugins carries a harness's models with what it knows about each` |

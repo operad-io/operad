@@ -13,7 +13,7 @@ import pkg from "../package.json" with { type: "json" };
 import { mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { CHAT_TYPE, agentConditionals, type AgentChoices, chatData, createChat, sendMessage, startingEffort, startingModel, titleFromMessage } from "@operad-io/chat";
-import { definePlugin, isRecord, type ActionArgSchema, type ActionArgsSchema, type ActionTypeDefinition, type JsonValue, type ObjectRow, type ObjectStore, type ObjectViews, type PluginStepResult, type SectionContent, type StepContext, type StoredObject } from "@operad-io/engine";
+import { definePlugin, isRecord, modelIds, type ActionArgSchema, type ActionArgsSchema, type ActionTypeDefinition, type HarnessModelInfo, type HarnessModels, type JsonValue, type ObjectRow, type ObjectStore, type ObjectViews, type PluginStepResult, type SectionContent, type StepContext, type StoredObject } from "@operad-io/engine";
 import {
   BOT_SETTINGS,
   DEFAULT_BOT,
@@ -109,7 +109,7 @@ export interface OpenChat {
   readonly settings: Readonly<Record<string, JsonValue>>;
   readonly harnesses: readonly string[];
   readonly bot: string;
-  readonly models?: Readonly<Record<string, { readonly list: readonly string[]; readonly default: string | null }>> | undefined;
+  readonly models?: Readonly<Record<string, HarnessModels>> | undefined;
   readonly efforts?: Readonly<Record<string, { readonly list: readonly string[]; readonly default: string | null }>> | undefined;
   readonly harness?: string | undefined;
   readonly model?: string | undefined;
@@ -173,6 +173,7 @@ function chatArgs(
   models: readonly string[] = [],
   efforts: readonly string[] = [],
   agents: readonly AgentChoices[] = [],
+  info?: Readonly<Record<string, HarnessModelInfo>> | undefined,
 ): ActionArgsSchema {
   const first = harnesses[0];
   const fallback = typeof botHarness === "string" && harnesses.includes(botHarness) ? botHarness : first;
@@ -189,6 +190,7 @@ function chatArgs(
       model: {
         type: "string",
         ...(models.length === 0 ? {} : { enum: [...models] }),
+        ...(info === undefined ? {} : { info }),
         description:
           "The model the agent uses; one from that agent's list. The bot's model, else the agent's default, when left out. It can be changed later.",
       },
@@ -244,6 +246,7 @@ function createArgs(
   models: readonly string[],
   efforts: readonly string[],
   agents: readonly AgentChoices[],
+  info?: Readonly<Record<string, HarnessModelInfo>> | undefined,
 ): ActionArgsSchema {
   const skills = home === undefined ? [] : knownSkills(home);
   const servers = home === undefined ? [] : knownMcpServers(home);
@@ -266,6 +269,7 @@ function createArgs(
       model: {
         type: "string",
         ...(models.length === 0 ? {} : { enum: [...models] }),
+        ...(info === undefined ? {} : { info }),
         description: "The model a new chat starts with; one the chosen agent lists. Left out: the agent's default.",
       },
       effort: {
@@ -301,11 +305,15 @@ const createAction: ActionTypeDefinition = {
   name: "create",
   on: BOT_TYPE,
   args: createArgs(undefined, [], [], [], []),
-  argsFor: (_object, env) =>
-    createArgs(
+  argsFor: (_object, env) => {
+    const info: Record<string, HarnessModelInfo> = {};
+    for (const name of env.harnesses ?? []) {
+      for (const [id, model] of Object.entries(env.models?.[name]?.info ?? {})) info[id] = model;
+    }
+    return createArgs(
       env.home,
       env.harnesses ?? [],
-      [...new Set((env.harnesses ?? []).flatMap((name) => env.models?.[name]?.list ?? []))],
+      [...new Set((env.harnesses ?? []).flatMap((name) => modelIds(env.models?.[name])))],
       [...new Set((env.harnesses ?? []).flatMap((name) => env.efforts?.[name]?.list ?? []))],
       (env.harnesses ?? []).map((name) => ({
         name,
@@ -314,7 +322,9 @@ const createAction: ActionTypeDefinition = {
         preferredModel: null,
         preferredEffort: null,
       })),
-    ),
+      Object.keys(info).length === 0 ? undefined : info,
+    );
+  },
   when: (state, env) => state.removed !== true && (env.harnesses ?? []).length > 0,
   async why(object, env) {
     if (object.data.removed === true) return `bot ${object.id} is no longer in the settings`;
@@ -373,11 +383,15 @@ const chatAction: ActionTypeDefinition = {
   on: BOT_TYPE,
   creates: "chat",
   args: chatArgs([], undefined),
-  argsFor: (object, env) =>
-    chatArgs(
+  argsFor: (object, env) => {
+    const info: Record<string, HarnessModelInfo> = {};
+    for (const name of env.harnesses ?? []) {
+      for (const [id, model] of Object.entries(env.models?.[name]?.info ?? {})) info[id] = model;
+    }
+    return chatArgs(
       env.harnesses ?? [],
       object.data.harness,
-      [...new Set((env.harnesses ?? []).flatMap((name) => env.models?.[name]?.list ?? []))],
+      [...new Set((env.harnesses ?? []).flatMap((name) => modelIds(env.models?.[name])))],
       [...new Set((env.harnesses ?? []).flatMap((name) => env.efforts?.[name]?.list ?? []))],
       (env.harnesses ?? []).map((name) => ({
         name,
@@ -386,7 +400,9 @@ const chatAction: ActionTypeDefinition = {
         preferredModel: typeof object.data.model === "string" ? object.data.model : null,
         preferredEffort: typeof object.data.effort === "string" ? object.data.effort : null,
       })),
-    ),
+      Object.keys(info).length === 0 ? undefined : info,
+    );
+  },
   when: (state, env) => state.removed !== true && typeof state.problem !== "string" && (env.harnesses ?? []).length > 0,
   async why(object, env) {
     if (object.data.removed === true) return `bot ${object.id} is no longer in the settings`;

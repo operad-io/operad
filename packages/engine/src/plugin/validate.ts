@@ -21,7 +21,9 @@ import {
   type CommandDefinition,
   type HarnessCapabilities,
   type HarnessEfforts,
+  type HarnessModelCapability,
   type HarnessModelContext,
+  type HarnessModelInfo,
   type HarnessModels,
   type KeyBindings,
   type MaybePromise,
@@ -845,24 +847,11 @@ function normalizeModels(
     ) => unknown;
     return (settings, context) => {
       const raw = source(settings, context);
-      const levels = normalizeLevels(raw, kind, at, "models");
-      if (levels === undefined) return { list: [], default: null };
-      const windows = normalizeWindows(raw, levels.list, at);
-      return {
-        list: levels.list,
-        default: levels.fallback,
-        ...(windows === undefined ? {} : { windows }),
-      };
+      const levels = normalizeModelLevels(raw, kind, at);
+      return levels === undefined ? { list: [], default: null } : levels;
     };
   }
-  const levels = normalizeLevels(value, kind, at, "models");
-  if (levels === undefined) return undefined;
-  const windows = normalizeWindows(value, levels.list, at);
-  return {
-    list: levels.list,
-    default: levels.fallback,
-    ...(windows === undefined ? {} : { windows }),
-  };
+  return normalizeModelLevels(value, kind, at);
 }
 
 /** A harness plugin's `modelsReady` hook: a list, possibly after waiting for one refresh. */
@@ -880,14 +869,165 @@ function normalizeModelsReady(
   ) => unknown;
   return async (settings, context) => {
     const raw = await source(settings, context);
-    const levels = normalizeLevels(raw, kind, at, "models");
-    if (levels === undefined) return { list: [], default: null };
-    const windows = normalizeWindows(raw, levels.list, at);
-    return {
-      list: levels.list,
-      default: levels.fallback,
-      ...(windows === undefined ? {} : { windows }),
-    };
+    const levels = normalizeModelLevels(raw, kind, at);
+    return levels === undefined ? { list: [], default: null } : levels;
+  };
+}
+
+/** The capabilities a model declares, as the names a client shows. */
+const MODEL_CAPABILITIES = ["vision", "reasoning", "tools", "web"] as const;
+
+function normalizeModelCapabilities(value: unknown, at: string): readonly HarnessModelCapability[] | undefined {
+  if (value === undefined) return undefined;
+  const found: HarnessModelCapability[] = [];
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      if (typeof item !== "string" || !(MODEL_CAPABILITIES as readonly string[]).includes(item)) {
+        throw new PluginError(`${at}: must be one of ${MODEL_CAPABILITIES.join(", ")}`);
+      }
+      found.push(item as HarnessModelCapability);
+    }
+  } else if (isRecord(value)) {
+    for (const capability of MODEL_CAPABILITIES) {
+      const on = value[capability];
+      if (on !== undefined && typeof on !== "boolean") {
+        throw new PluginError(`${at}.${capability}: must be a boolean`);
+      }
+      if (on === true) found.push(capability);
+    }
+    for (const key of Object.keys(value)) {
+      if (!(MODEL_CAPABILITIES as readonly string[]).includes(key)) {
+        throw new PluginError(`${at}.${key}: not a model capability`);
+      }
+    }
+  } else {
+    throw new PluginError(`${at}: must be an array of capabilities or an object of booleans`);
+  }
+  return found.length === 0 ? undefined : found;
+}
+
+/** One model's description, as the harness declares it. */
+function normalizeModelInfo(value: unknown, at: string, id: string): HarnessModelInfo {
+  if (!isRecord(value)) throw new PluginError(`${at}: must be an object`);
+  const declared = value.id;
+  if (declared !== undefined && (typeof declared !== "string" || declared.length === 0)) {
+    throw new PluginError(`${at}.id: must be a non-empty string`);
+  }
+  if (declared !== undefined && declared !== id) {
+    throw new PluginError(`${at}.id: must be "${id}"`);
+  }
+  const known = new Set(["id", "name", "provider", "window", "capabilities", ...MODEL_CAPABILITIES]);
+  for (const key of Object.keys(value)) {
+    if (!known.has(key)) throw new PluginError(`${at}.${key}: not a model field`);
+  }
+  const name = value.name;
+  if (name !== undefined && (typeof name !== "string" || name.length === 0)) {
+    throw new PluginError(`${at}.name: must be a non-empty string`);
+  }
+  const provider = value.provider;
+  if (provider !== undefined && (typeof provider !== "string" || provider.length === 0)) {
+    throw new PluginError(`${at}.provider: must be a non-empty string`);
+  }
+  const window = value.window;
+  if (window !== undefined && (typeof window !== "number" || !Number.isInteger(window) || window <= 0)) {
+    throw new PluginError(`${at}.window: must be a positive whole number`);
+  }
+  const found = new Set<HarnessModelCapability>();
+  for (const capability of MODEL_CAPABILITIES) {
+    const on = value[capability];
+    if (on === true) found.add(capability);
+    else if (on !== undefined && typeof on !== "boolean") {
+      throw new PluginError(`${at}.${capability}: must be a boolean`);
+    }
+  }
+  for (const capability of normalizeModelCapabilities(value.capabilities, `${at}.capabilities`) ?? []) {
+    found.add(capability);
+  }
+  const capabilities = MODEL_CAPABILITIES.filter((capability) => found.has(capability));
+  return {
+    id,
+    ...(typeof name === "string" ? { name } : {}),
+    ...(typeof provider === "string" ? { provider } : {}),
+    ...(typeof window === "number" ? { window } : {}),
+    ...(capabilities.length === 0 ? {} : { capabilities }),
+  };
+}
+
+/** The descriptions a harness gives beside its list, by model id. */
+function normalizeModelInfoMap(
+  value: unknown,
+  list: readonly string[],
+  at: string,
+): Readonly<Record<string, HarnessModelInfo>> | undefined {
+  if (value === undefined) return undefined;
+  const info: Record<string, HarnessModelInfo> = {};
+  const add = (raw: unknown, id: string, where: string): void => {
+    if (!list.includes(id)) {
+      throw new PluginError(`${where}: must be one of the models in the list`);
+    }
+    info[id] = normalizeModelInfo(raw, where, id);
+  };
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => {
+      if (!isRecord(item) || typeof item.id !== "string" || item.id.length === 0) {
+        throw new PluginError(`${at}: models.info[${index}].id: must be a non-empty string`);
+      }
+      add(item, item.id, `${at}: models.info[${index}]`);
+    });
+  } else if (isRecord(value)) {
+    for (const [id, item] of Object.entries(value)) {
+      add(item, id, `${at}: models.info.${id}`);
+    }
+  } else {
+    throw new PluginError(`${at}: models.info: must be an object or an array`);
+  }
+  return Object.keys(info).length === 0 ? undefined : info;
+}
+
+/** The list, fallback and descriptions of a harness plugin's `models`. */
+function normalizeModelLevels(
+  value: unknown,
+  kind: string,
+  at: string,
+): HarnessModels | undefined {
+  if (value === undefined) return undefined;
+  if (kind !== "harness") throw new PluginError(`${at}: models: only a harness plugin declares models`);
+  if (!isRecord(value) || !Array.isArray(value.list)) throw new PluginError(`${at}: models: must be { list, default }`);
+  const list: string[] = [];
+  const described: HarnessModelInfo[] = [];
+  value.list.forEach((item, index) => {
+    if (typeof item === "string" && item.length > 0) {
+      list.push(item);
+      return;
+    }
+    if (isRecord(item)) {
+      const id = item.id;
+      if (typeof id !== "string" || id.length === 0) {
+        throw new PluginError(`${at}: models.list[${index}].id: must be a non-empty string`);
+      }
+      list.push(id);
+      described.push(normalizeModelInfo(item, `${at}: models.list[${index}]`, id));
+      return;
+    }
+    throw new PluginError(`${at}: models.list[${index}]: must be a non-empty string or a model`);
+  });
+  const fallback = value.default === undefined ? null : value.default;
+  if (fallback !== null && (typeof fallback !== "string" || !list.includes(fallback))) {
+    throw new PluginError(`${at}: models.default: must be null or one of the list`);
+  }
+  const fromInfo = normalizeModelInfoMap(value.info, list, at);
+  const info: Record<string, HarnessModelInfo> = { ...(fromInfo ?? {}) };
+  for (const model of described) info[model.id] = model;
+  const declaredWindows = normalizeWindows(value, list, at);
+  const windows: Record<string, number> = { ...(declaredWindows ?? {}) };
+  for (const model of Object.values(info)) {
+    if (model.window !== undefined) windows[model.id] = model.window;
+  }
+  return {
+    list,
+    default: fallback,
+    ...(Object.keys(windows).length === 0 ? {} : { windows }),
+    ...(Object.keys(info).length === 0 ? {} : { info }),
   };
 }
 

@@ -236,3 +236,9 @@ setup it depends on, in the order they were recorded. The root
 |---|---|---|---|
 | T-0529-M2 | packages/harness/claude/src/worker.ts | the reply's context kept the first model call's usage instead of the last | `the context is the last model call's prompt, not the sum, with the model's window` |
 | T-0529-M3 | packages/harness/claude/src/protocol.ts | the 1M variant declared a 200,000-token window | `the models claude declares > each model's context window is declared, including the 1M variants` |
+
+## T-0530 — a harness describes each model it lists
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0530-M3 | packages/harness/claude/src/index.ts | a claude model declared only vision, not the reasoning and tools it knows | `the models claude declares > every model is anthropic, with vision, reasoning and tools` |

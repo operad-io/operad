@@ -100,6 +100,7 @@ A keyword that is not in the table is refused: `<path>: unknown keyword "<k>"`. 
 | `$defs`, `$ref` | record; `#/$defs/<name>` | A shared schema in the root's `$defs`, replaced by what it names at load. Fields beside `$ref` are merged over it | `<path>.$ref: must name an entry of the schema's $defs, as #/$defs/<name>`; `"<name>" refers to itself` |
 | `role` | `"note"` | The string is the person's note: a terminal prompts for it and `--note` fills it; the property must have `type: "string"`. At most one is used (the first) | `<path>.role: must be "note"`; `a note property must have type "string"` |
 | `format` | `"file"` | The string is a file a client uploaded: the client passes the upload's reference and `run` receives the stored path. An array of such strings takes several. Uploads are at most 20 MiB (`MAX_UPLOAD_BYTES`) and are kept for an hour (`UPLOAD_TTL_MS`) | `<path>.format: must be "file"`; `a file property must have type "string"`; a reference that is gone: `args.<field>: <the upload message>` |
+| `info` | record, id to a [model description](harness.md#models-and-efforts) | On a string argument that holds a model id: what the harness knows about each choice, such as `name`, `provider`, `window` and `capabilities`. A client draws its picker from it; a client that reads only `enum` keeps working | `<path>.info.<id>.capabilities: must name vision, reasoning, tools or web` |
 | `editable`, `confirm` | boolean | Meaningful in a settings schema only: see [Settings](settings.md#editing-a-setting) | `<path>.<key>: must be a boolean` |
 
 `validateActionArgs(schema, args, label)` returns `args` itself when it fits and throws `ActionArgsError`; `normalizeActionArgs(value, label)` is the load-time check; `noteProperty(schema)` finds the note field and `fileProperties(schema)` the file fields. A value that is `undefined` is treated as `{}`; one that is not an object is refused: `action "<a>": args: must be an object`.
@@ -132,7 +133,7 @@ argsFor: (object, env) => ({
 ```
 
 One conditional per agent; an agent that lists no model gets no `model` property in its `then`, so nothing can be picked for it.
-`agentConditionals(agents)` in `@operad-io/chat` builds this list from `{ name, models, efforts }`. The terminal client narrows `model` and `effort` by the chosen `agent`, and does not ask for a field the chosen agent's branch lists nothing for.
+`agentConditionals(agents)` in `@operad-io/chat` builds this list from `{ name, models, efforts }`. The terminal client narrows `model` and `effort` by the chosen `agent`, and does not ask for a field the chosen agent's branch lists nothing for. A model argument also carries `info` beside its `enum`, keyed by id, so a client can group models by provider and show their capabilities.
 
 ## The action context
 

@@ -7,7 +7,9 @@ import { cleanupTempRoots, tempRoot, waitForFile } from "../../process/test/supp
 import {
   createPiHarnessPlugin,
   parsePiCatalogue,
+  parsePiCatalogueModels,
   parsePiCatalogueRows,
+  parsePiRegistry,
   PI_LIST_CACHE_MS,
   piModelListPath,
 } from "../src/index.ts";
@@ -55,6 +57,11 @@ function writeKept(env: Env, list: readonly string[], at: number): void {
   writeFileSync(path, JSON.stringify({ at, list }));
 }
 
+/** Writes the registry store pi keeps beside its models file. */
+function writeRegistry(env: Env, value: unknown): void {
+  writeFileSync(join(env.root, "models-store.json"), JSON.stringify(value));
+}
+
 function askedTimes(env: Env): number {
   return existsSync(env.asked) ? readFileSync(env.asked, "utf8").trim().split("\n").length : 0;
 }
@@ -73,7 +80,9 @@ function registryFor(
     home: env.root,
     cwd: env.root,
     store: new MemoryPluginStore({ root: join(env.root, "store") }),
-    settings: { pi: { command: env.fake, ...settings } },
+    settings: {
+      pi: { command: env.fake, modelsPath: join(env.root, "models.json"), ...settings },
+    },
     onLog: extra.log ?? (() => undefined),
   });
 }
@@ -88,6 +97,66 @@ describe("the models pi declares", () => {
       { name: "openai/gpt-5", window: 400_000 },
       { name: "opencode-go/deepseek-v4.1-flash", window: 128_000 },
       { name: "zai/glm-5", window: 200_000 },
+    ]);
+  });
+
+  test("pi's registry fills a model's name, provider, vision and reasoning", () => {
+    expect(
+      parsePiRegistry({
+        openai: {
+          models: [
+            { id: "gpt-5", name: "GPT-5", provider: "openai", reasoning: true, input: ["text", "image"], contextWindow: 400_000 },
+            { id: "gpt-4", name: "GPT-4", provider: "openai", reasoning: false, input: ["text"] },
+          ],
+        },
+      }),
+    ).toEqual({
+      "openai/gpt-5": {
+        id: "openai/gpt-5",
+        name: "GPT-5",
+        provider: "openai",
+        window: 400_000,
+        capabilities: ["vision", "reasoning"],
+      },
+      "openai/gpt-4": { id: "openai/gpt-4", name: "GPT-4", provider: "openai" },
+    });
+  });
+
+  test("the kept list and the registry together describe each offered model", async () => {
+    const env = await fakePi(catalogueBody());
+    writeKept(env, CATALOGUE, Date.now());
+    writeRegistry(env, {
+      openai: {
+        models: [{ id: "gpt-5", name: "GPT-5", reasoning: true, input: ["text", "image"] }],
+      },
+      "opencode-go": {
+        models: [{ id: "deepseek-v4.1-flash", name: "DeepSeek V4.1 Flash", reasoning: false, input: ["text"] }],
+      },
+    });
+    const models = registryFor(env, {}).loadedModels().pi;
+    expect(models?.info?.["openai/gpt-5"]).toEqual({
+      id: "openai/gpt-5",
+      name: "GPT-5",
+      provider: "openai",
+      capabilities: ["vision", "reasoning"],
+    });
+    expect(models?.info?.["opencode-go/deepseek-v4.1-flash"]).toEqual({
+      id: "opencode-go/deepseek-v4.1-flash",
+      name: "DeepSeek V4.1 Flash",
+      provider: "opencode-go",
+    });
+  });
+
+  test("a table without a name column still gives each row's provider and known capabilities", () => {
+    expect(parsePiCatalogueModels(TABLE)).toEqual([
+      {
+        name: "openai/gpt-5",
+        provider: "openai",
+        window: 400_000,
+        capabilities: ["reasoning", "vision"],
+      },
+      { name: "opencode-go/deepseek-v4.1-flash", provider: "opencode-go", window: 128_000 },
+      { name: "zai/glm-5", provider: "zai", window: 200_000, capabilities: ["reasoning"] },
     ]);
   });
 
@@ -128,6 +197,25 @@ describe("the models pi declares", () => {
           "openai/gpt-5": 400_000,
           "opencode-go/deepseek-v4.1-flash": 128_000,
           "zai/glm-5": 200_000,
+        },
+        info: {
+          "openai/gpt-5": {
+            id: "openai/gpt-5",
+            provider: "openai",
+            window: 400_000,
+            capabilities: ["vision", "reasoning"],
+          },
+          "opencode-go/deepseek-v4.1-flash": {
+            id: "opencode-go/deepseek-v4.1-flash",
+            provider: "opencode-go",
+            window: 128_000,
+          },
+          "zai/glm-5": {
+            id: "zai/glm-5",
+            provider: "zai",
+            window: 200_000,
+            capabilities: ["reasoning"],
+          },
         },
       },
     });

@@ -883,6 +883,11 @@ export interface ActionArgSchema {
    * upload's reference and the action runs with the stored path.
    */
   readonly format?: "file" | undefined;
+  /**
+   * In an action whose value is a model id: what each choice is, by id. The
+   * kernel passes it through and does not read it.
+   */
+  readonly info?: Readonly<Record<string, HarnessModelInfo>> | undefined;
   /** In a settings schema: a client may change this setting. */
   readonly editable?: boolean | undefined;
   /** In a settings schema: changing it needs the person's confirmation. */
@@ -907,15 +912,46 @@ export interface ActionEnv {
   readonly efforts?: Readonly<Record<string, HarnessEfforts>> | undefined;
 }
 
+/** What a harness knows a model can do; only the ones it truly knows are listed. */
+export type HarnessModelCapability = "vision" | "reasoning" | "tools" | "web";
+
+/**
+ * What a harness can say about one model. `id` is the string a chat stores;
+ * a field the harness does not know is left out rather than guessed.
+ */
+export interface HarnessModelInfo {
+  readonly id: string;
+  /** A display name, when the harness has one. */
+  readonly name?: string | undefined;
+  /** The provider, such as `anthropic`, `openai` or `opencode-go`. */
+  readonly provider?: string | undefined;
+  /** The context window in tokens, when the harness knows it. */
+  readonly window?: number | undefined;
+  /** What the model can do, as far as the harness truly knows. */
+  readonly capabilities?: readonly HarnessModelCapability[] | undefined;
+}
+
 /** The models a harness plugin declares: those a chat may pick, and the one used when none is set. */
 export interface HarnessModels {
-  readonly list: readonly string[];
+  /**
+   * The model ids, or a description of each. A bare string works for a harness
+   * that knows nothing more, so a client that reads only ids keeps working.
+   */
+  readonly list: readonly (string | HarnessModelInfo)[];
   readonly default: string | null;
   /**
    * The context window of each listed model the harness knows, in tokens.
    * A model with no entry has an unknown window; it is never guessed.
    */
   readonly windows?: Readonly<Record<string, number>> | undefined;
+  /** What each listed model is, by id; a model with no entry is only an id. */
+  readonly info?: Readonly<Record<string, HarnessModelInfo>> | undefined;
+}
+
+/** The model ids a declaration lists, in its order. */
+export function modelIds(models: HarnessModels | undefined): readonly string[] {
+  if (models === undefined) return [];
+  return models.list.map((model) => (typeof model === "string" ? model : model.id));
 }
 
 /** What a harness's model hook may read besides its settings. */

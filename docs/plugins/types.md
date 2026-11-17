@@ -98,7 +98,7 @@ The types a plugin imports, by the page that explains them. The values these ent
 | `HarnessCapabilities` | What a harness plugin's agent does itself. `loadsSkills` says it loads the skill directories the step gives, so the prompt needs no list of them. `takesMessagesMidRun` says it takes a message while its run is going, so the host can hand one to it then. `accessLevels` lists the chat access levels it carries; a chat at a level it does not list refuses the reply. | [harness](harness.md) |
 | `HarnessEfforts` | The efforts a harness plugin declares: those a chat may pick, the one used when none is set, and the step argument that sets it (`--effort` when absent). | [harness](harness.md) |
 | `HarnessModelContext` | What a harness's model hook may read besides its settings: the operad home and where a background refresh reports a failure. | [harness](harness.md) |
-| `HarnessModels` | The models a harness plugin declares: those a chat may pick, and the one used when none is set. | [harness](harness.md) |
+| `HarnessModels` | The models a harness plugin declares: those a chat may pick, the one used when none is set, and what it knows about each (`id`, `name`, `provider`, `window`, `capabilities`). | [harness](harness.md) |
 | `PromptFlowParams` | The fixed params of every `<harness>:prompt` flow. | [harness](harness.md) |
 | `Usage` | What one run used. `costMicros: null` is an unknown cost; a free run is 0. `costQuality` is null exactly when the cost is unknown. | [harness](harness.md) |
 | `UsageCheck` | A type of the plugin API; its fields are described on the page. | [harness](harness.md) |

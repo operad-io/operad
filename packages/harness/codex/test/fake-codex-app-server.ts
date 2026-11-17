@@ -431,8 +431,26 @@ async function respondModels(id: unknown): Promise<void> {
     kind === "empty"
       ? []
       : [
-          { id: "gpt-fake", model: "gpt-fake", displayName: "Fake", hidden: false, isDefault: true },
-          { id: "gpt-other", model: "gpt-other", displayName: "Other", hidden: false, isDefault: false },
+          {
+            id: "gpt-fake",
+            model: "gpt-fake",
+            displayName: "Fake",
+            provider: "openai",
+            input: ["text", "image"],
+            reasoning: true,
+            hidden: false,
+            isDefault: true,
+          },
+          {
+            id: "gpt-other",
+            model: "gpt-other",
+            displayName: "Other",
+            provider: "openai",
+            input: ["text"],
+            reasoning: false,
+            hidden: false,
+            isDefault: false,
+          },
         ];
   respond(id, { data, nextCursor: null });
 }

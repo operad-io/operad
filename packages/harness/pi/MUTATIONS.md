@@ -212,3 +212,9 @@ the row fields.
 |---|---|---|---|
 | T-0529-M1 | packages/harness/pi/src/worker.ts | the reply's context used the summed usage of every call instead of the last call's prompt | `usage and cost are summed over every message_end, with a tool call between` |
 | T-0529-M4 | packages/harness/pi/src/model-list.ts | a model row's context column ignored its K/M unit | `the models pi declares > each row's context column becomes its context window` |
+
+## T-0530 — a harness describes each model it lists
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0530-M2 | packages/harness/pi/src/model-list.ts | the registry's display `name` was dropped from a model's description | `the models pi declares > pi's registry fills a model's name, provider, vision and reasoning` |

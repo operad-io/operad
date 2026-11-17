@@ -119,11 +119,46 @@ export interface ClaudeHarnessOptions {
   readonly maxKept?: number | undefined;
 }
 
-/** The models a chat may pick with this agent, the one used when none is set, and their windows. */
+/** What each model claude lists can do, as far as claude's own interface says. */
+const CLAUDE_MODEL_INFO = {
+  opus: {
+    id: "opus",
+    provider: "anthropic",
+    window: CLAUDE_CONTEXT_WINDOWS["opus"],
+    capabilities: ["vision", "reasoning", "tools"],
+  },
+  sonnet: {
+    id: "sonnet",
+    provider: "anthropic",
+    window: CLAUDE_CONTEXT_WINDOWS["sonnet"],
+    capabilities: ["vision", "reasoning", "tools"],
+  },
+  haiku: {
+    id: "haiku",
+    provider: "anthropic",
+    window: CLAUDE_CONTEXT_WINDOWS["haiku"],
+    capabilities: ["vision", "reasoning", "tools"],
+  },
+  "opus[1m]": {
+    id: "opus[1m]",
+    provider: "anthropic",
+    window: CLAUDE_CONTEXT_WINDOWS["opus[1m]"],
+    capabilities: ["vision", "reasoning", "tools"],
+  },
+  "sonnet[1m]": {
+    id: "sonnet[1m]",
+    provider: "anthropic",
+    window: CLAUDE_CONTEXT_WINDOWS["sonnet[1m]"],
+    capabilities: ["vision", "reasoning", "tools"],
+  },
+} as const;
+
+/** The models a chat may pick with this agent, the one used when none is set, and what each is. */
 export const CLAUDE_MODELS = {
   list: ["opus", "sonnet", "haiku", "opus[1m]", "sonnet[1m]"],
   default: "sonnet",
   windows: CLAUDE_CONTEXT_WINDOWS,
+  info: CLAUDE_MODEL_INFO,
 } as const;
 
 /** The efforts a chat may pick with this agent, the default, and the flag that sets it. */
