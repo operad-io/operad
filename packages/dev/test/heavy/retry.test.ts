@@ -1,5 +1,6 @@
 import { createPoolPlugin } from "@operad-io/pool";
 import { afterAll, afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { createChatPlugin } from "@operad-io/chat";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -267,7 +268,7 @@ describe("an environment failure of the work step", () => {
   test("a stopped worker is retried once, right away, and the retry is in the task", async () => {
     const worker = scripted((call) => (call === 1 ? KILLED : DONE));
     const w = await world(1);
-    const registry = registryOf(w, [createDevPlugin(), createPoolPlugin(), worker.plugin]);
+    const registry = registryOf(w, [createChatPlugin(), createDevPlugin(), createPoolPlugin(), worker.plugin]);
     const runs = new Map<string, string>();
     expect(await drive(w, registry, runs)).toEqual(["waiting"]);
     const runId = runs.get(w.tasks[0] as string) as string;
@@ -285,7 +286,7 @@ describe("an environment failure of the work step", () => {
   test("the retry is an attempt in history with its reason", async () => {
     const worker = scripted((call) => (call === 1 ? KILLED : DONE));
     const w = await world(1);
-    const registry = registryOf(w, [createDevPlugin(), createPoolPlugin(), worker.plugin]);
+    const registry = registryOf(w, [createChatPlugin(), createDevPlugin(), createPoolPlugin(), worker.plugin]);
     const runs = new Map<string, string>();
     await drive(w, registry, runs);
     const reasons: string[] = [];
@@ -303,7 +304,7 @@ describe("an environment failure of the work step", () => {
   test("a second stop in the same attempt waits for a person and says why", async () => {
     const worker = scripted(() => KILLED);
     const w = await world(1);
-    const registry = registryOf(w, [createDevPlugin(), createPoolPlugin(), worker.plugin]);
+    const registry = registryOf(w, [createChatPlugin(), createDevPlugin(), createPoolPlugin(), worker.plugin]);
     const runs = new Map<string, string>();
     expect(await drive(w, registry, runs)).toEqual(["waiting"]);
     expect(worker.state.calls).toBe(2);
@@ -320,7 +321,7 @@ describe("an environment failure of the work step", () => {
         : DONE,
     );
     const w = await world(1);
-    const registry = registryOf(w, [createDevPlugin(), createPoolPlugin(), worker.plugin]);
+    const registry = registryOf(w, [createChatPlugin(), createDevPlugin(), createPoolPlugin(), worker.plugin]);
     const runs = new Map<string, string>();
     await drive(w, registry, runs);
     const runId = runs.get(w.tasks[0] as string) as string;
@@ -337,7 +338,7 @@ describe("an environment failure of the work step", () => {
       data: { message: "the model said no" },
     }));
     const w = await world(1);
-    const registry = registryOf(w, [createDevPlugin(), createPoolPlugin(), worker.plugin]);
+    const registry = registryOf(w, [createChatPlugin(), createDevPlugin(), createPoolPlugin(), worker.plugin]);
     const runs = new Map<string, string>();
     expect(await drive(w, registry, runs)).toEqual(["waiting"]);
     expect(worker.state.calls).toBe(1);
@@ -349,7 +350,7 @@ describe("an environment failure of the work step", () => {
     const clock = manualClock();
     const worker = scripted(() => DONE);
     const w = await world(1);
-    const without = registryOf(w, [createDevPlugin(), worker.plugin]);
+    const without = registryOf(w, [createChatPlugin(), createDevPlugin(), worker.plugin]);
     const runs = new Map<string, string>();
     expect(await drive(w, without, runs)).toEqual(["blocked"]);
     clock.advance(10 * MINUTE);
@@ -358,7 +359,7 @@ describe("an environment failure of the work step", () => {
     expect((await taskOf(w, w.tasks[0] as string)).retry?.state).toBe("waiting");
     expect(waitingReasons(w)).toEqual([]);
 
-    const withPool = registryOf(w, [createDevPlugin(), createPoolPlugin(), worker.plugin]);
+    const withPool = registryOf(w, [createChatPlugin(), createDevPlugin(), createPoolPlugin(), worker.plugin]);
     expect(await drive(w, withPool, runs)).toEqual(["waiting"]);
     expect(worker.state.calls).toBe(1);
     expect(waitingReasons(w)).toEqual(["work did nothing"]);
@@ -369,7 +370,7 @@ describe("an environment failure of the work step", () => {
     const clock = manualClock();
     const worker = scripted(() => DONE);
     const w = await world(1, { retry: { environmentWaitMinutes: 5 } });
-    const without = registryOf(w, [createDevPlugin(), worker.plugin]);
+    const without = registryOf(w, [createChatPlugin(), createDevPlugin(), worker.plugin]);
     const runs = new Map<string, string>();
     expect(await drive(w, without, runs)).toEqual(["blocked"]);
     clock.advance(4 * MINUTE);
@@ -389,7 +390,7 @@ describe("a step that is not loaded, for several tasks", () => {
     const clock = manualClock();
     const worker = scripted(() => DONE);
     const w = await world(2);
-    const without = registryOf(w, [createDevPlugin(), worker.plugin]);
+    const without = registryOf(w, [createChatPlugin(), createDevPlugin(), worker.plugin]);
     const runs = new Map<string, string>();
     expect(await drive(w, without, runs)).toEqual(["blocked", "blocked"]);
     clock.advance(30 * MINUTE);
@@ -397,7 +398,7 @@ describe("a step that is not loaded, for several tasks", () => {
     expect(waitingReasons(w)).toEqual([]);
     for (const key of w.tasks) expect((await taskOf(w, key)).phase).toBe("running");
 
-    const withPool = registryOf(w, [createDevPlugin(), createPoolPlugin(), worker.plugin]);
+    const withPool = registryOf(w, [createChatPlugin(), createDevPlugin(), createPoolPlugin(), worker.plugin]);
     expect(await drive(w, withPool, runs)).toEqual(["waiting", "waiting"]);
     expect(worker.state.calls).toBe(2);
     // Each task waits for a reason of its own (the fake worker changed
@@ -414,7 +415,7 @@ describe("settings that cannot be read", () => {
   test("the work step says so, and the retry waits until they can be read", async () => {
     const clock = manualClock();
     const w = await world(1);
-    const registry = registryOf(w, [createDevPlugin(), createPoolPlugin(), scripted(() => DONE).plugin]);
+    const registry = registryOf(w, [createChatPlugin(), createDevPlugin(), createPoolPlugin(), scripted(() => DONE).plugin]);
     const key = w.tasks[0] as string;
     const object = { type: "task", id: key, data: {} };
     const path = join(w.remote.repository, ".operad", "dev.json");
@@ -451,7 +452,7 @@ describe("settings that cannot be read", () => {
   test("a stopped run whose settings still cannot be read waits for them instead of spending its retry", async () => {
     manualClock();
     const w = await world(1);
-    const registry = registryOf(w, [createDevPlugin(), createPoolPlugin(), scripted(() => DONE).plugin]);
+    const registry = registryOf(w, [createChatPlugin(), createDevPlugin(), createPoolPlugin(), scripted(() => DONE).plugin]);
     const key = w.tasks[0] as string;
     const object = { type: "task", id: key, data: {} };
     writeFileSync(join(w.remote.repository, ".operad", "dev.json"), "{ not json");
@@ -467,7 +468,7 @@ describe("settings that cannot be read", () => {
   test("the bound runs out and the task waits for a person with the cause", async () => {
     const clock = manualClock();
     const w = await world(1);
-    const registry = registryOf(w, [createDevPlugin(), createPoolPlugin(), scripted(() => DONE).plugin]);
+    const registry = registryOf(w, [createChatPlugin(), createDevPlugin(), createPoolPlugin(), scripted(() => DONE).plugin]);
     const key = w.tasks[0] as string;
     const object = { type: "task", id: key, data: {} };
     writeFileSync(join(w.remote.repository, ".operad", "dev.json"), "{ not json");
@@ -490,7 +491,7 @@ describe("settings that cannot be read, in the worktree step", () => {
   test("a recovered worktree step waits for the settings, then runs again", async () => {
     const clock = manualClock();
     const w = await world(1);
-    const registry = registryOf(w, [createDevPlugin(), createPoolPlugin(), scripted(() => DONE).plugin]);
+    const registry = registryOf(w, [createChatPlugin(), createDevPlugin(), createPoolPlugin(), scripted(() => DONE).plugin]);
     const key = w.tasks[0] as string;
     const found = registry.flow("dev");
     const steps = found?.flow.steps ?? [];
@@ -531,7 +532,7 @@ describe("a spent retry hands the task to a person", () => {
   test("a recovered run that gives up says waiting, not the phase it had", async () => {
     manualClock();
     const w = await world(1);
-    const registry = registryOf(w, [createDevPlugin(), createPoolPlugin(), scripted(() => DONE).plugin]);
+    const registry = registryOf(w, [createChatPlugin(), createDevPlugin(), createPoolPlugin(), scripted(() => DONE).plugin]);
     const key = w.tasks[0] as string;
     const object = { type: "task", id: key, data: {} };
     const before = await taskOf(w, key);
@@ -582,7 +583,7 @@ describe("a real process killed by a signal", () => {
     };
     const pi = module.createPiHarnessPlugin({ command: process.execPath, args: [wrapper] });
     const w = await world(1, { worker: { use: "pi/agent", args: [] } });
-    const registry = registryOf(w, [createDevPlugin(), createPoolPlugin(), createShellPlugin(), pi]);
+    const registry = registryOf(w, [createChatPlugin(), createDevPlugin(), createPoolPlugin(), createShellPlugin(), pi]);
     const runs = new Map<string, string>();
     expect(await drive(w, registry, runs)).toEqual(["waiting"]);
     const runId = runs.get(w.tasks[0] as string) as string;

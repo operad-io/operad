@@ -1,4 +1,5 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
+import { createChatPlugin } from "@operad-io/chat";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createViews, PluginRegistry } from "@operad-io/engine";
@@ -27,7 +28,7 @@ afterEach(() => {
 async function setup() {
   const root = await tempRoot();
   const store = storeAt(root);
-  const registry = new PluginRegistry([createDevPlugin()], { store, storeRoot: store.root });
+  const registry = new PluginRegistry([createChatPlugin(), createDevPlugin()], { store, storeRoot: store.root });
   const views = createViews({ registry, store, onLog: () => undefined });
   opened.push(views);
   const alphaPath = await makeGitRepository(root, "alpha");
@@ -172,7 +173,7 @@ describe("the repo type", () => {
     const { activeTasks: _dropped, ...old } = stored.data;
     await store.put("repo", "alpha", old, "test:old-repo");
     const again = storeAt(root);
-    const registry = new PluginRegistry([createDevPlugin()], { store: again, storeRoot: again.root });
+    const registry = new PluginRegistry([createChatPlugin(), createDevPlugin()], { store: again, storeRoot: again.root });
     const fresh = createViews({ registry, store: again, onLog: () => undefined });
     opened.push(fresh);
     expect((await fresh.get("repo:alpha")).row.mark).toBe("running");
@@ -218,7 +219,7 @@ describe("the repo type", () => {
     }, "test:legacy");
     // A fresh store handle has not migrated yet.
     const again = storeAt(root);
-    const registry = new PluginRegistry([createDevPlugin()], { store: again, storeRoot: again.root });
+    const registry = new PluginRegistry([createChatPlugin(), createDevPlugin()], { store: again, storeRoot: again.root });
     const fresh = createViews({ registry, store: again, onLog: () => undefined });
     opened.push(fresh);
     // No dev command runs first: the list itself carries the repository over.

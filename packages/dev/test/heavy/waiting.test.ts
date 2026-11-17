@@ -8,6 +8,7 @@ import {
   type AskRequest,
   type StepEvent,
 } from "@operad-io/engine";
+import { createChatPlugin } from "@operad-io/chat";
 import plugin from "../../src/index.ts";
 import {
   waitingPrompt,
@@ -43,7 +44,7 @@ async function setup() {
   const task = await addTask(store, { plan: plan.id, slug: "one", title: "One" });
   const storeRoot = store.root;
   const log = openLog({ backend: "sqlite", path: join(storeRoot, "log", "log.sqlite") });
-  const registry = new PluginRegistry([plugin], {
+  const registry = new PluginRegistry([createChatPlugin(), plugin], {
     home: root,
     cwd: repositoryPath,
     store,

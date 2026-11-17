@@ -8,6 +8,7 @@ import { createShellPlugin } from "@operad-io/shell";
 import { SqlitePluginStore, PluginRegistry } from "@operad-io/engine";
 import { createPoolPlugin } from "@operad-io/pool";
 import { createDevPlugin } from "../../src/index.ts";
+import { createChatPlugin } from "@operad-io/chat";
 
 const [storeRoot, repository] = process.argv.slice(2);
 if (storeRoot === undefined || repository === undefined) {
@@ -15,7 +16,7 @@ if (storeRoot === undefined || repository === undefined) {
 }
 
 const store = new SqlitePluginStore({ root: storeRoot });
-const registry = new PluginRegistry([createDevPlugin(), createPoolPlugin(), createShellPlugin()], {
+const registry = new PluginRegistry([createChatPlugin(), createDevPlugin(), createPoolPlugin(), createShellPlugin()], {
   home: storeRoot,
   cwd: repository,
   store,

@@ -14,6 +14,7 @@ import {
   chatData,
   chatFacts,
   chatRef,
+  ACCESS_ACTION_REQUEST,
   ACCESS_FACT,
   CLOSED_FACT,
   COMMAND_FACT,
@@ -388,8 +389,10 @@ function accessArgs(): ActionArgsSchema {
 
 /**
  * Prepares a change of the level in the plugin that owns what the level applies
- * to: a repository chat opens its worktree before it becomes writable. A step
- * that cannot prepare the change refuses it, so the level stays as it was.
+ * to: a repository chat opens its worktree before it becomes writable. The
+ * action is marked on the in-memory chat only while it is called, so no client
+ * offers it. An action that cannot prepare the change refuses it, so the level
+ * stays as it was.
  */
 async function prepareAccess(
   ctx: ActionContext,
@@ -397,26 +400,18 @@ async function prepareAccess(
   chatId: string,
   level: AccessLevel,
 ): Promise<void> {
-  if (chat.accessStep === undefined) return;
-  if (ctx.runStep === undefined) {
+  if (chat.accessAction === undefined) return;
+  if (ctx.act === undefined) {
     throw new Error(`chat ${chatId} cannot change its access here`);
   }
-  const outcome = await ctx.runStep(
-    chat.accessStep,
-    { chat: chatId, level },
-    {
-      runId: ctx.runId ?? `action:chat/access:${chatId}`,
-      object: ctx.object,
-      signal: ctx.signal,
-    },
-  );
-  if (outcome.result === "done") return;
-  const data = isRecord(outcome.data) ? outcome.data : {};
-  throw new Error(
-    typeof data.message === "string" && data.message.length > 0
-      ? data.message
-      : `chat ${chatId} could not prepare its access level`,
-  );
+  const original = ctx.object.data;
+  const marked: Record<string, unknown> = { ...original, [ACCESS_ACTION_REQUEST]: true };
+  Object.defineProperty(ctx.object, "data", { value: marked, configurable: true, writable: true });
+  try {
+    await ctx.act(chat.accessAction, { level });
+  } finally {
+    Object.defineProperty(ctx.object, "data", { value: original, configurable: true, writable: true });
+  }
 }
 
 const accessAction: ActionTypeDefinition = {

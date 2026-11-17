@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { listPending, PluginRegistry } from "@operad-io/engine";
 import poolPlugin from "@operad-io/pool";
+import { createChatPlugin } from "@operad-io/chat";
 import plugin from "../../src/index.ts";
 import { schedulerTestHooks } from "../../src/schedule.ts";
 import {
@@ -58,7 +59,7 @@ async function setup(
   const root = await tempRoot();
   const store = storeAt(root);
   const registry = new PluginRegistry(
-    plugins === "all" ? [plugin, poolPlugin] : [plugin],
+    plugins === "all" ? [createChatPlugin(), plugin, poolPlugin] : [createChatPlugin(), plugin],
     { home: root, cwd: root, store, storeRoot: store.root },
   );
   const errors: string[] = [];
@@ -263,7 +264,7 @@ describe("a plugin dev needs that the home does not load", () => {
     expect(items[0]?.prompt).toContain("`operad plugin enable pool`");
 
     // Loaded again, the same task starts.
-    const loaded = new PluginRegistry([plugin, poolPlugin], {
+    const loaded = new PluginRegistry([createChatPlugin(), plugin, poolPlugin], {
       home: fixture.root,
       cwd: fixture.root,
       store: fixture.store,
@@ -292,7 +293,7 @@ describe("a stopped task when a plugin dev needs is missing", () => {
     expect(fixture.registry.takeStartedRuns()).toEqual([]);
     expect(taskData((await getTask(fixture.store, task)).data).phase).toBe("running");
 
-    const loaded = new PluginRegistry([plugin, poolPlugin], {
+    const loaded = new PluginRegistry([createChatPlugin(), plugin, poolPlugin], {
       home: fixture.root,
       cwd: fixture.root,
       store: fixture.store,

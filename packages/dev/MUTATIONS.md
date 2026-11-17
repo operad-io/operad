@@ -1372,5 +1372,6 @@ the row fields.
 
 | id | file | mutation | failing test |
 |---|---|---|---|
-| T-0526-M1 | packages/dev/src/chat.ts | `chat_access` returned `done` instead of opening the chat's worktree | `a repository chat's access level > /access edits opens work/chat-<id>, moves the chat there, and a write passes without a question` (and `/access full does the same`, and the failed open) |
-| T-0526-M2 | packages/dev/src/chat.ts | `chat_access` opened a worktree for every level, not only `edits` and `full` | `a repository chat's access level > ask and plan in the main clone open no worktree` |
+| T-0526-M1 | packages/dev/src/chat.ts | the `dev/chat_access` action returned success instead of opening the chat's worktree | `a repository chat's access level > /access edits opens work/chat-<id>, moves the chat there, and a write passes without a question` (and `/access full does the same`, and the failed open) |
+| T-0526-M2 | packages/dev/src/chat.ts | the `dev/chat_access` action opened a worktree for every level, not only `edits` and `full` | `a repository chat's access level > ask and plan in the main clone open no worktree` |
+| T-0526-M6 | packages/dev/src/chat.ts | `dev/chat_access` was offered to clients instead of only while `chat:access` calls it | `a repository chat's access level > /access edits opens work/chat-<id>, moves the chat there, and a write passes without a question` |

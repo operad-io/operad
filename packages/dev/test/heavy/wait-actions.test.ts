@@ -15,6 +15,7 @@ import {
   type KernelState,
   type StepShape,
 } from "@operad-io/engine";
+import { createChatPlugin } from "@operad-io/chat";
 import plugin from "../../src/index.ts";
 import devFlow from "../../flows/dev.flow.ts";
 import { compileDevFlow } from "../../src/flow-compiler.ts";
@@ -122,7 +123,7 @@ async function setup(flow: FlowDefinition, attempt: TaskAttempt | undefined) {
   const repositoryPath = await makeGitRepository(root);
   const store = storeAt(root);
   const answers: string[] = [];
-  const registry = new PluginRegistry([plugin], {
+  const registry = new PluginRegistry([createChatPlugin(), plugin], {
     store,
     storeRoot: store.root,
     onAnswer: async (_runId, choice) => {

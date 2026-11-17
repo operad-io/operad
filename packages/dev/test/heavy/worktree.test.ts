@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
+import { createChatPlugin } from "@operad-io/chat";
 import {
   existsSync,
   mkdirSync,
@@ -75,7 +76,7 @@ async function fixture(): Promise<Fixture> {
     title: "Task",
     brief: "Change the README.",
   });
-  const registry = new PluginRegistry([createDevPlugin(), createShellPlugin()], {
+  const registry = new PluginRegistry([createChatPlugin(), createDevPlugin(), createShellPlugin()], {
     home: root,
     cwd: remote.repository,
     store,

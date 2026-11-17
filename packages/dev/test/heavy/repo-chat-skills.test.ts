@@ -1,9 +1,10 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { createChatPlugin, CHAT_TYPE } from "@operad-io/chat";
+import { CHAT_TYPE, createChatPlugin } from "@operad-io/chat";
 import {
   PluginRegistry,
+  Views,
   definePlugin,
   type JsonValue,
   type PluginStepResult,
@@ -258,7 +259,10 @@ describe("a repository chat's access level", () => {
     const moved = await chat(r, id);
     expect(moved.data.cwd).toBe(worktree);
     expect(moved.data.accessLevel).toBe("edits");
-    expect(moved.data.accessStep).toBe("dev/chat_access");
+    expect(moved.data.accessAction).toBe("dev/chat_access");
+    const views = new Views({ registry: r.registry, store: r.store, onLog: () => undefined });
+    expect((await views.get(`chat:${id}`)).actions.map((action) => action.name)).not.toContain("dev:chat_access");
+    expect(moved.data.accessActionRequest).toBeUndefined();
     expect(existsSync(worktree)).toBe(true);
     expect(git(worktree, ["rev-parse", "--abbrev-ref", "HEAD"]).out).toBe(`work/chat-${id}`);
     expect(git(path, ["rev-parse", "HEAD"]).out).toBe(head);

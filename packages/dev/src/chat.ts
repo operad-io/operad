@@ -6,6 +6,7 @@
  */
 
 import {
+  ACCESS_ACTION_REQUEST,
   CHAT_TYPE,
   ENTRY_FACT,
   WORKTREE_EVENT,
@@ -24,9 +25,11 @@ import {
 import {
   isRecord,
   type ActionArgsSchema,
+  type ActionContext,
   type ActionTypeDefinition,
   type JsonValue,
   type ObjectStore,
+  type PluginBaseContext,
   type PluginStepResult,
   type StepContext,
 } from "@operad-io/engine";
@@ -63,8 +66,8 @@ export const CHAT_ACCESS: Readonly<Record<string, JsonValue>> = {
 /** The step a repository chat calls at every reply to read its skills and access. */
 export const CHAT_SETTINGS_STEP = "dev/chat_settings";
 
-/** The step a repository chat asks before it changes its access level. */
-export const CHAT_ACCESS_STEP = "dev/chat_access";
+/** The action a repository chat runs before it changes its access level. */
+export const CHAT_ACCESS_ACTION = "dev/chat_access";
 
 /** The most bytes of the repository's instruction file a chat starts with. */
 export const CHAT_CONTEXT_FILE_MAX_BYTES = 32 * 1024;
@@ -464,7 +467,7 @@ const chatAction: ActionTypeDefinition = {
         accessDefault: "plan",
         skills: skills.directories,
         refresh: CHAT_SETTINGS_STEP,
-        accessStep: CHAT_ACCESS_STEP,
+        accessAction: CHAT_ACCESS_ACTION,
         title:
           input.title ??
           (input.message === undefined ? undefined : titleFromMessage(input.message)) ??
@@ -476,9 +479,6 @@ const chatAction: ActionTypeDefinition = {
     return { text: `opened chat ${id}${sent === undefined ? "" : `; ${sent}`}`, opens: `chat:${id}` };
   },
 };
-
-/** The actions of the chat part of dev. */
-export const chatActions: readonly ActionTypeDefinition[] = [chatAction];
 
 function failed(message: string): PluginStepResult {
   return { result: "failed", data: { message } };
@@ -548,26 +548,127 @@ export async function runChatSettings(ctx: StepContext, params: unknown): Promis
 }
 
 /**
- * Step `dev/chat_access`: prepares a change of a repository chat's access level.
- * A chat still in the main clone that is raised to `edits` or `full` first gets
- * its worktree, exactly as the worktree answer gives it; a chat already in its
+ * The action a repository chat runs before its access level changes: a chat
+ * still in the main clone that is raised to `edits` or `full` first gets its
+ * worktree, exactly as the worktree answer gives it. A chat already in its
  * worktree, a bot chat and a level below `edits` need nothing. A worktree that
- * cannot be opened fails the change, so the level stays as it was.
+ * cannot be opened refuses the change, so the level stays as it was. It is
+ * hidden from clients: the chat marks its in-memory object only while it calls
+ * this action.
  */
-export async function runChatAccess(ctx: StepContext, params: unknown): Promise<PluginStepResult> {
-  const chatId = isRecord(params) && typeof params.chat === "string" ? params.chat : undefined;
-  const level = isRecord(params) && typeof params.level === "string" ? params.level : undefined;
-  if (chatId === undefined || level === undefined) return failed("the chat and its new level are needed");
+export async function runChatAccess(ctx: ActionContext, args: unknown): Promise<unknown> {
+  const level = isRecord(args) && typeof args.level === "string" ? args.level : undefined;
+  if (level === undefined) throw new Error("the chat's new access level is needed");
+  const stored = await ctx.store.get(CHAT_TYPE, ctx.object.id);
+  if (stored === undefined) throw new Error(`there is no chat ${ctx.object.id}`);
+  if (level !== "edits" && level !== "full") return "no worktree is needed";
+  if (typeof stored.data.worktree === "object" && stored.data.worktree !== null) {
+    return "the chat already has its worktree";
+  }
+  const chat = chatData(stored.data);
+  const parent = typeof chat.parent === "string" ? chat.parent : "";
+  if (!parent.startsWith("repo:")) return "a bot chat works in its own directory";
+  const result = await openChatWorktree(
+    ctx,
+    ctx.object.id,
+    ctx.runId ?? `action:dev/chat_access:${ctx.object.id}`,
+    "action:dev/chat_access",
+  );
+  const data = isRecord(result.data) ? result.data : {};
+  if (result.result !== "done") {
+    throw new Error(
+      typeof data.message === "string" && data.message.length > 0
+        ? data.message
+        : `chat ${ctx.object.id} could not open its worktree`,
+    );
+  }
+  return "the chat now has its worktree";
+}
+
+const chatAccessAction: ActionTypeDefinition = {
+  name: "chat_access",
+  on: CHAT_TYPE,
+  args: {
+    type: "object",
+    properties: { level: { type: "string" } },
+    required: ["level"],
+    additionalProperties: false,
+  },
+  when: (state) => state[ACCESS_ACTION_REQUEST] === true,
+  run: runChatAccess,
+};
+
+/** The actions of the chat part of dev. */
+export const chatActions: readonly ActionTypeDefinition[] = [chatAction, chatAccessAction];
+
+/** Opens a chat's worktree and records where it moved; shared by the step and the access action. */
+async function openChatWorktree(
+  ctx: Pick<PluginBaseContext, "store" | "facts">,
+  chatId: string,
+  runId: string,
+  cause: string,
+): Promise<PluginStepResult> {
   const stored = await ctx.store.get(CHAT_TYPE, chatId);
   if (stored === undefined) return failed(`there is no chat ${chatId}`);
-  if (level !== "edits" && level !== "full") return { result: "done", data: { moved: false } };
   if (typeof stored.data.worktree === "object" && stored.data.worktree !== null) {
     return { result: "done", data: { moved: false } };
   }
   const chat = chatData(stored.data);
   const parent = typeof chat.parent === "string" ? chat.parent : "";
-  if (!parent.startsWith("repo:")) return { result: "done", data: { moved: false } };
-  return runChatWorktree(ctx);
+  const name = parent.startsWith("repo:") ? parent.slice("repo:".length) : undefined;
+  const repoObject = name === undefined ? undefined : await ctx.store.get("repo", name);
+  if (repoObject === undefined) return failed(`chat ${chatId} is not a chat about a repository`);
+  const repository = repositoryData(repoObject.data);
+
+  let settings;
+  try {
+    settings = await readDevSettings(repository.path);
+  } catch (error) {
+    return failed(error instanceof DevError ? error.message : String(error));
+  }
+  const worktreeName = chatWorktreeName(chatId);
+  const prepared = prepareWorktree(repository, settings, worktreeName);
+  if (prepared.kind !== "ready") {
+    return failed(prepared.message ?? `cannot open a worktree for chat ${chatId}`);
+  }
+  const path = worktreePath(repository.path, settings, worktreeName);
+  const branch = workBranch(worktreeName);
+
+  // Read again: the reply step may have moved the session while git ran.
+  const fresh = await ctx.store.get(CHAT_TYPE, chatId);
+  if (fresh === undefined) return failed(`there is no chat ${chatId}`);
+  if (typeof fresh.data.worktree === "object" && fresh.data.worktree !== null) {
+    return { result: "done", data: { moved: false } };
+  }
+  let skills: ChatSkillList;
+  try {
+    skills = repositoryChatSkills(settings, path);
+  } catch (error) {
+    return failed(error instanceof Error ? error.message : String(error));
+  }
+  const clean: Record<string, unknown> = { ...fresh.data };
+  // Only chat:access marks this in memory, to call its hidden action; it is never stored.
+  delete clean[ACCESS_ACTION_REQUEST];
+  await ctx.store.put(
+    CHAT_TYPE,
+    chatId,
+    {
+      ...clean,
+      cwd: path,
+      access: chatAccess(skills.roots, false),
+      skills: [...skills.directories],
+      worktree: { path, branch },
+    },
+    cause,
+  );
+  // The transcript says where the chat moved, once. It is an entry of the
+  // worktree run, not of a reply, so it does not become the agent's words.
+  await ctx.facts.append({
+    type: ENTRY_FACT,
+    object: chatRef(chatId),
+    data: { runId, kind: "worktree", text: WORKTREE_NOTE },
+  });
+  return { result: "done", data: { moved: true, path, branch } };
 }
 
 /**
@@ -578,74 +679,19 @@ export async function runChatAccess(ctx: StepContext, params: unknown): Promise<
 export async function runChatWorktree(ctx: StepContext): Promise<PluginStepResult> {
   const object = ctx.object;
   if (object === undefined || object.type !== CHAT_TYPE) return failed("this runs on a chat");
-  const stored = await ctx.store.get(CHAT_TYPE, object.id);
-  if (stored === undefined) return failed(`there is no chat ${object.id}`);
-  if (typeof stored.data.worktree === "object" && stored.data.worktree !== null) {
-    return { result: "done", data: { moved: false } };
-  }
-  const chat = chatData(stored.data);
-  const parent = typeof chat.parent === "string" ? chat.parent : "";
-  const name = parent.startsWith("repo:") ? parent.slice("repo:".length) : undefined;
-  const repoObject = name === undefined ? undefined : await ctx.store.get("repo", name);
-  if (repoObject === undefined) return failed(`chat ${object.id} is not a chat about a repository`);
-  const repository = repositoryData(repoObject.data);
-
-  let settings;
-  try {
-    settings = await readDevSettings(repository.path);
-  } catch (error) {
-    return failed(error instanceof DevError ? error.message : String(error));
-  }
-  const worktreeName = chatWorktreeName(object.id);
-  const prepared = prepareWorktree(repository, settings, worktreeName);
-  if (prepared.kind !== "ready") {
-    return failed(prepared.message ?? `cannot open a worktree for chat ${object.id}`);
-  }
-  const path = worktreePath(repository.path, settings, worktreeName);
-  const branch = workBranch(worktreeName);
-
-  // Read again: the reply step may have moved the session while git ran.
-  const fresh = await ctx.store.get(CHAT_TYPE, object.id);
-  if (fresh === undefined) return failed(`there is no chat ${object.id}`);
-  if (typeof fresh.data.worktree === "object" && fresh.data.worktree !== null) {
-    return { result: "done", data: { moved: false } };
-  }
-  let skills: ChatSkillList;
-  try {
-    skills = repositoryChatSkills(settings, path);
-  } catch (error) {
-    return failed(error instanceof Error ? error.message : String(error));
-  }
-  await ctx.store.put(
-    CHAT_TYPE,
-    object.id,
-    {
-      ...fresh.data,
-      cwd: path,
-      access: chatAccess(skills.roots, false),
-      skills: [...skills.directories],
-      worktree: { path, branch },
-    },
-    "step:dev/chat_worktree",
-  );
-  // The transcript says where the chat moved, once. It is an entry of the
-  // worktree run, not of a reply, so it does not become the agent's words.
-  await ctx.facts.append({
-    type: ENTRY_FACT,
-    object: chatRef(object.id),
-    data: { runId: ctx.runId, kind: "worktree", text: WORKTREE_NOTE },
-  });
+  const result = await openChatWorktree(ctx, object.id, ctx.runId, "step:dev/chat_worktree");
+  const data = isRecord(result.data) ? result.data : {};
   // A live yes ended the reply that asked; answer the same message again now
   // that the chat is writable. A yes that came after the reply ended only
   // opens the worktree, so it starts no reply.
-  if (ctx.trigger?.type === WORKTREE_EVENT && !lateWorktree(ctx)) {
+  if (data.moved === true && ctx.trigger?.type === WORKTREE_EVENT && !lateWorktree(ctx)) {
     await ctx.emit({
       type: CHAT_REPLY_EVENT,
       key: `worktree:${object.id}`,
       object: `${CHAT_TYPE}:${object.id}`,
     });
   }
-  return { result: "done", data: { moved: true, path, branch } };
+  return result;
 }
 
 /** Whether the event says its yes arrived after the asking reply had ended. */

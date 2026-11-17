@@ -1354,34 +1354,6 @@ export class PluginRegistry {
                 ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
               }),
           }),
-      runStep: (use, params, stepOptions) =>
-        this.runStepInner(
-          use,
-          params,
-          {
-            ...stepOptions,
-            ...(stepOptions.object === undefined && object !== undefined ? { object } : {}),
-            ...(stepOptions.emit === undefined && this.onEvent !== undefined
-              ? {
-                  emit: async (plugin: string, event: StepEvent) => {
-                    const onEvent = this.onEvent;
-                    if (onEvent === undefined) return;
-                    await onEvent({
-                      source: "operad",
-                      key: `action:${plugin}:${event.key}`,
-                      type: event.type,
-                      ...(event.object === undefined && object !== undefined ? { object: `${object.type}:${object.id}` } : {}),
-                      ...(event.object === undefined ? {} : { object: event.object }),
-                      ...(event.summary === undefined ? {} : { summary: event.summary }),
-                      ...(event.data === undefined ? {} : { data: event.data }),
-                      hops: 0,
-                    });
-                  },
-                }
-              : {}),
-          },
-          false,
-        ),
       ...(this.onEvent === undefined
         ? {}
         : { emit: this.actionEmitter(found.plugin.name) }),

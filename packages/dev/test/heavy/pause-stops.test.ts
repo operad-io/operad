@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { createChatPlugin } from "@operad-io/chat";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -127,7 +128,7 @@ async function setup(options: { readonly check: boolean }) {
     ],
   });
   const registry = new PluginRegistry(
-    [createDevPlugin(), createPoolPlugin(), createShellPlugin(), worker] as never,
+    [createChatPlugin(), createDevPlugin(), createPoolPlugin(), createShellPlugin(), worker] as never,
     { home, cwd: remote.repository, store },
   );
   const log = openLog({ backend: "sqlite", path: join(root, "log", "log.sqlite") });

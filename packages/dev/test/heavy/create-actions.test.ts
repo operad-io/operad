@@ -27,6 +27,7 @@ guardLockHandles();
 
 const ENGINE = fileURLToPath(new URL("../../../engine/src/index.ts", import.meta.url));
 const PLUGIN = fileURLToPath(new URL("../../src/index.ts", import.meta.url));
+const CHAT = fileURLToPath(new URL("../../../chat/src/index.ts", import.meta.url));
 const POOL = fileURLToPath(new URL("../../../pool/src/index.ts", import.meta.url));
 const SHELL = fileURLToPath(new URL("../../../shell/src/index.ts", import.meta.url));
 
@@ -46,7 +47,7 @@ async function setup() {
   writeFileSync(
     join(home, "config.json"),
     `${JSON.stringify({
-      plugins: [PLUGIN, POOL, SHELL],
+      plugins: [CHAT, PLUGIN, POOL, SHELL],
       store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
       http: { enabled: true, port: 0, listen: ["127.0.0.1"] },
     })}\n`,

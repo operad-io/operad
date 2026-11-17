@@ -7,6 +7,7 @@
 
 import { createPoolPlugin } from "@operad-io/pool";
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
+import { createChatPlugin } from "@operad-io/chat";
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -113,7 +114,7 @@ async function exampleFixture() {
   await confirmPlan(store, plan.id);
   const prompts: Prompts = { worker: [], reviewer: [] };
   const registry = new PluginRegistry(
-    [createDevPlugin(), createShellPlugin(), createPoolPlugin(), ...stubs(prompts)],
+    [createChatPlugin(), createDevPlugin(), createShellPlugin(), createPoolPlugin(), ...stubs(prompts)],
     { home: root, cwd: remote.repository, store },
   );
   const object = { type: "task", id: task.id, data: {} };

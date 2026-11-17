@@ -9,6 +9,7 @@ import {
   type PendingItem,
   type StepContext,
 } from "@operad-io/engine";
+import { createChatPlugin } from "@operad-io/chat";
 import plugin from "../../src/index.ts";
 import { saveTaskGuarded } from "../../src/steps.ts";
 import { trackFlakyTests } from "../../src/flaky.ts";
@@ -39,7 +40,7 @@ async function setup() {
   const plan = await addPlan(store, { repository, slug: "main", title: "Main" });
   await addTask(store, { plan: plan.id, slug: "first", title: "First" });
   await confirmPlan(store, plan.id);
-  const registry = new PluginRegistry([plugin], {
+  const registry = new PluginRegistry([createChatPlugin(), plugin], {
     home: root,
     cwd: path,
     store,

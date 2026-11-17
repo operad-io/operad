@@ -515,13 +515,13 @@ describe("a bot chat's access level", () => {
     await syncBots(r.store, r.home, {});
     const id = await r.open("reader");
     const before = chatData((await r.store.get(CHAT_TYPE, id))?.data ?? {});
-    expect(before.accessStep).toBeUndefined();
+    expect(before.accessAction).toBeUndefined();
 
     await r.act("chat", id, "chat/access", { level: "edits" });
     const changed = chatData((await r.store.get(CHAT_TYPE, id))?.data ?? {});
     expect(changed.cwd).toBe(before.cwd);
     expect(changed.accessLevel).toBe("edits");
-    expect(changed.accessStep).toBeUndefined();
+    expect(changed.accessAction).toBeUndefined();
 
     await r.say(id, "write a note");
     expect((await r.reply(id)).result).toBe("done");
