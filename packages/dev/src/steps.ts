@@ -15,9 +15,11 @@ import {
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import {
+  isRecord,
   messageOf,
   readUsage,
   type CostQuality,
+  type JsonValue,
   type PluginStepResult,
   type StepContext,
   type StepEvent,
@@ -1330,6 +1332,11 @@ function hasUncheckedWork(
   return ahead.ok && Number(ahead.out) > 0;
 }
 
+/** The profile a task worker starts from: the default's denies, not its asks (ADR 0025 D9). */
+function workerAccess(access: JsonValue): JsonValue {
+  return { ...(isRecord(access) ? access : {}), defaultAsks: false };
+}
+
 export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
   const loose = await looseTaskContext(ctx);
   if (!claimAllows(ctx, loose.task)) return cancelledStep();
@@ -1529,7 +1536,7 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
     cwd: path,
     ...(ctx.object === undefined ? {} : { object: ctx.object }),
     params: ctx.params,
-    access: ctx.access,
+    access: workerAccess(ctx.access),
     ...(ctx.trigger === undefined ? {} : { trigger: ctx.trigger }),
     signal: stopper.signal,
   };
