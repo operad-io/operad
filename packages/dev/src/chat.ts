@@ -63,6 +63,9 @@ export const CHAT_ACCESS: Readonly<Record<string, JsonValue>> = {
 /** The step a repository chat calls at every reply to read its skills and access. */
 export const CHAT_SETTINGS_STEP = "dev/chat_settings";
 
+/** The step a repository chat asks before it changes its access level. */
+export const CHAT_ACCESS_STEP = "dev/chat_access";
+
 /** The most bytes of the repository's instruction file a chat starts with. */
 export const CHAT_CONTEXT_FILE_MAX_BYTES = 32 * 1024;
 
@@ -461,6 +464,7 @@ const chatAction: ActionTypeDefinition = {
         accessDefault: "plan",
         skills: skills.directories,
         refresh: CHAT_SETTINGS_STEP,
+        accessStep: CHAT_ACCESS_STEP,
         title:
           input.title ??
           (input.message === undefined ? undefined : titleFromMessage(input.message)) ??
@@ -541,6 +545,29 @@ export async function runChatSettings(ctx: StepContext, params: unknown): Promis
       context,
     },
   };
+}
+
+/**
+ * Step `dev/chat_access`: prepares a change of a repository chat's access level.
+ * A chat still in the main clone that is raised to `edits` or `full` first gets
+ * its worktree, exactly as the worktree answer gives it; a chat already in its
+ * worktree, a bot chat and a level below `edits` need nothing. A worktree that
+ * cannot be opened fails the change, so the level stays as it was.
+ */
+export async function runChatAccess(ctx: StepContext, params: unknown): Promise<PluginStepResult> {
+  const chatId = isRecord(params) && typeof params.chat === "string" ? params.chat : undefined;
+  const level = isRecord(params) && typeof params.level === "string" ? params.level : undefined;
+  if (chatId === undefined || level === undefined) return failed("the chat and its new level are needed");
+  const stored = await ctx.store.get(CHAT_TYPE, chatId);
+  if (stored === undefined) return failed(`there is no chat ${chatId}`);
+  if (level !== "edits" && level !== "full") return { result: "done", data: { moved: false } };
+  if (typeof stored.data.worktree === "object" && stored.data.worktree !== null) {
+    return { result: "done", data: { moved: false } };
+  }
+  const chat = chatData(stored.data);
+  const parent = typeof chat.parent === "string" ? chat.parent : "";
+  if (!parent.startsWith("repo:")) return { result: "done", data: { moved: false } };
+  return runChatWorktree(ctx);
 }
 
 /**

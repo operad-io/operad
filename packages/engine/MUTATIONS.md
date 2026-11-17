@@ -1061,3 +1061,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0525-M9 | packages/engine/src/plugin/validate.ts | a declared `accessLevels` list was dropped from the harness capabilities | `harness capabilities > a harness declares the access levels it carries, and an absent list carries none` |
+
+## T-0526 — an action can run a step
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0526-M5 | packages/engine/src/plugin/registry.ts | an action's context no longer had `runStep` | `ctx.runStep in an action > runs a loaded step for the action's object, with the params and run id it gives` |

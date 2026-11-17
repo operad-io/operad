@@ -1,7 +1,7 @@
 /** The chat plugin: a long conversation with an agent, and how a message is answered. */
 
 import pkg from "../package.json" with { type: "json" };
-import { defineFlow, definePlugin, type ActionArgsSchema, type ActionContext, type ActionTypeDefinition, type PluginFact, type UsageTokens } from "@operad-io/engine";
+import { defineFlow, definePlugin, isRecord, type ActionArgsSchema, type ActionContext, type ActionTypeDefinition, type PluginFact, type UsageTokens } from "@operad-io/engine";
 import { ACCESS_LEVELS, isAccessLevel, type AccessLevel } from "@operad-io/access-match";
 import { stopKeptWorkers } from "@operad-io/engine/platform";
 import {
@@ -386,6 +386,39 @@ function accessArgs(): ActionArgsSchema {
   };
 }
 
+/**
+ * Prepares a change of the level in the plugin that owns what the level applies
+ * to: a repository chat opens its worktree before it becomes writable. A step
+ * that cannot prepare the change refuses it, so the level stays as it was.
+ */
+async function prepareAccess(
+  ctx: ActionContext,
+  chat: ChatData,
+  chatId: string,
+  level: AccessLevel,
+): Promise<void> {
+  if (chat.accessStep === undefined) return;
+  if (ctx.runStep === undefined) {
+    throw new Error(`chat ${chatId} cannot change its access here`);
+  }
+  const outcome = await ctx.runStep(
+    chat.accessStep,
+    { chat: chatId, level },
+    {
+      runId: ctx.runId ?? `action:chat/access:${chatId}`,
+      object: ctx.object,
+      signal: ctx.signal,
+    },
+  );
+  if (outcome.result === "done") return;
+  const data = isRecord(outcome.data) ? outcome.data : {};
+  throw new Error(
+    typeof data.message === "string" && data.message.length > 0
+      ? data.message
+      : `chat ${chatId} could not prepare its access level`,
+  );
+}
+
 const accessAction: ActionTypeDefinition = {
   name: "access",
   on: CHAT_TYPE,
@@ -405,6 +438,7 @@ const accessAction: ActionTypeDefinition = {
     }
     const from = chat.accessLevel ?? chat.accessDefault ?? "ask";
     if (from === level) return `chat ${ctx.object.id} already uses access level ${level}`;
+    await prepareAccess(ctx, chat, ctx.object.id, level);
     const changed: AccessChangedData = {
       by: { via: ctx.actor.via, id: ctx.actor.id },
       from,

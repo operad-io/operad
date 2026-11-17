@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createChatPlugin, CHAT_TYPE } from "@operad-io/chat";
 import {
@@ -15,7 +15,7 @@ import {
   createDevPlugin,
   validateDevSettings,
 } from "../../src/index.ts";
-import { makeRemote } from "../git-support.ts";
+import { git, makeRemote } from "../git-support.ts";
 import { cleanupTempRoots, guardLockHandles, storeAt, tempRoot } from "../support.ts";
 
 afterAll(cleanupTempRoots);
@@ -89,6 +89,24 @@ async function chat(r: Awaited<ReturnType<typeof rig>>, id: string): Promise<Sto
   const stored = await r.store.get(CHAT_TYPE, id);
   if (stored === undefined) throw new Error(`no chat ${id}`);
   return stored;
+}
+
+async function access(r: Awaited<ReturnType<typeof rig>>, id: string, level: string): Promise<unknown> {
+  const stored = await chat(r, id);
+  const run = await r.registry.runAction("chat/access", { level }, {
+    object: { type: CHAT_TYPE, id, data: stored.data },
+    actor: { via: "cli", id: "me" },
+  });
+  return run.value;
+}
+
+async function sendAccess(r: Awaited<ReturnType<typeof rig>>, id: string, level: string): Promise<unknown> {
+  const stored = await chat(r, id);
+  const run = await r.registry.runAction("chat/send", { note: `/access ${level}` }, {
+    object: { type: CHAT_TYPE, id, data: stored.data },
+    actor: { via: "cli", id: "me" },
+  });
+  return run.value;
 }
 
 async function reply(r: Awaited<ReturnType<typeof rig>>, id: string): Promise<PluginStepResult> {
@@ -225,5 +243,91 @@ describe("a repository's skills", () => {
     expect(validateDevSettings({}).skills).toEqual([".agents/skills"]);
     expect(validateDevSettings({ skills: [] }).skills).toEqual([]);
     expect(validateDevSettings({ skills: ["tools/skills"] }).skills).toEqual(["tools/skills"]);
+  });
+});
+
+describe("a repository chat's access level", () => {
+  test("/access edits opens work/chat-<id>, moves the chat there, and a write passes without a question", async () => {
+    const r = await rig();
+    const path = await repository(r, "edits");
+    const id = await openChat(r, "edits");
+    const head = git(path, ["rev-parse", "HEAD"]).out;
+
+    expect(String(await sendAccess(r, id, "edits"))).toContain("edits");
+    const worktree = join(path, ".operad-worktrees", `chat-${id}`);
+    const moved = await chat(r, id);
+    expect(moved.data.cwd).toBe(worktree);
+    expect(moved.data.accessLevel).toBe("edits");
+    expect(moved.data.accessStep).toBe("dev/chat_access");
+    expect(existsSync(worktree)).toBe(true);
+    expect(git(worktree, ["rev-parse", "--abbrev-ref", "HEAD"]).out).toBe(`work/chat-${id}`);
+    expect(git(path, ["rev-parse", "HEAD"]).out).toBe(head);
+    expect(git(path, ["status", "--porcelain", "--untracked-files=no"]).out).toBe("");
+
+    await reply(r, id);
+    expect(r.calls[0]?.cwd).toBe(worktree);
+    expect(r.calls[0]?.access).toMatchObject({ level: "edits", readOnly: false });
+    expect(existsSync(join(path, "new.txt"))).toBe(false);
+  });
+
+  test("/access full does the same, and the main clone does not move", async () => {
+    const r = await rig();
+    const path = await repository(r, "full");
+    const id = await openChat(r, "full");
+    const head = git(path, ["rev-parse", "HEAD"]).out;
+
+    await sendAccess(r, id, "full");
+    const worktree = join(path, ".operad-worktrees", `chat-${id}`);
+    const moved = await chat(r, id);
+    expect(moved.data.cwd).toBe(worktree);
+    expect(moved.data.accessLevel).toBe("full");
+    expect(git(path, ["rev-parse", "HEAD"]).out).toBe(head);
+    expect(git(path, ["status", "--porcelain", "--untracked-files=no"]).out).toBe("");
+
+    await reply(r, id);
+    expect(r.calls[0]?.cwd).toBe(worktree);
+    expect(r.calls[0]?.access).toMatchObject({ level: "full", readOnly: false });
+  });
+
+  test("a worktree that cannot be opened leaves the level unchanged and says why", async () => {
+    const r = await rig();
+    const path = await repository(r, "failed");
+    const id = await openChat(r, "failed");
+    const worktree = join(path, ".operad-worktrees", `chat-${id}`);
+    mkdirSync(worktree, { recursive: true });
+
+    await expect(access(r, id, "edits")).rejects.toThrow(/exists but is not a git worktree/);
+    const stayed = await chat(r, id);
+    expect(stayed.data.cwd).toBe(path);
+    expect(stayed.data.accessLevel).toBe("plan");
+    expect(stayed.data.worktree).toBeUndefined();
+  });
+
+  test("a chat already in its worktree changes the level there and opens nothing new", async () => {
+    const r = await rig();
+    const path = await repository(r, "already");
+    const id = await openChat(r, "already");
+    await r.registry.runStep("dev/chat_worktree", {}, {
+      runId: "run-worktree",
+      object: { type: CHAT_TYPE, id, data: {} },
+    });
+    const worktree = join(path, ".operad-worktrees", `chat-${id}`);
+    const listed = git(path, ["worktree", "list", "--porcelain"]).out;
+
+    await sendAccess(r, id, "full");
+    const changed = await chat(r, id);
+    expect(changed.data.cwd).toBe(worktree);
+    expect(changed.data.accessLevel).toBe("full");
+    expect(git(path, ["worktree", "list", "--porcelain"]).out).toBe(listed);
+  });
+
+  test("ask and plan in the main clone open no worktree", async () => {
+    const r = await rig();
+    const path = await repository(r, "read-only");
+    const id = await openChat(r, "read-only");
+
+    await sendAccess(r, id, "ask");
+    expect((await chat(r, id)).data.cwd).toBe(path);
+    expect(existsSync(join(path, ".operad-worktrees", `chat-${id}`))).toBe(false);
   });
 });

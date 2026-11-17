@@ -1057,6 +1057,19 @@ export interface ActionContext extends PluginBaseContext {
         options?: { readonly yes?: boolean | undefined } | undefined,
       ) => Promise<ActionRun>)
     | undefined;
+  /**
+   * Runs a loaded step for this action, with the options a step run takes.
+   * An action that must prepare another plugin's field before it changes its
+   * own uses it; the step is not part of a flow. Optional: set when the host
+   * can run steps.
+   */
+  readonly runStep?:
+    | ((
+        use: string,
+        params: unknown,
+        options: StepRunOptions,
+      ) => MaybePromise<PluginStepResult>)
+    | undefined;
   readonly runId: string | undefined;
   readonly object: RunObject;
   /** Who asked for the action: a person through a client. */

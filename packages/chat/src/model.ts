@@ -109,6 +109,12 @@ export interface ChatData {
    * above are then what the chat started with.
    */
   readonly refresh?: string | undefined;
+  /**
+   * A step (`<plugin>/<step>`) that prepares a change of the access level, such
+   * as opening a repository chat's worktree before it becomes writable; the
+   * access action asks it before it records the new level.
+   */
+  readonly accessStep?: string | undefined;
   /** The model the next reply uses; one the agent's plugin lists. Absent for an agent that lists none. */
   readonly model?: string | undefined;
   /** The effort the next reply uses; one the agent's plugin lists. Absent for an agent that lists none. */
@@ -151,6 +157,8 @@ export interface NewChat {
   readonly effortDefault?: string | undefined;
   /** See {@link ChatData.refresh}. */
   readonly refresh?: string | undefined;
+  /** See {@link ChatData.accessStep}. */
+  readonly accessStep?: string | undefined;
 }
 
 /** One file attached to a message: where it is stored, and what a client shows of it. */
@@ -480,6 +488,7 @@ export function chatData(data: Readonly<Record<string, unknown>>): ChatData {
     closed: data.closed === true,
     channels: stringList(data.channels),
     ...(typeof data.refresh === "string" && data.refresh.length > 0 ? { refresh: data.refresh } : {}),
+    ...(typeof data.accessStep === "string" && data.accessStep.length > 0 ? { accessStep: data.accessStep } : {}),
     ...(typeof data.contextCwd === "string" && data.contextCwd.length > 0 ? { contextCwd: data.contextCwd } : {}),
     ...(typeof data.model === "string" && data.model.length > 0 ? { model: data.model } : {}),
     ...(typeof data.effort === "string" && data.effort.length > 0 ? { effort: data.effort } : {}),
@@ -666,6 +675,7 @@ export async function createChat(
     ...(input.effort === undefined ? {} : { effort: input.effort }),
     ...(input.effort === undefined || input.effortDefault === undefined ? {} : { effortDefault: input.effortDefault }),
     ...(input.refresh === undefined ? {} : { refresh: input.refresh }),
+    ...(input.accessStep === undefined ? {} : { accessStep: input.accessStep }),
   };
   // The id counts up; a taken one (two chats made at once) moves on to the next.
   for (let attempt = 0; attempt < 20; attempt += 1) {

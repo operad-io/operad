@@ -9,7 +9,7 @@ import chatWorktreeFlow from "../flows/chat-worktree.flow.ts";
 import { actions } from "./actions.ts";
 import { runAnnounce } from "./announce.ts";
 import { checkDev } from "./check.ts";
-import { chatActions, runChatSettings, runChatWorktree } from "./chat.ts";
+import { chatActions, runChatAccess, runChatSettings, runChatWorktree } from "./chat.ts";
 import { commands } from "./commands.ts";
 import { creationActions } from "./create-actions.ts";
 import { runRework, runReview, runReviewDue, runVerify, runWorkDue } from "./gate.ts";
@@ -148,6 +148,12 @@ export function createDevPlugin() {
         name: "chat_settings",
         results: ["done", "failed"],
         run: runChatSettings,
+      },
+      {
+        // Prepares a change of a chat's access level, such as opening its worktree.
+        name: "chat_access",
+        results: ["done", "failed"],
+        run: runChatAccess,
       },
       {
         // The worktree a chat asked for; git runs in the repository.
