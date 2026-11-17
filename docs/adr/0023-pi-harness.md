@@ -32,7 +32,7 @@ An extension of the owner runs in the worker process with the worker's operating
 
 ### D5: Where the facts come from
 
-`sessionId` is the session file path; `usage` is summed from each `message_end`, with `cache_read` and `cache_write` from `cacheRead` and `cacheWrite`; `cost.micros` is the summed `cost.total` times one million rounded, and `null` for a model pi cannot price; `finalMessage` is `getLastAssistantText()`. The log is a subset of pi events (`message_end`, `tool_execution_start`, `tool_execution_end`, `agent_settled` and blocking records).
+`sessionId` is the session file path; `usage` is summed from each `message_end`, with `cache_read` and `cache_write` from `cacheRead` and `cacheWrite`; `cost.micros` is the summed `cost.total` times one million rounded, and `null` for a model pi cannot price; `finalMessage` is `getLastAssistantText()`. The reply's `context.used` comes from the last `message_end` alone, its input plus cache read and cache write, and `context.window` is the selected model's `contextWindow`. The log is a subset of pi events (`message_end`, `tool_execution_start`, `tool_execution_end`, `agent_settled` and blocking records).
 
 ### D6: Resume
 

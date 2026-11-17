@@ -65,6 +65,8 @@ export interface WorkerResult {
   /** The priced part of the run; `incomplete` when some message had no price. */
   readonly cost: { readonly micros: number; readonly incomplete?: true } | null;
   readonly finalMessage: string | null;
+  /** The context after the last model call, when one ran. */
+  readonly context?: { readonly used: number; readonly window?: number } | undefined;
   readonly reason?: FailureReason;
   readonly message?: string;
 }

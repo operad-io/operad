@@ -48,7 +48,7 @@ The params of every `agent` step (`AgentStepParams`):
 
 A harness takes a param from the step's `params` first and from the flow's own params (`ctx.params`) when the step has none, which is how `<harness>:prompt` flows work: `{ prompt, cwd, args? }` (`PromptFlowParams`).
 
-The data every `agent` step records (`AgentResultData`): `exitCode`, `signal`, `sessionId`, `finalMessage`, `usage`, `log` (the path of the JSONL file; never the output), `durationMs`, `timings`, `stderr` (the last lines), and on `failed` `reason` and `message`.
+The data every `agent` step records (`AgentResultData`): `exitCode`, `signal`, `sessionId`, `finalMessage`, `usage`, `log` (the path of the JSONL file; never the output), `durationMs`, `timings`, `stderr` (the last lines), and on `failed` `reason` and `message`. It also carries `context: { used, window? }` when the harness can tell: `used` is the last model call's input plus cache read and cache write, and `window` is the model's context window. A harness that cannot tell leaves it out; an unknown window is left out. A run that is not a finished reply need not carry it.
 `timings` holds three durations in milliseconds from the injected clock: `startToReadyMs` (the step's start to the worker's `session` line), `readyToFirstMs` (that line to the first text, thinking or tool line) and `totalMs` (the whole step). A duration whose line never came is `null`.
 
 Every line of the step's log carries `receivedAt`, the epoch milliseconds when the host received it. Every harness writes one `session` line when its session is ready and the prompt is about to go to the model. Readers of older logs that have neither field still fold them.
@@ -64,7 +64,7 @@ A harness plugin declares what a chat may pick:
 
 | Field | Type | Meaning |
 |---|---|---|
-| `models` | `{ list, default }` or a function of the settings | The models a chat may pick (an empty list: none can be chosen) and the one used when none is set. A function is called with the plugin's settings each time the list is read, so a harness can ask the agent itself |
+| `models` | `{ list, default, windows? }` or a function of the settings | The models a chat may pick (an empty list: none can be chosen) and the one used when none is set. A function is called with the plugin's settings each time the list is read, so a harness can ask the agent itself. `windows` maps a listed model to its context window in tokens when the harness knows it; a model with no entry has an unknown window |
 | `efforts` | `{ list, default, flag? }` | The same for effort, and the step argument that sets it (`--effort` when `flag` is absent) |
 | `capabilities` | `{ loadsSkills?, takesMessagesMidRun?, accessLevels? }` | What the agent does itself. `loadsSkills: true` says it loads the skill directories the step gives, so the prompt needs no list of them; any other harness gets the list of [Skills](#skills). `takesMessagesMidRun: true` says it takes a message while its run is going, so a chat hands one to it through the inbox after the tool calls already running; any other harness gets no inbox and the message waits for the next run. `accessLevels` lists the chat access levels the agent carries; a chat at a level the agent does not list refuses the reply at its start instead of ignoring it |
 

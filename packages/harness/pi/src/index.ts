@@ -70,6 +70,7 @@ import {
   PI_LIST_TIMEOUT_MS,
   piModelList,
   piModelListReady,
+  piModelWindows,
 } from "./model-list.ts";
 import { DEFAULT_PI_COMMAND, findPi, PI_FLOOR } from "./pi-install.ts";
 import {
@@ -305,19 +306,39 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
       : DEFAULT_PI_COMMAND;
   }
 
+  /** The context windows pi's kept list gives for the models this chat may pick. */
+  function windowsOf(
+    options: ReturnType<typeof listOptions>,
+    list: readonly string[],
+  ): Readonly<Record<string, number>> | undefined {
+    const known = piModelWindows(options);
+    const windows: Record<string, number> = {};
+    for (const model of list) {
+      const window = known[model];
+      if (window !== undefined) windows[model] = window;
+    }
+    return Object.keys(windows).length === 0 ? undefined : windows;
+  }
+
   /** The models a chat may pick and the default among them, from the kept list. */
   function piModels(
     settings: Readonly<Record<string, unknown>>,
     context: HarnessModelContext,
-  ): { list: readonly string[]; default: string | null } {
+  ): { list: readonly string[]; default: string | null; windows?: Readonly<Record<string, number>> | undefined } {
     const command = piCommandOf(settings);
     const configured = stringList(settings.models);
-    const list = configured ?? piModelList(listOptions(command, context));
+    const options = listOptions(command, context);
+    const list = configured ?? piModelList(options);
     const wanted =
       typeof settings.model === "string" && settings.model !== ""
         ? settings.model
         : piDefaultModel(piSettingsPath);
-    return { list, default: wanted !== undefined && list.includes(wanted) ? wanted : null };
+    const windows = windowsOf(options, list);
+    return {
+      list,
+      default: wanted !== undefined && list.includes(wanted) ? wanted : null,
+      ...(windows === undefined ? {} : { windows }),
+    };
   }
 
   /**
@@ -327,15 +348,21 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
   async function piModelsReady(
     settings: Readonly<Record<string, unknown>>,
     context: HarnessModelContext,
-  ): Promise<{ list: readonly string[]; default: string | null }> {
+  ): Promise<{ list: readonly string[]; default: string | null; windows?: Readonly<Record<string, number>> | undefined }> {
     const command = piCommandOf(settings);
     const configured = stringList(settings.models);
-    const list = configured ?? (await piModelListReady(listOptions(command, context)));
+    const options = listOptions(command, context);
+    const list = configured ?? (await piModelListReady(options));
     const wanted =
       typeof settings.model === "string" && settings.model !== ""
         ? settings.model
         : piDefaultModel(piSettingsPath);
-    return { list, default: wanted !== undefined && list.includes(wanted) ? wanted : null };
+    const windows = windowsOf(options, list);
+    return {
+      list,
+      default: wanted !== undefined && list.includes(wanted) ? wanted : null,
+      ...(windows === undefined ? {} : { windows }),
+    };
   }
 
   const promptFlow = defineFlow({
@@ -679,5 +706,6 @@ export {
   PI_LIST_CACHE_MS,
   PI_LIST_TIMEOUT_MS,
   parsePiCatalogue,
+  parsePiCatalogueRows,
   piModelListPath,
 } from "./model-list.ts";

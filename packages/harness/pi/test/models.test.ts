@@ -7,6 +7,7 @@ import { cleanupTempRoots, tempRoot, waitForFile } from "../../process/test/supp
 import {
   createPiHarnessPlugin,
   parsePiCatalogue,
+  parsePiCatalogueRows,
   PI_LIST_CACHE_MS,
   piModelListPath,
 } from "../src/index.ts";
@@ -82,6 +83,14 @@ describe("the models pi declares", () => {
     expect(parsePiCatalogue(TABLE)).toEqual(CATALOGUE);
   });
 
+  test("each row's context column becomes its context window", () => {
+    expect(parsePiCatalogueRows(TABLE)).toEqual([
+      { name: "openai/gpt-5", window: 400_000 },
+      { name: "opencode-go/deepseek-v4.1-flash", window: 128_000 },
+      { name: "zai/glm-5", window: 200_000 },
+    ]);
+  });
+
   test("pi's no-model sentence is not a model", () => {
     expect(parsePiCatalogue("No models available. Check your installation or add models to models.json.\n")).toEqual([]);
   });
@@ -112,7 +121,15 @@ describe("the models pi declares", () => {
     const env = await fakePi(catalogueBody());
     const registry = registryFor(env, {});
     expect(await registry.loadedModelsReady()).toEqual({
-      pi: { list: CATALOGUE, default: null },
+      pi: {
+        list: CATALOGUE,
+        default: null,
+        windows: {
+          "openai/gpt-5": 400_000,
+          "opencode-go/deepseek-v4.1-flash": 128_000,
+          "zai/glm-5": 200_000,
+        },
+      },
     });
     expect(askedTimes(env)).toBe(1);
     expect(registry.loadedModels().pi?.list).toEqual(CATALOGUE);

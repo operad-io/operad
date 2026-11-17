@@ -47,7 +47,7 @@ The plugin name is `claude`, `pi`, `radian` or `codex`: the `plugins.<name>` of 
 
 The plugin is `codex`, the package `@operad-io/harness-codex`, the step `codex/agent`. It speaks Codex's own `codex app-server` JSON-RPC over stdio: this harness's own connection, as `sdk` is for `claude` and `pi`, not a third reference connection (D2, D3). It starts the user's own `codex app-server`; the default command finds the `codex` of `PATH` and starts its `app-server`, and the setting `command` changes it. The credential is the user's ChatGPT login of their own Codex, which operad does not touch (D6). The model can use Codex's own image generation.
 
-- Usage: a subscription login has no money cost, so cost is recorded as unknown and does not block budget checks; each attempt records the number of image generation calls (the quota counts generations); each tool call from the app-server item stream is recorded in the step log so a rework can look it up.
+- Usage: a subscription login has no money cost, so cost is recorded as unknown and does not block budget checks; each attempt records the number of image generation calls (the quota counts generations); each tool call from the app-server item stream is recorded in the step log so a rework can look it up. The reply's context comes from the app-server's last token usage, and its window from the `modelContextWindow` the app-server reports with it when it reports one.
 - Time: an image generation can take minutes without output, which is normal; the worker's `stallSecs` and `wallTimeSecs` set the limits, and the harness does not decide a stall of its own.
 - Sandbox and approvals: Codex's own sandbox stays on, and its approval policy and reviewer are set so Codex asks operad instead of deciding; the access profile answers each command and file-change request (D4). Codex's own sandbox cannot write `.git`, so a flow that uses it has its `work` stage set `commit` (ADR 0020 D9); it needs network access and write access to the task's working directory.
 
@@ -56,3 +56,9 @@ The plugin is `codex`, the package `@operad-io/harness-codex`, the step `codex/a
 A step may give skill directories to a harness (ADR 0011 D2). A harness that declares `loadsSkills` loads them itself and its prompt is only the step's prompt. Any other harness gets a short list appended to the prompt: each skill's name, the description from its `SKILL.md` frontmatter and the path of that file, with one sentence to read the file before doing what it describes. A skill's body never enters the prompt.
 
 The list stays small: it carries at most a fixed number of skills and a fixed number of characters of each description, and says how many skills the cap left out. A directory whose `SKILL.md` or name cannot be read is left out, as D1 skips it for a harness that loads skills itself. The shared code of `@operad-io/harness-process` holds this, so a new harness gets it without writing its own.
+
+### D10: A harness declares each model's context window
+
+A harness's model list may carry `windows`, a map from a listed model to its context window in tokens. The window is a positive whole number; a model whose window the harness does not know has no entry. The value is a declaration about the agent's own model list, so a chat can show how full the context is without guessing; a harness that learns the window at run time may also report it with the run's context.
+
+`claude` declares the window of each model it lists, including the 1M variants. `pi` reads the context from its own model registry. `codex` reads it from the model information its app-server reports when it reports one. A model with no known window leaves it out.

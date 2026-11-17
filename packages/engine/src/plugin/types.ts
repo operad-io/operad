@@ -160,6 +160,18 @@ export interface SectionContent {
    */
   readonly status?: SectionStatus | undefined;
   /**
+   * Numbers a client shows beside the section, such as how full an agent's
+   * context is. The kernel passes it through on every read; a client that
+   * does not know it ignores it.
+   */
+  readonly context?:
+    | {
+        readonly used: number;
+        readonly window?: number | undefined;
+        readonly model?: string | undefined;
+      }
+    | undefined;
+  /**
    * `markdown` holds only what follows the requested `after`. Omit, or set
    * false, when the answer is a whole page; the kernel then tells the client
    * to replace instead of appending.
@@ -239,6 +251,24 @@ export interface ObjectViews {
    * one namespace exists. Read once per list.
    */
   readonly showScope?: ((ctx: ViewContext) => MaybePromise<boolean>) | undefined;
+  /**
+   * Numbers a detail page shows beside its row, such as how full an agent's
+   * context is. It may read facts and may be slow; the kernel passes it
+   * through and reads no meaning into it. Absent when the type has none.
+   */
+  readonly context?:
+    | ((
+        ctx: ViewContext,
+        object: StoredObject,
+      ) => MaybePromise<
+        | {
+            readonly used: number;
+            readonly window?: number | undefined;
+            readonly model?: string | undefined;
+          }
+        | undefined
+      >)
+    | undefined;
   /** Called when a person opens a section; it may be slow and paged. */
   readonly load: (
     ctx: ViewContext,
@@ -881,6 +911,11 @@ export interface ActionEnv {
 export interface HarnessModels {
   readonly list: readonly string[];
   readonly default: string | null;
+  /**
+   * The context window of each listed model the harness knows, in tokens.
+   * A model with no entry has an unknown window; it is never guessed.
+   */
+  readonly windows?: Readonly<Record<string, number>> | undefined;
 }
 
 /** What a harness's model hook may read besides its settings. */

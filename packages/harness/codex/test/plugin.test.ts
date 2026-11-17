@@ -223,6 +223,7 @@ describe("codex/agent: a prompt run", () => {
       costMicros: null,
       costQuality: null,
     });
+    expect(dataOf(result).context).toEqual({ used: 19, window: 200_000 });
   });
 
   test("--model and --effort become thread and turn settings, and other args are refused", async () => {

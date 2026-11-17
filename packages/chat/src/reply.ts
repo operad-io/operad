@@ -42,6 +42,7 @@ import {
   RUN_FACT,
   newMessageId,
   promptFor,
+  replyContextOf,
   unanswered,
   usageOf,
   worseQuality,
@@ -1208,6 +1209,12 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
 
   const usage = usageOf(data.usage);
   const timings = timingsOf(data.timings);
+  const replyContext = replyContextOf(data.context);
+  const windows = ctx.harnessModels?.(chat.harness)?.windows;
+  const window =
+    replyContext?.window ??
+    (usage.model === undefined ? undefined : windows?.[usage.model]) ??
+    (chat.model === undefined ? undefined : windows?.[chat.model]);
 
   await recordEntries(ctx, object.id, folded, { finalText: text, stopped: false });
 
@@ -1224,6 +1231,9 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
     runId: ctx.runId,
     ...(sessionId === undefined ? {} : { session: sessionId }),
     ...usage,
+    ...(replyContext === undefined
+      ? {}
+      : { context: { used: replyContext.used, ...(window === undefined ? {} : { window }) } }),
     ...(timings === undefined ? {} : { timings }),
   };
   await ctx.facts.append({ type: MESSAGE_FACT, object: chatRef(object.id), data: reply });

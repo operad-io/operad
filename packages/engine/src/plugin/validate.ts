@@ -186,6 +186,9 @@ function normalizeViews(
     if (raw.showScope !== undefined && typeof raw.showScope !== "function") {
       throw new PluginError(`${at}.${type}: showScope: must be a function`);
     }
+    if (raw.context !== undefined && typeof raw.context !== "function") {
+      throw new PluginError(`${at}.${type}: context: must be a function`);
+    }
     views[type] = {
       row: raw.row as ObjectViews["row"],
       sections: raw.sections as ObjectViews["sections"],
@@ -193,6 +196,9 @@ function normalizeViews(
       ...(raw.showScope === undefined
         ? {}
         : { showScope: raw.showScope as NonNullable<ObjectViews["showScope"]> }),
+      ...(raw.context === undefined
+        ? {}
+        : { context: raw.context as NonNullable<ObjectViews["context"]> }),
     };
   }
   return views;
@@ -838,12 +844,25 @@ function normalizeModels(
       context: HarnessModelContext,
     ) => unknown;
     return (settings, context) => {
-      const levels = normalizeLevels(source(settings, context), kind, at, "models");
-      return levels === undefined ? { list: [], default: null } : { list: levels.list, default: levels.fallback };
+      const raw = source(settings, context);
+      const levels = normalizeLevels(raw, kind, at, "models");
+      if (levels === undefined) return { list: [], default: null };
+      const windows = normalizeWindows(raw, levels.list, at);
+      return {
+        list: levels.list,
+        default: levels.fallback,
+        ...(windows === undefined ? {} : { windows }),
+      };
     };
   }
   const levels = normalizeLevels(value, kind, at, "models");
-  return levels === undefined ? undefined : { list: levels.list, default: levels.fallback };
+  if (levels === undefined) return undefined;
+  const windows = normalizeWindows(value, levels.list, at);
+  return {
+    list: levels.list,
+    default: levels.fallback,
+    ...(windows === undefined ? {} : { windows }),
+  };
 }
 
 /** A harness plugin's `modelsReady` hook: a list, possibly after waiting for one refresh. */
@@ -860,8 +879,15 @@ function normalizeModelsReady(
     context: HarnessModelContext,
   ) => unknown;
   return async (settings, context) => {
-    const levels = normalizeLevels(await source(settings, context), kind, at, "models");
-    return levels === undefined ? { list: [], default: null } : { list: levels.list, default: levels.fallback };
+    const raw = await source(settings, context);
+    const levels = normalizeLevels(raw, kind, at, "models");
+    if (levels === undefined) return { list: [], default: null };
+    const windows = normalizeWindows(raw, levels.list, at);
+    return {
+      list: levels.list,
+      default: levels.fallback,
+      ...(windows === undefined ? {} : { windows }),
+    };
   };
 }
 
@@ -949,6 +975,29 @@ function normalizeLevels(
     throw new PluginError(`${at}: ${field}.default: must be null or one of the list`);
   }
   return { list, fallback };
+}
+
+/** The context windows a harness's model list declares, when it declares any. */
+function normalizeWindows(
+  value: unknown,
+  list: readonly string[],
+  at: string,
+): Readonly<Record<string, number>> | undefined {
+  if (!isRecord(value)) return undefined;
+  const raw = value["windows"];
+  if (raw === undefined) return undefined;
+  if (!isRecord(raw)) throw new PluginError(`${at}: models.windows: must be an object`);
+  const windows: Record<string, number> = {};
+  for (const [model, window] of Object.entries(raw)) {
+    if (!list.includes(model)) {
+      throw new PluginError(`${at}: models.windows.${model}: must be one of the models in the list`);
+    }
+    if (typeof window !== "number" || !Number.isInteger(window) || window <= 0) {
+      throw new PluginError(`${at}: models.windows.${model}: must be a positive whole number`);
+    }
+    windows[model] = window;
+  }
+  return Object.keys(windows).length === 0 ? undefined : windows;
 }
 
 /** A harness step type ends only in the standard end results. */

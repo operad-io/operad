@@ -87,7 +87,11 @@ given twice.
 
 The `transcript` section is live: it shows user messages, the agent's
 intermediate text, `Thinking`, tool calls with their result, duration and a short
-output, and the final reply. A reply that fails leaves one line saying it failed
+output, and the final reply. It also carries how full the agent's context is
+(`used`, the model's `window` when known, and the `model`) from the last
+finished reply; the chat's object view carries the same `context`. A new session
+leaves it out until the next reply. The clients label it with the approved words
+**Context used** and **上下文用量**. A reply that fails leaves one line saying it failed
 and why, so a failure is not mistaken for a slow reply. Tool output is cut in the
 transcript; the full output is in a file in the chat's directory. A reply that is
 still being written shows its unfinished text and thinking as a `tail`; `mark`

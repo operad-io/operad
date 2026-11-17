@@ -1,6 +1,6 @@
 /**
  * Reads `model/list` from a `codex app-server` and prints the choices as JSON:
- * `[{ id, isDefault }]`. Run by `refreshCodexModels` in a short-lived child in
+ * `[{ id, isDefault, contextWindow? }]`. Run by `refreshCodexModels` in a short-lived child in
  * the background; the synchronous `models` answer only reads the cache. Not
  * imported by the plugin.
  */
@@ -67,12 +67,19 @@ function handle(message: Record<string, unknown>): void {
     finish([]);
     return;
   }
-  const choices: Array<{ id: string; isDefault: boolean }> = [];
+  const choices: Array<{ id: string; isDefault: boolean; contextWindow?: number }> = [];
   for (const entry of data) {
     if (typeof entry !== "object" || entry === null) continue;
     const id = Reflect.get(entry, "id");
     if (typeof id === "string" && id.length > 0) {
-      choices.push({ id, isDefault: Reflect.get(entry, "isDefault") === true });
+      const reported = Reflect.get(entry, "contextWindow") ?? Reflect.get(entry, "modelContextWindow");
+      const contextWindow =
+        typeof reported === "number" && Number.isInteger(reported) && reported > 0 ? reported : undefined;
+      choices.push({
+        id,
+        isDefault: Reflect.get(entry, "isDefault") === true,
+        ...(contextWindow === undefined ? {} : { contextWindow }),
+      });
     }
   }
   finish(choices);

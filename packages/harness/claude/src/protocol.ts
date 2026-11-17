@@ -11,6 +11,21 @@ import { mountedServersOf } from "@operad-io/harness-process";
 export const EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"] as const;
 export type WorkerEffort = (typeof EFFORT_LEVELS)[number];
 
+/** The context window of each model the plugin lists, in tokens. */
+export const CLAUDE_CONTEXT_WINDOWS: Readonly<Record<string, number>> = {
+  opus: 200_000,
+  sonnet: 200_000,
+  haiku: 200_000,
+  "opus[1m]": 1_000_000,
+  "sonnet[1m]": 1_000_000,
+};
+
+/** The context window a model name names, when claude's list knows it. */
+export function claudeContextWindow(model: string | null | undefined): number | undefined {
+  if (model === null || model === undefined) return undefined;
+  return CLAUDE_CONTEXT_WINDOWS[model.toLowerCase()];
+}
+
 /** What the program reads from stdin. */
 export interface WorkerInput {
   readonly prompt: string;
@@ -79,6 +94,8 @@ export interface WorkerResult {
   readonly finalMessage: string | null;
   /** The model that did the work: the first key of the result's `modelUsage`. */
   readonly model: string | null;
+  /** The context after the last model call, when one ran. */
+  readonly context?: { readonly used: number; readonly window?: number } | undefined;
   readonly reason?: FailureReason;
   readonly message?: string;
   readonly modelError?: WorkerModelError;

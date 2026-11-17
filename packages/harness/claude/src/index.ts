@@ -63,7 +63,7 @@ import {
   type ToolEvent,
 } from "@operad-io/harness-process";
 import { CLAUDE_FLOOR, DEFAULT_CLAUDE_COMMAND, claudeSignedIn, inspectClaude, sdkVersion } from "./claude-install.ts";
-import { DEFAULT_BASH_TIMEOUT_SECS, EFFORT_LEVELS, type WorkerResult } from "./protocol.ts";
+import { DEFAULT_BASH_TIMEOUT_SECS, CLAUDE_CONTEXT_WINDOWS, EFFORT_LEVELS, type WorkerResult } from "./protocol.ts";
 
 /** How long an agent may run before the step stops it. */
 export const DEFAULT_WALL_TIME_SECS = 3600;
@@ -119,10 +119,11 @@ export interface ClaudeHarnessOptions {
   readonly maxKept?: number | undefined;
 }
 
-/** The models a chat may pick with this agent, and the one used when none is set. */
+/** The models a chat may pick with this agent, the one used when none is set, and their windows. */
 export const CLAUDE_MODELS = {
-  list: ["opus", "sonnet", "haiku"],
+  list: ["opus", "sonnet", "haiku", "opus[1m]", "sonnet[1m]"],
   default: "sonnet",
+  windows: CLAUDE_CONTEXT_WINDOWS,
 } as const;
 
 /** The efforts a chat may pick with this agent, the default, and the flag that sets it. */

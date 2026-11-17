@@ -36,7 +36,7 @@ A filter is a named subset of a type's rows, by `state`:
 
 ## Views
 
-`views` maps an object type of this plugin to four functions:
+`views` maps an object type of this plugin to these functions:
 
 | Function | Signature | Required | What it does | A wrong value |
 |---|---|---|---|---|
@@ -44,8 +44,9 @@ A filter is a named subset of a type's rows, by `state`:
 | `sections` | `(object) => ViewSection[]` | yes | The section directory only; it reads no content | `views.<t>: sections: must be a function`; `sections must return an array`; `each section must be { id, title, live? }` |
 | `load` | `(ctx, object, sectionId, options) => SectionContent` | yes | Called when a person opens a section; may be slow and paged | `views.<t>: load: must be a function`; see [sections](#sections) |
 | `showScope` | `(ctx) => boolean` | no | Whether a list shows each row's `scope` beside its id because more than one namespace exists. Read once per list | `views.<t>: showScope: must be a function` |
+| `context` | `(ctx, object) => { used, window?, model? }` | no | Numbers a detail page shows beside the row, such as how full an agent's context is. It may read facts and may be slow; the kernel passes it through without reading it. A chat returns the last finished reply's context here | `views.<t>: context: must be a function` |
 
-The `ctx` of `load` and `showScope` is [the base context](define-plugin.md#the-context-every-hook-gets) plus `runTimes(runId)` (when a run started and ended and its steps and waits, in order), `settingsInForce(plugin)` (the plugin's settings as `config.json` has them now, so a view follows an edit without a restart) and `refreshedObject(type, id)` (an object after its `prepare` with the settings in force).
+The `ctx` of `load`, `showScope` and `context` is [the base context](define-plugin.md#the-context-every-hook-gets) plus `runTimes(runId)` (when a run started and ended and its steps and waits, in order), `settingsInForce(plugin)` (the plugin's settings as `config.json` has them now, so a view follows an edit without a restart) and `refreshedObject(type, id)` (an object after its `prepare` with the settings in force).
 
 ### The row
 
@@ -87,6 +88,7 @@ Each entry's `id` is what a client passes back to `load`.
 | `tail` | string | The part that is still changing, as Markdown: always its **whole current text**, not what changed since the last read |
 | `status` | `{ text: string, since: number }` | What the live section is doing now, and since when in epoch milliseconds. The kernel passes it through without reading it; a client that does not know it ignores it |
 | `delta` | boolean | `true` when `markdown` holds only what follows the requested `after`. Leave it out when the answer is a whole page: the kernel then tells the client to replace instead of appending |
+| `context` | `{ used: number, window?: number, model?: string }` | Numbers a client shows beside the section, such as how full an agent's context is. The kernel passes it through on every read, including one with `after`; a client that does not know it ignores it |
 
 ### The size cap, the timeout and the rate
 

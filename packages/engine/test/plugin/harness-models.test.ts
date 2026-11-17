@@ -29,6 +29,27 @@ describe("a harness plugin's models", () => {
     expect(() => load(harness({ list: [], default: null }, "domain"))).toThrow(/only a harness/);
   });
 
+  test("a model's context window is offered beside the list, and an unknown one is left out", () => {
+    const registry = load(
+      harness({ list: ["a", "b"], default: "a", windows: { a: 200_000 } }),
+    );
+    expect(registry.loadedModels()).toEqual({
+      h: { list: ["a", "b"], default: "a", windows: { a: 200_000 } },
+    });
+  });
+
+  test("a window for a model not in the list, or not a positive whole number, is refused", () => {
+    expect(() => load(harness({ list: ["a"], default: null, windows: { b: 1 } }))).toThrow(
+      /models\.windows\.b: must be one of the models in the list/,
+    );
+    expect(() => load(harness({ list: ["a"], default: null, windows: { a: 0 } }))).toThrow(
+      /models\.windows\.a: must be a positive whole number/,
+    );
+    expect(() => load(harness({ list: ["a"], default: null, windows: { a: 1.5 } }))).toThrow(
+      /models\.windows\.a: must be a positive whole number/,
+    );
+  });
+
   test("a function is called with the plugin's settings each time the list is read", () => {
     let calls = 0;
     let received: unknown;

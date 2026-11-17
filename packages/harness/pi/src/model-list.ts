@@ -26,15 +26,30 @@ export function piModelListPath(home: string): string {
   return join(home, "harness", "pi", MODEL_LIST_FILE);
 }
 
-/**
- * The rows of `pi --list-models` as provider/id: the first two columns of each
- * row after the header row. Anything that is not such a row is skipped.
- */
-export function parsePiCatalogue(output: string): readonly string[] {
-  const found: string[] = [];
+/** One row of `pi --list-models`: the model's provider/id and its context window when the table gives one. */
+export interface PiCatalogueRow {
+  readonly name: string;
+  readonly window?: number | undefined;
+}
+
+/** A human token count from pi's table (`400K`, `1M`, `1.5M`) as a whole number. */
+export function parsePiTokenCount(value: string | undefined): number | undefined {
+  const found = value === undefined ? null : /^(\d+(?:\.\d+)?)([KM])?$/i.exec(value);
+  if (found === null) return undefined;
+  const count = Number(found[1]);
+  const unit = found[2]?.toUpperCase();
+  if (!Number.isFinite(count) || count <= 0) return undefined;
+  const tokens = unit === "M" ? count * 1_000_000 : unit === "K" ? count * 1_000 : count;
+  return Math.round(tokens);
+}
+
+/** The rows of `pi --list-models`: provider/id, and the context column when it is a token count. */
+export function parsePiCatalogueRows(output: string): readonly PiCatalogueRow[] {
+  const found: PiCatalogueRow[] = [];
+  const names = new Set<string>();
   let header = false;
   for (const line of output.split("\n")) {
-    const [provider, id] = line.trim().split(/\s+/);
+    const [provider, id, context] = line.trim().split(/\s+/);
     if (provider === undefined || id === undefined) continue;
     // Rows count only after the header; a status sentence has none.
     if (provider === "provider" && id === "model") {
@@ -43,15 +58,27 @@ export function parsePiCatalogue(output: string): readonly string[] {
     }
     if (!header) continue;
     const name = `${provider}/${id}`;
-    if (!found.includes(name)) found.push(name);
+    if (names.has(name)) continue;
+    names.add(name);
+    const window = parsePiTokenCount(context);
+    found.push(window === undefined ? { name } : { name, window });
   }
   return found;
 }
 
-/** What a file under the home holds: when it was read and the rows it held. */
+/**
+ * The rows of `pi --list-models` as provider/id: the first two columns of each
+ * row after the header row. Anything that is not such a row is skipped.
+ */
+export function parsePiCatalogue(output: string): readonly string[] {
+  return parsePiCatalogueRows(output).map((row) => row.name);
+}
+
+/** What a file under the home holds: when it was read, the rows and their windows. */
 interface KeptList {
   readonly at: number;
   readonly list: readonly string[];
+  readonly windows?: Readonly<Record<string, number>> | undefined;
 }
 
 /** Where the list comes from and what a refresh may use. */
@@ -66,6 +93,7 @@ export interface PiModelListOptions {
 interface KeptRead {
   readonly at: number;
   readonly list: readonly string[];
+  readonly windows?: Readonly<Record<string, number>> | undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -79,7 +107,18 @@ function keptOf(value: unknown): KeptList | undefined {
   if (typeof at !== "number" || !Number.isFinite(at) || at < 0) return undefined;
   if (!Array.isArray(list)) return undefined;
   if (!list.every((item): item is string => typeof item === "string")) return undefined;
-  return { at, list };
+  const windows: Record<string, number> = {};
+  const raw = value["windows"];
+  if (isRecord(raw)) {
+    for (const [name, window] of Object.entries(raw)) {
+      if (typeof window === "number" && Number.isInteger(window) && window > 0) windows[name] = window;
+    }
+  }
+  return {
+    at,
+    list,
+    ...(Object.keys(windows).length === 0 ? {} : { windows }),
+  };
 }
 
 /** The list the home keeps for this command, or undefined when there is none. */
@@ -87,7 +126,13 @@ export function readPiModelList(options: PiModelListOptions): KeptRead | undefin
   try {
     const value: unknown = JSON.parse(readFileSync(piModelListPath(options.home), "utf8"));
     const kept = keptOf(value);
-    return kept === undefined ? undefined : { at: kept.at, list: kept.list };
+    return kept === undefined
+      ? undefined
+      : {
+          at: kept.at,
+          list: kept.list,
+          ...(kept.windows === undefined ? {} : { windows: kept.windows }),
+        };
   } catch {
     return undefined;
   }
@@ -112,7 +157,7 @@ async function textOf(stream: unknown): Promise<string> {
 }
 
 /** Asks pi once. Undefined means it failed, was killed, or answered with an error. */
-async function probe(options: PiModelListOptions): Promise<readonly string[] | undefined> {
+async function probe(options: PiModelListOptions): Promise<readonly PiCatalogueRow[] | undefined> {
   let child: ReturnType<typeof Bun.spawn>;
   try {
     child = Bun.spawn([options.command, "--list-models"], {
@@ -138,7 +183,7 @@ async function probe(options: PiModelListOptions): Promise<readonly string[] | u
       child.exited,
     ]);
     if (timedOut || exitCode !== 0) return undefined;
-    return parsePiCatalogue(out.trim() === "" ? err : out);
+    return parsePiCatalogueRows(out.trim() === "" ? err : out);
   } catch {
     return undefined;
   } finally {
@@ -149,13 +194,21 @@ async function probe(options: PiModelListOptions): Promise<readonly string[] | u
 
 async function writeKept(
   options: PiModelListOptions,
-  list: readonly string[],
+  rows: readonly PiCatalogueRow[],
   at: number,
 ): Promise<void> {
   const path = piModelListPath(options.home);
   const temporary = join(dirname(path), `.${MODEL_LIST_FILE}.${process.pid}.${randomUUID()}.tmp`);
   await mkdir(dirname(path), { recursive: true });
-  const kept: KeptList = { at, list };
+  const windows: Record<string, number> = {};
+  for (const row of rows) {
+    if (row.window !== undefined) windows[row.name] = row.window;
+  }
+  const kept: KeptList = {
+    at,
+    list: rows.map((row) => row.name),
+    ...(Object.keys(windows).length === 0 ? {} : { windows }),
+  };
   await writeFile(temporary, `${JSON.stringify(kept)}\n`);
   await rename(temporary, path);
 }
@@ -174,8 +227,8 @@ export function refreshPiModelList(options: PiModelListOptions): Promise<readonl
     return Promise.resolve(readPiModelList(options)?.list ?? []);
   }
   const loading = probe(options)
-    .then(async (list) => {
-      if (list === undefined) {
+    .then(async (rows) => {
+      if (rows === undefined) {
         failedAt.set(key, options.now());
         if (!failedLogged.has(key)) {
           failedLogged.add(key);
@@ -188,8 +241,8 @@ export function refreshPiModelList(options: PiModelListOptions): Promise<readonl
       failedAt.delete(key);
       failedLogged.delete(key);
       const at = options.now();
-      await writeKept(options, list, at).catch(() => undefined);
-      return list;
+      await writeKept(options, rows, at).catch(() => undefined);
+      return rows.map((row) => row.name);
     })
     .finally(() => {
       refreshing.delete(key);
@@ -223,4 +276,9 @@ export async function piModelListReady(options: PiModelListOptions): Promise<rea
     return kept.list;
   }
   return await refreshPiModelList(options);
+}
+
+/** The context windows of the kept model list, by provider/id; empty when none are kept. */
+export function piModelWindows(options: PiModelListOptions): Readonly<Record<string, number>> {
+  return readPiModelList(options)?.windows ?? {};
 }

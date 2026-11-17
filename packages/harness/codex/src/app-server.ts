@@ -29,6 +29,8 @@ export interface AppServerUsage {
   readonly cachedReadTokens?: number;
   readonly cachedWriteTokens?: number;
   readonly thoughtTokens?: number;
+  /** The model's context window when the app-server reports it. */
+  readonly modelContextWindow?: number;
 }
 
 /** An error response of the app-server, or the error of a failed turn. */
@@ -136,6 +138,7 @@ export function usageOf(value: unknown): AppServerUsage | null {
   const cachedReadTokens = numberField(counts, "cachedInputTokens");
   const cachedWriteTokens = numberField(counts, "cacheWriteInputTokens");
   const thoughtTokens = numberField(counts, "reasoningOutputTokens");
+  const modelContextWindow = numberField(value, "modelContextWindow");
   return {
     ...(totalTokens === undefined ? {} : { totalTokens }),
     ...(inputTokens === undefined ? {} : { inputTokens }),
@@ -143,6 +146,7 @@ export function usageOf(value: unknown): AppServerUsage | null {
     ...(cachedReadTokens === undefined ? {} : { cachedReadTokens }),
     ...(cachedWriteTokens === undefined ? {} : { cachedWriteTokens }),
     ...(thoughtTokens === undefined ? {} : { thoughtTokens }),
+    ...(modelContextWindow === undefined ? {} : { modelContextWindow }),
   };
 }
 

@@ -340,3 +340,10 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 |---|---|---|---|
 | T-0526-M3 | packages/chat/src/index.ts | `chat:access` no longer ran the chat's `accessAction` before it recorded the level | `a repository chat's access level > /access edits opens work/chat-<id>, moves the chat there, and a write passes without a question` (and `/access full does the same`) |
 | T-0526-M4 | packages/chat/src/index.ts | `chat:access` recorded the level before the `accessAction` could refuse it | `a repository chat's access level > a worktree that cannot be opened leaves the level unchanged and says why` |
+
+## T-0529 — a chat shows how full the context is
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0529-M6 | packages/chat/src/reply.ts | the reply ignored the model list's context window | `a chat's context usage > the reply records the last call's context and the model's window, and the view shows both` |
+| T-0529-M7 | packages/chat/src/model.ts | the view kept the previous session's context after a new session began | `a chat's context usage > a new session clears the view until the next reply` |

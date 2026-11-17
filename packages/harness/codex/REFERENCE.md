@@ -139,9 +139,12 @@ sandbox is the bound there, not the profile.
 
 ## Usage, images, time
 
-- Tokens come from `thread/tokenUsage/updated`, its `last` turn counts. The cost
-  is unknown for a subscription login: `costMicros` and `costQuality` are
-  `null`, never `0`, and nothing in `dev` or `pool` stops or blocks on it.
+- Tokens come from `thread/tokenUsage/updated`, its `last` turn counts. The
+  reply's `context.used` is those counts' input plus cached read and cache write,
+  and `context.window` is the `modelContextWindow` the app-server reports with
+  them when it reports one. The cost is unknown for a subscription login:
+  `costMicros` and `costQuality` are `null`, never `0`, and nothing in `dev` or
+  `pool` stops or blocks on it.
 - Each `imageGeneration` item is counted per attempt in `imageGenCalls` of the
   step result and of the closing `result` line of the log.
 - Every line of the step log carries `receivedAt` (epoch milliseconds). A

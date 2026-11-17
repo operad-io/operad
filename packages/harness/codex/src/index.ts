@@ -672,6 +672,18 @@ export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
                 cache_write: usage?.cachedWriteTokens ?? undefined,
               };
               const closing = log.finalText.trim().length > 0 ? log.finalText : null;
+              const context =
+                usage === null || usage === undefined
+                  ? undefined
+                  : {
+                      used:
+                        (usage.inputTokens ?? 0) +
+                        (usage.cachedReadTokens ?? 0) +
+                        (usage.cachedWriteTokens ?? 0),
+                      ...(usage.modelContextWindow !== undefined && usage.modelContextWindow > 0
+                        ? { window: usage.modelContextWindow }
+                        : {}),
+                    };
               const base = {
                 type: "result" as const,
                 sessionId: end.sessionId.length > 0 ? end.sessionId : sessionId,
@@ -679,6 +691,7 @@ export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
                 cost: null,
                 finalMessage: closing,
                 model: model ?? null,
+                ...(context === undefined ? {} : { context }),
               };
               if (end.stopReason === "interrupted") {
                 result = { ...base, result: "cancelled" };
@@ -717,6 +730,7 @@ export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
                 sessionId,
                 usage: result.usage,
                 cost: null,
+                ...(result.context === undefined ? {} : { context: result.context }),
                 imageGenCalls: log.imageGenerations,
               }),
             );

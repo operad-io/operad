@@ -15,7 +15,7 @@ import type {
 import { maskSecrets, type FoldEntry } from "@operad-io/harness-process";
 import { secretValues } from "./reply.ts";
 import { foldLogTail, agentLogPath } from "./tail.ts";
-import { agentLine, attachmentsOf, chatData, chatRef, COMMAND_FACT, commandOfFact, ENTRY_FACT, entryOfFact, IMAGE_TYPES, latestRunOf, MESSAGE_FACT, modelAndCost, stopOfFact, unanswered, type Attachment, type Command, type Entry, type Message } from "./model.ts";
+import { agentLine, allMessages, attachmentsOf, chatData, chatRef, COMMAND_FACT, commandOfFact, ENTRY_FACT, entryOfFact, IMAGE_TYPES, lastReplyContext, latestRunOf, MESSAGE_FACT, modelAndCost, stopOfFact, unanswered, type Attachment, type ChatContext, type Command, type Entry, type Message } from "./model.ts";
 import type { TailRead } from "./tail.ts";
 
 /** How many messages of a chat one page of the transcript holds. */
@@ -45,6 +45,11 @@ function row(object: StoredObject): ObjectRow {
 
 function sections(): readonly ViewSection[] {
   return [{ id: TRANSCRIPT, title: "Transcript", live: true }];
+}
+
+/** The context the chat's detail page and transcript show: its last finished reply's. */
+async function chatContext(ctx: ViewContext, object: StoredObject): Promise<ChatContext | undefined> {
+  return lastReplyContext(chatData(object.data), allMessages(ctx.store, object.id));
 }
 
 function minute(at: number): string {
@@ -555,6 +560,7 @@ async function load(
   const speaker = await speakerOf(ctx, object);
   const facts = allFacts(ctx, ref);
   const live = await liveOf(ctx, object, facts, speaker);
+  const context = await chatContext(ctx, object);
   const since = markAfter(options.after);
   if (since !== undefined) {
     // Only what was recorded after the mark, in the same Markdown as a full read.
@@ -565,6 +571,7 @@ async function load(
       mark: markOf(Math.max(since, chunks.at(-1)?.last ?? 0)),
       delta: true,
       ...live,
+      ...(context === undefined ? {} : { context }),
     };
   }
   const pages = pagesOf(ref, chunksOf(facts));
@@ -591,8 +598,9 @@ async function load(
     ...(nextPage?.cursor === undefined ? {} : { next: nextPage.cursor }),
     ...(toc.length > 1 ? { pages: toc } : {}),
     ...live,
+    ...(context === undefined ? {} : { context }),
   };
 }
 
 /** The views of the chat type. */
-export const chatViews: ObjectViews = { row, sections, load };
+export const chatViews: ObjectViews = { row, sections, context: chatContext, load };

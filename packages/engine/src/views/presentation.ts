@@ -158,6 +158,14 @@ export interface ViewObject {
   readonly lastRun?: ViewRunEnd | undefined;
   /** The ids of the objects of this type whose row has this one in `after`. */
   readonly dependents?: readonly string[] | undefined;
+  /** Numbers the plugin shows beside the row, such as a chat's context usage. */
+  readonly context?:
+    | {
+        readonly used: number;
+        readonly window?: number | undefined;
+        readonly model?: string | undefined;
+      }
+    | undefined;
 }
 
 /** What one section read returns. */
@@ -181,6 +189,14 @@ export interface ViewSectionContent {
    * kernel does not read it; a client that does not know it ignores it.
    */
   readonly status?: SectionStatus | undefined;
+  /** Numbers the plugin shows beside the section, such as a chat's context usage. */
+  readonly context?:
+    | {
+        readonly used: number;
+        readonly window?: number | undefined;
+        readonly model?: string | undefined;
+      }
+    | undefined;
   /**
    * Present on a read that asked with `after`: true when `markdown` holds only
    * what follows the mark, false when the plugin answered with a whole page
@@ -378,6 +394,27 @@ function statusOf(value: unknown): SectionStatus | undefined {
   const since = value.since;
   if (text === undefined || typeof since !== "number" || !Number.isFinite(since)) return undefined;
   return { text, since };
+}
+
+/** A plugin's context numbers, passed through when `used` is a whole count. */
+function contextOf(value: unknown):
+  | {
+      readonly used: number;
+      readonly window?: number | undefined;
+      readonly model?: string | undefined;
+    }
+  | undefined {
+  if (!isRecord(value)) return undefined;
+  const used = value.used;
+  if (typeof used !== "number" || !Number.isInteger(used) || used < 0) return undefined;
+  const window = value.window;
+  const knownWindow = typeof window === "number" && Number.isInteger(window) && window > 0 ? window : undefined;
+  const model = textOf(value.model);
+  return {
+    used,
+    ...(knownWindow === undefined ? {} : { window: knownWindow }),
+    ...(model === undefined || model.length === 0 ? {} : { model }),
+  };
 }
 
 function objectKey(type: string, id: string): string {
@@ -1235,6 +1272,13 @@ export class Views {
     const actions: ViewAction[] = [];
     let unavailable: string | undefined;
     let dependents: readonly string[] = [];
+    let context:
+      | {
+          readonly used: number;
+          readonly window?: number | undefined;
+          readonly model?: string | undefined;
+        }
+      | undefined;
 
     if (owner !== undefined && object !== undefined) {
       const { scope, ...guarded } = this.guardedRow(
@@ -1250,6 +1294,20 @@ export class Views {
           `plugin "${owner.plugin}": sections failed for "${resolved.type}:${resolved.id}": ${messageOf(error)}`,
         );
         sections = [];
+      }
+      if (owner.views.context !== undefined) {
+        try {
+          context = contextOf(
+            await owner.views.context(
+              this.viewContext(owner.plugin, new AbortController().signal),
+              object,
+            ),
+          );
+        } catch (error) {
+          this.onLog(
+            `plugin "${owner.plugin}": context failed for "${resolved.type}:${resolved.id}": ${messageOf(error)}`,
+          );
+        }
       }
       actions.push(...(await this.availableActions(resolved.type, object)));
       dependents = await this.dependentsOf(owner.plugin, resolved.type, row.id, scope);
@@ -1279,6 +1337,7 @@ export class Views {
       ...(unavailable === undefined ? {} : { unavailable }),
       ...(lastRun === undefined ? {} : { lastRun }),
       ...(dependents.length === 0 ? {} : { dependents }),
+      ...(context === undefined ? {} : { context }),
     };
   }
 
@@ -1412,6 +1471,7 @@ export class Views {
     const rawMark = isRecord(content) ? textOf(content.mark) : undefined;
     const tail = isRecord(content) ? textOf(content.tail) : undefined;
     const status = isRecord(content) ? statusOf(content.status) : undefined;
+    const context = isRecord(content) ? contextOf(content.context) : undefined;
     // A plugin that ignored `after` answers with a whole page; only one that
     // says its answer is the delta may be appended to by a client.
     const honoured =
@@ -1431,7 +1491,7 @@ export class Views {
       options.full === true,
       after === undefined ? undefined : honoured,
     );
-    return pages === undefined ? finished : { ...finished, pages };
+    return pages === undefined ? { ...finished, ...(context === undefined ? {} : { context }) } : { ...finished, pages, ...(context === undefined ? {} : { context }) };
   }
 
   /** An async stream of ids that changed. Repeated ids coalesce. */
