@@ -66,6 +66,8 @@ export function markerEnv(
   marker: StepMarker | undefined = currentStepMarker(),
 ): Record<string, string> {
   if (marker === undefined) return {};
+  // What carries the marker must be followed and swept when the step ends.
+  startTracker(marker);
   return {
     [MARKER_ENV]: markerValue(marker),
     [MARKER_HOME_ENV]: homeToken(marker.home),
@@ -450,12 +452,26 @@ function keyOf(marker: StepMarker): string {
 }
 
 /**
+ * Follows a step's processes once it is about to start one. A step that starts
+ * none has nothing to find, so it never reads the process table: the table is
+ * the expensive part of ending a step.
+ */
+function startTracker(marker: StepMarker): void {
+  const key = keyOf(marker);
+  if (!running.has(key) || trackers.has(key)) return;
+  const tracker = new StepTracker({ watcher: createProcessWatch() });
+  trackers.set(key, tracker);
+  tracker.start();
+}
+
+/**
  * Tells the platform that the running step started a process of its own (the
  * sentinel of a command or of a harness), so its descendants are followed.
  */
 export function trackRoot(pid: number | undefined): void {
   const marker = currentStepMarker();
   if (marker === undefined || pid === undefined) return;
+  startTracker(marker);
   const tracker = trackers.get(keyOf(marker));
   if (tracker === undefined) return;
   tracker.addRoot(pid);
@@ -590,11 +606,6 @@ const running = new Map<string, number>();
 export function enterStep(marker: StepMarker): () => boolean {
   const key = keyOf(marker);
   running.set(key, (running.get(key) ?? 0) + 1);
-  if (!trackers.has(key)) {
-    const tracker = new StepTracker({ watcher: createProcessWatch() });
-    trackers.set(key, tracker);
-    tracker.start();
-  }
   return () => {
     const count = (running.get(key) ?? 1) - 1;
     if (count <= 0) {
@@ -620,10 +631,11 @@ export async function reapStep(
   const home = homeToken(marker.home);
   const key = keyOf(marker);
   const tracker = trackers.get(key);
-  tracker?.stop(options.clock);
-  tracker?.finish();
+  if (tracker === undefined) return [];
+  tracker.stop(options.clock);
+  tracker.finish();
   trackers.delete(key);
-  if (tracker !== undefined) await tracker.poll(options.table);
+  await tracker.poll(options.table);
   return reapMarked({
     select: (one) => one.marker === value && one.home === home,
     tracker,

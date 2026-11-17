@@ -1061,3 +1061,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0525-M9 | packages/engine/src/plugin/validate.ts | a declared `accessLevels` list was dropped from the harness capabilities | `harness capabilities > a harness declares the access levels it carries, and an absent list carries none` |
+
+## T-0528 — a step that started no process is not swept
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0528-M1 | packages/engine/src/platform/step-reap.ts | `enterStep` started a tracker again, so a step that started no process read the process table when it ended | `a step that started no process reads no process table` |
