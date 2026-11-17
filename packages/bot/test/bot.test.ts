@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { match, readProfile, type AccessProfile } from "@operad-io/access-match";
 import { CHAT_TYPE, allMessages, chatData } from "@operad-io/chat";
-import { createViews, listTypes, Views, type TriggerEvent } from "@operad-io/engine";
+import { createViews, listTypes, Views, type HarnessModelInfo, type TriggerEvent } from "@operad-io/engine";
 import {
   BOT_SETTINGS,
   DEFAULT_BOT,
@@ -344,6 +344,47 @@ describe("bot:chat and the model", () => {
     const chat = (await views.get("bot:default")).actions.find((a) => a.name === "bot:chat");
     expect(chat?.args?.properties?.model?.enum).toEqual(["claude-a", "claude-b", "pi-a", "pi-b"]);
   });
+
+  test("bot:chat and bot:create carry what each agent knows about each model", async () => {
+    const r = await rig({}, ["claude", "pi"]);
+    await syncBots(r.store, r.home, {});
+    const views = new Views({ registry: r.registry, store: r.store, onLog: () => undefined });
+    try {
+      const actions = (await views.get("bot:default")).actions;
+      const expected: Readonly<Record<string, HarnessModelInfo>> = {
+        "claude-a": {
+          id: "claude-a",
+          name: "claude A",
+          provider: "fake",
+          window: 100_000,
+          capabilities: ["vision", "tools"],
+        },
+        "claude-b": {
+          id: "claude-b",
+          name: "claude B",
+          provider: "fake",
+          capabilities: ["reasoning", "web"],
+        },
+        "pi-a": {
+          id: "pi-a",
+          name: "pi A",
+          provider: "fake",
+          window: 100_000,
+          capabilities: ["vision", "tools"],
+        },
+        "pi-b": {
+          id: "pi-b",
+          name: "pi B",
+          provider: "fake",
+          capabilities: ["reasoning", "web"],
+        },
+      };
+      expect(actions.find((a) => a.name === "bot:chat")?.args?.properties?.model?.info).toEqual(expected);
+      expect(actions.find((a) => a.name === "bot:create")?.args?.properties?.model?.info).toEqual(expected);
+    } finally {
+      views.close();
+    }
+  });
 });
 
 describe("bot:chat per-agent conditionals", () => {
@@ -355,7 +396,7 @@ describe("bot:chat per-agent conditionals", () => {
     const all = chat?.args?.allOf ?? [];
     expect(all.map((c) => c.if?.properties?.agent?.const)).toEqual(["claude", "pi", "radian"]);
     const then = (i: number) => all[i]?.then?.properties;
-    expect(then(0)?.model).toEqual({ type: "string", enum: ["claude-a", "claude-b"], default: "claude-a" });
+    expect(then(0)?.model).toMatchObject({ type: "string", enum: ["claude-a", "claude-b"], default: "claude-a" });
     expect(then(0)?.effort).toEqual({ type: "string", enum: ["claude-low", "claude-high"], default: "claude-low" });
     expect(then(1)?.model?.default).toBe("pi-b");
     expect(then(1)?.effort?.default).toBe("pi-high");

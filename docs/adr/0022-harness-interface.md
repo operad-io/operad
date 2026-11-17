@@ -62,3 +62,11 @@ The list stays small: it carries at most a fixed number of skills and a fixed nu
 A harness's model list may carry `windows`, a map from a listed model to its context window in tokens. The window is a positive whole number; a model whose window the harness does not know has no entry. The value is a declaration about the agent's own model list, so a chat can show how full the context is without guessing; a harness that learns the window at run time may also report it with the run's context.
 
 `claude` declares the window of each model it lists, including the 1M variants. `pi` reads the context from its own model registry. `codex` reads it from the model information its app-server reports when it reports one. A model with no known window leaves it out.
+
+### D11: A harness describes each model it lists
+
+A model in a harness's `models.list` is either its id, as before, or a description of it. A description has the model's `id` — the string a chat stores, unchanged — and may carry a display `name`, a `provider`, its context `window` and the `capabilities` it truly knows. A `models.info` object may carry the same descriptions by id instead; a bare string list stays valid, so a harness that knows nothing more still works.
+
+The capabilities are `vision` (accepts images), `reasoning`, `tools` and `web` (has its own web search). A harness declares only what it knows: a field or capability it cannot tell is absent, never guessed. The `window` is the same fact as the `windows` entry of D10; a harness may give either, and both are exposed.
+
+The descriptions reach a client wherever `/v1` already gives a harness's models: the plugin list carries the harness's `models`, and an action argument that names a model carries the descriptions in its `info`, keyed by id. A client that reads only the ids keeps working. Clients may label the list and the capabilities in their own words; the server adds no user text. `claude` describes anthropic models with vision, reasoning and tools. `pi` takes the provider, name, vision and reasoning from its model registry. `codex` passes on what its app-server reports.

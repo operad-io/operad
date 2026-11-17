@@ -32,7 +32,28 @@ function fakeHarness(name: string, calls: Call[]) {
     kind: "harness",
     version: "0.0.0",
     capabilities: { accessLevels: ["plan", "ask", "edits", "full"] },
-    models: name === "radian" ? { list: [], default: null } : { list: [`${name}-a`, `${name}-b`], default: `${name}-a` },
+    models:
+      name === "radian"
+        ? { list: [], default: null }
+        : {
+            list: [`${name}-a`, `${name}-b`],
+            default: `${name}-a`,
+            info: {
+              [`${name}-a`]: {
+                id: `${name}-a`,
+                name: `${name} A`,
+                provider: "fake",
+                window: 100_000,
+                capabilities: ["vision", "tools"],
+              },
+              [`${name}-b`]: {
+                id: `${name}-b`,
+                name: `${name} B`,
+                provider: "fake",
+                capabilities: ["reasoning", "web"],
+              },
+            },
+          },
     efforts: name === "radian" ? { list: [], default: null } : { list: [`${name}-low`, `${name}-high`], default: `${name}-low`, flag: "--effort" },
     steps: [
       {

@@ -347,3 +347,9 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 |---|---|---|---|
 | T-0529-M6 | packages/chat/src/reply.ts | the reply ignored the model list's context window | `a chat's context usage > the reply records the last call's context and the model's window, and the view shows both` |
 | T-0529-M7 | packages/chat/src/model.ts | the view kept the previous session's context after a new session began | `a chat's context usage > a new session clears the view until the next reply` |
+
+## T-0530 — a harness describes each model it lists
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0530-M5 | packages/chat/src/index.ts | `chat:model` left out the descriptions of the models it offers | `chat:model > the argument carries what the agent knows about each model` |

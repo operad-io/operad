@@ -25,6 +25,9 @@ const notesPath = fileURLToPath(
 const signedInPath = fileURLToPath(
   new URL("../../engine/test/fixtures/plugins/signed-in-harness.ts", import.meta.url),
 );
+const modelHarnessPath = fileURLToPath(
+  new URL("../../engine/test/fixtures/plugins/model-harness.ts", import.meta.url),
+);
 
 function capture(): { io: CliIo; out(): string; err(): string } {
   let out = "";
@@ -147,6 +150,12 @@ interface Row {
   enabled: boolean;
   origin: string;
   signedIn?: boolean;
+  models?: {
+    list: (string | { id: string })[];
+    default: string | null;
+    windows?: Record<string, number>;
+    info?: Record<string, { id: string; name?: string; provider?: string; capabilities?: string[] }>;
+  };
 }
 
 /** A `bun add` that writes the package a local registry would have put there. */
@@ -233,6 +242,34 @@ describe("plugins over HTTP", () => {
     const rows = await listing(true);
     expect(rows.find((row) => row.name === "demo")?.signedIn).toBeUndefined();
     expect(rows.find((row) => row.name === "shell")?.signedIn).toBeUndefined();
+  });
+
+  test("GET /v1/plugins carries a harness's models with what it knows about each", async () => {
+    await withRig(
+      async (rig) => {
+        const response = await call(rig, "GET");
+        expect(response.status).toBe(200);
+        const rows = ((await response.json()) as { plugins: Row[] }).plugins;
+        expect(rows.find((row) => row.name === "models")?.models).toEqual({
+          list: ["fake-large", "fake-small", "fake-plain"],
+          default: "fake-large",
+          windows: { "fake-large": 200_000 },
+          info: {
+            "fake-large": {
+              id: "fake-large",
+              name: "Fake Large",
+              provider: "fake",
+              window: 200_000,
+              capabilities: ["vision", "reasoning", "tools"],
+            },
+            "fake-small": { id: "fake-small", provider: "fake" },
+          },
+        });
+        expect(rows.find((row) => row.name === "demo")?.models).toBeUndefined();
+      },
+      undefined,
+      { models: { module: modelHarnessPath, enabled: true } },
+    );
   });
 
   test("a switch answers a harness's signedIn while it is enabled, and leaves it out when disabled", async () => {

@@ -97,8 +97,11 @@ unknown, not refused.
   2 s. The synchronous listing read only returns the cache, so a slow Codex does
   not hold up `serve`, and the list is read once when the plugins load so the
   first client that asks after the start already has it. The default is the
-  model Codex marks `isDefault`. A chat may pick any of them; a worker step
-  still gets its `--model` or the setting.
+  model Codex marks `isDefault`. The same answer carries each model's display
+  name, provider, context window and the capabilities its fields report
+  (`input` with `image` is vision; `reasoning`, `tools` and web search are
+  passed only when the app-server says so). A chat may pick any of them; a
+  worker step still gets its `--model` or the setting.
 - `signedIn` still uses `codex login status` (kept for 30 s). It is already
   cheap and does not start an app-server; `account/read` over a fresh app-server
   took about twice as long on the owner's machine. Only the yes/no is exposed.

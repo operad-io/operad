@@ -2421,16 +2421,21 @@ export function pluginAdminFor(
     pluginRows(context.home, (await readConfig(context.home)).plugins, loaded, load);
   const publicRow = ({ key: _key, ...row }: PluginInfo & { readonly key: string }): PluginInfo => row;
   // The plugin list already reaches every client; a harness adds its agent's
-  // login there, so a client never needs a session to know it.
-  const withSignIn = async (row: PluginInfo): Promise<PluginInfo> => {
+  // login and its models there, so a client never needs a session to know them.
+  const withHarness = async (row: PluginInfo): Promise<PluginInfo> => {
     if (!row.enabled) return row;
     const signedIn = await context.registry.signedInFor(row.name);
-    return signedIn === undefined ? row : { ...row, signedIn };
+    const models = context.registry.loadedModels()[row.name];
+    return {
+      ...row,
+      ...(signedIn === undefined ? {} : { signedIn }),
+      ...(models === undefined ? {} : { models }),
+    };
   };
   return {
     list: async () =>
       Promise.all(
-        (await rowsNow()).map(async ({ key: _key, ...row }) => withSignIn(row)),
+        (await rowsNow()).map(async ({ key: _key, ...row }) => withHarness(row)),
       ),
     install: async (specifier, options) => {
       if (!options.confirmed) {
@@ -2470,7 +2475,7 @@ export function pluginAdminFor(
       });
       const row = (await rowsNow()).find((item) => item.key === key);
       if (row === undefined) throw new ViewError("not-found", `plugins.${name}: no such plugin`);
-      return withSignIn(publicRow(row));
+      return withHarness(publicRow(row));
     },
   };
 }

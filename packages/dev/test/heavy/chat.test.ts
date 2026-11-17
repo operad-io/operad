@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { PluginRegistry, Views, definePlugin, type CommandContext, type StepEvent, type StoredObject, type TriggerEvent, type TriggerView } from "@operad-io/engine";
+import { PluginRegistry, Views, definePlugin, type CommandContext, type HarnessModelInfo, type StepEvent, type StoredObject, type TriggerEvent, type TriggerView } from "@operad-io/engine";
 import {
   allEntries,
   allMessages,
@@ -26,7 +26,28 @@ function fakeHarness(name: string) {
     kind: "harness",
     version: "0.0.0",
     capabilities: { accessLevels: ["plan", "ask", "edits", "full"] },
-    models: name === "radian" ? { list: [], default: null } : { list: [`${name}-a`, `${name}-b`], default: `${name}-a` },
+    models:
+      name === "radian"
+        ? { list: [], default: null }
+        : {
+            list: [`${name}-a`, `${name}-b`],
+            default: `${name}-a`,
+            info: {
+              [`${name}-a`]: {
+                id: `${name}-a`,
+                name: `${name} A`,
+                provider: "fake",
+                window: 100_000,
+                capabilities: ["vision", "tools"],
+              },
+              [`${name}-b`]: {
+                id: `${name}-b`,
+                name: `${name} B`,
+                provider: "fake",
+                capabilities: ["reasoning", "web"],
+              },
+            },
+          },
     efforts: name === "radian" ? { list: [], default: null } : { list: [`${name}-low`, `${name}-high`], default: `${name}-low`, flag: "--effort" },
     steps: [{ name: "agent", results: ["done", "failed", "interrupted"], run: () => ({ result: "failed" }) }],
   });
@@ -131,6 +152,45 @@ describe("dev:chat and the model", () => {
     const chat = (await views.get("repo:repository")).actions.find((a) => a.name === "dev:chat");
     expect(chat?.args?.properties?.model?.enum).toEqual(["claude-a", "claude-b", "pi-a", "pi-b"]);
   });
+
+  test("the model argument carries what each agent knows about each model", async () => {
+    const r = await rig();
+    const views = new Views({ registry: r.registry, store: r.store, onLog: () => undefined });
+    try {
+      const chat = (await views.get("repo:repository")).actions.find((a) => a.name === "dev:chat");
+      const expected: Readonly<Record<string, HarnessModelInfo>> = {
+        "claude-a": {
+          id: "claude-a",
+          name: "claude A",
+          provider: "fake",
+          window: 100_000,
+          capabilities: ["vision", "tools"],
+        },
+        "claude-b": {
+          id: "claude-b",
+          name: "claude B",
+          provider: "fake",
+          capabilities: ["reasoning", "web"],
+        },
+        "pi-a": {
+          id: "pi-a",
+          name: "pi A",
+          provider: "fake",
+          window: 100_000,
+          capabilities: ["vision", "tools"],
+        },
+        "pi-b": {
+          id: "pi-b",
+          name: "pi B",
+          provider: "fake",
+          capabilities: ["reasoning", "web"],
+        },
+      };
+      expect(chat?.args?.properties?.model?.info).toEqual(expected);
+    } finally {
+      views.close();
+    }
+  });
 });
 
 describe("dev:chat per-agent conditionals", () => {
@@ -140,7 +200,7 @@ describe("dev:chat per-agent conditionals", () => {
     const chat = (await views.get("repo:repository")).actions.find((a) => a.name === "dev:chat");
     const all = chat?.args?.allOf ?? [];
     expect(all.map((c) => c.if?.properties?.agent?.const)).toEqual(["claude", "pi"]);
-    expect(all[1]?.then?.properties?.model).toEqual({ type: "string", enum: ["pi-a", "pi-b"], default: "pi-a" });
+    expect(all[1]?.then?.properties?.model).toMatchObject({ type: "string", enum: ["pi-a", "pi-b"], default: "pi-a" });
     expect(all[1]?.then?.properties?.effort).toEqual({ type: "string", enum: ["pi-low", "pi-high"], default: "pi-low" });
     expect(all[0]?.then?.properties?.model?.enum).toEqual(["claude-a", "claude-b"]);
   });

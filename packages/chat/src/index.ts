@@ -1,7 +1,7 @@
 /** The chat plugin: a long conversation with an agent, and how a message is answered. */
 
 import pkg from "../package.json" with { type: "json" };
-import { defineFlow, definePlugin, isRecord, type ActionArgsSchema, type ActionContext, type ActionTypeDefinition, type PluginFact, type UsageTokens } from "@operad-io/engine";
+import { defineFlow, definePlugin, isRecord, modelIds, type ActionArgsSchema, type ActionContext, type ActionTypeDefinition, type HarnessModels, type PluginFact, type UsageTokens } from "@operad-io/engine";
 import { ACCESS_LEVELS, isAccessLevel, type AccessLevel } from "@operad-io/access-match";
 import { stopKeptWorkers } from "@operad-io/engine/platform";
 import {
@@ -207,14 +207,16 @@ const sendAction: ActionTypeDefinition = {
   },
 };
 
-/** The models the chat's agent lists, as the enum of `chat:model`. */
-function modelArgs(models: readonly string[]): ActionArgsSchema {
+/** The models the chat's agent lists, as the enum and descriptions of `chat:model`. */
+function modelArgs(models: HarnessModels | undefined): ActionArgsSchema {
+  const list = modelIds(models);
   return {
     type: "object",
     properties: {
       model: {
         type: "string",
-        ...(models.length === 0 ? {} : { enum: [...models] }),
+        ...(list.length === 0 ? {} : { enum: [...list] }),
+        ...(models?.info === undefined ? {} : { info: models.info }),
         description: "The model the next reply uses.",
       },
     },
@@ -227,14 +229,14 @@ const modelAction: ActionTypeDefinition = {
   name: "model",
   on: CHAT_TYPE,
   command: "Change the model the next reply uses.",
-  args: modelArgs([]),
-  argsFor: (object, env) => modelArgs(env.models?.[chatData(object.data).harness]?.list ?? []),
+  args: modelArgs(undefined),
+  argsFor: (object, env) => modelArgs(env.models?.[chatData(object.data).harness]),
   when: (state, env) =>
-    !chatData(state).closed && (env.models?.[chatData(state).harness]?.list.length ?? 0) > 0,
+    !chatData(state).closed && modelIds(env.models?.[chatData(state).harness]).length > 0,
   why: (object, env) => {
     const chat = chatData(object.data);
     if (chat.closed) return `${object.id} is closed; its model cannot change`;
-    if ((env.models?.[chat.harness]?.list.length ?? 0) === 0) {
+    if (modelIds(env.models?.[chat.harness]).length === 0) {
       return `the agent "${chat.harness}" offers no model to pick`;
     }
     return undefined;
@@ -245,7 +247,7 @@ const modelAction: ActionTypeDefinition = {
     const chat = chatData(stored.data);
     if (chat.closed) throw new Error(`chat ${ctx.object.id} is closed; its model cannot change`);
     const model = (args as { readonly model: string }).model;
-    const offered = ctx.models[chat.harness]?.list ?? [];
+    const offered = modelIds(ctx.models[chat.harness]);
     if (!offered.includes(model)) {
       throw new Error(
         `the agent "${chat.harness}" cannot use the model "${model}"; it offers: ${offered.join(", ") || "none"}`,

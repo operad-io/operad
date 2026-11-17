@@ -3,6 +3,7 @@ import { join } from "node:path";
 import {
   defineFlow,
   MemoryPluginStore,
+  normalizeActionArgs,
   PluginError,
   PluginRegistry,
 } from "../../src/index.ts";
@@ -283,6 +284,50 @@ describe("plugin registry validation", () => {
     await expect(registry.runStep("ghost/step", {}, { runId: "r" })).rejects.toThrow(
       /no loaded plugin declares it/,
     );
+  });
+
+  test("an action schema carries a model's description beside its id", () => {
+    const args = normalizeActionArgs(
+      {
+        type: "object",
+        properties: {
+          model: {
+            type: "string",
+            enum: ["a"],
+            info: {
+              a: {
+                id: "a",
+                name: "Model A",
+                provider: "fake",
+                window: 200_000,
+                capabilities: ["vision", "tools"],
+              },
+            },
+          },
+        },
+      },
+      "args",
+    );
+    expect(args?.properties?.model?.info).toEqual({
+      a: {
+        id: "a",
+        name: "Model A",
+        provider: "fake",
+        window: 200_000,
+        capabilities: ["vision", "tools"],
+      },
+    });
+    expect(() =>
+      normalizeActionArgs(
+        {
+          type: "object",
+          properties: {
+            model: { type: "string", info: { a: { id: "a", capabilities: ["sound"] } } },
+          },
+        },
+        "args",
+      ),
+    ).toThrow(/capabilities/);
   });
 
   test("rejects an action args schema with an unknown keyword", () => {

@@ -1081,3 +1081,9 @@ the row fields.
 | T-0529-M8 | packages/engine/src/views/presentation.ts | the object view dropped the plugin's context | `a chat's context usage > the reply records the last call's context and the model's window, and the view shows both` |
 | T-0529-M9 | packages/engine/src/views/presentation.ts | a section read dropped the plugin's context | `a chat's context usage > the reply records the last call's context and the model's window, and the view shows both` |
 | T-0529-M10 | packages/engine/src/plugin/validate.ts | a context window for a model not in the list was accepted | `a harness plugin's models > a window for a model not in the list, or not a positive whole number, is refused` |
+
+## T-0530 — a harness describes each model it lists
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0530-M1 | packages/engine/src/plugin/validate.ts | a description in `models.list` was not carried into the models' `info` | `a harness plugin's models > a model may describe its id, name, provider, window and capabilities` |

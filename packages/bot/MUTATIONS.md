@@ -126,3 +126,9 @@ changes for bots, in the order they were recorded. The root
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0525-M13 | packages/bot/src/index.ts | a new bot chat started at `plan` instead of `ask` | `bot:chat > opens a chat of the chat plugin with the bot as its parent` |
+
+## T-0530 — a harness describes each model it lists
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0530-M7 | packages/bot/src/index.ts | `bot:chat` and `bot:create` left out the descriptions of the models they offer | `bot:chat and the model > bot:chat and bot:create carry what each agent knows about each model` |

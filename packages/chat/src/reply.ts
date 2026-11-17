@@ -7,7 +7,7 @@
 
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { AskTimeoutError, attachmentDir, isRecord, messageOf, safeFileName, type AskOutcome, type AskRequest, type ChoiceInfo, type JsonValue, type PluginStepResult, type RunObject, type StepAsker, type StepContext, type UsageTokens } from "@operad-io/engine";
+import { AskTimeoutError, attachmentDir, isRecord, messageOf, modelIds, safeFileName, type AskOutcome, type AskRequest, type ChoiceInfo, type JsonValue, type PluginStepResult, type RunObject, type StepAsker, type StepContext, type UsageTokens } from "@operad-io/engine";
 import { withAccessLevel } from "@operad-io/access-match";
 import {
   appendAlwaysAllow,
@@ -941,7 +941,7 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
       ctx.harnessModelsReady !== undefined
         ? await ctx.harnessModelsReady(chat.harness)
         : ctx.harnessModels?.(chat.harness);
-    if (models?.list.includes(chat.model) !== true) {
+    if (!modelIds(models).includes(chat.model)) {
       return failedReply(ctx, object.id, "model", `the agent "${chat.harness}" cannot use the model "${chat.model}"`, oldest);
     }
   }

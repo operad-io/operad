@@ -54,6 +54,24 @@ describe("chat:model", () => {
     expect(action?.args?.properties?.model?.enum).toEqual(["small", "large"]);
   });
 
+  test("the argument carries what the agent knows about each model", async () => {
+    const r = await rig(() => reply("ok"), {
+      list: ["small", "large"],
+      default: "small",
+      windows: { large: 200_000 },
+      info: {
+        small: { id: "small", name: "Small", provider: "fake", capabilities: ["vision"] },
+        large: { id: "large", name: "Large", provider: "fake", window: 200_000, capabilities: ["reasoning", "tools"] },
+      },
+    });
+    const chat = await r.chat({ model: "small" });
+    const action = await offered(r, chat);
+    expect(action?.args?.properties?.model?.info).toEqual({
+      small: { id: "small", name: "Small", provider: "fake", capabilities: ["vision"] },
+      large: { id: "large", name: "Large", provider: "fake", window: 200_000, capabilities: ["reasoning", "tools"] },
+    });
+  });
+
   test("a closed chat does not offer it", async () => {
     const r = await rig(() => reply("ok"), MODELS);
     const chat = await r.chat({ model: "small" });

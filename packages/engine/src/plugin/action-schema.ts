@@ -3,7 +3,12 @@
  * it when the plugin loads and validates the person's values against it.
  */
 
-import type { ActionArgSchema, ActionArgsSchema } from "./types.ts";
+import type {
+  ActionArgSchema,
+  ActionArgsSchema,
+  HarnessModelCapability,
+  HarnessModelInfo,
+} from "./types.ts";
 import { canonical } from "./paging.ts";
 import { isRecord } from "../util.ts";
 
@@ -36,6 +41,7 @@ const KEYWORDS = new Set([
   "description",
   "role",
   "format",
+  "info",
   "editable",
   "confirm",
 ]);
@@ -143,6 +149,49 @@ function normalizeSchema(
     if (value[key] !== undefined && typeof value[key] !== "boolean") {
       throw new Error(`${at}.${key}: must be a boolean`);
     }
+  }
+
+  let info: Readonly<Record<string, HarnessModelInfo>> | undefined;
+  if (value.info !== undefined) {
+    if (!isRecord(value.info)) throw new Error(`${at}.info: must be an object`);
+    const models: Record<string, HarnessModelInfo> = {};
+    for (const [id, raw] of Object.entries(value.info)) {
+      if (!isRecord(raw)) throw new Error(`${at}.info.${id}: must be an object`);
+      const declared = raw.id;
+      if (declared !== undefined && declared !== id) {
+        throw new Error(`${at}.info.${id}: id must be "${id}"`);
+      }
+      for (const field of ["name", "provider"] as const) {
+        if (raw[field] !== undefined && typeof raw[field] !== "string") {
+          throw new Error(`${at}.info.${id}.${field}: must be a string`);
+        }
+      }
+      const window = raw.window;
+      if (window !== undefined && (typeof window !== "number" || !Number.isInteger(window) || window <= 0)) {
+        throw new Error(`${at}.info.${id}.window: must be a positive whole number`);
+      }
+      const rawCapabilities = raw.capabilities;
+      const capabilities: HarnessModelCapability[] = [];
+      if (rawCapabilities !== undefined) {
+        if (!Array.isArray(rawCapabilities)) {
+          throw new Error(`${at}.info.${id}.capabilities: must be an array`);
+        }
+        for (const capability of rawCapabilities) {
+          if (capability !== "vision" && capability !== "reasoning" && capability !== "tools" && capability !== "web") {
+            throw new Error(`${at}.info.${id}.capabilities: must name vision, reasoning, tools or web`);
+          }
+          capabilities.push(capability);
+        }
+      }
+      models[id] = {
+        id,
+        ...(typeof raw.name === "string" ? { name: raw.name } : {}),
+        ...(typeof raw.provider === "string" ? { provider: raw.provider } : {}),
+        ...(typeof window === "number" ? { window } : {}),
+        ...(capabilities.length === 0 ? {} : { capabilities }),
+      };
+    }
+    info = models;
   }
 
   const enumValues = value.enum;
@@ -271,6 +320,7 @@ function normalizeSchema(
     ...(description === undefined ? {} : { description }),
     ...(role === "note" ? { role } : {}),
     ...(format === "file" ? { format } : {}),
+    ...(info === undefined ? {} : { info }),
     ...(value.editable === undefined ? {} : { editable: value.editable as boolean }),
     ...(value.confirm === undefined ? {} : { confirm: value.confirm as boolean }),
   };

@@ -6,6 +6,7 @@ import {
   PluginRegistry,
   definePlugin,
   type HarnessCapabilities,
+  type HarnessModels,
   type JsonValue,
   type PluginStepResult,
   type StepContext,
@@ -30,6 +31,7 @@ export interface Call {
 /** What a fake harness does with one call. */
 export type Script = (ctx: StepContext, call: Call) => Promise<PluginStepResult> | PluginStepResult;
 
+type Models = HarnessModels;
 type Levels = { readonly list: readonly string[]; readonly default: string | null; readonly windows?: Readonly<Record<string, number>> | undefined };
 
 /** A harness plugin whose answers the test writes. */
@@ -37,10 +39,10 @@ export function fakeHarness(
   name: string,
   script: Script,
   calls: Call[],
-  models?: Levels,
+  models?: Models,
   efforts?: Levels & { readonly flag?: string },
   capabilities?: HarnessCapabilities,
-  modelsReady?: (() => Promise<Levels>) | undefined,
+  modelsReady?: (() => Promise<Models>) | undefined,
 ) {
   const caps: HarnessCapabilities = {
     accessLevels: [...ACCESS_LEVELS],
@@ -109,12 +111,12 @@ export interface Rig {
  */
 export async function rig(
   script: Script,
-  models?: Levels,
+  models?: Models,
   levelOrHarness?: (Levels & { readonly flag?: string }) | string,
   harness = "fake",
   extraPlugins: readonly unknown[] = [],
   capabilities?: HarnessCapabilities,
-  modelsReady?: (() => Promise<Levels>) | undefined,
+  modelsReady?: (() => Promise<Models>) | undefined,
 ): Promise<Rig> {
   const efforts = typeof levelOrHarness === "string" ? undefined : levelOrHarness;
   const name = typeof levelOrHarness === "string" ? levelOrHarness : harness;

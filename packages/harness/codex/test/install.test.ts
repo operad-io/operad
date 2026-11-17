@@ -100,8 +100,37 @@ describe("what a chat may pick", () => {
     expect(await refreshCodexModels(command, 1_000)).toEqual({
       list: ["gpt-fake", "gpt-other"],
       default: "gpt-fake",
+      info: {
+        "gpt-fake": {
+          id: "gpt-fake",
+          name: "Fake",
+          provider: "openai",
+          capabilities: ["vision", "reasoning"],
+        },
+        "gpt-other": {
+          id: "gpt-other",
+          name: "Other",
+          provider: "openai",
+        },
+      },
     });
-    expect(codexModels(command, 1_001)).toEqual({ list: ["gpt-fake", "gpt-other"], default: "gpt-fake" });
+    expect(codexModels(command, 1_001)).toEqual({
+      list: ["gpt-fake", "gpt-other"],
+      default: "gpt-fake",
+      info: {
+        "gpt-fake": {
+          id: "gpt-fake",
+          name: "Fake",
+          provider: "openai",
+          capabilities: ["vision", "reasoning"],
+        },
+        "gpt-other": {
+          id: "gpt-other",
+          name: "Other",
+          provider: "openai",
+        },
+      },
+    });
   });
 
   test("a first read waits for the refresh the cache shares", async () => {
@@ -120,6 +149,19 @@ describe("what a chat may pick", () => {
     expect(await pending).toEqual({
       list: ["gpt-fake", "gpt-other"],
       default: "gpt-fake",
+      info: {
+        "gpt-fake": {
+          id: "gpt-fake",
+          name: "Fake",
+          provider: "openai",
+          capabilities: ["vision", "reasoning"],
+        },
+        "gpt-other": {
+          id: "gpt-other",
+          name: "Other",
+          provider: "openai",
+        },
+      },
     });
   });
 
@@ -136,6 +178,19 @@ describe("what a chat may pick", () => {
     expect(await refreshCodexModels(command, 5_000 + MODELS_EMPTY_RETRY_MS + 1)).toEqual({
       list: ["gpt-fake", "gpt-other"],
       default: "gpt-fake",
+      info: {
+        "gpt-fake": {
+          id: "gpt-fake",
+          name: "Fake",
+          provider: "openai",
+          capabilities: ["vision", "reasoning"],
+        },
+        "gpt-other": {
+          id: "gpt-other",
+          name: "Other",
+          provider: "openai",
+        },
+      },
     });
   });
 
