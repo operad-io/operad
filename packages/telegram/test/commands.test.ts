@@ -147,7 +147,7 @@ describe("the bot's command menu", () => {
     const menu = commands.start();
     await menu.ready;
     expect(api.menus).toHaveLength(1);
-    expect(names(api.menus[0])).toEqual(["model", "effort", "stop", "retry", "status", "close", "help", "extra"]);
+    expect(names(api.menus[0])).toEqual(["model", "effort", "access", "stop", "retry", "status", "close", "help", "extra"]);
     expect(api.menus[0]?.find((command) => command.command === "model")?.description).toBe(
       "Change the model the next reply uses.",
     );
@@ -159,7 +159,7 @@ describe("the bot's command menu", () => {
     available = false;
     await commands.refresh();
     expect(api.menus).toHaveLength(2);
-    expect(names(api.menus[1])).toEqual(["model", "effort", "stop", "retry", "status", "close", "help"]);
+    expect(names(api.menus[1])).toEqual(["model", "effort", "access", "stop", "retry", "status", "close", "help"]);
 
     await menu.stop();
     await w.close();
@@ -212,7 +212,7 @@ describe("the bot's command menu", () => {
 
     await commands.refresh();
     expect(api.menus).toHaveLength(1);
-    expect(names(api.menus[0])).toEqual(["model", "effort", "stop", "retry", "status", "close", "help"]);
+    expect(names(api.menus[0])).toEqual(["model", "effort", "access", "stop", "retry", "status", "close", "help"]);
     for (const name of names(api.menus[0])) expect(TELEGRAM_COMMAND_NAME.test(name)).toBe(true);
 
     const log = readFileSync(join(w.storeRoot, "logs", "telegram", "source.log"), "utf8");

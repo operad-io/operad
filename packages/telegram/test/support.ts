@@ -214,6 +214,7 @@ function fakeHarness(
     name: "test-agent",
     kind: "harness",
     version: "0.0.0",
+    capabilities: { accessLevels: ["plan", "ask", "edits", "full"] },
     models: { list: [...models], default: models[0] ?? null },
     efforts: { list: [...efforts.list], default: efforts.default },
     ...(agent === undefined
