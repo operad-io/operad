@@ -211,9 +211,12 @@ approves the change in Pending.
 Every chat has an access level, shown in the **Access** menu: **Plan only**,
 **Ask each time**, **Accept edits** or **Full access**. A repository chat starts
 at Plan only and a bot chat at Ask each time; choosing a level changes it for
-that chat and every later reply. The profile's deny lists and own ask rules
-still hold, and Full access says in one line that it skips the level's questions
-while those rules remain. See [Chats and bots](chats-and-bots.md#access-level).
+that chat and every later reply. Raising a repository chat that still works in
+the main clone to Accept edits or Full access first opens its worktree, and a
+failure leaves the level as it was and says why; a bot chat works in its own
+directory at every level. The profile's deny lists and own ask rules still hold,
+and Full access says in one line that it skips the level's questions while those
+rules remain. See [Chats and bots](chats-and-bots.md#access-level).
 
 ## Attachments
 

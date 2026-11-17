@@ -11,7 +11,7 @@ The types a plugin imports, by the page that explains them. The values these ent
 | `ActionArgSchema` | One property of an action's arguments. It is the JSON Schema subset the kernel validates: `type`, `enum`, `minimum`, `maximum`, `minLength`, `maxLength`, `items`, `properties`, `required`,... | [actions](actions.md) |
 | `ActionArgType` | The value types an action argument may have. | [actions](actions.md) |
 | `ActionArgsSchema` | The arguments of an action: a JSON Schema object. | [actions](actions.md) |
-| `ActionContext` | The context an action receives. `runId` is set when it answers a person wait. | [actions](actions.md) |
+| `ActionContext` | The context an action receives. `runId` is set when it answers a person wait; `runStep` runs a loaded step for the action. | [actions](actions.md) |
 | `ActionEnv` | What an action's checks may read: the object store, never write. | [actions](actions.md) |
 | `ActionEvent` | An event an action sends: the person's client is the source. | [actions](actions.md) |
 | `ActionOutcome` | What an action returns when it created an object: the line of text a person reads, and `opens`, the object as `type:id`. Returning only text still works. The kernel, the client API and HTTP pass... | [actions](actions.md) |

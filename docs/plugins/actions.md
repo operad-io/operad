@@ -147,6 +147,7 @@ An action's context has every field of [the base context](define-plugin.md#the-c
 | `harnesses` | list of strings | The names of the loaded `harness` plugins. |
 | `models`, `efforts` | records | The models and efforts each loaded harness plugin declares, by plugin name. |
 | `emit(event)` | function \| undefined | Sends an [event](events.md#an-action-sends-an-event) through the rules; set when the host routes events. |
+| `runStep(use, params, options)` | function \| undefined | Runs a loaded step for this action, with the options a step run takes (`runId`, and optionally `object` and `signal`). The step is not part of a flow. |
 
 ## Answering a wait from an action
 
