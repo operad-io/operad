@@ -48,6 +48,7 @@ The types a plugin imports, by the page that explains them. The values these ent
 | `ClientApi` | The in-process client API a source plugin's `start` receives: `list`, `get`, `section`, `events`, `act`, `pending` and `answer`, the same object HTTP and the TUI use. | [events](events.md) |
 | `PendingItem` | One item `pending` returns: a thing waiting for a person, with its prompt, choices, wait id, object and the actions that answer it. | [pending](pending.md) |
 | `ViewAction` | One action a client may offer for an object, as `get` lists it: its name, whether it needs a note or a confirmation. | [actions](actions.md) |
+| `ViewSkill` | A skill an object offers as a `/name` command: its name and the description from its `SKILL.md`, cut to what a menu shows. | [views](views.md) |
 | `CronField` | A five-field cron expression, evaluated in the machine's local time zone. | [events](events.md) |
 | `CronSchedule` | A type of the plugin API; its fields are described on the page. | [events](events.md) |
 | `EventFilePaths` | The paths an event's summary and data files use inside the store. | [events](events.md) |

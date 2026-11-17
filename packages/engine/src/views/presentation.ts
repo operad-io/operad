@@ -47,6 +47,7 @@ import type {
   RowMark,
   SectionStatus,
   ViewContext,
+  ViewSkill,
 } from "../plugin/types.ts";
 import { ROW_BADGE_MAX, ROW_MARKS } from "../plugin/types.ts";
 import {
@@ -152,6 +153,8 @@ export interface ViewObject {
   readonly row: ViewRow;
   readonly sections: readonly ViewSectionInfo[];
   readonly actions: readonly ViewAction[];
+  /** The skills this object offers as `/name` commands, such as a chat's. */
+  readonly skills?: readonly ViewSkill[] | undefined;
   /** Set when the object's plugin is no longer loaded. */
   readonly unavailable?: string | undefined;
   /** How the object's newest run ended; absent when it has no run or that run is still going. */
@@ -1272,6 +1275,7 @@ export class Views {
     const actions: ViewAction[] = [];
     let unavailable: string | undefined;
     let dependents: readonly string[] = [];
+    let skills: readonly ViewSkill[] | undefined;
     let context:
       | {
           readonly used: number;
@@ -1309,6 +1313,18 @@ export class Views {
           );
         }
       }
+      if (owner.views.skills !== undefined) {
+        try {
+          skills = await owner.views.skills(
+            this.viewContext(owner.plugin, new AbortController().signal),
+            object,
+          );
+        } catch (error) {
+          this.onLog(
+            `plugin "${owner.plugin}": skills failed for "${resolved.type}:${resolved.id}": ${messageOf(error)}`,
+          );
+        }
+      }
       actions.push(...(await this.availableActions(resolved.type, object)));
       dependents = await this.dependentsOf(owner.plugin, resolved.type, row.id, scope);
     } else {
@@ -1334,6 +1350,7 @@ export class Views {
       row,
       sections,
       actions,
+      ...(skills === undefined ? {} : { skills }),
       ...(unavailable === undefined ? {} : { unavailable }),
       ...(lastRun === undefined ? {} : { lastRun }),
       ...(dependents.length === 0 ? {} : { dependents }),

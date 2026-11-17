@@ -129,7 +129,7 @@ export const TOOLS = [
   },
   {
     name: "show",
-    description: "Show one object's row, sections and available actions.",
+    description: "Show one object's row, sections, skills and available actions.",
     inputSchema: {
       type: "object",
       required: ["id"],

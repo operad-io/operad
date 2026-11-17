@@ -82,6 +82,8 @@ A step may give skill directories in its `skills` param. A harness that declares
 
 The list is capped: `MAX_PROMPT_SKILLS` skills and `MAX_PROMPT_DESCRIPTION_CHARS` characters of a description (then `...`), and it says how many skills the cap left out. A skill whose `SKILL.md` or name cannot be read is left out. A harness that declares `loadsSkills` gets its prompt unchanged.
 
+These rules are for the list this param produces. A chat skill a person types as `/name rest` is different: a harness that does not declare `loadsSkills` gets that skill's body in the message, after a line naming the skill and before `rest`, while one that declares it gets `/name rest` unchanged (ADR 0028 D9).
+
 ## Pool workers
 
 `pool/agent` is called from a flow with params:

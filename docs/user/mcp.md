@@ -265,7 +265,7 @@ a plugin later does not add its actions; list them by hand.
 |---|---|---|
 | `types` | none | `{ "types": [...] }`, the same list as `GET /v1/types`. |
 | `list` | none; one of `type`, `root`, `parent` is needed | `{ "rows": [...], "next": "<c>" }`, the same page as `GET /v1/objects`. |
-| `show` | `id` | The object with its row, sections, allowed actions and `ownerActions`. |
+| `show` | `id` | The object with its row, sections, skills, allowed actions and `ownerActions`. A chat's `skills` are the ones it can type as `/name`, each `{ name, description? }`, beside the actions a client already reads. |
 | `section` | `id`, `section` | `{ "markdown", "next", "mark", "tail", "delta" }`, the same read as the HTTP section call; optional `cursor`, `after`, `full`. |
 | `pending` | none | `{ "items": [...] }`, with only the actions the lead may run. |
 | `answer` | `runId`, `waitId`, `choice` | `{ "runId", "waitId", "choice" }`; optional `note`, `confirmed`. |

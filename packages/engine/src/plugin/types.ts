@@ -269,6 +269,17 @@ export interface ObjectViews {
         | undefined
       >)
     | undefined;
+  /**
+   * The skills an object offers as `/name` commands, such as a chat's. The
+   * kernel passes it through and reads no meaning into it. Absent when the
+   * type has none.
+   */
+  readonly skills?:
+    | ((
+        ctx: ViewContext,
+        object: StoredObject,
+      ) => MaybePromise<readonly ViewSkill[] | undefined>)
+    | undefined;
   /** Called when a person opens a section; it may be slow and paged. */
   readonly load: (
     ctx: ViewContext,
@@ -276,6 +287,13 @@ export interface ObjectViews {
     sectionId: string,
     options: SectionReadOptions,
   ) => MaybePromise<SectionContent>;
+}
+
+/** A skill an object offers as a `/name` command: its name and what it does. */
+export interface ViewSkill {
+  readonly name: string;
+  /** The description from its `SKILL.md`, cut to what a menu shows. */
+  readonly description?: string | undefined;
 }
 
 /** A key binding a plugin brings as its default. */

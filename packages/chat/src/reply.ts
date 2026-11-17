@@ -22,6 +22,7 @@ import {
   type FoldState,
   type MessageInbox,
 } from "@operad-io/harness-process";
+import { readSkills, skillMessage } from "./skills.ts";
 import {
   allEntries,
   allMessages,
@@ -972,6 +973,8 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
     );
   }
   const leveled = withAccessLevel(live.access, level);
+  const skills = readSkills(live.skills);
+  const loadsSkills = capabilities?.loadsSkills === true;
 
   // A harness that takes messages mid-run is handed each ordinary message that
   // arrives while this round runs, after the tool calls already running. A
@@ -988,7 +991,9 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
       const data = fact.data;
       if (data.role !== "user" || typeof data.id !== "string" || typeof data.text !== "string") return;
       arrived.add(data.id);
-      if (attachmentsOf(data.attachments).length === 0) inbox.send(data.id, data.text);
+      if (attachmentsOf(data.attachments).length === 0) {
+        inbox.send(data.id, skillMessage(data.text, skills, loadsSkills));
+      }
     });
     // A message that came between the first read and this subscription is in
     // the facts now. It is delivered, not also put into the prompt.
@@ -1107,7 +1112,10 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
     midRun?.close();
   };
   const context = contextFor(chat, live, session);
-  const prompt = promptFor(pending, new Set(images.map((image) => image.path)));
+  const prompt = promptFor(
+    pending.map((message) => ({ ...message, text: skillMessage(message.text, skills, loadsSkills) })),
+    new Set(images.map((image) => image.path)),
+  );
   let outcome: PluginStepResult;
   try {
     outcome = await runStep(

@@ -191,6 +191,9 @@ function normalizeViews(
     if (raw.context !== undefined && typeof raw.context !== "function") {
       throw new PluginError(`${at}.${type}: context: must be a function`);
     }
+    if (raw.skills !== undefined && typeof raw.skills !== "function") {
+      throw new PluginError(`${at}.${type}: skills: must be a function`);
+    }
     views[type] = {
       row: raw.row as ObjectViews["row"],
       sections: raw.sections as ObjectViews["sections"],
@@ -201,6 +204,9 @@ function normalizeViews(
       ...(raw.context === undefined
         ? {}
         : { context: raw.context as NonNullable<ObjectViews["context"]> }),
+      ...(raw.skills === undefined
+        ? {}
+        : { skills: raw.skills as NonNullable<ObjectViews["skills"]> }),
     };
   }
   return views;

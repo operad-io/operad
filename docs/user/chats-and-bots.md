@@ -68,11 +68,23 @@ declared; one field takes the whole rest, and with more than one the last field
 takes what is left. A `/xxx` that names no action, or a slash later in the line,
 is an ordinary message. `/close` asks for the action's confirmation: `/close`
 alone does nothing and says to send `/close yes`. `/help` lists the actions this
-chat accepts, each with its one-line description. Every attempt leaves one entry
+chat accepts, each with its one-line description, then the skills it can type
+by name. Every attempt leaves one entry
 in the transcript, naming who typed it, the line and what happened or why it was
 refused; that entry is not a message, so the agent never sees it. A command runs
 at once while a reply is being written and does not start a reply of its own.
 A command works from every client because `chat:send` handles it.
+
+A chat's skills are typed as `/name rest` too. A bot chat can type its bot's
+skills; a repository chat can type the skills its `dev.json` gives it. When the
+name is not one of operad's commands, the line is an ordinary message to the
+agent: an agent that loads skills itself gets `/name rest` unchanged, and any
+other agent gets the skill's `SKILL.md` body in the prompt, after a line naming
+the skill and before `rest`. The transcript keeps the line as typed. A skill
+whose name is an operad command yields to the command. The chat's view carries
+`skills: [{ name, description? }]` beside its actions, so a client shows the
+skills and the commands from one `GET /v1/objects/<id>` (or MCP `show`); each
+description comes from `SKILL.md`.
 
 A message is an event: source `ios`, `telegram`, `cli`, `tui` or `other`, key is
 the message id, object is the chat. The `chat` plugin's own rule starts
