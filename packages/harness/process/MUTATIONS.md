@@ -171,3 +171,9 @@ and the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0525-M10 | packages/harness/process/src/ask-call.ts | an access level below `full` no longer made the run able to ask | `canAsk > is true for an access level below full, and false for full` |
+
+## T-0529 — a chat shows how full the context is
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0529-M11 | packages/harness/process/src/step.ts | an agent step's data dropped the context the worker reported | `codex/agent: a prompt run > the usage has the token counts and an unknown cost, never 0` |
