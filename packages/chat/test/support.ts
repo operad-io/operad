@@ -30,7 +30,7 @@ export interface Call {
 /** What a fake harness does with one call. */
 export type Script = (ctx: StepContext, call: Call) => Promise<PluginStepResult> | PluginStepResult;
 
-type Levels = { readonly list: readonly string[]; readonly default: string | null };
+type Levels = { readonly list: readonly string[]; readonly default: string | null; readonly windows?: Readonly<Record<string, number>> | undefined };
 
 /** A harness plugin whose answers the test writes. */
 export function fakeHarness(

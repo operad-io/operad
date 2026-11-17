@@ -229,3 +229,10 @@ setup it depends on, in the order they were recorded. The root
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0527-M1 | packages/harness/claude/test/fake-claude.ts | a spawn no longer recorded the worker's pid, so a reply that returned after the kept time left no pid to wait for | `the kept worker ends itself after the kept time` |
+
+## T-0529 — a chat shows how full the context is
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0529-M2 | packages/harness/claude/src/worker.ts | the reply's context kept the first model call's usage instead of the last | `the context is the last model call's prompt, not the sum, with the model's window` |
+| T-0529-M3 | packages/harness/claude/src/protocol.ts | the 1M variant declared a 200,000-token window | `the models claude declares > each model's context window is declared, including the 1M variants` |

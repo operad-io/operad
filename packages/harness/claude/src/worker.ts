@@ -48,6 +48,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { findClaude } from "./claude-install.ts";
 import {
+  claudeContextWindow,
   DEFAULT_BASH_TIMEOUT_SECS,
   parseInput,
   type CostQuality,
@@ -287,6 +288,7 @@ interface Turn {
   readonly open: Map<string, { readonly name: string; readonly startedAt: number }>;
   readonly profile: AccessProfile;
   final: Extract<SDKMessage, { type: "result" }> | undefined;
+  lastUsage: Required<WorkerUsage> | undefined;
   modelError: WorkerModelError | undefined;
   thrown: string | undefined;
   continued: boolean;
@@ -315,6 +317,7 @@ function newTurn(input: WorkerInput, io: WorkerIo, cancel: AbortSignal): Turn {
       return read.ok ? read.profile : {};
     })(),
     final: undefined,
+    lastUsage: undefined,
     modelError: undefined,
     thrown: undefined,
     continued: false,
@@ -710,6 +713,8 @@ class ClaudeSession {
         const id = message.message.id;
         if (this.seenMessages.has(id)) break;
         this.seenMessages.add(id);
+        const counts = usageOf(message.message.usage);
+        turn.lastUsage = counts;
         const said = messageSummary(
           message.message.content.map((block) => (block.type === "text" ? block.text : "")).join(" "),
         );
@@ -718,7 +723,7 @@ class ClaudeSession {
           role: "assistant",
           ...(said === undefined ? {} : { text: said }),
           stopReason: message.message.stop_reason,
-          usage: usageOf(message.message.usage),
+          usage: counts,
           cost: null,
         });
         break;
@@ -807,6 +812,17 @@ class ClaudeSession {
     const text = "result" in final && typeof final.result === "string" ? final.result : null;
     const names = Object.keys(final.modelUsage ?? {});
     const hasModel = names.length > 0;
+    const window = claudeContextWindow(turn.input.model ?? names[0]);
+    const context =
+      turn.lastUsage === undefined
+        ? undefined
+        : {
+            used:
+              turn.lastUsage.input +
+              turn.lastUsage.cache_read +
+              turn.lastUsage.cache_write,
+            ...(window === undefined ? {} : { window }),
+          };
     const base = {
       type: "result" as const,
       sessionId: final.session_id,
@@ -814,6 +830,7 @@ class ClaudeSession {
       cost: hasModel ? { micros: Math.round(finite(final.total_cost_usd) * 1e6), quality } : null,
       finalMessage: text,
       model: names[0] ?? null,
+      ...(context === undefined ? {} : { context }),
     };
     if (turn.continued) {
       return {

@@ -205,3 +205,10 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0525-M12 | packages/harness/pi/src/worker.ts | a level below `full` no longer made an owner extension's unchecked tool a refusal | `an extension's tool is refused at an access level below full when own settings are on` |
+
+## T-0529 — a chat shows how full the context is
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0529-M1 | packages/harness/pi/src/worker.ts | the reply's context used the summed usage of every call instead of the last call's prompt | `usage and cost are summed over every message_end, with a tool call between` |
+| T-0529-M4 | packages/harness/pi/src/model-list.ts | a model row's context column ignored its K/M unit | `the models pi declares > each row's context column becomes its context window` |

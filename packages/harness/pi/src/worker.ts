@@ -127,6 +127,7 @@ class Tally {
   #unpriced = 0;
   lastStop: string | undefined;
   lastError: string | undefined;
+  lastUsage: Required<WorkerUsage> | undefined;
 
   add(message: Extract<AgentSessionEvent, { type: "message_end" }>["message"]): WorkerLine | undefined {
     if (message.role !== "assistant") return undefined;
@@ -140,6 +141,7 @@ class Tally {
     for (const key of ["input", "output", "cache_read", "cache_write"] as const) {
       this.usage[key] = (this.usage[key] ?? 0) + counts[key];
     }
+    this.lastUsage = counts;
     const price = priceOf(usage);
     if (price === null) this.#unpriced += 1;
     else {
@@ -704,6 +706,19 @@ export async function runWorker(
     usage: tally.usage,
     cost: tally.cost,
     finalMessage: session.getLastAssistantText() ?? null,
+    ...(tally.lastUsage === undefined
+      ? {}
+      : {
+          context: {
+            used:
+              tally.lastUsage.input +
+              tally.lastUsage.cache_read +
+              tally.lastUsage.cache_write,
+            ...(model?.contextWindow !== undefined && model.contextWindow > 0
+              ? { window: model.contextWindow }
+              : {}),
+          },
+        }),
   });
 
   // Every way this run ends writes its Result here: text still held back as a

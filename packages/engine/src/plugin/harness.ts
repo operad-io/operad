@@ -58,6 +58,18 @@ export interface AgentResultData {
   readonly durationMs: number;
   /** The three durations of the run, when the step measured them. */
   readonly timings?: AgentTimings | undefined;
+  /**
+   * The context at the end of a finished reply: `used` is the last model
+   * call's input plus cache read and cache write, and `window` is the
+   * model's context window when known. A harness that cannot tell leaves it
+   * out, and an unknown window is left out.
+   */
+  readonly context?:
+    | {
+        readonly used: number;
+        readonly window?: number | undefined;
+      }
+    | undefined;
   /** Set on `failed`: which limit or condition ended the run. */
   readonly reason?: string | undefined;
   readonly message?: string | undefined;

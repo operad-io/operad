@@ -13,8 +13,10 @@ whether it is closed. Its ids are `C-0001` upward. Messages are not fields: each
 is a `chat.message` fact on the chat (who, when, text, attachment paths, the
 source and its reference). An assistant message also names the messages it answers
 (`replyTo`), the run it belongs to (`runId`), the session after it and, when its
-harness reported them, the token usage (`tokens`) and the step's three durations
-(`timings`: start to ready, ready to first increment, and the whole step). The
+harness reported them, the token usage (`tokens`), the context it ended with
+(`context`: the last model call's input plus cache read and cache write, and the
+model's `window` when known) and the step's three durations (`timings`: start to
+ready, ready to first increment, and the whole step). The
 chat carries the cost (`costMicros`, with `costQuality`) and tokens summed from
 its replies; a total missing some replies is marked incomplete for the cost and
 for the tokens. Closing a chat appends a `chat.closed` fact and marks the object
@@ -195,7 +197,9 @@ thinking as a block quote. A failed reply shows one line saying so and why, for
 every agent including radian. A stopped half reply is shown as stopped. Tool
 output is not shown. Radian chats show the
 tool lines only otherwise. Pages count messages, and a turn's entries stay on
-the page of its reply.
+the page of its reply. Every read also carries `context: { used, window?, model? }`,
+the last finished reply's context; a new session leaves it out until the next
+reply. The chat's object view carries the same `context`.
 
 ## The speaker
 

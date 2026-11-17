@@ -333,3 +333,10 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 | T-0525-M6 | packages/chat/src/reply.ts | the reply handed the harness the chat's profile without its level | `chat:access > the next reply uses the changed level, and the history says who changed it and to what` |
 | T-0525-M7 | packages/chat/src/reply.ts | an agent that declares no level was called instead of refusing the reply | `a chat whose agent cannot carry the level > the reply is refused at its start, names the level, and the agent is never called` |
 | T-0525-M8 | packages/chat/src/views.ts | the row never showed a level that differed from the starting one | `chat:access > the row leaves the starting level out and shows a choice` |
+
+## T-0529 — a chat shows how full the context is
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0529-M6 | packages/chat/src/reply.ts | the reply ignored the model list's context window | `a chat's context usage > the reply records the last call's context and the model's window, and the view shows both` |
+| T-0529-M7 | packages/chat/src/model.ts | the view kept the previous session's context after a new session began | `a chat's context usage > a new session clears the view until the next reply` |

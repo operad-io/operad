@@ -107,6 +107,7 @@ when the run stops, what is still held is written before the Result.
 | `result` | `"done"`, `"failed"` or `"cancelled"` | yes | how the run ended |
 | `sessionId` | string or null | yes | the session file path; null when no session was opened |
 | `usage` | `{input?, output?, cache_read?, cache_write?}` | yes | sums over every `message_end` (`cacheRead` becomes `cache_read`, `cacheWrite` becomes `cache_write`) |
+| `context` | `{used, window?}` | no | the last `message_end`'s input plus cache read and cache write, and the selected model's `contextWindow` when pi gives one |
 | `cost` | `{micros}` or null | yes | `round(sum of cost.total × 1e6)`; null when any `message_end` had no price, or there was none |
 | `finalMessage` | string or null | yes | `getLastAssistantText()` |
 | `reason` | string | on `failed` | a short condition name: `invalid_input`, `session_missing`, `model_missing`, `model_error` (also used for an unexpected error) |
@@ -188,7 +189,7 @@ param (`wallTimeSecs`, `stallSecs`) overrides the setting of the same name.
 | setting | type | default | meaning |
 |---|---|---|---|
 | `model` | string `provider/id` | unset | the model; unset uses pi's own default model |
-| `models` | list of `provider/id` | unset | the models a chat may pick; unset offers every model `pi --list-models` prints |
+| `models` | list of `provider/id` | unset | the models a chat may pick; unset offers every model `pi --list-models` prints. The kept list also keeps each model's context window from its `context` column |
 | `thinkingLevel` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max` | unset | the reasoning level; unset uses pi's default |
 | `command` | string | `pi` | the pi command: a name on PATH or a path; it must lead into an installed `@earendil-works/pi-coding-agent` at the floor version or newer |
 | `authPath` | string | `~/.pi/agent/auth.json` | pi's credentials file; the plugin passes the path and never reads the file |

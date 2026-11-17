@@ -1067,3 +1067,11 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0528-M1 | packages/engine/src/platform/step-reap.ts | `enterStep` started a tracker again, so a step that started no process read the process table when it ended | `a step that started no process reads no process table` |
+
+## T-0529 — a chat shows how full the context is
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0529-M8 | packages/engine/src/views/presentation.ts | the object view dropped the plugin's context | `a chat's context usage > the reply records the last call's context and the model's window, and the view shows both` |
+| T-0529-M9 | packages/engine/src/views/presentation.ts | a section read dropped the plugin's context | `a chat's context usage > the reply records the last call's context and the model's window, and the view shows both` |
+| T-0529-M10 | packages/engine/src/plugin/validate.ts | a context window for a model not in the list was accepted | `a harness plugin's models > a window for a model not in the list, or not a positive whole number, is refused` |

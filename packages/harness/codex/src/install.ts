@@ -223,10 +223,11 @@ interface ModelsCache {
 const modelsCache = new Map<string, ModelsCache>();
 const modelsLoading = new Map<string, Promise<HarnessModels>>();
 
-/** What a probe of the app-server's model list prints: id and whether it is the default. */
+/** What a probe of the app-server's model list prints: id, whether it is the default, and any window. */
 interface ModelChoice {
   readonly id: string;
   readonly isDefault: boolean;
+  readonly contextWindow?: number | undefined;
 }
 
 function emptyModels(): HarnessModels {
@@ -247,7 +248,14 @@ function parseModels(stdout: string): readonly ModelChoice[] {
     const record = entry as Record<string, unknown>;
     const id = record["id"];
     if (typeof id === "string" && id.length > 0) {
-      choices.push({ id, isDefault: record["isDefault"] === true });
+      const window = record["contextWindow"] ?? record["modelContextWindow"];
+      choices.push({
+        id,
+        isDefault: record["isDefault"] === true,
+        ...(typeof window === "number" && Number.isInteger(window) && window > 0
+          ? { contextWindow: window }
+          : {}),
+      });
     }
   }
   return choices;
@@ -284,7 +292,15 @@ async function probeModels(command: readonly string[], timeoutMs: number): Promi
     const choices = parseModels(stdout);
     const list = choices.map((choice) => choice.id);
     const fallback = choices.find((choice) => choice.isDefault)?.id ?? list[0] ?? null;
-    return { list, default: fallback };
+    const windows: Record<string, number> = {};
+    for (const choice of choices) {
+      if (choice.contextWindow !== undefined) windows[choice.id] = choice.contextWindow;
+    }
+    return {
+      list,
+      default: fallback,
+      ...(Object.keys(windows).length === 0 ? {} : { windows }),
+    };
   } catch {
     return emptyModels();
   } finally {

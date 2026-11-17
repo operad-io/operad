@@ -28,6 +28,11 @@ export interface AgentWorkerResult {
   readonly finalMessage: string | null;
   /** The model that did the work, when the worker reports it. */
   readonly model?: string | null;
+  /** The context at the end of a finished reply, when the worker can tell. */
+  readonly context?: {
+    readonly used: number;
+    readonly window?: number;
+  } | undefined;
   readonly reason?: string;
   readonly message?: string;
   /** Set when the worker saw a rate limit: it is a usage limit whatever the text says. */
@@ -164,6 +169,16 @@ export function modelErrorOf(message: string): Record<string, unknown> {
   };
 }
 
+/** A worker's end-of-reply context, when it has a whole token count. */
+export function contextOf(value: unknown): { readonly used: number; readonly window?: number } | undefined {
+  if (!isRecord(value)) return undefined;
+  const used = value.used;
+  if (typeof used !== "number" || !Number.isInteger(used) || used < 0) return undefined;
+  const window = value.window;
+  const known = typeof window === "number" && Number.isInteger(window) && window > 0 ? window : undefined;
+  return { used, ...(known === undefined ? {} : { window: known }) };
+}
+
 export function agentData(
   who: UsageSource,
   outcome: AgentRunOutcome,
@@ -179,6 +194,7 @@ export function agentData(
           incomplete: result.cost.incomplete === true,
           estimated: result.cost.quality === "estimated",
         };
+  const context = contextOf(result?.context);
   return {
     exitCode: outcome.exitCode,
     signal: outcome.signal,
@@ -186,6 +202,7 @@ export function agentData(
     finalMessage: result?.finalMessage ?? null,
     ...(result?.message === undefined ? {} : { message: result.message }),
     usage: standardUsage(who, result?.usage, cost),
+    ...(context === undefined ? {} : { context }),
     log,
     durationMs,
     stderr: outcome.stderrTail,

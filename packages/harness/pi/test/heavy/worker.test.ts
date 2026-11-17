@@ -483,12 +483,13 @@ test("a prompt that ends writes the lines in order and a Result with usage, cost
   expect(result["result"]).toBe("done");
   expect(result["usage"]).toEqual({ input: 12, output: 6, cache_read: 3, cache_write: 2 });
   expect(result["cost"]).toEqual({ micros: 1500 });
+  expect(result["context"]).toEqual({ used: 17, window: 128_000 });
   expect(result["finalMessage"]).toBe("ANSWER");
   const sessionId = result["sessionId"];
   expect(typeof sessionId).toBe("string");
   expect(String(sessionId).startsWith(String(s.input["sessionDir"]))).toBe(true);
   expect(existsSync(String(sessionId))).toBe(true);
-  expect(Object.keys(result).sort()).toEqual(["cost", "finalMessage", "result", "sessionId", "type", "usage"]);
+  expect(Object.keys(result).sort()).toEqual(["context", "cost", "finalMessage", "result", "sessionId", "type", "usage"]);
 });
 
 test("only the skill directories given are loaded, and the session log names them", async () => {
@@ -756,6 +757,8 @@ test("usage and cost are summed over every message_end, with a tool call between
   expect(output).toMatchObject({ toolCallId: start?.["toolCallId"], text: "x\n" });
   const result = last(run);
   expect(result["usage"]).toEqual({ input: 24, output: 16, cache_read: 6, cache_write: 4 });
+  // The context is the last call's prompt, not the sum over both calls.
+  expect(result["context"]).toEqual({ used: 17, window: 128_000 });
   expect(result["cost"]).toEqual({ micros: 3 });
   expect(run.stderr).toContain("tool_call read");
 });

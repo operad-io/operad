@@ -116,6 +116,7 @@ One JSON object per line, flushed per line, each with a `type`:
 | `result` | `"done"`, `"failed"` or `"cancelled"` | how the run ended |
 | `sessionId` | string or null | claude's `session_id`; its file is in `~/.claude/projects/`, and `claude --resume <id>` continues it |
 | `usage` | `{input, output, cache_read, cache_write}` | the result's four counters (`cache_creation_input_tokens` is `cache_write`); `{}` when there was no result |
+| `context` | `{used, window?}` | the last assistant message's input plus cache read and cache write, and the step's model's window when claude's model list gives one |
 | `cost` | `{micros, quality}` or null | `round(total_cost_usd × 1e6)`; `quality` is `estimated` with a subscription login (an API-price figure, not a charge) and `exact` otherwise |
 | `finalMessage` | string or null | the result's `result` text |
 | `model` | string or null | the first key of the result's `modelUsage` |

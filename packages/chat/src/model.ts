@@ -318,6 +318,8 @@ export interface MessageData {
   readonly costQuality?: CostQuality | undefined;
   /** An assistant message: the tokens it used, when the harness reported them. */
   readonly tokens?: UsageTokens | undefined;
+  /** An assistant message: the context it ended with, when the harness could tell. */
+  readonly context?: ReplyContext | undefined;
   /** An assistant message: how long the step took to start, to its first line, and in all. */
   readonly timings?: AgentTimings | undefined;
 }
@@ -548,6 +550,27 @@ function usageTokensOf(value: unknown): UsageTokens | undefined {
   return { input, output, cacheread, cachewrite };
 }
 
+/** What a reply records about the context it ended with. */
+export interface ReplyContext {
+  readonly used: number;
+  readonly window?: number | undefined;
+}
+
+/** What a chat's view says about its context: the last reply's numbers and model. */
+export interface ChatContext extends ReplyContext {
+  readonly model?: string | undefined;
+}
+
+/** The context numbers a harness or a stored reply reports, when they are whole. */
+export function replyContextOf(value: unknown): ReplyContext | undefined {
+  if (!isRecord(value)) return undefined;
+  const used = value.used;
+  if (typeof used !== "number" || !Number.isInteger(used) || used < 0) return undefined;
+  const window = value.window;
+  const known = typeof window === "number" && Number.isInteger(window) && window > 0 ? window : undefined;
+  return { used, ...(known === undefined ? {} : { window: known }) };
+}
+
 /** The model, tokens, cost and quality a harness's `usage` reports; each only when it did. */
 export function usageOf(value: unknown): {
   readonly model?: string;
@@ -687,6 +710,7 @@ function messageOfFact(fact: PluginFact): Message | undefined {
   const source = isRecord(data.source) ? data.source : {};
   const timings = timingsOf(data.timings);
   const tokens = usageTokensOf(data.tokens);
+  const context = replyContextOf(data.context);
   return {
     id: data.id,
     role: data.role,
@@ -707,6 +731,7 @@ function messageOfFact(fact: PluginFact): Message | undefined {
     ...(typeof data.costMicros === "number" && Number.isFinite(data.costMicros) ? { costMicros: data.costMicros } : {}),
     ...(isCostQuality(data.costQuality) ? { costQuality: data.costQuality } : {}),
     ...(tokens === undefined ? {} : { tokens }),
+    ...(context === undefined ? {} : { context }),
     ...(timings === undefined ? {} : { timings }),
     at: fact.at,
     sequence: fact.sequence,
@@ -948,6 +973,33 @@ export function currentSession(
     if (message?.role === "assistant" && message.session !== undefined) return message.session;
   }
   return typeof chat.session === "string" && chat.session.length > 0 ? chat.session : undefined;
+}
+
+/**
+ * The context a chat's view shows: the last finished reply's numbers, and the
+ * model that gave it. A reply from before the chat's current session is left
+ * out, so `/new` or a model change that starts a session clears the view until
+ * the next reply.
+ */
+export function lastReplyContext(
+  chat: ChatData,
+  messages: readonly Message[],
+): ChatContext | undefined {
+  let last: Message | undefined;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message?.role !== "assistant") continue;
+    last = message;
+    break;
+  }
+  if (last?.context === undefined) return undefined;
+  if ((chat.session ?? undefined) !== (last.session ?? undefined)) return undefined;
+  const model = last.model ?? chat.model ?? chat.lastModel;
+  return {
+    used: last.context.used,
+    ...(last.context.window === undefined ? {} : { window: last.context.window }),
+    ...(model === undefined || model.length === 0 ? {} : { model }),
+  };
 }
 
 function sizeText(size: number): string {

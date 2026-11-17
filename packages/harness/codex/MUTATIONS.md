@@ -82,3 +82,9 @@ recorded. The root [MUTATIONS.md](../../../MUTATIONS.md) explains the format and
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0511-M8 | packages/harness/codex/src/index.ts | `modelsReady` returned the empty cache instead of waiting for the refresh the cache was sharing | `what a chat may pick > a first read waits for the refresh the cache shares` |
+
+## T-0529 — a chat shows how full the context is
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0529-M5 | packages/harness/codex/src/index.ts | the reply's context left the cache write out of the last call's prompt | `codex/agent: a prompt run > the usage has the token counts and an unknown cost, never 0` |
