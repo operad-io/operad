@@ -223,3 +223,9 @@ setup it depends on, in the order they were recorded. The root
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0525-M11 | packages/harness/claude/src/access.ts | a level below `full` no longer made an unchecked tool a refusal | `a chat's access level > plan: one call reaches the level's decision` (and the ask and edits levels) |
+
+## T-0527 — the kept worker test takes its pid from the worker's start
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0527-M1 | packages/harness/claude/test/fake-claude.ts | a spawn no longer recorded the worker's pid, so a reply that returned after the kept time left no pid to wait for | `the kept worker ends itself after the kept time` |

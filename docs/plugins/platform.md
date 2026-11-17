@@ -50,7 +50,7 @@ The process the line starts leads its own group through a *sentinel*: it ignores
 
 ## What a step leaves behind
 
-Every process a step starts through the platform carries an environment marker naming the run and the step. When the step ends the platform finds the live processes of the same user that still carry the marker and stops them (TERM, a bounded wait, KILL). The same sweep runs at `serve` start for markers of runs that are no longer active. A process that removes the variable from its own environment is not found.
+Every process a step starts through the platform carries an environment marker naming the run and the step. When the step ends the platform finds the live processes of the same user that still carry the marker and stops them (TERM, a bounded wait, KILL). A step that started no marked process has nothing to find and reads no process table. The same sweep runs at `serve` start for markers of runs that are no longer active. A process that removes the variable from its own environment is not found.
 
 | Export | What it does |
 |---|---|
