@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { defaultAccess, match, withAccessLevel, withDefaultAccess } from "../src/index.ts";
+import { defaultAccess, defaultDenies, match, readProfile, withAccessLevel, withDefaultAccess } from "../src/index.ts";
 
 const HOME = "/home/u";
 const CWD = "/work/project";
@@ -111,4 +111,64 @@ test("every level, full included, keeps the default's deny and ask rules", () =>
     const push = match(profile, { tool: "bash", input: { command: "git push origin main" }, cwd: CWD }, { home: HOME });
     expect(push).toMatchObject({ allow: false, ask: true });
   }
+});
+
+test("a chat at full still asks for git push and for inline code", () => {
+  const profile = withAccessLevel({}, "full");
+  for (const command of ["git push origin main", 'bash -c "echo hi"']) {
+    expect(match(profile, { tool: "bash", input: { command }, cwd: CWD }, { home: HOME })).toMatchObject({
+      allow: false,
+      ask: true,
+    });
+  }
+});
+
+test("a generated step with no profile gets the default asks", () => {
+  const profile = withDefaultAccess(undefined);
+  for (const command of ["git push origin main", 'bash -c "echo hi"']) {
+    expect(match(profile, { tool: "bash", input: { command }, cwd: CWD }, { home: HOME })).toMatchObject({
+      allow: false,
+      ask: true,
+    });
+  }
+});
+
+test("defaultDenies is exactly the default's deny lists", () => {
+  expect(defaultDenies()).toEqual({ denyPaths: DENY_PATHS, denyCommands: DENY_COMMANDS });
+});
+
+test("a task worker keeps the default's denies, not its asks", () => {
+  const profile = withDefaultAccess({ defaultAsks: false });
+  expect(profile).toMatchObject({ defaultAsks: false, denyPaths: DENY_PATHS, denyCommands: DENY_COMMANDS });
+  expect(profile.askCommands).toBeUndefined();
+  expect(profile.askPaths).toBeUndefined();
+
+  // The default's ask commands and paths are not asked about.
+  expect(match(profile, { tool: "bash", input: { command: "git push origin main" }, cwd: CWD }, { home: HOME })).toEqual({ allow: true });
+  expect(match(profile, { tool: "write", input: { path: "~/.zshrc" }, cwd: CWD }, { home: HOME })).toEqual({ allow: true });
+  // A scripted edit does not ask, whichever form it takes.
+  expect(match(profile, { tool: "bash", input: { command: "python3 - <<'PY'\nprint(1)\nPY" }, cwd: CWD }, { home: HOME })).toEqual({ allow: true });
+  expect(match(profile, { tool: "bash", input: { command: 'bash -c "echo hi"' }, cwd: CWD }, { home: HOME }).ask).toBeUndefined();
+  // The default's denies still refuse.
+  for (const call of [
+    { tool: "bash", input: { command: "sudo ls" }, cwd: CWD },
+    { tool: "read", input: { path: "~/.ssh/id_ed25519" }, cwd: CWD },
+  ] as const) {
+    const verdict = match(profile, call, { home: HOME });
+    expect(verdict.allow).toBe(false);
+    expect(verdict.ask).toBeUndefined();
+  }
+});
+
+test("a flow profile still adds its own asks when the default's asks are left out", () => {
+  const profile = withDefaultAccess({ defaultAsks: false, askCommands: ["make"], askPaths: ["/scratch"] });
+  expect(profile.askCommands).toEqual(["make"]);
+  expect(profile.askPaths).toEqual(["/scratch"]);
+  expect(match(profile, { tool: "bash", input: { command: "make" }, cwd: CWD }, { home: HOME })).toMatchObject({ allow: false, ask: true });
+  expect(match(profile, { tool: "bash", input: { command: "git push origin main" }, cwd: CWD }, { home: HOME })).toEqual({ allow: true });
+});
+
+test("readProfile reads defaultAsks and refuses a malformed one", () => {
+  expect(readProfile({ defaultAsks: false })).toEqual({ ok: true, profile: { defaultAsks: false } });
+  expect(readProfile({ defaultAsks: "no" })).toEqual({ ok: false, message: "defaultAsks must be true or false" });
 });
