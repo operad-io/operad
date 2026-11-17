@@ -19,6 +19,7 @@ import {
   paramsObject,
   defineFlow,
   definePlugin,
+  type HarnessEfforts,
   type HarnessModelContext,
   type HarnessModelInfo,
   type PluginStepResult,
@@ -151,6 +152,23 @@ function piDefaultModel(settingsPath: string): string | undefined {
   }
 }
 
+/** One of pi's thinking levels, or undefined for anything else. */
+function thinkingLevelOf(value: unknown): WorkerThinkingLevel | undefined {
+  return typeof value === "string"
+    ? THINKING_LEVELS.find((level) => level === value)
+    : undefined;
+}
+
+/** pi's own default thinking level, from its settings file; undefined when it names none. */
+function piDefaultThinkingLevel(settingsPath: string): WorkerThinkingLevel | undefined {
+  try {
+    const value: unknown = JSON.parse(readFileSync(settingsPath, "utf8"));
+    return isRecord(value) ? thinkingLevelOf(value.defaultThinkingLevel) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** What pi is likely to use: the model's provider, else its settings' default provider. */
 function piProvider(model: unknown, settingsPath: string): string | undefined {
   if (typeof model === "string" && model.includes("/")) {
@@ -168,10 +186,13 @@ function piProvider(model: unknown, settingsPath: string): string | undefined {
   return undefined;
 }
 
+/** pi's documented built-in thinking level, used when neither operad nor pi names one. */
+export const PI_BUILTIN_THINKING_LEVEL = "medium" satisfies WorkerThinkingLevel;
+
 /** The efforts a chat may pick with this agent, mapped to its thinking levels. */
 export const PI_EFFORTS = {
   list: THINKING_LEVELS,
-  default: "medium",
+  default: PI_BUILTIN_THINKING_LEVEL,
   flag: "--thinking",
 } as const;
 
@@ -406,6 +427,19 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
     };
   }
 
+  /**
+   * The efforts a chat may pick, and the one it starts with: operad's
+   * `thinkingLevel` when it sets one, else pi's own `defaultThinkingLevel`,
+   * else pi's documented built-in level.
+   */
+  function piEfforts(settings: Readonly<Record<string, unknown>>): HarnessEfforts {
+    const wanted =
+      thinkingLevelOf(settings.thinkingLevel) ??
+      piDefaultThinkingLevel(piSettingsPath) ??
+      PI_BUILTIN_THINKING_LEVEL;
+    return { list: THINKING_LEVELS, default: wanted, flag: "--thinking" };
+  }
+
   const promptFlow = defineFlow({
     name: "pi:prompt",
     entry: "agent",
@@ -447,7 +481,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
     version: pkg.version,
     models: piModels,
     modelsReady: piModelsReady,
-    efforts: PI_EFFORTS,
+    efforts: piEfforts,
     capabilities: { loadsSkills: true, takesMessagesMidRun: true, accessLevels: ["plan", "ask", "edits", "full"] },
     signedIn: async (settings) => {
       const authPath = expandHome(

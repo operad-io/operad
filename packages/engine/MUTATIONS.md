@@ -1087,3 +1087,10 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0530-M1 | packages/engine/src/plugin/validate.ts | a description in `models.list` was not carried into the models' `info` | `a harness plugin's models > a model may describe its id, name, provider, window and capabilities` |
+
+## T-0536 — the value an action offers as current, and efforts from settings
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0536-M1 | packages/engine/src/plugin/action-schema.ts | `current` was not a keyword of an action's args schema | `plugin registry validation > an action schema carries the value a field has now` |
+| T-0536-M2 | packages/engine/src/plugin/registry.ts | a harness's efforts function was called with no settings | `a harness plugin's efforts > a function reads the default from the plugin's settings` |

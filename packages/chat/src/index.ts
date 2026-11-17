@@ -1,7 +1,7 @@
 /** The chat plugin: a long conversation with an agent, and how a message is answered. */
 
 import pkg from "../package.json" with { type: "json" };
-import { defineFlow, definePlugin, isRecord, modelIds, type ActionArgsSchema, type ActionContext, type ActionTypeDefinition, type HarnessModels, type PluginFact, type UsageTokens } from "@operad-io/engine";
+import { defineFlow, definePlugin, isRecord, modelIds, type ActionArgsSchema, type ActionContext, type ActionTypeDefinition, type HarnessEfforts, type HarnessModels, type PluginFact, type UsageTokens } from "@operad-io/engine";
 import { ACCESS_LEVELS, isAccessLevel, type AccessLevel } from "@operad-io/access-match";
 import { stopKeptWorkers } from "@operad-io/engine/platform";
 import {
@@ -209,8 +209,9 @@ const sendAction: ActionTypeDefinition = {
 };
 
 /** The models the chat's agent lists, as the enum and descriptions of `chat:model`. */
-function modelArgs(models: HarnessModels | undefined): ActionArgsSchema {
+function modelArgs(models: HarnessModels | undefined, chat: ChatData | undefined): ActionArgsSchema {
   const list = modelIds(models);
+  const current = chat?.model ?? chat?.lastModel ?? models?.default ?? undefined;
   return {
     type: "object",
     properties: {
@@ -218,6 +219,7 @@ function modelArgs(models: HarnessModels | undefined): ActionArgsSchema {
         type: "string",
         ...(list.length === 0 ? {} : { enum: [...list] }),
         ...(models?.info === undefined ? {} : { info: models.info }),
+        ...(current === undefined || current.length === 0 ? {} : { current }),
         description: "The model the next reply uses.",
       },
     },
@@ -230,8 +232,11 @@ const modelAction: ActionTypeDefinition = {
   name: "model",
   on: CHAT_TYPE,
   command: "Change the model the next reply uses.",
-  args: modelArgs(undefined),
-  argsFor: (object, env) => modelArgs(env.models?.[chatData(object.data).harness]),
+  args: modelArgs(undefined, undefined),
+  argsFor: (object, env) => {
+    const chat = chatData(object.data);
+    return modelArgs(env.models?.[chat.harness], chat);
+  },
   when: (state, env) =>
     !chatData(state).closed && modelIds(env.models?.[chatData(state).harness]).length > 0,
   why: (object, env) => {
@@ -275,13 +280,18 @@ const modelAction: ActionTypeDefinition = {
 };
 
 /** The efforts the chat's agent lists, as the enum of `chat:effort`. */
-function effortArgs(efforts: readonly string[]): ActionArgsSchema {
+function effortArgs(efforts: HarnessEfforts | undefined, chat: ChatData | undefined): ActionArgsSchema {
+  const list = efforts?.list ?? [];
+  const current = chat?.effort ?? chat?.effortDefault ?? efforts?.default ?? undefined;
+  const fallback = efforts?.default ?? undefined;
   return {
     type: "object",
     properties: {
       effort: {
         type: "string",
-        ...(efforts.length === 0 ? {} : { enum: [...efforts] }),
+        ...(list.length === 0 ? {} : { enum: [...list] }),
+        ...(current === undefined || current.length === 0 ? {} : { current }),
+        ...(fallback === undefined || fallback.length === 0 ? {} : { default: fallback }),
         description: "The effort the next reply uses.",
       },
     },
@@ -294,8 +304,11 @@ const effortAction: ActionTypeDefinition = {
   name: "effort",
   on: CHAT_TYPE,
   command: "Change the effort the next reply uses.",
-  args: effortArgs([]),
-  argsFor: (object, env) => effortArgs(env.efforts?.[chatData(object.data).harness]?.list ?? []),
+  args: effortArgs(undefined, undefined),
+  argsFor: (object, env) => {
+    const chat = chatData(object.data);
+    return effortArgs(env.efforts?.[chat.harness], chat);
+  },
   when: (state, env) =>
     !chatData(state).closed && (env.efforts?.[chatData(state).harness]?.list.length ?? 0) > 0,
   why: (object, env) => {

@@ -893,6 +893,12 @@ export interface ActionArgSchema {
   readonly additionalProperties?: false | ActionArgSchema | undefined;
   /** A value the kernel fills when the field is absent. */
   readonly default?: unknown;
+  /**
+   * The value the field has now, for an action that changes an existing value.
+   * A client shows it as the choice in effect; it is neither a default nor
+   * read by the kernel.
+   */
+  readonly current?: unknown;
   readonly description?: string | undefined;
   /** A note is prompted for in a terminal and accepted as `--note`. */
   readonly role?: "note" | undefined;
@@ -989,6 +995,15 @@ export interface HarnessEfforts {
   readonly default: string | null;
   readonly flag?: string | undefined;
 }
+
+/**
+ * The efforts a harness declares, or a function that reads them from the
+ * plugin's settings each time they are asked for. A harness whose default
+ * follows a setting of its own uses the function form.
+ */
+export type HarnessEffortsSource =
+  | HarnessEfforts
+  | ((settings: Readonly<Record<string, JsonValue>>) => HarnessEfforts);
 
 /** What a harness plugin's agent does itself, from ADR 0022's capability list. */
 export interface HarnessCapabilities {
@@ -1386,8 +1401,8 @@ export interface PluginShape {
         context: HarnessModelContext,
       ) => MaybePromise<HarnessModels>)
     | undefined;
-  /** A harness plugin: the efforts a chat may pick (empty list: none can be chosen). */
-  readonly efforts?: HarnessEfforts | undefined;
+  /** A harness plugin: the efforts a chat may pick (empty list: none can be chosen), or a function of its settings. */
+  readonly efforts?: HarnessEffortsSource | undefined;
   /** A harness plugin: what its agent does itself. */
   readonly capabilities?: HarnessCapabilities | undefined;
   /**

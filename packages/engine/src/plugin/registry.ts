@@ -1186,7 +1186,11 @@ export class PluginRegistry {
   loadedEfforts(): Readonly<Record<string, HarnessEfforts>> {
     const found: Record<string, HarnessEfforts> = {};
     for (const item of this.plugins) {
-      if (item.kind === "harness" && item.efforts !== undefined) found[item.name] = item.efforts;
+      if (item.kind !== "harness" || item.efforts === undefined) continue;
+      found[item.name] =
+        typeof item.efforts === "function"
+          ? item.efforts(this.settingsFor(item.name))
+          : item.efforts;
     }
     return found;
   }
