@@ -28,6 +28,15 @@
 5. **访问档管 MCP 工具**：访问档加一项，按服务和工具写允许、先问、禁止。默认是：不认识的工具当作写，写的先问（OpenBot 的做法；Cowork 是每个工具三态，按读和写分组）。operad 自己的 MCP 工具（ADR 0028 D4）照它允许列表的规矩，不受这条影响。MCP 返回的内容是资料，不是指令（ADR 0009 D1）。（`research/2026-11-11-grok-bot.md`「技能和 MCP」）
 6. **MCP 服务的密钥在边界注入**：ADR 0025 D5 延伸到 MCP。远程服务的 token 和 stdio 服务要的密钥由插件在启动服务或发请求时给，不进 bot 的环境变量，bot 的 shell 读不到（NanoClaw 的 vault、Rakazo 和 OpenBot 的后端注入是同一做法）。
 
+## 不过访问档的执行路径（T-0532 查到，2026-11-17）
+
+默认访问档现在由 harness 套在每个对话和生成的步骤上（ADR 0025 D9），dev 的任务 worker 也因此拿到默认档。下面这些路径不经 harness，自己起进程，不过访问档；已定第 4 条的检查要覆盖其中往外写的那些（T-0533）：
+
+- `packages/shell/src/index.ts` 的 `shell/command`、`shell/check`、`shell/probe`；
+- `packages/dev/src/git.ts`、`packages/dev/src/editor.ts`，以及 prepare 和 integrate 跑的命令；
+- `packages/bot/src/mcp-client.ts` 启动 MCP 服务；
+- harness 自己的辅助进程（列模型、安装）。
+
 ## 待决问题（未定）
 
 1. 壳的形态（`radian sandbox -- <命令>` 还是独立小程序），继承 `operad.md` 待决 2。
