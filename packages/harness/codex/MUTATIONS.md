@@ -88,3 +88,9 @@ recorded. The root [MUTATIONS.md](../../../MUTATIONS.md) explains the format and
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0529-M5 | packages/harness/codex/src/index.ts | the reply's context left the cache write out of the last call's prompt | `codex/agent: a prompt run > the usage has the token counts and an unknown cost, never 0` |
+
+## T-0530 — a harness describes each model it lists
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0530-M6 | packages/harness/codex/src/install.ts | a model's `input` and `reasoning` no longer became vision and reasoning capabilities | `what a chat may pick > the model list comes from the app-server without blocking the listing read` |
