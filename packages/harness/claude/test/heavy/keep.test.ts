@@ -131,6 +131,11 @@ function entries(env: Env): Record<string, unknown>[] {
     .map((line) => JSON.parse(line) as Record<string, unknown>);
 }
 
+function workerPid(env: Env): number {
+  const pid = entries(env).find((entry) => "workerPid" in entry)?.["workerPid"];
+  return typeof pid === "number" ? pid : 0;
+}
+
 test("a second message is answered by the same worker and the same claude", async () => {
   const env = setup([firstTurn("one"), laterTurn("two")]);
   const first = await run(env);
@@ -157,7 +162,9 @@ test("a second message is answered by the same worker and the same claude", asyn
 test("the kept worker ends itself after the kept time", async () => {
   const env = setup([firstTurn("one")], { keepMs: 800 });
   expect((await run(env)).result).toBe("done");
-  const pid = records(env)[0]?.pid ?? 0;
+  // The record can already be gone when a loaded reply returns after the kept
+  // time, so take the worker's pid from the record of its own start instead.
+  const pid = workerPid(env);
   expect(pid).toBeGreaterThan(1);
   await waitForGone(pid, 10_000);
   expect(records(env)).toEqual([]);
