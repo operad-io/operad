@@ -117,8 +117,8 @@ describe("pending items carry a question's choice info", () => {
     e.store.put("item", "two", { title: "Second" }, "seed");
     await waitOn(e.log, "item:two");
     const items = await listPending(e.log, e.registry, undefined, e.views);
-    expect(items.find((item) => item.waitId === "wait:1")?.choiceInfo).toEqual(choiceInfo);
-    const plain = items.find((item) => item.waitId !== "wait:1");
+    expect(items.find((item) => item.object === "item:one")?.choiceInfo).toEqual(choiceInfo);
+    const plain = items.find((item) => item.object === "item:two");
     expect(plain).not.toHaveProperty("choiceInfo");
   });
 });
