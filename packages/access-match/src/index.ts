@@ -9,6 +9,49 @@ export { COMMAND_SUMMARY_CHARS, SUMMARY_CHARS, COMMAND_NOT_SHOWN, REFUSED_IN_LOG
 import { isReadOnlyCommand } from "./readonly.ts";
 import { findDenied, inlineFormOf, parseRule, scan, type Part, type Rule } from "./command.ts";
 
+/**
+ * The rules of the built-in default profile. A chat and a generated step start
+ * from these; a bot, a repository or a flow may add to them, never remove them
+ * (ADR 0025).
+ */
+const DEFAULT_DENY_PATHS = [
+  "~/.ssh",
+  "~/.gnupg",
+  "~/.aws",
+  "~/.config/gh",
+  "~/.radian",
+  "~/Library/Keychains",
+  "~/Library/Application Support/Google/Chrome",
+  "~/Library/Application Support/Firefox",
+  "~/Library/Safari",
+  ".git/config",
+  ".git/hooks",
+] as const;
+
+const DEFAULT_DENY_COMMANDS = [
+  "sudo",
+  "su",
+  "rm -rf /",
+  "rm -rf ~",
+  "mkfs",
+  "dd",
+  "diskutil",
+  "shutdown",
+  "reboot",
+  "launchctl",
+  "crontab -r",
+  "git push --force*",
+  "git push --delete",
+  "curl … | sh",
+  "wget … | sh",
+  "pkill",
+  "killall",
+] as const;
+
+const DEFAULT_ASK_COMMANDS = ["git push", "brew install", "npm install -g", "pip install", "osascript", "open"] as const;
+
+const DEFAULT_ASK_PATHS = ["~/.zshrc", "~/.*profile"] as const;
+
 /** The access levels a chat may set, in the order a menu shows them. */
 export const ACCESS_LEVELS = ["plan", "ask", "edits", "full"] as const;
 
@@ -20,15 +63,16 @@ export function isAccessLevel(value: unknown): value is AccessLevel {
 }
 
 /**
- * A chat's profile with its level composed into it. The level adds asks when a
- * call is judged; it never removes a deny or a rule of the profile.
+ * A chat's profile with its level composed into it. The profile is first
+ * tightened with the built-in default, so every level, `full` included, keeps
+ * its deny and ask rules. The level itself only adds asks.
  */
 export function withAccessLevel<T extends AccessProfile>(
   profile: T,
   level: AccessLevel,
 ): T & { readonly level: AccessLevel } {
   return {
-    ...profile,
+    ...withDefaultAccess(profile),
     level,
     ...(level === "plan" ? { readOnly: true } : {}),
   } as T & { readonly level: AccessLevel };
@@ -103,6 +147,54 @@ export interface AccessProfile {
    * for the user layer).
    */
   readonly alwaysAllow?: readonly AlwaysAllowEntry[] | undefined;
+}
+
+/** The built-in default access profile every chat and generated step starts from. */
+export function defaultAccess(): AccessProfile {
+  return {
+    denyPaths: [...DEFAULT_DENY_PATHS],
+    denyCommands: [...DEFAULT_DENY_COMMANDS],
+    askCommands: [...DEFAULT_ASK_COMMANDS],
+    askPaths: [...DEFAULT_ASK_PATHS],
+  };
+}
+
+function combined(
+  base: readonly string[] | undefined,
+  extra: readonly string[] | undefined,
+): string[] | undefined {
+  if (base === undefined && extra === undefined) return undefined;
+  const list = [...(base ?? [])];
+  for (const entry of extra ?? []) if (!list.includes(entry)) list.push(entry);
+  return list;
+}
+
+/**
+ * The built-in default with `profile`'s rules added. It keeps every deny and
+ * ask of the default; a field the default does not set is kept as given.
+ */
+export function withDefaultAccess<T extends AccessProfile>(profile?: T | undefined): T & AccessProfile {
+  const base = defaultAccess();
+  const denyPaths = combined(base.denyPaths, profile?.denyPaths);
+  const denyCommands = combined(base.denyCommands, profile?.denyCommands);
+  const askCommands = combined(base.askCommands, profile?.askCommands);
+  const askPaths = combined(base.askPaths, profile?.askPaths);
+  const readPaths = combined(base.readPaths, profile?.readPaths);
+  const readOnly = base.readOnly === true || profile?.readOnly === true;
+  return {
+    ...(profile ?? {}),
+    denyPaths,
+    denyCommands,
+    askCommands,
+    askPaths,
+    ...(readPaths === undefined ? {} : { readPaths }),
+    ...(readOnly ? { readOnly: true } : {}),
+    ...(base.allowMcp === undefined
+      ? profile?.allowMcp === undefined
+        ? {}
+        : { allowMcp: profile.allowMcp }
+      : { allowMcp: profile?.allowMcp ?? base.allowMcp }),
+  } as T & AccessProfile;
 }
 
 export interface ToolCall {

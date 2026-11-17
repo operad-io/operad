@@ -364,6 +364,14 @@ describe("codex/agent: permissions", () => {
     expect(dataOf(result).finalMessage).toBe("it ran");
   });
 
+  test("a step a flow generates with no profile still gets the default", async () => {
+    const env = await setup("permission", { vars: { FAKE_CODEX_COMMAND: "sudo ls" } });
+    const result = await runAgent(env, { prompt: "x", cwd: env.root });
+    expect(result.result).toBe("done");
+    expect(permissionOutcome(env)).toBe("decline");
+    expect(dataOf(result).finalMessage).toBe("it was refused");
+  });
+
   test("a command the profile denies is rejected and logged as blocked", async () => {
     const env = await setup("permission");
     const result = await runAgent(env, { prompt: "x", cwd: env.root }, { access: { denyCommands: ["rm -rf"] } });

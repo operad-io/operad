@@ -1381,3 +1381,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0530-M8 | packages/dev/src/chat.ts | `dev:chat` left out the descriptions of the models it offers | `dev:chat and the model > the model argument carries what each agent knows about each model` |
+
+## T-0532 — the built-in default access profile
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0532-M4 | packages/dev/src/chat.ts | a repository chat's profile did not start from the built-in default | `a repository chat's access level > at full it still refuses credentials and sudo, and asks before git push` |

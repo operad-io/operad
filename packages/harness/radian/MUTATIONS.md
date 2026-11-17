@@ -106,3 +106,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0504-M1 | packages/harness/radian/src/index.ts | the `session` line waited for radian's first output instead of being written at its start | `radian/agent > the session line is written before radian's first output` |
+
+## T-0532 — the built-in default access profile
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0532-M8 | packages/harness/radian/src/index.ts | a step with no access profile wrote no hook config instead of using the built-in default | `radian/agent > a profile with rules > a step with no profile still gets the default's hook` |

@@ -301,7 +301,12 @@ describe("radian/agent", () => {
     };
     expect(record.prompt).toBe("hello");
     expect(record.workspace).toBe(env.root);
-    expect(record.argv).toEqual([
+    const argv = [...record.argv];
+    const config = argv.indexOf("--config");
+    expect(config).toBeGreaterThan(-1);
+    expect(readFileSync(String(argv[config + 1]), "utf8")).toMatch(/hook\.ts/);
+    argv.splice(config, 2);
+    expect(argv).toEqual([
       "exec",
       "--workspace",
       env.root,
@@ -520,9 +525,12 @@ describe("radian/agent", () => {
       expect(text).toMatch(/hook\.ts/);
     });
 
-    test("a profile with no rules, and no profile, change nothing", async () => {
-      expect(await configOf({})).toBeUndefined();
-      expect(await configOf(undefined)).toBeUndefined();
+    test("a step with no profile still gets the default's hook", async () => {
+      for (const access of [{}, undefined] as const) {
+        const text = await configOf(access);
+        expect(text).toContain("[[hooks.PreToolUse]]");
+        expect(text).toMatch(/hook\.ts/);
+      }
     });
 
     test("radianRefusal lets a reading command and a read through", () => {

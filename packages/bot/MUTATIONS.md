@@ -132,3 +132,9 @@ changes for bots, in the order they were recorded. The root
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0530-M7 | packages/bot/src/index.ts | `bot:chat` and `bot:create` left out the descriptions of the models they offer | `bot:chat and the model > bot:chat and bot:create carry what each agent knows about each model` |
+
+## T-0532 — the built-in default access profile
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0532-M3 | packages/bot/src/bot.ts | the bot's default no longer added `operad` to `denyCommands` | `a reply reads the bot again > the agent gets operad's tools and works in the bot's directory, not a repository` |

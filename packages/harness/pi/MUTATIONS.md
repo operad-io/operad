@@ -218,3 +218,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0530-M2 | packages/harness/pi/src/model-list.ts | the registry's display `name` was dropped from a model's description | `the models pi declares > pi's registry fills a model's name, provider, vision and reasoning` |
+
+## T-0532 — the built-in default access profile
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0532-M6 | packages/harness/pi/src/index.ts | a step with no access profile passed none to the worker instead of the built-in default | `pi/agent > the worker gets the prompt, the directories, the settings and no discovery` |

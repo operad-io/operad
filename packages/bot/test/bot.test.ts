@@ -168,6 +168,11 @@ describe("the default access profile", () => {
     expect(match(access, { tool: "read", input: { path: join(cwd, "notes.md") }, cwd }, { home }).allow).toBe(true);
     expect(match(access, { tool: "read", input: { path: "~/.ssh/id_ed25519" }, cwd }, { home: "/Users/someone" }).allow).toBe(false);
     expect(match(access, { tool: "bash", input: { command: "operad dev list" }, cwd }, { home }).allow).toBe(false);
+    expect(match(access, { tool: "bash", input: { command: "sudo ls" }, cwd }, { home }).allow).toBe(false);
+    expect(match(access, { tool: "bash", input: { command: "git push origin main" }, cwd }, { home })).toMatchObject({
+      allow: false,
+      ask: true,
+    });
   });
 
   test("anything new that appears in the home is denied too, but not the bot directory", async () => {

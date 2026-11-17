@@ -142,3 +142,10 @@ and the row fields.
 | T-0525-M2 | packages/access-match/src/index.ts | `edits` no longer asked about a write outside the working directory | `edits lets a write inside the working directory pass, asks outside it, and asks about a command not known to only read` |
 | T-0525-M3 | packages/access-match/src/index.ts | `full` asked about a command not known to only read | `full adds no ask, while the profile's denies and own asks still hold` |
 | T-0525-M4 | packages/access-match/src/index.ts | `withAccessLevel` did not make `plan` read-only | `withAccessLevel keeps the profile, sets the level, and makes plan read-only` |
+
+## T-0532 — the built-in default access profile
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0532-M1 | packages/access-match/src/index.ts | `~/.ssh` was left out of the built-in default's `denyPaths` | `the built-in default is exactly the list every chat and step starts from` |
+| T-0532-M2 | packages/access-match/src/index.ts | `withAccessLevel` composed a level into the profile without the built-in default | `every level, full included, keeps the default's deny and ask rules` |

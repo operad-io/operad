@@ -8,7 +8,7 @@
  */
 
 import pkg from "../package.json" with { type: "json" };
-import { secretValuesOf } from "@operad-io/access-match";
+import { secretValuesOf, withDefaultAccess, type AccessProfile } from "@operad-io/access-match";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
@@ -426,10 +426,12 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
           const mcpServers = mountedServersOf(input.mcpServers ?? flow.mcpServers);
           const images = imageInputsOf(input.images ?? flow.images);
           const claudeCommand = optionalText(ctx.settings.command, `${at}: settings.command`);
+          // A generated step that names no profile still starts from the default.
+          const access = withDefaultAccess(ctx.access as AccessProfile | undefined);
           const storeSecrets = await secretValuesOf(ctx.secrets);
           const allowAlways = personStarted(ctx.trigger);
           if (allowAlways && isRecord(rawAskAnswer) && rawAskAnswer["choice"] === ALLOW_ALWAYS) {
-            const entry = alwaysAllowFromGrant(ctx.access, cwd);
+            const entry = alwaysAllowFromGrant(access, cwd);
             if (entry !== undefined) {
               try {
                 await appendAlwaysAllow(ctx.home, entry);
@@ -440,11 +442,11 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
               }
             }
           }
-          let runAccess = accessWithAlwaysAllow(ctx.access, [], false);
+          let runAccess = accessWithAlwaysAllow(access, [], false);
           if (allowAlways) {
             const user = await readAlwaysAllow(ctx.home);
             if (user.problem !== undefined) await ctx.logger.write(user.problem);
-            runAccess = accessWithAlwaysAllow(ctx.access, user.entries, true);
+            runAccess = accessWithAlwaysAllow(access, user.entries, true);
           }
           const stdin: Record<string, unknown> = {
             prompt: promptWithNote,
@@ -500,7 +502,7 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
             cwd,
             stdin: JSON.stringify(stdin),
             // The program may ask to use a one-time permission; it needs a reply.
-            interactive: hasGrants(ctx.access) || canAsk(ctx.access) || inbox !== undefined,
+            interactive: hasGrants(access) || canAsk(access) || inbox !== undefined,
             inbox,
             ...(keep === undefined ? {} : { keep }),
             wallMs: wallTimeSecs * 1000,

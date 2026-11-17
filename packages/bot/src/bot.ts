@@ -9,6 +9,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import { MCP_REPORT_DIR } from "./mcp-constants.ts";
+import { defaultAccess as builtInAccess } from "@operad-io/access-match";
 import { configPath, isRecord, prepareSettings, type ActionArgsSchema, type JsonValue, type ObjectStore } from "@operad-io/engine";
 
 /** The object type of a bot. */
@@ -251,54 +252,26 @@ function within(path: string, directory: string): boolean {
 }
 
 /**
- * The default access profile of a bot: no credentials, no secrets, no operad
- * command (the agent reaches operad through its tools). Everything in the
- * operad home except the bot's own directory is denied: the names that are
- * there now, and the ones operad keeps there. Paths are absolute, so a home
- * other than `~/.operad` is covered too.
+ * The default access profile of a bot: the built-in default, with the operad
+ * home and the operad command added. Everything in the operad home except the
+ * bot's own directory is denied: the names that are there now, and the ones
+ * operad keeps there. Paths are absolute, so a home other than `~/.operad` is
+ * covered too. The agent reaches operad through its tools, never a shell.
  */
 export function defaultAccess(home: string): Record<string, JsonValue> {
   const inHome = new Set(["store", "secrets", "config.json", MCP_REPORT_DIR]);
   if (existsSync(home)) {
     for (const name of readdirSync(home)) if (name !== BOT_DIR) inHome.add(name);
   }
+  const base = builtInAccess();
   return {
     denyPaths: [
-      "~/.ssh",
-      "~/.gnupg",
-      "~/.aws",
-      "~/.config/gh",
-      "~/.radian",
-      "~/Library/Keychains",
-      "~/Library/Application Support/Google/Chrome",
-      "~/Library/Application Support/Firefox",
-      "~/Library/Safari",
-      ".git/config",
-      ".git/hooks",
+      ...(base.denyPaths ?? []),
       ...[...inHome].sort().map((name) => join(home, name)),
     ],
-    denyCommands: [
-      "operad",
-      "sudo",
-      "su",
-      "rm -rf /",
-      "rm -rf ~",
-      "mkfs",
-      "dd",
-      "diskutil",
-      "shutdown",
-      "reboot",
-      "launchctl",
-      "crontab -r",
-      "git push --force*",
-      "git push --delete",
-      "curl … | sh",
-      "wget … | sh",
-      "pkill",
-      "killall",
-    ],
-    askCommands: ["git push", "brew install", "npm install -g", "pip install", "osascript", "open"],
-    askPaths: ["~/.zshrc", "~/.*profile"],
+    denyCommands: ["operad", ...(base.denyCommands ?? [])],
+    askCommands: [...(base.askCommands ?? [])],
+    askPaths: [...(base.askPaths ?? [])],
   };
 }
 
