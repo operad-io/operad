@@ -1361,3 +1361,9 @@ the row fields.
 | older-graph-M2 | packages/dev/src/schedule.ts | `startOne` kept a recorded graph today's steps refuse | `graphs an older dev recorded > a refused graph on an open task is said once and the task starts on the repository's flow` |
 | older-graph-M3 | packages/dev/src/service.ts | a start on a built-in flow kept the task's old recorded graph | `graphs an older dev recorded > a refused graph on an open task is said once and the task starts on the repository's flow` |
 | older-graph-M4 | packages/dev/src/flow-compiler.ts | the flow name hashed the stages, not the compiled graph | `a flow's name follows its compiled graph, so a dev that compiles other steps names it anew` |
+
+## T-0525 — chat access levels
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0525-M14 | packages/dev/src/chat.ts | a new repository chat started at `ask` instead of `plan` | `dev:chat > creates a chat under the repository, in the main clone, read-only` |

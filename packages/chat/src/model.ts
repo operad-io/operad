@@ -13,6 +13,7 @@ import type {
   UsageTokens,
 } from "@operad-io/engine";
 import { isRecord, storedType, stringList } from "@operad-io/engine";
+import { isAccessLevel, type AccessLevel } from "@operad-io/access-match";
 
 /** The object type of a chat. */
 export const CHAT_TYPE = "chat";
@@ -50,6 +51,9 @@ export const MODEL_FACT = "chat.model";
 /** The fact type of a change of a chat's effort: who changed it, from what, to what. */
 export const EFFORT_FACT = "chat.effort";
 
+/** The fact type of a change of a chat's access level: who changed it, from what, to what. */
+export const ACCESS_FACT = "chat.access";
+
 /** The fact type of a chat that was closed. */
 export const CLOSED_FACT = "chat.closed";
 
@@ -84,6 +88,10 @@ export interface ChatData {
   readonly cwd: string;
   /** The access profile the harness applies; opaque here. */
   readonly access: Readonly<Record<string, JsonValue>>;
+  /** The level the next reply uses: `plan`, `ask`, `edits` or `full`. */
+  readonly accessLevel?: AccessLevel | undefined;
+  /** The level this chat started at, so the row can tell a choice from the default. */
+  readonly accessDefault?: AccessLevel | undefined;
   readonly skills: readonly string[];
   readonly title: string;
   /** Whether the chat was closed; a closed chat takes no messages. */
@@ -128,6 +136,10 @@ export interface NewChat {
   readonly harness: string;
   readonly cwd: string;
   readonly access?: Readonly<Record<string, JsonValue>> | undefined;
+  /** The level the chat starts at; when absent, `plan` for a read-only profile and `ask` otherwise. */
+  readonly accessLevel?: AccessLevel | undefined;
+  /** See {@link ChatData.accessDefault}. Defaults to the starting level. */
+  readonly accessDefault?: AccessLevel | undefined;
   readonly skills?: readonly string[] | undefined;
   readonly title: string;
   readonly channels?: readonly string[] | undefined;
@@ -224,6 +236,14 @@ export interface EffortChangedData {
   readonly by: { readonly via: string; readonly id: string };
   readonly from: string | null;
   readonly to: string;
+}
+
+/** What an access-level change fact holds. */
+export interface AccessChangedData {
+  readonly [key: string]: unknown;
+  readonly by: { readonly via: string; readonly id: string };
+  readonly from: AccessLevel;
+  readonly to: AccessLevel;
 }
 
 /**
@@ -436,14 +456,25 @@ export function commandOfFact(fact: PluginFact): Command | undefined {
   };
 }
 
-/** The chat fields of a stored object, with the lists defaulted. */
+/** The level a chat falls back to when it has none: a read-only profile starts at plan, any other at ask. */
+function fallbackAccessLevel(data: Readonly<Record<string, unknown>>): AccessLevel {
+  return isRecord(data.access) && data.access.readOnly === true ? "plan" : "ask";
+}
+
+/** The chat fields of a stored object, with the lists and the access level defaulted. */
 export function chatData(data: Readonly<Record<string, unknown>>): ChatData {
   const tokens = usageTokensOf(data.tokens);
+  const accessDefault = isAccessLevel(data.accessDefault)
+    ? data.accessDefault
+    : fallbackAccessLevel(data);
+  const accessLevel = isAccessLevel(data.accessLevel) ? data.accessLevel : accessDefault;
   return {
     ...data,
     harness: typeof data.harness === "string" ? data.harness : "",
     cwd: typeof data.cwd === "string" ? data.cwd : "",
     access: isRecord(data.access) ? (data.access as Record<string, JsonValue>) : {},
+    accessLevel,
+    accessDefault,
     skills: stringList(data.skills),
     title: typeof data.title === "string" ? data.title : "",
     closed: data.closed === true,
@@ -614,11 +645,18 @@ export async function createChat(
   if (input.harness.trim().length === 0) throw new Error("a chat needs an agent");
   if (input.cwd.trim().length === 0) throw new Error("a chat needs a working directory");
   if (input.title.trim().length === 0) throw new Error("a chat needs a title");
+  const accessLevel =
+    input.accessLevel ??
+    input.accessDefault ??
+    (input.access?.readOnly === true ? "plan" : "ask");
+  const accessDefault = input.accessDefault ?? accessLevel;
   const data: ChatData = {
     ...(input.parent === undefined ? {} : { parent: input.parent }),
     harness: input.harness,
     cwd: input.cwd,
     access: input.access ?? {},
+    accessLevel,
+    accessDefault,
     skills: input.skills ?? [],
     title: input.title.trim(),
     closed: false,

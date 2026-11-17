@@ -424,6 +424,8 @@ describe("bot:chat", () => {
     expect(chat.parent).toBe("bot:default");
     expect(chat.title).toBe("Morning");
     expect(chat.cwd).toBe(join(r.home, "bot"));
+    expect(chat.accessLevel).toBe("ask");
+    expect(chat.accessDefault).toBe("ask");
     expect(existsSync(chat.cwd)).toBe(true);
     const row = r.registry.viewsFor("chat")?.views.row((await r.store.get(CHAT_TYPE, id)) as never);
     expect(row?.parent).toBe("bot:default");

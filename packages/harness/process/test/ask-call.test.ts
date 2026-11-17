@@ -61,6 +61,11 @@ describe("canAsk", () => {
     expect(canAsk(null)).toBe(false);
   });
 
+  test("is true for an access level below full, and false for full", () => {
+    for (const level of ["plan", "ask", "edits"]) expect(canAsk({ level })).toBe(true);
+    expect(canAsk({ level: "full" })).toBe(false);
+  });
+
   test("is true for a profile that puts MCP tools under it, even with none listed", () => {
     expect(canAsk({ allowMcp: [] })).toBe(true);
     expect(canAsk({ allowMcp: ["notes.echo"] })).toBe(true);

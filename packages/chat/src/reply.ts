@@ -8,6 +8,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { AskTimeoutError, attachmentDir, isRecord, messageOf, safeFileName, type AskOutcome, type AskRequest, type ChoiceInfo, type JsonValue, type PluginStepResult, type RunObject, type StepAsker, type StepContext, type UsageTokens } from "@operad-io/engine";
+import { withAccessLevel } from "@operad-io/access-match";
 import {
   appendAlwaysAllow,
   alwaysAllowEntry,
@@ -956,6 +957,20 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
     return failedReply(ctx, object.id, why.reason, why.message, oldest);
   }
   const live = settled;
+  // A level reaches the harness only through an agent that declares it can
+  // carry it; an agent that cannot refuses the reply by name, never ignores it.
+  const level = chat.accessLevel ?? "ask";
+  const capabilities = ctx.harnessCapabilities?.(chat.harness);
+  if (capabilities !== undefined && !(capabilities.accessLevels ?? []).includes(level)) {
+    return failedReply(
+      ctx,
+      object.id,
+      "access",
+      `the agent "${chat.harness}" cannot carry the access level "${level}"`,
+      oldest,
+    );
+  }
+  const leveled = withAccessLevel(live.access, level);
 
   // A harness that takes messages mid-run is handed each ordinary message that
   // arrives while this round runs, after the tool calls already running. A
@@ -983,17 +998,20 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
   const resumed = isRecord(params) ? params : {};
   const session =
     typeof resumed.resumeSession === "string" ? resumed.resumeSession : currentSession(chat, messages);
-  const readOnly = live.access.readOnly === true;
+  const readOnly = leveled.readOnly === true;
+  // The worktree question belongs to a repository chat; a bot chat at `plan`
+  // is read-only without one.
+  const worktreeChat = readOnly && (chat.parent === undefined || chat.parent.startsWith("repo:"));
   const worktreeChosen = { run: false, stop: new AbortController() };
-  const asker = readOnly ? readOnlyAsker(ctx, live.cwd, worktreeChosen) : undefined;
+  const asker = worktreeChat ? readOnlyAsker(ctx, live.cwd, worktreeChosen) : undefined;
   // A worktree yes aborts `stop`, so the harness ends even if it swallows the
   // stop error; the reply still ends `done` below.
-  const signal = readOnly ? AbortSignal.any([ctx.signal, worktreeChosen.stop.signal]) : ctx.signal;
+  const signal = worktreeChat ? AbortSignal.any([ctx.signal, worktreeChosen.stop.signal]) : ctx.signal;
 
   // An answer that came back after the wait (the grace had passed) is the same
   // answer as one given live.
   const late = answeredQuestion(params);
-  const lateWorktree = readOnly && late !== undefined && isWorktreeQuestion(late.prompt);
+  const lateWorktree = worktreeChat && late !== undefined && isWorktreeQuestion(late.prompt);
   const lateAction = lateWorktree && late !== undefined ? worktreeAnswer(late.choice) : undefined;
   const lateCall = lateWorktree ? callFromGrants(ctx.access) ?? callFromQuestion(late?.prompt ?? "") : undefined;
   if (lateAction === "worktree") {
@@ -1037,8 +1055,8 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
   const directory = attachmentDir(ctx.home, CHAT_TYPE, object.id);
   const images = imagesOf(pending, chat.harness, directory);
   const base = messages.some((message) => message.attachments.length > 0)
-    ? withAttachmentReads(live.access, directory)
-    : live.access;
+    ? withAttachmentReads(leveled, directory)
+    : leveled;
   // A late Allow once is for this run alone; a late Always allow also wrote the user layer.
   const lateEntry =
     (lateAction === "allow_once" || lateAction === "allow_always") && lateCall !== undefined

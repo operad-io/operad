@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { AccessProfile } from "@operad-io/access-match";
+import { withAccessLevel, type AccessLevel, type AccessProfile } from "@operad-io/access-match";
 import { INERT_TOOLS, TOOL_TABLE, decideAccess, hasRules, translate } from "../src/access.ts";
 
 const CWD = "/work/project";
@@ -194,6 +194,31 @@ describe("tools outside the table", () => {
     expect(hasRules({ denyPaths: ["/x"] })).toBe(true);
     expect(hasRules({ denyCommands: ["rm"] })).toBe(true);
   });
+});
+
+describe("a chat's access level", () => {
+  const calls: Readonly<Record<AccessLevel, { readonly name: string; readonly input: Record<string, unknown>; readonly allowed: boolean }>> = {
+    plan: { name: "Write", input: { file_path: `${CWD}/a.ts`, content: "x" }, allowed: false },
+    ask: { name: "Write", input: { file_path: "/tmp/a.ts", content: "x" }, allowed: false },
+    edits: { name: "Write", input: { file_path: `${CWD}/a.ts`, content: "x" }, allowed: true },
+    full: { name: "Bash", input: { command: "git push origin main" }, allowed: true },
+  };
+
+  for (const level of ["plan", "ask", "edits", "full"] as const) {
+    test(`${level}: one call reaches the level's decision`, async () => {
+      const call = calls[level];
+      const profile = withAccessLevel({}, level);
+      const asked: unknown[] = [];
+      const verdict = await decideAccess(profile, call.name, call.input, CWD, undefined, async (question) => {
+        asked.push(question);
+        return { decision: "allow" };
+      });
+      expect(verdict).toEqual({ allow: true });
+      expect(asked.length).toBe(call.allowed ? 0 : 1);
+      // A level below full also refuses an unchecked tool a deny cannot see.
+      if (level !== "full") expect(hasRules(profile)).toBe(true);
+    });
+  }
 });
 
 describe("one-time grants", () => {

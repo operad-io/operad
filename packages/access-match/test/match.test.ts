@@ -740,3 +740,72 @@ test("an always-allowed command entry lets the exact MCP tool in the same cwd th
     value: "mcp notes.echo",
   });
 });
+
+// -- access levels -----------------------------------------------------------
+
+import { ACCESS_LEVELS, isAccessLevel, withAccessLevel } from "../src/index.ts";
+
+const LEVEL_BASE: AccessProfile = {
+  denyPaths: ["~/.ssh"],
+  askCommands: ["brew install"],
+  askPaths: ["~/.zshrc"],
+};
+
+function level(profile: AccessProfile, value: "plan" | "ask" | "edits" | "full"): AccessProfile {
+  return withAccessLevel(profile, value);
+}
+
+test("withAccessLevel keeps the profile, sets the level, and makes plan read-only", () => {
+  expect(ACCESS_LEVELS).toEqual(["plan", "ask", "edits", "full"]);
+  for (const value of ACCESS_LEVELS) expect(isAccessLevel(value)).toBe(true);
+  expect(isAccessLevel("smart")).toBe(false);
+  expect(withAccessLevel({ denyCommands: ["rm"] }, "ask")).toEqual({ denyCommands: ["rm"], level: "ask" });
+  expect(withAccessLevel({}, "plan")).toMatchObject({ level: "plan", readOnly: true });
+  expect(readProfile({ level: "full" })).toEqual({ ok: true, profile: { level: "full" } });
+  expect(readProfile({ level: "smart" })).toEqual({ ok: false, message: "level must be one of plan, ask, edits, full" });
+});
+
+test("plan asks about a write in the working directory and a command not known to only read", () => {
+  const profile = level(LEVEL_BASE, "plan");
+  expect(write(profile, "src/a.ts")).toMatchObject({ allow: false, ask: true, kind: "path", rule: CWD });
+  expect(bash(profile, "git status")).toEqual({ allow: true });
+  expect(bash(profile, "git push origin main")).toMatchObject({ allow: false, ask: true, rule: "readOnly" });
+  expect(read(profile, "~/.ssh/id_rsa").allow).toBe(false);
+});
+
+test("ask asks about every write and every command not known to only read", () => {
+  const profile = level(LEVEL_BASE, "ask");
+  expect(write(profile, "src/a.ts")).toMatchObject({ allow: false, ask: true, rule: "level" });
+  expect(write(profile, "/tmp/scratch")).toMatchObject({ allow: false, ask: true, rule: "level" });
+  expect(bash(profile, "cat README.md | head")).toEqual({ allow: true });
+  expect(bash(profile, "git push origin main")).toMatchObject({ allow: false, ask: true, rule: "level" });
+  expect(read(profile, "/tmp/notes")).toEqual({ allow: true });
+});
+
+test("edits lets a write inside the working directory pass, asks outside it, and asks about a command not known to only read", () => {
+  const profile = level(LEVEL_BASE, "edits");
+  expect(write(profile, "src/a.ts")).toEqual({ allow: true });
+  expect(write(profile, "../other/a.ts")).toMatchObject({ allow: false, ask: true, rule: "level" });
+  expect(bash(profile, "git status && ls")).toEqual({ allow: true });
+  expect(bash(profile, "git push origin main")).toMatchObject({ allow: false, ask: true, rule: "level" });
+});
+
+test("full adds no ask, while the profile's denies and own asks still hold", () => {
+  const profile = level(LEVEL_BASE, "full");
+  expect(write(profile, "src/a.ts")).toEqual({ allow: true });
+  expect(write(profile, "/tmp/scratch")).toEqual({ allow: true });
+  expect(bash(profile, "git push origin main")).toEqual({ allow: true });
+  expect(bash(profile, "brew install jq")).toMatchObject({ allow: false, ask: true, rule: "brew install" });
+  expect(write(profile, "~/.zshrc")).toMatchObject({ allow: false, ask: true, rule: "~/.zshrc" });
+  expect(read(profile, "~/.ssh/id_rsa")).toMatchObject({ allow: false });
+  const denied = read({ level: "full", denyPaths: ["/etc"] }, "/etc/passwd");
+  expect(denied.allow).toBe(false);
+  expect(denied.ask).toBeUndefined();
+});
+
+test("a read-only profile is not loosened by edits or full", () => {
+  const profile = level({ readOnly: true }, "full");
+  expect(write(profile, "src/a.ts")).toMatchObject({ allow: false, ask: true, rule: CWD });
+  expect(bash(profile, "git push origin main")).toMatchObject({ allow: false, ask: true, rule: "readOnly" });
+  expect(read(profile, "src/a.ts")).toEqual({ allow: true });
+});

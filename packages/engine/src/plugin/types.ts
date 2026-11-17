@@ -915,6 +915,12 @@ export interface HarnessCapabilities {
    * message waits for the next run.
    */
   readonly takesMessagesMidRun?: boolean | undefined;
+  /**
+   * The access levels the agent can carry, as their ids (`plan`, `ask`,
+   * `edits`, `full`). Absent or empty: the agent carries none, so a chat at a
+   * level refuses the reply instead of ignoring the level.
+   */
+  readonly accessLevels?: readonly string[] | undefined;
 }
 
 /** An action a plugin offers on an object type, or without one. */

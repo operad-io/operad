@@ -57,8 +57,9 @@ on that event. A closed chat refuses the action and adds no message.
 ## Commands in a chat
 
 An action with `command` set to a one-line description can be typed after `/`.
-`chat:model`, `chat:effort`, `chat:close` and `chat:help` declare it, so
-`/model sonnet`, `/effort high`, `/close` and `/help` work in every chat. The
+`chat:model`, `chat:effort`, `chat:access`, `chat:close` and `chat:help`
+declare it, so `/model sonnet`, `/effort high`, `/access full`, `/close` and
+`/help` work in every chat. The
 name is the action name after the colon. When another plugin gives a chat an
 action with the same short name, `chat` keeps the short name and the other is
 `/<plugin>_<action>`.
@@ -120,6 +121,10 @@ Changes the model the chat's next reply uses. The argument is one of the models 
 
 Changes the effort the chat's next reply uses. The argument is one of the levels the chat's agent lists (its plugin declares them; pi's thinking levels are its efforts); a closed chat, or an agent that lists none, does not offer the action. A `chat.effort` fact records who changed it, from what and to what. A chat whose effort its agent cannot take fails the reply with a message naming it; it never falls back to another one. The row shows the effort when it is not the agent's default.
 
+## `chat:access <chat> --level <level>`
+
+Changes how much the agent may do without asking in this chat: `plan`, `ask`, `edits` or `full`, typed as `/access <level>`. A closed chat does not offer it. A `chat.access` fact records who changed it, from what and to what, and every reply after it uses the level. The starting level comes from the plugin that created the chat (a bot chat starts at `ask`, a repository chat at `plan`); the row shows the level when it is not that starting level. The action's information gives every level its approved words and a short description; `full` says that it skips every question the level adds while the profile's deny and ask rules still hold. Every reply composes the chat's profile with the level through `@operad-io/access-match`; `claude` and `pi` carry every level, while an agent that declares no level refuses the reply at its start with a message naming the level.
+
 ## `chat:close <chat>`
 
 Asks for confirmation and records a `chat.closed` fact naming who closed it. A
@@ -161,8 +166,11 @@ a message fact, so it is never handed to the agent.
 The agent gets `operadTools: { home }`, so it calls operad through MCP tools and
 never through a shell.
 
-In a chat whose access profile is `readOnly`, an agent question about a
-command, a write or an edit becomes the worktree question. Its choices are
+A chat's access level is composed into the profile of every reply (ADR 0025
+D8): the level adds its asks on top of the profile's own deny and ask rules.
+In a repository chat whose profile is `readOnly` (its initial `plan` level, or
+the main clone before its worktree), an agent question about a command, a write
+or an edit becomes the worktree question. Its choices are
 `Allow once`, `Always allow`, `Deny` and the worktree offer: `Allow once` runs
 this call only, `Always allow` writes the exact call and working directory to
 the user layer (ADR 0025 D7) and runs it, `Deny` refuses it, and the worktree

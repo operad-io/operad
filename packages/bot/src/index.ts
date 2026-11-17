@@ -155,6 +155,8 @@ export async function openChat(input: OpenChat): Promise<string> {
       ...(effort === undefined || effortDefault === undefined ? {} : { effortDefault }),
       cwd: bot.cwd,
       access: bot.access,
+      accessLevel: "ask",
+      accessDefault: "ask",
       skills: bot.skills,
       title: input.title ?? `Bot (${bot.name})`,
       ...(input.channels === undefined ? {} : { channels: input.channels }),

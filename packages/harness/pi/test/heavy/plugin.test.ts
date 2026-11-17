@@ -449,7 +449,11 @@ describe("pi/agent", () => {
 
   test("the plugin declares that it loads skills itself", () => {
     const plugin = createPiHarnessPlugin();
-    expect(plugin.capabilities).toEqual({ loadsSkills: true, takesMessagesMidRun: true });
+    expect(plugin.capabilities).toEqual({
+      loadsSkills: true,
+      takesMessagesMidRun: true,
+      accessLevels: ["plan", "ask", "edits", "full"],
+    });
   });
 
   test("the skill directories of the step reach the worker's stdin", async () => {
@@ -728,7 +732,7 @@ describe("pi/agent", () => {
   test("the step declares the deny and ask fields it enforces and a timeout above its wall time", async () => {
     const env = await setup("done");
     const type = env.registry.stepTypes().find((item) => item.name === "pi/agent");
-    expect(type?.enforces).toEqual(["denyPaths", "denyCommands", "askCommands", "askPaths", "readPaths", "alwaysAllow"]);
+    expect(type?.enforces).toEqual(["level", "denyPaths", "denyCommands", "askCommands", "askPaths", "readPaths", "alwaysAllow"]);
     expect(type?.timeoutSecs).toBeGreaterThan(3600);
   });
 

@@ -217,3 +217,9 @@ setup it depends on, in the order they were recorded. The root
 |---|---|---|---|
 | T-0521-M1 | packages/harness/claude/src/worker.ts | a prompt that starts with `/` was sent without `client_composed`, so claude parsed it as its own command | `a prompt that starts with a slash reaches the model as text, never as one of claude's commands` |
 | T-0521-M2 | packages/harness/claude/src/worker.ts | an empty result with no usage carried no reason, so the chat could not say claude ran a local command | `an empty result with no usage reports claude's subtype and the local command it ran` |
+
+## T-0525 — chat access levels
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0525-M11 | packages/harness/claude/src/access.ts | a level below `full` no longer made an unchecked tool a refusal | `a chat's access level > plan: one call reaches the level's decision` (and the ask and edits levels) |

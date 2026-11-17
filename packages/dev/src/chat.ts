@@ -457,6 +457,8 @@ const chatAction: ActionTypeDefinition = {
         ...(effort === undefined || effortDefault === undefined ? {} : { effortDefault }),
         cwd: repository.path,
         access: chatAccess(skills.roots, true),
+        accessLevel: "plan",
+        accessDefault: "plan",
         skills: skills.directories,
         refresh: CHAT_SETTINGS_STEP,
         title:

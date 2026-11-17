@@ -169,7 +169,7 @@ describe("chat/reply with attachments", () => {
     const chat = await r.chat({ access: { denyPaths: ["/x"] } });
     await r.say(chat, "plain");
     await r.round(chat);
-    expect(seen[0]).toEqual({ denyPaths: ["/x"] });
+    expect(seen[0]).toEqual({ denyPaths: ["/x"], level: "ask" });
     expect(withAttachmentReads({}, "/d")).toEqual({ readPaths: ["/d"] });
     expect(promptFor([])).toBe("");
   });

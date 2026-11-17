@@ -29,11 +29,15 @@ export const TRANSCRIPT = "transcript";
 
 function row(object: StoredObject): ObjectRow {
   const chat = chatData(object.data);
+  const note = [
+    ...(chat.harness.length > 0 ? [agentLine(chat)] : []),
+    ...(chat.accessLevel !== chat.accessDefault ? [chat.accessLevel ?? ""] : []),
+  ].filter((part) => part.length > 0);
   return {
     id: object.id,
     title: chat.title.length > 0 ? chat.title : object.id,
     state: chat.closed ? "closed" : "open",
-    ...(chat.harness.length > 0 ? { note: agentLine(chat) } : {}),
+    ...(note.length === 0 ? {} : { note: note.join(" · ") }),
     ...(chat.closed ? { final: true } : {}),
     ...(typeof chat.parent === "string" && chat.parent.length > 0 ? { parent: chat.parent } : {}),
   };

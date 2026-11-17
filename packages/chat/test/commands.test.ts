@@ -193,7 +193,7 @@ describe("commands in chat:send", () => {
       .map((line: string) => /^- `\/([^`]+)`/.exec(line)?.[1])
       .filter((name: string | undefined): name is string => name !== undefined)
       .sort();
-    expect(listed).toEqual(["close", "help", "retry", "status", "stop"]);
+    expect(listed).toEqual(["access", "close", "help", "retry", "status", "stop"]);
     expect(String(help.value)).not.toContain("`/model`");
     expect(String(help.value)).not.toContain("`/effort`");
   });
@@ -309,7 +309,7 @@ describe("commands in chat:send", () => {
       .map((line: string) => /^- `\/([^`]+)`/.exec(line)?.[1])
       .filter((name: string | undefined): name is string => name !== undefined)
       .sort();
-    expect(listed).toEqual(["close", "effort", "help", "model", "other_model", "retry", "status", "stop"]);
+    expect(listed).toEqual(["access", "close", "effort", "help", "model", "other_model", "retry", "status", "stop"]);
     expect(text).not.toContain("/send");
     expect(text).not.toContain("/hidden");
     expect(commandFacts(r, chat)[0]?.outcome).toBe(text);

@@ -199,3 +199,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0521-M1 | packages/harness/pi/src/worker.ts | the prompt expanded prompt templates, so `/clear` ran the owner's template | `a prompt that starts with a slash reaches the model as text, not as a prompt template` |
+
+## T-0525 — chat access levels
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0525-M12 | packages/harness/pi/src/worker.ts | a level below `full` no longer made an owner extension's unchecked tool a refusal | `an extension's tool is refused at an access level below full when own settings are on` |

@@ -120,3 +120,9 @@ changes for bots, in the order they were recorded. The root
 |---|---|---|---|
 | T-0517-M5 | packages/bot/src/bot.ts | resolving a bot always said the own-settings switch was off | `bots > using the owner's own agent settings is off unless the bot turns it on` |
 | T-0517-M6 | packages/bot/src/index.ts | `bot/settings` did not return the own-settings switch | `a reply reads the bot again > the own-settings switch is off by default and reaches the agent when on` |
+
+## T-0525 — chat access levels
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0525-M13 | packages/bot/src/index.ts | a new bot chat started at `plan` instead of `ask` | `bot:chat > opens a chat of the chat plugin with the bot as its parent` |

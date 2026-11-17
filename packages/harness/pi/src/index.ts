@@ -380,7 +380,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
     models: piModels,
     modelsReady: piModelsReady,
     efforts: PI_EFFORTS,
-    capabilities: { loadsSkills: true, takesMessagesMidRun: true },
+    capabilities: { loadsSkills: true, takesMessagesMidRun: true, accessLevels: ["plan", "ask", "edits", "full"] },
     signedIn: async (settings) => {
       const authPath = expandHome(
         typeof settings.authPath === "string" ? settings.authPath : DEFAULT_AUTH_PATH,
@@ -396,7 +396,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
         // `waiting`: a question about a call was not answered within the grace.
         results: ["done", "failed", "interrupted", "waiting"],
         // The deny and ask fields are applied in the worker's tool_call hook.
-        enforces: ["denyPaths", "denyCommands", "askCommands", "askPaths", "readPaths", "alwaysAllow"],
+        enforces: ["level", "denyPaths", "denyCommands", "askCommands", "askPaths", "readPaths", "alwaysAllow"],
         timeoutSecs: STEP_TIMEOUT_SECS,
         // The model the step uses: its `--model` argument, else the setting.
         limit: modelLimit("pi", (params, settings) => {
