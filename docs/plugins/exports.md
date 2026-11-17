@@ -72,6 +72,7 @@ Types (`StepContext`, `ActionTypeDefinition`, `ObjectRow`, ...) are exported too
 | `DEFAULT_ASK_GRACE_SECS` | `600`: the default of `ask.graceSecs` | [Asking](asking.md) |
 | `askWaitId` | `askWaitId(runId, stepRunId, n)`: the stable id of a question, `<run>:<step run>:<n>` | [Asking](asking.md) |
 | `paramsObject` | `paramsObject(params, at)`: a step's params as an object, or `<at>: params: must be an object` | [Steps](steps.md#the-step-context) |
+| `modelIds` | `modelIds(models)`: the model ids a harness declaration lists, in order, whether an entry is a bare id or a description | [Harness plugins](harness.md#models-and-efforts) |
 
 ## Views, rows and sections
 
