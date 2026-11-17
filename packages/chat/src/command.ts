@@ -164,13 +164,35 @@ export async function runCommand(
   }
 }
 
-/** What `/help` says: every command this chat can run now, with its own description. */
-export function helpText(commands: readonly ChatCommand[]): string {
-  const lines = commands
-    .filter((command) => command.info.available !== false)
-    .map(
-      (command) =>
-        `- \`/${command.name}\` — ${(command.info.command ?? "").replace(/\s+/g, " ").trim()}`,
-    );
+/** A skill `/help` lists: its name and the description from its `SKILL.md`. */
+export interface HelpSkill {
+  readonly name: string;
+  readonly description?: string | undefined;
+}
+
+/**
+ * What `/help` says: every command this chat can run now, with its own
+ * description, then the skills it can type by name. A skill whose name is a
+ * command is left out: the command wins when it is typed.
+ */
+export function helpText(
+  commands: readonly ChatCommand[],
+  skills: readonly HelpSkill[] = [],
+): string {
+  const available = commands.filter((command) => command.info.available !== false);
+  const lines = available.map(
+    (command) =>
+      `- \`/${command.name}\` — ${(command.info.command ?? "").replace(/\s+/g, " ").trim()}`,
+  );
+  const names = new Set(commands.map((command) => command.name));
+  const listed = skills.filter((skill) => !names.has(skill.name));
+  if (listed.length > 0) {
+    lines.push("", "Skills:");
+    for (const skill of listed) {
+      lines.push(
+        `- \`/${skill.name}\` — skill${skill.description === undefined ? "" : `: ${skill.description}`}`,
+      );
+    }
+  }
   return [`What you can type with \`/\` here:`, ...lines].join("\n");
 }

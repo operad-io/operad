@@ -14,6 +14,7 @@ import type {
 } from "@operad-io/engine";
 import { maskSecrets, type FoldEntry } from "@operad-io/harness-process";
 import { secretValues } from "./reply.ts";
+import { readChatSkills, skillSummaries, type ObjectReader } from "./skills.ts";
 import { foldLogTail, agentLogPath } from "./tail.ts";
 import { agentLine, allMessages, attachmentsOf, chatData, chatRef, COMMAND_FACT, commandOfFact, ENTRY_FACT, entryOfFact, IMAGE_TYPES, lastReplyContext, latestRunOf, MESSAGE_FACT, modelAndCost, stopOfFact, unanswered, type Attachment, type ChatContext, type Command, type Entry, type Message } from "./model.ts";
 import type { TailRead } from "./tail.ts";
@@ -602,5 +603,18 @@ async function load(
   };
 }
 
+/** Reads an object through its type's `prepare`, or the store when the view has none. */
+function objectReader(ctx: ViewContext): ObjectReader {
+  return async (type, id) =>
+    ctx.refreshedObject === undefined ? ctx.store.get(type, id) : ctx.refreshedObject(type, id);
+}
+
 /** The views of the chat type. */
-export const chatViews: ObjectViews = { row, sections, context: chatContext, load };
+export const chatViews: ObjectViews = {
+  row,
+  sections,
+  context: chatContext,
+  skills: async (ctx, object) =>
+    skillSummaries(await readChatSkills(chatData(object.data), objectReader(ctx))),
+  load,
+};

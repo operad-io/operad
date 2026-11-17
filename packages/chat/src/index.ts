@@ -45,6 +45,7 @@ import {
 } from "./model.ts";
 import { runReply, WORKTREE_ALLOW_ALWAYS, WORKTREE_ALLOW_ONCE, WORKTREE_CHOICES, WORKTREE_DENY, WORKTREE_REPLY_EVENT, WORKTREE_YES, worktreeChoiceInfo } from "./reply.ts";
 import { chatCommands, findCommand, helpText, parseCommand, runCommand } from "./command.ts";
+import { readChatSkills } from "./skills.ts";
 import { chatViews } from "./views.ts";
 
 /** How many rounds one reply run may take before it stops (each round is one visit). */
@@ -656,8 +657,12 @@ const helpAction: ActionTypeDefinition = {
   when: (state) => !chatData(state).closed,
   why: (object) =>
     chatData(object.data).closed ? `${object.id} is closed; it takes no commands` : undefined,
-  run(ctx) {
-    return helpText(chatCommands(ctx.actions ?? []));
+  async run(ctx) {
+    const skills = await readChatSkills(
+      chatData(ctx.object.data),
+      async (type, id) => ctx.store.get(type, id),
+    );
+    return helpText(chatCommands(ctx.actions ?? []), skills);
   },
 };
 
@@ -727,5 +732,6 @@ export default createChatPlugin();
 export * from "./model.ts";
 export * from "./command.ts";
 export * from "./reply.ts";
+export * from "./skills.ts";
 export * from "./views.ts";
 export * from "./tail.ts";

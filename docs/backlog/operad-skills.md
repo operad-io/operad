@@ -17,7 +17,6 @@
 
 1. 仓库的 skill 要不要也给任务的 worker（今天只定了仓库 chat）。
 2. 新装的 bot 没有 skill：随 operad 带一份默认的，还是让 bot 按用户的描述写（`operad-bot.md` 待决 5）。
-3. skill 成为 `/名字`（`operad-chat-commands.md` 决定 6）：原生加载的 agent 把 `/名字 参数` 原样交给它，其余由 operad 把正文拼进消息；与 operad 的命令重名时 skill 让位。lead 的建议，owner 未明确答；等命令第一批合并后做。
 
 ## 验收
 

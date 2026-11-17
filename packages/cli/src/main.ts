@@ -969,6 +969,11 @@ async function commandShow(
   io.write(
     `actions: ${object.actions.length === 0 ? "none" : object.actions.map(actionLine).join(", ")}\n`,
   );
+  if (object.skills !== undefined) {
+    io.write(
+      `skills: ${object.skills.length === 0 ? "none" : object.skills.map((skill) => `/${skill.name}${skill.description === undefined ? "" : ` (${skill.description})`}`).join(", ")}\n`,
+    );
+  }
   if (requested === undefined) return;
 
   const content = await readSection(requested);

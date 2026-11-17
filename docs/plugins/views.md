@@ -45,8 +45,11 @@ A filter is a named subset of a type's rows, by `state`:
 | `load` | `(ctx, object, sectionId, options) => SectionContent` | yes | Called when a person opens a section; may be slow and paged | `views.<t>: load: must be a function`; see [sections](#sections) |
 | `showScope` | `(ctx) => boolean` | no | Whether a list shows each row's `scope` beside its id because more than one namespace exists. Read once per list | `views.<t>: showScope: must be a function` |
 | `context` | `(ctx, object) => { used, window?, model? }` | no | Numbers a detail page shows beside the row, such as how full an agent's context is. It may read facts and may be slow; the kernel passes it through without reading it. A chat returns the last finished reply's context here | `views.<t>: context: must be a function` |
+| `skills` | `(ctx, object) => ViewSkill[]` | no | The skills an object offers as `/name` commands, such as a chat's. Each has a `name` and an optional `description`; the kernel passes them through without reading them. A chat returns its current skills here | `views.<t>: skills: must be a function` |
 
-The `ctx` of `load`, `showScope` and `context` is [the base context](define-plugin.md#the-context-every-hook-gets) plus `runTimes(runId)` (when a run started and ended and its steps and waits, in order), `settingsInForce(plugin)` (the plugin's settings as `config.json` has them now, so a view follows an edit without a restart) and `refreshedObject(type, id)` (an object after its `prepare` with the settings in force).
+The `ctx` of `load`, `showScope`, `context` and `skills` is [the base context](define-plugin.md#the-context-every-hook-gets) plus `runTimes(runId)` (when a run started and ended and its steps and waits, in order), `settingsInForce(plugin)` (the plugin's settings as `config.json` has them now, so a view follows an edit without a restart) and `refreshedObject(type, id)` (an object after its `prepare` with the settings in force).
+
+An object's `get` carries `skills` when its type declares the hook, beside the actions a client already reads. A client that does not know the field ignores it.
 
 ### The row
 

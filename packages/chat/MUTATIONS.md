@@ -353,3 +353,13 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0530-M5 | packages/chat/src/index.ts | `chat:model` left out the descriptions of the models it offers | `chat:model > the argument carries what the agent knows about each model` |
+
+## T-0531 — a chat's skills as `/name`
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0531-M1 | packages/chat/src/views.ts | the chat view returned no skills, so a client got the commands but not the skills in the same request | `a chat's skills > a bot chat lists its bot's skills with their descriptions, in a stable order` |
+| T-0531-M2 | packages/chat/src/skills.ts | `skillMessage` expanded the skill for every harness, including one that declares `loadsSkills` | ``a chat's skills > a harness that loads skills itself gets `/name rest` unchanged`` |
+| T-0531-M3 | packages/chat/src/skills.ts | the skill's body was left out of the message for a harness that does not load skills | `a chat's skills > a harness that does not load skills gets the skill body and then the rest` |
+| T-0531-M4 | packages/chat/src/index.ts | `chat:send` no longer looked for an operad command first, so a skill named like one answered instead | `a chat's skills > an operad command of the same name wins, so the skill does not shadow it` |
+| T-0531-M5 | packages/chat/src/command.ts | `/help` listed the commands but no skills after them | ``a chat's skills > `/help` lists the skills after the commands, marked as skills`` |
