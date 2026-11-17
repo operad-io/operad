@@ -657,7 +657,8 @@ export class SqlitePluginStore implements PluginStore {
 
   private pollFacts(): void {
     // A removed database has nothing left to deliver; its timer outlives it.
-    if (!existsSync(this.location.file ?? this.root)) return;
+    const gone = (): boolean => !existsSync(this.location.file ?? this.root);
+    if (gone()) return;
     let rows: FactRow[];
     try {
       rows = this.db
@@ -672,6 +673,8 @@ export class SqlitePluginStore implements PluginStore {
       // A busy store is a poll that missed this turn, not a serve that ends:
       // the next turn reads what was committed then.
       if (isBusy(error)) return;
+      // The database can be removed between the check above and this query.
+      if (gone()) return;
       throw error;
     }
     for (const row of rows) {

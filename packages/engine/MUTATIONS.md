@@ -1067,3 +1067,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0528-M1 | packages/engine/src/platform/step-reap.ts | `enterStep` started a tracker again, so a step that started no process read the process table when it ended | `a step that started no process reads no process table` |
+
+## T-0526 — a poll whose database was removed does not throw
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0526-M7 | packages/engine/src/plugin/sqlite-store.ts | a poll that met a missing database after its check threw the error instead of doing nothing | `a poll whose database is removed while it queries does nothing` |
