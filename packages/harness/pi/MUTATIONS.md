@@ -224,3 +224,10 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0532-M6 | packages/harness/pi/src/index.ts | a step with no access profile passed none to the worker instead of the built-in default | `pi/agent > the worker gets the prompt, the directories, the settings and no discovery` |
+
+## T-0536 — pi's default effort from its own settings
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0536-M1 | packages/harness/pi/src/index.ts | pi's default effort ignored its own `defaultThinkingLevel` | `the efforts pi declares > the default is pi's own defaultThinkingLevel when pi names one` |
+| T-0536-M2 | packages/harness/pi/src/index.ts | operad's `thinkingLevel` was ignored for the default effort | `the efforts pi declares > operad's thinkingLevel setting wins over pi's own default` |

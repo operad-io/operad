@@ -21,6 +21,7 @@ import {
   type CommandDefinition,
   type HarnessCapabilities,
   type HarnessEfforts,
+  type HarnessEffortsSource,
   type HarnessModelCapability,
   type HarnessModelContext,
   type HarnessModelInfo,
@@ -85,7 +86,7 @@ export interface NormalizedPlugin {
         context: HarnessModelContext,
       ) => MaybePromise<HarnessModels>)
     | undefined;
-  readonly efforts: HarnessEfforts | undefined;
+  readonly efforts: HarnessEffortsSource | undefined;
   readonly capabilities: HarnessCapabilities;
   readonly signedIn:
     | ((settings: Readonly<Record<string, JsonValue>>) => MaybePromise<boolean | undefined>)
@@ -1039,9 +1040,29 @@ function normalizeModelLevels(
 
 /**
  * The efforts a harness plugin declares: a list of levels, the default among
- * them or null, and the step argument that sets one.
+ * them or null, the step argument that sets one, or a function of its settings.
  */
-function normalizeEfforts(value: unknown, kind: string, at: string): HarnessEfforts | undefined {
+function normalizeEfforts(
+  value: unknown,
+  kind: string,
+  at: string,
+): HarnessEffortsSource | undefined {
+  if (typeof value === "function") {
+    if (kind !== "harness") {
+      throw new PluginError(`${at}: efforts: only a harness plugin declares efforts`);
+    }
+    const source = value as (settings: Readonly<Record<string, JsonValue>>) => unknown;
+    return (settings) =>
+      normalizeEffortsValue(source(settings), "harness", at) ?? { list: [], default: null };
+  }
+  return normalizeEffortsValue(value, kind, at);
+}
+
+function normalizeEffortsValue(
+  value: unknown,
+  kind: string,
+  at: string,
+): HarnessEfforts | undefined {
   const levels = normalizeLevels(value, kind, at, "efforts");
   if (levels === undefined) return undefined;
   const flag = value === undefined ? undefined : (value as Record<string, unknown>).flag;
