@@ -40,3 +40,16 @@ The profile is a guardrail, not a boundary. When a sandbox shell wraps any comma
 ### D7: `allow_always` is written into a user layer file
 
 The user layer is a JSON file with a Schema that a person can open, edit by hand and undo by deleting a line; every conversation and harness reads the same file. Each entry binds the exact command (or tool plus path) and working directory, only releases a call that would otherwise be asked about, and never touches a deny rule. The worktree question of a read-only chat uses the same answer, so an `Always allow` there writes this entry and releases that exact call in every chat. The answer itself is the answer to a pending item, and the history records who, when and in which conversation; the rule is not written into the fact log, and the kernel still does not interpret the profile.
+
+### D8: A chat's access level composes its profile
+
+A chat's access level is one of `plan`, `ask`, `edits` and `full`. It is a field of the access profile, `level`, so every harness receives the same profile and judges it with the same matcher. The level adds asks to the profile. It never removes a deny, a secret rule, a `readOnly` rule, an `askCommands` or `askPaths` rule: the stricter rule wins.
+
+- `plan`: the working directory is read-only, as `readOnly: true` is today. A write there and a command not known to only read ask.
+- `ask`: every write and every command not known to only read asks.
+- `edits`: a write inside the working directory does not ask; a write outside it asks, and a command not known to only read asks.
+- `full`: the level adds no ask. The profile's own deny lists and ask lists still hold.
+
+A level is composed into the profile by `@operad-io/access-match`; the kernel does not interpret it. `claude` and `pi` carry every level and declare `level` among the profile fields they enforce. `codex` and `radian` carry none: a reply at any level is refused at its start with a message naming the level, never answered with the level ignored.
+
+The user-visible names are `Plan only`, `Ask each time`, `Accept edits` and `Full access` (Chinese: 仅规划, 逐次确认, 自动接受编辑, 完全访问), under the menu title `Access` (权限模式). Each level has a short description in the chat action's information; `full` says that it skips every question the level adds while the profile's deny and ask rules still hold.
