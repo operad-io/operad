@@ -74,8 +74,8 @@ The question is a pending item (D4, ADR 0008). Its prompt names the target as a
 person reads it — who, which channel or conversation, which repository and
 branch, which service — and carries the whole content being sent. Its choices
 are `send_once` and `reject_once` (`Send once`, `Reject`). An "always for this
-flow and target" choice is added by the next task; the question shape leaves it
-room. In a background run the chat's exact-call `alwaysAllow` (D3) does not
+flow and target" choice may be added; the question shape leaves it room. In a
+background run the chat's exact-call `alwaysAllow` (D3) does not
 count: the pending item asks even when the same exact call was allowed in a
 chat. The allow-always user layer is still not read or offered in such a run.
 
@@ -121,8 +121,8 @@ check has the same place the bot guard already has in front of a server's tools.
 `@operad-io/harness-process` sets `background: true` on the profile it hands a
 worker when no person started the run. The matcher then treats an outward
 command or MCP call as an ask, and the host turns it into the pending item of
-D10. The harness flows that carry a question to a later `wait_person` keep their
+D10. The harness flows that carry a question to a `wait_person` keep their
 existing permission choices; a question answered while the step is alive uses
 `send_once`.
 
-What was looked at: the Telegram senders (replies, commands, pending items, progress) are a source plugin, not a step or action, and every target is a chat that a listed owner user opened with operad, so they are owner channels and not outward. A bot proposal writes only local files, and only after a person approves it. A chat reply goes to the chat's own bound channels, also owner channels. `shell/command` and `shell/check` declare `reachesOutside` and guard each line; `dev/integrate` declares it and guards its push with the repository and main branch as the target. The paths that still start a process without the profile — `shell/probe`, the other git and editor commands of `dev`, and a bot's MCP server start — are listed in `docs/backlog/operad-sandbox.md`.
+What was looked at: the Telegram senders (replies, commands, pending items, progress) are a source plugin, not a step or action, and every target is a chat that a listed owner user opened with operad, so they are owner channels and not outward. A bot proposal writes only local files, and only after a person approves it. A chat reply goes to the chat's own bound channels, also owner channels. `shell/command` and `shell/check` declare `reachesOutside` and guard each line; `dev/integrate` declares it and guards its push with the repository and main branch as the target. This decision does not cover the paths that start a process without the profile: `shell/probe`, the other git and editor commands of `dev`, and a bot's MCP server start.
