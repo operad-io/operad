@@ -306,6 +306,25 @@ function remoteRefs(state: Fixture): string {
 }
 
 describe("dev/integrate", () => {
+  test("a scheduled run asks before the push, naming the remote and branch", async () => {
+    const state = await fixture({ style: "merge" });
+    const asked: string[] = [];
+    const result = await state.registry.runStep("dev/integrate", {}, {
+      runId: "integrate-scheduled",
+      object: { type: "task", id: state.taskKey, data: {} },
+      trigger: { source: "cron", type: "tick", key: "t-scheduled", hops: 0 },
+      asker: {
+        ask: (request) => {
+          asked.push(request.prompt);
+          return Promise.resolve({ kind: "answered", answer: { choice: "send_once" } });
+        },
+        useGrant: () => Promise.resolve(false),
+      },
+    });
+    expect(result.result).toBe("merged");
+    expect(asked[0]).toContain("origin/main");
+  });
+
   test("merge style lands a merge commit with the documented message", async () => {
     const state = await fixture({ style: "merge" });
     const verified = (await taskOf(state)).attempt?.verified ?? "";

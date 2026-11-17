@@ -1387,3 +1387,8 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0532-M4 | packages/dev/src/chat.ts | a repository chat's profile did not start from the built-in default | `a repository chat's access level > at full it still refuses credentials and sudo, and asks before git push` |
+
+## T-0533 — background push
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0533-M10 | packages/dev/src/integrate.ts | the integrate push no longer asked before it ran | `dev/integrate > a scheduled run asks before the push, naming the remote and branch` |

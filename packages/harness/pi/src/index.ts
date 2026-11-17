@@ -610,9 +610,11 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
             throw new Error(`${at}: params.useOwnSettings: must be a boolean`);
           }
           // A generated step that names no profile still starts from the default.
-          const access = withDefaultAccess(ctx.access as AccessProfile | undefined);
+          const startAccess = withDefaultAccess(ctx.access as AccessProfile | undefined);
           const storeSecrets = await secretValuesOf(ctx.secrets);
           const allowAlways = personStarted(ctx.trigger);
+          // A run no person's message started asks about every outward write.
+          const access = allowAlways ? startAccess : { ...startAccess, background: true };
           if (allowAlways && isRecord(rawAskAnswer) && rawAskAnswer["choice"] === ALLOW_ALWAYS) {
             const entry = alwaysAllowFromGrant(access, cwd);
             if (entry !== undefined) {

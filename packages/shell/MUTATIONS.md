@@ -28,3 +28,8 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0402-M1 | packages/shell/src/index.ts | `shell/check` ignored the runner's `stalled` outcome, so a stopped command reported a signal instead of `stall` | `shell/check > a check that writes nothing for stallSecs is stopped and names its last lines` (expected `stall`, received `signal`) |
+
+## T-0533 — outward commands
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0533-M9 | packages/shell/src/index.ts | `shell/command` stopped checking its line for an outward write | `shell/command > a background run asks before an outward command and names its target` |

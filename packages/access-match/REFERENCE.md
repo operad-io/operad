@@ -40,6 +40,11 @@ the `home` option). `test/match.test.ts` follows the tables below.
 | `alwaysAllow` | `{ kind: "command" \| "path", value, cwd, tool? }[]`, optional | calls a person answered `allow_always` for. A command entry is the exact command text and cwd; a path entry is the tool, the path and cwd. Such a call is allowed when it would otherwise ask. A deny still wins, and a harness leaves the entries out of a run no person's message started (ADR 0025 D3, D4 and D7; the background-run rule is still in `docs/backlog/operad-sandbox.md`) |
 
 | `grants` | `{ waitId, kind: "command" \| "path", value, tool? }[]`, optional | one-time permissions not yet used; see `findGrant` |
+| `outwardCommands` | string[], optional | command rules in the shape of `askCommands`; a matching `bash` part is an outward write in a background run (`git push` names `origin/main`, a `curl` write its URL, mail its recipients, otherwise the whole command). The built-in default names `git push`, `gh pr create`, `gh issue comment`, `curl`, `wget`, `mail`, `mailx` and `sendmail` |
+| `outwardAllow` | string[], optional | targets a background run may write to without asking: a channel and conversation (`telegram:123`), an address, a repository and branch (`origin/main`), or a service. `owner` stands for the owner's own channels; the built-in default contains it |
+| `background` | boolean, optional | set by a harness on a run no person's message started. An outward command or unknown MCP tool then asks even without another rule, and `alwaysAllow` is ignored (ADR 0025 D3 and D10) |
+
+`outwardAllowed(profile, write)` says whether one outward write is on the allowlist or to an owner channel. `outwardQuestion(write)` is the pending question that names its target and carries its content; its choices are `send_once` and `reject_once`. `guardOutward(ctx, write)` asks it only in a background run and only when the target is not allowed; `declaredOutward(declaration, input)` reads a step or action's `reachesOutside`/`outward` declaration, and `guardDeclaredOutward` guards every write it names. `personStarted(trigger)` tells a person's chat message from every other event.
 
 `findGrant(profile, call)` returns the grant that covers a call, or `undefined`:
 a `command` grant covers a `bash` call whose command equals `value` character

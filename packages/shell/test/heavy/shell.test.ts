@@ -15,6 +15,7 @@ import {
   type PluginDefinition,
   type PluginStepResult,
 } from "@operad-io/engine";
+import { defaultAccess } from "@operad-io/access-match";
 import shell, { createShellPlugin } from "../../src/index.ts";
 import {
   alive,
@@ -70,6 +71,29 @@ describe("shell/command", () => {
     expect(data.exitCode).toBe(0);
     expect(readFileSync(String(data.log), "utf8")).toContain("hello");
     expect(data.tail).toContain("hello");
+  });
+
+  test("a background run asks before an outward command and names its target", async () => {
+    const { registry } = await fixture();
+    const asked: string[] = [];
+    const result = await registry.runStep(
+      "shell/command",
+      { line: "git push --dry-run origin main" },
+      {
+        runId: "run-outward",
+        access: { ...defaultAccess(), background: true } as never,
+        trigger: { source: "cron", type: "tick", key: "t1", hops: 0 },
+        asker: {
+          ask: (request) => {
+            asked.push(request.prompt);
+            return Promise.resolve({ kind: "answered", answer: { choice: "send_once" } });
+          },
+          useGrant: () => Promise.resolve(false),
+        },
+      },
+    );
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toContain("origin/main");
   });
 
   test("understands quoting, pipes and &&", async () => {

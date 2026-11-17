@@ -324,3 +324,20 @@ describe("operad's own tools", () => {
     expect(asked).toEqual([{ kind: "path", value: `${CWD}/a.ts`, tool: "write" }]);
   });
 });
+
+test("a background run asks about an outward command with its target", async () => {
+  const asked: Array<{ readonly outward?: { readonly target?: string | undefined } | undefined }> = [];
+  const decision = await decideAccess(
+    { background: true, outwardCommands: ["git push"] },
+    "Bash",
+    { command: "git push origin main" },
+    CWD,
+    undefined,
+    async (question) => {
+      asked.push(question);
+      return { decision: "allow" };
+    },
+  );
+  expect(decision.allow).toBe(true);
+  expect(asked[0]?.outward?.target).toBe("origin/main");
+});

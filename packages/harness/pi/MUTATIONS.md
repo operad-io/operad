@@ -224,3 +224,8 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0532-M6 | packages/harness/pi/src/index.ts | a step with no access profile passed none to the worker instead of the built-in default | `pi/agent > the worker gets the prompt, the directories, the settings and no discovery` |
+
+## T-0533 — background profile
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0533-M5 | packages/harness/pi/src/index.ts | a background run passed no `background` marker to its worker | `pi: a call that must ask a person > a background run ignores the user layer and is not offered allow_always` |

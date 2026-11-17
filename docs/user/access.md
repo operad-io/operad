@@ -44,6 +44,8 @@ ask rule asks a person; every other call is allowed.
 | `level` | string | absent | `plan`, `ask`, `edits` or `full` | When a chat composes its profile for a reply; changed with `/access` | Refused by the reader: `level must be one of plan, ask, edits, full` |
 | `readPaths` | array of strings | `[]` | directories a read may still reach under a denied ancestor | When a step judges a read, or a `bash` command that only reads | Refused by the reader: `readPaths must be an array of strings` |
 | `allowMcp` | array of strings | absent: MCP tools are not under the profile | `<server>.<tool>` or `<server>.*` | When a step judges an MCP call; having the field at all, even empty, puts MCP tools under the profile | Refused by the reader: `allowMcp must be an array of strings` |
+| `outwardCommands` | array of strings | the default list below | command rules in the same shape as `askCommands` | In a background run, before a command that writes outside operad | Refused by the reader: `outwardCommands must be an array of strings` |
+| `outwardAllow` | array of strings | `["owner"]` | channel and conversation, address, repository and branch, or service targets; `owner` is the owner's own channels | In a background run, to let a target write without asking | Refused by the reader: `outwardAllow must be an array of strings` |
 | `alwaysAllow` | array of entry objects | the entries in [access-user.json](#access-userjson) for a run a person started; empty in a background run | the entries below | When a step judges a call that would otherwise ask | Refused by the reader: `alwaysAllow must be an array`, or an entry's own message |
 | `grants` | array of grant objects | `[]` | one-time permissions a step carries for one exact call | When the step that was waiting continues | Refused by the reader: `grants must be an array`, or a grant's own message |
 
@@ -87,6 +89,8 @@ after those additions, so `full` keeps these rules too.
 | `denyCommands` | `sudo`, `su`, `rm -rf /`, `rm -rf ~`, `mkfs`, `dd`, `diskutil`, `shutdown`, `reboot`, `launchctl`, `crontab -r`, `git push --force*`, `git push --delete`, `curl … \| sh`, `wget … \| sh`, `pkill`, `killall` |
 | `askCommands` | `git push`, `brew install`, `npm install -g`, `pip install`, `osascript`, `open` |
 | `askPaths` | `~/.zshrc`, `~/.*profile` |
+| `outwardCommands` | `git push`, `gh pr create`, `gh pr comment`, `gh issue create`, `gh issue comment`, `gh release create`, `curl`, `wget`, `mail`, `mailx`, `sendmail` |
+| `outwardAllow` | `owner` |
 | `readPaths`, `readOnly`, `allowMcp`, `level` | absent |
 
 A bot adds the operad home and the `operad` command: every entry of the home
@@ -172,7 +176,15 @@ Only a message from one of the chat's own client sources (`ios`, `telegram`,
 `cli`, `tui`, `other`) is a person's message for this rule.
 
 In a background run the existing `alwaysAllow` entries are not used, and
-`allow_always` is not offered: a question asks again every time, with
-`allow_once` and `reject_once` only. This is deliberate: a scheduled or incoming
-run is held to the profile afresh rather than inheriting a permission a person
-gave in an earlier conversation.
+`allow_always` is not offered: a question asks again every time. This is
+deliberate: a scheduled or incoming run is held to the profile afresh rather
+than inheriting a permission a person gave in an earlier conversation.
+
+An **outward write** also asks first: a message, mail or
+post; a `git push`; or a write call to an outside service. The question names
+the target (the chat, address, repository and branch, or service) and carries
+the whole content; its choices are `Send once` and `Reject`. A write to one of
+the owner's own channels, or to a target in `outwardAllow`, does not ask. A
+plugin step or action declares such a write; the shell steps use
+`outwardCommands`. The chat's exact-call `alwaysAllow` does not lift this
+question.

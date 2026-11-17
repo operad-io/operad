@@ -41,6 +41,20 @@ const DENY_COMMANDS = [
 
 const ASK_COMMANDS = ["git push", "brew install", "npm install -g", "pip install", "osascript", "open"];
 const ASK_PATHS = ["~/.zshrc", "~/.*profile"];
+const OUTWARD_COMMANDS = [
+  "git push",
+  "gh pr create",
+  "gh pr comment",
+  "gh issue create",
+  "gh issue comment",
+  "gh release create",
+  "curl",
+  "wget",
+  "mail",
+  "mailx",
+  "sendmail",
+];
+const OUTWARD_ALLOW = ["owner"];
 
 test("the built-in default is exactly the list every chat and step starts from", () => {
   expect(defaultAccess()).toEqual({
@@ -48,6 +62,8 @@ test("the built-in default is exactly the list every chat and step starts from",
     denyCommands: DENY_COMMANDS,
     askCommands: ASK_COMMANDS,
     askPaths: ASK_PATHS,
+    outwardCommands: OUTWARD_COMMANDS,
+    outwardAllow: OUTWARD_ALLOW,
   });
 });
 
@@ -90,12 +106,16 @@ test("a profile can add to the default but never remove its deny or ask rules", 
     denyCommands: ["rm"],
     askCommands: ["make"],
     askPaths: ["/scratch"],
+    outwardCommands: ["deploy"],
+    outwardAllow: ["telegram:123"],
     readOnly: true,
   });
   expect(tightened.denyPaths).toEqual([...DENY_PATHS, "/private"]);
   expect(tightened.denyCommands).toEqual([...DENY_COMMANDS, "rm"]);
   expect(tightened.askCommands).toEqual([...ASK_COMMANDS, "make"]);
   expect(tightened.askPaths).toEqual([...ASK_PATHS, "/scratch"]);
+  expect(tightened.outwardCommands).toEqual([...OUTWARD_COMMANDS, "deploy"]);
+  expect(tightened.outwardAllow).toEqual([...OUTWARD_ALLOW, "telegram:123"]);
   expect(tightened.readOnly).toBe(true);
 });
 

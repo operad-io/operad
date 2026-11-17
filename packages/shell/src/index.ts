@@ -8,6 +8,7 @@ import pkg from "../package.json" with { type: "json" };
 import { createHash } from "node:crypto";
 import { stat } from "node:fs/promises";
 import { definePlugin, paramsObject, type PluginLogger, type PluginStepResult, type StepContext } from "@operad-io/engine";
+import { guardOutward, outwardCommandWrites, personStarted } from "@operad-io/access-match";
 import {
   runLine,
   type Clock,
@@ -82,6 +83,22 @@ async function directoryError(cwd: string): Promise<string | undefined> {
   } catch {
     return `cwd does not exist: ${cwd}`;
   }
+}
+
+/** Asks about each outward write in a shell line; undefined when every one is allowed. */
+async function outwardProblem(ctx: StepContext, line: string): Promise<string | undefined> {
+  const guard = {
+    access: ctx.access,
+    ask: ctx.ask.bind(ctx),
+    personStarted: personStarted(ctx.trigger),
+    onTimeout: "reject_once" as const,
+  };
+  for (const write of outwardCommandWrites(ctx.access, line)) {
+    if (!(await guardOutward(guard, write))) {
+      return `the person did not allow the outward write to "${write.target}"`;
+    }
+  }
+  return undefined;
 }
 
 async function writeNote(logger: PluginLogger, note: string): Promise<string> {
@@ -212,6 +229,7 @@ export function createShellPlugin(options: ShellPluginOptions = {}) {
     steps: [
       {
         name: "command",
+        reachesOutside: true,
         results: ["pass", "fail", "interrupted"],
         async run(ctx, params) {
           const at = "shell/command";
@@ -221,6 +239,10 @@ export function createShellPlugin(options: ShellPluginOptions = {}) {
           const env = envParam(input, at);
           const timeout = timeoutParam(input, at);
           const stall = stallParam(input, at);
+          const refused = await outwardProblem(ctx, line);
+          if (refused !== undefined) {
+            return { result: "fail", data: { reason: "outward", message: refused } };
+          }
 
           const cwdProblem = await directoryError(cwd);
           if (cwdProblem !== undefined) {
@@ -252,6 +274,7 @@ export function createShellPlugin(options: ShellPluginOptions = {}) {
       },
       {
         name: "check",
+        reachesOutside: true,
         results: ["pass", "fail", "interrupted"],
         async run(ctx, params) {
           const at = "shell/check";
@@ -312,6 +335,13 @@ export function createShellPlugin(options: ShellPluginOptions = {}) {
               };
             }
 
+            const refused = await outwardProblem(ctx, line);
+            if (refused !== undefined) {
+              return {
+                result: "fail",
+                data: { reason: "outward", message: refused, line, lineNumber: index + 1, logStart: start },
+              };
+            }
             const outcome = await runLine({
               line,
               cwd,
@@ -391,6 +421,7 @@ export function createShellPlugin(options: ShellPluginOptions = {}) {
       },
       {
         name: "probe",
+        reachesOutside: true,
         results: ["ready", "waiting", "interrupted"],
         async run(ctx, params) {
           const at = "shell/probe";
