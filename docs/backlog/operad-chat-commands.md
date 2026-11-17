@@ -13,7 +13,7 @@
 
 ## 决定
 
-6. **第二批**：`/new`（从这里重新开始一个会话，记录留着）、`/compact`（压缩上下文）、`/btw`（旁问：用当前上下文回答，不打断正在写的回复，不进记录）、`/name`（改标题）、bot 的 skills 成为 `/名字`。
+6. **第二批**：`/new`（从这里重新开始一个会话，记录留着）、`/compact`（压缩上下文）、`/btw`（旁问：用当前上下文回答，不打断正在写的回复，不进记录）、`/name`（改标题）。
 7. **只在 Telegram**：`/whoami`（显示发送者的 id，配名单用）；显示工具调用和 thinking 的开关，等进度消息（T-0488）做完再定形式。
 8. **只在仓库 chat**：`/diff`（这个 chat 的 worktree 里改了什么）。
 9. **不做**：聊天里改配置、权限、名单、插件，重启，跑 shell，子 agent 管理，把外部 agent 绑到当前聊天。这些归命令行和设置页。
@@ -21,6 +21,5 @@
 
 ## 待决问题
 
-1. bot 的 `skills` 现在是否真的到了 agent 手里（`chat:reply` 传了参数，harness 一侧没找到读它的地方）。决定 6 的 skills 一项以它为前提。
-2. agent 自己上报的命令（Claude Agent SDK 的 `supportedCommands()`、ACP 的 `available_commands_update`）要不要出现在 `/` 菜单里。今天 chat 与用户自己的配置隔离，列表是空的；ADR 0027 D2 写了不记录"可用命令"。
-3. 带短 id 的文字审批兜底（Telegram 上按钮不可用时回 `allow <id>`），和 `operad-channels.md` 的卡片协议一起定。
+1. agent 自己上报的命令（Claude Agent SDK 的 `supportedCommands()`、ACP 的 `available_commands_update`）要不要出现在 `/` 菜单里。今天 chat 与用户自己的配置隔离，列表是空的；ADR 0027 D2 写了不记录"可用命令"。
+2. 带短 id 的文字审批兜底（Telegram 上按钮不可用时回 `allow <id>`），和 `operad-channels.md` 的卡片协议一起定。

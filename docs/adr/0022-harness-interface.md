@@ -53,7 +53,7 @@ The plugin is `codex`, the package `@operad-io/harness-codex`, the step `codex/a
 
 ### D9: A harness that cannot load skills itself is told them in the prompt
 
-A step may give skill directories to a harness (ADR 0011 D2). A harness that declares `loadsSkills` loads them itself and its prompt is only the step's prompt. Any other harness gets a short list appended to the prompt: each skill's name, the description from its `SKILL.md` frontmatter and the path of that file, with one sentence to read the file before doing what it describes. A skill's body never enters the prompt.
+A step may give skill directories to a harness (ADR 0011 D2). A harness that declares `loadsSkills` loads them itself and its prompt is only the step's prompt. Any other harness gets a short list appended to the prompt: each skill's name, the description from its `SKILL.md` frontmatter and the path of that file, with one sentence to read the file before doing what it describes. This list never carries a skill's body. The one exception is a skill a person types as `/name rest` in a chat: a harness that does not declare `loadsSkills` gets that skill's body in the message, after a line naming it and before `rest`, while a harness that declares it gets `/name rest` unchanged (ADR 0028 D9).
 
 The list stays small: it carries at most a fixed number of skills and a fixed number of characters of each description, and says how many skills the cap left out. A directory whose `SKILL.md` or name cannot be read is left out, as D1 skips it for a harness that loads skills itself. The shared code of `@operad-io/harness-process` holds this, so a new harness gets it without writing its own.
 

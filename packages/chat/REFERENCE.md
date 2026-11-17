@@ -81,7 +81,29 @@ the outcome or the refusal, and whether it ran. The transcript shows it as one
 entry; it is not a `chat.message`, so `promptFor` and the agent never see it.
 
 `/help` lists this chat's commands that can run now, with the one-line
-description from each declaration, under the name the chat types it by.
+description from each declaration, under the name the chat types it by. It then
+lists the chat's skills, marked as skills.
+
+## Skills in a chat
+
+A chat's view carries the skills this chat can use beside its actions:
+`GET /v1/objects/<id>` and MCP `show` return `skills: [{ name, description? }]`
+with the commands, so one request gives both. A bot chat lists its bot's
+current skills; a repository chat lists the skills its `dev.json` gives it. Each
+name and description comes from the skill's `SKILL.md`, the description cut to
+the same length as the harness prompt list (160 characters, then `...`), and the
+order is the order of the given skill directories. A skill whose `SKILL.md` or
+name cannot be read is left out. The view carries no paths and no bodies.
+
+`/name rest`, where `name` is one of these skills, is an ordinary message to the
+agent, not a command; an operad command of the same name wins, so a skill never
+shadows `/model` or `/help`. A harness that declares `capabilities.loadsSkills`
+gets the line unchanged (`/name rest`) because it loads the skill itself. Any
+other harness gets the skill's `SKILL.md` body in the prompt, after a line
+naming the skill and before `rest`. The message fact keeps what the person typed,
+so the transcript shows `/name rest`; the body is prompt text, never recorded.
+An unknown `/name` is an ordinary message as before. An ordinary message sent
+during a reply is expanded the same way before it reaches the agent.
 
 ## `chat:stop <chat>`
 

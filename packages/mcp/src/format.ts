@@ -119,6 +119,17 @@ export function showMarkdown(object: ViewObject | McpViewObject): string {
     }
   }
 
+  if (object.skills !== undefined) {
+    lines.push("", "## Skills");
+    if (object.skills.length === 0) {
+      lines.push("No skills.");
+    } else {
+      for (const skill of object.skills) {
+        lines.push(`- \`/${skill.name}\`${skill.description === undefined ? "" : `: ${skill.description}`}`);
+      }
+    }
+  }
+
   lines.push("", "## Actions");
   if (object.actions.length === 0) {
     lines.push("No actions are available now.");
