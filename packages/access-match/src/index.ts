@@ -140,6 +140,14 @@ export interface AccessProfile {
    */
   readonly askPaths?: readonly string[] | undefined;
   /**
+   * False when the profile starts from the built-in default's deny rules only:
+   * its `askCommands` and `askPaths` are not added. The profile's own asks
+   * still hold. A flow profile still only adds; there is no way to drop a
+   * default deny. A task worker step uses this to run its scripted edits
+   * without a question (ADR 0025 D9).
+   */
+  readonly defaultAsks?: boolean | undefined;
+  /**
    * The working directory is read-only: a write there (the `write` and `edit`
    * tools, a `bash` redirect) asks, as if the directory were in `askPaths`; a
    * `bash` command asks unless `isReadOnlyCommand` says it only reads.
@@ -197,6 +205,18 @@ export function defaultAccess(): AccessProfile {
   };
 }
 
+/**
+ * The built-in default's deny rules only. A task worker starts from these and
+ * not from the default's asks, so its scripted edits run without a question
+ * (ADR 0025 D9).
+ */
+export function defaultDenies(): AccessProfile {
+  return {
+    denyPaths: [...DEFAULT_DENY_PATHS],
+    denyCommands: [...DEFAULT_DENY_COMMANDS],
+  };
+}
+
 function combined(
   base: readonly string[] | undefined,
   extra: readonly string[] | undefined,
@@ -209,10 +229,12 @@ function combined(
 
 /**
  * The built-in default with `profile`'s rules added. It keeps every deny and
- * ask of the default; a field the default does not set is kept as given.
+ * ask of the default; a profile with `defaultAsks: false` starts from the
+ * default's denies only, and its own ask rules still hold. A field the default
+ * does not set is kept as given.
  */
 export function withDefaultAccess<T extends AccessProfile>(profile?: T | undefined): T & AccessProfile {
-  const base = defaultAccess();
+  const base = profile?.defaultAsks === false ? defaultDenies() : defaultAccess();
   const denyPaths = combined(base.denyPaths, profile?.denyPaths);
   const denyCommands = combined(base.denyCommands, profile?.denyCommands);
   const askCommands = combined(base.askCommands, profile?.askCommands);
@@ -294,13 +316,18 @@ export function readProfile(value: unknown): ProfileRead {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return { ok: false, message: "the access profile must be an object" };
   }
-  const found: { level?: AccessLevel; denyPaths?: string[]; denyCommands?: string[]; askCommands?: string[]; askPaths?: string[]; readPaths?: string[]; allowMcp?: string[]; outwardAllow?: string[]; outwardCommands?: string[]; readOnly?: boolean; background?: boolean; grants?: AccessGrant[]; alwaysAllow?: AlwaysAllowEntry[] } = {};
+  const found: { level?: AccessLevel; defaultAsks?: boolean; denyPaths?: string[]; denyCommands?: string[]; askCommands?: string[]; askPaths?: string[]; readPaths?: string[]; allowMcp?: string[]; outwardAllow?: string[]; outwardCommands?: string[]; readOnly?: boolean; background?: boolean; grants?: AccessGrant[]; alwaysAllow?: AlwaysAllowEntry[] } = {};
   const level: unknown = Reflect.get(value, "level");
   if (level !== undefined) {
     if (!isAccessLevel(level)) {
       return { ok: false, message: `level must be one of ${ACCESS_LEVELS.join(", ")}` };
     }
     found.level = level;
+  }
+  const defaultAsks: unknown = Reflect.get(value, "defaultAsks");
+  if (defaultAsks !== undefined) {
+    if (typeof defaultAsks !== "boolean") return { ok: false, message: "defaultAsks must be true or false" };
+    found.defaultAsks = defaultAsks;
   }
   const readOnly: unknown = Reflect.get(value, "readOnly");
   if (readOnly !== undefined) {
@@ -577,7 +604,10 @@ function checkBash(profile: AccessProfile, command: string, denied: Denied | und
   const { parts, substitution, extglob, ansiC } = scan(command);
 
   if ((profile.denyCommands ?? []).length > 0) {
-    if (substitution !== undefined) {
+    // A command that hides what it runs cannot be matched: when the profile
+    // also asks, askBash asks about it instead of refusing it here.
+    const asksInline = (profile.askCommands ?? []).length > 0;
+    if (substitution !== undefined && !asksInline) {
       return {
         allow: false,
         reason: `command "${command}" runs inline code (${substitution}); it is refused while denyCommands is set`,
@@ -585,7 +615,7 @@ function checkBash(profile: AccessProfile, command: string, denied: Denied | und
     }
     for (const part of parts) {
       const form = inlineFormOf(part);
-      if (form !== undefined) {
+      if (form !== undefined && !asksInline) {
         return {
           allow: false,
           reason: `part "${part.text}" runs inline code (${form}); it is refused while denyCommands is set`,

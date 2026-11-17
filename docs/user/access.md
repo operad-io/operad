@@ -79,9 +79,14 @@ does not allow a write: a write there asks.
 ## The default profile
 
 The default profile lives in `@operad-io/access-match` and is what every chat and
-every generated step starts from. A bot, a repository or a flow can add to its
-lists and turn `readOnly` on, never remove one. The access level is composed
-after those additions, so `full` keeps these rules too.
+every ordinary generated step starts from. A bot, a repository or a flow can add
+to its lists and turn `readOnly` on, never remove one. The access level is
+composed after those additions, so `full` keeps these rules too.
+
+A dev task worker is the exception: it starts from the default's deny rules
+only, without its ask rules, because it works in the worktree of its own task
+and its change reaches main only through checks, review and a merge. Chats and
+other generated steps keep the default in full, asks included.
 
 | List | Entries |
 |---|---|
@@ -113,8 +118,9 @@ A rule is a pattern of words; `*` matches any characters in a word. `-rf`
 matches the same single-dash letters in any order, and `…` adds no condition.
 `git push --force*` therefore matches `git -C x push --force`. An inline command
 (such as `bash -c`, `python -c`, `bun -e`, `osascript -e`, `find -exec`, `xargs`,
-`eval`, a backtick or `$()`) is refused while `denyCommands` is set, and asks
-while only `askCommands` is set, because the matcher cannot see what it runs.
+`eval`, a backtick or `$()`) is refused while `denyCommands` is set and no
+`askCommands` is set; when `askCommands` is set, it asks instead, because the
+matcher cannot see what it runs.
 The full rule tables are in `packages/access-match/REFERENCE.md`.
 
 ## `access-user.json`

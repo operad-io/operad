@@ -150,6 +150,14 @@ and the row fields.
 | T-0532-M1 | packages/access-match/src/index.ts | `~/.ssh` was left out of the built-in default's `denyPaths` | `the built-in default is exactly the list every chat and step starts from` |
 | T-0532-M2 | packages/access-match/src/index.ts | `withAccessLevel` composed a level into the profile without the built-in default | `every level, full included, keeps the default's deny and ask rules` |
 
+## T-0535 — a task worker starts from the default's denies, not its asks
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0535-M1 | packages/access-match/src/index.ts | `withDefaultAccess` ignored `defaultAsks: false` and always used the full built-in default | `a task worker keeps the default's denies, not its asks` (and `a flow profile still adds its own asks when the default's asks are left out`) |
+| T-0535-M2 | packages/access-match/src/index.ts | inline code was always refused while `denyCommands` was set, even when `askCommands` was set to ask about it | `a chat at full still asks for git push and for inline code` (and `a generated step with no profile gets the default asks`) |
+| T-0535-M3 | packages/access-match/src/index.ts | `defaultDenies` left `~/.ssh` out of its `denyPaths` | `defaultDenies is exactly the default's deny lists` |
+
 ## T-0533 — background outward writes
 | id | file | mutation | failing test |
 |---|---|---|---|

@@ -14,6 +14,7 @@ import {
   type PluginStepResult,
   type TriggerView,
 } from "@operad-io/engine";
+import { match, type AccessProfile } from "@operad-io/access-match";
 import { EVENT_NOTE_TEMPLATE, FLUSH_MS, modelErrorOf } from "@operad-io/harness-process";
 import { createPiHarnessPlugin, piModelListPath, piToolEvent } from "../../src/index.ts";
 import {
@@ -535,6 +536,36 @@ describe("pi/agent", () => {
     expect(access.denyCommands).toContain("rm");
     expect(access.denyCommands).toContain("sudo");
     expect(access.denyPaths).toContain("~/.ssh");
+  });
+
+  test("a task worker profile leaves out the default's asks", async () => {
+    const env = await setup("done");
+    await env.registry.runStep(
+      "pi/agent",
+      { prompt: "hello", cwd: env.root },
+      { runId: "run-worker", access: { defaultAsks: false } },
+    );
+    const access = recorded(env).access as AccessProfile;
+    const call = (command: string) =>
+      match(access, { tool: "bash", input: { command }, cwd: env.root }, { home: env.root });
+    expect(access.askCommands).toBeUndefined();
+    expect(access.askPaths).toBeUndefined();
+    expect(call("git push origin main").ask).toBeUndefined();
+    expect(call('bash -c "echo hi"').ask).toBeUndefined();
+    expect(call("sudo ls").allow).toBe(false);
+    expect(call("cat ~/.ssh/id_ed25519").allow).toBe(false);
+  });
+
+  test("a generated step with no profile still gets the default's asks", async () => {
+    const env = await setup("done");
+    await runAgent(env, { prompt: "hello", cwd: env.root });
+    const access = recorded(env).access as AccessProfile;
+    for (const command of ["git push origin main", 'bash -c "echo hi"']) {
+      expect(match(access, { tool: "bash", input: { command }, cwd: env.root }, { home: env.root })).toMatchObject({
+        allow: false,
+        ask: true,
+      });
+    }
   });
 
   test("a worker Result of failed is a failure that names the reason", async () => {

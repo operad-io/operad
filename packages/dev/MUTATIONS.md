@@ -1388,6 +1388,12 @@ the row fields.
 |---|---|---|---|
 | T-0532-M4 | packages/dev/src/chat.ts | a repository chat's profile did not start from the built-in default | `a repository chat's access level > at full it still refuses credentials and sudo, and asks before git push` |
 
+## T-0535 — a task worker starts from the default's denies, not its asks
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0535-M4 | packages/dev/src/steps.ts | `dev/work` passed the run's access profile to the worker without `defaultAsks: false` | `dev/work > a task worker keeps the default's denies, not its asks` |
+
 ## T-0533 — background push
 | id | file | mutation | failing test |
 |---|---|---|---|

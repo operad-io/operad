@@ -264,6 +264,10 @@ describe("a repository chat's access level", () => {
       allow: false,
       ask: true,
     });
+    expect(match(stored, { tool: "bash", input: { command: 'bash -c "echo hi"' }, cwd: worktree }, { home })).toMatchObject({
+      allow: false,
+      ask: true,
+    });
     expect(match(stored, { tool: "bash", input: { command: "operad dev list" }, cwd: worktree }, { home }).allow).toBe(false);
 
     await reply(r, id);

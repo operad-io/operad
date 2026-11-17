@@ -36,6 +36,7 @@ the `home` option). `test/match.test.ts` follows the tables below.
 | `readPaths` | array of paths, optional | directories the agent may read although `denyPaths` covers an ancestor: a read tool (`read`, `grep`, `find`, `ls`) or a `bash` command that only reads may touch a path under one. A write there asks (the entries count as `askPaths`); every other denied path stays denied |
 | `allowMcp` | string[], optional | MCP tools that run without asking, as `<server>.<tool>` or `<server>.*`. The field's presence (even empty) puts MCP tools under the profile: a call with `tool: "mcp"` and `input: { server, tool }` that is not listed counts as a write and asks (`kind: "command"`, value `mcp <server>.<tool>`), per the MCP-tool rule in `docs/backlog/operad-sandbox.md`, not in an ADR yet. When the field is absent, MCP tools are not under the profile and are allowed |
 | `askCommands` | string[], optional | rules in the shape of `denyCommands`; a `bash` command part that matches one of these asks a person (ADR 0025 D1). Writes to shell profiles are `askPaths` |
+| `defaultAsks` | boolean, optional | `false` starts the profile from the built-in default's deny rules only: its `askCommands` and `askPaths` are not added. The profile's own asks still hold. A dev task worker step sets it so its scripted edits run without a question (ADR 0025 D9); a flow profile still only adds |
 
 | `alwaysAllow` | `{ kind: "command" \| "path", value, cwd, tool? }[]`, optional | calls a person answered `allow_always` for. A command entry is the exact command text and cwd; a path entry is the tool, the path and cwd. Such a call is allowed when it would otherwise ask. A deny still wins, and a harness leaves the entries out of a run no person's message started (ADR 0025 D3, D4 and D7; the background-run rule is still in `docs/backlog/operad-sandbox.md`) |
 
@@ -58,18 +59,24 @@ and names the field at fault.
 
 ## The built-in default
 
-`defaultAccess()` is the profile every chat and every generated step starts
-from: the credential and keychain paths, `.git/config` and `.git/hooks` in
+`defaultAccess()` is the profile every chat and every ordinary generated step
+starts from: the credential and keychain paths, `.git/config` and `.git/hooks` in
 `denyPaths`; `sudo`, `su`, destructive disk and shutdown commands,
 `git push --force*`, `git push --delete`, `curl … | sh`, `wget … | sh`,
 `pkill` and `killall` in `denyCommands`; `git push`, `brew install`,
 `npm install -g`, `pip install`, `osascript` and `open` in `askCommands`; and
 `~/.zshrc` and `~/.*profile` in `askPaths` (ADR 0025 D9).
 
+`defaultDenies()` returns only the default's `denyPaths` and `denyCommands`.
+A dev task worker starts from these: the default's asks, and the inline-code
+ask they trigger, are left out (ADR 0025 D9).
+
 `withDefaultAccess(profile)` returns that default with the profile's rules
 appended to the four lists and `readOnly` turned on when either side has it.
-Nothing in the profile removes a default deny or ask. `withAccessLevel` uses it
-before composing a chat's level, so every level, `full` included, keeps the
+Nothing in the profile removes a default deny. A profile with
+`defaultAsks: false` uses `defaultDenies()` instead, so the default's asks are
+left out while the profile's own asks are still appended. `withAccessLevel` uses
+it before composing a chat's level, so every level, `full` included, keeps the
 default's rules. A bot adds the operad home and command, and a repository chat
 adds its qualification, in their plugins; the default itself stays free of a
 home or a plugin.
@@ -132,7 +139,9 @@ what it runs cannot be matched (ADR 0025 D3).
 ## Inline code
 
 Refused whatever the rules say, but only when the profile has at least one
-`denyCommands` rule (an empty profile means no checking). The reason is
+`denyCommands` rule and no `askCommands` rule (an empty profile means no
+checking). When `askCommands` is set, inline code asks instead, because what it
+runs cannot be matched. The refusal reason is
 `part "<part>" runs inline code (<form>); it is refused while denyCommands is set`.
 
 | form | seen as |
