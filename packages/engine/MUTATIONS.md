@@ -1055,3 +1055,9 @@ the row fields.
 |---|---|---|---|
 | T-0523-M1 | packages/engine/src/views/pending.ts | the pending item no longer carried the wait's `choiceInfo` | `pending items carry a question's choice info > a flow wait's info is in the item, and a wait without it is unchanged` |
 | T-0523-M2 | packages/engine/src/plugin/choice-info.ts | a `choiceInfo` key that was not a choice was accepted | `choice info validation > a key that is not a choice is refused by name` |
+
+## T-0525 — chat access levels
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0525-M9 | packages/engine/src/plugin/validate.ts | a declared `accessLevels` list was dropped from the harness capabilities | `harness capabilities > a harness declares the access levels it carries, and an absent list carries none` |

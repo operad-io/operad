@@ -30,7 +30,7 @@ A harness step may end only in the standard end results. A harness plugin that d
 | `name` | `agent` | `agent` | A flow calls `<harness>/agent` |
 | `resumable` | `true` | `true` | A question's answer comes back as `resumeSession` and `askAnswer` in the params |
 | `grants` | not set | `false` | `radian` cannot enforce a one-time permission, so `ctx.ask` refuses a question that offers one |
-| `enforces` | `denyPaths`, `denyCommands`, `askCommands`, `askPaths`, `readPaths`, `alwaysAllow` | none | The access-profile fields the harness applies in the agent's permission hook |
+| `enforces` | `level`, `denyPaths`, `denyCommands`, `askCommands`, `askPaths`, `readPaths`, `alwaysAllow` (`codex`: without `level`) | none | The access-profile fields the harness applies in the agent's permission hook |
 | `timeoutSecs` | 28800 (eight hours) | the step default | A step that runs an agent sets its limit above its own wall time |
 | `limit` | by model: `settings.concurrency[<model>]` | | At most that many runs of one model at once in the operad home (`modelLimit(harness, modelOf)` of `@operad-io/harness-process` builds it) |
 
@@ -66,11 +66,13 @@ A harness plugin declares what a chat may pick:
 |---|---|---|
 | `models` | `{ list, default }` or a function of the settings | The models a chat may pick (an empty list: none can be chosen) and the one used when none is set. A function is called with the plugin's settings each time the list is read, so a harness can ask the agent itself |
 | `efforts` | `{ list, default, flag? }` | The same for effort, and the step argument that sets it (`--effort` when `flag` is absent) |
-| `capabilities` | `{ loadsSkills?, takesMessagesMidRun? }` | What the agent does itself. `loadsSkills: true` says it loads the skill directories the step gives, so the prompt needs no list of them; any other harness gets the list of [Skills](#skills). `takesMessagesMidRun: true` says it takes a message while its run is going, so a chat hands one to it through the inbox after the tool calls already running; any other harness gets no inbox and the message waits for the next run |
+| `capabilities` | `{ loadsSkills?, takesMessagesMidRun?, accessLevels? }` | What the agent does itself. `loadsSkills: true` says it loads the skill directories the step gives, so the prompt needs no list of them; any other harness gets the list of [Skills](#skills). `takesMessagesMidRun: true` says it takes a message while its run is going, so a chat hands one to it through the inbox after the tool calls already running; any other harness gets no inbox and the message waits for the next run. `accessLevels` lists the chat access levels the agent carries; a chat at a level the agent does not list refuses the reply at its start instead of ignoring it |
 
 Actions read them from `ctx.models[<plugin>]` and `ctx.efforts[<plugin>]`; `argsFor` uses them to build the [per-agent `if`/`then` choices](actions.md#per-agent-choices-with-if-and-then). A non-harness plugin that declares `models` is refused: `models: only a harness plugin declares models`.
 
 A chat reads `capabilities.takesMessagesMidRun` through `ctx.harnessCapabilities`; a step reads the inbox the chat passes in its params with `inboxOf(params)` from `@operad-io/harness-process`. The listener answers false when the run can no longer take a message, so the host does not count it as taken. `claude`, `pi` and `codex` declare it; `radian` does not.
+
+A chat reads `capabilities.accessLevels` the same way. `claude` and `pi` list `plan`, `ask`, `edits` and `full`; `codex` and `radian` list none, so a chat at any level refuses the reply at its start with a message naming the level.
 
 ## Skills
 

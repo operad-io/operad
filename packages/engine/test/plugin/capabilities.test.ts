@@ -31,6 +31,22 @@ describe("harness capabilities", () => {
     expect(registryOf(plugin).loadedCapabilities()).toEqual({ a: { takesMessagesMidRun: true } });
   });
 
+  test("a harness declares the access levels it carries, and an absent list carries none", () => {
+    const plugin = definePlugin({
+      name: "a",
+      kind: "harness",
+      version: "0.0.1",
+      capabilities: { accessLevels: ["plan", "ask", "edits", "full"] },
+    });
+    expect(plugin.capabilities).toEqual({ accessLevels: ["plan", "ask", "edits", "full"] });
+    expect(registryOf(plugin).loadedCapabilities()).toEqual({
+      a: { accessLevels: ["plan", "ask", "edits", "full"] },
+    });
+    expect(
+      definePlugin({ name: "b", kind: "harness", version: "0.0.1", capabilities: {} }).capabilities,
+    ).toEqual({});
+  });
+
   test("a capability only a harness has is refused on another kind", () => {
     expect(() =>
       registryOf(
@@ -45,7 +61,13 @@ describe("harness capabilities", () => {
   });
 
   test("an unknown capability and a non-boolean value are refused", () => {
-    for (const capabilities of [{ loadsSkills: "yes" }, { takesMessagesMidRun: "yes" }, { doesEverything: true }]) {
+    for (const capabilities of [
+      { loadsSkills: "yes" },
+      { takesMessagesMidRun: "yes" },
+      { accessLevels: "plan" },
+      { accessLevels: [1] },
+      { doesEverything: true },
+    ]) {
       try {
         registryOf(
           definePlugin({

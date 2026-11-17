@@ -398,7 +398,8 @@ export async function runWorker(
     (candidate.denyCommands ?? []).length > 0 ||
     (candidate.askCommands ?? []).length > 0 ||
     (candidate.askPaths ?? []).length > 0 ||
-    candidate.readOnly === true;
+    candidate.readOnly === true ||
+    (candidate.level !== undefined && candidate.level !== "full");
   const judge = (name: string, toolInput: Readonly<Record<string, unknown>>): Verdict => {
     if (operadToolNames.has(name)) return { allow: true };
     const row = TOOL_FIELDS[name];

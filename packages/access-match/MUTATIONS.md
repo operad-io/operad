@@ -133,3 +133,12 @@ and the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0509-M1 | packages/access-match/src/readonly.ts | `sort --compress-program` was not a writing option, so a command that runs a program counted as reading | `a redirection that writes nowhere is allowed, and any other is not` |
+
+## T-0525 — chat access levels
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0525-M1 | packages/access-match/src/index.ts | `ask` no longer asked about every write | `ask asks about every write and every command not known to only read` |
+| T-0525-M2 | packages/access-match/src/index.ts | `edits` no longer asked about a write outside the working directory | `edits lets a write inside the working directory pass, asks outside it, and asks about a command not known to only read` |
+| T-0525-M3 | packages/access-match/src/index.ts | `full` asked about a command not known to only read | `full adds no ask, while the profile's denies and own asks still hold` |
+| T-0525-M4 | packages/access-match/src/index.ts | `withAccessLevel` did not make `plan` read-only | `withAccessLevel keeps the profile, sets the level, and makes plan read-only` |

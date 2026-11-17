@@ -41,6 +41,7 @@ every other call is allowed.
 | `askCommands` | array of strings | the default list below | command rules in the same shape as `denyCommands` | When a step judges a command that no deny refused | Refused by the reader: `askCommands must be an array of strings` |
 | `askPaths` | array of strings | the default list below | paths a write asks about; `*` stays within one path segment | When a step judges a write or edit, or a `bash` redirect | Refused by the reader: `askPaths must be an array of strings` |
 | `readOnly` | boolean | `false` | `true` or `false` | When a step judges a call in the profile's working directory | Refused by the reader: `readOnly must be true or false` |
+| `level` | string | absent | `plan`, `ask`, `edits` or `full` | When a chat composes its profile for a reply; changed with `/access` | Refused by the reader: `level must be one of plan, ask, edits, full` |
 | `readPaths` | array of strings | `[]` | directories a read may still reach under a denied ancestor | When a step judges a read, or a `bash` command that only reads | Refused by the reader: `readPaths must be an array of strings` |
 | `allowMcp` | array of strings | absent: MCP tools are not under the profile | `<server>.<tool>` or `<server>.*` | When a step judges an MCP call; having the field at all, even empty, puts MCP tools under the profile | Refused by the reader: `allowMcp must be an array of strings` |
 | `alwaysAllow` | array of entry objects | the entries in [access-user.json](#access-userjson) for a run a person started; empty in a background run | the entries below | When a step judges a call that would otherwise ask | Refused by the reader: `alwaysAllow must be an array`, or an entry's own message |
@@ -62,6 +63,14 @@ only read. `cd <dir>` may start a reading command, and a redirection that writes
 nowhere (`2>/dev/null`, `2>&1`) is allowed; a redirect to a file still asks. A
 deny still wins.
 
+`level` is a chat's access level. `plan` is read-only; `ask` asks about every
+write and every command not known to only read; `edits` lets a write inside the
+working directory pass while a write outside it and a command not known to only
+read ask; `full` adds no question. The profile's own deny lists, `readOnly`,
+`askCommands` and `askPaths` still hold at every level. A chat starts at `plan`
+on a repository and `ask` on a bot, and `/access <level>` changes it; see
+[Chats and bots](chats-and-bots.md#access-level).
+
 `readPaths` lets a read reach a directory under an ancestor in `denyPaths`. It
 does not allow a write: a write there asks.
 
@@ -76,7 +85,7 @@ a bot writes; a bot can tighten them, never loosen them.
 | `denyCommands` | `operad`, `sudo`, `su`, `rm -rf /`, `rm -rf ~`, `mkfs`, `dd`, `diskutil`, `shutdown`, `reboot`, `launchctl`, `crontab -r`, `git push --force*`, `git push --delete`, `curl … \| sh`, `wget … \| sh`, `pkill`, `killall` |
 | `askCommands` | `git push`, `brew install`, `npm install -g`, `pip install`, `osascript`, `open` |
 | `askPaths` | `~/.zshrc`, `~/.*profile` |
-| `readPaths`, `readOnly`, `allowMcp` | absent |
+| `readPaths`, `readOnly`, `allowMcp`, `level` | absent |
 
 The home entries are absolute, so a home other than `~/.operad` is covered too.
 The bot's own working directory under `~/.operad/bot` is the one part of the

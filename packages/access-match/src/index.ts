@@ -9,6 +9,31 @@ export { COMMAND_SUMMARY_CHARS, SUMMARY_CHARS, COMMAND_NOT_SHOWN, REFUSED_IN_LOG
 import { isReadOnlyCommand } from "./readonly.ts";
 import { findDenied, inlineFormOf, parseRule, scan, type Part, type Rule } from "./command.ts";
 
+/** The access levels a chat may set, in the order a menu shows them. */
+export const ACCESS_LEVELS = ["plan", "ask", "edits", "full"] as const;
+
+export type AccessLevel = (typeof ACCESS_LEVELS)[number];
+
+/** Whether a value names one of the access levels. */
+export function isAccessLevel(value: unknown): value is AccessLevel {
+  return typeof value === "string" && (ACCESS_LEVELS as readonly string[]).includes(value);
+}
+
+/**
+ * A chat's profile with its level composed into it. The level adds asks when a
+ * call is judged; it never removes a deny or a rule of the profile.
+ */
+export function withAccessLevel<T extends AccessProfile>(
+  profile: T,
+  level: AccessLevel,
+): T & { readonly level: AccessLevel } {
+  return {
+    ...profile,
+    level,
+    ...(level === "plan" ? { readOnly: true } : {}),
+  } as T & { readonly level: AccessLevel };
+}
+
 /** A one-time permission for the exact call a person was asked about. */
 export interface AccessGrant {
   readonly waitId: string;
@@ -33,6 +58,11 @@ export interface AlwaysAllowEntry {
 }
 
 export interface AccessProfile {
+  /**
+   * A chat's access level. It adds asks to the profile and removes none; see
+   * the level rules in `REFERENCE.md`.
+   */
+  readonly level?: AccessLevel | undefined;
   readonly denyPaths?: readonly string[] | undefined;
   readonly denyCommands?: readonly string[] | undefined;
   /** Command rules in the shape of `denyCommands`; a match asks a person instead of refusing. */
@@ -127,7 +157,14 @@ export function readProfile(value: unknown): ProfileRead {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return { ok: false, message: "the access profile must be an object" };
   }
-  const found: { denyPaths?: string[]; denyCommands?: string[]; askCommands?: string[]; askPaths?: string[]; readPaths?: string[]; allowMcp?: string[]; readOnly?: boolean; grants?: AccessGrant[]; alwaysAllow?: AlwaysAllowEntry[] } = {};
+  const found: { level?: AccessLevel; denyPaths?: string[]; denyCommands?: string[]; askCommands?: string[]; askPaths?: string[]; readPaths?: string[]; allowMcp?: string[]; readOnly?: boolean; grants?: AccessGrant[]; alwaysAllow?: AlwaysAllowEntry[] } = {};
+  const level: unknown = Reflect.get(value, "level");
+  if (level !== undefined) {
+    if (!isAccessLevel(level)) {
+      return { ok: false, message: `level must be one of ${ACCESS_LEVELS.join(", ")}` };
+    }
+    found.level = level;
+  }
   const readOnly: unknown = Reflect.get(value, "readOnly");
   if (readOnly !== undefined) {
     if (typeof readOnly !== "boolean") return { ok: false, message: "readOnly must be true or false" };
@@ -574,12 +611,23 @@ function matchMcp(profile: AccessProfile, call: ToolCall): Verdict {
  * over ask and ask over allow: the deny rules and paths are checked first, and
  * `askCommands` only when nothing denied the call.
  */
+/**
+ * Whether the level alone makes a write ask. A level never lifts an ask from
+ * the profile; the caller checks the profile's own asks first.
+ */
+function levelAsksWrite(level: AccessLevel | undefined, normal: string, cwd: string): boolean {
+  if (level === "ask") return true;
+  if (level === "edits") return !isUnder(normal, posix.resolve(cwd));
+  return false;
+}
+
 export function match(given: AccessProfile, call: ToolCall, options: MatchOptions = {}): Verdict {
   const home = options.home ?? homedir();
   // A read-only working directory is a directory whose writes ask.
   // A directory that may be read is one whose writes ask.
   const readPaths = (given.readPaths ?? []).filter((written) => written.length > 0);
-  const asking = [...(given.readOnly === true ? [call.cwd] : []), ...readPaths];
+  const readOnly = given.readOnly === true || given.level === "plan";
+  const asking = [...(readOnly ? [call.cwd] : []), ...readPaths];
   const profile: AccessProfile =
     asking.length > 0 ? { ...given, askPaths: [...(given.askPaths ?? []), ...asking] } : given;
   const entries = (profile.denyPaths ?? [])
@@ -604,8 +652,19 @@ export function match(given: AccessProfile, call: ToolCall, options: MatchOption
     const asked = askBash(profile, command, askedPaths(profile, call.cwd, home), call.cwd, home);
     if (!asked.allow) return asked;
     // A read-only directory runs only commands known to read.
-    if (given.readOnly === true && !isReadOnlyCommand(command)) {
+    if (readOnly && !isReadOnlyCommand(command)) {
       return { allow: false, ask: true, reason: "the working directory is read-only and this command is not known to only read", rule: "readOnly", kind: "command", value: command };
+    }
+    // The level asks about a command not known to only read.
+    if ((given.level === "ask" || given.level === "edits") && !isReadOnlyCommand(command)) {
+      return {
+        allow: false,
+        ask: true,
+        reason: `the chat's access level "${given.level}" asks about a command not known to only read`,
+        rule: "level",
+        kind: "command",
+        value: command,
+      };
     }
     return asked;
   }
@@ -624,10 +683,22 @@ export function match(given: AccessProfile, call: ToolCall, options: MatchOption
       // An always-allowed entry lifts the ask, never a deny.
       if (alwaysAllowed(profile, call)) return ALLOW;
       // Ask comes after deny: a write to a path that is asked about asks.
+      const normal = normalise(path, call.cwd, home);
       const asked = call.tool === "write" || call.tool === "edit" ? askedPaths(profile, call.cwd, home) : undefined;
-      const hit = asked === undefined ? undefined : askedRule(asked, normalise(path, call.cwd, home));
+      const hit = asked === undefined ? undefined : askedRule(asked, normal);
       if (hit !== undefined) {
         return { allow: false, ask: true, reason: `path "${path}" is under askPaths entry "${hit}"`, rule: hit, kind: "path", value: path, tool: call.tool };
+      }
+      if ((call.tool === "write" || call.tool === "edit") && levelAsksWrite(given.level, normal, call.cwd)) {
+        return {
+          allow: false,
+          ask: true,
+          reason: `the chat's access level "${given.level}" asks about this write`,
+          rule: "level",
+          kind: "path",
+          value: path,
+          tool: call.tool,
+        };
       }
     }
   }

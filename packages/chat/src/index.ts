@@ -2,6 +2,7 @@
 
 import pkg from "../package.json" with { type: "json" };
 import { defineFlow, definePlugin, type ActionArgsSchema, type ActionContext, type ActionTypeDefinition, type PluginFact, type UsageTokens } from "@operad-io/engine";
+import { ACCESS_LEVELS, isAccessLevel, type AccessLevel } from "@operad-io/access-match";
 import { stopKeptWorkers } from "@operad-io/engine/platform";
 import {
   CHAT_FILTERS,
@@ -13,6 +14,7 @@ import {
   chatData,
   chatFacts,
   chatRef,
+  ACCESS_FACT,
   CLOSED_FACT,
   COMMAND_FACT,
   costText,
@@ -29,6 +31,7 @@ import {
   stoppedRunAfter,
   unanswered,
   writingReply,
+  type AccessChangedData,
   type ChatData,
   type ClosedData,
   type CommandData,
@@ -342,6 +345,86 @@ const effortAction: ActionTypeDefinition = {
   },
 };
 
+/** What each level means, in the chat action's information and the row. */
+export const ACCESS_LEVEL_INFO: Readonly<Record<AccessLevel, { readonly title: string; readonly description: string }>> = {
+  plan: {
+    title: "Plan only",
+    description: "Read and run commands known to only read; a write asks.",
+  },
+  ask: {
+    title: "Ask each time",
+    description: "Every write and every command not known to only read asks.",
+  },
+  edits: {
+    title: "Accept edits",
+    description: "Write files in the working directory; a command not known to only read asks.",
+  },
+  full: {
+    title: "Full access",
+    description: "Skip every question the level adds; the profile's deny and ask rules still hold.",
+  },
+};
+
+function accessArgs(): ActionArgsSchema {
+  return {
+    type: "object",
+    properties: {
+      level: {
+        type: "string",
+        title: "Access",
+        enum: [...ACCESS_LEVELS],
+        oneOf: ACCESS_LEVELS.map((level) => ({
+          const: level,
+          title: ACCESS_LEVEL_INFO[level].title,
+          description: ACCESS_LEVEL_INFO[level].description,
+        })),
+        description: "How much the agent may do without asking in this chat.",
+      },
+    },
+    required: ["level"],
+    additionalProperties: false,
+  };
+}
+
+const accessAction: ActionTypeDefinition = {
+  name: "access",
+  on: CHAT_TYPE,
+  command: "Change what the agent may do without asking.",
+  args: accessArgs(),
+  when: (state) => !chatData(state).closed,
+  why: (object) =>
+    chatData(object.data).closed ? `${object.id} is closed; its access cannot change` : undefined,
+  async run(ctx, args) {
+    const stored = await ctx.store.get(CHAT_TYPE, ctx.object.id);
+    if (stored === undefined) throw new Error(`there is no chat ${ctx.object.id}`);
+    const chat = chatData(stored.data);
+    if (chat.closed) throw new Error(`chat ${ctx.object.id} is closed; its access cannot change`);
+    const level = (args as { readonly level?: unknown }).level;
+    if (!isAccessLevel(level)) {
+      throw new Error(`the access level must be one of ${ACCESS_LEVELS.join(", ")}`);
+    }
+    const from = chat.accessLevel ?? chat.accessDefault ?? "ask";
+    if (from === level) return `chat ${ctx.object.id} already uses access level ${level}`;
+    const changed: AccessChangedData = {
+      by: { via: ctx.actor.via, id: ctx.actor.id },
+      from,
+      to: level,
+    };
+    await ctx.facts.append({ type: ACCESS_FACT, object: chatRef(ctx.object.id), data: changed });
+    // Read again: a reply may have moved the session while the fact was written.
+    const fresh = await ctx.store.get(CHAT_TYPE, ctx.object.id);
+    if (fresh !== undefined) {
+      await ctx.store.put(
+        CHAT_TYPE,
+        ctx.object.id,
+        { ...fresh.data, accessLevel: level },
+        "action:chat/access",
+      );
+    }
+    return `chat ${ctx.object.id} now uses access level ${level}; the next reply uses it`;
+  },
+};
+
 const closeAction: ActionTypeDefinition = {
   name: "close",
   on: CHAT_TYPE,
@@ -603,7 +686,7 @@ export function createChatPlugin() {
         mode: "auto" as const,
       },
     ],
-    actions: [sendAction, modelAction, effortAction, stopAction, retryAction, statusAction, closeAction, helpAction],
+    actions: [sendAction, modelAction, effortAction, accessAction, stopAction, retryAction, statusAction, closeAction, helpAction],
     views: { [CHAT_TYPE]: chatViews },
   });
 }

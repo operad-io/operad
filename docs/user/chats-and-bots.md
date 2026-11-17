@@ -20,11 +20,11 @@ The plugins are deliberately cautious. A chat on a repository is read-only until
 
 ## How it works
 
-1. A chat is opened by a plugin: `dev:chat` on a repository, `bot:chat` on a bot. The agent is chosen then and does not change; the model and effort can be changed later with `chat:model` and `chat:effort`.
+1. A chat is opened by a plugin: `dev:chat` on a repository, `bot:chat` on a bot. The agent is chosen then and does not change; the model, effort and access level can be changed later with `chat:model`, `chat:effort` and `chat:access`.
 2. `chat:send` records a message. A message is an event whose source is `ios`, `telegram`, `cli`, `tui` or `other`, and the `chat` plugin's own rule starts `chat:reply` for it (see [Chats](#chats)).
 3. `chat:reply` takes the messages that no reply answers yet from the chat's own record, continues the agent's session, and records the reply. A message sent while the reply is being written is given to the agent in that same reply when its agent takes messages mid-run (`claude`, `pi`, `codex`); otherwise, or when it has an attachment, it waits for the next round. If messages are still waiting it goes round again, at most 20 rounds. Without `operad serve` the message is only recorded and is answered when `serve` runs. A reply being written can be stopped; its half-written text stays in the transcript, and `/retry` answers the last message again after a failed or stopped reply.
 4. While the agent works, the `transcript` section shows the messages, tool calls and the unfinished text of the current reply.
-5. Each tool call is checked against the chat's access profile (see [Access](access.md)). For a bot chat the profile is the default profile plus the bot's own `access` settings; the bot's settings are read again at every reply (see [Bots](#bots)).
+5. Each tool call is checked against the chat's access profile with the chat's access level composed into it (see [Access](access.md) and [Access level](#access-level)). For a bot chat the profile is the default profile plus the bot's own `access` settings; the bot's settings are read again at every reply (see [Bots](#bots)).
 6. A chat on a repository starts in the main clone as read-only. A write, or a command that is not known to only read, becomes the worktree question, which offers Allow once, Always allow, Deny and opening a worktree; the worktree offer has `dev` open `work/chat-<id>`, ends the asking reply and answers the same message again there, so the agent continues with write access.
 7. When a bot proposes a skill, a settings change or an MCP server (`operad bot skill`, `bot setting`, `bot mcp`), a `bot-proposal` object waits in Pending. `bot:approve` applies it and `bot:reject` drops it (see [Bot objects and proposals](#bot-objects-and-proposals)).
 8. `chat:close` records `chat.closed`; the transcript stays readable and `chat:send` is refused.
@@ -42,7 +42,10 @@ operad show C-0001 --section transcript
 `dev:chat` offers `claude` and `pi` as agents (the first one loaded when
 `--agent` is left out): they can stop a tool call before it starts, which a
 read-only chat needs. `radian` is refused there as an agent and stays for bot
-chats. `bot:chat` offers every loaded agent; its default is the bot's `harness`,
+chats. A repository chat starts at `plan`; a bot chat starts at `ask`. The
+access level is changed in the chat with `/access <level>` (see [Access
+level](#access-level)). `bot:chat` offers every loaded agent; its default is
+the bot's `harness`,
 or the first loaded.
 
 A chat has these actions:
@@ -125,6 +128,28 @@ it.
 The agent reaches operad through its tools (`list`, `show`, `section`, `pending`,
 `answer`, `running`, `history`, `command`, `act`, under the same allow lists as
 `operad mcp`), never by running `operad` in a shell.
+
+### Access level
+
+Every chat has an access level: `plan`, `ask`, `edits` or `full`. `/access
+<level>` changes it, or `operad chat:access <chat> --level <level>`; the level
+is recorded on the chat and every later reply uses it, across restarts and
+clients. A repository chat starts at `plan` (read-only) and a bot chat at
+`ask`. The row shows the level when it is not the chat's starting level.
+
+| Level | What runs without asking |
+|---|---|
+| `plan` | Reading, and commands known to only read; a write asks. |
+| `ask` | Reading; every write and every command not known to only read asks. |
+| `edits` | Reading and writing files in the working directory; a command not known to only read asks. |
+| `full` | Everything the profile does not deny; the level adds no question. |
+
+The profile's deny lists and its own ask rules still hold at every level,
+`full` included. The approved words in the interface are **Access** for the
+menu, and **Plan only**, **Ask each time**, **Accept edits** and **Full access**
+for the levels. `claude` and `pi` carry every level; a chat whose agent cannot
+carry a level refuses the reply with a message naming the level instead of
+ignoring it. See [Access](access.md) for the profile itself.
 
 ## Bots
 

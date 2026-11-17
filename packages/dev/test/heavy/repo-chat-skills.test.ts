@@ -32,6 +32,7 @@ function fakeHarness(calls: Call[]) {
     name: "claude",
     kind: "harness",
     version: "0.0.0",
+    capabilities: { accessLevels: ["plan", "ask", "edits", "full"] },
     models: { list: ["claude-a"], default: "claude-a" },
     efforts: { list: ["low", "high"], default: "low", flag: "--effort" },
     steps: [
@@ -196,6 +197,10 @@ describe("a repository's skills", () => {
       object: { type: CHAT_TYPE, id, data: {} },
     });
     expect(opened.result).toBe("done");
+    // A chat raised to edits writes in the worktree it already has.
+    const moved = await r.store.get(CHAT_TYPE, id);
+    if (moved === undefined) throw new Error("no chat after the worktree opened");
+    await r.store.put(CHAT_TYPE, id, { ...moved.data, accessLevel: "edits" }, "test");
     const branchSkill = skill(worktree);
     await reply(r, id);
     expect(r.calls[1]?.cwd).toBe(worktree);

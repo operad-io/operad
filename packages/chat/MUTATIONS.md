@@ -324,3 +324,12 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0523-M1 | packages/chat/src/reply.ts | the worktree question was asked without its `choiceInfo` | `a read-only chat > a question about writing a file names the path and says it is a write` |
+
+## T-0525 — chat access levels
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0525-M5 | packages/chat/src/index.ts | `chat:access` recorded the fact but left the chat's level unchanged | `chat:access > the next reply uses the changed level, and the history says who changed it and to what` |
+| T-0525-M6 | packages/chat/src/reply.ts | the reply handed the harness the chat's profile without its level | `chat:access > the next reply uses the changed level, and the history says who changed it and to what` |
+| T-0525-M7 | packages/chat/src/reply.ts | an agent that declares no level was called instead of refusing the reply | `a chat whose agent cannot carry the level > the reply is refused at its start, names the level, and the agent is never called` |
+| T-0525-M8 | packages/chat/src/views.ts | the row never showed a level that differed from the starting one | `chat:access > the row leaves the starting level out and shows a choice` |

@@ -13,6 +13,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { TOOL_OUTPUT_CAP_BYTES } from "@operad-io/harness-process";
+import { withAccessLevel, type AccessLevel } from "@operad-io/access-match";
 import { SqlitePluginStore } from "@operad-io/engine";
 import { newKeptWorkerSlot, readKeptWorkers, waitForChange } from "@operad-io/engine/platform";
 import { connect } from "node:net";
@@ -633,6 +634,27 @@ test("an extension's tool cannot run a refused command or write a refused path",
   expect(last(run)).toMatchObject({ result: "done", finalMessage: "REFUSED" });
 });
 
+test("an extension's tool is refused at an access level below full when own settings are on", async () => {
+  const s = setup();
+  const agentDir = join(s.dir, "owner-pi");
+  writeOwnerExtension(agentDir);
+  const marker = join(s.dir, "owner-tool-ran");
+  const run = await runFakeProcess(
+    s,
+    [
+      { text: "", toolCall: { name: "owner_run", arguments: { command: `touch ${marker}` } } },
+      { text: "REFUSED" },
+    ],
+    { ...s.input, useOwnSettings: true, access: withAccessLevel({}, "ask") },
+    { PI_CODING_AGENT_DIR: agentDir },
+  );
+
+  expect(run.exitCode).toBe(0);
+  expect(existsSync(marker)).toBe(false);
+  expect(run.lines.filter((line) => line["type"] === "blocked")).toHaveLength(1);
+  expect(last(run)).toMatchObject({ result: "done", finalMessage: "REFUSED" });
+});
+
 test("a skill name both the bot and the owner's pi define is the bot's", async () => {
   const s = setup();
   const agentDir = join(s.dir, "owner-pi");
@@ -822,6 +844,37 @@ test("a skill under denyPaths is readable through readPaths, and a write to it i
   ]);
   expect(readFileSync(file, "utf8")).toBe("original\n");
   expect(last(run)).toMatchObject({ result: "done", finalMessage: "finished" });
+});
+
+test("an access level reaches each call's decision", async () => {
+  const cases: Readonly<Record<AccessLevel, {
+    readonly toolCall: { readonly name: string; readonly arguments: Record<string, unknown> };
+    readonly blocked: boolean;
+  }>> = {
+    plan: { toolCall: { name: "bash", arguments: { command: "touch marker" } }, blocked: true },
+    ask: { toolCall: { name: "write", arguments: { path: "written", content: "x" } }, blocked: true },
+    edits: { toolCall: { name: "write", arguments: { path: "written", content: "x" } }, blocked: false },
+    full: { toolCall: { name: "bash", arguments: { command: "touch marker" } }, blocked: false },
+  };
+  for (const level of ["plan", "ask", "edits", "full"] as const) {
+    const s = setup();
+    const item = cases[level];
+    const toolCall = {
+      name: item.toolCall.name,
+      arguments: Object.fromEntries(
+        Object.entries(item.toolCall.arguments).map(([key, value]) => [
+          key,
+          typeof value === "string" ? join(s.input["cwd"] as string, value) : value,
+        ]),
+      ),
+    };
+    const run = await runFake(
+      s,
+      [{ text: "", toolCall }, { text: "finished" }],
+      { ...s.input, access: withAccessLevel({}, level) },
+    );
+    expect(run.lines.filter((line) => line["type"] === "blocked")).toHaveLength(item.blocked ? 1 : 0);
+  }
 });
 
 test("without a profile nothing is blocked", async () => {

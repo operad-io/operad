@@ -165,3 +165,9 @@ and the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0521-M1 | packages/harness/process/src/step.ts | a done result dropped the reason the worker gave for answering with nothing | `resultFor > a done result keeps the reason the worker gave for answering with nothing` |
+
+## T-0525 — chat access levels
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0525-M10 | packages/harness/process/src/ask-call.ts | an access level below `full` no longer made the run able to ask | `canAsk > is true for an access level below full, and false for full` |

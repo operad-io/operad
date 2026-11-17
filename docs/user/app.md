@@ -206,6 +206,15 @@ bot lists, if its agent takes MCP servers natively (`claude` and `radian` do;
 `pi` does not yet). A server whose tools changed is not mounted until a person
 approves the change in Pending.
 
+### Access level
+
+Every chat has an access level, shown in the **Access** menu: **Plan only**,
+**Ask each time**, **Accept edits** or **Full access**. A repository chat starts
+at Plan only and a bot chat at Ask each time; choosing a level changes it for
+that chat and every later reply. The profile's deny lists and own ask rules
+still hold, and Full access says in one line that it skips the level's questions
+while those rules remain. See [Chats and bots](chats-and-bots.md#access-level).
+
 ## Attachments
 
 The input box can send photos, camera images and files. The app uploads each one

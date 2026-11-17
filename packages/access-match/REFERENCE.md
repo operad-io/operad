@@ -32,6 +32,7 @@ the `home` option). `test/match.test.ts` follows the tables below.
 | `denyCommands` | string[], optional | a `bash` command part that matches one of these is refused |
 | `askPaths` | string[], optional | paths a write asks about (`~/.zshrc`, `~/.*profile`); `*` stays within one path segment and a path under a match counts. Judged for `write` and `edit`, and for a `bash` redirect (`>`, `>>`) to such a path, which asks with the whole command. Deny wins over it |
 | `readOnly` | boolean, optional | the call's working directory is read-only: a write under it (`write`, `edit`, a `bash` redirect) asks, as if the directory were in `askPaths`. Deny wins over it |
+| `level` | `plan`, `ask`, `edits` or `full`, optional | a chat's access level. It adds asks to the profile and never removes a deny or a rule: `plan` is `readOnly`; `ask` asks about every write and every command not known to only read; `edits` lets a write inside the working directory pass and asks about a write outside it and a command not known to only read; `full` adds no ask. The profile's own `askCommands`, `askPaths` and `readOnly` still hold |
 | `readPaths` | array of paths, optional | directories the agent may read although `denyPaths` covers an ancestor: a read tool (`read`, `grep`, `find`, `ls`) or a `bash` command that only reads may touch a path under one. A write there asks (the entries count as `askPaths`); every other denied path stays denied |
 | `allowMcp` | string[], optional | MCP tools that run without asking, as `<server>.<tool>` or `<server>.*`. The field's presence (even empty) puts MCP tools under the profile: a call with `tool: "mcp"` and `input: { server, tool }` that is not listed counts as a write and asks (`kind: "command"`, value `mcp <server>.<tool>`), per the MCP-tool rule in `docs/backlog/operad-sandbox.md`, not in an ADR yet. When the field is absent, MCP tools are not under the profile and are allowed |
 | `askCommands` | string[], optional | rules in the shape of `denyCommands`; a `bash` command part that matches one of these asks a person (ADR 0025 D1; the built-in default profile that fills `askCommands` is still in `docs/backlog/operad-sandbox.md`). Writes to shell profiles are `askPaths` |
@@ -120,6 +121,24 @@ Refused whatever the rules say, but only when the profile has at least one
 | `xargs` | the command name |
 | `eval` | the command name |
 | `` `…` ``, `$(…)`, `<(…)`, `>(…)` | in the command text outside single quotes (also inside double quotes) |
+
+## Access levels
+
+`withAccessLevel(profile, level)` composes a chat's level into its profile. It
+sets `level` and, for `plan`, `readOnly: true`. `match` then adds the level's
+asks after every deny and after the profile's own asks:
+
+| level | write inside the working directory | write outside it | command not known to only read |
+|---|---|---|---|
+| `plan` | asks | as `readOnly` says today | asks |
+| `ask` | asks | asks | asks |
+| `edits` | no level ask | asks | asks |
+| `full` | no level ask | no level ask | no level ask |
+
+A deny wins at every level, and an `alwaysAllow` entry lifts a level's ask for
+its exact call and working directory. The level never loosens a `readOnly`
+profile: a repository chat in its main clone stays read-only at `edits` and
+`full` until its worktree exists, and `plan` at `full` is still read-only.
 
 ## Read-only commands
 

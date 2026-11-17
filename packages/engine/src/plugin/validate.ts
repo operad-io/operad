@@ -891,17 +891,24 @@ function normalizeCapabilities(value: unknown, kind: string, at: string): Harnes
   }
   if (!isRecord(value)) throw new PluginError(`${at}: capabilities: must be an object`);
   for (const key of Object.keys(value)) {
-    if (key !== "loadsSkills" && key !== "takesMessagesMidRun") {
+    if (key !== "loadsSkills" && key !== "takesMessagesMidRun" && key !== "accessLevels") {
       throw new PluginError(`${at}: capabilities.${key}: not a capability`);
     }
   }
-  const result: { loadsSkills?: boolean; takesMessagesMidRun?: boolean } = {};
+  const result: { loadsSkills?: boolean; takesMessagesMidRun?: boolean; accessLevels?: readonly string[] } = {};
   for (const key of ["loadsSkills", "takesMessagesMidRun"] as const) {
     const capability = value[key];
     if (capability !== undefined && typeof capability !== "boolean") {
       throw new PluginError(`${at}: capabilities.${key}: must be a boolean`);
     }
     if (capability === true) result[key] = true;
+  }
+  const levels = value["accessLevels"];
+  if (levels !== undefined) {
+    if (!Array.isArray(levels) || !levels.every((level) => typeof level === "string" && level.length > 0)) {
+      throw new PluginError(`${at}: capabilities.accessLevels: must be an array of level ids`);
+    }
+    if (levels.length > 0) result.accessLevels = [...levels];
   }
   return result;
 }

@@ -53,6 +53,7 @@ async function openChatAsk(): Promise<Open> {
     name: "fake",
     kind: "harness",
     version: "0.0.0",
+    capabilities: { accessLevels: ["plan", "ask", "edits", "full"] },
     steps: [
       {
         name: "agent",

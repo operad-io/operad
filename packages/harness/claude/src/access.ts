@@ -64,7 +64,11 @@ export const INERT_TOOLS: readonly string[] = [
 
 /** Whether the profile has a rule that an unchecked call could break. */
 export function hasRules(profile: AccessProfile): boolean {
-  return (profile.denyPaths ?? []).length > 0 || (profile.denyCommands ?? []).length > 0;
+  return (
+    (profile.denyPaths ?? []).length > 0 ||
+    (profile.denyCommands ?? []).length > 0 ||
+    (profile.level !== undefined && profile.level !== "full")
+  );
 }
 
 export type Translated =

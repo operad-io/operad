@@ -12,6 +12,7 @@ import {
   type StepEvent,
   type TriggerEvent,
 } from "@operad-io/engine";
+import { ACCESS_LEVELS, type AccessLevel } from "@operad-io/access-match";
 import { chatRef, createChat, MESSAGE_FACT, newMessageId, createChatPlugin } from "../src/index.ts";
 
 const roots: string[] = [];
@@ -23,6 +24,7 @@ export async function cleanupRoots(): Promise<void> {
 /** One call the fake harness received. */
 export interface Call {
   readonly params: Record<string, unknown>;
+  readonly access: JsonValue;
 }
 
 /** What a fake harness does with one call. */
@@ -40,6 +42,10 @@ export function fakeHarness(
   capabilities?: HarnessCapabilities,
   modelsReady?: (() => Promise<Levels>) | undefined,
 ) {
+  const caps: HarnessCapabilities = {
+    accessLevels: [...ACCESS_LEVELS],
+    ...(capabilities ?? {}),
+  };
   return definePlugin({
     name,
     kind: "harness",
@@ -47,14 +53,14 @@ export function fakeHarness(
     ...(models === undefined ? {} : { models }),
     ...(modelsReady === undefined ? {} : { modelsReady }),
     ...(efforts === undefined ? {} : { efforts }),
-    ...(capabilities === undefined ? {} : { capabilities }),
+    capabilities: caps,
     steps: [
       {
         name: "agent",
         resumable: true,
         results: ["done", "failed", "interrupted", "waiting"],
         run(ctx, params) {
-          const call: Call = { params: params as Record<string, unknown> };
+          const call: Call = { params: params as Record<string, unknown>, access: ctx.access as JsonValue };
           calls.push(call);
           return script(ctx, call);
         },
@@ -77,6 +83,9 @@ export interface Rig {
   /** A chat that uses the fake harness. */
   chat(extra?: {
     readonly access?: Record<string, JsonValue>;
+    readonly accessLevel?: AccessLevel;
+    readonly accessDefault?: AccessLevel;
+    readonly parent?: string;
     readonly model?: string;
     readonly effort?: string;
     readonly effortDefault?: string;
@@ -146,6 +155,9 @@ export async function rig(
           cwd: extra?.cwd ?? root,
           title: "Test",
           ...(extra?.access === undefined ? {} : { access: extra.access }),
+          ...(extra?.accessLevel === undefined ? {} : { accessLevel: extra.accessLevel }),
+          ...(extra?.accessDefault === undefined ? {} : { accessDefault: extra.accessDefault }),
+          ...(extra?.parent === undefined ? {} : { parent: extra.parent }),
           ...(extra?.model === undefined ? {} : { model: extra.model }),
           ...(extra?.effort === undefined ? {} : { effort: extra.effort }),
           ...(extra?.effort === undefined || extra?.effortDefault === undefined ? {} : { effortDefault: extra.effortDefault }),
