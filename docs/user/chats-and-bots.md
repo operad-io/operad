@@ -87,9 +87,11 @@ skills and the commands from one `GET /v1/objects/<id>` (or MCP `show`); each
 description comes from `SKILL.md`.
 
 A message is an event: source `ios`, `telegram`, `cli`, `tui` or `other`, key is
-the message id, object is the chat. The `chat` plugin's own rule starts
-`chat:reply` for these sources automatically; a rule of yours in `triggers.json`
-with the same source and type replaces it. The reply reads the messages no reply
+the message id, object is the chat. A scheduled prompt's first message has the
+source `bot`, and the bot plugin's own rule starts `chat:reply` for it. The
+`chat` plugin's own rule starts `chat:reply` for the client sources
+automatically; a rule of yours in `triggers.json` with the same source and type
+replaces it. The reply reads the messages no reply
 answers yet from the chat's own record, continues the agent session, records the
 reply, and goes round again while new messages still wait (at most 20 rounds).
 An ordinary message sent during the reply is given to an agent that takes
