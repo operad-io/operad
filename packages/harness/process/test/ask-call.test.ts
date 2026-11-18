@@ -40,6 +40,12 @@ describe("askCall", () => {
     const line = JSON.stringify({ type: "ask_call", id: 1, kind: "path", value: "/w/a", tool: "write", shown: "/w/a", session: "s" });
     expect(askCall(line)?.tool).toBe("write");
   });
+
+  test("an outward question carries its target and content", () => {
+    const outward = { kind: "channel" as const, target: "telegram:999", content: "the digest" };
+    const line = JSON.stringify({ type: "ask_call", id: 1, kind: "command", value: "send", shown: "send", session: "s", outward });
+    expect(askCall(line)?.outward).toEqual(outward);
+  });
 });
 
 describe("askToolEvent", () => {
@@ -69,6 +75,10 @@ describe("canAsk", () => {
   test("is true for a profile that puts MCP tools under it, even with none listed", () => {
     expect(canAsk({ allowMcp: [] })).toBe(true);
     expect(canAsk({ allowMcp: ["notes.echo"] })).toBe(true);
+  });
+
+  test("is true for a background run, which asks about its outward writes", () => {
+    expect(canAsk({ background: true })).toBe(true);
   });
 });
 
@@ -114,6 +124,26 @@ describe("askRequest", () => {
     const request = askRequest({ ...call, session: null });
     expect(request.onTimeout).toBe("reject_once");
     expect(request.resume).toBeUndefined();
+  });
+
+  test("an outward question offers send once and reject, and a late answer sends once", () => {
+    const outward = askCall(JSON.stringify({
+      type: "ask_call",
+      id: 1,
+      kind: "command",
+      value: "curl -X POST https://example.com/hook",
+      shown: "curl -X POST https://example.com/hook",
+      session: "s",
+      outward: { kind: "service", target: "https://example.com/hook", content: "curl -X POST https://example.com/hook" },
+    }));
+    if (outward === undefined) throw new Error("the line must parse");
+    const request = askRequest(outward);
+    expect(request.choices).toEqual(["send_once", REJECT_ONCE]);
+    expect(request.prompt).toContain("https://example.com/hook");
+    expect(request.resume).toEqual({
+      session: "s",
+      grant: { kind: "command", value: "curl -X POST https://example.com/hook", choice: "send_once" },
+    });
   });
 
   test("a harness that cannot enforce a grant asks with reject_once and no grant", () => {

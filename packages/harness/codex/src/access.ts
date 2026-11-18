@@ -164,6 +164,7 @@ export async function decideAccess(
           kind: verdict.kind,
           value: verdict.value,
           ...(verdict.tool === undefined ? {} : { tool: verdict.tool }),
+          ...(verdict.outward === undefined ? {} : { outward: verdict.outward }),
           shown: deciders.shown(judged),
         });
       } catch {

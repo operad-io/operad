@@ -41,6 +41,20 @@ const DENY_COMMANDS = [
 
 const ASK_COMMANDS = ["git push", "brew install", "npm install -g", "pip install", "osascript", "open"];
 const ASK_PATHS = ["~/.zshrc", "~/.*profile"];
+const OUTWARD_COMMANDS = [
+  "git push",
+  "gh pr create",
+  "gh pr comment",
+  "gh issue create",
+  "gh issue comment",
+  "gh release create",
+  "curl",
+  "wget",
+  "mail",
+  "mailx",
+  "sendmail",
+];
+const OUTWARD_ALLOW = ["owner"];
 
 test("the built-in default is exactly the list every chat and step starts from", () => {
   expect(defaultAccess()).toEqual({
@@ -48,6 +62,8 @@ test("the built-in default is exactly the list every chat and step starts from",
     denyCommands: DENY_COMMANDS,
     askCommands: ASK_COMMANDS,
     askPaths: ASK_PATHS,
+    outwardCommands: OUTWARD_COMMANDS,
+    outwardAllow: OUTWARD_ALLOW,
   });
 });
 
@@ -90,12 +106,16 @@ test("a profile can add to the default but never remove its deny or ask rules", 
     denyCommands: ["rm"],
     askCommands: ["make"],
     askPaths: ["/scratch"],
+    outwardCommands: ["deploy"],
+    outwardAllow: ["telegram:123"],
     readOnly: true,
   });
   expect(tightened.denyPaths).toEqual([...DENY_PATHS, "/private"]);
   expect(tightened.denyCommands).toEqual([...DENY_COMMANDS, "rm"]);
   expect(tightened.askCommands).toEqual([...ASK_COMMANDS, "make"]);
   expect(tightened.askPaths).toEqual([...ASK_PATHS, "/scratch"]);
+  expect(tightened.outwardCommands).toEqual([...OUTWARD_COMMANDS, "deploy"]);
+  expect(tightened.outwardAllow).toEqual([...OUTWARD_ALLOW, "telegram:123"]);
   expect(tightened.readOnly).toBe(true);
 });
 
@@ -171,4 +191,30 @@ test("a flow profile still adds its own asks when the default's asks are left ou
 test("readProfile reads defaultAsks and refuses a malformed one", () => {
   expect(readProfile({ defaultAsks: false })).toEqual({ ok: true, profile: { defaultAsks: false } });
   expect(readProfile({ defaultAsks: "no" })).toEqual({ ok: false, message: "defaultAsks must be true or false" });
+});
+
+test("a task worker is never asked or refused for what the matcher cannot follow", () => {
+  const worker = withDefaultAccess({ defaultAsks: false });
+  const chat = withDefaultAccess({});
+  // A chat stops on each of these; a worker runs them.
+  const chatStops = [
+    "cd /elsewhere && cp a /tmp/b && trap 'mv /tmp/b a' EXIT && perl -0pi -e 's/x/y/' a && bun test x",
+    'bash -c "echo hi"',
+    "echo $(git rev-parse HEAD)",
+    "cd $DIR && cat notes",
+  ];
+  for (const command of [...chatStops, "python3 - <<'PY'\nprint(1)\nPY"]) {
+    const call = { tool: "bash", input: { command }, cwd: CWD } as const;
+    expect(match(worker, call, { home: HOME })).toEqual({ allow: true });
+    if (chatStops.includes(command)) expect(match(chat, call, { home: HOME }).allow).toBe(false);
+  }
+  // A plain match of a default deny still refuses a worker.
+  for (const call of [
+    { tool: "bash", input: { command: "sudo ls" }, cwd: CWD },
+    { tool: "bash", input: { command: "cat ~/.ssh/id_ed25519" }, cwd: CWD },
+  ] as const) {
+    const verdict = match(worker, call, { home: HOME });
+    expect(verdict.allow).toBe(false);
+    expect(verdict.ask).toBeUndefined();
+  }
 });

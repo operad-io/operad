@@ -17,6 +17,7 @@ import {
   defineFlow,
   definePlugin,
   type AgentResultData,
+  type HarnessEfforts,
   type PluginStepResult,
   type StepContext,
 } from "@operad-io/engine";
@@ -161,12 +162,21 @@ export const CLAUDE_MODELS = {
   info: CLAUDE_MODEL_INFO,
 } as const;
 
-/** The efforts a chat may pick with this agent, the default, and the flag that sets it. */
+/**
+ * The efforts a chat may pick with this agent, and its own flag. The default is
+ * the configured `effort` when there is one: claude's built-in default is not
+ * known without guessing, so no default is declared otherwise.
+ */
 export const CLAUDE_EFFORTS = {
   list: EFFORT_LEVELS,
-  default: "medium",
+  default: null,
   flag: "--effort",
 } as const;
+
+function claudeEfforts(settings: Readonly<Record<string, unknown>>): HarnessEfforts {
+  const configured = EFFORT_LEVELS.find((level) => level === settings.effort) ?? null;
+  return { list: EFFORT_LEVELS, default: configured, flag: "--effort" };
+}
 
 /** The settings a config.json section may set for this plugin. */
 export const PLUGIN_SETTINGS = {
@@ -317,7 +327,7 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
     kind: "harness",
     version: pkg.version,
     models: CLAUDE_MODELS,
-    efforts: CLAUDE_EFFORTS,
+    efforts: claudeEfforts,
     capabilities: { loadsSkills: true, takesMessagesMidRun: true, accessLevels: ["plan", "ask", "edits", "full"] },
     signedIn: (settings) => claudeSignedInCached(settings),
     settings: PLUGIN_SETTINGS,
@@ -427,9 +437,11 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
           const images = imageInputsOf(input.images ?? flow.images);
           const claudeCommand = optionalText(ctx.settings.command, `${at}: settings.command`);
           // A generated step that names no profile still starts from the default.
-          const access = withDefaultAccess(ctx.access as AccessProfile | undefined);
+          const startAccess = withDefaultAccess(ctx.access as AccessProfile | undefined);
           const storeSecrets = await secretValuesOf(ctx.secrets);
           const allowAlways = personStarted(ctx.trigger);
+          // A run no person's message started asks about every outward write.
+          const access = allowAlways ? startAccess : { ...startAccess, background: true };
           if (allowAlways && isRecord(rawAskAnswer) && rawAskAnswer["choice"] === ALLOW_ALWAYS) {
             const entry = alwaysAllowFromGrant(access, cwd);
             if (entry !== undefined) {

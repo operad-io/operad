@@ -330,6 +330,18 @@ describe("plugin registry validation", () => {
     ).toThrow(/capabilities/);
   });
 
+  test("an action schema carries the value a field has now", () => {
+    const args = normalizeActionArgs(
+      {
+        type: "object",
+        properties: { effort: { type: "string", enum: ["low", "high"], current: "high" } },
+      },
+      "args",
+    );
+    expect(args?.properties?.effort?.current).toBe("high");
+    expect(args?.properties?.effort?.default).toBeUndefined();
+  });
+
   test("rejects an action args schema with an unknown keyword", () => {
     const error = errorOf(
       () =>

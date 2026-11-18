@@ -12,8 +12,8 @@ afterAll(() => {
 const packages = [
   "engine",
   "mcp",
-  "harness/process",
   "access-match",
+  "harness/process",
   "shell",
   "chat",
   "review-grading",

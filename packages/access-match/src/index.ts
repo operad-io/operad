@@ -6,6 +6,10 @@ import { homedir } from "node:os";
 import { posix } from "node:path";
 export { isReadOnlyCommand } from "./readonly.ts";
 export { COMMAND_SUMMARY_CHARS, SUMMARY_CHARS, COMMAND_NOT_SHOWN, REFUSED_IN_LOG, summarizeCall, firstErrorLine, messageSummary, secretValuesOf, type SummaryOptions } from "./summary.ts";
+export { OUTWARD_REJECT_ONCE, OUTWARD_SEND_ONCE, declaredOutward, guardDeclaredOutward, guardOutward, outwardAllowed, outwardCommandWrites, outwardQuestion, personStarted, type OutwardGuardContext, type OutwardQuestionOptions } from "./outward.ts";
+import type { OutwardWrite } from "@operad-io/engine";
+export type { OutwardWrite } from "@operad-io/engine";
+import { outwardAllowed, outwardCommandWrites } from "./outward.ts";
 import { isReadOnlyCommand } from "./readonly.ts";
 import { findDenied, inlineFormOf, parseRule, scan, type Part, type Rule } from "./command.ts";
 
@@ -51,6 +55,24 @@ const DEFAULT_DENY_COMMANDS = [
 const DEFAULT_ASK_COMMANDS = ["git push", "brew install", "npm install -g", "pip install", "osascript", "open"] as const;
 
 const DEFAULT_ASK_PATHS = ["~/.zshrc", "~/.*profile"] as const;
+
+/** Shell commands that write outside operad; a git push target is its remote and branch. */
+const DEFAULT_OUTWARD_COMMANDS = [
+  "git push",
+  "gh pr create",
+  "gh pr comment",
+  "gh issue create",
+  "gh issue comment",
+  "gh release create",
+  "curl",
+  "wget",
+  "mail",
+  "mailx",
+  "sendmail",
+] as const;
+
+/** Targets a background run may write to without asking; `owner` is the owner's own channels. */
+const DEFAULT_OUTWARD_ALLOW = ["owner"] as const;
 
 /** The access levels a chat may set, in the order a menu shows them. */
 export const ACCESS_LEVELS = ["plan", "ask", "edits", "full"] as const;
@@ -146,6 +168,20 @@ export interface AccessProfile {
    * `docs/backlog/operad-sandbox.md`, not in an ADR yet).
    */
   readonly allowMcp?: readonly string[] | undefined;
+  /**
+   * Targets a background run may write to without asking: a channel and
+   * conversation (`telegram:123`), an address, a repository and branch
+   * (`origin/main`), or a service. `owner` stands for the owner's own channels.
+   */
+  readonly outwardAllow?: readonly string[] | undefined;
+  /** Shell commands that write outside operad; a git push names its remote and branch. */
+  readonly outwardCommands?: readonly string[] | undefined;
+  /**
+   * Set by a harness on a run no person's message started. It makes an outward
+   * shell command or MCP tool ask even when no other rule does, and it makes
+   * the matcher ignore `alwaysAllow` (ADR 0025 D3 and D10).
+   */
+  readonly background?: boolean | undefined;
   /** Permissions not yet used; the caller uses one up before it lets a call through. */
   readonly grants?: readonly AccessGrant[] | undefined;
   /**
@@ -164,6 +200,8 @@ export function defaultAccess(): AccessProfile {
     denyCommands: [...DEFAULT_DENY_COMMANDS],
     askCommands: [...DEFAULT_ASK_COMMANDS],
     askPaths: [...DEFAULT_ASK_PATHS],
+    outwardCommands: [...DEFAULT_OUTWARD_COMMANDS],
+    outwardAllow: [...DEFAULT_OUTWARD_ALLOW],
   };
 }
 
@@ -202,6 +240,8 @@ export function withDefaultAccess<T extends AccessProfile>(profile?: T | undefin
   const askCommands = combined(base.askCommands, profile?.askCommands);
   const askPaths = combined(base.askPaths, profile?.askPaths);
   const readPaths = combined(base.readPaths, profile?.readPaths);
+  const outwardCommands = combined(base.outwardCommands, profile?.outwardCommands);
+  const outwardAllow = combined(base.outwardAllow, profile?.outwardAllow);
   const readOnly = base.readOnly === true || profile?.readOnly === true;
   return {
     ...(profile ?? {}),
@@ -210,6 +250,9 @@ export function withDefaultAccess<T extends AccessProfile>(profile?: T | undefin
     askCommands,
     askPaths,
     ...(readPaths === undefined ? {} : { readPaths }),
+    ...(outwardCommands === undefined ? {} : { outwardCommands }),
+    ...(outwardAllow === undefined ? {} : { outwardAllow }),
+    ...(profile?.background === true ? { background: true } : {}),
     ...(readOnly ? { readOnly: true } : {}),
     ...(base.allowMcp === undefined
       ? profile?.allowMcp === undefined
@@ -255,6 +298,8 @@ export type Verdict =
       readonly kind: "command" | "path";
       readonly value: string;
       readonly tool?: string;
+      /** The outward write this question is about, when the run is a background run. */
+      readonly outward?: OutwardWrite | undefined;
     };
 
 export interface MatchOptions {
@@ -271,7 +316,7 @@ export function readProfile(value: unknown): ProfileRead {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return { ok: false, message: "the access profile must be an object" };
   }
-  const found: { level?: AccessLevel; defaultAsks?: boolean; denyPaths?: string[]; denyCommands?: string[]; askCommands?: string[]; askPaths?: string[]; readPaths?: string[]; allowMcp?: string[]; readOnly?: boolean; grants?: AccessGrant[]; alwaysAllow?: AlwaysAllowEntry[] } = {};
+  const found: { level?: AccessLevel; defaultAsks?: boolean; denyPaths?: string[]; denyCommands?: string[]; askCommands?: string[]; askPaths?: string[]; readPaths?: string[]; allowMcp?: string[]; outwardAllow?: string[]; outwardCommands?: string[]; readOnly?: boolean; background?: boolean; grants?: AccessGrant[]; alwaysAllow?: AlwaysAllowEntry[] } = {};
   const level: unknown = Reflect.get(value, "level");
   if (level !== undefined) {
     if (!isAccessLevel(level)) {
@@ -289,7 +334,12 @@ export function readProfile(value: unknown): ProfileRead {
     if (typeof readOnly !== "boolean") return { ok: false, message: "readOnly must be true or false" };
     found.readOnly = readOnly;
   }
-  for (const field of ["denyPaths", "denyCommands", "askCommands", "askPaths", "readPaths", "allowMcp"] as const) {
+  const background: unknown = Reflect.get(value, "background");
+  if (background !== undefined) {
+    if (typeof background !== "boolean") return { ok: false, message: "background must be true or false" };
+    found.background = background;
+  }
+  for (const field of ["denyPaths", "denyCommands", "askCommands", "askPaths", "readPaths", "allowMcp", "outwardAllow", "outwardCommands"] as const) {
     const entry: unknown = Reflect.get(value, field);
     if (entry === undefined) continue;
     if (!Array.isArray(entry) || !entry.every((item): item is string => typeof item === "string")) {
@@ -552,12 +602,15 @@ function checkBash(profile: AccessProfile, command: string, denied: Denied | und
     .map((text) => parseRule(text))
     .filter((rule): rule is Rule => rule !== undefined);
   const { parts, substitution, extglob, ansiC } = scan(command);
+  // A task worker is never stopped by what the matcher cannot follow: only a
+  // plain match of a deny refuses it (ADR 0025 D9).
+  const followsOnly = profile.defaultAsks === false;
 
   if ((profile.denyCommands ?? []).length > 0) {
     // A command that hides what it runs cannot be matched: when the profile
     // also asks, askBash asks about it instead of refusing it here.
     const asksInline = (profile.askCommands ?? []).length > 0;
-    if (substitution !== undefined && !asksInline) {
+    if (substitution !== undefined && !asksInline && !followsOnly) {
       return {
         allow: false,
         reason: `command "${command}" runs inline code (${substitution}); it is refused while denyCommands is set`,
@@ -565,7 +618,7 @@ function checkBash(profile: AccessProfile, command: string, denied: Denied | und
     }
     for (const part of parts) {
       const form = inlineFormOf(part);
-      if (form !== undefined && !asksInline) {
+      if (form !== undefined && !asksInline && !followsOnly) {
         return {
           allow: false,
           reason: `part "${part.text}" runs inline code (${form}); it is refused while denyCommands is set`,
@@ -600,7 +653,7 @@ function checkBash(profile: AccessProfile, command: string, denied: Denied | und
       }
     }
     // A deny wins over this ask: it is only reached when no path was denied.
-    if (unresolved !== undefined) {
+    if (unresolved !== undefined && !followsOnly) {
       return {
         allow: false,
         ask: true,
@@ -769,31 +822,83 @@ export function match(given: AccessProfile, call: ToolCall, options: MatchOption
     const verdict = checkBash(profile, command, denied);
     // A deny stays a deny; only an ask can be lifted by an always-allowed entry.
     if (!verdict.allow && verdict.ask !== true) return verdict;
-    if (alwaysAllowed(profile, call)) return ALLOW;
-    if (!verdict.allow) return verdict;
+    // A background run ignores the user layer; see ADR 0025 D3 and D10.
+    if (given.background !== true && alwaysAllowed(profile, call)) return ALLOW;
+    // An outward write not on the allowlist asks even without a matching rule.
+    const outward =
+      given.background === true
+        ? outwardCommandWrites(profile, command).find((write) => !outwardAllowed(profile, write))
+        : undefined;
+    const withOutward = (found: Verdict): Verdict =>
+      found.ask === true && outward !== undefined ? { ...found, outward } : found;
+    if (!verdict.allow) return withOutward(verdict);
     const asked = askBash(profile, command, askedPaths(profile, call.cwd, home), call.cwd, home);
-    if (!asked.allow) return asked;
+    if (!asked.allow) return withOutward(asked);
     // A read-only directory runs only commands known to read.
     if (readOnly && !isReadOnlyCommand(command)) {
-      return { allow: false, ask: true, reason: "the working directory is read-only and this command is not known to only read", rule: "readOnly", kind: "command", value: command };
+      return withOutward({ allow: false, ask: true, reason: "the working directory is read-only and this command is not known to only read", rule: "readOnly", kind: "command", value: command });
     }
     // The level asks about a command not known to only read.
     if ((given.level === "ask" || given.level === "edits") && !isReadOnlyCommand(command)) {
-      return {
+      return withOutward({
         allow: false,
         ask: true,
         reason: `the chat's access level "${given.level}" asks about a command not known to only read`,
         rule: "level",
         kind: "command",
         value: command,
+      });
+    }
+    if (outward !== undefined) {
+      return {
+        allow: false,
+        ask: true,
+        reason: `the command writes outside operad to "${outward.target}" and the run was not started by a person`,
+        rule: "outward",
+        kind: "command",
+        value: command,
+        outward,
       };
     }
     return asked;
   }
   if (call.tool === MCP_TOOL) {
     // An allow_always answer to an unlisted tool is its exact command entry.
-    if (alwaysAllowed(profile, call)) return ALLOW;
-    return matchMcp(profile, call);
+    if (given.background !== true && alwaysAllowed(profile, call)) return ALLOW;
+    const server: unknown = call.input["server"];
+    const tool: unknown = call.input["tool"];
+    // In a background run an MCP tool is outward even when `allowMcp` is
+    // absent: the default profile has no list, so it cannot be a pass.
+    if (given.background === true && profile.allowMcp === undefined) {
+      if (typeof server !== "string" || typeof tool !== "string") {
+        return { allow: false, reason: "an MCP call that names no server and tool cannot be checked" };
+      }
+      const write: OutwardWrite = {
+        kind: "service",
+        target: mcpCallValue(server, tool),
+        content: `the MCP tool "${server}.${tool}"`,
+      };
+      if (outwardAllowed(profile, write)) return ALLOW;
+      return {
+        allow: false,
+        ask: true,
+        reason: `the MCP tool "${server}.${tool}" writes outside operad and the run was not started by a person`,
+        rule: "outward",
+        kind: "command",
+        value: write.target,
+        outward: write,
+      };
+    }
+    const found = matchMcp(profile, call);
+    if (given.background === true && found.ask === true) {
+      const write: OutwardWrite = {
+        kind: "service",
+        target: found.value,
+        content: `the MCP tool "${String(call.input["server"])}.${String(call.input["tool"])}"`,
+      };
+      if (!outwardAllowed(profile, write)) return { ...found, outward: write };
+    }
+    return found;
   }
   if (PATH_TOOLS.has(call.tool)) {
     const path: unknown = call.input["path"] ?? call.input["file_path"];
@@ -803,7 +908,7 @@ export function match(given: AccessProfile, call: ToolCall, options: MatchOption
         if (!verdict.allow) return verdict;
       }
       // An always-allowed entry lifts the ask, never a deny.
-      if (alwaysAllowed(profile, call)) return ALLOW;
+      if (given.background !== true && alwaysAllowed(profile, call)) return ALLOW;
       // Ask comes after deny: a write to a path that is asked about asks.
       const normal = normalise(path, call.cwd, home);
       const asked = call.tool === "write" || call.tool === "edit" ? askedPaths(profile, call.cwd, home) : undefined;

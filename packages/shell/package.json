@@ -6,6 +6,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@operad-io/access-match": "workspace:*",
     "@operad-io/engine": "workspace:*"
   },
   "description": "operad: the shell plugin's command and check steps",

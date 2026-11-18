@@ -85,6 +85,7 @@ A keyword that is not in the table is refused: `<path>: unknown keyword "<k>"`. 
 | `enum` | list of strings, numbers or booleans | The allowed values; a client offers a pick list | At load: `<path>.enum: must be an array of strings, numbers or booleans`. A value: `args.<field>: "x" is not one of "a", "b"` |
 | `const` | any | The one value allowed | `args.<field>: must be <value>` |
 | `default` | any | The value a client pre-fills and `settings` fills when the field is absent. The kernel **does not fill it** into an action's `args`: an omitted optional field stays omitted, so `run` must apply the default itself | not checked |
+| `current` | any | The value the field has now, for an action that changes an existing value. A client shows it as the choice in effect; it is not a default, and the kernel does not read it | not checked |
 | `description` | string | Shown by help and in client forms | `<path>.description: must be a string` |
 | `minimum`, `maximum` | number | Inclusive bounds of a number | `args.<field>: must be at least <n>` / `must be at most <n>` |
 | `exclusiveMinimum`, `exclusiveMaximum` | number | Exclusive bounds of a number | `must be more than <n>` / `must be less than <n>` |

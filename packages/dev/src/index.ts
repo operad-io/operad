@@ -127,6 +127,7 @@ export function createDevPlugin() {
       },
       {
         name: "integrate",
+        reachesOutside: true,
         calls: ["shell/check", "shell/command"],
         timeoutSecs: STEP_TIMEOUT_SECS,
         results: ["merged", "conflict", "fail", "failed", "cancelled"],
