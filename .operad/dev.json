@@ -21,27 +21,16 @@
     ]
   },
   "reviewer": {
-    "use": "pi/agent",
+    "use": "claude/agent",
     "args": [
       "--model",
-      "opencode-go/muse-spark-1.3-contributor",
-      "--thinking",
+      "sonnet",
+      "--effort",
       "medium"
     ],
     "fixLevel": "major",
     "timeoutSecs": 3600,
-    "stallSecs": 900,
-    "fallback": [
-      {
-        "use": "claude/agent",
-        "args": [
-          "--model",
-          "sonnet",
-          "--effort",
-          "medium"
-        ]
-      }
-    ]
+    "stallSecs": 900
   },
   "prepare": [
     "bun install --frozen-lockfile"

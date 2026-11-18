@@ -382,3 +382,9 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0541-M1 | packages/chat/src/model.ts | `chosenEffort` returned any stored effort, so one equal to its stored default was treated as a choice | `the value a chat action offers as current > an effort equal to the stored default is inherited, and one that differs is offered` (and `chat:status > shows the live default for an inherited effort, a choice, and the stored default only when none is declared`) |
+
+## T-0546 — a plugin-written message names its own event source
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0546-M1 | packages/chat/src/index.ts | `sendMessage` ignored the source its caller named, so a scheduled message became `other` | `scheduled prompts > an entry fires on time, opens a new chat under the bot with its prompt, and the reply's notification carries a summary` (packages/bot/test/schedule.test.ts) |

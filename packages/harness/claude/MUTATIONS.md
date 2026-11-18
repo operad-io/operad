@@ -264,3 +264,9 @@ setup it depends on, in the order they were recorded. The root
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0534-M1 | packages/harness/claude/src/index.ts | the harness asker got no target-grant context, so a background outward call could neither record nor use a grant | `claude: a call that must ask a person > always for this flow and target records a grant and the next scheduled run does not ask` |
+
+## T-0549 — an empty claude probe answer is asked again
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0549-M1 | packages/harness/claude/src/claude-install.ts | an empty success from `claude --version` or `claude auth status` was believed instead of asked again | `an empty success from either probe is asked again` |

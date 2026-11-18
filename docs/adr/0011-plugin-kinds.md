@@ -22,3 +22,11 @@ The core knows kinds, not names. Kind names appear only in developer documents; 
 ### D2: Skills are `SKILL.md`
 
 The skills that a bot and a flow use take the `SKILL.md` format of Agent Skills, so they interoperate with pi and Claude Code. operad only gives the text of a skill to an agent to read, and does not run code inside a skill directory. There is no skill market. A harness that cannot load a `SKILL.md` itself is told the skill's name, description and the path of its `SKILL.md` in the prompt (ADR 0022 D9).
+
+### D3: A plugin may also be a source
+
+A plugin that declares `start` is started by `serve` as a source, whatever its
+kind. The kind still says what the plugin mainly is (the bot is a domain: it
+owns bot objects and their actions), and `start` says it also brings work from
+outside. This keeps a source that belongs to one domain's own objects in that
+plugin instead of in another source plugin or in the kernel.

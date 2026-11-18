@@ -138,3 +138,17 @@ changes for bots, in the order they were recorded. The root
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0532-M3 | packages/bot/src/bot.ts | the bot's default no longer added `operad` to `denyCommands` | `a reply reads the bot again > the agent gets operad's tools and works in the bot's directory, not a repository` |
+
+## T-0546 — scheduled prompts of a bot
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0546-M1 | packages/bot/src/schedule.ts | a normal poll never chose a due minute | `scheduled prompts > an entry fires on time, opens a new chat under the bot with its prompt, and the reply's notification carries a summary` |
+| T-0546-M2 | packages/bot/src/schedule.ts | the source ignored `paused`, so a paused entry fired | `scheduled prompts > a paused entry does not fire` |
+| T-0546-M3 | packages/bot/src/schedule.ts | `schedule-edit` kept the old schedule instead of the one given | `scheduled prompts > edit changes the next run` |
+| T-0546-M4 | packages/bot/src/schedule.ts | `schedule-remove` wrote the entry back, so it still fired | `scheduled prompts > remove stops it` |
+| T-0546-M5 | packages/bot/src/schedule.ts | a catch-up firing sent the bare prompt without its planned time and lateness line | `scheduled prompts > a catch-up firing adds the planned time and how late it is to the prompt` |
+| T-0546-M6 | packages/bot/src/schedule.ts | the notification carried an empty summary instead of the reply's | `scheduled prompts > an entry fires on time, opens a new chat under the bot with its prompt, and the reply's notification carries a summary` |
+| T-0546-M7 | packages/bot/src/index.ts | syncing a bot from the settings dropped the scheduled entries stored on its object | `scheduled prompts > the view shows next run time and the last result and chat id; edit, pause, resume and remove are actions` |
+| T-0546-M8 | packages/bot/src/index.ts | the scheduled message was sent with the bot's actor but no `bot` event source, so it came from `other` and counted as a person's | `scheduled prompts > an entry fires on time, opens a new chat under the bot with its prompt, and the reply's notification carries a summary` |
+| T-0546-M9 | packages/bot/src/schedule.ts | the bot page left out the last run's result and chat id | `scheduled prompts > an entry fires on time, opens a new chat under the bot with its prompt, and the reply's notification carries a summary` |

@@ -183,3 +183,31 @@ applied to the command; a server that does not start is not proposed.
   not listed counts as a write and asks first, as one-time or always-allow
   permission like any other call. `radian` cannot ask, so it refuses a tool that
   is not listed.
+
+## Scheduled prompts
+
+The `bot` plugin is also its own source for scheduled prompts. Each entry is
+stored on its bot object (`scheduled`), so the source and the actions read and
+write the same place without a `serve` reload. An entry is `name`, `schedule`
+(a five-field cron expression in local time), `prompt`, optional `model` and
+`effort`, `paused`, and the last firing (`plannedAt`, `firedAt`, `schedule`,
+`chatId`, `result`, `notified`).
+
+The source checks once a second, fires the latest planned minute at or before
+now, and catches up the latest missed minute in the last seven days after
+`serve` starts or the machine wakes. A firing calls `bot:chat` with the actor
+`{ via: "bot", id: "scheduled" }`: the new chat's first message therefore has
+the event source `bot`, which the bot's own rule sends to `chat:reply` as a
+background run. A catch-up firing appends `latenessLine` to the prompt.
+
+The source watches the new chat's facts. On the first assistant message, or on
+a failure entry, it records `replySummary` as the entry's `result`, runs the
+`notify` command from `config.json` with the summary as `OPERAD_REASON`, and
+marks `notified`. A firing whose reply ended before `serve` stopped is found the
+same way at the next start; a command that fails is logged and not retried.
+
+Actions: `schedule-add`, `schedule-edit`, `schedule-pause`, `schedule-resume`
+and `schedule-remove`, all on a bot. The adding and editing arguments are
+`name`, `schedule`, `prompt`, `model` and `effort`; the others take `name`.
+A name is unique on the bot. A changed schedule drops the old last time, so the
+next run is calculated fresh.

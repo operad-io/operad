@@ -1756,15 +1756,13 @@ export class PluginRegistry {
     return [...this.starts];
   }
 
-  /** The loaded source plugins, with the function that starts each one. */
+  /** The loaded plugins that start a source, with the function that starts each one. */
   sourcePlugins(): readonly {
     readonly plugin: string;
     readonly start: (ctx: SourceContext) => MaybePromise<SourceHandle> | SourceHandle;
   }[] {
     return this.plugins.flatMap((plugin) =>
-      plugin.kind !== "source" || plugin.start === undefined
-        ? []
-        : [{ plugin: plugin.name, start: plugin.start }],
+      plugin.start === undefined ? [] : [{ plugin: plugin.name, start: plugin.start }],
     );
   }
 
@@ -1781,7 +1779,7 @@ export class PluginRegistry {
   }): Promise<readonly { readonly plugin: string; readonly handle: SourceHandle }[]> {
     const running: { plugin: string; handle: SourceHandle }[] = [];
     for (const plugin of this.plugins) {
-      if (plugin.kind !== "source" || plugin.start === undefined) continue;
+      if (plugin.start === undefined) continue;
       const emit = async (event: SourceEvent): Promise<void> => {
         const trigger: TriggerEvent = {
           source: event.source ?? plugin.name,

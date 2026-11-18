@@ -87,9 +87,11 @@ skills and the commands from one `GET /v1/objects/<id>` (or MCP `show`); each
 description comes from `SKILL.md`.
 
 A message is an event: source `ios`, `telegram`, `cli`, `tui` or `other`, key is
-the message id, object is the chat. The `chat` plugin's own rule starts
-`chat:reply` for these sources automatically; a rule of yours in `triggers.json`
-with the same source and type replaces it. The reply reads the messages no reply
+the message id, object is the chat. A scheduled prompt's first message has the
+source `bot`, and the bot plugin's own rule starts `chat:reply` for it. The
+`chat` plugin's own rule starts `chat:reply` for the client sources
+automatically; a rule of yours in `triggers.json` with the same source and type
+replaces it. The reply reads the messages no reply
 answers yet from the chat's own record, continues the agent session, records the
 reply, and goes round again while new messages still wait (at most 20 rounds).
 An ordinary message sent during the reply is given to an agent that takes
@@ -286,3 +288,42 @@ and its secrets. It prints
 `operad bot setting <bot>` reads a JSON object from stdin and proposes the
 change. It cannot add or change `mcpServers`; that is what `bot mcp` is for. It
 prints `proposed settings for bot <bot>; review it in pending`.
+
+### Scheduled prompts
+
+A bot can hold scheduled prompts. The user word is **Scheduled** (Chinese
+定时任务). An entry has a name, a five-field cron schedule in the machine's local
+time zone, the prompt, an optional model and effort, and whether it is paused.
+The bot page lists the entries with their next run and the last run's result and
+chat id.
+
+```sh
+operad bot:schedule-add default --name Morning --schedule "0 8 * * *" --prompt "Collect the day's news."
+operad bot:schedule-edit default --name Morning --schedule "0 9 * * *"
+operad bot:schedule-pause default --name Morning
+operad bot:schedule-resume default --name Morning
+operad bot:schedule-remove default --name Morning
+```
+
+| Action | Arguments | What it does |
+|---|---|---|
+| `bot:schedule-add` | `name`, `schedule`, `prompt`, optional `model`, `effort`, `paused` | Adds an entry. The name is unique on that bot; the schedule is a five-field cron expression in local time. |
+| `bot:schedule-edit` | `name`, optional `schedule`, `prompt`, `model`, `effort` | Changes an entry. A changed schedule starts fresh, so no time missed under the old schedule is caught up. |
+| `bot:schedule-pause` | `name` | Stops it firing; a paused entry collects no missed times. |
+| `bot:schedule-resume` | `name` | Lets it fire again at its next planned time. |
+| `bot:schedule-remove` | `name` | Deletes it. |
+
+When an entry fires, the bot opens a new chat under itself, titled with the
+entry's name and the date, and sends the prompt as the first message. The chat
+runs as the bot, with its skills, MCP servers and access profile. It is a
+background run: an outward write asks, and the access rules for a run no person
+started apply. You can keep talking in the new chat.
+
+After `serve` has been down or the machine has slept, the latest missed run in
+the last seven days fires once; older ones are skipped. A catch-up run adds one
+line to the prompt saying when it was planned and how late it runs.
+
+When the reply ends, the entry's last result is a short summary of it, and the
+`notify` command runs with that summary as `OPERAD_REASON` (see
+[Notifications](notifications.md)). A failed reply records and notifies its
+failure line instead.

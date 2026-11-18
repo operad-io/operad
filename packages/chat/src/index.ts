@@ -113,7 +113,10 @@ export const replyFlow = defineFlow({
 });
 
 /** What {@link sendMessage} needs of an action's context. */
-export type SendContext = Pick<ActionContext, "facts" | "emit" | "actor">;
+export type SendContext = Pick<ActionContext, "facts" | "emit" | "actor"> & {
+  /** The event source for a message a plugin writes itself; absent uses the client's. */
+  readonly source?: string | undefined;
+};
 
 /**
  * Records a user message on chat `chatId` and, when events can be routed, starts
@@ -128,10 +131,10 @@ export async function sendMessage(
   files: readonly string[] = [],
 ): Promise<string> {
   const via = ctx.actor.via;
-  // The message records who sent it as it is; the event uses a known source, or
-  // `other` for a client this plugin does not know, so it is still answered.
+  // The message records who sent it as it is; the event uses the source its
+  // caller names, else a known client source, else `other`, so it is still answered.
   const known = CHAT_SOURCES.find((name) => name === via);
-  const source = known ?? OTHER_SOURCE;
+  const source = ctx.source ?? known ?? OTHER_SOURCE;
   const id = newMessageId();
   const message: MessageData = {
     id,
