@@ -433,8 +433,18 @@ for that pair is then not used.
 
 The cron source is the plugin named `cron` from `@operad-io/source-cron`. It
 emits one `tick` per due minute for each rule with `source` `cron` and a
-`schedule`; other rules ignore `schedule`. A rule may not name the reserved
-source `operad` when it is added by a command.
+`schedule`; other rules ignore `schedule`. It remembers the last minute it
+fired for each rule in `<home>/cron/state.json`, by the rule's own fields rather
+than its position in the file. A new rule, or one whose schedule changed,
+records its latest planned minute as a baseline and waits for the next one; it
+does not catch up a time before the rule was known. Once a rule has a recorded
+last time, a start of `serve` or a machine wake looks back up to seven days,
+emits only the most recent missed tick once, and the tick's summary names the
+older times it skipped and why. That tick also carries `scheduledAt` and
+`lateSecs` in its data, so a step or prompt can tell the agent the planned time
+and how late the run is; an on-time tick carries no lateness. A rule whose
+schedule changed starts fresh, with no catch-up for the old schedule. A rule
+may not name the reserved source `operad` when it is added by a command.
 
 If `triggers.json` is not valid, the whole file is refused, with the rule and
 field in the message. `operad serve` logs it and runs without sources until the
