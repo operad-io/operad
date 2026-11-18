@@ -54,6 +54,12 @@ test("the hook program denies a patch in every form, an unknown tool and a user'
   expect((await hook(denied, call("patch", { path: "ok.ts", edits: [{ old: "a", new: "b" }] }))).code).toBe(0);
 });
 
+test("the hook program denies an outward command in a background run", async () => {
+  const refused = await hook({ background: true, outwardCommands: ["git push"] }, call("shell", { command: "git push origin main" }));
+  expect(refused.code).toBe(2);
+  expect(refused.err).toContain("outward");
+});
+
 test("the hook program lets a read, a reading command and an operad tool through", async () => {
   expect((await hook({ readOnly: true }, call("read", { path: "a.ts" }))).code).toBe(0);
   expect((await hook({ readOnly: true }, call("shell", { command: "git log | head" }))).code).toBe(0);

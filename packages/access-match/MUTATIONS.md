@@ -157,3 +157,11 @@ and the row fields.
 | T-0535-M1 | packages/access-match/src/index.ts | `withDefaultAccess` ignored `defaultAsks: false` and always used the full built-in default | `a task worker keeps the default's denies, not its asks` (and `a flow profile still adds its own asks when the default's asks are left out`) |
 | T-0535-M2 | packages/access-match/src/index.ts | inline code was always refused while `denyCommands` was set, even when `askCommands` was set to ask about it | `a chat at full still asks for git push and for inline code` (and `a generated step with no profile gets the default asks`) |
 | T-0535-M3 | packages/access-match/src/index.ts | `defaultDenies` left `~/.ssh` out of its `denyPaths` | `defaultDenies is exactly the default's deny lists` |
+
+## T-0533 — background outward writes
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0533-M1 | packages/access-match/src/index.ts | a background run no longer turned a matching outward command into an ask | `a background run asks about git push with the remote and branch as its target` |
+| T-0533-M2 | packages/access-match/src/outward.ts | an allowlisted target no longer stopped the question | `an allowlisted target is not outward; a person-started run never asks for one` |
+| T-0533-M3 | packages/access-match/src/outward.ts | every answer except a rejection let an outward write through | `send once is the only answer that lets a background message go; reject refuses it` |
+| T-0533-M12 | packages/access-match/src/index.ts | a background MCP call with no `allowMcp` was allowed without asking | `a background MCP call asks with the default profile, which has no allowMcp` |

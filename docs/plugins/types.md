@@ -153,6 +153,9 @@ The types a plugin imports, by the page that explains them. The values these ent
 | `StepLineReceiver` | Takes one log line of a step as it is written. | [steps](steps.md) |
 | `StepRunOptions` | Options for running a step through the registry. | [steps](steps.md) |
 | `StepTypeDefinition` | A step type a plugin declares. The use name is `<plugin>/<name>`. | [steps](steps.md) |
+| `OutwardWrite` | One write a step or action makes outside operad: its kind, target and full content. | [steps](steps.md) |
+| `OutwardWrites` | One outward write or a list of them, or none. | [steps](steps.md) |
+| `OutwardTargets` | Names the target of one call a step or action writes outward. | [steps](steps.md) |
 | `FactInput` | A fact a plugin appends for itself, outside the objects it owns. | [storage](storage.md) |
 | `FactWriter` | Appends facts that are not an object change, such as a step's output path. | [storage](storage.md) |
 | `FactsOptions` | Options for reading one object's facts. | [storage](storage.md) |

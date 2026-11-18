@@ -231,3 +231,7 @@ the row fields.
 |---|---|---|---|
 | T-0536-M1 | packages/harness/pi/src/index.ts | pi's default effort ignored its own `defaultThinkingLevel` | `the efforts pi declares > the default is pi's own defaultThinkingLevel when pi names one` |
 | T-0536-M2 | packages/harness/pi/src/index.ts | operad's `thinkingLevel` was ignored for the default effort | `the efforts pi declares > operad's thinkingLevel setting wins over pi's own default` |
+## T-0533 — background profile
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0533-M5 | packages/harness/pi/src/index.ts | a background run passed no `background` marker to its worker | `pi: a call that must ask a person > a background run ignores the user layer and is not offered allow_always` |

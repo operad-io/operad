@@ -123,6 +123,7 @@ function runAgent(
   options: {
     readonly signal?: AbortSignal;
     readonly access?: Record<string, unknown>;
+    readonly trigger?: Record<string, unknown>;
     readonly asker?: {
       readonly ask: (request: { readonly prompt: string }) => Promise<{
         readonly kind: "answered";
@@ -136,6 +137,7 @@ function runAgent(
     runId: "run-1",
     ...(options.signal === undefined ? {} : { signal: options.signal }),
     ...(options.access === undefined ? {} : { access: options.access as never }),
+    ...(options.trigger === undefined ? {} : { trigger: options.trigger as never }),
     ...(options.asker === undefined ? {} : { asker: options.asker as never }),
   });
 }
@@ -476,6 +478,29 @@ describe("codex/agent: permissions", () => {
     expect(result.result).toBe("done");
     expect(asked).toEqual(["Run this command? rm -rf build"]);
     expect(permissionOutcome(env)).toBe("accept");
+  });
+
+  test("a background run asks about an outward command with its target", async () => {
+    const env = await setup("permission");
+    const asked: Array<{ readonly prompt: string; readonly choices?: readonly string[] }> = [];
+    const result = await runAgent(
+      env,
+      { prompt: "x", cwd: env.root },
+      {
+        access: { outwardCommands: ["rm -rf"] },
+        trigger: { source: "cron", type: "tick", key: "t1", hops: 0 },
+        asker: {
+          ask: (request) => {
+            asked.push(request);
+            return Promise.resolve({ kind: "answered", answer: { choice: "send_once" } });
+          },
+          useGrant: () => Promise.resolve(false),
+        },
+      },
+    );
+    expect(result.result).toBe("done");
+    expect(asked[0]?.prompt).toContain("rm -rf build");
+    expect(asked[0]?.choices).toEqual(["send_once", "reject_once"]);
   });
 
   test("a person who refuses leaves the call rejected", async () => {

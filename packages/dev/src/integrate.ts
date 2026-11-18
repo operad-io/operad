@@ -4,6 +4,7 @@
  * never runs either itself.
  */
 
+import { guardOutward, personStarted } from "@operad-io/access-match";
 import { isRecord, messageOf, type PluginStepResult, type StepContext, type StepRunOptions } from "@operad-io/engine";
 import { appendChange, appendRework, storeKey, type CleanupFailure, type CleanupRecord, type IntegrationRecord, type TaskAttempt, type TaskData } from "./model.ts";
 import {
@@ -362,6 +363,22 @@ export async function runIntegrate(
       data: integrationData(record, attempt, { message, ...extra }),
     };
   };
+
+  /** Asks before a push in a background run; a person-started run and an allowlisted target do not ask. */
+  const pushAllowed = async (sha: string | undefined, what: string): Promise<boolean> =>
+    guardOutward(
+      {
+        access: ctx.access,
+        ask: (request) => ctx.ask(request),
+        personStarted: personStarted(ctx.trigger),
+        onTimeout: "reject_once" as const,
+      },
+      {
+        kind: "repository",
+        target: `${settings.remote}/${settings.mainBranch}`,
+        content: `push ${sha ?? "HEAD"} to ${settings.remote}/${settings.mainBranch} (${what})`,
+      },
+    );
 
   let flakyReason: string | undefined;
   /** The other tasks this task was merged with in one batch. */
@@ -755,6 +772,7 @@ export async function runIntegrate(
       let landedDespiteError = false;
       const landed = await queue.landWhenStillQueued(followers, result, async () => {
         await integrateTestHooks.beforePush?.(batchHead);
+        if (!(await pushAllowed(batchHead, "the batch merge"))) return false;
         const pushed = git(gate, [
           "push",
           settings.remote,
@@ -767,6 +785,9 @@ export async function runIntegrate(
         return landedDespiteError;
       });
       if (landed === "withdrawn") return undefined;
+      if (landed === "failed") {
+        return fail(`the person did not allow the push to "${settings.remote}/${settings.mainBranch}"`);
+      }
       if (landed === "pushed") {
         if (landedDespiteError) return land({ landed: true });
         integrateTestHooks.afterPush?.(batchHead);
@@ -1137,6 +1158,9 @@ export async function runIntegrate(
       }
       integrateTestHooks.at?.("pending-saved");
 
+      if (!(await pushAllowed(sha, "the task merge"))) {
+        return fail(`the person did not allow the push to "${settings.remote}/${settings.mainBranch}"`);
+      }
       const push = git(gate, [
         "push",
         settings.remote,

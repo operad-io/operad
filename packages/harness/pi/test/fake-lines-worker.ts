@@ -59,7 +59,7 @@ switch (mode) {
     // What the real program does for a call that must ask a person. A run with
     // a one-time permission (an answered question came back) first uses it up
     // for the call it covers, then asks about another call.
-    const access = (input as { access?: { grants?: Array<{ waitId: string }> } }).access;
+    const access = (input as { access?: { grants?: Array<{ waitId: string }>; background?: boolean } }).access;
     const grant = access?.grants?.at(0);
     const session = (input as { resumeSession?: string }).resumeSession ?? "/sessions/one.jsonl";
     if (grant !== undefined) {
@@ -68,7 +68,12 @@ switch (mode) {
       if (recordPath !== undefined) writeFileSync(`${recordPath}.grant`, used);
     }
     mark();
-    line({ type: "ask_call", id: 7, kind: "command", value: grant === undefined ? "git push origin main" : "git push origin other", shown: "git push", session });
+    const value = grant === undefined ? "git push origin main" : "git push origin other";
+    const outward =
+      access?.background === true
+        ? { kind: "repository", target: "origin/main", content: value }
+        : undefined;
+    line({ type: "ask_call", id: 7, kind: "command", value, shown: "git push", session, ...(outward === undefined ? {} : { outward }) });
     process.on("SIGTERM", () => {
       line(result({ result: "cancelled" }));
       process.exit(143);

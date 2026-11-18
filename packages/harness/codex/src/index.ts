@@ -14,6 +14,7 @@ import {
   paramsObject,
   defineFlow,
   definePlugin,
+  type OutwardWrite,
   type PluginStepResult,
   type StepContext,
 } from "@operad-io/engine";
@@ -462,9 +463,11 @@ export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
           }
 
           // A generated step that names no profile still starts from the default.
-          const access = withDefaultAccess(ctx.access as AccessProfile | undefined);
+          const startAccess = withDefaultAccess(ctx.access as AccessProfile | undefined);
           const storeSecrets = await secretValuesOf(ctx.secrets);
           const allowAlways = personStarted(ctx.trigger);
+          // A run no person's message started asks about every outward write.
+          const access = allowAlways ? startAccess : { ...startAccess, background: true };
           if (allowAlways && isRecord(rawAskAnswer) && rawAskAnswer["choice"] === ALLOW_ALWAYS) {
             const entry = alwaysAllowFromGrant(access, cwd);
             if (entry !== undefined) {
@@ -527,6 +530,7 @@ export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
             readonly kind: "command" | "path";
             readonly value: string;
             readonly tool?: string;
+            readonly outward?: OutwardWrite | undefined;
             readonly shown: string;
           }): Promise<CallAnswer> =>
             new Promise<CallAnswer>((resolve) => {
@@ -537,6 +541,7 @@ export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
                 kind: question.kind,
                 value: question.value,
                 ...(question.tool === undefined ? {} : { tool: question.tool }),
+                ...(question.outward === undefined ? {} : { outward: question.outward }),
                 shown: question.shown,
                 session: client?.sessionId ?? null,
               });
