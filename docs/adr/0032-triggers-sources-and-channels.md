@@ -51,3 +51,23 @@ Only four channels are built, in this order: Telegram, WhatsApp, Slack, iMessage
 ### D11: The cron source catches up missed runs
 
 The cron source keeps the last minute it fired for each rule in `<home>/cron/state.json`, under the operad home and never under a repository's `.git`, keyed by the rule's own identity (its source, type, start, object, mode and schedule) rather than its position in the file; an entry no rule matches is dropped when the file is written. A rule with no recorded last time, including one just added or whose schedule changed, starts with its baseline at the latest planned minute at or before now and waits for the next planned time, so no tick runs for a missed time before the rule was known. Only a rule with a recorded last time catches up. When `serve` starts, or when the clock jumps far beyond the source's check interval (the machine slept), the source looks back up to seven days for each such rule, emits the most recent missed tick once, and leaves older missed times out; the tick's summary names the times it skipped and says that only the latest missed run is caught up. A catch-up tick carries the planned time and its lateness in the event data (`scheduledAt` and `lateSecs`), so a step or prompt can tell the agent; an on-time tick carries no lateness. A rule whose schedule changed starts fresh: the old schedule's last time is not used and no tick is caught up for it.
+
+### D12: A client manages scheduled flows
+
+The user-visible word is **Scheduled** (Chinese 定时任务). A scheduled flow is a
+rule in `triggers.json` with source `cron`, a `schedule`, `start.flow` and
+`start.params`, an `object` and a `mode`; it starts an already loaded flow with
+fixed parameters. The rule may carry `paused`. Pausing stops its ticks and is
+kept in the file, so it survives a restart. A paused rule advances its recorded
+last minute with the clock; resuming waits for the next planned minute instead
+of catching up the paused period. A changed schedule starts fresh under D11.
+
+The cron source plugin owns the management: list, add, edit, pause, resume and
+remove are its `scheduled` command, because scheduling is plugin work and the
+kernel only reads, validates and routes the rules. The command reads and writes
+the same `triggers.json`; there is no second store. It refuses an unknown flow
+and a bad cron expression with the reason. The command line reaches it as
+`operad scheduled ...`, HTTP as `POST /v1/commands` and MCP through its
+`command` tool. Listing a schedule gives its flow, schedule, parameters, next
+run and the last run's result and run id; the run's own history and the usual
+run-ended notification are unchanged.

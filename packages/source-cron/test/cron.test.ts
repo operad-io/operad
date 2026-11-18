@@ -10,7 +10,7 @@ import {
   type SourceContext,
 } from "@operad-io/engine";
 import { cleanupTempRoots, tempRoot } from "../../engine/test/plugin/support.ts";
-import { CronSource, dueMinute } from "../src/index.ts";
+import { CronSource, dueMinute, scheduledId } from "../src/index.ts";
 
 process.env.TZ = "America/New_York";
 
@@ -49,6 +49,17 @@ function context(
   };
 }
 
+function cronKey(schedule: string, flow = "one", object = "job:1"): string {
+  return scheduledId({
+    source: "cron",
+    type: "tick",
+    start: { flow },
+    object,
+    mode: "auto",
+    schedule,
+  });
+}
+
 function cronRule(schedule: string): SourceContext["rules"] {
   return [
     {
@@ -83,7 +94,7 @@ describe("the cron source", () => {
     await source.poll();
     expect(emitted).toHaveLength(1);
     expect(emitted[0]?.type).toBe("tick");
-    expect(emitted[0]?.key).toBe("0:2026-01-01T00:01:00.000Z");
+    expect(emitted[0]?.key).toBe(`${cronKey("* * * * *")}:2026-01-01T00:01:00.000Z`);
 
     await source.poll();
     expect(emitted).toHaveLength(1);
@@ -91,7 +102,7 @@ describe("the cron source", () => {
     clock.value = Date.parse("2026-01-01T00:02:10Z");
     await source.poll();
     expect(emitted).toHaveLength(2);
-    expect(emitted[1]?.key).toBe("0:2026-01-01T00:02:00.000Z");
+    expect(emitted[1]?.key).toBe(`${cronKey("* * * * *")}:2026-01-01T00:02:00.000Z`);
   });
 
   test("a three-hour gap emits only the latest tick", async () => {
@@ -106,7 +117,7 @@ describe("the cron source", () => {
     clock.value = Date.parse("2026-01-01T03:00:10Z");
     await source.poll();
     expect(emitted).toHaveLength(1);
-    expect(emitted[0]?.key).toBe("0:2026-01-01T03:00:00.000Z");
+    expect(emitted[0]?.key).toBe(`${cronKey("*/5 * * * *")}:2026-01-01T03:00:00.000Z`);
   });
 
   test("dueMinute returns the latest missed minute, not a burst", () => {
@@ -134,7 +145,7 @@ describe("missed runs", () => {
     );
     await source.poll();
     expect(resumed).toHaveLength(1);
-    expect(resumed[0]?.key).toBe("0:2026-01-01T03:00:00.000Z");
+    expect(resumed[0]?.key).toBe(`${cronKey("0 * * * *")}:2026-01-01T03:00:00.000Z`);
     expect(resumed[0]?.data).toEqual({
       scheduledAt: "2026-01-01T03:00:00.000Z",
       lateSecs: 30,
@@ -181,7 +192,7 @@ describe("missed runs", () => {
     await source.poll();
     expect(emitted).toHaveLength(1);
     expect(emitted[0]?.key).toBe(
-      `0:${new Date(Date.parse("2026-01-04T03:00:00-05:00")).toISOString()}`,
+      `${cronKey("0 3 * * *")}:${new Date(Date.parse("2026-01-04T03:00:00-05:00")).toISOString()}`,
     );
     expect(emitted[0]?.data).toEqual({
       scheduledAt: new Date(Date.parse("2026-01-04T03:00:00-05:00")).toISOString(),
@@ -217,7 +228,7 @@ describe("missed runs", () => {
     await source.poll();
     expect(changed).toHaveLength(1);
     expect(changed[0]?.key).toBe(
-      `0:${new Date(Date.parse("2026-01-03T05:00:00-05:00")).toISOString()}`,
+      `${cronKey("0 5 * * *")}:${new Date(Date.parse("2026-01-03T05:00:00-05:00")).toISOString()}`,
     );
     expect(changed[0]?.data).toBeUndefined();
   });
@@ -236,7 +247,7 @@ describe("missed runs", () => {
     await source.poll();
     expect(emitted).toHaveLength(1);
     expect(emitted[0]?.key).toBe(
-      `0:${new Date(Date.parse("2026-01-02T08:00:00-05:00")).toISOString()}`,
+      `${cronKey("0 8 * * *")}:${new Date(Date.parse("2026-01-02T08:00:00-05:00")).toISOString()}`,
     );
     expect(emitted[0]?.data).toBeUndefined();
   });
@@ -273,7 +284,7 @@ describe("missed runs", () => {
     await later.poll();
     expect(emitted).toHaveLength(1);
     expect(emitted[0]?.key).toBe(
-      `0:${new Date(Date.parse("2026-01-02T08:00:00-05:00")).toISOString()}`,
+      `${cronKey("0 8 * * *", "two", "job:b")}:${new Date(Date.parse("2026-01-02T08:00:00-05:00")).toISOString()}`,
     );
     expect(emitted[0]?.summary).toContain(
       new Date(Date.parse("2026-01-01T08:00:00-05:00")).toISOString(),
@@ -291,7 +302,7 @@ describe("missed runs", () => {
     clock.value = Date.parse("2026-01-01T00:01:10Z");
     await source.poll();
     expect(emitted).toHaveLength(1);
-    expect(emitted[0]?.key).toBe("0:2026-01-01T00:01:00.000Z");
+    expect(emitted[0]?.key).toBe(`${cronKey("* * * * *")}:2026-01-01T00:01:00.000Z`);
     expect(emitted[0]?.data).toBeUndefined();
   });
 });

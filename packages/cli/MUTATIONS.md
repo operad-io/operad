@@ -309,3 +309,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0530-M4 | packages/cli/src/main.ts | `GET /v1/plugins` left out a loaded harness's models | `plugins over HTTP > GET /v1/plugins carries a harness's models with what it knows about each` |
+
+## T-0548 — scheduled flows from a client
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0548-M1 | packages/cli/src/main.ts | `trigger rules` did not say a rule is paused | `operad trigger rules > lists each rule with where it came from` |

@@ -6,7 +6,12 @@
 
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { isRecord } from "@operad-io/engine";
+import {
+  isRecord,
+  latestCronMinute,
+  parseCron,
+  type TriggerRule,
+} from "@operad-io/engine";
 
 /** What the source remembers about one rule. */
 export interface CronRuleState {
@@ -29,6 +34,37 @@ export function cronStateDirectory(home: string): string {
 /** The file the last fired minutes are in. */
 export function cronStatePath(home: string): string {
   return join(cronStateDirectory(home), "state.json");
+}
+
+/** The stable identity of a rule, independent of its position in the file. */
+export function ruleStateKey(rule: TriggerRule): string {
+  return JSON.stringify([
+    rule.source,
+    rule.type,
+    rule.start.flow,
+    rule.start.params ?? null,
+    rule.object,
+    rule.mode,
+    rule.schedule,
+  ]);
+}
+
+/** Starts a rule from the latest planned minute at or before `now`. */
+export function baselineCronRule(
+  home: string,
+  rule: TriggerRule,
+  now: number,
+): void {
+  if (rule.schedule === undefined) return;
+  const last = latestCronMinute(parseCron(rule.schedule), now);
+  if (last === null) return;
+  const state = readCronState(home);
+  writeCronState(home, {
+    rules: {
+      ...state.rules,
+      [ruleStateKey(rule)]: { schedule: rule.schedule, last },
+    },
+  });
 }
 
 function ruleStateOf(value: unknown): CronRuleState | undefined {
