@@ -104,6 +104,165 @@ function withoutAssignmentValues(command: string): string {
   return out + command.slice(at);
 }
 
+/** Where one shell word ends, and whether it was read to its end. */
+interface WordEnd {
+  readonly end: number;
+  readonly complete: boolean;
+}
+
+/** The index after the `)` that closes the `(` at `open`, or undefined when it is left open. */
+function afterParen(command: string, open: number): number | undefined {
+  let depth = 0;
+  let i = open;
+  while (i < command.length) {
+    const c = command.charAt(i);
+    if (c === "\\") {
+      i += 2;
+      continue;
+    }
+    if (c === "'") {
+      const close = command.indexOf("'", i + 1);
+      if (close < 0) return undefined;
+      i = close + 1;
+      continue;
+    }
+    if (c === '"') {
+      i += 1;
+      while (i < command.length && command.charAt(i) !== '"') i += command.charAt(i) === "\\" ? 2 : 1;
+      if (i >= command.length) return undefined;
+      i += 1;
+      continue;
+    }
+    if (c === "`") {
+      i += 1;
+      while (i < command.length && command.charAt(i) !== "`") i += command.charAt(i) === "\\" ? 2 : 1;
+      if (i >= command.length) return undefined;
+      i += 1;
+      continue;
+    }
+    if (c === "(") depth += 1;
+    else if (c === ")" && --depth === 0) return i + 1;
+    i += 1;
+  }
+  return undefined;
+}
+
+/** The index after the `}` that closes the `{` at `open`, or undefined when it is left open. */
+function afterBrace(command: string, open: number): number | undefined {
+  let depth = 0;
+  let i = open;
+  while (i < command.length) {
+    const c = command.charAt(i);
+    if (c === "\\") {
+      i += 2;
+      continue;
+    }
+    if (c === "'") {
+      const close = command.indexOf("'", i + 1);
+      if (close < 0) return undefined;
+      i = close + 1;
+      continue;
+    }
+    if (c === '"') {
+      i += 1;
+      while (i < command.length && command.charAt(i) !== '"') i += command.charAt(i) === "\\" ? 2 : 1;
+      if (i >= command.length) return undefined;
+      i += 1;
+      continue;
+    }
+    if (c === "{") depth += 1;
+    else if (c === "}" && --depth === 0) return i + 1;
+    i += 1;
+  }
+  return undefined;
+}
+
+/**
+ * Where the shell word at `start` ends, skipping quotes and the substitutions
+ * whose contents may hold spaces. `complete` is false when a quote or
+ * substitution is left open, or a backslash ends the command.
+ */
+function wordEnd(command: string, start: number): WordEnd {
+  let i = start;
+  while (i < command.length) {
+    const c = command.charAt(i);
+    if (/\s/.test(c)) return { end: i, complete: true };
+    if (c === "\\") {
+      if (i + 1 >= command.length) return { end: command.length, complete: false };
+      i += 2;
+      continue;
+    }
+    if (c === "'") {
+      const close = command.indexOf("'", i + 1);
+      if (close < 0) return { end: command.length, complete: false };
+      i = close + 1;
+      continue;
+    }
+    if (c === '"') {
+      i += 1;
+      while (i < command.length && command.charAt(i) !== '"') i += command.charAt(i) === "\\" ? 2 : 1;
+      if (i >= command.length) return { end: command.length, complete: false };
+      i += 1;
+      continue;
+    }
+    if (c === "`") {
+      i += 1;
+      while (i < command.length && command.charAt(i) !== "`") i += command.charAt(i) === "\\" ? 2 : 1;
+      if (i >= command.length) return { end: command.length, complete: false };
+      i += 1;
+      continue;
+    }
+    if ((c === "$" || c === "<" || c === ">") && command.charAt(i + 1) === "(") {
+      const after = afterParen(command, i + 1);
+      if (after === undefined) return { end: command.length, complete: false };
+      i = after;
+      continue;
+    }
+    if (c === "$" && command.charAt(i + 1) === "{") {
+      const after = afterBrace(command, i + 1);
+      if (after === undefined) return { end: command.length, complete: false };
+      i = after;
+      continue;
+    }
+    i += 1;
+  }
+  return { end: i, complete: true };
+}
+
+/**
+ * A command the log hides, with the values of its leading assignments masked
+ * as far as they can be read. An assignment whose value holds a construct the
+ * reader does not understand stays as written, so a person still sees what
+ * runs; an assignment whose quote is left open is masked to the command's end.
+ */
+function questionCommand(command: string): string {
+  let out = "";
+  let at = 0;
+  let i = 0;
+  while (i < command.length) {
+    while (i < command.length && /\s/.test(command.charAt(i))) i += 1;
+    if (i >= command.length) break;
+    const word = wordEnd(command, i);
+    const text = command.slice(i, word.end);
+    const name = /^[A-Za-z_][A-Za-z0-9_]*=/.exec(text);
+    if (name === null) break;
+    const valueAt = i + name[0].length;
+    if (!word.complete) {
+      out += `${command.slice(at, valueAt)}${MASK}`;
+      at = command.length;
+      break;
+    }
+    if (NOT_UNDERSTOOD.some((mark) => text.includes(mark))) {
+      i = word.end;
+      continue;
+    }
+    out += `${command.slice(at, valueAt)}${MASK}`;
+    at = word.end;
+    i = word.end;
+  }
+  return out + command.slice(at);
+}
+
 /** The values in a secret store, so a log can mask them. A store that cannot be read has none. */
 export async function secretValuesOf(store: {
   names(): Promise<readonly string[]>;
@@ -175,8 +334,9 @@ export function summarizeCall(
     if (typeof command === "string") {
       const readable = withoutAssignmentValues(command);
       // A question never says the command could not be read: the person must
-      // see what they are asked to approve.
-      text = options.forQuestion === true && readable === COMMAND_NOT_SHOWN ? command : readable;
+      // see what they are asked to approve, though a literal leading assignment
+      // value stays masked.
+      text = options.forQuestion === true && readable === COMMAND_NOT_SHOWN ? questionCommand(command) : readable;
       limit = COMMAND_SUMMARY_CHARS;
     }
   } else {

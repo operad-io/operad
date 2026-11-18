@@ -29,6 +29,22 @@ test("a question shows a command the log cannot read, with its lines kept and a 
   expect(summarizeCall({}, "Bash", { command: `${"y".repeat(900)}` }, CWD, { forQuestion: true })).toBe(`${"y".repeat(499)}…`);
 });
 
+test("a question masks the leading assignment values of a command the log cannot read", () => {
+  const unreadable = 'TOKEN=abc echo "oops';
+  expect(summarizeCall({}, "Bash", { command: unreadable }, CWD)).toBe(NOT_SHOWN);
+  expect(summarizeCall({}, "Bash", { command: unreadable }, CWD, { forQuestion: true })).toBe('TOKEN=*** echo "oops');
+
+  const substitution = "TOKEN=abc n=$(printf supersecret) make test";
+  expect(summarizeCall({}, "Bash", { command: substitution }, CWD, { secrets: ["supersecret"] })).toBe(NOT_SHOWN);
+  expect(summarizeCall({}, "Bash", { command: substitution }, CWD, { secrets: ["supersecret"], forQuestion: true })).toBe(
+    "TOKEN=*** n=$(printf ***) make test",
+  );
+
+  expect(summarizeCall({}, "Bash", { command: 'A=1 B="oops make' }, CWD, { forQuestion: true })).toBe("A=*** B=***");
+  expect(summarizeCall({}, "Bash", { command: "A=1 echo \\" }, CWD, { forQuestion: true })).toBe("A=*** echo \\");
+  expect(summarizeCall({}, "Bash", { command: "A='x y' echo 'oops" }, CWD, { forQuestion: true })).toBe("A=*** echo 'oops");
+});
+
 test("file tools summarize to their path, never their content", () => {
   expect(summarizeCall({}, "Read", { file_path: "/w/a.ts" }, CWD)).toBe("/w/a.ts");
   expect(summarizeCall({}, "edit", { path: "/w/b.ts", oldText: "SECRET", newText: "X" }, CWD)).toBe("/w/b.ts");

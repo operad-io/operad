@@ -117,8 +117,9 @@ leading environment assignments, cuts a command at 500 characters and another
 summary at 300, and says `<command not shown: could not read it safely>` for a
 command it cannot read. `keepLines` keeps a command's line breaks for a log.
 `forQuestion` is for a question a person answers: a command the log would hide
-is shown in full, with its line breaks kept and the same cut and secret masks,
-because a person must see what they are asked to approve. A log leaves it unset.
+is shown in full, with its line breaks kept and the same cut and masks, because a
+person must see what they are asked to approve. A leading assignment value is
+masked even in a command the log would hide. A log leaves it unset.
 
 ## Splitting a `bash` command
 
