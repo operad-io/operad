@@ -163,3 +163,10 @@ changes for bots, in the order they were recorded. The root
 | T-0547-M4 | packages/bot/src/proposals.ts | the review dropped the schedule in words | `schedules a chat proposes > a chat's add makes a pending proposal and no entry; approve adds it, reject leaves none` (and the edit test) |
 | T-0547-M5 | packages/bot/src/index.ts | `bot/settings` returned no starting line, so the bot's agent was not told a schedule is a proposal | `schedules a chat proposes > a bot chat starts with the line that a schedule is a proposal` |
 | T-0547-M6 | packages/bot/src/schedule.ts | applying a proposed remove left the entry in place | `schedules a chat proposes > a proposed remove deletes the entry only after approve` |
+| T-0547-M7 | packages/bot/src/proposals.ts | the duplicate-add refusal was skipped, so a second schedule with the same name was proposed | `schedules a chat refuses to propose > an add of a name the bot already has is refused` |
+| T-0547-M8 | packages/bot/src/proposals.ts | an edit of a missing name was not refused, while a remove still was | `schedules a chat refuses to propose > an edit of a missing name is refused` |
+| T-0547-M9 | packages/bot/src/proposals.ts | a remove of a missing name was not refused, while an edit still was | `schedules a chat refuses to propose > a remove of a missing name is refused` |
+| T-0547-M10 | packages/bot/src/proposals.ts | an add without the schedule in words was accepted | `schedules a chat refuses to propose > an add without the schedule in words is refused` |
+| T-0547-M11 | packages/bot/src/proposals.ts | an add accepted the schedule without checking the cron expression | `schedules a chat refuses to propose > a malformed cron expression is refused` |
+| T-0547-M12 | packages/bot/src/proposals.ts | an edit with nothing to change was accepted | `schedules a chat refuses to propose > an edit with nothing to change is refused` |
+| T-0547-M13 | packages/bot/src/proposals.ts | a remove carrying other fields was accepted | `schedules a chat refuses to propose > a remove that carries other fields is refused` |

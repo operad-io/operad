@@ -389,3 +389,134 @@ describe("schedules a chat proposes", () => {
     expect(await entries(r)).toEqual([]);
   });
 });
+
+describe("schedules a chat refuses to propose", () => {
+  const entries = async (r: Awaited<ReturnType<typeof rig>>): Promise<readonly ScheduledPrompt[]> =>
+    scheduledPrompts((await r.store.get("bot", "default"))?.data ?? {});
+
+  async function unchanged(r: Awaited<ReturnType<typeof rig>>): Promise<void> {
+    expect(await r.registry.standing()).toEqual([]);
+    expect(await entries(r)).toEqual([
+      { name: "Morning", schedule: "0 8 * * *", prompt: "At eight.", paused: false },
+    ]);
+  }
+
+  test("an add of a name the bot already has is refused", async () => {
+    const r = await rig();
+    await add(r, { name: "Morning", schedule: "0 8 * * *", prompt: "At eight." });
+    await expect(
+      r.command("bot", "schedule", [
+        "default",
+        "add",
+        "Morning",
+        "--schedule",
+        "0 9 * * *",
+        "--words",
+        "every morning at 9",
+        "--prompt",
+        "At nine.",
+      ]),
+    ).rejects.toThrow('bot default already has a scheduled prompt "Morning"');
+    await unchanged(r);
+  });
+
+  test("an edit of a missing name is refused", async () => {
+    const r = await rig();
+    await add(r, { name: "Morning", schedule: "0 8 * * *", prompt: "At eight." });
+    await expect(
+      r.command("bot", "schedule", [
+        "default",
+        "edit",
+        "Evening",
+        "--prompt",
+        "At nine.",
+        "--words",
+        "every evening at 9",
+      ]),
+    ).rejects.toThrow('bot default has no scheduled prompt "Evening"');
+    await unchanged(r);
+  });
+
+  test("a remove of a missing name is refused", async () => {
+    const r = await rig();
+    await add(r, { name: "Morning", schedule: "0 8 * * *", prompt: "At eight." });
+    await expect(
+      r.command("bot", "schedule", [
+        "default",
+        "remove",
+        "Evening",
+        "--words",
+        "every evening at 9",
+      ]),
+    ).rejects.toThrow('bot default has no scheduled prompt "Evening"');
+    await unchanged(r);
+  });
+
+  test("an add without the schedule in words is refused", async () => {
+    const r = await rig();
+    await add(r, { name: "Morning", schedule: "0 8 * * *", prompt: "At eight." });
+    await expect(
+      r.command("bot", "schedule", [
+        "default",
+        "add",
+        "Evening",
+        "--schedule",
+        "0 21 * * *",
+        "--prompt",
+        "At nine.",
+      ]),
+    ).rejects.toThrow("give the schedule in words with --words");
+    await unchanged(r);
+  });
+
+  test("a malformed cron expression is refused", async () => {
+    const r = await rig();
+    await add(r, { name: "Morning", schedule: "0 8 * * *", prompt: "At eight." });
+    await expect(
+      r.command("bot", "schedule", [
+        "default",
+        "add",
+        "Evening",
+        "--schedule",
+        "every evening",
+        "--words",
+        "every evening at 9",
+        "--prompt",
+        "At nine.",
+      ]),
+    ).rejects.toThrow();
+    await unchanged(r);
+  });
+
+  test("an edit with nothing to change is refused", async () => {
+    const r = await rig();
+    await add(r, { name: "Morning", schedule: "0 8 * * *", prompt: "At eight." });
+    await expect(
+      r.command("bot", "schedule", [
+        "default",
+        "edit",
+        "Morning",
+        "--words",
+        "every morning at 8",
+      ]),
+    ).rejects.toThrow("editing a scheduled prompt needs a field to change");
+    await unchanged(r);
+  });
+
+  test("a remove that carries other fields is refused", async () => {
+    const r = await rig();
+    await add(r, { name: "Morning", schedule: "0 8 * * *", prompt: "At eight." });
+    await expect(
+      r.command("bot", "schedule", [
+        "default",
+        "remove",
+        "Morning",
+        "--words",
+        "every morning at 8",
+        "--prompt",
+        "At nine.",
+      ]),
+    ).rejects.toThrow("removing a scheduled prompt takes only its name");
+    await unchanged(r);
+  });
+});
