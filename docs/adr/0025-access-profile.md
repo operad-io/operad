@@ -58,4 +58,73 @@ The user-visible names are `Plan only`, `Ask each time`, `Accept edits` and `Ful
 
 The default profile lives in `@operad-io/access-match`, beside the matcher and free of engine internals, as `defaultAccess()`. Every chat and every generated step starts from it. A bot adds the operad home, its skills and the repositories it knows; a repository chat adds its read-only main clone and its skills; a flow may add rules to a step it generates. Each addition appends to the default's deny and ask lists and may turn `readOnly` on; none removes a default deny or ask. The access level is composed after the additions, so `full`, too, keeps the default's deny and ask rules. A harness applies the default to a generated step that names no profile. The default is shipped with operad; this decision does not add another file a user could replace it with.
 
-A dev task worker is the exception: it starts from the default's deny rules but not its ask rules, so the inline-code ask those rules trigger does not stop a worker's scripted edit. A worker works in its own worktree and its change reaches main only through checks, review and a merge. A flow profile still adds: it cannot remove a default deny, and its own asks still hold. Chats and other generated steps keep the default in full, asks included.
+A dev task worker is the exception: it starts from the default's deny rules but not its ask rules, so the inline-code ask those rules trigger does not stop a worker's scripted edit. A worker works in its own worktree and its change reaches main only through checks, review and a merge. A flow profile still adds: it cannot remove a default deny, and its own asks still hold. Chats and other generated steps keep the default in full, asks included. A worker is never stopped because of the default: a command the matcher cannot follow (inline code, a shell expansion, a path after a directory change it cannot follow) is allowed for a worker, where a chat would be asked or refused; only a plain match of a deny refuses it. No person is there to answer a worker's question, and its change still passes checks, review and a merge.
+
+### D10: A run no person started asks before every outward write
+
+A run is **person-started** when a person wrote a message in the run's chat
+(`personStarted` in `@operad-io/harness-process`). Every other run — a schedule,
+a webhook, incoming mail, another event — is a background run. In a background
+run, an **outward write** asks a person before it happens.
+
+An outward write is a message, mail or post sent out; a `git push`; or a write
+call to an outside service. It is not outward when it goes to one of the owner's
+own channels (the Telegram chat the owner talks to operad through, the desktop
+and iOS clients) or to any target named in the profile's allowlist.
+
+The question is a pending item (D4, ADR 0008). Its prompt names the target as a
+person reads it — who, which channel or conversation, which repository and
+branch, which service — and carries the whole content being sent. Its choices
+are `send_once` and `reject_once` (`Send once`, `Reject`). An "always for this
+flow and target" choice may be added; the question shape leaves it room. In a
+background run the chat's exact-call `alwaysAllow` (D3) does not
+count: the pending item asks even when the same exact call was allowed in a
+chat. The allow-always user layer is still not read or offered in such a run.
+
+Every path is judged the same way, not only a tool call an agent makes through
+a harness: a plugin step or action that sends or calls out by itself goes
+through the same check.
+
+### D11: How an outward write is recognised
+
+The profile has two more fields:
+
+- `outwardCommands` is a list of command rules in the shape of `askCommands`
+  (`git push`, `gh pr create`, `gh issue comment`, `curl`, `wget`, `mail`,
+  `sendmail`, …). A matching `bash` part is an outward write in a background
+  run. The target is read from the command where it can be: `git push origin
+  main` names `origin/main`; a `curl` write names its URL; a mail command names
+  its recipients; otherwise the whole command is the target. A `curl` without a
+  write method or body, and a command whose own write shape is not recognised,
+  is not outward.
+- `outwardAllow` is a list of target strings a background run may write to
+  without asking: a channel and conversation (`telegram:123`), an address, a
+  repository and branch (`origin/main`), or a service. The list holds `owner`
+  for the owner's own channels; a plugin marks a write to one of those with
+  `owner: true`, so a digest to the owner's Telegram does not ask while a
+  message to another chat does. A target is matched exactly.
+
+A plugin step or action that writes outward declares it in its plugin
+declaration: `reachesOutside: true` and `outward(input)`, a function that names
+the target and content of one call (`OutwardWrite` in the engine types:
+`channel`, `mail`, `post`, `repository`, `service` or `command`). A step or
+action that marks itself as reaching outside but names no target counts the
+whole call as an outward write, so nothing about it can be allowlisted and it
+asks. The kernel carries these two fields because a step and an action are
+declared to the kernel; it reads no meaning into them. The matcher, the
+question and the guard live in `@operad-io/access-match`, and a plugin calls
+that guard before it sends.
+
+An MCP tool not on the profile's `allowMcp` list already counts as a write. In a
+background run that write is also outward, with the service and tool as its
+target (`mcp <server>.<tool>`); a tool the allowlist names is not outward. The
+check has the same place the bot guard already has in front of a server's tools.
+
+`@operad-io/harness-process` sets `background: true` on the profile it hands a
+worker when no person started the run. The matcher then treats an outward
+command or MCP call as an ask, and the host turns it into the pending item of
+D10. The harness flows that carry a question to a `wait_person` keep their
+existing permission choices; a question answered while the step is alive uses
+`send_once`.
+
+What was looked at: the Telegram senders (replies, commands, pending items, progress) are a source plugin, not a step or action, and every target is a chat that a listed owner user opened with operad, so they are owner channels and not outward. A bot proposal writes only local files, and only after a person approves it. A chat reply goes to the chat's own bound channels, also owner channels. `shell/command` and `shell/check` declare `reachesOutside` and guard each line; `dev/integrate` declares it and guards its push with the repository and main branch as the target. This decision does not cover the paths that start a process without the profile: `shell/probe`, the other git and editor commands of `dev`, and a bot's MCP server start.

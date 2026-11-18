@@ -1393,3 +1393,8 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0535-M4 | packages/dev/src/steps.ts | `dev/work` passed the run's access profile to the worker without `defaultAsks: false` | `dev/work > a task worker keeps the default's denies, not its asks` |
+
+## T-0533 — background push
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0533-M10 | packages/dev/src/integrate.ts | the integrate push no longer asked before it ran | `dev/integrate > a scheduled run asks before the push, naming the remote and branch` |

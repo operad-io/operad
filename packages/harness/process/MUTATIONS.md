@@ -177,3 +177,8 @@ and the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0529-M11 | packages/harness/process/src/step.ts | an agent step's data dropped the context the worker reported | `codex/agent: a prompt run > the usage has the token counts and an unknown cost, never 0` |
+
+## T-0533 — outward questions
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0533-M4 | packages/harness/process/src/ask-call.ts | an outward ask_call was turned into the ordinary run-this-command question | `askRequest > an outward question offers send once and reject, and a late answer sends once` |

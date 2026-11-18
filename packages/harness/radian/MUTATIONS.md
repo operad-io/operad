@@ -112,3 +112,8 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0532-M8 | packages/harness/radian/src/index.ts | a step with no access profile wrote no hook config instead of using the built-in default | `radian/agent > a profile with rules > a step with no profile still gets the default's hook` |
+
+## T-0533 — background profile
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0533-M8 | packages/harness/radian/src/index.ts | a background run passed no `background` marker to its hook profile | `radian/agent > a run no person started gives its hook a background profile` |

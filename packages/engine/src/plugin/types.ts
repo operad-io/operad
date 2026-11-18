@@ -735,6 +735,24 @@ export interface StepRunOptions {
     | undefined;
 }
 
+/** Where a plugin write goes outside operad: one call's target and its full content. */
+export interface OutwardWrite {
+  /** A message, mail or post; a repository push; a call to an outside service; or a shell command. */
+  readonly kind: "channel" | "mail" | "post" | "repository" | "service" | "command";
+  /** The target as a person reads it: a channel and conversation, an address, a remote and branch, a service, or a command. */
+  readonly target: string;
+  /** The full content the write carries, when the plugin can name it. */
+  readonly content?: string | undefined;
+  /** True when the target is one of the owner's own channels, which never ask. */
+  readonly owner?: boolean | undefined;
+}
+
+/** The outward writes of one call, or none. */
+export type OutwardWrites = OutwardWrite | readonly OutwardWrite[] | undefined;
+
+/** Names the target of one call a step or action writes outward. */
+export type OutwardTargets = (input: unknown) => OutwardWrites;
+
 /** A step type a plugin declares. The use name is `<plugin>/<name>`. */
 export interface StepTypeDefinition {
   readonly name: string;
@@ -764,6 +782,14 @@ export interface StepTypeDefinition {
   readonly callsNamedByData?: boolean | undefined;
   /** Access profile fields this step applies, such as `denyPaths`. */
   readonly enforces?: readonly string[] | undefined;
+  /**
+   * True when this step can write outside operad: send a message, mail or a
+   * post, push, or call an outside service. `outward` names the target of one
+   * call; an undeclared step that marks itself so counts as outward, with the
+   * whole call as the target.
+   */
+  readonly reachesOutside?: boolean | undefined;
+  readonly outward?: OutwardTargets | undefined;
   /**
    * How long one run of this step may take, in seconds. Default: the runner's
    * step timeout (5 minutes). A step that runs an agent or a test suite sets
@@ -893,6 +919,12 @@ export interface ActionArgSchema {
   readonly additionalProperties?: false | ActionArgSchema | undefined;
   /** A value the kernel fills when the field is absent. */
   readonly default?: unknown;
+  /**
+   * The value the field has now, for an action that changes an existing value.
+   * A client shows it as the choice in effect; it is neither a default nor
+   * read by the kernel.
+   */
+  readonly current?: unknown;
   readonly description?: string | undefined;
   /** A note is prompted for in a terminal and accepted as `--note`. */
   readonly role?: "note" | undefined;
@@ -990,6 +1022,15 @@ export interface HarnessEfforts {
   readonly flag?: string | undefined;
 }
 
+/**
+ * The efforts a harness declares, or a function that reads them from the
+ * plugin's settings each time they are asked for. A harness whose default
+ * follows a setting of its own uses the function form.
+ */
+export type HarnessEffortsSource =
+  | HarnessEfforts
+  | ((settings: Readonly<Record<string, JsonValue>>) => HarnessEfforts);
+
 /** What a harness plugin's agent does itself, from ADR 0022's capability list. */
 export interface HarnessCapabilities {
   /**
@@ -1030,6 +1071,13 @@ export interface ActionTypeDefinition {
   readonly argsFor?: ((object: RunObject, env: ActionEnv) => ActionArgsSchema) | undefined;
   /** The action asks for confirmation before it runs. */
   readonly confirm?: boolean | undefined;
+  /**
+   * True when this action can write outside operad; `outward` names the target
+   * of one call. A background run asks before it runs when no target function
+   * is declared.
+   */
+  readonly reachesOutside?: boolean | undefined;
+  readonly outward?: OutwardTargets | undefined;
   /**
    * A one-line description when a chat may run this action as a `/<name>`
    * command; its presence is what makes the action a chat command. `true` takes
@@ -1386,8 +1434,8 @@ export interface PluginShape {
         context: HarnessModelContext,
       ) => MaybePromise<HarnessModels>)
     | undefined;
-  /** A harness plugin: the efforts a chat may pick (empty list: none can be chosen). */
-  readonly efforts?: HarnessEfforts | undefined;
+  /** A harness plugin: the efforts a chat may pick (empty list: none can be chosen), or a function of its settings. */
+  readonly efforts?: HarnessEffortsSource | undefined;
   /** A harness plugin: what its agent does itself. */
   readonly capabilities?: HarnessCapabilities | undefined;
   /**

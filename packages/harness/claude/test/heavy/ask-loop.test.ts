@@ -274,6 +274,8 @@ describe("claude: a call that must ask a person", () => {
         trigger: { source: "cron", type: "tick", key: "t1", hops: 0 },
       }).run();
       await env.opened(1);
+      const access = env.input()["access"] as Record<string, unknown>;
+      expect(access["background"]).toBe(true);
       await timer.armed();
       timer.fire();
       expect(await run).toBe("waiting");

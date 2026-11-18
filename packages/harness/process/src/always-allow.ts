@@ -12,6 +12,8 @@ import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { isRecord } from "@operad-io/engine";
 import { withLockFile } from "@operad-io/engine/platform";
+import { personStarted } from "@operad-io/access-match";
+export { personStarted };
 
 /** The file name of the user layer under the operad home. */
 export const ACCESS_USER_FILE = "access-user.json";
@@ -183,22 +185,3 @@ export function accessWithAlwaysAllow(
   return { ...(base ?? {}), alwaysAllow: combined };
 }
 
-/** The sources `chat:send` uses for a message a person wrote in a chat. */
-const MESSAGE_SOURCES = new Set(["ios", "telegram", "cli", "tui", "other"]);
-
-/**
- * Whether a run may see `allow_always`: no trigger is a person's command, and
- * a message event from one of the chat's own client sources is a person's
- * message in that conversation. Every other event (a schedule, a webhook, an
- * incoming message from another source, a run's own event) is a background run
- * (`docs/backlog/operad-sandbox.md`, not in an ADR yet).
- */
-export function personStarted(trigger: unknown): boolean {
-  if (trigger === undefined || trigger === null) return true;
-  return (
-    isRecord(trigger) &&
-    trigger["type"] === "message" &&
-    typeof trigger["source"] === "string" &&
-    MESSAGE_SOURCES.has(trigger["source"])
-  );
-}

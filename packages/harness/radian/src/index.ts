@@ -48,6 +48,7 @@ import {
   type RawCounts,
   type UsageSource,
   modelLimit,
+  personStarted,
   runAgent,
   systemClock,
   type AgentRunOutcome,
@@ -630,7 +631,8 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
               : text(ctx.settings.command, `${at}: settings.command`);
 
           // A generated step that names no profile still starts from the default.
-          const access = withDefaultAccess(ctx.access as AccessProfile | undefined);
+          const startAccess = withDefaultAccess(ctx.access as AccessProfile | undefined);
+          const access = personStarted(ctx.trigger) ? startAccess : { ...startAccess, background: true };
           const readAccess = readProfile(access);
           const logSecrets = await secretValuesOf(ctx.secrets);
           const logProfile: AccessProfile = readAccess.ok ? readAccess.profile : {};

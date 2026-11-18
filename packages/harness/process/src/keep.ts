@@ -17,6 +17,7 @@ import {
   writeKeptWorker,
 } from "@operad-io/engine/platform";
 import { messageText } from "./inbox.ts";
+import type { OutwardWrite } from "@operad-io/engine";
 import type { CallAnswer } from "./ask-call.ts";
 
 export const EXIT_FAILED = 1;
@@ -96,6 +97,7 @@ export interface WorkerIo<TLine = unknown> {
     readonly tool?: string;
     readonly shown: string;
     readonly session: string | null;
+    readonly outward?: OutwardWrite | undefined;
   }): Promise<CallAnswer>;
   /**
    * Hands each message the host sends mid-run to `handler`, those that came

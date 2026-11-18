@@ -156,7 +156,12 @@ export function checkProfile(
   if (verdict.allow) return { kind: "allow" };
   const question: CallQuestion | undefined =
     verdict.ask === true
-      ? { kind: verdict.kind, value: verdict.value, ...(verdict.tool === undefined ? {} : { tool: verdict.tool }) }
+      ? {
+          kind: verdict.kind,
+          value: verdict.value,
+          ...(verdict.tool === undefined ? {} : { tool: verdict.tool }),
+          ...(verdict.outward === undefined ? {} : { outward: verdict.outward }),
+        }
       : undefined;
   // A one-time permission covers one exact call that would be refused. The
   // host writes the fact before it answers, so a crash after it cannot give
