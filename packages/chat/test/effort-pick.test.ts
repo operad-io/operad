@@ -26,10 +26,10 @@ async function offered(r: Rig, chat: string) {
 describe("chat:effort", () => {
   test("the next reply uses the changed effort, and the history says who changed it and to what", async () => {
     const r = await rig(() => reply("ok"), undefined, EFFORTS);
-    const chat = await r.chat({ effort: "medium", effortDefault: "medium" });
+    const chat = await r.chat({ effort: "low", effortDefault: "medium" });
     await r.say(chat, "one");
     await r.round(chat);
-    expect(r.calls[0]?.params.args).toEqual(["--effort", "medium"]);
+    expect(r.calls[0]?.params.args).toEqual(["--effort", "low"]);
 
     await act(r, chat, { effort: "high" });
     await r.say(chat, "two");
@@ -37,7 +37,7 @@ describe("chat:effort", () => {
     expect(r.calls[1]?.params.args).toEqual(["--effort", "high"]);
 
     const facts = r.store.facts({ type: CHAT_TYPE, id: chat }).facts.filter((fact) => fact.type === EFFORT_FACT);
-    expect(facts.map((fact) => fact.data)).toEqual([{ by: { via: "cli", id: "me" }, from: "medium", to: "high" }]);
+    expect(facts.map((fact) => fact.data)).toEqual([{ by: { via: "cli", id: "me" }, from: "low", to: "high" }]);
     expect(chatViews.row((await r.store.get(CHAT_TYPE, chat)) as never).note).toBe("fake · high");
   });
 
@@ -46,11 +46,11 @@ describe("chat:effort", () => {
     const inherited = await r.chat({ effortDefault: "medium" });
     expect(chatViews.row((await r.store.get(CHAT_TYPE, inherited)) as never).note).toBe("fake");
     const chat = await r.chat({ effort: "medium", effortDefault: "medium" });
-    expect(chatViews.row((await r.store.get(CHAT_TYPE, chat)) as never).note).toBe("fake · medium");
+    expect(chatViews.row((await r.store.get(CHAT_TYPE, chat)) as never).note).toBe("fake");
     await act(r, chat, { effort: "low" });
     expect(chatViews.row((await r.store.get(CHAT_TYPE, chat)) as never).note).toBe("fake · low");
     await act(r, chat, { effort: "medium" });
-    expect(chatViews.row((await r.store.get(CHAT_TYPE, chat)) as never).note).toBe("fake · medium");
+    expect(chatViews.row((await r.store.get(CHAT_TYPE, chat)) as never).note).toBe("fake");
   });
 
   test("an effort the agent does not list is refused by name", async () => {
@@ -105,6 +105,15 @@ describe("the reply and the effort", () => {
     await r.round(chat);
     expect(r.calls[0]?.params.args).toEqual(["--thinking", "high"]);
     expect(r.calls[0]?.params.effort).toBe("high");
+  });
+
+  test("an effort equal to the stored default is inherited, so the reply passes none", async () => {
+    const r = await rig(() => reply("ok"), undefined, EFFORTS);
+    const chat = await r.chat({ effort: "medium", effortDefault: "medium" });
+    await r.say(chat, "hi");
+    await r.round(chat);
+    expect(r.calls[0]?.params.args).toBeUndefined();
+    expect(r.calls[0]?.params.effort).toBeUndefined();
   });
 
   test("a chat that stores no effort passes none", async () => {
