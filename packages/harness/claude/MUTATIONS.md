@@ -270,3 +270,9 @@ setup it depends on, in the order they were recorded. The root
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0549-M1 | packages/harness/claude/src/claude-install.ts | an empty success from `claude --version` or `claude auth status` was believed instead of asked again | `an empty success from either probe is asked again` |
+
+## T-0550 — an empty probe answer is asked only once more
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0550-M1 | packages/harness/claude/src/claude-install.ts | an empty success was retried five times instead of once more | `a probe that never answers is refused after a bounded number of asks` |

@@ -35,20 +35,26 @@ function executable(path: string, text: string): void {
 }
 
 /** A fake `claude` that passes the harness check without a real agent. */
-function fakeClaude(bin: string): void {
-  executable(
-    join(bin, "claude"),
-    [
-      "#!/bin/sh",
-      'if [ "$1" = "--version" ]; then echo "2.1.319 (Claude Code)"; exit 0; fi',
-      'if [ "$1" = "auth" ] && [ "$2" = "status" ]; then',
-      '  printf \'{"loggedIn":true,"authMethod":"claude.ai","subscriptionType":"max"}\\n\'',
-      "  exit 0",
-      "fi",
-      "exit 1",
-      "",
-    ].join("\n"),
+function fakeClaude(bin: string, emptyFirst?: string): void {
+  const lines = ["#!/bin/sh"];
+  if (emptyFirst !== undefined) {
+    lines.push(
+      `count=$(cat '${emptyFirst}' 2>/dev/null || echo 0)`,
+      "count=$((count + 1))",
+      `printf '%s' "$count" > '${emptyFirst}'`,
+      'if [ "$count" -eq 1 ]; then exit 0; fi',
+    );
+  }
+  lines.push(
+    'if [ "$1" = "--version" ]; then echo "2.1.319 (Claude Code)"; exit 0; fi',
+    'if [ "$1" = "auth" ] && [ "$2" = "status" ]; then',
+    '  printf \'{"loggedIn":true,"authMethod":"claude.ai","subscriptionType":"max"}\\n\'',
+    "  exit 0",
+    "fi",
+    "exit 1",
+    "",
   );
+  executable(join(bin, "claude"), lines.join("\n"));
 }
 
 /** A fake pi install: the check reads the package beside the command, it never runs it. */
@@ -76,6 +82,7 @@ function fakeRadian(bin: string): void {
 async function initWith(
   root: string,
   bins: readonly string[],
+  options: { readonly emptyFirstProbe?: string | undefined } = {},
 ): Promise<{
   readonly code: number;
   readonly output: Output;
@@ -85,7 +92,7 @@ async function initWith(
   const bin = join(root, "bin");
   mkdirSync(bin, { recursive: true });
   for (const name of bins) {
-    if (name === "claude") fakeClaude(bin);
+    if (name === "claude") fakeClaude(bin, options.emptyFirstProbe);
     else if (name === "pi") fakePi(root, bin);
     else if (name === "radian") fakeRadian(bin);
   }
@@ -113,6 +120,15 @@ describe("`operad init` finds the agent on PATH", () => {
     expect(output.text()).toContain("claude: claude 2.1.319");
     expect(output.text()).not.toContain("radian:");
     expect(output.text()).not.toContain("pi:");
+  });
+
+  test("an empty first probe answer is asked again, so claude still passes", async () => {
+    const root = await tempRoot();
+    const calls = join(root, "probe-calls");
+    const { code, output } = await initWith(root, ["claude"], { emptyFirstProbe: calls });
+    expect(code).toBe(0);
+    expect(output.text()).toContain("claude: claude 2.1.319");
+    expect(Number(readFileSync(calls, "utf8"))).toBeGreaterThanOrEqual(2);
   });
 
   test("only pi is enabled", async () => {
