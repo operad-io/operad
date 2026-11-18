@@ -227,6 +227,106 @@ export function inlineFormOf(part: Part): string | undefined {
   return undefined;
 }
 
+/** The argument of the first option whose single-dash letters include `letter`. */
+function optionArgument(args: readonly string[], letter: string): string | undefined {
+  const at = args.findIndex((arg) => CLUSTER.test(arg) && arg.slice(1).includes(letter));
+  return at === -1 ? undefined : args[at + 1];
+}
+
+/** The index of the `)` that closes the `(` at `open`, or -1. */
+function closingParen(text: string, open: number): number {
+  let depth = 0;
+  let i = open;
+  while (i < text.length) {
+    const c = text.charAt(i);
+    if (c === "'") {
+      const close = text.indexOf("'", i + 1);
+      if (close === -1) return -1;
+      i = close + 1;
+      continue;
+    }
+    if (c === '"') {
+      i += 1;
+      while (i < text.length && text.charAt(i) !== '"') i += text.charAt(i) === "\\" ? 2 : 1;
+      i += 1;
+      continue;
+    }
+    if (c === "\\") {
+      i += 2;
+      continue;
+    }
+    if (c === "(") depth += 1;
+    if (c === ")" && --depth === 0) return i;
+    i += 1;
+  }
+  return -1;
+}
+
+/** The text inside each command, process or backtick substitution, outside single quotes. */
+function substitutionContents(command: string): string[] {
+  const found: string[] = [];
+  let i = 0;
+  while (i < command.length) {
+    const c = command.charAt(i);
+    const next = command.charAt(i + 1);
+    if (c === "'") {
+      const close = command.indexOf("'", i + 1);
+      if (close === -1) return found;
+      i = close + 1;
+      continue;
+    }
+    if (c === "\\") {
+      i += 2;
+      continue;
+    }
+    if (c === "`") {
+      const close = command.indexOf("`", i + 1);
+      if (close === -1) return found;
+      found.push(command.slice(i + 1, close));
+      i = close + 1;
+      continue;
+    }
+    if ((c === "$" || c === "<" || c === ">") && next === "(") {
+      const close = closingParen(command, i + 1);
+      if (close === -1) return found;
+      found.push(command.slice(i + 2, close));
+      i = close + 1;
+      continue;
+    }
+    i += 1;
+  }
+  return found;
+}
+
+/**
+ * What a command's inline code or shell substitutions plainly contain, for a
+ * deny check where the matcher lets their effect through (ADR 0025 D8, D9).
+ */
+export function unreadableContentsOf(command: string, parts: readonly Part[]): string[] {
+  const found: string[] = [];
+  const add = (text: string | undefined): void => {
+    if (text !== undefined && text.trim().length > 0 && !found.includes(text)) found.push(text);
+  };
+  for (const part of parts) {
+    for (const level of levels(part.words)) {
+      const name = baseName(level.at(0) ?? "");
+      const args = level.slice(1);
+      if ((SHELLS.has(name) || /^python[0-9.]*$/.test(name)) && letters(args).has("c")) {
+        add(optionArgument(args, "c"));
+      } else if (INLINE_E.has(name) && letters(args).has("e")) {
+        add(optionArgument(args, "e"));
+      } else if (name === "find") {
+        const at = args.findIndex((arg) => FIND_EXEC.has(arg));
+        if (at !== -1) add(args.slice(at + 1).join(" "));
+      } else if (name === "xargs" || name === "eval") {
+        add(args.join(" "));
+      }
+    }
+  }
+  for (const content of substitutionContents(command)) add(content);
+  return found;
+}
+
 function glob(pattern: string): RegExp {
   const source = pattern
     .split("*")

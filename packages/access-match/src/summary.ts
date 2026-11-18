@@ -33,6 +33,12 @@ export interface SummaryOptions {
   readonly env?: Readonly<Record<string, string | undefined>> | undefined;
   /** A command keeps its line breaks (still cut at 500 characters), for a log that shows its first line. */
   readonly keepLines?: boolean | undefined;
+  /**
+   * The text is for a question a person answers, so a command the log would
+   * hide is shown in full instead: line breaks kept, cut at 500 characters,
+   * secret values still masked. A log leaves this unset.
+   */
+  readonly forQuestion?: boolean | undefined;
 }
 
 /** Keys that hold the main argument of a tool, in the order they are tried. */
@@ -137,6 +143,11 @@ function linesOf(text: string, limit: number): string {
   return flat.length <= limit ? flat : `${flat.slice(0, limit - 1)}…`;
 }
 
+/** The command exactly as written, cut at the limit with the cut marked. */
+function verbatim(text: string, limit: number): string {
+  return text.length <= limit ? text : `${text.slice(0, limit - 1)}…`;
+}
+
 /**
  * The summary of one tool call, or undefined when the tool has no main
  * argument. `bash` shows its command (500 characters, one line), the file tools
@@ -162,7 +173,10 @@ export function summarizeCall(
   if (tool === "bash") {
     const command = input["command"];
     if (typeof command === "string") {
-      text = withoutAssignmentValues(command);
+      const readable = withoutAssignmentValues(command);
+      // A question never says the command could not be read: the person must
+      // see what they are asked to approve.
+      text = options.forQuestion === true && readable === COMMAND_NOT_SHOWN ? command : readable;
       limit = COMMAND_SUMMARY_CHARS;
     }
   } else {
@@ -176,6 +190,7 @@ export function summarizeCall(
   }
   if (text === undefined || text.trim().length === 0) return undefined;
   const masked = withoutSecretValues(text, options);
+  if (options.forQuestion === true && tool === "bash") return verbatim(masked, limit);
   return options.keepLines === true && tool === "bash" ? linesOf(masked, limit) : oneLine(masked, limit);
 }
 

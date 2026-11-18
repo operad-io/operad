@@ -175,3 +175,12 @@ and the row fields.
 | T-0534-M2 | packages/access-match/src/target-grants.ts | every definition got the same digest, so an edit and a revert could not make a new identity | `an edited flow asks, and reverting the edit asks again` |
 | T-0534-M3 | packages/access-match/src/target-grants.ts | a grant matched any target of the flow definition | `another target asks` |
 | T-0534-M4 | packages/access-match/src/target-grants.ts | revoking kept every grant | `revoking the target makes the next run ask` |
+
+## T-0556 — full access runs what the matcher cannot follow
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0556-M1 | packages/access-match/src/index.ts | `full` was not treated like a task worker for a command the matcher cannot follow, so it still asked | `a chat at full runs a command the matcher cannot follow, where edits still asks` |
+| T-0556-M2 | packages/access-match/src/index.ts | the inline-code and unresolved-redirect fallbacks still asked at `full` | `a chat at full runs a command the matcher cannot follow, where edits still asks` |
+| T-0556-M3 | packages/access-match/src/summary.ts | a question still hid a command the log could not read | `a question shows a command the log cannot read, with its lines kept and a secret masked` |
+| T-0556-M4 | packages/access-match/src/index.ts | the visible content of inline code and substitutions was not checked for a deny at `full` | `a chat at full still refuses a deny its inline code plainly shows` |

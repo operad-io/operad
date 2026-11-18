@@ -556,6 +556,43 @@ describe("bot:chat", () => {
 });
 
 describe("a bot chat's access level", () => {
+  test("full runs a heredoc and a substitution; edits asks; deny and ask rules still hold", async () => {
+    const r = await rig({ reader: {} });
+    await syncBots(r.store, r.home, {});
+    const id = await r.open("reader");
+    await r.act("chat", id, "chat/access", { level: "full" });
+    await r.say(id, "run it");
+    await r.reply(id);
+    const full = accessOf(r.calls[0]?.access);
+    const cwd = String(r.calls[0]?.cwd);
+    const unreadable = ["python3 - <<'PY'\nprint(1)\nPY", "echo $(git rev-parse HEAD)"];
+    for (const command of unreadable) {
+      expect(match(full, { tool: "bash", input: { command }, cwd }, { home: r.home })).toEqual({ allow: true });
+    }
+    const denied = match(
+      full,
+      { tool: "read", input: { path: join(r.home, "store", "log.sqlite") }, cwd },
+      { home: r.home },
+    );
+    expect(denied.allow).toBe(false);
+    expect(denied.ask).toBeUndefined();
+    expect(match(full, { tool: "bash", input: { command: "git push origin main" }, cwd }, { home: r.home })).toMatchObject({
+      allow: false,
+      ask: true,
+    });
+
+    await r.act("chat", id, "chat/access", { level: "edits" });
+    await r.say(id, "run it again");
+    await r.reply(id);
+    const edits = accessOf(r.calls[1]?.access);
+    for (const command of unreadable) {
+      expect(match(edits, { tool: "bash", input: { command }, cwd }, { home: r.home })).toMatchObject({
+        allow: false,
+        ask: true,
+      });
+    }
+  });
+
   test("/access edits writes in the bot's own directory, and opens no worktree", async () => {
     const r = await rig({ reader: {} });
     await syncBots(r.store, r.home, {});

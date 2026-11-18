@@ -12,7 +12,7 @@ import type { OutwardWrite } from "@operad-io/engine";
 export type { OutwardWrite } from "@operad-io/engine";
 import { outwardAllowed, outwardCommandWrites } from "./outward.ts";
 import { isReadOnlyCommand } from "./readonly.ts";
-import { findDenied, inlineFormOf, parseRule, scan, type Part, type Rule } from "./command.ts";
+import { findDenied, inlineFormOf, parseRule, scan, unreadableContentsOf, type Part, type Rule } from "./command.ts";
 
 /**
  * The rules of the built-in default profile. A chat and a generated step start
@@ -603,15 +603,15 @@ function checkBash(profile: AccessProfile, command: string, denied: Denied | und
     .map((text) => parseRule(text))
     .filter((rule): rule is Rule => rule !== undefined);
   const { parts, substitution, extglob, ansiC } = scan(command);
-  // A task worker is never stopped by what the matcher cannot follow: only a
-  // plain match of a deny refuses it (ADR 0025 D9).
-  const followsOnly = profile.defaultAsks === false;
+  // A task worker and a chat at full are never stopped by what the matcher
+  // cannot follow: only a plain match of a deny refuses them (ADR 0025 D8, D9).
+  const unreadableAllowed = profile.defaultAsks === false || profile.level === "full";
 
   if ((profile.denyCommands ?? []).length > 0) {
     // A command that hides what it runs cannot be matched: when the profile
     // also asks, askBash asks about it instead of refusing it here.
     const asksInline = (profile.askCommands ?? []).length > 0;
-    if (substitution !== undefined && !asksInline && !followsOnly) {
+    if (substitution !== undefined && !asksInline && !unreadableAllowed) {
       return {
         allow: false,
         reason: `command "${command}" runs inline code (${substitution}); it is refused while denyCommands is set`,
@@ -619,7 +619,7 @@ function checkBash(profile: AccessProfile, command: string, denied: Denied | und
     }
     for (const part of parts) {
       const form = inlineFormOf(part);
-      if (form !== undefined && !asksInline && !followsOnly) {
+      if (form !== undefined && !asksInline && !unreadableAllowed) {
         return {
           allow: false,
           reason: `part "${part.text}" runs inline code (${form}); it is refused while denyCommands is set`,
@@ -629,6 +629,15 @@ function checkBash(profile: AccessProfile, command: string, denied: Denied | und
     const hit = findDenied(rules, parts);
     if (hit !== undefined) {
       return { allow: false, reason: `part "${hit.text}" is refused by denyCommands rule "${hit.rule}"`, rule: hit.rule };
+    }
+  }
+
+  // When the inline code or expansion itself is let through, a deny it plainly
+  // shows still refuses it (ADR 0025 D8, D9).
+  if (unreadableAllowed && (rules.length > 0 || denied !== undefined)) {
+    for (const content of unreadableContentsOf(command, parts)) {
+      const inner = checkBash(profile, content, denied);
+      if (!inner.allow) return inner;
     }
   }
 
@@ -654,7 +663,7 @@ function checkBash(profile: AccessProfile, command: string, denied: Denied | und
       }
     }
     // A deny wins over this ask: it is only reached when no path was denied.
-    if (unresolved !== undefined && !followsOnly) {
+    if (unresolved !== undefined && !unreadableAllowed) {
       return {
         allow: false,
         ask: true,
@@ -702,10 +711,12 @@ function redirectTarget(word: string, next: string | undefined): string | undefi
 /**
  * The ask verdict of a command, when no deny applied. A command that hides what
  * it runs (inline code) cannot be matched, so it asks while `askCommands` is
- * set (ADR 0025 D3).
+ * set (ADR 0025 D3), except at `full`, where only the profile's own plain ask
+ * rules still ask (ADR 0025 D8). A task worker keeps the rule of D9.
  */
 function askBash(profile: AccessProfile, command: string, asked: AskedPaths | undefined, cwd: string, home: string): Verdict {
   const texts = profile.askCommands ?? [];
+  const full = profile.level === "full";
   let found: { readonly target: string; readonly rule: string } | undefined;
   if (texts.length === 0 && asked === undefined) return ALLOW;
   const rules = texts.map((text) => parseRule(text)).filter((rule): rule is Rule => rule !== undefined);
@@ -735,17 +746,17 @@ function askBash(profile: AccessProfile, command: string, asked: AskedPaths | un
     if (found !== undefined) return ask(`command "${command}" writes "${found.target}", which is under askPaths entry "${found.rule}"`, found.rule);
     if (redirects && walked.unresolvedCd) unresolved ??= "a cd target";
     if (redirects && substitution !== undefined) unresolved ??= `a command substitution (${substitution})`;
-    if (unresolved !== undefined) {
+    if (unresolved !== undefined && !full) {
       return ask(`command "${command}" writes to ${unresolved}, which holds a shell expansion that cannot be matched against askPaths; it asks`, "inline code");
     }
   }
   if (texts.length === 0) return ALLOW;
-  if (substitution !== undefined) {
+  if (substitution !== undefined && !full) {
     return ask(`command "${command}" runs inline code (${substitution}); it asks while askCommands is set`, "inline code");
   }
   for (const part of parts) {
     const form = inlineFormOf(part);
-    if (form !== undefined) {
+    if (form !== undefined && !full) {
       return ask(`part "${part.text}" runs inline code (${form}); it asks while askCommands is set`, "inline code");
     }
   }

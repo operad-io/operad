@@ -32,7 +32,7 @@ the `home` option). `test/match.test.ts` follows the tables below.
 | `denyCommands` | string[], optional | a `bash` command part that matches one of these is refused |
 | `askPaths` | string[], optional | paths a write asks about (`~/.zshrc`, `~/.*profile`); `*` stays within one path segment and a path under a match counts. Judged for `write` and `edit`, and for a `bash` redirect (`>`, `>>`) to such a path, which asks with the whole command. Deny wins over it |
 | `readOnly` | boolean, optional | the call's working directory is read-only: a write under it (`write`, `edit`, a `bash` redirect) asks, as if the directory were in `askPaths`. Deny wins over it |
-| `level` | `plan`, `ask`, `edits` or `full`, optional | a chat's access level. It adds asks to the profile and never removes a deny or a rule: `plan` is `readOnly`; `ask` asks about every write and every command not known to only read; `edits` lets a write inside the working directory pass and asks about a write outside it and a command not known to only read; `full` adds no ask. The profile's own `askCommands`, `askPaths` and `readOnly` still hold |
+| `level` | `plan`, `ask`, `edits` or `full`, optional | a chat's access level. It adds asks to the profile and never removes a deny or a rule: `plan` is `readOnly`; `ask` asks about every write and every command not known to only read; `edits` lets a write inside the working directory pass and asks about a write outside it and a command not known to only read; `full` adds no ask. At `full`, a command the matcher cannot follow (inline code, a shell expansion, a path after a directory change it cannot follow) runs unless a plain deny matches, where the lower levels ask. The profile's own `askCommands`, `askPaths` and `readOnly` still hold |
 | `readPaths` | array of paths, optional | directories the agent may read although `denyPaths` covers an ancestor: a read tool (`read`, `grep`, `find`, `ls`) or a `bash` command that only reads may touch a path under one. A write there asks (the entries count as `askPaths`); every other denied path stays denied |
 | `allowMcp` | string[], optional | MCP tools that run without asking, as `<server>.<tool>` or `<server>.*`. The field's presence (even empty) puts MCP tools under the profile: a call with `tool: "mcp"` and `input: { server, tool }` that is not listed counts as a write and asks (`kind: "command"`, value `mcp <server>.<tool>`), per the MCP-tool rule in `docs/backlog/operad-sandbox.md`, not in an ADR yet. When the field is absent, MCP tools are not under the profile and are allowed |
 | `askCommands` | string[], optional | rules in the shape of `denyCommands`; a `bash` command part that matches one of these asks a person (ADR 0025 D1). Writes to shell profiles are `askPaths` |
@@ -109,6 +109,17 @@ home or a plugin.
 A missing or non-string path argument of a checked tool is allowed: the tool
 itself reports that error.
 
+## Showing a call
+
+`summarizeCall(profile, tool, input, cwd, options)` is the short text a log or a
+question shows for one call. It masks known secret values and the values of
+leading environment assignments, cuts a command at 500 characters and another
+summary at 300, and says `<command not shown: could not read it safely>` for a
+command it cannot read. `keepLines` keeps a command's line breaks for a log.
+`forQuestion` is for a question a person answers: a command the log would hide
+is shown in full, with its line breaks kept and the same cut and secret masks,
+because a person must see what they are asked to approve. A log leaves it unset.
+
 ## Splitting a `bash` command
 
 Outside quotes the command is split into parts at these operators. Each part
@@ -150,14 +161,17 @@ The reason is `part "<part>" is refused by denyCommands rule "<rule>"`.
 "<rule>"`, and the verdict's `value` is the whole command of the call: that is
 what a person is asked about and what a one-time permission (`findGrant`) covers.
 Inline code (below) asks while `askCommands` is set, with the rule `inline code`:
-what it runs cannot be matched (ADR 0025 D3).
+what it runs cannot be matched (ADR 0025 D3). At `full` only the plain rule
+matches still ask; the inline fallback does not (ADR 0025 D8).
 
 ## Inline code
 
 Refused whatever the rules say, but only when the profile has at least one
 `denyCommands` rule and no `askCommands` rule (an empty profile means no
 checking). When `askCommands` is set, inline code asks instead, because what it
-runs cannot be matched. The refusal reason is
+runs cannot be matched. At level `full` it is allowed instead unless a plain
+deny matches; a profile with `defaultAsks: false` (a dev task) has the same rule
+(ADR 0025 D8 and D9). The refusal reason is
 `part "<part>" runs inline code (<form>); it is refused while denyCommands is set`.
 
 | form | seen as |
@@ -182,7 +196,7 @@ and after the profile's own asks:
 | `plan` | asks | as `readOnly` says today | asks |
 | `ask` | asks | asks | asks |
 | `edits` | no level ask | asks | asks |
-| `full` | no level ask | no level ask | no level ask |
+| `full` | no level ask | no level ask | no level ask; a command the matcher cannot follow runs unless a plain deny matches |
 
 A deny wins at every level, and an `alwaysAllow` entry lifts a level's ask for
 its exact call and working directory. The level never loosens a `readOnly`
@@ -243,7 +257,7 @@ The profile is a guard rail, not a boundary (ADR 0025 D6).
 
 ## Shell expansion in bash paths
 
-The matcher is a guardrail: where it cannot tell, it asks, and a deny always wins over an ask.
+The matcher is a guardrail: where it cannot tell, it asks, and a deny always wins over an ask. At level `full` it lets an unresolved expansion or directory run instead, unless a plain deny matches (ADR 0025 D8).
 
 **Expansion.** `~`, `$HOME` and `${HOME}` become the matcher's home before a path word, a redirect target or a `cd` target is matched. Any other expansion in a path or `cd` target (`$OTHER`, `${…}`, `$(…)`, backticks, `<(…)`, `$((…))`, `$1`, `$@`, `~user`, a `$'…'` word with escapes) asks. Only words that look like paths (they hold a `/`, or start with `~` or `.`) are judged, so `cat $OTHER` is not.
 

@@ -265,8 +265,9 @@ call finds the grant used and is checked against the profile as usual.
 
 A call the profile's `askCommands` matches (and that no deny rule matched: deny
 wins over ask) asks a person instead of running. The step keeps the worker's
-stdin open. The worker writes `{"type":"ask_call","id":n,"kind":"command","value":"<the whole command>","shown":"...","session":"<session>"|null}`
-and holds the call; the host asks with `ctx.ask` (choices `allow_once`,
+stdin open. The worker writes `{"type":"ask_call","id":n,"kind":"command","value":"<the whole command>","shown":"<the command, or the path>","session":"<session>"|null}`
+and holds the call; `shown` is the command itself, with its line breaks and
+secret values masked, even when the log has to say it cannot read it safely; the host asks with `ctx.ask` (choices `allow_once`,
 `allow_always` and `reject_once`, the grace period of the kernel: 10 minutes by
 default, set by `ask.graceSecs`, `askGraceSecs` of the step or the question) and
 answers on

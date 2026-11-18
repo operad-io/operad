@@ -535,7 +535,11 @@ export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
           });
 
           const shown = (call: JudgedCall): string =>
-            summarizeCall({}, call.tool, call.input, cwd, { secrets: storeSecrets, keepLines: true }) ?? call.tool;
+            summarizeCall({}, call.tool, call.input, cwd, {
+              secrets: storeSecrets,
+              keepLines: true,
+              forQuestion: true,
+            }) ?? call.tool;
 
           const ask = (question: {
             readonly kind: "command" | "path";

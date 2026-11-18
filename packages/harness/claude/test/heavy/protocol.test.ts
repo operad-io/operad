@@ -1645,6 +1645,31 @@ test("a command that askCommands matches writes an ask_call with the command and
   expect(last(run)).toMatchObject({ result: "done" });
 });
 
+test("a question about a command the log cannot read shows the command itself", async () => {
+  const command = "python3 -c 'print(1)";
+  const s = setup();
+  s.input["access"] = { askCommands: ["python3"] };
+  const child = new Child(
+    s.env({
+      steps: [
+        { say: systemInit() },
+        { hook: "PreToolUse", toolName: "Bash", toolUseId: "tool-1", input: { command } },
+        { ask: { toolName: "Bash", toolUseId: "tool-1", input: { command } } },
+        { say: result() },
+      ],
+    }),
+    s.recordFile,
+  );
+  child.sendLine(JSON.stringify(s.input));
+  const call = await child.untilLine("ask_call");
+  expect(call).toMatchObject({ type: "ask_call", kind: "command", value: command, shown: command });
+  expect(String(call?.["shown"])).not.toContain("command not shown");
+  if (call !== undefined) child.sendLine(JSON.stringify({ type: "ask_ack", id: call["id"], decision: "deny" }));
+  child.endInput();
+  const run = await child.finish();
+  expect(kinds(run)).toContain("blocked");
+});
+
 test("with the own-settings switch on, a call the profile says to ask still asks through operad", async () => {
   const s = setup();
   s.input["access"] = ASKING;

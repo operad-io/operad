@@ -17,6 +17,18 @@ test("a bash call keeps its lines when the log asks for them, still cut at 500 c
   expect(summarizeCall({}, "Read", { file_path: "/w/a\nb" }, CWD, { keepLines: true })).toBe("/w/a b");
 });
 
+test("a question shows a command the log cannot read, with its lines kept and a secret masked", () => {
+  const command = "token=$(printf supersecret) make test\n  make more";
+  expect(summarizeCall({}, "Bash", { command }, CWD, { secrets: ["supersecret"] })).toBe(NOT_SHOWN);
+  expect(summarizeCall({}, "Bash", { command }, CWD, { secrets: ["supersecret"], forQuestion: true })).toBe(
+    "token=$(printf ***) make test\n  make more",
+  );
+  const cut = summarizeCall({}, "Bash", { command: `echo '${"x".repeat(900)}` }, CWD, { forQuestion: true });
+  expect(cut?.length).toBe(500);
+  expect(cut?.endsWith("…")).toBe(true);
+  expect(summarizeCall({}, "Bash", { command: `${"y".repeat(900)}` }, CWD, { forQuestion: true })).toBe(`${"y".repeat(499)}…`);
+});
+
 test("file tools summarize to their path, never their content", () => {
   expect(summarizeCall({}, "Read", { file_path: "/w/a.ts" }, CWD)).toBe("/w/a.ts");
   expect(summarizeCall({}, "edit", { path: "/w/b.ts", oldText: "SECRET", newText: "X" }, CWD)).toBe("/w/b.ts");
