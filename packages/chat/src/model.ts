@@ -84,6 +84,21 @@ export type ChatSource = (typeof CHAT_SOURCES)[number];
 /** Who wrote a message: the person, or the assistant. */
 export type MessageRole = "user" | "assistant";
 
+/** The scheduled prompt that opened a chat: its bot and the entry's name. */
+export interface ScheduledChat {
+  readonly [key: string]: string;
+  readonly bot: string;
+  readonly entry: string;
+}
+
+/** The scheduled origin a stored chat names, if it has one. */
+export function scheduledChatOf(value: unknown): ScheduledChat | undefined {
+  if (!isRecord(value)) return undefined;
+  if (typeof value.bot !== "string" || value.bot.length === 0) return undefined;
+  if (typeof value.entry !== "string" || value.entry.length === 0) return undefined;
+  return { bot: value.bot, entry: value.entry };
+}
+
 /** What a chat stores. The creating plugin gives every field but `session`. */
 export interface ChatData {
   readonly [key: string]: unknown;
@@ -138,6 +153,8 @@ export interface ChatData {
   readonly tokens?: UsageTokens | undefined;
   /** True when some replies reported no tokens, so `tokens` is a partial total. */
   readonly tokensIncomplete?: true | undefined;
+  /** The scheduled prompt that opened this chat; absent for every other chat. */
+  readonly scheduled?: ScheduledChat | undefined;
 }
 
 /** How far to trust a cost: the harness's own words. */
@@ -166,6 +183,8 @@ export interface NewChat {
   readonly refresh?: string | undefined;
   /** See {@link ChatData.accessAction}. */
   readonly accessAction?: string | undefined;
+  /** See {@link ChatData.scheduled}. */
+  readonly scheduled?: ScheduledChat | undefined;
 }
 
 /** One file attached to a message: where it is stored, and what a client shows of it. */
@@ -510,6 +529,7 @@ function fallbackAccessLevel(data: Readonly<Record<string, unknown>>): AccessLev
 /** The chat fields of a stored object, with the lists and the access level defaulted. */
 export function chatData(data: Readonly<Record<string, unknown>>): ChatData {
   const tokens = usageTokensOf(data.tokens);
+  const scheduled = scheduledChatOf(data.scheduled);
   const accessDefault = isAccessLevel(data.accessDefault)
     ? data.accessDefault
     : fallbackAccessLevel(data);
@@ -536,6 +556,7 @@ export function chatData(data: Readonly<Record<string, unknown>>): ChatData {
     ...(isCostQuality(data.costQuality) ? { costQuality: data.costQuality } : {}),
     ...(tokens === undefined ? {} : { tokens }),
     ...(data.tokensIncomplete === true ? { tokensIncomplete: true as const } : {}),
+    ...(scheduled === undefined ? {} : { scheduled }),
   };
 }
 
@@ -736,6 +757,7 @@ export async function createChat(
     ...(input.effortDefault === undefined ? {} : { effortDefault: input.effortDefault }),
     ...(input.refresh === undefined ? {} : { refresh: input.refresh }),
     ...(input.accessAction === undefined ? {} : { accessAction: input.accessAction }),
+    ...(input.scheduled === undefined ? {} : { scheduled: input.scheduled }),
   };
   // The id counts up; a taken one (two chats made at once) moves on to the next.
   for (let attempt = 0; attempt < 20; attempt += 1) {

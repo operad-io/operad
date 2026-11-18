@@ -104,9 +104,9 @@ result against `bot.schema.json` before the proposal exists.
 [--prompt <text>] [--model <model>] [--effort <effort>]` proposes adding,
 changing or removing a scheduled prompt. `add` needs the cron expression, the
 same schedule in words and the prompt; `edit` needs a field to change and the
-schedule in words; `remove` takes the name and the schedule in words. The
-proposal shows the name, the
-schedule in words and as cron, the prompt, the model and the effort, and no
+schedule in words; `remove` takes the name and the schedule in words. An empty
+`--model ""` or `--effort ""` clears that field. The proposal shows the name,
+the schedule in words and as cron, the prompt, the model and the effort, and no
 entry is written before a person approves it.
 
 Each proposal is one pending item of its bot, with the actions `Review`,
@@ -205,9 +205,10 @@ write the same place without a `serve` reload. An entry is `name`, `schedule`
 The source checks once a second, fires the latest planned minute at or before
 now, and catches up the latest missed minute in the last seven days after
 `serve` starts or the machine wakes. A firing calls `bot:chat` with the actor
-`{ via: "bot", id: "scheduled" }`: the new chat's first message therefore has
+`{ via: "bot", id: <entry name> }`: the new chat's first message therefore has
 the event source `bot`, which the bot's own rule sends to `chat:reply` as a
-background run. A catch-up firing appends `latenessLine` to the prompt.
+background run, and the chat's data records `scheduled: { bot, entry }`. A
+catch-up firing appends `latenessLine` to the prompt.
 
 The source watches the new chat's facts. On the first assistant message, or on
 a failure entry, it records `replySummary` as the entry's `result`, runs the

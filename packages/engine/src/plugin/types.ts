@@ -111,6 +111,12 @@ export interface ObjectRow {
    * does. The row is drawn waiting, like one with a run waiting.
    */
   readonly waiting?: boolean | undefined;
+  /**
+   * Structured data the plugin defines for its clients, passed through
+   * unchanged. The kernel reads no field of it; a client that does not know
+   * a plugin's shape ignores it.
+   */
+  readonly data?: Readonly<Record<string, JsonValue>> | undefined;
 }
 
 /** One section a detail page offers. `live` means its content still grows. */

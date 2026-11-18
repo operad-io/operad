@@ -41,6 +41,7 @@ function row(object: StoredObject): ObjectRow {
     ...(note.length === 0 ? {} : { note: note.join(" · ") }),
     ...(chat.closed ? { final: true } : {}),
     ...(typeof chat.parent === "string" && chat.parent.length > 0 ? { parent: chat.parent } : {}),
+    ...(chat.scheduled === undefined ? {} : { data: { scheduled: chat.scheduled } }),
   };
 }
 

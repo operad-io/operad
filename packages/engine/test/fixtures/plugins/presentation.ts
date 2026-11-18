@@ -101,6 +101,9 @@ export default definePlugin({
           ...(object.data.badge === undefined
             ? {}
             : { badge: object.data.badge as string }),
+          ...(object.data.rowData === undefined
+            ? {}
+            : { data: object.data.rowData as ObjectRow["data"] }),
         };
       },
       sections() {

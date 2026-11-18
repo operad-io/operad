@@ -91,4 +91,35 @@ describe("operad scheduled", () => {
     ).toBe(1);
     expect(refused.errors()).toContain('unknown flow "missing"');
   });
+
+  test("an empty --params clears a flow's parameters", async () => {
+    const home = await makeHome();
+    await main(
+      [
+        "scheduled",
+        "add",
+        "--flow",
+        "plugin-one",
+        "--schedule",
+        "0 8 * * *",
+        "--params",
+        '{"from":"cli"}',
+      ],
+      { home, io: capture().io },
+    );
+    const before = capture();
+    expect(await main(["scheduled", "list", "--json"], { home, io: before.io })).toBe(0);
+    const [entry] = JSON.parse(before.text()) as { readonly id: string }[];
+    if (entry === undefined) throw new Error("no scheduled flow");
+    expect(
+      await main(["scheduled", "edit", entry.id, "--params", ""], {
+        home,
+        io: capture().io,
+      }),
+    ).toBe(0);
+    const after = capture();
+    expect(await main(["scheduled", "list", "--json"], { home, io: after.io })).toBe(0);
+    const [cleared] = JSON.parse(after.text()) as { readonly params?: unknown }[];
+    expect(cleared?.params).toBeUndefined();
+  });
 });
