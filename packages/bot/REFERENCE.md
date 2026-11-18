@@ -100,6 +100,15 @@ object with the fields to change (`speaker`, `harness`, `skills`, `access`, and
 so on); the fields it does not name keep their value. The kernel validates the
 result against `bot.schema.json` before the proposal exists.
 
+`bot schedule <bot> add|edit|remove <name> [--words <text>] [--schedule <cron>]
+[--prompt <text>] [--model <model>] [--effort <effort>]` proposes adding,
+changing or removing a scheduled prompt. `add` needs the cron expression, the
+same schedule in words and the prompt; `edit` needs a field to change and the
+schedule in words; `remove` takes the name and the schedule in words. The
+proposal shows the name, the
+schedule in words and as cron, the prompt, the model and the effort, and no
+entry is written before a person approves it.
+
 Each proposal is one pending item of its bot, with the actions `Review`,
 `approve` and `reject`. `Review` shows the change: the full `SKILL.md`, the file
 list with scripts apart and, for a changed skill, the diff; a settings proposal
@@ -211,3 +220,8 @@ and `schedule-remove`, all on a bot. The adding and editing arguments are
 `name`, `schedule`, `prompt`, `model` and `effort`; the others take `name`.
 A name is unique on the bot. A changed schedule drops the old last time, so the
 next run is calculated fresh.
+
+A schedule asked for in a chat goes through `bot schedule`, not through these
+actions: the chat's agent turns the words into a five-field cron expression and
+the proposal waits in Pending until a person approves it. `bot/settings` returns
+the line a bot chat starts with, saying that a schedule is proposed this way.
