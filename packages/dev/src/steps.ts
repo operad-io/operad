@@ -47,7 +47,7 @@ import {
   type WorkerDefinition,
 } from "@operad-io/pool";
 import { git, type GitResult } from "./git.ts";
-import { runPrepare } from "./prepare.ts";
+import { runPrepare, taskStepAccess } from "./prepare.ts";
 import { classifyStop, isConnectionError, STOP_REASONS } from "./stops.ts";
 import { findRepository, putTaskKeepingPlanCost, withRepoLock } from "./service.ts";
 import {
@@ -1332,11 +1332,6 @@ function hasUncheckedWork(
   return ahead.ok && Number(ahead.out) > 0;
 }
 
-/** The profile a task worker starts from: the default's denies, not its asks (ADR 0025 D9). */
-function workerAccess(access: JsonValue): JsonValue {
-  return { ...(isRecord(access) ? access : {}), defaultAsks: false };
-}
-
 export async function runWork(ctx: StepContext, stepParams?: unknown): Promise<PluginStepResult> {
   // The step's own params (a flow stage writes them) and the run's start params
   // (a direct call writes them) both reach this step; the step's own win.
@@ -1542,7 +1537,7 @@ export async function runWork(ctx: StepContext, stepParams?: unknown): Promise<P
     cwd: path,
     ...(ctx.object === undefined ? {} : { object: ctx.object }),
     params: ctx.params,
-    access: workerAccess(ctx.access),
+    access: taskStepAccess(ctx.access),
     ...(ctx.trigger === undefined ? {} : { trigger: ctx.trigger }),
     signal: stopper.signal,
   };

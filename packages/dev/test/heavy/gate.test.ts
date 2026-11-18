@@ -31,6 +31,7 @@ import {
   type PluginStepResult,
 } from "@operad-io/engine";
 import { createShellPlugin } from "@operad-io/shell";
+import { withDefaultAccess, type AccessProfile } from "@operad-io/access-match";
 import { setTaskPhase } from "../../src/service.ts";
 import { notCodeTestHooks } from "../../src/notcode.ts";
 import type { CheckCommand } from "../../src/settings.ts";
@@ -146,6 +147,7 @@ interface ReviewCall {
   readonly resultPath: string;
   readonly stallSecs: number | undefined;
   readonly wallTimeSecs: number | undefined;
+  readonly access: JsonValue;
 }
 
 /**
@@ -227,7 +229,10 @@ function fakeReviewer(options: FakeReviewerOptions = {}): FakeReviewer {
       },
     ],
   });
-  async function runMode(_ctx: unknown, params: unknown): Promise<PluginStepResult> {
+  async function runMode(
+    ctx: { readonly access: JsonValue },
+    params: unknown,
+  ): Promise<PluginStepResult> {
           count += 1;
           const input = params as {
             readonly prompt: string;
@@ -244,6 +249,7 @@ function fakeReviewer(options: FakeReviewerOptions = {}): FakeReviewer {
             stallSecs: input.stallSecs,
             wallTimeSecs: input.wallTimeSecs,
             resultPath: input.resultPath,
+            access: ctx.access,
           });
           if (options.callLog !== undefined) {
             appendFileSync(options.callLog, "call\n");
@@ -976,6 +982,20 @@ describe("dev/verify", () => {
 });
 
 describe("dev/review", () => {
+  test("a reviewer gets a task's profile: the default's denies, not its asks", async () => {
+    const state = await fixture();
+    await verify(state);
+    const result = await review(state);
+    expect(result.result).toBe("pass");
+    const access = state.reviewer.calls[0]?.access;
+    expect(access).toMatchObject({ defaultAsks: false });
+    const profile = withDefaultAccess(access as AccessProfile);
+    expect(profile.denyPaths).toContain("~/.ssh");
+    expect(profile.denyCommands).toContain("sudo");
+    expect(profile.askCommands).toBeUndefined();
+    expect(profile.askPaths).toBeUndefined();
+  });
+
   test("no findings pass", async () => {
     const state = await fixture({ reviewerArgs: ["none"] });
     await verify(state);

@@ -1406,6 +1406,12 @@ the row fields.
 | T-0534-M1 | packages/dev/src/access-grants.ts | the `allow` action did not remove a target | `dev actions > allow lists the always-allowed outward targets and removes one` |
 | T-0534-M2 | packages/dev/src/integrate.ts | the integrate push got no flow, so it could not use or record a target grant | `dev/integrate > always for this flow and target records the push target for a scheduled run` |
 
+## T-0544 — every step a dev task runs keeps the default's denies, not its asks
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0544-M1 | packages/dev/src/prepare.ts | `stepOptions` passed the run's access profile on without `defaultAsks: false` | `dev/review > a reviewer gets a task's profile: the default's denies, not its asks` (and `prepare > a prepare call gets a task's profile: the default's denies, not its asks`) |
+
 ## T-0539 — a worker's question waits for a person and resumes the same worker
 
 | id | file | mutation | failing test |
