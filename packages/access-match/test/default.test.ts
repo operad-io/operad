@@ -192,3 +192,29 @@ test("readProfile reads defaultAsks and refuses a malformed one", () => {
   expect(readProfile({ defaultAsks: false })).toEqual({ ok: true, profile: { defaultAsks: false } });
   expect(readProfile({ defaultAsks: "no" })).toEqual({ ok: false, message: "defaultAsks must be true or false" });
 });
+
+test("a task worker is never asked or refused for what the matcher cannot follow", () => {
+  const worker = withDefaultAccess({ defaultAsks: false });
+  const chat = withDefaultAccess({});
+  // A chat stops on each of these; a worker runs them.
+  const chatStops = [
+    "cd /elsewhere && cp a /tmp/b && trap 'mv /tmp/b a' EXIT && perl -0pi -e 's/x/y/' a && bun test x",
+    'bash -c "echo hi"',
+    "echo $(git rev-parse HEAD)",
+    "cd $DIR && cat notes",
+  ];
+  for (const command of [...chatStops, "python3 - <<'PY'\nprint(1)\nPY"]) {
+    const call = { tool: "bash", input: { command }, cwd: CWD } as const;
+    expect(match(worker, call, { home: HOME })).toEqual({ allow: true });
+    if (chatStops.includes(command)) expect(match(chat, call, { home: HOME }).allow).toBe(false);
+  }
+  // A plain match of a default deny still refuses a worker.
+  for (const call of [
+    { tool: "bash", input: { command: "sudo ls" }, cwd: CWD },
+    { tool: "bash", input: { command: "cat ~/.ssh/id_ed25519" }, cwd: CWD },
+  ] as const) {
+    const verdict = match(worker, call, { home: HOME });
+    expect(verdict.allow).toBe(false);
+    expect(verdict.ask).toBeUndefined();
+  }
+});
