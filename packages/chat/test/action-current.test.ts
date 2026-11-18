@@ -32,14 +32,15 @@ async function rig(piSettings: Record<string, unknown>) {
     },
   );
   const views = new Views({ registry, store, onLog: () => undefined });
-  const chat = async (effort?: string): Promise<string> =>
+  const chat = async (effort?: string, effortDefault?: string): Promise<string> =>
     createChat(
       store,
       {
         harness: "pi",
         cwd: root,
         title: "Test",
-        ...(effort === undefined ? {} : { effort, effortDefault: "high" }),
+        ...(effort === undefined ? {} : { effort }),
+        ...(effortDefault === undefined ? {} : { effortDefault }),
       },
       "test",
     );
@@ -57,6 +58,12 @@ describe("the value a chat action offers as current", () => {
     const effort = (await r.offered(chat, "chat:effort"))?.effort;
     expect(effort?.current).toBe("high");
     expect(effort?.default).toBe("high");
+  });
+
+  test("a chat made when the agent's default was medium offers the default it declares now", async () => {
+    const r = await rig({ defaultThinkingLevel: "high" });
+    const chat = await r.chat(undefined, "medium");
+    expect((await r.offered(chat, "chat:effort"))?.effort?.current).toBe("high");
   });
 
   test("a chat that picked an effort offers that effort", async () => {

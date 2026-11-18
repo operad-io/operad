@@ -19,6 +19,7 @@ import {
   CLOSED_FACT,
   COMMAND_FACT,
   costText,
+  effectiveEffort,
   EFFORT_FACT,
   firstOutputMs,
   lastReplyOutcome,
@@ -282,7 +283,7 @@ const modelAction: ActionTypeDefinition = {
 /** The efforts the chat's agent lists, as the enum of `chat:effort`. */
 function effortArgs(efforts: HarnessEfforts | undefined, chat: ChatData | undefined): ActionArgsSchema {
   const list = efforts?.list ?? [];
-  const current = chat?.effort ?? chat?.effortDefault ?? efforts?.default ?? undefined;
+  const current = chat === undefined ? undefined : effectiveEffort(chat, efforts);
   const fallback = efforts?.default ?? undefined;
   return {
     type: "object",
@@ -553,16 +554,16 @@ function statusClock(at: number): string {
   return new Date(at).toISOString().slice(0, 19).replace("T", " ");
 }
 
-/** What `/status` says: a few lines read from the chat's record alone. */
+/** What `/status` says: a few lines read from the chat's record and its agent's declared effort. */
 function statusText(
   chat: ChatData,
   messages: readonly Message[],
   facts: readonly PluginFact[],
   writing: WritingReply | undefined,
+  effort: string | undefined,
 ): string {
   const last = [...messages].reverse().find((message) => message.role === "assistant");
   const model = chat.model ?? chat.lastModel;
-  const effort = chat.effort ?? chat.effortDefault;
   const waiting = unanswered(messages, facts).length;
   const first = firstOutputMs(last?.timings);
   const lastUsage =
@@ -607,11 +608,13 @@ const statusAction: ActionTypeDefinition = {
     // A host that cannot tell leaves the fact-only answer as it was.
     const latest = latestRunOf(facts);
     const alive = latest === undefined ? undefined : await ctx.runs?.active?.(latest);
+    const chat = chatData(stored.data);
     return statusText(
-      chatData(stored.data),
+      chat,
       messages,
       facts,
       alive === false ? undefined : writing,
+      effectiveEffort(chat, ctx.efforts[chat.harness]),
     );
   },
 };
