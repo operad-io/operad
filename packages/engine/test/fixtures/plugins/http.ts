@@ -185,5 +185,21 @@ export default definePlugin({
       },
     },
   ],
+  commands: [
+    {
+      name: "echo",
+      args: "<words...>",
+      run(ctx, argv) {
+        return { words: argv, flows: ctx.flows.length };
+      },
+    },
+    {
+      name: "refuse",
+      args: "",
+      run() {
+        throw new Error("the command refused");
+      },
+    },
+  ],
   keys: { m: "webtest:approve" },
 });

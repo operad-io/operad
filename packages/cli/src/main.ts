@@ -1408,8 +1408,9 @@ async function commandTrigger(
     for (const entry of rules) {
       const rule = entry.rule;
       const schedule = rule.schedule === undefined ? "" : ` every ${rule.schedule}`;
+      const paused = rule.paused === true ? " paused" : "";
       io.write(
-        `${rule.source} ${rule.type} -> ${rule.start.flow} on ${rule.object} (${rule.mode})${schedule}  from ${entry.from}\n`,
+        `${rule.source} ${rule.type} -> ${rule.start.flow} on ${rule.object} (${rule.mode})${schedule}${paused}  from ${entry.from}\n`,
       );
     }
     return;

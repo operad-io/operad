@@ -1114,3 +1114,11 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0546-M1 | packages/engine/src/plugin/registry.ts | `startSources` started only `kind: "source"`, so a domain plugin's `start` never ran | `plugin registry > a domain plugin that declares start is started as a source` |
+
+## T-0548 — scheduled flows from a client
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0548-M1 | packages/engine/src/trigger/rules.ts | `paused` was no longer a rule field, so a paused rule could not be read after a restart | `scheduled flows > pause stops ticks and survives a reload, and resume starts them again` |
+| T-0548-M2 | packages/engine/src/http/server.ts | `POST /v1/commands` matched no path and answered `404` | `http server > POST /v1/commands runs a plugin verb, and a missing verb or a refusal is named` |
+| T-0548-M3 | packages/engine/src/plugin/registry.ts | a command got no loaded flow names, so it refused every flow | `operad scheduled > adds a flow, lists it, and refuses an unknown flow` |

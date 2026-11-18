@@ -751,6 +751,46 @@ function createHandler(
       }
     }
 
+    if (path === "/v1/commands") {
+      if (method !== "POST") {
+        return errorResponse(405, "method", "this endpoint takes POST");
+      }
+      const body = await readBody(request);
+      if (!isRecord(body)) {
+        return errorResponse(400, "args", "the body must be an object");
+      }
+      const { plugin, verb, args, input } = body;
+      if (typeof plugin !== "string" || plugin.length === 0) {
+        return errorResponse(400, "args", "the body needs a plugin");
+      }
+      if (typeof verb !== "string" || verb.length === 0) {
+        return errorResponse(400, "args", "the body needs a verb");
+      }
+      if (args !== undefined && (!Array.isArray(args) || !args.every((item) => typeof item === "string"))) {
+        return errorResponse(400, "args", "args must be an array of strings");
+      }
+      if (input !== undefined && typeof input !== "string") {
+        return errorResponse(400, "args", "input must be a string");
+      }
+      const commandArgs = args === undefined ? [] : (args as readonly string[]);
+      try {
+        const run = await options.registry.runCommand([plugin, verb, ...commandArgs], {
+          ...(input === undefined ? {} : { input }),
+        });
+        if (run === undefined) {
+          return errorResponse(
+            404,
+            "not-found",
+            `no loaded plugin "${plugin}" declares the verb "${verb}"`,
+          );
+        }
+        return json({ plugin: run.plugin, verb: run.command, value: run.value });
+      } catch (error) {
+        onLog(`http: command "${plugin} ${verb}" refused: ${messageOf(error)}`);
+        return errorResponse(422, "refused", messageOf(error));
+      }
+    }
+
     if (path === "/v1/settings") {
       if (method === "GET") {
         const scope = url.searchParams.get("scope") ?? undefined;

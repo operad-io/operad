@@ -22,7 +22,7 @@ export function triggersPath(home: string): string {
   return join(home, TRIGGERS_FILE);
 }
 
-const RULE_KEYS = new Set(["source", "type", "start", "object", "mode", "schedule"]);
+const RULE_KEYS = new Set(["source", "type", "start", "object", "mode", "schedule", "paused"]);
 const START_KEYS = new Set(["flow", "params"]);
 const MODES: readonly TriggerMode[] = ["observe", "candidate", "auto"];
 
@@ -167,9 +167,23 @@ function readRule(value: unknown, index: number, file: string): TriggerRule {
     }
   }
 
-  return schedule === undefined
-    ? { source, type, start, object, mode }
-    : { source, type, start, object, mode, schedule };
+  let paused: boolean | undefined;
+  if (value.paused !== undefined) {
+    if (typeof value.paused !== "boolean") {
+      throw new TriggerError(`${at}: paused: must be true or false`);
+    }
+    paused = value.paused;
+  }
+
+  return {
+    source,
+    type,
+    start,
+    object,
+    mode,
+    ...(schedule === undefined ? {} : { schedule }),
+    ...(paused === undefined ? {} : { paused }),
+  };
 }
 
 /**

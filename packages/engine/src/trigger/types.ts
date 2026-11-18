@@ -33,6 +33,8 @@ export interface TriggerRule {
   readonly object: string;
   readonly mode: TriggerMode;
   readonly schedule?: string;
+  /** Kept in the file: a paused rule fires no tick until it is resumed. */
+  readonly paused?: boolean;
 }
 
 /** What a step sees as `ctx.trigger`; read-only, and file paths only. */

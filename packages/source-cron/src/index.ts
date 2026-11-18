@@ -12,7 +12,10 @@ import type {
   SourceHandle,
   TriggerRule,
 } from "@operad-io/engine";
-import { readCronState, writeCronState, type CronState } from "./state.ts";
+import { readCronState, ruleStateKey, writeCronState, type CronState } from "./state.ts";
+import { scheduledCommand, scheduledId } from "./schedules.ts";
+
+export * from "./schedules.ts";
 
 /** How often the running source checks the clock. */
 const CHECK_INTERVAL_MS = 1_000;
@@ -24,10 +27,10 @@ const DAY_MS = 24 * 60 * 60_000;
 
 /** One cron rule and how far it has emitted. */
 interface CronRule {
-  readonly index: number;
   readonly rule: TriggerRule;
   readonly schedule: CronSchedule;
   readonly expression: string;
+  readonly paused: boolean;
   last: number | null;
   /** A rule with no recorded last time begins at its latest planned time. */
   baseline: boolean;
@@ -50,15 +53,7 @@ export function dueMinute(
 
 /** The stable identity of a rule, independent of its position in the file. */
 function ruleKey(rule: TriggerRule): string {
-  return JSON.stringify([
-    rule.source,
-    rule.type,
-    rule.start.flow,
-    rule.start.params ?? null,
-    rule.object,
-    rule.mode,
-    rule.schedule,
-  ]);
+  return ruleStateKey(rule);
 }
 
 /** One line for history naming the times a catch-up passed over. */
@@ -86,15 +81,15 @@ export class CronSource {
     this.ctx = ctx;
     const state = readCronState(ctx.home);
     this.rules = [];
-    for (const [index, rule] of ctx.rules.entries()) {
+    for (const rule of ctx.rules) {
       if (rule.source !== "cron" || rule.schedule === undefined) continue;
       const stored = state.rules[ruleKey(rule)];
       const sameSchedule = stored !== undefined && stored.schedule === rule.schedule;
       this.rules.push({
-        index,
         rule,
         schedule: parseCron(rule.schedule),
         expression: rule.schedule,
+        paused: rule.paused === true,
         last: sameSchedule ? stored.last : null,
         baseline: !sameSchedule,
       });
@@ -117,6 +112,17 @@ export class CronSource {
             latestCronMinute(entry.schedule, now, CATCH_UP_DAYS) ?? minuteStart(now);
           entry.baseline = false;
           changed = true;
+          continue;
+        }
+        if (entry.paused) {
+          // A pause does not collect missed times: its recorded minute follows
+          // the clock, so resuming waits for the next planned minute.
+          const latest =
+            latestCronMinute(entry.schedule, now, CATCH_UP_DAYS) ?? minuteStart(now);
+          if (entry.last === null || latest > entry.last) {
+            entry.last = latest;
+            changed = true;
+          }
           continue;
         }
         if (catchUp) {
@@ -184,7 +190,7 @@ export class CronSource {
     const late = minute < minuteStart(now) || skipped.length > 0;
     await this.ctx.emit({
       source: "cron",
-      key: `${entry.index}:${new Date(minute).toISOString()}`,
+      key: `${scheduledId(entry.rule)}:${new Date(minute).toISOString()}`,
       type: "tick",
       ...(skipped.length === 0 ? {} : { summary: skippedLine(skipped) }),
       ...(late
@@ -230,6 +236,7 @@ export default definePlugin({
   name: "cron",
   kind: "source",
   version: pkg.version,
+  commands: [scheduledCommand()],
   start(ctx) {
     const source = new CronSource(ctx);
     void source.poll();

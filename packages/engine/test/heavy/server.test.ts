@@ -948,6 +948,44 @@ describe("http server", () => {
     }
   });
 
+  test("POST /v1/commands runs a plugin verb, and a missing verb or a refusal is named", async () => {
+    const h = await makeHarness();
+    try {
+      const post = (body: unknown): Promise<Response> =>
+        api(h, "/v1/commands", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        });
+
+      const ran = await post({ plugin: "webtest", verb: "echo", args: ["one", "two"] });
+      expect(ran.status).toBe(200);
+      expect(await json(ran)).toEqual({
+        plugin: "webtest",
+        verb: "echo",
+        value: { words: ["one", "two"], flows: 0 },
+      });
+
+      const missing = await post({ plugin: "webtest", verb: "nothing" });
+      expect(missing.status).toBe(404);
+      expect(((await json(missing)).error as { message: string }).message).toContain(
+        'no loaded plugin "webtest" declares the verb "nothing"',
+      );
+
+      const refused = await post({ plugin: "webtest", verb: "refuse" });
+      expect(refused.status).toBe(422);
+      expect(((await json(refused)).error as { message: string }).message).toBe(
+        "the command refused",
+      );
+
+      expect((await post({ plugin: "webtest" })).status).toBe(400);
+      expect((await post({ plugin: "webtest", verb: "echo", args: [1] })).status).toBe(400);
+      expect((await api(h, "/v1/commands")).status).toBe(405);
+    } finally {
+      await h.close();
+    }
+  });
+
   test("POST /v1/settings with a deeper name changes one entry and keeps a concurrent change", async () => {
     const h = await makeHarness();
     try {

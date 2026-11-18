@@ -1232,6 +1232,8 @@ export interface CommandDefinition {
 export interface CommandContext extends PluginBaseContext {
   /** The text the command reads from stdin, when its caller supplied one. */
   readonly input?: string | undefined;
+  /** Every loaded flow name, so a command can refuse one that cannot start. */
+  readonly flows: readonly string[];
 }
 
 /** Options for running a command through the registry. */

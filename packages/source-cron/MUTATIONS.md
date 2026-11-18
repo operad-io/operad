@@ -15,3 +15,18 @@ the row fields.
 | T-0545-M6 | packages/source-cron/src/index.ts | emptied the catch-up's skipped list, so its summary named no skipped time | `missed runs > serve down over three planned times runs only the latest, once, and history names the skipped ones` |
 | T-0545-M7 | packages/source-cron/src/index.ts | a new rule ran its earlier planned time on the first poll instead of recording a baseline | `missed runs > a new rule whose planned time passed earlier today waits for its next one` |
 | T-0545-M8 | packages/source-cron/src/index.ts | keyed each rule's remembered last time by its array index again | `missed runs > removing an earlier rule does not change what a later rule catches up` |
+
+## T-0548 — scheduled flows from a client
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0548-M1 | packages/source-cron/src/index.ts | the source treated a paused rule as active and fired it | `scheduled flows > pause stops ticks and survives a reload, and resume starts them again` |
+| T-0548-M2 | packages/source-cron/src/schedules.ts | the next run was the current minute instead of the next matching minute | `scheduled flows > adding one makes it appear in the list with its next run` |
+| T-0548-M3 | packages/source-cron/src/schedules.ts | edit kept the old schedule and ignored the new one | `scheduled flows > edit changes the schedule and the next run` |
+| T-0548-M4 | packages/source-cron/src/schedules.ts | remove wrote the rules back unchanged | `scheduled flows > remove deletes the rule` |
+| T-0548-M5 | packages/source-cron/src/schedules.ts | add accepted a flow that is not loaded | `scheduled flows > an unknown flow is refused with the reason` |
+| T-0548-M6 | packages/source-cron/src/schedules.ts | a bad cron expression was replaced by a valid one instead of refused | `scheduled flows > a bad cron expression is refused with the reason` |
+| T-0548-M7 | packages/source-cron/src/schedules.ts | the list dropped the last run it found in the log | `scheduled flows > the list shows the last run's result and run id` |
+| T-0548-M8 | packages/source-cron/src/schedules.ts | pause did not write `paused` into the rule | `scheduled flows > pause stops ticks and survives a reload, and resume starts them again` |
+| T-0548-M9 | packages/source-cron/src/schedules.ts | resume left the rule paused | `scheduled flows > pause stops ticks and survives a reload, and resume starts them again` |
+| T-0548-M10 | packages/source-cron/src/index.ts | a tick was keyed by the rule's position again instead of its stable identity | `the cron source > emits once per due minute` |
