@@ -31,6 +31,29 @@ function path(value: unknown): string {
 }
 
 describe("plugin registry", () => {
+  test("a domain plugin that declares start is started as a source", async () => {
+    const started: string[] = [];
+    const both = definePlugin({
+      name: "both",
+      kind: "domain",
+      version: "0.0.1",
+      start(ctx) {
+        started.push(ctx.plugin);
+        return { stop: () => undefined };
+      },
+    });
+    const registry = new PluginRegistry([both], { onLog: () => undefined });
+    const handles = await registry.startSources({
+      rules: [],
+      clock: () => 0,
+      client: {} as never,
+      emit: async () => undefined,
+    });
+    expect(started).toEqual(["both"]);
+    expect(handles.map((handle) => handle.plugin)).toEqual(["both"]);
+    for (const handle of handles) await handle.handle.stop();
+  });
+
   test("loads a plugin from the operad home config", async () => {
     const root = await tempRoot();
     const home = join(root, "home");

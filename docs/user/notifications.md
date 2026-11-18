@@ -26,13 +26,14 @@ operad does not ship a delivery service. It runs your command and passes the det
 5. After the command ends, `serve` records the notice. A failure or a timeout is logged with the exit code and the last lines of output, recorded too, and not retried. The wait does not notify again, including after a restart of `serve`.
 6. If `serve` is stopped while the command is still running, the command is cancelled and nothing is recorded, so the next `serve` runs it again. If `serve` is killed after the command ends but before the record is written, that wait notifies once more.
 7. When you answer and the same run later waits again, that is a new wait and a new notice.
+8. A scheduled prompt of a bot also runs the command once when its reply ends. `OPERAD_ID`, `OPERAD_TITLE` and `OPERAD_LINK` name the new chat, and `OPERAD_REASON` is a short summary of the reply (or its failure line). This happens even when `notify.on` does not name `waiting`: the command is the existing way to tell you that a scheduled run finished.
 
 ## Settings and variables
 
 | Key | Type | Default | Allowed values | When it takes effect | Wrong value |
 |---|---|---|---|---|---|
 | `notify` | object | `{ "command": null, "on": ["waiting"] }` | an object with the keys below; a missing section means notifications are off | When `operad serve` starts; a reload when the new config loads | Refused: `notify: must be an object` |
-| `notify.command` | string or `null` | `null` | a non-empty shell line, run with `sh -c` in the operad home; `null` turns notifications off | When `serve` starts or reloads; the command runs for each new wait | Refused: `notify.command: must be a non-empty string or null` |
+| `notify.command` | string or `null` | `null` | a non-empty shell line, run with `sh -c` in the operad home; `null` turns notifications off | When `serve` starts or reloads; the command runs for each new wait and for a finished scheduled prompt | Refused: `notify.command: must be a non-empty string or null` |
 | `notify.on` | array of strings | `["waiting"]` | `waiting` only: an object now waits for a person | When `serve` starts or reloads; it sets which new waits notify | Refused: `notify.on: must be an array of "waiting"`; a repeated `waiting` is kept once |
 
 An unknown key inside `notify` is ignored; only the keys above are read. The

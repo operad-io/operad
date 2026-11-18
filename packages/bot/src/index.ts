@@ -12,7 +12,7 @@
 import pkg from "../package.json" with { type: "json" };
 import { mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { CHAT_TYPE, agentConditionals, type AgentChoices, chatData, createChat, sendMessage, startingEffort, startingModel, titleFromMessage } from "@operad-io/chat";
+import { CHAT_TYPE, MESSAGE_EVENT, agentConditionals, type AgentChoices, chatData, createChat, sendMessage, startingEffort, startingModel, titleFromMessage } from "@operad-io/chat";
 import { definePlugin, isRecord, modelIds, type ActionArgSchema, type ActionArgsSchema, type ActionTypeDefinition, type HarnessModelInfo, type HarnessModels, type JsonValue, type ObjectRow, type ObjectStore, type ObjectViews, type PluginStepResult, type SectionContent, type StepContext, type StoredObject } from "@operad-io/engine";
 import {
   BOT_SETTINGS,
@@ -35,6 +35,13 @@ import {
   runSettingCommand,
   runSkillCommand,
 } from "./proposals.ts";
+import {
+  SCHEDULE_SOURCE,
+  scheduleActions,
+  scheduledMarkdown,
+  scheduledPrompts,
+  startScheduled,
+} from "./schedule.ts";
 
 /** The step a chat calls at every reply to read its bot. */
 export const SETTINGS_STEP = "bot/settings";
@@ -86,6 +93,10 @@ export async function syncBots(
       data = { name, removed: false, problem: error.message };
     }
     const current = await store.get(BOT_TYPE, name);
+    // A client's scheduled prompts belong to the bot object, not to config.json.
+    if (Array.isArray(current?.data.scheduled)) {
+      data.scheduled = current.data.scheduled as JsonValue[];
+    }
     if (current === undefined || JSON.stringify(current.data) !== JSON.stringify(data)) {
       await store.put(BOT_TYPE, name, data, "bot");
     }
@@ -434,7 +445,14 @@ const chatAction: ActionTypeDefinition = {
       channels: input.channels,
       cause: "action:bot/chat",
     });
-    const sent = input.message === undefined ? undefined : await sendMessage(ctx, id, input.message);
+    const sent =
+      input.message === undefined
+        ? undefined
+        : await sendMessage(
+            ctx.actor.via === SCHEDULE_SOURCE ? { ...ctx, source: SCHEDULE_SOURCE } : ctx,
+            id,
+            input.message,
+          );
     return { text: `opened chat ${id}${sent === undefined ? "" : `; ${sent}`}`, opens: `chat:${id}` };
   },
 };
@@ -501,6 +519,7 @@ function botMarkdown(object: StoredObject): string {
       `They are mounted in chats on ${MCP_HARNESSES.join(" and ")}. A chat on pi does not mount them: pi takes no MCP servers yet, so it cannot use ${servers.join(", ")}.`,
     );
   }
+  lines.push(scheduledMarkdown(scheduledPrompts(data), Date.now()).join("\n"));
   return lines.join("\n\n");
 }
 
@@ -548,7 +567,18 @@ export function createBotPlugin() {
       },
     ],
     steps: [{ name: "settings", results: ["done", "failed"], run: runSettings }],
-    actions: [chatAction, createAction, ...proposalActions],
+    // A scheduled prompt opens a chat and sends its first message from the
+    // bot source; that message is not a person's, so the reply is a background run.
+    rules: [
+      {
+        source: SCHEDULE_SOURCE,
+        type: MESSAGE_EVENT,
+        start: { flow: "chat:reply" },
+        object: "$event.object",
+        mode: "auto" as const,
+      },
+    ],
+    actions: [chatAction, createAction, ...proposalActions, ...scheduleActions],
     commands: [
       {
         name: "skill",
@@ -571,6 +601,9 @@ export function createBotPlugin() {
       await ingestReports(ctx.store, ctx.home);
       return proposalItems(ctx.store);
     },
+    // The bot is its own source for its scheduled prompts. It declares `start`
+    // while staying a domain plugin, so `serve` starts it like any source.
+    start: startScheduled,
     views: { [BOT_TYPE]: botViews, [PROPOSAL_TYPE]: proposalViews },
   });
 }
@@ -580,6 +613,7 @@ export default createBotPlugin();
 export * from "./bot.ts";
 export * from "./create.ts";
 export * from "./proposals.ts";
+export * from "./schedule.ts";
 export * from "./mcp.ts";
 export * from "./mcp-proposals.ts";
 export { runGuard, markedResult, MATERIAL_NOTE, reportPath } from "./guard.ts";
