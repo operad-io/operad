@@ -184,3 +184,9 @@ and the row fields.
 | T-0556-M2 | packages/access-match/src/index.ts | the inline-code and unresolved-redirect fallbacks still asked at `full` | `a chat at full runs a command the matcher cannot follow, where edits still asks` |
 | T-0556-M3 | packages/access-match/src/summary.ts | a question still hid a command the log could not read | `a question shows a command the log cannot read, with its lines kept and a secret masked` |
 | T-0556-M4 | packages/access-match/src/index.ts | the visible content of inline code and substitutions was not checked for a deny at `full` | `a chat at full still refuses a deny its inline code plainly shows` |
+
+## T-0557 — full access asks follow-ups
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0557-M1 | packages/access-match/src/summary.ts | a question showed a leading assignment value unmasked when the command could not be read | `a question masks the leading assignment values of a command the log cannot read` |
