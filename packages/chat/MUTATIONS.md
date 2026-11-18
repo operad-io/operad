@@ -376,3 +376,9 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0540-M1 | packages/chat/src/model.ts | `effectiveEffort` preferred the stored default over the agent's live one | `the value a chat action offers as current > a chat made when the agent's default was medium offers the default it declares now` (and `chat:status > shows the agent's live default, and the stored one only when it declares none`) |
+
+## T-0541 — an effort equal to its stored default is inherited
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0541-M1 | packages/chat/src/model.ts | `chosenEffort` returned any stored effort, so one equal to its stored default was treated as a choice | `the value a chat action offers as current > an effort equal to the stored default is inherited, and one that differs is offered` (and `chat:status > shows the live default for an inherited effort, a choice, and the stored default only when none is declared`) |

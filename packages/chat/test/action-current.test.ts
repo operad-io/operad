@@ -66,6 +66,14 @@ describe("the value a chat action offers as current", () => {
     expect((await r.offered(chat, "chat:effort"))?.effort?.current).toBe("high");
   });
 
+  test("an effort equal to the stored default is inherited, and one that differs is offered", async () => {
+    const r = await rig({ defaultThinkingLevel: "high" });
+    const inherited = await r.chat("medium", "medium");
+    expect((await r.offered(inherited, "chat:effort"))?.effort?.current).toBe("high");
+    const chosen = await r.chat("low", "medium");
+    expect((await r.offered(chosen, "chat:effort"))?.effort?.current).toBe("low");
+  });
+
   test("a chat that picked an effort offers that effort", async () => {
     const r = await rig({ defaultThinkingLevel: "high" });
     const chat = await r.chat("low");

@@ -32,6 +32,7 @@ import {
   chatFacts,
   IMAGE_TYPES,
   chatData,
+  chosenEffort,
   type ChatData,
   type CostQuality,
   type Entry,
@@ -946,10 +947,12 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
       return failedReply(ctx, object.id, "model", `the agent "${chat.harness}" cannot use the model "${chat.model}"`, oldest);
     }
   }
-  // The same for an effort: the agent's list is the only one that can take it.
+  // The same for an effort: the agent's list is the only one that can take the
+  // effort the chat chose; one equal to its stored default is inherited.
   const efforts = ctx.harnessEfforts?.(chat.harness);
-  if (chat.effort !== undefined && efforts?.list.includes(chat.effort) !== true) {
-    return failedReply(ctx, object.id, "effort", `the agent "${chat.harness}" cannot use the effort "${chat.effort}"`, oldest);
+  const effort = chosenEffort(chat);
+  if (effort !== undefined && efforts?.list.includes(effort) !== true) {
+    return failedReply(ctx, object.id, "effort", `the agent "${chat.harness}" cannot use the effort "${effort}"`, oldest);
   }
   const effortFlag = efforts?.flag ?? (chat.harness === "pi" ? "--thinking" : "--effort");
 
@@ -1124,15 +1127,15 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
         prompt: context === undefined ? prompt : `${context}\n\n${prompt}`,
         ...(images.length === 0 ? {} : { images }),
         cwd: live.cwd,
-        ...(chat.model === undefined && chat.effort === undefined
+        ...(chat.model === undefined && effort === undefined
           ? {}
           : {
               args: [
                 ...(chat.model === undefined ? [] : ["--model", chat.model]),
-                ...(chat.effort === undefined ? [] : [effortFlag, chat.effort]),
+                ...(effort === undefined ? [] : [effortFlag, effort]),
               ],
             }),
-        ...(chat.effort === undefined ? {} : { effort: chat.effort }),
+        ...(effort === undefined ? {} : { effort }),
         ...(live.skills.length === 0 ? {} : { skills: live.skills }),
         // Operad's own tools, so the agent never runs the `operad` command.
         operadTools: { home: ctx.home },
