@@ -113,11 +113,18 @@ function dataOf(result: PluginStepResult): Record<string, unknown> {
 function runAgent(
   env: TestEnv,
   params: Record<string, unknown>,
-  options: { readonly runId?: string; readonly signal?: AbortSignal } = {},
+  options: {
+    readonly runId?: string;
+    readonly signal?: AbortSignal;
+    readonly access?: Record<string, unknown>;
+    readonly trigger?: Record<string, unknown>;
+  } = {},
 ) {
   return env.registry.runStep("radian/agent", params, {
     runId: options.runId ?? "run-1",
     ...(options.signal === undefined ? {} : { signal: options.signal }),
+    ...(options.access === undefined ? {} : { access: options.access as never }),
+    ...(options.trigger === undefined ? {} : { trigger: options.trigger as never }),
   });
 }
 
@@ -267,6 +274,20 @@ describe("radian/agent", () => {
     expect(start("shell", { command: "make test" })).toBe("make test");
     expect(start("patch", { path: "src/a.ts", old: "x", new: "y" })).toBe("src/a.ts");
     expect(start("git_diff", { path: "src/a.ts" })).toBe("src/a.ts");
+  });
+
+  test("a run no person started gives its hook a background profile", async () => {
+    const env = await setup("done");
+    const result = await runAgent(
+      env,
+      { prompt: "hello", cwd: env.root },
+      {
+        access: { askCommands: ["git push"] },
+        trigger: { source: "cron", type: "tick", key: "t1", hops: 0 },
+      },
+    );
+    const profile = JSON.parse(readFileSync(`${String(dataOf(result).log)}.hook.profile.json`, "utf8")) as Record<string, unknown>;
+    expect(profile["background"]).toBe(true);
   });
 
   test("a successful run records the Result record and writes the JSONL log", async () => {

@@ -126,7 +126,7 @@ export interface ChatData {
   readonly model?: string | undefined;
   /** The effort the next reply uses; one the agent's plugin lists. Absent for an agent that lists none. */
   readonly effort?: string | undefined;
-  /** The agent's default effort when this chat was made, so the row can tell a choice from the default. */
+  /** The agent's default effort when this chat was made; a fallback only when the agent declares none now. */
   readonly effortDefault?: string | undefined;
   /** The model that gave the last reply, when its harness reported one. */
   readonly lastModel?: string | undefined;
@@ -283,6 +283,35 @@ export function startingEffort(
     return wanted;
   }
   return efforts?.default ?? undefined;
+}
+
+/**
+ * The effort the chat itself chose, or undefined when it only inherits the
+ * agent's default. An effort equal to the one stored when the chat was made is
+ * inherited, so a harness whose default changed is followed.
+ */
+export function chosenEffort(
+  chat: Pick<ChatData, "effort" | "effortDefault">,
+): string | undefined {
+  return chat.effort !== undefined && chat.effort !== chat.effortDefault
+    ? chat.effort
+    : undefined;
+}
+
+/**
+ * The effort in force for a chat: its own choice, else the agent's live declared
+ * default, else the default stored when the chat was made. The stored default is
+ * only a fallback for an agent that declares none now, so a harness whose
+ * default changed is followed.
+ */
+export function effectiveEffort(
+  chat: Pick<ChatData, "effort" | "effortDefault">,
+  efforts: { readonly default: string | null } | undefined,
+): string | undefined {
+  const chosen = chosenEffort(chat);
+  if (chosen !== undefined) return chosen;
+  const declared = efforts?.default;
+  return declared !== null && declared !== undefined ? declared : chat.effortDefault;
 }
 
 /**
@@ -535,12 +564,13 @@ export function modelAndCost(
 /** What a chat uses, for its row and its page: `claude · sonnet · high · $0.12`. */
 export function agentLine(chat: ChatData): string {
   const model = chat.model ?? chat.lastModel;
-  const effort =
-    chat.effort !== undefined && chat.effort !== chat.effortDefault ? [chat.effort] : [];
+  // A row reads only the stored chat, so it shows the effort the chat itself
+  // chose; the agent's live default is not a choice and may have changed since.
+  const effort = chosenEffort(chat);
   return [
     chat.harness,
     ...(model === undefined || model.length === 0 ? [] : [model]),
-    ...effort,
+    ...(effort === undefined ? [] : [effort]),
     ...(chat.costMicros === undefined ? [] : [costText(chat.costMicros, chat.costQuality)]),
   ]
     .filter((part) => part.length > 0)
@@ -703,7 +733,7 @@ export async function createChat(
     channels: input.channels ?? [],
     ...(input.model === undefined ? {} : { model: input.model }),
     ...(input.effort === undefined ? {} : { effort: input.effort }),
-    ...(input.effort === undefined || input.effortDefault === undefined ? {} : { effortDefault: input.effortDefault }),
+    ...(input.effortDefault === undefined ? {} : { effortDefault: input.effortDefault }),
     ...(input.refresh === undefined ? {} : { refresh: input.refresh }),
     ...(input.accessAction === undefined ? {} : { accessAction: input.accessAction }),
   };

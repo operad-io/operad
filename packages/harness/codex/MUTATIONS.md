@@ -100,3 +100,8 @@ recorded. The root [MUTATIONS.md](../../../MUTATIONS.md) explains the format and
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0532-M7 | packages/harness/codex/src/index.ts | a step with no access profile judged calls without the built-in default | `codex/agent: permissions > a step a flow generates with no profile still gets the default` |
+
+## T-0533 — outward questions
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0533-M7 | packages/harness/codex/src/index.ts | the ask_call line left out the outward target | `codex/agent: permissions > a background run asks about an outward command with its target` |

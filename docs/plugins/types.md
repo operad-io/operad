@@ -98,6 +98,7 @@ The types a plugin imports, by the page that explains them. The values these ent
 | `EndResult` | A type of the plugin API; its fields are described on the page. | [harness](harness.md) |
 | `HarnessCapabilities` | What a harness plugin's agent does itself. `loadsSkills` says it loads the skill directories the step gives, so the prompt needs no list of them. `takesMessagesMidRun` says it takes a message while its run is going, so the host can hand one to it then. `accessLevels` lists the chat access levels it carries; a chat at a level it does not list refuses the reply. | [harness](harness.md) |
 | `HarnessEfforts` | The efforts a harness plugin declares: those a chat may pick, the one used when none is set, and the step argument that sets it (`--effort` when absent). | [harness](harness.md) |
+| `HarnessEffortsSource` | A harness plugin's efforts, either the declaration itself or a function of its settings that is called each time they are read. | [harness](harness.md#models-and-efforts) |
 | `HarnessModelCapability` | One thing a model can do: `vision`, `reasoning`, `tools` or `web`. | [harness](harness.md#models-and-efforts) |
 | `HarnessModelContext` | What a harness's model hook may read besides its settings: the operad home and where a background refresh reports a failure. | [harness](harness.md) |
 | `HarnessModelInfo` | What a harness knows about one model: its `id`, and optionally its `name`, `provider`, `window` and `capabilities`. | [harness](harness.md#models-and-efforts) |
@@ -152,6 +153,9 @@ The types a plugin imports, by the page that explains them. The values these ent
 | `StepLineReceiver` | Takes one log line of a step as it is written. | [steps](steps.md) |
 | `StepRunOptions` | Options for running a step through the registry. | [steps](steps.md) |
 | `StepTypeDefinition` | A step type a plugin declares. The use name is `<plugin>/<name>`. | [steps](steps.md) |
+| `OutwardWrite` | One write a step or action makes outside operad: its kind, target and full content. | [steps](steps.md) |
+| `OutwardWrites` | One outward write or a list of them, or none. | [steps](steps.md) |
+| `OutwardTargets` | Names the target of one call a step or action writes outward. | [steps](steps.md) |
 | `FactInput` | A fact a plugin appends for itself, outside the objects it owns. | [storage](storage.md) |
 | `FactWriter` | Appends facts that are not an object change, such as a step's output path. | [storage](storage.md) |
 | `FactsOptions` | Options for reading one object's facts. | [storage](storage.md) |

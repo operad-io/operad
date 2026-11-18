@@ -363,3 +363,22 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 | T-0531-M3 | packages/chat/src/skills.ts | the skill's body was left out of the message for a harness that does not load skills | `a chat's skills > a harness that does not load skills gets the skill body and then the rest` |
 | T-0531-M4 | packages/chat/src/index.ts | `chat:send` no longer looked for an operad command first, so a skill named like one answered instead | `a chat's skills > an operad command of the same name wins, so the skill does not shadow it` |
 | T-0531-M5 | packages/chat/src/command.ts | `/help` listed the commands but no skills after them | ``a chat's skills > `/help` lists the skills after the commands, marked as skills`` |
+
+## T-0536 — the value a chat action offers as current
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0536-M1 | packages/chat/src/index.ts | `chat:effort` left out the current effort | `the value a chat action offers as current > a pi chat with no effort offers pi's own defaultThinkingLevel` |
+| T-0536-M2 | packages/chat/src/index.ts | `chat:model` left out the current model | `the value a chat action offers as current > a chat with no model offers the configured model` |
+
+## T-0540 — a chat follows its agent's live default effort
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0540-M1 | packages/chat/src/model.ts | `effectiveEffort` preferred the stored default over the agent's live one | `the value a chat action offers as current > a chat made when the agent's default was medium offers the default it declares now` (and `chat:status > shows the agent's live default, and the stored one only when it declares none`) |
+
+## T-0541 — an effort equal to its stored default is inherited
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0541-M1 | packages/chat/src/model.ts | `chosenEffort` returned any stored effort, so one equal to its stored default was treated as a choice | `the value a chat action offers as current > an effort equal to the stored default is inherited, and one that differs is offered` (and `chat:status > shows the live default for an inherited effort, a choice, and the stored default only when none is declared`) |

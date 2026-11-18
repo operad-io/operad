@@ -69,6 +69,20 @@ describe("chat:status", () => {
     expect(r.events).toEqual([]);
   });
 
+  test("shows the live default for an inherited effort, a choice, and the stored default only when none is declared", async () => {
+    const live = await rig(() => reply("hi"), MODELS, { list: ["low", "medium", "high"], default: "high" });
+    const changed = await live.chat({ effortDefault: "medium" });
+    expect(String((await send(live, changed, "/status")).value)).toContain("Effort: high");
+    const inherited = await live.chat({ effort: "medium", effortDefault: "medium" });
+    expect(String((await send(live, inherited, "/status")).value)).toContain("Effort: high");
+    const chosen = await live.chat({ effort: "low", effortDefault: "medium" });
+    expect(String((await send(live, chosen, "/status")).value)).toContain("Effort: low");
+
+    const none = await rig(() => reply("hi"), MODELS, { list: [], default: null });
+    const stored = await none.chat({ effortDefault: "medium" });
+    expect(String((await send(none, stored, "/status")).value)).toContain("Effort: medium");
+  });
+
   test("an unknown cost is said to be unknown, never shown as zero", async () => {
     const r = await rig(
       () => ({

@@ -98,6 +98,8 @@ An action's `args` may carry JSON Schema conditionals that narrow a field by ano
 
 A `model` argument also carries `info`, keyed by model id, beside its `enum`: the same `name`, `provider`, `window` and `capabilities` the plugin list gives, for the models of the agents whose list the argument offers. `chat:model` carries it for the chat's agent. A client that reads only the ids ignores it.
 
+An action that changes an existing value carries `current` on the field: the value in effect now. `chat:model` gives the chat's model, else the model of its last reply, else the agent's configured model; `chat:effort` gives the effort the chat chose, else the agent's declared default now, else the one it started with. An effort equal to the one it started with is inherited, not a choice. `current` is not a default: a field that has no value now has no `current`.
+
 `POST /v1/act` records the caller as `{ "via": "<client>", "id": "<token
 label>" }`; `via` is `http` unless the client named itself, and the token label is
 `operad app` unless the secret store names another. It records the action the

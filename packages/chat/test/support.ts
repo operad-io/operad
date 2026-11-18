@@ -162,7 +162,7 @@ export async function rig(
           ...(extra?.parent === undefined ? {} : { parent: extra.parent }),
           ...(extra?.model === undefined ? {} : { model: extra.model }),
           ...(extra?.effort === undefined ? {} : { effort: extra.effort }),
-          ...(extra?.effort === undefined || extra?.effortDefault === undefined ? {} : { effortDefault: extra.effortDefault }),
+          ...(extra?.effortDefault === undefined ? {} : { effortDefault: extra.effortDefault }),
           ...(extra?.refresh === undefined ? {} : { refresh: extra.refresh }),
         },
         "test",

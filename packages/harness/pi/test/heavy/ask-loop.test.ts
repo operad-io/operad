@@ -279,7 +279,8 @@ describe("pi: a call that must ask a person", () => {
       }).run();
       await env.opened(1);
       const pending = await listPending(env.log, env.registry);
-      expect(pending[0]?.choices).toEqual(["allow_once", "reject_once"]);
+      expect(pending[0]?.choices).toEqual(["send_once", "reject_once"]);
+      expect(pending[0]?.prompt).toContain("origin/main");
       const access = env.input()["access"] as Record<string, unknown>;
       expect(access["alwaysAllow"]).toEqual([]);
       await recordAnswer({ log: env.log, runId: env.runId, choice: "reject_once", actor: ACTOR });

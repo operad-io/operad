@@ -248,3 +248,13 @@ setup it depends on, in the order they were recorded. The root
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0532-M5 | packages/harness/claude/src/index.ts | a step with no access profile passed none to the worker instead of the built-in default | `claude/agent > a step a flow generates with no profile gets the default` |
+
+## T-0536 — claude's default effort from its configured effort
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0536-M1 | packages/harness/claude/src/index.ts | claude's efforts ignored the configured `effort`, so no default was declared | `the efforts claude declares > the configured effort is the default` |
+## T-0533 — outward questions
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0533-M6 | packages/harness/claude/src/access.ts | the profile's outward write was left out of the question | `a background run asks about an outward command with its target` |

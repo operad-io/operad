@@ -18,8 +18,9 @@
  * line: no hook sees its calls, so it offers no grant (`degradedAskRequest`).
  */
 
-import type { AskAnswer, AskRequest } from "@operad-io/engine";
+import type { AskAnswer, AskRequest, OutwardWrite } from "@operad-io/engine";
 import { isRecord } from "@operad-io/engine";
+import { OUTWARD_SEND_ONCE, outwardQuestion } from "@operad-io/access-match";
 import { alwaysAllowEntry, appendAlwaysAllow, type AlwaysAllowEntry } from "./always-allow.ts";
 
 /** The choice that lets the one call through. */
@@ -43,6 +44,28 @@ export interface AskCall {
   readonly shown: string;
   /** The session to continue after a late answer; null when the program has none. */
   readonly session: string | null;
+  /** The outward write this question is about, in a background run. */
+  readonly outward?: OutwardWrite | undefined;
+}
+
+function outwardOf(value: unknown): OutwardWrite | undefined {
+  if (!isRecord(value)) return undefined;
+  const kind = value["kind"];
+  const target = value["target"];
+  const content = value["content"];
+  const owner = value["owner"];
+  if (kind !== "channel" && kind !== "mail" && kind !== "post" && kind !== "repository" && kind !== "service" && kind !== "command") {
+    return undefined;
+  }
+  if (typeof target !== "string" || target.length === 0) return undefined;
+  if (content !== undefined && typeof content !== "string") return undefined;
+  if (owner !== undefined && typeof owner !== "boolean") return undefined;
+  return {
+    kind,
+    target,
+    ...(content === undefined ? {} : { content }),
+    ...(owner === undefined ? {} : { owner }),
+  };
 }
 
 /** The `ask_call` line, if this is one. */
@@ -60,7 +83,8 @@ export function askCall(line: string): AskCall | undefined {
   if (typeof value !== "string" || value.length === 0 || typeof shown !== "string") return undefined;
   if (tool !== undefined && typeof tool !== "string") return undefined;
   if (session !== null && typeof session !== "string") return undefined;
-  return { id, kind, value, ...(tool === undefined ? {} : { tool }), shown, session };
+  const outward = outwardOf(parsed.outward);
+  return { id, kind, value, ...(tool === undefined ? {} : { tool }), shown, session, ...(outward === undefined ? {} : { outward }) };
 }
 
 /**
@@ -83,6 +107,8 @@ export function askToolEvent(line: string): "tool-start" | "tool-end" | undefine
 /** Whether the run's access profile has a rule that may make a call ask. */
 export function canAsk(access: unknown): boolean {
   if (!isRecord(access)) return false;
+  // A background run asks about an outward write even when no rule names it.
+  if (access.background === true) return true;
   if (access.readOnly === true) return true;
   // The levels below full ask about a write or a command not known to only read.
   if (typeof access.level === "string" && access.level !== "full") return true;
@@ -103,6 +129,22 @@ export function askRequest(call: AskCall, allowAlways = false): AskRequest {
   const choices = allowAlways ? [ALLOW_ONCE, ALLOW_ALWAYS, REJECT_ONCE] : [ALLOW_ONCE, REJECT_ONCE];
   // Without a session there is nothing to continue after a late answer, so
   // the question gets one answer within the grace and a refusal after it.
+  if (call.outward !== undefined) {
+    const question = outwardQuestion(call.outward);
+    if (call.session === null) return { ...question, onTimeout: "reject_once" };
+    return {
+      ...question,
+      resume: {
+        session: call.session,
+        grant: {
+          kind: call.kind,
+          value: call.value,
+          choice: OUTWARD_SEND_ONCE,
+          ...(call.tool === undefined ? {} : { tool: call.tool }),
+        },
+      },
+    };
+  }
   if (call.session === null) return { prompt, choices, onTimeout: "reject_once" };
   return {
     prompt,
@@ -138,6 +180,8 @@ export interface CallQuestion {
   readonly kind: "command" | "path";
   readonly value: string;
   readonly tool?: string;
+  /** The outward write the question is about, in a background run. */
+  readonly outward?: OutwardWrite | undefined;
 }
 
 /** The host's answer to an `ask_call` line, as the program reads it. */
