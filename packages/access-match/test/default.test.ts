@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { defaultAccess, defaultDenies, match, readProfile, withAccessLevel, withDefaultAccess } from "../src/index.ts";
+import { defaultAccess, defaultDenies, match, readProfile, withAccessLevel, withDefaultAccess, type AccessProfile } from "../src/index.ts";
 
 const HOME = "/home/u";
 const CWD = "/work/project";
@@ -133,14 +133,61 @@ test("every level, full included, keeps the default's deny and ask rules", () =>
   }
 });
 
-test("a chat at full still asks for git push and for inline code", () => {
-  const profile = withAccessLevel({}, "full");
-  for (const command of ["git push origin main", 'bash -c "echo hi"']) {
-    expect(match(profile, { tool: "bash", input: { command }, cwd: CWD }, { home: HOME })).toMatchObject({
-      allow: false,
-      ask: true,
-    });
+test("a chat at full runs a command the matcher cannot follow, where edits still asks", () => {
+  const full = withAccessLevel({}, "full");
+  const edits = withAccessLevel({}, "edits");
+  const unreadable = [
+    "python3 - <<'PY'\nprint(1)\nPY",
+    "echo $(git rev-parse HEAD)",
+    "cd $DIR && cat notes",
+    'bash -c "echo hi"',
+  ];
+  for (const command of unreadable) {
+    const call = { tool: "bash", input: { command }, cwd: CWD } as const;
+    expect(match(full, call, { home: HOME })).toEqual({ allow: true });
+    expect(match(edits, call, { home: HOME })).toMatchObject({ allow: false, ask: true });
   }
+  // The profile's own ask rules still ask, and a plain deny still refuses.
+  expect(match(full, { tool: "bash", input: { command: "git push origin main" }, cwd: CWD }, { home: HOME })).toMatchObject({
+    allow: false,
+    ask: true,
+  });
+  for (const call of [
+    { tool: "bash", input: { command: "sudo ls" }, cwd: CWD },
+    { tool: "bash", input: { command: "cat ~/.ssh/id_ed25519" }, cwd: CWD },
+    { tool: "read", input: { path: "~/.ssh/id_ed25519" }, cwd: CWD },
+  ] as const) {
+    const verdict = match(full, call, { home: HOME });
+    expect(verdict.allow).toBe(false);
+    expect(verdict.ask).toBeUndefined();
+  }
+});
+
+test("a chat at full runs inline code a profile without askCommands would otherwise refuse", () => {
+  const full: AccessProfile = { level: "full", denyCommands: ["mkfs"] };
+  for (const command of ['bash -c "echo hi"', "echo $(whoami)"]) {
+    expect(match(full, { tool: "bash", input: { command }, cwd: CWD }, { home: HOME })).toEqual({ allow: true });
+  }
+  const denied = match(full, { tool: "bash", input: { command: "mkfs /tmp/x" }, cwd: CWD }, { home: HOME });
+  expect(denied.allow).toBe(false);
+  expect(denied.ask).toBeUndefined();
+});
+
+test("a chat at full still refuses a deny its inline code plainly shows", () => {
+  const full: AccessProfile = { level: "full", denyCommands: ["sudo"], denyPaths: ["/etc/secret"] };
+  for (const command of [
+    "bash -c 'sudo ls'",
+    "bash -c 'cat /etc/secret/key'",
+    "echo $(sudo ls)",
+    "echo $(cat /etc/secret/key)",
+  ]) {
+    const verdict = match(full, { tool: "bash", input: { command }, cwd: CWD }, { home: HOME });
+    expect(verdict.allow).toBe(false);
+    expect(verdict.ask).toBeUndefined();
+  }
+  expect(match(full, { tool: "bash", input: { command: "bash -c 'echo hi'" }, cwd: CWD }, { home: HOME })).toEqual({
+    allow: true,
+  });
 });
 
 test("a generated step with no profile gets the default asks", () => {

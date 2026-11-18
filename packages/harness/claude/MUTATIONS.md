@@ -276,3 +276,9 @@ setup it depends on, in the order they were recorded. The root
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0550-M1 | packages/harness/claude/src/claude-install.ts | an empty success was retried five times instead of once more | `a probe that never answers is refused after a bounded number of asks` |
+
+## T-0556 — a question shows the command it asks about
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0556-M1 | packages/harness/claude/src/worker.ts | the ask line's `shown` was summarized as a log, so an unreadable command was hidden from the question | `a question about a command the log cannot read shows the command itself` |

@@ -104,7 +104,7 @@ One JSON object per line, flushed per line, each with a `type`:
 | `log` | `text` | a line for the step log that the fold does not read: a skipped skill, or the names of the skills loaded (`skills: <name>, <name>`) |
 | `rate_limit` | `status`, `rateLimitType` (or null), `resetsAt` (or null) | claude reported its rate limit state |
 | `grant_use` | `id`, `waitId` | asks the host to use up a one-time permission; answered on stdin by `{"type":"grant_ack","id":n,"used":true\|false}` |
-| `ask_call` | `id`, `kind`, `value`, `tool` (path questions), `shown`, `session` | asks the host to ask a person whether one call may run (`askCommands`); answered on stdin by `{"type":"ask_ack","id":n,"decision":"allow"\|"deny"\|"stop"}` |
+| `ask_call` | `id`, `kind`, `value`, `tool` (path questions), `shown`, `session` | asks the host to ask a person whether one call may run (`askCommands`); `shown` is the command itself with its line breaks, even when the log says `<command not shown: could not read it safely>`; answered on stdin by `{"type":"ask_ack","id":n,"decision":"allow"\|"deny"\|"stop"}` |
 | `ask_resolved` | `id` | the question closed; the call goes on or is refused |
 | `result` | see below | always the last line |
 
@@ -284,8 +284,9 @@ The host's half (`hasGrants`, `grantUse`, `answerGrant`) is in
 
 A call the profile's `askCommands` matches (and that no deny rule matched: deny
 wins over ask) asks a person instead of running. The step keeps the worker's
-stdin open. The worker writes `{"type":"ask_call","id":n,"kind":"command","value":"<the whole command>","shown":"...","session":"<session>"|null}`
-and holds the call; the host asks with `ctx.ask` (choices `allow_once`,
+stdin open. The worker writes `{"type":"ask_call","id":n,"kind":"command","value":"<the whole command>","shown":"<the command, or the path>","session":"<session>"|null}`
+and holds the call; `shown` is the command itself, with its line breaks and
+secret values masked, even when the log has to say it cannot read it safely; the host asks with `ctx.ask` (choices `allow_once`,
 `allow_always` and `reject_once`, the grace period of the kernel: 10 minutes by
 default, set by `ask.graceSecs`, `askGraceSecs` of the step or the question) and
 answers on

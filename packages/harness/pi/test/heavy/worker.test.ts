@@ -1302,6 +1302,29 @@ test("a command askCommands matches asks a person: allowed, it runs once; the sa
   expect(last(run)).toMatchObject({ result: "done", finalMessage: "finished" });
 });
 
+test("a question about a command the log cannot read shows the command itself", async () => {
+  const s = setup();
+  const command = "python3 -c 'print(1)";
+  const calls: Array<Record<string, unknown>> = [];
+  const run = await runAsking(
+    s,
+    [
+      { text: "", toolCall: { name: "bash", arguments: { command } } },
+      { text: "finished" },
+    ],
+    { ...s.input, access: { askCommands: ["python3"] } },
+    (call) => {
+      calls.push(call);
+      return "deny";
+    },
+  );
+
+  expect(calls[0]).toMatchObject({ type: "ask_call", kind: "command", value: command, shown: command });
+  expect(String(calls[0]?.["shown"])).not.toContain("command not shown");
+  // The log keeps hiding what it cannot read.
+  expect(toolLines(run).start[0]).toMatchObject({ input: "<command not shown: could not read it safely>" });
+});
+
 test("a denied command is never asked about: deny wins over ask", async () => {
   const s = setup();
   const marker = join(s.dir, "marker");

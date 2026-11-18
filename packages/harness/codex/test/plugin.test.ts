@@ -488,6 +488,29 @@ describe("codex/agent: permissions", () => {
     expect(permissionOutcome(env)).toBe("accept");
   });
 
+  test("a question about a command the log cannot read shows the command itself", async () => {
+    const command = "rm -rf 'build";
+    const env = await setup("permission", { vars: { FAKE_CODEX_COMMAND: command } });
+    const asked: string[] = [];
+    const result = await runAgent(
+      env,
+      { prompt: "x", cwd: env.root },
+      {
+        access: { askCommands: ["rm -rf"] },
+        asker: {
+          ask: (request) => {
+            asked.push(request.prompt);
+            return Promise.resolve({ kind: "answered", answer: { choice: "allow_once" } });
+          },
+          useGrant: () => Promise.resolve(false),
+        },
+      },
+    );
+    expect(result.result).toBe("done");
+    expect(asked).toEqual([`Run this command? ${command}`]);
+    expect(asked[0]).not.toContain("command not shown");
+  });
+
   test("a background run asks about an outward command with its target", async () => {
     const env = await setup("permission");
     const asked: Array<{ readonly prompt: string; readonly choices?: readonly string[] }> = [];

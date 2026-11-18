@@ -993,7 +993,10 @@ class ClaudeSession {
             if ((input.secretValues ?? []).some((secret) => secret.length > 0 && question.value.includes(secret))) {
               return { decision: "deny", reason: "the call holds a secret value, so nobody is asked about it" };
             }
-            const shown = summarizeCall(turn.profile, toolName, toolInput, input.cwd, { secrets: input.secretValues });
+            const shown = summarizeCall(turn.profile, toolName, toolInput, input.cwd, {
+              secrets: input.secretValues,
+              forQuestion: true,
+            });
             return askHost({ ...question, shown: shown ?? question.value, session: this.sessionId });
           },
     );

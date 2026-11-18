@@ -111,3 +111,9 @@ recorded. The root [MUTATIONS.md](../../../MUTATIONS.md) explains the format and
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0534-M1 | packages/harness/codex/src/index.ts | the harness asker got no target-grant context, so a background outward call could neither record nor use a grant | `codex/agent: permissions > always for this flow and target records a grant and the next scheduled run does not ask` |
+
+## T-0556 — a question shows the command it asks about
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0556-M1 | packages/harness/codex/src/index.ts | the ask line's `shown` was summarized as a log, so an unreadable command was hidden from the question | `codex/agent: permissions > a question about a command the log cannot read shows the command itself` |

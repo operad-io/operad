@@ -166,11 +166,13 @@ any level works in the bot's own directory, with no worktree.
 | `plan` | Reading, and commands known to only read; a write asks. |
 | `ask` | Reading; every write and every command not known to only read asks. |
 | `edits` | Reading and writing files in the working directory; a command not known to only read asks. |
-| `full` | Everything the profile does not deny; the level adds no question. |
+| `full` | Everything the profile does not deny; the level adds no question. A command the matcher cannot follow (inline code, a shell expansion, a path after a directory change it cannot follow) runs too, unless a deny plainly matches. |
 
 The profile's deny lists and its own ask rules still hold at every level,
-`full` included. The approved words in the interface are **Access** for the
-menu, and **Plan only**, **Ask each time**, **Accept edits** and **Full access**
+`full` included. At `full`, an `askCommands` or `askPaths` rule still asks when
+it plainly matches, and a background run still asks before an outward write. The
+approved words in the interface are **Access** for the menu, and **Plan only**,
+**Ask each time**, **Accept edits** and **Full access**
 for the levels. `claude` and `pi` carry every level; a chat whose agent cannot
 carry a level refuses the reply with a message naming the level instead of
 ignoring it. See [Access](access.md) for the profile itself.

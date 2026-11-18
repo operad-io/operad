@@ -457,7 +457,10 @@ export async function runWorker(
           // A value that holds a secret is never asked about: no fact may hold it.
           answer = { decision: "deny", reason: "the call holds a secret value, so nobody is asked about it" };
         } else {
-          const shown = summarizeCall(profile, event.toolName, event.input, input.cwd, { secrets: input.secretValues });
+          const shown = summarizeCall(profile, event.toolName, event.input, input.cwd, {
+            secrets: input.secretValues,
+            forQuestion: true,
+          });
           try {
             answer = await io.ask({ kind: verdict.kind, value: verdict.value, ...(verdict.tool === undefined ? {} : { tool: verdict.tool }), ...(verdict.outward === undefined ? {} : { outward: verdict.outward }), shown: shown ?? verdict.value, session: sessionFile });
           } catch {

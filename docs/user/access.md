@@ -14,15 +14,15 @@ command another way is outside what it can see.
 
 An agent can run shell commands and edit files, and you will not read every call before it runs. An access profile lets you write down in advance which paths and commands are refused, which ask a person first, and which run freely. The default profile covers the common cases: credentials, destructive commands, and a few commands that change the machine; a bot adds its operad home.
 
-The profile is a guard rail, not a boundary. It matches the text of a call and cannot see what a program does once it runs, so it makes no claim to stop everything. For commands that hide what they run, such as `bash -c`, it asks or refuses instead of guessing.
+The profile is a guard rail, not a boundary. It matches the text of a call and cannot see what a program does once it runs, so it makes no claim to stop everything. For commands that hide what they run, such as `bash -c`, it asks or refuses instead of guessing, except in a chat at Full access, where such a command runs unless a deny plainly matches.
 
 ## How it works
 
 1. Before an agent runs a tool, the harness gives the call to the matcher in `packages/access-match` together with the profile. A call is a tool name, its input and the working directory.
 2. The matcher applies the order **deny, then ask, then allow**. A match in `denyPaths` or `denyCommands` refuses the call. A match in `askPaths` or `askCommands`, or a write in a `readOnly` working directory, asks a person. Anything else runs. See [The profile](#the-profile).
-3. A path is normalised first: `~` is the user's home and a relative path is joined to the call's working directory. A command is split into its pipeline parts and each part is matched. Inline code is refused or asked about, because its content cannot be seen.
+3. A path is normalised first: `~` is the user's home and a relative path is joined to the call's working directory. A command is split into its pipeline parts and each part is matched. Inline code is refused or asked about, because its content cannot be seen; at Full access it runs unless a deny plainly matches.
 4. For an MCP call the matcher looks at `allowMcp` when the field is present: a listed tool runs, an unlisted one counts as a write and asks (see [MCP tool entries](#mcp-tool-entries)).
-5. A question goes to a person, who answers `allow_once`, `allow_always` or `reject_once`. `allow_always` appends the exact command or path and the working directory to `access-user.json`, and the next identical call in that directory is allowed without a question (see [`allow_always`](#allow_always)). It never lifts a deny.
+5. A question goes to a person, who answers `allow_once`, `allow_always` or `reject_once`. `allow_always` appends the exact command or path and the working directory to `access-user.json`, and the next identical call in that directory is allowed without a question (see [`allow_always`](#allow_always)). It never lifts a deny. The question shows the command it is about, even one the log would hide as unreadable: line breaks are kept, it is cut at 500 characters, and known secret values are masked.
 6. In a [background run](#background-runs), no person started the run, so `alwaysAllow` entries are ignored and every question is asked again.
 
 ## The profile
@@ -68,9 +68,13 @@ deny still wins.
 `level` is a chat's access level. `plan` is read-only; `ask` asks about every
 write and every command not known to only read; `edits` lets a write inside the
 working directory pass while a write outside it and a command not known to only
-read ask; `full` adds no question. The profile's own deny lists, `readOnly`,
-`askCommands` and `askPaths` still hold at every level. A chat starts at `plan`
-on a repository and `ask` on a bot, and `/access <level>` changes it; see
+read ask; `full` adds no question. At `full`, a command the matcher cannot
+follow (inline code, a shell expansion, a path after a directory change it
+cannot follow) runs unless a deny plainly matches, where `plan`, `ask` and
+`edits` still ask about it. The profile's own deny lists, `readOnly`,
+`askCommands` and `askPaths` still hold at every level, so at `full` an ask rule
+still asks when it plainly matches. A chat starts at `plan` on a repository and
+`ask` on a bot, and `/access <level>` changes it; see
 [Chats and bots](chats-and-bots.md#access-level).
 
 `readPaths` lets a read reach a directory under an ancestor in `denyPaths`. It
@@ -120,7 +124,8 @@ matches the same single-dash letters in any order, and `…` adds no condition.
 (such as `bash -c`, `python -c`, `bun -e`, `osascript -e`, `find -exec`, `xargs`,
 `eval`, a backtick or `$()`) is refused while `denyCommands` is set and no
 `askCommands` is set; when `askCommands` is set, it asks instead, because the
-matcher cannot see what it runs.
+matcher cannot see what it runs. A chat at `full` runs it instead unless a deny
+plainly matches; `plan`, `ask` and `edits` keep the refusal or question.
 The full rule tables are in `packages/access-match/REFERENCE.md`.
 
 ## `access-user.json`
