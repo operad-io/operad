@@ -1,5 +1,6 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import type { AskAnswer, AskRequest } from "@operad-io/engine";
+import { defineFlow, type AskAnswer, type AskRequest, type FlowDefinition } from "@operad-io/engine";
+import { OUTWARD_ALLOW_TARGET, readTargetGrants } from "@operad-io/access-match";
 import { readAlwaysAllow } from "../src/always-allow.ts";
 import { cleanupTempRoots, tempRoot } from "./support.ts";
 import {
@@ -11,6 +12,7 @@ import {
   canAsk,
   createCallAsker,
   degradedAskRequest,
+  recordTargetGrantFromAnswer,
   REJECT_ONCE,
 } from "../src/ask-call.ts";
 
@@ -146,6 +148,30 @@ describe("askRequest", () => {
     });
   });
 
+  test("an outward question with a flow offers the target grant, and either approving answer sends once", () => {
+    const outward = askCall(JSON.stringify({
+      type: "ask_call",
+      id: 1,
+      kind: "command",
+      value: "curl -X POST https://example.com/hook",
+      shown: "curl -X POST https://example.com/hook",
+      session: "s",
+      outward: { kind: "service", target: "https://example.com/hook", content: "curl -X POST https://example.com/hook" },
+    }));
+    if (outward === undefined) throw new Error("the line must parse");
+    const request = askRequest(outward, false, true);
+    expect(request.choices).toEqual(["send_once", OUTWARD_ALLOW_TARGET, REJECT_ONCE]);
+    expect(request.resume).toEqual({
+      session: "s",
+      grant: {
+        kind: "command",
+        value: "curl -X POST https://example.com/hook",
+        choice: "send_once",
+        choices: ["send_once", OUTWARD_ALLOW_TARGET],
+      },
+    });
+  });
+
   test("a harness that cannot enforce a grant asks with reject_once and no grant", () => {
     expect(degradedAskRequest("Run it?")).toEqual({ prompt: "Run it?", choices: [ALLOW_ONCE, REJECT_ONCE], onTimeout: "reject_once" });
   });
@@ -156,6 +182,7 @@ describe("createCallAsker", () => {
     answer: (request: AskRequest) => Promise<AskAnswer>,
     secrets: readonly string[] = [],
     alwaysAllow?: { readonly home: string; readonly cwd: string },
+    targetGrants?: { readonly home: string; readonly flow: FlowDefinition; readonly now?: (() => number) | undefined },
   ) {
     const sent: Array<Record<string, unknown>> = [];
     const asked: AskRequest[] = [];
@@ -170,6 +197,7 @@ describe("createCallAsker", () => {
       },
       secrets,
       ...(alwaysAllow === undefined ? {} : { alwaysAllow }),
+      ...(targetGrants === undefined ? {} : { targetGrants }),
     });
     const reply = (text: string): void => {
       sent.push(JSON.parse(text) as Record<string, unknown>);
@@ -221,6 +249,87 @@ describe("createCallAsker", () => {
     expect(env.sent).toEqual([
       { type: "ask_ack", id: 4, decision: "allow" },
       { type: "ask_ack", id: 5, decision: "allow" },
+    ]);
+  });
+
+  test("a target grant in a background run is written once and lifts the next identical call", async () => {
+    const home = await tempRoot();
+    const flow = defineFlow({
+      name: "daily:send",
+      entry: "send",
+      steps: [
+        {
+          id: "send",
+          kind: "plugin",
+          params: { use: "shell/command", params: {} },
+          replay: "safe",
+          next: { pass: "done" },
+        },
+        { id: "done", kind: "end", params: { status: "done" }, replay: "safe" },
+      ],
+    });
+    const line = JSON.stringify({
+      type: "ask_call",
+      id: 7,
+      kind: "command",
+      value: "curl -X POST https://example.com/hook",
+      shown: "curl -X POST https://example.com/hook",
+      session: "s",
+      outward: { kind: "service", target: "https://example.com/hook", content: "curl -X POST https://example.com/hook" },
+    });
+    const env = setup(
+      async () => ({ choice: OUTWARD_ALLOW_TARGET, actor: { via: "ios", id: "owner" } }),
+      [],
+      undefined,
+      { home, flow, now: () => 42 },
+    );
+    await env.asker.handle(line, env.reply);
+    expect(env.sent).toEqual([{ type: "ask_ack", id: 7, decision: "allow" }]);
+    const read = await readTargetGrants(home);
+    expect(read.file.grants).toMatchObject([
+      { flow: "daily:send", kind: "service", target: "https://example.com/hook", by: { via: "ios", id: "owner" }, at: 42 },
+    ]);
+
+    await env.asker.handle(line.replace('"id":7', '"id":8'), env.reply);
+    expect(env.asked).toHaveLength(1);
+    expect(env.sent[1]).toEqual({ type: "ask_ack", id: 8, decision: "allow" });
+  });
+
+  test("a late target answer records the grant with the person who answered", async () => {
+    const home = await tempRoot();
+    const flow = defineFlow({
+      name: "daily:send",
+      entry: "send",
+      steps: [
+        {
+          id: "send",
+          kind: "plugin",
+          params: { use: "shell/command", params: {} },
+          replay: "safe",
+          next: { pass: "done" },
+        },
+        { id: "done", kind: "end", params: { status: "done" }, replay: "safe" },
+      ],
+    });
+    const access = {
+      grants: [{ waitId: "w1", kind: "command", value: "curl -X POST https://example.com/hook" }],
+      outwardCommands: ["curl"],
+    };
+    await recordTargetGrantFromAnswer(
+      home,
+      flow,
+      access,
+      { prompt: "Call https://example.com/hook?", choice: OUTWARD_ALLOW_TARGET, actor: { via: "ios", id: "owner" } },
+      () => 99,
+    );
+    expect((await readTargetGrants(home)).file.grants).toMatchObject([
+      {
+        flow: "daily:send",
+        kind: "service",
+        target: "https://example.com/hook",
+        by: { via: "ios", id: "owner" },
+        at: 99,
+      },
     ]);
   });
 

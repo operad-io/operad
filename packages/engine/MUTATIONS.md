@@ -1094,3 +1094,17 @@ the row fields.
 |---|---|---|---|
 | T-0536-M1 | packages/engine/src/plugin/action-schema.ts | `current` was not a keyword of an action's args schema | `plugin registry validation > an action schema carries the value a field has now` |
 | T-0536-M2 | packages/engine/src/plugin/registry.ts | a harness's efforts function was called with no settings | `a harness plugin's efforts > a function reads the default from the plugin's settings` |
+
+## T-0543 — a step that leaves nothing is not swept as if it left something
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0543-M1 | packages/engine/src/platform/process-group.ts | the stop after a line that reported its own status sent one SIGKILL and never looked again for a child forked as it went out | `process groups > a child forked as a line that ended is signaled does not outlive it` |
+| T-0543-M2 | packages/engine/src/platform/step-reap.ts | the process table kept a process that had ended and waited to be reaped | `what a step leaves behind > a process that ended and waits to be reaped is not in the table` |
+## T-0534 — the flow definition reaches a step, and a late answer carries who answered
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0534-M1 | packages/engine/src/runner/runner.ts | a step run in this process got no flow definition | `run access profile > accepts a field one step of the flow enforces and gives it to every step` |
+| T-0534-M2 | packages/engine/src/kernel/decide.ts | a resumed step's `askAnswer` dropped the actor who answered | `decide: an answered question returns to the step > the step runs again with its params, the session, the answer and a grant` |
+| T-0534-M3 | packages/engine/src/runner/step-worker.ts | the worker got no flow definition from the run | `step worker in this process > a worker step gets the flow definition the run executes` |

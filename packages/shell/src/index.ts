@@ -92,6 +92,11 @@ async function outwardProblem(ctx: StepContext, line: string): Promise<string | 
     ask: ctx.ask.bind(ctx),
     personStarted: personStarted(ctx.trigger),
     onTimeout: "reject_once" as const,
+    home: ctx.home,
+    ...(ctx.flow === undefined ? {} : { flow: ctx.flow }),
+    onLog: (message: string) => {
+      void ctx.logger.write(message);
+    },
   };
   for (const write of outwardCommandWrites(ctx.access, line)) {
     if (!(await guardOutward(guard, write))) {

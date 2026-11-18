@@ -1399,6 +1399,13 @@ the row fields.
 |---|---|---|---|
 | T-0533-M10 | packages/dev/src/integrate.ts | the integrate push no longer asked before it ran | `dev/integrate > a scheduled run asks before the push, naming the remote and branch` |
 
+## T-0534 — listing target grants, and the integrate push
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0534-M1 | packages/dev/src/access-grants.ts | the `allow` action did not remove a target | `dev actions > allow lists the always-allowed outward targets and removes one` |
+| T-0534-M2 | packages/dev/src/integrate.ts | the integrate push got no flow, so it could not use or record a target grant | `dev/integrate > always for this flow and target records the push target for a scheduled run` |
+
 ## T-0539 — a worker's question waits for a person and resumes the same worker
 
 | id | file | mutation | failing test |

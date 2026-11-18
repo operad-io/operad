@@ -7,6 +7,7 @@ import { PLAN_FILTERS, REPO_FILTERS, TASK_FILTERS } from "./model.ts";
 import devFlow from "../flows/dev.flow.ts";
 import chatWorktreeFlow from "../flows/chat-worktree.flow.ts";
 import { actions } from "./actions.ts";
+import { accessAction } from "./access-grants.ts";
 import { runAnnounce } from "./announce.ts";
 import { checkDev } from "./check.ts";
 import { chatActions, runChatSettings, runChatWorktree } from "./chat.ts";
@@ -193,7 +194,7 @@ export function createDevPlugin() {
         mode: "auto",
       },
     ],
-    actions: [...actions, ...chatActions, ...creationActions],
+    actions: [...actions, accessAction, ...chatActions, ...creationActions],
     commands,
     onTick: runScheduler,
     standing: devStanding,

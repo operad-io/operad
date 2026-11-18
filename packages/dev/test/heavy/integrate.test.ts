@@ -19,7 +19,8 @@ import {
 } from "../../src/integration-queue.ts";
 import { validateDevSettings } from "../../src/settings.ts";
 import { fileURLToPath } from "node:url";
-import { SqlitePluginStore, PluginRegistry } from "@operad-io/engine";
+import { defineFlow, SqlitePluginStore, PluginRegistry } from "@operad-io/engine";
+import { OUTWARD_ALLOW_TARGET, readTargetGrants } from "@operad-io/access-match";
 import { createShellPlugin } from "@operad-io/shell";
 import {
   addPlan,
@@ -323,6 +324,34 @@ describe("dev/integrate", () => {
     });
     expect(result.result).toBe("merged");
     expect(asked[0]).toContain("origin/main");
+  });
+
+  test("always for this flow and target records the push target for a scheduled run", async () => {
+    const state = await fixture({ style: "merge" });
+    const flow = defineFlow({
+      name: "deploy",
+      entry: "done",
+      steps: [{ id: "done", kind: "end", params: { status: "done" }, replay: "safe" }],
+    });
+    const result = await state.registry.runStep("dev/integrate", {}, {
+      runId: "integrate-target-grant",
+      object: { type: "task", id: state.taskKey, data: {} },
+      trigger: { source: "cron", type: "tick", key: "t-grant", hops: 0 },
+      flow,
+      asker: {
+        ask: () =>
+          Promise.resolve({
+            kind: "answered",
+            answer: { choice: OUTWARD_ALLOW_TARGET, actor: { via: "ios", id: "owner" } },
+          }),
+        useGrant: () => Promise.resolve(false),
+      },
+    });
+    expect(result.result).toBe("merged");
+    const grants = (await readTargetGrants(state.root)).file.grants;
+    expect(grants).toMatchObject([
+      { flow: "deploy", kind: "repository", target: "origin/main", by: { via: "ios", id: "owner" } },
+    ]);
   });
 
   test("merge style lands a merge commit with the documented message", async () => {

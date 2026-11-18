@@ -45,7 +45,23 @@ the `home` option). `test/match.test.ts` follows the tables below.
 | `outwardAllow` | string[], optional | targets a background run may write to without asking: a channel and conversation (`telegram:123`), an address, a repository and branch (`origin/main`), or a service. `owner` stands for the owner's own channels; the built-in default contains it |
 | `background` | boolean, optional | set by a harness on a run no person's message started. An outward command or unknown MCP tool then asks even without another rule, and `alwaysAllow` is ignored (ADR 0025 D3 and D10) |
 
-`outwardAllowed(profile, write)` says whether one outward write is on the allowlist or to an owner channel. `outwardQuestion(write)` is the pending question that names its target and carries its content; its choices are `send_once` and `reject_once`. `guardOutward(ctx, write)` asks it only in a background run and only when the target is not allowed; `declaredOutward(declaration, input)` reads a step or action's `reachesOutside`/`outward` declaration, and `guardDeclaredOutward` guards every write it names. `personStarted(trigger)` tells a person's chat message from every other event.
+`outwardAllowed(profile, write)` says whether one outward write is on the allowlist or to an owner channel. `outwardQuestion(write)` is the pending question that names its target and carries its content; its choices are `send_once` and `reject_once`, plus `allow_target` when the caller can bind a grant (`Always for this flow and target`). `guardOutward(ctx, write)` asks it only in a background run and only when the target is not allowed; with `home` and `flow` it first checks the target grants of `access-grants.json` and records one for the `allow_target` answer. `declaredOutward(declaration, input)` reads a step or action's `reachesOutside`/`outward` declaration, and `guardDeclaredOutward` guards every write it names. `personStarted(trigger)` tells a person's chat message from every other event.
+
+## Target grants
+
+`$OPERAD_HOME/access-grants.json` is the user layer of the third outward
+answer (ADR 0025 D12). `readTargetGrants(home)` returns `{ file, problem? }`,
+where `file` is `{ flows, grants }`. `targetGrantFor(home, flow, target)`
+returns the grant for this flow definition and target, and first records a
+changed definition: the flow's digest is kept beside a generated id, and a
+digest that differs from the last one seen gives a new id. So an edit and a
+later revert both change the identity, and no older grant comes back.
+`appendTargetGrant(home, flow, write, by, at)` writes or replaces the grant of
+that definition and target; `revokeTargetGrants(home, target, flow?)` removes
+the grants of a target and returns how many went. The grant is bound to the
+target, never to the content sent. The file is written under the platform file
+lock and replaced whole; an unreadable file is reported and treated as empty.
+`flowDefinitionDigest(flow)` is the stable digest on which the identity rests.
 
 `findGrant(profile, call)` returns the grant that covers a call, or `undefined`:
 a `command` grant covers a `bash` call whose command equals `value` character

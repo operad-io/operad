@@ -16,6 +16,13 @@ export default definePlugin({
       },
     },
     {
+      name: "flow",
+      results: ["ok"],
+      run(ctx) {
+        return { result: "ok", data: { flow: ctx.flow?.name ?? null } };
+      },
+    },
+    {
       name: "write",
       results: ["ok"],
       async run(ctx) {

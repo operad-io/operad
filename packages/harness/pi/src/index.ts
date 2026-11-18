@@ -56,6 +56,7 @@ import {
   parseStepFlags,
   personStarted,
   readAlwaysAllow,
+  recordTargetGrantFromAnswer,
   resultFor,
   secs,
   stringListParam,
@@ -661,6 +662,15 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
               }
             }
           }
+          if (ctx.flow !== undefined) {
+            try {
+              await recordTargetGrantFromAnswer(ctx.home, ctx.flow, access, rawAskAnswer, now);
+            } catch (error) {
+              await ctx.logger.write(
+                `the target grant could not be written: ${String(error)}; this call runs once`,
+              );
+            }
+          }
           let runAccess = accessWithAlwaysAllow(access, [], false);
           if (allowAlways) {
             const user = await readAlwaysAllow(ctx.home);
@@ -716,6 +726,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
             onStop: () => stopper.abort(),
             secrets: storeSecrets,
             ...(allowAlways ? { alwaysAllow: { home: ctx.home, cwd } } : {}),
+            ...(ctx.flow === undefined ? {} : { targetGrants: { home: ctx.home, flow: ctx.flow } }),
             onLog: (message) => {
               void ctx.logger.write(message);
             },

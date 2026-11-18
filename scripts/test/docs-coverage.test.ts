@@ -143,6 +143,7 @@ const FILE_PAGES: Readonly<Record<string, string>> = {
   "review.schema.json": "dev.md",
   "bot.schema.json": "config.md",
   "access-user.schema.json": "access.md",
+  "access-grants.schema.json": "access.md",
   "telegram.schema.json": "telegram.md",
 };
 
@@ -531,6 +532,7 @@ describe("the user docs", () => {
   test("every config file's example on the pages fits its schema", () => {
     const examples = schemaExamples();
     const expected = [
+      "access-grants.schema.json",
       "access-user.schema.json",
       "config.schema.json",
       "dev.schema.json",

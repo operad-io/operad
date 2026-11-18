@@ -235,3 +235,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0533-M5 | packages/harness/pi/src/index.ts | a background run passed no `background` marker to its worker | `pi: a call that must ask a person > a background run ignores the user layer and is not offered allow_always` |
+
+## T-0534 — target grants on pi's outward question
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0534-M1 | packages/harness/pi/src/index.ts | the harness asker got no target-grant context, so a background outward call could neither record nor use a grant | `pi: a call that must ask a person > always for this flow and target records a grant and the next scheduled run does not ask` |
