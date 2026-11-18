@@ -97,6 +97,32 @@ switch (mode) {
     process.exit(0);
     break;
   }
+  case "outward": {
+    // A background run's outward call. The host either asks or lifts it with a
+    // target grant; the worker only sees the answer.
+    const session = (input as { resumeSession?: string }).resumeSession ?? "11111111-2222-4333-8444-555555555555";
+    mark();
+    line({
+      type: "ask_call",
+      id: 7,
+      kind: "command",
+      value: "git push origin main",
+      shown: "git push",
+      session,
+      outward: { kind: "repository", target: "origin/main", content: "git push origin main" },
+    });
+    process.on("SIGTERM", () => {
+      line(result({ result: "cancelled" }));
+      process.exit(143);
+    });
+    const ack = await stdinLine();
+    if (recordPath !== undefined) writeFileSync(`${recordPath}.ack`, ack);
+    line({ type: "ask_resolved", id: 7 });
+    if ((JSON.parse(ack) as { decision?: string }).decision === "stop") await hang();
+    line(result());
+    process.exit(0);
+    break;
+  }
   case "always": {
     // The real worker's access check lets an exact user-layer command through
     // without asking. This mode proves the entry reached the worker.

@@ -105,3 +105,9 @@ recorded. The root [MUTATIONS.md](../../../MUTATIONS.md) explains the format and
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0533-M7 | packages/harness/codex/src/index.ts | the ask_call line left out the outward target | `codex/agent: permissions > a background run asks about an outward command with its target` |
+
+## T-0534 — target grants on codex's outward question
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0534-M1 | packages/harness/codex/src/index.ts | the harness asker got no target-grant context, so a background outward call could neither record nor use a grant | `codex/agent: permissions > always for this flow and target records a grant and the next scheduled run does not ask` |
