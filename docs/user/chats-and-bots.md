@@ -26,7 +26,7 @@ The plugins are deliberately cautious. A chat on a repository is read-only until
 4. While the agent works, the `transcript` section shows the messages, tool calls and the unfinished text of the current reply.
 5. Each tool call is checked against the chat's access profile with the chat's access level composed into it (see [Access](access.md) and [Access level](#access-level)). For a bot chat the profile is the default profile plus the bot's own `access` settings; the bot's settings are read again at every reply (see [Bots](#bots)).
 6. A chat on a repository starts in the main clone as read-only. A write, or a command that is not known to only read, becomes the worktree question, which offers Allow once, Always allow, Deny and opening a worktree; the worktree offer has `dev` open `work/chat-<id>`, ends the asking reply and answers the same message again there, so the agent continues with write access.
-7. When a bot proposes a skill, a settings change or an MCP server (`operad bot skill`, `bot setting`, `bot mcp`), a `bot-proposal` object waits in Pending. `bot:approve` applies it and `bot:reject` drops it (see [Bot objects and proposals](#bot-objects-and-proposals)).
+7. When a bot proposes a skill, a settings change, an MCP server or a scheduled prompt (`operad bot skill`, `bot setting`, `bot mcp`, `bot schedule`), a `bot-proposal` object waits in Pending. `bot:approve` applies it and `bot:reject` drops it (see [Bot objects and proposals](#bot-objects-and-proposals)).
 8. `chat:close` records `chat.closed`; the transcript stays readable and `chat:send` is refused.
 
 ## Chats
@@ -260,7 +260,9 @@ proposal is one of:
   directory and added to the bot's `skills`;
 - a settings change (`bot setting`): the bot's settings before and after;
 - an MCP server (`bot mcp`): a new server, an upgrade, or a server whose tools
-  changed.
+  changed;
+- a scheduled prompt (`bot schedule`): adding, changing or removing one entry,
+  shown with its name, schedule in words and as cron, prompt, model and effort.
 
 `bot:approve` applies a pending proposal and `bot:reject` rejects it. A proposal
 that is not pending still shows its state.
@@ -289,6 +291,15 @@ and its secrets. It prints
 change. It cannot add or change `mcpServers`; that is what `bot mcp` is for. It
 prints `proposed settings for bot <bot>; review it in pending`.
 
+`operad bot schedule <bot> add|edit|remove <name>` proposes a change to the
+bot's scheduled prompts. `add` needs `--schedule <cron>`, `--words <schedule in
+words>` and `--prompt <text>`; `edit` needs at least one of `--schedule`,
+`--prompt`, `--model` and `--effort`, with `--words`; `remove` takes the name and
+`--words`. Optional `--model` and `--effort` set or clear those fields. It prints
+`proposed scheduled prompt "<name>" for bot <bot>; review it in pending`. A
+chat's agent calls this command through operad's `command` tool; a schedule it
+writes is a proposal, never an immediate entry.
+
 ### Scheduled prompts
 
 A bot can hold scheduled prompts. The user word is **Scheduled** (Chinese
@@ -296,6 +307,14 @@ A bot can hold scheduled prompts. The user word is **Scheduled** (Chinese
 time zone, the prompt, an optional model and effort, and whether it is paused.
 The bot page lists the entries with their next run and the last run's result and
 chat id.
+
+To schedule something from a chat, say it in words ("every morning at 8, collect
+the day's news"). The bot writes a proposal with the name, the schedule in words
+and as a five-field cron expression, the prompt, and the model and effort. It
+waits in Pending: `bot:approve` adds it, `bot:reject` drops it, and until then no
+entry exists. Editing or removing an existing entry from a chat is a proposal
+too; a change made through the actions below is your own edit and applies at
+once.
 
 ```sh
 operad bot:schedule-add default --name Morning --schedule "0 8 * * *" --prompt "Collect the day's news."

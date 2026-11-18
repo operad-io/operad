@@ -152,3 +152,21 @@ changes for bots, in the order they were recorded. The root
 | T-0546-M7 | packages/bot/src/index.ts | syncing a bot from the settings dropped the scheduled entries stored on its object | `scheduled prompts > the view shows next run time and the last result and chat id; edit, pause, resume and remove are actions` |
 | T-0546-M8 | packages/bot/src/index.ts | the scheduled message was sent with the bot's actor but no `bot` event source, so it came from `other` and counted as a person's | `scheduled prompts > an entry fires on time, opens a new chat under the bot with its prompt, and the reply's notification carries a summary` |
 | T-0546-M9 | packages/bot/src/schedule.ts | the bot page left out the last run's result and chat id | `scheduled prompts > an entry fires on time, opens a new chat under the bot with its prompt, and the reply's notification carries a summary` |
+
+## T-0547 — a schedule a bot writes in a chat is a proposal
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0547-M1 | packages/bot/src/proposals.ts | a schedule proposal applied its add, edit or remove as it was made | `schedules a chat proposes > a chat's add makes a pending proposal and no entry; approve adds it, reject leaves none` (and the edit and remove tests) |
+| T-0547-M2 | packages/bot/src/proposals.ts | approving a schedule proposal marked it applied but changed no entry | `schedules a chat proposes > a chat's add makes a pending proposal and no entry; approve adds it, reject leaves none` (and the edit and remove tests) |
+| T-0547-M3 | packages/bot/src/schedule.ts | applying a proposed edit wrote the entry before instead of after | `schedules a chat proposes > a proposed edit leaves the entry as it is until approve` |
+| T-0547-M4 | packages/bot/src/proposals.ts | the review dropped the schedule in words | `schedules a chat proposes > a chat's add makes a pending proposal and no entry; approve adds it, reject leaves none` (and the edit test) |
+| T-0547-M5 | packages/bot/src/index.ts | `bot/settings` returned no starting line, so the bot's agent was not told a schedule is a proposal | `schedules a chat proposes > a bot chat starts with the line that a schedule is a proposal` |
+| T-0547-M6 | packages/bot/src/schedule.ts | applying a proposed remove left the entry in place | `schedules a chat proposes > a proposed remove deletes the entry only after approve` |
+| T-0547-M7 | packages/bot/src/proposals.ts | the duplicate-add refusal was skipped, so a second schedule with the same name was proposed | `schedules a chat refuses to propose > an add of a name the bot already has is refused` |
+| T-0547-M8 | packages/bot/src/proposals.ts | an edit of a missing name was not refused, while a remove still was | `schedules a chat refuses to propose > an edit of a missing name is refused` |
+| T-0547-M9 | packages/bot/src/proposals.ts | a remove of a missing name was not refused, while an edit still was | `schedules a chat refuses to propose > a remove of a missing name is refused` |
+| T-0547-M10 | packages/bot/src/proposals.ts | an add without the schedule in words was accepted | `schedules a chat refuses to propose > an add without the schedule in words is refused` |
+| T-0547-M11 | packages/bot/src/proposals.ts | an add accepted the schedule without checking the cron expression | `schedules a chat refuses to propose > a malformed cron expression is refused` |
+| T-0547-M12 | packages/bot/src/proposals.ts | an edit with nothing to change was accepted | `schedules a chat refuses to propose > an edit with nothing to change is refused` |
+| T-0547-M13 | packages/bot/src/proposals.ts | a remove carrying other fields was accepted | `schedules a chat refuses to propose > a remove that carries other fields is refused` |

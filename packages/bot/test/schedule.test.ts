@@ -5,7 +5,9 @@ import { CHAT_TYPE, allMessages } from "@operad-io/chat";
 import { createViews, type ClientApi, type TriggerEvent } from "@operad-io/engine";
 import {
   BotScheduleSource,
+  PROPOSAL_TYPE,
   nextRun,
+  proposalData,
   scheduledPrompts,
   type ScheduleNotice,
   type ScheduledPrompt,
@@ -229,5 +231,292 @@ describe("scheduled prompts", () => {
     } finally {
       views.close();
     }
+  });
+});
+
+describe("schedules a chat proposes", () => {
+  const entries = async (r: Awaited<ReturnType<typeof rig>>): Promise<readonly ScheduledPrompt[]> =>
+    scheduledPrompts((await r.store.get("bot", "default"))?.data ?? {});
+
+  test("a bot chat starts with the line that a schedule is a proposal", async () => {
+    const r = await rig();
+    const chat = await r.open("default");
+    await r.say(chat, "hello");
+    await r.reply(chat);
+    const prompt = String(r.calls[0]?.params.prompt ?? "");
+    expect(prompt).toContain("plugin `bot`");
+    expect(prompt).toContain("verb `schedule`");
+    expect(prompt).toContain("Pending");
+  });
+
+  test("a chat's add makes a pending proposal and no entry; approve adds it, reject leaves none", async () => {
+    const r = await rig();
+    const said = await r.command("bot", "schedule", [
+      "default",
+      "add",
+      "Morning",
+      "--schedule",
+      "0 8 * * *",
+      "--words",
+      "every morning at 8",
+      "--prompt",
+      "Collect the news.",
+      "--model",
+      "claude-a",
+      "--effort",
+      "claude-low",
+    ]);
+    expect(String(said)).toContain('proposed scheduled prompt "Morning"');
+    expect(await entries(r)).toEqual([]);
+
+    const items = await r.registry.standing();
+    expect(items).toHaveLength(1);
+    expect(items[0]?.actions).toEqual([
+      { plugin: "bot", action: "review" },
+      { plugin: "bot", action: "approve" },
+      { plugin: "bot", action: "reject" },
+    ]);
+    const id = items[0]?.object?.id;
+    if (id === undefined) throw new Error("no proposal item");
+    const proposal = await r.store.get(PROPOSAL_TYPE, id);
+    if (proposal === undefined) throw new Error("no proposal");
+    expect(proposalData(proposal).kind).toBe("schedule");
+    expect(proposalData(proposal).state).toBe("pending");
+
+    const views = createViews({ registry: r.registry, store: r.store, onLog: () => undefined });
+    try {
+      const review = await views.section(`${PROPOSAL_TYPE}:${id}`, "review", undefined, {
+        full: true,
+      });
+      expect(review.markdown).toContain("Scheduled prompt Morning");
+      expect(review.markdown).toContain("every morning at 8");
+      expect(review.markdown).toContain("0 8 * * *");
+      expect(review.markdown).toContain("Collect the news.");
+      expect(review.markdown).toContain("claude-a");
+      expect(review.markdown).toContain("claude-low");
+    } finally {
+      views.close();
+    }
+
+    await r.act(PROPOSAL_TYPE, id, "bot/reject");
+    expect(await entries(r)).toEqual([]);
+    expect(await r.registry.standing()).toEqual([]);
+
+    await r.command("bot", "schedule", [
+      "default",
+      "add",
+      "Morning",
+      "--schedule",
+      "0 8 * * *",
+      "--words",
+      "every morning at 8",
+      "--prompt",
+      "Collect the news.",
+      "--model",
+      "claude-a",
+      "--effort",
+      "claude-low",
+    ]);
+    const again = (await r.registry.standing())[0]?.object?.id;
+    if (again === undefined) throw new Error("no second proposal item");
+    await r.act(PROPOSAL_TYPE, again, "bot/approve");
+    expect(await entries(r)).toEqual([
+      {
+        name: "Morning",
+        schedule: "0 8 * * *",
+        prompt: "Collect the news.",
+        model: "claude-a",
+        effort: "claude-low",
+        paused: false,
+      },
+    ]);
+    expect(await r.registry.standing()).toEqual([]);
+  });
+
+  test("a proposed edit leaves the entry as it is until approve", async () => {
+    const r = await rig();
+    await add(r, { name: "Morning", schedule: "0 8 * * *", prompt: "At eight." });
+    await r.command("bot", "schedule", [
+      "default",
+      "edit",
+      "Morning",
+      "--schedule",
+      "0 9 * * *",
+      "--words",
+      "every morning at 9",
+      "--prompt",
+      "At nine.",
+    ]);
+    expect(await entries(r)).toEqual([
+      { name: "Morning", schedule: "0 8 * * *", prompt: "At eight.", paused: false },
+    ]);
+    const id = (await r.registry.standing())[0]?.object?.id;
+    if (id === undefined) throw new Error("no proposal item");
+    const views = createViews({ registry: r.registry, store: r.store, onLog: () => undefined });
+    try {
+      const review = await views.section(`${PROPOSAL_TYPE}:${id}`, "review", undefined, {
+        full: true,
+      });
+      expect(review.markdown).toContain("### Before");
+      expect(review.markdown).toContain("At eight.");
+      expect(review.markdown).toContain("### After");
+      expect(review.markdown).toContain("every morning at 9");
+      expect(review.markdown).toContain("0 9 * * *");
+      expect(review.markdown).toContain("At nine.");
+    } finally {
+      views.close();
+    }
+    await r.act(PROPOSAL_TYPE, id, "bot/approve");
+    expect(await entries(r)).toEqual([
+      { name: "Morning", schedule: "0 9 * * *", prompt: "At nine.", paused: false },
+    ]);
+  });
+
+  test("a proposed remove deletes the entry only after approve", async () => {
+    const r = await rig();
+    await add(r, { name: "Gone", schedule: "0 8 * * *", prompt: "Never." });
+    await r.command("bot", "schedule", [
+      "default",
+      "remove",
+      "Gone",
+      "--words",
+      "every morning at 8",
+    ]);
+    expect(await entries(r)).toHaveLength(1);
+    const id = (await r.registry.standing())[0]?.object?.id;
+    if (id === undefined) throw new Error("no proposal item");
+    await r.act(PROPOSAL_TYPE, id, "bot/approve");
+    expect(await entries(r)).toEqual([]);
+  });
+});
+
+describe("schedules a chat refuses to propose", () => {
+  const entries = async (r: Awaited<ReturnType<typeof rig>>): Promise<readonly ScheduledPrompt[]> =>
+    scheduledPrompts((await r.store.get("bot", "default"))?.data ?? {});
+
+  async function unchanged(r: Awaited<ReturnType<typeof rig>>): Promise<void> {
+    expect(await r.registry.standing()).toEqual([]);
+    expect(await entries(r)).toEqual([
+      { name: "Morning", schedule: "0 8 * * *", prompt: "At eight.", paused: false },
+    ]);
+  }
+
+  test("an add of a name the bot already has is refused", async () => {
+    const r = await rig();
+    await add(r, { name: "Morning", schedule: "0 8 * * *", prompt: "At eight." });
+    await expect(
+      r.command("bot", "schedule", [
+        "default",
+        "add",
+        "Morning",
+        "--schedule",
+        "0 9 * * *",
+        "--words",
+        "every morning at 9",
+        "--prompt",
+        "At nine.",
+      ]),
+    ).rejects.toThrow('bot default already has a scheduled prompt "Morning"');
+    await unchanged(r);
+  });
+
+  test("an edit of a missing name is refused", async () => {
+    const r = await rig();
+    await add(r, { name: "Morning", schedule: "0 8 * * *", prompt: "At eight." });
+    await expect(
+      r.command("bot", "schedule", [
+        "default",
+        "edit",
+        "Evening",
+        "--prompt",
+        "At nine.",
+        "--words",
+        "every evening at 9",
+      ]),
+    ).rejects.toThrow('bot default has no scheduled prompt "Evening"');
+    await unchanged(r);
+  });
+
+  test("a remove of a missing name is refused", async () => {
+    const r = await rig();
+    await add(r, { name: "Morning", schedule: "0 8 * * *", prompt: "At eight." });
+    await expect(
+      r.command("bot", "schedule", [
+        "default",
+        "remove",
+        "Evening",
+        "--words",
+        "every evening at 9",
+      ]),
+    ).rejects.toThrow('bot default has no scheduled prompt "Evening"');
+    await unchanged(r);
+  });
+
+  test("an add without the schedule in words is refused", async () => {
+    const r = await rig();
+    await add(r, { name: "Morning", schedule: "0 8 * * *", prompt: "At eight." });
+    await expect(
+      r.command("bot", "schedule", [
+        "default",
+        "add",
+        "Evening",
+        "--schedule",
+        "0 21 * * *",
+        "--prompt",
+        "At nine.",
+      ]),
+    ).rejects.toThrow("give the schedule in words with --words");
+    await unchanged(r);
+  });
+
+  test("a malformed cron expression is refused", async () => {
+    const r = await rig();
+    await add(r, { name: "Morning", schedule: "0 8 * * *", prompt: "At eight." });
+    await expect(
+      r.command("bot", "schedule", [
+        "default",
+        "add",
+        "Evening",
+        "--schedule",
+        "every evening",
+        "--words",
+        "every evening at 9",
+        "--prompt",
+        "At nine.",
+      ]),
+    ).rejects.toThrow();
+    await unchanged(r);
+  });
+
+  test("an edit with nothing to change is refused", async () => {
+    const r = await rig();
+    await add(r, { name: "Morning", schedule: "0 8 * * *", prompt: "At eight." });
+    await expect(
+      r.command("bot", "schedule", [
+        "default",
+        "edit",
+        "Morning",
+        "--words",
+        "every morning at 8",
+      ]),
+    ).rejects.toThrow("editing a scheduled prompt needs a field to change");
+    await unchanged(r);
+  });
+
+  test("a remove that carries other fields is refused", async () => {
+    const r = await rig();
+    await add(r, { name: "Morning", schedule: "0 8 * * *", prompt: "At eight." });
+    await expect(
+      r.command("bot", "schedule", [
+        "default",
+        "remove",
+        "Morning",
+        "--words",
+        "every morning at 8",
+        "--prompt",
+        "At nine.",
+      ]),
+    ).rejects.toThrow("removing a scheduled prompt takes only its name");
+    await unchanged(r);
   });
 });
