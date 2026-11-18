@@ -88,6 +88,16 @@ test("an unknown MCP tool in a background run is an outward service call", () =>
   });
 });
 
+test("a background MCP call asks with the default profile, which has no allowMcp", () => {
+  const profile = { ...PROFILE, background: true };
+  const verdict = match(profile, { tool: "mcp", input: { server: "calendar", tool: "create" }, cwd: CWD }, { home: HOME });
+  expect(verdict).toMatchObject({
+    ask: true,
+    outward: { kind: "service", target: "mcp calendar.create" },
+  });
+  expect(match({ ...profile, background: false }, { tool: "mcp", input: { server: "calendar", tool: "create" }, cwd: CWD }, { home: HOME })).toEqual({ allow: true });
+});
+
 const MESSAGE: OutwardWrite = { kind: "channel", target: "telegram:999", content: "the digest" };
 
 test("a background message to another chat asks, names the chat, and carries the text", async () => {

@@ -96,6 +96,30 @@ describe("shell/command", () => {
     expect(asked[0]).toContain("origin/main");
   });
 
+  test("shell/probe checks an outward line before it runs it", async () => {
+    const { registry } = await fixture();
+    const asked: string[] = [];
+    const result = await registry.runStep(
+      "shell/probe",
+      { line: "git push --dry-run origin main" },
+      {
+        runId: "run-probe-outward",
+        access: { ...defaultAccess(), background: true } as never,
+        trigger: { source: "cron", type: "tick", key: "t1", hops: 0 },
+        asker: {
+          ask: (request) => {
+            asked.push(request.prompt);
+            return Promise.resolve({ kind: "answered", answer: { choice: "send_once" } });
+          },
+          useGrant: () => Promise.resolve(false),
+        },
+      },
+    );
+    expect(result.result).toBe("waiting");
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toContain("origin/main");
+  });
+
   test("understands quoting, pipes and &&", async () => {
     const { registry } = await fixture();
     const result = await registry.runStep(

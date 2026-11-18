@@ -33,3 +33,4 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0533-M9 | packages/shell/src/index.ts | `shell/command` stopped checking its line for an outward write | `shell/command > a background run asks before an outward command and names its target` |
+| T-0533-M11 | packages/shell/src/index.ts | `shell/probe` stopped checking its line for an outward write | `shell/command > shell/probe checks an outward line before it runs it` |

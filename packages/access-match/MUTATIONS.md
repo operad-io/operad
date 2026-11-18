@@ -164,3 +164,4 @@ and the row fields.
 | T-0533-M1 | packages/access-match/src/index.ts | a background run no longer turned a matching outward command into an ask | `a background run asks about git push with the remote and branch as its target` |
 | T-0533-M2 | packages/access-match/src/outward.ts | an allowlisted target no longer stopped the question | `an allowlisted target is not outward; a person-started run never asks for one` |
 | T-0533-M3 | packages/access-match/src/outward.ts | every answer except a rejection let an outward write through | `send once is the only answer that lets a background message go; reject refuses it` |
+| T-0533-M12 | packages/access-match/src/index.ts | a background MCP call with no `allowMcp` was allowed without asking | `a background MCP call asks with the default profile, which has no allowMcp` |

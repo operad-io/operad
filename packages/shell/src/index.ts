@@ -438,6 +438,11 @@ export function createShellPlugin(options: ShellPluginOptions = {}) {
             };
           }
 
+          const refused = await outwardProblem(ctx, line);
+          if (refused !== undefined) {
+            return { result: "interrupted", data: { reason: "outward", message: refused } };
+          }
+
           const outcome = await runLine({
             line,
             cwd,

@@ -862,6 +862,30 @@ export function match(given: AccessProfile, call: ToolCall, options: MatchOption
   if (call.tool === MCP_TOOL) {
     // An allow_always answer to an unlisted tool is its exact command entry.
     if (given.background !== true && alwaysAllowed(profile, call)) return ALLOW;
+    const server: unknown = call.input["server"];
+    const tool: unknown = call.input["tool"];
+    // In a background run an MCP tool is outward even when `allowMcp` is
+    // absent: the default profile has no list, so it cannot be a pass.
+    if (given.background === true && profile.allowMcp === undefined) {
+      if (typeof server !== "string" || typeof tool !== "string") {
+        return { allow: false, reason: "an MCP call that names no server and tool cannot be checked" };
+      }
+      const write: OutwardWrite = {
+        kind: "service",
+        target: mcpCallValue(server, tool),
+        content: `the MCP tool "${server}.${tool}"`,
+      };
+      if (outwardAllowed(profile, write)) return ALLOW;
+      return {
+        allow: false,
+        ask: true,
+        reason: `the MCP tool "${server}.${tool}" writes outside operad and the run was not started by a person`,
+        rule: "outward",
+        kind: "command",
+        value: write.target,
+        outward: write,
+      };
+    }
     const found = matchMcp(profile, call);
     if (given.background === true && found.ask === true) {
       const write: OutwardWrite = {
