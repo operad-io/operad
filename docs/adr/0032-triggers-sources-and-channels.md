@@ -47,3 +47,7 @@ A plugin's declaration carries default rules of the same shape as `triggers.json
 ### D10: Four channels
 
 Only four channels are built, in this order: Telegram, WhatsApp, Slack, iMessage. The first is Telegram.
+
+### D11: The cron source catches up missed runs
+
+The cron source keeps the last minute it fired for each rule in `<home>/cron/state.json`, under the operad home and never under a repository's `.git`. When `serve` starts, or when the clock jumps far beyond the source's check interval (the machine slept), the source looks back up to seven days for each rule, emits the most recent missed tick once, and leaves older missed times out; the tick's summary names the times it skipped and says that only the latest missed run is caught up. A catch-up tick carries the planned time and its lateness in the event data (`scheduledAt` and `lateSecs`), so a step or prompt can tell the agent; an on-time tick carries no lateness. A rule whose schedule changed starts fresh: the old schedule's last time is not used and no tick is caught up for it.
