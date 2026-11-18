@@ -1,11 +1,12 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { chmodSync, writeFileSync } from "node:fs";
+import { chmodSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { MemoryPluginStore, PluginRegistry } from "@operad-io/engine";
 import {
   CLAUDE_FLOOR,
   ClaudeInstallError,
   ClaudeNotFoundError,
+  PROBE_EMPTY_ATTEMPTS,
   compareVersions,
   inspectClaude,
   sdkVersion,
@@ -45,6 +46,46 @@ async function fakeClaude(fake: FakeClaude = {}): Promise<string> {
   );
   chmodSync(path, 0o755);
   return path;
+}
+
+/**
+ * A `claude` whose probes exit 0 with no output for their first `version` and
+ * `auth` calls, as a spawned command may under load, and then answer.
+ */
+async function slowClaude(empty: { readonly version?: number; readonly auth?: number } = {}): Promise<{
+  readonly path: string;
+  readonly calls: () => number;
+}> {
+  const root = await tempRoot();
+  const path = join(root, "claude");
+  const calls = join(root, "calls");
+  const version = empty.version ?? 0;
+  const auth = empty.auth ?? 0;
+  writeFileSync(
+    path,
+    `#!/bin/sh
+total=$(cat '${calls}' 2>/dev/null || echo 0)
+total=$((total + 1))
+printf '%s' "$total" > '${calls}'
+case "$1" in
+  --version)
+    probe=$(cat '${calls}.version' 2>/dev/null || echo 0)
+    probe=$((probe + 1))
+    printf '%s' "$probe" > '${calls}.version'
+    if [ "$probe" -le ${version} ]; then exit 0; fi
+    printf '%s\\n' '2.1.319 (Claude Code)';;
+  auth)
+    probe=$(cat '${calls}.auth' 2>/dev/null || echo 0)
+    probe=$((probe + 1))
+    printf '%s' "$probe" > '${calls}.auth'
+    if [ "$probe" -le ${auth} ]; then exit 0; fi
+    printf '%s\\n' '${LOGGED_IN}';;
+  *) exit 9;;
+esac
+`,
+  );
+  chmodSync(path, 0o755);
+  return { path, calls: () => Number(readFileSync(calls, "utf8")) };
 }
 
 describe("inspectClaude", () => {
@@ -91,6 +132,21 @@ describe("inspectClaude", () => {
   test("a version output it cannot parse is refused with what it printed", async () => {
     const path = await fakeClaude({ version: "hello there" });
     expect(() => inspectClaude(path)).toThrow(/did not print a version this check can read \(it printed "hello there"\)/);
+  });
+
+  test("an empty success from either probe is asked again", async () => {
+    const fake = await slowClaude({ version: 1, auth: 1 });
+    const found = inspectClaude(fake.path);
+    expect(found.version).toBe("2.1.319");
+    expect(found.login).toBe("claude.ai (max)");
+    // One empty answer and one real answer for each probe.
+    expect(fake.calls()).toBe(4);
+  });
+
+  test("a probe that never answers is refused after a bounded number of asks", async () => {
+    const fake = await slowClaude({ version: PROBE_EMPTY_ATTEMPTS });
+    expect(() => inspectClaude(fake.path)).toThrow(/did not print a version/);
+    expect(fake.calls()).toBe(PROBE_EMPTY_ATTEMPTS);
   });
 
   test("not logged in is refused and says how to log in", async () => {
