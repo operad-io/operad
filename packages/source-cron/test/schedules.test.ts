@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   loadTriggerRules,
@@ -229,6 +229,58 @@ describe("scheduled flows", () => {
     const entries = await list(home, clock);
     expect(entries[0]).toMatchObject({ paused: true, nextRun: null });
     expect(await run(home, ["list"], clock)).toContain("paused");
+  });
+
+  test("the next run is never the current minute or earlier", async () => {
+    const home = await scheduleHome();
+    const clock = { value: Date.parse("2026-01-01T08:00:30Z") };
+    await run(home, ["add", "--flow", "plugin-one", "--schedule", "0 8 * * *"], clock);
+    expect((await list(home, clock))[0]?.nextRun).toBe("2026-01-02T08:00:00.000Z");
+  });
+
+  test("a paused rule's recorded minute follows the clock, so reopening it does not catch up the pause", async () => {
+    const home = await scheduleHome();
+    const clock = { value: Date.parse("2026-01-01T00:00:30Z") };
+    await run(home, ["add", "--flow", "plugin-one", "--schedule", "* * * * *"], clock);
+    await run(home, ["pause", (await list(home, clock))[0]?.id ?? ""], clock);
+    const paused = new CronSource(
+      sourceContext(await loadTriggerRules({ home }), () => clock.value, [], home),
+    );
+    await paused.poll();
+    clock.value = Date.parse("2026-01-01T00:05:10Z");
+    await paused.poll();
+
+    // The file is changed by hand, so only the source's own record can hold the line.
+    const file = join(home, "triggers.json");
+    const rules = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>[];
+    writeFileSync(
+      file,
+      JSON.stringify(rules.map(({ paused: _paused, ...rest }) => rest)),
+      "utf8",
+    );
+    clock.value = Date.parse("2026-01-01T00:05:40Z");
+    const emitted: Emitted[] = [];
+    await new CronSource(
+      sourceContext(await loadTriggerRules({ home }), () => clock.value, emitted, home),
+    ).poll();
+    expect(emitted).toHaveLength(0);
+  });
+
+  test("resuming records a baseline, so a source started later does not catch up the pause", async () => {
+    const home = await scheduleHome();
+    const clock = { value: Date.parse("2026-01-01T00:00:30Z") };
+    await run(home, ["add", "--flow", "plugin-one", "--schedule", "* * * * *"], clock);
+    const id = (await list(home, clock))[0]?.id ?? "";
+    clock.value = Date.parse("2026-01-01T00:00:40Z");
+    await run(home, ["pause", id], clock);
+    clock.value = Date.parse("2026-01-01T00:10:30Z");
+    await run(home, ["resume", id], clock);
+    clock.value = Date.parse("2026-01-01T00:10:40Z");
+    const emitted: Emitted[] = [];
+    await new CronSource(
+      sourceContext(await loadTriggerRules({ home }), () => clock.value, emitted, home),
+    ).poll();
+    expect(emitted).toHaveLength(0);
   });
 
   test("remove deletes the rule", async () => {

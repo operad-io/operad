@@ -108,6 +108,86 @@ describe("scheduled prompts", () => {
     }
   });
 
+  test("a reply that goes round again is notified when it ends, not at its first message", async () => {
+    const r = await rig();
+    const views = createViews({ registry: r.registry, store: r.store, home: r.home, onLog: () => undefined });
+    const notices: ScheduleNotice[] = [];
+    const clock = { value: Date.parse("2026-01-01T00:00:30Z") };
+    const source = sourceFor(r, views as unknown as ClientApi, clock, notices);
+    try {
+      await add(r, { name: "Rounds", schedule: "* * * * *", prompt: "Go." });
+      await source.begin();
+      clock.value = Date.parse("2026-01-01T00:01:10Z");
+      await source.poll();
+      const id = (await chats(r))[0];
+      if (id === undefined) throw new Error("no chat");
+      const first = allMessages(r.store, id)[0];
+      if (first === undefined) throw new Error("no message");
+      const assistant = async (messageId: string, text: string, replyTo: readonly string[]): Promise<void> => {
+        await r.store.append({
+          type: "chat.message",
+          object: { type: "chat", id },
+          cause: "test",
+          data: {
+            id: messageId,
+            role: "assistant",
+            from: { via: "claude", id: "claude" },
+            text,
+            attachments: [],
+            source: { kind: "claude", ref: null },
+            replyTo,
+            runId: "run-x",
+          },
+        });
+      };
+      await r.store.append({
+        type: "chat.run",
+        object: { type: "chat", id },
+        cause: "test",
+        data: { runId: "run-x" },
+      });
+      await r.say(id, "and more");
+      await assistant("a-1", "first round", [first.id]);
+      await source.settled();
+      expect(notices).toEqual([]);
+
+      const more = allMessages(r.store, id).find((message) => message.text === "and more");
+      if (more === undefined) throw new Error("no second message");
+      await assistant("a-2", "second round", [more.id]);
+      await source.settled();
+      expect(notices.map((notice) => notice.summary)).toEqual(["second round"]);
+    } finally {
+      views.close();
+    }
+  });
+
+  test("editing the schedule of a firing that awaits its reply still records its result", async () => {
+    const r = await rig();
+    const views = createViews({ registry: r.registry, store: r.store, home: r.home, onLog: () => undefined });
+    const notices: ScheduleNotice[] = [];
+    const clock = { value: Date.parse("2026-01-01T00:00:30Z") };
+    const source = sourceFor(r, views as unknown as ClientApi, clock, notices);
+    try {
+      await add(r, { name: "Edited", schedule: "* * * * *", prompt: "Go." });
+      await source.begin();
+      clock.value = Date.parse("2026-01-01T00:01:10Z");
+      await source.poll();
+      const id = (await chats(r))[0];
+      if (id === undefined) throw new Error("no chat");
+      await r.act("bot", "default", "bot/schedule-edit", { name: "Edited", schedule: "*/2 * * * *" });
+      clock.value = Date.parse("2026-01-01T00:01:40Z");
+      await source.poll();
+      await r.reply(id);
+      await source.settled();
+      expect(notices).toHaveLength(1);
+      const bot = await r.store.get("bot", "default");
+      const entry = scheduledPrompts(bot?.data ?? {}).find((item) => item.name === "Edited");
+      expect(entry?.last).toMatchObject({ chatId: id, result: "ok", notified: true });
+    } finally {
+      views.close();
+    }
+  });
+
   test("two firings make two chats", async () => {
     const r = await rig();
     const views = createViews({ registry: r.registry, store: r.store, home: r.home, onLog: () => undefined });

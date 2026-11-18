@@ -176,3 +176,6 @@ changes for bots, in the order they were recorded. The root
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0551-M1 | packages/bot/src/schedule.ts | approving an edit wrote the proposal's snapshot over the entry instead of applying only what it changed | `schedules a chat proposes > approving an edit keeps a pause made after the proposal and applies only what it changed` |
+| T-0551-M2 | packages/bot/src/schedule.ts | the result and notification were taken at the first assistant message of a reply that goes round again | `scheduled prompts > a reply that goes round again is notified when it ends, not at its first message` |
+| T-0551-M3 | packages/bot/src/schedule.ts | the watch matched the entry by planned time as well as chat id, so a re-baselined entry lost its result | `scheduled prompts > editing the schedule of a firing that awaits its reply still records its result` |
+| T-0551-M4 | packages/bot/src/schedule.ts | editing the schedule cleared `last`, dropping the chat of a firing awaiting its reply | `scheduled prompts > editing the schedule of a firing that awaits its reply still records its result` |

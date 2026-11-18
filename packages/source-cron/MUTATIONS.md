@@ -36,3 +36,7 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0551-M1 | packages/source-cron/src/schedules.ts | edit accepted a change that made the rule identical to another scheduled flow | `scheduled flows > edit that makes a rule identical to another is refused and changes nothing` |
+| T-0551-M2 | packages/source-cron/src/schedules.ts | the next run could be a minute at or before now, because the day scan no longer skipped earlier times | `scheduled flows > the next run is never the current minute or earlier` |
+| T-0551-M3 | packages/source-cron/src/index.ts | a paused rule's recorded minute no longer followed the clock | `scheduled flows > a paused rule's recorded minute follows the clock, so reopening it does not catch up the pause` |
+| T-0551-M4 | packages/source-cron/src/schedules.ts | pause and resume wrote no baseline for the rule | `scheduled flows > resuming records a baseline, so a source started later does not catch up the pause` |
+| T-0551-M5 | packages/source-cron/src/schedules.ts | the list ignored `--json` and always gave text | `scheduled flows > adding one makes it appear in the list with its next run` |
