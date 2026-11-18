@@ -23,7 +23,7 @@
 
 ## 不过访问档的执行路径（T-0533 后仍未全接）
 
-默认访问档现在由 harness 套在每个对话和生成的步骤上（ADR 0025 D9），dev 的任务 worker 也因此拿到默认档。T-0533 给 shell 的 `command` 和 `check` 接上了对外写检查，给 dev 的 integrate push 也接上了；下面这些还没有接上，留待做：
+默认访问档现在由 harness 套在每个对话和生成的步骤上（ADR 0025 D9），dev 的任务步骤（worker、reviewer 和整合里的冲突修复）也因此拿到默认档。T-0533 给 shell 的 `command` 和 `check` 接上了对外写检查，给 dev 的 integrate push 也接上了；下面这些还没有接上，留待做：
 
 - `packages/shell/src/index.ts` 的 `shell/probe`；
 - `packages/dev/src/git.ts`、`packages/dev/src/editor.ts`，以及 prepare 跑的命令；
