@@ -75,11 +75,12 @@ and iOS clients) or to any target named in the profile's allowlist.
 The question is a pending item (D4, ADR 0008). Its prompt names the target as a
 person reads it — who, which channel or conversation, which repository and
 branch, which service — and carries the whole content being sent. Its choices
-are `send_once` and `reject_once` (`Send once`, `Reject`). An "always for this
-flow and target" choice may be added; the question shape leaves it room. In a
-background run the chat's exact-call `alwaysAllow` (D3) does not
-count: the pending item asks even when the same exact call was allowed in a
-chat. The allow-always user layer is still not read or offered in such a run.
+are `send_once`, `allow_target` (`Send once`, `Always for this flow and target`)
+and `reject_once` (`Reject`); D12 says what the middle choice records. In a
+background run the chat's exact-call `alwaysAllow` (D3) does not count: the
+pending item asks even when the same exact call was allowed in a chat. The
+allow-always user layer is still not read or offered in such a run; only the
+target grants of D12 lift the question.
 
 Every path is judged the same way, not only a tool call an agent makes through
 a harness: a plugin step or action that sends or calls out by itself goes
@@ -128,3 +129,39 @@ existing permission choices; a question answered while the step is alive uses
 `send_once`.
 
 What was looked at: the Telegram senders (replies, commands, pending items, progress) are a source plugin, not a step or action, and every target is a chat that a listed owner user opened with operad, so they are owner channels and not outward. A bot proposal writes only local files, and only after a person approves it. A chat reply goes to the chat's own bound channels, also owner channels. `shell/command` and `shell/check` declare `reachesOutside` and guard each line; `dev/integrate` declares it and guards its push with the repository and main branch as the target. This decision does not cover the paths that start a process without the profile: `shell/probe`, the other git and editor commands of `dev`, and a bot's MCP server start.
+
+### D12: A target grant binds a flow definition and one outward target
+
+The third answer, `allow_target`, records a grant instead of answering only this
+write. A background run of the same flow after the answer, writing to the same
+target, does not ask; another target asks; a changed flow definition asks
+again.
+
+The grant is bound to the flow's definition identity, never to the content that
+is sent: a daily digest with new text each day to the same chat stays allowed.
+The identity is a generated id kept beside the digest of the definition last
+seen. Every time the digest differs from that last digest a new id is made, so
+an edit asks again even after it is reverted, because reverting is another
+change from the digest last seen. A grant entry carries the flow name, that
+identity, the outward kind, the exact target, who answered and when.
+
+The grants are access data, not kernel data, and live in
+`$OPERAD_HOME/access-grants.json`, the user layer beside `access-user.json`.
+The file is JSON with a Schema, hand-editable, written under the platform file
+lock and replaced whole. It lives in `@operad-io/access-match`, not in the
+harness package that owns `access-user.json`, because the shell and dev steps
+call the outward guard there without loading a harness; `guardOutward` both
+checks a grant and records one. A file that cannot be read is reported by the
+step and treated as empty.
+
+The owner lists and removes grants through the `allow` action on a repository,
+which the owner already reaches through `dev`: `operad dev:allow` lists them
+and `operad dev:allow <repo> --target <target>` removes the grants of one
+target (optionally only one flow's). The same action is reachable through the
+HTTP and MCP action paths, so a client can show the list. A removed grant
+asks again on the next write. The action and its output use the existing word
+`allow`; they add no user word.
+
+The exact-call `allow_always` of D3 still does not count in a background run,
+whether it was answered in a chat or earlier for the same call. Only these
+target grants lift the background question.
