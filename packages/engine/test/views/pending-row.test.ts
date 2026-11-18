@@ -8,6 +8,7 @@ import {
   listPending,
   openLog,
   type LogBackend,
+  type ObjectRow,
   type TriggerCandidate,
   type Views,
 } from "../../src/index.ts";
@@ -37,6 +38,9 @@ const plugin = definePlugin({
           title: String(object.data.title ?? ""),
           state: String(object.data.state ?? "new"),
           ...(typeof object.data.note === "string" ? { note: object.data.note } : {}),
+          ...(object.data.rowData === undefined
+            ? {}
+            : { data: object.data.rowData as ObjectRow["data"] }),
         };
       },
       sections() {
@@ -141,6 +145,17 @@ describe("pending items carry their object's row", () => {
       note: "n",
       waiting: true,
     });
+  });
+
+  test("a pending item's row carries the plugin's data", async () => {
+    const e = await env();
+    const data = { scheduled: [{ name: "Morning", paused: false }] };
+    e.store.put("item", "one", { title: "First", rowData: data }, "seed");
+    await waitOn(e.log, "item:one");
+
+    const items = await listPending(e.log, e.registry, undefined, e.views);
+
+    expect(items[0]?.row?.data).toEqual(data);
   });
 
   test("without views the item has no row", async () => {

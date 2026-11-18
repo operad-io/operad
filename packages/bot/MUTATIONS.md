@@ -190,3 +190,9 @@ changes for bots, in the order they were recorded. The root
 | T-0553-M4 | packages/bot/src/schedule.ts | a firing named itself `scheduled` instead of the entry in its actor, so the chat recorded the wrong entry | `scheduled prompts > an entry fires on time, opens a new chat under the bot with its prompt, and the reply's notification carries a summary` |
 | T-0553-M5 | packages/bot/src/schedule.ts | the structured entry left out the last result | `scheduled prompts > an entry fires on time, opens a new chat under the bot with its prompt, and the reply's notification carries a summary` |
 | T-0553-M6 | packages/bot/src/index.ts | `bot:chat` recorded no scheduled origin on a chat the source opened | `scheduled prompts > an entry fires on time, opens a new chat under the bot with its prompt, and the reply's notification carries a summary` |
+
+## T-0554 — scheduled gaps follow-ups
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0554-M1 | packages/bot/src/schedule.ts | `mergedEdit` treated an empty model or effort as unchanged, so approving a proposed edit kept the old one (T-0553-M2 named `proposals.ts`; this is where the approve-time clear is) | `schedules a chat proposes > a proposed edit with an empty model or effort clears it on approve` |
