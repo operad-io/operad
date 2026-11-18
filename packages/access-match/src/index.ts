@@ -144,8 +144,8 @@ export interface AccessProfile {
    * False when the profile starts from the built-in default's deny rules only:
    * its `askCommands` and `askPaths` are not added. The profile's own asks
    * still hold. A flow profile still only adds; there is no way to drop a
-   * default deny. A task worker step uses this to run its scripted edits
-   * without a question (ADR 0025 D9).
+   * default deny. Every step a dev task runs uses this so its scripted edits
+   * run without a question (ADR 0025 D9).
    */
   readonly defaultAsks?: boolean | undefined;
   /**
@@ -207,9 +207,9 @@ export function defaultAccess(): AccessProfile {
 }
 
 /**
- * The built-in default's deny rules only. A task worker starts from these and
- * not from the default's asks, so its scripted edits run without a question
- * (ADR 0025 D9).
+ * The built-in default's deny rules only. Every agent a dev task runs starts
+ * from these and not from the default's asks, so its scripted edits run
+ * without a question (ADR 0025 D9).
  */
 export function defaultDenies(): AccessProfile {
   return {
