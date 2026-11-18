@@ -150,6 +150,100 @@ test("a poll whose database is removed while it queries does nothing", () => {
   }
 });
 
+test("a poll stops when the store's directory is removed, so its timer does not outlive it", () => {
+  const file = tempFile();
+  let tick: (() => void) | undefined;
+  let stopped = false;
+  const store = new SqlitePluginStore({
+    root: join(file, ".."),
+    file,
+    repeat: (_ms, callback) => {
+      tick = callback;
+      return () => {
+        stopped = true;
+      };
+    },
+  });
+  try {
+    store.subscribe(() => undefined);
+    if (tick === undefined) throw new Error("the poll did not start");
+    const poll = tick;
+    rmSync(join(file, ".."), { recursive: true, force: true });
+    expect(() => poll()).not.toThrow();
+    expect(stopped).toBe(true);
+  } finally {
+    store.close();
+  }
+});
+
+test("a poll stops when the store's -wal and -shm are removed", () => {
+  const file = tempFile();
+  let tick: (() => void) | undefined;
+  let stopped = false;
+  const store = new SqlitePluginStore({
+    root: join(file, ".."),
+    file,
+    repeat: (_ms, callback) => {
+      tick = callback;
+      return () => {
+        stopped = true;
+      };
+    },
+  });
+  try {
+    store.subscribe(() => undefined);
+    if (tick === undefined) throw new Error("the poll did not start");
+    const poll = tick;
+    rmSync(`${file}-wal`, { force: true });
+    rmSync(`${file}-shm`, { force: true });
+    expect(() => poll()).not.toThrow();
+    expect(stopped).toBe(true);
+  } finally {
+    store.close();
+  }
+});
+
+test("a poll reports an I/O error from a store that is still there", () => {
+  const file = tempFile();
+  let tick: (() => void) | undefined;
+  let stopped = false;
+  const store = new SqlitePluginStore({
+    root: join(file, ".."),
+    file,
+    repeat: (_ms, callback) => {
+      tick = callback;
+      return () => {
+        stopped = true;
+      };
+    },
+  });
+  const real = store["db"];
+  try {
+    store.subscribe(() => undefined);
+    if (tick === undefined) throw new Error("the poll did not start");
+    const poll = tick;
+    const broken = new Proxy(real, {
+      get(target, property, receiver) {
+        if (property === "query") {
+          return () => {
+            throw Object.assign(new Error("disk I/O error"), {
+              code: "SQLITE_IOERR",
+            });
+          };
+        }
+        const value: unknown = Reflect.get(target, property, receiver);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    (store as unknown as { db: Database }).db = broken;
+    expect(() => poll()).toThrow("disk I/O error");
+    expect(stopped).toBe(false);
+  } finally {
+    (store as unknown as { db: Database }).db = real;
+    store.close();
+  }
+});
+
 test("a poll that meets a busy store skips its turn instead of throwing", () => {
   const file = tempFile();
   const store = new SqlitePluginStore({ root: join(file, ".."), file });

@@ -1122,3 +1122,11 @@ the row fields.
 | T-0548-M1 | packages/engine/src/trigger/rules.ts | `paused` was no longer a rule field, so a paused rule could not be read after a restart | `scheduled flows > pause stops ticks and survives a reload, and resume starts them again` |
 | T-0548-M2 | packages/engine/src/http/server.ts | `POST /v1/commands` matched no path and answered `404` | `http server > POST /v1/commands runs a plugin verb, and a missing verb or a refusal is named` |
 | T-0548-M3 | packages/engine/src/plugin/registry.ts | a command got no loaded flow names, so it refused every flow | `operad scheduled > adds a flow, lists it, and refuses an unknown flow` |
+
+## T-0552 — a poll of a store that went away stops and does not throw
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0552-M1 | packages/engine/src/plugin/sqlite-store.ts | `gone` checked only the database file, so removing its `-wal` and `-shm` left a store that looked live | `a poll stops when the store's -wal and -shm are removed` |
+| T-0552-M2 | packages/engine/src/plugin/sqlite-store.ts | a poll that met a gone store returned without stopping its timer | `a poll stops when the store's directory is removed, so its timer does not outlive it` |
+| T-0552-M3 | packages/engine/src/plugin/sqlite-store.ts | a poll swallowed an I/O error from a store whose files were still there | `a poll reports an I/O error from a store that is still there` |
