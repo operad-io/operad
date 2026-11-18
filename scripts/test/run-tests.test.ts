@@ -177,11 +177,17 @@ test("stays open until released", async () => {
         await new Promise((r) => setTimeout(r, 25));
       }
     };
-    // The heartbeat is the script's own child that runs the script's command line.
+    // The heartbeat is the script's own child in a process group of its own.
+    // A command substitution is a transient child in the script's own group and
+    // runs the same command line, so it must not stand in for the heartbeat.
     const heartbeats = (): number[] => {
       const kids = Bun.spawnSync(["pgrep", "-P", String(child.pid)]).stdout.toString().split("\n").filter(Boolean);
       return kids
-        .filter((pid) => Bun.spawnSync(["ps", "-o", "command=", "-p", pid]).stdout.toString().includes("run-tests.sh"))
+        .filter((pid) => {
+          const command = Bun.spawnSync(["ps", "-o", "command=", "-p", pid]).stdout.toString();
+          if (!command.includes("run-tests.sh")) return false;
+          return Bun.spawnSync(["ps", "-o", "pgid=", "-p", pid]).stdout.toString().trim() === pid;
+        })
         .map(Number);
     };
     try {

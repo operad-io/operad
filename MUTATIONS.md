@@ -117,3 +117,9 @@ Each package keeps its mutation checks in `MUTATIONS.md`; a row names the broken
 |---|---|---|---|
 | T-0474-M2 | scripts/test/mutations-append-only.test.ts | `checkBase` let the missing `origin/main` error through again | `MUTATIONS.md files are append-only > the check base is unset when OPERAD_CHECK_BASE is unset and origin/main is absent` |
 | T-0474-M3 | scripts/test/mutations-append-only.test.ts | the missing-file branch skipped the file without a problem, so a deleted MUTATIONS.md passed | `MUTATIONS.md files are append-only > a deleted file fails and names its first base line` |
+
+## T-0538 — the heartbeat test finds the heartbeat
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0538-M1 | scripts/run-tests.sh | removed `set -m`, so the heartbeat stayed in the script's own process group and the test would not take a command substitution for it | `run-tests.sh > the heartbeat ends by itself when the script is killed without a chance to stop it` (timed out waiting) |
