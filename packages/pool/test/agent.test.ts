@@ -515,6 +515,21 @@ describe("a worker's question", () => {
     expect(r.book.used("harness:harness-a")).toBe(0);
   });
 
+  test("a worker cancelled while its question waits ends interrupted and gives the place back", async () => {
+    const r = await rig();
+    const controller = new AbortController();
+    const run = r.run(params([a]), controller.signal);
+    const call = await r.calls.next();
+    expect(r.book.used(`count:${PREFIX}/a`)).toBe(1);
+    controller.abort();
+    const result = await run;
+    expect(result.result).toBe("interrupted");
+    expect(result.data).toMatchObject({ reason: "cancelled", worker: "a" });
+    expect(r.book.used(`count:${PREFIX}/a`)).toBe(0);
+    expect(r.book.used("harness:harness-a")).toBe(0);
+    expect(call.use).toBe("harness-a/agent");
+  });
+
   test("a resumed question reaches the harness with its session and answer, and does not fall back", async () => {
     const r = await rig();
     const asked = { prompt: question.prompt, choice: "allow_once" };

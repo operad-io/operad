@@ -62,7 +62,7 @@ export function fakeHarness(name: string, calls: Queue<HarnessCall>) {
       {
         name: "agent",
         results: ["done", "failed", "interrupted", "waiting"],
-        run(_ctx, params) {
+        run(ctx, params) {
           return new Promise<PluginStepResult>((resolve, reject) => {
             calls.push({
               use: `${name}/agent`,
@@ -70,6 +70,13 @@ export function fakeHarness(name: string, calls: Queue<HarnessCall>) {
               finish: resolve,
               fail: reject,
             });
+            // A harness that is cancelled stops its run and says so; a worker
+            // waiting for its question is stopped the same way.
+            ctx.signal.addEventListener(
+              "abort",
+              () => resolve({ result: "interrupted", data: { reason: "cancelled" } }),
+              { once: true },
+            );
           });
         },
       },

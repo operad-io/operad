@@ -22,6 +22,7 @@ import {
   validateDevSettings,
   type DevStage,
 } from "../../src/index.ts";
+import { isWorkQuestionWait } from "../../src/waits.ts";
 import { cleanupTempRoots, guardLockHandles, makeGitRepository, storeAt, tempRoot } from "../support.ts";
 
 afterAll(cleanupTempRoots);
@@ -85,7 +86,7 @@ test("every task wait says what its choices are, and its prompt is the reason", 
   expect(waits.length).toBeGreaterThan(0);
   for (const step of waits) {
     if (step.kind !== "wait_person") continue;
-    if (step.id.startsWith("wait_work_question")) continue;
+    if (isWorkQuestionWait(step.id)) continue;
     const params = step.params as {
       readonly prompt: string;
       readonly choices: readonly string[];
@@ -130,7 +131,7 @@ test("a generated flow gives each of its waits the same choice info", () => {
   const waits = flow.steps.filter((step) => step.kind === "wait_person");
   expect(waits.length).toBeGreaterThan(0);
   for (const step of waits) {
-    if (step.id.startsWith("wait_work_question")) continue;
+    if (isWorkQuestionWait(step.id)) continue;
     expect(step.params).toMatchObject({
       choiceInfo: {
         merge: { label: "Merge" },

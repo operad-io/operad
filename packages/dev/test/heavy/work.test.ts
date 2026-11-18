@@ -29,6 +29,7 @@ import {
   addPlan,
   addRepository,
   addTask,
+  compileDevFlow,
   createDevPlugin,
   MAX_WORK_WAITS,
   reviewTestHooks,
@@ -101,18 +102,27 @@ function fakeHarness(record: string) {
           );
           if (mode === "ask") {
             if (input.askAnswer === undefined) {
-              await ctx.ask({
-                prompt: "Run this command? git push origin main",
-                choices: ["allow_once", "reject_once"],
-                resume: {
-                  session: "fake-session",
-                  grant: {
-                    kind: "command",
-                    value: "git push origin main",
-                    choice: "allow_once",
+              try {
+                await ctx.ask({
+                  prompt: "Run this command? git push origin main",
+                  choices: ["allow_once", "reject_once"],
+                  resume: {
+                    session: "fake-session",
+                    grant: {
+                      kind: "command",
+                      value: "git push origin main",
+                      choice: "allow_once",
+                    },
                   },
-                },
-              });
+                });
+              } catch (error) {
+                // A cancel while the question is open stops the worker, as a
+                // harness does for any other stop.
+                if (ctx.signal.aborted) {
+                  return { result: "interrupted", data: { reason: "cancelled" } };
+                }
+                throw error;
+              }
             }
             writeFileSync(join(input.cwd, "worker.txt"), "done\n");
             gitOrThrow(input.cwd, ["add", "worker.txt"]);
@@ -413,17 +423,14 @@ class QuestionTimer {
   }
 }
 
-async function startDevFlow(state: Fixture) {
+async function startDevFlow(state: Fixture, name = "dev") {
   const log = openLog({
     backend: "sqlite",
     path: join(state.root, "log", "log.sqlite"),
   });
-  const found = state.registry.flow("dev");
-  if (found === undefined) throw new Error("the dev flow is not loaded");
+  const found = state.registry.flow(name);
+  if (found === undefined) throw new Error(`the flow "${name}" is not loaded`);
   const { runId } = await log.startRun("dev", `task:${state.taskKey}`);
-  await log.append(runId, 0, [
-    { kind: "run_started", payload: { flow: "dev" }, cause: "seed" },
-  ]);
   const runner = (timer?: QuestionTimer) =>
     new Runner({
       log,
@@ -1033,6 +1040,17 @@ describe("dev/work with workers", () => {
     args: [mode],
     ...extra,
   });
+  /** The flow of the question test: the work, and a person to hand it to. */
+  const questionFlow = (name: string) => {
+    const flow = compileDevFlow(name, [{ stage: "work" }, { stage: "human" }]);
+    const plugin = definePlugin({
+      name: `test-flows-${name}`,
+      kind: "domain",
+      version: "0.0.0",
+      flows: [flow],
+    });
+    return { name, plugin };
+  };
 
   test("the old single worker runs as one worker named after its harness", async () => {
     const state = await fixture("commit");
@@ -1296,6 +1314,27 @@ describe("dev/work with workers", () => {
     expect((await taskDataOf(state)).attempt?.fallbackFrom).toBeNull();
   });
 
+  test("a resume's session and answer in the step's params reach the worker", async () => {
+    const state = await fixture("nothing");
+    expect((await runWork(state, "run-1")).result).toBe("nothing");
+    const asked = { prompt: "Run this command? git push origin main", choice: "allow_once" };
+    const resumed = await state.registry.runStep(
+      "dev/work",
+      { resumeSession: "old-session", askAnswer: asked },
+      {
+        runId: "run-2",
+        object: { type: "task", id: state.taskKey, data: {} },
+      },
+    );
+    expect(resumed.result).toBe("nothing");
+    const record = JSON.parse(readFileSync(state.record, "utf8")) as {
+      readonly resumeSession: string | null;
+      readonly askAnswer: { readonly choice?: unknown } | null;
+    };
+    expect(record.resumeSession).toBe("old-session");
+    expect(record.askAnswer?.choice).toBe("allow_once");
+  });
+
   test("a rework resumes the session of the worker it goes back to", async () => {
     const state = await fixture("nothing", { workers: { only: fake("nothing") } });
     await runWork(state, "run-1");
@@ -1362,10 +1401,12 @@ describe("dev/work with workers", () => {
       use: "fake-harness/agent",
       args: ["ask", name],
     });
+    const question = questionFlow("question");
     const state = await fixture("nothing", {
       workers: { alpha: askWorker("alpha"), beta: askWorker("beta") },
+      plugins: [question.plugin],
     });
-    const dev = await startDevFlow(state);
+    const dev = await startDevFlow(state, question.name);
     const timer = new QuestionTimer();
     try {
       const first = dev.runner(timer).run();

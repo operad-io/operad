@@ -1337,7 +1337,13 @@ function workerAccess(access: JsonValue): JsonValue {
   return { ...(isRecord(access) ? access : {}), defaultAsks: false };
 }
 
-export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
+export async function runWork(ctx: StepContext, stepParams?: unknown): Promise<PluginStepResult> {
+  // The step's own params (a flow stage writes them) and the run's start params
+  // (a direct call writes them) both reach this step; the step's own win.
+  const stage: Record<string, unknown> = {
+    ...(isRecord(ctx.params) ? ctx.params : {}),
+    ...(isRecord(stepParams) ? stepParams : {}),
+  };
   const loose = await looseTaskContext(ctx);
   if (!claimAllows(ctx, loose.task)) return cancelledStep();
   if (loose.settings === undefined) {
@@ -1543,11 +1549,10 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
   // A rework or reject goes back to the worker that ran the attempt before,
   // and resumes its session when the harness can. When that worker is no
   // longer in the pool, any free worker takes it and the change is recorded.
-  const stagePool = stageParamsOf(ctx.params).pool ?? DEFAULT_POOL;
-  const inputParams = isRecord(ctx.params) ? ctx.params : {};
+  const stagePool = stageParamsOf(stage).pool ?? DEFAULT_POOL;
   const resumedSession =
-    typeof inputParams.resumeSession === "string" ? inputParams.resumeSession : undefined;
-  const askAnswer = isRecord(inputParams.askAnswer) ? inputParams.askAnswer : undefined;
+    typeof stage.resumeSession === "string" ? stage.resumeSession : undefined;
+  const askAnswer = isRecord(stage.askAnswer) ? stage.askAnswer : undefined;
   // An answer to the worker's own question comes back to this step; it resumes
   // the same worker, never a fallback.
   const resumed = resumedSession !== undefined || askAnswer !== undefined;
@@ -1709,7 +1714,7 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
     resumeSession,
     outbox.inbox,
     context.taskId,
-    stageParamsOf(ctx.params),
+    stageParamsOf(stage),
   );
   if (askAnswer !== undefined) poolCall.askAnswer = askAnswer;
   try {

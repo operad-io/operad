@@ -31,6 +31,7 @@ import {
   WAIT_ACTIONS,
   WAIT_STEPS,
   WORK_QUESTION_CHOICES,
+  isWorkQuestionWait,
   reviewWaitKind,
   waitChoices,
   waitKindOf,
@@ -180,8 +181,7 @@ function kindOfStep(id: string): WaitKind | undefined {
     const base = WAIT_STEPS[kind];
     if (id === base || id.startsWith(`${base}_`)) return kind;
   }
-  const question = WAIT_STEPS["work-question"];
-  if (id === question || id.startsWith(`${question}_`)) return "work-question";
+  if (isWorkQuestionWait(id)) return "work-question";
   return id === WAIT_STEPS.person || id === "human" ? "person" : undefined;
 }
 
