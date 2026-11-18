@@ -652,19 +652,28 @@ export class SqlitePluginStore implements PluginStore {
   }
 
   /**
-   * Whether the store's files were removed under the open connection. A WAL
-   * store keeps `-wal` and `-shm` beside the database while it is open, and a
-   * teardown can remove them before the database itself. A missing file means
+   * Whether the store's root or database file is gone. Before a query only
+   * these count: a live store can briefly lack its `-wal`, and it still
+   * delivers the facts checkpointed into the database.
+   */
+  private missing(): boolean {
+    if (!existsSync(this.root)) return true;
+    const file = this.location.file;
+    return file !== undefined && !existsSync(file);
+  }
+
+  /**
+   * Whether a store that met an I/O error went away. A WAL store keeps `-wal`
+   * and `-shm` beside the database while it is open, and a teardown can remove
+   * them before the database itself. Missing journals after a failed query mean
    * the store went away, not that a live store met a disk error.
    */
   private gone(): boolean {
-    if (!existsSync(this.root)) return true;
+    if (this.missing()) return true;
     const file = this.location.file;
-    if (file === undefined) return false;
     return (
-      !existsSync(file) ||
-      !existsSync(`${file}-wal`) ||
-      !existsSync(`${file}-shm`)
+      file !== undefined &&
+      (!existsSync(`${file}-wal`) || !existsSync(`${file}-shm`))
     );
   }
 
@@ -677,7 +686,7 @@ export class SqlitePluginStore implements PluginStore {
 
   private pollFacts(): void {
     // A removed store has nothing left to deliver; stop the timer that outlived it.
-    if (this.gone()) {
+    if (this.missing()) {
       this.stopPolling();
       return;
     }

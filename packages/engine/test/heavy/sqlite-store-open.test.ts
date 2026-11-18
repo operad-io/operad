@@ -203,6 +203,39 @@ test("a poll stops when the store's -wal and -shm are removed", () => {
   }
 });
 
+test("a live store whose -wal is absent before a poll keeps delivering facts", () => {
+  const file = tempFile();
+  let tick: (() => void) | undefined;
+  let stopped = false;
+  const reader = new SqlitePluginStore({
+    root: join(file, ".."),
+    file,
+    repeat: (_ms, callback) => {
+      tick = callback;
+      return () => {
+        stopped = true;
+      };
+    },
+  });
+  const writer = new SqlitePluginStore({ root: join(file, ".."), file, follow: false });
+  try {
+    const seen: string[] = [];
+    reader.subscribe((object) => seen.push(`${object.type}:${object.id}`));
+    writer.put("note", "one", { text: "hello" }, "test");
+    // Keep the fact in the database, so removing the -wal loses no write.
+    writer["db"].run("PRAGMA wal_checkpoint(TRUNCATE)");
+    rmSync(`${file}-wal`, { force: true });
+    if (tick === undefined) throw new Error("the poll did not start");
+    const poll = tick;
+    expect(() => poll()).not.toThrow();
+    expect(stopped).toBe(false);
+    expect(seen).toEqual(["note:one"]);
+  } finally {
+    writer.close();
+    reader.close();
+  }
+});
+
 test("a poll reports an I/O error from a store that is still there", () => {
   const file = tempFile();
   let tick: (() => void) | undefined;
