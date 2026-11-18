@@ -17,6 +17,13 @@ export const DEFAULT_CLAUDE_COMMAND = "claude";
 /** How long `claude --version` or `claude auth status` may take. */
 const PROBE_TIMEOUT_MS = 30_000;
 
+/**
+ * How many times a probe that must print is run in all. Under load a spawned
+ * command can exit 0 with nothing on its output, which is not an answer; the
+ * same glitch is why the dev plugin asks an empty git answer again.
+ */
+export const PROBE_EMPTY_ATTEMPTS = 5;
+
 /** How long `claude auth status` may take when a client asks for the login state. */
 export const SIGNED_IN_PROBE_TIMEOUT_MS = 10_000;
 
@@ -93,7 +100,7 @@ interface Ran {
   readonly stdout: string;
 }
 
-function runClaude(path: string, args: readonly string[]): Ran {
+function runClaudeOnce(path: string, args: readonly string[]): Ran {
   const ran = Bun.spawnSync([path, ...args], {
     stdin: "ignore",
     stdout: "pipe",
@@ -101,6 +108,19 @@ function runClaude(path: string, args: readonly string[]): Ran {
     timeout: PROBE_TIMEOUT_MS,
   });
   return { exitCode: ran.exitCode, stdout: ran.stdout.toString("utf8") };
+}
+
+/** Both probes must print on success, so an empty success is asked again. */
+function runClaude(path: string, args: readonly string[]): Ran {
+  let ran = runClaudeOnce(path, args);
+  for (
+    let attempt = 1;
+    attempt < PROBE_EMPTY_ATTEMPTS && ran.exitCode === 0 && ran.stdout.trim().length === 0;
+    attempt += 1
+  ) {
+    ran = runClaudeOnce(path, args);
+  }
+  return ran;
 }
 
 /** A login field that is safe to print: a short word, not free text. */
