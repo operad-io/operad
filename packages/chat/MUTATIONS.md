@@ -370,3 +370,9 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 |---|---|---|---|
 | T-0536-M1 | packages/chat/src/index.ts | `chat:effort` left out the current effort | `the value a chat action offers as current > a pi chat with no effort offers pi's own defaultThinkingLevel` |
 | T-0536-M2 | packages/chat/src/index.ts | `chat:model` left out the current model | `the value a chat action offers as current > a chat with no model offers the configured model` |
+
+## T-0540 — a chat follows its agent's live default effort
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0540-M1 | packages/chat/src/model.ts | `effectiveEffort` preferred the stored default over the agent's live one | `the value a chat action offers as current > a chat made when the agent's default was medium offers the default it declares now` (and `chat:status > shows the agent's live default, and the stored one only when it declares none`) |

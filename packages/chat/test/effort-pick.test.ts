@@ -41,14 +41,16 @@ describe("chat:effort", () => {
     expect(chatViews.row((await r.store.get(CHAT_TYPE, chat)) as never).note).toBe("fake · high");
   });
 
-  test("the row leaves the default effort out and shows a choice", async () => {
+  test("the row shows the chat's own effort and leaves out one it only inherits", async () => {
     const r = await rig(() => reply("ok"), undefined, EFFORTS);
+    const inherited = await r.chat({ effortDefault: "medium" });
+    expect(chatViews.row((await r.store.get(CHAT_TYPE, inherited)) as never).note).toBe("fake");
     const chat = await r.chat({ effort: "medium", effortDefault: "medium" });
-    expect(chatViews.row((await r.store.get(CHAT_TYPE, chat)) as never).note).toBe("fake");
+    expect(chatViews.row((await r.store.get(CHAT_TYPE, chat)) as never).note).toBe("fake · medium");
     await act(r, chat, { effort: "low" });
     expect(chatViews.row((await r.store.get(CHAT_TYPE, chat)) as never).note).toBe("fake · low");
     await act(r, chat, { effort: "medium" });
-    expect(chatViews.row((await r.store.get(CHAT_TYPE, chat)) as never).note).toBe("fake");
+    expect(chatViews.row((await r.store.get(CHAT_TYPE, chat)) as never).note).toBe("fake · medium");
   });
 
   test("an effort the agent does not list is refused by name", async () => {
