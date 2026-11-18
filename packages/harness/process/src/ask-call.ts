@@ -7,7 +7,8 @@
  *
  * - `allow`: a person said `allow_once` or `allow_always` within the grace
  *   period; the program lets this one call through, and no other. `allow_always`
- *   also appends the entry to the access profile's user layer.
+ *   also appends the entry to the access profile's user layer. On an outward
+ *   question `allow_target` records a target grant for the flow definition.
  * - `deny`: a person said `reject_once`, or the question could not be asked.
  * - `stop`: the grace period passed, or the question failed. The program holds
  *   the call and the host ends the program; the step then throws what `ask`
@@ -18,9 +19,9 @@
  * line: no hook sees its calls, so it offers no grant (`degradedAskRequest`).
  */
 
-import type { AskAnswer, AskRequest, OutwardWrite } from "@operad-io/engine";
+import type { AskAnswer, AskRequest, FlowDefinition, OutwardWrite } from "@operad-io/engine";
 import { isRecord } from "@operad-io/engine";
-import { OUTWARD_SEND_ONCE, outwardQuestion } from "@operad-io/access-match";
+import { OUTWARD_ALLOW_TARGET, OUTWARD_SEND_ONCE, appendTargetGrant, outwardCommandWrites, outwardQuestion, targetGrantFor } from "@operad-io/access-match";
 import { alwaysAllowEntry, appendAlwaysAllow, type AlwaysAllowEntry } from "./always-allow.ts";
 
 /** The choice that lets the one call through. */
@@ -120,17 +121,17 @@ export function canAsk(access: unknown): boolean {
 /**
  * The question for one call. The grace and `onTimeout` are the kernel's
  * defaults. `allowAlways` is false in a background run, which neither consults
- * the user layer nor offers to remember a call (`docs/backlog/operad-sandbox.md`,
- * not in an ADR yet).
+ * the user layer nor offers to remember an exact call; `allowTarget` offers the
+ * target grant of ADR 0025 D12 instead.
  */
-export function askRequest(call: AskCall, allowAlways = false): AskRequest {
+export function askRequest(call: AskCall, allowAlways = false, allowTarget = false): AskRequest {
   const prompt =
     call.kind === "command" ? `Run this command? ${call.shown}` : `Let ${call.tool ?? "the tool"} use this path? ${call.shown}`;
   const choices = allowAlways ? [ALLOW_ONCE, ALLOW_ALWAYS, REJECT_ONCE] : [ALLOW_ONCE, REJECT_ONCE];
   // Without a session there is nothing to continue after a late answer, so
   // the question gets one answer within the grace and a refusal after it.
   if (call.outward !== undefined) {
-    const question = outwardQuestion(call.outward);
+    const question = outwardQuestion(call.outward, allowTarget ? { allowTarget: true } : {});
     if (call.session === null) return { ...question, onTimeout: "reject_once" };
     return {
       ...question,
@@ -140,6 +141,7 @@ export function askRequest(call: AskCall, allowAlways = false): AskRequest {
           kind: call.kind,
           value: call.value,
           choice: OUTWARD_SEND_ONCE,
+          ...(allowTarget ? { choices: [OUTWARD_SEND_ONCE, OUTWARD_ALLOW_TARGET] } : {}),
           ...(call.tool === undefined ? {} : { tool: call.tool }),
         },
       },
@@ -162,6 +164,48 @@ export function askRequest(call: AskCall, allowAlways = false): AskRequest {
       },
     },
   };
+}
+
+/**
+ * A late `allow_target` carries the answer but not the write it was about.
+ * The resumed step's one-time grant carries the exact call; this turns it back
+ * into the outward target and records the grant with the person who answered.
+ * A call with more than one outward target is not guessed at.
+ */
+export async function recordTargetGrantFromAnswer(
+  home: string,
+  flow: FlowDefinition,
+  access: unknown,
+  askAnswer: unknown,
+  now: () => number = Date.now,
+): Promise<void> {
+  if (!isRecord(askAnswer) || askAnswer["choice"] !== OUTWARD_ALLOW_TARGET) return;
+  const by = actorOf(askAnswer["actor"]);
+  if (by === undefined) return;
+  if (!isRecord(access) || !Array.isArray(access["grants"])) return;
+  const grant = access["grants"].find(
+    (entry): entry is Record<string, unknown> =>
+      isRecord(entry) && entry["kind"] === "command" && typeof entry["value"] === "string",
+  );
+  if (grant === undefined) return;
+  const value = grant["value"];
+  if (typeof value !== "string" || value.length === 0) return;
+  const writes = value.startsWith("mcp ")
+    ? [{ kind: "service" as const, target: value, content: `the MCP tool "${value.slice(4)}"` }]
+    : outwardCommandWrites(access, value);
+  const unique = new Map(writes.map((write) => [write.target, write]));
+  if (unique.size !== 1) return;
+  const [write] = unique.values();
+  if (write === undefined) return;
+  await appendTargetGrant(home, flow, write, by, now());
+}
+
+function actorOf(value: unknown): { readonly via: string; readonly id: string } | undefined {
+  if (!isRecord(value)) return undefined;
+  const via = value["via"];
+  const id = value["id"];
+  if (typeof via !== "string" || via.length === 0 || typeof id !== "string" || id.length === 0) return undefined;
+  return { via, id };
 }
 
 /**
@@ -210,6 +254,8 @@ export interface CallAskerOptions {
    * the call. Absent in a background run, which does not offer the choice.
    */
   readonly alwaysAllow?: { readonly home: string; readonly cwd: string } | undefined;
+  /** The operad home and flow whose target grants this run may use. */
+  readonly targetGrants?: { readonly home: string; readonly flow: FlowDefinition; readonly now?: (() => number) | undefined } | undefined;
   /** Reports a write that could not be made; the call still runs once, as allow_once does. */
   readonly onLog?: ((message: string) => void) | undefined;
 }
@@ -256,8 +302,23 @@ export function createCallAsker(options: CallAskerOptions): CallAsker {
       answer(reply, call.id, "allow");
       return;
     }
+    if (call.outward !== undefined && options.targetGrants !== undefined) {
+      try {
+        const grant = await targetGrantFor(options.targetGrants.home, options.targetGrants.flow, call.outward.target);
+        if (grant !== undefined) {
+          answer(reply, call.id, "allow");
+          return;
+        }
+      } catch (error) {
+        options.onLog?.(
+          `the target grants could not be read: ${error instanceof Error ? error.message : String(error)}; this call asks`,
+        );
+      }
+    }
     try {
-      const got = await options.ask(askRequest(call, options.alwaysAllow !== undefined));
+      const got = await options.ask(
+        askRequest(call, options.alwaysAllow !== undefined, options.targetGrants !== undefined),
+      );
       if (got.rejected === true) answer(reply, call.id, "deny", "nobody answered in time");
       else if (got.choice === ALLOW_ONCE || got.choice === ALLOW_ALWAYS) {
         if (got.choice === ALLOW_ALWAYS && options.alwaysAllow !== undefined) {
@@ -272,6 +333,21 @@ export function createCallAsker(options: CallAskerOptions): CallAsker {
               }; this call runs once`,
             );
           }
+        }
+        answer(reply, call.id, "allow");
+      } else if (got.choice === OUTWARD_ALLOW_TARGET && options.targetGrants !== undefined && call.outward !== undefined) {
+        try {
+          await appendTargetGrant(
+            options.targetGrants.home,
+            options.targetGrants.flow,
+            call.outward,
+            got.actor ?? { via: "unknown", id: "unknown" },
+            (options.targetGrants.now ?? Date.now)(),
+          );
+        } catch (error) {
+          options.onLog?.(
+            `the target grant could not be written: ${error instanceof Error ? error.message : String(error)}; this call runs once`,
+          );
         }
         answer(reply, call.id, "allow");
       } else {

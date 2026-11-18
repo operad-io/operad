@@ -182,3 +182,10 @@ and the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0533-M4 | packages/harness/process/src/ask-call.ts | an outward ask_call was turned into the ordinary run-this-command question | `askRequest > an outward question offers send once and reject, and a late answer sends once` |
+
+## T-0534 — the target grant on a harness outward question
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0534-M1 | packages/harness/process/src/ask-call.ts | an outward question with a flow did not offer the target grant | `askRequest > an outward question with a flow offers the target grant, and either approving answer sends once` |
+| T-0534-M2 | packages/harness/process/src/ask-call.ts | a late target answer did not write its grant | `createCallAsker > a late target answer records the grant with the person who answered` |

@@ -1,8 +1,9 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { PluginRegistry } from "@operad-io/engine";
+import { defineFlow, PluginRegistry } from "@operad-io/engine";
 import { createChatPlugin } from "@operad-io/chat";
+import { appendTargetGrant, readTargetGrants } from "@operad-io/access-match";
 import plugin from "../../src/index.ts";
 import { integrationQueueDirectory } from "../../src/integration-queue.ts";
 import {
@@ -52,6 +53,7 @@ async function setup(
   const registry = new PluginRegistry([createChatPlugin(), plugin], {
     store,
     storeRoot: store.root,
+    home: root,
     ...(onCancelRun === undefined ? {} : { onCancelRun }),
     ...(onAnswer === undefined
       ? {}
@@ -62,10 +64,46 @@ async function setup(
         }),
   });
   const repository = await addRepository(store, { path: repositoryPath });
-  return { store, registry, repository };
+  return { root, store, registry, repository };
 }
 
 describe("dev actions", () => {
+  test("allow lists the always-allowed outward targets and removes one", async () => {
+    const { root, store, registry, repository } = await setup();
+    const flow = defineFlow({
+      name: "daily:send",
+      entry: "send",
+      steps: [
+        {
+          id: "send",
+          kind: "plugin",
+          params: { use: "shell/command", params: {} },
+          replay: "safe",
+          next: { pass: "done" },
+        },
+        { id: "done", kind: "end", params: { status: "done" }, replay: "safe" },
+      ],
+    });
+    await appendTargetGrant(
+      root,
+      flow,
+      { kind: "channel", target: "telegram:999" },
+      { via: "ios", id: "owner" },
+      1_700_000_000_000,
+    );
+    const object = await store.get("repo", repository.name);
+    if (object === undefined) throw new Error("the repository was not stored");
+
+    const listed = await registry.runAction("dev/allow", {}, { object, actor: ACTOR });
+    expect(String(listed.value)).toContain("daily:send");
+    expect(String(listed.value)).toContain("telegram:999");
+    expect(String(listed.value)).toContain("ios:owner");
+
+    const removed = await registry.runAction("dev/allow", { target: "telegram:999" }, { object, actor: ACTOR });
+    expect(removed.value).toBe('removed 1 always-allowed target for "telegram:999"');
+    expect((await readTargetGrants(root)).file.grants).toEqual([]);
+  });
+
   test("confirm is one name on a plan and on a task", async () => {
     const { store, registry, repository } = await setup();
     const plan = await addPlan(store, { repository, slug: "work", title: "Work" });

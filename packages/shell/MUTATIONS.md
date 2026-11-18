@@ -34,3 +34,9 @@ the row fields.
 |---|---|---|---|
 | T-0533-M9 | packages/shell/src/index.ts | `shell/command` stopped checking its line for an outward write | `shell/command > a background run asks before an outward command and names its target` |
 | T-0533-M11 | packages/shell/src/index.ts | `shell/probe` stopped checking its line for an outward write | `shell/command > shell/probe checks an outward line before it runs it` |
+
+## T-0534 — shell outward writes use the flow's target grant
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0534-M1 | packages/shell/src/index.ts | the outward guard got no flow, so it could not use or record a target grant | `shell/command > always for this flow and target lifts the next run's outward question` |

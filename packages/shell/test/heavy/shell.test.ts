@@ -15,7 +15,7 @@ import {
   type PluginDefinition,
   type PluginStepResult,
 } from "@operad-io/engine";
-import { defaultAccess } from "@operad-io/access-match";
+import { OUTWARD_ALLOW_TARGET, defaultAccess } from "@operad-io/access-match";
 import shell, { createShellPlugin } from "../../src/index.ts";
 import {
   alive,
@@ -94,6 +94,63 @@ describe("shell/command", () => {
     );
     expect(asked).toHaveLength(1);
     expect(asked[0]).toContain("origin/main");
+  });
+
+  test("always for this flow and target lifts the next run's outward question", async () => {
+    const { registry } = await fixture();
+    const flow = defineFlow({
+      name: "daily:send",
+      entry: "send",
+      steps: [
+        {
+          id: "send",
+          kind: "plugin",
+          params: { use: "shell/command", params: { line: "git push --dry-run origin main" } },
+          replay: "safe",
+          next: { pass: "done", fail: "done", interrupted: "done" },
+        },
+        { id: "done", kind: "end", params: { status: "done" }, replay: "safe" },
+      ],
+    });
+    let asked = 0;
+    await registry.runStep(
+      "shell/command",
+      { line: "git push --dry-run origin main" },
+      {
+        runId: "run-target-grant-1",
+        flow,
+        access: { ...defaultAccess(), background: true } as never,
+        trigger: { source: "cron", type: "tick", key: "t1", hops: 0 },
+        asker: {
+          ask: (request) => {
+            asked += 1;
+            expect(request.choices).toContain(OUTWARD_ALLOW_TARGET);
+            return Promise.resolve({ kind: "answered", answer: { choice: OUTWARD_ALLOW_TARGET, actor: { via: "ios", id: "owner" } } });
+          },
+          useGrant: () => Promise.resolve(false),
+        },
+      },
+    );
+    expect(asked).toBe(1);
+
+    await registry.runStep(
+      "shell/command",
+      { line: "git push --dry-run origin main" },
+      {
+        runId: "run-target-grant-2",
+        flow,
+        access: { ...defaultAccess(), background: true } as never,
+        trigger: { source: "cron", type: "tick", key: "t2", hops: 0 },
+        asker: {
+          ask: () => {
+            asked += 1;
+            return Promise.resolve({ kind: "answered", answer: { choice: "send_once" } });
+          },
+          useGrant: () => Promise.resolve(false),
+        },
+      },
+    );
+    expect(asked).toBe(1);
   });
 
   test("shell/probe checks an outward line before it runs it", async () => {

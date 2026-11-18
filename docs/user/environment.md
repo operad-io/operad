@@ -17,7 +17,7 @@ message named in the row.
 
 | Variable | Type | Default | Allowed values | When it takes effect |
 |---|---|---|---|---|
-| `OPERAD_HOME` | path | `~/.operad` | A directory path | Every command: the home that holds `config.json`, the store, the secrets directory, `tui.json`, `keys.json`, `serve.lock` and `access-user.json`. A relative path is resolved from the current directory. |
+| `OPERAD_HOME` | path | `~/.operad` | A directory path | Every command: the home that holds `config.json`, the store, the secrets directory, `tui.json`, `keys.json`, `serve.lock`, `access-user.json` and `access-grants.json`. A relative path is resolved from the current directory. |
 | `OPERAD_SERVE_INTERVAL_MS` | integer | `1000` | milliseconds, more than 0 | When `operad serve` starts: the time between loop passes. A value that is not a finite positive number falls back to 1000. |
 | `OPERAD_BIND_RETRY_MS` | integer | `10000` | milliseconds, more than 0 | When a `serve` that took over from another one opens its addresses: how long it keeps trying. A first start fails at once. A value that is not a positive number falls back to 10000. |
 | `OPERAD_BIND_RETRY_STEP_MS` | integer | `250` | milliseconds, more than 0 | The wait between two tries of the same retry. A value that is not a positive number falls back to 250. |

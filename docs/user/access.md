@@ -1,5 +1,5 @@
 ---
-description: Access profiles, the default profile, access-user.json, always allow, MCP tools and background runs.
+description: Access profiles, the default profile, access-user.json, always allow, target grants, MCP tools and background runs.
 ---
 
 # Access
@@ -151,6 +151,59 @@ An invalid file is treated as an empty list and the step logs `the user access
 file "<path>" ...; it is treated as empty`. An `allow_always` answer writes an entry only when the call was allowed
 once; a call that holds a secret value is never asked about and never written.
 
+## Always for this flow and target
+
+In a background run the outward question also offers **Always for this flow and
+target**. Choosing it records a grant: the same flow, with the same definition,
+writing to the same target does not ask again. Another target asks, and a
+change to the flow's definition asks again even after the change is reverted.
+The grant is not bound to the content sent, so a daily digest with new text each
+day to the same chat stays allowed. The chat's exact-call `allow_always` still
+does not lift a background question.
+
+The grants live in `$OPERAD_HOME/access-grants.json`. A missing file is an empty
+list. A file that cannot be read is reported by the step that reads it and
+treated as empty. A person lists and removes them with `operad dev:allow` on a
+repository; `--target <target>` removes the grants of one target, and
+`--flow <name>` narrows that to one flow. The same `allow` action is reachable
+through HTTP and MCP, so a client can show the list. A removed grant asks again
+on the next write.
+
+<!-- schema: access-grants.schema.json -->
+```json
+{
+  "flows": [
+    { "flow": "daily:send", "digest": "b3f1…", "id": "6a8e…" }
+  ],
+  "grants": [
+    {
+      "flow": "daily:send",
+      "definition": "6a8e…",
+      "kind": "channel",
+      "target": "telegram:999",
+      "by": { "via": "ios", "id": "owner" },
+      "at": 1700000000000
+    }
+  ]
+}
+```
+
+| Key | Type | Default | Allowed values | When it takes effect | Wrong value |
+|---|---|---|---|---|---|
+| `flows` | array of flow identities | `[]` | the flow definitions last seen | Whenever a background outward write is judged: a digest that differs from the last one makes a new id | An entry without a flow, digest or id makes the whole file count as empty |
+| `flows.flow` | string | required | the flow's name | It names the flow the identity belongs to | An empty value makes the whole file count as empty |
+| `flows.digest` | string | required | the digest of the definition last seen | It tells an edit from the same definition | An empty value makes the whole file count as empty |
+| `flows.id` | string | required | a generated identity, never reused | A grant matches only a grant with this identity | An empty value makes the whole file count as empty |
+| `grants` | array of target grants | `[]` | the targets a person allowed | A background outward write to a matching target does not ask | An entry with a missing or wrong field makes the whole file count as empty |
+| `grants.flow` | string | required | the flow's name | The grant lifts only that flow's question | An empty value makes the whole file count as empty |
+| `grants.definition` | string | required | the definition identity the person answered for | A changed definition no longer matches | An empty value makes the whole file count as empty |
+| `grants.kind` | string | required | `channel`, `mail`, `post`, `repository`, `service`, `command` | It records what kind of write the target takes | Any other value makes the whole file count as empty |
+| `grants.target` | string | required | the exact target as the question names it | The write must name the same target | An empty value makes the whole file count as empty |
+| `grants.by` | object | required | `{ "via", "id" }`, who answered | It is shown in the list and recorded for the owner | A missing or empty field makes the whole file count as empty |
+| `grants.by.via` | string | required | the client the person answered from | It is shown in the list | An empty value makes the whole file count as empty |
+| `grants.by.id` | string | required | who answered, as the client names them | It is shown in the list | An empty value makes the whole file count as empty |
+| `grants.at` | number | required | when the person answered, in epoch milliseconds | It is shown in the list | A missing or non-number value makes the whole file count as empty |
+
 ## `allow_always`
 
 When a call needs to ask, a person sees three choices in a run a person started
@@ -189,8 +242,8 @@ than inheriting a permission a person gave in an earlier conversation.
 An **outward write** also asks first: a message, mail or
 post; a `git push`; or a write call to an outside service. The question names
 the target (the chat, address, repository and branch, or service) and carries
-the whole content; its choices are `Send once` and `Reject`. A write to one of
-the owner's own channels, or to a target in `outwardAllow`, does not ask. A
-plugin step or action declares such a write; the shell steps use
-`outwardCommands`. The chat's exact-call `alwaysAllow` does not lift this
-question.
+the whole content; its choices are `Send once`, `Always for this flow and
+target` and `Reject`. A write to one of the owner's own channels, or to a target
+in `outwardAllow`, does not ask. A plugin step or action declares such a write;
+the shell steps use `outwardCommands`. The chat's exact-call `alwaysAllow` does
+not lift this question; only a target grant from the section above does.
