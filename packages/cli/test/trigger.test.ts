@@ -110,6 +110,7 @@ describe("operad trigger rules", () => {
           start: { flow: "plugin-two" },
           object: "job:2",
           mode: "candidate",
+          paused: true,
         },
       ],
       [rulesPluginPath],
@@ -117,7 +118,7 @@ describe("operad trigger rules", () => {
     const output = capture();
     expect(await main(["trigger", "rules"], { home, io: output.io })).toBe(0);
 
-    expect(output.text()).toContain("cron tick -> plugin-two on job:2 (candidate)  from user");
+    expect(output.text()).toContain("cron tick -> plugin-two on job:2 (candidate) paused  from user");
     expect(output.text()).toContain(
       "manual go -> plugin-two on $event.object (auto)  from rules-fixture",
     );

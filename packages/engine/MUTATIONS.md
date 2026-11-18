@@ -1108,3 +1108,11 @@ the row fields.
 | T-0534-M1 | packages/engine/src/runner/runner.ts | a step run in this process got no flow definition | `run access profile > accepts a field one step of the flow enforces and gives it to every step` |
 | T-0534-M2 | packages/engine/src/kernel/decide.ts | a resumed step's `askAnswer` dropped the actor who answered | `decide: an answered question returns to the step > the step runs again with its params, the session, the answer and a grant` |
 | T-0534-M3 | packages/engine/src/runner/step-worker.ts | the worker got no flow definition from the run | `step worker in this process > a worker step gets the flow definition the run executes` |
+
+## T-0548 — scheduled flows from a client
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0548-M1 | packages/engine/src/trigger/rules.ts | `paused` was no longer a rule field, so a paused rule could not be read after a restart | `scheduled flows > pause stops ticks and survives a reload, and resume starts them again` |
+| T-0548-M2 | packages/engine/src/http/server.ts | `POST /v1/commands` matched no path and answered `404` | `http server > POST /v1/commands runs a plugin verb, and a missing verb or a refusal is named` |
+| T-0548-M3 | packages/engine/src/plugin/registry.ts | a command got no loaded flow names, so it refused every flow | `operad scheduled > adds a flow, lists it, and refuses an unknown flow` |

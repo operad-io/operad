@@ -40,6 +40,10 @@
         "type": "string",
         "minLength": 1,
         "description": "A five-field cron expression in the local time zone."
+      },
+      "paused": {
+        "type": "boolean",
+        "description": "A paused cron rule fires no tick until it is resumed."
       }
     },
     "required": ["source", "type", "start", "object", "mode"],

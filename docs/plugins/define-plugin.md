@@ -105,7 +105,7 @@ commands: [
 `args` is the usage text printed in help; the kernel does not parse it, and `argv` is the rest of the command line after the verb.
 What `run` returns is printed: a string as it is, `undefined` as nothing, anything else as indented JSON.
 A throw is printed as the error.
-The context is the [base context](#the-context-every-hook-gets) plus `input`, the text read from stdin when the caller supplied one.
+The context is the [base context](#the-context-every-hook-gets) plus `input`, the text read from stdin when the caller supplied one, and `flows`, the names of every loaded flow, so a command can refuse a flow that cannot start.
 
 ## The context every hook gets
 

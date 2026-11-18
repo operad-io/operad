@@ -115,6 +115,8 @@ Types (`StepContext`, `ActionTypeDefinition`, `ObjectRow`, ...) are exported too
 | `MemoryPluginStore` | The in-process store, for tests and one-shot use | [Storage](storage.md) |
 | `SqlitePluginStore` | The store backed by one SQLite file | [Storage](storage.md) |
 | `openPluginStore` | Opens the store a home uses | [Storage](storage.md) |
+| `readConfig` | Reads a home's `config.json`, with defaults for the sections it leaves out | [Settings](settings.md#the-entry-in-configjson) |
+| `openConfigLog` | Opens the log backend the home's `config.json` selects; the caller closes it | [Storage](storage.md) |
 | `OBJECT_CHANGE_FACT` | `"object.changed"`: the type of a fact `put` writes | [Storage](storage.md#reading-changes) |
 | `foldObjectFacts` | `foldObjectFacts(facts, start?)`: yields the whole object after each version fact, and returns the final value | [Storage](storage.md#reading-changes) |
 | `objectValueAfter` | The whole object after one fact, or `undefined` for an appended fact | [Storage](storage.md#reading-changes) |

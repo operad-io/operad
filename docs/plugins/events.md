@@ -36,6 +36,7 @@ See [`triggers.json`](../user/config.md#triggersjson) for how a person writes th
 | `object` | string | required | A fixed object key `<type>:<id>`, or `$event.object` to use the event's | At load | `object: must be a non-empty string` |
 | `mode` | string | required | `observe`: record only; `candidate`: put a pending item a person starts or dismisses; `auto`: start the flow | At load | `mode: must be "observe", "candidate", "auto"` |
 | `schedule` | string | not set | A five-field cron expression in the machine's local time zone, evaluated for a source that ticks (`source-cron`) | At load | `schedule: <the cron message>` |
+| `paused` | boolean | not set | `true` keeps a cron rule in the file but stops its ticks | At load | `paused: must be true or false` |
 
 An unknown key in a rule is `<key>: not a rule field`. Rules from a plugin are checked by the same validator as the file and with the plugin's name in the message.
 The result of an event is one of: started, an active run was reused (`active`), recorded, observed, candidate, or skipped with a reason.

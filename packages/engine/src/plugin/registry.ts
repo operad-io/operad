@@ -1544,6 +1544,7 @@ export class PluginRegistry {
       signal: options.signal ?? new AbortController().signal,
       settings: this.settingsFor(plugin.name),
       secrets: this.secretsFor(plugin.name),
+      flows: this.flows().map((entry) => entry.flow.name),
       ...(options.input === undefined ? {} : { input: options.input }),
       ...(this.onCancelRun === undefined ? {} : { runs: this.runControl() }),
     };

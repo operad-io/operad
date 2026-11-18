@@ -430,6 +430,7 @@ for that pair is then not used.
 | `object` | string | required | a fixed object id, or `$event.object` | When the rule starts a run | Refused: `rule <n>: object: must be a non-empty string` |
 | `mode` | string | required | `observe`, `candidate`, `auto` | When the rule starts a run | Refused: `rule <n>: mode: must be "observe", "candidate", "auto"` |
 | `schedule` | string | absent | a five-field cron expression in the local time zone | When a cron rule is loaded; only rules with source `cron` use it | Refused: `rule <n>: schedule: <why the cron expression is not valid>` |
+| `paused` | boolean | absent | `true` stops the rule's ticks; a paused rule keeps no missed times | When the rule is read; the next load starts or resumes it | Refused: `rule <n>: paused: must be true or false` |
 
 The cron source is the plugin named `cron` from `@operad-io/source-cron`. It
 emits one `tick` per due minute for each rule with `source` `cron` and a
@@ -444,7 +445,18 @@ older times it skipped and why. That tick also carries `scheduledAt` and
 `lateSecs` in its data, so a step or prompt can tell the agent the planned time
 and how late the run is; an on-time tick carries no lateness. A rule whose
 schedule changed starts fresh, with no catch-up for the old schedule. A rule
-may not name the reserved source `operad` when it is added by a command.
+with `paused` true fires no tick; its recorded time follows the clock, so
+resuming waits for the next planned minute rather than catching up the paused
+period. A rule may not name the reserved source `operad` when it is added by a
+command.
+
+The cron source also owns the `scheduled` command, which lists, adds, edits,
+pauses, resumes and removes these rules without editing the file by hand. It
+writes the same `triggers.json`; there is no second store. A client reaches it
+as `operad scheduled ...`, over HTTP with `POST /v1/commands`, or through the
+MCP `command` tool. A list shows each scheduled flow's flow, schedule,
+parameters, next run, and the result and run id of its last run. An unknown flow
+or a bad cron expression is refused with the reason.
 
 If `triggers.json` is not valid, the whole file is refused, with the rule and
 field in the message. `operad serve` logs it and runs without sources until the
