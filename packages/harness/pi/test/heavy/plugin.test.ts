@@ -22,6 +22,7 @@ import {
   manualClock,
   tempRoot,
   waitForFile,
+  waitForPid,
   type ManualClock,
 } from "../../../process/test/support.ts";
 
@@ -720,7 +721,11 @@ describe("pi/agent", () => {
   });
 
   test("cancel fired the moment the worker is up never leaves it running", async () => {
-    for (let i = 0; i < 40; i++) {
+    // Ten starts, not forty: each starts and cancels a real worker at about
+    // 0.4 s. Forty took 18 to 25 s alone and crossed the 30 s heavy-file limit
+    // while the suite's other heavy files ran beside it. Ten still sample the
+    // moment the cancel lands and stay far inside the limit.
+    for (let i = 0; i < 10; i++) {
       const env = await setup("cancel");
       const controller = new AbortController();
       const running = runAgent(
@@ -728,13 +733,8 @@ describe("pi/agent", () => {
         { prompt: "hello", cwd: env.root, wallTimeSecs: 300, stallSecs: 300 },
         { signal: controller.signal, runId: `run-${i}` },
       );
-      await waitForFile(env.marker);
       // The file exists before the worker has written its pid into it.
-      let pid = Number(readFileSync(env.marker, "utf8"));
-      while (!(pid > 0)) {
-        await new Promise((r) => setTimeout(r, 1));
-        pid = Number(readFileSync(env.marker, "utf8"));
-      }
+      const pid = await waitForPid(env.marker);
       controller.abort();
       const result = await running;
       expect(result.result).toBe("interrupted");
