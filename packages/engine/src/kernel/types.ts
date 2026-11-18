@@ -173,6 +173,8 @@ export interface AnsweredAskState {
   readonly resume: JsonValue;
   readonly choice: string;
   readonly note: string | null;
+  /** Who answered, so a late answer can record a grant with the same person. */
+  readonly actor: Actor | null;
 }
 
 /** What a flow wait took over from a step that asked and ran out of grace. */

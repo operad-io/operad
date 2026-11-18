@@ -136,7 +136,7 @@ for (const mode of ["memory", "file"] as const) {
 
         const seen = env.read("second-run.json");
         expect(seen.resumeSession).toBe("sess-1");
-        expect(seen.askAnswer).toEqual({ prompt: "Run rm -rf build?", choice: "yes" });
+        expect(seen.askAnswer).toEqual({ prompt: "Run rm -rf build?", choice: "yes", actor: ACTOR });
         const grants = seen.grants as Record<string, unknown>[];
         expect(grants).toHaveLength(1);
         expect(grants[0]).toMatchObject({ kind: "command", value: "rm -rf build" });

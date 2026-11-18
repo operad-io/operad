@@ -711,7 +711,7 @@ describe("decide: an answered question returns to the step", () => {
     expect(runner.state.effect?.params).toEqual({
       prompt: "p",
       resumeSession: "s1",
-      askAnswer: { prompt: "Run it?", choice: "yes", note: "ok" },
+      askAnswer: { prompt: "Run it?", choice: "yes", note: "ok", actor: ACTOR },
     });
     expect(runner.state.effect?.grants).toEqual([
       { waitId: "w1", kind: "command", value: "rm -rf build" },
@@ -808,7 +808,7 @@ describe("decide: an answered question returns to the step", () => {
     expect(runner.state.effect?.params).toEqual({
       prompt: "p",
       resumeSession: "/s/one.jsonl",
-      askAnswer: { prompt: "Run it?", choice: "yes" },
+      askAnswer: { prompt: "Run it?", choice: "yes", actor: ACTOR },
     });
     expect(runner.state.effect?.grants).toBeUndefined();
   });
@@ -958,7 +958,7 @@ describe("decide: an answered question returns to the step", () => {
     expect(runner.state.effect?.params).toEqual({
       prompt: "p",
       resumeSession: "s1",
-      askAnswer: { prompt: "Run it?", choice: "yes" },
+      askAnswer: { prompt: "Run it?", choice: "yes", actor: ACTOR },
     });
     expect(runner.state.effect?.grants).toEqual([{ waitId: "w1", kind: "command", value: "ls" }]);
   });

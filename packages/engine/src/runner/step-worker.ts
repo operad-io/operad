@@ -17,6 +17,7 @@ import type {
   StepLimitRequest,
 } from "../plugin/types.ts";
 import type { JsonValue } from "../log/types.ts";
+import type { FlowDefinition } from "../flow/types.ts";
 import { SqlitePluginStore } from "../plugin/sqlite-store.ts";
 import type {
   PluginStore,
@@ -34,6 +35,7 @@ export interface StepWorkerRequest {
   readonly use: string;
   readonly params: unknown;
   readonly flowParams: JsonValue;
+  readonly flow?: FlowDefinition | undefined;
   readonly access?: JsonValue | undefined;
   /** The validated settings of every plugin, keyed by plugin name. */
   readonly settings?: Readonly<Record<string, unknown>> | undefined;
@@ -277,6 +279,7 @@ export async function runStepWorker(
     runId: request.runId,
     params: request.flowParams,
     cwd: request.cwd,
+    ...(request.flow === undefined ? {} : { flow: request.flow }),
     access: request.access ?? null,
     ...(request.object === undefined ? {} : { object: request.object }),
     ...(request.trigger === undefined ? {} : { trigger: request.trigger }),

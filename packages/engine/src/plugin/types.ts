@@ -600,6 +600,8 @@ export interface StepContext extends PluginBaseContext {
   readonly object: RunObject | undefined;
   /** Fixed JSON the flow was started with; null when it was given none. */
   readonly params: JsonValue;
+  /** The flow definition the run executes; absent in a direct step call with no flow. */
+  readonly flow?: FlowDefinition | undefined;
   /** The run's access profile, opaque to the kernel; null when it has none. */
   readonly access: JsonValue;
   /** The event that started the run, with paths to its text. */
@@ -722,6 +724,8 @@ export interface StepRunOptions {
   readonly cwd?: string | undefined;
   readonly signal?: AbortSignal | undefined;
   readonly params?: JsonValue | undefined;
+  /** The flow definition the run executes, for a step that binds data to it. */
+  readonly flow?: FlowDefinition | undefined;
   /** The run's access profile; the kernel only checks who enforces it. */
   readonly access?: JsonValue | undefined;
   readonly trigger?: TriggerView | undefined;
