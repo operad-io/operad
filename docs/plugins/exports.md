@@ -145,6 +145,7 @@ Types (`StepContext`, `ActionTypeDefinition`, `ObjectRow`, ...) are exported too
 | `readKeysFile` | Reads it | [Settings](settings.md#key-bindings) |
 | `defaultOperadHome` | `$OPERAD_HOME`, or `~/.operad` | [Settings](settings.md#the-entry-in-configjson) |
 | `configPath` | `<home>/config.json` | [Settings](settings.md#the-entry-in-configjson) |
+| `readConfig` | `readConfig(home)`: the home's `config.json`, checked and with defaults filled; a file a plugin cannot use should be read as its own section, never this way | [Settings](settings.md#the-entry-in-configjson) |
 | `isRangeSyntax` | Whether a version range is one of `^`, `~`, `>=` or exact | [`requires`](define-plugin.md#requires) |
 | `satisfiesRange` | Whether a version satisfies a range | [`requires`](define-plugin.md#requires) |
 
@@ -152,6 +153,7 @@ Types (`StepContext`, `ActionTypeDefinition`, `ObjectRow`, ...) are exported too
 
 | Export | What it is | Page |
 |---|---|---|
+| `objectLink` | `objectLink(type, id)`: the `operad://objects/<id>` link that opens one object | [Events](events.md#the-event) |
 | `MAX_TRIGGER_HOPS` | `8`: how deep a chain of events is followed | [Events](events.md#the-event) |
 | `parseTriggerRules` | Checks a parsed list of rules | [Events](events.md#rules) |
 | `mergeTriggerRules` | Merges the person's rules over a plugin's: the same source and type replaces | [Events](events.md#rules) |
