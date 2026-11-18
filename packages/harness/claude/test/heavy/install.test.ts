@@ -146,6 +146,8 @@ describe("inspectClaude", () => {
   test("a probe that never answers is refused after a bounded number of asks", async () => {
     const fake = await slowClaude({ version: PROBE_EMPTY_ATTEMPTS });
     expect(() => inspectClaude(fake.path)).toThrow(/did not print a version/);
+    // One answer and one more ask: a real empty answer is reported at once.
+    expect(fake.calls()).toBeLessThanOrEqual(2);
     expect(fake.calls()).toBe(PROBE_EMPTY_ATTEMPTS);
   });
 

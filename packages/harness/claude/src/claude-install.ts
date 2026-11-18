@@ -18,11 +18,12 @@ export const DEFAULT_CLAUDE_COMMAND = "claude";
 const PROBE_TIMEOUT_MS = 30_000;
 
 /**
- * How many times a probe that must print is run in all. Under load a spawned
- * command can exit 0 with nothing on its output, which is not an answer; the
- * same glitch is why the dev plugin asks an empty git answer again.
+ * How many times a probe that must print is run in all: its answer, and one
+ * more ask when that answer is an empty success. A spawned command can exit 0
+ * with nothing on its output, which is not an answer; one more ask is enough,
+ * and it is not five waits for a probe that genuinely prints nothing.
  */
-export const PROBE_EMPTY_ATTEMPTS = 5;
+export const PROBE_EMPTY_ATTEMPTS = 2;
 
 /** How long `claude auth status` may take when a client asks for the login state. */
 export const SIGNED_IN_PROBE_TIMEOUT_MS = 10_000;

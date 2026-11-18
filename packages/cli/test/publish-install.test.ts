@@ -212,6 +212,9 @@ describe("publishing and installing the packages", () => {
     expect(help.out).toContain("usage: operad");
 
     const init = run([binary, "init"], scratchRoot, env);
+    // A failed check names itself in init's output. Keep that output in the
+    // failure, so a later flake says which probe answered nothing.
+    if (init.code !== 0) throw new Error(`init exited ${init.code}:\n${init.out}${init.err}`);
     expect({ code: init.code, err: init.err }).toEqual({ code: 0, err: "" });
     expect(init.out).toContain("created");
     expect(init.out).toContain("shell: ready");
