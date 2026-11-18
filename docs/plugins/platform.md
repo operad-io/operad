@@ -46,11 +46,11 @@ A plugin that runs a command starts it in a process group of its own and stops o
 | `sentinelScript`, `killGroup` | | | Test-only seams |
 
 `LineOutcome` is `{ exitCode, signal, timedOut, cancelled, spawnError, log, tail }`: the exit code (or `null`), the signal name, whether the timeout or a cancel ended it, the error text when the shell could not start, the log's path, and the last lines of output (a bounded tail of 64 KiB).
-The process the line starts leads its own group through a *sentinel*: it ignores SIGTERM, announces `ready` on a control pipe, runs the line in the same group, reports the line's status, and stays alive until the stop's last SIGKILL, so the group id cannot be reused by an unrelated group in between. It also watches the process that started it, and kills the whole group if that process is killed before it can stop it.
+The process the line starts leads its own group through a *sentinel*: it ignores SIGTERM, announces `ready` on a control pipe, runs the line in the same group, reports the line's status, and stays alive until the stop's last SIGKILL, so the group id cannot be reused by an unrelated group in between. It also watches the process that started it, and kills the whole group if that process is killed before it can stop it. A line that reported its own status is stopped with SIGKILL at once, and the stop looks again for a child forked as the signal went out, so neither the line's own work nor the sentinel's `sleep` outlives it.
 
 ## What a step leaves behind
 
-Every process a step starts through the platform carries an environment marker naming the run and the step. When the step ends the platform finds the live processes of the same user that still carry the marker and stops them (TERM, a bounded wait, KILL). A step that started no marked process has nothing to find and reads no process table. The same sweep runs at `serve` start for markers of runs that are no longer active. A process that removes the variable from its own environment is not found.
+Every process a step starts through the platform carries an environment marker naming the run and the step. When the step ends the platform finds the live processes of the same user that still carry the marker and stops them (TERM, a bounded wait, KILL). A step that started no marked process has nothing to find and reads no process table. The same sweep runs at `serve` start for markers of runs that are no longer active. A process that removes the variable from its own environment is not found. A process that has ended and waits for its parent to reap it (a zombie) runs nothing and cannot be stopped, so the process table leaves it out: no sweep waits its grace out or reports it as left running.
 
 | Export | What it does |
 |---|---|

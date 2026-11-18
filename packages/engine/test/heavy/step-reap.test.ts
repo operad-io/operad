@@ -11,6 +11,7 @@ import {
   enterStep,
   markerEnv,
   parseEnvColumn,
+  readProcessTable,
   StepTracker,
   type ProcessRow,
   reapStale,
@@ -95,6 +96,32 @@ async function stepWith(line: string, runId: string, root: string, home: string)
   return registry.runStep("leaver/run", { line }, { runId, cwd: root });
 }
 
+/** The zombie children of a pid, read from `ps` itself rather than the table. */
+function zombieChildren(ppid: number): number[] {
+  const uid = String(process.getuid?.() ?? "");
+  const who = uid === "" ? ["-x"] : ["-U", uid];
+  const ps = Bun.spawnSync(["ps", ...who, "-ww", "-o", "pid=,ppid=,stat=,command="]);
+  const found: number[] = [];
+  for (const line of ps.stdout.toString().split("\n")) {
+    const match = /^\s*(\d+)\s+(\d+)\s+(\S+)\s/.exec(line);
+    if (match === null || Number(match[2]) !== ppid) continue;
+    if ((match[3] ?? "").startsWith("Z")) found.push(Number(match[1]));
+  }
+  return found;
+}
+
+/** Resolves with the pid of a zombie child of `ppid`, once there is one. */
+async function waitForZombie(ppid: number): Promise<number> {
+  const deadline = Date.now() + 10_000;
+  for (;;) {
+    const [pid] = zombieChildren(ppid);
+    if (pid !== undefined) return pid;
+    if (Date.now() >= deadline) throw new Error(`no zombie child of ${ppid}`);
+    // No event announces a process that ends; the table is the only source.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
 function marker(runId: string, home: string): StepMarker {
   return { runId, step: "leaver/run", home };
 }
@@ -144,6 +171,19 @@ describe("what a step leaves behind", () => {
     expect(
       await Bun.file(join(root, "store", "logs", "leaver", "runs", "run-4", "run.log")).exists(),
     ).toBe(false);
+  });
+
+  test("a process that ended and waits to be reaped is not in the table", async () => {
+    // The shell's background `sleep` ends at once, then the shell execs a sleep
+    // that never reaps it: the ended child is a zombie while the keeper lives.
+    const keeper = spawn("/bin/sh", ["-c", "sleep 0.2 & exec sleep 20"], { stdio: "ignore" });
+    started.push(keeper);
+    const dead = await waitForZombie(keeper.pid ?? 0);
+    const rows = await readProcessTable();
+    // The keeper is live and in the table, so the read worked; its child, which
+    // runs nothing and cannot be stopped, is not there to be swept.
+    expect(rows.some((row) => row.pid === keeper.pid)).toBe(true);
+    expect(rows.some((row) => row.pid === dead)).toBe(false);
   });
 
   test("of two steps with one marker at once, only the last to end sweeps", () => {

@@ -222,7 +222,7 @@ export interface ProcessRow {
 export type ProcessTable = () => Promise<readonly ProcessRow[]>;
 
 const ROW_PATTERN =
-  /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\w{3}\s+\S+\s+\S+\s+[\d:]+\s+\d{4})\s+(.*)$/;
+  /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s+(\w{3}\s+\S+\s+\S+\s+[\d:]+\s+\d{4})\s+(.*)$/;
 
 /** Seconds since the epoch of a `ps` start time (`Mon  9 Nov 00:26:59 2026` or `Mon Nov  9 00:26:59 2026`). */
 export function parseStart(text: string): number {
@@ -236,22 +236,30 @@ export function parseStart(text: string): number {
   return Math.floor(Date.UTC(Number(year), months.indexOf(month), Number(day), hours, minutes, seconds) / 1000);
 }
 
-/** The table of this user's processes, by `ps`; it works the same on macOS and Linux. */
+/**
+ * The table of this user's processes, by `ps`; it works the same on macOS and
+ * Linux. A process that has ended and waits for its parent to reap it is a
+ * zombie: it runs nothing, holds no environment and cannot be stopped, so it
+ * is no part of the table. Stopping one would only make a sweep wait out its
+ * grace for a process that is already gone.
+ */
 export const readProcessTable: ProcessTable = async () => {
   const uid = String(process.getuid?.() ?? "");
   const who = uid === "" ? ["-x"] : ["-U", uid];
-  const listing = await run("ps", [...who, "-ww", "-o", "pid=,ppid=,pgid=,lstart=,command="]);
+  const listing = await run("ps", [...who, "-ww", "-o", "pid=,ppid=,pgid=,stat=,lstart=,command="]);
   const rows: ProcessRow[] = [];
   for (const line of listing.out.split("\n")) {
     const match = ROW_PATTERN.exec(line);
     if (match === null) continue;
     if (Number(match[1]) === listing.pid) continue;
+    // `Z` and its flags (`ZN`, `Z+`) are the zombie states.
+    if ((match[4] ?? "").startsWith("Z")) continue;
     rows.push({
       pid: Number(match[1]),
       ppid: Number(match[2]),
       pgid: Number(match[3]),
-      startSec: parseStart(match[4] ?? ""),
-      command: match[5] ?? "",
+      startSec: parseStart(match[5] ?? ""),
+      command: match[6] ?? "",
     });
   }
   return rows;

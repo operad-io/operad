@@ -513,14 +513,15 @@ export async function runLine(options: LineRunOptions): Promise<LineOutcome> {
   });
 
   let readySeen = false;
-  const stop = createGroupStop({
+  const group: GroupStopOptions = {
     clock,
     killGroup: options.killGroup ?? killProcessGroup,
     pid: () => child.pid,
     sentinelExited: () => sentinelExited,
     readySeen: () => readySeen,
     ready: readyGate,
-  });
+  };
+  const stop = createGroupStop(group);
 
   let finished = false;
   let timedOut = false;
@@ -654,7 +655,14 @@ export async function runLine(options: LineRunOptions): Promise<LineOutcome> {
   // line pay 500 ms. A cancellation or timeout still takes the TERM path.
   if (ended.kind === "end" && !cancelled && !timedOut && !stalled) {
     const pid = child.pid;
-    if (pid !== undefined) (options.killGroup ?? killProcessGroup)(pid, "SIGKILL");
+    if (pid !== undefined && (options.killGroup ?? killProcessGroup)(pid, "SIGKILL")) {
+      // A child forked as the group was signaled missed the signal, and the
+      // sentinel's own `sleep` is forked right about now. The killed leader is
+      // a zombie until the event loop reaps it, so its id is still ours: look
+      // again, as the TERM path does, before taking the straggler for the
+      // step's work to stop later.
+      sweep(pid, group);
+    }
   } else {
     await stop();
   }

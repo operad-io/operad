@@ -208,7 +208,7 @@ describe("process groups", () => {
     expect(groupsSeen).toBe(true);
   });
 
-  test("a finished line is stopped with a single SIGKILL", async () => {
+  test("a finished line is stopped without the grace", async () => {
     const root = await tempRoot();
     const signals: (string | number)[] = [];
     const clock = manualClock();
@@ -232,8 +232,48 @@ describe("process groups", () => {
 
     expect(outcome.exitCode).toBe(0);
     expect(clock.sleeps).toBe(0);
-    expect(signals).toEqual(["SIGKILL"]);
+    // A group that still has a live member gets another SIGKILL, as the TERM
+    // path does; a TERM or a grace wait here would be the mistake.
+    expect(afterTerm(signals)).toEqual(["SIGKILL"]);
   });
+
+  test("a child forked as a line that ended is signaled does not outlive it", async () => {
+    const root = await tempRoot();
+    const childFile = join(root, "child");
+    // The sentinel forks a child before it reports the end, as its own `sleep`
+    // does. A test cannot land a fork in the kernel's window, so the first
+    // SIGKILL reaches the leader alone: the child is missed, as a fork at that
+    // instant would be. The stop must look again, as the TERM path does.
+    let kills = 0;
+    const outcome = await runLine({
+      line: "echo hi",
+      cwd: root,
+      signal: new AbortController().signal,
+      sentinelScript: [
+        "trap ':' TERM",
+        "printf 'ready\\n' >&2",
+        'sh -c "$1" 2>&1',
+        "status=$?",
+        "sleep 10 &",
+        `echo $! > '${childFile}'`,
+        "printf 'end %s\\n' \"$status\" >&2",
+        "wait",
+      ].join("\n"),
+      killGroup: (pgid, signal) => {
+        kills += 1;
+        try {
+          process.kill(kills === 1 ? pgid : -pgid, signal);
+          return true;
+        } catch {
+          return false;
+        }
+      },
+    });
+
+    expect(outcome.exitCode).toBe(0);
+    const child = await waitForPid(childFile);
+    await waitUntil(() => !alive(child), 5000);
+  }, 20_000);
 
   test("a cancelled line still takes SIGTERM, the grace and SIGKILL", async () => {
     const root = await tempRoot();
