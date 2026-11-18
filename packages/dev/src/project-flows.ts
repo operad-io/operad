@@ -12,6 +12,7 @@ import { pathToFileURL } from "node:url";
 import type { FlowDefinition, StepShape } from "@operad-io/engine";
 import type { DevSettings } from "./settings.ts";
 import type { DevStage } from "./flow-compiler.ts";
+import { isWorkQuestionWait } from "./waits.ts";
 import { isRecord } from "@operad-io/engine";
 
 const FLOW_SUFFIX = ".flow.ts";
@@ -50,7 +51,12 @@ export function flowProblem(flow: unknown): string | undefined {
   const steps = flow.steps.filter(isRecord);
   const decides = steps.some((step) => {
     const use = useOf(step);
-    return step.kind === "wait_person" || use === "dev/verify" || use === "dev/review";
+    // A worker's own question keeps the worker going; it is not a step that
+    // asks a person what the task should do.
+    const asked = step.kind === "wait_person" && !(
+      typeof step.id === "string" && isWorkQuestionWait(step.id)
+    );
+    return asked || use === "dev/verify" || use === "dev/review";
   });
   if (!decides) return "needs at least one check, review or human step";
   if (!steps.some((step) => useOf(step) === "dev/integrate")) {

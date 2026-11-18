@@ -3049,6 +3049,7 @@ describe("the dev flow", () => {
       unavailable: "work_retry",
       cancelled: "end_cancelled",
       interrupted: "retry_work_stopped",
+      waiting: "wait_work_question",
     });
     expect(nextOf("work_retry")).toEqual({
       ready: "work",

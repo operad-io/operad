@@ -49,3 +49,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0440-M8 | packages/pool/src/index.ts | treated a thrown first attempt as a fallback trigger again (the T-0431-M1 mutation) | `fallback > a worker with a fallback whose step throws does not run the fallback` (packages/pool/test/agent.test.ts); `a worker with a fallback whose step throws does not run the fallback, and the work fails` (packages/dev/test/heavy/work.test.ts) |
+
+## T-0539 — a worker's question reaches the owner
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0539-M1 | packages/pool/src/index.ts | `pool/agent` did not declare the result `waiting`, so the engine refused the worker's question | `a worker's question > a waiting harness result passes through with its question and gives the place back` (packages/pool/test/agent.test.ts); `dev/work with workers > a worker's question is pending on the task, and the answer resumes the same worker and finishes the work` (packages/dev/test/heavy/work.test.ts) |

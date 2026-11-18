@@ -30,6 +30,8 @@ import {
 import {
   WAIT_ACTIONS,
   WAIT_STEPS,
+  WORK_QUESTION_CHOICES,
+  isWorkQuestionWait,
   reviewWaitKind,
   waitChoices,
   waitKindOf,
@@ -179,6 +181,7 @@ function kindOfStep(id: string): WaitKind | undefined {
     const base = WAIT_STEPS[kind];
     if (id === base || id.startsWith(`${base}_`)) return kind;
   }
+  if (isWorkQuestionWait(id)) return "work-question";
   return id === WAIT_STEPS.person || id === "human" ? "person" : undefined;
 }
 
@@ -198,9 +201,14 @@ describe("the actions a waiting task offers", () => {
         const kind = kindOfStep(step.id);
         expect(kind, step.id).toBeDefined();
         if (kind === undefined) continue;
-        expect([...choicesOf(step)], step.id).toEqual([
-          ...waitChoices(kind, item.hasReverify),
-        ]);
+        expect(
+          [...choicesOf(step)],
+          step.id,
+        ).toEqual(
+          kind === "work-question"
+            ? [...WORK_QUESTION_CHOICES]
+            : [...waitChoices(kind, item.hasReverify)],
+        );
       }
     });
 

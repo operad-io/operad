@@ -14,14 +14,22 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
+  answerRun,
   definePlugin,
+  isRecord,
+  listPending,
+  openLog,
   PluginRegistry,
+  Runner,
+  type AskTimer,
+  type Fact,
   type PluginStepResult,
 } from "@operad-io/engine";
 import {
   addPlan,
   addRepository,
   addTask,
+  compileDevFlow,
   createDevPlugin,
   MAX_WORK_WAITS,
   reviewTestHooks,
@@ -59,13 +67,15 @@ function fakeHarness(record: string) {
     steps: [
       {
         name: "agent",
-        results: ["done", "failed", "interrupted"],
+        resumable: true,
+        results: ["done", "failed", "interrupted", "waiting"],
         async run(ctx, params): Promise<PluginStepResult> {
           const input = params as {
             readonly prompt: string;
             readonly cwd: string;
             readonly args?: readonly string[];
             readonly resumeSession?: string;
+            readonly askAnswer?: { readonly prompt: string; readonly choice: string };
           };
           // Mirror radian: an absent args falls back to the flow's.
           const flow =
@@ -86,9 +96,47 @@ function fakeHarness(record: string) {
               cwd: input.cwd,
               args,
               resumeSession: input.resumeSession ?? null,
+              askAnswer: input.askAnswer ?? null,
               access: ctx.access,
             }),
           );
+          if (mode === "ask") {
+            if (input.askAnswer === undefined) {
+              try {
+                await ctx.ask({
+                  prompt: "Run this command? git push origin main",
+                  choices: ["allow_once", "reject_once"],
+                  resume: {
+                    session: "fake-session",
+                    grant: {
+                      kind: "command",
+                      value: "git push origin main",
+                      choice: "allow_once",
+                    },
+                  },
+                });
+              } catch (error) {
+                // A cancel while the question is open stops the worker, as a
+                // harness does for any other stop.
+                if (ctx.signal.aborted) {
+                  return { result: "interrupted", data: { reason: "cancelled" } };
+                }
+                throw error;
+              }
+            }
+            writeFileSync(join(input.cwd, "worker.txt"), "done\n");
+            gitOrThrow(input.cwd, ["add", "worker.txt"]);
+            gitOrThrow(input.cwd, [
+              "-c",
+              "user.name=worker",
+              "-c",
+              "user.email=worker@example.com",
+              "commit",
+              "-qm",
+              "worker work",
+            ]);
+            return { result: "done", data: { sessionId: "fake-session" } };
+          }
           if (mode === "throw") throw new Error("the fake harness crashed");
           if (mode === "fail") {
             return {
@@ -355,6 +403,52 @@ function readRecord(state: Fixture): {
     readonly cwd: string;
     readonly access: AccessProfile;
   };
+}
+
+/** A grace timer the test fires by hand. */
+class QuestionTimer {
+  private readonly fires: (() => void)[] = [];
+  private waiters: (() => void)[] = [];
+  readonly timer: AskTimer = (_ms, fire) => {
+    this.fires.push(fire);
+    for (const waiter of this.waiters.splice(0)) waiter();
+    return () => undefined;
+  };
+  armed(): Promise<void> {
+    if (this.fires.length > 0) return Promise.resolve();
+    return new Promise((resolve) => this.waiters.push(resolve));
+  }
+  fire(): void {
+    this.fires.at(-1)?.();
+  }
+}
+
+async function startDevFlow(state: Fixture, name = "dev") {
+  const log = openLog({
+    backend: "sqlite",
+    path: join(state.root, "log", "log.sqlite"),
+  });
+  const found = state.registry.flow(name);
+  if (found === undefined) throw new Error(`the flow "${name}" is not loaded`);
+  const { runId } = await log.startRun("dev", `task:${state.taskKey}`);
+  const runner = (timer?: QuestionTimer) =>
+    new Runner({
+      log,
+      flow: found.flow,
+      runId,
+      registry: state.registry,
+      lockRoot: join(state.root, "runner-lock"),
+      object: { type: "task", id: state.taskKey },
+      clock: () => Date.now(),
+      ...(timer === undefined ? {} : { askTimer: timer.timer }),
+    });
+  return { log, runId, flow: found.flow, runner };
+}
+
+async function readFacts(log: ReturnType<typeof openLog>, runId: string): Promise<Fact[]> {
+  const facts: Fact[] = [];
+  for await (const fact of log.read(runId)) facts.push(fact);
+  return facts;
 }
 
 async function taskDataOf(state: Fixture) {
@@ -946,6 +1040,17 @@ describe("dev/work with workers", () => {
     args: [mode],
     ...extra,
   });
+  /** The flow of the question test: the work, and a person to hand it to. */
+  const questionFlow = (name: string) => {
+    const flow = compileDevFlow(name, [{ stage: "work" }, { stage: "human" }]);
+    const plugin = definePlugin({
+      name: `test-flows-${name}`,
+      kind: "domain",
+      version: "0.0.0",
+      flows: [flow],
+    });
+    return { name, plugin };
+  };
 
   test("the old single worker runs as one worker named after its harness", async () => {
     const state = await fixture("commit");
@@ -1209,6 +1314,27 @@ describe("dev/work with workers", () => {
     expect((await taskDataOf(state)).attempt?.fallbackFrom).toBeNull();
   });
 
+  test("a resume's session and answer in the step's params reach the worker", async () => {
+    const state = await fixture("nothing");
+    expect((await runWork(state, "run-1")).result).toBe("nothing");
+    const asked = { prompt: "Run this command? git push origin main", choice: "allow_once" };
+    const resumed = await state.registry.runStep(
+      "dev/work",
+      { resumeSession: "old-session", askAnswer: asked },
+      {
+        runId: "run-2",
+        object: { type: "task", id: state.taskKey, data: {} },
+      },
+    );
+    expect(resumed.result).toBe("nothing");
+    const record = JSON.parse(readFileSync(state.record, "utf8")) as {
+      readonly resumeSession: string | null;
+      readonly askAnswer: { readonly choice?: unknown } | null;
+    };
+    expect(record.resumeSession).toBe("old-session");
+    expect(record.askAnswer?.choice).toBe("allow_once");
+  });
+
   test("a rework resumes the session of the worker it goes back to", async () => {
     const state = await fixture("nothing", { workers: { only: fake("nothing") } });
     await runWork(state, "run-1");
@@ -1269,4 +1395,77 @@ describe("dev/work with workers", () => {
       stub.restore();
     }
   });
+
+  test("a worker's question is pending on the task, and the answer resumes the same worker and finishes the work", async () => {
+    const askWorker = (name: string) => ({
+      use: "fake-harness/agent",
+      args: ["ask", name],
+    });
+    const question = questionFlow("question");
+    const state = await fixture("nothing", {
+      workers: { alpha: askWorker("alpha"), beta: askWorker("beta") },
+      plugins: [question.plugin],
+    });
+    const dev = await startDevFlow(state, question.name);
+    const timer = new QuestionTimer();
+    try {
+      const first = dev.runner(timer).run();
+      await timer.armed();
+      timer.fire();
+      expect(await first).toBe("waiting");
+
+      const pending = await listPending(dev.log, state.registry);
+      expect(pending).toHaveLength(1);
+      expect(pending[0]).toMatchObject({
+        runId: dev.runId,
+        object: `task:${state.taskKey}`,
+        prompt: "Run this command? git push origin main",
+        choices: ["allow_once", "reject_once"],
+      });
+      const waitId = pending[0]?.waitId;
+      if (waitId === undefined) throw new Error("the question has no wait id");
+
+      // A resume without the pinned worker would take beta, which is first now.
+      rewrite(state, {
+        workers: { beta: askWorker("beta"), alpha: askWorker("alpha") },
+      });
+      await answerRun({
+        log: dev.log,
+        flow: dev.flow,
+        runId: dev.runId,
+        choice: "allow_once",
+        actor: { via: "test", id: "me" },
+      });
+      await dev.runner().run();
+
+      const facts = await readFacts(dev.log, dev.runId);
+      const workResults: Record<string, unknown>[] = [];
+      for (const fact of facts) {
+        if (
+          fact.kind === "step_result" &&
+          isRecord(fact.payload) &&
+          fact.payload.step === "work"
+        ) {
+          workResults.push(fact.payload);
+        }
+      }
+      expect(workResults.at(-1)?.result).toBe("done");
+
+      const record = JSON.parse(readFileSync(state.record, "utf8")) as {
+        readonly args: readonly string[];
+        readonly resumeSession: string | null;
+        readonly askAnswer: { readonly choice?: unknown } | null;
+      };
+      expect(record.args).toEqual(["ask", "alpha"]);
+      expect(record.resumeSession).toBe("fake-session");
+      expect(record.askAnswer?.choice).toBe("allow_once");
+      expect(
+        (await listPending(dev.log, state.registry)).some(
+          (item) => item.runId === dev.runId && item.choices.includes("allow_once"),
+        ),
+      ).toBe(false);
+    } finally {
+      await dev.log.close();
+    }
+  }, 30_000);
 });

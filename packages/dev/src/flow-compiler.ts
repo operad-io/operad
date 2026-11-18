@@ -9,7 +9,7 @@ import { type FlowDefinition, type StepShape } from "@operad-io/engine";
 import { createHash } from "node:crypto";
 import type { CheckCommand } from "./settings.ts";
 import { DEV_MAX_VISITS } from "./timeouts.ts";
-import { WAIT_STEPS, waitChoiceInfo, waitChoices } from "./waits.ts";
+import { WAIT_STEPS, WORK_QUESTION_CHOICES, WORK_QUESTION_LATE_CHOICES, waitChoiceInfo, waitChoices } from "./waits.ts";
 
 /** The worker stage: the harness changes the task branch. */
 export interface WorkStage {
@@ -138,6 +138,32 @@ function waitPerson(
     },
     replay: "safe",
     next,
+  };
+}
+
+/** The wait a worker's own question goes to, and the answer goes back to the same work step. */
+function workQuestionWaitId(workId: string): string {
+  return workId === "work"
+    ? WAIT_STEPS["work-question"]
+    : `${WAIT_STEPS["work-question"]}_${workId}`;
+}
+
+function waitWorkerQuestion(id: string, workId: string): StepShape {
+  return {
+    id,
+    kind: "wait_person",
+    params: {
+      prompt: "The worker asked about a call.",
+      choices: [...WORK_QUESTION_CHOICES],
+      lateChoices: [...WORK_QUESTION_LATE_CHOICES],
+    },
+    replay: "safe",
+    next: {
+      allow_once: workId,
+      allow_always: workId,
+      reject_once: workId,
+      interrupted: "end_cancelled",
+    },
   };
 }
 
@@ -295,9 +321,11 @@ function defaultSteps(
         unavailable: "work_retry",
         cancelled: "end_cancelled",
         interrupted: "retry_work_stopped",
+        waiting: workQuestionWaitId("work"),
       },
       "unsafe",
     ),
+    waitWorkerQuestion(workQuestionWaitId("work"), "work"),
     waitCheck("work_retry", "dev/work_due", {
       ready: "work",
       interrupted: "end_cancelled",
@@ -638,9 +666,11 @@ function generatedSteps(
               unavailable: `${id}_retry`,
               cancelled: "end_cancelled",
               interrupted: `retry_${id}_stopped`,
+              waiting: workQuestionWaitId(id),
             },
             "unsafe",
           ),
+          waitWorkerQuestion(workQuestionWaitId(id), id),
           waitCheck(`${id}_retry`, "dev/work_due", {
             ready: id,
             interrupted: "end_cancelled",

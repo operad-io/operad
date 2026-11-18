@@ -1411,3 +1411,12 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0544-M1 | packages/dev/src/prepare.ts | `stepOptions` passed the run's access profile on without `defaultAsks: false` | `dev/review > a reviewer gets a task's profile: the default's denies, not its asks` (and `prepare > a prepare call gets a task's profile: the default's denies, not its asks`) |
+
+## T-0539 — a worker's question waits for a person and resumes the same worker
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0539-M2 | packages/dev/src/steps.ts | a resumed question did not ask the pool for the worker that ran, so the first free worker took it | `dev/work with workers > a worker's question is pending on the task, and the answer resumes the same worker and finishes the work` |
+| T-0539-M3 | packages/dev/src/flow-compiler.ts | the work step had no `waiting` edge to its question wait | `the built-in default keeps today's ids and edges` (packages/dev/test/heavy/flow-compiler.test.ts) |
+| T-0539-M4 | packages/dev/src/steps.ts | `dev/work` read the resume from the run's start params instead of the step's own, so the session and the answer were not passed on | `dev/work with workers > a resume's session and answer in the step's params reach the worker` |
+| T-0539-M5 | packages/dev/src/project-flows.ts | counted a worker's own question wait as the check, review or human step a flow must have | `a TS flow with no check, review or human step is refused` (packages/dev/test/heavy/project-flows.test.ts) |

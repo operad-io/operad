@@ -22,7 +22,7 @@ plan -> tasks (draft) -> confirm -> ready -> work -> check -> review -> you merg
 4. **Check.** The commands in `gate.commands` run against the commit. A failing test is run again on its own first, so a flaky test is told apart from a real failure.
 5. **Review.** The reviewer reads the change and writes a report. Findings that reach `reviewer.fixLevel` (default `major`) fail the review.
 6. **Rework.** A failed check or a failed review sends the task back to the worker, up to `maxAutoRework` times (default `2`). After that the task waits for you.
-7. **Waiting for you.** A task that passed check and review waits in `operad pending` as `ready to merge`, with the actions `dev:merge`, `dev:reject`, `dev:rework`, `dev:reverify` and `dev:cancel`. A task also waits when something needs a person: review findings, a failed gate, the rework limit, a worker that added no commit.
+7. **Waiting for you.** A task that passed check and review waits in `operad pending` as `ready to merge`, with the actions `dev:merge`, `dev:reject`, `dev:rework`, `dev:reverify` and `dev:cancel`. A task also waits when something needs a person: review findings, a failed gate, the rework limit, a worker that added no commit. A worker's own question, such as a permission ask from its harness, is a pending item too; `allow_once` or `reject_once` answers it, and the same worker continues.
 8. **Merge and clean up.** `dev:merge` puts the verified commit on main (`integration.style`), runs `integration.keyCommands`, and pushes to the remote. Then cleanup removes the task's worktrees and branches. Tasks of one repository integrate one at a time. If the remote refuses the push, nothing is written and the task waits with a note.
 
 Every step is recorded: `operad history <task>` shows what ran, what a check or review found, and what you chose. A run whose process died starts again from its last recorded step. A plan can go further without you: `operad dev:auto <plan> --level merge` merges reviewed work after the check passes, `--level run` starts the plan's tasks without you and still stops each one for you at the merge, and `--level off` waits for you at every start and merge. `autoDefault` sets the level for new plans.
@@ -850,7 +850,8 @@ such as the one that did the first attempt), plus anything the harness step take
 3. It runs the worker's `use` with the params, the worker's `args`,
    `wallTimeSecs` and `stallSecs`, and returns the result unchanged, adding to
    `data`: `worker`, `harness` and, after a fallback, `fallbackFrom` (the worker
-   that failed).
+   that failed). A `waiting` result keeps its question; a later answer
+   continues the same worker with `resumeSession` and `askAnswer`.
 4. When the result's `data.modelError.kind` is `unavailable` or `usage_limit`,
    or the harness process cannot start (the step ended `failed` with
    `data.reason` `missing` or `spawn`), and the worker has a `fallback`, it runs
@@ -1071,7 +1072,8 @@ A step ends with one of these results:
 The end results apply to plugins of the `harness` kind: they run an agent, and
 a flow reads any agent the same way. `operad plugin check` refuses a harness
 step that declares another name and names it. The agent steps of
-`radian`, `pi`, `claude` and `codex` declare `done`, `failed` and `interrupted`.
+`radian`, `pi`, `claude` and `codex` declare `done`, `failed`, `interrupted`
+and, when the harness can resume a question, `waiting`.
 Plugins of other kinds name their own results. `shell` is a `stage`, not a
 harness: its steps run a command or a check and give a verdict, so they end in
 `pass` and `fail` (and `ready` or `waiting` for a check), and the end results

@@ -17,6 +17,7 @@ import {
   setTaskPhase,
 } from "../../src/service.ts";
 import { planData, planState, taskData } from "../../src/model.ts";
+import { isWorkQuestionWait } from "../../src/waits.ts";
 import { planViews } from "../../src/views.ts";
 import { cleanupTempRoots, guardLockHandles, makeGitRepository, storeAt, tempRoot } from "../support.ts";
 
@@ -364,9 +365,11 @@ describe("dev actions", () => {
   test("every person wait of the dev flow accepts rework and routes it like reject", async () => {
     const flow = (await import("../../flows/dev.flow.ts")).default as unknown;
     const waits = JSON.parse(JSON.stringify(flow)) as {
-      steps: { kind: string; choices?: string[]; params?: { choices?: string[] }; next?: Record<string, string> }[];
+      steps: { id: string; kind: string; choices?: string[]; params?: { choices?: string[] }; next?: Record<string, string> }[];
     };
-    const people = waits.steps.filter((node) => node.kind === "wait_person");
+    const people = waits.steps.filter(
+      (node) => node.kind === "wait_person" && !isWorkQuestionWait(node.id),
+    );
     expect(people.length).toBeGreaterThan(0);
     for (const node of people) {
       expect(node.choices ?? node.params?.choices).toContain("rework");
