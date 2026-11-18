@@ -29,7 +29,7 @@ interface CronRule {
   readonly schedule: CronSchedule;
   readonly expression: string;
   last: number | null;
-  /** A changed schedule begins at its latest planned time, not at an older one. */
+  /** A rule with no recorded last time begins at its latest planned time. */
   baseline: boolean;
 }
 
@@ -46,6 +46,19 @@ export function dueMinute(
     return candidate;
   }
   return latestCronMinute(schedule, now, lookbackDays);
+}
+
+/** The stable identity of a rule, independent of its position in the file. */
+function ruleKey(rule: TriggerRule): string {
+  return JSON.stringify([
+    rule.source,
+    rule.type,
+    rule.start.flow,
+    rule.start.params ?? null,
+    rule.object,
+    rule.mode,
+    rule.schedule,
+  ]);
 }
 
 /** One line for history naming the times a catch-up passed over. */
@@ -75,7 +88,7 @@ export class CronSource {
     this.rules = [];
     for (const [index, rule] of ctx.rules.entries()) {
       if (rule.source !== "cron" || rule.schedule === undefined) continue;
-      const stored = state.rules[String(index)];
+      const stored = state.rules[ruleKey(rule)];
       const sameSchedule = stored !== undefined && stored.schedule === rule.schedule;
       this.rules.push({
         index,
@@ -83,7 +96,7 @@ export class CronSource {
         schedule: parseCron(rule.schedule),
         expression: rule.schedule,
         last: sameSchedule ? stored.last : null,
-        baseline: stored !== undefined && !sameSchedule,
+        baseline: !sameSchedule,
       });
     }
   }
@@ -189,7 +202,7 @@ export class CronSource {
     const rules: Record<string, { schedule: string; last: number }> = {};
     for (const entry of this.rules) {
       if (entry.last === null) continue;
-      rules[String(entry.index)] = {
+      rules[ruleKey(entry.rule)] = {
         schedule: entry.expression,
         last: entry.last,
       };

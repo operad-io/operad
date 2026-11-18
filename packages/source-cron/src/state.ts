@@ -1,7 +1,7 @@
 /**
  * The plugin's own state file, `<home>/cron/state.json`. It holds the last
- * minute the source fired for each rule, keyed by the rule's index. A rule
- * whose schedule changed no longer matches its entry, so it starts fresh.
+ * minute the source fired for each rule, keyed by the rule's stable identity.
+ * A rule whose schedule changed no longer matches its entry, so it starts fresh.
  */
 
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
@@ -16,7 +16,7 @@ export interface CronRuleState {
   readonly last: number;
 }
 
-/** The rules' remembered state, by rule index. */
+/** The rules' remembered state, by rule identity. */
 export interface CronState {
   readonly rules: Readonly<Record<string, CronRuleState>>;
 }

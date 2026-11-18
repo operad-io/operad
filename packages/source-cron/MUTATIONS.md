@@ -13,3 +13,5 @@ the row fields.
 | T-0545-M4 | packages/source-cron/src/index.ts | reused the old schedule's last time after the schedule changed | `missed runs > a changed schedule does not catch up` |
 | T-0545-M5 | packages/source-cron/src/index.ts | put lateness on every tick, including an on-time one | `missed runs > a normal on-time tick carries no lateness` |
 | T-0545-M6 | packages/source-cron/src/index.ts | emptied the catch-up's skipped list, so its summary named no skipped time | `missed runs > serve down over three planned times runs only the latest, once, and history names the skipped ones` |
+| T-0545-M7 | packages/source-cron/src/index.ts | a new rule ran its earlier planned time on the first poll instead of recording a baseline | `missed runs > a new rule whose planned time passed earlier today waits for its next one` |
+| T-0545-M8 | packages/source-cron/src/index.ts | keyed each rule's remembered last time by its array index again | `missed runs > removing an earlier rule does not change what a later rule catches up` |
