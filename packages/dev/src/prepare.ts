@@ -4,7 +4,7 @@
  * plain checkout: dev installs and links nothing itself.
  */
 
-import { isRecord, messageOf, type StepContext, type StepRunOptions } from "@operad-io/engine";
+import { isRecord, messageOf, type JsonValue, type StepContext, type StepRunOptions } from "@operad-io/engine";
 
 import type { CommandRunner } from "./mainclone.ts";
 import type { DevSettings } from "./settings.ts";
@@ -12,13 +12,18 @@ import type { DevSettings } from "./settings.ts";
 /** The reason a step reports when a prepare command failed. */
 export const PREPARE_FAILED = "prepare failed";
 
+/** The profile every step of a dev task uses: the default's denies, not its asks (ADR 0025 D9). */
+export function taskStepAccess(access: JsonValue): JsonValue {
+  return { ...(isRecord(access) ? access : {}), defaultAsks: false };
+}
+
 export function stepOptions(ctx: StepContext, cwd: string): StepRunOptions {
   return {
     runId: ctx.runId,
     cwd,
     ...(ctx.object === undefined ? {} : { object: ctx.object }),
     params: ctx.params,
-    access: ctx.access,
+    access: taskStepAccess(ctx.access),
     ...(ctx.trigger === undefined ? {} : { trigger: ctx.trigger }),
     signal: ctx.signal,
   };
