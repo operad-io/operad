@@ -195,6 +195,42 @@ describe("scheduled flows", () => {
     expect(emitted).toHaveLength(1);
   });
 
+  test("edit that makes a rule identical to another is refused and changes nothing", async () => {
+    const home = await scheduleHome();
+    const clock = { value: Date.parse("2026-01-01T07:00:00Z") };
+    await run(home, ["add", "--flow", "plugin-one", "--schedule", "0 8 * * *"], clock);
+    await run(home, ["add", "--flow", "plugin-one", "--schedule", "0 9 * * *"], clock);
+    const before = await list(home, clock);
+    const second = before.find((entry) => entry.schedule === "0 9 * * *");
+    await expect(
+      run(home, ["edit", second?.id ?? "", "--schedule", "0 8 * * *"], clock),
+    ).rejects.toThrow("already exists");
+    expect(await list(home, clock)).toEqual(before);
+  });
+
+  test("a rare schedule's next run is found: a leap day, and none within two years", async () => {
+    const home = await scheduleHome();
+    const clock = { value: Date.parse("2026-03-01T07:00:00Z") };
+    await run(home, ["add", "--flow", "plugin-one", "--schedule", "30 4 29 2 *"], clock);
+    await run(home, ["add", "--flow", "plugin-one", "--schedule", "0 0 31 2 *"], clock);
+    const entries = await list(home, clock);
+    expect(entries.find((entry) => entry.schedule === "30 4 29 2 *")?.nextRun).toBe(
+      "2028-02-29T04:30:00.000Z",
+    );
+    expect(entries.find((entry) => entry.schedule === "0 0 31 2 *")?.nextRun).toBeNull();
+  });
+
+  test("the list shows a paused flow as paused, as text and as data", async () => {
+    const home = await scheduleHome();
+    const clock = { value: Date.parse("2026-01-01T07:00:00Z") };
+    await run(home, ["add", "--flow", "plugin-one", "--schedule", "0 8 * * *"], clock);
+    const id = (await list(home, clock))[0]?.id ?? "";
+    await run(home, ["pause", id], clock);
+    const entries = await list(home, clock);
+    expect(entries[0]).toMatchObject({ paused: true, nextRun: null });
+    expect(await run(home, ["list"], clock)).toContain("paused");
+  });
+
   test("remove deletes the rule", async () => {
     const home = await scheduleHome();
     const now = { value: Date.parse("2026-01-01T07:00:00Z") };

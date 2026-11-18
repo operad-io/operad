@@ -372,6 +372,48 @@ describe("schedules a chat proposes", () => {
     ]);
   });
 
+  test("approving an edit keeps a pause made after the proposal and applies only what it changed", async () => {
+    const r = await rig();
+    await add(r, { name: "Morning", schedule: "0 8 * * *", prompt: "At eight." });
+    await r.command("bot", "schedule", ["default", "edit", "Morning", "--prompt", "At nine.", "--words", "every morning at 8"]);
+    const id = (await r.registry.standing())[0]?.object?.id;
+    if (id === undefined) throw new Error("no proposal item");
+    await r.act("bot", "default", "bot/schedule-pause", { name: "Morning" });
+    await r.act("bot", "default", "bot/schedule-edit", { name: "Morning", schedule: "0 7 * * *" });
+    await r.act(PROPOSAL_TYPE, id, "bot/approve");
+    expect(await entries(r)).toEqual([
+      { name: "Morning", schedule: "0 7 * * *", prompt: "At nine.", paused: true },
+    ]);
+  });
+
+  test("rejecting a proposed edit or remove leaves the entry unchanged", async () => {
+    const r = await rig();
+    await add(r, { name: "Morning", schedule: "0 8 * * *", prompt: "At eight." });
+    const unchanged = [
+      { name: "Morning", schedule: "0 8 * * *", prompt: "At eight.", paused: false },
+    ];
+    await r.command("bot", "schedule", [
+      "default",
+      "edit",
+      "Morning",
+      "--schedule",
+      "0 9 * * *",
+      "--words",
+      "every morning at 9",
+    ]);
+    const edit = (await r.registry.standing())[0]?.object?.id;
+    if (edit === undefined) throw new Error("no edit proposal");
+    await r.act(PROPOSAL_TYPE, edit, "bot/reject");
+    expect(await entries(r)).toEqual(unchanged);
+
+    await r.command("bot", "schedule", ["default", "remove", "Morning", "--words", "every morning at 8"]);
+    const removal = (await r.registry.standing())[0]?.object?.id;
+    if (removal === undefined) throw new Error("no remove proposal");
+    await r.act(PROPOSAL_TYPE, removal, "bot/reject");
+    expect(await entries(r)).toEqual(unchanged);
+    expect(await r.registry.standing()).toEqual([]);
+  });
+
   test("a proposed remove deletes the entry only after approve", async () => {
     const r = await rig();
     await add(r, { name: "Gone", schedule: "0 8 * * *", prompt: "Never." });

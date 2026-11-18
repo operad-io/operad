@@ -30,3 +30,9 @@ the row fields.
 | T-0548-M8 | packages/source-cron/src/schedules.ts | pause did not write `paused` into the rule | `scheduled flows > pause stops ticks and survives a reload, and resume starts them again` |
 | T-0548-M9 | packages/source-cron/src/schedules.ts | resume left the rule paused | `scheduled flows > pause stops ticks and survives a reload, and resume starts them again` |
 | T-0548-M10 | packages/source-cron/src/index.ts | a tick was keyed by the rule's position again instead of its stable identity | `the cron source > emits once per due minute` |
+
+## T-0551 — scheduled tasks follow-ups
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0551-M1 | packages/source-cron/src/schedules.ts | edit accepted a change that made the rule identical to another scheduled flow | `scheduled flows > edit that makes a rule identical to another is refused and changes nothing` |
