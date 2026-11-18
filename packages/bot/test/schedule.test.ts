@@ -85,6 +85,9 @@ describe("scheduled prompts", () => {
       const chat = await r.store.get(CHAT_TYPE, id);
       expect(chat?.data.parent).toBe("bot:default");
       expect(chat?.data.title).toBe("Morning (2026-01-01)");
+      expect(chat?.data.scheduled).toEqual({ bot: "default", entry: "Morning" });
+      const chatRow = (await views.get(`chat:${id}`)).row;
+      expect(chatRow.data).toEqual({ scheduled: { bot: "default", entry: "Morning" } });
       const messages = allMessages(r.store, id);
       expect(messages.map((message) => message.text)).toEqual(["Collect the news."]);
 
@@ -99,6 +102,11 @@ describe("scheduled prompts", () => {
       const bot = await r.store.get("bot", "default");
       const entry = scheduledPrompts(bot?.data ?? {}).find((item) => item.name === "Morning");
       expect(entry?.last).toMatchObject({ chatId: id, result: "ok", notified: true });
+      const botRow = (await views.list("bot")).rows.find((row) => row.id === "default");
+      const rowData = botRow?.data as
+        | { readonly scheduled?: readonly Readonly<Record<string, unknown>>[] }
+        | undefined;
+      expect(rowData?.scheduled?.[0]).toMatchObject({ lastResult: "ok", lastChatId: id });
       const page = await views.section("bot:default", "bot", undefined, { full: true });
       expect(page.markdown).toContain("Scheduled:");
       expect(page.markdown).toContain("Morning");
@@ -244,6 +252,25 @@ describe("scheduled prompts", () => {
     }
   });
 
+  test("an edit with an empty model or effort clears it", async () => {
+    const r = await rig();
+    await add(r, {
+      name: "Morning",
+      schedule: "0 8 * * *",
+      prompt: "At eight.",
+      model: "claude-a",
+      effort: "claude-high",
+    });
+    await r.act("bot", "default", "bot/schedule-edit", {
+      name: "Morning",
+      model: "",
+      effort: "",
+    });
+    expect(
+      scheduledPrompts((await r.store.get("bot", "default"))?.data ?? {}),
+    ).toEqual([{ name: "Morning", schedule: "0 8 * * *", prompt: "At eight.", paused: false }]);
+  });
+
   test("remove stops it", async () => {
     const r = await rig();
     const views = createViews({ registry: r.registry, store: r.store, home: r.home, onLog: () => undefined });
@@ -279,6 +306,47 @@ describe("scheduled prompts", () => {
       expect(text).toContain("Digest.");
       expect(text).toContain("Scheduled for 2026-01-01 08:00");
       expect(text).toContain("5 minutes late");
+    } finally {
+      views.close();
+    }
+  });
+
+  test("a bot row carries its scheduled prompts as structured data", async () => {
+    const r = await rig();
+    const views = createViews({ registry: r.registry, store: r.store, home: r.home, onLog: () => undefined });
+    try {
+      await add(r, {
+        name: "Morning",
+        schedule: "0 8 * * *",
+        prompt: "Digest.",
+        model: "claude-a",
+        effort: "claude-high",
+      });
+      await add(r, { name: "Paused", schedule: "0 9 * * *", prompt: "Later.", paused: true });
+      const row = (await views.list("bot")).rows.find((entry) => entry.id === "default");
+      const data = row?.data as
+        | { readonly scheduled?: readonly Readonly<Record<string, unknown>>[] }
+        | undefined;
+      expect(data?.scheduled).toHaveLength(2);
+      expect(data?.scheduled?.[0]).toMatchObject({
+        name: "Morning",
+        schedule: "0 8 * * *",
+        prompt: "Digest.",
+        model: "claude-a",
+        effort: "claude-high",
+        paused: false,
+        lastResult: null,
+        lastChatId: null,
+      });
+      expect(typeof data?.scheduled?.[0]?.nextRun).toBe("string");
+      expect(data?.scheduled?.[1]).toMatchObject({
+        name: "Paused",
+        model: null,
+        effort: null,
+        paused: true,
+        nextRun: null,
+      });
+      expect((await views.get("bot:default")).row.data).toEqual(row?.data);
     } finally {
       views.close();
     }
@@ -449,6 +517,44 @@ describe("schedules a chat proposes", () => {
     await r.act(PROPOSAL_TYPE, id, "bot/approve");
     expect(await entries(r)).toEqual([
       { name: "Morning", schedule: "0 9 * * *", prompt: "At nine.", paused: false },
+    ]);
+  });
+
+  test("a proposed edit with an empty model or effort clears it on approve", async () => {
+    const r = await rig();
+    await add(r, {
+      name: "Morning",
+      schedule: "0 8 * * *",
+      prompt: "At eight.",
+      model: "claude-a",
+      effort: "claude-high",
+    });
+    await r.command("bot", "schedule", [
+      "default",
+      "edit",
+      "Morning",
+      "--model",
+      "",
+      "--effort",
+      "",
+      "--words",
+      "every morning at 8",
+    ]);
+    expect(await entries(r)).toEqual([
+      {
+        name: "Morning",
+        schedule: "0 8 * * *",
+        prompt: "At eight.",
+        model: "claude-a",
+        effort: "claude-high",
+        paused: false,
+      },
+    ]);
+    const id = (await r.registry.standing())[0]?.object?.id;
+    if (id === undefined) throw new Error("no proposal item");
+    await r.act(PROPOSAL_TYPE, id, "bot/approve");
+    expect(await entries(r)).toEqual([
+      { name: "Morning", schedule: "0 8 * * *", prompt: "At eight.", paused: false },
     ]);
   });
 

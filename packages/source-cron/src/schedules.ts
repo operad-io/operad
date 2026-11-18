@@ -177,7 +177,8 @@ function checkedObject(object: string): string {
   return trimmed;
 }
 
-function checkedParams(text: string): JsonValue {
+function checkedParams(text: string): JsonValue | undefined {
+  if (text.trim().length === 0) return undefined;
   try {
     return JSON.parse(text) as JsonValue;
   } catch (error) {
@@ -385,13 +386,14 @@ export function scheduledCommand(
         const schedule = checkedSchedule(required(parsed, "--schedule"));
         const object = checkedObject(parsed.values.get("--object") ?? `flow:${flow}`);
         const mode = checkedMode(parsed.values.get("--mode") ?? "auto");
-        const params = parsed.values.get("--params");
+        const paramsArg = parsed.values.get("--params");
+        const params = paramsArg === undefined ? undefined : checkedParams(paramsArg);
         const rule: TriggerRule = {
           source: "cron",
           type: "tick",
           start: {
             flow,
-            ...(params === undefined ? {} : { params: checkedParams(params) }),
+            ...(params === undefined ? {} : { params }),
           },
           object,
           mode,

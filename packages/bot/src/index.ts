@@ -12,7 +12,7 @@
 import pkg from "../package.json" with { type: "json" };
 import { mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { CHAT_TYPE, MESSAGE_EVENT, agentConditionals, type AgentChoices, chatData, createChat, sendMessage, startingEffort, startingModel, titleFromMessage } from "@operad-io/chat";
+import { CHAT_TYPE, MESSAGE_EVENT, agentConditionals, type AgentChoices, type ScheduledChat, chatData, createChat, sendMessage, startingEffort, startingModel, titleFromMessage } from "@operad-io/chat";
 import { definePlugin, isRecord, modelIds, type ActionArgSchema, type ActionArgsSchema, type ActionTypeDefinition, type HarnessModelInfo, type HarnessModels, type JsonValue, type ObjectRow, type ObjectStore, type ObjectViews, type PluginStepResult, type SectionContent, type StepContext, type StoredObject } from "@operad-io/engine";
 import {
   BOT_SETTINGS,
@@ -40,6 +40,7 @@ import {
   SCHEDULE_SOURCE,
   scheduleActions,
   scheduledChatContext,
+  scheduledData,
   scheduledMarkdown,
   scheduledPrompts,
   startScheduled,
@@ -130,6 +131,8 @@ export interface OpenChat {
   readonly title?: string | undefined;
   /** The channels (`telegram:<chat>`) whose messages land in this chat. */
   readonly channels?: readonly string[] | undefined;
+  /** The scheduled prompt that opens the chat; absent when a person opens it. */
+  readonly scheduled?: ScheduledChat | undefined;
   readonly cause: string;
 }
 
@@ -173,6 +176,7 @@ export async function openChat(input: OpenChat): Promise<string> {
       skills: bot.skills,
       title: input.title ?? `Bot (${bot.name})`,
       ...(input.channels === undefined ? {} : { channels: input.channels }),
+      ...(input.scheduled === undefined ? {} : { scheduled: input.scheduled }),
       refresh: SETTINGS_STEP,
     },
     input.cause,
@@ -432,6 +436,10 @@ const chatAction: ActionTypeDefinition = {
       readonly channels?: readonly string[];
       readonly message?: string;
     };
+    const scheduled =
+      ctx.actor.via === SCHEDULE_SOURCE
+        ? { bot: ctx.object.id, entry: ctx.actor.id }
+        : undefined;
     const id = await openChat({
       store: ctx.store,
       home: ctx.home,
@@ -445,6 +453,7 @@ const chatAction: ActionTypeDefinition = {
       effort: input.effort,
       title: input.title ?? (input.message === undefined ? undefined : titleFromMessage(input.message)),
       channels: input.channels,
+      ...(scheduled === undefined ? {} : { scheduled }),
       cause: "action:bot/chat",
     });
     const sent =
@@ -532,6 +541,9 @@ export const botViews: ObjectViews = {
     id: object.id,
     title: object.id,
     state: object.data.removed === true ? "removed" : "open",
+    data: {
+      scheduled: scheduledData(scheduledPrompts(object.data), Date.now()) as unknown as JsonValue,
+    },
   }),
   sections: () => [{ id: "bot", title: "Bot" }],
   load: (_ctx, object): SectionContent => ({ markdown: botMarkdown(object) }),

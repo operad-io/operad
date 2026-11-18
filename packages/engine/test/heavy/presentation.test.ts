@@ -484,6 +484,28 @@ describe("presentation views", () => {
     await log.close();
   });
 
+  test("a row's plugin data passes through list and get, and is absent otherwise", async () => {
+    const { store, registry, log } = await fixture();
+    store.put(
+      "item",
+      "data",
+      { title: "D", rowData: { scheduled: [{ name: "Morning", paused: false }] } },
+      "seed",
+    );
+    const views = trackedViews({ registry, store, log });
+    const page = await views.list("item");
+    const withData = page.rows.find((row) => row.id === "data");
+    expect(withData?.data).toEqual({
+      scheduled: [{ name: "Morning", paused: false }],
+    });
+    const plain = page.rows.find((row) => row.id === "one");
+    expect(plain !== undefined && "data" in plain).toBe(false);
+    expect((await views.get("item:data")).row.data).toEqual({
+      scheduled: [{ name: "Morning", paused: false }],
+    });
+    await log.close();
+  });
+
   test("a row's wait text passes through list and get whole, and is absent otherwise (T-0318)", async () => {
     const { store, registry, log } = await fixture();
     store.put("item", "waits", { title: "W", wait: "held by a · b" }, "seed");

@@ -237,6 +237,43 @@ export function nextRun(entry: ScheduledPrompt, now: number): number | null {
   return null;
 }
 
+/** One scheduled prompt as a client reads it from a bot row, without parsing Markdown. */
+export interface ScheduledPromptView {
+  readonly name: string;
+  readonly schedule: string;
+  readonly prompt: string;
+  readonly model: string | null;
+  readonly effort: string | null;
+  readonly paused: boolean;
+  /** The next planned minute as an ISO time; null when paused or none is within two years. */
+  readonly nextRun: string | null;
+  /** The last reply's summary, or why it could not start; null before the first firing. */
+  readonly lastResult: string | null;
+  /** The chat the last firing opened; null before the first firing. */
+  readonly lastChatId: string | null;
+}
+
+/** The structured entries a bot row gives a client. */
+export function scheduledData(
+  entries: readonly ScheduledPrompt[],
+  now: number,
+): readonly ScheduledPromptView[] {
+  return entries.map((entry) => {
+    const next = nextRun(entry, now);
+    return {
+      name: entry.name,
+      schedule: entry.schedule,
+      prompt: entry.prompt,
+      model: entry.model ?? null,
+      effort: entry.effort ?? null,
+      paused: entry.paused,
+      nextRun: next === null ? null : new Date(next).toISOString(),
+      lastResult: entry.last?.result ?? null,
+      lastChatId: entry.last?.chatId ?? null,
+    };
+  });
+}
+
 /** A short, one-line summary of a reply. */
 export function replySummary(message: string): string {
   const oneLine = message.replace(/\s+/g, " ").trim();
@@ -528,8 +565,9 @@ export const scheduleActions: readonly ActionTypeDefinition[] = [
             ...entry,
             schedule,
             prompt,
-            ...(model === undefined ? {} : { model }),
-            ...(effort === undefined ? {} : { effort }),
+            // An empty value clears the field; leaving it out keeps the old one.
+            ...(model === undefined ? { model: undefined } : { model }),
+            ...(effort === undefined ? { effort: undefined } : { effort }),
             // A changed schedule keeps `last`: the poll sees its schedule is not the
             // entry's, starts from a new baseline and keeps the chat of a firing
             // that still awaits its notification, so no missed time is caught up.
@@ -779,7 +817,8 @@ export class BotScheduleSource {
           ...(entry.model === undefined ? {} : { model: entry.model }),
           ...(entry.effort === undefined ? {} : { effort: entry.effort }),
         },
-        actor: { via: SCHEDULE_SOURCE, id: "scheduled" },
+        // The entry's name is the origin recorded on the new chat.
+        actor: { via: SCHEDULE_SOURCE, id: entry.name },
       });
       chatId = run.opens?.startsWith(`${CHAT_TYPE}:`) === true
         ? run.opens.slice(CHAT_TYPE.length + 1)

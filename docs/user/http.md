@@ -297,6 +297,43 @@ and plans from their phase, the step the attempt has reached and the holds the
 scheduler records. `operad list` and the first lines of `operad show` print a
 row's badge after its state; a row without one prints as it did without badges.
 
+## Row data
+
+A row may also carry `data`, an object the plugin defines for its clients. The
+kernel passes it through unchanged in list, get and pending rows. A client that
+does not know a plugin's shape ignores it.
+
+A bot row's `data.scheduled` is an array of its scheduled prompts, so an edit
+form needs no parsing of the bot section's Markdown. Each entry is:
+
+```json
+{
+  "name": "Morning",
+  "schedule": "0 8 * * *",
+  "prompt": "Collect the day's news.",
+  "model": "claude-sonnet",
+  "effort": "high",
+  "paused": false,
+  "nextRun": "2026-01-02T08:00:00.000Z",
+  "lastResult": "Collected 12 items.",
+  "lastChatId": "C-0042"
+}
+```
+
+`model` and `effort` are `null` when the entry leaves them to the bot. `nextRun`
+is an ISO time, or `null` when the entry is paused or has no next run within two
+years. `lastResult` and `lastChatId` are `null` before the entry first fires.
+
+A chat a scheduled prompt opened carries `data.scheduled`, which names its bot
+and the entry that opened it, so a client reads that instead of guessing from
+the title:
+
+```json
+{ "scheduled": { "bot": "default", "entry": "Morning" } }
+```
+
+Every other chat has no `data.scheduled`.
+
 ## Links
 
 An object link is `operad://objects/<id>`, where `<id>` is the object as `get`

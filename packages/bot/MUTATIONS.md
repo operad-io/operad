@@ -179,3 +179,14 @@ changes for bots, in the order they were recorded. The root
 | T-0551-M2 | packages/bot/src/schedule.ts | the result and notification were taken at the first assistant message of a reply that goes round again | `scheduled prompts > a reply that goes round again is notified when it ends, not at its first message` |
 | T-0551-M3 | packages/bot/src/schedule.ts | the watch matched the entry by planned time as well as chat id, so a re-baselined entry lost its result | `scheduled prompts > editing the schedule of a firing that awaits its reply still records its result` |
 | T-0551-M4 | packages/bot/src/schedule.ts | editing the schedule cleared `last`, dropping the chat of a firing awaiting its reply | `scheduled prompts > editing the schedule of a firing that awaits its reply still records its result` |
+
+## T-0553 — scheduled gaps from the desktop and iOS reviews
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0553-M1 | packages/bot/src/schedule.ts | `schedule-edit` kept the old model and effort when given an empty value | `scheduled prompts > an edit with an empty model or effort clears it` |
+| T-0553-M2 | packages/bot/src/proposals.ts | a proposed edit kept the old model and effort when given an empty value | `schedules a chat proposes > a proposed edit with an empty model or effort clears it on approve` |
+| T-0553-M3 | packages/bot/src/index.ts | a bot row carried no structured scheduled prompts | `scheduled prompts > a bot row carries its scheduled prompts as structured data` |
+| T-0553-M4 | packages/bot/src/schedule.ts | a firing named itself `scheduled` instead of the entry in its actor, so the chat recorded the wrong entry | `scheduled prompts > an entry fires on time, opens a new chat under the bot with its prompt, and the reply's notification carries a summary` |
+| T-0553-M5 | packages/bot/src/schedule.ts | the structured entry left out the last result | `scheduled prompts > an entry fires on time, opens a new chat under the bot with its prompt, and the reply's notification carries a summary` |
+| T-0553-M6 | packages/bot/src/index.ts | `bot:chat` recorded no scheduled origin on a chat the source opened | `scheduled prompts > an entry fires on time, opens a new chat under the bot with its prompt, and the reply's notification carries a summary` |

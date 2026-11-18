@@ -195,6 +195,34 @@ describe("scheduled flows", () => {
     expect(emitted).toHaveLength(1);
   });
 
+  test("an empty --params adds none and clears the ones an edit finds", async () => {
+    const home = await scheduleHome();
+    const now = { value: Date.parse("2026-01-01T07:00:00Z") };
+    await run(
+      home,
+      [
+        "add",
+        "--flow",
+        "plugin-one",
+        "--schedule",
+        "0 8 * * *",
+        "--params",
+        '{"topic":"news"}',
+      ],
+      now,
+    );
+    const id = (await list(home, now))[0]?.id ?? "";
+    expect((await list(home, now))[0]?.params).toEqual({ topic: "news" });
+    await run(home, ["edit", id, "--params", ""], now);
+    expect((await list(home, now))[0]?.params).toBeUndefined();
+    await run(
+      home,
+      ["add", "--flow", "plugin-two", "--schedule", "0 9 * * *", "--params", ""],
+      now,
+    );
+    expect((await list(home, now)).find((entry) => entry.flow === "plugin-two")?.params).toBeUndefined();
+  });
+
   test("edit that makes a rule identical to another is refused and changes nothing", async () => {
     const home = await scheduleHome();
     const clock = { value: Date.parse("2026-01-01T07:00:00Z") };

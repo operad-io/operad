@@ -118,6 +118,8 @@ export interface ViewRow {
   readonly waiting: boolean;
   /** The object's run is working. */
   readonly running: boolean;
+  /** Structured data the plugin defines for its clients, passed through unchanged. */
+  readonly data?: Readonly<Record<string, JsonValue>> | undefined;
   /** Set when the plugin's `row` failed; the row is then an error row. */
   readonly error?: string | undefined;
 }
@@ -2444,6 +2446,14 @@ export class Views {
         new Error("row after must be an array of non-empty object ids"),
       );
     }
+    const data = outcome.data;
+    if (data !== undefined && !isRecord(data)) {
+      return this.failRow(
+        plugin,
+        object,
+        new Error("row data must be an object"),
+      );
+    }
     return {
       id,
       title,
@@ -2456,6 +2466,7 @@ export class Views {
       ...(outcome.final === true ? { final: true } : {}),
       ...(mark === undefined ? {} : { mark }),
       ...(typeof badge === "string" ? { badge } : {}),
+      ...(data === undefined ? {} : { data: data as Readonly<Record<string, JsonValue>> }),
       waiting: outcome.waiting === true,
       running: false,
     };

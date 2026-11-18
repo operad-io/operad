@@ -388,3 +388,10 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0546-M1 | packages/chat/src/index.ts | `sendMessage` ignored the source its caller named, so a scheduled message became `other` | `scheduled prompts > an entry fires on time, opens a new chat under the bot with its prompt, and the reply's notification carries a summary` (packages/bot/test/schedule.test.ts) |
+
+## T-0553 — scheduled gaps from the desktop and iOS reviews
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0553-M1 | packages/chat/src/views.ts | a chat row dropped the scheduled origin it was given | `scheduled prompts > an entry fires on time, opens a new chat under the bot with its prompt, and the reply's notification carries a summary` (packages/bot/test/schedule.test.ts) |
+| T-0553-M2 | packages/chat/src/model.ts | `createChat` dropped the scheduled origin it was given | `scheduled prompts > an entry fires on time, opens a new chat under the bot with its prompt, and the reply's notification carries a summary` (packages/bot/test/schedule.test.ts) |

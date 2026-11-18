@@ -40,3 +40,9 @@ the row fields.
 | T-0551-M3 | packages/source-cron/src/index.ts | a paused rule's recorded minute no longer followed the clock | `scheduled flows > a paused rule's recorded minute follows the clock, so reopening it does not catch up the pause` |
 | T-0551-M4 | packages/source-cron/src/schedules.ts | pause and resume wrote no baseline for the rule | `scheduled flows > resuming records a baseline, so a source started later does not catch up the pause` |
 | T-0551-M5 | packages/source-cron/src/schedules.ts | the list ignored `--json` and always gave text | `scheduled flows > adding one makes it appear in the list with its next run` |
+
+## T-0553 — scheduled gaps from the desktop and iOS reviews
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0553-M1 | packages/source-cron/src/schedules.ts | an empty `--params` was parsed as JSON instead of adding none or clearing the flow's parameters | `scheduled flows > an empty --params adds none and clears the ones an edit finds` |
