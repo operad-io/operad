@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -52,10 +52,20 @@ async function setup() {
   const proposed = async () =>
     (await items()).filter((item) => item.kind === "standing" && item.object?.startsWith("task:"));
   const planRow = async () => (await views.get(`plan:${plan.id}`)).row;
+  closers.push(async () => {
+    views.close();
+    await log.close();
+    store.close();
+  });
   return { root, path, store, repository, plan, registry, log, views, items, proposed, planRow };
 }
 
 type Setup = Awaited<ReturnType<typeof setup>>;
+
+const closers: (() => Promise<void>)[] = [];
+afterEach(async () => {
+  for (const close of closers.splice(0)) await close();
+});
 
 async function flakyTask(s: Setup): Promise<string> {
   const logPath = join(s.root, "flaky.log");

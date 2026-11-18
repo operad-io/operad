@@ -626,8 +626,7 @@ export class SqlitePluginStore implements PluginStore {
 
   /** Closes the database; tests open many homes. */
   close(): void {
-    this.stopPoll?.();
-    this.stopPoll = undefined;
+    this.stopPolling();
     this.db.close();
   }
 
@@ -644,8 +643,38 @@ export class SqlitePluginStore implements PluginStore {
 
   private releasePolling(): void {
     if (this.factListeners.size > 0 || this.listeners.size > 0) return;
+    this.stopPolling();
+  }
+
+  private stopPolling(): void {
     this.stopPoll?.();
     this.stopPoll = undefined;
+  }
+
+  /**
+   * Whether the store's root or database file is gone. Before a query only
+   * these count: a live store can briefly lack its `-wal`, and it still
+   * delivers the facts checkpointed into the database.
+   */
+  private missing(): boolean {
+    if (!existsSync(this.root)) return true;
+    const file = this.location.file;
+    return file !== undefined && !existsSync(file);
+  }
+
+  /**
+   * Whether a store that met an I/O error went away. A WAL store keeps `-wal`
+   * and `-shm` beside the database while it is open, and a teardown can remove
+   * them before the database itself. Missing journals after a failed query mean
+   * the store went away, not that a live store met a disk error.
+   */
+  private gone(): boolean {
+    if (this.missing()) return true;
+    const file = this.location.file;
+    return (
+      file !== undefined &&
+      (!existsSync(`${file}-wal`) || !existsSync(`${file}-shm`))
+    );
   }
 
   private maxSequence(): number {
@@ -656,9 +685,11 @@ export class SqlitePluginStore implements PluginStore {
   }
 
   private pollFacts(): void {
-    // A removed database has nothing left to deliver; its timer outlives it.
-    const gone = (): boolean => !existsSync(this.location.file ?? this.root);
-    if (gone()) return;
+    // A removed store has nothing left to deliver; stop the timer that outlived it.
+    if (this.missing()) {
+      this.stopPolling();
+      return;
+    }
     let rows: FactRow[];
     try {
       rows = this.db
@@ -673,8 +704,11 @@ export class SqlitePluginStore implements PluginStore {
       // A busy store is a poll that missed this turn, not a serve that ends:
       // the next turn reads what was committed then.
       if (isBusy(error)) return;
-      // The database can be removed between the check above and this query.
-      if (gone()) return;
+      // The store can be removed between the check above and this query.
+      if (this.gone()) {
+        this.stopPolling();
+        return;
+      }
       throw error;
     }
     for (const row of rows) {

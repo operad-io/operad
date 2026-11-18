@@ -1128,3 +1128,11 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0553-M1 | packages/engine/src/views/presentation.ts | a row dropped the plugin's `data` instead of passing it through | `presentation views > a row's plugin data passes through list and get, and is absent otherwise` |
+## T-0552 — a poll of a store that went away stops and does not throw
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0552-M1 | packages/engine/src/plugin/sqlite-store.ts | `gone` checked only the database file, so removing its `-wal` and `-shm` left a store that looked live | `a poll stops when the store's -wal and -shm are removed` |
+| T-0552-M2 | packages/engine/src/plugin/sqlite-store.ts | a poll that met a gone store returned without stopping its timer | `a poll stops when the store's directory is removed, so its timer does not outlive it` |
+| T-0552-M3 | packages/engine/src/plugin/sqlite-store.ts | a poll swallowed an I/O error from a store whose files were still there | `a poll reports an I/O error from a store that is still there` |
+| T-0552-M4 | packages/engine/src/plugin/sqlite-store.ts | the pre-query check treated a missing `-wal`/`-shm` as a store that went away, so a live store stopped polling before it delivered facts | `a live store whose -wal is absent before a poll keeps delivering facts` |
