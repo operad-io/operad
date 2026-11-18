@@ -19,8 +19,14 @@ export const WAIT_STEPS = {
   "review-timeout": "wait_review_timeout",
   "review-unavailable": "wait_review_unavailable",
   "review-out-of-time": "wait_review_out_of_time",
+  // A worker's own question, such as a permission ask from its harness.
+  "work-question": "wait_work_question",
 } as const;
 export type WaitKind = keyof typeof WAIT_STEPS;
+
+/** The answers a worker's harness may ask for when its question outlives its grace. */
+export const WORK_QUESTION_CHOICES = ["allow_once", "reject_once"] as const;
+export const WORK_QUESTION_LATE_CHOICES = ["allow_always"] as const;
 
 const WAIT_ACCEPTS: Readonly<Record<WaitKind, readonly WaitAction[]>> = {
   person: WAIT_ACTIONS,
@@ -30,6 +36,8 @@ const WAIT_ACCEPTS: Readonly<Record<WaitKind, readonly WaitAction[]>> = {
   "review-out-of-time": ["merge", "reject", "rework"],
   // The reviewer may be back: the same commit can be checked again.
   "review-unavailable": ["merge", "reject", "rework", "reverify"],
+  // The worker's own question is not one of dev's task actions.
+  "work-question": [],
 };
 
 /** The choices of a wait; a flow with no check or review has nothing to reverify. */

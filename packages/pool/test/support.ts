@@ -61,7 +61,7 @@ export function fakeHarness(name: string, calls: Queue<HarnessCall>) {
     steps: [
       {
         name: "agent",
-        results: ["done", "failed", "interrupted"],
+        results: ["done", "failed", "interrupted", "waiting"],
         run(_ctx, params) {
           return new Promise<PluginStepResult>((resolve, reject) => {
             calls.push({

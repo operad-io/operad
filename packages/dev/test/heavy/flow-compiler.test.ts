@@ -50,6 +50,7 @@ test("the built-in default keeps today's ids and edges", () => {
   expect(nextOf(flow.steps, "work")).toMatchObject({
     done: "verify",
     unavailable: "work_retry",
+    waiting: "wait_work_question",
   });
   expect(nextOf(flow.steps, "verify")).toEqual({
     pass: "review",
@@ -84,6 +85,7 @@ test("every task wait says what its choices are, and its prompt is the reason", 
   expect(waits.length).toBeGreaterThan(0);
   for (const step of waits) {
     if (step.kind !== "wait_person") continue;
+    if (step.id.startsWith("wait_work_question")) continue;
     const params = step.params as {
       readonly prompt: string;
       readonly choices: readonly string[];
@@ -128,6 +130,7 @@ test("a generated flow gives each of its waits the same choice info", () => {
   const waits = flow.steps.filter((step) => step.kind === "wait_person");
   expect(waits.length).toBeGreaterThan(0);
   for (const step of waits) {
+    if (step.id.startsWith("wait_work_question")) continue;
     expect(step.params).toMatchObject({
       choiceInfo: {
         merge: { label: "Merge" },
@@ -162,6 +165,37 @@ test("a failed review returns to the nearest work stage before it", () => {
   expect(nextOf(flow.steps, "work_2").done).toBe("review");
   expect(nextOf(flow.steps, "review").fail).toBe("rework_review");
   expect(nextOf(flow.steps, "rework_review").again).toBe("work_2");
+});
+
+test("a work question waits with the answers a harness asks for and returns to its own work step", () => {
+  const flow = compileDevFlow("dev", [
+    { stage: "work" },
+    { stage: "check" },
+    { stage: "review" },
+    { stage: "human" },
+  ]);
+  const wait = stepOf(flow.steps, "wait_work_question");
+  expect(wait.kind).toBe("wait_person");
+  expect(wait.params).toMatchObject({
+    choices: ["allow_once", "reject_once"],
+    lateChoices: ["allow_always"],
+  });
+  expect(nextOf(flow.steps, "wait_work_question")).toEqual({
+    allow_once: "work",
+    allow_always: "work",
+    reject_once: "work",
+    interrupted: "end_cancelled",
+  });
+
+  const twice = compileDevFlow("twice", [
+    { stage: "work" },
+    { stage: "check" },
+    { stage: "work" },
+    { stage: "review" },
+    { stage: "human" },
+  ]);
+  expect(nextOf(twice.steps, "work_2").waiting).toBe("wait_work_question_work_2");
+  expect(nextOf(twice.steps, "wait_work_question_work_2").allow_once).toBe("work_2");
 });
 
 test("a failed check with no work stage waits for a person", () => {

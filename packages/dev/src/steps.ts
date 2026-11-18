@@ -1544,6 +1544,13 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
   // and resumes its session when the harness can. When that worker is no
   // longer in the pool, any free worker takes it and the change is recorded.
   const stagePool = stageParamsOf(ctx.params).pool ?? DEFAULT_POOL;
+  const inputParams = isRecord(ctx.params) ? ctx.params : {};
+  const resumedSession =
+    typeof inputParams.resumeSession === "string" ? inputParams.resumeSession : undefined;
+  const askAnswer = isRecord(inputParams.askAnswer) ? inputParams.askAnswer : undefined;
+  // An answer to the worker's own question comes back to this step; it resumes
+  // the same worker, never a fallback.
+  const resumed = resumedSession !== undefined || askAnswer !== undefined;
   const before =
     typeof attempt.previousWorker === "string" && attempt.previousWorker.length > 0
       ? attempt.previousWorker
@@ -1560,8 +1567,15 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
         return false;
       }
     })();
-  const asked = stillThere ? before : undefined;
-  const workerChangedFrom = before !== undefined && !stillThere ? before : undefined;
+  const asked = resumed
+    ? (typeof attempt.worker === "string" ? attempt.worker : before)
+    : stillThere
+      ? before
+      : undefined;
+  const workerChangedFrom = !resumed && before !== undefined && !stillThere ? before : undefined;
+  const resumeSession =
+    resumedSession ??
+    (typeof attempt.previousSession === "string" ? attempt.previousSession : undefined);
   const clock = stepTestHooks.workClock ?? realWorkClock;
   let timedOut = false;
   const timeOut = (): void => {
@@ -1686,23 +1700,25 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
       say("the worker started", null);
     }
   };
+  const poolCall: Record<string, unknown> = poolParams(
+    finalPrompt,
+    path,
+    context.repository,
+    context.settings,
+    asked,
+    resumeSession,
+    outbox.inbox,
+    context.taskId,
+    stageParamsOf(ctx.params),
+  );
+  if (askAnswer !== undefined) poolCall.askAnswer = askAnswer;
   try {
     outcome = await withWorkerReports(
       { placed: workerPlaced, started: workerStarted },
       () =>
         runStep(
           "pool/agent",
-          poolParams(
-            finalPrompt,
-            path,
-            context.repository,
-            context.settings,
-            asked,
-            typeof attempt.previousSession === "string" ? attempt.previousSession : undefined,
-            outbox.inbox,
-            context.taskId,
-            stageParamsOf(ctx.params),
-          ),
+          poolCall,
           { ...options, observe: onPoolEvent },
         ),
     );
@@ -1813,6 +1829,7 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
         // unavailable is not a person's business: the work step runs again.
         phase:
           result === "done" || waitsForModel || retried ? "running" : "waiting",
+        waitKind: result === "waiting" ? "work-question" : undefined,
         run: ctx.runId,
         attempts,
         attempt: nextAttempt,
@@ -1849,6 +1866,12 @@ export async function runWork(ctx: StepContext): Promise<PluginStepResult> {
   };
 
   untrackNote(path);
+  // The worker asked a person and the grace passed. The pool already gave the
+  // worker's place back; the flow's wait carries the question, and the answer
+  // returns here to resume the same worker's session.
+  if (outcome?.result === "waiting") {
+    return finish("waiting", { ...outcomeData });
+  }
   if (timedOutRun) {
     const committed = commitWip(path);
     const left = changedFiles(path);

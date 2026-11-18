@@ -211,7 +211,7 @@ export function createPoolPlugin(options: PoolPluginOptions = {}) {
     steps: [
       {
         name: "agent",
-        results: ["done", "failed", "interrupted"],
+        results: ["done", "failed", "interrupted", "waiting"],
         // A run waits for room and then runs an agent: as long as a harness step.
         timeoutSecs: 8 * 3600,
         async run(ctx, params): Promise<PluginStepResult> {

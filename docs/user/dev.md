@@ -850,7 +850,8 @@ such as the one that did the first attempt), plus anything the harness step take
 3. It runs the worker's `use` with the params, the worker's `args`,
    `wallTimeSecs` and `stallSecs`, and returns the result unchanged, adding to
    `data`: `worker`, `harness` and, after a fallback, `fallbackFrom` (the worker
-   that failed).
+   that failed). A `waiting` result keeps its question; a later answer
+   continues the same worker with `resumeSession` and `askAnswer`.
 4. When the result's `data.modelError.kind` is `unavailable` or `usage_limit`,
    or the harness process cannot start (the step ended `failed` with
    `data.reason` `missing` or `spawn`), and the worker has a `fallback`, it runs
@@ -1071,7 +1072,8 @@ A step ends with one of these results:
 The end results apply to plugins of the `harness` kind: they run an agent, and
 a flow reads any agent the same way. `operad plugin check` refuses a harness
 step that declares another name and names it. The agent steps of
-`radian`, `pi`, `claude` and `codex` declare `done`, `failed` and `interrupted`.
+`radian`, `pi`, `claude` and `codex` declare `done`, `failed`, `interrupted`
+and, when the harness can resume a question, `waiting`.
 Plugins of other kinds name their own results. `shell` is a `stage`, not a
 harness: its steps run a command or a check and give a verdict, so they end in
 `pass` and `fail` (and `ready` or `waiting` for a check), and the end results

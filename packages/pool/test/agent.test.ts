@@ -493,6 +493,43 @@ describe("fallback", () => {
   });
 });
 
+describe("a worker's question", () => {
+  const claude = worker("claude", "harness-a/agent", { fallback: "pi" });
+  const pi = worker("pi", "harness-b/agent");
+  const question = {
+    waitId: "run-1:work:1:1",
+    prompt: "Run this command? git push origin main",
+    choices: ["allow_once", "reject_once"],
+    resume: { session: "session-1", grant: { kind: "command", value: "git push origin main" } },
+  };
+
+  test("a waiting harness result passes through with its question and gives the place back", async () => {
+    const r = await rig();
+    const run = r.run(params([a]));
+    (await r.calls.next()).finish({ result: "waiting", data: question });
+    expect(await run).toEqual({
+      result: "waiting",
+      data: { ...question, worker: "a", harness: "harness-a" },
+    });
+    expect(r.book.used(`count:${PREFIX}/a`)).toBe(0);
+    expect(r.book.used("harness:harness-a")).toBe(0);
+  });
+
+  test("a resumed question reaches the harness with its session and answer, and does not fall back", async () => {
+    const r = await rig();
+    const asked = { prompt: question.prompt, choice: "allow_once" };
+    const run = r.run(
+      params([claude, pi], { worker: "claude", resumeSession: "session-1", askAnswer: asked }),
+    );
+    const call = await r.calls.next();
+    expect(call.use).toBe("harness-a/agent");
+    expect(call.params).toMatchObject({ resumeSession: "session-1", askAnswer: asked });
+    call.finish(done);
+    expect((await run).data).toMatchObject({ worker: "claude" });
+    expect(r.calls.length).toBe(0);
+  });
+});
+
 describe("modelUnavailable", () => {
   test("reads the kind only", () => {
     expect(modelUnavailable({ modelError: { kind: "unavailable" } })).toBe(true);

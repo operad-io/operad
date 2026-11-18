@@ -66,7 +66,7 @@ export function createDevPlugin() {
         name: "work",
         calls: ["pool/agent"],
         timeoutSecs: STEP_TIMEOUT_SECS,
-        results: ["done", "nothing", "failed", "unavailable", "cancelled", "interrupted"],
+        results: ["done", "nothing", "failed", "unavailable", "cancelled", "interrupted", "waiting"],
         run: runWork,
       },
       {
