@@ -5,6 +5,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import {
   cronMatches,
+  type CronField,
   isRecord,
   minuteStart,
   openConfigLog,
@@ -72,12 +73,30 @@ export function nextScheduledMinute(expression: string, now: number): number | n
   } catch {
     return null;
   }
-  const start = minuteStart(now);
-  const limit = start + 366 * 2 * DAY_MS;
-  for (let candidate = start + 60_000; candidate <= limit; candidate += 60_000) {
-    if (cronMatches(schedule, new Date(candidate))) return candidate;
+  const first = minuteStart(now) + 60_000;
+  const limit = minuteStart(now) + 366 * 2 * DAY_MS;
+  // Only a day the date fields allow is scanned by minute; the rest are skipped whole.
+  const anyTime: CronField = { values: new Set(range(60)), restricted: false };
+  const dayOnly = { ...schedule, minute: anyTime, hour: anyTime };
+  const day = new Date(first);
+  day.setHours(0, 0, 0, 0);
+  for (; day.getTime() <= limit; day.setDate(day.getDate() + 1)) {
+    if (!cronMatches(dayOnly, day)) continue;
+    for (const hour of [...schedule.hour.values].sort((a, b) => a - b)) {
+      for (const minute of [...schedule.minute.values].sort((a, b) => a - b)) {
+        const candidate = new Date(day);
+        candidate.setHours(hour, minute, 0, 0);
+        const time = candidate.getTime();
+        if (time < first || time > limit) continue;
+        if (cronMatches(schedule, candidate)) return time;
+      }
+    }
   }
   return null;
+}
+
+function range(count: number): number[] {
+  return Array.from({ length: count }, (_, index) => index);
 }
 
 function triggersFile(home: string): string {
@@ -416,6 +435,13 @@ export function scheduledCommand(
           return edited;
         });
         if (edited === undefined) throw new ScheduleError(`there is no scheduled flow "${id}"`);
+        const editedId = scheduledId(edited);
+        if (
+          editedId !== id &&
+          scheduled(rules).filter((entry) => scheduledId(entry) === editedId).length > 1
+        ) {
+          throw new ScheduleError(`a scheduled flow "${editedId}" already exists`);
+        }
         writeRules(ctx.home, rules);
         baselineCronRule(ctx.home, edited, now());
         return `edited ${edited.start.flow} (${scheduledId(edited)})`;

@@ -108,6 +108,86 @@ describe("scheduled prompts", () => {
     }
   });
 
+  test("a reply that goes round again is notified when it ends, not at its first message", async () => {
+    const r = await rig();
+    const views = createViews({ registry: r.registry, store: r.store, home: r.home, onLog: () => undefined });
+    const notices: ScheduleNotice[] = [];
+    const clock = { value: Date.parse("2026-01-01T00:00:30Z") };
+    const source = sourceFor(r, views as unknown as ClientApi, clock, notices);
+    try {
+      await add(r, { name: "Rounds", schedule: "* * * * *", prompt: "Go." });
+      await source.begin();
+      clock.value = Date.parse("2026-01-01T00:01:10Z");
+      await source.poll();
+      const id = (await chats(r))[0];
+      if (id === undefined) throw new Error("no chat");
+      const first = allMessages(r.store, id)[0];
+      if (first === undefined) throw new Error("no message");
+      const assistant = async (messageId: string, text: string, replyTo: readonly string[]): Promise<void> => {
+        await r.store.append({
+          type: "chat.message",
+          object: { type: "chat", id },
+          cause: "test",
+          data: {
+            id: messageId,
+            role: "assistant",
+            from: { via: "claude", id: "claude" },
+            text,
+            attachments: [],
+            source: { kind: "claude", ref: null },
+            replyTo,
+            runId: "run-x",
+          },
+        });
+      };
+      await r.store.append({
+        type: "chat.run",
+        object: { type: "chat", id },
+        cause: "test",
+        data: { runId: "run-x" },
+      });
+      await r.say(id, "and more");
+      await assistant("a-1", "first round", [first.id]);
+      await source.settled();
+      expect(notices).toEqual([]);
+
+      const more = allMessages(r.store, id).find((message) => message.text === "and more");
+      if (more === undefined) throw new Error("no second message");
+      await assistant("a-2", "second round", [more.id]);
+      await source.settled();
+      expect(notices.map((notice) => notice.summary)).toEqual(["second round"]);
+    } finally {
+      views.close();
+    }
+  });
+
+  test("editing the schedule of a firing that awaits its reply still records its result", async () => {
+    const r = await rig();
+    const views = createViews({ registry: r.registry, store: r.store, home: r.home, onLog: () => undefined });
+    const notices: ScheduleNotice[] = [];
+    const clock = { value: Date.parse("2026-01-01T00:00:30Z") };
+    const source = sourceFor(r, views as unknown as ClientApi, clock, notices);
+    try {
+      await add(r, { name: "Edited", schedule: "* * * * *", prompt: "Go." });
+      await source.begin();
+      clock.value = Date.parse("2026-01-01T00:01:10Z");
+      await source.poll();
+      const id = (await chats(r))[0];
+      if (id === undefined) throw new Error("no chat");
+      await r.act("bot", "default", "bot/schedule-edit", { name: "Edited", schedule: "*/2 * * * *" });
+      clock.value = Date.parse("2026-01-01T00:01:40Z");
+      await source.poll();
+      await r.reply(id);
+      await source.settled();
+      expect(notices).toHaveLength(1);
+      const bot = await r.store.get("bot", "default");
+      const entry = scheduledPrompts(bot?.data ?? {}).find((item) => item.name === "Edited");
+      expect(entry?.last).toMatchObject({ chatId: id, result: "ok", notified: true });
+    } finally {
+      views.close();
+    }
+  });
+
   test("two firings make two chats", async () => {
     const r = await rig();
     const views = createViews({ registry: r.registry, store: r.store, home: r.home, onLog: () => undefined });
@@ -370,6 +450,48 @@ describe("schedules a chat proposes", () => {
     expect(await entries(r)).toEqual([
       { name: "Morning", schedule: "0 9 * * *", prompt: "At nine.", paused: false },
     ]);
+  });
+
+  test("approving an edit keeps a pause made after the proposal and applies only what it changed", async () => {
+    const r = await rig();
+    await add(r, { name: "Morning", schedule: "0 8 * * *", prompt: "At eight." });
+    await r.command("bot", "schedule", ["default", "edit", "Morning", "--prompt", "At nine.", "--words", "every morning at 8"]);
+    const id = (await r.registry.standing())[0]?.object?.id;
+    if (id === undefined) throw new Error("no proposal item");
+    await r.act("bot", "default", "bot/schedule-pause", { name: "Morning" });
+    await r.act("bot", "default", "bot/schedule-edit", { name: "Morning", schedule: "0 7 * * *" });
+    await r.act(PROPOSAL_TYPE, id, "bot/approve");
+    expect(await entries(r)).toEqual([
+      { name: "Morning", schedule: "0 7 * * *", prompt: "At nine.", paused: true },
+    ]);
+  });
+
+  test("rejecting a proposed edit or remove leaves the entry unchanged", async () => {
+    const r = await rig();
+    await add(r, { name: "Morning", schedule: "0 8 * * *", prompt: "At eight." });
+    const unchanged = [
+      { name: "Morning", schedule: "0 8 * * *", prompt: "At eight.", paused: false },
+    ];
+    await r.command("bot", "schedule", [
+      "default",
+      "edit",
+      "Morning",
+      "--schedule",
+      "0 9 * * *",
+      "--words",
+      "every morning at 9",
+    ]);
+    const edit = (await r.registry.standing())[0]?.object?.id;
+    if (edit === undefined) throw new Error("no edit proposal");
+    await r.act(PROPOSAL_TYPE, edit, "bot/reject");
+    expect(await entries(r)).toEqual(unchanged);
+
+    await r.command("bot", "schedule", ["default", "remove", "Morning", "--words", "every morning at 8"]);
+    const removal = (await r.registry.standing())[0]?.object?.id;
+    if (removal === undefined) throw new Error("no remove proposal");
+    await r.act(PROPOSAL_TYPE, removal, "bot/reject");
+    expect(await entries(r)).toEqual(unchanged);
+    expect(await r.registry.standing()).toEqual([]);
   });
 
   test("a proposed remove deletes the entry only after approve", async () => {

@@ -70,4 +70,4 @@ and a bad cron expression with the reason. The command line reaches it as
 `operad scheduled ...`, HTTP as `POST /v1/commands` and MCP through its
 `command` tool. Listing a schedule gives its flow, schedule, parameters, next
 run and the last run's result and run id; the run's own history and the usual
-run-ended notification are unchanged.
+run-ended notification are unchanged. A scheduled flow's id comes from the fields that decide what it starts (flow, params, object, mode and schedule), so editing any of them gives it a new id: the last run shown and any id a client holds are lost, and the client reads the new id from the list. An edit that would make a rule identical to another scheduled flow is refused.

@@ -10,7 +10,7 @@
  * time zone, with the catch-up rule of the cron source (ADR 0032 D11).
  */
 
-import { CHAT_TYPE, allEntries, allMessages } from "@operad-io/chat";
+import { CHAT_TYPE, allEntries, allMessages, chatFacts, writingReply } from "@operad-io/chat";
 import {
   cronMatches,
   cronMinutesBetween,
@@ -333,6 +333,25 @@ async function removeEntry(store: ObjectStore, bot: string, name: string): Promi
   return true;
 }
 
+/** The current entry with the fields the proposal changed, from `before` to `after`, applied. */
+function mergedEdit(
+  current: ScheduledPrompt,
+  before: ScheduledPrompt,
+  after: ScheduledPrompt,
+): ScheduledPrompt {
+  const schedule = after.schedule === before.schedule ? current.schedule : after.schedule;
+  const model = after.model === before.model ? current.model : after.model;
+  const effort = after.effort === before.effort ? current.effort : after.effort;
+  return {
+    ...current,
+    name: after.name,
+    schedule,
+    prompt: after.prompt === before.prompt ? current.prompt : after.prompt,
+    ...(model === undefined ? { model: undefined } : { model }),
+    ...(effort === undefined ? { effort: undefined } : { effort }),
+  };
+}
+
 /** Applies a schedule proposal: the add, edit or remove the person approved. */
 export async function applyScheduleChange(
   store: ObjectStore,
@@ -354,7 +373,9 @@ export async function applyScheduleChange(
       store,
       bot,
       before.name,
-      () => after,
+      // Only what the proposal changed is applied: the pause state, last run
+      // and any edit made since the proposal stay as they are now.
+      (current) => mergedEdit(current, before, after),
       "action:bot/schedule-edit",
     );
     if (changed === undefined) {
@@ -509,8 +530,9 @@ export const scheduleActions: readonly ActionTypeDefinition[] = [
             prompt,
             ...(model === undefined ? {} : { model }),
             ...(effort === undefined ? {} : { effort }),
-            // A changed schedule starts fresh, so no missed time is caught up.
-            ...(schedule === entry.schedule ? {} : { last: undefined }),
+            // A changed schedule keeps `last`: the poll sees its schedule is not the
+            // entry's, starts from a new baseline and keeps the chat of a firing
+            // that still awaits its notification, so no missed time is caught up.
           };
         },
         "action:bot/schedule-edit",
@@ -820,8 +842,11 @@ export class BotScheduleSource {
         const chat = await this.ctx.store.get(CHAT_TYPE, chatId);
         if (chat === undefined) return;
         const messages = allMessages(this.ctx.store, chatId);
+        const entries = allEntries(this.ctx.store, chatId);
+        // A reply that goes round again is not finished at its first message.
+        if (writingReply(chatFacts(this.ctx.store, chatId), messages, entries) !== undefined) return;
         const reply = [...messages].reverse().find((message) => message.role === "assistant");
-        const failure = [...allEntries(this.ctx.store, chatId)].reverse().find((item) => item.kind === "failure");
+        const failure = [...entries].reverse().find((item) => item.kind === "failure");
         const result =
           reply === undefined
             ? failure === undefined
@@ -837,7 +862,7 @@ export class BotScheduleSource {
           bot,
           name,
           (entry) =>
-            entry.last?.plannedAt === plannedAt && entry.last.chatId === chatId
+            entry.last?.chatId === chatId
               ? { ...entry, last: { ...entry.last, result, notified: false } }
               : undefined,
           "step:bot/scheduled",
@@ -855,7 +880,7 @@ export class BotScheduleSource {
           bot,
           name,
           (entry) =>
-            entry.last?.plannedAt === plannedAt && entry.last.chatId === chatId
+            entry.last?.chatId === chatId
               ? { ...entry, last: { ...entry.last, notified: true } }
               : undefined,
           "step:bot/scheduled",
