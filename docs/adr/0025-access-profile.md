@@ -23,7 +23,7 @@ Each harness translates the profile into its own mechanism: `radian` into permis
 - Inline code (`bash -c`, `python -c`, `node -e`, `osascript -e`, `find -exec`, `xargs`) is matched again by its inline content, and when it cannot be matched it is asked about.
 - Every part of an `&&`, `;` or `|` chain must pass.
 
-What the shell matcher cannot see is asked about, not allowed.
+What the shell matcher cannot see is asked about, not allowed; a task worker and a chat at `full` are the exceptions (D8 and D9).
 
 ### D4: An ask is a pending item
 
@@ -48,7 +48,7 @@ A chat's access level is one of `plan`, `ask`, `edits` and `full`. It is a field
 - `plan`: the working directory is read-only, as `readOnly: true` is today. A write there and a command not known to only read ask.
 - `ask`: every write and every command not known to only read asks.
 - `edits`: a write inside the working directory does not ask; a write outside it asks, and a command not known to only read asks.
-- `full`: the level adds no ask. The profile's own deny lists and ask lists still hold.
+- `full`: the level adds no ask. A command the matcher cannot follow — inline code, a shell expansion, a path after a directory change it cannot follow — runs without a question, unless a deny plainly matches what the matcher can see (a `denyCommands` part or a `denyPaths` path). Inline code that would be refused while `denyCommands` is set and no `askCommands` is set is allowed too, unless the same plain deny matches. The profile's own `denyCommands`, `denyPaths`, `askCommands` and `askPaths` still hold, as do outward-write questions in a background run. `plan`, `ask` and `edits` keep asking about a command the matcher cannot follow.
 
 A level is composed into the profile by `@operad-io/access-match`; the kernel does not interpret it. `claude` and `pi` carry every level and declare `level` among the profile fields they enforce. `codex` and `radian` carry none: a reply at any level is refused at its start with a message naming the level, never answered with the level ignored.
 
@@ -58,7 +58,7 @@ The user-visible names are `Plan only`, `Ask each time`, `Accept edits` and `Ful
 
 The default profile lives in `@operad-io/access-match`, beside the matcher and free of engine internals, as `defaultAccess()`. Every chat and every generated step starts from it. A bot adds the operad home, its skills and the repositories it knows; a repository chat adds its read-only main clone and its skills; a flow may add rules to a step it generates. Each addition appends to the default's deny and ask lists and may turn `readOnly` on; none removes a default deny or ask. The access level is composed after the additions, so `full`, too, keeps the default's deny and ask rules. A harness applies the default to a generated step that names no profile. The default is shipped with operad; this decision does not add another file a user could replace it with.
 
-A dev task is the exception: every agent it runs — the worker, the reviewer, the integration's conflict fixer — starts from the default's deny rules but not its ask rules, so the inline-code ask those rules trigger does not stop a scripted edit. Each works in its own worktree and the change reaches main only through checks, review and a merge. A flow profile still adds: it cannot remove a default deny, and its own asks still hold. Chats and other generated steps keep the default in full, asks included. A task's step is never stopped because of the default: a command the matcher cannot follow (inline code, a shell expansion, a path after a directory change it cannot follow) is allowed for it, where a chat would be asked or refused; only a plain match of a deny refuses it. No person is there to answer a task's question, and its change still passes checks, review and a merge.
+A dev task is the exception: every agent it runs — the worker, the reviewer, the integration's conflict fixer — starts from the default's deny rules but not its ask rules, so the inline-code ask those rules trigger does not stop a scripted edit. Each works in its own worktree and the change reaches main only through checks, review and a merge. A flow profile still adds: it cannot remove a default deny, and its own asks still hold. Chats and other generated steps keep the default in full, asks included. A task's step is never stopped because of the default: a command the matcher cannot follow (inline code, a shell expansion, a path after a directory change it cannot follow) is allowed for it, where a chat below `full` would be asked or refused, and a chat at `full` has the same rule (D8); only a plain match of a deny refuses it. No person is there to answer a task's question, and its change still passes checks, review and a merge.
 
 ### D10: A run no person started asks before every outward write
 
