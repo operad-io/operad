@@ -6,7 +6,7 @@ Status: accepted
 
 ### D1: The functions of an object type
 
-- `row(object)` → `{ id, title, state, note?, parent? }` is one row in a list. `parent` is the id of the upper-level object (ADR 0015). It must be a pure function and fast: it reads only stored object data and runs no git and starts no process. `note` is a short text at the end of the row (cost, elapsed time).
+- `row(object)` → `{ id, title, state, note?, parent? }` is one row in a list. `parent` is the id of the upper-level object (ADR 0015). It must be a pure function and fast: it reads only stored object data and runs no git and starts no process. `note` is a short text at the end of the row (cost, elapsed time). A row may also carry `data`, an object of JSON the plugin defines for its clients (a bot's scheduled prompts, the scheduled prompt that opened a chat); the kernel checks only that it is an object and passes it through unchanged in list, get and pending rows.
 - `context(ctx, object)` → `{ used, window?, model? }` is optional: numbers a detail page shows beside the row, such as how full an agent's context is. It may read facts and may be slow; the kernel passes it through and reads no meaning of its own into it.
 - `sections(object)` → `[{ id, title, live? }]` says which sections a detail page has; it is only a table of contents. `live` means the content is still growing (a worker's log).
 - `load(ctx, object, sectionId, { cursor })` → `{ markdown, next? }` is the content of one section. It is called only when a user opens it, it may be slow, and when it is long it is paged.
