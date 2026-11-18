@@ -17,6 +17,7 @@
   "license": "MIT",
   "files": [
     "src",
+    "access-grants.schema.json",
     "README.md",
     "LICENSE"
   ]

@@ -104,6 +104,21 @@ describe("step worker in this process", () => {
     });
   });
 
+  test("a worker step gets the flow definition the run executes", async () => {
+    const root = await tempRoot();
+    const port = new FakePort();
+    const flow = {
+      name: "worker-flow",
+      entry: "end",
+      steps: [{ id: "end", kind: "end" as const, params: { status: "done" as const }, replay: "safe" as const }],
+    };
+    const run = runStepWorker(request(root, "worker/flow", {}, { flow }), port);
+    expect(await resultOf(port, run)).toMatchObject({
+      ok: true,
+      result: { result: "ok", data: { flow: "worker-flow" } },
+    });
+  });
+
   test("a worker step writes to the configured sqlite store", async () => {
     const root = await tempRoot();
     const sqlite = join(root, "sqlite");

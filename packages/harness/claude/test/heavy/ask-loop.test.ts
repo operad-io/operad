@@ -15,6 +15,7 @@ import {
   type Fact,
   type LogBackend,
 } from "@operad-io/engine";
+import { readTargetGrants } from "@operad-io/access-match";
 import { createClaudeHarnessPlugin } from "../../src/index.ts";
 import { alive, cleanupTempRoots, manualClock, tempRoot, waitForGone, waitForPid } from "../../../process/test/support.ts";
 
@@ -254,6 +255,48 @@ describe("claude: a call that must ask a person", () => {
       expect(await again).toBe("ended");
       const result = (await facts(env.log, next.runId)).find((fact) => fact.kind === "step_result");
       expect(result?.payload).toMatchObject({ result: "done" });
+    } finally {
+      await env.log.close();
+    }
+  }, 30_000);
+
+  test("always for this flow and target records a grant and the next scheduled run does not ask", async () => {
+    const env = await setup();
+    try {
+      setEnv("FAKE_CLAUDE_MODE", "outward");
+      const timer = new FakeTimer();
+      const run = new Runner({
+        log: env.log,
+        flow: env.flow,
+        runId: env.runId,
+        registry: env.registry,
+        params: { prompt: "push it", cwd: env.root },
+        access: ACCESS,
+        askTimer: timer.timer,
+        trigger: { source: "cron", type: "tick", key: "t1", hops: 0 },
+      }).run();
+      await env.opened(1);
+      const pending = await listPending(env.log, env.registry);
+      expect(pending[0]?.choices).toContain("allow_target");
+      await recordAnswer({ log: env.log, runId: env.runId, choice: "allow_target", actor: ACTOR });
+      expect(await run).toBe("ended");
+      expect((await readTargetGrants(env.root)).file.grants).toMatchObject([
+        { flow: env.flow.name, target: "origin/main", by: ACTOR },
+      ]);
+
+      const next = await env.log.startRun(env.flow.name, OBJECT);
+      const again = new Runner({
+        log: env.log,
+        flow: env.flow,
+        runId: next.runId,
+        registry: env.registry,
+        params: { prompt: "push it", cwd: env.root },
+        access: ACCESS,
+        askTimer: new FakeTimer().timer,
+        trigger: { source: "cron", type: "tick", key: "t2", hops: 0 },
+      }).run();
+      expect(await again).toBe("ended");
+      expect(count(await facts(env.log, next.runId), "ask_opened")).toBe(0);
     } finally {
       await env.log.close();
     }

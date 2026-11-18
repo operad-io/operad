@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://operad.io/schemas/access-grants.schema.json",
+  "title": "operad access target grants",
+  "description": "The outward targets a background run may write to without asking, in $OPERAD_HOME/access-grants.json (ADR 0025 D12). Each grant is bound to one flow definition identity and one target. The flows list keeps the definition digest last seen and its generated identity, so an edit gives a new identity even when it is later reverted.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "flows": {
+      "type": "array",
+      "description": "The flow definition identities last seen.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "flow": { "type": "string", "minLength": 1, "description": "The flow's name." },
+          "digest": { "type": "string", "minLength": 1, "description": "The digest of the definition last seen." },
+          "id": { "type": "string", "minLength": 1, "description": "The generated identity of that definition; a change makes a new one." }
+        },
+        "required": ["flow", "digest", "id"]
+      }
+    },
+    "grants": {
+      "type": "array",
+      "description": "The targets a person allowed for one flow definition.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "flow": { "type": "string", "minLength": 1, "description": "The flow the grant belongs to." },
+          "definition": { "type": "string", "minLength": 1, "description": "The definition identity the person answered for." },
+          "kind": {
+            "type": "string",
+            "enum": ["channel", "mail", "post", "repository", "service", "command"],
+            "description": "What kind of outward write the target takes."
+          },
+          "target": { "type": "string", "minLength": 1, "description": "The exact target, as the question names it." },
+          "by": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "via": { "type": "string", "minLength": 1, "description": "The client the person answered from." },
+              "id": { "type": "string", "minLength": 1, "description": "Who answered, as the client names them." }
+            },
+            "required": ["via", "id"]
+          },
+          "at": { "type": "number", "description": "When the person answered, in epoch milliseconds." }
+        },
+        "required": ["flow", "definition", "kind", "target", "by", "at"]
+      }
+    }
+  },
+  "required": ["flows", "grants"]
+}

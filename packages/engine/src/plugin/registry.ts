@@ -1039,6 +1039,7 @@ export class PluginRegistry {
       runId: options.runId,
       object: options.object,
       params: options.params ?? null,
+      flow: options.flow,
       access: options.access ?? null,
       trigger: options.trigger,
       emit,
@@ -1072,6 +1073,7 @@ export class PluginRegistry {
         }
         return this.runStepInner(nestedUse, nestedParams, {
           ...nestedOptions,
+          flow: nestedOptions.flow ?? options.flow,
           limits: nestedOptions.limits ?? options.limits,
           asker: nestedOptions.asker ?? options.asker,
           // A nested step reports its events to the same destination.

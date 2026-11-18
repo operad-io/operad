@@ -25,7 +25,7 @@ The keys are in [The sections](#the-sections) and each plugin's settings in [Plu
 
 `operad` keeps its state in one directory: `$OPERAD_HOME` when it is set, and
 `~/.operad` otherwise. The home holds `config.json`, the store, the secrets
-directory, `access-user.json`, `keys.json`, `triggers.json`, `tui.json` and the
+directory, `access-user.json`, `access-grants.json`, `keys.json`, `triggers.json`, `tui.json` and the
 themes directory. A secret file is mode `0600` inside a `0700` directory;
 nothing in this manual prints a secret.
 

@@ -5,8 +5,9 @@
  * `REFERENCE.md` and ADR 0025.
  */
 
-import type { AskAnswer, AskRequest, OutwardTargets, OutwardWrite, OutwardWrites } from "@operad-io/engine";
+import type { Actor, AskAnswer, AskRequest, FlowDefinition, OutwardTargets, OutwardWrite, OutwardWrites } from "@operad-io/engine";
 import { baseName, levels, scan, findDenied, parseRule, type Part } from "./command.ts";
+import { appendTargetGrant, targetGrantFor, type TargetGrant } from "./target-grants.ts";
 
 /** The choice that lets one outward write through. */
 export const OUTWARD_SEND_ONCE = "send_once";
@@ -14,12 +15,17 @@ export const OUTWARD_SEND_ONCE = "send_once";
 /** The choice that refuses one outward write. */
 export const OUTWARD_REJECT_ONCE = "reject_once";
 
+/** The choice that allows this target for this flow definition from now on. */
+export const OUTWARD_ALLOW_TARGET = "allow_target";
+
 /** What a background run asks before an outward write. */
 export interface OutwardQuestionOptions {
   /** How long the step waits for an answer; the kernel's own default when absent. */
   readonly graceSecs?: number | undefined;
   /** What happens when the grace passes; a step that cannot wait asks with `reject_once`. */
   readonly onTimeout?: "waiting" | "reject_once" | undefined;
+  /** Offer the choice that records a grant for this flow and target. */
+  readonly allowTarget?: boolean | undefined;
 }
 
 function oneLine(text: string): string {
@@ -45,11 +51,17 @@ export function outwardQuestion(write: OutwardWrite, options: OutwardQuestionOpt
   const head = `${ACTION[write.kind]} ${target}?`;
   const content = write.content?.trim();
   const prompt = content === undefined || content.length === 0 ? head : `${head}\n\n${content}`;
+  const choices = options.allowTarget === true
+    ? [OUTWARD_SEND_ONCE, OUTWARD_ALLOW_TARGET, OUTWARD_REJECT_ONCE]
+    : [OUTWARD_SEND_ONCE, OUTWARD_REJECT_ONCE];
   return {
     prompt,
-    choices: [OUTWARD_SEND_ONCE, OUTWARD_REJECT_ONCE],
+    choices,
     choiceInfo: {
       [OUTWARD_SEND_ONCE]: { label: "Send once", hint: "Make this write once.", role: "primary" },
+      ...(options.allowTarget === true
+        ? { [OUTWARD_ALLOW_TARGET]: { label: "Always for this flow and target", hint: "Do not ask again for this target unless the flow changes." } }
+        : {}),
       [OUTWARD_REJECT_ONCE]: { label: "Reject", hint: "Do not make this write." },
     },
     ...(options.graceSecs === undefined ? {} : { graceSecs: options.graceSecs }),
@@ -76,21 +88,59 @@ export interface OutwardGuardContext {
   readonly personStarted: boolean;
   /** What happens when the grace passes; absent keeps the kernel's `waiting`. */
   readonly onTimeout?: "waiting" | "reject_once" | undefined;
+  /** The operad home where target grants are kept. */
+  readonly home?: string | undefined;
+  /** The flow whose definition a target grant is bound to. */
+  readonly flow?: FlowDefinition | undefined;
+  /** The clock of the answer's time; defaults to `Date.now`. */
+  readonly now?: (() => number) | undefined;
+  /** Reports a grant that could not be written; the write still goes once. */
+  readonly onLog?: ((message: string) => void) | undefined;
 }
 
 /**
- * Whether one outward write may go ahead: a person-started run and a target
- * on the allowlist do not ask; every other background write asks, and only
- * `send_once` lets it through. The chat's exact-call `allow_always` is not
- * consulted (ADR 0025 D3, D10).
+ * Whether one outward write may go ahead: a person-started run, a target
+ * on the allowlist, and a target grant for this flow definition do not ask;
+ * every other background write asks, and only `send_once` or
+ * `allow_target` lets it through. The chat's exact-call `allow_always` is not
+ * consulted (ADR 0025 D3, D10 and D12).
  */
 export async function guardOutward(
   ctx: OutwardGuardContext,
   write: OutwardWrite,
 ): Promise<boolean> {
   if (ctx.personStarted || outwardAllowed(ctx.access, write)) return true;
-  const answer = await ctx.ask(outwardQuestion(write, ctx.onTimeout === undefined ? {} : { onTimeout: ctx.onTimeout }));
-  return answer.choice === OUTWARD_SEND_ONCE && answer.rejected !== true;
+  let grant: TargetGrant | undefined;
+  if (ctx.home !== undefined && ctx.flow !== undefined) {
+    try {
+      grant = await targetGrantFor(ctx.home, ctx.flow, write.target);
+    } catch (error) {
+      ctx.onLog?.(
+        `the target grants could not be read: ${error instanceof Error ? error.message : String(error)}; this write asks`,
+      );
+    }
+  }
+  if (grant !== undefined) return true;
+  const allowTarget = ctx.home !== undefined && ctx.flow !== undefined;
+  const answer = await ctx.ask(
+    outwardQuestion(write, {
+      ...(ctx.onTimeout === undefined ? {} : { onTimeout: ctx.onTimeout }),
+      ...(allowTarget ? { allowTarget: true } : {}),
+    }),
+  );
+  if (answer.rejected === true) return false;
+  if (answer.choice === OUTWARD_ALLOW_TARGET && ctx.home !== undefined && ctx.flow !== undefined) {
+    const by: Actor = answer.actor ?? { via: "unknown", id: "unknown" };
+    try {
+      await appendTargetGrant(ctx.home, ctx.flow, write, by, (ctx.now ?? Date.now)());
+    } catch (error) {
+      ctx.onLog?.(
+        `the target grant could not be written: ${error instanceof Error ? error.message : String(error)}; this write runs once`,
+      );
+    }
+    return true;
+  }
+  return answer.choice === OUTWARD_SEND_ONCE;
 }
 
 

@@ -1,6 +1,7 @@
 import { END, type FlowDefinition, type Step } from "../flow/types.ts";
 import type { FactCause, JsonValue } from "../log/types.ts";
 import { MAX_TRIGGER_HOPS } from "../trigger/types.ts";
+import type { Actor } from "../plugin/types.ts";
 import type {
   Decision,
   Effect,
@@ -73,6 +74,7 @@ interface AnsweredAsk {
   readonly resume: JsonValue;
   readonly choice: string;
   readonly note: string | null;
+  readonly actor: Actor | null;
 }
 
 type EnterVia = {
@@ -107,6 +109,7 @@ function resumedParams(base: JsonValue, answered: AnsweredAsk): JsonValue {
       prompt: answered.prompt,
       choice: answered.choice,
       ...(answered.note === null ? {} : { note: answered.note }),
+      ...(answered.actor === null ? {} : { actor: { via: answered.actor.via, id: answered.actor.id } }),
     },
   };
 }
@@ -611,6 +614,7 @@ export function decide(
               resume: wait.ask.resume,
               choice: input.choice,
               note: input.note ?? null,
+              actor: { via: input.actor.via, id: input.actor.id },
             },
       );
       return { facts, effects };

@@ -3,11 +3,14 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  defineFlow,
   MemoryPluginStore,
   PluginRegistry,
   validateUsage,
+  type FlowDefinition,
   type PluginStepResult,
 } from "@operad-io/engine";
+import { readTargetGrants } from "@operad-io/access-match";
 import { FLUSH_MS } from "@operad-io/harness-process";
 import {
   alive,
@@ -127,10 +130,14 @@ function runAgent(
     readonly asker?: {
       readonly ask: (request: { readonly prompt: string }) => Promise<{
         readonly kind: "answered";
-        readonly answer: { readonly choice: string | undefined };
+        readonly answer: {
+          readonly choice: string | undefined;
+          readonly actor?: { readonly via: string; readonly id: string };
+        };
       }>;
       readonly useGrant: (waitId: string) => Promise<boolean>;
     };
+    readonly flow?: FlowDefinition;
   } = {},
 ) {
   return env.registry.runStep("codex/agent", params, {
@@ -139,6 +146,7 @@ function runAgent(
     ...(options.access === undefined ? {} : { access: options.access as never }),
     ...(options.trigger === undefined ? {} : { trigger: options.trigger as never }),
     ...(options.asker === undefined ? {} : { asker: options.asker as never }),
+    ...(options.flow === undefined ? {} : { flow: options.flow }),
   });
 }
 
@@ -501,6 +509,59 @@ describe("codex/agent: permissions", () => {
     expect(result.result).toBe("done");
     expect(asked[0]?.prompt).toContain("rm -rf build");
     expect(asked[0]?.choices).toEqual(["send_once", "reject_once"]);
+  });
+
+  test("always for this flow and target records a grant and the next scheduled run does not ask", async () => {
+    const env = await setup("permission");
+    const flow = defineFlow({
+      name: "daily:codex",
+      entry: "done",
+      steps: [{ id: "done", kind: "end", params: { status: "done" }, replay: "safe" }],
+    });
+    const asked: string[] = [];
+    const first = await runAgent(
+      env,
+      { prompt: "x", cwd: env.root },
+      {
+        access: { outwardCommands: ["rm -rf"] },
+        trigger: { source: "cron", type: "tick", key: "t1", hops: 0 },
+        flow,
+        asker: {
+          ask: (request) => {
+            asked.push(request.prompt);
+            return Promise.resolve({
+              kind: "answered",
+              answer: { choice: "allow_target", actor: { via: "ios", id: "owner" } },
+            });
+          },
+          useGrant: () => Promise.resolve(false),
+        },
+      },
+    );
+    expect(first.result).toBe("done");
+    expect(asked).toHaveLength(1);
+    expect((await readTargetGrants(env.root)).file.grants).toMatchObject([
+      { flow: "daily:codex", target: "rm -rf build", by: { via: "ios", id: "owner" } },
+    ]);
+
+    const second = await runAgent(
+      env,
+      { prompt: "x", cwd: env.root },
+      {
+        access: { outwardCommands: ["rm -rf"] },
+        trigger: { source: "cron", type: "tick", key: "t2", hops: 0 },
+        flow,
+        asker: {
+          ask: () => {
+            asked.push("asked again");
+            return Promise.reject(new Error("the target grant must lift this question"));
+          },
+          useGrant: () => Promise.resolve(false),
+        },
+      },
+    );
+    expect(second.result).toBe("done");
+    expect(asked).toHaveLength(1);
   });
 
   test("a person who refuses leaves the call rejected", async () => {

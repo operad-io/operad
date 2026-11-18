@@ -50,6 +50,7 @@ const guardedFlow: FlowDefinition = {
 
 function plugin() {
   const seen: unknown[] = [];
+  const flows: unknown[] = [];
   const definition = def({
     name: "p",
     flows: [plainFlow, guardedFlow],
@@ -59,6 +60,7 @@ function plugin() {
         results: ["ok"],
         run(ctx) {
           seen.push(ctx.access);
+          flows.push(ctx.flow);
           return { result: "ok" };
         },
       },
@@ -68,12 +70,13 @@ function plugin() {
         enforces: ["network", "cwd"],
         run(ctx) {
           seen.push(ctx.access);
+          flows.push(ctx.flow);
           return { result: "ok" };
         },
       },
     ],
   });
-  return { definition, seen };
+  return { definition, seen, flows };
 }
 
 async function setup(): Promise<{
@@ -81,12 +84,13 @@ async function setup(): Promise<{
   readonly log: LogBackend;
   readonly registry: PluginRegistry;
   readonly seen: unknown[];
+  readonly flows: unknown[];
   close(): Promise<void>;
 }> {
   const root = await tempRoot();
   const storeRoot = join(root, "store");
   const log = openLog({ backend: "sqlite", path: join(storeRoot, "log.sqlite") });
-  const { definition, seen } = plugin();
+  const { definition, seen, flows } = plugin();
   const registry = new PluginRegistry([definition], {
     home: root,
     storeRoot,
@@ -98,6 +102,7 @@ async function setup(): Promise<{
     log,
     registry,
     seen,
+    flows,
     close: async () => {
       await log.close();
     },
@@ -147,6 +152,7 @@ describe("run access profile", () => {
         access,
       }).run();
       expect(run.seen).toEqual([access, access]);
+      expect(run.flows).toEqual([flow, flow]);
     } finally {
       await run.close();
     }

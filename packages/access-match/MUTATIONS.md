@@ -166,3 +166,12 @@ and the row fields.
 | T-0533-M3 | packages/access-match/src/outward.ts | every answer except a rejection let an outward write through | `send once is the only answer that lets a background message go; reject refuses it` |
 | T-0533-M12 | packages/access-match/src/index.ts | a background MCP call with no `allowMcp` was allowed without asking | `a background MCP call asks with the default profile, which has no allowMcp` |
 | T-0542-M1 | packages/access-match/src/index.ts | a task worker profile asked again about a command whose paths the matcher cannot follow | `a task worker is never asked or refused for what the matcher cannot follow` |
+
+## T-0534 — target grants for a background outward write
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0534-M1 | packages/access-match/src/outward.ts | the guard skipped the target grant lookup, so the next run asked again | `always for this flow and target records who and when, and the next run to the same target does not ask` |
+| T-0534-M2 | packages/access-match/src/target-grants.ts | every definition got the same digest, so an edit and a revert could not make a new identity | `an edited flow asks, and reverting the edit asks again` |
+| T-0534-M3 | packages/access-match/src/target-grants.ts | a grant matched any target of the flow definition | `another target asks` |
+| T-0534-M4 | packages/access-match/src/target-grants.ts | revoking kept every grant | `revoking the target makes the next run ask` |

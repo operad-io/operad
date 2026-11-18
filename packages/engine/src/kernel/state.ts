@@ -222,6 +222,7 @@ export function evolve(state: KernelState, fact: NewFact): KernelState {
                 resume: payload.ask.resume,
                 choice: payload.choice,
                 note: payload.note,
+                actor: payload.actor,
               },
         lastSeq,
       };

@@ -258,3 +258,9 @@ setup it depends on, in the order they were recorded. The root
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0533-M6 | packages/harness/claude/src/access.ts | the profile's outward write was left out of the question | `a background run asks about an outward command with its target` |
+
+## T-0534 — target grants on claude's outward question
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0534-M1 | packages/harness/claude/src/index.ts | the harness asker got no target-grant context, so a background outward call could neither record nor use a grant | `claude: a call that must ask a person > always for this flow and target records a grant and the next scheduled run does not ask` |

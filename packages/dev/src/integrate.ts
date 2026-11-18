@@ -372,6 +372,11 @@ export async function runIntegrate(
         ask: (request) => ctx.ask(request),
         personStarted: personStarted(ctx.trigger),
         onTimeout: "reject_once" as const,
+        home: ctx.home,
+        ...(ctx.flow === undefined ? {} : { flow: ctx.flow }),
+        onLog: (message) => {
+          void ctx.logger.write(message);
+        },
       },
       {
         kind: "repository",
