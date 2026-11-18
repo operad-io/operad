@@ -95,29 +95,62 @@ function lastOf(value: unknown): ScheduledLast | undefined {
   };
 }
 
+/** One scheduled prompt from stored data, or undefined when it is unusable. */
+export function scheduledPromptOf(value: unknown): ScheduledPrompt | undefined {
+  if (!isRecord(value)) return undefined;
+  const name = text(value.name);
+  const schedule = text(value.schedule);
+  const prompt = text(value.prompt);
+  if (name === undefined || schedule === undefined || prompt === undefined) return undefined;
+  const last = lastOf(value.last);
+  return {
+    name,
+    schedule,
+    prompt,
+    ...(text(value.model) === undefined ? {} : { model: value.model as string }),
+    ...(text(value.effort) === undefined ? {} : { effort: value.effort as string }),
+    paused: value.paused === true,
+    ...(last === undefined ? {} : { last }),
+  };
+}
+
 /** The scheduled prompts written on a bot object, skipping an unusable entry. */
 export function scheduledPrompts(data: Readonly<Record<string, unknown>>): readonly ScheduledPrompt[] {
   const raw = data.scheduled;
   if (!Array.isArray(raw)) return [];
   const found: ScheduledPrompt[] = [];
   for (const value of raw) {
-    if (!isRecord(value)) continue;
-    const name = text(value.name);
-    const schedule = text(value.schedule);
-    const prompt = text(value.prompt);
-    if (name === undefined || schedule === undefined || prompt === undefined) continue;
-    const last = lastOf(value.last);
-    found.push({
-      name,
-      schedule,
-      prompt,
-      ...(text(value.model) === undefined ? {} : { model: value.model as string }),
-      ...(text(value.effort) === undefined ? {} : { effort: value.effort as string }),
-      paused: value.paused === true,
-      ...(last === undefined ? {} : { last }),
-    });
+    const entry = scheduledPromptOf(value);
+    if (entry !== undefined) found.push(entry);
   }
   return found;
+}
+
+/** What a chat's schedule command asks a person to decide. */
+export interface ScheduleChange {
+  readonly action: "add" | "edit" | "remove";
+  /** The schedule in words, as the agent wrote it. */
+  readonly words?: string | undefined;
+  readonly before: ScheduledPrompt | null;
+  readonly after: ScheduledPrompt | null;
+}
+
+/** Reads the schedule change a proposal stores, or undefined when it is unusable. */
+export function scheduleChangeOf(value: unknown): ScheduleChange | undefined {
+  if (!isRecord(value)) return undefined;
+  if (value.action !== "add" && value.action !== "edit" && value.action !== "remove") {
+    return undefined;
+  }
+  const before = value.before === null ? null : scheduledPromptOf(value.before);
+  const after = value.after === null ? null : scheduledPromptOf(value.after);
+  if (before === undefined || after === undefined) return undefined;
+  if (value.words !== undefined && typeof value.words !== "string") return undefined;
+  return {
+    action: value.action,
+    ...(value.words === undefined ? {} : { words: value.words }),
+    before,
+    after,
+  };
 }
 
 /** One entry as the bot object stores it. */
@@ -175,6 +208,15 @@ export function lateText(seconds: number): string {
 /** The one line a catch-up adds to the prompt. It is not added to an on-time run. */
 export function latenessLine(scheduledAt: number, lateSecs: number): string {
   return `Scheduled for ${localStamp(scheduledAt)}; this run is ${lateText(lateSecs)} late.`;
+}
+
+/** What a bot chat's first session starts with: a schedule it writes is a proposal. */
+export const SCHEDULE_INSTRUCTION =
+  "To schedule something for me, propose it: call the operad `command` tool with plugin `bot`, verb `schedule`, action `add` (or `edit` or `remove`). Give the schedule both as a five-field cron expression and in words. Nothing takes effect until I approve it in Pending.";
+
+/** The text and place a bot chat starts with. */
+export function scheduledChatContext(): { readonly text: string; readonly where: string } {
+  return { text: SCHEDULE_INSTRUCTION, where: SCHEDULE_INSTRUCTION };
 }
 
 /** The next planned minute after `now`, or null when none is within two years. */
@@ -289,6 +331,43 @@ async function removeEntry(store: ObjectStore, bot: string, name: string): Promi
     "action:bot/schedule-remove",
   );
   return true;
+}
+
+/** Applies a schedule proposal: the add, edit or remove the person approved. */
+export async function applyScheduleChange(
+  store: ObjectStore,
+  bot: string,
+  change: ScheduleChange,
+): Promise<void> {
+  if (change.action === "add") {
+    if (change.after === null) throw new BotError("the proposal has no scheduled prompt to add");
+    await addEntry(store, bot, change.after);
+    return;
+  }
+  if (change.action === "edit") {
+    const before = change.before;
+    const after = change.after;
+    if (before === null || after === null) {
+      throw new BotError("the proposal has no scheduled prompt to change");
+    }
+    const changed = await replaceEntry(
+      store,
+      bot,
+      before.name,
+      () => after,
+      "action:bot/schedule-edit",
+    );
+    if (changed === undefined) {
+      throw new BotError(`bot ${bot} has no scheduled prompt "${before.name}"`);
+    }
+    return;
+  }
+  if (change.before === null) {
+    throw new BotError("the proposal has no scheduled prompt to remove");
+  }
+  if (!(await removeEntry(store, bot, change.before.name))) {
+    throw new BotError(`bot ${bot} has no scheduled prompt "${change.before.name}"`);
+  }
 }
 
 /** Adds one entry to the bot object. */

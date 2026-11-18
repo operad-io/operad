@@ -33,11 +33,13 @@ import {
   proposalItems,
   proposalViews,
   runSettingCommand,
+  runScheduleCommand,
   runSkillCommand,
 } from "./proposals.ts";
 import {
   SCHEDULE_SOURCE,
   scheduleActions,
+  scheduledChatContext,
   scheduledMarkdown,
   scheduledPrompts,
   startScheduled,
@@ -494,6 +496,7 @@ export async function runSettings(ctx: StepContext, params: unknown): Promise<Pl
         skills: [...bot.skills],
         mcpServers,
         useOwnSettings: bot.useOwnSettings,
+        context: scheduledChatContext(),
       },
     };
   } catch (error) {
@@ -594,6 +597,11 @@ export function createBotPlugin() {
         name: "setting",
         args: "<bot>",
         run: runSettingCommand,
+      },
+      {
+        name: "schedule",
+        args: "<bot> add|edit|remove <name> [--words <text>] [--schedule <cron>] [--prompt <text>] [--model <model>] [--effort <effort>]",
+        run: runScheduleCommand,
       },
     ],
     // A proposal waits for no run; each one is a pending item of its bot.

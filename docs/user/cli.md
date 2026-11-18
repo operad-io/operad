@@ -83,6 +83,7 @@ and `operad help` print the whole table.
 | `operad bot skill <bot> <name>` | `--from <dir>` | Proposes a new or changed skill; a person approves it. |
 | `operad bot mcp <bot> <name> [<command> [args…]]` | none of its own; the command's words are the server's | Proposes a local MCP server after reading its tools. With no command, reads a pasted `mcpServers` entry from stdin. |
 | `operad bot setting <bot>` | none | Proposes a settings change for one bot from JSON on stdin; a person approves it. |
+| `operad bot schedule <bot> add\|edit\|remove <name>` | `--words <text>`, `--schedule <cron>`, `--prompt <text>`, `--model <model>`, `--effort <effort>` | Proposes adding, changing or removing a scheduled prompt; a person approves it. |
 
 A client of `serve` does the same over HTTP with `GET /v1/plugins` and `POST /v1/plugins`, including installing with the `"install"` form; see [Plugins](http.md#plugins).
 
@@ -127,6 +128,11 @@ A client of `serve` does the same over HTTP with `GET /v1/plugins` and `POST /v1
 | `--area <area>` | `dev task add`, `dev task update` | The task's area; `--area ""` clears it. |
 | `--chat <id>` | `dev task add` | The chat whose worktree the task uses. |
 | `--from <dir>` | `bot skill` | The directory to read the skill from. |
+| `--words <text>` | `bot schedule` | The schedule in words, shown in the proposal next to the cron expression. |
+| `--schedule <cron>` | `bot schedule` | A five-field cron expression in the machine's local time zone. |
+| `--prompt <text>` | `bot schedule` | The first message of the chat a firing opens. |
+| `--model <model>` | `bot schedule` | The model a firing's chat uses; `--model ""` clears it. |
+| `--effort <effort>` | `bot schedule` | The effort a firing's chat uses; `--effort ""` clears it. |
 
 The flags of an action are made from its arguments: an argument named `note`
 becomes `--note <text>`, a boolean becomes `--flag` or `--flag=true`, and an
@@ -421,6 +427,13 @@ server starts. A remote server (an address) cannot be registered yet.
 `operad bot setting <bot>` reads a JSON object from stdin and proposes the
 change. A bot can tighten the default access profile, never loosen it. MCP
 servers are not changed here; use `bot mcp`.
+
+`operad bot schedule <bot> add|edit|remove <name>` proposes adding, changing
+or removing one scheduled prompt. `add` takes `--schedule`, `--words` and
+`--prompt`; `edit` takes the field or fields to change and `--words`;
+`remove` takes `--words`. Optional `--model` and `--effort` set or clear those
+fields. The proposal shows the schedule in words and as cron, the prompt, the
+model and the effort, and nothing fires until a person approves it.
 
 ## Runnable examples
 

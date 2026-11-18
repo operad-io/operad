@@ -44,6 +44,15 @@ import {
   type McpServerSettings,
 } from "./bot.ts";
 import { commandLine, compareTools, differenceLines, secretName, storedTools } from "./mcp.ts";
+import {
+  applyScheduleChange,
+  checkPromptName,
+  checkSchedule,
+  scheduleChangeOf,
+  scheduledPrompts,
+  type ScheduleChange,
+  type ScheduledPrompt,
+} from "./schedule.ts";
 
 /** The object type of a proposal. It is internal: a person sees its pending item. */
 export const PROPOSAL_TYPE = "bot-proposal";
@@ -78,7 +87,7 @@ export interface SettingsChange {
 export interface ProposalData {
   readonly [key: string]: unknown;
   readonly bot: string;
-  readonly kind: "skill" | "settings" | "mcp";
+  readonly kind: "skill" | "settings" | "mcp" | "schedule";
   readonly title: string;
   readonly state: ProposalState;
   readonly createdAt: number;
@@ -89,6 +98,7 @@ export interface ProposalData {
   } | undefined;
   readonly settings?: SettingsChange | undefined;
   readonly mcp?: McpChange | undefined;
+  readonly schedule?: ScheduleChange | undefined;
 }
 
 /** A local MCP server a proposal registers, upgrades or lets through after a change of its tools. */
@@ -106,7 +116,10 @@ function dataOf(object: StoredObject): ProposalData {
   const data = object.data;
   if (
     typeof data.bot !== "string" ||
-    (data.kind !== "skill" && data.kind !== "settings" && data.kind !== "mcp") ||
+    (data.kind !== "skill" &&
+      data.kind !== "settings" &&
+      data.kind !== "mcp" &&
+      data.kind !== "schedule") ||
     typeof data.title !== "string" ||
     (data.state !== "pending" && data.state !== "applied" && data.state !== "rejected") ||
     typeof data.createdAt !== "number"
@@ -476,9 +489,62 @@ function mcpReview(bot: string, change: McpChange): string {
   return out.join("\n");
 }
 
+function scheduleLines(entry: ScheduledPrompt, words: string | undefined): string[] {
+  const spoken = words === undefined || words.trim().length === 0 ? undefined : words.trim();
+  return [
+    `- Name: ${entry.name}`,
+    `- Schedule: ${spoken === undefined ? `\`${entry.schedule}\`` : `${spoken} (\`${entry.schedule}\`)`}`,
+    `- Model: ${entry.model ?? "the bot's model"}`,
+    `- Effort: ${entry.effort ?? "the bot's effort"}`,
+    ...(entry.paused ? ["- Paused: yes"] : []),
+  ];
+}
+
+function schedulePromptLines(entry: ScheduledPrompt): string[] {
+  return [
+    "",
+    "### Prompt",
+    "",
+    "```",
+    ...entry.prompt.replaceAll("\r\n", "\n").split("\n"),
+    "```",
+  ];
+}
+
+/** What a person reads before a scheduled prompt is added, changed or removed. */
+function scheduleReview(bot: string, change: ScheduleChange): string {
+  const name = (change.after ?? change.before)?.name ?? "?";
+  const action =
+    change.action === "add" ? "adds" : change.action === "edit" ? "changes" : "removes";
+  const out = [
+    `## Scheduled prompt ${name} for bot ${bot}`,
+    "",
+    `This proposal ${action} a scheduled prompt on bot ${bot}. Approve applies it; reject leaves the bot as it is.`,
+  ];
+  if (change.before !== null) {
+    out.push(
+      "",
+      "### Before",
+      "",
+      ...scheduleLines(change.before, change.action === "remove" ? change.words : undefined),
+      ...schedulePromptLines(change.before),
+    );
+  }
+  if (change.after !== null) {
+    out.push("", "### After", "", ...scheduleLines(change.after, change.words), ...schedulePromptLines(change.after));
+  }
+  return out.join("\n");
+}
+
 /** The review a person reads for a proposal. */
 export function proposalReview(object: StoredObject): string {
   const data = dataOf(object);
+  if (data.kind === "schedule") {
+    const change = scheduleChangeOf(data.schedule);
+    return change === undefined
+      ? "No scheduled prompt is recorded for this proposal."
+      : scheduleReview(data.bot, change);
+  }
   if (data.kind === "mcp") {
     const change = mcpChangeOf(data.mcp);
     return change === undefined ? "No MCP server is recorded for this proposal." : mcpReview(data.bot, change);
@@ -673,6 +739,126 @@ export async function proposeSettings(
   return `proposed settings for bot ${bot}; review it in pending`;
 }
 
+/** What the chat's `bot schedule` command is asked to propose. */
+export interface ScheduleProposalInput {
+  readonly action: "add" | "edit" | "remove";
+  readonly name: string;
+  readonly words?: string | undefined;
+  readonly schedule?: string | undefined;
+  readonly prompt?: string | undefined;
+  readonly model?: string | undefined;
+  readonly effort?: string | undefined;
+}
+
+function optionalText(value: string | undefined): string | undefined {
+  return value !== undefined && value.trim().length > 0 ? value : undefined;
+}
+
+/**
+ * Proposes adding, changing or removing one of a bot's scheduled prompts. The
+ * owner's direct actions apply at once; this path is the one a chat's agent
+ * uses, so nothing fires until a person approves the proposal.
+ */
+export async function proposeSchedule(
+  store: ObjectStore,
+  home: string,
+  bot: string,
+  input: ScheduleProposalInput,
+): Promise<string> {
+  if (readBots(home)[bot] === undefined) throw new BotError(`there is no bot "${bot}"`);
+  const object = await store.get(BOT_TYPE, bot);
+  if (object === undefined) throw new BotError(`there is no bot "${bot}"`);
+  const name = checkPromptName(input.name);
+  const current = scheduledPrompts(object.data).find((entry) => entry.name === name);
+  if (input.action === "add" && current !== undefined) {
+    throw new BotError(`bot ${bot} already has a scheduled prompt "${name}"`);
+  }
+  if (input.action !== "add" && current === undefined) {
+    throw new BotError(`bot ${bot} has no scheduled prompt "${name}"`);
+  }
+  if (
+    input.action === "remove" &&
+    (input.schedule !== undefined ||
+      input.prompt !== undefined ||
+      input.model !== undefined ||
+      input.effort !== undefined)
+  ) {
+    throw new BotError(
+      "removing a scheduled prompt takes only its name and, optionally, the schedule in words",
+    );
+  }
+  const words = optionalText(input.words);
+  if (words === undefined) {
+    throw new BotError(
+      "give the schedule in words with --words, so the review shows both it and the cron expression",
+    );
+  }
+  let after: ScheduledPrompt | null = null;
+  if (input.action === "add") {
+    if (input.schedule === undefined) {
+      throw new BotError("adding a scheduled prompt needs --schedule, a five-field cron expression");
+    }
+    const prompt = input.prompt === undefined ? "" : input.prompt.trim();
+    if (prompt.length === 0) throw new BotError("a scheduled prompt needs a prompt");
+    const model = optionalText(input.model);
+    const effort = optionalText(input.effort);
+    after = {
+      name,
+      schedule: checkSchedule(input.schedule),
+      prompt,
+      ...(model === undefined ? {} : { model }),
+      ...(effort === undefined ? {} : { effort }),
+      paused: false,
+    };
+  } else if (input.action === "edit" && current !== undefined) {
+    if (
+      input.schedule === undefined &&
+      input.prompt === undefined &&
+      input.model === undefined &&
+      input.effort === undefined
+    ) {
+      throw new BotError(
+        "editing a scheduled prompt needs a field to change: --schedule, --prompt, --model or --effort",
+      );
+    }
+    const schedule = input.schedule === undefined ? current.schedule : checkSchedule(input.schedule);
+    const prompt = input.prompt === undefined ? current.prompt : input.prompt.trim();
+    if (prompt.length === 0) throw new BotError("a scheduled prompt needs a prompt");
+    const model = input.model === undefined ? current.model : optionalText(input.model);
+    const effort = input.effort === undefined ? current.effort : optionalText(input.effort);
+    after = {
+      name,
+      schedule,
+      prompt,
+      ...(model === undefined ? {} : { model }),
+      ...(effort === undefined ? {} : { effort }),
+      paused: current.paused,
+      ...(schedule === current.schedule
+        ? current.last === undefined
+          ? {}
+          : { last: current.last }
+        : {}),
+    };
+  }
+  const change: ScheduleChange = {
+    action: input.action,
+    words: words.trim(),
+    before: current ?? null,
+    after,
+  };
+  const data: ProposalData = {
+    bot,
+    kind: "schedule",
+    title: `Scheduled prompt ${name}`,
+    state: "pending",
+    createdAt: Date.now(),
+    schedule: change,
+  };
+  const id = `p-${randomUUID()}`;
+  await store.put(PROPOSAL_TYPE, id, data as unknown as Record<string, JsonValue>, "command:bot/schedule");
+  return `proposed scheduled prompt "${name}" for bot ${bot}; review it in pending`;
+}
+
 function skillData(value: unknown): ProposalData["skill"] | undefined {
   if (!isRecord(value) || typeof value.name !== "string") return undefined;
   const before = value.before === null ? null : snapshotOf(value.before) ?? null;
@@ -753,7 +939,11 @@ export async function applyProposal(
     return `proposal ${id} is already ${data.state}; nothing to apply`;
   }
   const skill = skillData(data.skill);
-  if (data.kind === "mcp") {
+  if (data.kind === "schedule") {
+    const change = scheduleChangeOf(data.schedule);
+    if (change === undefined) throw new BotError(`proposal ${id} has no scheduled prompt to apply`);
+    await applyScheduleChange(store, data.bot, change);
+  } else if (data.kind === "mcp") {
     const change = mcpChangeOf(data.mcp);
     if (change === undefined) throw new BotError(`proposal ${id} has no MCP server to apply`);
     await applyMcp(home, data.bot, change);
@@ -875,6 +1065,68 @@ export async function runSettingCommand(ctx: CommandContext, argv: readonly stri
     throw new BotError(`the settings change is not JSON: ${messageOf(error)}`);
   }
   return proposeSettings(ctx.store, ctx.home, bot, patch);
+}
+
+/** The usage line shared by the parser's refusals. */
+const SCHEDULE_USAGE =
+  "usage: operad bot schedule <bot> add|edit|remove <name> [--words <text>] [--schedule <cron>] [--prompt <text>] [--model <model>] [--effort <effort>]";
+
+/** Parses the `bot schedule` command: what the chat's agent calls to propose an entry. */
+export async function runScheduleCommand(
+  ctx: CommandContext,
+  argv: readonly string[],
+): Promise<string> {
+  const positional: string[] = [];
+  let words: string | undefined;
+  let schedule: string | undefined;
+  let prompt: string | undefined;
+  let model: string | undefined;
+  let effort: string | undefined;
+  for (let at = 0; at < argv.length; at += 1) {
+    const word = argv[at];
+    if (word === undefined) continue;
+    if (
+      word === "--words" ||
+      word === "--schedule" ||
+      word === "--prompt" ||
+      word === "--model" ||
+      word === "--effort"
+    ) {
+      const value = argv[at + 1];
+      if (value === undefined) throw new BotError(`bot schedule: ${word} needs a value`);
+      if (word === "--words") words = value;
+      else if (word === "--schedule") schedule = value;
+      else if (word === "--prompt") prompt = value;
+      else if (word === "--model") model = value;
+      else effort = value;
+      at += 1;
+      continue;
+    }
+    if (word.startsWith("--")) {
+      throw new BotError(`bot schedule: there is no option ${word}; ${SCHEDULE_USAGE}`);
+    }
+    positional.push(word);
+  }
+  const bot = positional[0];
+  const action = positional[1];
+  const name = positional[2];
+  if (
+    bot === undefined ||
+    name === undefined ||
+    positional.length > 3 ||
+    (action !== "add" && action !== "edit" && action !== "remove")
+  ) {
+    throw new BotError(SCHEDULE_USAGE);
+  }
+  return proposeSchedule(ctx.store, ctx.home, bot, {
+    action,
+    name,
+    words,
+    schedule,
+    prompt,
+    model,
+    effort,
+  });
 }
 
 /** The actions on a proposal. */
