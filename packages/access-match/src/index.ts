@@ -602,12 +602,15 @@ function checkBash(profile: AccessProfile, command: string, denied: Denied | und
     .map((text) => parseRule(text))
     .filter((rule): rule is Rule => rule !== undefined);
   const { parts, substitution, extglob, ansiC } = scan(command);
+  // A task worker is never stopped by what the matcher cannot follow: only a
+  // plain match of a deny refuses it (ADR 0025 D9).
+  const followsOnly = profile.defaultAsks === false;
 
   if ((profile.denyCommands ?? []).length > 0) {
     // A command that hides what it runs cannot be matched: when the profile
     // also asks, askBash asks about it instead of refusing it here.
     const asksInline = (profile.askCommands ?? []).length > 0;
-    if (substitution !== undefined && !asksInline) {
+    if (substitution !== undefined && !asksInline && !followsOnly) {
       return {
         allow: false,
         reason: `command "${command}" runs inline code (${substitution}); it is refused while denyCommands is set`,
@@ -615,7 +618,7 @@ function checkBash(profile: AccessProfile, command: string, denied: Denied | und
     }
     for (const part of parts) {
       const form = inlineFormOf(part);
-      if (form !== undefined && !asksInline) {
+      if (form !== undefined && !asksInline && !followsOnly) {
         return {
           allow: false,
           reason: `part "${part.text}" runs inline code (${form}); it is refused while denyCommands is set`,
@@ -650,7 +653,7 @@ function checkBash(profile: AccessProfile, command: string, denied: Denied | und
       }
     }
     // A deny wins over this ask: it is only reached when no path was denied.
-    if (unresolved !== undefined) {
+    if (unresolved !== undefined && !followsOnly) {
       return {
         allow: false,
         ask: true,
