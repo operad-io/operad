@@ -134,6 +134,36 @@ describe("chat transcript: after, mark and tail", () => {
     expect(during.tail).toBe("tool Bash since 09:05:07 `ls -la`");
   });
 
+  test("a retry is a live item with the time of its next attempt", async () => {
+    const { during } = await whileRunning([
+      {
+        type: "retry_start",
+        attempt: 2,
+        maxAttempts: 3,
+        delayMs: 4_000,
+        reason: "the provider is overloaded: s3cr3t-value",
+        receivedAt: 1_700_000_000_000,
+      },
+    ]);
+    expect(during.retry).toEqual({
+      attempt: 2,
+      maxAttempts: 3,
+      until: 1_700_000_004_000,
+      reason: "the provider is overloaded: ***",
+    });
+    expect(during.tail).toContain("Retrying the model request (2 of 3): the provider is overloaded: ***");
+  });
+
+  test("a successful retry leaves the live view", async () => {
+    const { during } = await whileRunning([
+      { type: "retry_start", attempt: 1, maxAttempts: 3, delayMs: 2_000, reason: "overloaded", receivedAt: 1_700_000_000_000 },
+      { type: "retry_end", success: true },
+      { type: "text_delta", text: "the answer" },
+    ]);
+    expect(during.retry).toBeUndefined();
+    expect(during.tail).toBe("**Operad Bot:** the answer");
+  });
+
   test("there is no tail when nothing runs, and none without a log", async () => {
     const { r, chat } = await whileRunning([{ type: "text_delta", text: "partial" }]);
     expect((await view(r, chat, { running: false })).tail).toBeUndefined();

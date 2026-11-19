@@ -469,6 +469,14 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 |---|---|---|---|
 | T-0569-M10 | packages/chat/src/reply.ts | `isWriteQuestion` and `questionedCall` did not recognise a form, so a form whose text reads like a write question became the worktree question | `a form a chat's agent asks > it is never turned into the worktree question, and its answers reach the harness` |
 
+## T-0574 — a retry is a live transcript item
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0574-M1 | packages/chat/src/views.ts | the live transcript dropped the `retry` item | `chat transcript: after, mark and tail > a retry is a live item with the time of its next attempt` |
+| T-0574-M2 | packages/chat/src/views.ts | the live tail left out the retry line | `chat transcript: after, mark and tail > a retry is a live item with the time of its next attempt` |
+| T-0574-M3 | packages/chat/src/reply.ts | a `pi` reply did not ask the worker for its retry | `chat/reply > a pi chat asks for pi's retry; another agent is not asked` |
+
 ## T-0575 — `chat:retry` is offered only when it would answer
 
 | id | file | mutation | failing test |

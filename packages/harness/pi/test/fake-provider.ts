@@ -38,6 +38,8 @@ export interface FakeResponse {
   before?: Promise<void>;
   /** Streams its content and then never finishes; an abort ends it. */
   endless?: boolean;
+  /** Fail the request with this provider message instead of answering. */
+  error?: string;
 }
 
 const CHUNK_SIZE = 4;
@@ -257,6 +259,18 @@ export class FakeProvider {
         stopReason: "error",
         errorMessage: "No more fake responses queued",
         timestamp: Date.now(),
+      };
+      stream.push({ type: "error", reason: "error", error: message });
+      stream.end();
+      return;
+    }
+
+    if (response.error !== undefined) {
+      const message: AssistantMessage = {
+        ...this.#message(model, { text: "" }),
+        content: [],
+        stopReason: "error",
+        errorMessage: response.error,
       };
       stream.push({ type: "error", reason: "error", error: message });
       stream.end();

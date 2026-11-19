@@ -39,6 +39,19 @@ export type SharedLine =
       readonly error?: string;
     }
   | { readonly type: "blocked"; readonly toolName: string; readonly reason: string }
+  /**
+   * The harness is waiting before it asks the model again. `delayMs` is how
+   * long it waits, and `reason` is the provider's message that caused it.
+   */
+  | {
+      readonly type: "retry_start";
+      readonly attempt: number;
+      readonly maxAttempts: number;
+      readonly delayMs: number;
+      readonly reason: string;
+    }
+  /** The retry is over: it succeeded, or it ran out and the failure follows. */
+  | { readonly type: "retry_end"; readonly success: boolean }
   /** A line for the step log that neither the model nor the fold reads. */
   | { readonly type: "log"; readonly text: string }
   /**

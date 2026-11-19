@@ -17,8 +17,9 @@ those directories. With `useOwnSettings` on, pi's own settings manager and
 resource loader read the owner's pi directory (`getAgentDir()`, so
 `PI_CODING_AGENT_DIR` is respected) for settings, context files, user skills,
 prompt templates and extensions; the project's `.pi` resources stay untrusted.
-Session files remain under the input's `sessionDir`, and operad's compaction
-and retry settings stay off. Every prompt goes to `session.prompt` with
+Session files remain under the input's `sessionDir`; compaction stays off. Pi's
+automatic retry is off unless the input sets `retry`, and a chat reply sets it
+with pi's own attempt count and backoff. Every prompt goes to `session.prompt` with
 `expandPromptTemplates: false`, both the first and one the host sends mid-run,
 so a person's text that starts with `/` is never dispatched as one of pi's
 commands or expanded as one of the owner's prompt templates.
@@ -62,6 +63,7 @@ this table.
 | `thinkingLevel` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max` | no | reasoning level; absent means pi's default |
 | `skills` | array of strings | no | skill directories to load, each with a `SKILL.md`; with `useOwnSettings` off nothing else is discovered. A directory whose `SKILL.md` cannot be read or has no name is skipped with one `log` line, not a failed run. Absent: no skills |
 | `useOwnSettings` | boolean | no | load the owner's own pi settings and resources (ADR 0023 D3); absent or false keeps the explicit, in-memory child |
+| `retry` | boolean | no | retry a failed model request with pi's own bounded backoff; absent or false keeps it off. A chat reply sets it; a task does not |
 | `keep` | object `{ socket, meta, token, scope, key, timeoutMs }` | no | the step sets this for a chat reply whose worker may stay: where it listens, its record, its token, the chat and the configuration hash, and how long it stays. A worker without it runs one reply and exits |
 | `access` | object | no | the access profile; `denyPaths` and `denyCommands` (arrays of strings) are enforced in the `tool_call` hook by `@operad-io/access-match`, other fields are ignored; absent means nothing is denied |
 
@@ -88,6 +90,8 @@ The host adds `receivedAt` (epoch milliseconds) to every line it writes to the s
 | `text_end` | `text` | the full text of a finished assistant message, after its increments |
 | `thinking_end` | `text` | the full text of a finished thinking block, after its increments |
 | `blocked` | `toolName`, `reason` | the access matcher refused a tool call; the call does not run: its `tool_execution_end` has `isError: true` and the model gets `reason` as the tool result. The run continues |
+| `retry_start` | `attempt`, `maxAttempts`, `delayMs`, `reason` | pi is waiting before it asks the model again. `delayMs` is how long it waits, and `reason` is the provider's masked message |
+| `retry_end` | `success` (boolean) | the retry is over: it succeeded, or it ran out and the failure follows |
 | `log` | `text` | a line for the step log that neither the model nor the fold reads: a skipped skill, or the names of the skills loaded (`skills: <name>, <name>`, or `skills: none`) |
 | `agent_settled` | `aborted` (boolean) | pi has stopped for good (not `agent_end`, after which pi may continue) |
 | `result` | see below | always the last line |
@@ -243,6 +247,12 @@ or 529, `overloaded`, `rate limit` or `too many requests` is `unavailable`; any
 other text is `protocol`. `status` is that number when the text has one, else
 `null`; `retry_after_secs` is `null` because pi does not report it. `dev`'s
 review and work waits read `kind` and so treat both harnesses alike.
+
+A chat reply turns pi's automatic retry on (ADR 0023 D3): pi retries the
+request with its own attempt count and backoff, and the worker writes
+`retry_start` and `retry_end` so the live transcript can show the wait (ADR
+0027 D9). A task keeps retry off; its failure gets dev's own retry wait and
+fallbacks.
 
 ### Asking and resuming
 

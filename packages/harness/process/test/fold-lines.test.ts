@@ -170,6 +170,41 @@ describe("foldLines", () => {
     expect(all.calls.map((c) => c.callId)).toEqual(["t3"]);
     expect(all.entries.filter((e) => e.kind === "text").map((e) => e.kind === "text" && e.text)).toEqual(["I will run it", "more"]);
   });
+
+  test("a retry carries its attempt, delay and reason until it ends", () => {
+    const start = foldLines([
+      {
+        type: "retry_start",
+        attempt: 2,
+        maxAttempts: 3,
+        delayMs: 4_000,
+        reason: "the provider is overloaded",
+        receivedAt: 1_700_000_000_000,
+      },
+    ]);
+    expect(start.retry).toEqual({
+      attempt: 2,
+      maxAttempts: 3,
+      delayMs: 4_000,
+      reason: "the provider is overloaded",
+      at: 1_700_000_000_000,
+    });
+    expect(foldLines([{ type: "retry_end", success: true }], start).retry).toBeUndefined();
+    expect(foldLines([{ type: "retry_end", success: false }], start).retry).toBeUndefined();
+  });
+
+  test("a successful message clears the retry even before its end line", () => {
+    const waiting = foldLines([
+      { type: "retry_start", attempt: 1, maxAttempts: 3, delayMs: 2_000, reason: "overloaded" },
+    ]);
+    const done = foldLines([{ type: "message_end", role: "assistant", stopReason: "stop", text: "answer" }], waiting);
+    expect(done.retry).toBeUndefined();
+    expect(done.entries).toEqual([{ kind: "text", text: "answer" }]);
+  });
+
+  test("a retry line without its numbers is skipped", () => {
+    expect(foldLines([{ type: "retry_start", attempt: 1, reason: "overloaded" }]).retry).toBeUndefined();
+  });
 });
 
 describe("capToolOutput", () => {

@@ -49,6 +49,15 @@ export interface OpenCall {
   readonly blocked: string | null;
 }
 
+export interface FoldRetry {
+  readonly attempt: number;
+  readonly maxAttempts: number;
+  /** When the host received the line that announced the wait, when the log gave one. */
+  readonly at?: number | undefined;
+  readonly delayMs: number;
+  readonly reason: string;
+}
+
 export interface FoldState {
   /** What has finished, in the order it finished. */
   readonly entries: readonly FoldEntry[];
@@ -62,6 +71,8 @@ export interface FoldState {
   readonly sawText: boolean;
   /** A `blocked` line that came before its call started, by tool name. */
   readonly earlyBlocks: Readonly<Record<string, string>>;
+  /** A model request the harness is waiting to try again, until `retry_end` or a failed message. */
+  readonly retry?: FoldRetry | undefined;
 }
 
 export const emptyFold: FoldState = {
@@ -87,6 +98,17 @@ function str(value: unknown): string | undefined {
 function receivedAtOf(line: Record<string, unknown>): number | undefined {
   const at = line["receivedAt"];
   return typeof at === "number" && Number.isFinite(at) ? at : undefined;
+}
+
+function wholeNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : undefined;
+}
+
+/** The state without a retry being waited for. */
+function noRetry(state: FoldState): FoldState {
+  if (state.retry === undefined) return state;
+  const { retry: _retry, ...rest } = state;
+  return rest;
 }
 
 /** Puts unfinished text and thinking into the entries, with the time of the line that finished them. */
@@ -137,14 +159,35 @@ function apply(state: FoldState, line: unknown): FoldState {
     case "message_end": {
       const at = receivedAtOf(line);
       const settled = settle(state, at);
+      // A successful message is proof the retry worked, even before its end line.
+      const stopped = str(line["stopReason"]);
+      const base = stopped !== undefined && stopped !== "error" ? noRetry(settled) : settled;
       const said = str(line["text"]);
       // Today's harnesses write only the head of a message's text here.
       const entries =
-        !settled.sawText && said !== undefined && said.length > 0
-          ? [...settled.entries, { kind: "text" as const, text: said, ...(at === undefined ? {} : { at }) }]
-          : settled.entries;
-      return { ...settled, entries, sawText: false };
+        !base.sawText && said !== undefined && said.length > 0
+          ? [...base.entries, { kind: "text" as const, text: said, ...(at === undefined ? {} : { at }) }]
+          : base.entries;
+      return { ...base, entries, sawText: false };
     }
+    case "retry_start": {
+      const attempt = wholeNumber(line["attempt"]);
+      const maxAttempts = wholeNumber(line["maxAttempts"]);
+      const delayMs = wholeNumber(line["delayMs"]);
+      const reason = str(line["reason"]);
+      if (attempt === undefined || maxAttempts === undefined || delayMs === undefined) return state;
+      const at = receivedAtOf(line);
+      const retry: FoldRetry = {
+        attempt,
+        maxAttempts,
+        delayMs,
+        reason: reason ?? "the model request failed",
+        ...(at === undefined ? {} : { at }),
+      };
+      return { ...state, retry };
+    }
+    case "retry_end":
+      return noRetry(state);
     case "tool_execution_start": {
       const callId = str(line["toolCallId"]);
       const toolName = str(line["toolName"]);

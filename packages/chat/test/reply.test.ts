@@ -29,6 +29,20 @@ describe("chat/reply", () => {
     expect((await r.store.get("chat", chat))?.data.session).toBe("s-9");
   });
 
+  test("a pi chat asks for pi's retry; another agent is not asked", async () => {
+    const pi = await rig(() => reply("retried"), undefined, "pi");
+    const chat = await pi.chat();
+    await pi.say(chat, "ask");
+    await pi.round(chat);
+    expect(pi.calls[0]?.params.retry).toBe(true);
+
+    const other = await rig(() => reply("plain"));
+    const plain = await other.chat();
+    await other.say(plain, "ask");
+    await other.round(plain);
+    expect("retry" in (other.calls[0]?.params ?? {})).toBe(false);
+  });
+
   test("the reply fact keeps the step's three durations with the usage", async () => {
     const timings = { startToReadyMs: 480, readyToFirstMs: 1_200, totalMs: 4_800 };
     const r = await rig(() => ({
