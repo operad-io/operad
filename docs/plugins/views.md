@@ -107,7 +107,7 @@ Each entry's `id` is what a client passes back to `load`.
 
 ### Reading only what is new: `mark`, `tail` and `after`
 
-A section that grows (an agent's transcript) is read in two parts so a client does not fetch it all again: the *finished* content, which only grows at the end, and the *tail*, which still changes. A live section may also carry a `status` beside them; a change of it counts as growth.
+A section that grows (an agent's transcript) is read in two parts so a client does not fetch it all again: the *finished* content, which only grows at the end, and the *tail*, which still changes. A live section may also carry a `status` or `retry` beside them; a change of either counts as growth.
 
 1. The first read has no `after`. The plugin returns the finished content as `markdown`, a `mark` that says where it ends, and the changing part as `tail`.
 2. The client keeps the finished text and shows the tail after it. On the next read it sends the `mark` as `after`.

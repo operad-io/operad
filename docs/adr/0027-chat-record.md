@@ -46,6 +46,6 @@ An assistant message carries `context: { used, window? }` beside its usage. `use
 
 ### D9: A retry being waited for is a live item
 
-When a harness retries a failed model request, the live transcript carries a `retry` item beside `tail` and `status`: `{ attempt, maxAttempts, until, reason }`. `until` is the time of the next attempt in milliseconds since the epoch, so a client counts down from it instead of reading a fixed number of seconds; `reason` is the provider's message, masked like a log line. The live tail also says in one Markdown line that the request is being retried. The kernel passes the item through the section read and the pushed `tail` event without reading it; a client that does not know it ignores it.
+When a harness retries a failed model request, the live transcript carries a `retry` item beside `tail` and `status`: `{ attempt, maxAttempts, until, reason }`. `until` is the time of the next attempt in milliseconds since the epoch, so a client counts down from it instead of reading a fixed number of seconds; `reason` is the provider's message, masked like a log line. The live tail also says in one Markdown line that the request is being retried. ADR 0019 D7 says how the kernel checks and carries the item on a section read and a pushed `tail` event.
 
 A successful retry and retries that run out both remove the item from the live view: the harness's retry-end line clears it, and the successful text or the failure follows. The stored transcript keeps no retry entry. When the retries run out the reply fails as D7 says.
