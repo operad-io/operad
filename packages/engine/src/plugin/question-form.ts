@@ -18,6 +18,9 @@ export const MAX_QUESTION_CHOICES = 8;
 /** The longest question text. */
 export const MAX_QUESTION_TEXT = 500;
 
+/** The longest Markdown body a question may carry. */
+export const MAX_QUESTION_BODY = 256 * 1024;
+
 /** The longest header a question may carry. */
 export const MAX_QUESTION_HEADER = 40;
 
@@ -30,7 +33,7 @@ export const MAX_QUESTION_CHOICE_DESCRIPTION = 280;
 /** The longest free-text answer. */
 export const MAX_QUESTION_ANSWER_TEXT = 4000;
 
-const QUESTION_FIELDS = new Set(["id", "text", "header", "choices", "multiple", "freeText"]);
+const QUESTION_FIELDS = new Set(["id", "text", "body", "header", "choices", "multiple", "freeText"]);
 const CHOICE_FIELDS = new Set(["label", "description"]);
 const ANSWER_FIELDS = new Set(["id", "choices", "text", "skipped"]);
 
@@ -99,6 +102,12 @@ export function questionsProblem(value: unknown): string | undefined {
     if (raw.text.length > MAX_QUESTION_TEXT) {
       return `${at}.text: must be at most ${MAX_QUESTION_TEXT} characters`;
     }
+    if (raw.body !== undefined) {
+      if (typeof raw.body !== "string") return `${at}.body: must be a string`;
+      if (raw.body.length > MAX_QUESTION_BODY) {
+        return `${at}.body: must be at most ${MAX_QUESTION_BODY} characters`;
+      }
+    }
     if (raw.header !== undefined) {
       if (typeof raw.header !== "string") return `${at}.header: must be a string`;
       if (raw.header.length > MAX_QUESTION_HEADER) {
@@ -148,6 +157,7 @@ export function normalizeQuestions(value: unknown): readonly AskQuestion[] | und
     questions.push({
       id: raw.id,
       text: raw.text,
+      ...(typeof raw.body === "string" ? { body: raw.body } : {}),
       ...(typeof raw.header === "string" ? { header: raw.header } : {}),
       ...(choices.length === 0 ? {} : { choices }),
       ...(raw.multiple === true ? { multiple: true } : {}),

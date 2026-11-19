@@ -76,6 +76,19 @@ type StreamKind = "text" | "thinking";
 /** The tool claude asks its own questions with. */
 export const ASK_QUESTION_TOOL = "AskUserQuestion";
 
+/** The tool claude leaves plan mode with. */
+export const EXIT_PLAN_MODE_TOOL = "ExitPlanMode";
+
+/** The id of the one question a plan review is. */
+export const PLAN_QUESTION_ID = "plan";
+
+/** The two answers a plan review offers. */
+export const PLAN_APPROVE = "Approve";
+export const PLAN_REQUEST_CHANGES = "Request changes";
+
+/** The word a plan without a heading is titled with. */
+export const PLAN_TITLE = "Plan";
+
 /** The capability that lets an answer say a question was skipped. */
 export const UNANSWERED_CAPABILITY = "ask_user_question_unanswered_v1";
 
@@ -116,6 +129,50 @@ export function claudeQuestions(toolInput: unknown): HarnessQuestion[] | undefin
     });
   }
   return questions;
+}
+
+/** A plan a person reviews before claude leaves plan mode. */
+export interface PlanReview {
+  readonly title: string;
+  readonly text: string;
+}
+
+const PLAN_TITLE_LIMIT = 120;
+
+/** The plan's title: its first Markdown heading, else its first line, else "Plan". */
+function planTitle(text: string): string {
+  for (const raw of text.split(/\r\n|[\r\n\u2028\u2029]/)) {
+    const line = raw.trim();
+    if (line.length === 0) continue;
+    const heading = /^#{1,6}\s+(.+?)\s*#*$/.exec(line);
+    const title = (heading?.[1] ?? line).replace(/[*_`]/g, "").trim();
+    if (title.length === 0) continue;
+    return title.length <= PLAN_TITLE_LIMIT ? title : `${title.slice(0, PLAN_TITLE_LIMIT - 1)}…`;
+  }
+  return PLAN_TITLE;
+}
+
+/** The plan claude's `ExitPlanMode` call carries, when it carries one. */
+export function planReview(toolInput: unknown): PlanReview | undefined {
+  const record = recordOf(toolInput);
+  const text = record === undefined ? undefined : stringOf(record["plan"]);
+  if (text === undefined || text.trim().length === 0) return undefined;
+  return { title: planTitle(text), text };
+}
+
+/** The one-question form a plan review puts to the person (ADR 0026 D6). */
+export function planQuestions(review: PlanReview) {
+  return askQuestions([
+    {
+      id: PLAN_QUESTION_ID,
+      text: review.title,
+      body: review.text,
+      choices: [
+        { label: PLAN_APPROVE, description: "Leave plan mode and carry out the plan." },
+        { label: PLAN_REQUEST_CHANGES, description: "Refuse this plan and end the reply so you can say what to change." },
+      ],
+    },
+  ]);
 }
 
 function recordOf(value: unknown): Record<string, unknown> | undefined {
@@ -1036,6 +1093,7 @@ class ClaudeSession {
     const profile = liveAccess(turn.profile);
     io.log(`canUseTool ${toolName}`);
     if (toolName === ASK_QUESTION_TOOL) return this.askQuestion(turn, toolInput, options);
+    if (toolName === EXIT_PLAN_MODE_TOOL) return this.reviewPlan(turn, toolInput, options);
     const askHost = io.ask;
     const verdict = await decideAccess(
       profile,
@@ -1135,6 +1193,69 @@ class ClaudeSession {
         answers,
         ...(Object.keys(annotations).length === 0 ? {} : { annotations }),
       },
+    };
+  }
+
+  /**
+   * The plan claude is ready to carry out, put to the person before plan mode
+   * ends. Approving lets the tool run as it did before, so claude itself leaves
+   * plan mode; asking for changes refuses the call with the person's note and
+   * ends the reply, so the next message can say what to change.
+   */
+  private async reviewPlan(
+    turn: Turn,
+    toolInput: Record<string, unknown>,
+    options: { readonly toolUseID: string; readonly signal: AbortSignal },
+  ): Promise<Awaited<ReturnType<CanUseTool>>> {
+    const io = turn.io;
+    const review = planReview(toolInput);
+    if (review === undefined) {
+      return {
+        behavior: "deny",
+        message: "the plan was empty; write the plan and call ExitPlanMode with it in the plan argument",
+      };
+    }
+    const questions = planQuestions(review);
+    if (io.askForm === undefined) {
+      return { behavior: "deny", message: "this host cannot put a plan to a person" };
+    }
+    const shown = JSON.stringify(review);
+    if (this.secrets.some((secret) => secret.length > 0 && shown.includes(secret))) {
+      return { behavior: "deny", message: "the plan holds a secret value, so nobody is asked about it" };
+    }
+    let got;
+    try {
+      got = await io.askForm({ questions, session: this.sessionId });
+    } catch {
+      return { behavior: "deny", message: "the plan could not be put to a person" };
+    }
+    if (got.decision === "stop") {
+      // The grace passed: the host ends this program, and the answer comes
+      // back to a resumed session as text.
+      await new Promise<void>((resolve) => {
+        if (this.controller.signal.aborted) resolve();
+        this.controller.signal.addEventListener("abort", () => resolve(), { once: true });
+      });
+      this.endCall(turn, options.toolUseID, EXIT_PLAN_MODE_TOOL, true, REFUSED_IN_LOG);
+      return { behavior: "deny", message: "waiting for a plan review", interrupt: true };
+    }
+    if (got.decision === "rejected") {
+      this.writeLine(turn, { type: "blocked", toolName: EXIT_PLAN_MODE_TOOL, reason: REFUSED_IN_LOG });
+      this.endCall(turn, options.toolUseID, EXIT_PLAN_MODE_TOOL, true, REFUSED_IN_LOG);
+      return { behavior: "deny", message: "nobody reviewed the plan in time" };
+    }
+    const answer = answerFor(got.answers, PLAN_QUESTION_ID);
+    const choice = answer?.choices?.[0];
+    if (choice === PLAN_APPROVE && answer?.skipped !== true) {
+      return { behavior: "allow", updatedInput: toolInput };
+    }
+    const note = got.note === undefined || got.note.trim().length === 0 ? undefined : got.note.trim();
+    this.writeLine(turn, { type: "blocked", toolName: EXIT_PLAN_MODE_TOOL, reason: REFUSED_IN_LOG });
+    this.endCall(turn, options.toolUseID, EXIT_PLAN_MODE_TOOL, true, REFUSED_IN_LOG);
+    return {
+      behavior: "deny",
+      message: note ?? "The person asked for changes to the plan.",
+      interrupt: true,
     };
   }
 

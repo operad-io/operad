@@ -183,6 +183,10 @@ class Capture implements WorkerIo<unknown> {
     return this.inner.ask?.(call) ?? Promise.resolve({ decision: "deny", reason: "the host cannot ask" });
   };
 
+  askForm = (form: Parameters<NonNullable<WorkerIo["askForm"]>>[0]): Promise<FormAnswer> => {
+    return this.inner.askForm?.(form) ?? Promise.resolve({ decision: "rejected" });
+  };
+
   onMessage = (handler: (text: string) => void): void => {
     this.inner.onMessage?.(handler);
   };
@@ -360,12 +364,14 @@ export class Channel<TLine = unknown> {
           const id: unknown = Reflect.get(ack, "id");
           const decision: unknown = Reflect.get(ack, "decision");
           const answers: unknown = Reflect.get(ack, "answers");
+          const note: unknown = Reflect.get(ack, "note");
           if (typeof id === "number") {
             this.forms.get(id)?.({
               decision: decision === "answered" || decision === "stop" ? decision : "rejected",
               ...(Array.isArray(answers)
                 ? { answers: answers as readonly AskQuestionAnswer[] }
                 : {}),
+              ...(typeof note === "string" ? { note } : {}),
             });
             this.forms.delete(id);
           }

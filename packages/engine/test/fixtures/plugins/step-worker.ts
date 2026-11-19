@@ -67,6 +67,28 @@ export default definePlugin({
       },
     },
     {
+      name: "ask-form",
+      results: ["answered", "waiting", "failed"],
+      async run(ctx) {
+        try {
+          const answer = await ctx.ask({
+            prompt: "Plan",
+            questions: [
+              {
+                id: "plan",
+                text: "Plan",
+                body: "# Plan\n\n- change one",
+                choices: [{ label: "Approve" }, { label: "Request changes" }],
+              },
+            ],
+          });
+          return { result: "answered", data: { answers: answer.answers ?? [] } };
+        } catch (error) {
+          return { result: "failed", data: { error: messageOf(error) } };
+        }
+      },
+    },
+    {
       name: "grant",
       results: ["ok", "failed"],
       async run(ctx) {
