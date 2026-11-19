@@ -31,7 +31,6 @@ import {
   formChoices,
   normalizeAnswers,
   questionsJson,
-  questionsProblem,
   storedAnswers,
   storedQuestions,
 } from "../plugin/question-form.ts";
