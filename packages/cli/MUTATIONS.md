@@ -315,3 +315,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0548-M1 | packages/cli/src/main.ts | `trigger rules` did not say a rule is paused | `operad trigger rules > lists each rule with where it came from` |
+
+## T-0562 — a child's output is read from files, not pipes
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0562-M1 | packages/cli/test/publish-install.test.ts | `run` sent a child's stdout to a pipe while reading the output file, so the captured answer was empty | `publishing and installing the packages > init retries a claude install that failed after config.json was written` |
