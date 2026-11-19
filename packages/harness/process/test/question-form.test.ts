@@ -15,6 +15,13 @@ import {
   isSkipped,
 } from "../src/index.ts";
 
+test("a plan's title and Markdown body become one question", () => {
+  const body = "# Plan\n\n- change one";
+  expect(askQuestions([{ id: "plan", text: "Plan", body }])).toEqual([
+    { id: "plan", text: "Plan", body },
+  ]);
+});
+
 test("a harness's question becomes a kernel question with a stable id", () => {
   expect(
     askQuestions([

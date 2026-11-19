@@ -14,6 +14,8 @@ import { fileURLToPath } from "node:url";
 import {
   MemoryPluginStore,
   PluginRegistry,
+  type AskOutcome,
+  type AskRequest,
   type JsonValue,
   type PluginStepResult,
 } from "@operad-io/engine";
@@ -233,6 +235,39 @@ test("a kept worker receives this reply's grant, not the previous reply's", asyn
   expect(replies).toHaveLength(2);
   expect(replies[0]?.["answer"]).toMatchObject({ behavior: "deny" });
   expect(replies[1]?.["answer"]).toMatchObject({ behavior: "allow" });
+  await stopAllKeptWorkers({ home: env.root });
+});
+
+test("a plan review in a kept worker's second reply still reaches the person", async () => {
+  const plan = "# Plan\n\nDo the work.";
+  const planAsk = {
+    ask: { toolName: "ExitPlanMode", toolUseId: "p1", input: { plan } },
+  };
+  const env = setup([
+    firstTurn("one"),
+    [{ say: assistant("m2", "two") }, planAsk, { say: result({ result: "two" }) }],
+  ]);
+  expect((await run(env)).result).toBe("done");
+  const asked: AskRequest[] = [];
+  const second = await run(env, { prompt: "again" }, {
+    runId: "run-2",
+    asker: {
+      ask: (request): Promise<AskOutcome> => {
+        asked.push(request);
+        return Promise.resolve({
+          kind: "answered",
+          answer: {
+            choice: undefined,
+            answers: [{ id: "plan", choices: ["Approve"] }],
+            actor: { via: "cli", id: "me" },
+          },
+        });
+      },
+      useGrant: () => Promise.resolve(false),
+    },
+  });
+  expect(second.result).toBe("done");
+  expect(asked[0]?.questions?.[0]).toMatchObject({ id: "plan", text: "Plan", body: plan });
   await stopAllKeptWorkers({ home: env.root });
 });
 
