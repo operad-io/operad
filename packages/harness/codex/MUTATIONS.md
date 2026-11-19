@@ -129,3 +129,9 @@ recorded. The root [MUTATIONS.md](../../../MUTATIONS.md) explains the format and
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0560-M1 | packages/harness/codex/src/index.ts | the permission request used the startup profile instead of the live one | `codex/agent: permissions > the live level file is read for the permission request, not only at the start` |
+
+## T-0569 — item/tool/requestUserInput is a form a person fills in
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0569-M9 | packages/harness/codex/src/app-server.ts | the client did not serve `item/tool/requestUserInput`, so the agent's question was refused as an unknown method | `a request for input becomes a form and is answered per question` |

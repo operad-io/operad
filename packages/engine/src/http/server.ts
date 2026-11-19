@@ -10,7 +10,7 @@ import type { HttpConfig } from "../config/config.ts";
 import type { LogBackend } from "../log/types.ts";
 import { messageOf } from "../plugin/errors.ts";
 import type { PluginRegistry } from "../plugin/registry.ts";
-import type { Actor } from "../plugin/types.ts";
+import type { Actor, AskQuestionAnswer } from "../plugin/types.ts";
 import type { Kernel } from "../trigger/kernel.ts";
 import { listPending } from "../views/pending.ts";
 import {
@@ -112,6 +112,7 @@ export interface EventEntry {
 
 type HubEvent =
   | { readonly kind: "change"; readonly entry: EventEntry }
+  | { readonly kind: "live"; readonly event: ViewEvent }
   | { readonly kind: "reset" };
 
 type HubListener = (event: HubEvent) => void;
@@ -233,6 +234,12 @@ export class EventHub {
   }
 
   private publish(value: ViewEvent): void {
+    if (value.section !== undefined) {
+      // A live part is for the clients connected now; it is not replayed on a
+      // reconnect, where the section read gives the whole current tail again.
+      this.notify({ kind: "live", event: value });
+      return;
+    }
     this.resetAnnounced = false;
     this.seq += 1;
     const entry: EventEntry = {
@@ -461,6 +468,10 @@ function formatEvent(entry: EventEntry): string {
   return `id: ${entry.event}\ndata: ${JSON.stringify({ id: entry.id })}\n\n`;
 }
 
+function formatTailEvent(event: ViewEvent): string {
+  return `event: tail\ndata: ${JSON.stringify(event)}\n\n`;
+}
+
 const RESET_EVENT = "event: reset\ndata: {}\n\n";
 
 export function eventResponse(
@@ -527,6 +538,7 @@ export function eventResponse(
       else for (const entry of snapshot.replay) push(formatEvent(entry));
       unsubscribe = hub.subscribe((event) => {
         if (event.kind === "reset") push(RESET_EVENT);
+        else if (event.kind === "live") push(formatTailEvent(event.event));
         else push(formatEvent(event.entry));
       }, finish);
       untrack = track(token, finish);
@@ -902,8 +914,18 @@ function createHandler(
       if (typeof waitId !== "string" || waitId.length === 0) {
         return errorResponse(400, "args", "the body needs a waitId");
       }
-      if (typeof choice !== "string" || choice.length === 0) {
-        return errorResponse(400, "args", "the body needs a choice");
+      const answers = body.answers;
+      if (answers !== undefined && !Array.isArray(answers)) {
+        return errorResponse(400, "args", "answers must be a list");
+      }
+      if (
+        (choice === undefined || typeof choice !== "string" || choice.length === 0) &&
+        answers === undefined
+      ) {
+        return errorResponse(400, "args", "the body needs a choice or answers");
+      }
+      if (choice !== undefined && (typeof choice !== "string" || choice.length === 0)) {
+        return errorResponse(400, "args", "choice must be a string");
       }
       const note = body.note;
       if (note !== undefined && typeof note !== "string") {
@@ -918,7 +940,10 @@ function createHandler(
         await options.views.answer({
           runId,
           waitId,
-          choice,
+          choice: typeof choice === "string" ? choice : undefined,
+          ...(answers === undefined
+            ? {}
+            : { answers: answers as unknown as readonly AskQuestionAnswer[] }),
           ...(note === undefined ? {} : { note }),
           ...(confirmed === true ? { confirmed: true } : {}),
           surface: "http",

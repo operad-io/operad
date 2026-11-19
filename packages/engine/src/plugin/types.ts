@@ -292,6 +292,25 @@ export interface ObjectViews {
         object: StoredObject,
       ) => MaybePromise<readonly ViewSkill[] | undefined>)
     | undefined;
+  /**
+   * The changing part of a live section, pushed on the event stream as it
+   * grows. The kernel passes `section`, `tail` and `status` through without
+   * reading them, in the same shapes a section read uses. Absent: the type
+   * pushes no live part and an event carries only the object id.
+   */
+  readonly tail?:
+    | ((
+        ctx: ViewContext,
+        object: StoredObject,
+      ) => MaybePromise<
+        | {
+            readonly section: string;
+            readonly tail?: string | undefined;
+            readonly status?: SectionStatus | undefined;
+          }
+        | undefined
+      >)
+    | undefined;
   /** Called when a person opens a section; it may be slow and paged. */
   readonly load: (
     ctx: ViewContext,
@@ -532,6 +551,45 @@ export interface ChoiceInfo {
   readonly note?: "optional" | "required" | undefined;
 }
 
+/** One answer a form's question offers. */
+export interface AskQuestionChoice {
+  /** What a client shows and what an answer names. */
+  readonly label: string;
+  /** One sentence saying what choosing this means. */
+  readonly description?: string | undefined;
+}
+
+/**
+ * One question of a form a step asks a person: the agent's own question, with
+ * its choices, carried through the kernel unchanged.
+ */
+export interface AskQuestion {
+  /** What an answer names this question by; unique within the form. */
+  readonly id: string;
+  /** The question in full, as the agent asked it. */
+  readonly text: string;
+  /** A short label a client shows beside the question. */
+  readonly header?: string | undefined;
+  /** The answers offered; absent or empty means free text only. */
+  readonly choices?: readonly AskQuestionChoice[] | undefined;
+  /** True when the person may pick more than one choice. */
+  readonly multiple?: boolean | undefined;
+  /** True when the person may answer in their own words. */
+  readonly freeText?: boolean | undefined;
+}
+
+/** The person's answer to one question of a form. */
+export interface AskQuestionAnswer {
+  /** The question this answers; one of the form's ids. */
+  readonly id: string;
+  /** The labels picked, in the form's order. */
+  readonly choices?: readonly string[] | undefined;
+  /** What the person typed, instead of or beside a choice. */
+  readonly text?: string | undefined;
+  /** True when the person gave no answer to this question. */
+  readonly skipped?: true | undefined;
+}
+
 /** What a question says when it is checked again while it waits. */
 export interface AskRecheck {
   /** False when this question no longer needs a person. */
@@ -553,6 +611,12 @@ export interface AskRequest {
    * it to every read of the question.
    */
   readonly choiceInfo?: Readonly<Record<string, ChoiceInfo>> | undefined;
+  /**
+   * The form the person fills in, when the agent asked questions rather than
+   * for one answer. A form has no `choices` of its own: the kernel shows one
+   * question's labels to a client that cannot draw a form.
+   */
+  readonly questions?: readonly AskQuestion[] | undefined;
   /**
    * How long to wait for the answer, in seconds, while the step goes on
    * waiting. The narrowest of this, the step's `askGraceSecs` param and the
@@ -584,6 +648,11 @@ export interface AskAnswer {
   readonly actor?: Actor | undefined;
   /** True when the grace passed and `onTimeout` was `"reject_once"`. */
   readonly rejected?: boolean | undefined;
+  /**
+   * The person's answer to each question of a form, in the form's order, with
+   * `skipped` for one they left alone. Absent for a question that is not a form.
+   */
+  readonly answers?: readonly AskQuestionAnswer[] | undefined;
 }
 
 /** The data of a step that ended `waiting` because an ask timed out. */
@@ -592,6 +661,8 @@ export interface AskWaitingData {
   readonly prompt: string;
   readonly choices: readonly string[];
   readonly choiceInfo?: Readonly<Record<string, ChoiceInfo>> | undefined;
+  /** The form the step asked, when it asked one. */
+  readonly questions?: readonly AskQuestion[] | undefined;
   readonly resume: JsonValue;
 }
 
@@ -604,6 +675,8 @@ export type AskOutcome =
       readonly prompt: string;
       readonly choices: readonly string[];
       readonly choiceInfo?: Readonly<Record<string, ChoiceInfo>> | undefined;
+      /** The form the step asked, when it asked one. */
+      readonly questions?: readonly AskQuestion[] | undefined;
       /** What the step needs to carry on later, when the asker shaped it; the request's own resume otherwise. */
       readonly resume?: JsonValue | undefined;
     };

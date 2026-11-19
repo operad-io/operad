@@ -55,6 +55,8 @@ export const INERT_TOOLS: readonly string[] = [
   "TodoWrite",
   "WebFetch",
   "WebSearch",
+  // The agent's own question asks a person through ctx.ask, not the profile.
+  "AskUserQuestion",
   "ExitPlanMode",
   "BashOutput",
   "KillShell",

@@ -339,8 +339,10 @@ async function readUntilDone(
   return ended;
 }
 
+type PushedTail = Pick<ViewEvent, "type" | "section" | "tail" | "status">;
+
 type SourceItem =
-  | { readonly kind: "event"; readonly id: string }
+  | { readonly kind: "event"; readonly id: string; readonly tail?: PushedTail }
   | { readonly kind: "error"; readonly error: Error }
   | { readonly kind: "end" };
 
@@ -369,8 +371,8 @@ class ControlledSource {
     };
   };
 
-  push(id: string): void {
-    this.items.push({ kind: "event", id });
+  push(id: string, tail?: PushedTail): void {
+    this.items.push({ kind: "event", id, ...(tail === undefined ? {} : { tail }) });
     this.wake();
   }
 
@@ -409,7 +411,7 @@ class ControlledSource {
     if (item === undefined) return { done: true, value: undefined };
     if (item.kind === "error") throw item.error;
     if (item.kind === "end") return { done: true, value: undefined };
-    return { done: false, value: { id: item.id } };
+    return { done: false, value: { id: item.id, ...(item.tail ?? {}) } };
   }
 
   private wake(): void {
@@ -852,6 +854,137 @@ describe("http server", () => {
         state: "approved",
         approvedNote: "looks good",
       });
+    } finally {
+      await h.close();
+    }
+  });
+
+  test("a form is answered through /v1/answer with one answer per question", async () => {
+    const h = await makeHarness();
+    try {
+      seed(h, "one", { title: "First", state: "new" });
+      const run = await h.log.startRun("demo-flow", "item:one");
+      await h.log.append(run.runId, 0, [
+        {
+          kind: "waiting_for_person",
+          payload: {
+            waitId: "wait:form",
+            step: "ask",
+            prompt: "How should it load?",
+            choices: ["Built-in", "Dynamic"],
+            questions: [
+              {
+                id: "loader",
+                text: "How should it load?",
+                choices: [{ label: "Built-in" }, { label: "Dynamic" }],
+              },
+            ],
+            waitKind: "step",
+            effectId: null,
+          },
+          cause: "test",
+        },
+      ]);
+
+      const refused = await api(h, "/v1/answer", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          runId: run.runId,
+          waitId: "wait:form",
+          answers: [{ id: "loader", choices: ["From the network"] }],
+        }),
+      });
+      expect(refused.status).toBe(409);
+      expect((await json(refused)).error).toMatchObject({ kind: "not-available" });
+
+      const answered = await api(h, "/v1/answer", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          runId: run.runId,
+          waitId: "wait:form",
+          answers: [{ id: "loader", choices: ["Dynamic"] }],
+        }),
+      });
+      expect(answered.status).toBe(200);
+    } finally {
+      await h.close();
+    }
+  });
+
+  test("a form is answered as a form even when a label names an action", async () => {
+    const h = await makeHarness();
+    try {
+      seed(h, "one", { title: "First", state: "new" });
+      const run = await h.log.startRun("demo-flow", "item:one");
+      await h.log.append(run.runId, 0, [
+        {
+          kind: "waiting_for_person",
+          payload: {
+            waitId: "wait:drop",
+            step: "ask",
+            prompt: "Drop it?",
+            choices: ["drop"],
+            questions: [{ id: "drop", text: "Drop it?", choices: [{ label: "drop" }] }],
+            waitKind: "step",
+            effectId: null,
+          },
+          cause: "test",
+        },
+      ]);
+      const answered = await api(h, "/v1/answer", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ runId: run.runId, waitId: "wait:drop", choice: "drop" }),
+      });
+      expect(answered.status).toBe(200);
+      // The label is an answer to the form, never the action of the same name.
+      expect(h.store.get("item", "one")?.data.dropped).toBeUndefined();
+    } finally {
+      await h.close();
+    }
+  });
+
+  test("a plain choice is refused for a form of several questions, and the item stays pending", async () => {
+    const h = await makeHarness();
+    try {
+      seed(h, "one", { title: "First", state: "new" });
+      const run = await h.log.startRun("demo-flow", "item:one");
+      await h.log.append(run.runId, 0, [
+        {
+          kind: "waiting_for_person",
+          payload: {
+            waitId: "wait:two",
+            step: "ask",
+            prompt: "How should it load?\n\nWhat name?",
+            choices: [],
+            questions: [
+              {
+                id: "loader",
+                text: "How should it load?",
+                choices: [{ label: "Built-in" }, { label: "Dynamic" }],
+              },
+              { id: "name", text: "What name?", freeText: true },
+            ],
+            waitKind: "step",
+            effectId: null,
+          },
+          cause: "test",
+        },
+      ]);
+
+      const refused = await api(h, "/v1/answer", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ runId: run.runId, waitId: "wait:two", choice: "Built-in" }),
+      });
+      expect(refused.status).toBe(409);
+      expect((await json(refused)).error).toMatchObject({ kind: "not-available" });
+
+      // Nothing was recorded: the same item is still the one waiting.
+      const pending = (await (await api(h, "/v1/pending")).json()) as { runId: string; waitId?: string }[];
+      expect(pending.find((item) => item.runId === run.runId)?.waitId).toBe("wait:two");
     } finally {
       await h.close();
     }
@@ -1481,6 +1614,39 @@ describe("http server", () => {
     } finally {
       unsubscribe();
       await connected.cancel();
+      hub.stop();
+    }
+  });
+
+  test("a pushed tail is its own event and is not part of the resume window", async () => {
+    const source = new ControlledSource();
+    const hub = new EventHub(source.source, 10, () => undefined);
+    const stream = openSse(hubStream(hub));
+    try {
+      source.push("item", {
+        type: "item",
+        section: "log",
+        tail: "being written",
+        status: { text: "Thinking", since: 1_700_000_000_000 },
+      });
+      const [pushed] = await stream.next();
+      expect(pushed?.event).toBe("tail");
+      expect(pushed?.id).toBeUndefined();
+      expect(JSON.parse(pushed?.data ?? "{}")).toEqual({
+        id: "item",
+        type: "item",
+        section: "log",
+        tail: "being written",
+        status: { text: "Thinking", since: 1_700_000_000_000 },
+      });
+
+      // A change after it has an id; the pushed tail before that id is not replayed.
+      source.push("item");
+      const [change] = await stream.next();
+      expect(change?.id).toBeDefined();
+      expect(hub.snapshot(change?.id)).toEqual({ reset: false, replay: [] });
+    } finally {
+      await stream.cancel();
       hub.stop();
     }
   });

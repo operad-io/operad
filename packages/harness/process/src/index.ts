@@ -19,6 +19,7 @@ export * from "./keep.ts";
 export * from "./lines.ts";
 export * from "./operad-tools.ts";
 export * from "./process.ts";
+export * from "./question-form.ts";
 export * from "./skills.ts";
 export * from "./step.ts";
 export * from "./timings.ts";

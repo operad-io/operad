@@ -16,6 +16,7 @@ import {
   paramsObject,
   defineFlow,
   definePlugin,
+  AskTimeoutError,
   type AgentResultData,
   type HarnessEfforts,
   type PluginStepResult,
@@ -27,6 +28,7 @@ import {
   alwaysAllowFromGrant,
   appendAlwaysAllow,
   answerGrant,
+  askFormRequest,
   askToolEvent,
   canAsk,
   createCallAsker,
@@ -56,6 +58,7 @@ import {
   modelLimit,
   standardUsage,
   StepTimings,
+  formAnswer,
   withTimings,
   type UsageSource,
   runAgent,
@@ -510,6 +513,15 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
           const stopper = new AbortController();
           const asker = createCallAsker({
             ask: (request) => ctx.ask(request),
+            // The agent's own questions are one form the person fills in.
+            async askForm(form) {
+              try {
+                return formAnswer(await ctx.ask(askFormRequest(form)));
+              } catch (error) {
+                if (error instanceof AskTimeoutError) return { decision: "stop" };
+                throw error;
+              }
+            },
             onStop: () => stopper.abort(),
             secrets: storeSecrets,
             ...(allowAlways ? { alwaysAllow: { home: ctx.home, cwd } } : {}),

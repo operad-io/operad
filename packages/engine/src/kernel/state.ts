@@ -181,6 +181,7 @@ export function evolve(state: KernelState, fact: NewFact): KernelState {
         ...(payload.choiceInfo === undefined
           ? {}
           : { choiceInfo: payload.choiceInfo }),
+        ...(payload.questions === undefined ? {} : { questions: payload.questions }),
         kind: payload.waitKind,
         effectId: payload.effectId,
         ...(payload.ask === undefined ? {} : { ask: payload.ask }),
@@ -221,6 +222,10 @@ export function evolve(state: KernelState, fact: NewFact): KernelState {
                 prompt: payload.ask.prompt,
                 resume: payload.ask.resume,
                 choice: payload.choice,
+                ...(payload.answers === undefined ? {} : { answers: payload.answers }),
+                ...(payload.ask.questions === undefined
+                  ? {}
+                  : { questions: payload.ask.questions }),
                 note: payload.note,
                 actor: payload.actor,
               },

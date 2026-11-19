@@ -70,6 +70,37 @@ function flow(
   });
 }
 
+function lateFlow(name: string) {
+  return defineFlow({
+    name,
+    entry: "q",
+    steps: [
+      {
+        id: "q",
+        kind: "plugin",
+        params: { use: "ask/question", params: {} },
+        replay: "safe",
+        next: {
+          answered: "done",
+          rejected: "done",
+          waiting: "person",
+          failed: "done",
+          interrupted: "done",
+        },
+      },
+      {
+        // The late answer sends the run back to the step that asked.
+        id: "person",
+        kind: "wait_person",
+        params: { prompt: "Waiting?", choices: ["yes", "no"] },
+        replay: "safe",
+        next: { yes: "q", no: "q", interrupted: "done" },
+      },
+      { id: "done", kind: "end", params: { status: "done" }, replay: "safe" },
+    ],
+  });
+}
+
 /**
  * Asks what the run's params say and ends with the answer. The run's params
  * are { name, dir, prompt?, choices?, graceSecs?, onTimeout? }.
@@ -82,7 +113,12 @@ export default definePlugin({
     {
       name: "question",
       results: ["answered", "rejected", "waiting", "failed", "interrupted"],
-      async run(ctx) {
+      async run(ctx, params) {
+        // A step that ran again after its question was answered gets the answer
+        // as `askAnswer`; this fixture reports it instead of asking again.
+        if (isRecord(params) && isRecord(params.askAnswer)) {
+          return { result: "answered", data: { late: params.askAnswer } };
+        }
         if (!isRecord(ctx.params)) throw new Error("the flow needs params");
         const { name, dir } = ctx.params;
         if (typeof name !== "string" || typeof dir !== "string") {
@@ -103,12 +139,25 @@ export default definePlugin({
         }
         const answer = await ctx.ask({
           prompt:
-            typeof ctx.params.prompt === "string"
-              ? ctx.params.prompt
-              : "Delete the stale branch?",
-          choices: Array.isArray(ctx.params.choices)
-            ? ctx.params.choices.filter((item): item is string => typeof item === "string")
-            : ["yes", "no"],
+            Array.isArray(ctx.params.questions)
+              ? ctx.params.questions
+                  .map((question) =>
+                    isRecord(question) && typeof question.text === "string" ? question.text : "",
+                  )
+                  .join("\n\n")
+              : typeof ctx.params.prompt === "string"
+                ? ctx.params.prompt
+                : "Delete the stale branch?",
+          ...(Array.isArray(ctx.params.questions)
+            ? {
+                questions: ctx.params.questions as never,
+                ...(ctx.params.withOwnChoices === true ? { choices: ["yes", "no"] } : {}),
+              }
+            : {
+                choices: Array.isArray(ctx.params.choices)
+                  ? ctx.params.choices.filter((item): item is string => typeof item === "string")
+                  : ["yes", "no"],
+              }),
           ...(isRecord(ctx.params.choiceInfo)
             ? {
                 choiceInfo: ctx.params.choiceInfo as Readonly<
@@ -139,6 +188,7 @@ export default definePlugin({
           data: {
             choice: answer.choice ?? null,
             note: answer.note ?? null,
+            ...(answer.answers === undefined ? {} : { answers: [...answer.answers] }),
             actor: answer.actor === undefined ? null : { ...answer.actor },
           },
         };
@@ -179,5 +229,6 @@ export default definePlugin({
     flow("ask-param30", { askGraceSecs: 30 }, false),
     flow("ask-unsafe", {}, false, "unsafe"),
     flow("ask-unsafe-hold", {}, true, "unsafe"),
+    lateFlow("ask-form-late"),
   ],
 });

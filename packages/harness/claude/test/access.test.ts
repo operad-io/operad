@@ -163,6 +163,8 @@ describe("tools outside the table", () => {
       "TodoWrite",
       "WebFetch",
       "WebSearch",
+      // The agent's own question goes to a person, not through the profile.
+      "AskUserQuestion",
       "ExitPlanMode",
       "BashOutput",
       "KillShell",

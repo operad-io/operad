@@ -105,6 +105,7 @@ One JSON object per line, flushed per line, each with a `type`:
 | `rate_limit` | `status`, `rateLimitType` (or null), `resetsAt` (or null) | claude reported its rate limit state |
 | `grant_use` | `id`, `waitId` | asks the host to use up a one-time permission; answered on stdin by `{"type":"grant_ack","id":n,"used":true\|false}` |
 | `ask_call` | `id`, `kind`, `value`, `tool` (path questions), `shown`, `session` | asks the host to ask a person whether one call may run (`askCommands`); `shown` is the command itself with its line breaks, even when the log says `<command not shown: could not read it safely>`; answered on stdin by `{"type":"ask_ack","id":n,"decision":"allow"\|"deny"\|"stop"}` |
+| `ask_form` | `id`, `questions`, `session` | asks the host to put the agent's own question to a person as one form (ADR 0026 D6); `questions` is the kernel's form, and answered on stdin by `{"type":"ask_form_ack","id":n,"decision":"answered"\|"rejected"\|"stop","answers"?}` |
 | `ask_resolved` | `id` | the question closed; the call goes on or is refused |
 | `result` | see below | always the last line |
 
@@ -255,10 +256,12 @@ rule is set: a call without its target cannot be judged.
 
 A tool that is not in the table:
 
-- `TodoWrite`, `WebFetch`, `WebSearch`, `ExitPlanMode`, `BashOutput`,
-  `KillShell`, `Task` and `Agent` run no command and name no file, so they are
-  allowed. A subagent's own tool calls come to `canUseTool` too and are judged
-  like any other.
+- `TodoWrite`, `WebFetch`, `WebSearch`, `AskUserQuestion`, `ExitPlanMode`,
+  `BashOutput`, `KillShell`, `Task` and `Agent` run no command and name no
+  file, so they are allowed. A subagent's own tool calls come to `canUseTool`
+  too and are judged like any other. `AskUserQuestion` is not judged at all: it
+  is the agent's own question, put to a person as a form (see
+  [Asking the agent's own question](#asking-the-agents-own-question)).
 - Any other name (an MCP tool, a tool a later claude adds) is allowed only when
   the profile has no `denyPaths` and no `denyCommands`. With a rule set it is
   refused, because a rule that could match it cannot be checked.
@@ -279,6 +282,18 @@ host that is gone (stdin closed) and a host that fails all leave the call
 refused. A second identical call finds the grant used and is judged as usual.
 The host's half (`hasGrants`, `grantUse`, `answerGrant`) is in
 `@operad-io/harness-process`, shared with `pi`.
+
+### Asking the agent's own question
+
+`AskUserQuestion` is a tool call the worker turns into one form for a person,
+not a permission: its questions and the person's answers are carried by
+`ask_form` and `ask_form_ack` (above), and the answers go back to claude as the
+permission result's `updatedInput.answers`, keyed by the question's text. A
+`multiSelect` answer is the labels joined with `, `. A question the person
+skipped is empty text, plus `annotations[question].unanswered: "skipped"` when
+the init line advertises `ask_user_question_unanswered_v1`. The profile does
+not refuse the tool. A form whose grace passes holds the call and the host ends
+the program, exactly as a call question does.
 
 ### Asking about a call
 

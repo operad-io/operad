@@ -24,9 +24,9 @@ The model's context stays the agent's: a reply continues with `resumeSession`, a
 
 The `transcript` section renders a tool call as a Markdown line (as `dev` shows a worker's activity), so no client changes. Thinking is recorded and shown, and a harness that does not give it (radian) shows none; radian's chats show tool lines only. A structured, collapsible block would need a structured kind in the display interface and is not part of this.
 
-### D4: Text arrives by the section's incremental read
+### D4: Text arrives as the live tail, pushed and readable
 
-Live text uses the incremental read of a live section (ADR 0019), not a separate stream. The text the current run has not finished writing reaches `serve` through the step's log: the run is not inside the `serve` process, so the `tail` of the `transcript` section is read from the log of the step that is running for this chat. The `tail` holds only entries not yet finished; finished ones are already facts. After a reconnect, the text already written for the current turn is returned with it.
+Live text uses the live section (ADR 0019), not a separate connection. The text the current run has not finished writing reaches `serve` through the step's log: the run is not inside the `serve` process, so the `tail` of the `transcript` section is read from the log of the step that is running for this chat. The `tail` holds only entries not yet finished; finished ones are already facts. The transcript's `tail` function returns that tail and status, so `serve` pushes it on the event stream as a `tail` event as the reply is written; a client may also read the same tail with the section's incremental read. After a reconnect, the text already written for the current turn is returned with the section.
 
 ### D5: Where entries come from
 
