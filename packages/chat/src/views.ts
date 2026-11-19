@@ -478,15 +478,40 @@ interface BuiltReply {
   readonly answerSequence?: number | undefined;
 }
 
-/** The replies already finished among `chunks`, in order. */
-function storedReplies(chunks: readonly Chunk[], messages: readonly Message[]): readonly BuiltReply[] {
+/** The assistant message a chunk ends with, when it has one. */
+function answerIn(chunk: Chunk): Message | undefined {
+  return chunk.facts
+    .map((fact) => (fact.type === MESSAGE_FACT ? messageFrom(fact) : undefined))
+    .find((message) => message?.role === "assistant");
+}
+
+/** The last answer before `sequence`, so a window's first reply still names its input. */
+function answerBefore(chunks: readonly Chunk[], sequence: number): number {
+  let previous = -1;
+  for (const chunk of chunks) {
+    const answer = answerIn(chunk);
+    if (answer === undefined) continue;
+    if (answer.sequence >= sequence) break;
+    previous = answer.sequence;
+  }
+  return previous;
+}
+
+/**
+ * The replies already finished among `chunks`, in order. `previousAnswer` is
+ * the answer before the first chunk, so a page or a read after a mark builds
+ * only the replies it carries while keeping an older reply's input right.
+ */
+function storedReplies(
+  chunks: readonly Chunk[],
+  messages: readonly Message[],
+  previousAnswer = -1,
+): readonly BuiltReply[] {
   const byId = new Map(messages.map((message) => [message.id, message]));
   const blocks: BuiltReply[] = [];
-  let previousAnswer = -1;
+  let previous = previousAnswer;
   for (const chunk of chunks) {
-    const answer = chunk.facts
-      .map((fact) => (fact.type === MESSAGE_FACT ? messageFrom(fact) : undefined))
-      .find((message) => message?.role === "assistant");
+    const answer = answerIn(chunk);
     if (answer === undefined) continue;
     const runId = answer.runId ?? chunk.runId;
     if (runId === undefined) continue;
@@ -500,7 +525,7 @@ function storedReplies(chunks: readonly Chunk[], messages: readonly Message[]): 
       : messages.filter(
           (message) =>
             message.role === "user" &&
-            message.sequence > previousAnswer &&
+            message.sequence > previous &&
             message.sequence < answer.sequence,
         );
     blocks.push({
@@ -514,7 +539,7 @@ function storedReplies(chunks: readonly Chunk[], messages: readonly Message[]): 
       chunk,
       answerSequence: answer.sequence,
     });
-    previousAnswer = answer.sequence;
+    previous = answer.sequence;
   }
   return blocks;
 }
@@ -629,7 +654,6 @@ function cutReply(reply: ReplyBlock, capBytes: number): ReplyBlock {
       return {
         ...entry,
         input: entry.input === null ? null : shorten(entry.input, capBytes),
-        output: { ...entry.output, text: "", truncated: true as const },
       };
     }
     return { ...entry, text: shorten(entry.text, capBytes) };
@@ -1372,8 +1396,17 @@ async function load(
     const blocks = chunks.flatMap((chunk) => rendered(chunk, speaker, ctx.home, chat.harness));
     const markdown = blocks.join("\n\n---\n\n");
     // The replies whose answer is after the mark, and the one still running.
-    const changed = storedReplies(finishedChunks, messages).filter(
-      (reply) => reply.answerSequence !== undefined && reply.answerSequence > since,
+    const sinceChunks = finishedChunks.filter((chunk) => {
+      const answer = answerIn(chunk);
+      return answer !== undefined && answer.sequence > since;
+    });
+    const firstSince = sinceChunks
+      .map((chunk) => answerIn(chunk)?.sequence)
+      .find((sequence): sequence is number => sequence !== undefined);
+    const changed = storedReplies(
+      sinceChunks,
+      messages,
+      firstSince === undefined ? -1 : answerBefore(finishedChunks, firstSince),
     );
     const replies = liveBlock === undefined ? changed : [...changed, liveBlock];
     const data = replyData(
@@ -1395,9 +1428,12 @@ async function load(
   const index = pages.findIndex((page) => page.after === after);
   const selected = pages[index < 0 ? 0 : index] ?? pages[0];
   const pageIndex = index < 0 ? 0 : index;
-  const onPage = new Set(selected?.chunks ?? []);
-  const onPageBlocks = storedReplies(finishedChunks, messages).filter(
-    (reply) => reply.chunk !== undefined && onPage.has(reply.chunk),
+  const pageChunks = selected?.chunks ?? [];
+  const firstOnPage = pageChunks[0]?.facts[0]?.sequence ?? Number.MAX_SAFE_INTEGER;
+  const onPageBlocks = storedReplies(
+    pageChunks,
+    messages,
+    answerBefore(finishedChunks, firstOnPage),
   );
   const pageReplies = pageIndex === pages.length - 1 && liveBlock !== undefined
     ? [...onPageBlocks, liveBlock]
