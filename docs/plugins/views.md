@@ -46,8 +46,9 @@ A filter is a named subset of a type's rows, by `state`:
 | `showScope` | `(ctx) => boolean` | no | Whether a list shows each row's `scope` beside its id because more than one namespace exists. Read once per list | `views.<t>: showScope: must be a function` |
 | `context` | `(ctx, object) => { used, window?, model? }` | no | Numbers a detail page shows beside the row, such as how full an agent's context is. It may read facts and may be slow; the kernel passes it through without reading it. A chat returns the last finished reply's context here | `views.<t>: context: must be a function` |
 | `skills` | `(ctx, object) => ViewSkill[]` | no | The skills an object offers as `/name` commands, such as a chat's. Each has a `name` and an optional `description`; the kernel passes them through without reading them. A chat returns its current skills here | `views.<t>: skills: must be a function` |
+| `live` | `(ctx, object) => { section, tail?, status? }` | no | The changing part of a live section, pushed on the event stream as it grows. The kernel passes `section`, `tail` and `status` through without reading them, in the same shapes `load` returns. A chat returns its unfinished reply here | `views.<t>: live: must be a function` |
 
-The `ctx` of `load`, `showScope`, `context` and `skills` is [the base context](define-plugin.md#the-context-every-hook-gets) plus `runTimes(runId)` (when a run started and ended and its steps and waits, in order), `settingsInForce(plugin)` (the plugin's settings as `config.json` has them now, so a view follows an edit without a restart) and `refreshedObject(type, id)` (an object after its `prepare` with the settings in force).
+The `ctx` of `load`, `showScope`, `context`, `skills` and `live` is [the base context](define-plugin.md#the-context-every-hook-gets) plus `runTimes(runId)` (when a run started and ended and its steps and waits, in order), `settingsInForce(plugin)` (the plugin's settings as `config.json` has them now, so a view follows an edit without a restart) and `refreshedObject(type, id)` (an object after its `prepare` with the settings in force).
 
 An object's `get` carries `skills` when its type declares the hook, beside the actions a client already reads. A client that does not know the field ignores it.
 
@@ -113,6 +114,10 @@ A section that grows (an agent's transcript) is read in two parts so a client do
 4. A plugin that does not implement `after` answers with the whole section and leaves `delta` out; the client replaces what it has. The kernel only reports a delta when the plugin said `delta: true` on a read that had an `after`.
 
 An `after` that is not a mark the section gave is refused: `section "<s>" of "<id>": "after" is not a mark this section gave; read the section once without "after" first`; one made for another section or object says which: `the mark was made for section "<s>" of "<type>:<id>"; read this section without "after" first`.
+
+### Pushing the changing part
+
+A type that supplies `live` pushes the changing part without a section read. The kernel calls it when the object's live content grows and sends a `live` event on the same stream as `events`: `{ "id", "live": { "type", "section", "tail"?, "status"? } }`. `tail` and `status` have the same meaning and shape as on a section read; `section` names the live section they belong to. The event carries no resume id and is not replayed, so a reconnecting client reads the section again. A type without `live` sends only id change events, and a client that does not know `live` ignores it.
 
 ### The history section
 

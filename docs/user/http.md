@@ -141,7 +141,10 @@ the first page has no cursor, every other page carries its own.
 A live section also carries `mark` and `tail`. `mark` is an opaque position of
 the finished content; `tail` is the Markdown of the part still changing (a chat's
 unfinished reply and thinking, a running tool call), the whole tail on each
-read. To append instead of replacing, pass `after=<mark>` from the last read:
+read. `serve` also pushes that `tail` on the event stream as a `live` event,
+so a client can render a running reply without reading the section again (see
+[Events](#events)). To append instead of replacing, pass `after=<mark>` from the
+last read:
 the answer's `markdown` then holds only the finished content after that mark,
 and `delta` is `true` when that is all it holds. A plugin that cannot answer
 with a delta answers a whole page and `delta` is `false`; the client replaces
@@ -345,7 +348,7 @@ Opening it in the app shows that object. Following the link's path
 
 ## Events
 
-`GET /v1/events` streams server-sent events. Each event is an object that
+`GET /v1/events` streams server-sent events. Each change event is an object that
 changed:
 
 ```text
@@ -354,7 +357,21 @@ data: {"id":"T-0019-http-api"}
 
 ```
 
-An `id:` is an opaque string. It changes on every event and starts with a
+A live section whose plugin pushes its changing part also sends `live` events on
+the same stream, with the same `tail` and `status` a section read returns:
+
+```text
+event: live
+data: {"id":"C-0042","live":{"type":"chat","section":"transcript","tail":"**Operad Bot:** I am writing","status":{"text":"Thinking","since":1767225600000}}}
+
+```
+
+A `live` event has no `id:` and is not replayed on a reconnect: the client reads
+the open live section again, including its current `tail`. A client that does not
+know `live` ignores it and keeps reading the section after each change event, as
+before.
+
+An `id:` is an opaque string. It changes on every change event and starts with a
 value the process chose at boot, so an id from an earlier `serve` is not
 resumable. A client that reconnects with `Last-Event-ID` receives the events it
 missed. When that id is older than the server still keeps, or comes from an
