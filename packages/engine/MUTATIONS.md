@@ -1239,3 +1239,9 @@ resume window`. Rows are append-only, so the old lines stay as history.
 |---|---|---|---|
 | T-0577-M1 | packages/engine/src/views/presentation.ts | `file` skipped the plugin's record check and served any file under the attachment directories | `the attachment route refuses a file the chat does not name, and one outside the chat` |
 | T-0577-M2 | packages/engine/src/plugin/validate.ts | a `file` view hook that was not a function passed validation | `plugin registry validation > rejects a views file check that is not a function` |
+
+## T-0579 — a line written before its run's log directory is watched
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0579-M1 | packages/engine/src/views/live-logs.ts | `ensureDirectories` took the directory's whole content as its baseline, so lines written before the watch opened were never announced | `a live log that grows without a fact > lines written before a missing directory is watched are announced when it appears` |

@@ -229,19 +229,33 @@ export class LiveLogWatch {
           runLogDirectory(this.options.storeRoot, plugin, watched.runId),
         ),
     );
-    for (const directory of [...watched.stops.keys()]) {
+    for (const directory of new Set([...watched.stops.keys(), ...watched.files.keys()])) {
       if (wanted.has(directory)) continue;
       this.stopDirectory(watched, directory);
     }
     for (const directory of wanted) {
       if (watched.stops.has(directory)) continue;
-      if (!isDirectory(directory)) continue;
+      const before = watched.files.get(directory);
+      if (!isDirectory(directory)) {
+        // An empty baseline: the first line a directory that is not there yet
+        // receives is growth, even when it lands before the watch is opened.
+        watched.files.set(directory, new Map());
+        continue;
+      }
+      // The snapshot is taken before the watch opens, so a write between the
+      // two is found by the fallback check instead of entering the baseline.
+      const after = snapshotOf(directory);
       const stop = this.options.watch(directory, (filename) =>
         this.grew(watched, directory, filename),
       );
       watched.stops.set(directory, stop);
-      // Existing lines are not growth: the run start already announced them.
-      watched.files.set(directory, snapshotOf(directory));
+      watched.files.set(directory, after);
+      // A directory the run start already had is not growth: that start
+      // announced the object. One that appeared later may hold lines no event
+      // has announced yet, so its first content is announced now.
+      if (before !== undefined && snapshotsDiffer(before, after)) {
+        this.options.onGrowth(watched.object);
+      }
     }
   }
 
