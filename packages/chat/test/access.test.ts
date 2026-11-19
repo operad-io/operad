@@ -1,8 +1,11 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { Views } from "@operad-io/engine";
+import { join } from "node:path";
+import { Views, type AskRequest, type StepContext } from "@operad-io/engine";
+import { readLiveAccess } from "@operad-io/access-match";
 import {
   ACCESS_FACT,
   ACCESS_LEVEL_INFO,
+  accessLevelPath,
   allMessages,
   CHAT_TYPE,
   chatData,
@@ -48,6 +51,48 @@ describe("chat:access", () => {
     ]);
     expect(chatData((await r.store.get(CHAT_TYPE, chat))?.data ?? {}).accessLevel).toBe("full");
     expect(chatViews.row((await r.store.get(CHAT_TYPE, chat)) as never).note).toBe("fake · full");
+  });
+
+  test("a change updates the live file a running reply reads, keeping its base profile", async () => {
+    const r = await rig(() => reply("ok"));
+    const chat = await r.chat({ access: { denyCommands: ["rm"] }, accessLevel: "ask", accessDefault: "ask" });
+    const file = accessLevelPath(join(r.root, "home"), chat);
+
+    await act(r, chat, { level: "full" });
+    expect(readLiveAccess(file)).toEqual({ access: { denyCommands: ["rm"] }, level: "full" });
+
+    await act(r, chat, { level: "edits" });
+    expect(readLiveAccess(file)).toEqual({ access: { denyCommands: ["rm"] }, level: "edits" });
+  });
+
+  test("a question open when the level rises is checked again under the new level", async () => {
+    const asked: AskRequest[] = [];
+    let checked: unknown;
+    const r = await rig(async (ctx: StepContext) => {
+      await ctx.ask({
+        prompt: "Let write use this path? /repo/a.ts",
+        choices: ["allow_once", "reject_once"],
+        resume: { session: "s", grant: { kind: "path", value: "/repo/a.ts", choice: "allow_once", tool: "write" } },
+      });
+      return reply("done");
+    });
+    const chat = await r.chat({ access: { readOnly: true }, accessLevel: "plan", accessDefault: "plan" });
+    await r.say(chat, "go");
+    const asker = {
+      async ask(request: AskRequest) {
+        asked.push(request);
+        await act(r, chat, { level: "full" });
+        checked = await request.recheck?.();
+        return { kind: "answered" as const, answer: { choice: checked === undefined ? "reject_once" : "allow_once" } };
+      },
+      async useGrant() {
+        return false;
+      },
+    };
+
+    expect((await r.round(chat, {}, asker)).result).toBe("done");
+    expect(asked).toHaveLength(1);
+    expect(checked).toEqual({ ask: false, note: "Full access", actor: { via: "cli", id: "me" } });
   });
 
   test("the row leaves the starting level out and shows a choice", async () => {

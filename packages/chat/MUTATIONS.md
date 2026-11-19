@@ -395,3 +395,10 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 |---|---|---|---|
 | T-0553-M1 | packages/chat/src/views.ts | a chat row dropped the scheduled origin it was given | `scheduled prompts > an entry fires on time, opens a new chat under the bot with its prompt, and the reply's notification carries a summary` (packages/bot/test/schedule.test.ts) |
 | T-0553-M2 | packages/chat/src/model.ts | `createChat` dropped the scheduled origin it was given | `scheduled prompts > an entry fires on time, opens a new chat under the bot with its prompt, and the reply's notification carries a summary` (packages/bot/test/schedule.test.ts) |
+
+## T-0558 — a chat's access level is live
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0558-M2 | packages/chat/src/index.ts | `chat:access` no longer wrote the live-level file | `chat:access > a change updates the live file a running reply reads, keeping its base profile` |
+| T-0558-M3 | packages/chat/src/reply.ts | `levelRecheck` returned no check, so an open question was not checked again | `chat:access > a question open when the level rises is checked again under the new level` |

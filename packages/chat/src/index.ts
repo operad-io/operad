@@ -2,7 +2,7 @@
 
 import pkg from "../package.json" with { type: "json" };
 import { defineFlow, definePlugin, isRecord, modelIds, type ActionArgsSchema, type ActionContext, type ActionTypeDefinition, type HarnessEfforts, type HarnessModels, type PluginFact, type UsageTokens } from "@operad-io/engine";
-import { ACCESS_LEVELS, isAccessLevel, type AccessLevel } from "@operad-io/access-match";
+import { ACCESS_LEVELS, isAccessLevel, updateLiveAccessLevel, type AccessLevel } from "@operad-io/access-match";
 import { stopKeptWorkers } from "@operad-io/engine/platform";
 import {
   CHAT_FILTERS,
@@ -16,6 +16,8 @@ import {
   chatRef,
   ACCESS_ACTION_REQUEST,
   ACCESS_FACT,
+  ACCESS_LEVEL_INFO,
+  accessLevelPath,
   CLOSED_FACT,
   COMMAND_FACT,
   costText,
@@ -48,6 +50,8 @@ import { runReply, WORKTREE_ALLOW_ALWAYS, WORKTREE_ALLOW_ONCE, WORKTREE_CHOICES,
 import { chatCommands, findCommand, helpText, parseCommand, runCommand } from "./command.ts";
 import { readChatSkills } from "./skills.ts";
 import { chatViews } from "./views.ts";
+
+export { ACCESS_LEVEL_INFO } from "./model.ts";
 
 /** How many rounds one reply run may take before it stops (each round is one visit). */
 export const REPLY_MAX_VISITS = 20;
@@ -366,26 +370,6 @@ const effortAction: ActionTypeDefinition = {
   },
 };
 
-/** What each level means, in the chat action's information and the row. */
-export const ACCESS_LEVEL_INFO: Readonly<Record<AccessLevel, { readonly title: string; readonly description: string }>> = {
-  plan: {
-    title: "Plan only",
-    description: "Read and run commands known to only read; a write asks.",
-  },
-  ask: {
-    title: "Ask each time",
-    description: "Every write and every command not known to only read asks.",
-  },
-  edits: {
-    title: "Accept edits",
-    description: "Write files in the working directory; a command not known to only read asks.",
-  },
-  full: {
-    title: "Full access",
-    description: "Skip every question the level adds; the profile's deny and ask rules still hold.",
-  },
-};
-
 function accessArgs(): ActionArgsSchema {
   return {
     type: "object",
@@ -468,6 +452,15 @@ const accessAction: ActionTypeDefinition = {
         ctx.object.id,
         { ...fresh.data, accessLevel: level },
         "action:chat/access",
+      );
+    }
+    // A reply already running reads this file again for each call. The file
+    // keeps the base profile, so the new level adds or removes only its own asks.
+    try {
+      await updateLiveAccessLevel(accessLevelPath(ctx.home, ctx.object.id), level, chat.access);
+    } catch (error) {
+      await ctx.logger.write(
+        `the live access level could not be written: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
     return `chat ${ctx.object.id} now uses access level ${level}; the next reply uses it`;

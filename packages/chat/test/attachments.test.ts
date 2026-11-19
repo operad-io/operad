@@ -170,7 +170,8 @@ describe("chat/reply with attachments", () => {
     const chat = await r.chat({ access: { denyPaths: ["/x"] } });
     await r.say(chat, "plain");
     await r.round(chat);
-    expect(seen[0]).toEqual({ ...defaultAccess(), denyPaths: [...(defaultAccess().denyPaths ?? []), "/x"], level: "ask" });
+    expect(seen[0]).toMatchObject({ ...defaultAccess(), denyPaths: [...(defaultAccess().denyPaths ?? []), "/x"], level: "ask" });
+    expect(String((seen[0] as Record<string, unknown>).levelFile)).toContain(`/chat/${chat}/access.json`);
     expect(withAttachmentReads({}, "/d")).toEqual({ readPaths: ["/d"] });
     expect(promptFor([])).toBe("");
   });
