@@ -189,3 +189,9 @@ and the row fields.
 |---|---|---|---|
 | T-0534-M1 | packages/harness/process/src/ask-call.ts | an outward question with a flow did not offer the target grant | `askRequest > an outward question with a flow offers the target grant, and either approving answer sends once` |
 | T-0534-M2 | packages/harness/process/src/ask-call.ts | a late target answer did not write its grant | `createCallAsker > a late target answer records the grant with the person who answered` |
+
+## T-0565 — a text entry keeps the time its log line carried
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0565-M1 | packages/harness/process/src/fold-lines.ts | `receivedAtOf` ignored the log line's received time, so a finished text entry carried none | `foldLines > a line's receivedAt gives a finished text its time, and old logs still read` |

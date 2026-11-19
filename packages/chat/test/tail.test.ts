@@ -384,7 +384,7 @@ describe("chat transcript: after, mark and tail", () => {
     expect(foldLogTail(path)?.state.text).toBe("wholewhole");
   });
 
-  test("a line's receivedAt does not change the fold", async () => {
+  test("a line's receivedAt gives a finished text its time", async () => {
     const r = await rig(() => reply("x"));
     const plain = text([{ type: "text_end", text: "same words" }, { type: "message_end", role: "assistant" }]);
     const stamped = text([
@@ -395,7 +395,8 @@ describe("chat transcript: after, mark and tail", () => {
     const stampedPath = logIn(r, "run-received-at");
     writeFileSync(plainPath, plain);
     writeFileSync(stampedPath, stamped);
-    expect(foldLogTail(stampedPath)?.state).toEqual(foldLogTail(plainPath)?.state);
+    expect(foldLogTail(plainPath)?.state.entries).toEqual([{ kind: "text", text: "same words" }]);
+    expect(foldLogTail(stampedPath)?.state.entries).toEqual([{ kind: "text", text: "same words", at: 1_000 }]);
   });
 
   test("a finished entry the facts already hold leaves the saved fold", async () => {

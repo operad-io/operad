@@ -215,8 +215,13 @@ A live section that pages over the message and entry facts, so the command line,
 the TUI and the app show a chat with no client change. A turn's entries show
 before its reply: one line per tool call with what ran and how long it took, how
 a failed, blocked or denied call ended, the agent's text with its speaker, and
-thinking as a block quote. A failed reply shows one line saying so and why, for
-every agent including radian. A stopped half reply is shown as stopped. Tool
+thinking as a block quote. A message sent during the turn is ordered with the
+entries by its time: entries whose time is earlier stay above it and those whose
+time is later go below it. A tool call's time is its start; a text or thinking
+part's time is when its log line was received. An entry with no time keeps the
+recorded order, so an older chat reads as before. The message that started the
+turn stays above all its entries. A failed reply shows one line saying so and
+why, for every agent including radian. A stopped half reply is shown as stopped. Tool
 output is not shown. Radian chats show the
 tool lines only otherwise. Pages count messages, and a turn's entries stay on
 the page of its reply. Every read also carries `context: { used, window?, model? }`,
