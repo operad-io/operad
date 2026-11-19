@@ -464,7 +464,7 @@ const accessAction: ActionTypeDefinition = {
         `the live access level could not be written: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
-    return `chat ${ctx.object.id} now uses access level ${level}; the next reply uses it`;
+    return `chat ${ctx.object.id} now uses access level ${level}; replies follow it`;
   },
 };
 

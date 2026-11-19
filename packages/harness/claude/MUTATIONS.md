@@ -288,3 +288,9 @@ setup it depends on, in the order they were recorded. The root
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0558-M6 | packages/harness/claude/src/worker.ts | `canUseTool` judged with the turn's startup profile | `a running worker reads the live level again for each call, so lowering asks` |
+
+## T-0560 — the live-level test runs the claude worker as a child
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0560-M1 | packages/harness/claude/src/worker.ts | `canUseTool` judged with the turn's startup profile | `a running worker reads the live level again for each call, so lowering asks` |

@@ -33,6 +33,7 @@ import {
 afterAll(cleanupTempRoots);
 
 const FAKE = fileURLToPath(new URL("./fake-codex-app-server.ts", import.meta.url));
+const STEP_WORKER = join(import.meta.dir, "step-worker.ts");
 
 const restores: Array<() => void> = [];
 afterEach(() => {
@@ -89,6 +90,37 @@ async function setup(
     settings: { codex: { command: [process.execPath, FAKE], ...(options.settings ?? {}) } },
   });
   return { root, clock, registry, record, marker, release };
+}
+
+interface StepOutput {
+  readonly result: PluginStepResult;
+  readonly asked: readonly string[];
+}
+
+/** The codex step in a real child process, for the tests that need one. */
+class StepChild {
+  readonly #process: Bun.Subprocess<"pipe", "pipe", "pipe">;
+
+  constructor(input: Record<string, unknown>) {
+    this.#process = Bun.spawn([process.execPath, STEP_WORKER], {
+      stdin: "pipe",
+      stdout: "pipe",
+      stderr: "pipe",
+      env: process.env,
+    });
+    this.#process.stdin.write(JSON.stringify(input));
+    void this.#process.stdin.end();
+  }
+
+  async finish(): Promise<StepOutput> {
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(this.#process.stdout).text(),
+      new Response(this.#process.stderr).text(),
+      this.#process.exited,
+    ]);
+    if (exitCode !== 0) throw new Error(`the step child failed (${exitCode}): ${stderr}`);
+    return JSON.parse(stdout.trim()) as StepOutput;
+  }
 }
 
 function dataOf(result: PluginStepResult): Record<string, unknown> {
@@ -383,27 +415,26 @@ describe("codex/agent: permissions", () => {
   });
 
   test("the live level file is read for the permission request, not only at the start", async () => {
-    const env = await setup("permission", { vars: { FAKE_CODEX_COMMAND: "touch hi" } });
+    const env = await setup("permission-gate", { vars: { FAKE_CODEX_COMMAND: "touch hi" } });
     const directory = join(env.root, "chat");
     mkdirSync(directory, { recursive: true });
     const levelFile = join(directory, "access.json");
     const base = { denyPaths: [directory] };
+    writeFileSync(levelFile, JSON.stringify({ access: base, level: "full" }));
+    const child = new StepChild({
+      root: env.root,
+      codex: [process.execPath, FAKE],
+      params: { prompt: "x", cwd: env.root },
+      access: { level: "full", levelFile, denyPaths: [directory] },
+    });
+    const running = child.finish();
+
+    // The turn has started at full. Lower the level before the permission request.
+    await waitForFile(env.marker);
     writeFileSync(levelFile, JSON.stringify({ access: base, level: "ask" }));
-    const asked: string[] = [];
-    const result = await runAgent(
-      env,
-      { prompt: "x", cwd: env.root },
-      {
-        access: { level: "full", levelFile, denyPaths: [directory] },
-        asker: {
-          ask: (request) => {
-            asked.push(request.prompt);
-            return Promise.resolve({ kind: "answered" as const, answer: { choice: "allow_once" } });
-          },
-          useGrant: () => Promise.resolve(false),
-        },
-      },
-    );
+    writeFileSync(env.release, "go");
+
+    const { result, asked } = await running;
     expect(result.result).toBe("done");
     expect(asked).toHaveLength(1);
     expect(asked[0]).toContain("touch hi");

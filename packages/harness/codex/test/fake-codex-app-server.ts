@@ -14,7 +14,8 @@
  * model-list probe's pid, and the file a non-empty answer waits for).
  *
  * Modes: `done`, `images` (two image generations), `permission`,
- * `permission-network`, `permission-edit`, `permission-legacy`,
+ * `permission-gate` (waits for the release before it asks), `permission-network`,
+ * `permission-edit`, `permission-legacy`,
  * `permission-legacy-edit`, `usage-limit`, `bad-model`,
  * `bad-effort`, `auth`, `cancel`, `cancel-ignored`, `silent-image`, `steer`,
  * `no-load` (a resume fails), `silent` (no line after the turn starts),
@@ -178,6 +179,7 @@ function finish(): void {
 }
 
 async function permissionTurn(): Promise<void> {
+  if (mode === "permission-gate") await waitForRelease(releasePath);
   if (mode === "permission-legacy" || mode === "permission-legacy-edit") {
     // The names Codex used before the item notifications.
     const legacyEdit = mode === "permission-legacy-edit";
@@ -369,6 +371,7 @@ async function runTurn(): Promise<void> {
       return;
     }
     case "permission":
+    case "permission-gate":
     case "permission-network":
     case "permission-edit":
     case "permission-legacy":
