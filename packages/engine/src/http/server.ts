@@ -11,6 +11,7 @@ import type { LogBackend } from "../log/types.ts";
 import { messageOf } from "../plugin/errors.ts";
 import type { PluginRegistry } from "../plugin/registry.ts";
 import type { Actor } from "../plugin/types.ts";
+import { looseAnswers } from "../plugin/question-form.ts";
 import type { Kernel } from "../trigger/kernel.ts";
 import { listPending } from "../views/pending.ts";
 import {
@@ -902,8 +903,18 @@ function createHandler(
       if (typeof waitId !== "string" || waitId.length === 0) {
         return errorResponse(400, "args", "the body needs a waitId");
       }
-      if (typeof choice !== "string" || choice.length === 0) {
-        return errorResponse(400, "args", "the body needs a choice");
+      const answers = body.answers;
+      if (answers !== undefined && !Array.isArray(answers)) {
+        return errorResponse(400, "args", "answers must be a list");
+      }
+      if (
+        (choice === undefined || typeof choice !== "string" || choice.length === 0) &&
+        answers === undefined
+      ) {
+        return errorResponse(400, "args", "the body needs a choice or answers");
+      }
+      if (choice !== undefined && (typeof choice !== "string" || choice.length === 0)) {
+        return errorResponse(400, "args", "choice must be a string");
       }
       const note = body.note;
       if (note !== undefined && typeof note !== "string") {
@@ -918,7 +929,10 @@ function createHandler(
         await options.views.answer({
           runId,
           waitId,
-          choice,
+          choice: typeof choice === "string" ? choice : undefined,
+          ...(answers === undefined
+            ? {}
+            : { answers: looseAnswers(answers) ?? [] }),
           ...(note === undefined ? {} : { note }),
           ...(confirmed === true ? { confirmed: true } : {}),
           surface: "http",

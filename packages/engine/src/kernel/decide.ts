@@ -1,7 +1,7 @@
 import { END, type FlowDefinition, type Step } from "../flow/types.ts";
 import type { FactCause, JsonValue } from "../log/types.ts";
 import { MAX_TRIGGER_HOPS } from "../trigger/types.ts";
-import type { Actor } from "../plugin/types.ts";
+import type { Actor, AskQuestion, AskQuestionAnswer } from "../plugin/types.ts";
 import type {
   Decision,
   Effect,
@@ -17,6 +17,7 @@ import type {
 } from "./types.ts";
 import { inputCause } from "./types.ts";
 import { storedChoiceInfo, type ChoiceInfoMap } from "../plugin/choice-info.ts";
+import { answersJson, normalizeAnswers, storedAnswers, storedQuestions } from "../plugin/question-form.ts";
 
 /** The default number of times a run may enter the same step. */
 export const DEFAULT_MAX_VISITS = 10;
@@ -63,6 +64,8 @@ interface AskedVia {
   readonly prompt: string;
   readonly choices: readonly string[];
   readonly choiceInfo: ChoiceInfoMap | undefined;
+  /** The form the step asked, when it asked one. */
+  readonly questions: readonly AskQuestion[] | undefined;
   readonly resume: JsonValue;
 }
 
@@ -72,7 +75,11 @@ interface AnsweredAsk {
   readonly step: string;
   readonly prompt: string;
   readonly resume: JsonValue;
-  readonly choice: string;
+  readonly choice: string | null;
+  /** The person's answer to each question, when the question was a form. */
+  readonly answers?: readonly AskQuestionAnswer[] | undefined;
+  /** The form the person answered, so a resumed step can name each answer. */
+  readonly questions?: readonly AskQuestion[] | undefined;
   readonly note: string | null;
   readonly actor: Actor | null;
 }
@@ -107,11 +114,35 @@ function resumedParams(base: JsonValue, answered: AnsweredAsk): JsonValue {
     ...(session === undefined ? {} : { resumeSession: session }),
     askAnswer: {
       prompt: answered.prompt,
-      choice: answered.choice,
+      ...(answered.choice === null ? {} : { choice: answered.choice }),
+      ...(answered.answers === undefined ? {} : { answers: answersJson(answered.answers) }),
+      ...(answered.questions === undefined ? {} : { questions: answered.questions as unknown as JsonValue }),
       ...(answered.note === null ? {} : { note: answered.note }),
       ...(answered.actor === null ? {} : { actor: { via: answered.actor.via, id: answered.actor.id } }),
     },
   };
+}
+
+/**
+ * The edge a form's answer takes in the wait step that caught the timeout: the
+ * one the asker named, else the answer's own choice when it is an edge, else
+ * the step's first choice that is an edge.
+ */
+function formEdge(
+  step: Step,
+  resume: JsonValue,
+  choice: string | undefined,
+): string | undefined {
+  const edges = edgesOf(step);
+  const named = isPlainRecord(resume) && typeof resume.choice === "string" ? resume.choice : undefined;
+  if (named !== undefined && edges[named] !== undefined) return named;
+  if (choice !== undefined && edges[choice] !== undefined) return choice;
+  if (step.kind === "wait_person") {
+    for (const candidate of step.params.choices) {
+      if (edges[candidate] !== undefined) return candidate;
+    }
+  }
+  return undefined;
 }
 
 /** The one-time permission the call the step asked about gets, if it named one. */
@@ -138,7 +169,7 @@ function grantsFrom(answered: AnsweredAsk): readonly Grant[] | undefined {
     }
   }
   if (approves.size === 0) approves.add("approve");
-  if (!approves.has(answered.choice)) return undefined;
+  if (answered.choice === null || !approves.has(answered.choice)) return undefined;
   return [
     {
       waitId: answered.waitId,
@@ -168,6 +199,7 @@ function askedIn(result: string, data: unknown): AskedVia | undefined {
     prompt: record.prompt,
     choices,
     choiceInfo: storedChoiceInfo(record.choiceInfo, choices),
+    questions: storedQuestions(record.questions),
     resume: (record.resume ?? null) as JsonValue,
   };
 }
@@ -350,12 +382,17 @@ export function decide(
         const waitId = asked?.waitId ?? `${step.id}:${visit}`;
         const own = [...step.params.choices];
         const allowed = new Set([...own, ...(step.params.lateChoices ?? [])]);
+        // A form shows its questions, never the choices of the wait step that
+        // caught the timeout.
+        const questions = asked?.questions;
         const choices =
-          asked !== undefined &&
-          asked.choices.length > 0 &&
-          asked.choices.every((choice) => allowed.has(choice))
+          questions !== undefined && questions.length > 0 && asked !== undefined
             ? [...asked.choices]
-            : own;
+            : asked !== undefined &&
+                asked.choices.length > 0 &&
+                asked.choices.every((choice) => allowed.has(choice))
+              ? [...asked.choices]
+              : own;
         const prompt = asked?.prompt ?? waitPrompt(step.params, via);
         const choiceInfo = storedChoiceInfo(
           asked?.choiceInfo ?? step.params.choiceInfo,
@@ -369,11 +406,18 @@ export function decide(
             prompt,
             choices,
             ...(choiceInfo === undefined ? {} : { choiceInfo }),
+            ...(questions === undefined ? {} : { questions }),
             waitKind: "step",
             effectId: null,
             ...(asked === undefined || via === undefined
               ? {}
-              : { ask: { step: via.step, resume: asked.resume } }),
+              : {
+                  ask: {
+                    step: via.step,
+                    resume: asked.resume,
+                    ...(questions === undefined ? {} : { questions }),
+                  },
+                }),
           },
           enteredSeq,
         );
@@ -555,21 +599,37 @@ export function decide(
 
     case "person_answer": {
       const wait = state.wait;
-      if (
-        state.status !== "waiting_person" ||
-        wait === null ||
-        wait.id !== input.waitId ||
-        !wait.choices.includes(input.choice)
-      ) {
+      const questions = wait?.questions;
+      const isForm = questions !== undefined && questions.length > 0;
+      const given = isForm ? storedAnswers(input.answers, questions) : undefined;
+      const lone = isForm && given === undefined && input.choice !== undefined && wait !== null && wait.choices.includes(input.choice);
+      const acceptable =
+        state.status === "waiting_person" &&
+        wait !== null &&
+        wait.id === input.waitId &&
+        (isForm
+          ? given !== undefined || lone
+          : input.choice !== undefined && wait.choices.includes(input.choice));
+      if (!acceptable) {
         return { facts, effects };
       }
+      const answers =
+        isForm && questions !== undefined && wait !== null
+          ? (given ??
+              normalizeAnswers(
+                [{ id: questions[0]?.id, choices: [input.choice] }],
+                questions,
+              ) ??
+              null)
+          : null;
       const answerSeq = push(
         "person_answered",
         {
           waitId: wait.id,
           step: wait.step,
-          choice: input.choice,
+          choice: input.choice ?? null,
           note: input.note ?? null,
+          ...(answers === null ? {} : { answers: answersJson(answers) }),
           waitKind: wait.kind,
           actor: { via: input.actor.via, id: input.actor.id },
           ...(wait.ask === undefined
@@ -579,6 +639,9 @@ export function decide(
                   step: wait.ask.step,
                   prompt: wait.prompt,
                   resume: wait.ask.resume,
+                  ...(wait.ask.questions === undefined
+                    ? {}
+                    : { questions: wait.ask.questions }),
                 },
               }),
         },
@@ -599,9 +662,19 @@ export function decide(
         endRun("failed", `unknown step ${wait.step}`, answerSeq);
         return { facts, effects };
       }
+      // A form's answer is not one of the wait step's choices: the edge it
+      // takes is the one the asker named, else the wait's first choice. The
+      // answer itself is what reaches the step that asked.
+      const edge = isForm
+        ? formEdge(step, wait.ask?.resume ?? null, input.choice)
+        : (input.choice as string);
+      if (edge === undefined) {
+        endRun("failed", "no edge for the answer to a form", answerSeq);
+        return { facts, effects };
+      }
       takeEdge(
         step,
-        input.choice,
+        edge,
         answerSeq,
         undefined,
         undefined,
@@ -612,7 +685,9 @@ export function decide(
               step: wait.ask.step,
               prompt: wait.prompt,
               resume: wait.ask.resume,
-              choice: input.choice,
+              choice: input.choice ?? null,
+              answers: answers === null ? undefined : answers,
+              ...(questions === undefined ? {} : { questions }),
               note: input.note ?? null,
               actor: { via: input.actor.via, id: input.actor.id },
             },

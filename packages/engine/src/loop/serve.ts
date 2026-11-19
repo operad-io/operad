@@ -6,6 +6,7 @@ import { StartRefusedError } from "../plugin/errors.ts";
 import type { PluginRegistry } from "../plugin/registry.ts";
 import type { RunLookup, StartRunRequest } from "../plugin/types.ts";
 import type { Input, PersonAnswerInput } from "../kernel/types.ts";
+import { looseAnswers } from "../plugin/question-form.ts";
 import { Kernel } from "../trigger/kernel.ts";
 import { loadTriggerRules } from "../trigger/rules.ts";
 import type { TriggerRule } from "../trigger/types.ts";
@@ -64,10 +65,13 @@ function recordedAnswer(payload: JsonValue): PersonAnswerInput | undefined {
   if (!isRecord(payload) || payload.kind !== "person_answer") return undefined;
   const waitId = payload.waitId;
   const choice = payload.choice;
+  const answers = payload.answers;
   const actor = payload.actor;
   if (
     typeof waitId !== "string" ||
-    typeof choice !== "string" ||
+    (choice !== undefined && typeof choice !== "string") ||
+    (answers !== undefined && !Array.isArray(answers)) ||
+    (choice === undefined && answers === undefined) ||
     !isRecord(actor) ||
     typeof actor.via !== "string" ||
     typeof actor.id !== "string"
@@ -77,7 +81,8 @@ function recordedAnswer(payload: JsonValue): PersonAnswerInput | undefined {
   return {
     kind: "person_answer",
     waitId,
-    choice,
+    ...(choice === undefined ? {} : { choice }),
+    ...(answers === undefined ? {} : { answers: looseAnswers(answers) ?? [] }),
     ...(typeof payload.note === "string" ? { note: payload.note } : {}),
     actor: { via: actor.via, id: actor.id },
   };

@@ -33,6 +33,27 @@ function number(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
+/** The person's answers as one line: each answer's labels or text, in order. */
+function answersLine(value: unknown): string | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const parts: string[] = [];
+  for (const raw of value) {
+    if (typeof raw !== "object" || raw === null || Array.isArray(raw)) continue;
+    const answer = raw as Record<string, unknown>;
+    if (answer.skipped === true) {
+      parts.push("(skipped)");
+      continue;
+    }
+    const labels = Array.isArray(answer.choices)
+      ? answer.choices.filter((label): label is string => typeof label === "string")
+      : [];
+    const typed = typeof answer.text === "string" && answer.text.length > 0 ? answer.text : undefined;
+    const one = [...labels, ...(typed === undefined ? [] : [typed])].join(", ");
+    if (one.length > 0) parts.push(one);
+  }
+  return parts.length === 0 ? undefined : parts.join("; ");
+}
+
 function iso(time: number): string {
   return new Date(time).toISOString();
 }
@@ -172,11 +193,15 @@ export function historyEntry(fact: HistoryFact): HistoryEntry {
       if (note !== undefined) whyParts.push(note);
       if (via !== undefined) whyParts.push(`via ${via}`);
       if (id !== undefined) whyParts.push(`as ${id}`);
+      const answered = answersLine(payload.answers);
       return {
         time,
         step,
-        what: `you chose ${text(payload.choice) ?? "an answer"}`,
-        why: whyParts.join(", "),
+        what:
+          answered === undefined
+            ? `you chose ${text(payload.choice) ?? "an answer"}`
+            : "you answered the questions",
+        why: answered === undefined ? whyParts.join(", ") : [answered, ...whyParts].join(", "),
         ...(via === undefined || id === undefined
           ? {}
           : { actor: { via, id } }),
@@ -200,11 +225,15 @@ export function historyEntry(fact: HistoryFact): HistoryEntry {
       if (note !== undefined) whyParts.push(note);
       if (via !== undefined) whyParts.push(`via ${via}`);
       if (id !== undefined) whyParts.push(`as ${id}`);
+      const answered = answersLine(payload.answers);
       return {
         time,
         step,
-        what: `you chose ${text(payload.choice) ?? "an answer"}`,
-        why: whyParts.join(", "),
+        what:
+          answered === undefined
+            ? `you chose ${text(payload.choice) ?? "an answer"}`
+            : "you answered the questions",
+        why: answered === undefined ? whyParts.join(", ") : [answered, ...whyParts].join(", "),
         ...(via === undefined || id === undefined
           ? {}
           : { actor: { via, id } }),

@@ -1,4 +1,4 @@
-import type { ChoiceInfo } from "./types.ts";
+import type { AskQuestion, ChoiceInfo } from "./types.ts";
 
 /** A plugin cannot be loaded or used; the message names the plugin and field. */
 export class PluginError extends Error {
@@ -50,6 +50,8 @@ export class AskTimeoutError extends Error {
   readonly prompt: string;
   readonly choices: readonly string[];
   readonly choiceInfo: Readonly<Record<string, ChoiceInfo>> | undefined;
+  /** The form the step asked, when it asked one. */
+  readonly questions: readonly AskQuestion[] | undefined;
   readonly resume: unknown;
 
   constructor(question: {
@@ -57,6 +59,7 @@ export class AskTimeoutError extends Error {
     readonly prompt: string;
     readonly choices: readonly string[];
     readonly choiceInfo?: Readonly<Record<string, ChoiceInfo>> | undefined;
+    readonly questions?: readonly AskQuestion[] | undefined;
     readonly resume: unknown;
   }) {
     super(`nobody answered "${question.prompt}" in time`);
@@ -65,6 +68,7 @@ export class AskTimeoutError extends Error {
     this.prompt = question.prompt;
     this.choices = question.choices;
     this.choiceInfo = question.choiceInfo;
+    this.questions = question.questions;
     this.resume = question.resume;
   }
 }

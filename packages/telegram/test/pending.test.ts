@@ -31,7 +31,7 @@ function actionInfo(plugin: string, action: string, noteRequired: boolean): View
 class StubClient {
   items: PendingItem[] = [];
   readonly acts: { name: string; id: string | undefined; note?: string | undefined; actor: unknown }[] = [];
-  readonly answers: { runId: string; waitId: string; choice: string; note?: string | undefined; actor: unknown }[] = [];
+  readonly answers: { runId: string; waitId: string; choice: string | undefined; note?: string | undefined; actor: unknown }[] = [];
   /** Refuse every act and answer, as the client does for an item already answered. */
   refuse = false;
   /** What the history section of a chat reads. */

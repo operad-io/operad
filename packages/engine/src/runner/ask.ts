@@ -15,6 +15,8 @@ import type { JsonValue, LogBackend } from "../log/types.ts";
 import type {
   Actor,
   AskOutcome,
+  AskQuestion,
+  AskQuestionAnswer,
   AskRequest,
   StepAsker,
 } from "../plugin/types.ts";
@@ -23,6 +25,16 @@ import type { Grant, KernelState } from "../kernel/types.ts";
 import { useGrant } from "./grants.ts";
 import { isRecord } from "../util.ts";
 import { choiceInfoJson, storedChoiceInfo, type ChoiceInfoMap } from "../plugin/choice-info.ts";
+import {
+  answersJson,
+  answersProblem,
+  formChoices,
+  normalizeAnswers,
+  questionsJson,
+  questionsProblem,
+  storedAnswers,
+  storedQuestions,
+} from "../plugin/question-form.ts";
 
 /** How often a waiting step looks again when no change was announced. */
 const RECHECK_MS = 1000;
@@ -41,9 +53,12 @@ export const realAskTimer: AskTimer = (ms, fire) => {
 export type AskStatus = "open" | "answered" | "timed_out";
 
 export interface AskedAnswer {
-  readonly choice: string;
+  /** The one answer a question of choices takes; absent for a form's answer. */
+  readonly choice: string | undefined;
   readonly note: string | undefined;
   readonly actor: Actor;
+  /** The person's answer to each question, when the question was a form. */
+  readonly answers: readonly AskQuestionAnswer[] | undefined;
 }
 
 /** One question as the facts of its run tell it. */
@@ -54,6 +69,8 @@ export interface AskRecord {
   readonly prompt: string;
   readonly choices: readonly string[];
   readonly choiceInfo: ChoiceInfoMap | undefined;
+  /** The form the step asked, when it asked one. */
+  readonly questions: readonly AskQuestion[] | undefined;
   readonly status: AskStatus;
   readonly answer: AskedAnswer | undefined;
 }
@@ -70,15 +87,23 @@ function actorOf(value: unknown): Actor | undefined {
   return { via: value.via, id: value.id };
 }
 
-function answerOf(payload: Record<string, JsonValue>): AskedAnswer | undefined {
+function answerOf(
+  payload: Record<string, JsonValue>,
+  questions: readonly AskQuestion[] | undefined,
+): AskedAnswer | undefined {
   const actor = actorOf(payload.actor);
-  if (actor === undefined || typeof payload.choice !== "string") {
-    return undefined;
-  }
+  if (actor === undefined) return undefined;
+  const choice = typeof payload.choice === "string" ? payload.choice : undefined;
+  const answers =
+    questions === undefined || questions.length === 0
+      ? undefined
+      : storedAnswers(payload.answers, questions);
+  if (choice === undefined && answers === undefined) return undefined;
   return {
-    choice: payload.choice,
+    choice,
     note: typeof payload.note === "string" ? payload.note : undefined,
     actor,
+    answers,
   };
 }
 
@@ -125,6 +150,7 @@ export async function scanAsks(
         prompt: payload.prompt,
         choices,
         choiceInfo: storedChoiceInfo(payload.choiceInfo, choices),
+        questions: storedQuestions(payload.questions),
         status: "open",
         answer: undefined,
       });
@@ -136,7 +162,7 @@ export async function scanAsks(
       asks.set(waitId, { ...existing, status: "timed_out" });
       continue;
     }
-    const answer = answerOf(payload);
+    const answer = answerOf(payload, existing.questions);
     if (answer !== undefined) {
       asks.set(waitId, { ...existing, status: "answered", answer });
     }
@@ -189,6 +215,7 @@ async function claimedAnswer(
   log: LogBackend,
   runId: string,
   waitId: string,
+  questions: readonly AskQuestion[] | undefined,
 ): Promise<AskedAnswer | undefined> {
   // The input id is made from the source and the key, so one lookup finds it.
   const input = await log.findInput(
@@ -198,7 +225,7 @@ async function claimedAnswer(
   if (!isRecord(input.payload) || input.payload.kind !== "ask_answer") {
     return undefined;
   }
-  return answerOf(input.payload);
+  return answerOf(input.payload, questions);
 }
 
 function answeredFact(waitId: string, answer: AskedAnswer): FactSpec {
@@ -206,8 +233,9 @@ function answeredFact(waitId: string, answer: AskedAnswer): FactSpec {
     kind: "ask_answered",
     payload: {
       waitId,
-      choice: answer.choice,
+      choice: answer.choice ?? null,
       note: answer.note ?? null,
+      ...(answer.answers === undefined ? {} : { answers: answersJson(answer.answers) }),
       actor: { via: answer.actor.via, id: answer.actor.id },
     },
   };
@@ -225,7 +253,7 @@ export async function settleAsk(
   const { asks } = await scanAsks(log, runId);
   const record = asks.get(waitId);
   if (record === undefined || record.status !== "open") return record;
-  const claimed = await claimedAnswer(log, runId, waitId);
+  const claimed = await claimedAnswer(log, runId, waitId, record.questions);
   if (claimed === undefined) return record;
   await appendWhen(log, runId, (current) =>
     current.get(waitId)?.status === "open" ? [answeredFact(waitId, claimed)] : [],
@@ -251,9 +279,52 @@ export interface AnswerAskOptions {
   readonly runId: string;
   readonly state: KernelState;
   readonly ask: AskRecord;
-  readonly choice: string;
+  /** The one choice a question of choices takes; absent for a form's answer. */
+  readonly choice: string | undefined;
   readonly note?: string | undefined;
+  /** The person's answer to each question, for a form. */
+  readonly answers?: unknown;
   readonly actor: Actor;
+}
+
+/** What a person's answer to one question says, checked against the question. */
+function resolvedAnswer(
+  runId: string,
+  ask: AskRecord,
+  choice: string | undefined,
+  answers: unknown,
+): { readonly choice: string | undefined; readonly answers: readonly AskQuestionAnswer[] | undefined } {
+  const questions = ask.questions;
+  if (questions === undefined || questions.length === 0) {
+    if (choice === undefined) {
+      throw new StateError(`run ${runId}: this question takes a choice`);
+    }
+    if (ask.choices.length > 0 && !ask.choices.includes(choice)) {
+      throw new StateError(
+        `run ${runId}: "${choice}" is not one of ${ask.choices
+          .map((item) => `"${item}"`)
+          .join(", ")}`,
+      );
+    }
+    return { choice, answers: undefined };
+  }
+  const problem = answersProblem(answers, questions);
+  if (problem !== undefined) {
+    throw new StateError(`run ${runId}: answers: ${problem}`);
+  }
+  if (answers !== undefined) {
+    return { choice, answers: normalizeAnswers(answers, questions) };
+  }
+  // A client that cannot draw the form answers the one question it was shown.
+  if (choice !== undefined && questions.length === 1 && ask.choices.includes(choice)) {
+    return {
+      choice,
+      answers: normalizeAnswers([{ id: questions[0]?.id, choices: [choice] }], questions),
+    };
+  }
+  throw new StateError(
+    `run ${runId}: this question is a form; it needs one answer per question`,
+  );
 }
 
 /**
@@ -263,13 +334,7 @@ export interface AnswerAskOptions {
  */
 export async function answerAsk(options: AnswerAskOptions): Promise<void> {
   const { log, runId, ask, choice, actor } = options;
-  if (ask.choices.length > 0 && !ask.choices.includes(choice)) {
-    throw new StateError(
-      `run ${runId}: "${choice}" is not one of ${ask.choices
-        .map((item) => `"${item}"`)
-        .join(", ")}`,
-    );
-  }
+  const resolved = resolvedAnswer(runId, ask, choice, options.answers);
   const refuse = async (reason: string): Promise<never> => {
     // An ended run takes no more facts; the answer is just not taken.
     if (options.state.status === "ended") {
@@ -280,7 +345,7 @@ export async function answerAsk(options: AnswerAskOptions): Promise<void> {
         kind: "ask_refused",
         payload: {
           waitId: ask.waitId,
-          choice,
+          choice: choice ?? null,
           actor: { via: actor.via, id: actor.id },
           reason,
         },
@@ -303,8 +368,9 @@ export async function answerAsk(options: AnswerAskOptions): Promise<void> {
   const payload: Record<string, JsonValue> = {
     kind: "ask_answer",
     waitId: ask.waitId,
-    choice,
+    choice: resolved.choice ?? null,
     note: options.note ?? null,
+    ...(resolved.answers === undefined ? {} : { answers: answersJson(resolved.answers) }),
     actor: { via: actor.via, id: actor.id },
   };
   const claim = await log.recordInput(
@@ -316,7 +382,12 @@ export async function answerAsk(options: AnswerAskOptions): Promise<void> {
   if (claim.duplicate) {
     throw new StateError(`run ${runId}: already answered`);
   }
-  const answer: AskedAnswer = { choice, note: options.note, actor };
+  const answer: AskedAnswer = {
+    choice: resolved.choice,
+    note: options.note,
+    actor,
+    answers: resolved.answers,
+  };
   const written = await appendWhen(log, runId, (asks) =>
     asks.get(ask.waitId)?.status === "open" ? [answeredFact(ask.waitId, answer)] : [],
   );
@@ -402,7 +473,11 @@ export class AskHost {
     signal: AbortSignal | undefined,
   ): Promise<AskOutcome> {
     const waitId = askWaitId(runId, effectId, n);
-    const choices = [...(request.choices ?? [])];
+    const questions = request.questions;
+    // A form shows one question's labels to a client that cannot draw it, so
+    // such a client still answers with a choice; the kernel derives them.
+    const choices =
+      questions === undefined ? [...(request.choices ?? [])] : formChoices(questions);
     const choiceInfo = storedChoiceInfo(request.choiceInfo, choices);
     const grace = narrowest(request.graceSecs, this.graceSecs);
 
@@ -421,6 +496,9 @@ export class AskHost {
                 ...(choiceInfo === undefined
                   ? {}
                   : { choiceInfo: choiceInfoJson(choiceInfo) }),
+                ...(questions === undefined
+                  ? {}
+                  : { questions: questionsJson(questions) }),
               },
             },
           ],
@@ -447,6 +525,9 @@ export class AskHost {
               ...(record.answer.note === undefined
                 ? {}
                 : { note: record.answer.note }),
+              ...(record.answer.answers === undefined
+                ? {}
+                : { answers: record.answer.answers }),
               actor: record.answer.actor,
             },
           };
@@ -460,6 +541,9 @@ export class AskHost {
             ...(record.choiceInfo === undefined
               ? {}
               : { choiceInfo: record.choiceInfo }),
+            ...(record.questions === undefined
+              ? {}
+              : { questions: record.questions }),
           };
         }
         if (request.recheck !== undefined) {

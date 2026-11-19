@@ -61,6 +61,7 @@ export {
   whereFingerprint,
 } from "./paging.ts";
 export * from "./types.ts";
+export * from "./question-form.ts";
 export * from "./object-facts.ts";
 export * from "./harness.ts";
 export * from "./usage.ts";

@@ -3,7 +3,8 @@
 import type { FlowDefinition } from "../flow/types.ts";
 import type { KernelState } from "../kernel/types.ts";
 import type { JsonValue, LogBackend } from "../log/types.ts";
-import type { Actor } from "../plugin/types.ts";
+import type { Actor, AskQuestion, AskQuestionAnswer } from "../plugin/types.ts";
+import { answersProblem, normalizeAnswers } from "../plugin/question-form.ts";
 import { answerAsk, answerableAsks, scanAsks } from "./ask.ts";
 import { StateError } from "./errors.ts";
 import { applyInput, readState } from "./service.ts";
@@ -12,7 +13,10 @@ export interface AnswerOptions {
   readonly log: LogBackend;
   readonly flow: FlowDefinition;
   readonly runId: string;
-  readonly choice: string;
+  /** The one choice a question of choices takes; absent for a form's answer. */
+  readonly choice: string | undefined;
+  /** The person's answer to each question, when the question was a form. */
+  readonly answers?: readonly AskQuestionAnswer[] | undefined;
   readonly note?: string | undefined;
   readonly actor: Actor;
   readonly clock?: (() => number) | undefined;
@@ -30,7 +34,9 @@ export interface RecordAnswerOptions {
    * answer to a question that is closed is refused and recorded.
    */
   readonly waitId?: string | undefined;
-  readonly choice: string;
+  readonly choice: string | undefined;
+  /** The person's answer to each question, when the question was a form. */
+  readonly answers?: readonly AskQuestionAnswer[] | undefined;
   readonly note?: string | undefined;
   readonly actor: Actor;
 }
@@ -39,29 +45,47 @@ export interface RecordAnswerOptions {
 export interface RecordedAnswerPayload {
   readonly kind: "person_answer";
   readonly waitId: string;
-  readonly choice: string;
+  readonly choice: string | undefined;
+  readonly answers?: readonly AskQuestionAnswer[] | undefined;
   readonly note?: string | undefined;
   readonly actor: { readonly via: string; readonly id: string };
 }
 
 function answerInput(
   runId: string,
-  choice: string,
+  choice: string | undefined,
+  answers: readonly AskQuestionAnswer[] | undefined,
   note: string | undefined,
   actor: Actor,
-): (wait: { readonly id: string; readonly choices: readonly string[] }) => RecordedAnswerPayload {
+): (wait: {
+  readonly id: string;
+  readonly choices: readonly string[];
+  readonly questions?: readonly AskQuestion[] | undefined;
+}) => RecordedAnswerPayload {
   return (wait) => {
-    if (!wait.choices.includes(choice)) {
+    if (choice === undefined && answers === undefined) {
+      throw new StateError(`run ${runId}: an answer needs a choice or answers`);
+    }
+    if (choice !== undefined && wait.choices.length > 0 && !wait.choices.includes(choice)) {
       throw new StateError(
         `run ${runId}: "${choice}" is not one of ${wait.choices
           .map((item) => `"${item}"`)
           .join(", ")}`,
       );
     }
+    const questions = wait.questions;
+    const problem =
+      answers === undefined || questions === undefined
+        ? undefined
+        : answersProblem(answers, questions);
+    if (problem !== undefined) {
+      throw new StateError(`run ${runId}: answers: ${problem}`);
+    }
     return {
       kind: "person_answer",
       waitId: wait.id,
       choice,
+      ...(answers === undefined ? {} : { answers: normalizeAnswers(answers, questions ?? []) }),
       ...(note === undefined ? {} : { note }),
       actor: { via: actor.via, id: actor.id },
     };
@@ -100,6 +124,7 @@ export async function recordAnswer(options: RecordAnswerOptions): Promise<void> 
       state,
       ask,
       choice: options.choice,
+      ...(options.answers === undefined ? {} : { answers: options.answers }),
       ...(options.note === undefined ? {} : { note: options.note }),
       actor: options.actor,
     });
@@ -108,13 +133,14 @@ export async function recordAnswer(options: RecordAnswerOptions): Promise<void> 
   const payload = answerInput(
     options.runId,
     options.choice,
+    options.answers,
     options.note,
     options.actor,
   )(wait);
   await options.log.recordInput(
     options.runId,
     "person",
-    `${options.runId}:answer:${wait.id}:${options.choice}`,
+    `${options.runId}:answer:${wait.id}:${options.choice ?? "answers"}`,
     payload as unknown as JsonValue,
   );
 }
@@ -128,7 +154,13 @@ export async function answerRun(options: AnswerOptions): Promise<KernelState> {
   }
   // Check the choice before recording anything, exactly as a recorded answer
   // does; the payload built here is the one `decide` applies.
-  answerInput(options.runId, options.choice, options.note, options.actor)(wait);
+  answerInput(
+    options.runId,
+    options.choice,
+    options.answers,
+    options.note,
+    options.actor,
+  )(wait);
 
   const now = (options.clock ?? (() => Date.now()))();
   const result = await applyInput(
@@ -139,13 +171,14 @@ export async function answerRun(options: AnswerOptions): Promise<KernelState> {
     {
       kind: "person_answer",
       waitId: wait.id,
-      choice: options.choice,
+      ...(options.choice === undefined ? {} : { choice: options.choice }),
+      ...(options.answers === undefined ? {} : { answers: options.answers }),
       ...(options.note === undefined ? {} : { note: options.note }),
       actor: options.actor,
     },
     now,
     "person",
-    `answer:${wait.id}:${options.choice}`,
+    `answer:${wait.id}:${options.choice ?? "answers"}`,
     {
       beforeEnd: async (runId, ended) => {
         await options.onEnded?.(runId, ended);
