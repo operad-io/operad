@@ -1129,18 +1129,12 @@ export async function runScheduleCommand(
   });
 }
 
-/** The actions on a proposal. */
+/**
+ * The actions on a proposal. Approve comes first, so it is the main button of a
+ * client; review is last because a proposal's Review section already shows what
+ * it returns, and it stays for the command line and MCP.
+ */
 export const proposalActions: readonly ActionTypeDefinition[] = [
-  {
-    name: "review",
-    on: PROPOSAL_TYPE,
-    when: (state) => state.state === "pending",
-    async run(ctx) {
-      const object = await ctx.store.get(PROPOSAL_TYPE, ctx.object.id);
-      if (object === undefined) throw new BotError(`there is no proposal "${ctx.object.id}"`);
-      return proposalReview(object);
-    },
-  },
   {
     name: "approve",
     on: PROPOSAL_TYPE,
@@ -1155,6 +1149,16 @@ export const proposalActions: readonly ActionTypeDefinition[] = [
     when: (state) => state.state === "pending",
     async run(ctx) {
       return rejectProposal(ctx.store, ctx.object.id);
+    },
+  },
+  {
+    name: "review",
+    on: PROPOSAL_TYPE,
+    when: (state) => state.state === "pending",
+    async run(ctx) {
+      const object = await ctx.store.get(PROPOSAL_TYPE, ctx.object.id);
+      if (object === undefined) throw new BotError(`there is no proposal "${ctx.object.id}"`);
+      return proposalReview(object);
     },
   },
 ];

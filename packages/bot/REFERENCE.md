@@ -109,12 +109,14 @@ schedule in words; `remove` takes the name and the schedule in words. An empty
 the schedule in words and as cron, the prompt, the model and the effort, and no
 entry is written before a person approves it.
 
-Each proposal is one pending item of its bot, with the actions `Review`,
-`approve` and `reject`. `Review` shows the change: the full `SKILL.md`, the file
-list with scripts apart and, for a changed skill, the diff; a settings proposal
-shows the settings before and after. `approve` applies the change and `reject`
-leaves every file and setting as it was. Nothing changes until the person acts,
-and an unanswered proposal neither changes anything nor blocks the chat.
+Each proposal is one pending item of its bot, with the actions `approve`,
+`reject` and `Review`, in that order: a client's main button is `approve`. The
+proposal's Review section already shows the change, so `Review` stays for the
+command line and MCP. `Review` shows the full `SKILL.md`, the file list with
+scripts apart and, for a changed skill, the diff; a settings proposal shows the
+settings before and after. `approve` applies the change and `reject` leaves
+every file and setting as it was. Nothing changes until the person acts, and an
+unanswered proposal neither changes anything nor blocks the chat.
 
 An approved skill is on disk before the approval returns, so the bot's next
 reply reads it (`bot/settings` already reads `config.json` again at every
@@ -144,13 +146,14 @@ echo '{"mcpServers":{"notes":{"command":"npx","args":["-y","@acme/notes-mcp@1.2.
 
 An agent with operad's MCP tools calls the `command` tool the same way as for
 a skill. Registering is a pending item of the bot, never applied without a
-person (`Review`, `approve`, `reject`). `Review` lists the command, the package
-and its pinned version, the tools the server offers (name and description) and
-the secrets it needs, and says that **approving trusts the package**: it runs on
-your machine as you and nothing contains it yet (there is no shell). The tools
-are read by starting the server once, in the bot's working directory with a bare
-environment (`PATH`, `HOME`, `TMPDIR`, `LANG`) and the bot's access profile
-applied to the command; a server that does not start is not proposed.
+person (`approve`, `reject`, `Review`, in that order). `Review` lists the
+command, the package and its pinned version, the tools the server offers (name
+and description) and the secrets it needs, and says that **approving trusts the
+package**: it runs on your machine as you and nothing contains it yet (there is
+no shell). The tools are read by starting the server once, in the bot's working
+directory with a bare environment (`PATH`, `HOME`, `TMPDIR`, `LANG`) and the
+bot's access profile applied to the command; a server that does not start is
+not proposed.
 
 - **Pinned versions only.** A package runner (`npx`, `bunx`, `pnpm dlx`, `uvx`,
   …) must name an exact version, `name@1.2.3`. `@latest`, a tag, a range

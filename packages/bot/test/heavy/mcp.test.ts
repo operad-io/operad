@@ -127,9 +127,9 @@ describe("registering a local MCP server", () => {
     const items = await r.registry.standing();
     expect(items).toHaveLength(1);
     expect(items[0]?.actions).toEqual([
-      { plugin: "bot", action: "review" },
       { plugin: "bot", action: "approve" },
       { plugin: "bot", action: "reject" },
+      { plugin: "bot", action: "review" },
     ]);
     const [item] = await pending(r);
     expect(item?.text).toContain("npx -y fake-notes@1.2.3");

@@ -159,6 +159,21 @@ describe("the show Markdown", () => {
     expect(shown).toContain("## Owner actions");
     expect(shown).toContain("- `demo:auto`: the owner runs it");
   });
+
+  test("keeps a proposal's action order: approve, reject, then review", () => {
+    const actions = [
+      action({ plugin: "bot", action: "approve", name: "bot:approve" }),
+      action({ plugin: "bot", action: "reject", name: "bot:reject" }),
+      action({ plugin: "bot", action: "review", name: "bot:review" }),
+    ];
+    const shown = showMarkdown(object({ actions }));
+    expect(shown.indexOf("- `bot:approve`")).toBeLessThan(
+      shown.indexOf("- `bot:reject`"),
+    );
+    expect(shown.indexOf("- `bot:reject`")).toBeLessThan(
+      shown.indexOf("- `bot:review`"),
+    );
+  });
 });
 
 describe("a plugin value as text", () => {
@@ -239,6 +254,19 @@ describe("the pending Markdown", () => {
     expect(text).toContain("## run-2 (other)");
     expect(text).toContain("- step: -");
     expect(text).toContain("\n\n## run-2 (other)");
+  });
+
+  test("keeps a proposal's action order: approve, reject, then review", () => {
+    const text = pendingMarkdown([
+      item({
+        actions: [
+          { plugin: "bot", action: "approve" },
+          { plugin: "bot", action: "reject" },
+          { plugin: "bot", action: "review" },
+        ],
+      }),
+    ]);
+    expect(text).toContain("- actions: bot:approve, bot:reject, bot:review");
   });
 });
 
