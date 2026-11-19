@@ -12,7 +12,7 @@ type Rig = Awaited<ReturnType<typeof rig>>;
 async function pushed(
   r: Rig,
   chat: string,
-): Promise<Awaited<ReturnType<NonNullable<typeof chatViews.live>>> | undefined> {
+): Promise<Awaited<ReturnType<NonNullable<typeof chatViews.tail>>> | undefined> {
   const object = await r.store.get("chat", chat);
   if (object === undefined) throw new Error("no chat");
   const ctx = {
@@ -27,8 +27,8 @@ async function pushed(
     },
     runTimes: async () => ({ startedAt: 1, endedAt: null, segments: [] }),
   } as unknown as ViewContext;
-  const live = chatViews.live;
-  if (live === undefined) throw new Error("the chat type pushes no live part");
+  const live = chatViews.tail;
+  if (live === undefined) throw new Error("the chat type pushes no tail");
   return live(ctx, object);
 }
 
@@ -61,7 +61,7 @@ async function whileRunning(
   return during;
 }
 
-describe("the chat's live push", () => {
+describe("the chat's pushed tail", () => {
   test("the text being written is the same tail the section shows", async () => {
     const live = await whileRunning([
       { type: "text_delta", text: "I am " },

@@ -227,18 +227,15 @@ export interface ViewSectionPage {
 export interface ViewEvent {
   readonly id: string;
   /**
-   * The changing part of a live section, pushed as its own event while the
-   * section grows. It is not part of the resume window: a reconnecting client
-   * reads the section again. A client that does not know it ignores it.
+   * The object type when this is a pushed tail event, with the live section's
+   * `section`, whole current `tail` and `status`. A tail event is not part of
+   * the resume window: a reconnecting client reads the section again. A client
+   * that does not know it ignores it.
    */
-  readonly live?:
-    | {
-        readonly type: string;
-        readonly section: string;
-        readonly tail?: string | undefined;
-        readonly status?: SectionStatus | undefined;
-      }
-    | undefined;
+  readonly type?: string | undefined;
+  readonly section?: string | undefined;
+  readonly tail?: string | undefined;
+  readonly status?: SectionStatus | undefined;
 }
 
 /** Why a presentation call refused. */
@@ -567,9 +564,9 @@ class EventStream implements AsyncIterable<ViewEvent> {
     if (this.closed) return;
     // A live push is its own event; a later change of the same object does not
     // replace it, and a later live push replaces the earlier one.
-    const key = event.live === undefined
+    const key = event.section === undefined
       ? event.id
-      : `live:${event.live.type}:${event.id}`;
+      : `tail:${event.type}:${event.id}`;
     if (this.pending.size >= this.max && !this.pending.has(key)) {
       const oldest = this.pending.keys().next().value;
       if (oldest !== undefined) this.pending.delete(oldest);
@@ -2835,7 +2832,7 @@ export class Views {
    */
   private publish(ref: ObjectRef, growth = false): void {
     const key = `${ref.type}:${ref.id}`;
-    const live = this.registry.viewsFor(ref.type)?.views.live;
+    const live = this.registry.viewsFor(ref.type)?.views.tail;
     if (live !== undefined && growth) {
       // A newer growth makes an older live computation stale.
       this.liveGenerations.set(key, (this.liveGenerations.get(key) ?? 0) + 1);
@@ -2924,11 +2921,11 @@ export class Views {
       .then((event) => {
         if (this.closed) return;
         if (this.liveGenerations.get(key) !== generation) return;
-        if (event?.live !== undefined) this.announce(event);
+        if (event?.section !== undefined) this.announce(event);
       })
       .catch((error: unknown) => {
         this.onLog(
-          `live "${key}" failed: ${messageOf(error)}`,
+          `tail "${key}" failed: ${messageOf(error)}`,
         );
       });
   }
@@ -2936,13 +2933,13 @@ export class Views {
   /** The plugin's live part, or undefined when it is gone or has nothing to say. */
   private async liveEvent(ref: ObjectRef): Promise<ViewEvent | undefined> {
     const owner = this.registry.viewsFor(ref.type);
-    const live = owner?.views.live;
+    const live = owner?.views.tail;
     if (owner === undefined || live === undefined) return undefined;
     let object: StoredObject | undefined;
     try {
       object = await this.store.get(ref.type, ref.id);
     } catch (error) {
-      this.onLog(`live "${ref.type}:${ref.id}": ${messageOf(error)}`);
+      this.onLog(`tail "${ref.type}:${ref.id}": ${messageOf(error)}`);
       return undefined;
     }
     if (object === undefined) return undefined;
@@ -2970,16 +2967,14 @@ export class Views {
       if (tail === undefined && status === undefined) return undefined;
       return {
         id: ref.id,
-        live: {
-          type: ref.type,
-          section,
-          ...(tail === undefined ? {} : { tail }),
-          ...(status === undefined ? {} : { status }),
-        },
+        type: ref.type,
+        section,
+        ...(tail === undefined ? {} : { tail }),
+        ...(status === undefined ? {} : { status }),
       };
     } catch (error) {
       this.onLog(
-        `plugin "${owner.plugin}": live for "${ref.type}:${ref.id}" failed: ${messageOf(error)}`,
+        `plugin "${owner.plugin}": tail for "${ref.type}:${ref.id}" failed: ${messageOf(error)}`,
       );
       return undefined;
     } finally {

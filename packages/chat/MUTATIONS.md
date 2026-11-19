@@ -455,3 +455,11 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 | T-0570-M1 | packages/chat/src/views.ts | `livePush` left the `tail` out of the pushed part | `the chat's live push > the text being written is the same tail the section shows` |
 | T-0570-M2 | packages/chat/src/views.ts | `livePush` flattened the pushed tail onto one line, so thinking lost its quote lines | `the chat's live push > thinking being written is a block quote` |
 | T-0570-M3 | packages/chat/src/views.ts | `toolMarkdown` dropped a finished tool call's duration from the pushed tail | `the chat's live push > a tool call ending replaces its start with how long it took` |
+
+## T-0570 rework — the pushed tail
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0570-M4 | packages/chat/src/views.ts | `tailPush` left the `tail` out of the pushed part | `the chat's pushed tail > the text being written is the same tail the section shows` |
+| T-0570-M5 | packages/chat/src/views.ts | `tailPush` flattened the pushed tail onto one line, so thinking lost its quote lines | `the chat's pushed tail > thinking being written is a block quote` |
+| T-0570-M6 | packages/chat/src/views.ts | `toolMarkdown` dropped a finished tool call's duration from the pushed tail | `the chat's pushed tail > a tool call ending replaces its start with how long it took` |

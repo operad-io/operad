@@ -876,7 +876,7 @@ function objectReader(ctx: ViewContext): ObjectReader {
  * is the same tail and status a section read returns, without the finished
  * content, so a client renders what the reply writes as it arrives.
  */
-async function livePush(
+async function tailPush(
   ctx: ViewContext,
   object: StoredObject,
 ): Promise<{ readonly section: string; readonly tail?: string; readonly status?: SectionStatus } | undefined> {
@@ -898,6 +898,6 @@ export const chatViews: ObjectViews = {
   context: chatContext,
   skills: async (ctx, object) =>
     skillSummaries(await readChatSkills(chatData(object.data), objectReader(ctx))),
-  live: livePush,
+  tail: tailPush,
   load,
 };

@@ -292,7 +292,7 @@ export interface ObjectViews {
    * reading them, in the same shapes a section read uses. Absent: the type
    * pushes no live part and an event carries only the object id.
    */
-  readonly live?:
+  readonly tail?:
     | ((
         ctx: ViewContext,
         object: StoredObject,

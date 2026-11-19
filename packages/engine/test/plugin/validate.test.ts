@@ -6,6 +6,7 @@ import {
   normalizeActionArgs,
   PluginError,
   PluginRegistry,
+  type ObjectViews,
 } from "../../src/index.ts";
 import { cleanupTempRoots, def, tempRoot } from "./support.ts";
 
@@ -59,6 +60,27 @@ describe("plugin registry validation", () => {
     );
     expect(error.message).toContain('plugin "odd"');
     expect(error.message).toContain("kind");
+  });
+
+  test("rejects a views tail that is not a function", () => {
+    const error = errorOf(
+      () =>
+        new PluginRegistry([
+          def({
+            name: "a",
+            objects: [{ name: "thing" }],
+            views: {
+              thing: {
+                row: (object) => ({ id: object.id, title: "Thing", state: "new" }),
+                sections: () => [],
+                load: () => ({ markdown: "" }),
+                tail: "no" as unknown as NonNullable<ObjectViews["tail"]>,
+              },
+            },
+          }),
+        ]),
+    );
+    expect(error.message).toContain("views.thing: tail: must be a function");
   });
 
   test("rejects an object type another plugin already owns", () => {

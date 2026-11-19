@@ -206,66 +206,6 @@ const first = { type: "text_delta", text: "first " };
 const second = { type: "text_delta", text: "second" };
 
 describe("a running reply is pushed over the event stream", () => {
-  test("text, thinking and a tool call are the same tail the section returns", async () => {
-    const arrived = channel<string>();
-    const gate = gates();
-    const lines: readonly Record<string, unknown>[] = [
-      { type: "text_delta", text: "Hello" },
-      { type: "thinking_delta", text: "hmm\nwell" },
-      {
-        type: "tool_execution_start",
-        toolCallId: "t1",
-        toolName: "Bash",
-        at: Date.UTC(2026, 10, 12, 9, 5, 7),
-        input: "ls -la",
-      },
-      {
-        type: "tool_execution_end",
-        toolCallId: "t1",
-        toolName: "Bash",
-        isError: false,
-        durationMs: 1_200,
-      },
-    ];
-    const script: Script = async (ctx) => {
-      arrived.push("ready");
-      await gate.hold("write");
-      for (const line of lines) await ctx.logger.write(JSON.stringify(line));
-      arrived.push("wrote");
-      await gate.hold("finish");
-      return reply("done");
-    };
-    const r = await makeRig(script);
-    let events: Awaited<ReturnType<typeof openSse>> | undefined;
-    try {
-      const running = r.run();
-      expect(await arrived.next()).toBe("ready");
-      events = await openSse(r);
-      gate.release("write");
-      expect(await arrived.next()).toBe("wrote");
-      for (;;) {
-        const event = await events.next();
-        if (event.event !== "live") continue;
-        const body = bodyOf(event);
-        if (body.id !== r.chat) continue;
-        const live = body.live as Record<string, unknown> | undefined;
-        expect(live?.type).toBe("chat");
-        expect(live?.section).toBe("transcript");
-        const tail = live?.tail;
-        if (typeof tail !== "string") continue;
-        if (!tail.includes("**Operad Bot:** Hello")) continue;
-        expect(tail).toContain("> hmm\n> well");
-        expect(tail).toContain("tool Bash 1s `ls -la`");
-        break;
-      }
-      gate.release("finish");
-      await running;
-    } finally {
-      await events?.cancel();
-      await r.close();
-    }
-  }, 30_000);
-
   test("a client re-reading the tail and a client using the push each receive the line from the fake harness", async () => {
     const measure = async (push: boolean): Promise<number> => {
       const arrived = channel<number>();
@@ -294,12 +234,11 @@ describe("a running reply is pushed over the event stream", () => {
             try {
               for (;;) {
                 const event = await reader.next();
-                if (event.event === "live") {
+                if (event.event === "tail") {
                   if (!push) continue;
                   const body = bodyOf(event);
                   if (body.id !== r.chat) continue;
-                  const live = body.live as Record<string, unknown> | undefined;
-                  if (typeof live?.tail === "string" && live.tail.includes("second")) {
+                  if (typeof body.tail === "string" && body.tail.includes("second")) {
                     resolve(performance.now());
                     return;
                   }

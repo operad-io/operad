@@ -234,7 +234,7 @@ export class EventHub {
   }
 
   private publish(value: ViewEvent): void {
-    if (value.live !== undefined) {
+    if (value.section !== undefined) {
       // A live part is for the clients connected now; it is not replayed on a
       // reconnect, where the section read gives the whole current tail again.
       this.notify({ kind: "live", event: value });
@@ -468,8 +468,8 @@ function formatEvent(entry: EventEntry): string {
   return `id: ${entry.event}\ndata: ${JSON.stringify({ id: entry.id })}\n\n`;
 }
 
-function formatLiveEvent(event: ViewEvent): string {
-  return `event: live\ndata: ${JSON.stringify({ id: event.id, live: event.live })}\n\n`;
+function formatTailEvent(event: ViewEvent): string {
+  return `event: tail\ndata: ${JSON.stringify(event)}\n\n`;
 }
 
 const RESET_EVENT = "event: reset\ndata: {}\n\n";
@@ -538,7 +538,7 @@ export function eventResponse(
       else for (const entry of snapshot.replay) push(formatEvent(entry));
       unsubscribe = hub.subscribe((event) => {
         if (event.kind === "reset") push(RESET_EVENT);
-        else if (event.kind === "live") push(formatLiveEvent(event.event));
+        else if (event.kind === "live") push(formatTailEvent(event.event));
         else push(formatEvent(event.entry));
       }, finish);
       untrack = track(token, finish);

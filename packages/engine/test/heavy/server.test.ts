@@ -339,8 +339,10 @@ async function readUntilDone(
   return ended;
 }
 
+type PushedTail = Pick<ViewEvent, "type" | "section" | "tail" | "status">;
+
 type SourceItem =
-  | { readonly kind: "event"; readonly id: string; readonly live?: ViewEvent["live"] }
+  | { readonly kind: "event"; readonly id: string; readonly tail?: PushedTail }
   | { readonly kind: "error"; readonly error: Error }
   | { readonly kind: "end" };
 
@@ -369,8 +371,8 @@ class ControlledSource {
     };
   };
 
-  push(id: string, live?: ViewEvent["live"]): void {
-    this.items.push({ kind: "event", id, ...(live === undefined ? {} : { live }) });
+  push(id: string, tail?: PushedTail): void {
+    this.items.push({ kind: "event", id, ...(tail === undefined ? {} : { tail }) });
     this.wake();
   }
 
@@ -409,7 +411,7 @@ class ControlledSource {
     if (item === undefined) return { done: true, value: undefined };
     if (item.kind === "error") throw item.error;
     if (item.kind === "end") return { done: true, value: undefined };
-    return { done: false, value: { id: item.id, ...(item.live === undefined ? {} : { live: item.live }) } };
+    return { done: false, value: { id: item.id, ...(item.tail ?? {}) } };
   }
 
   private wake(): void {
@@ -1485,7 +1487,7 @@ describe("http server", () => {
     }
   });
 
-  test("a live part is its own event and is not part of the resume window", async () => {
+  test("a pushed tail is its own event and is not part of the resume window", async () => {
     const source = new ControlledSource();
     const hub = new EventHub(source.source, 10, () => undefined);
     const stream = openSse(hubStream(hub));
@@ -1496,20 +1498,18 @@ describe("http server", () => {
         tail: "being written",
         status: { text: "Thinking", since: 1_700_000_000_000 },
       });
-      const [live] = await stream.next();
-      expect(live?.event).toBe("live");
-      expect(live?.id).toBeUndefined();
-      expect(JSON.parse(live?.data ?? "{}")).toEqual({
+      const [pushed] = await stream.next();
+      expect(pushed?.event).toBe("tail");
+      expect(pushed?.id).toBeUndefined();
+      expect(JSON.parse(pushed?.data ?? "{}")).toEqual({
         id: "item",
-        live: {
-          type: "item",
-          section: "log",
-          tail: "being written",
-          status: { text: "Thinking", since: 1_700_000_000_000 },
-        },
+        type: "item",
+        section: "log",
+        tail: "being written",
+        status: { text: "Thinking", since: 1_700_000_000_000 },
       });
 
-      // A change after it has an id; the live part before that id is not replayed.
+      // A change after it has an id; the pushed tail before that id is not replayed.
       source.push("item");
       const [change] = await stream.next();
       expect(change?.id).toBeDefined();
