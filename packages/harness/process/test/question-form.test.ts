@@ -55,6 +55,23 @@ test("a question with no text is left out, so no answer could match it", () => {
   expect(askQuestions([{ id: "a", text: "   " }])).toEqual([]);
 });
 
+test("a harness's long text is cut to the kernel's bounds, not refused", () => {
+  const form = askQuestions([
+    {
+      id: "a",
+      text: "x".repeat(700),
+      header: "h".repeat(60),
+      choices: [{ label: "l".repeat(120), description: "d".repeat(400) }],
+    },
+  ]);
+  const question = form[0];
+  expect(question?.text.length).toBe(500);
+  expect(question?.text.endsWith("…")).toBe(true);
+  expect(question?.header?.length).toBe(40);
+  expect(question?.choices?.[0]?.label.length).toBe(80);
+  expect(question?.choices?.[0]?.description?.length).toBe(280);
+});
+
 test("the request carries the form's text and no choices of its own", () => {
   const form = askQuestions([
     { id: "a", text: "One?" },

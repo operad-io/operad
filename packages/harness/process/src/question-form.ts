@@ -11,6 +11,12 @@
  */
 
 import type { AskQuestion, AskQuestionAnswer, AskQuestionChoice, AskRequest } from "@operad-io/engine";
+import {
+  MAX_QUESTION_CHOICE_DESCRIPTION,
+  MAX_QUESTION_CHOICE_LABEL,
+  MAX_QUESTION_HEADER,
+  MAX_QUESTION_TEXT,
+} from "@operad-io/engine";
 
 /** One choice a harness's agent offered. */
 export interface HarnessQuestionChoice {
@@ -36,6 +42,12 @@ function isOther(label: string): boolean {
   return label.trim().toLowerCase() === "other";
 }
 
+/** Long text is cut to the kernel's bound instead of making the form invalid. */
+function cut(text: string, max: number): string {
+  if (text.length <= max) return text;
+  return `${text.slice(0, max - 1)}…`;
+}
+
 /**
  * The kernel's form from a harness's questions. An empty id becomes `q<n>`, a
  * duplicate id gets a suffix, and an empty choice label or question text is
@@ -46,7 +58,7 @@ export function askQuestions(questions: readonly HarnessQuestion[]): AskQuestion
   const used = new Set<string>();
   const form: AskQuestion[] = [];
   for (const [index, question] of questions.entries()) {
-    const text = question.text.trim();
+    const text = cut(question.text.trim(), MAX_QUESTION_TEXT);
     if (text.length === 0) continue;
     const base = question.id.trim().length > 0 ? question.id.trim() : `q${index + 1}`;
     let id = base;
@@ -54,14 +66,14 @@ export function askQuestions(questions: readonly HarnessQuestion[]): AskQuestion
     used.add(id);
     const choices: AskQuestionChoice[] = [];
     for (const choice of question.choices ?? []) {
-      const label = choice.label.trim();
+      const label = cut(choice.label.trim(), MAX_QUESTION_CHOICE_LABEL);
       if (label.length === 0 || isOther(label)) continue;
       if (choices.some((existing) => existing.label === label)) continue;
       choices.push({
         label,
         ...(choice.description === undefined || choice.description.trim().length === 0
           ? {}
-          : { description: choice.description.trim() }),
+          : { description: cut(choice.description.trim(), MAX_QUESTION_CHOICE_DESCRIPTION) }),
       });
     }
     form.push({
@@ -69,7 +81,7 @@ export function askQuestions(questions: readonly HarnessQuestion[]): AskQuestion
       text,
       ...(question.header === undefined || question.header.trim().length === 0
         ? {}
-        : { header: question.header.trim() }),
+        : { header: cut(question.header.trim(), MAX_QUESTION_HEADER) }),
       ...(choices.length === 0 ? {} : { choices }),
       ...(question.multiple === true ? { multiple: true } : {}),
       ...(question.freeText === true || (question.choices ?? []).some((choice) => isOther(choice.label))
