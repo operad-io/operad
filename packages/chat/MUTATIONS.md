@@ -404,3 +404,10 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 | T-0558-M3 | packages/chat/src/reply.ts | `levelRecheck` returned no check, so an open question was not checked again | `chat:access > a question open when the level rises is checked again under the new level` |
 | T-0558-M8 | packages/chat/src/reply.ts | `levelRecheck` compared the new level with the reply's start level instead of the level the question was opened under | `chat:access > a question opened after a lowering is lifted when the level returns to the reply's start` |
 | T-0558-M9 | packages/chat/src/reply.ts | `withLevelFileDeny` left the chat directory out of `denyPaths`, so an agent could write its own live level file | `chat:access > every level denies its own live level file to write, edit and a bash redirect` |
+
+## T-0560 — follow-ups for the live access level
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0560-M1 | packages/chat/src/reply.ts | `levelRecheck` lifted a question when the new level still asked about it | `chat:access > a question opened after a lowering stays open when the new level still asks` |
+| T-0560-M2 | packages/chat/src/index.ts | `chat:access` said the next reply would use the level, not that replies follow it | `chat:access > the next reply uses the changed level, and the history says who changed it and to what` |

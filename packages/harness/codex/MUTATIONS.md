@@ -123,3 +123,9 @@ recorded. The root [MUTATIONS.md](../../../MUTATIONS.md) explains the format and
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0558-M7 | packages/harness/codex/src/index.ts | the permission request used the startup profile instead of the live one | `codex/agent: permissions > the live level file is read for the permission request, not only at the start` |
+
+## T-0560 — the live-level test runs the codex step as a child
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0560-M1 | packages/harness/codex/src/index.ts | the permission request used the startup profile instead of the live one | `codex/agent: permissions > the live level file is read for the permission request, not only at the start` |

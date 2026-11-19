@@ -40,7 +40,8 @@ describe("chat:access", () => {
     expect(r.calls[0]?.access).toMatchObject({ level: "ask" });
     expect(chatViews.row((await r.store.get(CHAT_TYPE, chat)) as never).note).toBe("fake");
 
-    await act(r, chat, { level: "full" });
+    const changed = await act(r, chat, { level: "full" });
+    expect(String(changed.value)).toBe(`chat ${chat} now uses access level full; replies follow it`);
     await r.say(chat, "two");
     await r.round(chat);
     expect(r.calls[1]?.access).toMatchObject({ level: "full" });
@@ -164,6 +165,42 @@ describe("chat:access", () => {
       expect((await r.round(chat, {}, asker)).result).toBe("done");
       expect(checked).toEqual([{ ask: false, note: item.note, actor: { via: "cli", id: "me" } }]);
     }
+  });
+
+  test("a question opened after a lowering stays open when the new level still asks", async () => {
+    const asked: AskRequest[] = [];
+    let beforeAsk: () => Promise<void> = async () => undefined;
+    const r = await rig(async (ctx: StepContext) => {
+      await beforeAsk();
+      await ctx.ask({
+        prompt: "Run this command? touch hi",
+        choices: ["allow_once", "reject_once"],
+        resume: { session: "s", grant: { kind: "command", value: "touch hi", choice: "allow_once" } },
+      });
+      return reply("done");
+    });
+    const chat = await r.chat({ accessLevel: "full", accessDefault: "full" });
+    beforeAsk = async () => {
+      await act(r, chat, { level: "edits" });
+    };
+    await r.say(chat, "go");
+    const checked: unknown[] = [];
+    const asker = {
+      async ask(request: AskRequest) {
+        asked.push(request);
+        await act(r, chat, { level: "ask" });
+        const check = await request.recheck?.();
+        checked.push(check);
+        return { kind: "answered" as const, answer: { choice: "reject_once" } };
+      },
+      async useGrant() {
+        return false;
+      },
+    };
+
+    expect((await r.round(chat, {}, asker)).result).toBe("done");
+    expect(asked).toHaveLength(1);
+    expect(checked).toEqual([{ ask: true }]);
   });
 
   test("the row leaves the starting level out and shows a choice", async () => {

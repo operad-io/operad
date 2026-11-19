@@ -65,8 +65,10 @@ function toRun(stdout: string, stderr: string, exitCode: number, recordFile: str
 class ProcessChild {
   readonly #process: Bun.Subprocess<"pipe", "pipe", "pipe">;
   readonly #waiters = new Set<() => void>();
+  readonly #listeners: Array<(line: Line) => void> = [];
   #stdout = "";
   #stderr = "";
+  #lines = "";
   readonly #stdoutDone: Promise<void>;
   readonly #stderrDone: Promise<void>;
 
@@ -88,7 +90,18 @@ class ProcessChild {
   async #readStdout(stream: ReadableStream<Uint8Array>): Promise<void> {
     const decoder = new TextDecoder();
     for await (const chunk of stream) {
-      this.#stdout += decoder.decode(chunk, { stream: true });
+      const text = decoder.decode(chunk, { stream: true });
+      this.#stdout += text;
+      this.#lines += text;
+      for (;;) {
+        const newline = this.#lines.indexOf("\n");
+        if (newline === -1) break;
+        const line = this.#lines.slice(0, newline);
+        this.#lines = this.#lines.slice(newline + 1);
+        if (!line.startsWith("{")) continue;
+        const parsed = JSON.parse(line) as Line;
+        for (const listener of this.#listeners) listener(parsed);
+      }
       for (const wake of this.#waiters) wake();
       this.#waiters.clear();
     }
@@ -120,6 +133,11 @@ class ProcessChild {
 
   endInput(): void {
     void this.#process.stdin.end();
+  }
+
+  /** Calls `listener` with each stdout line the child writes from now on. */
+  onLine(listener: (line: Line) => void): void {
+    this.#listeners.push(listener);
   }
 
   /** Waits for the first stdout line of this type, or the end of the child. */
@@ -1616,7 +1634,8 @@ test("a running worker reads the live level again for each call, so lowering ask
   writeFileSync(levelFile, JSON.stringify({ access: base, level: "full" }));
   s.input["access"] = { level: "full", levelFile, denyPaths: [directory] };
 
-  const child = new Child(
+  const child = new ProcessChild(
+    FAKE_WORKER,
     s.env({
       steps: [
         { say: systemInit() },
