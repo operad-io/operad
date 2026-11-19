@@ -160,9 +160,10 @@ describe("chat transcript: after, mark and tail", () => {
     const run = "run-retry-without-time";
     const path = agentLogPath(r.store.root, "fake", run);
     mkdirSync(join(path, ".."), { recursive: true });
+    // A later stamped line gives the log a `lastAt`; the retry's own line has none.
     writeFileSync(
       path,
-      `${JSON.stringify({ type: "retry_start", attempt: 1, maxAttempts: 3, delayMs: 2_000, reason: "overloaded" })}\n`,
+      `${JSON.stringify({ type: "retry_start", attempt: 1, maxAttempts: 3, delayMs: 2_000, reason: "overloaded" })}\n${JSON.stringify({ type: "journal", note: "still waiting", receivedAt: 1_700_000_000_000 })}\n`,
     );
     await r.store.append({ type: RUN_FACT, object: { type: "chat", id: chat }, cause: "test", data: { runId: run } });
     const page = await view(r, chat);
