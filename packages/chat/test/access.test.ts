@@ -281,11 +281,13 @@ describe("a form a chat's agent asks", () => {
     const asked: AskRequest[] = [];
     const r = await rig(async (ctx: StepContext) => {
       const answer = await ctx.ask({
-        prompt: "How should it load?",
+        // The question's own words read like a write question; a form is still
+        // not about one call.
+        prompt: "Run this command?",
         questions: [
           {
-            id: "loader",
-            text: "How should it load?",
+            id: "runner",
+            text: "Run this command?",
             choices: [{ label: "Built-in", description: "use the built-in loader" }],
           },
         ],
@@ -300,7 +302,7 @@ describe("a form a chat's agent asks", () => {
         asked.push(request);
         return {
           kind: "answered" as const,
-          answer: { choice: undefined, answers: [{ id: "loader", choices: ["Built-in"] }] },
+          answer: { choice: undefined, answers: [{ id: "runner", choices: ["Built-in"] }] },
         };
       },
       async useGrant() {
@@ -312,7 +314,7 @@ describe("a form a chat's agent asks", () => {
     expect(outcome.result).toBe("done");
     // The question reached the person as the agent asked it, not as a call.
     expect(asked).toHaveLength(1);
-    expect(asked[0]?.prompt).toBe("How should it load?");
+    expect(asked[0]?.prompt).toBe("Run this command?");
     expect(asked[0]?.questions).toHaveLength(1);
     // The form carries no choices of its own: its questions have them.
     expect(asked[0]?.choices).toBeUndefined();

@@ -426,3 +426,9 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0566-M1 | packages/chat/src/views.ts | `runChunks` kept a message the reply did not name in the reply's items | `the transcript places a message sent during a reply by its time > stored: a message the run did not take stays out of the reply's items and waits below it` |
+
+## T-0569 — a form question is never the worktree question
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0569-M10 | packages/chat/src/reply.ts | `isWriteQuestion` and `questionedCall` did not recognise a form, so a form whose text reads like a write question became the worktree question | `a form a chat's agent asks > it is never turned into the worktree question, and its answers reach the harness` |

@@ -1148,3 +1148,12 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0561-M1 | packages/engine/src/plugin/sqlite-store.ts | `gone` checked only the database file, so an I/O error after the `-wal` and `-shm` were removed did not stop the poll | `a poll stops when the store's -wal and -shm are removed` |
+
+## T-0569 — a question's form, with an answer per question
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0569-M1 | packages/engine/src/plugin/question-form.ts | `normalizeAnswers` dropped a question's picked labels, so an answer read as skipped | `a form a step asks > the pending item carries the questions and their choices` |
+| T-0569-M2 | packages/engine/src/kernel/decide.ts | `wait_person` left `questions` out of the `waiting_for_person` payload, so the item lost its form after the grace | `a form a step asks > a form the grace passed keeps its questions and reaches the step again` |
+| T-0569-M3 | packages/engine/src/runner/ask.ts | the ask host kept no choices for a form instead of the one question's labels | `a form a step asks > the pending item carries the questions and their choices` |
+| T-0569-M4 | packages/engine/src/runner/ask.ts | `answerAsk` ignored what `answersProblem` said and recorded an answer the form did not offer | `a form a step asks > a form of two questions needs one answer per question` |
