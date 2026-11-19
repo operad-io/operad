@@ -119,6 +119,14 @@ describe("chat transcript: after, mark and tail", () => {
     expect(during.tail).toBe("> hmm\n> well");
   });
 
+  test("text being written keeps its lines and their Markdown", async () => {
+    const { during } = await whileRunning([
+      { type: "text_delta", text: "First paragraph.\n\n" },
+      { type: "text_delta", text: "- one\n- two\n" },
+    ]);
+    expect(during.tail).toBe("**Operad Bot:** First paragraph.\n\n- one\n- two");
+  });
+
   test("a tool call that started and did not end is one line with its start", async () => {
     const { during } = await whileRunning([
       start("t1", "Bash", "ls -la", Date.UTC(2026, 10, 12, 9, 5, 7)),

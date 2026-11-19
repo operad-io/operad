@@ -426,3 +426,10 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0566-M1 | packages/chat/src/views.ts | `runChunks` kept a message the reply did not name in the reply's items | `the transcript places a message sent during a reply by its time > stored: a message the run did not take stays out of the reply's items and waits below it` |
+
+## T-0567 — running and intermediate text keep their lines
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0567-M1 | packages/chat/src/views.ts | the live tail flattened the text being written again | `chat transcript: after, mark and tail > text being written keeps its lines and their Markdown` |
+| T-0567-M2 | packages/chat/src/views.ts | `entryMarkdown` flattened a stored intermediate text entry again | `chat entries > stored intermediate text and thinking keep their lines and Markdown` |
