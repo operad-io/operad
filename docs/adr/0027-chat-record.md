@@ -20,13 +20,23 @@ Tool output is kept in the fact only up to its first 4 KB; the whole output goes
 
 The model's context stays the agent's: a reply continues with `resumeSession`, and operad never rebuilds context from its own record.
 
-### D3: A reply is shown as Markdown lines, thinking included
+### D3: A reply is Markdown and a structured form beside it
 
-The `transcript` section renders a tool call as a Markdown line (as `dev` shows a worker's activity), so no client changes. Thinking is recorded and shown, and a harness that does not give it (radian) shows none; radian's chats show tool lines only. A structured, collapsible block would need a structured kind in the display interface and is not part of this.
+The `transcript` section keeps its Markdown lines, so a client that reads only Markdown is unchanged, and carries `data.replies` beside it. Each reply is `{ runId, input, process, answer?, durationMs? }`.
+
+`data.replies` follows the same window as `markdown`: a page read carries the replies on that page; a read with `after` carries the replies whose answer is after the mark and the one still running; the pushed `tail` event (D4) carries the running reply. A client merges by `runId`: a page read replaces the replies it draws with that page's, and an `after` read or a `tail` event replaces the block of an existing `runId` and adds a new one.
+
+`input` and `answer` are message blocks `{ id, text, at }`; a finished reply has `answer`, and a reply still being written has none. `durationMs` is the step's reported total when its harness reports timings.
+
+`process` is the thinking, intermediate text and tool calls between input and answer, grouped per turn in time order. A message the reply took mid-run ends one group and starts the next, so the groups and the input keep the order the transcript records for a message sent during a reply. A group is `{ categories, items }`; `categories` are the category ids `read`, `edit`, `run`, `search` and `other`, in first-use order, and clients word them.
+
+A process item is `{ kind: "thinking" | "text", text, at? }` or `{ kind: "tool", callId, name, input, at?, durationMs?, failed, result?, output }`. A tool's `input` is the recorded summary or null, and `at` is when the call started. `result` is absent while a call runs; `failed` is true only for the result `failed`. `output` is `{ text, lines, path?, truncated? }`: `text` is the recorded output (at most the first 4 KB D2 keeps), `lines` counts its lines, `path` is the file holding the whole output when D2 wrote one, and `truncated` says the recorded text is shorter than that file.
+
+The size cap counts `markdown`, `tail` and `data.replies` together. When the replies do not fit, a tool's output text is cut first: it is left empty, `lines` stays its count and `truncated` is true. Only then is Markdown shortened. A read with `full` leaves both whole. The changed-file card and diff are not part of this.
 
 ### D4: Text arrives as the live tail, pushed and readable
 
-Live text uses the live section (ADR 0019), not a separate connection. The text the current run has not finished writing reaches `serve` through the step's log: the run is not inside the `serve` process, so the `tail` of the `transcript` section is read from the log of the step that is running for this chat. The `tail` holds only entries not yet finished; finished ones are already facts. The transcript's `tail` function returns that tail and status, so `serve` pushes it on the event stream as a `tail` event as the reply is written; a client may also read the same tail with the section's incremental read. After a reconnect, the text already written for the current turn is returned with the section.
+Live text uses the live section (ADR 0019), not a separate connection. The text the current run has not finished writing reaches `serve` through the step's log: the run is not inside the `serve` process, so the `tail` of the `transcript` section is read from the log of the step that is running for this chat. The `tail` holds only entries not yet finished; finished ones are already facts. The transcript's `tail` function returns that tail, status and the running reply's `data.replies`, so `serve` pushes them on the event stream as a `tail` event as the reply is written; a client may also read the same tail with the section's incremental read. After a reconnect, the text already written for the current turn is returned with the section.
 
 ### D5: Where entries come from
 

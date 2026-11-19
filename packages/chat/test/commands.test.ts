@@ -334,6 +334,7 @@ describe("commands in chat:send", () => {
         logger: { path: "", write: () => Promise.resolve("") },
         signal: new AbortController().signal,
         settings: {},
+        sectionCapBytes: 256 * 1024,
         secrets: {
           get: () => Promise.resolve(undefined),
           set: () => Promise.resolve(),

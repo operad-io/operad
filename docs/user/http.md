@@ -77,7 +77,7 @@ otherwise. An object id in a path is URL-encoded; `<id>` may be the bare id or
 | `GET /v1/pending` | The same list as `operad pending`, with the actions each item offers. A question carries `waitId`, the id an answer quotes, and may carry `choiceInfo`, keyed by a choice with optional `label`, `hint`, `role` and `note`. A question the agent asked as a form (a chat agent asking one or more questions) also carries `questions`: `[{ "id", "text", "body"?, "header"?, "choices"?: [{ "label", "description"? }], "multiple"?, "freeText"? }]`. Its answers name a question by `id`; `multiple` says more than one label may be picked, and `freeText` says the person may answer in their own words. A question may also carry `body`, Markdown too long for its text. A plan review is a form of one question: its `text` is the plan's title, its `body` is the plan's Markdown, and its `choices` are `Approve` and `Request changes`. A form has no `choices` of its own: when it has exactly one question with choices and does not take more than one label, `choices` carries that question's labels, so a client that cannot draw the form still answers it. A wait that its plugin is about to answer automatically (dev: a passed review of a task in a plan at auto merge) is not listed, so the count does not flicker; it is listed if the automatic answer does not come. An item a plugin raises without a run waiting (`kind` `standing`, no actions, `runId` `<plugin>:<id>`) is in the list too, and goes when the plugin stops reporting it. An item that is about an object also carries `object` (`<type>:<id>`), its `link` and its `row`: the same row `GET /v1/objects?type=…` returns for that object (`id`, `title`, `state`, optional `note`, `mark`, `badge`, `waiting`, `running`), so a client does not read each object. When the row cannot be built (the object is gone, no loaded plugin shows its type, or the plugin's row fails) the item carries the error row the list shows for a bad row, with `state` `error` and an `error` message; the list itself never fails for one object. A candidate has no object and no `row`. `operad pending` prints the row's title under each line that has one. |
 | `GET /v1/running` | The same list as `operad running`. Each item has `runId`, `flow`, `step`, `stepLabel`, `queued`, `startedAt` and `elapsedMs` (the run's age), and: `object`, the object's id as rows and `operad show` name it (for example `operad/T-0048-type-filters`), or `null` for a run with no object; `title`, that object's row title, or `null` when there is no object or the lookup failed (a failed lookup never fails the list); `stepStartedAt` and `stepElapsedMs`, when the current step's current attempt started and how long it has run (`null` before the first step); `mark`, the object's row mark (one of the [row marks](#row-marks)), left out when the row has none or cannot be built. The step time starts again when the step changes and on a new attempt. |
 | `GET /v1/objects/<id>` | `{ "id", "type", "link", "row", "sections", "actions", "skills"? }`: the link that opens the object, the row, the section directory, and the actions available now with their `args` schema, `note` field, `confirm` flag and `command` description when a chat can run it after `/`. A chat also carries `skills: [{ "name", "description"? }]` beside its actions, so one request gives the commands and the skills: each is a skill the chat can type as `/name`, with the description from its `SKILL.md` cut to the menu length; a skill whose file cannot be read is left out. A skill whose name is also a command is not run as a skill: `/name` runs the command. A chat also carries `context: { "used", "window"?, "model"? }` when its last finished reply reported one: `used` is the last model call's input plus cache read and cache write, `window` is the model's context window when known, and `model` is the model that answered when known. A new session leaves `context` out until its next reply. An object whose newest run has ended also carries `lastRun`: `{ "outcome": "done" | "failed" | "cancelled", "reason"?, "endedAt" }`, read from the run's ending, not from the History text. `reason` is the line the run recorded when it ended or, for a failure that recorded none, the message of the step that failed; it is left out when there is neither; `endedAt` is milliseconds since the epoch. An object with no run, or whose newest run is still going, has no `lastRun`. It is not part of the row. |
-| `GET /v1/objects/<id>/sections/<section>?cursor=<c>&full=<bool>&after=<mark>` | `{ "markdown": "...", "next": "<c>", "mark": "<m>", "tail": "..." }`. A section may also carry `data`, an object the plugin defines for its clients, on every read including one with `after`. A chat's `transcript` also carries `context: { "used", "window"?, "model"? }` from its last finished reply, like the object view, on every read including one with `after`, and `data.queued` with `data.queuedCount`: the messages sent but not yet taken by a run, in sending order, each with `id`, `text`, `at` and `attachments`. `full=true` skips the size cap. `mark` is an opaque position the finished content goes to and `tail` is the Markdown of the part still changing; a plugin that does not use them sends neither. With `after=<mark>` from an earlier read, `markdown` holds only the finished content after that mark; the answer then also carries `delta`: true when it is that part alone, false when the plugin answered with a whole page and a client must replace instead of append. The size cap covers `markdown` and `tail` together but never cuts `tail`: when both do not fit, `markdown` is shortened first; when even the tail and the truncation note do not fit, the call is refused with an over-cap message naming `--full`. A mark from another section or object is refused with `400`. |
+| `GET /v1/objects/<id>/sections/<section>?cursor=<c>&full=<bool>&after=<mark>` | `{ "markdown": "...", "next": "<c>", "mark": "<m>", "tail": "..." }`. A section may also carry `data`, an object the plugin defines for its clients, on every read including one with `after`. A chat's `transcript` also carries `context: { "used", "window"?, "model"? }` from its last finished reply, like the object view, on every read including one with `after`; `data.queued` with `data.queuedCount`, the messages sent but not yet taken by a run, in sending order, each with `id`, `text`, `at` and `attachments`; and `data.replies`, the structured form of each reply beside the Markdown (see [A chat's replies](#a-chats-replies)). `data.replies` follows the read's window: a page carries the replies on that page, a read with `after` carries the replies finished since the mark and the one still running, and a `tail` event carries the running reply. `full=true` skips the size cap. `mark` is an opaque position the finished content goes to and `tail` is the Markdown of the part still changing; a plugin that does not use them sends neither. With `after=<mark>` from an earlier read, `markdown` holds only the finished content after that mark; the answer then also carries `delta`: true when it is that part alone, false when the plugin answered with a whole page and a client must replace instead of append. The size cap covers `markdown`, `tail` and the plugin's `data` together but never cuts `tail`: a chat cuts tool output text inside `data.replies` first, keeping its lines and setting `truncated`, and only then is `markdown` shortened; when even the tail, data and the truncation note do not fit, the call is refused with an over-cap message naming `--full`. A mark from another section or object is refused with `400`. |
 | `POST /v1/act` | Runs one action. The body is `{ "action": "plugin:action", "id": "<id>", "args": {...}, "note": "...", "confirmed": true }`; only `action` is always required, and an action that targets an object also needs `id`. An action with `confirm: true` needs `"confirmed": true`. The body is at most 1 MiB; a larger one gets `413` with `the request body is larger than the 1 MB limit`. An argument the action's schema declares with `"format": "file"` (a string, or a list of strings) takes the `ref` of an upload; the action runs with the path the file is stored at. |
 | `POST /v1/commands` | Runs a plugin verb as `operad <plugin> <verb>` does. The body is `{ "plugin": "cron", "verb": "scheduled", "args": ["list", "--json"], "input": "..." }`; `plugin` and `verb` are required, `args` is an array of strings, and `input` is the text the command reads from stdin. The answer is `{ "plugin", "verb", "value" }`, where `value` is what the command returned. A verb no loaded plugin declares is `404`; a command that refuses gets `422` with its reason. The scheduled flows command lists, adds, edits, pauses, resumes and removes cron rules in `triggers.json`; see [`triggers.json`](config.md#triggersjson). |
 | `GET /v1/plugins` | `{ "plugins": [{ "name": "dev", "version": "0.4.0", "enabled": true, "origin": "builtin" }] }`: the configured plugins, in config order, with what `operad plugin list` prints. `version` is `null` for a plugin that is off or did not load, where the command line prints `-`. `origin` is `builtin` for a package operad ships and `home` for any other plugin the home's `config.json` names (a path or another package); plugins of a project are not loaded, so there is no third value. A loaded harness plugin also carries `signedIn`: `true` or `false` when its agent can tell whether the user is signed in, absent when it cannot (and absent for a plugin that is off or not a harness). Only the yes/no is exposed; it never shows a credential, and a client needs no session to read it. A loaded harness plugin also carries `models`: `{ "list", "default", "windows"?, "info"? }`. `list` is the model ids a chat may pick, and `info` maps an id to `{ "id", "name"?, "provider"?, "window"?, "capabilities"? }`; `capabilities` is a subset of `vision`, `reasoning`, `tools` and `web`. A field the harness does not know is absent, never guessed; a client that reads only `list` keeps working. |
@@ -155,9 +155,72 @@ and `delta` is `true` when that is all it holds. A plugin that cannot answer
 with a delta answers a whole page and `delta` is `false`; the client replaces
 its content then. A mark from another section or object is a `400`.
 
-The size cap covers `markdown` and `tail` together, but never cuts `tail`: it
-shortens `markdown` first. When even the tail and the truncation note do not
-fit, the call is a `400` naming `--full`.
+The size cap covers `markdown`, `tail` and the plugin's `data` together, but
+never cuts `tail`. A chat cuts the tool output text inside `data.replies` first,
+keeping its line count and setting `truncated`; only then is `markdown`
+shortened. When even the tail, data and the truncation note do not fit, the call
+is a `400` naming `--full`. A read with `full=true` leaves the data whole.
+
+### A chat's replies
+
+A chat's `transcript` carries `data.replies` beside its Markdown. Its window is
+the read's window: a page read carries the replies on that page; a read with
+`after` carries the replies whose answer is after the mark and the one still
+running; a pushed `tail` event carries the running reply. A client merges by
+`runId`: a page read replaces the replies it draws with that page's, while an
+`after` read or a `tail` event replaces the block of an existing `runId` and
+adds a new one. A client that reads only Markdown keeps working. Each entry is
+one reply: its input, its process and, when it has finished, its answer:
+
+```json
+{
+  "runId": "run-1",
+  "input": [{ "id": "m-1", "text": "hello", "at": 1700000000000 }],
+  "process": [
+    {
+      "categories": ["read", "run"],
+      "items": [
+        { "kind": "thinking", "text": "look first", "at": 1700000000001 },
+        { "kind": "text", "text": "I will look.", "at": 1700000000002 },
+        {
+          "kind": "tool",
+          "callId": "t1",
+          "name": "Bash",
+          "input": "ls",
+          "at": 1700000000003,
+          "durationMs": 1500,
+          "failed": false,
+          "result": "done",
+          "output": { "text": "a.txt\n", "lines": 1 }
+        }
+      ]
+    }
+  ],
+  "answer": { "id": "m-2", "text": "final answer", "at": 1700000000004 },
+  "durationMs": 1234
+}
+```
+
+`input` and `answer` are message blocks `{ id, text, at }`. A reply still being
+written has no `answer`; a finished reply has its `durationMs` when its agent
+reported timings. `process` holds the thinking, intermediate text and tool calls
+between the input and the answer, in time order. A message the reply took while
+it was writing ends one process group and starts the next. Each group carries
+`categories`, the ids `read`, `edit`, `run`, `search` and `other` for what its
+tools did, in first-use order; the client words them.
+
+A thinking or text item is `{ kind, text, at? }`. A tool item is
+`{ kind: "tool", callId, name, input, at?, durationMs?, failed, result?, output }`.
+`at` is when a tool call started. `durationMs` and `result` are absent while the
+call is still running. `failed` is true only for the result `failed`; the other
+results are `done`, `blocked` and `denied`. `output` is
+`{ text, lines, path?, truncated? }`: `text` is the recorded output (the first
+4 KB at most), `lines` counts its lines, `path` is the file holding the whole
+output when it was longer than 4 KB, and `truncated` says that file holds more
+than `text` does. When the size cap cuts the output, `text` is empty, `lines`
+keeps its count and `truncated` is `true`; a full read leaves the text whole. A
+client shows the first lines and folds the rest; the changed-file card and diff
+are not part of this shape.
 
 ## Settings
 
@@ -381,14 +444,16 @@ data: {"id":"T-0019-http-api"}
 ```
 
 A live section whose plugin pushes its changing part also sends `tail` events on
-the same stream, with the same `tail`, `status` and `retry` a section read
-returns:
+the same stream, with the same `tail`, `status`, `retry` and `data` a section
+read returns; a chat's event carries its running reply in `data.replies`:
 
 ```text
 event: tail
-data: {"id":"C-0042","type":"chat","section":"transcript","tail":"**Operad Bot:** I am writing","status":{"text":"Thinking","since":1767225600000}}
+data: {"id":"C-0042","type":"chat","section":"transcript","tail":"**Operad Bot:** I am writing","status":{"text":"Thinking","since":1767225600000},"data":{"replies":[{"runId":"run-1","input":[],"process":[]}]}}
 
 ```
+
+A retry that the agent is waiting for is in the same events:
 
 ```text
 event: tail
@@ -397,9 +462,10 @@ data: {"id":"C-0042","type":"chat","section":"transcript","tail":"Retrying the m
 ```
 
 A `tail` event has no `id:` and is not replayed on a reconnect: the client reads
-the open live section again, including its current `tail` and `retry`. A client that does not
-know `tail` ignores it and keeps reading the section after each change event, as
-before.
+the open live section again, including its current `tail`, `retry` and `data`. A
+client that does not know `tail` ignores it and keeps reading the section after
+each change event, as before. A client merges the running reply into its replies
+by `runId`.
 
 An `id:` is an opaque string. It changes on every change event and starts with a
 value the process chose at boot, so an id from an earlier `serve` is not

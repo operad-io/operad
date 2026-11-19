@@ -46,9 +46,9 @@ A filter is a named subset of a type's rows, by `state`:
 | `showScope` | `(ctx) => boolean` | no | Whether a list shows each row's `scope` beside its id because more than one namespace exists. Read once per list | `views.<t>: showScope: must be a function` |
 | `context` | `(ctx, object) => { used, window?, model? }` | no | Numbers a detail page shows beside the row, such as how full an agent's context is. It may read facts and may be slow; the kernel passes it through without reading it. A chat returns the last finished reply's context here | `views.<t>: context: must be a function` |
 | `skills` | `(ctx, object) => ViewSkill[]` | no | The skills an object offers as `/name` commands, such as a chat's. Each has a `name` and an optional `description`; the kernel passes them through without reading them. A chat returns its current skills here | `views.<t>: skills: must be a function` |
-| `tail` | `(ctx, object) => { section, tail?, status?, retry? }` | no | The changing part of a live section, pushed on the event stream as it grows. The kernel passes `section`, `tail`, `status` and `retry` through without reading them, in the same shapes `load` returns. A chat returns its unfinished reply here | `views.<t>: tail: must be a function` |
+| `tail` | `(ctx, object) => { section, tail?, status?, retry?, data? }` | no | The changing part of a live section, pushed on the event stream as it grows. The kernel passes `section`, `tail`, `status`, `retry` and `data` through without reading them, in the same shapes `load` returns. A chat returns its unfinished reply here | `views.<t>: tail: must be a function` |
 
-The `ctx` of `load`, `showScope`, `context`, `skills` and `tail` is [the base context](define-plugin.md#the-context-every-hook-gets) plus `runTimes(runId)` (when a run started and ended and its steps and waits, in order), `settingsInForce(plugin)` (the plugin's settings as `config.json` has them now, so a view follows an edit without a restart) and `refreshedObject(type, id)` (an object after its `prepare` with the settings in force).
+The `ctx` of `load`, `showScope`, `context`, `skills` and `tail` is [the base context](define-plugin.md#the-context-every-hook-gets) plus `runTimes(runId)` (when a run started and ended and its steps and waits, in order), `settingsInForce(plugin)` (the plugin's settings as `config.json` has them now, so a view follows an edit without a restart), `refreshedObject(type, id)` (an object after its `prepare` with the settings in force) and `sectionCapBytes` (the most bytes a read may return when the client did not ask for `full`).
 
 An object's `get` carries `skills` when its type declares the hook, beside the actions a client already reads. A client that does not know the field ignores it.
 
@@ -81,7 +81,7 @@ See [Putting objects in levels](index.md#putting-objects-in-levels) for `parent`
 `sections(object)` returns `{ id, title, live? }` entries. `live: true` says the content still grows; it must be a boolean (`section.live must be a boolean`).
 Each entry's `id` is what a client passes back to `load`.
 
-`load(ctx, object, sectionId, { cursor, after })` returns `SectionContent`:
+`load(ctx, object, sectionId, { cursor, after, full })` returns `SectionContent`:
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -94,7 +94,7 @@ Each entry's `id` is what a client passes back to `load`.
 | `retry` | `{ attempt: number, maxAttempts: number, until: number, reason: string }` | A model request the agent is waiting to try again: which attempt, how many in all, when the next one starts in epoch milliseconds, and the provider's masked message. The kernel passes it through without reading it; a client that does not know it ignores it |
 | `delta` | boolean | `true` when `markdown` holds only what follows the requested `after`. Leave it out when the answer is a whole page: the kernel then tells the client to replace instead of appending |
 | `context` | `{ used: number, window?: number, model?: string }` | Numbers a client shows beside the section, such as how full an agent's context is. The kernel passes it through on every read, including one with `after`; a client that does not know it ignores it |
-| `data` | object | Structured data the plugin defines for its clients, such as a chat's queued messages. The kernel checks only that it is an object, leaves a value that is not an object out, and passes an object through unchanged on every read, including one with `after`; a client that does not know its shape ignores it |
+| `data` | object | Structured data the plugin defines for its clients, such as a chat's queued messages or the replies in its transcript. The kernel checks only that it is an object, leaves a value that is not an object out, and passes an object through unchanged on every read, including one with `after`; a client that does not know its shape ignores it. The kernel counts it with `markdown` and `tail` under the size cap |
 
 ### The size cap, the timeout and the rate
 
@@ -102,7 +102,7 @@ Each entry's `id` is what a client passes back to `load`.
 |---|---|---|---|
 | Time `load` may take | 10 seconds (`DEFAULT_LOAD_TIMEOUT_MS`) | Fixed; no setting changes it | The call is cut: `section "<s>" of "<id>" did not answer within 10000ms`, and `ctx.signal` is aborted so the code can stop |
 | A throw in `load` | | Each read | `section "<s>" of "<id>" failed: <message>` |
-| Size of one read | 256 KiB (`DEFAULT_SECTION_CAP_BYTES`) for `markdown` and `tail` together | Fixed | The finished `markdown` is shortened at a character boundary and ends with `[Truncated. See all of it with \`operad show <id> --section <s> --full\`.]`. The `tail` is never cut; when even the tail and the note do not fit, the read is refused with `section "<s>" of "<id>" is over the 262144-byte size cap; ...`. `--full` (the client's `full` option) lifts the cap |
+| Size of one read | 256 KiB (`DEFAULT_SECTION_CAP_BYTES`) for `markdown`, `tail` and `data` together | Fixed | A plugin that carries data cuts its own data first; a chat cuts tool output text, keeps its line count and sets `truncated`. The kernel then shortens the finished `markdown` at a character boundary and ends it with `[Truncated. See all of it with \`operad show <id> --section <s> --full\`.]`. The `tail` is never cut; when even the tail, data and the note do not fit, the read is refused with `section "<s>" of "<id>" is over the 262144-byte size cap; ...`. `--full` (the client's `full` option) lifts the cap and leaves the data whole |
 | Announcing growth of a `live` section | At most once per object per 250 ms (`GROWTH_EVENT_INTERVAL_MS`) | Fixed | When a run about the object records a fact the kernel announces the object; announcements inside the window are held and the last one is sent when the window ends. An object's own stored change is always announced at once |
 | An unknown section | | | `object "<id>" has no section "<s>"` |
 
@@ -119,7 +119,7 @@ An `after` that is not a mark the section gave is refused: `section "<s>" of "<i
 
 ### Pushing the changing part
 
-A type that supplies `tail` pushes the changing part without a section read. The kernel calls it when the object's live content grows and sends a `tail` event on the same stream as `events`: `{ "id", "type", "section", "tail"?, "status"?, "retry"? }`. `tail`, `status` and `retry` have the same meaning and shape as on a section read; `section` names the live section they belong to. The event carries no resume id and is not replayed, so a reconnecting client reads the section again. A type without `tail` sends only id change events, and a client that does not know `tail` ignores it.
+A type that supplies `tail` pushes the changing part without a section read. The kernel calls it when the object's live content grows and sends a `tail` event on the same stream as `events`: `{ "id", "type", "section", "tail"?, "status"?, "retry"?, "data"? }`. `tail`, `status`, `retry` and `data` have the same meaning and shape as on a section read; `section` names the live section they belong to. The event carries no resume id and is not replayed, so a reconnecting client reads the section again. A type without `tail` sends only id change events, and a client that does not know `tail` ignores it.
 
 ### The history section
 

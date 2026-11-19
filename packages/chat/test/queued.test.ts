@@ -52,6 +52,7 @@ function viewContext(r: Rig): ViewContext {
     logger: { path: "", write: () => Promise.resolve("") },
     signal: new AbortController().signal,
     settings: r.registry.settingsFor("chat"),
+    sectionCapBytes: 256 * 1024,
     secrets: {
       get: () => Promise.resolve(undefined),
       set: () => Promise.resolve(),

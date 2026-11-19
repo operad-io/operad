@@ -16,11 +16,11 @@ The result of `load` can carry more things beside the page: `mark`, an opaque po
 
 `events` says which object changed. A change of unfinished content also counts as the object having changed, and the kernel limits such change notifications to one per object per 250 milliseconds.
 
-A live section whose plugin supplies its changing part (D6) is also pushed as a `tail` event on the same event stream. It carries the object type, the section's id and its whole current `tail`, `status` and `retry`, in the shapes a section read uses, and is limited to one per object per 50 milliseconds. A `tail` event has no resume id and is not replayed: a client that reconnects reads the section again. A client that does not know `tail` ignores it and keeps its change-event reads.
+A live section whose plugin supplies its changing part (D6) is also pushed as a `tail` event on the same event stream. It carries the object type, the section's id, its whole current `tail`, `status` and `retry`, and the plugin's `data`, in the shapes a section read uses, and is limited to one per object per 50 milliseconds. A `tail` event has no resume id and is not replayed: a client that reconnects reads the section again. A client that does not know `tail` ignores it and keeps its change-event reads.
 
 ### D3: Compatibility
 
-A client that does not know these things works as before: it just does not see `tail`, `status`, `retry` or `data`. The command line's `operad show --section` does not show `tail`, `status` or `retry`.
+A client that does not know these things works as before: it just does not see `tail`, `status`, `retry` or `data`. The command line's `operad show --section` does not show `tail`, `status`, `retry` or `data`.
 
 ### D4: A live section can say what it is doing
 
@@ -32,7 +32,7 @@ The result of `load` may carry `status`, an object `{ "text": string, "since": n
 
 ### D6: A live section's changing part is pushed as it is written
 
-A type's views may supply `tail(ctx, object)`, returning `{ section, tail?, status?, retry? }`: the same part a section read returns, without the finished content. The kernel calls it when the object grows and pushes the result as a `tail` event (D2). A plugin that supplies no `tail` function keeps id-only change events. The chat's `transcript` supplies it, so the text being written, thinking, and tool calls starting and ending reach a client without a section re-read; finished content still arrives by the incremental read of D1.
+A type's views may supply `tail(ctx, object)`, returning `{ section, tail?, status?, retry?, data? }`: the same part a section read returns, without the finished content. The kernel calls it when the object grows and pushes the result as a `tail` event (D2). A plugin that supplies no `tail` function keeps id-only change events. The chat's `transcript` supplies it, so the text being written, thinking, tool calls starting and ending, a retry it waits for, and the running reply's structured form reach a client without a section re-read; finished content still arrives by the incremental read of D1.
 
 ### D7: A section can carry a retry the agent is waiting for
 
@@ -40,4 +40,4 @@ The result of `load` may carry `retry`, an object `{ "attempt": number, "maxAtte
 
 ### D8: A section can carry data beside its text
 
-`load` may return `data`, an object the plugin defines for its clients, such as a chat's queued messages. The kernel checks only that it is an object and leaves a value that is not an object out; it does not read any field. It passes the object through unchanged on every read, including a read with `after`, and serves it by the HTTP section read and the MCP `section` tool. A client that does not know the plugin's shape ignores it.
+`load` may return `data`, an object the plugin defines for its clients, such as a chat's queued messages or the replies in its transcript. The kernel checks only that it is an object and leaves a value that is not an object out; it does not read any field. It passes the object through unchanged on every read, including a read with `after`, on a pushed `tail` event (D2), and serves it by the HTTP section read and the MCP `section` tool. The size cap counts it with `markdown` and `tail`; a plugin that carries data cuts its own parts before the kernel shortens Markdown. A client that does not know the plugin's shape ignores it.

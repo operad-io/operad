@@ -135,6 +135,8 @@ export interface SectionReadOptions {
    * does not implement it answers with the whole section and leaves `delta` out.
    */
   readonly after?: string | undefined;
+  /** The read asked to skip the size cap, so the plugin may leave its data whole. */
+  readonly full?: boolean | undefined;
 }
 
 /** What a live section says it is doing, and since when. */
@@ -244,6 +246,12 @@ export interface ViewContext extends PluginBaseContext {
     | ((plugin: string) => Readonly<Record<string, JsonValue>>)
     | undefined;
   /**
+   * The most bytes a section read may return when the client did not ask for
+   * `full`: Markdown, the tail and the plugin's data together. A plugin that
+   * carries data cuts its own parts before the kernel shortens Markdown.
+   */
+  readonly sectionCapBytes: number;
+  /**
    * An object after its type's `prepare` has run with the settings in force
    * now, so a view can see a change without a restart. Undefined when the
    * object is gone.
@@ -309,9 +317,9 @@ export interface ObjectViews {
     | undefined;
   /**
    * The changing part of a live section, pushed on the event stream as it
-   * grows. The kernel passes `section`, `tail` and `status` through without
-   * reading them, in the same shapes a section read uses. Absent: the type
-   * pushes no live part and an event carries only the object id.
+   * grows. The kernel passes `section`, `tail`, `status` and `data` through
+   * without reading them, in the same shapes a section read uses. Absent: the
+   * type pushes no live part and an event carries only the object id.
    */
   readonly tail?:
     | ((
@@ -323,6 +331,7 @@ export interface ObjectViews {
             readonly tail?: string | undefined;
             readonly status?: SectionStatus | undefined;
             readonly retry?: SectionRetry | undefined;
+            readonly data?: Readonly<Record<string, JsonValue>> | undefined;
           }
         | undefined
       >)

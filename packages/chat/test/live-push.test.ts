@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import type { StepContext, ViewContext } from "@operad-io/engine";
-import { chatViews } from "../src/index.ts";
+import { chatViews, type ReplyBlock, type ReplyToolItem } from "../src/index.ts";
 import { cleanupRoots, reply, rig } from "./support.ts";
 
 afterAll(cleanupRoots);
@@ -128,5 +128,30 @@ describe("the chat's pushed tail", () => {
       },
     ]);
     expect(live?.tail).toBe("tool Bash 1s `ls -la`");
+  });
+
+  test("the running reply is structured in the push", async () => {
+    const live = await whileRunning([
+      { type: "thinking_end", text: "look first", receivedAt: 1_001 },
+      { type: "tool_execution_start", toolCallId: "t1", toolName: "Bash", input: "ls", at: 1_002 },
+      { type: "tool_output", toolCallId: "t1", text: "a.txt\n" },
+      { type: "tool_execution_end", toolCallId: "t1", toolName: "Bash", isError: false, durationMs: 1_200 },
+    ]);
+    const data = live?.data as { readonly replies?: readonly ReplyBlock[] } | undefined;
+    const reply = data?.replies?.[0];
+    expect(reply?.runId).toBe("run-1");
+    expect(reply?.input.map((message) => message.text)).toEqual(["go"]);
+    expect(reply?.answer).toBeUndefined();
+    expect(reply?.process[0]?.categories).toEqual(["run"]);
+    const call = reply?.process[0]?.items.find((item): item is ReplyToolItem => item.kind === "tool");
+    expect(call).toMatchObject({
+      callId: "t1",
+      name: "Bash",
+      input: "ls",
+      durationMs: 1_200,
+      failed: false,
+      result: "done",
+      output: { text: "a.txt\n", lines: 1 },
+    });
   });
 });

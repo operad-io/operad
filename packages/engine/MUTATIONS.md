@@ -1206,3 +1206,16 @@ the row fields.
 | T-0575-M1 | packages/engine/src/plugin/registry.ts | `actionEnv` left the object out, so a `when` saw no object to read facts for | `an action that a chat may run as a command > a when reads the object it works on, and a refusal prints the why line` |
 | T-0575-M2 | packages/engine/src/plugin/registry.ts | `runActionChecked` refused with the plain line instead of the plugin's `why` | `an action that a chat may run as a command > a when reads the object it works on, and a refusal prints the why line` |
 | T-0575-M3 | packages/engine/src/views/presentation.ts | the offer check left the object out of the env, so a `when` could not read the object's facts | `chat:retry is offered only when it would start a reply > a reply being written does not offer it, even after a failed attempt` |
+
+## T-0571 — a section carries the plugin's structured data
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0571-M5 | packages/engine/src/views/presentation.ts | `section` left the plugin's `data` out of its answer | `structured data beside a section > a read carries the plugin's data, and so does a read after a mark` |
+
+## T-0571 rework — a section's data and the pushed tail
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0571-M13 | packages/engine/src/views/presentation.ts | `finishSection` left `data` out of the size cap | `the size cap with structured data > data is counted with the Markdown, and a full read leaves both whole` |
+| T-0571-M14 | packages/engine/src/views/presentation.ts | `liveEvent` left the plugin's `data` out of the pushed tail | `a live log that grows without a fact > a pushed tail carries the live section's data` |

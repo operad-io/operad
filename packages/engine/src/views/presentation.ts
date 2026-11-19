@@ -234,15 +234,16 @@ export interface ViewEvent {
   readonly id: string;
   /**
    * The object type when this is a pushed tail event, with the live section's
-   * `section`, whole current `tail` and `status`. A tail event is not part of
-   * the resume window: a reconnecting client reads the section again. A client
-   * that does not know it ignores it.
+   * `section`, whole current `tail`, `status` and `data`. A tail event is not
+   * part of the resume window: a reconnecting client reads the section again.
+   * A client that does not know it ignores it.
    */
   readonly type?: string | undefined;
   readonly section?: string | undefined;
   readonly tail?: string | undefined;
   readonly status?: SectionStatus | undefined;
   readonly retry?: SectionRetry | undefined;
+  readonly data?: Readonly<Record<string, JsonValue>> | undefined;
 }
 
 /** Why a presentation call refused. */
@@ -1484,6 +1485,7 @@ export class Views {
         undefined,
         undefined,
         undefined,
+        undefined,
         options.full === true,
         after === undefined ? undefined : false,
       );
@@ -1533,6 +1535,7 @@ export class Views {
         owner.views.load(ctx, object, sectionId, {
           ...(cursor === undefined ? {} : { cursor }),
           ...(after === undefined ? {} : { after }),
+          ...(options.full === true ? { full: true } : {}),
         }),
       );
       content = await Promise.race([work, timeout]);
@@ -1582,13 +1585,13 @@ export class Views {
       tail,
       status,
       retry,
+      data,
       options.full === true,
       after === undefined ? undefined : honoured,
     );
-    const withData = data === undefined ? finished : { ...finished, data };
     return pages === undefined
-      ? { ...withData, ...(context === undefined ? {} : { context }) }
-      : { ...withData, pages, ...(context === undefined ? {} : { context }) };
+      ? { ...finished, ...(context === undefined ? {} : { context }) }
+      : { ...finished, pages, ...(context === undefined ? {} : { context }) };
   }
 
   /** An async stream of changes. Repeated ids coalesce. */
@@ -1995,6 +1998,7 @@ export class Views {
     tail: string | undefined,
     status: SectionStatus | undefined,
     retry: SectionRetry | undefined,
+    data: Readonly<Record<string, JsonValue>> | undefined,
     full: boolean,
     delta: boolean | undefined,
   ): ViewSectionContent {
@@ -2008,6 +2012,7 @@ export class Views {
       ...(shownTail === undefined ? {} : { tail: shownTail }),
       ...(status === undefined ? {} : { status }),
       ...(retry === undefined ? {} : { retry }),
+      ...(data === undefined ? {} : { data }),
       ...(delta === undefined ? {} : { delta }),
     });
     if (full) return result(markdown, tail);
@@ -2016,19 +2021,20 @@ export class Views {
     const limit = this.sectionCapBytes;
     const markdownBytes = Buffer.byteLength(markdown, "utf8");
     const tailBytes = tail === undefined ? 0 : Buffer.byteLength(tail, "utf8");
-    if (markdownBytes + tailBytes <= limit) return result(markdown, tail);
+    const dataBytes = data === undefined ? 0 : Buffer.byteLength(JSON.stringify(data), "utf8");
+    if (markdownBytes + tailBytes + dataBytes <= limit) return result(markdown, tail);
 
-    // The cap covers the finished page, the changing tail and the note
-    // together. The tail is never cut: if even the tail and the note do not
-    // fit, the section is refused and the client asks for it whole.
+    // The cap covers the finished page, the changing tail, the plugin's data
+    // and the note together. The tail is never cut: if even the tail, data and
+    // note do not fit, the section is refused and the client asks for it whole.
     const suffixBytes = Buffer.byteLength(suffix, "utf8");
-    if (tailBytes + suffixBytes > limit) {
+    if (tailBytes + dataBytes + suffixBytes > limit) {
       throw new ViewError(
         "section",
         `section "${sectionId}" of "${id}" is over the ${limit}-byte size cap; ${suffix.trim()}`,
       );
     }
-    const body = capBytes(markdown, limit - suffixBytes - tailBytes);
+    const body = capBytes(markdown, Math.max(0, limit - suffixBytes - tailBytes - dataBytes));
     return result(`${body}${suffix}`, tail);
   }
 
@@ -2632,6 +2638,7 @@ export class Views {
       signal,
       settings: this.registry.settingsFor(plugin),
       settingsInForce: (name: string) => this.settingsInForce(name),
+      sectionCapBytes: this.sectionCapBytes,
       refreshedObject: (type: string, id: string) =>
         this.refreshedObject(type, id),
       secrets: new FileSecretStore({ home: this.registry.home, plugin }),
@@ -3017,7 +3024,11 @@ export class Views {
       const tail = textOf(content.tail);
       const status = statusOf(content.status);
       const retry = retryOf(content.retry);
-      if (tail === undefined && status === undefined && retry === undefined) return undefined;
+      const data =
+        isRecord(content.data) ? (content.data as Readonly<Record<string, JsonValue>>) : undefined;
+      if (tail === undefined && status === undefined && retry === undefined && data === undefined) {
+        return undefined;
+      }
       return {
         id: ref.id,
         type: ref.type,
@@ -3025,6 +3036,7 @@ export class Views {
         ...(tail === undefined ? {} : { tail }),
         ...(status === undefined ? {} : { status }),
         ...(retry === undefined ? {} : { retry }),
+        ...(data === undefined ? {} : { data }),
       };
     } catch (error) {
       this.onLog(
