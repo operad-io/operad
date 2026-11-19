@@ -10,7 +10,7 @@ The phone is the main place a person talks to a bot, so the display interface ha
 
 ### D1: `operad serve` exposes the display interface as HTTP
 
-`operad serve` exposes the client API (`list`, `get`, `section`, `events`, `act`) as HTTP. It listens only on the local machine, the local network or a Tailscale address (never a wildcard), requires a token, and uses SSE for `events`. A live section's changing part travels on the same SSE stream as a `live` event, so a client can render a running reply as it is written; a client that does not know the event keeps reading the section after a change event.
+`operad serve` exposes the client API (`list`, `get`, `section`, `events`, `act`) as HTTP. It listens only on the local machine, the local network or a Tailscale address (never a wildcard), requires a token, and uses SSE for `events`. A live section's changing part travels on the same SSE stream as a `tail` event, so a client can render a running reply as it is written; a client that does not know the event keeps reading the section after a change event.
 
 ### D2: The app has one backend and knows no plugin
 

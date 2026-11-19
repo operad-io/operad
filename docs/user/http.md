@@ -141,7 +141,7 @@ the first page has no cursor, every other page carries its own.
 A live section also carries `mark` and `tail`. `mark` is an opaque position of
 the finished content; `tail` is the Markdown of the part still changing (a chat's
 unfinished reply and thinking, a running tool call), the whole tail on each
-read. `serve` also pushes that `tail` on the event stream as a `live` event,
+read. `serve` also pushes that `tail` on the event stream as a `tail` event,
 so a client can render a running reply without reading the section again (see
 [Events](#events)). To append instead of replacing, pass `after=<mark>` from the
 last read:
@@ -357,18 +357,18 @@ data: {"id":"T-0019-http-api"}
 
 ```
 
-A live section whose plugin pushes its changing part also sends `live` events on
+A live section whose plugin pushes its changing part also sends `tail` events on
 the same stream, with the same `tail` and `status` a section read returns:
 
 ```text
-event: live
-data: {"id":"C-0042","live":{"type":"chat","section":"transcript","tail":"**Operad Bot:** I am writing","status":{"text":"Thinking","since":1767225600000}}}
+event: tail
+data: {"id":"C-0042","type":"chat","section":"transcript","tail":"**Operad Bot:** I am writing","status":{"text":"Thinking","since":1767225600000}}
 
 ```
 
-A `live` event has no `id:` and is not replayed on a reconnect: the client reads
+A `tail` event has no `id:` and is not replayed on a reconnect: the client reads
 the open live section again, including its current `tail`. A client that does not
-know `live` ignores it and keeps reading the section after each change event, as
+know `tail` ignores it and keeps reading the section after each change event, as
 before.
 
 An `id:` is an opaque string. It changes on every change event and starts with a

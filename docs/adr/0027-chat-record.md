@@ -26,7 +26,7 @@ The `transcript` section renders a tool call as a Markdown line (as `dev` shows 
 
 ### D4: Text arrives as the live tail, pushed and readable
 
-Live text uses the live section (ADR 0019), not a separate connection. The text the current run has not finished writing reaches `serve` through the step's log: the run is not inside the `serve` process, so the `tail` of the `transcript` section is read from the log of the step that is running for this chat. The `tail` holds only entries not yet finished; finished ones are already facts. The transcript's `live` function returns that tail and status, so `serve` pushes it on the event stream as a live event as the reply is written; a client may also read the same tail with the section's incremental read. After a reconnect, the text already written for the current turn is returned with the section.
+Live text uses the live section (ADR 0019), not a separate connection. The text the current run has not finished writing reaches `serve` through the step's log: the run is not inside the `serve` process, so the `tail` of the `transcript` section is read from the log of the step that is running for this chat. The `tail` holds only entries not yet finished; finished ones are already facts. The transcript's `tail` function returns that tail and status, so `serve` pushes it on the event stream as a `tail` event as the reply is written; a client may also read the same tail with the section's incremental read. After a reconnect, the text already written for the current turn is returned with the section.
 
 ### D5: Where entries come from
 
