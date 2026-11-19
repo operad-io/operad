@@ -33,6 +33,57 @@ an answer sends.
 its `waitId`, like any other wait. `POST /v1/answer` and the MCP `answer` tool
 take that `runId`, `waitId` and one of the choices.
 
+## A question with a form
+
+A step may ask a form instead of one choice: `questions` names one or more
+questions, and `choices` is left out. Each question is an `AskQuestion`: an
+`id` an answer names it by, the `text`, an optional short `header`, choices of a
+`label` and an optional `description` (`AskQuestionChoice`), `multiple` when
+more than one label may be picked, and `freeText` when the person may answer in
+their own words. The kernel checks the shape before anyone is asked: a non-empty
+id and text, an id used once, at most 8 questions with at most 8 choices each,
+`text` up to 500 characters, `header` up to 40, a `label` up to 80 and a
+`description` up to 280.
+
+| Name | What it is |
+|---|---|
+| `AskQuestion` | one question of a form: `id`, `text`, an optional `header`, `choices`, `multiple` and `freeText` |
+| `AskQuestionChoice` | one answer a question offers: a `label` and an optional `description` |
+| `AskQuestionAnswer` | the person's answer to one question: `id`, `choices`, `text`, `skipped` |
+
+```ts
+const answer = await ctx.ask({
+  prompt: "How should it load?",
+  questions: [
+    {
+      id: "loader",
+      header: "Loader",
+      text: "How should it load?",
+      choices: [
+        { label: "Built-in", description: "use the built-in loader" },
+        { label: "Dynamic", description: "load it dynamically" },
+      ],
+      freeText: true,
+    },
+  ],
+  resume: { session: "abc" },
+});
+```
+
+The answer is `answers`, one `AskQuestionAnswer` per question in the form's
+order: `{ id, choices, text, skipped }`. A question the answer leaves out counts
+as `skipped`, so the person can always finish. The kernel checks every answer
+against the form: the id names one of its questions and is used once, a label is
+one of that question's choices, `text` needs `freeText`, more than one label
+needs `multiple`, and a skipped answer carries neither. An invalid answer is
+refused before anything is recorded. A `choice` still answers a form of one
+question, for a client that can only show choices; a form of several gives none.
+
+A form with exactly one question that offers choices and is not `multiple` also
+fills the item's `choices` with that question's labels, so a client that does
+not know the form still answers it. A form is never about one call: it carries
+no `resume.grant`, and an answer to it is not a permission.
+
 **The grace.** While the step's process is alive the answer goes straight to the
 waiting call and the step goes on. The wait lasts the narrowest of: the
 `graceSecs` of the call, the step's `askGraceSecs` param, and `ask.graceSecs` in

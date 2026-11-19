@@ -11,12 +11,15 @@
  */
 
 import type { AskQuestion, AskQuestionAnswer, AskQuestionChoice, AskRequest } from "@operad-io/engine";
-import {
-  MAX_QUESTION_CHOICE_DESCRIPTION,
-  MAX_QUESTION_CHOICE_LABEL,
-  MAX_QUESTION_HEADER,
-  MAX_QUESTION_TEXT,
-} from "@operad-io/engine";
+
+/** The kernel's longest question text, mirrored here so a long one is cut. */
+const MAX_QUESTION_TEXT = 500;
+/** The kernel's longest header, mirrored here. */
+const MAX_QUESTION_HEADER = 40;
+/** The kernel's longest choice label, mirrored here. */
+const MAX_QUESTION_CHOICE_LABEL = 80;
+/** The kernel's longest choice description, mirrored here. */
+const MAX_QUESTION_CHOICE_DESCRIPTION = 280;
 
 /** One choice a harness's agent offered. */
 export interface HarnessQuestionChoice {
