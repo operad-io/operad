@@ -434,7 +434,11 @@ export interface EntryData {
   /** What ran: the command, path or main argument, as the harness summarized it. */
   readonly input?: string | null | undefined;
   readonly result?: ToolResult | undefined;
-  /** Epoch milliseconds; null when the harness gave no start time. */
+  /**
+   * Epoch milliseconds: a tool call's start, or when the log received the line
+   * that finished a text or thinking part. Null for a tool call whose log had
+   * no start line; absent when the item carries no time, such as an old fact.
+   */
   readonly startedAt?: number | null | undefined;
   readonly durationMs?: number | undefined;
   /** The first 4 KB of what the call printed; null when it printed nothing. */
@@ -848,6 +852,7 @@ export function entryOfFact(fact: PluginFact): Entry | undefined {
     kind: entryKind,
     at: fact.at,
     sequence: fact.sequence,
+    ...(typeof data.startedAt === "number" || data.startedAt === null ? { startedAt: data.startedAt } : {}),
     ...(typeof data.reason === "string" ? { reason: data.reason } : {}),
     ...(typeof data.messageId === "string" ? { messageId: data.messageId } : {}),
   };
@@ -861,7 +866,6 @@ export function entryOfFact(fact: PluginFact): Entry | undefined {
       toolName: data.toolName,
       ...(typeof data.input === "string" || data.input === null ? { input: data.input } : {}),
       result: data.result,
-      ...(typeof data.startedAt === "number" || data.startedAt === null ? { startedAt: data.startedAt } : {}),
       ...(typeof data.durationMs === "number" && Number.isFinite(data.durationMs) ? { durationMs: data.durationMs } : {}),
       ...(typeof data.output === "string" || data.output === null ? { output: data.output } : {}),
       ...(typeof data.outputPath === "string" ? { outputPath: data.outputPath } : {}),

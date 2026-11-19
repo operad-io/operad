@@ -16,7 +16,7 @@ import { maskSecrets, type FoldEntry } from "@operad-io/harness-process";
 import { secretValues } from "./reply.ts";
 import { readChatSkills, skillSummaries, type ObjectReader } from "./skills.ts";
 import { foldLogTail, agentLogPath } from "./tail.ts";
-import { agentLine, allMessages, attachmentsOf, chatData, chatRef, COMMAND_FACT, commandOfFact, ENTRY_FACT, entryOfFact, IMAGE_TYPES, lastReplyContext, latestRunOf, MESSAGE_FACT, modelAndCost, stopOfFact, unanswered, type Attachment, type ChatContext, type Command, type Entry, type Message } from "./model.ts";
+import { agentLine, allMessages, attachmentsOf, chatData, chatRef, COMMAND_FACT, commandOfFact, ENTRY_FACT, entryOfFact, IMAGE_TYPES, lastReplyContext, latestRunOf, MESSAGE_FACT, modelAndCost, RUN_FACT, stopOfFact, unanswered, type Attachment, type ChatContext, type Command, type Entry, type Message } from "./model.ts";
 import type { TailRead } from "./tail.ts";
 
 /** How many messages of a chat one page of the transcript holds. */
@@ -253,8 +253,47 @@ function chunkOf(facts: readonly PluginFact[]): Chunk {
   };
 }
 
+/** The facts a turn shows: messages, commands and finished entries. */
+function shownFact(fact: PluginFact): boolean {
+  return fact.type === MESSAGE_FACT || fact.type === COMMAND_FACT || fact.type === ENTRY_FACT;
+}
+
+/**
+ * The chunks of each run, from the run fact to its reply. A message sent while
+ * the run writes is in that span, so it is ordered with the run's items rather
+ * than left as a chunk above all of them. Content before the first run fact,
+ * and a store that predates run facts, keeps the older chunking.
+ */
+function runChunks(facts: readonly PluginFact[]): { readonly chunks: readonly Chunk[]; readonly consumed: ReadonlySet<number> } | undefined {
+  const starts: { readonly index: number; readonly runId: string }[] = [];
+  facts.forEach((fact, index) => {
+    if (fact.type === RUN_FACT && typeof fact.data.runId === "string" && fact.data.runId.length > 0) {
+      starts.push({ index, runId: fact.data.runId });
+    }
+  });
+  if (starts.length === 0) return undefined;
+  const chunks: Chunk[] = [];
+  const consumed = new Set<number>();
+  starts.forEach((start, at) => {
+    const end = starts[at + 1]?.index ?? facts.length;
+    let turn: PluginFact[] = [];
+    for (let index = start.index + 1; index < end; index += 1) {
+      const fact = facts[index];
+      if (fact === undefined || !shownFact(fact)) continue;
+      turn.push(fact);
+      consumed.add(index);
+      if (fact.type === MESSAGE_FACT && fact.data.role === "assistant" && fact.data.runId === start.runId) {
+        chunks.push(chunkOf(turn));
+        turn = [];
+      }
+    }
+    if (turn.length > 0) chunks.push(chunkOf(turn));
+  });
+  return { chunks, consumed };
+}
+
 /** A turn is the entries of a run and the reply they led to, so a page never splits them. */
-function chunksOf(facts: readonly PluginFact[]): readonly Chunk[] {
+function legacyChunksOf(facts: readonly PluginFact[]): readonly Chunk[] {
   const replies = new Map<string, number[]>();
   const indexes = new Map<number, number>();
   facts.forEach((fact, index) => {
@@ -296,6 +335,47 @@ function chunksOf(facts: readonly PluginFact[]): readonly Chunk[] {
     index += 1;
   }
   return chunks;
+}
+
+function chunksOf(facts: readonly PluginFact[]): readonly Chunk[] {
+  const runs = runChunks(facts);
+  if (runs === undefined) return legacyChunksOf(facts);
+  // What no run fact covers (a message before the first run, or an old entry)
+  // is still shown in its own place.
+  const rest: Chunk[] = [];
+  let index = 0;
+  while (index < facts.length) {
+    if (runs.consumed.has(index)) {
+      index += 1;
+      continue;
+    }
+    const fact = facts[index];
+    if (fact === undefined) break;
+    if (fact.type === MESSAGE_FACT || fact.type === COMMAND_FACT) {
+      rest.push(chunkOf([fact]));
+      index += 1;
+      continue;
+    }
+    if (fact.type === ENTRY_FACT) {
+      const runId = typeof fact.data.runId === "string" ? fact.data.runId : undefined;
+      let end = index + 1;
+      while (
+        end < facts.length &&
+        !runs.consumed.has(end) &&
+        facts[end]?.type === ENTRY_FACT &&
+        (runId === undefined || facts[end]?.data.runId === runId)
+      ) {
+        end += 1;
+      }
+      rest.push(chunkOf(facts.slice(index, end)));
+      index = end;
+      continue;
+    }
+    index += 1;
+  }
+  return [...runs.chunks, ...rest].sort((left, right) =>
+    (left.facts[0]?.sequence ?? 0) - (right.facts[0]?.sequence ?? 0),
+  );
 }
 
 interface Page {
@@ -343,6 +423,29 @@ function cursorAfter(cursor: string): number | undefined {
   return value.kind === "facts" && typeof value.after === "number" ? value.after : undefined;
 }
 
+/** When one shown item happened, for ordering a turn with a message sent during it. */
+function shownAt(fact: PluginFact): number {
+  const entry = fact.type === ENTRY_FACT ? entryOfFact(fact) : undefined;
+  return entry !== undefined && typeof entry.startedAt === "number" ? entry.startedAt : fact.at;
+}
+
+/**
+ * The facts of a turn in time order, when the entries carry times. A store whose
+ * entries carry none keeps the order it recorded, so an older chat reads as it
+ * always did. Messages and commands always carry their fact's time.
+ */
+function turnFacts(facts: readonly PluginFact[]): readonly PluginFact[] {
+  const timed = facts.some((fact) => {
+    const entry = fact.type === ENTRY_FACT ? entryOfFact(fact) : undefined;
+    return entry !== undefined && typeof entry.startedAt === "number";
+  });
+  if (!timed) return facts;
+  return facts
+    .map((fact, index) => ({ fact, index, at: shownAt(fact) }))
+    .sort((left, right) => left.at - right.at || left.index - right.index)
+    .map((item) => item.fact);
+}
+
 function rendered(chunk: Chunk, speaker: string, home: string | undefined, harness: string): readonly string[] {
   const blocks: string[] = [];
   let lines: string[] = [];
@@ -350,7 +453,7 @@ function rendered(chunk: Chunk, speaker: string, home: string | undefined, harne
     if (lines.length > 0) blocks.push(lines.join("\n"));
     lines = [];
   };
-  for (const fact of chunk.facts) {
+  for (const fact of turnFacts(chunk.facts)) {
     if (fact.type === COMMAND_FACT) {
       flush();
       const command = commandOfFact(fact);
@@ -391,10 +494,18 @@ interface SectionStatus {
   readonly since: number;
 }
 
-/** The changing part of a transcript: its tail and what the reply is doing. */
+/** The changing part of a transcript: its tail, what the reply is doing, and where finished content pauses. */
 interface Live {
   readonly tail?: string | undefined;
   readonly status?: SectionStatus | undefined;
+  /** The last fact before a message the live tail holds, so a client reads it again with the reply. */
+  readonly cut?: number | undefined;
+}
+
+interface TailItem {
+  readonly at?: number | undefined;
+  readonly order: number;
+  readonly markdown: string;
 }
 
 /**
@@ -454,6 +565,52 @@ function statusOf(
   return { text: "Thinking", since: read.lastAt ?? times?.startedAt ?? first.at };
 }
 
+/** One shown fact as a tail line, for a message the live reply is holding. */
+function factTailItem(fact: PluginFact, speaker: string, home: string | undefined, harness: string): string | undefined {
+  if (fact.type === COMMAND_FACT) {
+    const command = commandOfFact(fact);
+    return command === undefined ? undefined : commandMarkdown(command);
+  }
+  if (fact.type === ENTRY_FACT) {
+    const entry = entryOfFact(fact);
+    return entry === undefined ? undefined : entryMarkdown(entry, speaker, harness);
+  }
+  if (fact.type !== MESSAGE_FACT) return undefined;
+  const message = messageFrom(fact);
+  return message === undefined ? undefined : messageMarkdown(message, speaker, home);
+}
+
+/**
+ * The tail of a reply that has a message sent during it. The message is a fact
+ * but the reply's items are still in the log: both are put in time order, so
+ * the live tail and the stored transcript place the message alike. `cut` is the
+ * fact before the first such message; finished content stops there until the
+ * run ends or the message can be appended with the rest.
+ */
+function heldTail(
+  facts: readonly PluginFact[],
+  cut: number,
+  log: readonly TailItem[],
+  speaker: string,
+  home: string | undefined,
+  harness: string,
+): string | undefined {
+  const held: TailItem[] = [];
+  for (const fact of facts) {
+    if (fact.sequence <= cut) continue;
+    const markdown = factTailItem(fact, speaker, home, harness);
+    if (markdown === undefined) continue;
+    held.push({ at: shownAt(fact), order: held.length, markdown });
+  }
+  const all = [...held, ...log.map((item, index) => ({ ...item, order: held.length + index }))];
+  const fallback = log.at(-1)?.at ?? 0;
+  const ordered = all
+    .map((item) => ({ ...item, sort: item.at ?? fallback }))
+    .sort((left, right) => left.sort - right.sort || left.order - right.order);
+  const lines = ordered.map((item) => item.markdown).filter((line) => line.trim().length > 0);
+  return lines.length === 0 ? undefined : lines.join("\n\n");
+}
+
 /**
  * What the running reply has written and the facts do not hold yet, as
  * Markdown, or undefined when no reply runs. It is read from the end of the log
@@ -476,11 +633,14 @@ async function liveOf(
   let read: TailRead | undefined;
   let called: ReadonlySet<string> = new Set<string>();
   let secrets: readonly string[] = [];
+  let cut: number | undefined;
   if (runId !== undefined && chat.harness.length > 0 && ctx.runTimes !== undefined && times !== undefined && times.endedAt === null) {
     secrets = await secretValues(ctx);
     const said = new Set<string>();
     const calls = new Set<string>();
+    let runStart = -1;
     for (const fact of facts) {
+      if (fact.type === RUN_FACT && fact.data.runId === runId) runStart = fact.sequence;
       if (fact.data.runId !== runId) continue;
       if (fact.type === MESSAGE_FACT && fact.data.role === "assistant" && typeof fact.data.text === "string") {
         said.add(fact.data.text.trim());
@@ -490,6 +650,17 @@ async function liveOf(
       else if (entry?.text !== undefined) said.add(entry.text.trim());
     }
     called = calls;
+    // A person's message after the run began is inside the reply. Its fact is
+    // already stored while the reply's own items are still in the log.
+    const during = runStart < 0
+      ? undefined
+      : facts.find(
+          (fact) =>
+            fact.sequence > runStart &&
+            fact.type === MESSAGE_FACT &&
+            fact.data.role === "user",
+        );
+    cut = during?.sequence === undefined ? undefined : during.sequence - 1;
     // The read drops a finished entry the facts already hold, so a long run does
     // not keep them all in the saved fold.
     const held = (entry: FoldEntry): boolean => {
@@ -502,51 +673,63 @@ async function liveOf(
         const masked = maskSecrets(text, secrets);
         return masked.trim().length === 0 || said.has(masked.trim()) ? undefined : masked;
       };
-      const lines: string[] = [];
+      const items: TailItem[] = [];
+      const push = (at: number | null | undefined, markdown: string | undefined): void => {
+        if (markdown === undefined || markdown.trim().length === 0) return;
+        items.push({ ...(at === null || at === undefined ? {} : { at }), order: items.length, markdown });
+      };
       // A finished entry is shown until the facts hold it; then `said` and `called` drop it.
       for (const entry of read.state.entries) {
         // Radian gives no text or thinking increments; its chats show tool lines only.
         if (chat.harness === "radian" && entry.kind !== "tool") continue;
         if (entry.kind === "tool") {
           if (calls.has(maskSecrets(entry.callId, secrets))) continue;
-          const markdown = entryMarkdown(
-            {
-              ...entry,
-              toolName: maskSecrets(entry.toolName, secrets),
-              input: entry.input === null ? null : maskSecrets(entry.input, secrets),
-              error: entry.error === null ? null : maskSecrets(entry.error, secrets),
-            },
-            speaker,
-            chat.harness,
+          push(
+            entry.at,
+            entryMarkdown(
+              {
+                ...entry,
+                toolName: maskSecrets(entry.toolName, secrets),
+                input: entry.input === null ? null : maskSecrets(entry.input, secrets),
+                error: entry.error === null ? null : maskSecrets(entry.error, secrets),
+              },
+              speaker,
+              chat.harness,
+            ),
           );
-          if (markdown !== undefined) lines.push(markdown);
           continue;
         }
         const text = fresh(entry.text);
         if (text === undefined) continue;
-        const markdown = entryMarkdown({ ...entry, text }, speaker, chat.harness);
-        if (markdown !== undefined) lines.push(markdown);
+        push(entry.at, entryMarkdown({ ...entry, text }, speaker, chat.harness));
       }
       // Radian gives no text or thinking increments; its chats show the tool lines only.
       if (chat.harness !== "radian") {
         const thinking = fresh(read.state.thinking);
-        if (thinking !== undefined) lines.push(thinking.split(/\r?\n/).map((line) => `> ${line}`).join("\n"));
+        if (thinking !== undefined) push(read.lastAt, thinking.split(/\r?\n/).map((line) => `> ${line}`).join("\n"));
         const text = fresh(read.state.text);
-        if (text !== undefined) lines.push(`**${speaker}:** ${flat(text)}`);
+        if (text !== undefined) push(read.lastAt, `**${speaker}:** ${flat(text)}`);
       }
       for (const call of read.state.calls) {
         if (calls.has(maskSecrets(call.callId, secrets))) continue;
         const input = call.input === null ? "" : flat(maskSecrets(call.input, secrets));
         const what = input.length === 0 ? "" : ` ${inlineCode(input.length <= 160 ? input : `${input.slice(0, 159)}…`)}`;
-        lines.push(`tool ${maskSecrets(call.toolName, secrets)} since ${clock(call.at)}${what}`);
+        push(call.at, `tool ${maskSecrets(call.toolName, secrets)} since ${clock(call.at)}${what}`);
       }
-      tail = lines.length === 0 ? undefined : lines.join("\n\n");
+      tail = cut === undefined
+        ? (items.length === 0 ? undefined : items.map((item) => item.markdown).join("\n\n"))
+        : heldTail(facts, cut, items, speaker, ctx.home, chat.harness);
+    }
+    // The log may not exist yet; the mid-run message still belongs in the tail.
+    if (cut !== undefined && tail === undefined) {
+      tail = heldTail(facts, cut, [], speaker, ctx.home, chat.harness);
     }
   }
   const status = statusOf(facts, pending, runId, times, read, called, secrets);
   return {
     ...(tail === undefined ? {} : { tail }),
     ...(status === undefined ? {} : { status }),
+    ...(cut === undefined ? {} : { cut }),
   };
 }
 
@@ -562,21 +745,25 @@ async function load(
   const speaker = await speakerOf(ctx, object);
   const facts = allFacts(ctx, ref);
   const live = await liveOf(ctx, object, facts, speaker);
+  const { cut, ...liveContent } = live;
+  // A message the live tail holds stays unread as finished content until the
+  // run ends, so the same facts then arrive together with the reply's items.
+  const finished = cut === undefined ? facts : facts.filter((fact) => fact.sequence <= cut);
   const context = await chatContext(ctx, object);
   const since = markAfter(options.after);
   if (since !== undefined) {
     // Only what was recorded after the mark, in the same Markdown as a full read.
-    const chunks = chunksOf(facts.filter((fact) => fact.sequence > since));
+    const chunks = chunksOf(finished.filter((fact) => fact.sequence > since));
     const blocks = chunks.flatMap((chunk) => rendered(chunk, speaker, ctx.home, chat.harness));
     return {
       markdown: blocks.join("\n\n---\n\n"),
       mark: markOf(Math.max(since, chunks.at(-1)?.last ?? 0)),
       delta: true,
-      ...live,
+      ...liveContent,
       ...(context === undefined ? {} : { context }),
     };
   }
-  const pages = pagesOf(ref, chunksOf(facts));
+  const pages = pagesOf(ref, chunksOf(finished));
   const after = options.cursor === undefined ? undefined : cursorAfter(options.cursor);
   const index = pages.findIndex((page) => page.after === after);
   const selected = pages[index < 0 ? 0 : index] ?? pages[0];
@@ -599,7 +786,7 @@ async function load(
     mark: markOf(selected?.chunks.at(-1)?.last ?? 0),
     ...(nextPage?.cursor === undefined ? {} : { next: nextPage.cursor }),
     ...(toc.length > 1 ? { pages: toc } : {}),
-    ...live,
+    ...liveContent,
     ...(context === undefined ? {} : { context }),
   };
 }

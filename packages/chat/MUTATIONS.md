@@ -411,3 +411,12 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 |---|---|---|---|
 | T-0560-M1 | packages/chat/src/reply.ts | `levelRecheck` lifted a question when the new level still asked about it | `chat:access > a question opened after a lowering stays open when the new level still asks` |
 | T-0560-M2 | packages/chat/src/index.ts | `chat:access` said the next reply would use the level, not that replies follow it | `chat:access > the next reply uses the changed level, and the history says who changed it and to what` |
+
+## T-0565 — a message sent during a reply is in time order
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0565-M1 | packages/chat/src/views.ts | `turnFacts` no longer ordered a turn by its items' times | `the transcript places a message sent during a reply by its time > stored: the reply's items before the message stay above it, and those after stay below it` |
+| T-0565-M2 | packages/chat/src/views.ts | the live section did not stop finished content before a message it was holding in the tail | `the transcript places a message sent during a reply by its time > live: the tail puts the message among the reply's lines, and the stored read after the run keeps that order` |
+| T-0565-M3 | packages/chat/src/reply.ts | a text entry was recorded without the time its log line carried | `the transcript places a message sent during a reply by its time > stored: the reply's items before the message stay above it, and those after stay below it` |
+| T-0565-M4 | packages/chat/src/views.ts | `runChunks` fell back to the older chunks, so a mid-run message stayed in its own chunk above the whole reply | `the transcript places a message sent during a reply by its time > stored: the reply's items before the message stay above it, and those after stay below it` |

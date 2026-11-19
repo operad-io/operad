@@ -764,7 +764,12 @@ async function entryData(
   secrets: readonly string[],
 ): Promise<EntryData> {
   if (entry.kind !== "tool") {
-    return { runId, kind: entry.kind, text: maskSecrets(entry.text, secrets) };
+    return {
+      runId,
+      kind: entry.kind,
+      text: maskSecrets(entry.text, secrets),
+      ...(entry.kind === "stopped" || entry.at === undefined ? {} : { startedAt: entry.at }),
+    };
   }
   const output = entry.output === null ? null : maskSecrets(entry.output, secrets);
   const data: EntryData = {

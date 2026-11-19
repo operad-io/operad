@@ -127,7 +127,7 @@ describe("foldLines", () => {
     expect(foldLines(["x", null, 3, { type: "result" }, { type: "tool_execution_end" }]).entries).toEqual([]);
   });
 
-  test("a line's receivedAt does not change the fold, so old logs still read", () => {
+  test("a line's receivedAt gives a finished text its time, and old logs still read", () => {
     const lines = [
       { type: "text_delta", text: "I will " },
       start("t1", "Bash", "ls"),
@@ -136,8 +136,14 @@ describe("foldLines", () => {
       { type: "message_end", role: "assistant", text: "I will" },
     ];
     const stamped = lines.map((line) => ({ ...(line as Record<string, unknown>), receivedAt: 12_345 }));
-    expect(foldLines(stamped)).toEqual(foldLines(lines));
-    expect(foldLines(lines)).toEqual(foldLines(stamped));
+    expect(foldLines(lines).entries).toEqual([
+      { kind: "text", text: "I will " },
+      { kind: "tool", callId: "t1", toolName: "Bash", input: "ls", result: "done", at: 100, durationMs: 5, output: "file", outputTruncated: false, error: null },
+    ]);
+    expect(foldLines(stamped).entries).toEqual([
+      { kind: "text", text: "I will ", at: 12_345 },
+      { kind: "tool", callId: "t1", toolName: "Bash", input: "ls", result: "done", at: 100, durationMs: 5, output: "file", outputTruncated: false, error: null },
+    ]);
   });
 
   test("one by one gives the same state as all at once, at every cut", () => {

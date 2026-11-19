@@ -10,8 +10,18 @@ import { isRecord } from "@operad-io/engine";
 export type ToolResult = "done" | "failed" | "blocked" | "denied";
 
 export type FoldEntry =
-  | { readonly kind: "text"; readonly text: string }
-  | { readonly kind: "thinking"; readonly text: string }
+  | {
+      readonly kind: "text";
+      readonly text: string;
+      /** When the host received the line that finished it, when the log gave one. */
+      readonly at?: number | undefined;
+    }
+  | {
+      readonly kind: "thinking";
+      readonly text: string;
+      /** When the host received the line that finished it, when the log gave one. */
+      readonly at?: number | undefined;
+    }
   | {
       readonly kind: "tool";
       readonly callId: string;
@@ -73,11 +83,21 @@ function str(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
-/** Puts unfinished text and thinking into the entries. */
-function settle(state: FoldState): FoldState {
+/** When the host received a line; undefined for a log written without stamping. */
+function receivedAtOf(line: Record<string, unknown>): number | undefined {
+  const at = line["receivedAt"];
+  return typeof at === "number" && Number.isFinite(at) ? at : undefined;
+}
+
+/** Puts unfinished text and thinking into the entries, with the time of the line that finished them. */
+function settle(state: FoldState, at: number | undefined): FoldState {
   const entries = [...state.entries];
-  if (state.thinking.length > 0) entries.push({ kind: "thinking", text: state.thinking });
-  if (state.text.length > 0) entries.push({ kind: "text", text: state.text });
+  if (state.thinking.length > 0) {
+    entries.push({ kind: "thinking", text: state.thinking, ...(at === undefined ? {} : { at }) });
+  }
+  if (state.text.length > 0) {
+    entries.push({ kind: "text", text: state.text, ...(at === undefined ? {} : { at }) });
+  }
   return { ...state, entries, text: "", thinking: "", sawText: state.sawText || state.text.length > 0 };
 }
 
@@ -96,9 +116,10 @@ function apply(state: FoldState, line: unknown): FoldState {
     case "text_end": {
       const text = str(line["text"]);
       if (text === undefined) return state;
+      const at = receivedAtOf(line);
       return {
         ...state,
-        entries: [...state.entries, { kind: "text", text }],
+        entries: [...state.entries, { kind: "text", text, ...(at === undefined ? {} : { at }) }],
         text: "",
         sawText: true,
       };
@@ -106,15 +127,21 @@ function apply(state: FoldState, line: unknown): FoldState {
     case "thinking_end": {
       const text = str(line["text"]);
       if (text === undefined) return state;
-      return { ...state, entries: [...state.entries, { kind: "thinking", text }], thinking: "" };
+      const at = receivedAtOf(line);
+      return {
+        ...state,
+        entries: [...state.entries, { kind: "thinking", text, ...(at === undefined ? {} : { at }) }],
+        thinking: "",
+      };
     }
     case "message_end": {
-      const settled = settle(state);
+      const at = receivedAtOf(line);
+      const settled = settle(state, at);
       const said = str(line["text"]);
       // Today's harnesses write only the head of a message's text here.
       const entries =
         !settled.sawText && said !== undefined && said.length > 0
-          ? [...settled.entries, { kind: "text" as const, text: said }]
+          ? [...settled.entries, { kind: "text" as const, text: said, ...(at === undefined ? {} : { at }) }]
           : settled.entries;
       return { ...settled, entries, sawText: false };
     }
@@ -124,7 +151,7 @@ function apply(state: FoldState, line: unknown): FoldState {
       const at = line["at"];
       if (callId === undefined || toolName === undefined || typeof at !== "number") return state;
       if (state.calls.some((call) => call.callId === callId)) return state;
-      const settled = settle(state);
+      const settled = settle(state, receivedAtOf(line));
       const early = settled.earlyBlocks[toolName];
       const { [toolName]: _used, ...rest } = settled.earlyBlocks;
       const call: OpenCall = {
@@ -186,7 +213,7 @@ function apply(state: FoldState, line: unknown): FoldState {
     case "tool_execution_end": {
       const callId = str(line["toolCallId"]);
       if (callId === undefined) return state;
-      const settled = settle(state);
+      const settled = settle(state, receivedAtOf(line));
       const open = settled.calls.find((call) => call.callId === callId);
       const toolName = open?.toolName ?? str(line["toolName"]) ?? "tool";
       const isError = line["isError"] === true;
