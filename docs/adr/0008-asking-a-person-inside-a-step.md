@@ -57,11 +57,11 @@ form beside its answers so the step can name each answer. A form that runs out
 of grace is carried on exactly as D2 to D5 carry a choice question, so the same
 item stays pending and a late answer still reaches the step.
 
-When a form has exactly one question that offers choices, takes no free text and
-is not multiple, the kernel also exposes that question's labels as the
-question's `choices`, so a client that knows only a choice still answers it. Any
-other form has none; such a client shows the form's text and cannot answer every
-question, and that is the form's own limit, not a second question.
+When a form has exactly one question that offers choices and is not multiple,
+the kernel also exposes that question's labels as the question's `choices`, so a
+client that knows only a choice still answers it. Any other form has none; such
+a client shows the form's text and cannot answer every question, and that is the
+form's own limit, not a second question.
 
 The answer is `answers: [{ id, choices?, text?, skipped? }]`: the labels picked,
 the person's own text, or `skipped`. A question the answer leaves out counts as
