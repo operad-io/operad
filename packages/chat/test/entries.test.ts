@@ -93,12 +93,14 @@ describe("chat entries", () => {
       attachments: [],
       source: { kind: role === "user" ? "cli" : "", ref: null },
     });
-    const oldStore = new MemoryPluginStore({ root: "unused" });
+    // Both stores record the same facts, so they must give them the same times.
+    const clock = (): number => 1_700_000_000_000;
+    const oldStore = new MemoryPluginStore({ root: "unused", clock });
     oldStore.append({ type: "chat", object: ref, cause: "seed", data: base });
     oldStore.append({ type: "chat.message", object: ref, cause: "say", data: message("m1", "user", "hello") });
     oldStore.append({ type: "chat", object: ref, cause: "reply", data: { ...base, session: "s-1" } });
     oldStore.append({ type: "chat.message", object: ref, cause: "reply", data: message("m2", "assistant", "hi there") });
-    const newStore = new MemoryPluginStore({ root: "unused" });
+    const newStore = new MemoryPluginStore({ root: "unused", clock });
     newStore.put("chat", id, base, "seed");
     newStore.append({ type: "chat.message", object: ref, cause: "say", data: message("m1", "user", "hello") });
     newStore.put("chat", id, { ...base, session: "s-1" }, "reply");
