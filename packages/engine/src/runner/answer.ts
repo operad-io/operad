@@ -45,7 +45,7 @@ export interface RecordAnswerOptions {
 export interface RecordedAnswerPayload {
   readonly kind: "person_answer";
   readonly waitId: string;
-  readonly choice: string | undefined;
+  readonly choice?: string | undefined;
   readonly answers?: readonly AskQuestionAnswer[] | undefined;
   readonly note?: string | undefined;
   readonly actor: { readonly via: string; readonly id: string };
@@ -84,7 +84,7 @@ function answerInput(
     return {
       kind: "person_answer",
       waitId: wait.id,
-      choice,
+      ...(choice === undefined ? {} : { choice }),
       ...(answers === undefined ? {} : { answers: normalizeAnswers(answers, questions ?? []) }),
       ...(note === undefined ? {} : { note }),
       actor: { via: actor.via, id: actor.id },
