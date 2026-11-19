@@ -47,9 +47,9 @@ describe("a bot proposes a skill", () => {
     const items = await r.registry.standing();
     expect(items).toHaveLength(1);
     expect(items[0]?.actions).toEqual([
-      { plugin: "bot", action: "review" },
       { plugin: "bot", action: "approve" },
       { plugin: "bot", action: "reject" },
+      { plugin: "bot", action: "review" },
     ]);
     const id = items[0]?.object?.id;
     if (id === undefined) throw new Error("no proposal item");
@@ -58,6 +58,12 @@ describe("a bot proposes a skill", () => {
 
     const views = createViews({ registry: r.registry, store: r.store, onLog: () => undefined });
     try {
+      const page = await views.get(`${PROPOSAL_TYPE}:${id}`);
+      expect(page.actions.map((action) => action.name)).toEqual([
+        "bot:approve",
+        "bot:reject",
+        "bot:review",
+      ]);
       const review = await views.section(`${PROPOSAL_TYPE}:${id}`, "review", undefined, { full: true });
       expect(review.markdown).toContain("---\nname: brain");
       expect(review.markdown).toContain("Write notes.");

@@ -420,9 +420,9 @@ describe("schedules a chat proposes", () => {
     const items = await r.registry.standing();
     expect(items).toHaveLength(1);
     expect(items[0]?.actions).toEqual([
-      { plugin: "bot", action: "review" },
       { plugin: "bot", action: "approve" },
       { plugin: "bot", action: "reject" },
+      { plugin: "bot", action: "review" },
     ]);
     const id = items[0]?.object?.id;
     if (id === undefined) throw new Error("no proposal item");

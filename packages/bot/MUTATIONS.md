@@ -196,3 +196,9 @@ changes for bots, in the order they were recorded. The root
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0554-M1 | packages/bot/src/schedule.ts | `mergedEdit` treated an empty model or effort as unchanged, so approving a proposed edit kept the old one (T-0553-M2 named `proposals.ts`; this is where the approve-time clear is) | `schedules a chat proposes > a proposed edit with an empty model or effort clears it on approve` |
+
+## T-0559 — a proposal's actions put approve first
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0559-M1 | packages/bot/src/proposals.ts | the actions kept `review` first, so a client's main button showed the review instead of approving | `a bot proposes a skill > it is one pending item, shows SKILL.md and the files with scripts apart, and applies at the next reply` |
