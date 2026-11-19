@@ -19,7 +19,7 @@
  * line: no hook sees its calls, so it offers no grant (`degradedAskRequest`).
  */
 
-import type { AskAnswer, AskRequest, FlowDefinition, OutwardWrite } from "@operad-io/engine";
+import type { AskAnswer, AskQuestion, AskQuestionAnswer, AskRequest, FlowDefinition, OutwardWrite } from "@operad-io/engine";
 import { isRecord } from "@operad-io/engine";
 import { OUTWARD_ALLOW_TARGET, OUTWARD_SEND_ONCE, appendTargetGrant, outwardCommandWrites, outwardQuestion, targetGrantFor } from "@operad-io/access-match";
 import { alwaysAllowEntry, appendAlwaysAllow, type AlwaysAllowEntry } from "./always-allow.ts";
@@ -47,6 +47,54 @@ export interface AskCall {
   readonly session: string | null;
   /** The outward write this question is about, in a background run. */
   readonly outward?: OutwardWrite | undefined;
+}
+
+/** The `ctx.ask` request for a form a program asked, with the way back. */
+export function askFormRequest(form: AskForm): AskRequest {
+  return {
+    prompt: form.questions.map((question) => question.text).join("\n\n"),
+    questions: form.questions,
+    ...(form.session === null
+      ? { onTimeout: "reject_once" as const }
+      : { resume: { session: form.session } }),
+  };
+}
+
+/** The program's answer from what `ctx.ask` returned. */
+export function formAnswer(answer: AskAnswer): FormAnswer {
+  if (answer.rejected === true) return { decision: "rejected" };
+  return { decision: "answered", answers: answer.answers ?? [] };
+}
+
+/** Puts one form through an asker and resolves with the program's answer. */
+export function askedForm(
+  asker: CallAsker,
+  id: number,
+  form: { readonly questions: readonly AskQuestion[]; readonly session: string | null },
+): Promise<FormAnswer> {
+  return new Promise<FormAnswer>((resolve) => {
+    void asker.handle(
+      JSON.stringify({ type: "ask_form", id, questions: form.questions, session: form.session }),
+      (reply) => {
+        try {
+          const ack: unknown = JSON.parse(reply);
+          if (isRecord(ack) && ack.type === "ask_form_ack") {
+            const decision = ack.decision;
+            resolve({
+              decision: decision === "answered" || decision === "stop" ? decision : "rejected",
+              ...(Array.isArray(ack.answers)
+                ? { answers: ack.answers as readonly AskQuestionAnswer[] }
+                : {}),
+            });
+            return;
+          }
+        } catch {
+          // Fall through to a refusal.
+        }
+        resolve({ decision: "rejected" });
+      },
+    );
+  });
 }
 
 function outwardOf(value: unknown): OutwardWrite | undefined {
@@ -89,11 +137,52 @@ export function askCall(line: string): AskCall | undefined {
 }
 
 /**
+ * The question an agent asked in its own words: one form (ADR 0026 D6). The
+ * program writes one `ask_form` line and waits for one `ask_form_ack` line, so
+ * a person fills the form in as one question.
+ */
+export interface AskForm {
+  readonly id: number;
+  readonly questions: readonly AskQuestion[];
+  /** The session a late answer continues; null when the program has none. */
+  readonly session: string | null;
+}
+
+/** How a form's question ended, as the program reads it. */
+export interface FormAnswer {
+  readonly decision: "answered" | "rejected" | "stop";
+  readonly answers?: readonly AskQuestionAnswer[] | undefined;
+}
+
+/** The `ask_form` line, if this is one. */
+export function askFormLine(line: string): AskForm | undefined {
+  if (!line.includes('"ask_form"')) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(line);
+  } catch {
+    return undefined;
+  }
+  if (!isRecord(parsed) || parsed.type !== "ask_form") return undefined;
+  const { id, questions, session } = parsed;
+  if (typeof id !== "number" || !Array.isArray(questions)) return undefined;
+  if (session !== null && typeof session !== "string") return undefined;
+  const form: AskQuestion[] = [];
+  for (const raw of questions) {
+    if (!isRecord(raw) || typeof raw.id !== "string" || typeof raw.text !== "string") return undefined;
+    form.push(raw as unknown as AskQuestion);
+  }
+  if (form.length === 0) return undefined;
+  return { id, questions: form, session };
+}
+
+/**
  * Classifies the question lines for the stall timer: while a question is open
  * nothing is written, and that is not a stall.
  */
 export function askToolEvent(line: string): "tool-start" | "tool-end" | undefined {
   if (line.includes('"ask_call"') && askCall(line) !== undefined) return "tool-start";
+  if (line.includes('"ask_form"') && askFormLine(line) !== undefined) return "tool-start";
   if (line.includes('"ask_resolved"')) {
     try {
       const parsed: unknown = JSON.parse(line);
@@ -245,6 +334,8 @@ export interface CallAsker {
 export interface CallAskerOptions {
   /** `ctx.ask`. */
   readonly ask: (request: AskRequest) => Promise<AskAnswer>;
+  /** `ctx.ask` for a form the agent asked; absent when the host cannot ask one. */
+  readonly askForm?: ((form: AskForm) => Promise<FormAnswer>) | undefined;
   /** Called once when the wait ends: the program must be ended. */
   readonly onStop: () => void;
   /** Secret values of the store: a call that holds one is refused and never asked, so no fact holds a secret. */
@@ -287,6 +378,45 @@ export function createCallAsker(options: CallAskerOptions): CallAsker {
 
   const answer = (reply: (text: string) => void, id: number, decision: AskDecision, reason?: string): void => {
     reply(JSON.stringify({ type: "ask_ack", id, decision, ...(reason === undefined ? {} : { reason }) }));
+  };
+
+  const answerForm = (reply: (text: string) => void, id: number, form: FormAnswer): void => {
+    reply(
+      JSON.stringify({
+        type: "ask_form_ack",
+        id,
+        decision: form.decision,
+        ...(form.answers === undefined ? {} : { answers: form.answers }),
+      }),
+    );
+  };
+
+  /** One form the program asked: a person answers every question in one go. */
+  const oneForm = async (form: AskForm, reply: (text: string) => void): Promise<void> => {
+    if (stop !== undefined) {
+      answerForm(reply, form.id, { decision: "stop" });
+      return;
+    }
+    if (options.askForm === undefined) {
+      answerForm(reply, form.id, { decision: "rejected" });
+      return;
+    }
+    try {
+      const got = await options.askForm(form);
+      if (got.decision === "stop") {
+        answerForm(reply, form.id, { decision: "stop" });
+        return;
+      }
+      if (got.decision === "rejected") {
+        answerForm(reply, form.id, { decision: "rejected" });
+        return;
+      }
+      answerForm(reply, form.id, { decision: "answered", answers: got.answers ?? [] });
+    } catch (error) {
+      stop = { error };
+      answerForm(reply, form.id, { decision: "stop" });
+      options.onStop();
+    }
   };
 
   const one = async (call: AskCall, reply: (text: string) => void): Promise<void> => {
@@ -365,8 +495,13 @@ export function createCallAsker(options: CallAskerOptions): CallAsker {
   return {
     handle(line, reply) {
       const call = askCall(line);
-      if (call === undefined) return Promise.resolve();
-      chain = chain.then(() => one(call, reply));
+      if (call !== undefined) {
+        chain = chain.then(() => one(call, reply));
+        return chain;
+      }
+      const form = askFormLine(line);
+      if (form === undefined) return Promise.resolve();
+      chain = chain.then(() => oneForm(form, reply));
       return chain;
     },
     stopped: () => stop,
