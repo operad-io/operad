@@ -1750,7 +1750,9 @@ export class Views {
     subject: string | undefined,
     options: ActOptions,
   ): Promise<ViewActionRun> {
-    const env = this.registry.actionEnv();
+    const env = this.registry.actionEnv(
+      object === undefined ? undefined : { type: object.type, id: object.id },
+    );
     const label = subject ?? target.info.name;
 
     // A result that is already true is not an error: the plugin says so and
@@ -2095,7 +2097,7 @@ export class Views {
   ): Promise<readonly ViewAction[]> {
     const keys = new Map(this.registry.keyBindings().map((item) => [item.name, item.key]));
     const actions: (ViewAction & { readonly rank: number })[] = [];
-    const env = this.registry.actionEnv();
+    const env = this.registry.actionEnv({ type: object.type, id: object.id });
     for (const info of this.registry.actions()) {
       if (info.on !== type) continue;
       const action = this.registry.actionDefinition(
@@ -2804,7 +2806,10 @@ export class Views {
     subject: string,
   ): Promise<string> {
     try {
-      const why = await target.action.why?.(object, this.registry.actionEnv());
+      const why = await target.action.why?.(
+        object,
+        this.registry.actionEnv({ type: object.type, id: object.id }),
+      );
       if (why !== undefined && why.length > 0) return why;
     } catch (error) {
       this.onLog(`action "${target.info.name}": why failed: ${messageOf(error)}`);

@@ -1187,3 +1187,11 @@ the row fields.
 |---|---|---|---|
 | T-0573-M1 | packages/engine/src/plugin/question-form.ts | `normalizeQuestions` dropped a question's `body`, so the plan's Markdown never reached the pending item | `a form a step asks > a question's Markdown body reaches the item while it runs and after the grace` |
 | T-0573-M2 | packages/engine/src/runner/step-worker.ts | the ask request sent to the parent left `questions` out, so a step in a worker lost its form | `step worker in this process > a form and its Markdown body reach the parent` |
+
+## T-0575 — an action's `when` reads its object, and a refusal prints the plugin's line
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0575-M1 | packages/engine/src/plugin/registry.ts | `actionEnv` left the object out, so a `when` saw no object to read facts for | `an action that a chat may run as a command > a when reads the object it works on, and a refusal prints the why line` |
+| T-0575-M2 | packages/engine/src/plugin/registry.ts | `runActionChecked` refused with the plain line instead of the plugin's `why` | `an action that a chat may run as a command > a when reads the object it works on, and a refusal prints the why line` |
+| T-0575-M3 | packages/engine/src/views/presentation.ts | the offer check left the object out of the env, so a `when` could not read the object's facts | `chat:retry is offered only when it would start a reply > a reply being written does not offer it, even after a failed attempt` |
