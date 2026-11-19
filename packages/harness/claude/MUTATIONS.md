@@ -313,3 +313,10 @@ setup it depends on, in the order they were recorded. The root
 | T-0573-M5 | packages/harness/claude/src/worker.ts | a plan holding a secret value was asked instead of refused | `a plan that holds a secret value is refused without asking the person` |
 | T-0573-M6 | packages/harness/claude/src/worker.ts | a host without `askForm` was not refused before the call, so the plan was denied as a failed question instead of named as unaskable | `a host without forms refuses the plan instead of letting it through` |
 | T-0573-M7 | packages/harness/claude/src/worker.ts | a rejected plan review fell through to request changes instead of saying nobody reviewed it | `a plan review the host rejected is refused and closed` |
+
+## T-0576 — chat friction follow-ups
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0576-M1 | packages/harness/claude/src/worker.ts | `askQuestion` keyed the answers by the form's trimmed id instead of claude's raw question text, so a spaced or duplicate-text question was not looked up | `the answers are keyed by claude's own question text, which the form trims` |
+| T-0576-M2 | packages/harness/claude/src/worker.ts | claude's `api_retry` system message was ignored, so its retry never became a live item | `claude's own retry report becomes a retry line` |

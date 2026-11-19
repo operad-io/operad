@@ -309,6 +309,14 @@ the init line advertises `ask_user_question_unanswered_v1`. The profile does
 not refuse the tool. A form whose grace passes holds the call and the host ends
 the program, exactly as a call question does.
 
+### Retrying a failed model request
+
+Claude's SDK reports a retryable model failure as a `system` message with
+`subtype: "api_retry"`. The worker writes it as one `retry_start` line with the
+attempt, the retry budget, the delay and the error and HTTP status as the
+reason, so the chat's live transcript shows the retry item (ADR 0027 D9). The
+next finished assistant message clears it.
+
 ### Asking about a call
 
 A call the profile's `askCommands` matches (and that no deny rule matched: deny

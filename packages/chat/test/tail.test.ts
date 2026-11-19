@@ -154,6 +154,49 @@ describe("chat transcript: after, mark and tail", () => {
     expect(during.tail).toContain("Retrying the model request (2 of 3): the provider is overloaded: ***");
   });
 
+  test("a retry with no time of its own is left out of the retry item and the tail alike", async () => {
+    const r = await rig(() => reply("x"));
+    const chat = await r.chat();
+    const run = "run-retry-without-time";
+    const path = agentLogPath(r.store.root, "fake", run);
+    mkdirSync(join(path, ".."), { recursive: true });
+    // A later stamped line gives the log a `lastAt`; the retry's own line has none.
+    writeFileSync(
+      path,
+      `${JSON.stringify({ type: "retry_start", attempt: 1, maxAttempts: 3, delayMs: 2_000, reason: "overloaded" })}\n${JSON.stringify({ type: "journal", note: "still waiting", receivedAt: 1_700_000_000_000 })}\n`,
+    );
+    await r.store.append({ type: RUN_FACT, object: { type: "chat", id: chat }, cause: "test", data: { runId: run } });
+    const page = await view(r, chat);
+    expect(page.retry).toBeUndefined();
+    expect(page.tail ?? "").not.toContain("Retrying");
+  });
+
+  test("a whitespace-only delta leaves no empty speaker line in the tail", async () => {
+    const { during } = await whileRunning([{ type: "text_delta", text: " \n " }]);
+    expect(during.tail).toBeUndefined();
+  });
+
+  test("the same multi-line reply reads the same while it runs and once stored", async () => {
+    const body = "First paragraph.\n\n- one\n- two";
+    let during: SectionContent | undefined;
+    let chat = "";
+    let holder: Rig | undefined;
+    const r = await rig(async (ctx) => {
+      await write(ctx, { type: "text_delta", text: "First paragraph.\n\n" });
+      await write(ctx, { type: "text_delta", text: "- one\n- two\n" });
+      if (holder !== undefined) during = await view(holder, chat, { running: true });
+      return reply(body);
+    });
+    holder = r;
+    chat = await r.chat();
+    await r.say(chat, "go");
+    await r.round(chat);
+    const after = await view(r, chat, { running: false });
+    expect(during?.tail).toBe(`**Operad Bot:** ${body}`);
+    expect(after.tail).toBeUndefined();
+    expect(after.markdown).toContain(body);
+  });
+
   test("a successful retry leaves the live view", async () => {
     const { during } = await whileRunning([
       { type: "retry_start", attempt: 1, maxAttempts: 3, delayMs: 2_000, reason: "overloaded", receivedAt: 1_700_000_000_000 },

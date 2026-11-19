@@ -5,7 +5,7 @@
  */
 
 import { expect, test } from "bun:test";
-import { AppServerClient, questionsOf, type AppServerQuestionRequest } from "../src/app-server.ts";
+import { AppServerClient, personQuestions, questionsOf, type AppServerQuestionRequest } from "../src/app-server.ts";
 
 function client(onQuestion?: (request: AppServerQuestionRequest) => Promise<Readonly<Record<string, readonly string[]>>>): AppServerClient {
   return new AppServerClient({
@@ -101,4 +101,23 @@ test("a question without an id or text is left out, and a request with none is r
     params: { ...REQUEST.params, questions: [{ question: "no id?" }] },
   });
   expect(reply).toMatchObject({ id: 7, error: { code: -32601 } });
+});
+
+test("a secret question is parsed, and is never put to the person", () => {
+  const parsed = questionsOf([
+    { id: "token", question: "Paste the token", isSecret: true },
+    { id: "loader", question: "How should it load?" },
+  ]);
+  expect(parsed).toEqual([
+    { id: "token", question: "Paste the token", isSecret: true },
+    { id: "loader", question: "How should it load?" },
+  ]);
+  const request: AppServerQuestionRequest = {
+    method: "item/tool/requestUserInput",
+    itemId: "i1",
+    threadId: "t1",
+    turnId: "u1",
+    questions: parsed,
+  };
+  expect(personQuestions(request)).toEqual([{ id: "loader", question: "How should it load?" }]);
 });

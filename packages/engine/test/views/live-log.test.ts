@@ -565,6 +565,50 @@ describe("a live log that grows without a fact", () => {
     }
   });
 
+  test("a pushed tail that has nothing left to say clears the client's tail", async () => {
+    const { plugin } = pushingPlugin((call) => (call === 1 ? { section: "log", tail: "tail 1" } : undefined));
+    const env = await fixture({ logDir: true }, plugin);
+    const views = viewsOf(env);
+    const onChange = await env.watches.opened(env.directory);
+    const stream = views.events()[Symbol.asyncIterator]();
+    try {
+      onChange("agent.log");
+      expect(await nextTail(stream)).toEqual({
+        id: "one",
+        type: "item",
+        section: "log",
+        tail: "tail 1",
+      });
+
+      env.now.value = 60;
+      onChange("agent.log");
+      expect(await nextTail(stream)).toEqual({
+        id: "one",
+        type: "item",
+        section: "log",
+        tail: "",
+      });
+    } finally {
+      await stream.return?.();
+    }
+  });
+
+  test("a tail function with nothing to say sends no empty tail", async () => {
+    const { plugin } = pushingPlugin(() => undefined);
+    const env = await fixture({ logDir: true }, plugin);
+    const views = viewsOf(env);
+    const onChange = await env.watches.opened(env.directory);
+    const stream = views.events()[Symbol.asyncIterator]();
+    try {
+      onChange("agent.log");
+      expect(await nextChange(stream, "one")).toEqual({ id: "one" });
+      env.store.put("item", "two", { title: "Two changed" }, "seed");
+      expect(await nextChange(stream, "two")).toEqual({ id: "two" });
+    } finally {
+      await stream.return?.();
+    }
+  });
+
   test("a pushed tail is held to one per object per 50 ms and the last growth wins", async () => {
     const { plugin, state } = pushingPlugin((call) => ({ section: "log", tail: `tail ${call}` }));
     const env = await fixture({ logDir: true }, plugin);

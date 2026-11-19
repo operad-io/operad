@@ -721,6 +721,8 @@ export class Views {
   private readonly livePending = new Map<string, ObjectRef>();
   private readonly liveTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly liveGenerations = new Map<string, number>();
+  /** The section of the last tail an object pushed, so an empty tail can clear it. */
+  private readonly liveSections = new Map<string, string>();
   private closed = false;
   /** How the newest ended run of an object ended, keyed by its run and last fact. */
   private readonly lastRunEnds = new Map<
@@ -870,6 +872,7 @@ export class Views {
     this.livePending.clear();
     this.liveAnnouncedAt.clear();
     this.liveGenerations.clear();
+    this.liveSections.clear();
     this.lastRunEnds.clear();
   }
 
@@ -3013,14 +3016,27 @@ export class Views {
     this.pushLive(ref, key);
   }
 
-  /** Reads the plugin's live part and sends it, unless a newer change won. */
+  /**
+   * Reads the plugin's live part and sends it, unless a newer change won. When
+   * the plugin has nothing left to say, one last event with an empty tail tells
+   * a client that renders only from push to drop what it kept.
+   */
   private pushLive(ref: ObjectRef, key: string): void {
     const generation = this.liveGenerations.get(key) ?? 0;
     void this.liveEvent(ref)
-      .then((event) => {
+      .then((result) => {
         if (this.closed) return;
         if (this.liveGenerations.get(key) !== generation) return;
-        if (event?.section !== undefined) this.announce(event);
+        if (result === undefined) return;
+        if (result.event !== undefined && result.section !== undefined) {
+          this.liveSections.set(key, result.section);
+          this.announce(result.event);
+          return;
+        }
+        const section = result.section ?? this.liveSections.get(key);
+        if (section === undefined) return;
+        this.liveSections.delete(key);
+        this.announce({ id: ref.id, type: ref.type, section, tail: "" });
       })
       .catch((error: unknown) => {
         this.onLog(
@@ -3029,8 +3045,14 @@ export class Views {
       });
   }
 
-  /** The plugin's live part, or undefined when it is gone or has nothing to say. */
-  private async liveEvent(ref: ObjectRef): Promise<ViewEvent | undefined> {
+  /**
+   * The plugin's live part. Undefined when the type has no tail, the object is
+   * gone, or the call failed; the section alone when it has nothing to say now;
+   * otherwise the section and the event to announce.
+   */
+  private async liveEvent(
+    ref: ObjectRef,
+  ): Promise<{ readonly section?: string | undefined; readonly event?: ViewEvent | undefined } | undefined> {
     const owner = this.registry.viewsFor(ref.type);
     const live = owner?.views.tail;
     if (owner === undefined || live === undefined) return undefined;
@@ -3058,6 +3080,8 @@ export class Views {
         ),
         timeout,
       ]);
+      // The plugin may have no live content now; that is not a failure.
+      if (content === undefined) return {};
       if (!isRecord(content)) return undefined;
       const section = textOf(content.section);
       if (section === undefined || section.length === 0) return undefined;
@@ -3067,16 +3091,19 @@ export class Views {
       const data =
         isRecord(content.data) ? (content.data as Readonly<Record<string, JsonValue>>) : undefined;
       if (tail === undefined && status === undefined && retry === undefined && data === undefined) {
-        return undefined;
+        return { section };
       }
       return {
-        id: ref.id,
-        type: ref.type,
         section,
-        ...(tail === undefined ? {} : { tail }),
-        ...(status === undefined ? {} : { status }),
-        ...(retry === undefined ? {} : { retry }),
-        ...(data === undefined ? {} : { data }),
+        event: {
+          id: ref.id,
+          type: ref.type,
+          section,
+          ...(tail === undefined ? {} : { tail }),
+          ...(status === undefined ? {} : { status }),
+          ...(retry === undefined ? {} : { retry }),
+          ...(data === undefined ? {} : { data }),
+        },
       };
     } catch (error) {
       this.onLog(

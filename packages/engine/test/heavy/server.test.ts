@@ -990,6 +990,42 @@ describe("http server", () => {
     }
   });
 
+  test("a choice for a wait with no choices is refused and records nothing", async () => {
+    const h = await makeHarness();
+    try {
+      seed(h, "one", { title: "First", state: "new" });
+      const run = await h.log.startRun("demo-flow", "item:one");
+      await h.log.append(run.runId, 0, [
+        {
+          kind: "waiting_for_person",
+          payload: {
+            waitId: "wait:none",
+            step: "ask",
+            prompt: "Say anything?",
+            choices: [],
+            waitKind: "step",
+            effectId: null,
+          },
+          cause: "test",
+        },
+      ]);
+
+      const refused = await api(h, "/v1/answer", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ runId: run.runId, waitId: "wait:none", choice: "anything" }),
+      });
+      expect(refused.status).toBe(409);
+      expect((await json(refused)).error).toMatchObject({ kind: "not-available" });
+
+      // Nothing was recorded: the same item is still the one waiting.
+      const pending = (await (await api(h, "/v1/pending")).json()) as { runId: string; waitId?: string }[];
+      expect(pending.find((item) => item.runId === run.runId)?.waitId).toBe("wait:none");
+    } finally {
+      await h.close();
+    }
+  });
+
   test("an action's opens passes through /v1/act when it names an existing object, and is dropped with a log line when not", async () => {
     const h = await makeHarness();
     try {

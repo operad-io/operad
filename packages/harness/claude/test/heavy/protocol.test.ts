@@ -1925,6 +1925,37 @@ test("parseInput refuses an image that is not a path with an image media type", 
   expect(parseInput({ ...base, images: "x" }).ok).toBe(false);
 });
 
+test("claude's own retry report becomes a retry line", async () => {
+  const run = await runFake(setup(), {
+    steps: [
+      { say: systemInit() },
+      {
+        say: {
+          type: "system",
+          subtype: "api_retry",
+          attempt: 1,
+          max_retries: 3,
+          retry_delay_ms: 2_000,
+          error_status: 529,
+          error: "overloaded",
+          uuid: "retry-1",
+          session_id: SESSION,
+        },
+      },
+      { say: assistant("m1", "the answer") },
+      { say: result() },
+    ],
+  });
+  const line = run.lines.find((entry) => entry["type"] === "retry_start");
+  expect(line).toEqual({
+    type: "retry_start",
+    attempt: 1,
+    maxAttempts: 3,
+    delayMs: 2_000,
+    reason: "the model request failed: overloaded (HTTP 529)",
+  });
+});
+
 // -- AskUserQuestion: the agent's own question as a form ---------------------
 
 const ASK_FORM_QUESTION = {
@@ -1985,6 +2016,66 @@ test("AskUserQuestion becomes one form, and the person's answer goes back as its
   expect(last(run)).toMatchObject({ result: "done" });
 });
 
+test("the answers are keyed by claude's own question text, which the form trims", async () => {
+  const s = setup();
+  const child = new Child(
+    s.env({
+      steps: [
+        { say: systemInit() },
+        {
+          ask: {
+            toolName: "AskUserQuestion",
+            toolUseId: "q-1",
+            input: {
+              questions: [
+                {
+                  question: "  How should it load?  ",
+                  header: "Loader",
+                  options: [{ label: "Built-in" }],
+                },
+                {
+                  question: "How should it load?",
+                  header: "Again",
+                  options: [{ label: "Dynamic" }],
+                },
+              ],
+            },
+          },
+        },
+        { say: assistant("m1", "done") },
+        { say: result() },
+      ],
+    }),
+    s.recordFile,
+  );
+  child.sendLine(JSON.stringify(s.input));
+  const form = await child.untilLine("ask_form");
+  const questions = form?.["questions"] as Array<{ id: string }> | undefined;
+  expect(questions?.map((question) => question.id)).toEqual(["How should it load?", "How should it load?-2"]);
+  child.sendLine(
+    JSON.stringify({
+      type: "ask_form_ack",
+      id: form?.["id"],
+      decision: "answered",
+      answers: [
+        { id: "How should it load?", choices: ["Built-in"] },
+        { id: "How should it load?-2", choices: ["Dynamic"] },
+      ],
+    }),
+  );
+  child.endInput();
+  const run = await child.finish();
+  expect(answerOf(run)).toMatchObject({
+    behavior: "allow",
+    updatedInput: {
+      answers: {
+        "  How should it load?  ": "Built-in",
+        "How should it load?": "Dynamic",
+      },
+    },
+  });
+});
+
 // -- ExitPlanMode: the plan as one review question ---------------------------
 
 const PLAN = "# Change the loader\n\n1. Edit src/a.ts.\n2. Run bun test.";
@@ -2043,6 +2134,33 @@ test("asking for changes refuses the call with the person's note and interrupts 
   });
   expect(kinds(run)).toContain("blocked");
   expect(last(run)).toMatchObject({ result: "done" });
+});
+
+test("a request for changes with no note refuses with the default message", async () => {
+  const { run } = await planRun({
+    decision: "answered",
+    answers: [{ id: "plan", choices: ["Request changes"] }],
+  });
+  expect(answerOf(run)).toMatchObject({
+    behavior: "deny",
+    message: "The person asked for changes to the plan.",
+    interrupt: true,
+  });
+  expect(kinds(run)).toContain("blocked");
+});
+
+test("a skipped or free-text plan answer is a request for changes", async () => {
+  for (const answer of [
+    { decision: "answered", answers: [{ id: "plan", skipped: true }] },
+    { decision: "answered", answers: [{ id: "plan", text: "Use the old loader." }] },
+  ]) {
+    const { run } = await planRun(answer);
+    expect(answerOf(run)).toMatchObject({
+      behavior: "deny",
+      message: "The person asked for changes to the plan.",
+      interrupt: true,
+    });
+  }
 });
 
 test("a plan whose review ran out of grace holds the call until the host ends the program", async () => {

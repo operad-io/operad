@@ -1040,13 +1040,13 @@ export function entryOfFact(fact: PluginFact): Entry | undefined {
     ...(data.interrupted === true ? { interrupted: true } : {}),
   };
   if (entryKind === "tool") {
-    if (typeof data.callId !== "string" || typeof data.toolName !== "string" || !isToolResult(data.result)) {
-      return undefined;
-    }
+    if (!isToolResult(data.result)) return undefined;
     return {
       ...base,
-      callId: data.callId,
-      toolName: data.toolName,
+      // An older or partly written entry may have no id or name; it still ran,
+      // so it is shown as a tool rather than dropped from the transcript.
+      callId: typeof data.callId === "string" ? data.callId : "",
+      toolName: typeof data.toolName === "string" && data.toolName.length > 0 ? data.toolName : "tool",
       ...(typeof data.input === "string" || data.input === null ? { input: data.input } : {}),
       result: data.result,
       ...(typeof data.durationMs === "number" && Number.isFinite(data.durationMs) ? { durationMs: data.durationMs } : {}),

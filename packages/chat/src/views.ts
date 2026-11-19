@@ -328,11 +328,10 @@ function replyOutput(
 
 function replyItemOfEntry(entry: Entry, home: string | undefined): ReplyItem | undefined {
   if (entry.kind === "tool") {
-    if (entry.callId === undefined || entry.toolName === undefined) return undefined;
     return {
       kind: "tool",
-      callId: entry.callId,
-      name: entry.toolName,
+      callId: entry.callId ?? "",
+      name: entry.toolName ?? "tool",
       input: entry.input ?? null,
       ...(typeof entry.startedAt === "number" ? { at: entry.startedAt } : {}),
       ...(entry.durationMs === undefined ? {} : { durationMs: entry.durationMs }),
@@ -488,15 +487,41 @@ interface BuiltReply {
   readonly answerSequence?: number | undefined;
 }
 
-/** The replies already finished among `chunks`, in order. */
-function storedReplies(chunks: readonly Chunk[], messages: readonly Message[], home: string | undefined): readonly BuiltReply[] {
+/** The assistant message a chunk ends with, when it has one. */
+function answerIn(chunk: Chunk): Message | undefined {
+  return chunk.facts
+    .map((fact) => (fact.type === MESSAGE_FACT ? messageFrom(fact) : undefined))
+    .find((message) => message?.role === "assistant");
+}
+
+/** The last answer before `sequence`, so a window's first reply still names its input. */
+function answerBefore(chunks: readonly Chunk[], sequence: number): number {
+  let previous = -1;
+  for (const chunk of chunks) {
+    const answer = answerIn(chunk);
+    if (answer === undefined) continue;
+    if (answer.sequence >= sequence) break;
+    previous = answer.sequence;
+  }
+  return previous;
+}
+
+/**
+ * The replies already finished among `chunks`, in order. `previousAnswer` is
+ * the answer before the first chunk, so a page or a read after a mark builds
+ * only the replies it carries while keeping an older reply's input right.
+ */
+function storedReplies(
+  chunks: readonly Chunk[],
+  messages: readonly Message[],
+  home: string | undefined,
+  previousAnswer = -1,
+): readonly BuiltReply[] {
   const byId = new Map(messages.map((message) => [message.id, message]));
   const blocks: BuiltReply[] = [];
-  let previousAnswer = -1;
+  let previous = previousAnswer;
   for (const chunk of chunks) {
-    const answer = chunk.facts
-      .map((fact) => (fact.type === MESSAGE_FACT ? messageFrom(fact) : undefined))
-      .find((message) => message?.role === "assistant");
+    const answer = answerIn(chunk);
     if (answer === undefined) continue;
     const runId = answer.runId ?? chunk.runId;
     if (runId === undefined) continue;
@@ -510,7 +535,7 @@ function storedReplies(chunks: readonly Chunk[], messages: readonly Message[], h
       : messages.filter(
           (message) =>
             message.role === "user" &&
-            message.sequence > previousAnswer &&
+            message.sequence > previous &&
             message.sequence < answer.sequence,
         );
     blocks.push({
@@ -524,7 +549,7 @@ function storedReplies(chunks: readonly Chunk[], messages: readonly Message[], h
       chunk,
       answerSequence: answer.sequence,
     });
-    previousAnswer = answer.sequence;
+    previous = answer.sequence;
   }
   return blocks;
 }
@@ -570,15 +595,23 @@ function jsonBytes(value: unknown): number {
   return Buffer.byteLength(JSON.stringify(value), "utf8");
 }
 
-/** The transcript's data, with tool output text cut first when it is over its budget. */
+/**
+ * The transcript's data, cut to fit its budget: tool output text first, then
+ * the other reply text, and at last the oldest reply blocks. A read that still
+ * did not fit would be refused, so this always answers within the budget.
+ */
 function replyData(
   replies: readonly ReplyBlock[],
   maxBytes: number,
   base: Readonly<Record<string, JsonValue>> = {},
 ): Readonly<Record<string, JsonValue>> {
-  const whole = { ...base, replies } as unknown as Readonly<Record<string, JsonValue>>;
+  const data = (shown: readonly ReplyBlock[], extra: Readonly<Record<string, JsonValue>> = base) =>
+    ({ ...extra, replies: shown }) as unknown as Readonly<Record<string, JsonValue>>;
+  const whole = data(replies);
   if (jsonBytes(whole) <= maxBytes) return whole;
-  const cut = replies.map((reply) => ({
+  // A tool's output is the largest part and the least useful to a structured
+  // client, so it goes first, keeping its line count and `truncated`.
+  const blanked = replies.map((reply) => ({
     ...reply,
     process: reply.process.map((group) => ({
       ...group,
@@ -591,7 +624,60 @@ function replyData(
       }),
     })),
   }));
-  return { ...base, replies: cut } as unknown as Readonly<Record<string, JsonValue>>;
+  if (jsonBytes(data(blanked)) <= maxBytes) return data(blanked);
+  // Thinking, text, input and answer text are shortened next, in steps, so a
+  // long absence still leaves every reply's structure.
+  for (const cap of [512, 128, 32, 0]) {
+    const cut = blanked.map((reply) => cutReply(reply, cap));
+    if (jsonBytes(data(cut)) <= maxBytes) return data(cut);
+  }
+  // Even empty text leaves too much structure: the oldest replies go.
+  for (let drop = 1; drop <= blanked.length; drop += 1) {
+    const kept = blanked.slice(drop);
+    const cut = kept.map((reply) => cutReply(reply, 0));
+    if (jsonBytes(data(cut)) <= maxBytes) return data(cut);
+  }
+  const empty = data([]);
+  if (jsonBytes(empty) <= maxBytes) return empty;
+  // The base is the only thing left; it is small in every caller but is cut
+  // last rather than letting the read be refused.
+  return (jsonBytes({ replies: [] }) <= maxBytes ? { replies: [] } : {}) as Readonly<Record<string, JsonValue>>;
+}
+
+/** Text cut to fit a byte budget, ending with an ellipsis when it was longer. */
+function shorten(text: string, capBytes: number): string {
+  if (capBytes <= 0) return "";
+  if (Buffer.byteLength(text, "utf8") <= capBytes) return text;
+  if (capBytes <= 3) return "";
+  let end = Math.min(text.length, capBytes);
+  while (end > 0 && Buffer.byteLength(text.slice(0, end), "utf8") + 3 > capBytes) end -= 1;
+  return end === 0 ? "" : `${text.slice(0, end)}…`;
+}
+
+/** One reply with its free text cut to a budget and its tool output left empty. */
+function cutReply(reply: ReplyBlock, capBytes: number): ReplyBlock {
+  const message = (block: ReplyMessage): ReplyMessage => ({
+    ...block,
+    text: shorten(block.text, capBytes),
+  });
+  const item = (entry: ReplyItem): ReplyItem => {
+    if (entry.kind === "tool") {
+      return {
+        ...entry,
+        input: entry.input === null ? null : shorten(entry.input, capBytes),
+      };
+    }
+    return { ...entry, text: shorten(entry.text, capBytes) };
+  };
+  return {
+    ...reply,
+    input: reply.input.map(message),
+    ...(reply.answer === undefined ? {} : { answer: message(reply.answer) }),
+    process: reply.process.map((group) => ({
+      ...group,
+      items: group.items.map(item),
+    })),
+  };
 }
 
 /** One finished part of an answer as Markdown lines; tool output is never shown. */
@@ -1175,7 +1261,9 @@ async function liveOf(
     };
     read = foldLogTail(agentLogPath(ctx.store.root, chat.harness, runId), held);
     const waiting = read?.state.retry;
-    const retryAt = waiting?.at ?? read?.lastAt;
+    // The retry's own line stamps when the wait began; a later line's time
+    // would move `until` on every read, so it is not used as a fallback.
+    const retryAt = waiting?.at;
     retry =
       waiting === undefined || retryAt === undefined
         ? undefined
@@ -1319,8 +1407,18 @@ async function load(
     const blocks = chunks.flatMap((chunk) => rendered(chunk, speaker, ctx.home, chat.harness));
     const markdown = blocks.join("\n\n---\n\n");
     // The replies whose answer is after the mark, and the one still running.
-    const changed = storedReplies(finishedChunks, messages, ctx.home).filter(
-      (reply) => reply.answerSequence !== undefined && reply.answerSequence > since,
+    const sinceChunks = finishedChunks.filter((chunk) => {
+      const answer = answerIn(chunk);
+      return answer !== undefined && answer.sequence > since;
+    });
+    const firstSince = sinceChunks
+      .map((chunk) => answerIn(chunk)?.sequence)
+      .find((sequence): sequence is number => sequence !== undefined);
+    const changed = storedReplies(
+      sinceChunks,
+      messages,
+      ctx.home,
+      firstSince === undefined ? -1 : answerBefore(finishedChunks, firstSince),
     );
     const replies = liveBlock === undefined ? changed : [...changed, liveBlock];
     const data = replyData(
@@ -1342,9 +1440,13 @@ async function load(
   const index = pages.findIndex((page) => page.after === after);
   const selected = pages[index < 0 ? 0 : index] ?? pages[0];
   const pageIndex = index < 0 ? 0 : index;
-  const onPage = new Set(selected?.chunks ?? []);
-  const onPageBlocks = storedReplies(finishedChunks, messages, ctx.home).filter(
-    (reply) => reply.chunk !== undefined && onPage.has(reply.chunk),
+  const pageChunks = selected?.chunks ?? [];
+  const firstOnPage = pageChunks[0]?.facts[0]?.sequence ?? Number.MAX_SAFE_INTEGER;
+  const onPageBlocks = storedReplies(
+    pageChunks,
+    messages,
+    ctx.home,
+    answerBefore(finishedChunks, firstOnPage),
   );
   const pageReplies = pageIndex === pages.length - 1 && liveBlock !== undefined
     ? [...onPageBlocks, liveBlock]

@@ -145,8 +145,10 @@ Codex's own question is `item/tool/requestUserInput`: the app-server sends
 isOther, isSecret }]` and reads `{ answers: { <id>: { answers: [<text>] } } }`.
 It is not a permission; it becomes one form for a person through `ctx.ask`
 (ADR 0026 D6), `isOther` becomes free text, and codex has no multiple choice.
-`isBlocking` and `autoResolutionMs` do not skip the question: every one waits
-for the person with the kernel's usual grace. An app-server that sends the
+A question whose `isSecret` is true is answered empty and never asked, so a
+secret answer never reaches the pending item or the fact log. `isBlocking` and
+`autoResolutionMs` do not skip the other questions: every one waits for the
+person with the kernel's usual grace. An app-server that sends the
 method when no question is expected gets the method-not-found error, as before.
 
 ## Usage, images, time
