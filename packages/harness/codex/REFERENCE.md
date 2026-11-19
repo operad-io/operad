@@ -140,6 +140,15 @@ Codex asks only about what leaves its sandbox. A command that runs inside the
 sandbox is not asked about, so a profile's deny rules do not see it: Codex's
 sandbox is the bound there, not the profile.
 
+Codex's own question is `item/tool/requestUserInput`: the app-server sends
+`questions: [{ id, header, question, options: [{ label, description }],
+isOther, isSecret }]` and reads `{ answers: { <id>: { answers: [<text>] } } }`.
+It is not a permission; it becomes one form for a person through `ctx.ask`
+(ADR 0026 D6), `isOther` becomes free text, and codex has no multiple choice.
+`isBlocking` and `autoResolutionMs` do not skip the question: every one waits
+for the person with the kernel's usual grace. An app-server that sends the
+method when no question is expected gets the method-not-found error, as before.
+
 ## Usage, images, time
 
 - Tokens come from `thread/tokenUsage/updated`, its `last` turn counts. The
@@ -173,5 +182,4 @@ sandbox is the bound there, not the profile.
   interface has no field for them, so `codex` exposes none of them and invents
   no new field.
 - `item/permissions/requestApproval` (the agent asking for extra sandbox
-  permissions), `item/tool/requestUserInput` (Codex asking the user a question),
-  forking, review mode and image output are not mapped.
+  permissions), forking, review mode and image output are not mapped.

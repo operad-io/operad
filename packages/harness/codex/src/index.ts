@@ -23,7 +23,11 @@ import {
   accessWithAlwaysAllow,
   alwaysAllowFromGrant,
   appendAlwaysAllow,
+  answerFor,
   askNote,
+  askQuestions,
+  askedForm,
+  isSkipped,
   createCallAsker,
   CONCURRENCY_SETTING,
   deliverLine,
@@ -589,6 +593,36 @@ export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
             clientName: "operad",
             clientVersion: pkg.version,
             onNotification: (method, params) => log.handle(method, params),
+            async onQuestion(request) {
+              const questions = askQuestions(
+                request.questions.map((question) => ({
+                  id: question.id,
+                  text: question.question,
+                  ...(question.header === undefined ? {} : { header: question.header }),
+                  ...(question.options === undefined ? {} : { choices: question.options }),
+                  ...(question.isOther === true ? { freeText: true } : {}),
+                })),
+              );
+              if (questions.length === 0) return {};
+              askId += 1;
+              const got = await askedForm(asker, askId, {
+                questions,
+                session: client?.sessionId ?? null,
+              });
+              if (got.decision === "stop") {
+                // The grace passed: the host ends this program, and the answer
+                // comes back to a resumed session as text.
+                return {};
+              }
+              const answers: Record<string, readonly string[]> = {};
+              for (const question of questions) {
+                const answer = answerFor(got.answers, question.id);
+                answers[question.id] = isSkipped(answer)
+                  ? []
+                  : [...(answer?.choices ?? []), ...(answer?.text === undefined ? [] : [answer.text])];
+              }
+              return answers;
+            },
             async onPermission(request) {
               const decision = await decideAccess(liveAccess(startProfile), request.method, request.params, request.item, cwd, {
                 useGrant: (waitId) => ctx.useGrant(waitId),
