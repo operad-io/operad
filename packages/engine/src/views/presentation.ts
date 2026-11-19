@@ -35,6 +35,7 @@ import { attachmentDir, UploadMissingError, Uploads } from "./uploads.ts";
 import type {
   ActionTypeDefinition,
   Actor,
+  AskQuestionAnswer,
   FactWriter,
   FactsOptions,
   FactsPage,
@@ -321,7 +322,10 @@ export interface AnswerViewOptions {
   readonly runId: string;
   /** The wait id the pending item named. */
   readonly waitId: string;
-  readonly choice: string;
+  /** The one choice a question of choices takes; absent for a form's answer. */
+  readonly choice: string | undefined;
+  /** The person's answer to each question, when the question was a form. */
+  readonly answers?: readonly AskQuestionAnswer[] | undefined;
   readonly note?: string | undefined;
   /** Confirms an action-backed choice whose action asks to confirm. */
   readonly confirmed?: boolean | undefined;
@@ -1649,6 +1653,7 @@ export class Views {
     // action, so its note, confirmation and object update still happen.
     const throughAction =
       item !== undefined &&
+      item.questions === undefined &&
       item.choices.every((name) =>
         item.actions.some((action) => action.action === name),
       )
@@ -1678,6 +1683,7 @@ export class Views {
         runId: options.runId,
         waitId: options.waitId,
         choice: options.choice,
+        ...(options.answers === undefined ? {} : { answers: options.answers }),
         ...(options.note === undefined ? {} : { note: options.note }),
         actor: options.actor,
       });

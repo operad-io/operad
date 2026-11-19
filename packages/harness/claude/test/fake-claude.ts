@@ -293,7 +293,7 @@ export const SESSION = "11111111-2222-4333-8444-555555555555";
 
 export const MISSING_SESSION = "No conversation found with session ID: 00000000-0000-4000-8000-000000000000";
 
-export function systemInit(session = SESSION): Json {
+export function systemInit(session = SESSION, capabilities?: readonly string[]): Json {
   return {
     type: "system",
     subtype: "init",
@@ -310,6 +310,7 @@ export function systemInit(session = SESSION): Json {
     output_style: "default",
     skills: [],
     plugins: [],
+    ...(capabilities === undefined ? {} : { capabilities: [...capabilities] }),
   };
 }
 

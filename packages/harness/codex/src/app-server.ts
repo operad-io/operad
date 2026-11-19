@@ -79,6 +79,28 @@ export interface AppServerMcpServer {
   readonly env?: Readonly<Record<string, string>> | undefined;
 }
 
+/** One question of a `item/tool/requestUserInput` request. */
+export interface AppServerQuestion {
+  readonly id: string;
+  readonly question: string;
+  readonly header?: string | undefined;
+  readonly options?: readonly { readonly label: string; readonly description?: string | undefined }[] | undefined;
+  /** True when Codex itself offers an answer in the person's own words. */
+  readonly isOther?: boolean | undefined;
+}
+
+/** A `item/tool/requestUserInput` request of the app-server. */
+export interface AppServerQuestionRequest {
+  readonly method: string;
+  readonly itemId: string;
+  readonly threadId: string | null;
+  readonly turnId: string | null;
+  readonly questions: readonly AppServerQuestion[];
+}
+
+/** One question's answer as the app-server reads it. */
+export type AppServerQuestionAnswers = Readonly<Record<string, readonly string[]>>;
+
 export interface AppServerClientOptions {
   readonly cwd: string;
   /** The prompt as app-server `UserInput` entries. */
@@ -99,14 +121,18 @@ export interface AppServerClientOptions {
   readonly onNotification: (method: string, params: Readonly<Record<string, unknown>>) => void | Promise<void>;
   /** True lets the call run once; false refuses it. */
   readonly onPermission: (request: AppServerPermissionRequest) => Promise<boolean>;
+  /**
+   * The agent's own questions, as one form the person fills in (ADR 0026 D6).
+   * Resolves with one answer per question id; absent refuses the request.
+   */
+  readonly onQuestion?: ((request: AppServerQuestionRequest) => Promise<AppServerQuestionAnswers>) | undefined;
 }
 
 type Phase = "initialize" | "session" | "turn" | "done";
 
 type Stage = AppServerStage | "steer" | "cancel";
 
-function errorOf(value: unknown): AppServerError {
-  if (!isRecord(value)) return { code: -32603, message: "the app-server sent an error without a body" };
+function errorOf(value: unknown): AppServerError {  if (!isRecord(value)) return { code: -32603, message: "the app-server sent an error without a body" };
   return {
     code: typeof value.code === "number" ? value.code : -32603,
     message: typeof value.message === "string" ? value.message : "the app-server sent an error without a message",
@@ -123,6 +149,44 @@ function turnErrorOf(value: unknown): AppServerError | undefined {
 function numberField(value: Readonly<Record<string, unknown>>, key: string): number | undefined {
   const found = value[key];
   return typeof found === "number" && Number.isFinite(found) ? found : undefined;
+}
+
+/**
+ * The questions of an `item/tool/requestUserInput` payload. A question without
+ * an id or text cannot be answered, so it is left out.
+ */
+export function questionsOf(value: unknown): AppServerQuestion[] {
+  if (!Array.isArray(value)) return [];
+  const questions: AppServerQuestion[] = [];
+  for (const raw of value) {
+    if (!isRecord(raw)) continue;
+    const id = raw["id"];
+    const question = raw["question"];
+    if (typeof id !== "string" || id.length === 0) continue;
+    if (typeof question !== "string" || question.trim().length === 0) continue;
+    const options: { label: string; description?: string }[] = [];
+    if (Array.isArray(raw["options"])) {
+      for (const option of raw["options"]) {
+        if (!isRecord(option)) continue;
+        const label = option["label"];
+        if (typeof label !== "string" || label.trim().length === 0) continue;
+        const description = option["description"];
+        options.push({
+          label,
+          ...(typeof description === "string" && description.trim().length > 0 ? { description } : {}),
+        });
+      }
+    }
+    const header = raw["header"];
+    questions.push({
+      id,
+      question,
+      ...(typeof header === "string" && header.length > 0 ? { header } : {}),
+      ...(options.length === 0 ? {} : { options }),
+      ...(raw["isOther"] === true ? { isOther: true } : {}),
+    });
+  }
+  return questions;
 }
 
 /** The counts of the last turn from a `thread/tokenUsage/updated` payload. */
@@ -357,6 +421,37 @@ export class AppServerClient {
     const refuse = (message: string): void => {
       this.send(JSON.stringify({ jsonrpc: "2.0", id, error: { code: -32601, message } }));
     };
+    if (method === "item/tool/requestUserInput") {
+      const itemId = typeof body["itemId"] === "string" ? body["itemId"] : "";
+      const request: AppServerQuestionRequest = {
+        method,
+        itemId,
+        threadId: typeof body["threadId"] === "string" ? body["threadId"] : null,
+        turnId: typeof body["turnId"] === "string" ? body["turnId"] : null,
+        questions: questionsOf(body["questions"]),
+      };
+      const onQuestion = this.options.onQuestion;
+      if (onQuestion === undefined || request.questions.length === 0) {
+        refuse(`method not supported: ${method}`);
+        return;
+      }
+      // The reader does not wait: a person may take long to answer, and the
+      // app-server's other lines (the answer to an interrupt) must still be read.
+      void (async () => {
+        let answers: AppServerQuestionAnswers = {};
+        if (!this.cancelling) {
+          try {
+            answers = await onQuestion(request);
+          } catch {
+            answers = {};
+          }
+        }
+        const byId: Record<string, { readonly answers: readonly string[] }> = {};
+        for (const [key, labels] of Object.entries(answers)) byId[key] = { answers: labels };
+        answer({ answers: byId });
+      })();
+      return;
+    }
     const itemId = typeof body["itemId"] === "string" ? body["itemId"] : typeof body["callId"] === "string" ? body["callId"] : "";
     const legacyCommand = method === "execCommandApproval";
     const legacyPatch = method === "applyPatchApproval";

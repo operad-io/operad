@@ -196,6 +196,14 @@ and the row fields.
 |---|---|---|---|
 | T-0565-M1 | packages/harness/process/src/fold-lines.ts | `receivedAtOf` ignored the log line's received time, so a finished text entry carried none | `foldLines > a line's receivedAt gives a finished text its time, and old logs still read` |
 
+## T-0569 — a form line between a program and its host
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0569-M5 | packages/harness/process/src/question-form.ts | `answerText` dropped the person's own words, so only a picked label reached the harness | `the answer to one question is its labels and free text` |
+| T-0569-M6 | packages/harness/process/src/ask-note.ts | `askNote` grew no form paragraph, so a late answer reached the agent as one text | `a form's paragraph names each question and its answer, and marks a skipped one` |
+| T-0569-M12 | packages/harness/process/src/question-form.ts | `askQuestions` kept a harness's long question text, which the kernel refuses, so one long description would end the reply instead of being cut | `a harness's long text is cut to the kernel's bounds, not refused` |
+
 ## T-0574 — a retry is a live transcript item
 
 | id | file | mutation | failing test |

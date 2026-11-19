@@ -463,6 +463,11 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 | T-0570-M4 | packages/chat/src/views.ts | `tailPush` left the `tail` out of the pushed part | `the chat's pushed tail > the text being written is the same tail the section shows` |
 | T-0570-M5 | packages/chat/src/views.ts | `tailPush` flattened the pushed tail onto one line, so thinking lost its quote lines | `the chat's pushed tail > thinking being written is a block quote` |
 | T-0570-M6 | packages/chat/src/views.ts | `toolMarkdown` dropped a finished tool call's duration from the pushed tail | `the chat's pushed tail > a tool call ending replaces its start with how long it took` |
+## T-0569 — a form question is never the worktree question
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0569-M10 | packages/chat/src/reply.ts | `isWriteQuestion` and `questionedCall` did not recognise a form, so a form whose text reads like a write question became the worktree question | `a form a chat's agent asks > it is never turned into the worktree question, and its answers reach the harness` |
 
 ## T-0574 — a retry is a live transcript item
 

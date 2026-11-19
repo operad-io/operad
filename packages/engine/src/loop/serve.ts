@@ -16,6 +16,7 @@ import { applyInput, objectKey, parseObjectKey, readState } from "../runner/serv
 import { isBusy } from "../platform/index.ts";
 import { reapStale } from "../platform/step-reap.ts";
 import { stopAllKeptWorkers } from "../platform/kept-workers.ts";
+import type { AskQuestionAnswer } from "../plugin/types.ts";
 import { isRecord } from "../util.ts";
 
 export interface SpawnRunOptions {
@@ -64,10 +65,13 @@ function recordedAnswer(payload: JsonValue): PersonAnswerInput | undefined {
   if (!isRecord(payload) || payload.kind !== "person_answer") return undefined;
   const waitId = payload.waitId;
   const choice = payload.choice;
+  const answers = payload.answers;
   const actor = payload.actor;
   if (
     typeof waitId !== "string" ||
-    typeof choice !== "string" ||
+    (choice !== undefined && typeof choice !== "string") ||
+    (answers !== undefined && !Array.isArray(answers)) ||
+    (choice === undefined && answers === undefined) ||
     !isRecord(actor) ||
     typeof actor.via !== "string" ||
     typeof actor.id !== "string"
@@ -77,7 +81,8 @@ function recordedAnswer(payload: JsonValue): PersonAnswerInput | undefined {
   return {
     kind: "person_answer",
     waitId,
-    choice,
+    ...(choice === undefined ? {} : { choice }),
+    ...(answers === undefined ? {} : { answers: answers as unknown as readonly AskQuestionAnswer[] }),
     ...(typeof payload.note === "string" ? { note: payload.note } : {}),
     actor: { via: actor.via, id: actor.id },
   };
