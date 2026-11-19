@@ -38,7 +38,9 @@ function row(object: StoredObject): ObjectRow {
   const queued = queuedOf(object.data.queued);
   const data: Record<string, JsonValue> = {
     ...(chat.scheduled === undefined ? {} : { scheduled: chat.scheduled }),
-    ...(queued.length === 0 ? {} : { queued: queued as unknown as JsonValue }),
+    ...(queued.length === 0
+      ? {}
+      : { queued: queued as unknown as JsonValue, queuedCount: queued.length }),
   };
   return {
     id: object.id,

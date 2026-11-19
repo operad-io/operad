@@ -94,6 +94,7 @@ describe("a chat's queued messages", () => {
     let stored = await r.store.get("chat", chat);
     if (stored === undefined) throw new Error("no chat");
     expect(queuedOfRow(chatViews.row(stored)).map((item) => item.id)).toEqual([first]);
+    expect(chatViews.row(stored).data?.queuedCount).toBe(1);
     expect(queuedOfSection((await section(r, chat)).content).map((item) => item.id)).toEqual([first]);
 
     const round = r.round(chat);
@@ -107,6 +108,7 @@ describe("a chat's queued messages", () => {
     stored = await r.store.get("chat", chat);
     if (stored === undefined) throw new Error("no chat");
     expect(queuedOfRow(chatViews.row(stored)).map((item) => item.id)).toEqual([second]);
+    expect(chatViews.row(stored).data?.queuedCount).toBe(1);
     expect(queuedOfSection((await section(r, chat)).content).map((item) => item.id)).toEqual([second]);
     expect(queuedOfRow(chatViews.row(stored))[0]?.text).toBe("second");
 
