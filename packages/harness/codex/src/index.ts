@@ -66,6 +66,7 @@ import {
 import { decideAccess, type JudgedCall } from "./access.ts";
 import {
   AppServerClient,
+  personQuestions,
   type AppServerEnd,
   type AppServerError,
   type AppServerMcpServer,
@@ -594,8 +595,15 @@ export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
             clientVersion: pkg.version,
             onNotification: (method, params) => log.handle(method, params),
             async onQuestion(request) {
+              // A secret answer would be kept in the pending item and the
+              // fact log, so its question is answered empty and never asked.
+              const answers: Record<string, readonly string[]> = {};
+              for (const question of request.questions) {
+                if (question.isSecret === true) answers[question.id] = [];
+              }
+              const asked = personQuestions(request);
               const questions = askQuestions(
-                request.questions.map((question) => ({
+                asked.map((question) => ({
                   id: question.id,
                   text: question.question,
                   ...(question.header === undefined ? {} : { header: question.header }),
@@ -603,7 +611,7 @@ export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
                   ...(question.isOther === true ? { freeText: true } : {}),
                 })),
               );
-              if (questions.length === 0) return {};
+              if (questions.length === 0) return answers;
               askId += 1;
               const got = await askedForm(asker, askId, {
                 questions,
@@ -612,9 +620,8 @@ export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
               if (got.decision === "stop") {
                 // The grace passed: the host ends this program, and the answer
                 // comes back to a resumed session as text.
-                return {};
+                return answers;
               }
-              const answers: Record<string, readonly string[]> = {};
               for (const question of questions) {
                 const answer = answerFor(got.answers, question.id);
                 answers[question.id] = isSkipped(answer)

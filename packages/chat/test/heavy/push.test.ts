@@ -143,7 +143,7 @@ async function openSse(r: Rig): Promise<{
           const value = line.slice(colon + 1).replace(/^ /, "");
           if (name === "event") event = value;
           else if (name === "id") id = value;
-          else if (name === "data") data = data.length === 0 ? value : `\n`;
+          else if (name === "data") data = data.length === 0 ? value : `${data}\n${value}`;
         }
         if (field) return { event, id, data };
       }
@@ -205,8 +205,8 @@ function bodyOf(event: SseEvent): Record<string, unknown> {
 const first = { type: "text_delta", text: "first " };
 const second = { type: "text_delta", text: "second" };
 
-/** How long one way takes to receive the line the fake harness writes. */
-async function measure(push: boolean): Promise<number> {
+/** How long one way takes to receive the line, and how many section reads it made. */
+async function measure(push: boolean): Promise<{ readonly elapsed: number; readonly rereads: number }> {
   const arrived = channel<number>();
   const gate = gates();
   const script: Script = async (ctx) => {
@@ -228,6 +228,7 @@ async function measure(push: boolean): Promise<number> {
     expect(beforeWrite).toBe(-1);
     events = await openSse(r);
     const reader = events;
+    let rereads = 0;
     const received = new Promise<number>((resolve, reject) => {
       void (async () => {
         try {
@@ -246,6 +247,7 @@ async function measure(push: boolean): Promise<number> {
             if (event.event !== "message" || push) continue;
             const body = bodyOf(event);
             if (body.id !== r.chat) continue;
+            rereads += 1;
             const response = await fetch(
               `${r.base}/v1/objects/chat:${r.chat}/sections/transcript`,
               { headers: { authorization: `Bearer ${r.token}` } },
@@ -266,7 +268,7 @@ async function measure(push: boolean): Promise<number> {
     const heard = await received;
     gate.release("finish");
     await running;
-    return heard - at;
+    return { elapsed: heard - at, rereads };
   } finally {
     await events?.cancel();
     await r.close();
@@ -277,14 +279,16 @@ describe("a running reply is pushed over the event stream", () => {
   test("a client re-reading the tail receives the line from the fake harness", async () => {
     const reread = await measure(false);
     // The number is in this test's output, so a run records what the way costs.
-    console.log(`tail re-read: ${reread.toFixed(1)} ms`);
-    expect(reread).toBeGreaterThan(0);
+    console.log(`tail re-read: ${reread.elapsed.toFixed(1)} ms (${reread.rereads} section reads)`);
+    expect(reread.elapsed).toBeGreaterThan(0);
+    expect(reread.rereads).toBeGreaterThan(0);
   }, 30_000);
 
   test("a client using the push receives the line from the fake harness", async () => {
     const pushed = await measure(true);
     // The number is in this test's output, so a run records what the way costs.
-    console.log(`push: ${pushed.toFixed(1)} ms`);
-    expect(pushed).toBeGreaterThan(0);
+    console.log(`push: ${pushed.elapsed.toFixed(1)} ms (${pushed.rereads} section reads)`);
+    expect(pushed.elapsed).toBeGreaterThan(0);
+    expect(pushed.rereads).toBe(0);
   }, 30_000);
 });

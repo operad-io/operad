@@ -321,11 +321,10 @@ function replyOutput(text: string | null | undefined, path?: string, truncated?:
 
 function replyItemOfEntry(entry: Entry): ReplyItem | undefined {
   if (entry.kind === "tool") {
-    if (entry.callId === undefined || entry.toolName === undefined) return undefined;
     return {
       kind: "tool",
-      callId: entry.callId,
-      name: entry.toolName,
+      callId: entry.callId ?? "",
+      name: entry.toolName ?? "tool",
       input: entry.input ?? null,
       ...(typeof entry.startedAt === "number" ? { at: entry.startedAt } : {}),
       ...(entry.durationMs === undefined ? {} : { durationMs: entry.durationMs }),
@@ -560,15 +559,23 @@ function jsonBytes(value: unknown): number {
   return Buffer.byteLength(JSON.stringify(value), "utf8");
 }
 
-/** The transcript's data, with tool output text cut first when it is over its budget. */
+/**
+ * The transcript's data, cut to fit its budget: tool output text first, then
+ * the other reply text, and at last the oldest reply blocks. A read that still
+ * did not fit would be refused, so this always answers within the budget.
+ */
 function replyData(
   replies: readonly ReplyBlock[],
   maxBytes: number,
   base: Readonly<Record<string, JsonValue>> = {},
 ): Readonly<Record<string, JsonValue>> {
-  const whole = { ...base, replies } as unknown as Readonly<Record<string, JsonValue>>;
+  const data = (shown: readonly ReplyBlock[], extra: Readonly<Record<string, JsonValue>> = base) =>
+    ({ ...extra, replies: shown }) as unknown as Readonly<Record<string, JsonValue>>;
+  const whole = data(replies);
   if (jsonBytes(whole) <= maxBytes) return whole;
-  const cut = replies.map((reply) => ({
+  // A tool's output is the largest part and the least useful to a structured
+  // client, so it goes first, keeping its line count and `truncated`.
+  const blanked = replies.map((reply) => ({
     ...reply,
     process: reply.process.map((group) => ({
       ...group,
@@ -581,7 +588,61 @@ function replyData(
       }),
     })),
   }));
-  return { ...base, replies: cut } as unknown as Readonly<Record<string, JsonValue>>;
+  if (jsonBytes(data(blanked)) <= maxBytes) return data(blanked);
+  // Thinking, text, input and answer text are shortened next, in steps, so a
+  // long absence still leaves every reply's structure.
+  for (const cap of [512, 128, 32, 0]) {
+    const cut = blanked.map((reply) => cutReply(reply, cap));
+    if (jsonBytes(data(cut)) <= maxBytes) return data(cut);
+  }
+  // Even empty text leaves too much structure: the oldest replies go.
+  for (let drop = 1; drop <= blanked.length; drop += 1) {
+    const kept = blanked.slice(drop);
+    const cut = kept.map((reply) => cutReply(reply, 0));
+    if (jsonBytes(data(cut)) <= maxBytes) return data(cut);
+  }
+  const empty = data([]);
+  if (jsonBytes(empty) <= maxBytes) return empty;
+  // The base is the only thing left; it is small in every caller but is cut
+  // last rather than letting the read be refused.
+  return (jsonBytes({ replies: [] }) <= maxBytes ? { replies: [] } : {}) as Readonly<Record<string, JsonValue>>;
+}
+
+/** Text cut to fit a byte budget, ending with an ellipsis when it was longer. */
+function shorten(text: string, capBytes: number): string {
+  if (capBytes <= 0) return "";
+  if (Buffer.byteLength(text, "utf8") <= capBytes) return text;
+  if (capBytes <= 3) return "";
+  let end = Math.min(text.length, capBytes);
+  while (end > 0 && Buffer.byteLength(text.slice(0, end), "utf8") + 3 > capBytes) end -= 1;
+  return end === 0 ? "" : `${text.slice(0, end)}…`;
+}
+
+/** One reply with its free text cut to a budget and its tool output left empty. */
+function cutReply(reply: ReplyBlock, capBytes: number): ReplyBlock {
+  const message = (block: ReplyMessage): ReplyMessage => ({
+    ...block,
+    text: shorten(block.text, capBytes),
+  });
+  const item = (entry: ReplyItem): ReplyItem => {
+    if (entry.kind === "tool") {
+      return {
+        ...entry,
+        input: entry.input === null ? null : shorten(entry.input, capBytes),
+        output: { ...entry.output, text: "", truncated: true as const },
+      };
+    }
+    return { ...entry, text: shorten(entry.text, capBytes) };
+  };
+  return {
+    ...reply,
+    input: reply.input.map(message),
+    ...(reply.answer === undefined ? {} : { answer: message(reply.answer) }),
+    process: reply.process.map((group) => ({
+      ...group,
+      items: group.items.map(item),
+    })),
+  };
 }
 
 /** One finished part of an answer as Markdown lines; tool output is never shown. */
@@ -1165,7 +1226,9 @@ async function liveOf(
     };
     read = foldLogTail(agentLogPath(ctx.store.root, chat.harness, runId), held);
     const waiting = read?.state.retry;
-    const retryAt = waiting?.at ?? read?.lastAt;
+    // The retry's own line stamps when the wait began; a later line's time
+    // would move `until` on every read, so it is not used as a fallback.
+    const retryAt = waiting?.at;
     retry =
       waiting === undefined || retryAt === undefined
         ? undefined

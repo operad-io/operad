@@ -452,9 +452,9 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 
 | id | file | mutation | failing test |
 |---|---|---|---|
-| T-0570-M1 | packages/chat/src/views.ts | `livePush` left the `tail` out of the pushed part | `the chat's live push > the text being written is the same tail the section shows` |
-| T-0570-M2 | packages/chat/src/views.ts | `livePush` flattened the pushed tail onto one line, so thinking lost its quote lines | `the chat's live push > thinking being written is a block quote` |
-| T-0570-M3 | packages/chat/src/views.ts | `toolMarkdown` dropped a finished tool call's duration from the pushed tail | `the chat's live push > a tool call ending replaces its start with how long it took` |
+| T-0570-M1 | packages/chat/src/views.ts | `tailPush` left the `tail` out of the pushed part | `the chat's pushed tail > the text being written is the same tail the section shows` |
+| T-0570-M2 | packages/chat/src/views.ts | `tailPush` flattened the pushed tail onto one line, so thinking lost its quote lines | `the chat's pushed tail > thinking being written is a block quote` |
+| T-0570-M3 | packages/chat/src/views.ts | `toolMarkdown` dropped a finished tool call's duration from the pushed tail | `the chat's pushed tail > a tool call ending replaces its start with how long it took` |
 
 ## T-0570 rework — the pushed tail
 
@@ -518,3 +518,11 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 | T-0571-M11 | packages/chat/src/views.ts | a `full` read cut the tool output text as a capped read did | `a reply's structured form > many replies: the cap cuts tool output text before it cuts the Markdown, keeping its lines` |
 | T-0571-M12 | packages/chat/src/views.ts | `tailPush` left the running reply's data out of the pushed part | `the chat's pushed tail > the running reply is structured in the push` |
 | T-0571-M15 | packages/chat/src/views.ts | a read with `after` left the one still-running reply out of its data | `a reply's structured form > live: the input and the process are there, and the stored read adds the answer and the reply's duration` |
+
+## T-0576 — chat friction follow-ups
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0576-M1 | packages/chat/src/views.ts | a retry with no `receivedAt` fell back to the log's last stamped line, so `until` moved on every read | `chat transcript: after, mark and tail > a retry with no time of its own is left out of the retry item and the tail alike` |
+| T-0576-M2 | packages/chat/src/views.ts | `replyData` blanked tool output but left thinking, text, input and answer text whole, so a reply whose output was empty could still go over the cap | `a reply's structured form > the cap shortens the thinking, text and answer of a reply too` and `the chat's pushed tail > the pushed running reply's data stays under the cap` |
+| T-0576-M3 | packages/chat/src/model.ts | `entryOfFact` dropped a stored tool entry that had no call id or name instead of showing it as a tool | `a reply's structured form > a stored tool entry without a call id or name stays as a tool` |
