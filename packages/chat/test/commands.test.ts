@@ -193,9 +193,11 @@ describe("commands in chat:send", () => {
       .map((line: string) => /^- `\/([^`]+)`/.exec(line)?.[1])
       .filter((name: string | undefined): name is string => name !== undefined)
       .sort();
-    expect(listed).toEqual(["access", "close", "help", "retry", "status", "stop"]);
+    expect(listed).toEqual(["access", "close", "help", "status", "stop"]);
     expect(String(help.value)).not.toContain("`/model`");
     expect(String(help.value)).not.toContain("`/effort`");
+    // Nothing failed, stopped or was interrupted, so a retry would start no reply.
+    expect(String(help.value)).not.toContain("`/retry`");
   });
 
   test("a command runs at once while a reply is being written and starts no reply", async () => {
@@ -309,7 +311,7 @@ describe("commands in chat:send", () => {
       .map((line: string) => /^- `\/([^`]+)`/.exec(line)?.[1])
       .filter((name: string | undefined): name is string => name !== undefined)
       .sort();
-    expect(listed).toEqual(["access", "close", "effort", "help", "model", "other_model", "retry", "status", "stop"]);
+    expect(listed).toEqual(["access", "close", "effort", "help", "model", "other_model", "status", "stop"]);
     expect(text).not.toContain("/send");
     expect(text).not.toContain("/hidden");
     expect(commandFacts(r, chat)[0]?.outcome).toBe(text);

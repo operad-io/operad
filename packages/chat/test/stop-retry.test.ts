@@ -252,9 +252,17 @@ describe("chat:stop and chat:retry", () => {
     expect(commands(r, chat)[0]).toMatchObject({ command: "/retry", ok: false });
   });
 
-  test("/help lists stop and retry", async () => {
-    const r = await rig(() => reply("x"));
+  test("/help lists stop, and retry once a reply failed", async () => {
+    let calls = 0;
+    const r = await rig(() => {
+      calls += 1;
+      return calls === 1
+        ? { result: "failed", data: { reason: "model_error", message: "boom" } }
+        : reply("x");
+    });
     const chat = await r.chat();
+    await r.say(chat, "hello");
+    await r.round(chat);
     const help = await command(r, chat, "/help");
     expect(String(help.value)).toContain("`/stop`");
     expect(String(help.value)).toContain("`/retry`");

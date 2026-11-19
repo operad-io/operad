@@ -468,3 +468,12 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0569-M10 | packages/chat/src/reply.ts | `isWriteQuestion` and `questionedCall` did not recognise a form, so a form whose text reads like a write question became the worktree question | `a form a chat's agent asks > it is never turned into the worktree question, and its answers reach the harness` |
+
+## T-0575 — `chat:retry` is offered only when it would answer
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0575-M4 | packages/chat/src/index.ts | `chat:retry` was offered on every open chat again, instead of only when it would start a reply | `chat:retry is offered only when it would start a reply > a finished reply does not offer it, and says why` |
+| T-0575-M5 | packages/chat/src/index.ts | `retryCheck` did not check whether a reply is being written | `chat:retry is offered only when it would start a reply > a reply being written does not offer it, even after a failed attempt` |
+| T-0575-M6 | packages/chat/src/index.ts | `retryCheck` ignored the stop fact that is recorded before the stopped half reply | `chat:retry is offered only when it would start a reply > a stop offers it at once, before the stopped half reply enters the record` |
+| T-0575-M7 | packages/chat/src/index.ts | `run` no longer checked the rule again, so a reply that started after the offer was retried anyway | `chat:retry is offered only when it would start a reply > the run checks the rule again when a reply started after the offer` |
