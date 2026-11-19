@@ -1,6 +1,6 @@
 # pi-durable 能不能做 operad bot 聊天背后的 agent（2026-11-19）
 
-owner 问的问题：`@earendil-works/pi-durable` 能不能放在 bot 聊天后面，让一次回复在 worker 死掉或 `operad serve` 重启后接着跑。事实和判断分开写：前五节是事实，标 **实测** 的是在临时目录里跑过的探针（不在 operad 仓库里），标 **代码** 的读自 operad `main`（`de50ff8f`）或 pi-durable 1.5.2 的 `dist/`，标 **文档** 的只出自它的 README，标 **未核** 的没有验证；最后两节是判断，都还不是决定。
+owner 问的问题：`@earendil-works/pi-durable` 能不能放在 bot 聊天后面，让一次回复在 worker 死掉或 `operad serve` 重启后接着跑。事实和判断分开写：前六节是事实，标 **第三方** 的只有第三方出处，标 **实测** 的是在临时目录里跑过的探针（不在 operad 仓库里），标 **代码** 的读自 operad `main`（`de50ff8f`）或 pi-durable 1.5.2 的 `dist/`，标 **文档** 的只出自它的 README，标 **未核** 的没有验证；最后两节是判断，都还不是决定。
 
 探针用的版本：pi-durable 1.5.2（npm `latest`，2026-11-10 发布），Bun 1.3.14，Node 24.18.1，macOS arm64，owner 全局安装的 pi 1.5.2。
 
@@ -119,9 +119,50 @@ owner 问的问题：`@earendil-works/pi-durable` 能不能放在 bot 聊天后�
 - **要重写的不是适配层，是 harness 本身**：今天的 worker 建在 `createAgentSession` 上，拿到的是 pi 的技能加载、系统提示、压缩、扩展和会话文件。pi-durable 是另一套运行时，这些都要用它的 extension、section、`CodingTools` 重新接。ADR 0023 D3（不做发现）、D10（保留 worker）也要重新定义。
 - **Bun**：ADR 0023 的 worker 是 Bun 子进程。自带 SQLite 存储在 Bun 下不能用，官方只声明支持 Node。
 
+## 6. 内置 pi：OpenClaw 的做法
+
+owner 读完前五节后问"如果我们内置 pi / pi-durable 呢"，随后说"做成像 open claw 那样"（2026-11-19）。这一节记 OpenClaw 怎么用 pi，以及 operad 今天离它差什么。
+
+**OpenClaw 怎么做（第三方，没读它的源码）**
+
+- pi 的包是它自己的依赖，在进程内直接调 `createAgentSession()`，不起子进程，也不走 RPC。
+- 会话文件在它自己的目录（`~/.openclaw/agents/<agentId>/sessions/`），不用 pi 默认的 `~/.pi/agent/sessions/`。
+- 登录是它自己的一套（每个 provider 可以有多个 key，失败后轮换并冷却），不用 pi 的 `AuthStorage`。
+- 系统提示和工具由它自己组装，再订阅 pi 会话的事件流。
+- 它用的是 pi-coding-agent，没有找到它用 pi-durable 的说法，**未核**。
+
+**operad 今天和它的差别（代码）**
+
+| | OpenClaw | operad 的 pi harness |
+|---|---|---|
+| 调用方式 | `createAgentSession()` | 一样（`worker.ts:609`） |
+| 会话文件 | 自己的目录 | 一样，`<home>/harness/pi/sessions` |
+| 发现和设置 | 自己组装 | 一样，默认不做发现（ADR 0023 D3） |
+| 工具 | 自己注入 | 一样，经 `@operad-io/mcp` |
+| pi 从哪来 | 自己的依赖 | 用户 `PATH` 上的 pi（D9） |
+| 登录 | 自己的存储 | 用户的 `~/.pi/agent/auth.json`（D4） |
+| 进程 | 网关进程内 | Bun 子进程（worker） |
+
+所以"像 OpenClaw 那样"实际只差三处，前四行已经一样。
+
+**pi 的包本身（代码）**：`pi-coding-agent`、`pi-ai`、`pi-agent-core` 都是 MIT，纯 JavaScript。`packages/harness/pi/package.json` 今天把 `pi-coding-agent` 放在 `devDependencies`（`1.5.0`），`dependencies` 里没有。
+
 ## 判断
 
 以下是我的看法，不是决定。
+
+**关于"像 OpenClaw 那样"（第 6 节）**
+
+- **pi 从哪来**：改成 operad 自己的依赖。这是这个方向的核心，要改 ADR 0022 D6 和 0023 D9，并新增一个运行时依赖。`plugin check` 的版本下限检查随之去掉。
+- **进程**：建议不跟 OpenClaw，保留子进程 worker。它给了崩溃隔离、`kill` 进程组的收尾和保留 worker（D10），而且内核不该在自己进程里跑 agent（ADR 0002）。
+- **登录**：这一处要 owner 定。两条路：
+  - 继续读用户的 `~/.pi/agent/auth.json`（D4 不变）。用户不用再登录一次，但 operad 内置的 pi 和用户自己的 pi 会是两个版本读写同一份文件，是否安全**未核**。
+  - 像 OpenClaw 一样有 operad 自己的登录存储。彻底不依赖用户装没装 pi，但 operad 要自己做登录流程（OAuth、刷新、多账号），这是一块不小的新功能。
+  
+  我倾向先走第一条，只读不写（pi 有 `ReadOnlyAuthStorage`），token 刷新谁来做要先验证。
+- **pi-durable 不在这个方向里**：OpenClaw 的做法是内置 pi-coding-agent。内置之后以后要试 pi-durable 也更容易，因为 pi-ai 只有一份。
+
+**关于 pi-durable（前五节）**
 
 1. **它解决的问题是真的，但对 bot 聊天不大。** 今天丢的是一轮回复，代价是用户再发一次或 `/retry`。更实在的缺口有两个，都不需要 pi-durable：
    - serve 重启后这一轮在记录里什么都不留。
