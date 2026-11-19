@@ -2,7 +2,7 @@
 
 import { randomUUID } from "node:crypto";
 import { statSync } from "node:fs";
-import { basename, extname } from "node:path";
+import { basename, extname, join } from "node:path";
 import type {
   ActionArgSchema,
   AgentTimings,
@@ -13,7 +13,7 @@ import type {
   PluginFact,
   UsageTokens,
 } from "@operad-io/engine";
-import { isRecord, modelIds, storedType, stringList } from "@operad-io/engine";
+import { isRecord, modelIds, safeFileName, storedType, stringList } from "@operad-io/engine";
 import { isAccessLevel, type AccessLevel } from "@operad-io/access-match";
 
 /** The object type of a chat. */
@@ -54,6 +54,31 @@ export const EFFORT_FACT = "chat.effort";
 
 /** The fact type of a change of a chat's access level: who changed it, from what, to what. */
 export const ACCESS_FACT = "chat.access";
+
+/** What each level means, in the chat action's information and a question its change lifts. */
+export const ACCESS_LEVEL_INFO: Readonly<Record<AccessLevel, { readonly title: string; readonly description: string }>> = {
+  plan: {
+    title: "Plan only",
+    description: "Read and run commands known to only read; a write asks.",
+  },
+  ask: {
+    title: "Ask each time",
+    description: "Every write and every command not known to only read asks.",
+  },
+  edits: {
+    title: "Accept edits",
+    description: "Write files in the working directory; a command not known to only read asks.",
+  },
+  full: {
+    title: "Full access",
+    description: "Skip every question the level adds; the profile's deny and ask rules still hold.",
+  },
+};
+
+/** The file a chat keeps its live level in, read again by a harness for each call. */
+export function accessLevelPath(home: string, chat: string): string {
+  return join(home, "chat", safeFileName(chat), "access.json");
+}
 
 /**
  * The field the access action puts on the in-memory chat while it runs the

@@ -28,6 +28,7 @@ The types a plugin imports, by the page that explains them. The values these ent
 | `AskAnswer` | The answer `ctx.ask` returns. | [asking](asking.md) |
 | `AskOutcome` | What the host reports back for one question a step asked. | [asking](asking.md) |
 | `AskRequest` | What a step asks a person with `ctx.ask`. | [asking](asking.md) |
+| `AskRecheck` | What a question says when the host checks it again while it waits. | [asking](asking.md) |
 | `ChoiceInfo` | What one choice of a question says about itself: an optional label, hint, role (`primary` or `destructive`) and note (`optional` or `required`). | [asking](asking.md) |
 | `AskWaitingData` | The data of a step that ended `waiting` because an ask timed out. | [asking](asking.md) |
 | `StepAsker` | Where a step's questions go. `request.graceSecs` already holds the narrower of the call and the step's `askGraceSecs`; the host narrows it by its own setting. | [asking](asking.md) |

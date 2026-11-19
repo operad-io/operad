@@ -7,8 +7,8 @@
 
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { AskTimeoutError, attachmentDir, isRecord, messageOf, modelIds, safeFileName, type AskOutcome, type AskRequest, type ChoiceInfo, type JsonValue, type PluginStepResult, type RunObject, type StepAsker, type StepContext, type UsageTokens } from "@operad-io/engine";
-import { withAccessLevel } from "@operad-io/access-match";
+import { AskTimeoutError, attachmentDir, isRecord, messageOf, modelIds, safeFileName, type AskOutcome, type AskRecheck, type AskRequest, type ChoiceInfo, type JsonValue, type PluginStepResult, type RunObject, type StepAsker, type StepContext, type UsageTokens } from "@operad-io/engine";
+import { match, MCP_TOOL, withAccessLevel, writeLiveAccess, type AccessLevel } from "@operad-io/access-match";
 import {
   appendAlwaysAllow,
   alwaysAllowEntry,
@@ -24,6 +24,9 @@ import {
 } from "@operad-io/harness-process";
 import { readSkills, skillMessage } from "./skills.ts";
 import {
+  ACCESS_FACT,
+  ACCESS_LEVEL_INFO,
+  accessLevelPath,
   allEntries,
   allMessages,
   ANSWER_FACT,
@@ -352,6 +355,122 @@ function failed(reason: string, message: string): PluginStepResult {
   return { result: "failed", data: { reason, message } };
 }
 
+/** The call a question names in its own resume, when it carries one. */
+function resumeCall(resume: unknown): WorktreeCall | undefined {
+  if (!isRecord(resume) || !isRecord(resume.call)) return undefined;
+  const kind = resume.call.kind;
+  const value = resume.call.value;
+  const tool = resume.call.tool;
+  if ((kind !== "command" && kind !== "path") || typeof value !== "string" || value.length === 0) return undefined;
+  return { kind, value, ...(typeof tool === "string" ? { tool } : {}) };
+}
+
+/** The call a question is about, from its grant, its resume or its own words. */
+function questionedCall(request: AskRequest): WorktreeCall | undefined {
+  return worktreeCall(request) ?? resumeCall(request.resume) ?? callFromQuestion(request.prompt);
+}
+
+/** One call in the words `access-match` takes. */
+function matcherCall(call: WorktreeCall): { readonly tool: string; readonly input: Record<string, unknown> } {
+  if (call.kind === "command") {
+    if (call.value.startsWith("mcp ")) {
+      const rest = call.value.slice("mcp ".length);
+      const at = rest.indexOf(".");
+      if (at > 0 && at + 1 < rest.length) {
+        return { tool: MCP_TOOL, input: { server: rest.slice(0, at), tool: rest.slice(at + 1) } };
+      }
+    }
+    return { tool: "bash", input: { command: call.value } };
+  }
+  return { tool: call.tool ?? "write", input: { path: call.value } };
+}
+
+/** Who changed the chat's level to `level`, from the latest access fact that did. */
+function levelActor(ctx: StepContext, chat: string, level: AccessLevel): { readonly via: string; readonly id: string } | undefined {
+  const fact = [...chatFacts(ctx.store, chat)].reverse().find((item) => item.type === ACCESS_FACT && item.data.to === level);
+  const by = fact !== undefined && isRecord(fact.data.by) ? fact.data.by : undefined;
+  if (by === undefined || typeof by.via !== "string" || typeof by.id !== "string") return undefined;
+  return { via: by.via, id: by.id };
+}
+
+/**
+ * The check a chat's question runs again while it waits. A question about one
+ * call is lifted only when the level changed and the new level would not ask
+ * that call; a question that is not about a call, or whose ask comes from the
+ * profile rather than the level, stays open.
+ */
+function levelRecheck(
+  ctx: StepContext,
+  chatId: string,
+  cwd: string,
+  base: () => Readonly<Record<string, JsonValue>>,
+  openedLevel: AccessLevel,
+  request: AskRequest,
+): (() => Promise<AskRecheck>) | undefined {
+  const call = questionedCall(request);
+  if (call === undefined) return undefined;
+  const judged = matcherCall(call);
+  return async () => {
+    const stored = await ctx.store.get(CHAT_TYPE, chatId);
+    if (stored === undefined) return { ask: true };
+    const chat = chatData(stored.data);
+    const level = chat.accessLevel ?? "ask";
+    if (level === openedLevel) return { ask: true };
+    const verdict = match(withAccessLevel(base(), level), { ...judged, cwd });
+    if (!verdict.allow) return { ask: true };
+    const actor = levelActor(ctx, chatId, level);
+    return { ask: false, note: ACCESS_LEVEL_INFO[level].title, ...(actor === undefined ? {} : { actor }) };
+  };
+}
+
+/** The chat step's own `ctx.ask`, in the shape the harness's asker takes. */
+function contextAsker(ctx: StepContext): StepAsker {
+  return {
+    async ask(request): Promise<AskOutcome> {
+      try {
+        return { kind: "answered", answer: await ctx.ask(request) };
+      } catch (error) {
+        if (error instanceof AskTimeoutError) {
+          return {
+            kind: "timeout",
+            waitId: error.waitId,
+            prompt: error.prompt,
+            choices: error.choices,
+            ...(error.choiceInfo === undefined ? {} : { choiceInfo: error.choiceInfo }),
+            ...(error.resume === undefined || error.resume === null ? {} : { resume: error.resume as JsonValue }),
+          };
+        }
+        throw error;
+      }
+    },
+    useGrant: (waitId) => ctx.useGrant(waitId),
+  };
+}
+
+/** An asker that adds the level recheck to every question about one call. */
+function levelAsker(
+  ctx: StepContext,
+  chatId: string,
+  cwd: string,
+  base: () => Readonly<Record<string, JsonValue>>,
+  initialLevel: AccessLevel,
+  inner: StepAsker,
+): StepAsker {
+  return {
+    async ask(request, signal): Promise<AskOutcome> {
+      if (request.recheck !== undefined) return inner.ask(request, signal);
+      // The question may be opened after the reply started, under a level the
+      // owner set meanwhile; changing back to the reply's start level is still
+      // a change that may lift this question.
+      const stored = await ctx.store.get(CHAT_TYPE, chatId);
+      const openedLevel = stored === undefined ? initialLevel : chatData(stored.data).accessLevel ?? "ask";
+      const recheck = levelRecheck(ctx, chatId, cwd, base, openedLevel, request);
+      return inner.ask(recheck === undefined ? request : { ...request, recheck }, signal);
+    },
+    useGrant: (waitId) => inner.useGrant(waitId),
+  };
+}
+
 /**
  * The asker a read-only chat's harness gets: a question about writing a file
  * becomes the worktree question, which may let this call run once, remember it
@@ -365,6 +484,7 @@ function readOnlyAsker(
   ctx: StepContext,
   cwd: string,
   chosen: { run: boolean; readonly stop: AbortController },
+  inner: StepAsker,
 ): StepAsker {
   const person = personStarted(ctx.trigger);
   return {
@@ -389,41 +509,30 @@ function readOnlyAsker(
             ...(request.graceSecs === undefined ? {} : { graceSecs: request.graceSecs }),
           }
         : request;
-      try {
-        const answer = await ctx.ask(shaped);
-        if (shaped === request) return { kind: "answered", answer };
-        const action = worktreeAnswer(answer.choice);
-        const actor = answer.actor === undefined ? {} : { actor: answer.actor };
-        if (action === "allow_once") {
-          return { kind: "answered", answer: { choice: "allow_once", ...actor } };
-        }
-        if (action === "allow_always" && person) {
-          if (call !== undefined) await rememberAlways(ctx, call, cwd);
-          return { kind: "answered", answer: { choice: "allow_always", ...actor } };
-        }
-        if (action === "worktree") {
-          // Opening a worktree keeps this call out of the main clone. The reply
-          // ends here; the worktree flow starts the answer again there.
-          chosen.run = true;
-          chosen.stop.abort();
-          throw new WorktreeChosen();
-        }
-        // Deny refuses as no did, and says why.
-        return { kind: "answered", answer: { choice: "reject_once", note: READ_ONLY_REFUSAL, ...actor } };
-      } catch (error) {
-        if (error instanceof AskTimeoutError) {
-          return {
-            kind: "timeout",
-            waitId: error.waitId,
-            prompt: error.prompt,
-            choices: error.choices,
-            ...(shaped.resume === undefined ? {} : { resume: shaped.resume }),
-          };
-        }
-        throw error;
+      const outcome = await inner.ask(shaped);
+      if (outcome.kind === "timeout") return outcome;
+      const answer = outcome.answer;
+      if (shaped === request) return outcome;
+      const action = worktreeAnswer(answer.choice);
+      const actor = answer.actor === undefined ? {} : { actor: answer.actor };
+      if (action === "allow_once") {
+        return { kind: "answered", answer: { choice: "allow_once", ...actor } };
       }
+      if (action === "allow_always" && person) {
+        if (call !== undefined) await rememberAlways(ctx, call, cwd);
+        return { kind: "answered", answer: { choice: "allow_always", ...actor } };
+      }
+      if (action === "worktree") {
+        // Opening a worktree keeps this call out of the main clone. The reply
+        // ends here; the worktree flow starts the answer again there.
+        chosen.run = true;
+        chosen.stop.abort();
+        throw new WorktreeChosen();
+      }
+      // Deny refuses as no did, and says why.
+      return { kind: "answered", answer: { choice: "reject_once", note: READ_ONLY_REFUSAL, ...actor } };
     },
-    useGrant: (waitId) => ctx.useGrant(waitId),
+    useGrant: (waitId) => inner.useGrant(waitId),
   };
 }
 
@@ -565,6 +674,21 @@ export function withAttachmentReads(
 ): Readonly<Record<string, JsonValue>> {
   const own = Array.isArray(access.readPaths) ? access.readPaths : [];
   return { ...access, readPaths: [...own, directory] };
+}
+
+/**
+ * The profile with the chat's own directory denied: its live-level file is
+ * written by `chat:access`, never by the agent, at any level.
+ */
+export function withLevelFileDeny(
+  access: Readonly<Record<string, JsonValue>>,
+  levelPath: string,
+): Readonly<Record<string, JsonValue>> {
+  const directory = dirname(levelPath);
+  const denied = Array.isArray(access.denyPaths)
+    ? access.denyPaths.filter((entry): entry is string => typeof entry === "string")
+    : [];
+  return denied.includes(directory) ? access : { ...access, denyPaths: [...denied, directory] };
 }
 
 /** How much of a tool call's output a fact keeps; the rest goes to a file. */
@@ -1012,7 +1136,10 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
   // is read-only without one.
   const worktreeChat = readOnly && (chat.parent === undefined || chat.parent.startsWith("repo:"));
   const worktreeChosen = { run: false, stop: new AbortController() };
-  const asker = worktreeChat ? readOnlyAsker(ctx, live.cwd, worktreeChosen) : undefined;
+  // The live file holds the base profile; a level change rewrites only its level.
+  let recheckBase: Readonly<Record<string, JsonValue>> = live.access;
+  const withLevel = levelAsker(ctx, object.id, live.cwd, () => recheckBase, level, contextAsker(ctx));
+  const asker = worktreeChat ? readOnlyAsker(ctx, live.cwd, worktreeChosen, withLevel) : withLevel;
   // A worktree yes aborts `stop`, so the harness ends even if it swallows the
   // stop error; the reply still ends `done` below.
   const signal = worktreeChat ? AbortSignal.any([ctx.signal, worktreeChosen.stop.signal]) : ctx.signal;
@@ -1063,17 +1190,28 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
   // them, every file as a path, and the chat's own attachment directory open to reads.
   const directory = attachmentDir(ctx.home, CHAT_TYPE, object.id);
   const images = imagesOf(pending, chat.harness, directory);
-  const base = messages.some((message) => message.attachments.length > 0)
-    ? withAttachmentReads(leveled, directory)
-    : leveled;
+  const levelPath = accessLevelPath(ctx.home, object.id);
+  const withReads = messages.some((message) => message.attachments.length > 0)
+    ? withAttachmentReads(live.access, directory)
+    : live.access;
+  const baseAccess = withLevelFileDeny(withReads, levelPath);
+  recheckBase = baseAccess;
+  const base = withAccessLevel(baseAccess, level);
+  try {
+    await writeLiveAccess(levelPath, baseAccess, level);
+  } catch (error) {
+    await ctx.logger.write(
+      `the live access level could not be written: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
   // A late Allow once is for this run alone; a late Always allow also wrote the user layer.
   const lateEntry =
     (lateAction === "allow_once" || lateAction === "allow_always") && lateCall !== undefined
       ? alwaysAllowEntry(lateCall, live.cwd)
       : undefined;
   const existing = Array.isArray(base.alwaysAllow) ? base.alwaysAllow : [];
-  const access =
-    lateEntry === undefined
+  const access = {
+    ...(lateEntry === undefined
       ? base
       : {
           ...base,
@@ -1086,7 +1224,9 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
               ...(lateEntry.tool === undefined ? {} : { tool: lateEntry.tool }),
             },
           ],
-        };
+        }),
+    levelFile: levelPath,
+  };
 
   // The harness hands each log line over as it writes it; the fold keeps what
   // is finished and what is still being written. None of this is stored until
@@ -1155,7 +1295,7 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
         ...(ctx.trigger === undefined ? {} : { trigger: ctx.trigger }),
         signal,
         receiver,
-        ...(asker === undefined ? {} : { asker }),
+        asker,
       },
     );
   } catch (error) {

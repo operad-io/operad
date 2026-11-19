@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { defaultAccess } from "@operad-io/access-match";
 import { attachmentDir, type StepContext } from "@operad-io/engine";
 import {
+  accessLevelPath,
   allMessages,
   chatViews,
   imagesOf,
@@ -158,7 +159,11 @@ describe("chat/reply with attachments", () => {
     await r.round(chat);
     const profile = seen[0] as Record<string, unknown>;
     expect(profile.readPaths).toEqual([mine]);
-    expect(profile.denyPaths).toEqual([...(defaultAccess().denyPaths ?? []), ...denied]);
+    expect(profile.denyPaths).toEqual([
+      ...(defaultAccess().denyPaths ?? []),
+      ...denied,
+      dirname(accessLevelPath(home, chat)),
+    ]);
   });
 
   test("a chat with no attachments keeps its profile as it is", async () => {
@@ -170,7 +175,12 @@ describe("chat/reply with attachments", () => {
     const chat = await r.chat({ access: { denyPaths: ["/x"] } });
     await r.say(chat, "plain");
     await r.round(chat);
-    expect(seen[0]).toEqual({ ...defaultAccess(), denyPaths: [...(defaultAccess().denyPaths ?? []), "/x"], level: "ask" });
+    expect(seen[0]).toMatchObject({
+      ...defaultAccess(),
+      denyPaths: [...(defaultAccess().denyPaths ?? []), "/x", dirname(accessLevelPath(join(r.root, "home"), chat))],
+      level: "ask",
+    });
+    expect(String((seen[0] as Record<string, unknown>).levelFile)).toContain(`/chat/${chat}/access.json`);
     expect(withAttachmentReads({}, "/d")).toEqual({ readPaths: ["/d"] });
     expect(promptFor([])).toBe("");
   });

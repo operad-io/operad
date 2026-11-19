@@ -190,3 +190,10 @@ and the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0557-M1 | packages/access-match/src/summary.ts | a question showed a leading assignment value unmasked when the command could not be read | `a question masks the leading assignment values of a command the log cannot read` |
+
+## T-0558 — a chat's access level is live
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0558-M1 | packages/access-match/src/index.ts | `liveAccess` returned the startup profile instead of reading the live-level file | `a chat's live access level > is read again from its file, so a lowered level asks the next call` |
+| T-0558-M10 | packages/access-match/src/index.ts | `liveAccess` took any readable level file, even one that no longer held the chat directory deny | `a chat's live access level > a level file that drops the chat directory deny is ignored` |

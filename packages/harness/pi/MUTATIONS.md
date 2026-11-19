@@ -247,3 +247,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0556-M1 | packages/harness/pi/src/worker.ts | the ask line's `shown` was summarized as a log, so an unreadable command was hidden from the question | `a question about a command the log cannot read shows the command itself` |
+
+## T-0558 — the pi worker reads the live level for each call
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0558-M5 | packages/harness/pi/src/worker.ts | `currentProfile` returned the startup profile, so a lowered level did not reach the next call | `a real worker reads the live level again for each call, so lowering to ask applies` |

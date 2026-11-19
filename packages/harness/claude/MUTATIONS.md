@@ -282,3 +282,9 @@ setup it depends on, in the order they were recorded. The root
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0556-M1 | packages/harness/claude/src/worker.ts | the ask line's `shown` was summarized as a log, so an unreadable command was hidden from the question | `a question about a command the log cannot read shows the command itself` |
+
+## T-0558 — the claude worker reads the live level for each call
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0558-M6 | packages/harness/claude/src/worker.ts | `canUseTool` judged with the turn's startup profile | `a running worker reads the live level again for each call, so lowering asks` |

@@ -350,6 +350,37 @@ for (const mode of ["memory", "file"] as const) {
 }
 
 describe("ctx.ask", () => {
+  test("a question checked again and no longer needed is answered allow_once with its note", async () => {
+    const env = await setup("memory");
+    try {
+      const id = await env.create("ask-wait", "r", { recheck: "no" });
+      const run = env.runner(id, new FakeTimer()).run();
+      expect(await run).toBe("ended");
+
+      const list = await facts(env.log, id);
+      const all = list.map((fact) => fact.kind);
+      expect(count(all, "ask_opened")).toBe(1);
+      expect(count(all, "ask_answered")).toBe(1);
+      expect(count(all, "ask_timed_out")).toBe(0);
+      const answered = list.find((fact) => fact.kind === "ask_answered");
+      expect(answered?.payload).toMatchObject({
+        choice: "allow_once",
+        note: "Full access",
+        actor: { via: "cli", id: "me" },
+      });
+      expect(stepResult(list, "q").data).toMatchObject({
+        choice: "allow_once",
+        note: "Full access",
+        actor: { via: "cli", id: "me" },
+      });
+      const words: string[] = [];
+      for await (const entry of historyEntries(env.log.read(id))) words.push(entry.what);
+      expect(words).toContain("you chose allow_once");
+    } finally {
+      await env.close();
+    }
+  }, 30_000);
+
   test("a late answer to a step that ended is refused and recorded", async () => {
     const env = await setup("memory");
     try {

@@ -122,6 +122,15 @@ export default definePlugin({
           ...(ctx.params.onTimeout === "reject_once"
             ? { onTimeout: "reject_once" as const }
             : {}),
+          ...(ctx.params.recheck === "no"
+            ? {
+                recheck: () => ({
+                  ask: false as const,
+                  note: "Full access",
+                  actor: { via: "cli", id: "me" },
+                }),
+              }
+            : {}),
           resume: { session: "s1" },
         });
         if (answer.rejected === true) return { result: "rejected" };

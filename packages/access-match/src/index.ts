@@ -2,8 +2,10 @@
  * The access profile matcher. `README.md` holds the tables the tests follow.
  */
 
+import { readFileSync } from "node:fs";
+import { mkdir, rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { posix } from "node:path";
+import { dirname, posix } from "node:path";
 export { isReadOnlyCommand } from "./readonly.ts";
 export { COMMAND_SUMMARY_CHARS, SUMMARY_CHARS, COMMAND_NOT_SHOWN, REFUSED_IN_LOG, summarizeCall, firstErrorLine, messageSummary, secretValuesOf, type SummaryOptions } from "./summary.ts";
 export { OUTWARD_ALLOW_TARGET, OUTWARD_REJECT_ONCE, OUTWARD_SEND_ONCE, declaredOutward, guardDeclaredOutward, guardOutward, outwardAllowed, outwardCommandWrites, outwardQuestion, personStarted, type OutwardGuardContext, type OutwardQuestionOptions } from "./outward.ts";
@@ -101,6 +103,90 @@ export function withAccessLevel<T extends AccessProfile>(
   } as T & { readonly level: AccessLevel };
 }
 
+/** What a chat keeps in its live-level file: the profile without a level, and the level now in force. */
+export interface LiveAccessFile {
+  readonly access: Readonly<Record<string, unknown>>;
+  readonly level: AccessLevel;
+}
+
+function liveAccessFileOf(value: unknown): LiveAccessFile | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  const access: unknown = Reflect.get(value, "access");
+  const level: unknown = Reflect.get(value, "level");
+  if (typeof access !== "object" || access === null || Array.isArray(access)) return undefined;
+  if (!isAccessLevel(level)) return undefined;
+  return { access: access as Readonly<Record<string, unknown>>, level };
+}
+
+/** The live-level file at `path`, or undefined when it is absent or unreadable. */
+export function readLiveAccess(path: string): LiveAccessFile | undefined {
+  try {
+    return liveAccessFileOf(JSON.parse(readFileSync(path, "utf8")));
+  } catch {
+    return undefined;
+  }
+}
+
+/** Whether this profile has a live level a harness reads again for each call. */
+export function hasLiveAccess(profile: unknown): boolean {
+  return (
+    typeof profile === "object" &&
+    profile !== null &&
+    !Array.isArray(profile) &&
+    typeof Reflect.get(profile, "levelFile") === "string" &&
+    String(Reflect.get(profile, "levelFile")).length > 0
+  );
+}
+
+/**
+ * The profile with the level its chat has now. The level file holds the base
+ * profile, so a level change can add or remove the level's own asks; the run's
+ * one-time grants, its always-allowed entries and its background flag come
+ * from the profile the harness was started with and stay.
+ */
+export function liveAccess<T extends AccessProfile>(profile: T): T & AccessProfile {
+  const path = profile.levelFile;
+  if (path === undefined) return profile;
+  const file = readLiveAccess(path);
+  if (file === undefined) return profile;
+  // The chat's own directory is denied in the base profile. A file that no
+  // longer holds that deny was not written by `chat:access`, so its level is
+  // not taken and the profile the harness started with stays in force.
+  const requiredDeny = dirname(path);
+  const denied: unknown = file.access["denyPaths"];
+  if (!Array.isArray(denied) || !denied.some((entry) => entry === requiredDeny || entry === path)) {
+    return profile;
+  }
+  return {
+    ...withAccessLevel(file.access, file.level),
+    levelFile: path,
+    ...(profile.background === true ? { background: true } : {}),
+    ...(profile.grants === undefined ? {} : { grants: profile.grants }),
+    ...(profile.alwaysAllow === undefined ? {} : { alwaysAllow: profile.alwaysAllow }),
+  } as T & AccessProfile;
+}
+
+/** Writes the base profile and the level now in force, replacing the file whole. */
+export async function writeLiveAccess(
+  path: string,
+  access: Readonly<Record<string, unknown>>,
+  level: AccessLevel,
+): Promise<void> {
+  await mkdir(dirname(path), { recursive: true });
+  const temporary = `${path}.${process.pid}.tmp`;
+  await writeFile(temporary, JSON.stringify({ access, level }, null, 2), { mode: 0o600 });
+  await rename(temporary, path);
+}
+
+/** Changes only the level of a live-level file, keeping the base profile it already holds. */
+export async function updateLiveAccessLevel(
+  path: string,
+  level: AccessLevel,
+  fallback: Readonly<Record<string, unknown>> = {},
+): Promise<void> {
+  await writeLiveAccess(path, readLiveAccess(path)?.access ?? fallback, level);
+}
+
 /** A one-time permission for the exact call a person was asked about. */
 export interface AccessGrant {
   readonly waitId: string;
@@ -130,6 +216,12 @@ export interface AccessProfile {
    * the level rules in `REFERENCE.md`.
    */
   readonly level?: AccessLevel | undefined;
+  /**
+   * A file a chat keeps its live level in, internal to operad. A harness reads
+   * it again for each call, so a level change reaches the calls after it even
+   * while the reply keeps its worker. It is not a user setting.
+   */
+  readonly levelFile?: string | undefined;
   readonly denyPaths?: readonly string[] | undefined;
   readonly denyCommands?: readonly string[] | undefined;
   /** Command rules in the shape of `denyCommands`; a match asks a person instead of refusing. */
@@ -317,7 +409,14 @@ export function readProfile(value: unknown): ProfileRead {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return { ok: false, message: "the access profile must be an object" };
   }
-  const found: { level?: AccessLevel; defaultAsks?: boolean; denyPaths?: string[]; denyCommands?: string[]; askCommands?: string[]; askPaths?: string[]; readPaths?: string[]; allowMcp?: string[]; outwardAllow?: string[]; outwardCommands?: string[]; readOnly?: boolean; background?: boolean; grants?: AccessGrant[]; alwaysAllow?: AlwaysAllowEntry[] } = {};
+  const found: { level?: AccessLevel; levelFile?: string; defaultAsks?: boolean; denyPaths?: string[]; denyCommands?: string[]; askCommands?: string[]; askPaths?: string[]; readPaths?: string[]; allowMcp?: string[]; outwardAllow?: string[]; outwardCommands?: string[]; readOnly?: boolean; background?: boolean; grants?: AccessGrant[]; alwaysAllow?: AlwaysAllowEntry[] } = {};
+  const levelFile: unknown = Reflect.get(value, "levelFile");
+  if (levelFile !== undefined) {
+    if (typeof levelFile !== "string" || levelFile.length === 0) {
+      return { ok: false, message: "levelFile must be a non-empty string" };
+    }
+    found.levelFile = levelFile;
+  }
   const level: unknown = Reflect.get(value, "level");
   if (level !== undefined) {
     if (!isAccessLevel(level)) {

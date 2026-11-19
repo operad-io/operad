@@ -12,11 +12,12 @@
  */
 
 import { EventEmitter } from "node:events";
-import { appendFileSync, readFileSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { appendFileSync, existsSync, readFileSync, readdirSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 import { PassThrough } from "node:stream";
 import type { SpawnOptions, SpawnedProcess } from "@anthropic-ai/claude-agent-sdk";
 import { isRecord } from "@operad-io/engine";
+import { waitForChange } from "@operad-io/engine/platform";
 
 export type HookName = "PreToolUse" | "PostToolUse" | "PostToolUseFailure";
 
@@ -34,6 +35,7 @@ export type FakeStep =
       readonly ask: { readonly toolName: string; readonly toolUseId: string; readonly input: Record<string, unknown> };
     }
   | { readonly hang: true }
+  | { readonly wait: string }
   | { readonly exit: number };
 
 export interface FakeScript {
@@ -222,6 +224,10 @@ class FakeProcess extends EventEmitter implements SpawnedProcess {
           input: step.ask.input,
         });
         record(this.recordFile, { askReply: step.ask.toolName, answer: reply["response"] ?? reply["error"] ?? null });
+      } else if ("wait" in step) {
+        while (!existsSync(step.wait)) {
+          await waitForChange(dirname(step.wait), basename(step.wait), 100);
+        }
       } else if ("hang" in step) {
         record(this.recordFile, { hanging: true });
         this.log("fake-claude-hanging\n");

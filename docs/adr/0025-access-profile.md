@@ -52,6 +52,8 @@ A chat's access level is one of `plan`, `ask`, `edits` and `full`. It is a field
 
 A level is composed into the profile by `@operad-io/access-match`; the kernel does not interpret it. `claude` and `pi` carry every level and declare `level` among the profile fields they enforce. `codex` and `radian` carry none: a reply at any level is refused at its start with a message naming the level, never answered with the level ignored.
 
+The level is read for each call, not once per reply. A `chat:access` change while a reply runs applies to every call that reply makes after the change, in every harness that takes an access profile; a lowering applies the same way, so a call at `full` that comes after a change to `ask` asks. A question that is open when the level changes is checked again under the new level; when the new level would not ask it, it is answered `allow_once` and the question's history note is the level's own title.
+
 The user-visible names are `Plan only`, `Ask each time`, `Accept edits` and `Full access` (Chinese: 仅规划, 逐次确认, 自动接受编辑, 完全访问), under the menu title `Access` (权限模式). Each level has a short description in the chat action's information; `full` says that it skips every question the level adds while the profile's deny and ask rules still hold.
 
 ### D9: One built-in default, which can only be tightened

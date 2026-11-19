@@ -1,8 +1,11 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { Views } from "@operad-io/engine";
+import { dirname, join } from "node:path";
+import { Views, type AskRequest, type StepContext } from "@operad-io/engine";
+import { match, readLiveAccess, type AccessProfile } from "@operad-io/access-match";
 import {
   ACCESS_FACT,
   ACCESS_LEVEL_INFO,
+  accessLevelPath,
   allMessages,
   CHAT_TYPE,
   chatData,
@@ -48,6 +51,119 @@ describe("chat:access", () => {
     ]);
     expect(chatData((await r.store.get(CHAT_TYPE, chat))?.data ?? {}).accessLevel).toBe("full");
     expect(chatViews.row((await r.store.get(CHAT_TYPE, chat)) as never).note).toBe("fake · full");
+  });
+
+  test("a change updates the live file a running reply reads, keeping its base profile", async () => {
+    const r = await rig(() => reply("ok"));
+    const chat = await r.chat({ access: { denyCommands: ["rm"] }, accessLevel: "ask", accessDefault: "ask" });
+    const file = accessLevelPath(join(r.root, "home"), chat);
+    const access = { denyCommands: ["rm"], denyPaths: [dirname(file)] };
+
+    await act(r, chat, { level: "full" });
+    expect(readLiveAccess(file)).toEqual({ access, level: "full" });
+
+    await act(r, chat, { level: "edits" });
+    expect(readLiveAccess(file)).toEqual({ access, level: "edits" });
+  });
+
+  test("every level denies its own live level file to write, edit and a bash redirect", async () => {
+    for (const level of ["ask", "edits", "full"] as const) {
+      let seen: unknown;
+      const r = await rig((ctx: StepContext) => {
+        seen = ctx.access;
+        return reply("ok");
+      });
+      const chat = await r.chat({ accessLevel: level, accessDefault: level });
+      await r.say(chat, "go");
+      await r.round(chat);
+      const file = accessLevelPath(join(r.root, "home"), chat);
+      const profile = seen as AccessProfile;
+      const calls = [
+        { tool: "write", input: { path: file, content: "changed" } },
+        { tool: "edit", input: { path: file, oldText: "a", newText: "b" } },
+        { tool: "bash", input: { command: `echo changed > ${file}` } },
+      ];
+      for (const call of calls) {
+        const verdict = match(profile, { ...call, cwd: r.root });
+        expect(verdict.allow).toBe(false);
+        expect(verdict.ask).toBeUndefined();
+      }
+    }
+  });
+
+  test("a question open when the level rises is checked again under the new level", async () => {
+    const asked: AskRequest[] = [];
+    let checked: unknown;
+    const r = await rig(async (ctx: StepContext) => {
+      await ctx.ask({
+        prompt: "Let write use this path? /repo/a.ts",
+        choices: ["allow_once", "reject_once"],
+        resume: { session: "s", grant: { kind: "path", value: "/repo/a.ts", choice: "allow_once", tool: "write" } },
+      });
+      return reply("done");
+    });
+    const chat = await r.chat({ access: { readOnly: true }, accessLevel: "plan", accessDefault: "plan" });
+    await r.say(chat, "go");
+    const asker = {
+      async ask(request: AskRequest) {
+        asked.push(request);
+        await act(r, chat, { level: "full" });
+        checked = await request.recheck?.();
+        return { kind: "answered" as const, answer: { choice: checked === undefined ? "reject_once" : "allow_once" } };
+      },
+      async useGrant() {
+        return false;
+      },
+    };
+
+    expect((await r.round(chat, {}, asker)).result).toBe("done");
+    expect(asked).toHaveLength(1);
+    expect(checked).toEqual({ ask: false, note: "Full access", actor: { via: "cli", id: "me" } });
+  });
+
+  test("a question opened after a lowering is lifted when the level returns to the reply's start", async () => {
+    const cases = [
+      { start: "full", opened: "ask", back: "full", note: "Full access" },
+      { start: "edits", opened: "ask", back: "edits", note: "Accept edits" },
+    ] as const;
+    for (const item of cases) {
+      let beforeAsk: () => Promise<void> = async () => undefined;
+      let workdir = "";
+      const r = await rig(async (ctx: StepContext) => {
+        await beforeAsk();
+        const path = join(workdir, "a.ts");
+        await ctx.ask({
+          prompt: `Let write use this path? ${path}`,
+          choices: ["allow_once", "reject_once"],
+          resume: { session: "s", grant: { kind: "path", value: path, choice: "allow_once", tool: "write" } },
+        });
+        return reply("done");
+      });
+      const chat = await r.chat({ accessLevel: item.start, accessDefault: item.start });
+      workdir = r.root;
+      beforeAsk = async () => {
+        await act(r, chat, { level: item.opened });
+      };
+      await r.say(chat, "go");
+      const checked: unknown[] = [];
+      const asker = {
+        async ask(request: AskRequest) {
+          await act(r, chat, { level: item.back });
+          const check = await request.recheck?.();
+          checked.push(check);
+          return {
+            kind: "answered" as const,
+            answer: { choice: check?.ask === false ? "allow_once" : "reject_once" },
+          };
+        },
+        async useGrant() {
+          return false;
+        },
+      };
+
+      expect((await r.round(chat, {}, asker)).result).toBe("done");
+      expect(checked).toEqual([{ ask: false, note: item.note, actor: { via: "cli", id: "me" } }]);
+    }
   });
 
   test("the row leaves the starting level out and shows a choice", async () => {

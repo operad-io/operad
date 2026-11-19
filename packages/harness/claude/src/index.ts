@@ -8,7 +8,7 @@
  */
 
 import pkg from "../package.json" with { type: "json" };
-import { secretValuesOf, withDefaultAccess, type AccessProfile } from "@operad-io/access-match";
+import { hasLiveAccess, secretValuesOf, withDefaultAccess, type AccessProfile } from "@operad-io/access-match";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
@@ -525,7 +525,8 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
             cwd,
             stdin: JSON.stringify(stdin),
             // The program may ask to use a one-time permission; it needs a reply.
-            interactive: hasGrants(access) || canAsk(access) || inbox !== undefined,
+            // A live level can lower to one that asks, so keep the reply channel open.
+            interactive: hasGrants(access) || canAsk(access) || hasLiveAccess(access) || inbox !== undefined,
             inbox,
             ...(keep === undefined ? {} : { keep }),
             wallMs: wallTimeSecs * 1000,
