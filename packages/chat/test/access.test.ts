@@ -95,6 +95,51 @@ describe("chat:access", () => {
     expect(checked).toEqual({ ask: false, note: "Full access", actor: { via: "cli", id: "me" } });
   });
 
+  test("a question opened after a lowering is lifted when the level returns to the reply's start", async () => {
+    const cases = [
+      { start: "full", opened: "ask", back: "full", note: "Full access" },
+      { start: "edits", opened: "ask", back: "edits", note: "Accept edits" },
+    ] as const;
+    for (const item of cases) {
+      let beforeAsk: () => Promise<void> = async () => undefined;
+      let workdir = "";
+      const r = await rig(async (ctx: StepContext) => {
+        await beforeAsk();
+        const path = join(workdir, "a.ts");
+        await ctx.ask({
+          prompt: `Let write use this path? ${path}`,
+          choices: ["allow_once", "reject_once"],
+          resume: { session: "s", grant: { kind: "path", value: path, choice: "allow_once", tool: "write" } },
+        });
+        return reply("done");
+      });
+      const chat = await r.chat({ accessLevel: item.start, accessDefault: item.start });
+      workdir = r.root;
+      beforeAsk = async () => {
+        await act(r, chat, { level: item.opened });
+      };
+      await r.say(chat, "go");
+      const checked: unknown[] = [];
+      const asker = {
+        async ask(request: AskRequest) {
+          await act(r, chat, { level: item.back });
+          const check = await request.recheck?.();
+          checked.push(check);
+          return {
+            kind: "answered" as const,
+            answer: { choice: check?.ask === false ? "allow_once" : "reject_once" },
+          };
+        },
+        async useGrant() {
+          return false;
+        },
+      };
+
+      expect((await r.round(chat, {}, asker)).result).toBe("done");
+      expect(checked).toEqual([{ ask: false, note: item.note, actor: { via: "cli", id: "me" } }]);
+    }
+  });
+
   test("the row leaves the starting level out and shows a choice", async () => {
     const r = await rig(() => reply("ok"));
     const chat = await r.chat({ accessLevel: "plan", accessDefault: "plan" });

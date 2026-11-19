@@ -404,7 +404,7 @@ function levelRecheck(
   chatId: string,
   cwd: string,
   base: () => Readonly<Record<string, JsonValue>>,
-  initialLevel: AccessLevel,
+  openedLevel: AccessLevel,
   request: AskRequest,
 ): (() => Promise<AskRecheck>) | undefined {
   const call = questionedCall(request);
@@ -415,7 +415,7 @@ function levelRecheck(
     if (stored === undefined) return { ask: true };
     const chat = chatData(stored.data);
     const level = chat.accessLevel ?? "ask";
-    if (level === initialLevel) return { ask: true };
+    if (level === openedLevel) return { ask: true };
     const verdict = match(withAccessLevel(base(), level), { ...judged, cwd });
     if (!verdict.allow) return { ask: true };
     const actor = levelActor(ctx, chatId, level);
@@ -459,7 +459,12 @@ function levelAsker(
   return {
     async ask(request, signal): Promise<AskOutcome> {
       if (request.recheck !== undefined) return inner.ask(request, signal);
-      const recheck = levelRecheck(ctx, chatId, cwd, base, initialLevel, request);
+      // The question may be opened after the reply started, under a level the
+      // owner set meanwhile; changing back to the reply's start level is still
+      // a change that may lift this question.
+      const stored = await ctx.store.get(CHAT_TYPE, chatId);
+      const openedLevel = stored === undefined ? initialLevel : chatData(stored.data).accessLevel ?? "ask";
+      const recheck = levelRecheck(ctx, chatId, cwd, base, openedLevel, request);
       return inner.ask(recheck === undefined ? request : { ...request, recheck }, signal);
     },
     useGrant: (waitId) => inner.useGrant(waitId),
