@@ -158,6 +158,11 @@ function flat(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
 
+/** Text as a Markdown block: its lines stay, only the space around them goes. */
+function block(text: string): string {
+  return text.replace(/\r\n/g, "\n").trim();
+}
+
 function inlineCode(text: string): string {
   const longest = Math.max(0, ...(text.match(/`+/g) ?? []).map((run) => run.length));
   const fence = "`".repeat(longest + 1);
@@ -223,7 +228,7 @@ function entryMarkdown(entry: Entry | FoldEntry, speaker: string, harness: strin
       .map((line) => `> ${line}`)
       .join("\n");
   }
-  const said = flat(entry.text);
+  const said = block(entry.text);
   if (said.length === 0) return undefined;
   const body = `**${speaker}:** ${said}`;
   return entry.kind === "stopped" ? `${body}\n\n*stopped*` : body;
@@ -777,7 +782,7 @@ async function liveOf(
         const thinking = fresh(read.state.thinking);
         if (thinking !== undefined) push(read.lastAt, thinking.split(/\r?\n/).map((line) => `> ${line}`).join("\n"));
         const text = fresh(read.state.text);
-        if (text !== undefined) push(read.lastAt, `**${speaker}:** ${flat(text)}`);
+        if (text !== undefined) push(read.lastAt, `**${speaker}:** ${block(text)}`);
       }
       for (const call of read.state.calls) {
         if (calls.has(maskSecrets(call.callId, secrets))) continue;
