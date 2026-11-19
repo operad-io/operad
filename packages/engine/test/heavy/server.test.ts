@@ -857,6 +857,60 @@ describe("http server", () => {
     }
   });
 
+  test("a form is answered through /v1/answer with one answer per question", async () => {
+    const h = await makeHarness();
+    try {
+      seed(h, "one", { title: "First", state: "new" });
+      const run = await h.log.startRun("demo-flow", "item:one");
+      await h.log.append(run.runId, 0, [
+        {
+          kind: "waiting_for_person",
+          payload: {
+            waitId: "wait:form",
+            step: "ask",
+            prompt: "How should it load?",
+            choices: ["Built-in", "Dynamic"],
+            questions: [
+              {
+                id: "loader",
+                text: "How should it load?",
+                choices: [{ label: "Built-in" }, { label: "Dynamic" }],
+              },
+            ],
+            waitKind: "step",
+            effectId: null,
+          },
+          cause: "test",
+        },
+      ]);
+
+      const refused = await api(h, "/v1/answer", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          runId: run.runId,
+          waitId: "wait:form",
+          answers: [{ id: "loader", choices: ["From the network"] }],
+        }),
+      });
+      expect(refused.status).toBe(409);
+      expect((await json(refused)).error).toMatchObject({ kind: "not-available" });
+
+      const answered = await api(h, "/v1/answer", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          runId: run.runId,
+          waitId: "wait:form",
+          answers: [{ id: "loader", choices: ["Dynamic"] }],
+        }),
+      });
+      expect(answered.status).toBe(200);
+    } finally {
+      await h.close();
+    }
+  });
+
   test("an action's opens passes through /v1/act when it names an existing object, and is dropped with a log line when not", async () => {
     const h = await makeHarness();
     try {

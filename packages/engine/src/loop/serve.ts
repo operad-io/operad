@@ -6,7 +6,6 @@ import { StartRefusedError } from "../plugin/errors.ts";
 import type { PluginRegistry } from "../plugin/registry.ts";
 import type { RunLookup, StartRunRequest } from "../plugin/types.ts";
 import type { Input, PersonAnswerInput } from "../kernel/types.ts";
-import { looseAnswers } from "../plugin/question-form.ts";
 import { Kernel } from "../trigger/kernel.ts";
 import { loadTriggerRules } from "../trigger/rules.ts";
 import type { TriggerRule } from "../trigger/types.ts";
@@ -17,6 +16,7 @@ import { applyInput, objectKey, parseObjectKey, readState } from "../runner/serv
 import { isBusy } from "../platform/index.ts";
 import { reapStale } from "../platform/step-reap.ts";
 import { stopAllKeptWorkers } from "../platform/kept-workers.ts";
+import type { AskQuestionAnswer } from "../plugin/types.ts";
 import { isRecord } from "../util.ts";
 
 export interface SpawnRunOptions {
@@ -82,7 +82,7 @@ function recordedAnswer(payload: JsonValue): PersonAnswerInput | undefined {
     kind: "person_answer",
     waitId,
     ...(choice === undefined ? {} : { choice }),
-    ...(answers === undefined ? {} : { answers: looseAnswers(answers) ?? [] }),
+    ...(answers === undefined ? {} : { answers: answers as unknown as readonly AskQuestionAnswer[] }),
     ...(typeof payload.note === "string" ? { note: payload.note } : {}),
     actor: { via: actor.via, id: actor.id },
   };

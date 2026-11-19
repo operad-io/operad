@@ -10,8 +10,7 @@ import type { HttpConfig } from "../config/config.ts";
 import type { LogBackend } from "../log/types.ts";
 import { messageOf } from "../plugin/errors.ts";
 import type { PluginRegistry } from "../plugin/registry.ts";
-import type { Actor } from "../plugin/types.ts";
-import { looseAnswers } from "../plugin/question-form.ts";
+import type { Actor, AskQuestionAnswer } from "../plugin/types.ts";
 import type { Kernel } from "../trigger/kernel.ts";
 import { listPending } from "../views/pending.ts";
 import {
@@ -932,7 +931,7 @@ function createHandler(
           choice: typeof choice === "string" ? choice : undefined,
           ...(answers === undefined
             ? {}
-            : { answers: looseAnswers(answers) ?? [] }),
+            : { answers: answers as unknown as readonly AskQuestionAnswer[] }),
           ...(note === undefined ? {} : { note }),
           ...(confirmed === true ? { confirmed: true } : {}),
           surface: "http",

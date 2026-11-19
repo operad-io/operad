@@ -270,28 +270,6 @@ export function normalizeAnswers(
 }
 
 /**
- * The answers a recorded input carries, before the kernel checks them against
- * the form they answer. Entries without a question id are left out.
- */
-export function looseAnswers(value: unknown): readonly AskQuestionAnswer[] | undefined {
-  if (!Array.isArray(value)) return undefined;
-  const answers: AskQuestionAnswer[] = [];
-  for (const raw of value) {
-    if (!isRecord(raw) || typeof raw.id !== "string") continue;
-    const choices = Array.isArray(raw.choices)
-      ? raw.choices.filter((label): label is string => typeof label === "string")
-      : [];
-    answers.push({
-      id: raw.id,
-      ...(choices.length === 0 ? {} : { choices }),
-      ...(typeof raw.text === "string" ? { text: raw.text } : {}),
-      ...(raw.skipped === true ? { skipped: true as const } : {}),
-    });
-  }
-  return answers.length === 0 ? undefined : answers;
-}
-
-/**
  * A person's answer to a form as a fact or a step's data carries it. Invalid
  * entries are left out, so a log never holds an answer the form did not offer.
  */
