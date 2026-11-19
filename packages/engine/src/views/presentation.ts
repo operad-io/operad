@@ -1585,6 +1585,7 @@ export class Views {
     // action, so its note, confirmation and object update still happen.
     const throughAction =
       item !== undefined &&
+      item.questions === undefined &&
       item.choices.every((name) =>
         item.actions.some((action) => action.action === name),
       )

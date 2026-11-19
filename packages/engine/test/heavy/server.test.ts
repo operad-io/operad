@@ -911,6 +911,39 @@ describe("http server", () => {
     }
   });
 
+  test("a form is answered as a form even when a label names an action", async () => {
+    const h = await makeHarness();
+    try {
+      seed(h, "one", { title: "First", state: "new" });
+      const run = await h.log.startRun("demo-flow", "item:one");
+      await h.log.append(run.runId, 0, [
+        {
+          kind: "waiting_for_person",
+          payload: {
+            waitId: "wait:drop",
+            step: "ask",
+            prompt: "Drop it?",
+            choices: ["drop"],
+            questions: [{ id: "drop", text: "Drop it?", choices: [{ label: "drop" }] }],
+            waitKind: "step",
+            effectId: null,
+          },
+          cause: "test",
+        },
+      ]);
+      const answered = await api(h, "/v1/answer", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ runId: run.runId, waitId: "wait:drop", choice: "drop" }),
+      });
+      expect(answered.status).toBe(200);
+      // The label is an answer to the form, never the action of the same name.
+      expect(h.store.get("item", "one")?.data.dropped).toBeUndefined();
+    } finally {
+      await h.close();
+    }
+  });
+
   test("an action's opens passes through /v1/act when it names an existing object, and is dropped with a log line when not", async () => {
     const h = await makeHarness();
     try {
