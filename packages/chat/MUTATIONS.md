@@ -518,3 +518,10 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 | T-0571-M11 | packages/chat/src/views.ts | a `full` read cut the tool output text as a capped read did | `a reply's structured form > many replies: the cap cuts tool output text before it cuts the Markdown, keeping its lines` |
 | T-0571-M12 | packages/chat/src/views.ts | `tailPush` left the running reply's data out of the pushed part | `the chat's pushed tail > the running reply is structured in the push` |
 | T-0571-M15 | packages/chat/src/views.ts | a read with `after` left the one still-running reply out of its data | `a reply's structured form > live: the input and the process are there, and the stored read adds the answer and the reply's duration` |
+
+## T-0577 — a tool output's server address
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0577-M1 | packages/chat/src/views.ts | `replyOutput` left `url` out, so a client got no address for the whole output | `a tool's whole output carries the server address that serves it, and no local path` |
+| T-0577-M2 | packages/chat/src/views.ts | the chat's `file` check allowed every path instead of only the files its facts name | `the attachment route refuses a file the chat does not name, and one outside the chat` |

@@ -83,6 +83,27 @@ describe("plugin registry validation", () => {
     expect(error.message).toContain("views.thing: tail: must be a function");
   });
 
+  test("rejects a views file check that is not a function", () => {
+    const error = errorOf(
+      () =>
+        new PluginRegistry([
+          def({
+            name: "a",
+            objects: [{ name: "thing" }],
+            views: {
+              thing: {
+                row: (object) => ({ id: object.id, title: "Thing", state: "new" }),
+                sections: () => [],
+                load: () => ({ markdown: "" }),
+                file: "no" as unknown as NonNullable<ObjectViews["file"]>,
+              },
+            },
+          }),
+        ]),
+    );
+    expect(error.message).toContain("views.thing: file: must be a function");
+  });
+
   test("rejects an object type another plugin already owns", () => {
     const error = errorOf(
       () =>

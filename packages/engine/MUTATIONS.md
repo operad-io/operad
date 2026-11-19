@@ -1219,3 +1219,10 @@ the row fields.
 |---|---|---|---|
 | T-0571-M13 | packages/engine/src/views/presentation.ts | `finishSection` left `data` out of the size cap | `the size cap with structured data > data is counted with the Markdown, and a full read leaves both whole` |
 | T-0571-M14 | packages/engine/src/views/presentation.ts | `liveEvent` left the plugin's `data` out of the pushed tail | `a live log that grows without a fact > a pushed tail carries the live section's data` |
+
+## T-0577 — the attachment route serves only a chat's recorded files
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0577-M1 | packages/engine/src/views/presentation.ts | `file` skipped the plugin's record check and served any file under the attachment directories | `the attachment route refuses a file the chat does not name, and one outside the chat` |
+| T-0577-M2 | packages/engine/src/plugin/validate.ts | a `file` view hook that was not a function passed validation | `plugin registry validation > rejects a views file check that is not a function` |
