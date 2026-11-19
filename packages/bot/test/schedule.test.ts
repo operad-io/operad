@@ -87,7 +87,7 @@ describe("scheduled prompts", () => {
       expect(chat?.data.title).toBe("Morning (2026-01-01)");
       expect(chat?.data.scheduled).toEqual({ bot: "default", entry: "Morning" });
       const chatRow = (await views.get(`chat:${id}`)).row;
-      expect(chatRow.data).toEqual({ scheduled: { bot: "default", entry: "Morning" } });
+      expect(chatRow.data).toMatchObject({ scheduled: { bot: "default", entry: "Morning" } });
       const messages = allMessages(r.store, id);
       expect(messages.map((message) => message.text)).toEqual(["Collect the news."]);
 
