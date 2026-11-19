@@ -196,11 +196,14 @@ test("a poll stops when the store's -wal and -shm are removed", () => {
     if (tick === undefined) throw new Error("the poll did not start");
     const poll = tick;
     rmSync(`${file}-wal`, { force: true });
+    // SQLite can still read through the open connection after one journal is
+    // unlinked, so the real query succeeds and the poll keeps its timer.
+    expect(() => poll()).not.toThrow();
+    expect(stopped).toBe(false);
     rmSync(`${file}-shm`, { force: true });
-    // SQLite keeps removed journals open through its descriptors, so the query
-    // can still succeed after the unlink. A teardown that loses them makes the
-    // next query fail; let it fail here, so the test proves the poll stops when
-    // an I/O error finds the journals gone instead of waiting for the race.
+    // A teardown that loses both journals makes the next query fail; let it
+    // fail here, so the test proves the poll stops when an I/O error finds the
+    // journals gone instead of waiting for SQLite to unlink them in a race.
     const vanishing = new Proxy(real, {
       get(target, property, receiver) {
         if (property === "query") {
