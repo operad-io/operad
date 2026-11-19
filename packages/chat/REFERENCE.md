@@ -142,12 +142,20 @@ already ended, it says so and changes nothing. Its button word is **Stop**.
 
 ## `chat:retry <chat>`
 
-Answers the last message again when the last attempt failed or was stopped: it
+Answers the last message again when the last attempt failed, was stopped or was
+interrupted by a serve stop, restart or crash, and no reply is being written: it
 sends one message event, keyed by that attempt's run id, so a repeated command
-before the reply begins does not answer twice. The failed or stopped attempt
-stays in the record and the new reply continues the chat's session. When the
-last reply finished normally, or the last attempt neither failed nor stopped, it
-refuses with a line saying so and starts nothing.
+before the reply begins does not answer twice. The failed, stopped or
+interrupted attempt stays in the record and the new reply continues the chat's
+session. It is offered only when it would start that reply: the chat is open, a
+message waits for a reply, the last attempt failed, was stopped or was
+interrupted, and no reply is being written. Otherwise it is not among the chat's
+actions and its `why` says why; a stop records its fact before the stopped half
+reply enters the record, so a retry works at once after `/stop`. One rule
+decides the offer and the run, and the run checks it again because a reply may
+start in between. Typing `/retry` when it is not offered answers with the same
+refusal line as before and starts nothing; a reply being written is the one new
+line.
 
 ## `chat:status <chat>`
 

@@ -488,3 +488,11 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 | T-0572-M5 | packages/chat/src/reply.ts | the inbox handed a message without recording the take, so an action could still withdraw it | `a chat's queued messages > a take and a withdraw of the same message never both happen: the take wins when it starts first` |
 | T-0572-M6 | packages/chat/src/index.ts | `chat:send` no longer wrote the new queue to the chat object, so the row showed none | `a chat's queued messages > the row and the transcript say what is queued, and a run's first message stops being queued` |
 | T-0572-M7 | packages/chat/src/views.ts | the row carried `data.queued` without `data.queuedCount` | `a chat's queued messages > the row and the transcript say what is queued, and a run's first message stops being queued` |
+## T-0575 — `chat:retry` is offered only when it would answer
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0575-M4 | packages/chat/src/index.ts | `chat:retry` was offered on every open chat again, instead of only when it would start a reply | `chat:retry is offered only when it would start a reply > a finished reply does not offer it, and says why` |
+| T-0575-M5 | packages/chat/src/index.ts | `retryCheck` did not check whether a reply is being written | `chat:retry is offered only when it would start a reply > a reply being written does not offer it, even after a failed attempt` |
+| T-0575-M6 | packages/chat/src/index.ts | `retryCheck` ignored the stop fact that is recorded before the stopped half reply | `chat:retry is offered only when it would start a reply > a stop offers it at once, before the stopped half reply enters the record` |
+| T-0575-M7 | packages/chat/src/index.ts | `run` no longer checked the rule again, so a reply that started after the offer was retried anyway | `chat:retry is offered only when it would start a reply > the run checks the rule again when a reply started after the offer` |

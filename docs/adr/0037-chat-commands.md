@@ -32,9 +32,13 @@ The command and its outcome are one `chat.command` fact: who typed it, the line 
 
 `chat:stop` cancels the reply run of this chat through the plugin's run control. What was written so far stays as a `stopped` entry (ADR 0027 D2), shown as stopped. Messages that arrived during the reply stay unanswered and no new reply starts by itself; the command's line says so and says `/retry` answers the last message. With no reply running it says so and changes nothing. The run control reports whether it cancelled a run, so a plugin can tell those two cases without a second run lookup; the kernel gains no new concept. A successful stop records a `chat.stop` fact naming the cancelled run, so `/retry` and `/status` do not read the command's words. The action is a command and appears in the chat's actions; its button word is "Stop".
 
-### D6: `/retry` answers the last message after a failed, stopped or interrupted reply
+### D6: `/retry` is offered only while it would answer the last message again
 
-`chat:retry` starts a reply again when the last attempt failed, was stopped, or was interrupted by a serve stop, restart or crash. The failed, stopped or interrupted attempt stays in the record, and the new reply continues the chat's session from the messages that are still unanswered, including ones that arrived during the interrupted reply. When the last reply finished normally, or the last attempt did not fail, stop or get interrupted, it refuses with a line saying so and starts nothing. A retry of one attempt starts one reply, so repeating the command before that reply begins does not answer twice. It is a command and appears in the chat's actions.
+`chat:retry` starts a reply again when the last attempt failed, was stopped, or was interrupted by a serve stop, restart or crash. The failed, stopped or interrupted attempt stays in the record, and the new reply continues the chat's session from the messages that are still unanswered, including ones that arrived during the interrupted reply.
+
+It is offered only when it would start such a reply: the chat is open, a message waits for a reply, no reply is being written, and the last attempt failed, was stopped or was interrupted. Otherwise it is not among the chat's actions, and its `why` says why: the last reply finished normally, no attempt has failed or stopped yet, or a reply is being written. A stop records its fact before the stopped half reply enters the record, so that fact alone makes the retry offered at once. One rule decides the offer and the run, and the run checks it again because a reply may start between the two.
+
+Typing `/retry` when it is not offered answers with the line it answered with before this rule, and starts nothing; a reply being written is the one new line. A retry of one attempt starts one reply, so repeating the command before that reply begins does not answer twice. It is a command.
 
 ### D7: Telegram shows the commands as a menu and a choice as buttons
 
