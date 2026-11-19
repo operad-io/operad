@@ -305,11 +305,13 @@ export function resolveAnswer(
     if (choice === undefined) {
       throw new StateError(`run ${runId}: this question takes a choice`);
     }
-    if (ask.choices.length > 0 && !ask.choices.includes(choice)) {
+    if (!ask.choices.includes(choice)) {
       throw new StateError(
-        `run ${runId}: "${choice}" is not one of ${ask.choices
-          .map((item) => `"${item}"`)
-          .join(", ")}`,
+        ask.choices.length === 0
+          ? `run ${runId}: this question takes no choice`
+          : `run ${runId}: "${choice}" is not one of ${ask.choices
+              .map((item) => `"${item}"`)
+              .join(", ")}`,
       );
     }
     return { choice, answers: undefined };

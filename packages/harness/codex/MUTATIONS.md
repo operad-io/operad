@@ -135,3 +135,9 @@ recorded. The root [MUTATIONS.md](../../../MUTATIONS.md) explains the format and
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0569-M9 | packages/harness/codex/src/app-server.ts | the client did not serve `item/tool/requestUserInput`, so the agent's question was refused as an unknown method | `a request for input becomes a form and is answered per question` |
+
+## T-0576 — chat friction follow-ups
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0576-M1 | packages/harness/codex/src/app-server.ts | `personQuestions` passed a secret question to the person, so its answer would be kept in the fact log and the pending item | `a secret question is parsed, and is never put to the person` |

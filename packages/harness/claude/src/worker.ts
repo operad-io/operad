@@ -787,6 +787,16 @@ class ClaudeSession {
     if ("session_id" in message && typeof message.session_id === "string") this.sessionId = message.session_id;
     switch (message.type) {
       case "system":
+        if (message.subtype === "api_retry") {
+          turn.io.line({
+            type: "retry_start",
+            attempt: message.attempt,
+            maxAttempts: message.max_retries,
+            delayMs: message.retry_delay_ms,
+            reason: `the model request failed: ${message.error}${message.error_status === null ? "" : ` (HTTP ${message.error_status})`}`,
+          });
+          break;
+        }
         if (message.subtype === "init" && turn.final !== undefined) {
           turn.io.log("a second session started after the result; stopping");
           turn.continued = true;
@@ -1175,16 +1185,20 @@ class ClaudeSession {
     }
     const answers: Record<string, string> = {};
     const annotations: Record<string, { readonly unanswered: "skipped" }> = {};
-    for (const question of questions) {
+    // claude keys its answers by the question's own text, and the share form
+    // trims an id or suffixes a duplicate one; the raw text is still the key.
+    const keys = raw?.map((question) => question.id) ?? [];
+    for (const [index, question] of questions.entries()) {
+      const key = keys[index] ?? question.id;
       const answer = answerFor(got.answers, question.id);
       if (isSkipped(answer)) {
-        answers[question.id] = "";
+        answers[key] = "";
         if (this.capabilities.has(UNANSWERED_CAPABILITY)) {
-          annotations[question.id] = { unanswered: "skipped" };
+          annotations[key] = { unanswered: "skipped" };
         }
         continue;
       }
-      answers[question.id] = answerText(answer);
+      answers[key] = answerText(answer);
     }
     return {
       behavior: "allow",
@@ -1259,7 +1273,8 @@ class ClaudeSession {
     };
   }
 
-  private deniedByProfile(turn: Turn, name: string, toolInput: unknown): { readonly rule?: string } | undefined {    const record = typeof toolInput === "object" && toolInput !== null ? (toolInput as Record<string, unknown>) : {};
+  private deniedByProfile(turn: Turn, name: string, toolInput: unknown): { readonly rule?: string } | undefined {
+    const record = typeof toolInput === "object" && toolInput !== null ? (toolInput as Record<string, unknown>) : {};
     const check = checkProfile(liveAccess(turn.profile), name, record, turn.input.cwd);
     if (check.kind !== "refuse") return undefined;
     return check.rule === undefined ? {} : { rule: check.rule };

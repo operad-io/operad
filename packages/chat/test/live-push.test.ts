@@ -12,6 +12,7 @@ type Rig = Awaited<ReturnType<typeof rig>>;
 async function pushed(
   r: Rig,
   chat: string,
+  options: { readonly sectionCapBytes?: number } = {},
 ): Promise<Awaited<ReturnType<NonNullable<typeof chatViews.tail>>> | undefined> {
   const object = await r.store.get("chat", chat);
   if (object === undefined) throw new Error("no chat");
@@ -21,6 +22,7 @@ async function pushed(
     cwd: r.root,
     store: r.store,
     settings: {},
+    ...(options.sectionCapBytes === undefined ? {} : { sectionCapBytes: options.sectionCapBytes }),
     secrets: {
       names: async () => [],
       get: async () => undefined,
@@ -43,13 +45,14 @@ async function write(ctx: StepContext, ...lines: Record<string, unknown>[]): Pro
 /** Runs one round whose agent writes `lines`, and gives what the chat pushed while it ran. */
 async function whileRunning(
   lines: Record<string, unknown>[],
+  options: { readonly sectionCapBytes?: number } = {},
 ): Promise<Awaited<ReturnType<typeof pushed>>> {
   let during: Awaited<ReturnType<typeof pushed>>;
   let chatId = "";
   let holder: Rig | undefined;
   const r = await rig(async (ctx) => {
     await write(ctx, ...lines);
-    if (holder !== undefined) during = await pushed(holder, chatId);
+    if (holder !== undefined) during = await pushed(holder, chatId, options);
     return reply("final answer");
   });
   holder = r;
@@ -128,6 +131,29 @@ describe("the chat's pushed tail", () => {
       },
     ]);
     expect(live?.tail).toBe("tool Bash 1s `ls -la`");
+  });
+
+  test("the pushed running reply's data stays under the cap", async () => {
+    const long = "z".repeat(10_000);
+    const lines: Record<string, unknown>[] = [];
+    for (let index = 0; index < 10; index += 1) {
+      lines.push({ type: "tool_execution_start", toolCallId: `t${index}`, toolName: "Bash", input: long, at: index });
+      lines.push({ type: "tool_execution_end", toolCallId: `t${index}`, toolName: "Bash", isError: false, durationMs: 1 });
+    }
+    const live = await whileRunning(lines, { sectionCapBytes: 20_000 });
+    const data = live?.data === undefined ? 0 : Buffer.byteLength(JSON.stringify(live.data), "utf8");
+    expect(data).toBeLessThanOrEqual(20_000);
+    const calls = (live?.data as { readonly replies?: readonly ReplyBlock[] } | undefined)?.replies
+      ?.flatMap((block) => block.process)
+      .flatMap((group) => group.items)
+      .filter((item): item is ReplyToolItem => item.kind === "tool") ?? [];
+    expect(calls.length).toBe(10);
+    for (const call of calls) expect(call.input?.length ?? 0).toBeLessThan(long.length);
+  });
+
+  test("a whitespace-only delta pushes no empty speaker line", async () => {
+    const live = await whileRunning([{ type: "text_delta", text: " \n " }]);
+    expect(live?.tail).toBeUndefined();
   });
 
   test("the running reply is structured in the push", async () => {

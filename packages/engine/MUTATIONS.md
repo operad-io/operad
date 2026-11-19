@@ -1219,3 +1219,16 @@ the row fields.
 |---|---|---|---|
 | T-0571-M13 | packages/engine/src/views/presentation.ts | `finishSection` left `data` out of the size cap | `the size cap with structured data > data is counted with the Markdown, and a full read leaves both whole` |
 | T-0571-M14 | packages/engine/src/views/presentation.ts | `liveEvent` left the plugin's `data` out of the pushed tail | `a live log that grows without a fact > a pushed tail carries the live section's data` |
+
+## T-0576 — chat friction follow-ups
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0576-M1 | packages/engine/src/views/presentation.ts | `pushLive` sent nothing when a tail function had nothing left to say, so a client that renders only from push kept the last tail | `a live log that grows without a fact > a pushed tail that has nothing left to say clears the client's tail` |
+| T-0576-M2 | packages/engine/src/runner/ask.ts | `resolveAnswer` let any choice through when the wait had no choices, so `decide` dropped the recorded answer and `/v1/answer` answered success | `http server > a choice for a wait with no choices is refused and records nothing` |
+
+The T-0570 rows earlier in this file predate the rename of the `live` hook and
+`live` event to `tail`; their current tests are `a live log that grows without a
+fact > a pushed tail is held to one per object per 50 ms and the last growth
+wins` and `http server > a pushed tail is its own event and is not part of the
+resume window`. Rows are append-only, so the old lines stay as history.

@@ -2,7 +2,10 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import type { SectionContent, StepContext, ViewContext } from "@operad-io/engine";
 import {
+  ENTRY_FACT,
+  MESSAGE_FACT,
   allMessages,
+  chatRef,
   chatViews,
   type ReplyBlock,
   type ReplyItem,
@@ -278,6 +281,65 @@ describe("a reply's structured form", () => {
     expect(allMessages(r.store, chat).map((message) => message.role)).toEqual(["user", "user", "assistant"]);
   });
 
+  test("a stored tool entry without a call id or name stays as a tool", async () => {
+    let live: SectionContent | undefined;
+    let chat = "";
+    let holder: Rig | undefined;
+    const r = await rig(async (ctx) => {
+      await ctx.facts.append({
+        type: ENTRY_FACT,
+        object: chatRef(chat),
+        cause: "test",
+        data: { runId: ctx.runId, kind: "tool", result: "done", input: "ls", output: "a.txt\n" },
+      });
+      if (holder !== undefined) live = await view(holder, chat, { running: true });
+      return reply("the answer");
+    });
+    holder = r;
+    chat = await r.chat();
+    await r.say(chat, "go");
+    await r.round(chat);
+    if (live === undefined) throw new Error("the reply did not run");
+    expect(live.markdown).toContain("tool `ls`");
+    const call = replies(live).flatMap(items).find((item): item is ReplyToolItem => item.kind === "tool");
+    expect(call).toMatchObject({ callId: "", name: "tool", input: "ls" });
+  });
+
+  test("the cap shortens the thinking, text and answer of a reply too", async () => {
+    const long = "z".repeat(20_000);
+    const r = await rig(async (ctx) => {
+      await write(ctx, { type: "thinking_end", text: long });
+      await write(ctx, { type: "text_end", text: long });
+      return reply(long);
+    });
+    const chat = await r.chat();
+    await r.say(chat, "go");
+    await r.round(chat);
+    const cap = 20_000;
+    const page = await view(r, chat, { sectionCapBytes: cap });
+    expect(Buffer.byteLength(JSON.stringify(page.data), "utf8")).toBeLessThanOrEqual(cap);
+  });
+
+  test("the cap shortens a tool's input when its output is already empty", async () => {
+    const long = "z".repeat(10_000);
+    const r = await rig(async (ctx) => {
+      for (let index = 0; index < 10; index += 1) {
+        await write(ctx, { type: "tool_execution_start", toolCallId: `t${index}`, toolName: "Bash", input: long, at: index });
+        await write(ctx, { type: "tool_execution_end", toolCallId: `t${index}`, toolName: "Bash", isError: false, durationMs: 1 });
+      }
+      return reply("the answer");
+    });
+    const chat = await r.chat();
+    await r.say(chat, "go");
+    await r.round(chat);
+    const cap = 20_000;
+    const page = await view(r, chat, { sectionCapBytes: cap });
+    expect(Buffer.byteLength(JSON.stringify(page.data), "utf8")).toBeLessThanOrEqual(cap);
+    const calls = replies(page).flatMap(items).filter((item): item is ReplyToolItem => item.kind === "tool");
+    expect(calls.length).toBe(10);
+    for (const call of calls) expect(call.input?.length ?? 0).toBeLessThan(long.length);
+  });
+
   test("many replies: a page carries the replies on it, and an after read only what finished since its mark", async () => {
     const { r, chat } = await chatWithReplies(55, 1);
     const pages: SectionContent[] = [];
@@ -309,6 +371,49 @@ describe("a reply's structured form", () => {
     expect(after.markdown).toContain("answer 56");
     expect(after.markdown).not.toContain("answer 55");
     expect(replies(after).map((reply) => reply.answer?.text)).toEqual(["answer 56"]);
+  });
+
+  test("many replies: a page's first reply keeps its own input, and an after read starts at its mark", async () => {
+    const r = await rig(() => reply("unused"));
+    const chat = await r.chat();
+    for (let index = 1; index <= 60; index += 1) {
+      await r.store.append({
+        type: MESSAGE_FACT,
+        object: chatRef(chat),
+        cause: "test",
+        data: {
+          id: `u${index}`,
+          role: "user",
+          text: `question ${index}`,
+          attachments: [],
+          source: { kind: "cli", ref: null },
+        },
+      });
+      await r.store.append({
+        type: MESSAGE_FACT,
+        object: chatRef(chat),
+        cause: "test",
+        data: {
+          id: `a${index}`,
+          role: "assistant",
+          text: `answer ${index}`,
+          runId: `run-${index}`,
+          attachments: [],
+          source: { kind: "fake", ref: null },
+        },
+      });
+    }
+
+    const first = await view(r, chat);
+    if (first.next === undefined) throw new Error("the chat has only one page");
+    const second = await view(r, chat, { cursor: first.next });
+    const firstOnPage = replies(second)[0];
+    expect(firstOnPage?.answer?.text).toBe("answer 26");
+    expect(firstOnPage?.input.map((message) => message.text)).toEqual(["question 26"]);
+
+    const after = await view(r, chat, { after: first.mark ?? "" });
+    expect(replies(after)[0]?.answer?.text).toBe("answer 26");
+    expect(replies(after)[0]?.input.map((message) => message.text)).toEqual(["question 26"]);
   });
 
   test("many replies: the cap cuts tool output text before it cuts the Markdown, keeping its lines", async () => {

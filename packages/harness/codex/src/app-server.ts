@@ -87,6 +87,8 @@ export interface AppServerQuestion {
   readonly options?: readonly { readonly label: string; readonly description?: string | undefined }[] | undefined;
   /** True when Codex itself offers an answer in the person's own words. */
   readonly isOther?: boolean | undefined;
+  /** True when the answer is a secret that must not be kept as a fact. */
+  readonly isSecret?: boolean | undefined;
 }
 
 /** A `item/tool/requestUserInput` request of the app-server. */
@@ -132,7 +134,8 @@ type Phase = "initialize" | "session" | "turn" | "done";
 
 type Stage = AppServerStage | "steer" | "cancel";
 
-function errorOf(value: unknown): AppServerError {  if (!isRecord(value)) return { code: -32603, message: "the app-server sent an error without a body" };
+function errorOf(value: unknown): AppServerError {
+  if (!isRecord(value)) return { code: -32603, message: "the app-server sent an error without a body" };
   return {
     code: typeof value.code === "number" ? value.code : -32603,
     message: typeof value.message === "string" ? value.message : "the app-server sent an error without a message",
@@ -184,9 +187,18 @@ export function questionsOf(value: unknown): AppServerQuestion[] {
       ...(typeof header === "string" && header.length > 0 ? { header } : {}),
       ...(options.length === 0 ? {} : { options }),
       ...(raw["isOther"] === true ? { isOther: true } : {}),
+      ...(raw["isSecret"] === true ? { isSecret: true } : {}),
     });
   }
   return questions;
+}
+
+/**
+ * The questions a person may be asked: a secret answer would be kept in the
+ * pending item and the fact log, so a secret question is never put to them.
+ */
+export function personQuestions(request: AppServerQuestionRequest): readonly AppServerQuestion[] {
+  return request.questions.filter((question) => question.isSecret !== true);
 }
 
 /** The counts of the last turn from a `thread/tokenUsage/updated` payload. */
