@@ -259,7 +259,11 @@ describe("a form a step asks", () => {
   test("a client that knows only a choice answers a one-question form", async () => {
     const env = await setup();
     try {
-      const id = await env.create("ask-wait", "legacy", { questions: FORM });
+      // The question takes free text too; a client that cannot draw the form
+      // still gets its labels.
+      const id = await env.create("ask-wait", "legacy", {
+        questions: [{ ...FORM[0], freeText: true }],
+      });
       const run = env.runner(id, new FakeTimer()).run();
       const waitId = await env.opened(id);
       await recordAnswer({ log: env.log, runId: id, waitId, choice: "Built-in", actor: ACTOR });
@@ -283,6 +287,23 @@ describe("a form a step asks", () => {
       const pending = await listPending(env.log, env.registry);
       // A form of more than one question offers no one-choice fallback.
       expect(pending[0]?.choices).toEqual([]);
+      // Neither does a one-question form that takes more than one label.
+      const multi = await env.create("ask-wait", "multi", {
+        questions: [{ ...FORM[0], multiple: true }],
+      });
+      const multiRun = env.runner(multi, new FakeTimer()).run();
+      await env.opened(multi);
+      const multiItem = (await listPending(env.log, env.registry)).find((item) => item.runId === multi);
+      expect(multiItem?.choices).toEqual([]);
+      await recordAnswer({
+        log: env.log,
+        runId: multi,
+        waitId: multiItem?.waitId,
+        choice: undefined,
+        answers: [{ id: "loader", choices: ["Built-in", "Dynamic"] }],
+        actor: ACTOR,
+      });
+      expect(await multiRun).toBe("ended");
 
       await expect(
         recordAnswer({ log: env.log, runId: id, waitId, choice: "Built-in", actor: ACTOR }),

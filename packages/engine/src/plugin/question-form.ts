@@ -36,13 +36,13 @@ const ANSWER_FIELDS = new Set(["id", "choices", "text", "skipped"]);
 
 /**
  * The labels a client that cannot draw a form can still answer with: the one
- * question's choices, when the form is one single-answer question that takes no
- * free text. Any other form gives none.
+ * question's choices, when the form is one single-answer question. A form of
+ * several questions, or one that takes more than one label, gives none.
  */
 export function formChoices(questions: readonly AskQuestion[]): string[] {
   if (questions.length !== 1) return [];
   const question = questions[0];
-  if (question === undefined || question.freeText === true || question.multiple === true) return [];
+  if (question === undefined || question.multiple === true) return [];
   return (question.choices ?? []).map((choice) => choice.label);
 }
 
