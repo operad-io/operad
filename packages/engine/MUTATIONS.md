@@ -1148,3 +1148,23 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0561-M1 | packages/engine/src/plugin/sqlite-store.ts | `gone` checked only the database file, so an I/O error after the `-wal` and `-shm` were removed did not stop the poll | `a poll stops when the store's -wal and -shm are removed` |
+
+## T-0570 — a running reply is pushed over the event stream
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0570-M1 | packages/engine/src/http/server.ts | `EventHub` treated a live part as a normal change, so the stream carried no `live` event | `http server > a live part is its own event and is not part of the resume window` |
+| T-0570-M2 | packages/engine/src/plugin/validate.ts | `normalizeViews` dropped a type's `live` function, so the registry never pushed its live part | `a running reply is pushed over the event stream > text, thinking and a tool call are the same tail the section returns` |
+
+## T-0570 rework — the pushed tail's window, staleness and failures
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0570-M3 | packages/engine/src/http/server.ts | `EventHub` treated a pushed tail as a normal change, so the stream carried no `tail` event | `http server > a pushed tail is its own event and is not part of the resume window` |
+| T-0570-M4 | packages/engine/src/views/presentation.ts | `publishLive` and `flushLive` ignored the 50 ms per-object window, so the second growth called the tail function at once | `a live log that grows without a fact > a pushed tail is held to one per object per 50 ms and the last growth wins` |
+| T-0570-M5 | packages/engine/src/views/presentation.ts | `pushLive` no longer dropped a tail whose growth had been overtaken | `a live log that grows without a fact > a pushed tail overtaken by a newer growth is dropped` |
+| T-0570-M6 | packages/engine/src/views/presentation.ts | a plugin with no `tail` function still got a pushed tail | `a live log that grows without a fact > a plugin without a tail function sends only the change event` |
+| T-0570-M7 | packages/engine/src/views/presentation.ts | a failing `tail` function sent a tail anyway | `a live log that grows without a fact > a pushed tail that fails leaves the stream alone` |
+| T-0570-M8 | packages/engine/src/views/presentation.ts | the `tail` timeout no longer rejected, so a hung function held the push | `a live log that grows without a fact > a pushed tail that does not answer in time is dropped` |
+| T-0570-M9 | packages/engine/src/plugin/validate.ts | `normalizeViews` no longer refused a non-function `tail` | `plugin registry validation > rejects a views tail that is not a function` |
+| T-0570-M10 | packages/engine/src/plugin/validate.ts | `normalizeViews` dropped a type's `tail` function, so the registry never pushed its tail | `a live log that grows without a fact > a pushed tail is held to one per object per 50 ms and the last growth wins` |

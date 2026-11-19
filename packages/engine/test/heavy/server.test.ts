@@ -339,8 +339,10 @@ async function readUntilDone(
   return ended;
 }
 
+type PushedTail = Pick<ViewEvent, "type" | "section" | "tail" | "status">;
+
 type SourceItem =
-  | { readonly kind: "event"; readonly id: string }
+  | { readonly kind: "event"; readonly id: string; readonly tail?: PushedTail }
   | { readonly kind: "error"; readonly error: Error }
   | { readonly kind: "end" };
 
@@ -369,8 +371,8 @@ class ControlledSource {
     };
   };
 
-  push(id: string): void {
-    this.items.push({ kind: "event", id });
+  push(id: string, tail?: PushedTail): void {
+    this.items.push({ kind: "event", id, ...(tail === undefined ? {} : { tail }) });
     this.wake();
   }
 
@@ -409,7 +411,7 @@ class ControlledSource {
     if (item === undefined) return { done: true, value: undefined };
     if (item.kind === "error") throw item.error;
     if (item.kind === "end") return { done: true, value: undefined };
-    return { done: false, value: { id: item.id } };
+    return { done: false, value: { id: item.id, ...(item.tail ?? {}) } };
   }
 
   private wake(): void {
@@ -1481,6 +1483,39 @@ describe("http server", () => {
     } finally {
       unsubscribe();
       await connected.cancel();
+      hub.stop();
+    }
+  });
+
+  test("a pushed tail is its own event and is not part of the resume window", async () => {
+    const source = new ControlledSource();
+    const hub = new EventHub(source.source, 10, () => undefined);
+    const stream = openSse(hubStream(hub));
+    try {
+      source.push("item", {
+        type: "item",
+        section: "log",
+        tail: "being written",
+        status: { text: "Thinking", since: 1_700_000_000_000 },
+      });
+      const [pushed] = await stream.next();
+      expect(pushed?.event).toBe("tail");
+      expect(pushed?.id).toBeUndefined();
+      expect(JSON.parse(pushed?.data ?? "{}")).toEqual({
+        id: "item",
+        type: "item",
+        section: "log",
+        tail: "being written",
+        status: { text: "Thinking", since: 1_700_000_000_000 },
+      });
+
+      // A change after it has an id; the pushed tail before that id is not replayed.
+      source.push("item");
+      const [change] = await stream.next();
+      expect(change?.id).toBeDefined();
+      expect(hub.snapshot(change?.id)).toEqual({ reset: false, replay: [] });
+    } finally {
+      await stream.cancel();
       hub.stop();
     }
   });

@@ -447,3 +447,19 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 | T-0568-M7 | packages/chat/src/model.ts | `entryOfFact` dropped the interrupted flag, so the stopped line lost its own shape | `a reply interrupted by a crash or restart > keeps the items it finished and a stopped line, and /retry continues the chat` |
 | T-0568-M8 | packages/chat/src/reply.ts | the keep step skipped every run with an assistant message, so an interrupted second round kept nothing | `a reply interrupted by a crash or restart > keeps the second round when an earlier round already recorded a reply` |
 | T-0568-M9 | packages/chat/src/reply.ts | the recovered log recorded the earlier round's entries again | `a reply interrupted by a crash or restart > keeps the second round when an earlier round already recorded a reply` |
+
+## T-0570 — a running reply is pushed over the event stream
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0570-M1 | packages/chat/src/views.ts | `livePush` left the `tail` out of the pushed part | `the chat's live push > the text being written is the same tail the section shows` |
+| T-0570-M2 | packages/chat/src/views.ts | `livePush` flattened the pushed tail onto one line, so thinking lost its quote lines | `the chat's live push > thinking being written is a block quote` |
+| T-0570-M3 | packages/chat/src/views.ts | `toolMarkdown` dropped a finished tool call's duration from the pushed tail | `the chat's live push > a tool call ending replaces its start with how long it took` |
+
+## T-0570 rework — the pushed tail
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0570-M4 | packages/chat/src/views.ts | `tailPush` left the `tail` out of the pushed part | `the chat's pushed tail > the text being written is the same tail the section shows` |
+| T-0570-M5 | packages/chat/src/views.ts | `tailPush` flattened the pushed tail onto one line, so thinking lost its quote lines | `the chat's pushed tail > thinking being written is a block quote` |
+| T-0570-M6 | packages/chat/src/views.ts | `toolMarkdown` dropped a finished tool call's duration from the pushed tail | `the chat's pushed tail > a tool call ending replaces its start with how long it took` |

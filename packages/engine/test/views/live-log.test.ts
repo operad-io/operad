@@ -9,6 +9,8 @@ import {
   openLog,
   PluginRegistry,
   type LogBackend,
+  type PluginDefinition,
+  type ViewEvent,
   type Views,
 } from "../../src/index.ts";
 import demo from "../fixtures/plugins/presentation.ts";
@@ -50,6 +52,27 @@ function within<T>(promise: Promise<T>, ms = 3_000): Promise<T> {
       },
     );
   });
+}
+
+/** The next pushed tail, skipping the change event that comes beside it. */
+async function nextTail(stream: AsyncIterator<ViewEvent>): Promise<ViewEvent> {
+  for (;;) {
+    const event = await within(stream.next());
+    if (event.done) throw new Error("the stream ended");
+    if (event.value.section !== undefined) return event.value;
+  }
+}
+
+/** The next change event for `id`, refusing any pushed tail before it. */
+async function nextChange(stream: AsyncIterator<ViewEvent>, id: string): Promise<ViewEvent> {
+  for (;;) {
+    const event = await within(stream.next());
+    if (event.done) throw new Error("the stream ended");
+    if (event.value.section !== undefined) {
+      throw new Error(`an unexpected pushed tail arrived before the change of "${id}"`);
+    }
+    if (event.value.id === id) return event.value;
+  }
 }
 
 /** The directory watches a test fires by hand, and the ones it saw stop. */
@@ -151,6 +174,36 @@ const quiet = definePlugin({
   },
 });
 
+interface Pushed {
+  readonly section: string;
+  readonly tail?: string | undefined;
+}
+
+/** A live item whose pushed tail a test controls; `hook` sees each call's number. */
+function pushingPlugin(
+  hook: (call: number) => Pushed | Promise<Pushed | undefined> | undefined,
+) {
+  const state = { calls: 0 };
+  const plugin = definePlugin({
+    name: "pusher",
+    kind: "domain",
+    version: "0.0.1",
+    objects: [{ name: "item" }],
+    views: {
+      item: {
+        row: (object) => ({ id: object.id, title: object.id, state: "open" }),
+        sections: () => [{ id: "log", title: "Log", live: true }],
+        load: () => ({ markdown: "" }),
+        tail: () => {
+          state.calls += 1;
+          return hook(state.calls);
+        },
+      },
+    },
+  });
+  return { plugin, state };
+}
+
 /** A log whose subscription a test fires by hand; only the files change by itself. */
 function manualLog(inner: LogBackend): {
   readonly log: LogBackend;
@@ -209,19 +262,22 @@ interface Env {
 }
 
 /** A store and a running demo item, with its step log directory when asked. */
-async function fixture(options: { readonly logDir: boolean }): Promise<Env> {
+async function fixture(
+  options: { readonly logDir: boolean },
+  plugin: PluginDefinition = demo,
+): Promise<Env> {
   const root = await tempRoot();
   const store = new MemoryPluginStore({ root: join(root, "plugins") });
   store.put("item", "one", { title: "One" }, "seed");
   store.put("item", "two", { title: "Two" }, "seed");
-  const registry = new PluginRegistry([demo], { store });
+  const registry = new PluginRegistry([plugin], { store });
   const log = openLog({
     backend: "sqlite",
     path: join(root, "store", "log.sqlite"),
   });
   openedLogs.push(log);
   const run = await log.startRun("demo-flow", "item:one");
-  const directory = join(store.root, "logs", "demo", "runs", run.runId);
+  const directory = join(store.root, "logs", plugin.name, "runs", run.runId);
   if (options.logDir) {
     await mkdir(directory, { recursive: true });
     await appendFile(join(directory, "agent.log"), '{"line":1}\n');
@@ -241,7 +297,13 @@ async function fixture(options: { readonly logDir: boolean }): Promise<Env> {
   };
 }
 
-function viewsOf(env: Env): Views {
+function viewsOf(
+  env: Env,
+  options: {
+    readonly onLog?: ((message: string) => void) | undefined;
+    readonly loadTimeoutMs?: number | undefined;
+  } = {},
+): Views {
   return trackedViews({
     registry: env.registry,
     store: env.store,
@@ -250,6 +312,10 @@ function viewsOf(env: Env): Views {
     watch: env.watches.watch,
     repeat: env.repeat.repeat,
     pollMs: 60_000,
+    ...(options.onLog === undefined ? {} : { onLog: options.onLog }),
+    ...(options.loadTimeoutMs === undefined
+      ? {}
+      : { loadTimeoutMs: options.loadTimeoutMs }),
   });
 }
 
@@ -419,5 +485,149 @@ describe("a live log that grows without a fact", () => {
     // demo run's watch opening is the barrier.
     await within(watches.opened(demoDir));
     expect(watches.watched(quietDir)).toBe(false);
+  });
+
+  test("a plugin without a tail function sends only the change event", async () => {
+    const env = await fixture({ logDir: true });
+    const views = viewsOf(env);
+    const onChange = await env.watches.opened(env.directory);
+    const stream = views.events()[Symbol.asyncIterator]();
+    try {
+      onChange("agent.log");
+      expect((await within(stream.next())).value).toEqual({ id: "one" });
+      env.store.put("item", "two", { title: "Two changed" }, "seed");
+      expect(await nextChange(stream, "two")).toEqual({ id: "two" });
+    } finally {
+      await stream.return?.();
+    }
+  });
+
+  test("a pushed tail is held to one per object per 50 ms and the last growth wins", async () => {
+    const { plugin, state } = pushingPlugin((call) => ({ section: "log", tail: `tail ${call}` }));
+    const env = await fixture({ logDir: true }, plugin);
+    const views = viewsOf(env);
+    const onChange = await env.watches.opened(env.directory);
+    const stream = views.events()[Symbol.asyncIterator]();
+    try {
+      onChange("agent.log");
+      expect(await nextTail(stream)).toEqual({
+        id: "one",
+        type: "item",
+        section: "log",
+        tail: "tail 1",
+      });
+
+      env.now.value = 10;
+      onChange("agent.log");
+      // Another object changes first: the second tail is still inside the window.
+      env.store.put("item", "two", { title: "Two changed" }, "seed");
+      expect(await nextChange(stream, "two")).toEqual({ id: "two" });
+      expect(state.calls).toBe(1);
+
+      env.now.value = 60;
+      expect(await nextTail(stream)).toEqual({
+        id: "one",
+        type: "item",
+        section: "log",
+        tail: "tail 2",
+      });
+      expect(state.calls).toBe(2);
+    } finally {
+      await stream.return?.();
+    }
+  });
+
+  test("a pushed tail overtaken by a newer growth is dropped", async () => {
+    let resolveOld: ((value: Pushed) => void) | undefined;
+    let started: (() => void) | undefined;
+    const firstStarted = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const { plugin } = pushingPlugin((call) => {
+      if (call !== 1) return { section: "log", tail: "new" };
+      return new Promise<Pushed>((resolve) => {
+        resolveOld = resolve;
+        started?.();
+      });
+    });
+    const env = await fixture({ logDir: true }, plugin);
+    const views = viewsOf(env);
+    const onChange = await env.watches.opened(env.directory);
+    const stream = views.events()[Symbol.asyncIterator]();
+    try {
+      onChange("agent.log");
+      await within(firstStarted);
+
+      env.now.value = 10;
+      onChange("agent.log");
+      env.now.value = 60;
+      expect(await nextTail(stream)).toEqual({
+        id: "one",
+        type: "item",
+        section: "log",
+        tail: "new",
+      });
+
+      resolveOld?.({ section: "log", tail: "old" });
+      // Let the old live computation finish before the next change is read.
+      for (let turn = 0; turn < 4; turn += 1) await Promise.resolve();
+      env.store.put("item", "two", { title: "Two changed" }, "seed");
+      expect(await nextChange(stream, "two")).toEqual({ id: "two" });
+      env.store.put("item", "three", { title: "Three" }, "seed");
+      expect(await nextChange(stream, "three")).toEqual({ id: "three" });
+    } finally {
+      await stream.return?.();
+    }
+  });
+
+  test("a pushed tail that fails leaves the stream alone", async () => {
+    const { plugin } = pushingPlugin(() => {
+      throw new Error("no tail");
+    });
+    let failed: ((message: string) => void) | undefined;
+    const failure = new Promise<string>((resolve) => {
+      failed = resolve;
+    });
+    const env = await fixture({ logDir: true }, plugin);
+    const views = viewsOf(env, {
+      onLog: (message) => {
+        if (message.includes("tail for")) failed?.(message);
+      },
+    });
+    const onChange = await env.watches.opened(env.directory);
+    const stream = views.events()[Symbol.asyncIterator]();
+    try {
+      onChange("agent.log");
+      expect(await within(failure)).toContain('plugin "pusher": tail for "item:one" failed: no tail');
+      env.store.put("item", "two", { title: "Two changed" }, "seed");
+      expect(await nextChange(stream, "two")).toEqual({ id: "two" });
+    } finally {
+      await stream.return?.();
+    }
+  });
+
+  test("a pushed tail that does not answer in time is dropped", async () => {
+    const { plugin } = pushingPlugin(() => new Promise<Pushed>(() => undefined));
+    let timedOut: ((message: string) => void) | undefined;
+    const timeout = new Promise<string>((resolve) => {
+      timedOut = resolve;
+    });
+    const env = await fixture({ logDir: true }, plugin);
+    const views = viewsOf(env, {
+      loadTimeoutMs: 5,
+      onLog: (message) => {
+        if (message.includes("tail for")) timedOut?.(message);
+      },
+    });
+    const onChange = await env.watches.opened(env.directory);
+    const stream = views.events()[Symbol.asyncIterator]();
+    try {
+      onChange("agent.log");
+      expect(await within(timeout)).toContain("did not answer within 5ms");
+      env.store.put("item", "two", { title: "Two changed" }, "seed");
+      expect(await nextChange(stream, "two")).toEqual({ id: "two" });
+    } finally {
+      await stream.return?.();
+    }
   });
 });
