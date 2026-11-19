@@ -93,6 +93,7 @@ Each entry's `id` is what a client passes back to `load`.
 | `status` | `{ text: string, since: number }` | What the live section is doing now, and since when in epoch milliseconds. The kernel passes it through without reading it; a client that does not know it ignores it |
 | `delta` | boolean | `true` when `markdown` holds only what follows the requested `after`. Leave it out when the answer is a whole page: the kernel then tells the client to replace instead of appending |
 | `context` | `{ used: number, window?: number, model?: string }` | Numbers a client shows beside the section, such as how full an agent's context is. The kernel passes it through on every read, including one with `after`; a client that does not know it ignores it |
+| `data` | object | Structured data the plugin defines for its clients, such as a chat's queued messages. The kernel checks only that it is an object, leaves a value that is not an object out, and passes an object through unchanged on every read, including one with `after`; a client that does not know its shape ignores it |
 
 ### The size cap, the timeout and the rate
 

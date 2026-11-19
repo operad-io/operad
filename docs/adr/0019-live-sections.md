@@ -10,7 +10,7 @@ A chat shows its reply as it is written. This is done within the section interfa
 
 ### D1: A live section reads only what is new, with an unfinished tail
 
-The result of `load` can carry more things beside the page: `mark`, an opaque position that says how far the finished content has gone; `tail`, a Markdown text that is the part still changing (a reply and thinking being written, a running tool call in a chat), always the whole text as it is now; `status` (D4); and `context` (D5). A client can read a section with `after: <mark>`; then `markdown` has only the content finished after that position, the client appends it to what it has, and replaces the old `tail` as a whole with the new one. Without `after`, one page is read as before, also carrying `mark` and `tail`, so a reconnect or coming back to the foreground needs only one re-read.
+The result of `load` can carry more things beside the page: `mark`, an opaque position that says how far the finished content has gone; `tail`, a Markdown text that is the part still changing (a reply and thinking being written, a running tool call in a chat), always the whole text as it is now; `status` (D4); `context` (D5); and `data` (D7). A client can read a section with `after: <mark>`; then `markdown` has only the content finished after that position, the client appends it to what it has, and replaces the old `tail` as a whole with the new one. Without `after`, one page is read as before, also carrying `mark` and `tail`, so a reconnect or coming back to the foreground needs only one re-read.
 
 ### D2: `events` says what changed, and pushes a live tail
 
@@ -20,7 +20,7 @@ A live section whose plugin supplies its changing part (D6) is also pushed as a 
 
 ### D3: Compatibility
 
-A client that does not know these things works as before: it just does not see `tail` or `status`. The command line's `operad show --section` does not show `tail` or `status`.
+A client that does not know these things works as before: it just does not see `tail`, `status` or `data`. The command line's `operad show --section` does not show `tail` or `status`.
 
 ### D4: A live section can say what it is doing
 
@@ -33,3 +33,7 @@ The result of `load` may carry `status`, an object `{ "text": string, "since": n
 ### D6: A live section's changing part is pushed as it is written
 
 A type's views may supply `tail(ctx, object)`, returning `{ section, tail?, status? }`: the same part a section read returns, without the finished content. The kernel calls it when the object grows and pushes the result as a `tail` event (D2). A plugin that supplies no `tail` function keeps id-only change events. The chat's `transcript` supplies it, so the text being written, thinking, and tool calls starting and ending reach a client without a section re-read; finished content still arrives by the incremental read of D1.
+
+### D7: A section can carry data beside its text
+
+`load` may return `data`, an object the plugin defines for its clients, such as a chat's queued messages. The kernel checks only that it is an object and leaves a value that is not an object out; it does not read any field. It passes the object through unchanged on every read, including a read with `after`, and serves it by the HTTP section read and the MCP `section` tool. A client that does not know the plugin's shape ignores it.
