@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   AskTimeoutError,
+  historyEntries,
   MemoryPluginStore,
   PluginRegistry,
   Runner,
@@ -337,6 +338,101 @@ describe("a form a step asks", () => {
           { id: "name", text: "typed" },
         ],
       });
+    } finally {
+      await env.close();
+    }
+  }, 30_000);
+
+  test("a form the grace passed refuses an answer that does not fill it, and records nothing", async () => {
+    const env = await setup();
+    try {
+      const id = await env.create("ask-form-late", "late-bad", { questions: TWO });
+      const timer = new FakeTimer();
+      const run = env.runner(id, timer).run();
+      await env.opened(id);
+      await timer.armed();
+      timer.fire();
+      expect(await run).toBe("waiting");
+      const flow = flowOf(env, "ask-form-late");
+      const waitId = (await readState(env.log, id)).wait?.id;
+
+      // A plain choice is refused for a form of several questions, as it is
+      // while the step is still running.
+      await expect(
+        answerRun({ log: env.log, flow, runId: id, choice: "Built-in", actor: ACTOR }),
+      ).rejects.toThrow(/one answer per question/);
+      await expect(
+        recordAnswer({ log: env.log, runId: id, waitId, choice: "Built-in", actor: ACTOR }),
+      ).rejects.toThrow(/one answer per question/);
+      // An answers list that does not fit is refused too.
+      await expect(
+        answerRun({
+          log: env.log,
+          flow,
+          runId: id,
+          choice: undefined,
+          answers: [{ id: "loader", choices: ["From the network"] }],
+          actor: ACTOR,
+        }),
+      ).rejects.toThrow(/is not one of the question's choices/);
+      // Nothing was recorded: the form is still open.
+      const state = await readState(env.log, id);
+      expect(state.status).toBe("waiting_person");
+      const list = await facts(env.log, id);
+      expect(list.map((fact) => fact.kind)).not.toContain("person_answered");
+      expect((await listPending(env.log, env.registry)).map((item) => item.runId)).toEqual([id]);
+    } finally {
+      await env.close();
+    }
+  }, 30_000);
+
+  test("a form answer says in history what the person answered", async () => {
+    const env = await setup();
+    try {
+      // While the step runs: the answer is an `ask_answered` fact.
+      const live = await env.create("ask-wait", "hist-live", { questions: TWO });
+      const run = env.runner(live, new FakeTimer()).run();
+      const waitId = await env.opened(live);
+      await recordAnswer({
+        log: env.log,
+        runId: live,
+        waitId,
+        choice: undefined,
+        answers: [
+          { id: "loader", choices: ["Built-in"] },
+          { id: "name", text: "typed" },
+        ],
+        actor: ACTOR,
+      });
+      expect(await run).toBe("ended");
+      let entries: { what: string; why: string }[] = [];
+      for await (const entry of historyEntries(env.log.read(live))) entries.push(entry);
+      const answered = entries.find((entry) => entry.what === "you answered the questions");
+      expect(answered?.why).toContain("Built-in; typed");
+
+      // After the grace: the answer is a `person_answered` fact.
+      const late = await env.create("ask-form-late", "hist-late", { questions: TWO });
+      const timer = new FakeTimer();
+      const lateRun = env.runner(late, timer).run();
+      await env.opened(late);
+      await timer.armed();
+      timer.fire();
+      expect(await lateRun).toBe("waiting");
+      await answerRun({
+        log: env.log,
+        flow: flowOf(env, "ask-form-late"),
+        runId: late,
+        choice: undefined,
+        answers: [
+          { id: "loader", choices: ["Dynamic"] },
+          { id: "name", skipped: true },
+        ],
+        actor: ACTOR,
+      });
+      entries = [];
+      for await (const entry of historyEntries(env.log.read(late))) entries.push(entry);
+      const lateAnswered = entries.find((entry) => entry.what === "you answered the questions");
+      expect(lateAnswered?.why).toContain("Dynamic; (skipped)");
     } finally {
       await env.close();
     }

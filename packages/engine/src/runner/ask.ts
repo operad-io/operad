@@ -286,10 +286,17 @@ export interface AnswerAskOptions {
   readonly actor: Actor;
 }
 
-/** What a person's answer to one question says, checked against the question. */
-function resolvedAnswer(
+/**
+ * What a person's answer to one question says, checked against the question.
+ * The same rule serves a running step's question and a flow's wait after the
+ * grace, so an answer one path refuses is never silently dropped by the other.
+ */
+export function resolveAnswer(
   runId: string,
-  ask: AskRecord,
+  ask: {
+    readonly choices: readonly string[];
+    readonly questions?: readonly AskQuestion[] | undefined;
+  },
   choice: string | undefined,
   answers: unknown,
 ): { readonly choice: string | undefined; readonly answers: readonly AskQuestionAnswer[] | undefined } {
@@ -333,7 +340,7 @@ function resolvedAnswer(
  */
 export async function answerAsk(options: AnswerAskOptions): Promise<void> {
   const { log, runId, ask, choice, actor } = options;
-  const resolved = resolvedAnswer(runId, ask, choice, options.answers);
+  const resolved = resolveAnswer(runId, ask, choice, options.answers);
   const refuse = async (reason: string): Promise<never> => {
     // An ended run takes no more facts; the answer is just not taken.
     if (options.state.status === "ended") {

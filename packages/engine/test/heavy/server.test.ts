@@ -944,6 +944,50 @@ describe("http server", () => {
     }
   });
 
+  test("a plain choice is refused for a form of several questions, and the item stays pending", async () => {
+    const h = await makeHarness();
+    try {
+      seed(h, "one", { title: "First", state: "new" });
+      const run = await h.log.startRun("demo-flow", "item:one");
+      await h.log.append(run.runId, 0, [
+        {
+          kind: "waiting_for_person",
+          payload: {
+            waitId: "wait:two",
+            step: "ask",
+            prompt: "How should it load?\n\nWhat name?",
+            choices: [],
+            questions: [
+              {
+                id: "loader",
+                text: "How should it load?",
+                choices: [{ label: "Built-in" }, { label: "Dynamic" }],
+              },
+              { id: "name", text: "What name?", freeText: true },
+            ],
+            waitKind: "step",
+            effectId: null,
+          },
+          cause: "test",
+        },
+      ]);
+
+      const refused = await api(h, "/v1/answer", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ runId: run.runId, waitId: "wait:two", choice: "Built-in" }),
+      });
+      expect(refused.status).toBe(409);
+      expect((await json(refused)).error).toMatchObject({ kind: "not-available" });
+
+      // Nothing was recorded: the same item is still the one waiting.
+      const pending = (await (await api(h, "/v1/pending")).json()) as { runId: string; waitId?: string }[];
+      expect(pending.find((item) => item.runId === run.runId)?.waitId).toBe("wait:two");
+    } finally {
+      await h.close();
+    }
+  });
+
   test("an action's opens passes through /v1/act when it names an existing object, and is dropped with a log line when not", async () => {
     const h = await makeHarness();
     try {

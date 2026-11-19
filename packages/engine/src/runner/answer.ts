@@ -4,8 +4,7 @@ import type { FlowDefinition } from "../flow/types.ts";
 import type { KernelState } from "../kernel/types.ts";
 import type { JsonValue, LogBackend } from "../log/types.ts";
 import type { Actor, AskQuestion, AskQuestionAnswer } from "../plugin/types.ts";
-import { answersProblem, normalizeAnswers } from "../plugin/question-form.ts";
-import { answerAsk, answerableAsks, scanAsks } from "./ask.ts";
+import { answerAsk, answerableAsks, resolveAnswer, scanAsks } from "./ask.ts";
 import { StateError } from "./errors.ts";
 import { applyInput, readState } from "./service.ts";
 
@@ -63,29 +62,14 @@ function answerInput(
   readonly questions?: readonly AskQuestion[] | undefined;
 }) => RecordedAnswerPayload {
   return (wait) => {
-    if (choice === undefined && answers === undefined) {
-      throw new StateError(`run ${runId}: an answer needs a choice or answers`);
-    }
-    if (choice !== undefined && wait.choices.length > 0 && !wait.choices.includes(choice)) {
-      throw new StateError(
-        `run ${runId}: "${choice}" is not one of ${wait.choices
-          .map((item) => `"${item}"`)
-          .join(", ")}`,
-      );
-    }
-    const questions = wait.questions;
-    const problem =
-      answers === undefined || questions === undefined
-        ? undefined
-        : answersProblem(answers, questions);
-    if (problem !== undefined) {
-      throw new StateError(`run ${runId}: answers: ${problem}`);
-    }
+    // The same check a running step's question makes: a form needs one answer
+    // per question, and a question of choices needs a choice.
+    const resolved = resolveAnswer(runId, wait, choice, answers);
     return {
       kind: "person_answer",
       waitId: wait.id,
-      ...(choice === undefined ? {} : { choice }),
-      ...(answers === undefined ? {} : { answers: normalizeAnswers(answers, questions ?? []) }),
+      ...(resolved.choice === undefined ? {} : { choice: resolved.choice }),
+      ...(resolved.answers === undefined ? {} : { answers: resolved.answers }),
       ...(note === undefined ? {} : { note }),
       actor: { via: actor.via, id: actor.id },
     };
