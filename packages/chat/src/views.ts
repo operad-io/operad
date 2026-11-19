@@ -158,6 +158,11 @@ function flat(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
 
+/** Text as a Markdown block: its lines stay, only the space around them goes. */
+function block(text: string): string {
+  return text.replace(/\r\n/g, "\n").trim();
+}
+
 function inlineCode(text: string): string {
   const longest = Math.max(0, ...(text.match(/`+/g) ?? []).map((run) => run.length));
   const fence = "`".repeat(longest + 1);
@@ -208,6 +213,11 @@ function entryMarkdown(entry: Entry | FoldEntry, speaker: string, harness: strin
     const said = flat(entry.text ?? "");
     return said.length === 0 ? undefined : said;
   }
+  // The line a crash or restart leaves is shown for every harness, as a failure is.
+  if (entry.kind === "stopped" && entry.interrupted === true) {
+    const said = flat(entry.text ?? "");
+    return said.length === 0 ? undefined : said;
+  }
   // Radian gives no text or thinking increments; its chats show the tool lines only.
   if (entry.kind !== "tool" && harness === "radian") return undefined;
   if (entry.kind === "tool") return toolMarkdown(entry);
@@ -218,7 +228,7 @@ function entryMarkdown(entry: Entry | FoldEntry, speaker: string, harness: strin
       .map((line) => `> ${line}`)
       .join("\n");
   }
-  const said = flat(entry.text);
+  const said = block(entry.text);
   if (said.length === 0) return undefined;
   const body = `**${speaker}:** ${said}`;
   return entry.kind === "stopped" ? `${body}\n\n*stopped*` : body;
@@ -772,7 +782,7 @@ async function liveOf(
         const thinking = fresh(read.state.thinking);
         if (thinking !== undefined) push(read.lastAt, thinking.split(/\r?\n/).map((line) => `> ${line}`).join("\n"));
         const text = fresh(read.state.text);
-        if (text !== undefined) push(read.lastAt, `**${speaker}:** ${flat(text)}`);
+        if (text !== undefined) push(read.lastAt, `**${speaker}:** ${block(text)}`);
       }
       for (const call of read.state.calls) {
         if (calls.has(maskSecrets(call.callId, secrets))) continue;

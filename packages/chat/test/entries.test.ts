@@ -243,6 +243,23 @@ describe("chat entries", () => {
     expect(shown.markdown).not.toContain(secret);
   });
 
+  test("stored intermediate text and thinking keep their lines and Markdown", async () => {
+    const r = await rig((ctx) => {
+      const line = send(ctx);
+      line({ type: "thinking_end", text: "weigh this\nand that" });
+      line({ type: "text_end", text: "First paragraph.\n\n- one\n- two" });
+      return reply("final answer");
+    });
+    const chat = await r.chat();
+    await r.say(chat, "hello");
+    await r.round(chat);
+
+    const shown = await transcript(r, chat);
+    expect(shown.markdown).toContain("> weigh this\n> and that");
+    expect(shown.markdown).toContain("**Operad Bot:** First paragraph.\n\n- one\n- two");
+    expect(shown.markdown).not.toContain("First paragraph. - one - two");
+  });
+
   test("a step that runs again does not record the same entries twice", async () => {
     let first = true;
     const r = await rig((ctx) => {
