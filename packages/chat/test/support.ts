@@ -14,7 +14,7 @@ import {
   type TriggerEvent,
 } from "@operad-io/engine";
 import { ACCESS_LEVELS, type AccessLevel } from "@operad-io/access-match";
-import { chatRef, createChat, MESSAGE_FACT, newMessageId, createChatPlugin } from "../src/index.ts";
+import { chatRef, createChat, MESSAGE_FACT, newMessageId, createChatPlugin, syncQueued } from "../src/index.ts";
 
 const roots: string[] = [];
 
@@ -183,6 +183,7 @@ export async function rig(
           source: { kind: "cli", ref: null },
         },
       });
+      await syncQueued(store, join(root, "home"), chat, "test");
       return id;
     },
     async round(chat, params = {}, asker, onEmit) {

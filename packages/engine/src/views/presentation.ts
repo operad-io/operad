@@ -213,6 +213,8 @@ export interface ViewSectionContent {
         readonly model?: string | undefined;
       }
     | undefined;
+  /** Structured data the plugin defines for its clients, passed through unchanged. */
+  readonly data?: Readonly<Record<string, JsonValue>> | undefined;
   /**
    * Present on a read that asked with `after`: true when `markdown` holds only
    * what follows the mark, false when the plugin answered with a whole page
@@ -1559,6 +1561,10 @@ export class Views {
     const status = isRecord(content) ? statusOf(content.status) : undefined;
     const retry = isRecord(content) ? retryOf(content.retry) : undefined;
     const context = isRecord(content) ? contextOf(content.context) : undefined;
+    const data =
+      isRecord(content) && isRecord(content.data)
+        ? (content.data as Readonly<Record<string, JsonValue>>)
+        : undefined;
     // A plugin that ignored `after` answers with a whole page; only one that
     // says its answer is the delta may be appended to by a client.
     const honoured =
@@ -1579,7 +1585,10 @@ export class Views {
       options.full === true,
       after === undefined ? undefined : honoured,
     );
-    return pages === undefined ? { ...finished, ...(context === undefined ? {} : { context }) } : { ...finished, pages, ...(context === undefined ? {} : { context }) };
+    const withData = data === undefined ? finished : { ...finished, data };
+    return pages === undefined
+      ? { ...withData, ...(context === undefined ? {} : { context }) }
+      : { ...withData, pages, ...(context === undefined ? {} : { context }) };
   }
 
   /** An async stream of changes. Repeated ids coalesce. */

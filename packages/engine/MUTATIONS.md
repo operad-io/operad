@@ -1193,3 +1193,9 @@ the row fields.
 |---|---|---|---|
 | T-0574-M1 | packages/engine/src/views/presentation.ts | `retryOf` dropped a sound `retry` item from a section read and a pushed tail | `a live log that grows without a fact > a retry item is passed through on a read and a pushed tail` |
 | T-0574-M2 | packages/engine/src/views/presentation.ts | a pushed tail left out the `retry` item the plugin returned | `a live log that grows without a fact > a retry item is passed through on a read and a pushed tail` |
+
+## T-0572 — structured data beside a section
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0572-M1 | packages/engine/src/views/presentation.ts | a section read dropped the plugin's `data` instead of passing it through | `structured data beside a section > a read carries the plugin's data, and so does a read after a mark` |

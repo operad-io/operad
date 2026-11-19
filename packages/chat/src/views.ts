@@ -2,6 +2,7 @@
 
 import { attachmentUrl, decodeCursor, encodeCursor } from "@operad-io/engine";
 import type {
+  JsonValue,
   ObjectRef,
   ObjectRow,
   ObjectViews,
@@ -17,7 +18,7 @@ import { maskSecrets, type FoldEntry } from "@operad-io/harness-process";
 import { secretValues } from "./reply.ts";
 import { readChatSkills, skillSummaries, type ObjectReader } from "./skills.ts";
 import { foldLogTail, agentLogPath } from "./tail.ts";
-import { agentLine, allMessages, answeredOfFact, attachmentsOf, chatData, chatRef, COMMAND_FACT, commandOfFact, ENTRY_FACT, entryOfFact, IMAGE_TYPES, lastReplyContext, latestRunOf, MESSAGE_FACT, modelAndCost, RUN_FACT, stopOfFact, unanswered, ANSWER_FACT, type Attachment, type ChatContext, type Command, type Entry, type Message } from "./model.ts";
+import { agentLine, allMessages, answeredOfFact, attachmentsOf, chatData, chatRef, COMMAND_FACT, commandOfFact, ENTRY_FACT, entryOfFact, IMAGE_TYPES, lastReplyContext, latestRunOf, MESSAGE_CHANGE_FACT, MESSAGE_FACT, messageChangeOfFact, messageFactsInForce, modelAndCost, queuedData, queuedMessages, queuedOf, RUN_FACT, stopOfFact, unanswered, ANSWER_FACT, type Attachment, type ChatContext, type Command, type Entry, type Message, type MessageChange } from "./model.ts";
 import type { TailRead } from "./tail.ts";
 
 /** How many messages of a chat one page of the transcript holds. */
@@ -35,6 +36,13 @@ function row(object: StoredObject): ObjectRow {
     ...(chat.harness.length > 0 ? [agentLine(chat)] : []),
     ...(chat.accessLevel !== chat.accessDefault ? [chat.accessLevel ?? ""] : []),
   ].filter((part) => part.length > 0);
+  const queued = queuedOf(object.data.queued);
+  const data: Record<string, JsonValue> = {
+    ...(chat.scheduled === undefined ? {} : { scheduled: chat.scheduled }),
+    ...(queued.length === 0
+      ? {}
+      : { queued: queued as unknown as JsonValue, queuedCount: queued.length }),
+  };
   return {
     id: object.id,
     title: chat.title.length > 0 ? chat.title : object.id,
@@ -42,7 +50,7 @@ function row(object: StoredObject): ObjectRow {
     ...(note.length === 0 ? {} : { note: note.join(" · ") }),
     ...(chat.closed ? { final: true } : {}),
     ...(typeof chat.parent === "string" && chat.parent.length > 0 ? { parent: chat.parent } : {}),
-    ...(chat.scheduled === undefined ? {} : { data: { scheduled: chat.scheduled } }),
+    ...(Object.keys(data).length === 0 ? {} : { data }),
   };
 }
 
@@ -63,6 +71,12 @@ function minute(at: number): string {
 export function commandMarkdown(command: Command): string {
   const via = command.from.via.length > 0 ? ` via ${command.from.via}` : "";
   return `**you**${via} · ${minute(command.at)} — \`${command.command.replace(/`/g, "\\`")}\`\n\n${command.outcome}`;
+}
+
+/** One withdrawn message as the history entry that says what happened to it. */
+export function withdrawalMarkdown(change: MessageChange): string {
+  const via = change.by.via.length > 0 ? ` via ${change.by.via}` : "";
+  return `**you**${via} · ${minute(change.at)} — \`withdraw ${change.id}\`\n\nThe message was withdrawn and was not sent to the agent.`;
 }
 
 /** A path as a Markdown link destination: spaces and parentheses are escaped. */
@@ -264,8 +278,9 @@ function chunkOf(facts: readonly PluginFact[]): Chunk {
   };
 }
 
-/** The facts a turn shows: messages, commands and finished entries. */
+/** The facts a turn shows: messages, commands, withdraw entries and finished entries. */
 function shownFact(fact: PluginFact): boolean {
+  if (fact.type === MESSAGE_CHANGE_FACT) return messageChangeOfFact(fact)?.kind === "withdraw";
   return fact.type === MESSAGE_FACT || fact.type === COMMAND_FACT || fact.type === ENTRY_FACT;
 }
 
@@ -395,7 +410,13 @@ function legacyChunksOf(facts: readonly PluginFact[]): readonly Chunk[] {
       index = end;
       continue;
     }
-    if (fact.type === MESSAGE_FACT || fact.type === COMMAND_FACT) chunks.push(chunkOf([fact]));
+    if (
+      fact.type === MESSAGE_FACT ||
+      fact.type === COMMAND_FACT ||
+      (fact.type === MESSAGE_CHANGE_FACT && messageChangeOfFact(fact)?.kind === "withdraw")
+    ) {
+      chunks.push(chunkOf([fact]));
+    }
     index += 1;
   }
   return chunks;
@@ -421,7 +442,11 @@ function chunksOf(facts: readonly PluginFact[]): readonly Chunk[] {
     }
     const fact = facts[index];
     if (fact === undefined) break;
-    if (fact.type === MESSAGE_FACT || fact.type === COMMAND_FACT) {
+    if (
+      fact.type === MESSAGE_FACT ||
+      fact.type === COMMAND_FACT ||
+      (fact.type === MESSAGE_CHANGE_FACT && messageChangeOfFact(fact)?.kind === "withdraw")
+    ) {
       rest(index, chunkOf([fact]));
       index += 1;
       continue;
@@ -533,6 +558,12 @@ function rendered(chunk: Chunk, speaker: string, home: string | undefined, harne
       flush();
       const command = commandOfFact(fact);
       if (command !== undefined) blocks.push(commandMarkdown(command));
+      continue;
+    }
+    if (fact.type === MESSAGE_CHANGE_FACT) {
+      flush();
+      const change = messageChangeOfFact(fact);
+      if (change?.kind === "withdraw") blocks.push(withdrawalMarkdown(change));
       continue;
     }
     if (fact.type === ENTRY_FACT) {
@@ -656,6 +687,10 @@ function factTailItem(fact: PluginFact, speaker: string, home: string | undefine
   if (fact.type === ENTRY_FACT) {
     const entry = entryOfFact(fact);
     return entry === undefined ? undefined : entryMarkdown(entry, speaker, harness);
+  }
+  if (fact.type === MESSAGE_CHANGE_FACT) {
+    const change = messageChangeOfFact(fact);
+    return change?.kind === "withdraw" ? withdrawalMarkdown(change) : undefined;
   }
   if (fact.type !== MESSAGE_FACT) return undefined;
   const message = messageFrom(fact);
@@ -841,7 +876,15 @@ async function load(
   const ref = chatRef(object.id);
   const chat = chatData(object.data);
   const speaker = await speakerOf(ctx, object);
-  const facts = allFacts(ctx, ref);
+  const facts = messageFactsInForce(allFacts(ctx, ref));
+  const messages = facts
+    .map(messageFrom)
+    .filter((message): message is Message => message !== undefined);
+  const queued = queuedData(queuedMessages(messages, facts));
+  const queueData: Record<string, JsonValue> = {
+    queued: queued as unknown as JsonValue,
+    queuedCount: queued.length,
+  };
   const live = await liveOf(ctx, object, facts, speaker);
   const { cut, ...liveContent } = live;
   // A message the live tail holds stays unread as finished content until the
@@ -859,6 +902,7 @@ async function load(
       delta: true,
       ...liveContent,
       ...(context === undefined ? {} : { context }),
+      data: queueData,
     };
   }
   const pages = pagesOf(ref, chunksOf(finished));
@@ -886,6 +930,7 @@ async function load(
     ...(toc.length > 1 ? { pages: toc } : {}),
     ...liveContent,
     ...(context === undefined ? {} : { context }),
+    data: queueData,
   };
 }
 

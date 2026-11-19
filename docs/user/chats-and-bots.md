@@ -22,7 +22,7 @@ The plugins are deliberately cautious. A chat on a repository is read-only until
 
 1. A chat is opened by a plugin: `dev:chat` on a repository, `bot:chat` on a bot. The agent is chosen then and does not change; the model, effort and access level can be changed later with `chat:model`, `chat:effort` and `chat:access`.
 2. `chat:send` records a message. A message is an event whose source is `ios`, `telegram`, `cli`, `tui` or `other`, and the `chat` plugin's own rule starts `chat:reply` for it (see [Chats](#chats)).
-3. `chat:reply` takes the messages that no reply answers yet from the chat's own record, continues the agent's session, and records the reply. A message sent while the reply is being written is given to the agent in that same reply when its agent takes messages mid-run (`claude`, `pi`, `codex`); otherwise, or when it has an attachment, it waits for the next round. If messages are still waiting it goes round again, at most 20 rounds. Without `operad serve` the message is only recorded and is answered when `serve` runs. A reply being written can be stopped; its half-written text stays in the transcript, and `/retry` answers the last message again after a failed or stopped reply. A `pi` chat retries a failed model request by itself with pi's bounded backoff; the live transcript shows the attempt, the time of the next try and why, and a successful retry leaves no line behind.
+3. `chat:reply` takes the messages that no reply answers yet from the chat's own record, continues the agent's session, and records the reply. A message sent while the reply is being written is given to the agent in that same reply when its agent takes messages mid-run (`claude`, `pi`, `codex`); otherwise, or when it has an attachment, it waits for the next round as a **queued** message. If messages are still waiting it goes round again, at most 20 rounds. Without `operad serve` the message is only recorded and is answered when `serve` runs. A reply being written can be stopped; its half-written text stays in the transcript, and `/retry` answers the last message again after a failed or stopped reply. A `pi` chat retries a failed model request by itself with pi's bounded backoff; the live transcript shows the attempt, the time of the next try and why, and a successful retry leaves no line behind.
 4. While the agent works, the `transcript` section shows the messages, tool calls and the unfinished text of the current reply.
 5. Each tool call is checked against the chat's access profile with the chat's access level composed into it (see [Access](access.md) and [Access level](#access-level)). For a bot chat the profile is the default profile plus the bot's own `access` settings; the bot's settings are read again at every reply (see [Bots](#bots)).
 6. A chat on a repository starts in the main clone as read-only. A write, or a command that is not known to only read, becomes the worktree question, which offers Allow once, Always allow, Deny and opening a worktree; the worktree offer has `dev` open `work/chat-<id>`, ends the asking reply and answers the same message again there, so the agent continues with write access.
@@ -53,6 +53,8 @@ A chat has these actions:
 | Action | Arguments | What it does |
 |---|---|---|
 | `chat:send` | `note`, `attachments` (uploaded file refs), `ref` | Records a message and starts the reply. The message may be only attachments. Prints `sent <message id>`; with no `serve` it prints `recorded <id>; it is answered when operad serve runs`. A closed chat refuses it. |
+| `chat:withdraw` | `message` | Withdraws a queued message before any run takes it. The message leaves the transcript, is not sent to the agent, and one history entry says it was withdrawn. A message a run has taken is refused. Prints `withdrew message <id>`. |
+| `chat:edit` | `message`, `text` | Changes the text of a queued message before any run takes it; its attachments stay. A message a run has taken is refused. Prints `changed message <id>`. |
 | `chat:model` | `model` | Changes the model the next reply uses. The model must be one the chat's agent lists; prints `chat <id> now uses <model>; the next reply uses it`. |
 | `chat:effort` | `effort` | Changes the effort the next reply uses, from the agent's list; prints `chat <id> now uses effort <effort>; the next reply uses it`. |
 | `chat:stop` | none | Stops the reply being written. What was written stays in the transcript, marked stopped. Messages that arrived meanwhile stay unanswered and no new reply starts by itself; prints that and points to `/retry`. With no reply running it says so and changes nothing. The client's button word is **Stop**. |
@@ -60,9 +62,19 @@ A chat has these actions:
 | `chat:status` | none | Shows the agent, the model and effort in force, whether a reply is being written and since when, how many messages wait, the session's cost and token usage, and the last reply's usage and time to first output. It reads only, costs no tokens and works while a reply is being written. An agent that reports no cost leaves it `unknown`. |
 | `chat:close` | none; asks to confirm | Records `chat.closed` and ends the chat. Prints `closed <id>`. The transcript stays readable; no other action appears. |
 
+A message is queued from when it is sent until a run takes it: the messages of
+a run's first prompt are taken when it starts, and a message handed to an agent
+mid-run is taken then. A chat's row and its `transcript` section carry the
+queued messages in `data.queued`, in sending order, with `data.queuedCount`; the
+row and the section have neither field when nothing is queued. A client shows
+"N queued" above the composer and offers `chat:withdraw` and `chat:edit` on
+each of them. A message a run has taken never changes, and both actions refuse
+it with a line naming the message.
+
 A line that starts with `/` and names one of the chat's actions runs that action
 instead of going to the agent: `/model sonnet`, `/effort high`, `/stop`, `/retry`,
-`/status`, `/close`, `/help`.
+`/status`, `/close`, `/help`. `chat:withdraw` and `chat:edit` are actions of the
+queued message, not chat commands.
 The rest of the line is the action's arguments, in the order its fields are
 declared; one field takes the whole rest, and with more than one the last field
 takes what is left. A `/xxx` that names no action, or a slash later in the line,

@@ -56,6 +56,29 @@ client (`ios`, `telegram`, `cli`; any other client counts as `cli`), keyed by th
 message id and about the chat. Three default rules start `chat:reply` with `auto`
 on that event. A closed chat refuses the action and adds no message.
 
+## Queued messages
+
+A message is queued from when it is sent until a run takes it. A run takes the
+messages of its first prompt when it starts, and each message an agent takes
+mid-run when the inbox hands it over. A taken message stays taken, even when
+the attempt fails and a later run answers it. The fact `chat.taken` records the
+messages a run took; it is written before the agent starts or the message is
+handed over.
+
+The chat object keeps the queue of its messages in `queued`; the row returns it
+as `data.queued` with `data.queuedCount`, and has neither field when the queue is
+empty. The `transcript` section returns the same data on every read. Each entry
+has `id`, `text`, `at` and `attachments`.
+
+`chat:withdraw <chat> --message <id>` records a `chat.message_change` fact of
+kind `withdraw`; the message leaves the transcript and is never part of a
+prompt, and the transcript shows one history entry saying it was withdrawn.
+`chat:edit <chat> --message <id> --text <text>` records one of kind `text`; the
+transcript and the next prompt use the new text, and the attachments stay.
+Both refuse a message a run has taken with a line naming it. A take and either
+action take one lock per chat, so a message is never both taken and withdrawn or
+changed. Neither action is a chat command.
+
 ## Commands in a chat
 
 An action with `command` set to a one-line description can be typed after `/`.
@@ -241,7 +264,8 @@ view when the retry succeeds or the retries run out. Tool output is not shown. R
 tool lines only otherwise. Pages count messages, and a turn's entries stay on
 the page of its reply. Every read also carries `context: { used, window?, model? }`,
 the last finished reply's context; a new session leaves it out until the next
-reply. The chat's object view carries the same `context`.
+reply. The chat's object view carries the same `context`. Every read also
+carries `data.queued` and `data.queuedCount`, the messages a run has not taken.
 
 ## The speaker
 
