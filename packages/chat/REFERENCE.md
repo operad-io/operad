@@ -209,6 +209,11 @@ ask keeps the whole call. A `Deny` tells the agent the call was refused because
 the chat is read-only, and that it should answer in the chat or use read-only
 commands.
 
+The agent's own question is not about a call, so it never becomes the worktree
+question: `ctx.ask` with `questions` passes through the level check and the
+read-only check unchanged. The pending item carries the form (ADR 0008 D7), and
+the person's answers reach the agent in its harness's shape (ADR 0026 D6).
+
 ## The `transcript` section
 
 A live section that pages over the message and entry facts, so the command line,

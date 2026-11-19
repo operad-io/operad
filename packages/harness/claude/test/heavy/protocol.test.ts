@@ -1924,3 +1924,100 @@ test("parseInput refuses an image that is not a path with an image media type", 
   expect(parseInput({ ...base, images: [{ path: "/a.pdf", mediaType: "application/pdf" }] }).ok).toBe(false);
   expect(parseInput({ ...base, images: "x" }).ok).toBe(false);
 });
+
+// -- AskUserQuestion: the agent's own question as a form ---------------------
+
+const ASK_FORM_QUESTION = {
+  question: "How should it load?",
+  header: "Loader",
+  options: [
+    { label: "Built-in", description: "use the built-in loader" },
+    { label: "Dynamic", description: "load it dynamically" },
+  ],
+  multiSelect: false,
+};
+
+const ASK_FORM_STEPS: FakeStep[] = [
+  { say: systemInit() },
+  { ask: { toolName: "AskUserQuestion", toolUseId: "q-1", input: { questions: [ASK_FORM_QUESTION] } } },
+  { say: assistant("m1", "done") },
+  { say: result() },
+];
+
+test("AskUserQuestion becomes one form, and the person's answer goes back as its answers", async () => {
+  const s = setup();
+  const child = new Child(s.env({ steps: ASK_FORM_STEPS }), s.recordFile);
+  child.sendLine(JSON.stringify(s.input));
+  const form = await child.untilLine("ask_form");
+  expect(form).toEqual({
+    type: "ask_form",
+    id: 1,
+    questions: [
+      {
+        id: "How should it load?",
+        text: "How should it load?",
+        header: "Loader",
+        choices: [
+          { label: "Built-in", description: "use the built-in loader" },
+          { label: "Dynamic", description: "load it dynamically" },
+        ],
+        freeText: true,
+      },
+    ],
+    session: SESSION,
+  });
+  child.sendLine(
+    JSON.stringify({
+      type: "ask_form_ack",
+      id: form?.["id"],
+      decision: "answered",
+      answers: [{ id: "How should it load?", choices: ["Dynamic"] }],
+    }),
+  );
+  child.endInput();
+  const run = await child.finish();
+  expect(run.exitCode).toBe(0);
+  expect(answerOf(run)).toMatchObject({
+    behavior: "allow",
+    updatedInput: { answers: { "How should it load?": "Dynamic" } },
+  });
+  expect(kinds(run)).not.toContain("blocked");
+  expect(last(run)).toMatchObject({ result: "done" });
+});
+
+test("a skipped question says so only to a claude that takes that field", async () => {
+  const s = setup();
+  const child = new Child(
+    s.env({ steps: [{ say: systemInit(SESSION, ["ask_user_question_unanswered_v1"]) }, ...ASK_FORM_STEPS.slice(1)] }),
+    s.recordFile,
+  );
+  child.sendLine(JSON.stringify(s.input));
+  const form = await child.untilLine("ask_form");
+  child.sendLine(
+    JSON.stringify({
+      type: "ask_form_ack",
+      id: form?.["id"],
+      decision: "answered",
+      answers: [{ id: "How should it load?", skipped: true }],
+    }),
+  );
+  child.endInput();
+  const run = await child.finish();
+  expect(answerOf(run)).toMatchObject({
+    behavior: "allow",
+    updatedInput: { answers: { "How should it load?": "" }, annotations: { "How should it load?": { unanswered: "skipped" } } },
+  });
+});
+
+test("a question whose grace passed holds the call until the host ends the program", async () => {
+  const s = setup();
+  const child = new Child(s.env({ steps: ASK_FORM_STEPS }), s.recordFile);
+  child.sendLine(JSON.stringify(s.input));
+  const form = await child.untilLine("ask_form");
+  child.sendLine(JSON.stringify({ type: "ask_form_ack", id: form?.["id"], decision: "stop" }));
+  await child.untilLine("ask_resolved");
+  child.signal("SIGTERM");
+  const run = await child.finish();
+  expect(kinds(run)).not.toContain("message_end");
+  expect(answerOf(run)["behavior"]).not.toBe("allow");
+});

@@ -42,3 +42,38 @@ The default behaviour after a timeout, `onTimeout`, is `waiting` (it requires th
 A question may carry `choiceInfo`, keyed by a choice string. Each value may hold `label` (what a button shows instead of the raw choice), `hint` (one sentence saying what choosing it does), `role` (`"primary"` for the one the asker recommends, `"destructive"` for one that cannot be undone) and `note` (`"optional"` or `"required"`). At most one choice is `primary`; any number may be `destructive`. Every key must be one of the question's choices.
 
 `choiceInfo` is accepted wherever choices are given: on `ctx.ask`, on a flow's `wait_person` step, and on a question a harness passes on. The kernel checks the keys, the roles and the bounds of the strings before anyone is asked, then only carries the value: into the wait's record, the pending view, the HTTP pending read, the MCP `pending` tool and a channel event. The choice string itself remains the value an answer sends. A question without `choiceInfo` reads exactly as before, and the kernel gives no choice a meaning of its own.
+
+### D7: A question may be a form
+
+`ctx.ask({ prompt, questions })` asks a form instead of one answer: one or more
+questions, each with an `id`, its `text`, an optional short `header`, choices of
+`label` and `description`, `multiple` and `freeText`. A form carries no
+`choices` of its own. The kernel checks the shape before anyone is asked (a
+non-empty id and text, an id used once, at most 8 questions with at most 8
+choices each, and the bounds of each string), then carries it unchanged: into
+the wait's record, the pending view, the HTTP pending read, the MCP `pending`
+tool, a channel event, and the resumed step's `askAnswer`, which carries the
+form beside its answers so the step can name each answer. A form that runs out
+of grace is carried on exactly as D2 to D5 carry a choice question, so the same
+item stays pending and a late answer still reaches the step.
+
+When a form has exactly one question that offers choices and is not multiple,
+the kernel also exposes that question's labels as the question's `choices`, so a
+client that knows only a choice still answers it. Any other form has none; such
+a client shows the form's text and cannot answer every question, and that is the
+form's own limit, not a second question.
+
+The answer is `answers: [{ id, choices?, text?, skipped? }]`: the labels picked,
+the person's own text, or `skipped`. A question the answer leaves out counts as
+skipped, so a person can always finish the form. The kernel checks every answer
+against the form: the id names one of its questions and is used once, a label is
+one of that question's choices, `text` needs `freeText`, more than one label
+needs `multiple`, and a skipped answer carries neither. An invalid answer is
+refused before anything is recorded. A plain `choice` is still an answer when
+the form is one question, and is refused for any other form.
+
+A form asks no one-time permission: `resume.grant` and the approving choices
+play no part. The flow edge a late form answer takes is the one the asker named
+in `resume.choice` when that is an edge of the wait step, else the answer's own
+choice when it is an edge, else the wait step's first choice. A harness that
+only gives text has no form and keeps D1 to D6 exactly as they are.

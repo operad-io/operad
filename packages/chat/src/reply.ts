@@ -344,6 +344,8 @@ function callFromQuestion(prompt: string): WorktreeCall | undefined {
  * question for each, with the permission answers and the worktree offer.
  */
 export function isWriteQuestion(request: AskRequest): boolean {
+  // A form is a question about the agent's own choice, never about one call.
+  if (request.questions !== undefined && request.questions.length > 0) return false;
   const resume = request.resume;
   if (isRecord(resume) && isRecord(resume.grant)) {
     const grant = resume.grant;
@@ -370,6 +372,8 @@ function resumeCall(resume: unknown): WorktreeCall | undefined {
 
 /** The call a question is about, from its grant, its resume or its own words. */
 function questionedCall(request: AskRequest): WorktreeCall | undefined {
+  // A form carries no call: its questions are the agent's, not the profile's.
+  if (request.questions !== undefined && request.questions.length > 0) return undefined;
   return worktreeCall(request) ?? resumeCall(request.resume) ?? callFromQuestion(request.prompt);
 }
 
@@ -440,6 +444,7 @@ function contextAsker(ctx: StepContext): StepAsker {
             prompt: error.prompt,
             choices: error.choices,
             ...(error.choiceInfo === undefined ? {} : { choiceInfo: error.choiceInfo }),
+            ...(error.questions === undefined ? {} : { questions: error.questions }),
             ...(error.resume === undefined || error.resume === null ? {} : { resume: error.resume as JsonValue }),
           };
         }

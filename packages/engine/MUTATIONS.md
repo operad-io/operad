@@ -1168,3 +1168,15 @@ the row fields.
 | T-0570-M8 | packages/engine/src/views/presentation.ts | the `tail` timeout no longer rejected, so a hung function held the push | `a live log that grows without a fact > a pushed tail that does not answer in time is dropped` |
 | T-0570-M9 | packages/engine/src/plugin/validate.ts | `normalizeViews` no longer refused a non-function `tail` | `plugin registry validation > rejects a views tail that is not a function` |
 | T-0570-M10 | packages/engine/src/plugin/validate.ts | `normalizeViews` dropped a type's `tail` function, so the registry never pushed its tail | `a live log that grows without a fact > a pushed tail is held to one per object per 50 ms and the last growth wins` |
+## T-0569 — a question's form, with an answer per question
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0569-M1 | packages/engine/src/plugin/question-form.ts | `normalizeAnswers` dropped a question's picked labels, so an answer read as skipped | `a form a step asks > the pending item carries the questions and their choices` |
+| T-0569-M2 | packages/engine/src/kernel/decide.ts | `wait_person` left `questions` out of the `waiting_for_person` payload, so the item lost its form after the grace | `a form a step asks > a form the grace passed keeps its questions and reaches the step again` |
+| T-0569-M3 | packages/engine/src/runner/ask.ts | the ask host kept no choices for a form instead of the one question's labels | `a form a step asks > the pending item carries the questions and their choices` |
+| T-0569-M4 | packages/engine/src/runner/ask.ts | `answerAsk` ignored what `answersProblem` said and recorded an answer the form did not offer | `a form a step asks > a form of two questions needs one answer per question` |
+| T-0569-M11 | packages/engine/src/runner/answer.ts | a recorded form answer carried `choice: undefined`, which a fact payload cannot hold, so `/v1/answer` refused the answer | `http server > a form is answered through /v1/answer with one answer per question` |
+| T-0569-M13 | packages/engine/src/views/presentation.ts | a form's answer went through the action path when every label matched an action name, so a question whose label was `drop` ran `webtest:drop` | `http server > a form is answered as a form even when a label names an action` |
+| T-0569-M14 | packages/engine/src/runner/answer.ts | the flow wait's answer check was looser than a running question's, so a plain choice for a form of several questions, or an answer for a question of choices, was accepted and then dropped by `decide` with nobody told | `a form a step asks > a form the grace passed refuses an answer that does not fill it, and records nothing` and `http server > a plain choice is refused for a form of several questions, and the item stays pending` |
+| T-0569-M15 | packages/engine/src/views/history.ts | `answersLine` was not read for a form's answer, so History said `you chose an answer` instead of what the person answered | `a form a step asks > a form answer says in history what the person answered` |

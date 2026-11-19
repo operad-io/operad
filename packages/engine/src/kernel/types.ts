@@ -1,6 +1,6 @@
 import type { EndStatus, Replay, StepKind } from "../flow/types.ts";
 import type { FactCause, JsonValue, NewFact } from "../log/types.ts";
-import type { Actor, ChoiceInfo } from "../plugin/types.ts";
+import type { Actor, AskQuestion, AskQuestionAnswer, ChoiceInfo } from "../plugin/types.ts";
 
 /** The kinds of fact the kernel writes. */
 export type FactKind =
@@ -127,7 +127,10 @@ export interface StepResultInput extends InputBase {
 export interface PersonAnswerInput extends InputBase {
   readonly kind: "person_answer";
   readonly waitId: string;
-  readonly choice: string;
+  /** The one choice a question of choices takes; absent for a form's answer. */
+  readonly choice?: string;
+  /** The person's answer to each question, when the question was a form. */
+  readonly answers?: readonly AskQuestionAnswer[];
   readonly note?: string;
   /** Who answered: a person through a client. */
   readonly actor: Actor;
@@ -171,7 +174,11 @@ export interface AnsweredAskState {
   readonly step: string;
   readonly prompt: string;
   readonly resume: JsonValue;
-  readonly choice: string;
+  readonly choice: string | null;
+  /** The person's answer to each question, when the question was a form. */
+  readonly answers?: readonly AskQuestionAnswer[] | undefined;
+  /** The form the person answered, so a resumed step can name each answer. */
+  readonly questions?: readonly AskQuestion[] | undefined;
   readonly note: string | null;
   /** Who answered, so a late answer can record a grant with the same person. */
   readonly actor: Actor | null;
@@ -183,6 +190,8 @@ export interface AskedWait {
   readonly step: string;
   /** What the step left to carry on with: a session and the call asked about. */
   readonly resume: JsonValue;
+  /** The form the step asked, when it asked one. */
+  readonly questions?: readonly AskQuestion[] | undefined;
 }
 
 export interface PendingEffect {
@@ -204,6 +213,8 @@ export interface PendingWait {
   readonly prompt: string;
   readonly choices: readonly string[];
   readonly choiceInfo?: Readonly<Record<string, ChoiceInfo>> | undefined;
+  /** The form the person fills in, when the question was one. */
+  readonly questions?: readonly AskQuestion[] | undefined;
   readonly kind: WaitKind;
   readonly effectId: string | null;
   readonly ask?: AskedWait | undefined;
@@ -319,6 +330,8 @@ export interface WaitingForPersonPayload {
   readonly prompt: string;
   readonly choices: string[];
   readonly choiceInfo?: Readonly<Record<string, ChoiceInfo>> | undefined;
+  /** The form the person fills in, when the question was one. */
+  readonly questions?: readonly AskQuestion[] | undefined;
   readonly waitKind: WaitKind;
   readonly effectId: string | null;
   readonly ask?: AskedWait;
@@ -327,7 +340,9 @@ export interface WaitingForPersonPayload {
 export interface PersonAnsweredPayload {
   readonly waitId: string;
   readonly step: string;
-  readonly choice: string;
+  readonly choice: string | null;
+  /** The person's answer to each question, when the question was a form. */
+  readonly answers?: readonly AskQuestionAnswer[] | undefined;
   readonly note: string | null;
   readonly waitKind: WaitKind;
   readonly actor: Actor | null;
@@ -336,6 +351,7 @@ export interface PersonAnsweredPayload {
     readonly step: string;
     readonly prompt: string;
     readonly resume: JsonValue;
+    readonly questions?: readonly AskQuestion[] | undefined;
   };
 }
 

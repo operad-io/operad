@@ -294,3 +294,10 @@ setup it depends on, in the order they were recorded. The root
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0560-M1 | packages/harness/claude/src/worker.ts | `canUseTool` judged with the turn's startup profile | `a running worker reads the live level again for each call, so lowering asks` |
+
+## T-0569 — AskUserQuestion is a form a person fills in
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0569-M7 | packages/harness/claude/src/worker.ts | the permission result dropped the person's `answers`, so the tool got no answer | `AskUserQuestion becomes one form, and the person's answer goes back as its answers` |
+| T-0569-M8 | packages/harness/claude/src/access.ts | `AskUserQuestion` was not inert, so the profile refused the agent's own question | `tools outside the table > an inert tool is allowed under any profile` |

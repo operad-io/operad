@@ -6,6 +6,7 @@ import type { LogBackend, RunInfo } from "../log/types.ts";
 import type { PluginRegistry } from "../plugin/registry.ts";
 import type { Views, ViewRow } from "./presentation.ts";
 import type { ChoiceInfo, PendingActionView } from "../plugin/types.ts";
+import type { AskQuestion } from "../plugin/types.ts";
 import { answerableAsks, scanAsks } from "../runner/ask.ts";
 import { parseObjectKey, readState } from "../runner/service.ts";
 import type { RefusedStart, TriggerCandidate } from "../trigger/types.ts";
@@ -28,6 +29,11 @@ export interface PendingItem {
   readonly choices: readonly string[];
   /** What each choice is, when the question said; see `ChoiceInfo`. */
   readonly choiceInfo?: Readonly<Record<string, ChoiceInfo>> | undefined;
+  /**
+   * The form the person fills in, when the agent asked questions. A client that
+   * does not know it shows `prompt` and `choices` as before.
+   */
+  readonly questions?: readonly AskQuestion[] | undefined;
   /**
    * The question's wait id, which an answer quotes. Absent when the item asks
    * nothing (a candidate or a standing item).
@@ -82,6 +88,7 @@ export async function listPending(
           ...(open.choiceInfo === undefined
             ? {}
             : { choiceInfo: open.choiceInfo }),
+          ...(open.questions === undefined ? {} : { questions: open.questions }),
           waitId: open.waitId,
           actions: await actionsFor(registry, log, run),
           kind: "run",
@@ -107,6 +114,9 @@ export async function listPending(
       ...(state.wait.choiceInfo === undefined
         ? {}
         : { choiceInfo: state.wait.choiceInfo }),
+      ...(state.wait.questions === undefined
+        ? {}
+        : { questions: state.wait.questions }),
       waitId: state.wait.id,
       actions,
       kind: "run",

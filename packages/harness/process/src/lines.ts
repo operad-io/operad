@@ -63,6 +63,17 @@ export type SharedLine =
       readonly session: string | null;
     }
   | { readonly type: "ask_resolved"; readonly id: number }
+  /**
+   * The program asks the person the questions its agent asked, as one form,
+   * and holds the call until the host answers with an `AskFormAck` line.
+   * `session` is what a late answer continues.
+   */
+  | {
+      readonly type: "ask_form";
+      readonly id: number;
+      readonly questions: readonly unknown[];
+      readonly session: string | null;
+    }
   /** New assistant text only, not the text so far. */
   | { readonly type: "text_delta"; readonly text: string }
   /** New thinking only, not the thinking so far. */

@@ -35,3 +35,31 @@ test("params without an answer have no paragraph", () => {
   expect(askNote({ prompt: "Q" })).toBeUndefined();
   expect(askNote("yes")).toBeUndefined();
 });
+
+test("a form's paragraph names each question and its answer, and marks a skipped one", () => {
+  const note = askNote({
+    prompt: "How should it load?",
+    answers: [
+      { id: "loader", choices: ["Built-in"] },
+      { id: "name", skipped: true },
+    ],
+    questions: [
+      { id: "loader", text: "How should it load?" },
+      { id: "name", text: "What name?" },
+    ],
+  });
+  expect(note).toBe(
+    "You asked these questions. The person's answers follow, one per line; a skipped question has no answer.\n- How should it load?: Built-in\n- What name?: (skipped)\nContinue.",
+  );
+});
+
+test("a form's answer can carry free text beside a choice, and the note stays quoted", () => {
+  const note = askNote({
+    prompt: "Which?",
+    answers: [{ id: "q1", choices: ["Built-in"], text: "or the old one" }],
+    questions: [{ id: "q1", text: "Which loader?" }],
+    note: "take care",
+  });
+  expect(note).toContain("- Which loader?: Built-in, or the old one");
+  expect(note).toContain("> take care");
+});

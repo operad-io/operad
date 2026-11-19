@@ -17,8 +17,8 @@ import {
   writeKeptWorker,
 } from "@operad-io/engine/platform";
 import { messageText } from "./inbox.ts";
-import type { OutwardWrite } from "@operad-io/engine";
-import type { CallAnswer } from "./ask-call.ts";
+import type { AskQuestion, AskQuestionAnswer, OutwardWrite } from "@operad-io/engine";
+import type { CallAnswer, FormAnswer } from "./ask-call.ts";
 
 export const EXIT_FAILED = 1;
 export const EXIT_INVALID_INPUT = 2;
@@ -99,6 +99,14 @@ export interface WorkerIo<TLine = unknown> {
     readonly session: string | null;
     readonly outward?: OutwardWrite | undefined;
   }): Promise<CallAnswer>;
+  /**
+   * Asks the host to put one form to a person (an agent's own question) and
+   * resolves with the answers. Absent when the host cannot ask a form.
+   */
+  askForm?(form: {
+    readonly questions: readonly AskQuestion[];
+    readonly session: string | null;
+  }): Promise<FormAnswer>;
   /**
    * Hands each message the host sends mid-run to `handler`, those that came
    * before the call first. Absent when the host cannot send any.
@@ -240,6 +248,7 @@ export class Channel<TLine = unknown> {
   private readonly lines: StdinLines;
   private readonly waiting = new Map<number, (used: boolean) => void>();
   private readonly questions = new Map<number, (answer: CallAnswer) => void>();
+  private readonly forms = new Map<number, (answer: FormAnswer) => void>();
   private readonly early: string[] = [];
   private readonly onGone: (() => void) | undefined;
   private onMessage: ((text: string) => void) | undefined;
@@ -289,6 +298,20 @@ export class Channel<TLine = unknown> {
           });
           write(`${JSON.stringify({ type: "ask_call", id, ...call })}\n`);
         }),
+      askForm: (form) =>
+        new Promise<FormAnswer>((resolve) => {
+          if (this.hostGone) {
+            resolve({ decision: "rejected" });
+            return;
+          }
+          const id = this.nextAsk;
+          this.nextAsk += 1;
+          this.forms.set(id, (answer) => {
+            write(`${JSON.stringify({ type: "ask_resolved", id })}\n`);
+            resolve(answer);
+          });
+          write(`${JSON.stringify({ type: "ask_form", id, questions: form.questions, session: form.session })}\n`);
+        }),
     };
   }
 
@@ -333,6 +356,20 @@ export class Channel<TLine = unknown> {
             this.questions.delete(id);
           }
         }
+        if (typeof ack === "object" && ack !== null && Reflect.get(ack, "type") === "ask_form_ack") {
+          const id: unknown = Reflect.get(ack, "id");
+          const decision: unknown = Reflect.get(ack, "decision");
+          const answers: unknown = Reflect.get(ack, "answers");
+          if (typeof id === "number") {
+            this.forms.get(id)?.({
+              decision: decision === "answered" || decision === "stop" ? decision : "rejected",
+              ...(Array.isArray(answers)
+                ? { answers: answers as readonly AskQuestionAnswer[] }
+                : {}),
+            });
+            this.forms.delete(id);
+          }
+        }
         if (typeof ack === "object" && ack !== null && Reflect.get(ack, "type") === "grant_ack") {
           const id: unknown = Reflect.get(ack, "id");
           const used: unknown = Reflect.get(ack, "used");
@@ -355,6 +392,8 @@ export class Channel<TLine = unknown> {
     this.waiting.clear();
     for (const resolve of this.questions.values()) resolve({ decision: "deny", reason: "the host is gone" });
     this.questions.clear();
+    for (const resolve of this.forms.values()) resolve({ decision: "rejected" });
+    this.forms.clear();
     this.onGone?.();
   }
 }

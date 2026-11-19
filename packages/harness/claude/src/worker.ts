@@ -38,7 +38,12 @@ import {
   serveOne,
   serverCommand,
   toolOutputLines,
+  askQuestions,
+  answerFor,
+  answerText,
+  isSkipped,
   type GivenSkill,
+  type HarnessQuestion,
   type WorkerAdapter,
   type WorkerIo as SharedWorkerIo,
   type WorkerPorts,
@@ -67,6 +72,51 @@ export { EXIT_CANCELLED, EXIT_FAILED, EXIT_INVALID_INPUT };
 export const STREAM_GROUP_MS = 100;
 
 type StreamKind = "text" | "thinking";
+
+/** The tool claude asks its own questions with. */
+export const ASK_QUESTION_TOOL = "AskUserQuestion";
+
+/** The capability that lets an answer say a question was skipped. */
+export const UNANSWERED_CAPABILITY = "ask_user_question_unanswered_v1";
+
+/**
+ * The questions claude's `AskUserQuestion` asked, in the shape the shared form
+ * takes (ADR 0026 D6). Claude always offers the person their own words, so
+ * every question allows free text. Undefined when the call is not that shape,
+ * and then the access profile judges it as before.
+ */
+export function claudeQuestions(toolInput: unknown): HarnessQuestion[] | undefined {
+  const record = recordOf(toolInput);
+  const raw = record?.["questions"];
+  if (!Array.isArray(raw) || raw.length === 0) return undefined;
+  const questions: HarnessQuestion[] = [];
+  for (const item of raw) {
+    const question = recordOf(item);
+    const text = question === undefined ? undefined : stringOf(question["question"]);
+    if (question === undefined || text === undefined || text.trim().length === 0) return undefined;
+    const choices: { label: string; description?: string }[] = [];
+    if (Array.isArray(question["options"])) {
+      for (const option of question["options"]) {
+        const row = recordOf(option);
+        const label = row === undefined ? undefined : stringOf(row["label"]);
+        if (row === undefined || label === undefined) continue;
+        const description = stringOf(row["description"]);
+        choices.push({ label, ...(description === undefined ? {} : { description }) });
+      }
+    }
+    const header = stringOf(question["header"]);
+    questions.push({
+      // Claude keys its answers by the question's own text.
+      id: text,
+      text,
+      ...(header === undefined ? {} : { header }),
+      ...(choices.length === 0 ? {} : { choices }),
+      ...(question["multiSelect"] === true ? { multiple: true } : {}),
+      freeText: true,
+    });
+  }
+  return questions;
+}
 
 function recordOf(value: unknown): Record<string, unknown> | undefined {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -452,6 +502,8 @@ class ClaudeSession {
   private initLine:
     | { readonly claudeVersion: string; readonly apiKeySource: string; readonly model: string }
     | undefined;
+  /** What this claude said it supports, from the init line's capabilities. */
+  private capabilities = new Set<string>();
   private started = false;
   private queryEnded = false;
   private closed = false;
@@ -686,6 +738,7 @@ class ClaudeSession {
         }
         if (message.subtype === "init") {
           turn.io.log(`claude ${message.claude_code_version}`);
+          this.capabilities = new Set(message.capabilities ?? []);
           if (this.sessionSkillNote !== undefined) {
             turn.io.log(this.sessionSkillNote);
             turn.io.line({ type: "log", text: this.sessionSkillNote });
@@ -982,6 +1035,7 @@ class ClaudeSession {
     const io = turn.io;
     const profile = liveAccess(turn.profile);
     io.log(`canUseTool ${toolName}`);
+    if (toolName === ASK_QUESTION_TOOL) return this.askQuestion(turn, toolInput, options);
     const askHost = io.ask;
     const verdict = await decideAccess(
       profile,
@@ -1016,8 +1070,75 @@ class ClaudeSession {
     return { behavior: "deny", message: verdict.reason };
   };
 
-  private deniedByProfile(turn: Turn, name: string, toolInput: unknown): { readonly rule?: string } | undefined {
-    const record = typeof toolInput === "object" && toolInput !== null ? (toolInput as Record<string, unknown>) : {};
+  /**
+   * The agent's own question, as a form the person fills in (ADR 0026 D6). The
+   * answers go back as the `answers` claude's tool reads, keyed by question
+   * text; a skipped question is reported as such only when this claude takes
+   * that field.
+   */
+  private async askQuestion(
+    turn: Turn,
+    toolInput: unknown,
+    options: { readonly toolUseID: string; readonly signal: AbortSignal },
+  ): Promise<Awaited<ReturnType<CanUseTool>>> {
+    const io = turn.io;
+    const raw = claudeQuestions(toolInput);
+    const questions = raw === undefined ? [] : askQuestions(raw);
+    if (questions.length === 0) {
+      return { behavior: "deny", message: `the ${ASK_QUESTION_TOOL} call named no question a person can answer` };
+    }
+    if (io.askForm === undefined) {
+      return { behavior: "deny", message: "this host cannot put a question to a person" };
+    }
+    const shown = JSON.stringify(questions);
+    if (this.secrets.some((secret) => secret.length > 0 && shown.includes(secret))) {
+      return { behavior: "deny", message: "the question holds a secret value, so nobody is asked about it" };
+    }
+    let got;
+    try {
+      got = await io.askForm({ questions, session: this.sessionId });
+    } catch {
+      return { behavior: "deny", message: "the question could not be asked" };
+    }
+    if (got.decision === "stop") {
+      // The grace passed: the host ends this program, and the answer comes
+      // back to a resumed session as text.
+      await new Promise<void>((resolve) => {
+        if (this.controller.signal.aborted) resolve();
+        this.controller.signal.addEventListener("abort", () => resolve(), { once: true });
+      });
+      this.endCall(turn, options.toolUseID, ASK_QUESTION_TOOL, true, REFUSED_IN_LOG);
+      return { behavior: "deny", message: "waiting for an answer", interrupt: true };
+    }
+    if (got.decision === "rejected") {
+      this.writeLine(turn, { type: "blocked", toolName: ASK_QUESTION_TOOL, reason: REFUSED_IN_LOG });
+      this.endCall(turn, options.toolUseID, ASK_QUESTION_TOOL, true, REFUSED_IN_LOG);
+      return { behavior: "deny", message: "nobody answered the questions in time" };
+    }
+    const answers: Record<string, string> = {};
+    const annotations: Record<string, { readonly unanswered: "skipped" }> = {};
+    for (const question of questions) {
+      const answer = answerFor(got.answers, question.id);
+      if (isSkipped(answer)) {
+        answers[question.id] = "";
+        if (this.capabilities.has(UNANSWERED_CAPABILITY)) {
+          annotations[question.id] = { unanswered: "skipped" };
+        }
+        continue;
+      }
+      answers[question.id] = answerText(answer);
+    }
+    return {
+      behavior: "allow",
+      updatedInput: {
+        ...(recordOf(toolInput) ?? {}),
+        answers,
+        ...(Object.keys(annotations).length === 0 ? {} : { annotations }),
+      },
+    };
+  }
+
+  private deniedByProfile(turn: Turn, name: string, toolInput: unknown): { readonly rule?: string } | undefined {    const record = typeof toolInput === "object" && toolInput !== null ? (toolInput as Record<string, unknown>) : {};
     const check = checkProfile(liveAccess(turn.profile), name, record, turn.input.cwd);
     if (check.kind !== "refuse") return undefined;
     return check.rule === undefined ? {} : { rule: check.rule };
