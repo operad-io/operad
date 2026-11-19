@@ -101,11 +101,13 @@ given twice.
 
 The `transcript` section is live: it shows user messages, the agent's
 intermediate text, `Thinking`, tool calls with their result, duration and a short
-output, and the final reply. It shows a reply's lines and any message sent
-during it in the order they happened: what the agent did before the message
-stays above it and what it did after stays below it, and the message that
-started the reply stays above all of them. An older chat whose lines were
-recorded without a time keeps the order it was recorded in. It also carries how
+output, and the final reply. It shows a reply's lines and any message the reply
+takes during it in the order they happened: what the agent did before the
+message stays above it and what it did after stays below it, and the message
+that started the reply stays above all of them. A message the reply does not
+take waits for the next round and shows below the finished reply. An older chat
+whose lines were recorded without a time keeps the order it was recorded in. It
+also carries how
 full the agent's context is
 (`used`, the model's `window` when known, and the `model`) from the last
 finished reply; the chat's object view carries the same `context`. A new session

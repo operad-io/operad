@@ -16,7 +16,7 @@ import { maskSecrets, type FoldEntry } from "@operad-io/harness-process";
 import { secretValues } from "./reply.ts";
 import { readChatSkills, skillSummaries, type ObjectReader } from "./skills.ts";
 import { foldLogTail, agentLogPath } from "./tail.ts";
-import { agentLine, allMessages, attachmentsOf, chatData, chatRef, COMMAND_FACT, commandOfFact, ENTRY_FACT, entryOfFact, IMAGE_TYPES, lastReplyContext, latestRunOf, MESSAGE_FACT, modelAndCost, RUN_FACT, stopOfFact, unanswered, type Attachment, type ChatContext, type Command, type Entry, type Message } from "./model.ts";
+import { agentLine, allMessages, answeredOfFact, attachmentsOf, chatData, chatRef, COMMAND_FACT, commandOfFact, ENTRY_FACT, entryOfFact, IMAGE_TYPES, lastReplyContext, latestRunOf, MESSAGE_FACT, modelAndCost, RUN_FACT, stopOfFact, unanswered, ANSWER_FACT, type Attachment, type ChatContext, type Command, type Entry, type Message } from "./model.ts";
 import type { TailRead } from "./tail.ts";
 
 /** How many messages of a chat one page of the transcript holds. */
@@ -258,13 +258,56 @@ function shownFact(fact: PluginFact): boolean {
   return fact.type === MESSAGE_FACT || fact.type === COMMAND_FACT || fact.type === ENTRY_FACT;
 }
 
+/** What one run took: the messages its reply or answer fact names, and whether either says so. */
+interface RunTaken {
+  readonly ids: ReadonlySet<string>;
+  readonly known: boolean;
+}
+
 /**
- * The chunks of each run, from the run fact to its reply. A message sent while
- * the run writes is in that span, so it is ordered with the run's items rather
- * than left as a chunk above all of them. Content before the first run fact,
- * and a store that predates run facts, keeps the older chunking.
+ * The messages each run took. A reply names them in `replyTo`; a run that ended
+ * without a reply names the ones it took in `chat.answered`. A run with neither
+ * says nothing, so an older chat keeps the order it recorded.
  */
-function runChunks(facts: readonly PluginFact[]): { readonly chunks: readonly Chunk[]; readonly consumed: ReadonlySet<number> } | undefined {
+function takenByRun(facts: readonly PluginFact[]): ReadonlyMap<string, RunTaken> {
+  const found = new Map<string, { readonly ids: Set<string>; known: boolean }>();
+  const add = (runId: unknown, ids: readonly string[], known: boolean): void => {
+    if (typeof runId !== "string" || runId.length === 0) return;
+    const run = found.get(runId) ?? { ids: new Set<string>(), known: false };
+    for (const id of ids) run.ids.add(id);
+    run.known = run.known || known;
+    found.set(runId, run);
+  };
+  for (const fact of facts) {
+    if (fact.type === MESSAGE_FACT && fact.data.role === "assistant") {
+      const replyTo = fact.data.replyTo;
+      const ids = Array.isArray(replyTo)
+        ? replyTo.filter((id): id is string => typeof id === "string" && id.length > 0)
+        : [];
+      add(fact.data.runId, ids, Array.isArray(replyTo));
+    } else if (fact.type === ANSWER_FACT) {
+      add(fact.data.runId, answeredOfFact(fact), true);
+    }
+  }
+  return found;
+}
+
+interface RunChunk {
+  readonly chunk: Chunk;
+  readonly span: number;
+}
+
+/**
+ * The chunks of each run, from the run fact to its reply. A message the run
+ * took while it wrote is in that span, so it is ordered with the run's items
+ * rather than left as a chunk above all of them. A message the run did not take
+ * waits for the next round, so it stays out of the reply's items. Content before
+ * the first run fact, and a store that predates run facts, keeps the older
+ * chunking.
+ */
+function runChunks(
+  facts: readonly PluginFact[],
+): { readonly chunks: readonly RunChunk[]; readonly consumed: ReadonlySet<number>; readonly spans: readonly number[] } | undefined {
   const starts: { readonly index: number; readonly runId: string }[] = [];
   facts.forEach((fact, index) => {
     if (fact.type === RUN_FACT && typeof fact.data.runId === "string" && fact.data.runId.length > 0) {
@@ -272,24 +315,34 @@ function runChunks(facts: readonly PluginFact[]): { readonly chunks: readonly Ch
     }
   });
   if (starts.length === 0) return undefined;
-  const chunks: Chunk[] = [];
+  const taken = takenByRun(facts);
+  const spans = facts.map(() => -1);
+  const chunks: RunChunk[] = [];
   const consumed = new Set<number>();
   starts.forEach((start, at) => {
     const end = starts[at + 1]?.index ?? facts.length;
+    for (let index = start.index; index < end; index += 1) spans[index] = start.index;
+    const took = taken.get(start.runId);
     let turn: PluginFact[] = [];
     for (let index = start.index + 1; index < end; index += 1) {
       const fact = facts[index];
       if (fact === undefined || !shownFact(fact)) continue;
+      // A person's message that this run's reply does not name was not given
+      // to the agent; it is the next round's, not part of this reply.
+      if (fact.type === MESSAGE_FACT && fact.data.role === "user") {
+        const id = typeof fact.data.id === "string" ? fact.data.id : undefined;
+        if (id !== undefined && took?.known === true && !took.ids.has(id)) continue;
+      }
       turn.push(fact);
       consumed.add(index);
       if (fact.type === MESSAGE_FACT && fact.data.role === "assistant" && fact.data.runId === start.runId) {
-        chunks.push(chunkOf(turn));
+        chunks.push({ chunk: chunkOf(turn), span: start.index });
         turn = [];
       }
     }
-    if (turn.length > 0) chunks.push(chunkOf(turn));
+    if (turn.length > 0) chunks.push({ chunk: chunkOf(turn), span: start.index });
   });
-  return { chunks, consumed };
+  return { chunks, consumed, spans };
 }
 
 /** A turn is the entries of a run and the reply they led to, so a page never splits them. */
@@ -340,9 +393,15 @@ function legacyChunksOf(facts: readonly PluginFact[]): readonly Chunk[] {
 function chunksOf(facts: readonly PluginFact[]): readonly Chunk[] {
   const runs = runChunks(facts);
   if (runs === undefined) return legacyChunksOf(facts);
-  // What no run fact covers (a message before the first run, or an old entry)
-  // is still shown in its own place.
-  const rest: Chunk[] = [];
+  // A chunk carries the run span it belongs to. A run's own chunks come before
+  // what its span left out: a message it did not take waits above the next
+  // round, below this reply, rather than splitting the reply's items.
+  const placed: { readonly chunk: Chunk; readonly span: number; readonly after: boolean }[] = runs.chunks.map(
+    (run) => ({ chunk: run.chunk, span: run.span, after: false }),
+  );
+  const rest = (first: number, chunk: Chunk): void => {
+    placed.push({ chunk, span: runs.spans[first] ?? -1, after: true });
+  };
   let index = 0;
   while (index < facts.length) {
     if (runs.consumed.has(index)) {
@@ -352,7 +411,7 @@ function chunksOf(facts: readonly PluginFact[]): readonly Chunk[] {
     const fact = facts[index];
     if (fact === undefined) break;
     if (fact.type === MESSAGE_FACT || fact.type === COMMAND_FACT) {
-      rest.push(chunkOf([fact]));
+      rest(index, chunkOf([fact]));
       index += 1;
       continue;
     }
@@ -367,15 +426,20 @@ function chunksOf(facts: readonly PluginFact[]): readonly Chunk[] {
       ) {
         end += 1;
       }
-      rest.push(chunkOf(facts.slice(index, end)));
+      rest(index, chunkOf(facts.slice(index, end)));
       index = end;
       continue;
     }
     index += 1;
   }
-  return [...runs.chunks, ...rest].sort((left, right) =>
-    (left.facts[0]?.sequence ?? 0) - (right.facts[0]?.sequence ?? 0),
-  );
+  return placed
+    .sort(
+      (left, right) =>
+        left.span - right.span ||
+        (left.after === right.after ? 0 : left.after ? 1 : -1) ||
+        (left.chunk.facts[0]?.sequence ?? 0) - (right.chunk.facts[0]?.sequence ?? 0),
+    )
+    .map((item) => item.chunk);
 }
 
 interface Page {

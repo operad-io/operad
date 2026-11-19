@@ -65,6 +65,7 @@ describe("the transcript places a message sent during a reply by its time", () =
         if (r.calls.length !== 1) return reply("again");
         const inbox = nextInboxMessage(call.params);
         before = Date.now() - 2_000;
+        await write(ctx, { type: "thinking_end", text: "before thought", receivedAt: before - 1 });
         await write(ctx, { type: "text_end", text: "before words", receivedAt: before });
         await write(ctx, {
           type: "tool_execution_start",
@@ -87,6 +88,7 @@ describe("the transcript places a message sent during a reply by its time", () =
         mid = sent.at;
         await inbox;
         after = Date.now();
+        await write(ctx, { type: "thinking_end", text: "after thought", receivedAt: after });
         await write(ctx, { type: "text_end", text: "after words", receivedAt: after });
         await write(ctx, {
           type: "tool_execution_start",
@@ -117,11 +119,12 @@ describe("the transcript places a message sent during a reply by its time", () =
 
     const entries = allEntries(r.store, chat);
     expect(entries.filter((entry) => entry.kind === "text").map((entry) => entry.startedAt)).toEqual([before, after]);
+    expect(entries.filter((entry) => entry.kind === "thinking").map((entry) => entry.startedAt)).toEqual([before - 1, after]);
     expect(entries.filter((entry) => entry.kind === "tool").map((entry) => entry.startedAt)).toEqual([before + 1, after]);
 
     const stored = await view(r, chat, { running: false });
     expect(stored.markdown).toContain("second question");
-    inOrder(stored.markdown, ["first question", "before words", "tool Bash <1s `echo before`", "second question", "after words", "tool Read <1s `after.ts`", "final answer"]);
+    inOrder(stored.markdown, ["first question", "> before thought", "before words", "tool Bash <1s `echo before`", "second question", "> after thought", "after words", "tool Read <1s `after.ts`", "final answer"]);
     expect(mid).toBeGreaterThan(before);
     expect(after).toBeGreaterThanOrEqual(mid);
   });
@@ -135,6 +138,7 @@ describe("the transcript places a message sent during a reply by its time", () =
         if (r.calls.length !== 1) return reply("again");
         const inbox = nextInboxMessage(call.params);
         const before = Date.now() - 2_000;
+        await write(ctx, { type: "thinking_end", text: "before thought", receivedAt: before - 1 });
         await write(ctx, { type: "text_end", text: "before words", receivedAt: before });
         await write(ctx, {
           type: "tool_execution_start",
@@ -154,6 +158,7 @@ describe("the transcript places a message sent during a reply by its time", () =
         await r.say(chat, "second question");
         await inbox;
         const after = Date.now();
+        await write(ctx, { type: "thinking_end", text: "after thought", receivedAt: after });
         await write(ctx, { type: "text_end", text: "after words", receivedAt: after });
         await write(ctx, {
           type: "tool_execution_start",
@@ -187,17 +192,84 @@ describe("the transcript places a message sent during a reply by its time", () =
     if (live === undefined) throw new Error("the live view was not read");
 
     const liveText = `${live.markdown}\n\n${live.tail ?? ""}`;
-    inOrder(liveText, ["first question", "before words", "tool Bash <1s `echo before`", "second question", "after words", "tool Read <1s `after.ts`"]);
+    inOrder(liveText, ["first question", "> before thought", "before words", "tool Bash <1s `echo before`", "second question", "> after thought", "after words", "tool Read <1s `after.ts`"]);
     expect(live.tail).not.toContain("final answer");
 
     const stored = await view(r, chat, { running: false });
-    inOrder(stored.markdown, ["first question", "before words", "tool Bash <1s `echo before`", "second question", "after words", "tool Read <1s `after.ts`", "final answer"]);
+    inOrder(stored.markdown, ["first question", "> before thought", "before words", "tool Bash <1s `echo before`", "second question", "> after thought", "after words", "tool Read <1s `after.ts`", "final answer"]);
 
     // A client that was live reads on from its mark and sees the same lines as
     // finished content, with no message left above the whole reply.
     const switched = await view(r, chat, { after: live.mark ?? "", running: false });
     expect(switched.tail).toBeUndefined();
     inOrder(switched.markdown, ["before words", "tool Bash <1s `echo before`", "second question", "after words", "tool Read <1s `after.ts`", "final answer"]);
+  });
+
+  test("stored: a message the run did not take stays out of the reply's items and waits below it", async () => {
+    let chat = "";
+    const r = await rig(async (ctx) => {
+      if (r.calls.length !== 1) return reply("second answer");
+      const before = Date.now() - 2_000;
+      await write(ctx, { type: "thinking_end", text: "before thought", receivedAt: before - 1 });
+      await write(ctx, { type: "text_end", text: "before words", receivedAt: before });
+      await write(ctx, {
+        type: "tool_execution_start",
+        toolCallId: "t1",
+        toolName: "Bash",
+        input: "echo before",
+        at: before + 1,
+      });
+      await write(ctx, {
+        type: "tool_execution_end",
+        toolCallId: "t1",
+        toolName: "Bash",
+        isError: false,
+        durationMs: 1,
+        receivedAt: before + 2,
+      });
+      await r.say(chat, "second question");
+      const after = Date.now();
+      await write(ctx, { type: "thinking_end", text: "after thought", receivedAt: after });
+      await write(ctx, { type: "text_end", text: "after words", receivedAt: after });
+      await write(ctx, {
+        type: "tool_execution_start",
+        toolCallId: "t2",
+        toolName: "Read",
+        input: "after.ts",
+        at: after,
+      });
+      await write(ctx, {
+        type: "tool_execution_end",
+        toolCallId: "t2",
+        toolName: "Read",
+        isError: false,
+        durationMs: 1,
+        receivedAt: after,
+      });
+      return reply("first answer");
+    });
+    chat = await r.chat();
+    await r.say(chat, "first question");
+
+    expect((await r.round(chat)).result).toBe("more");
+    expect(r.calls[0]?.params.inbox).toBeUndefined();
+    expect((await r.round(chat)).result).toBe("done");
+    expect(r.calls.map((call) => call.params.prompt)).toEqual(["first question", "second question"]);
+
+    const stored = await view(r, chat, { running: false });
+    inOrder(stored.markdown, [
+      "first question",
+      "> before thought",
+      "before words",
+      "tool Bash <1s `echo before`",
+      "> after thought",
+      "after words",
+      "tool Read <1s `after.ts`",
+      "first answer",
+      "second question",
+      "second answer",
+    ]);
+    expect(stored.markdown.split("second question")).toHaveLength(2);
   });
 
   test("an older store whose entries carry no time keeps the order it recorded", async () => {
