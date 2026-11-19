@@ -31,6 +31,8 @@ interface ScriptEntry {
   gate?: boolean;
   /** Streams its content and then never finishes; an abort ends it. */
   endless?: boolean;
+  /** Fail the request with this provider message instead of answering. */
+  error?: string;
   toolCall?: FakeToolCall;
 }
 
@@ -49,6 +51,7 @@ export function fakeHooks(
     if (entry.hang === true) response.before = new Promise<void>(() => {});
     if (entry.gate === true) response.before = waitForRelease(env["FAKE_RELEASE"]);
     if (entry.endless === true) response.endless = true;
+    if (entry.error !== undefined) response.error = entry.error;
     provider.enqueue(response);
   }
 

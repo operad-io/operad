@@ -144,6 +144,16 @@ export interface SectionStatus {
   readonly since: number;
 }
 
+/** A model request a harness waits to try again, with when the next attempt starts. */
+export interface SectionRetry {
+  readonly attempt: number;
+  readonly maxAttempts: number;
+  /** When the next attempt starts, in milliseconds since the epoch. */
+  readonly until: number;
+  /** The provider's message that caused the retry. */
+  readonly reason: string;
+}
+
 /** The Markdown of one section, and where to continue when it is paged. */
 export interface SectionContent {
   readonly markdown: string;
@@ -165,6 +175,11 @@ export interface SectionContent {
    * never reads it. A client that does not know it ignores it.
    */
   readonly status?: SectionStatus | undefined;
+  /**
+   * A model request the harness is waiting to try again. The kernel passes it
+   * through on every read; a client that does not know it ignores it.
+   */
+  readonly retry?: SectionRetry | undefined;
   /**
    * Numbers a client shows beside the section, such as how full an agent's
    * context is. The kernel passes it through on every read; a client that
@@ -301,6 +316,7 @@ export interface ObjectViews {
             readonly section: string;
             readonly tail?: string | undefined;
             readonly status?: SectionStatus | undefined;
+            readonly retry?: SectionRetry | undefined;
           }
         | undefined
       >)

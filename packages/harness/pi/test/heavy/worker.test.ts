@@ -606,7 +606,7 @@ test("the own-settings switch on loads a context file, a skill and an extension 
   const context = readFileSync(contexts, "utf8");
   expect(context).toContain("OWNER_CONTEXT_MARKER");
   expect(context).toContain("OWNER_SKILL_MARKER");
-  // The owner's settings load, but a chat's compaction and retry stay operad's.
+  // The owner's settings load, but compaction stays off and a task keeps retry off.
   const seen = JSON.parse(readFileSync(resources, "utf8").trim()) as {
     settings: { compaction: unknown; retry: unknown };
     loader: { agentDir: unknown; noExtensions?: unknown; noContextFiles?: unknown };
@@ -615,6 +615,77 @@ test("the own-settings switch on loads a context file, a skill and an extension 
   expect(seen.loader.agentDir).toBe(agentDir);
   expect(seen.loader.noExtensions).toBeUndefined();
   expect(seen.loader.noContextFiles).toBeUndefined();
+});
+
+test("a chat turns pi's retry on, with pi's attempts and backoff, and reports the wait", async () => {
+  const s = setup();
+  const agentDir = join(s.dir, "owner-pi");
+  mkdirSync(agentDir, { recursive: true });
+  writeFileSync(
+    join(agentDir, "settings.json"),
+    JSON.stringify({ retry: { enabled: false, maxRetries: 1, baseDelayMs: 1 } }),
+  );
+  const resources = join(s.dir, "resources.jsonl");
+  const run = await runFakeProcess(
+    s,
+    [{ error: "the provider is overloaded" }, { text: "ANSWER" }],
+    { ...s.input, retry: true, useOwnSettings: true },
+    { PI_CODING_AGENT_DIR: agentDir, FAKE_RESOURCES_FILE: resources },
+  );
+
+  expect(run.exitCode).toBe(0);
+  expect(last(run)).toMatchObject({ result: "done", finalMessage: "ANSWER" });
+  expect(run.lines.filter((line) => line["type"] === "retry_start")).toEqual([
+    {
+      type: "retry_start",
+      attempt: 1,
+      maxAttempts: 1,
+      delayMs: 1,
+      reason: "the provider is overloaded",
+    },
+  ]);
+  expect(run.lines.filter((line) => line["type"] === "retry_end")).toEqual([
+    { type: "retry_end", success: true },
+  ]);
+  const seen = JSON.parse(readFileSync(resources, "utf8").trim()) as {
+    settings: { compaction: unknown; retry: unknown };
+  };
+  expect(seen.settings).toEqual({ compaction: false, retry: true });
+});
+
+test("a task keeps pi's retry off, and a chat whose retries run out fails as before", async () => {
+  const task = setup();
+  const noRetry = await runFakeProcess(task, [{ error: "the provider is overloaded" }]);
+  expect(noRetry.lines.some((line) => line["type"] === "retry_start")).toBe(false);
+  expect(noRetry.lines.some((line) => line["type"] === "retry_end")).toBe(false);
+  expect(last(noRetry)).toMatchObject({
+    result: "failed",
+    reason: "model_error",
+    message: "the provider is overloaded",
+  });
+
+  const chat = setup();
+  const agentDir = join(chat.dir, "owner-pi");
+  mkdirSync(agentDir, { recursive: true });
+  writeFileSync(
+    join(agentDir, "settings.json"),
+    JSON.stringify({ retry: { maxRetries: 1, baseDelayMs: 1 } }),
+  );
+  const run = await runFakeProcess(
+    chat,
+    [{ error: "the provider is overloaded" }, { error: "the provider is still overloaded" }],
+    { ...chat.input, retry: true, useOwnSettings: true },
+    { PI_CODING_AGENT_DIR: agentDir },
+  );
+  expect(run.lines.filter((line) => line["type"] === "retry_start")).toHaveLength(1);
+  expect(run.lines.filter((line) => line["type"] === "retry_end")).toEqual([
+    { type: "retry_end", success: false },
+  ]);
+  expect(last(run)).toMatchObject({
+    result: "failed",
+    reason: "model_error",
+    message: "the provider is still overloaded",
+  });
 });
 
 test("a prompt that starts with a slash reaches the model as text, not as a prompt template", async () => {
@@ -1149,6 +1220,7 @@ const INVALID: Array<[string, (input: Record<string, unknown>) => unknown]> = [
   ["thinkingLevel", (input) => ({ ...input, thinkingLevel: "loud" })],
   ["skills", (input) => ({ ...input, skills: "x" })],
   ["useOwnSettings", (input) => ({ ...input, useOwnSettings: "yes" })],
+  ["retry", (input) => ({ ...input, retry: "yes" })],
   ["access", (input) => ({ ...input, access: "deny" })],
 ];
 
