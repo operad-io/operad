@@ -3,6 +3,7 @@ import { join } from "node:path";
 import type { SectionContent, StepContext, ViewContext } from "@operad-io/engine";
 import {
   ENTRY_FACT,
+  MESSAGE_FACT,
   allMessages,
   chatRef,
   chatViews,
@@ -370,6 +371,49 @@ describe("a reply's structured form", () => {
     expect(after.markdown).toContain("answer 56");
     expect(after.markdown).not.toContain("answer 55");
     expect(replies(after).map((reply) => reply.answer?.text)).toEqual(["answer 56"]);
+  });
+
+  test("many replies: a page's first reply keeps its own input, and an after read starts at its mark", async () => {
+    const r = await rig(() => reply("unused"));
+    const chat = await r.chat();
+    for (let index = 1; index <= 60; index += 1) {
+      await r.store.append({
+        type: MESSAGE_FACT,
+        object: chatRef(chat),
+        cause: "test",
+        data: {
+          id: `u${index}`,
+          role: "user",
+          text: `question ${index}`,
+          attachments: [],
+          source: { kind: "cli", ref: null },
+        },
+      });
+      await r.store.append({
+        type: MESSAGE_FACT,
+        object: chatRef(chat),
+        cause: "test",
+        data: {
+          id: `a${index}`,
+          role: "assistant",
+          text: `answer ${index}`,
+          runId: `run-${index}`,
+          attachments: [],
+          source: { kind: "fake", ref: null },
+        },
+      });
+    }
+
+    const first = await view(r, chat);
+    if (first.next === undefined) throw new Error("the chat has only one page");
+    const second = await view(r, chat, { cursor: first.next });
+    const firstOnPage = replies(second)[0];
+    expect(firstOnPage?.answer?.text).toBe("answer 26");
+    expect(firstOnPage?.input.map((message) => message.text)).toEqual(["question 26"]);
+
+    const after = await view(r, chat, { after: first.mark ?? "" });
+    expect(replies(after)[0]?.answer?.text).toBe("answer 26");
+    expect(replies(after)[0]?.input.map((message) => message.text)).toEqual(["question 26"]);
   });
 
   test("many replies: the cap cuts tool output text before it cuts the Markdown, keeping its lines", async () => {

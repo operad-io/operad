@@ -526,6 +526,7 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 | T-0576-M1 | packages/chat/src/views.ts | a retry with no `receivedAt` fell back to the log's last stamped line, so `until` moved on every read | `chat transcript: after, mark and tail > a retry with no time of its own is left out of the retry item and the tail alike` |
 | T-0576-M2 | packages/chat/src/views.ts | `replyData` blanked tool output but left thinking, text, input and answer text whole, so a reply whose output was empty could still go over the cap | `a reply's structured form > the cap shortens the thinking, text and answer of a reply too` and `the chat's pushed tail > the pushed running reply's data stays under the cap` |
 | T-0576-M3 | packages/chat/src/model.ts | `entryOfFact` dropped a stored tool entry that had no call id or name instead of showing it as a tool | `a reply's structured form > a stored tool entry without a call id or name stays as a tool` |
+| T-0576-M4 | packages/chat/src/views.ts | a page or `after` read built every reply, or lost the answer before its window, so the window's first reply carried replies it did not answer or lost its own input | `a reply's structured form > many replies: a page's first reply keeps its own input, and an after read starts at its mark` |
 
 The T-0570 rows earlier in this file name `livePush`, which is now `tailPush`;
 their current tests are `the chat's pushed tail > the text being written is the
