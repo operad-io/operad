@@ -121,7 +121,7 @@ owner 问的问题：`@earendil-works/pi-durable` 能不能放在 bot 聊天后�
 
 ## 6. 内置 pi：OpenClaw 的做法
 
-owner 读完前五节后问"如果我们内置 pi / pi-durable 呢"，随后说"做成像 open claw 那样"（2026-11-19）。这一节记 OpenClaw 怎么用 pi，以及 operad 今天离它差什么。
+owner 读完前五节后问"如果我们内置 pi / pi-durable 呢"，随后说"做成像 open claw 那样"（2026-11-19）。这一节记 OpenClaw 怎么用 pi，以及 operad 今天离它差什么。owner 看完对照后说"先不用了"（同日）：内置 pi 现在不做，这一节只留作以后的参考。
 
 **OpenClaw 怎么做（第三方，没读它的源码）**
 
