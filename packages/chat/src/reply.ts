@@ -32,6 +32,8 @@ import {
   ANSWER_FACT,
   answeredOfFact,
   attachmentsOf,
+  ATTEMPT_END_FACT,
+  attemptEndedOfFact,
   chatFacts,
   IMAGE_TYPES,
   chatData,
@@ -57,6 +59,7 @@ import {
   type Message,
   type MessageData,
 } from "./model.ts";
+import { agentLogPath, foldLogTail } from "./tail.ts";
 
 /**
  * Brings the chat object in line with its facts: the session after a reply, and
@@ -730,16 +733,32 @@ export async function secretValues(ctx: Pick<StepContext, "secrets">): Promise<r
   }
 }
 
+/** What the transcript says when a crash, stop or restart interrupted a reply. */
+export const INTERRUPTED_NOTE = "The reply was stopped before it finished.";
+
+/** One entry as `recordEntries` records it: a folded entry or a stopped line. */
+type RecordedEntry =
+  | FoldEntry
+  | { readonly kind: "stopped"; readonly text: string; readonly interrupted?: true };
+
 /** The entries to record: what finished, and the reply a stopped run got only half way through. */
 function entriesToRecord(
   folded: FoldState,
-  options: { readonly finalText?: string | undefined; readonly stopped: boolean },
+  options: {
+    readonly finalText?: string | undefined;
+    readonly stopped: boolean;
+    readonly interrupted?: boolean | undefined;
+  },
   secrets: readonly string[],
-): readonly (FoldEntry | { readonly kind: "stopped"; readonly text: string })[] {
-  const entries: (FoldEntry | { readonly kind: "stopped"; readonly text: string })[] = [...folded.entries];
+): readonly RecordedEntry[] {
+  const entries: RecordedEntry[] = [...folded.entries];
   // What is still only an increment is not an entry. A stopped run keeps the
   // text it got half way through; finished text and thinking are already above.
   if (options.stopped && folded.text.length > 0) entries.push({ kind: "stopped", text: folded.text });
+  // A recovered reply gets one line of its own, even when it wrote no text.
+  if (options.interrupted === true) {
+    entries.push({ kind: "stopped", text: INTERRUPTED_NOTE, interrupted: true });
+  }
   // The final reply is a chat.message of its own; its text is not an entry too.
   if (options.finalText !== undefined) {
     const final = options.finalText.trim();
@@ -760,7 +779,7 @@ async function entryData(
   ctx: StepContext,
   chat: string,
   runId: string,
-  entry: FoldEntry | { readonly kind: "stopped"; readonly text: string },
+  entry: RecordedEntry,
   secrets: readonly string[],
 ): Promise<EntryData> {
   if (entry.kind !== "tool") {
@@ -768,6 +787,7 @@ async function entryData(
       runId,
       kind: entry.kind,
       text: maskSecrets(entry.text, secrets),
+      ...(entry.kind === "stopped" && entry.interrupted === true ? { interrupted: true } : {}),
       ...(entry.kind === "stopped" || entry.at === undefined ? {} : { startedAt: entry.at }),
     };
   }
@@ -808,7 +828,11 @@ async function recordEntries(
   ctx: StepContext,
   chat: string,
   folded: FoldState,
-  options: { readonly finalText?: string | undefined; readonly stopped: boolean },
+  options: {
+    readonly finalText?: string | undefined;
+    readonly stopped: boolean;
+    readonly interrupted?: boolean | undefined;
+  },
 ): Promise<void> {
   const secrets = await secretValues(ctx);
   const wanted = entriesToRecord(folded, options, secrets);
@@ -1037,6 +1061,53 @@ function replyInbox(): ReplyInbox {
       waiting.length = 0;
     },
   };
+}
+
+/** Records that the reply step returned on its own, before its result enters the log. */
+async function recordAttemptEnd(ctx: StepContext, chat: string): Promise<void> {
+  await ctx.facts.append({
+    type: ATTEMPT_END_FACT,
+    object: chatRef(chat),
+    data: { runId: ctx.runId },
+  });
+}
+
+/**
+ * Runs after a reply step a crash, stop or restart interrupted. It reads the
+ * log the agent wrote and records the entries it finished, the half-written
+ * text and one line saying the reply stopped, so `/retry` can continue the
+ * chat from what was kept. A step that returned `interrupted` on its own
+ * already recorded those and left its attempt fact, so this adds nothing.
+ */
+export async function keepInterrupted(ctx: StepContext, _params: unknown): Promise<PluginStepResult> {
+  const object = ctx.object;
+  if (object === undefined || object.type !== CHAT_TYPE) {
+    return failed("object", "chat:reply runs on a chat");
+  }
+  const stored = await ctx.store.get(CHAT_TYPE, object.id);
+  if (stored === undefined) return { result: "done", data: {} };
+  const messages = allMessages(ctx.store, object.id);
+  const facts = chatFacts(ctx.store, object.id);
+  const pending = unanswered(messages, facts);
+  const replied = messages.some((message) => message.role === "assistant" && message.runId === ctx.runId);
+  if (replied && pending.length === 0) {
+    // The reply entered the record before the crash and owes no message: there is nothing to mark.
+    await syncChat(ctx, object.id, undefined);
+    return { result: "done", data: { kept: false } };
+  }
+  if (facts.some((fact) => attemptEndedOfFact(fact) === ctx.runId)) {
+    // The reply step ended on its own and recorded its entries first.
+    return { result: "done", data: { kept: false } };
+  }
+  const chat = chatData(stored.data);
+  const read = foldLogTail(agentLogPath(ctx.store.root, chat.harness, ctx.runId));
+  const folded = read?.state ?? emptyFold;
+  // The log holds every round of the run; a round whose reply is already in
+  // the record is a prefix of it and is not recorded again.
+  const prior = allEntries(ctx.store, object.id).filter((entry) => entry.runId === ctx.runId).length;
+  const current = prior === 0 ? folded : { ...folded, entries: folded.entries.slice(prior) };
+  await recordEntries(ctx, object.id, current, { stopped: true, interrupted: true });
+  return { result: "done", data: { kept: true } };
 }
 
 /** Runs one round of an answer; see the file's comment. */
@@ -1346,6 +1417,7 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
   if (outcome.result === "interrupted") {
     await recordEntries(ctx, object.id, folded, { stopped: true });
     await recordTaken(ctx, object.id, ctx.runId, midRun?.handed ?? []);
+    await recordAttemptEnd(ctx, object.id);
     return { result: "interrupted", data };
   }
   if (outcome.result !== "done") {
