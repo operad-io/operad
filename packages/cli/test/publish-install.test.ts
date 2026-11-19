@@ -1,5 +1,16 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  closeSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  openSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -42,20 +53,40 @@ interface Ran {
   readonly err: string;
 }
 
+/** Where `run` writes a child's output: files, so a lost pipe read cannot hide it. */
+const runOutput = scratch("operad-run-");
+let runCount = 0;
+
+/**
+ * Runs a command with its output written to files rather than pipes. Bun 1.3.14
+ * under load sometimes returns an empty pipe and exit 0 for a child that
+ * printed (bun#46142); output on a file descriptor is never lost that way.
+ */
 function run(command: readonly string[], cwd: string, env: Record<string, string | undefined> = {}): Ran {
-  const result = Bun.spawnSync({
-    cmd: [...command],
-    cwd,
-    env: { ...process.env, ...env },
-    stdin: "ignore",
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  return {
-    code: result.exitCode ?? 1,
-    out: result.stdout.toString(),
-    err: result.stderr.toString(),
-  };
+  runCount += 1;
+  const prefix = join(runOutput, String(runCount));
+  const stdout = `${prefix}.out`;
+  const stderr = `${prefix}.err`;
+  const out = openSync(stdout, "w");
+  const err = openSync(stderr, "w");
+  try {
+    const result = Bun.spawnSync({
+      cmd: [...command],
+      cwd,
+      env: { ...process.env, ...env },
+      stdin: "ignore",
+      stdout: out,
+      stderr: err,
+    });
+    return {
+      code: result.exitCode ?? 1,
+      out: readFileSync(stdout, "utf8"),
+      err: readFileSync(stderr, "utf8"),
+    };
+  } finally {
+    closeSync(out);
+    closeSync(err);
+  }
 }
 
 /** Packs every package `bun publish` would publish, name to tarball. */
