@@ -324,6 +324,23 @@ describe("pi/agent", () => {
     );
   });
 
+  test("a chat's retry reaches the worker only when it asks for it", async () => {
+    const on = await setup("done");
+    await runAgent(on, { prompt: "hello", cwd: on.root, retry: true });
+    expect(recorded(on).retry).toBe(true);
+
+    const off = await setup("done");
+    await runAgent(off, { prompt: "hello", cwd: off.root, retry: false });
+    expect("retry" in recorded(off)).toBe(false);
+    const absent = await setup("done");
+    await runAgent(absent, { prompt: "hello", cwd: absent.root });
+    expect("retry" in recorded(absent)).toBe(false);
+
+    await expect(runAgent(on, { prompt: "hello", cwd: on.root, retry: "yes" })).rejects.toThrow(
+      /retry/,
+    );
+  });
+
   test("an effort from a chat reaches the worker as pi's thinking level", async () => {
     const env = await setup("done", { thinkingLevel: "low" });
     await runAgent(env, { prompt: "hello", cwd: env.root, effort: "xhigh" });

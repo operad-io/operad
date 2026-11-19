@@ -195,3 +195,11 @@ and the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0565-M1 | packages/harness/process/src/fold-lines.ts | `receivedAtOf` ignored the log line's received time, so a finished text entry carried none | `foldLines > a line's receivedAt gives a finished text its time, and old logs still read` |
+
+## T-0574 — a retry is a live transcript item
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0574-M1 | packages/harness/process/src/fold-lines.ts | `retry_start` was folded without keeping the retry | `foldLines > a retry carries its attempt, delay and reason until it ends` |
+| T-0574-M2 | packages/harness/process/src/fold-lines.ts | `retry_end` left the retry in the live state | `foldLines > a retry carries its attempt, delay and reason until it ends` |
+| T-0574-M3 | packages/harness/process/src/fold-lines.ts | a successful `message_end` left the retry in the live state | `foldLines > a successful message clears the retry even before its end line` |

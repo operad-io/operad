@@ -463,3 +463,11 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 | T-0570-M4 | packages/chat/src/views.ts | `tailPush` left the `tail` out of the pushed part | `the chat's pushed tail > the text being written is the same tail the section shows` |
 | T-0570-M5 | packages/chat/src/views.ts | `tailPush` flattened the pushed tail onto one line, so thinking lost its quote lines | `the chat's pushed tail > thinking being written is a block quote` |
 | T-0570-M6 | packages/chat/src/views.ts | `toolMarkdown` dropped a finished tool call's duration from the pushed tail | `the chat's pushed tail > a tool call ending replaces its start with how long it took` |
+
+## T-0574 — a retry is a live transcript item
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0574-M1 | packages/chat/src/views.ts | the live transcript dropped the `retry` item | `chat transcript: after, mark and tail > a retry is a live item with the time of its next attempt` |
+| T-0574-M2 | packages/chat/src/views.ts | the live tail left out the retry line | `chat transcript: after, mark and tail > a retry is a live item with the time of its next attempt` |
+| T-0574-M3 | packages/chat/src/reply.ts | a `pi` reply did not ask the worker for its retry | `chat/reply > a pi chat asks for pi's retry; another agent is not asked` |

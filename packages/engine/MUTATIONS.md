@@ -1168,3 +1168,10 @@ the row fields.
 | T-0570-M8 | packages/engine/src/views/presentation.ts | the `tail` timeout no longer rejected, so a hung function held the push | `a live log that grows without a fact > a pushed tail that does not answer in time is dropped` |
 | T-0570-M9 | packages/engine/src/plugin/validate.ts | `normalizeViews` no longer refused a non-function `tail` | `plugin registry validation > rejects a views tail that is not a function` |
 | T-0570-M10 | packages/engine/src/plugin/validate.ts | `normalizeViews` dropped a type's `tail` function, so the registry never pushed its tail | `a live log that grows without a fact > a pushed tail is held to one per object per 50 ms and the last growth wins` |
+
+## T-0574 — a retry is a live transcript item
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0574-M1 | packages/engine/src/views/presentation.ts | `retryOf` dropped a sound `retry` item from a section read and a pushed tail | `a live log that grows without a fact > a retry item is passed through on a read and a pushed tail` |
+| T-0574-M2 | packages/engine/src/views/presentation.ts | a pushed tail left out the `retry` item the plugin returned | `a live log that grows without a fact > a retry item is passed through on a read and a pushed tail` |
