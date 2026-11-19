@@ -46,7 +46,7 @@ A filter is a named subset of a type's rows, by `state`:
 | `showScope` | `(ctx) => boolean` | no | Whether a list shows each row's `scope` beside its id because more than one namespace exists. Read once per list | `views.<t>: showScope: must be a function` |
 | `context` | `(ctx, object) => { used, window?, model? }` | no | Numbers a detail page shows beside the row, such as how full an agent's context is. It may read facts and may be slow; the kernel passes it through without reading it. A chat returns the last finished reply's context here | `views.<t>: context: must be a function` |
 | `skills` | `(ctx, object) => ViewSkill[]` | no | The skills an object offers as `/name` commands, such as a chat's. Each has a `name` and an optional `description`; the kernel passes them through without reading them. A chat returns its current skills here | `views.<t>: skills: must be a function` |
-| `tail` | `(ctx, object) => { section, tail?, status?, data? }` | no | The changing part of a live section, pushed on the event stream as it grows. The kernel passes `section`, `tail`, `status` and `data` through without reading them, in the same shapes `load` returns. A chat returns its unfinished reply here | `views.<t>: tail: must be a function` |
+| `tail` | `(ctx, object) => { section, tail?, status?, retry?, data? }` | no | The changing part of a live section, pushed on the event stream as it grows. The kernel passes `section`, `tail`, `status`, `retry` and `data` through without reading them, in the same shapes `load` returns. A chat returns its unfinished reply here | `views.<t>: tail: must be a function` |
 
 The `ctx` of `load`, `showScope`, `context`, `skills` and `tail` is [the base context](define-plugin.md#the-context-every-hook-gets) plus `runTimes(runId)` (when a run started and ended and its steps and waits, in order), `settingsInForce(plugin)` (the plugin's settings as `config.json` has them now, so a view follows an edit without a restart), `refreshedObject(type, id)` (an object after its `prepare` with the settings in force) and `sectionCapBytes` (the most bytes a read may return when the client did not ask for `full`).
 
@@ -91,6 +91,7 @@ Each entry's `id` is what a client passes back to `load`.
 | `mark` | string | An opaque position the *finished* content goes to. The kernel wraps it so it is used only for the section and object that made it, and a client passes it back as `after` |
 | `tail` | string | The part that is still changing, as Markdown: always its **whole current text**, not what changed since the last read |
 | `status` | `{ text: string, since: number }` | What the live section is doing now, and since when in epoch milliseconds. The kernel passes it through without reading it; a client that does not know it ignores it |
+| `retry` | `{ attempt: number, maxAttempts: number, until: number, reason: string }` | A model request the agent is waiting to try again: which attempt, how many in all, when the next one starts in epoch milliseconds, and the provider's masked message. The kernel passes it through without reading it; a client that does not know it ignores it |
 | `delta` | boolean | `true` when `markdown` holds only what follows the requested `after`. Leave it out when the answer is a whole page: the kernel then tells the client to replace instead of appending |
 | `context` | `{ used: number, window?: number, model?: string }` | Numbers a client shows beside the section, such as how full an agent's context is. The kernel passes it through on every read, including one with `after`; a client that does not know it ignores it |
 | `data` | object | Structured data the plugin defines for its clients, such as a chat's queued messages or the replies in its transcript. The kernel checks only that it is an object, leaves a value that is not an object out, and passes an object through unchanged on every read, including one with `after`; a client that does not know its shape ignores it. The kernel counts it with `markdown` and `tail` under the size cap |
@@ -107,7 +108,7 @@ Each entry's `id` is what a client passes back to `load`.
 
 ### Reading only what is new: `mark`, `tail` and `after`
 
-A section that grows (an agent's transcript) is read in two parts so a client does not fetch it all again: the *finished* content, which only grows at the end, and the *tail*, which still changes. A live section may also carry a `status` beside them; a change of it counts as growth.
+A section that grows (an agent's transcript) is read in two parts so a client does not fetch it all again: the *finished* content, which only grows at the end, and the *tail*, which still changes. A live section may also carry a `status` or `retry` beside them; a change of either counts as growth.
 
 1. The first read has no `after`. The plugin returns the finished content as `markdown`, a `mark` that says where it ends, and the changing part as `tail`.
 2. The client keeps the finished text and shows the tail after it. On the next read it sends the `mark` as `after`.
@@ -118,7 +119,7 @@ An `after` that is not a mark the section gave is refused: `section "<s>" of "<i
 
 ### Pushing the changing part
 
-A type that supplies `tail` pushes the changing part without a section read. The kernel calls it when the object's live content grows and sends a `tail` event on the same stream as `events`: `{ "id", "type", "section", "tail"?, "status"?, "data"? }`. `tail`, `status` and `data` have the same meaning and shape as on a section read; `section` names the live section they belong to. The event carries no resume id and is not replayed, so a reconnecting client reads the section again. A type without `tail` sends only id change events, and a client that does not know `tail` ignores it.
+A type that supplies `tail` pushes the changing part without a section read. The kernel calls it when the object's live content grows and sends a `tail` event on the same stream as `events`: `{ "id", "type", "section", "tail"?, "status"?, "retry"?, "data"? }`. `tail`, `status`, `retry` and `data` have the same meaning and shape as on a section read; `section` names the live section they belong to. The event carries no resume id and is not replayed, so a reconnecting client reads the section again. A type without `tail` sends only id change events, and a client that does not know `tail` ignores it.
 
 ### The history section
 

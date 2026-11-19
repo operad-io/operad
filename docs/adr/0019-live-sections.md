@@ -10,17 +10,17 @@ A chat shows its reply as it is written. This is done within the section interfa
 
 ### D1: A live section reads only what is new, with an unfinished tail
 
-The result of `load` can carry more things beside the page: `mark`, an opaque position that says how far the finished content has gone; `tail`, a Markdown text that is the part still changing (a reply and thinking being written, a running tool call in a chat), always the whole text as it is now; `status` (D4); and `context` (D5). A client can read a section with `after: <mark>`; then `markdown` has only the content finished after that position, the client appends it to what it has, and replaces the old `tail` as a whole with the new one. Without `after`, one page is read as before, also carrying `mark` and `tail`, so a reconnect or coming back to the foreground needs only one re-read.
+The result of `load` can carry more things beside the page: `mark`, an opaque position that says how far the finished content has gone; `tail`, a Markdown text that is the part still changing (a reply and thinking being written, a running tool call in a chat), always the whole text as it is now; `status` (D4); `retry` (D7); and `context` (D5). A client can read a section with `after: <mark>`; then `markdown` has only the content finished after that position, the client appends it to what it has, and replaces the old `tail` as a whole with the new one. Without `after`, one page is read as before, also carrying `mark` and `tail`, so a reconnect or coming back to the foreground needs only one re-read.
 
 ### D2: `events` says what changed, and pushes a live tail
 
 `events` says which object changed. A change of unfinished content also counts as the object having changed, and the kernel limits such change notifications to one per object per 250 milliseconds.
 
-A live section whose plugin supplies its changing part (D6) is also pushed as a `tail` event on the same event stream. It carries the object type, the section's id, its whole current `tail` and `status`, and the plugin's `data`, in the shapes a section read uses, and is limited to one per object per 50 milliseconds. A `tail` event has no resume id and is not replayed: a client that reconnects reads the section again. A client that does not know `tail` ignores it and keeps its change-event reads.
+A live section whose plugin supplies its changing part (D6) is also pushed as a `tail` event on the same event stream. It carries the object type, the section's id, its whole current `tail`, `status` and `retry`, and the plugin's `data`, in the shapes a section read uses, and is limited to one per object per 50 milliseconds. A `tail` event has no resume id and is not replayed: a client that reconnects reads the section again. A client that does not know `tail` ignores it and keeps its change-event reads.
 
 ### D3: Compatibility
 
-A client that does not know these things works as before: it just does not see `tail`, `status` or `data`. The command line's `operad show --section` does not show `tail`, `status` or `data`.
+A client that does not know these things works as before: it just does not see `tail`, `status`, `retry` or `data`. The command line's `operad show --section` does not show `tail`, `status`, `retry` or `data`.
 
 ### D4: A live section can say what it is doing
 
@@ -32,4 +32,8 @@ The result of `load` may carry `status`, an object `{ "text": string, "since": n
 
 ### D6: A live section's changing part is pushed as it is written
 
-A type's views may supply `tail(ctx, object)`, returning `{ section, tail?, status?, data? }`: the same part a section read returns, without the finished content. The kernel calls it when the object grows and pushes the result as a `tail` event (D2). A plugin that supplies no `tail` function keeps id-only change events. The chat's `transcript` supplies it, so the text being written, thinking, tool calls starting and ending, and the running reply's structured form reach a client without a section re-read; finished content still arrives by the incremental read of D1.
+A type's views may supply `tail(ctx, object)`, returning `{ section, tail?, status?, retry?, data? }`: the same part a section read returns, without the finished content. The kernel calls it when the object grows and pushes the result as a `tail` event (D2). A plugin that supplies no `tail` function keeps id-only change events. The chat's `transcript` supplies it, so the text being written, thinking, tool calls starting and ending, a retry it waits for, and the running reply's structured form reach a client without a section re-read; finished content still arrives by the incremental read of D1.
+
+### D7: A section can carry a retry the agent is waiting for
+
+The result of `load` may carry `retry`, an object `{ "attempt": number, "maxAttempts": number, "until": number, "reason": string }`. The kernel checks that `attempt` and `maxAttempts` are whole numbers of at least 1, that `until` is a finite time in milliseconds since the epoch, and that `reason` is a string; it drops an item that does not have that shape and does not read the meaning. It passes a sound item through on every section read, including a read with `after`, and on a pushed `tail` event (D6), beside `tail` and `status`. A client that does not know it works as before and ignores it. `until` is a time, not a duration, so a client counts down from it.

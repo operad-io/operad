@@ -53,3 +53,9 @@ When a reply ends `failed`, the chat records one more entry, kind `failure`, and
 ### D8: A reply records the context it ended with
 
 An assistant message carries `context: { used, window? }` beside its usage. `used` is the last model call's input plus its cache read and cache write, as the harness parsed it; it is not the sum over the reply's calls. `window` is the model's context window when the harness's model list gives one. A harness that cannot tell leaves `used` out, and an unknown window is left out; neither is ever guessed. The chat's view reads this from the last finished reply (ADR 0026 D16).
+
+### D9: A retry being waited for is a live item
+
+When a harness retries a failed model request, the live transcript carries a `retry` item beside `tail` and `status`: `{ attempt, maxAttempts, until, reason }`. `until` is the time of the next attempt in milliseconds since the epoch, so a client counts down from it instead of reading a fixed number of seconds; `reason` is the provider's message, masked like a log line. The live tail also says in one Markdown line that the request is being retried. ADR 0019 D7 says how the kernel checks and carries the item on a section read and a pushed `tail` event.
+
+A successful retry and retries that run out both remove the item from the live view: the harness's retry-end line clears it, and the successful text or the failure follows. The stored transcript keeps no retry entry. When the retries run out the reply fails as D7 says.

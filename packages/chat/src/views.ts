@@ -9,6 +9,7 @@ import type {
   PluginFact,
   SectionContent,
   SectionPage,
+  SectionRetry,
   StoredObject,
   ViewContext,
   ViewSection,
@@ -942,12 +943,19 @@ interface SectionStatus {
 interface Live {
   readonly tail?: string | undefined;
   readonly status?: SectionStatus | undefined;
+  readonly retry?: SectionRetry | undefined;
   /** The last fact before a message the live tail holds, so a client reads it again with the reply. */
   readonly cut?: number | undefined;
   /** The run still being written, so its structured reply can take the unfinished items. */
   readonly run?: string | undefined;
   /** The process items the log holds and the facts do not, oldest first. */
   readonly items?: readonly ReplyItem[] | undefined;
+}
+
+/** One line for a model request the agent is waiting to try again. */
+function retryMarkdown(retry: SectionRetry): string {
+  const reason = flat(retry.reason);
+  return `Retrying the model request (${retry.attempt} of ${retry.maxAttempts})${reason.length === 0 ? "" : `: ${reason}`}`;
 }
 
 interface TailItem {
@@ -1080,6 +1088,7 @@ async function liveOf(
   const times = runId !== undefined && ctx.runTimes !== undefined ? await ctx.runTimes(runId) : undefined;
   let tail: string | undefined;
   let read: TailRead | undefined;
+  let retry: SectionRetry | undefined;
   let called: ReadonlySet<string> = new Set<string>();
   let secrets: readonly string[] = [];
   let cut: number | undefined;
@@ -1120,6 +1129,17 @@ async function liveOf(
       return said.has(maskSecrets(entry.text, secrets).trim());
     };
     read = foldLogTail(agentLogPath(ctx.store.root, chat.harness, runId), held);
+    const waiting = read?.state.retry;
+    const retryAt = waiting?.at ?? read?.lastAt;
+    retry =
+      waiting === undefined || retryAt === undefined
+        ? undefined
+        : {
+            attempt: waiting.attempt,
+            maxAttempts: waiting.maxAttempts,
+            until: retryAt + waiting.delayMs,
+            reason: maskSecrets(waiting.reason, secrets),
+          };
     if (read !== undefined) {
       const fresh = (text: string): string | undefined => {
         const masked = maskSecrets(text, secrets);
@@ -1191,11 +1211,14 @@ async function liveOf(
           replyItemOfOpenCall(call, secrets),
         );
       }
+      if (retry !== undefined) push(undefined, retryMarkdown(retry));
       const structured = tailItems.flatMap((item) => (item.item === undefined ? [] : [item.item]));
       if (structured.length > 0) items = structured;
       tail = cut === undefined
         ? (tailItems.length === 0 ? undefined : tailItems.map((item) => item.markdown).join("\n\n"))
         : heldTail(facts, cut, tailItems, speaker, ctx.home, chat.harness);
+    } else if (retry !== undefined) {
+      tail = retryMarkdown(retry);
     }
     // The log may not exist yet; the mid-run message still belongs in the tail.
     if (cut !== undefined && tail === undefined) {
@@ -1206,6 +1229,7 @@ async function liveOf(
   return {
     ...(tail === undefined ? {} : { tail }),
     ...(status === undefined ? {} : { status }),
+    ...(retry === undefined ? {} : { retry }),
     ...(cut === undefined ? {} : { cut }),
     ...(liveRun === undefined ? {} : { run: liveRun }),
     ...(items === undefined ? {} : { items }),
@@ -1315,7 +1339,7 @@ function objectReader(ctx: ViewContext): ObjectReader {
 async function tailPush(
   ctx: ViewContext,
   object: StoredObject,
-): Promise<{ readonly section: string; readonly tail?: string; readonly status?: SectionStatus; readonly data?: Readonly<Record<string, JsonValue>> } | undefined> {
+): Promise<{ readonly section: string; readonly tail?: string; readonly status?: SectionStatus; readonly retry?: SectionRetry; readonly data?: Readonly<Record<string, JsonValue>> } | undefined> {
   const facts = allFacts(ctx, chatRef(object.id));
   const speaker = await speakerOf(ctx, object);
   const live = await liveOf(ctx, object, facts, speaker);
@@ -1330,11 +1354,14 @@ async function tailPush(
         [liveBlock.block],
         Math.max(0, limit - Buffer.byteLength(live.tail ?? "", "utf8")),
       );
-  if (live.tail === undefined && live.status === undefined && data === undefined) return undefined;
+  if (live.tail === undefined && live.status === undefined && live.retry === undefined && data === undefined) {
+    return undefined;
+  }
   return {
     section: TRANSCRIPT,
     ...(live.tail === undefined ? {} : { tail: live.tail }),
     ...(live.status === undefined ? {} : { status: live.status }),
+    ...(live.retry === undefined ? {} : { retry: live.retry }),
     ...(data === undefined ? {} : { data }),
   };
 }

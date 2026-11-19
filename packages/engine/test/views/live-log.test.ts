@@ -322,6 +322,46 @@ function viewsOf(
 }
 
 describe("a live log that grows without a fact", () => {
+  test("a retry item is passed through on a read and a pushed tail", async () => {
+    const retry = {
+      attempt: 2,
+      maxAttempts: 3,
+      until: 1_700_000_004_000,
+      reason: "the provider is overloaded",
+    };
+    const retrying = definePlugin({
+      name: "retrying",
+      kind: "domain",
+      version: "0.0.1",
+      objects: [{ name: "item" }],
+      views: {
+        item: {
+          row: (object) => ({ id: object.id, title: object.id, state: "open" }),
+          sections: () => [{ id: "log", title: "Log", live: true }],
+          load: () => ({ markdown: "", retry }),
+          tail: () => ({ section: "log", tail: "waiting", retry }),
+        },
+      },
+    });
+    const env = await fixture({ logDir: true }, retrying);
+    const views = viewsOf(env);
+    const onChange = await env.watches.opened(env.directory);
+    const stream = views.events()[Symbol.asyncIterator]();
+    try {
+      expect((await views.section("item:one", "log")).retry).toEqual(retry);
+      onChange("agent.log");
+      expect(await nextTail(stream)).toEqual({
+        id: "one",
+        type: "item",
+        section: "log",
+        tail: "waiting",
+        retry,
+      });
+    } finally {
+      await stream.return?.();
+    }
+  });
+
   test("an appended line announces the run's object", async () => {
     const env = await fixture({ logDir: true });
     const views = viewsOf(env);

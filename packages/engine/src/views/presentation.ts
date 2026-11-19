@@ -46,6 +46,7 @@ import type {
   PluginStore,
   StoredObject,
   RowMark,
+  SectionRetry,
   SectionStatus,
   ViewContext,
   ViewSkill,
@@ -202,6 +203,8 @@ export interface ViewSectionContent {
    * kernel does not read it; a client that does not know it ignores it.
    */
   readonly status?: SectionStatus | undefined;
+  /** A model request the harness waits to try again, passed through from the plugin. */
+  readonly retry?: SectionRetry | undefined;
   /** Numbers the plugin shows beside the section, such as a chat's context usage. */
   readonly context?:
     | {
@@ -239,6 +242,7 @@ export interface ViewEvent {
   readonly section?: string | undefined;
   readonly tail?: string | undefined;
   readonly status?: SectionStatus | undefined;
+  readonly retry?: SectionRetry | undefined;
   readonly data?: Readonly<Record<string, JsonValue>> | undefined;
 }
 
@@ -423,6 +427,29 @@ function statusOf(value: unknown): SectionStatus | undefined {
   const since = value.since;
   if (text === undefined || typeof since !== "number" || !Number.isFinite(since)) return undefined;
   return { text, since };
+}
+
+/** A plugin's retry item, passed through when every field is there and sound. */
+function retryOf(value: unknown): SectionRetry | undefined {
+  if (!isRecord(value)) return undefined;
+  const attempt = value.attempt;
+  const maxAttempts = value.maxAttempts;
+  const until = value.until;
+  const reason = textOf(value.reason);
+  if (
+    typeof attempt !== "number" ||
+    !Number.isInteger(attempt) ||
+    attempt < 1 ||
+    typeof maxAttempts !== "number" ||
+    !Number.isInteger(maxAttempts) ||
+    maxAttempts < 1 ||
+    typeof until !== "number" ||
+    !Number.isFinite(until) ||
+    reason === undefined
+  ) {
+    return undefined;
+  }
+  return { attempt, maxAttempts, until, reason };
 }
 
 /** A plugin's context numbers, passed through when `used` is a whole count. */
@@ -1458,6 +1485,7 @@ export class Views {
         undefined,
         undefined,
         undefined,
+        undefined,
         options.full === true,
         after === undefined ? undefined : false,
       );
@@ -1534,6 +1562,7 @@ export class Views {
     const rawMark = isRecord(content) ? textOf(content.mark) : undefined;
     const tail = isRecord(content) ? textOf(content.tail) : undefined;
     const status = isRecord(content) ? statusOf(content.status) : undefined;
+    const retry = isRecord(content) ? retryOf(content.retry) : undefined;
     const context = isRecord(content) ? contextOf(content.context) : undefined;
     const data =
       isRecord(content) && isRecord(content.data)
@@ -1555,6 +1584,7 @@ export class Views {
       mark,
       tail,
       status,
+      retry,
       data,
       options.full === true,
       after === undefined ? undefined : honoured,
@@ -1965,6 +1995,7 @@ export class Views {
     mark: string | undefined,
     tail: string | undefined,
     status: SectionStatus | undefined,
+    retry: SectionRetry | undefined,
     data: Readonly<Record<string, JsonValue>> | undefined,
     full: boolean,
     delta: boolean | undefined,
@@ -1978,6 +2009,7 @@ export class Views {
       ...(mark === undefined ? {} : { mark }),
       ...(shownTail === undefined ? {} : { tail: shownTail }),
       ...(status === undefined ? {} : { status }),
+      ...(retry === undefined ? {} : { retry }),
       ...(data === undefined ? {} : { data }),
       ...(delta === undefined ? {} : { delta }),
     });
@@ -2986,15 +3018,19 @@ export class Views {
       if (section === undefined || section.length === 0) return undefined;
       const tail = textOf(content.tail);
       const status = statusOf(content.status);
+      const retry = retryOf(content.retry);
       const data =
         isRecord(content.data) ? (content.data as Readonly<Record<string, JsonValue>>) : undefined;
-      if (tail === undefined && status === undefined && data === undefined) return undefined;
+      if (tail === undefined && status === undefined && retry === undefined && data === undefined) {
+        return undefined;
+      }
       return {
         id: ref.id,
         type: ref.type,
         section,
         ...(tail === undefined ? {} : { tail }),
         ...(status === undefined ? {} : { status }),
+        ...(retry === undefined ? {} : { retry }),
         ...(data === undefined ? {} : { data }),
       };
     } catch (error) {

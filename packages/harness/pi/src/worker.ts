@@ -150,6 +150,7 @@ class Tally {
       this.#total += price;
     }
     this.lastStop = message.stopReason;
+    // A later success clears the earlier failed attempt: only the last message decides the run.
     this.lastError = message.stopReason === "error" ? (message.errorMessage ?? "the model failed") : undefined;
     const said = messageSummary(textOf(message.content));
     return {
@@ -495,11 +496,12 @@ export async function runWorker(
   // the project is not trusted here, so only the owner's user layer and the
   // context files pi finds from the working directory load.
   const ownerAgentDir = ownSettings ? getAgentDir() : undefined;
+  const retry = input.retry === true;
   const settingsManager =
     ownerAgentDir === undefined
       ? SettingsManager.inMemory({
           compaction: { enabled: false },
-          retry: { enabled: false },
+          retry: { enabled: retry },
         })
       : SettingsManager.create(input.cwd, ownerAgentDir, { projectTrusted: false });
   const givenSkills =
@@ -548,8 +550,10 @@ export async function runWorker(
         };
   const resourceLoader = new DefaultResourceLoader(loaderOptions);
   await resourceLoader.reload();
-  // A chat's compaction and retry are operad's, not the owner's settings'.
-  settingsManager.applyOverrides({ compaction: { enabled: false }, retry: { enabled: false } });
+  // A chat's compaction and retry are operad's, not the owner's settings'. A
+  // chat turns retry on; a task keeps it off, and the owner's other retry
+  // values (attempts and delays) still apply when the switch is on.
+  settingsManager.applyOverrides({ compaction: { enabled: false }, retry: { enabled: retry } });
   const isolation = ownerAgentDir === undefined;
   hooks.observeResources?.({
     settings: {
@@ -652,6 +656,19 @@ export async function runWorker(
         if (line !== undefined) io.line(line);
         break;
       }
+      case "auto_retry_start": {
+        io.line({
+          type: "retry_start",
+          attempt: event.attempt,
+          maxAttempts: event.maxAttempts,
+          delayMs: event.delayMs,
+          reason: maskSecrets(event.errorMessage || "the model request failed", input.secretValues ?? []),
+        });
+        break;
+      }
+      case "auto_retry_end":
+        io.line({ type: "retry_end", success: event.success });
+        break;
       case "tool_execution_start": {
         const startedAt = now();
         started.set(event.toolCallId, startedAt);

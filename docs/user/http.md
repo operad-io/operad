@@ -140,10 +140,15 @@ the first page has no cursor, every other page carries its own.
 
 A live section also carries `mark` and `tail`. `mark` is an opaque position of
 the finished content; `tail` is the Markdown of the part still changing (a chat's
-unfinished reply and thinking, a running tool call), the whole tail on each
-read. `serve` also pushes that `tail` on the event stream as a `tail` event,
-so a client can render a running reply without reading the section again (see
-[Events](#events)). To append instead of replacing, pass `after=<mark>` from the
+unfinished reply and thinking, a running tool call, or a model request the
+agent is waiting to retry), the whole tail on each read. A live section may also
+carry `retry`, a model request the agent waits to try again:
+`{ "attempt": 2, "maxAttempts": 3, "until": 1767225604000, "reason": "the provider is overloaded" }`.
+`until` is when the next attempt starts, in milliseconds since the epoch, so a
+client counts down from it; `reason` is the provider's masked message. A client
+that does not know `retry` ignores it. `serve` also pushes that `tail` on the
+event stream as a `tail` event, so a client can render a running reply without
+reading the section again (see [Events](#events)). To append instead of replacing, pass `after=<mark>` from the
 last read:
 the answer's `markdown` then holds only the finished content after that mark,
 and `delta` is `true` when that is all it holds. A plugin that cannot answer
@@ -421,8 +426,8 @@ data: {"id":"T-0019-http-api"}
 ```
 
 A live section whose plugin pushes its changing part also sends `tail` events on
-the same stream, with the same `tail`, `status` and `data` a section read
-returns; a chat's event carries its running reply in `data.replies`:
+the same stream, with the same `tail`, `status`, `retry` and `data` a section
+read returns; a chat's event carries its running reply in `data.replies`:
 
 ```text
 event: tail
@@ -430,11 +435,19 @@ data: {"id":"C-0042","type":"chat","section":"transcript","tail":"**Operad Bot:*
 
 ```
 
+A retry that the agent is waiting for is in the same events:
+
+```text
+event: tail
+data: {"id":"C-0042","type":"chat","section":"transcript","tail":"Retrying the model request (2 of 3): the provider is overloaded","retry":{"attempt":2,"maxAttempts":3,"until":1767225604000,"reason":"the provider is overloaded"}}
+
+```
+
 A `tail` event has no `id:` and is not replayed on a reconnect: the client reads
-the open live section again, including its current `tail` and `data`. A client
-that does not know `tail` ignores it and keeps reading the section after each
-change event, as before. A client merges the running reply into its replies by
-`runId`.
+the open live section again, including its current `tail`, `retry` and `data`. A
+client that does not know `tail` ignores it and keeps reading the section after
+each change event, as before. A client merges the running reply into its replies
+by `runId`.
 
 An `id:` is an opaque string. It changes on every change event and starts with a
 value the process chose at boot, so an id from an earlier `serve` is not

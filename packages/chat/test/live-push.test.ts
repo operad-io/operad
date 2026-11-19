@@ -90,6 +90,26 @@ describe("the chat's pushed tail", () => {
     expect(live?.tail).toBe("tool Bash since 09:05:07 `ls -la`");
   });
 
+  test("a retry is pushed with the time of its next attempt", async () => {
+    const live = await whileRunning([
+      {
+        type: "retry_start",
+        attempt: 1,
+        maxAttempts: 3,
+        delayMs: 2_000,
+        reason: "the provider is overloaded",
+        receivedAt: 1_700_000_000_000,
+      },
+    ]);
+    expect(live?.retry).toEqual({
+      attempt: 1,
+      maxAttempts: 3,
+      until: 1_700_000_002_000,
+      reason: "the provider is overloaded",
+    });
+    expect(live?.tail).toContain("Retrying the model request (1 of 3)");
+  });
+
   test("a tool call ending replaces its start with how long it took", async () => {
     const live = await whileRunning([
       {

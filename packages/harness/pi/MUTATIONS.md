@@ -253,3 +253,13 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0558-M5 | packages/harness/pi/src/worker.ts | `currentProfile` returned the startup profile, so a lowered level did not reach the next call | `a real worker reads the live level again for each call, so lowering to ask applies` |
+
+## T-0574 — pi retries a chat's failed model request
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0574-M1 | packages/harness/pi/src/index.ts | the step did not pass `retry` to the worker | `pi/agent > a chat's retry reaches the worker only when it asks for it` |
+| T-0574-M2 | packages/harness/pi/src/worker.ts | the settings override kept pi's retry off even when the step asked | `a chat turns pi's retry on, with pi's attempts and backoff, and reports the wait` |
+| T-0574-M3 | packages/harness/pi/src/worker.ts | a task's worker turned pi's retry on | `a task keeps pi's retry off, and a chat whose retries run out fails as before` |
+| T-0574-M4 | packages/harness/pi/src/worker.ts | the worker wrote no `retry_start` line for the chat's live view | `a chat turns pi's retry on, with pi's attempts and backoff, and reports the wait` |
+| T-0574-M5 | packages/harness/pi/src/worker.ts | a successful message did not clear the earlier failed attempt's error | `a chat turns pi's retry on, with pi's attempts and backoff, and reports the wait` |

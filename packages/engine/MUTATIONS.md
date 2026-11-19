@@ -1187,6 +1187,12 @@ the row fields.
 |---|---|---|---|
 | T-0573-M1 | packages/engine/src/plugin/question-form.ts | `normalizeQuestions` dropped a question's `body`, so the plan's Markdown never reached the pending item | `a form a step asks > a question's Markdown body reaches the item while it runs and after the grace` |
 | T-0573-M2 | packages/engine/src/runner/step-worker.ts | the ask request sent to the parent left `questions` out, so a step in a worker lost its form | `step worker in this process > a form and its Markdown body reach the parent` |
+## T-0574 — a retry is a live transcript item
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0574-M1 | packages/engine/src/views/presentation.ts | `retryOf` dropped a sound `retry` item from a section read and a pushed tail | `a live log that grows without a fact > a retry item is passed through on a read and a pushed tail` |
+| T-0574-M2 | packages/engine/src/views/presentation.ts | a pushed tail left out the `retry` item the plugin returned | `a live log that grows without a fact > a retry item is passed through on a read and a pushed tail` |
 
 ## T-0571 — a section carries the plugin's structured data
 

@@ -644,6 +644,10 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
           if (ownSettings !== undefined && typeof ownSettings !== "boolean") {
             throw new Error(`${at}: params.useOwnSettings: must be a boolean`);
           }
+          const retry = input.retry ?? flow.retry;
+          if (retry !== undefined && typeof retry !== "boolean") {
+            throw new Error(`${at}: params.retry: must be a boolean`);
+          }
           // A generated step that names no profile still starts from the default.
           const startAccess = withDefaultAccess(ctx.access as AccessProfile | undefined);
           const storeSecrets = await secretValuesOf(ctx.secrets);
@@ -695,6 +699,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
               : { images: imageInputsOf(input.images ?? flow.images) }),
             ...(skills.length === 0 ? {} : { skills }),
             ...(ownSettings === true ? { useOwnSettings: true } : {}),
+            ...(retry === true ? { retry: true } : {}),
             ...(runAccess === undefined ? {} : { access: runAccess }),
             ...(storeSecrets.length === 0 ? {} : { secretValues: storeSecrets }),
           };
