@@ -487,6 +487,37 @@ describe("a live log that grows without a fact", () => {
     }
   });
 
+  test("lines written before a missing directory is watched are announced when it appears", async () => {
+    const env = await fixture({ logDir: false });
+    // A second run whose directory exists is the barrier: its watch opening
+    // means the first refresh looked at the run with no directory.
+    const barrier = await env.log.startRun("demo-flow", "item:two");
+    const barrierDir = join(
+      env.store.root,
+      "logs",
+      "demo",
+      "runs",
+      barrier.runId,
+    );
+    await mkdir(barrierDir, { recursive: true });
+    const views = viewsOf(env);
+    await within(env.watches.opened(barrierDir));
+
+    // The step writes its first line before a refresh can watch the directory
+    // that write creates.
+    await mkdir(env.directory, { recursive: true });
+    await appendFile(join(env.directory, "agent.log"), '{"line":1}\n');
+
+    const stream = views.events()[Symbol.asyncIterator]();
+    try {
+      const pending = stream.next();
+      env.repeat.fire();
+      expect((await within(pending)).value).toEqual({ id: "one" });
+    } finally {
+      await stream.return?.();
+    }
+  });
+
   test("a run whose object has no live section is not watched", async () => {
     const root = await tempRoot();
     const store = new MemoryPluginStore({ root: join(root, "plugins") });
