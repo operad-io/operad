@@ -46,7 +46,7 @@ import {
   type StopData,
   type WritingReply,
 } from "./model.ts";
-import { runReply, withLevelFileDeny, WORKTREE_ALLOW_ALWAYS, WORKTREE_ALLOW_ONCE, WORKTREE_CHOICES, WORKTREE_DENY, WORKTREE_REPLY_EVENT, WORKTREE_YES, worktreeChoiceInfo } from "./reply.ts";
+import { keepInterrupted, runReply, withLevelFileDeny, WORKTREE_ALLOW_ALWAYS, WORKTREE_ALLOW_ONCE, WORKTREE_CHOICES, WORKTREE_DENY, WORKTREE_REPLY_EVENT, WORKTREE_YES, worktreeChoiceInfo } from "./reply.ts";
 import { chatCommands, findCommand, helpText, parseCommand, runCommand } from "./command.ts";
 import { readChatSkills } from "./skills.ts";
 import { chatViews } from "./views.ts";
@@ -81,8 +81,17 @@ export const replyFlow = defineFlow({
         more: "reply",
         waiting: "person",
         failed: "failed",
-        interrupted: "cancelled",
+        interrupted: "keep",
       },
+    },
+    {
+      // A reply a crash, stop or restart interrupted keeps what its log
+      // finished and one line saying so, so /retry can continue it.
+      id: "keep",
+      kind: "plugin",
+      params: { use: "chat/keep", params: {} },
+      replay: "safe",
+      next: { done: "cancelled", failed: "cancelled" },
     },
     {
       // A question ran out of grace. The answer sends the run back to the
@@ -702,6 +711,12 @@ export function createChatPlugin() {
       additionalProperties: false,
     },
     steps: [
+      {
+        name: "keep",
+        resumable: false,
+        results: ["done", "failed"],
+        run: keepInterrupted,
+      },
       {
         name: "reply",
         // The harness's question comes back as `resumeSession` and `askAnswer`.

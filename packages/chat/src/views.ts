@@ -208,6 +208,11 @@ function entryMarkdown(entry: Entry | FoldEntry, speaker: string, harness: strin
     const said = flat(entry.text ?? "");
     return said.length === 0 ? undefined : said;
   }
+  // The line a crash or restart leaves is shown for every harness, as a failure is.
+  if (entry.kind === "stopped" && entry.interrupted === true) {
+    const said = flat(entry.text ?? "");
+    return said.length === 0 ? undefined : said;
+  }
   // Radian gives no text or thinking increments; its chats show the tool lines only.
   if (entry.kind !== "tool" && harness === "radian") return undefined;
   if (entry.kind === "tool") return toolMarkdown(entry);
