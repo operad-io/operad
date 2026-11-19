@@ -676,6 +676,21 @@ export function withAttachmentReads(
   return { ...access, readPaths: [...own, directory] };
 }
 
+/**
+ * The profile with the chat's own directory denied: its live-level file is
+ * written by `chat:access`, never by the agent, at any level.
+ */
+export function withLevelFileDeny(
+  access: Readonly<Record<string, JsonValue>>,
+  levelPath: string,
+): Readonly<Record<string, JsonValue>> {
+  const directory = dirname(levelPath);
+  const denied = Array.isArray(access.denyPaths)
+    ? access.denyPaths.filter((entry): entry is string => typeof entry === "string")
+    : [];
+  return denied.includes(directory) ? access : { ...access, denyPaths: [...denied, directory] };
+}
+
 /** How much of a tool call's output a fact keeps; the rest goes to a file. */
 export const TOOL_OUTPUT_FACT_BYTES = 4 * 1024;
 
@@ -1175,12 +1190,13 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
   // them, every file as a path, and the chat's own attachment directory open to reads.
   const directory = attachmentDir(ctx.home, CHAT_TYPE, object.id);
   const images = imagesOf(pending, chat.harness, directory);
-  const baseAccess = messages.some((message) => message.attachments.length > 0)
+  const levelPath = accessLevelPath(ctx.home, object.id);
+  const withReads = messages.some((message) => message.attachments.length > 0)
     ? withAttachmentReads(live.access, directory)
     : live.access;
+  const baseAccess = withLevelFileDeny(withReads, levelPath);
   recheckBase = baseAccess;
   const base = withAccessLevel(baseAccess, level);
-  const levelPath = accessLevelPath(ctx.home, object.id);
   try {
     await writeLiveAccess(levelPath, baseAccess, level);
   } catch (error) {

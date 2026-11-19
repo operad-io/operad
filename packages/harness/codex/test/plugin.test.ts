@@ -384,14 +384,17 @@ describe("codex/agent: permissions", () => {
 
   test("the live level file is read for the permission request, not only at the start", async () => {
     const env = await setup("permission", { vars: { FAKE_CODEX_COMMAND: "touch hi" } });
-    const levelFile = join(env.root, "access.json");
-    writeFileSync(levelFile, JSON.stringify({ access: {}, level: "ask" }));
+    const directory = join(env.root, "chat");
+    mkdirSync(directory, { recursive: true });
+    const levelFile = join(directory, "access.json");
+    const base = { denyPaths: [directory] };
+    writeFileSync(levelFile, JSON.stringify({ access: base, level: "ask" }));
     const asked: string[] = [];
     const result = await runAgent(
       env,
       { prompt: "x", cwd: env.root },
       {
-        access: { level: "full", levelFile },
+        access: { level: "full", levelFile, denyPaths: [directory] },
         asker: {
           ask: (request) => {
             asked.push(request.prompt);

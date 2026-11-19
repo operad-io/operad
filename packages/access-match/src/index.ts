@@ -149,6 +149,14 @@ export function liveAccess<T extends AccessProfile>(profile: T): T & AccessProfi
   if (path === undefined) return profile;
   const file = readLiveAccess(path);
   if (file === undefined) return profile;
+  // The chat's own directory is denied in the base profile. A file that no
+  // longer holds that deny was not written by `chat:access`, so its level is
+  // not taken and the profile the harness started with stays in force.
+  const requiredDeny = dirname(path);
+  const denied: unknown = file.access["denyPaths"];
+  if (!Array.isArray(denied) || !denied.some((entry) => entry === requiredDeny || entry === path)) {
+    return profile;
+  }
   return {
     ...withAccessLevel(file.access, file.level),
     levelFile: path,

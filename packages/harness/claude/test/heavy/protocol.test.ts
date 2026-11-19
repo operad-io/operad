@@ -1608,10 +1608,13 @@ test("a secret of the operad store sent as secretValues is masked in the logged 
 
 test("a running worker reads the live level again for each call, so lowering asks", async () => {
   const s = setup();
-  const levelFile = join(dirname(s.recordFile), "access.json");
+  const directory = join(dirname(s.recordFile), "chat");
+  mkdirSync(directory, { recursive: true });
+  const levelFile = join(directory, "access.json");
   const gate = join(dirname(s.recordFile), "gate");
-  writeFileSync(levelFile, JSON.stringify({ access: {}, level: "full" }));
-  s.input["access"] = { level: "full", levelFile };
+  const base = { denyPaths: [directory] };
+  writeFileSync(levelFile, JSON.stringify({ access: base, level: "full" }));
+  s.input["access"] = { level: "full", levelFile, denyPaths: [directory] };
 
   const child = new Child(
     s.env({
@@ -1642,7 +1645,7 @@ test("a running worker reads the live level again for each call, so lowering ask
 
   // The first call ran at full. Lower the level before the gated second call.
   await firstFinished;
-  writeFileSync(levelFile, JSON.stringify({ access: {}, level: "ask" }));
+  writeFileSync(levelFile, JSON.stringify({ access: base, level: "ask" }));
   writeFileSync(gate, "go");
 
   const run = await child.finish();

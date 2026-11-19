@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { Views, type AskRequest, type StepContext } from "@operad-io/engine";
-import { readLiveAccess } from "@operad-io/access-match";
+import { match, readLiveAccess, type AccessProfile } from "@operad-io/access-match";
 import {
   ACCESS_FACT,
   ACCESS_LEVEL_INFO,
@@ -57,12 +57,38 @@ describe("chat:access", () => {
     const r = await rig(() => reply("ok"));
     const chat = await r.chat({ access: { denyCommands: ["rm"] }, accessLevel: "ask", accessDefault: "ask" });
     const file = accessLevelPath(join(r.root, "home"), chat);
+    const access = { denyCommands: ["rm"], denyPaths: [dirname(file)] };
 
     await act(r, chat, { level: "full" });
-    expect(readLiveAccess(file)).toEqual({ access: { denyCommands: ["rm"] }, level: "full" });
+    expect(readLiveAccess(file)).toEqual({ access, level: "full" });
 
     await act(r, chat, { level: "edits" });
-    expect(readLiveAccess(file)).toEqual({ access: { denyCommands: ["rm"] }, level: "edits" });
+    expect(readLiveAccess(file)).toEqual({ access, level: "edits" });
+  });
+
+  test("every level denies its own live level file to write, edit and a bash redirect", async () => {
+    for (const level of ["ask", "edits", "full"] as const) {
+      let seen: unknown;
+      const r = await rig((ctx: StepContext) => {
+        seen = ctx.access;
+        return reply("ok");
+      });
+      const chat = await r.chat({ accessLevel: level, accessDefault: level });
+      await r.say(chat, "go");
+      await r.round(chat);
+      const file = accessLevelPath(join(r.root, "home"), chat);
+      const profile = seen as AccessProfile;
+      const calls = [
+        { tool: "write", input: { path: file, content: "changed" } },
+        { tool: "edit", input: { path: file, oldText: "a", newText: "b" } },
+        { tool: "bash", input: { command: `echo changed > ${file}` } },
+      ];
+      for (const call of calls) {
+        const verdict = match(profile, { ...call, cwd: r.root });
+        expect(verdict.allow).toBe(false);
+        expect(verdict.ask).toBeUndefined();
+      }
+    }
   });
 
   test("a question open when the level rises is checked again under the new level", async () => {

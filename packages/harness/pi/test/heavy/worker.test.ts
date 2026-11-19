@@ -908,8 +908,11 @@ test("an access level reaches each call's decision", async () => {
 
 test("a real worker reads the live level again for each call, so lowering to ask applies", async () => {
   const s = setup();
-  const levelFile = join(s.dir, "access.json");
-  writeFileSync(levelFile, JSON.stringify({ access: {}, level: "full" }));
+  const directory = join(s.dir, "chat");
+  mkdirSync(directory, { recursive: true });
+  const levelFile = join(directory, "access.json");
+  const base = { denyPaths: [directory] };
+  writeFileSync(levelFile, JSON.stringify({ access: base, level: "full" }));
   const first = join(s.dir, "first");
   const second = join(s.dir, "second");
   const release = join(s.dir, "release");
@@ -932,11 +935,11 @@ test("a real worker reads the live level again for each call, so lowering to ask
     asked.push(line);
     child.sendLine(JSON.stringify({ type: "ask_ack", id: line["id"], decision: "allow" }));
   });
-  child.sendLine(JSON.stringify({ ...s.input, access: { level: "full", levelFile } }));
+  child.sendLine(JSON.stringify({ ...s.input, access: { ...withAccessLevel(base, "full"), levelFile } }));
 
   // The first call ran at full. Lower the level before the gated second call.
   await firstFinished;
-  writeFileSync(levelFile, JSON.stringify({ access: {}, level: "ask" }));
+  writeFileSync(levelFile, JSON.stringify({ access: base, level: "ask" }));
   writeFileSync(release, "go");
 
   const run = await child.finish();
@@ -944,6 +947,76 @@ test("a real worker reads the live level again for each call, so lowering to ask
   expect(asked[0]).toMatchObject({ type: "ask_call", kind: "command", value: `touch ${second}` });
   expect(existsSync(second)).toBe(true);
   expect(last(run)).toMatchObject({ result: "done", finalMessage: "finished" });
+});
+
+test("a real worker ignores a live level file rewritten to full without its deny", async () => {
+  const s = setup();
+  const directory = join(s.dir, "chat");
+  mkdirSync(directory, { recursive: true });
+  const levelFile = join(directory, "access.json");
+  writeFileSync(levelFile, JSON.stringify({ access: { denyPaths: [directory] }, level: "ask" }));
+  const second = join(s.dir, "second");
+  const release = join(s.dir, "release");
+  const asked: Array<Record<string, unknown>> = [];
+  let firstDone: () => void = () => {};
+  const firstFinished = new Promise<void>((resolve) => {
+    firstDone = resolve;
+  });
+  const child = new ProcessChild(FAKE_WORKER, s.home, {
+    FAKE_SCRIPT: JSON.stringify([
+      { text: "", toolCall: { name: "bash", arguments: { command: "echo first" } } },
+      { text: "", gate: true, toolCall: { name: "bash", arguments: { command: `touch ${second}` } } },
+      { text: "finished" },
+    ]),
+    FAKE_RELEASE: release,
+  });
+  child.onLine((line) => {
+    if (line["type"] === "tool_execution_end" && line["toolCallId"] === "fake-tool-1") firstDone();
+    if (line["type"] !== "ask_call") return;
+    asked.push(line);
+    child.sendLine(JSON.stringify({ type: "ask_ack", id: line["id"], decision: "allow" }));
+  });
+  child.sendLine(JSON.stringify({
+    ...s.input,
+    access: { ...withAccessLevel({ denyPaths: [directory] }, "ask"), levelFile },
+  }));
+
+  await firstFinished;
+  // Anyone but chat:access could rewrite the level; without the deny it is not taken.
+  writeFileSync(levelFile, JSON.stringify({ access: {}, level: "full" }));
+  writeFileSync(release, "go");
+
+  const run = await child.finish();
+  expect(asked).toHaveLength(1);
+  expect(asked[0]).toMatchObject({ type: "ask_call", kind: "command", value: `touch ${second}` });
+  expect(existsSync(second)).toBe(true);
+  expect(last(run)).toMatchObject({ result: "done", finalMessage: "finished" });
+});
+
+test("a live level file is refused at every level by write, edit and a bash redirect", async () => {
+  for (const level of ["ask", "edits", "full"] as const) {
+    const s = setup();
+    const directory = join(s.dir, "chat");
+    mkdirSync(directory, { recursive: true });
+    const file = join(directory, "access.json");
+    const content = JSON.stringify({ access: { denyPaths: [directory] }, level });
+    writeFileSync(file, content);
+    const run = await runAsking(
+      s,
+      [
+        { text: "", toolCall: { name: "write", arguments: { path: file, content: "changed\n" } } },
+        { text: "", toolCall: { name: "edit", arguments: { path: file, oldText: "full", newText: "ask" } } },
+        { text: "", toolCall: { name: "bash", arguments: { command: `echo changed > ${file}` } } },
+        { text: "finished" },
+      ],
+      { ...s.input, access: { ...withAccessLevel({ denyPaths: [directory] }, level), levelFile: file } },
+      () => "allow",
+    );
+
+    expect(run.lines.filter((line) => line["type"] === "blocked")).toHaveLength(3);
+    expect(readFileSync(file, "utf8")).toBe(content);
+    expect(last(run)).toMatchObject({ result: "done", finalMessage: "finished" });
+  }
 });
 
 test("without a profile nothing is blocked", async () => {

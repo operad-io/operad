@@ -46,7 +46,7 @@ import {
   type StopData,
   type WritingReply,
 } from "./model.ts";
-import { runReply, WORKTREE_ALLOW_ALWAYS, WORKTREE_ALLOW_ONCE, WORKTREE_CHOICES, WORKTREE_DENY, WORKTREE_REPLY_EVENT, WORKTREE_YES, worktreeChoiceInfo } from "./reply.ts";
+import { runReply, withLevelFileDeny, WORKTREE_ALLOW_ALWAYS, WORKTREE_ALLOW_ONCE, WORKTREE_CHOICES, WORKTREE_DENY, WORKTREE_REPLY_EVENT, WORKTREE_YES, worktreeChoiceInfo } from "./reply.ts";
 import { chatCommands, findCommand, helpText, parseCommand, runCommand } from "./command.ts";
 import { readChatSkills } from "./skills.ts";
 import { chatViews } from "./views.ts";
@@ -456,8 +456,9 @@ const accessAction: ActionTypeDefinition = {
     }
     // A reply already running reads this file again for each call. The file
     // keeps the base profile, so the new level adds or removes only its own asks.
+    const levelPath = accessLevelPath(ctx.home, ctx.object.id);
     try {
-      await updateLiveAccessLevel(accessLevelPath(ctx.home, ctx.object.id), level, chat.access);
+      await updateLiveAccessLevel(levelPath, level, withLevelFileDeny(chat.access, levelPath));
     } catch (error) {
       await ctx.logger.write(
         `the live access level could not be written: ${error instanceof Error ? error.message : String(error)}`,
