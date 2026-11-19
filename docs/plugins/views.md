@@ -51,6 +51,10 @@ A filter is a named subset of a type's rows, by `state`:
 
 The `ctx` of `load`, `showScope`, `context`, `skills`, `file` and `tail` is [the base context](define-plugin.md#the-context-every-hook-gets) plus `runTimes(runId)` (when a run started and ended and its steps and waits, in order), `settingsInForce(plugin)` (the plugin's settings as `config.json` has them now, so a view follows an edit without a restart), `refreshedObject(type, id)` (an object after its `prepare` with the settings in force) and `sectionCapBytes` (the most bytes a read may return when the client did not ask for `full`).
 
+### The files a type serves
+
+`GET /v1/attachments/<type>/<id>/...` asks a type's optional `file(ctx, object, path)` before it serves a file. `path` holds the decoded segments after the type and id; the hook returns true only for a file the object's records name, and it never receives a filesystem path a client chose. A type without the hook keeps the kernel's attachment-directory bounds (ADR 0029 D3). A chat supplies it for its message attachments and tool output files.
+
 An object's `get` carries `skills` when its type declares the hook, beside the actions a client already reads. A client that does not know the field ignores it.
 
 ### The row
