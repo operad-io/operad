@@ -275,3 +275,51 @@ describe("a chat whose agent cannot carry the level", () => {
     }
   });
 });
+
+describe("a form a chat's agent asks", () => {
+  test("it is never turned into the worktree question, and its answers reach the harness", async () => {
+    const asked: AskRequest[] = [];
+    const r = await rig(async (ctx: StepContext) => {
+      const answer = await ctx.ask({
+        prompt: "How should it load?",
+        questions: [
+          {
+            id: "loader",
+            text: "How should it load?",
+            choices: [{ label: "Built-in", description: "use the built-in loader" }],
+          },
+        ],
+        resume: { session: "s" },
+      });
+      return reply(JSON.stringify(answer.answers ?? null));
+    });
+    const chat = await r.chat({ access: { readOnly: true }, accessLevel: "plan", accessDefault: "plan" });
+    await r.say(chat, "go");
+    const asker = {
+      async ask(request: AskRequest) {
+        asked.push(request);
+        return {
+          kind: "answered" as const,
+          answer: { choice: undefined, answers: [{ id: "loader", choices: ["Built-in"] }] },
+        };
+      },
+      async useGrant() {
+        return false;
+      },
+    };
+
+    const outcome = await r.round(chat, {}, asker);
+    expect(outcome.result).toBe("done");
+    // The question reached the person as the agent asked it, not as a call.
+    expect(asked).toHaveLength(1);
+    expect(asked[0]?.prompt).toBe("How should it load?");
+    expect(asked[0]?.questions).toHaveLength(1);
+    // The form carries no choices of its own: its questions have them.
+    expect(asked[0]?.choices).toBeUndefined();
+    expect(asked[0]?.resume).toEqual({ session: "s" });
+    // The harness was told the answer, not asked for a worktree.
+    const message = allMessages(r.store, chat).find((entry) => entry.role === "assistant");
+    expect(String(message?.text)).toContain('"choices":["Built-in"]');
+    expect(String(message?.text)).not.toContain("worktree");
+  });
+});
