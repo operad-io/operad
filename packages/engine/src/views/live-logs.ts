@@ -20,7 +20,7 @@ import type { LogBackend } from "../log/types.ts";
 import { runLogDirectory } from "../plugin/logger.ts";
 import { messageOf } from "../plugin/errors.ts";
 import type { PluginRegistry } from "../plugin/registry.ts";
-import type { PluginStore, StoredObject } from "../plugin/types.ts";
+import type { ObjectRef, PluginStore, StoredObject } from "../plugin/types.ts";
 import { isRecord } from "../util.ts";
 
 /** One file's fingerprint: enough to tell that it changed, never its text. */
@@ -29,7 +29,7 @@ type FileStamp = string;
 /** The directories watched for one run, and what each file looked like last. */
 interface WatchedRun {
   readonly runId: string;
-  readonly objectId: string;
+  readonly object: ObjectRef;
   readonly stops: Map<string, () => void>;
   readonly files: Map<string, Map<string, FileStamp>>;
 }
@@ -49,7 +49,7 @@ export interface LiveLogWatchOptions {
   readonly repeat: (ms: number, callback: () => void) => () => void;
   readonly pollMs: number;
   /** Announces that an object's live content grew. */
-  readonly onGrowth: (objectId: string) => void;
+  readonly onGrowth: (object: ObjectRef) => void;
   readonly onLog?: ((message: string) => void) | undefined;
 }
 
@@ -187,7 +187,7 @@ export class LiveLogWatch {
       if (this.runs.has(run.runId)) continue;
       this.runs.set(run.runId, {
         runId: run.runId,
-        objectId: parsed.id,
+        object: parsed,
         stops: new Map(),
         files: new Map(),
       });
@@ -266,7 +266,7 @@ export class LiveLogWatch {
       else files.set(filename, stamp);
       watched.files.set(directory, files);
     }
-    this.options.onGrowth(watched.objectId);
+    this.options.onGrowth(watched.object);
   }
 
   /**
@@ -283,7 +283,7 @@ export class LiveLogWatch {
         watched.files.set(directory, after);
         if (snapshotsDiffer(before, after)) grew = true;
       }
-      if (grew) this.options.onGrowth(watched.objectId);
+      if (grew) this.options.onGrowth(watched.object);
     }
   }
 

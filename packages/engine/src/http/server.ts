@@ -112,6 +112,7 @@ export interface EventEntry {
 
 type HubEvent =
   | { readonly kind: "change"; readonly entry: EventEntry }
+  | { readonly kind: "live"; readonly event: ViewEvent }
   | { readonly kind: "reset" };
 
 type HubListener = (event: HubEvent) => void;
@@ -233,6 +234,12 @@ export class EventHub {
   }
 
   private publish(value: ViewEvent): void {
+    if (value.live !== undefined) {
+      // A live part is for the clients connected now; it is not replayed on a
+      // reconnect, where the section read gives the whole current tail again.
+      this.notify({ kind: "live", event: value });
+      return;
+    }
     this.resetAnnounced = false;
     this.seq += 1;
     const entry: EventEntry = {
@@ -461,6 +468,10 @@ function formatEvent(entry: EventEntry): string {
   return `id: ${entry.event}\ndata: ${JSON.stringify({ id: entry.id })}\n\n`;
 }
 
+function formatLiveEvent(event: ViewEvent): string {
+  return `event: live\ndata: ${JSON.stringify({ id: event.id, live: event.live })}\n\n`;
+}
+
 const RESET_EVENT = "event: reset\ndata: {}\n\n";
 
 export function eventResponse(
@@ -527,6 +538,7 @@ export function eventResponse(
       else for (const entry of snapshot.replay) push(formatEvent(entry));
       unsubscribe = hub.subscribe((event) => {
         if (event.kind === "reset") push(RESET_EVENT);
+        else if (event.kind === "live") push(formatLiveEvent(event.event));
         else push(formatEvent(event.entry));
       }, finish);
       untrack = track(token, finish);

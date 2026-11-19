@@ -195,6 +195,9 @@ function normalizeViews(
     if (raw.skills !== undefined && typeof raw.skills !== "function") {
       throw new PluginError(`${at}.${type}: skills: must be a function`);
     }
+    if (raw.live !== undefined && typeof raw.live !== "function") {
+      throw new PluginError(`${at}.${type}: live: must be a function`);
+    }
     views[type] = {
       row: raw.row as ObjectViews["row"],
       sections: raw.sections as ObjectViews["sections"],
@@ -208,6 +211,9 @@ function normalizeViews(
       ...(raw.skills === undefined
         ? {}
         : { skills: raw.skills as NonNullable<ObjectViews["skills"]> }),
+      ...(raw.live === undefined
+        ? {}
+        : { live: raw.live as NonNullable<ObjectViews["live"]> }),
     };
   }
   return views;

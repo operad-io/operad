@@ -1148,3 +1148,10 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0561-M1 | packages/engine/src/plugin/sqlite-store.ts | `gone` checked only the database file, so an I/O error after the `-wal` and `-shm` were removed did not stop the poll | `a poll stops when the store's -wal and -shm are removed` |
+
+## T-0570 — a running reply is pushed over the event stream
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0570-M1 | packages/engine/src/http/server.ts | `EventHub` treated a live part as a normal change, so the stream carried no `live` event | `http server > a live part is its own event and is not part of the resume window` |
+| T-0570-M2 | packages/engine/src/plugin/validate.ts | `normalizeViews` dropped a type's `live` function, so the registry never pushed its live part | `a running reply is pushed over the event stream > text, thinking and a tool call are the same tail the section returns` |

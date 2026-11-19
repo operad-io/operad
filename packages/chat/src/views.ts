@@ -866,6 +866,26 @@ function objectReader(ctx: ViewContext): ObjectReader {
     ctx.refreshedObject === undefined ? ctx.store.get(type, id) : ctx.refreshedObject(type, id);
 }
 
+/**
+ * The changing part of the transcript, for the event stream's live push. It
+ * is the same tail and status a section read returns, without the finished
+ * content, so a client renders what the reply writes as it arrives.
+ */
+async function livePush(
+  ctx: ViewContext,
+  object: StoredObject,
+): Promise<{ readonly section: string; readonly tail?: string; readonly status?: SectionStatus } | undefined> {
+  const facts = allFacts(ctx, chatRef(object.id));
+  const speaker = await speakerOf(ctx, object);
+  const live = await liveOf(ctx, object, facts, speaker);
+  if (live.tail === undefined && live.status === undefined) return undefined;
+  return {
+    section: TRANSCRIPT,
+    ...(live.tail === undefined ? {} : { tail: live.tail }),
+    ...(live.status === undefined ? {} : { status: live.status }),
+  };
+}
+
 /** The views of the chat type. */
 export const chatViews: ObjectViews = {
   row,
@@ -873,5 +893,6 @@ export const chatViews: ObjectViews = {
   context: chatContext,
   skills: async (ctx, object) =>
     skillSummaries(await readChatSkills(chatData(object.data), objectReader(ctx))),
+  live: livePush,
   load,
 };

@@ -94,6 +94,13 @@ export const DEFAULT_MAX_EVENT_IDS = 1024;
  */
 export const GROWTH_EVENT_INTERVAL_MS = 250;
 
+/**
+ * How often one object's live part is pushed. A live part is sent as its own
+ * event so a client can render it without reading the section again; the
+ * change event keeps its own, slower window.
+ */
+const LIVE_PUSH_INTERVAL_MS = 50;
+
 /** A row as a client sees it: the plugin's row plus the kernel's two flags. */
 export interface ViewRow {
   readonly id: string;
@@ -219,6 +226,19 @@ export interface ViewSectionPage {
 /** One change a client may react to. */
 export interface ViewEvent {
   readonly id: string;
+  /**
+   * The changing part of a live section, pushed as its own event while the
+   * section grows. It is not part of the resume window: a reconnecting client
+   * reads the section again. A client that does not know it ignores it.
+   */
+  readonly live?:
+    | {
+        readonly type: string;
+        readonly section: string;
+        readonly tail?: string | undefined;
+        readonly status?: SectionStatus | undefined;
+      }
+    | undefined;
 }
 
 /** Why a presentation call refused. */
@@ -524,18 +544,18 @@ interface RunFlags {
   readonly running: boolean;
 }
 
-/** A bounded, coalescing stream of ids. */
+/** A bounded, coalescing stream of changes. */
 class EventStream implements AsyncIterable<ViewEvent> {
-  private readonly pending = new Set<string>();
+  private readonly pending = new Map<string, ViewEvent>();
   private readonly max: number;
-  private readonly listeners: Set<(id: string) => void>;
+  private readonly listeners: Set<(event: ViewEvent) => void>;
   private readonly flush: () => void;
   private closed = false;
   private resume: (() => void) | undefined;
 
   constructor(
     max: number,
-    listeners: Set<(id: string) => void>,
+    listeners: Set<(event: ViewEvent) => void>,
     flush: () => void,
   ) {
     this.max = Math.max(1, max);
@@ -543,14 +563,19 @@ class EventStream implements AsyncIterable<ViewEvent> {
     this.flush = flush;
   }
 
-  readonly listener = (id: string): void => {
+  readonly listener = (event: ViewEvent): void => {
     if (this.closed) return;
-    if (this.pending.size >= this.max && !this.pending.has(id)) {
-      const oldest = this.pending.values().next().value;
+    // A live push is its own event; a later change of the same object does not
+    // replace it, and a later live push replaces the earlier one.
+    const key = event.live === undefined
+      ? event.id
+      : `live:${event.live.type}:${event.id}`;
+    if (this.pending.size >= this.max && !this.pending.has(key)) {
+      const oldest = this.pending.keys().next().value;
       if (oldest !== undefined) this.pending.delete(oldest);
     }
-    this.pending.delete(id);
-    this.pending.add(id);
+    this.pending.delete(key);
+    this.pending.set(key, event);
     this.wake();
   };
 
@@ -573,10 +598,11 @@ class EventStream implements AsyncIterable<ViewEvent> {
       });
     }
     if (this.closed) return { done: true, value: undefined };
-    const id = this.pending.values().next().value;
-    if (id === undefined) return { done: false, value: { id: "" } };
-    this.pending.delete(id);
-    return { done: false, value: { id } };
+    const found = this.pending.entries().next().value;
+    if (found === undefined) return { done: false, value: { id: "" } };
+    const [key, event] = found;
+    this.pending.delete(key);
+    return { done: false, value: event };
   }
 
   private stop(): IteratorResult<ViewEvent> {
@@ -652,13 +678,19 @@ export class Views {
   private readonly onLog: (message: string) => void;
   private readonly home: string;
   private readonly uploads: Uploads;
-  private readonly eventListeners = new Set<(id: string) => void>();
+  private readonly eventListeners = new Set<(event: ViewEvent) => void>();
   /** When each object's live growth was last announced, for the rate limit. */
   private readonly growthAnnouncedAt = new Map<string, number>();
   /** Objects whose growth was held back in the current rate window. */
   private readonly growthPending = new Set<string>();
   /** The timer that announces an object when its rate window ends. */
   private readonly growthTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** The same window for a live section's pushed part, keyed by type and id. */
+  private readonly liveAnnouncedAt = new Map<string, number>();
+  private readonly livePending = new Map<string, ObjectRef>();
+  private readonly liveTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly liveGenerations = new Map<string, number>();
+  private closed = false;
   /** How the newest ended run of an object ended, keyed by its run and last fact. */
   private readonly lastRunEnds = new Map<
     string,
@@ -689,7 +721,7 @@ export class Views {
       const subscriptionWatch = resolveSubscriptionWatch(options);
       if (typeof this.store.subscribe === "function") {
         this.unsubscribe.push(
-          this.store.subscribe((object) => this.publish(object.id)),
+          this.store.subscribe((object) => this.publish(object)),
         );
       }
       if (typeof this.log?.subscribe === "function") {
@@ -700,7 +732,7 @@ export class Views {
               : splitId(change.object);
             if (parsed === undefined) return;
             if (parsed.type === "flow") return;
-            this.publish(parsed.id, true);
+            this.publish(parsed, true);
             // A step appends to its log between facts; look for a new run's log.
             void this.liveLogs?.sync();
           }),
@@ -718,7 +750,7 @@ export class Views {
               watch: subscriptionWatch.watch,
               repeat: subscriptionWatch.repeat,
               pollMs: subscriptionWatch.pollMs,
-              onGrowth: (id) => this.publish(id, true),
+              onGrowth: (object) => this.publish(object, true),
               onLog: this.onLog,
             });
     }
@@ -795,12 +827,18 @@ export class Views {
 
   /** Closes the change listeners this view opened. */
   close(): void {
+    this.closed = true;
     this.liveLogs?.close();
     for (const unsubscribe of this.unsubscribe.splice(0)) unsubscribe();
     for (const timer of this.growthTimers.values()) clearTimeout(timer);
     this.growthTimers.clear();
     this.growthPending.clear();
     this.growthAnnouncedAt.clear();
+    for (const timer of this.liveTimers.values()) clearTimeout(timer);
+    this.liveTimers.clear();
+    this.livePending.clear();
+    this.liveAnnouncedAt.clear();
+    this.liveGenerations.clear();
     this.lastRunEnds.clear();
   }
 
@@ -1513,12 +1551,15 @@ export class Views {
     return pages === undefined ? { ...finished, ...(context === undefined ? {} : { context }) } : { ...finished, pages, ...(context === undefined ? {} : { context }) };
   }
 
-  /** An async stream of ids that changed. Repeated ids coalesce. */
+  /** An async stream of changes. Repeated ids coalesce. */
   events(): AsyncIterable<ViewEvent> {
     return new EventStream(
       this.maxEventIds,
       this.eventListeners,
-      () => this.flushDueGrowth(),
+      () => {
+        this.flushDueGrowth();
+        this.flushDueLive();
+      },
     );
   }
 
@@ -2789,26 +2830,34 @@ export class Views {
    * Announces an object. A run's growth can arrive far faster than a client
    * can read it, so growth is announced at most once per object per window;
    * the last growth in a window is announced when the window ends. An object's
-   * own stored change is always announced.
+   * own stored change is always announced. A type that opts into `live` also
+   * pushes its live section's changing part, on its own faster window.
    */
-  private publish(id: string, growth = false): void {
+  private publish(ref: ObjectRef, growth = false): void {
+    const key = `${ref.type}:${ref.id}`;
+    const live = this.registry.viewsFor(ref.type)?.views.live;
+    if (live !== undefined && growth) {
+      // A newer growth makes an older live computation stale.
+      this.liveGenerations.set(key, (this.liveGenerations.get(key) ?? 0) + 1);
+      this.publishLive(ref, key);
+    }
     if (growth) {
       const now = this.clock();
-      const last = this.growthAnnouncedAt.get(id);
+      const last = this.growthAnnouncedAt.get(ref.id);
       if (last !== undefined && now - last < GROWTH_EVENT_INTERVAL_MS) {
-        this.growthPending.add(id);
-        this.scheduleGrowth(id, GROWTH_EVENT_INTERVAL_MS - (now - last));
+        this.growthPending.add(ref.id);
+        this.scheduleGrowth(ref.id, GROWTH_EVENT_INTERVAL_MS - (now - last));
         return;
       }
-      this.growthPending.delete(id);
-      this.clearGrowthTimer(id);
-      this.growthAnnouncedAt.set(id, now);
+      this.growthPending.delete(ref.id);
+      this.clearGrowthTimer(ref.id);
+      this.growthAnnouncedAt.set(ref.id, now);
     }
-    this.announce(id);
+    this.announce({ id: ref.id });
   }
 
-  private announce(id: string): void {
-    for (const listener of this.eventListeners) listener(id);
+  private announce(event: ViewEvent): void {
+    for (const listener of this.eventListeners) listener(event);
   }
 
   /** Announces a held-back growth once its window has passed, or waits again. */
@@ -2823,7 +2872,7 @@ export class Views {
     this.growthPending.delete(id);
     this.clearGrowthTimer(id);
     this.growthAnnouncedAt.set(id, now);
-    this.announce(id);
+    this.announce({ id });
   }
 
   /** Announces every held-back growth whose window has passed by the clock. */
@@ -2851,6 +2900,134 @@ export class Views {
     if (timer === undefined) return;
     clearTimeout(timer);
     this.growthTimers.delete(id);
+  }
+
+  /** Sends a live section's changing part now, or when its own window ends. */
+  private publishLive(ref: ObjectRef, key: string): void {
+    const now = this.clock();
+    const last = this.liveAnnouncedAt.get(key);
+    if (last !== undefined && now - last < LIVE_PUSH_INTERVAL_MS) {
+      this.livePending.set(key, ref);
+      this.scheduleLive(key, LIVE_PUSH_INTERVAL_MS - (now - last));
+      return;
+    }
+    this.livePending.delete(key);
+    this.clearLiveTimer(key);
+    this.liveAnnouncedAt.set(key, now);
+    this.pushLive(ref, key);
+  }
+
+  /** Reads the plugin's live part and sends it, unless a newer change won. */
+  private pushLive(ref: ObjectRef, key: string): void {
+    const generation = this.liveGenerations.get(key) ?? 0;
+    void this.liveEvent(ref)
+      .then((event) => {
+        if (this.closed) return;
+        if (this.liveGenerations.get(key) !== generation) return;
+        if (event?.live !== undefined) this.announce(event);
+      })
+      .catch((error: unknown) => {
+        this.onLog(
+          `live "${key}" failed: ${messageOf(error)}`,
+        );
+      });
+  }
+
+  /** The plugin's live part, or undefined when it is gone or has nothing to say. */
+  private async liveEvent(ref: ObjectRef): Promise<ViewEvent | undefined> {
+    const owner = this.registry.viewsFor(ref.type);
+    const live = owner?.views.live;
+    if (owner === undefined || live === undefined) return undefined;
+    let object: StoredObject | undefined;
+    try {
+      object = await this.store.get(ref.type, ref.id);
+    } catch (error) {
+      this.onLog(`live "${ref.type}:${ref.id}": ${messageOf(error)}`);
+      return undefined;
+    }
+    if (object === undefined) return undefined;
+
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        controller.abort();
+        reject(new Error(`did not answer within ${this.loadTimeoutMs}ms`));
+      }, this.loadTimeoutMs);
+    });
+    try {
+      const content = await Promise.race([
+        Promise.resolve().then(() =>
+          live(this.viewContext(owner.plugin, controller.signal), object),
+        ),
+        timeout,
+      ]);
+      if (!isRecord(content)) return undefined;
+      const section = textOf(content.section);
+      if (section === undefined || section.length === 0) return undefined;
+      const tail = textOf(content.tail);
+      const status = statusOf(content.status);
+      if (tail === undefined && status === undefined) return undefined;
+      return {
+        id: ref.id,
+        live: {
+          type: ref.type,
+          section,
+          ...(tail === undefined ? {} : { tail }),
+          ...(status === undefined ? {} : { status }),
+        },
+      };
+    } catch (error) {
+      this.onLog(
+        `plugin "${owner.plugin}": live for "${ref.type}:${ref.id}" failed: ${messageOf(error)}`,
+      );
+      return undefined;
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
+  }
+
+  /** Sends a held-back live part once its window has passed, or waits again. */
+  private flushLive(key: string): void {
+    const ref = this.livePending.get(key);
+    if (ref === undefined) return;
+    const now = this.clock();
+    const last = this.liveAnnouncedAt.get(key);
+    if (last !== undefined && now - last < LIVE_PUSH_INTERVAL_MS) {
+      this.scheduleLive(key, LIVE_PUSH_INTERVAL_MS - (now - last));
+      return;
+    }
+    this.livePending.delete(key);
+    this.clearLiveTimer(key);
+    this.liveAnnouncedAt.set(key, now);
+    this.pushLive(ref, key);
+  }
+
+  /** Sends every held-back live part whose window has passed by the clock. */
+  private flushDueLive(): void {
+    for (const key of [...this.livePending.keys()]) {
+      const last = this.liveAnnouncedAt.get(key);
+      if (last === undefined || this.clock() - last >= LIVE_PUSH_INTERVAL_MS) {
+        this.flushLive(key);
+      }
+    }
+  }
+
+  /** The one timer per object that wakes a reader when its live window ends. */
+  private scheduleLive(key: string, waitMs: number): void {
+    if (this.liveTimers.has(key)) return;
+    const timer = setTimeout(() => {
+      this.liveTimers.delete(key);
+      this.flushLive(key);
+    }, Math.max(0, waitMs));
+    this.liveTimers.set(key, timer);
+  }
+
+  private clearLiveTimer(key: string): void {
+    const timer = this.liveTimers.get(key);
+    if (timer === undefined) return;
+    clearTimeout(timer);
+    this.liveTimers.delete(key);
   }
 }
 

@@ -340,7 +340,7 @@ async function readUntilDone(
 }
 
 type SourceItem =
-  | { readonly kind: "event"; readonly id: string }
+  | { readonly kind: "event"; readonly id: string; readonly live?: ViewEvent["live"] }
   | { readonly kind: "error"; readonly error: Error }
   | { readonly kind: "end" };
 
@@ -369,8 +369,8 @@ class ControlledSource {
     };
   };
 
-  push(id: string): void {
-    this.items.push({ kind: "event", id });
+  push(id: string, live?: ViewEvent["live"]): void {
+    this.items.push({ kind: "event", id, ...(live === undefined ? {} : { live }) });
     this.wake();
   }
 
@@ -409,7 +409,7 @@ class ControlledSource {
     if (item === undefined) return { done: true, value: undefined };
     if (item.kind === "error") throw item.error;
     if (item.kind === "end") return { done: true, value: undefined };
-    return { done: false, value: { id: item.id } };
+    return { done: false, value: { id: item.id, ...(item.live === undefined ? {} : { live: item.live }) } };
   }
 
   private wake(): void {
@@ -1481,6 +1481,41 @@ describe("http server", () => {
     } finally {
       unsubscribe();
       await connected.cancel();
+      hub.stop();
+    }
+  });
+
+  test("a live part is its own event and is not part of the resume window", async () => {
+    const source = new ControlledSource();
+    const hub = new EventHub(source.source, 10, () => undefined);
+    const stream = openSse(hubStream(hub));
+    try {
+      source.push("item", {
+        type: "item",
+        section: "log",
+        tail: "being written",
+        status: { text: "Thinking", since: 1_700_000_000_000 },
+      });
+      const [live] = await stream.next();
+      expect(live?.event).toBe("live");
+      expect(live?.id).toBeUndefined();
+      expect(JSON.parse(live?.data ?? "{}")).toEqual({
+        id: "item",
+        live: {
+          type: "item",
+          section: "log",
+          tail: "being written",
+          status: { text: "Thinking", since: 1_700_000_000_000 },
+        },
+      });
+
+      // A change after it has an id; the live part before that id is not replayed.
+      source.push("item");
+      const [change] = await stream.next();
+      expect(change?.id).toBeDefined();
+      expect(hub.snapshot(change?.id)).toEqual({ reset: false, replay: [] });
+    } finally {
+      await stream.cancel();
       hub.stop();
     }
   });

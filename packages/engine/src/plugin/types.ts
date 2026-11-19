@@ -286,6 +286,25 @@ export interface ObjectViews {
         object: StoredObject,
       ) => MaybePromise<readonly ViewSkill[] | undefined>)
     | undefined;
+  /**
+   * The changing part of a live section, pushed on the event stream as it
+   * grows. The kernel passes `section`, `tail` and `status` through without
+   * reading them, in the same shapes a section read uses. Absent: the type
+   * pushes no live part and an event carries only the object id.
+   */
+  readonly live?:
+    | ((
+        ctx: ViewContext,
+        object: StoredObject,
+      ) => MaybePromise<
+        | {
+            readonly section: string;
+            readonly tail?: string | undefined;
+            readonly status?: SectionStatus | undefined;
+          }
+        | undefined
+      >)
+    | undefined;
   /** Called when a person opens a section; it may be slow and paged. */
   readonly load: (
     ctx: ViewContext,
