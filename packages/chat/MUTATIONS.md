@@ -533,3 +533,10 @@ their current tests are `the chat's pushed tail > the text being written is the
 same tail the section shows`, `... > thinking being written is a block quote`
 and `... > a tool call ending replaces its start with how long it took`. Rows
 are append-only, so the old lines stay as history.
+
+## T-0577 — a tool output's server address
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0577-M1 | packages/chat/src/views.ts | `replyOutput` left `url` out, so a client got no address for the whole output | `a tool's whole output carries the server address that serves it, and no local path` |
+| T-0577-M2 | packages/chat/src/views.ts | the chat's `file` check allowed every path instead of only the files its facts name | `the attachment route refuses a file the chat does not name, and one outside the chat` |

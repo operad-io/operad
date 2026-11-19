@@ -316,6 +316,20 @@ export interface ObjectViews {
       ) => MaybePromise<readonly ViewSkill[] | undefined>)
     | undefined;
   /**
+   * Whether a file below the object's attachment directory may be served: a
+   * path the object's own records name, never one a client chose. The kernel
+   * passes the path segments after the type and id, already decoded. A type
+   * that declares it serves only what it allows; a type without it keeps the
+   * kernel's attachment-directory bounds, as before.
+   */
+  readonly file?:
+    | ((
+        ctx: ViewContext,
+        object: StoredObject,
+        path: readonly string[],
+      ) => MaybePromise<boolean>)
+    | undefined;
+  /**
    * The changing part of a live section, pushed on the event stream as it
    * grows. The kernel passes `section`, `tail`, `status` and `data` through
    * without reading them, in the same shapes a section read uses. Absent: the

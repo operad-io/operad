@@ -85,7 +85,7 @@ otherwise. An object id in a path is URL-encoded; `<id>` may be the bare id or
 | `GET /v1/settings?scope=<scope>` | Lists the settings a person may tune: `{ "settings": [{ "name", "scope", "value", "default", "title", "description", "type", "enum", "editable", "confirm" }] }`. Without `scope` it lists the global settings and every repository scope; a scope names one repository. A setting that cannot be read in a scope is left out. |
 | `POST /v1/settings` | Changes one setting. The body is `{ "name": "<plugin>.<path>", "value": <any>, "scope"?: "<repo>", "confirmed"?: true }`; `name` and `value` are required, and `value` may be `null`. The answer is the changed setting, the same shape as one entry above. An unknown setting name is `404`; a value the schema refuses is `422` with the reason; a setting that is not editable, or asks to confirm without `confirmed`, is `409`. |
 | `POST /v1/uploads?name=<file name>` | Uploads a file for an action's file argument. The body is the file itself, streamed; its `content-type` header is kept as the file's type. The answer is `201` and `{ "ref", "name", "type", "size" }`. A file larger than 20 MB gets `413` and a message naming the limit. The `ref` works once: the action that takes it moves the file into the target object's attachment directory under the operad home (`attachments/<type>/<id>/`), and a second use is refused with `400`. An upload no action took within an hour is removed. |
-| `GET /v1/attachments/<type>/<id>/<ref>/<name>` | Serves a stored file of an action's file argument, with the type its upload gave. The transcript of a chat links its attachments here. | 
+| `GET /v1/attachments/<type>/<id>/<ref>/<name>` | Serves a stored file of an action's file argument, with the type its upload gave. The transcript of a chat links its attachments here, and a reply's tool `output.url` points here. For a chat the route serves only a file one of the chat's records names, a message attachment or a tool call's whole output; a file beside them that no record names, a path that leaves the chat's directory, and another chat's file are `404`. |
 | `POST /v1/answer` | Answers an open question of a pending item. The body is `{ "runId": "<item runId>", "waitId": "<item waitId>", "choice"?: "<one of the item's choices>", "answers"?: [{ "id", "choices"?: ["<label>"], "text"? , "skipped"?: true }], "note": "...", "confirmed": true }`; `runId`, `waitId` and a `choice` or `answers` are required, and `note` and `confirmed` are optional. `answers` fills in a form: one entry per question, with the labels picked, the person's own text, or `skipped`; a question left out counts as skipped, and a missing answer to a required question is not invented. A `choice` answers a question that offers choices; for a form of one question it is that question's answer too. `note` is the person's note for the whole question or form; a plan review's `Request changes` carries what to change in it. The server checks every answer against the form before it records anything. When every choice is also an action on the item's object (a `dev` wait), it runs that action, so the action's note and confirmation apply; a confirmed action needs `"confirmed": true` just as it does for `/v1/act`. An answer to a question that is already closed gets `409` and is not applied. |
 | `GET /v1/events` | An SSE stream of changes. |
 
@@ -214,13 +214,15 @@ A thinking or text item is `{ kind, text, at? }`. A tool item is
 `at` is when a tool call started. `durationMs` and `result` are absent while the
 call is still running. `failed` is true only for the result `failed`; the other
 results are `done`, `blocked` and `denied`. `output` is
-`{ text, lines, path?, truncated? }`: `text` is the recorded output (the first
-4 KB at most), `lines` counts its lines, `path` is the file holding the whole
-output when it was longer than 4 KB, and `truncated` says that file holds more
-than `text` does. When the size cap cuts the output, `text` is empty, `lines`
-keeps its count and `truncated` is `true`; a full read leaves the text whole. A
-client shows the first lines and folds the rest; the changed-file card and diff
-are not part of this shape.
+`{ text, lines, url?, truncated? }`: `text` is the recorded output (the first
+4 KB at most), `lines` counts its lines, `url` is the `/v1/attachments/...`
+address that serves the whole output through this interface when it was longer
+than 4 KB, and `truncated` says that file holds more than `text` does. The reply
+never carries the file's local path on the serve machine. When the size cap cuts
+the output, `text` is empty, `lines` keeps its count and `truncated` is `true`; a
+full read leaves the text whole. A client shows the first lines, folds the rest
+and fetches `url` for all of it; the changed-file card and diff are not part of
+this shape.
 
 ## Settings
 

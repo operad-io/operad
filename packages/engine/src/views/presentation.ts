@@ -31,7 +31,7 @@ import {
 } from "../plugin/paging.ts";
 import { ALL_FILTER, filterShows, typeFilters, type TypeFilter } from "../plugin/filters.ts";
 import { ActionArgsError, fileProperties, noteProperty, validateActionArgs } from "../plugin/action-schema.ts";
-import { attachmentDir, UploadMissingError, Uploads } from "./uploads.ts";
+import { attachmentDir, findAttachment, UploadMissingError, Uploads } from "./uploads.ts";
 import type {
   ActionTypeDefinition,
   Actor,
@@ -1322,6 +1322,46 @@ export class Views {
   async facts(id: string, options: FactsOptions = {}): Promise<FactsPage> {
     const resolved = await this.resolve(id);
     return this.store.facts({ type: resolved.type, id: resolved.id }, options);
+  }
+
+  /**
+   * The file a `/v1/attachments/<rel>` request may serve. A type that declares
+   * `file` serves only what its records name; every other type keeps the
+   * attachment directories' own bounds. The name and type come from the file
+   * itself, and a link out of the root is still refused.
+   */
+  async file(
+    rel: readonly string[],
+  ): Promise<
+    { readonly path: string; readonly type: string; readonly name: string } | undefined
+  > {
+    const type = rel[0];
+    const id = rel[1];
+    if (type !== undefined && id !== undefined) {
+      const owner = this.registry.viewsFor(type);
+      if (owner?.views.file !== undefined) {
+        let object: StoredObject | undefined;
+        try {
+          object = await this.store.get(type, id);
+        } catch (error) {
+          this.onLog(`plugin "${owner.plugin}": file lookup for "${type}:${id}" failed: ${messageOf(error)}`);
+          return undefined;
+        }
+        if (object === undefined) return undefined;
+        try {
+          const allowed = await owner.views.file(
+            this.viewContext(owner.plugin, new AbortController().signal),
+            object,
+            rel.slice(2),
+          );
+          if (allowed !== true) return undefined;
+        } catch (error) {
+          this.onLog(`plugin "${owner.plugin}": file check for "${type}:${id}" failed: ${messageOf(error)}`);
+          return undefined;
+        }
+      }
+    }
+    return findAttachment(this.home, rel);
   }
 
   /** One object: its row, its section directory and the actions available now. */

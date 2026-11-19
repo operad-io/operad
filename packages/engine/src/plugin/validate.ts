@@ -195,6 +195,9 @@ function normalizeViews(
     if (raw.skills !== undefined && typeof raw.skills !== "function") {
       throw new PluginError(`${at}.${type}: skills: must be a function`);
     }
+    if (raw.file !== undefined && typeof raw.file !== "function") {
+      throw new PluginError(`${at}.${type}: file: must be a function`);
+    }
     if (raw.tail !== undefined && typeof raw.tail !== "function") {
       throw new PluginError(`${at}.${type}: tail: must be a function`);
     }
@@ -211,6 +214,9 @@ function normalizeViews(
       ...(raw.skills === undefined
         ? {}
         : { skills: raw.skills as NonNullable<ObjectViews["skills"]> }),
+      ...(raw.file === undefined
+        ? {}
+        : { file: raw.file as NonNullable<ObjectViews["file"]> }),
       ...(raw.tail === undefined
         ? {}
         : { tail: raw.tail as NonNullable<ObjectViews["tail"]> }),

@@ -1232,3 +1232,10 @@ The T-0570 rows earlier in this file predate the rename of the `live` hook and
 fact > a pushed tail is held to one per object per 50 ms and the last growth
 wins` and `http server > a pushed tail is its own event and is not part of the
 resume window`. Rows are append-only, so the old lines stay as history.
+
+## T-0577 — the attachment route serves only a chat's recorded files
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0577-M1 | packages/engine/src/views/presentation.ts | `file` skipped the plugin's record check and served any file under the attachment directories | `the attachment route refuses a file the chat does not name, and one outside the chat` |
+| T-0577-M2 | packages/engine/src/plugin/validate.ts | a `file` view hook that was not a function passed validation | `plugin registry validation > rejects a views file check that is not a function` |

@@ -1,6 +1,6 @@
 /** How a chat shows in a list and on its page: a row and a transcript. */
 
-import { attachmentUrl, decodeCursor, DEFAULT_SECTION_CAP_BYTES, encodeCursor } from "@operad-io/engine";
+import { attachmentDir, attachmentUrl, decodeCursor, DEFAULT_SECTION_CAP_BYTES, encodeCursor } from "@operad-io/engine";
 import type {
   JsonValue,
   ObjectRef,
@@ -14,11 +14,12 @@ import type {
   ViewContext,
   ViewSection,
 } from "@operad-io/engine";
+import { join } from "node:path";
 import { maskSecrets, type FoldEntry } from "@operad-io/harness-process";
 import { secretValues } from "./reply.ts";
 import { readChatSkills, skillSummaries, type ObjectReader } from "./skills.ts";
 import { foldLogTail, agentLogPath } from "./tail.ts";
-import { agentLine, allMessages, answeredOfFact, attachmentsOf, chatData, chatRef, COMMAND_FACT, commandOfFact, ENTRY_FACT, entryOfFact, IMAGE_TYPES, lastReplyContext, latestRunOf, MESSAGE_CHANGE_FACT, MESSAGE_FACT, messageChangeOfFact, messageFactsInForce, modelAndCost, queuedData, queuedMessages, queuedOf, RUN_FACT, stopOfFact, timingsOf, unanswered, ANSWER_FACT, type Attachment, type ChatContext, type Command, type Entry, type Message, type MessageChange, type ToolResult } from "./model.ts";
+import { agentLine, allMessages, answeredOfFact, attachmentsOf, CHAT_TYPE, chatData, chatRef, COMMAND_FACT, commandOfFact, ENTRY_FACT, entryOfFact, IMAGE_TYPES, lastReplyContext, latestRunOf, MESSAGE_CHANGE_FACT, MESSAGE_FACT, messageChangeOfFact, messageFactsInForce, modelAndCost, queuedData, queuedMessages, queuedOf, RUN_FACT, stopOfFact, timingsOf, unanswered, ANSWER_FACT, type Attachment, type ChatContext, type Command, type Entry, type Message, type MessageChange, type ToolResult } from "./model.ts";
 import type { TailRead } from "./tail.ts";
 
 /** How many messages of a chat one page of the transcript holds. */
@@ -238,9 +239,9 @@ export interface ReplyOutput {
   readonly text: string;
   /** How many lines the recorded output has; a final newline adds no empty line. */
   readonly lines: number;
-  /** The file that holds the whole output, when it was longer than 4 KB. */
-  readonly path?: string | undefined;
-  /** Whether the recorded output was cut; `path` then holds the rest. */
+  /** The server address of the file that holds the whole output, when it was longer than 4 KB. */
+  readonly url?: string | undefined;
+  /** Whether the recorded output was cut; `url` then holds the rest. */
   readonly truncated?: true | undefined;
 }
 
@@ -309,17 +310,23 @@ function lineCount(text: string): number {
   return clean.length === 0 ? 0 : clean.split("\n").length;
 }
 
-function replyOutput(text: string | null | undefined, path?: string, truncated?: boolean): ReplyOutput {
+function replyOutput(
+  text: string | null | undefined,
+  path: string | undefined,
+  truncated: boolean | undefined,
+  home: string | undefined,
+): ReplyOutput {
   const said = text ?? "";
+  const url = path === undefined || home === undefined ? undefined : attachmentUrl(home, path);
   return {
     text: said,
     lines: lineCount(said),
-    ...(path === undefined ? {} : { path }),
+    ...(url === undefined ? {} : { url }),
     ...(truncated === true ? { truncated: true as const } : {}),
   };
 }
 
-function replyItemOfEntry(entry: Entry): ReplyItem | undefined {
+function replyItemOfEntry(entry: Entry, home: string | undefined): ReplyItem | undefined {
   if (entry.kind === "tool") {
     return {
       kind: "tool",
@@ -330,7 +337,7 @@ function replyItemOfEntry(entry: Entry): ReplyItem | undefined {
       ...(entry.durationMs === undefined ? {} : { durationMs: entry.durationMs }),
       failed: entry.result === "failed",
       result: entry.result,
-      output: replyOutput(entry.output, entry.outputPath, entry.outputTruncated || entry.outputPath !== undefined),
+      output: replyOutput(entry.output, entry.outputPath, entry.outputTruncated || entry.outputPath !== undefined, home),
     };
   }
   if (entry.kind !== "text" && entry.kind !== "thinking") return undefined;
@@ -358,6 +365,7 @@ function replyItemOfFold(entry: FoldEntry, secrets: readonly string[]): ReplyIte
         entry.output === null ? null : maskSecrets(entry.output, secrets),
         undefined,
         entry.outputTruncated,
+        undefined,
       ),
     };
   }
@@ -385,6 +393,7 @@ function replyItemOfOpenCall(
       call.output === null ? null : maskSecrets(call.output, secrets),
       undefined,
       call.outputTruncated,
+      undefined,
     ),
   };
 }
@@ -416,7 +425,7 @@ function appendItem(state: OpenGroups, item: ReplyItem): void {
 }
 
 /** The process of one turn's facts, split where a message the reply took arrived. */
-function processOf(chunk: Chunk, extra: readonly ReplyItem[] = []): readonly ReplyProcess[] {
+function processOf(chunk: Chunk, home: string | undefined, extra: readonly ReplyItem[] = []): readonly ReplyProcess[] {
   const events: { readonly at?: number | undefined; readonly order: number; readonly message?: Message; readonly item?: ReplyItem }[] = [];
   for (const fact of turnFacts(chunk.facts)) {
     const message = fact.type === MESSAGE_FACT ? messageFrom(fact) : undefined;
@@ -426,7 +435,7 @@ function processOf(chunk: Chunk, extra: readonly ReplyItem[] = []): readonly Rep
     }
     if (fact.type !== ENTRY_FACT) continue;
     const entry = entryOfFact(fact);
-    const item = entry === undefined ? undefined : replyItemOfEntry(entry);
+    const item = entry === undefined ? undefined : replyItemOfEntry(entry, home);
     if (item !== undefined) events.push({ ...(item.at === undefined ? {} : { at: item.at }), order: events.length, item });
   }
   // The log's unfinished items follow the facts; their times put them before a
@@ -505,6 +514,7 @@ function answerBefore(chunks: readonly Chunk[], sequence: number): number {
 function storedReplies(
   chunks: readonly Chunk[],
   messages: readonly Message[],
+  home: string | undefined,
   previousAnswer = -1,
 ): readonly BuiltReply[] {
   const byId = new Map(messages.map((message) => [message.id, message]));
@@ -532,7 +542,7 @@ function storedReplies(
       block: {
         runId,
         input: messagesInTime(input),
-        process: processOf(chunk),
+        process: processOf(chunk, home),
         answer: replyMessage(answer),
         ...(answer.timings === undefined ? {} : { durationMs: answer.timings.totalMs }),
       },
@@ -549,6 +559,7 @@ function liveReply(
   facts: readonly PluginFact[],
   messages: readonly Message[],
   live: LiveReply,
+  home: string | undefined,
 ): BuiltReply | undefined {
   const chunks = chunksOf(facts);
   let target = -1;
@@ -564,7 +575,7 @@ function liveReply(
       block: {
         runId: chunk.runId ?? live.runId,
         input: messagesInTime(unanswered(messages, facts)),
-        process: processOf(chunk, live.items),
+        process: processOf(chunk, home, live.items),
       },
       chunk,
     };
@@ -1382,7 +1393,7 @@ async function load(
   const liveBlock =
     liveRun === undefined
       ? undefined
-      : liveReply(facts, messages, { runId: liveRun, items: liveItems ?? [] });
+      : liveReply(facts, messages, { runId: liveRun, items: liveItems ?? [] }, ctx.home);
   const limit = options.full === true ? Number.POSITIVE_INFINITY : ctx.sectionCapBytes ?? DEFAULT_SECTION_CAP_BYTES;
   // A message the live tail holds stays unread as finished content until the
   // run ends, so the same facts then arrive together with the reply's items.
@@ -1406,6 +1417,7 @@ async function load(
     const changed = storedReplies(
       sinceChunks,
       messages,
+      ctx.home,
       firstSince === undefined ? -1 : answerBefore(finishedChunks, firstSince),
     );
     const replies = liveBlock === undefined ? changed : [...changed, liveBlock];
@@ -1433,6 +1445,7 @@ async function load(
   const onPageBlocks = storedReplies(
     pageChunks,
     messages,
+    ctx.home,
     answerBefore(finishedChunks, firstOnPage),
   );
   const pageReplies = pageIndex === pages.length - 1 && liveBlock !== undefined
@@ -1489,7 +1502,7 @@ async function tailPush(
   const messages = facts.map(messageFrom).filter((message): message is Message => message !== undefined);
   const liveBlock = live.run === undefined
     ? undefined
-    : liveReply(facts, messages, { runId: live.run, items: live.items ?? [] });
+    : liveReply(facts, messages, { runId: live.run, items: live.items ?? [] }, ctx.home);
   const limit = ctx.sectionCapBytes ?? DEFAULT_SECTION_CAP_BYTES;
   const data = liveBlock === undefined
     ? undefined
@@ -1509,6 +1522,29 @@ async function tailPush(
   };
 }
 
+/** Whether a requested path is one the chat's own facts name, never one a client chose. */
+async function file(ctx: ViewContext, object: StoredObject, path: readonly string[]): Promise<boolean> {
+  if (
+    path.length === 0 ||
+    path.some(
+      (part) => part.length === 0 || part === "." || part === ".." || part.includes("/") || part.includes("\\"),
+    )
+  ) {
+    return false;
+  }
+  const requested = join(attachmentDir(ctx.home, CHAT_TYPE, object.id), ...path);
+  const named = new Set<string>();
+  for (const fact of allFacts(ctx, chatRef(object.id))) {
+    if (fact.type === MESSAGE_FACT) {
+      for (const attachment of attachmentsOf(fact.data.attachments)) named.add(attachment.path);
+    } else if (fact.type === ENTRY_FACT) {
+      const entry = entryOfFact(fact);
+      if (entry?.outputPath !== undefined) named.add(entry.outputPath);
+    }
+  }
+  return named.has(requested);
+}
+
 /** The views of the chat type. */
 export const chatViews: ObjectViews = {
   row,
@@ -1516,6 +1552,7 @@ export const chatViews: ObjectViews = {
   context: chatContext,
   skills: async (ctx, object) =>
     skillSummaries(await readChatSkills(chatData(object.data), objectReader(ctx))),
+  file,
   tail: tailPush,
   load,
 };

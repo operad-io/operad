@@ -224,10 +224,13 @@ describe("a reply's structured form", () => {
     expect(failed.output.text.startsWith("line 1\nline 2")).toBe(true);
     expect(failed.output.text).not.toContain("line 1000");
     expect(failed.output.lines).toBeGreaterThan(16);
-    expect(failed.output.path).toBeDefined();
+    expect(failed.output.url).toBe(
+      `/v1/attachments/chat/${chat}/tool-output/${block.runId}/b.txt`,
+    );
     expect(failed.output.truncated).toBe(true);
-    if (failed.output.path === undefined) throw new Error("the long output has no file");
-    expect(await Bun.file(failed.output.path).text()).toBe(output);
+    expect(failed.output).not.toHaveProperty("path");
+    const stored = join(r.root, "home", "attachments", "chat", chat, "tool-output", block.runId, "b.txt");
+    expect(await Bun.file(stored).text()).toBe(output);
   });
 
   test("a reply with a mid-run message keeps both in time order and splits its process there", async () => {
