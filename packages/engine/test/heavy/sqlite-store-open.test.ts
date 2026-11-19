@@ -190,15 +190,35 @@ test("a poll stops when the store's -wal and -shm are removed", () => {
       };
     },
   });
+  const real = store["db"];
   try {
     store.subscribe(() => undefined);
     if (tick === undefined) throw new Error("the poll did not start");
     const poll = tick;
     rmSync(`${file}-wal`, { force: true });
     rmSync(`${file}-shm`, { force: true });
+    // SQLite keeps removed journals open through its descriptors, so the query
+    // can still succeed after the unlink. A teardown that loses them makes the
+    // next query fail; let it fail here, so the test proves the poll stops when
+    // an I/O error finds the journals gone instead of waiting for the race.
+    const vanishing = new Proxy(real, {
+      get(target, property, receiver) {
+        if (property === "query") {
+          return () => {
+            throw Object.assign(new Error("disk I/O error"), {
+              code: "SQLITE_IOERR",
+            });
+          };
+        }
+        const value: unknown = Reflect.get(target, property, receiver);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    (store as unknown as { db: Database }).db = vanishing;
     expect(() => poll()).not.toThrow();
     expect(stopped).toBe(true);
   } finally {
+    (store as unknown as { db: Database }).db = real;
     store.close();
   }
 });
