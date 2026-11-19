@@ -462,6 +462,29 @@ export class AskHost {
               : { choiceInfo: record.choiceInfo }),
           };
         }
+        if (request.recheck !== undefined) {
+          const next = await request.recheck();
+          if (next.ask === false) {
+            await appendWhen(this.log, runId, (asks) =>
+              asks.get(waitId)?.status === "open"
+                ? [
+                    {
+                      kind: "ask_answered",
+                      payload: {
+                        waitId,
+                        choice: "allow_once",
+                        note: next.note ?? null,
+                        actor: next.actor === undefined
+                          ? { via: "", id: "" }
+                          : { via: next.actor.via, id: next.actor.id },
+                      },
+                    },
+                  ]
+                : [],
+            );
+            continue;
+          }
+        }
         if (grace <= 0 || expired) {
           await appendWhen(this.log, runId, (asks) =>
             asks.get(waitId)?.status === "open"

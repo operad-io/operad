@@ -18,6 +18,7 @@ import {
 } from "@anthropic-ai/claude-agent-sdk";
 import {
   firstErrorLine,
+  liveAccess,
   messageSummary,
   readProfile,
   REFUSED_IN_LOG,
@@ -979,10 +980,11 @@ class ClaudeSession {
     if (turn === undefined) return { behavior: "deny", message: "no reply is running" };
     const input = turn.input;
     const io = turn.io;
+    const profile = liveAccess(turn.profile);
     io.log(`canUseTool ${toolName}`);
     const askHost = io.ask;
     const verdict = await decideAccess(
-      turn.profile,
+      profile,
       toolName,
       toolInput,
       input.cwd,
@@ -993,7 +995,7 @@ class ClaudeSession {
             if ((input.secretValues ?? []).some((secret) => secret.length > 0 && question.value.includes(secret))) {
               return { decision: "deny", reason: "the call holds a secret value, so nobody is asked about it" };
             }
-            const shown = summarizeCall(turn.profile, toolName, toolInput, input.cwd, {
+            const shown = summarizeCall(profile, toolName, toolInput, input.cwd, {
               secrets: input.secretValues,
               forQuestion: true,
             });
@@ -1016,7 +1018,7 @@ class ClaudeSession {
 
   private deniedByProfile(turn: Turn, name: string, toolInput: unknown): { readonly rule?: string } | undefined {
     const record = typeof toolInput === "object" && toolInput !== null ? (toolInput as Record<string, unknown>) : {};
-    const check = checkProfile(turn.profile, name, record, turn.input.cwd);
+    const check = checkProfile(liveAccess(turn.profile), name, record, turn.input.cwd);
     if (check.kind !== "refuse") return undefined;
     return check.rule === undefined ? {} : { rule: check.rule };
   }
@@ -1027,9 +1029,10 @@ class ClaudeSession {
   // through the same matcher says whether read-only is what stops the call.
   private hookRefusal(turn: Turn, name: string, toolInput: unknown): { readonly reason: string } | undefined {
     const record = typeof toolInput === "object" && toolInput !== null ? (toolInput as Record<string, unknown>) : {};
-    const check = checkProfile(turn.profile, name, record, turn.input.cwd);
+    const profile = liveAccess(turn.profile);
+    const check = checkProfile(profile, name, record, turn.input.cwd);
     if (check.kind === "refuse") return { reason: check.reason };
-    if (turn.profile.readOnly === true) {
+    if (profile.readOnly === true) {
       const alone = checkProfile({ readOnly: true }, name, record, turn.input.cwd);
       if (alone.kind !== "allow") return { reason: alone.reason };
     }
@@ -1043,7 +1046,7 @@ class ClaudeSession {
     const denied = this.deniedByProfile(turn, name, toolInput);
     const summary = denied !== undefined
       ? `${name} denied by the access profile${denied.rule === undefined ? "" : ` (rule: ${denied.rule.replace(/\s+/g, " ").slice(0, 300)})`}`
-      : summarizeCall(turn.profile, name, toolInput, turn.input.cwd, {
+      : summarizeCall(liveAccess(turn.profile), name, toolInput, turn.input.cwd, {
           secrets: turn.input.secretValues,
           keepLines: true,
         });

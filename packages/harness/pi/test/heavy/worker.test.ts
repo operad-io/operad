@@ -155,8 +155,11 @@ function writeToolClashExtension(agentDir: string, marker: string): string {
 class ProcessChild {
   readonly #process: Bun.Subprocess<"pipe", "pipe", "pipe">;
   readonly #stderrText: Promise<string>;
-  readonly #stdoutText: Promise<string>;
+  readonly #stdoutDone: Promise<void>;
   readonly #waiters = new Set<() => void>();
+  readonly #listeners: Array<(line: Record<string, unknown>) => void> = [];
+  #stdout = "";
+  #pending = "";
   #stderr = "";
 
   constructor(file: string, home: string, env: Record<string, string>) {
@@ -166,8 +169,31 @@ class ProcessChild {
       stderr: "pipe",
       env: { ...process.env, HOME: home, ...env },
     });
-    this.#stdoutText = new Response(this.#process.stdout).text();
+    this.#stdoutDone = this.#readStdout(this.#process.stdout);
     this.#stderrText = this.#readStderr(this.#process.stderr);
+  }
+
+  async #readStdout(stream: ReadableStream<Uint8Array>): Promise<void> {
+    const decoder = new TextDecoder();
+    for await (const chunk of stream) {
+      const text = decoder.decode(chunk, { stream: true });
+      this.#stdout += text;
+      this.#pending += text;
+      for (;;) {
+        const newline = this.#pending.indexOf("\n");
+        if (newline === -1) break;
+        const line = this.#pending.slice(0, newline);
+        this.#pending = this.#pending.slice(newline + 1);
+        if (line.length === 0) continue;
+        const parsed = JSON.parse(line) as Record<string, unknown>;
+        for (const listener of this.#listeners) listener(parsed);
+      }
+    }
+  }
+
+  /** Calls `listener` with each stdout line the child writes from now on. */
+  onLine(listener: (line: Record<string, unknown>) => void): void {
+    this.#listeners.push(listener);
   }
 
   async #readStderr(stream: ReadableStream<Uint8Array>): Promise<string> {
@@ -217,9 +243,9 @@ class ProcessChild {
 
   async finish(): Promise<Run> {
     const exitCode = await this.#process.exited;
-    const out = await this.#stdoutText;
+    await this.#stdoutDone;
     const stderr = await this.#stderrText;
-    const raw = out.split("\n").filter((line) => line.length > 0);
+    const raw = this.#stdout.split("\n").filter((line) => line.length > 0);
     return { lines: raw.map((line) => JSON.parse(line) as Record<string, unknown>), raw, stderr, exitCode };
   }
 }
@@ -878,6 +904,46 @@ test("an access level reaches each call's decision", async () => {
     );
     expect(run.lines.filter((line) => line["type"] === "blocked")).toHaveLength(item.blocked ? 1 : 0);
   }
+});
+
+test("a real worker reads the live level again for each call, so lowering to ask applies", async () => {
+  const s = setup();
+  const levelFile = join(s.dir, "access.json");
+  writeFileSync(levelFile, JSON.stringify({ access: {}, level: "full" }));
+  const first = join(s.dir, "first");
+  const second = join(s.dir, "second");
+  const release = join(s.dir, "release");
+  const asked: Array<Record<string, unknown>> = [];
+  let firstDone: () => void = () => {};
+  const firstFinished = new Promise<void>((resolve) => {
+    firstDone = resolve;
+  });
+  const child = new ProcessChild(FAKE_WORKER, s.home, {
+    FAKE_SCRIPT: JSON.stringify([
+      { text: "", toolCall: { name: "bash", arguments: { command: `touch ${first}` } } },
+      { text: "", gate: true, toolCall: { name: "bash", arguments: { command: `touch ${second}` } } },
+      { text: "finished" },
+    ]),
+    FAKE_RELEASE: release,
+  });
+  child.onLine((line) => {
+    if (line["type"] === "tool_execution_end" && line["toolCallId"] === "fake-tool-1") firstDone();
+    if (line["type"] !== "ask_call") return;
+    asked.push(line);
+    child.sendLine(JSON.stringify({ type: "ask_ack", id: line["id"], decision: "allow" }));
+  });
+  child.sendLine(JSON.stringify({ ...s.input, access: { level: "full", levelFile } }));
+
+  // The first call ran at full. Lower the level before the gated second call.
+  await firstFinished;
+  writeFileSync(levelFile, JSON.stringify({ access: {}, level: "ask" }));
+  writeFileSync(release, "go");
+
+  const run = await child.finish();
+  expect(asked).toHaveLength(1);
+  expect(asked[0]).toMatchObject({ type: "ask_call", kind: "command", value: `touch ${second}` });
+  expect(existsSync(second)).toBe(true);
+  expect(last(run)).toMatchObject({ result: "done", finalMessage: "finished" });
 });
 
 test("without a profile nothing is blocked", async () => {

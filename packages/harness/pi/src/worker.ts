@@ -10,6 +10,7 @@ import {
   findGrant,
   firstErrorLine,
   REFUSED_IN_LOG,
+  liveAccess,
   match,
   messageSummary,
   readProfile,
@@ -377,7 +378,10 @@ export async function runWorker(
   // matcher; a refusal blocks the call and the agent goes on.
   const bashTimeoutSecs = input.bashTimeoutSecs ?? DEFAULT_BASH_TIMEOUT_SECS;
   const access = readProfile(input.access ?? {});
-  const profile: AccessProfile = access.ok ? access.profile : {};
+  const startProfile: AccessProfile = access.ok ? access.profile : {};
+  // A chat writes its live level beside the profile; reading it per call lets a
+  // change reach a reply that is already running, including a lowering.
+  const currentProfile = (): AccessProfile => liveAccess(startProfile);
   const blockedCalls = new Set<string>();
   const ownSettings = input.useOwnSettings === true;
   // Operad's own tools, by the names they take in pi; they are not the owner's
@@ -402,7 +406,7 @@ export async function runWorker(
     (candidate.askPaths ?? []).length > 0 ||
     candidate.readOnly === true ||
     (candidate.level !== undefined && candidate.level !== "full");
-  const judge = (name: string, toolInput: Readonly<Record<string, unknown>>): Verdict => {
+  const judge = (profile: AccessProfile, name: string, toolInput: Readonly<Record<string, unknown>>): Verdict => {
     if (operadToolNames.has(name)) return { allow: true };
     const row = TOOL_FIELDS[name];
     if (row === undefined) {
@@ -432,7 +436,8 @@ export async function runWorker(
         const bounded = boundedTimeout(Reflect.get(event.input, "timeout"), bashTimeoutSecs);
         if (bounded !== undefined) Reflect.set(event.input, "timeout", bounded);
       }
-      const verdict = judge(event.toolName, event.input);
+      const profile = currentProfile();
+      const verdict = judge(profile, event.toolName, event.input);
       if (verdict.allow) return undefined;
       // A one-time permission covers one exact call that would be refused. The
       // host writes the fact before it answers, so a crash after it cannot
@@ -650,7 +655,7 @@ export async function runWorker(
       case "tool_execution_start": {
         const startedAt = now();
         started.set(event.toolCallId, startedAt);
-        const summary = summarizeCall(profile, event.toolName, event.args, input.cwd, { secrets: input.secretValues, keepLines: true });
+        const summary = summarizeCall(currentProfile(), event.toolName, event.args, input.cwd, { secrets: input.secretValues, keepLines: true });
         io.line({
           type: "tool_execution_start",
           toolCallId: event.toolCallId,

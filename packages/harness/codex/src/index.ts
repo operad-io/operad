@@ -8,7 +8,7 @@
  */
 
 import pkg from "../package.json" with { type: "json" };
-import { readProfile, secretValuesOf, summarizeCall, withDefaultAccess, type AccessProfile } from "@operad-io/access-match";
+import { liveAccess, readProfile, secretValuesOf, summarizeCall, withDefaultAccess, type AccessProfile } from "@operad-io/access-match";
 import {
   isRecord,
   paramsObject,
@@ -497,7 +497,7 @@ export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
             runAccess = accessWithAlwaysAllow(access, user.entries, true);
           }
           const read = readProfile(runAccess ?? {});
-          const profile: AccessProfile = read.ok ? read.profile : {};
+          const startProfile: AccessProfile = read.ok ? read.profile : {};
 
           const jsonl = new JsonlLog(ctx.logger, clock, now);
           const stopper = new AbortController();
@@ -529,7 +529,7 @@ export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
             write: writeLine,
             now,
             cwd,
-            profile,
+            profile: startProfile,
             secrets: storeSecrets,
             active: () => client?.active === true,
           });
@@ -590,7 +590,7 @@ export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
             clientVersion: pkg.version,
             onNotification: (method, params) => log.handle(method, params),
             async onPermission(request) {
-              const decision = await decideAccess(profile, request.method, request.params, request.item, cwd, {
+              const decision = await decideAccess(liveAccess(startProfile), request.method, request.params, request.item, cwd, {
                 useGrant: (waitId) => ctx.useGrant(waitId),
                 ask,
                 shown,

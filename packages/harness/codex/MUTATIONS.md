@@ -117,3 +117,9 @@ recorded. The root [MUTATIONS.md](../../../MUTATIONS.md) explains the format and
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0556-M1 | packages/harness/codex/src/index.ts | the ask line's `shown` was summarized as a log, so an unreadable command was hidden from the question | `codex/agent: permissions > a question about a command the log cannot read shows the command itself` |
+
+## T-0558 — the codex permission request reads the live level
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0558-M7 | packages/harness/codex/src/index.ts | the permission request used the startup profile instead of the live one | `codex/agent: permissions > the live level file is read for the permission request, not only at the start` |

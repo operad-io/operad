@@ -1,9 +1,10 @@
 import { afterEach, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, existsSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { EFFORT_LEVELS, parseInput } from "../../src/protocol.ts";
 import { STREAM_GROUP_MS, serveWorker } from "../../src/worker.ts";
+import { waitForChange } from "@operad-io/engine/platform";
 import { TOOL_OUTPUT_CAP_BYTES } from "@operad-io/harness-process";
 import { fakeHooks } from "../fake-hooks.ts";
 import { TOOL_TABLE } from "../../src/access.ts";
@@ -176,6 +177,7 @@ class Child {
   readonly #encoder = new TextEncoder();
   readonly #waiters = new Set<() => void>();
   readonly #controller = new AbortController();
+  readonly #listeners: Array<(line: Line) => void> = [];
   #stdout = "";
   #stderr = "";
   #exit: number | undefined;
@@ -198,6 +200,11 @@ class Child {
       {
         write: (text) => {
           this.#stdout += text;
+          for (const textLine of text.split("\n")) {
+            if (!textLine.startsWith("{")) continue;
+            const parsed = JSON.parse(textLine) as Line;
+            for (const listener of this.#listeners) listener(parsed);
+          }
           wake();
         },
         log: (text) => log(`${text}\n`),
@@ -223,6 +230,11 @@ class Child {
 
   endInput(): void {
     void this.#writer.close().catch(() => undefined);
+  }
+
+  /** Calls `listener` with each stdout line the run writes from now on. */
+  onLine(listener: (line: Line) => void): void {
+    this.#listeners.push(listener);
   }
 
   /** Waits for the first stdout line of this type, or the end of the run. */
@@ -1592,6 +1604,51 @@ test("a secret of the operad store sent as secretValues is masked in the logged 
   });
   expect(toolLines(run).start[0]?.["input"]).toBe("curl -H *** x");
   expect(run.stdout).not.toContain("store-secret-9");
+});
+
+test("a running worker reads the live level again for each call, so lowering asks", async () => {
+  const s = setup();
+  const levelFile = join(dirname(s.recordFile), "access.json");
+  const gate = join(dirname(s.recordFile), "gate");
+  writeFileSync(levelFile, JSON.stringify({ access: {}, level: "full" }));
+  s.input["access"] = { level: "full", levelFile };
+
+  const child = new Child(
+    s.env({
+      steps: [
+        { say: systemInit() },
+        { ask: { toolName: "Bash", toolUseId: "tool-1", input: { command: "echo first" } } },
+        { say: assistant("m1", "first") },
+        { wait: gate },
+        { ask: { toolName: "Bash", toolUseId: "tool-2", input: { command: "touch second" } } },
+        { say: assistant("m2", "second") },
+        { say: result() },
+      ],
+    }),
+    s.recordFile,
+  );
+  let firstDone: () => void = () => {};
+  const firstFinished = new Promise<void>((resolve) => {
+    firstDone = resolve;
+  });
+  const asked: Line[] = [];
+  child.onLine((line) => {
+    if (line["type"] === "message_end") firstDone();
+    if (line["type"] !== "ask_call") return;
+    asked.push(line);
+    child.sendLine(JSON.stringify({ type: "ask_ack", id: line["id"], decision: "allow" }));
+  });
+  child.sendLine(JSON.stringify(s.input));
+
+  // The first call ran at full. Lower the level before the gated second call.
+  await firstFinished;
+  writeFileSync(levelFile, JSON.stringify({ access: {}, level: "ask" }));
+  writeFileSync(gate, "go");
+
+  const run = await child.finish();
+  expect(asked).toHaveLength(1);
+  expect(asked[0]).toMatchObject({ type: "ask_call", kind: "command", value: "touch second" });
+  expect(last(run)).toMatchObject({ result: "done" });
 });
 
 // -- askCommands: a call that must ask a person ------------------------------

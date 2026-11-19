@@ -382,6 +382,31 @@ describe("codex/agent: permissions", () => {
     expect(dataOf(result).finalMessage).toBe("it was refused");
   });
 
+  test("the live level file is read for the permission request, not only at the start", async () => {
+    const env = await setup("permission", { vars: { FAKE_CODEX_COMMAND: "touch hi" } });
+    const levelFile = join(env.root, "access.json");
+    writeFileSync(levelFile, JSON.stringify({ access: {}, level: "ask" }));
+    const asked: string[] = [];
+    const result = await runAgent(
+      env,
+      { prompt: "x", cwd: env.root },
+      {
+        access: { level: "full", levelFile },
+        asker: {
+          ask: (request) => {
+            asked.push(request.prompt);
+            return Promise.resolve({ kind: "answered" as const, answer: { choice: "allow_once" } });
+          },
+          useGrant: () => Promise.resolve(false),
+        },
+      },
+    );
+    expect(result.result).toBe("done");
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toContain("touch hi");
+    expect(permissionOutcome(env)).toBe("accept");
+  });
+
   test("a command the profile denies is rejected and logged as blocked", async () => {
     const env = await setup("permission");
     const result = await runAgent(env, { prompt: "x", cwd: env.root }, { access: { denyCommands: ["rm -rf"] } });

@@ -526,6 +526,16 @@ export interface ChoiceInfo {
   readonly note?: "optional" | "required" | undefined;
 }
 
+/** What a question says when it is checked again while it waits. */
+export interface AskRecheck {
+  /** False when this question no longer needs a person. */
+  readonly ask: boolean;
+  /** Why it was let through, shown in history; the level's own title for a level change. */
+  readonly note?: string | undefined;
+  /** Who changed what lifted the question, when one person did. */
+  readonly actor?: Actor | undefined;
+}
+
 /** What a step asks a person with `ctx.ask`. */
 export interface AskRequest {
   readonly prompt: string;
@@ -551,6 +561,13 @@ export interface AskRequest {
   readonly onTimeout?: "waiting" | "reject_once" | undefined;
   /** What the step needs to carry on later; handed back in the `waiting` data. */
   readonly resume?: JsonValue | undefined;
+  /**
+   * Whether the question still needs a person. The host checks it while the
+   * question waits; when it says no, the question is answered `allow_once` with
+   * its note and actor. A level change uses this so a question it made
+   * unnecessary does not stay open.
+   */
+  readonly recheck?: (() => MaybePromise<AskRecheck>) | undefined;
 }
 
 /** The answer `ctx.ask` returns. */

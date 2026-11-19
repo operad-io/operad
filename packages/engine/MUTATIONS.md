@@ -1136,3 +1136,9 @@ the row fields.
 | T-0552-M2 | packages/engine/src/plugin/sqlite-store.ts | a poll that met a gone store returned without stopping its timer | `a poll stops when the store's directory is removed, so its timer does not outlive it` |
 | T-0552-M3 | packages/engine/src/plugin/sqlite-store.ts | a poll swallowed an I/O error from a store whose files were still there | `a poll reports an I/O error from a store that is still there` |
 | T-0552-M4 | packages/engine/src/plugin/sqlite-store.ts | the pre-query check treated a missing `-wal`/`-shm` as a store that went away, so a live store stopped polling before it delivered facts | `a live store whose -wal is absent before a poll keeps delivering facts` |
+
+## T-0558 — a question rechecked under the new level
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0558-M4 | packages/engine/src/runner/ask.ts | a rechecked question wrote no note when it was answered `allow_once` | `ctx.ask > a question checked again and no longer needed is answered allow_once with its note` |
