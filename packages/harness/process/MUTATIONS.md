@@ -203,3 +203,17 @@ and the row fields.
 | T-0569-M5 | packages/harness/process/src/question-form.ts | `answerText` dropped the person's own words, so only a picked label reached the harness | `the answer to one question is its labels and free text` |
 | T-0569-M6 | packages/harness/process/src/ask-note.ts | `askNote` grew no form paragraph, so a late answer reached the agent as one text | `a form's paragraph names each question and its answer, and marks a skipped one` |
 | T-0569-M12 | packages/harness/process/src/question-form.ts | `askQuestions` kept a harness's long question text, which the kernel refuses, so one long description would end the reply instead of being cut | `a harness's long text is cut to the kernel's bounds, not refused` |
+
+## T-0573 — a plan review's note and a kept worker's form
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0573-M1 | packages/harness/process/src/ask-call.ts | the form answer's `note` was left out of `ask_form_ack`, so the person's reason for changes was lost | `a form's note > the person's note for the whole form goes back in the form's answer` |
+| T-0573-M2 | packages/harness/process/src/keep.ts | `Capture` did not pass `askForm` to the kept reply, so a plan review after the first reply never reached the person | `a plan review in a kept worker's second reply still reaches the person` |
+## T-0574 — a retry is a live transcript item
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0574-M1 | packages/harness/process/src/fold-lines.ts | `retry_start` was folded without keeping the retry | `foldLines > a retry carries its attempt, delay and reason until it ends` |
+| T-0574-M2 | packages/harness/process/src/fold-lines.ts | `retry_end` left the retry in the live state | `foldLines > a retry carries its attempt, delay and reason until it ends` |
+| T-0574-M3 | packages/harness/process/src/fold-lines.ts | a successful `message_end` left the retry in the live state | `foldLines > a successful message clears the retry even before its end line` |

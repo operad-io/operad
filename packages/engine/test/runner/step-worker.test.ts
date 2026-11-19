@@ -202,6 +202,40 @@ describe("step worker in this process", () => {
     });
   });
 
+  test("a form and its Markdown body reach the parent", async () => {
+    const root = await tempRoot();
+    const port = new FakePort();
+    const run = runStepWorker(request(root, "worker/ask-form"), port);
+    const ask = await port.next("ask");
+    expect(ask).toMatchObject({
+      kind: "ask",
+      request: {
+        prompt: "Plan",
+        questions: [
+          {
+            id: "plan",
+            text: "Plan",
+            body: "# Plan\n\n- change one",
+            choices: [{ label: "Approve" }, { label: "Request changes" }],
+          },
+        ],
+      },
+    });
+    port.send({
+      kind: "ask-result",
+      id: ask.id,
+      ok: true,
+      outcome: {
+        kind: "answered",
+        answer: { choice: undefined, answers: [{ id: "plan", choices: ["Approve"] }] },
+      },
+    });
+    expect(await resultOf(port, run)).toMatchObject({
+      ok: true,
+      result: { result: "answered", data: { answers: [{ id: "plan", choices: ["Approve"] }] } },
+    });
+  });
+
   test("an aborted question tells the parent to cancel it and fails the step", async () => {
     const root = await tempRoot();
     const port = new FakePort();

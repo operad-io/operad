@@ -14,6 +14,8 @@ import type { AskQuestion, AskQuestionAnswer, AskQuestionChoice, AskRequest } fr
 
 /** The kernel's longest question text, mirrored here so a long one is cut. */
 const MAX_QUESTION_TEXT = 500;
+/** The kernel's longest Markdown body, mirrored here. */
+const MAX_QUESTION_BODY = 256 * 1024;
 /** The kernel's longest header, mirrored here. */
 const MAX_QUESTION_HEADER = 40;
 /** The kernel's longest choice label, mirrored here. */
@@ -32,6 +34,7 @@ export interface HarnessQuestion {
   /** What the harness names this question by; empty for a harness without ids. */
   readonly id: string;
   readonly text: string;
+  readonly body?: string | undefined;
   readonly header?: string | undefined;
   readonly choices?: readonly HarnessQuestionChoice[] | undefined;
   /** True when the person may pick more than one choice. */
@@ -82,6 +85,9 @@ export function askQuestions(questions: readonly HarnessQuestion[]): AskQuestion
     form.push({
       id,
       text,
+      ...(question.body === undefined || question.body.length === 0
+        ? {}
+        : { body: cut(question.body, MAX_QUESTION_BODY) }),
       ...(question.header === undefined || question.header.trim().length === 0
         ? {}
         : { header: cut(question.header.trim(), MAX_QUESTION_HEADER) }),

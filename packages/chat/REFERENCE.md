@@ -213,6 +213,13 @@ a message fact, so it is never handed to the agent.
 The agent gets `operadTools: { home }`, so it calls operad through MCP tools and
 never through a shell.
 
+A `pi` reply turns pi's automatic retry on: a failed model request is tried
+again with pi's own bounded backoff, and the live transcript carries a `retry`
+item with the attempt, the time of the next try and the provider's reason (ADR
+0027 D9). A task keeps pi's retry off and lets dev's own retry wait and
+fallbacks decide. A successful retry removes the item; when the retries run out
+the reply fails as usual.
+
 A chat's access level is composed into the profile of every reply (ADR 0025
 D8): the level adds its asks on top of the profile's own deny and ask rules.
 In a repository chat whose profile is `readOnly` (its initial `plan` level, or
@@ -250,8 +257,10 @@ for the next round and stays below the finished turn. A tool call's time is its
 start; a text or thinking part's time is when its log line was received. An
 entry with no time keeps the recorded order, so an older chat reads as before.
 The message that started the turn stays above all its entries. A failed reply shows one line saying so and
-why, for every agent including radian. A stopped half reply is shown as stopped. Tool
-output is not shown. Radian chats show the
+why, for every agent including radian. A stopped half reply is shown as stopped. A
+model request the agent is waiting to retry is a live `retry` item with its
+attempt, the time of the next try and the provider's reason; it leaves the live
+view when the retry succeeds or the retries run out. Tool output is not shown. Radian chats show the
 tool lines only otherwise. Pages count messages, and a turn's entries stay on
 the page of its reply. Every read also carries `context: { used, window?, model? }`,
 the last finished reply's context; a new session leaves it out until the next

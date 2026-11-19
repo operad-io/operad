@@ -205,81 +205,86 @@ function bodyOf(event: SseEvent): Record<string, unknown> {
 const first = { type: "text_delta", text: "first " };
 const second = { type: "text_delta", text: "second" };
 
-describe("a running reply is pushed over the event stream", () => {
-  test("a client re-reading the tail and a client using the push each receive the line from the fake harness", async () => {
-    const measure = async (push: boolean): Promise<number> => {
-      const arrived = channel<number>();
-      const gate = gates();
-      const script: Script = async (ctx) => {
-        arrived.push(-1);
-        await gate.hold("write");
-        await ctx.logger.write(JSON.stringify(first));
-        await ctx.logger.write(JSON.stringify(second));
-        arrived.push(performance.now());
-        await gate.hold("finish");
-        return reply("done");
-      };
-      const r = await makeRig(script);
-      let events: Awaited<ReturnType<typeof openSse>> | undefined;
-      try {
-        const running = r.run();
-        // The run fact is recorded before the agent step; open the stream after
-        // it, so only the line's own event is seen.
-        const beforeWrite = await arrived.next();
-        expect(beforeWrite).toBe(-1);
-        events = await openSse(r);
-        const reader = events;
-        const received = new Promise<number>((resolve, reject) => {
-          void (async () => {
-            try {
-              for (;;) {
-                const event = await reader.next();
-                if (event.event === "tail") {
-                  if (!push) continue;
-                  const body = bodyOf(event);
-                  if (body.id !== r.chat) continue;
-                  if (typeof body.tail === "string" && body.tail.includes("second")) {
-                    resolve(performance.now());
-                    return;
-                  }
-                  continue;
-                }
-                if (event.event !== "message" || push) continue;
-                const body = bodyOf(event);
-                if (body.id !== r.chat) continue;
-                const response = await fetch(
-                  `${r.base}/v1/objects/chat:${r.chat}/sections/transcript`,
-                  { headers: { authorization: `Bearer ${r.token}` } },
-                );
-                const section = (await response.json()) as Record<string, unknown>;
-                if (typeof section.tail === "string" && section.tail.includes("second")) {
-                  resolve(performance.now());
-                  return;
-                }
+/** How long one way takes to receive the line the fake harness writes. */
+async function measure(push: boolean): Promise<number> {
+  const arrived = channel<number>();
+  const gate = gates();
+  const script: Script = async (ctx) => {
+    arrived.push(-1);
+    await gate.hold("write");
+    await ctx.logger.write(JSON.stringify(first));
+    await ctx.logger.write(JSON.stringify(second));
+    arrived.push(performance.now());
+    await gate.hold("finish");
+    return reply("done");
+  };
+  const r = await makeRig(script);
+  let events: Awaited<ReturnType<typeof openSse>> | undefined;
+  try {
+    const running = r.run();
+    // The run fact is recorded before the agent step; open the stream after
+    // it, so only the line's own event is seen.
+    const beforeWrite = await arrived.next();
+    expect(beforeWrite).toBe(-1);
+    events = await openSse(r);
+    const reader = events;
+    const received = new Promise<number>((resolve, reject) => {
+      void (async () => {
+        try {
+          for (;;) {
+            const event = await reader.next();
+            if (event.event === "tail") {
+              if (!push) continue;
+              const body = bodyOf(event);
+              if (body.id !== r.chat) continue;
+              if (typeof body.tail === "string" && body.tail.includes("second")) {
+                resolve(performance.now());
+                return;
               }
-            } catch (error) {
-              reject(error);
+              continue;
             }
-          })();
-        });
-        gate.release("write");
-        const at = await arrived.next();
-        const heard = await received;
-        gate.release("finish");
-        await running;
-        return heard - at;
-      } finally {
-        await events?.cancel();
-        await r.close();
-      }
-    };
+            if (event.event !== "message" || push) continue;
+            const body = bodyOf(event);
+            if (body.id !== r.chat) continue;
+            const response = await fetch(
+              `${r.base}/v1/objects/chat:${r.chat}/sections/transcript`,
+              { headers: { authorization: `Bearer ${r.token}` } },
+            );
+            const section = (await response.json()) as Record<string, unknown>;
+            if (typeof section.tail === "string" && section.tail.includes("second")) {
+              resolve(performance.now());
+              return;
+            }
+          }
+        } catch (error) {
+          reject(error);
+        }
+      })();
+    });
+    gate.release("write");
+    const at = await arrived.next();
+    const heard = await received;
+    gate.release("finish");
+    await running;
+    return heard - at;
+  } finally {
+    await events?.cancel();
+    await r.close();
+  }
+}
 
+describe("a running reply is pushed over the event stream", () => {
+  test("a client re-reading the tail receives the line from the fake harness", async () => {
     const reread = await measure(false);
-    const pushed = await measure(true);
-    // The numbers are in this test's output, so a run records what the two
-    // ways cost; the test itself only requires both to receive the line.
-    console.log(`tail re-read: ${reread.toFixed(1)} ms; push: ${pushed.toFixed(1)} ms`);
+    // The number is in this test's output, so a run records what the way costs.
+    console.log(`tail re-read: ${reread.toFixed(1)} ms`);
     expect(reread).toBeGreaterThan(0);
+  }, 30_000);
+
+  test("a client using the push receives the line from the fake harness", async () => {
+    const pushed = await measure(true);
+    // The number is in this test's output, so a run records what the way costs.
+    console.log(`push: ${pushed.toFixed(1)} ms`);
     expect(pushed).toBeGreaterThan(0);
   }, 30_000);
 });

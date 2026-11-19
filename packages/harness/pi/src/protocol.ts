@@ -41,6 +41,8 @@ export interface WorkerInput {
   readonly skills?: readonly string[] | undefined;
   /** Load the owner's own pi settings and resources (ADR 0023 D3); off unless true. */
   readonly useOwnSettings?: boolean | undefined;
+  /** Retry a failed model request with pi's own bounded backoff; off unless true. */
+  readonly retry?: boolean | undefined;
   /** Set by a chat reply: the worker may serve the next reply and then end itself. */
   readonly keep?: WorkerKeep | undefined;
 }
@@ -183,6 +185,11 @@ export function parseInput(value: unknown): ParsedInput {
     return { ok: false, message: "useOwnSettings must be a boolean" };
   }
 
+  const retry = value["retry"];
+  if (retry !== undefined && typeof retry !== "boolean") {
+    return { ok: false, message: "retry must be a boolean" };
+  }
+
   const access = value["access"];
   if (access !== undefined && !isRecord(access)) {
     return { ok: false, message: "access must be an object" };
@@ -237,6 +244,7 @@ export function parseInput(value: unknown): ParsedInput {
       images: images.length === 0 ? undefined : images,
       skills: skills === undefined || skills.length === 0 ? undefined : skills,
       useOwnSettings,
+      retry,
       keep,
     },
   };

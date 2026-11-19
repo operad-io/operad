@@ -257,6 +257,51 @@ describe("a form a step asks", () => {
     }
   }, 30_000);
 
+  test("a question's Markdown body reaches the item while it runs and after the grace", async () => {
+    const env = await setup();
+    try {
+      const body = "# Plan\n\n1. Change the loader.\n2. Run the tests.";
+      const questions = [
+        {
+          id: "plan",
+          text: "Plan",
+          body,
+          choices: [{ label: "Approve" }, { label: "Request changes" }],
+        },
+      ];
+      const live = await env.create("ask-wait", "body-live", { questions });
+      const liveRun = env.runner(live, new FakeTimer()).run();
+      const liveWait = await env.opened(live);
+      const liveItem = (await listPending(env.log, env.registry)).find((item) => item.runId === live);
+      expect(liveItem?.questions?.[0]?.body).toBe(body);
+      expect(liveItem?.choices).toEqual(["Approve", "Request changes"]);
+      await recordAnswer({
+        log: env.log,
+        runId: live,
+        waitId: liveWait,
+        choice: undefined,
+        answers: [{ id: "plan", choices: ["Approve"] }],
+        actor: ACTOR,
+      });
+      expect(await liveRun).toBe("ended");
+
+      const late = await env.create("ask-form-late", "body-late", { questions });
+      const timer = new FakeTimer();
+      const lateRun = env.runner(late, timer).run();
+      const lateWait = await env.opened(late);
+      await timer.armed();
+      timer.fire();
+      expect(await lateRun).toBe("waiting");
+      const state = await readState(env.log, late);
+      expect(state.wait?.questions?.[0]?.body).toBe(body);
+      const lateItem = (await listPending(env.log, env.registry)).find((item) => item.runId === late);
+      expect(lateItem?.waitId).toBe(lateWait);
+      expect(lateItem?.questions?.[0]?.body).toBe(body);
+    } finally {
+      await env.close();
+    }
+  }, 30_000);
+
   test("a client that knows only a choice answers a one-question form", async () => {
     const env = await setup();
     try {

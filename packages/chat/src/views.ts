@@ -9,6 +9,7 @@ import type {
   PluginFact,
   SectionContent,
   SectionPage,
+  SectionRetry,
   StoredObject,
   ViewContext,
   ViewSection,
@@ -603,8 +604,15 @@ interface SectionStatus {
 interface Live {
   readonly tail?: string | undefined;
   readonly status?: SectionStatus | undefined;
+  readonly retry?: SectionRetry | undefined;
   /** The last fact before a message the live tail holds, so a client reads it again with the reply. */
   readonly cut?: number | undefined;
+}
+
+/** One line for a model request the agent is waiting to try again. */
+function retryMarkdown(retry: SectionRetry): string {
+  const reason = flat(retry.reason);
+  return `Retrying the model request (${retry.attempt} of ${retry.maxAttempts})${reason.length === 0 ? "" : `: ${reason}`}`;
 }
 
 interface TailItem {
@@ -740,6 +748,7 @@ async function liveOf(
   const times = runId !== undefined && ctx.runTimes !== undefined ? await ctx.runTimes(runId) : undefined;
   let tail: string | undefined;
   let read: TailRead | undefined;
+  let retry: SectionRetry | undefined;
   let called: ReadonlySet<string> = new Set<string>();
   let secrets: readonly string[] = [];
   let cut: number | undefined;
@@ -777,6 +786,17 @@ async function liveOf(
       return said.has(maskSecrets(entry.text, secrets).trim());
     };
     read = foldLogTail(agentLogPath(ctx.store.root, chat.harness, runId), held);
+    const waiting = read?.state.retry;
+    const retryAt = waiting?.at ?? read?.lastAt;
+    retry =
+      waiting === undefined || retryAt === undefined
+        ? undefined
+        : {
+            attempt: waiting.attempt,
+            maxAttempts: waiting.maxAttempts,
+            until: retryAt + waiting.delayMs,
+            reason: maskSecrets(waiting.reason, secrets),
+          };
     if (read !== undefined) {
       const fresh = (text: string): string | undefined => {
         const masked = maskSecrets(text, secrets);
@@ -825,9 +845,12 @@ async function liveOf(
         const what = input.length === 0 ? "" : ` ${inlineCode(input.length <= 160 ? input : `${input.slice(0, 159)}…`)}`;
         push(call.at, `tool ${maskSecrets(call.toolName, secrets)} since ${clock(call.at)}${what}`);
       }
+      if (retry !== undefined) push(undefined, retryMarkdown(retry));
       tail = cut === undefined
         ? (items.length === 0 ? undefined : items.map((item) => item.markdown).join("\n\n"))
         : heldTail(facts, cut, items, speaker, ctx.home, chat.harness);
+    } else if (retry !== undefined) {
+      tail = retryMarkdown(retry);
     }
     // The log may not exist yet; the mid-run message still belongs in the tail.
     if (cut !== undefined && tail === undefined) {
@@ -838,6 +861,7 @@ async function liveOf(
   return {
     ...(tail === undefined ? {} : { tail }),
     ...(status === undefined ? {} : { status }),
+    ...(retry === undefined ? {} : { retry }),
     ...(cut === undefined ? {} : { cut }),
   };
 }
@@ -924,15 +948,16 @@ function objectReader(ctx: ViewContext): ObjectReader {
 async function tailPush(
   ctx: ViewContext,
   object: StoredObject,
-): Promise<{ readonly section: string; readonly tail?: string; readonly status?: SectionStatus } | undefined> {
+): Promise<{ readonly section: string; readonly tail?: string; readonly status?: SectionStatus; readonly retry?: SectionRetry } | undefined> {
   const facts = allFacts(ctx, chatRef(object.id));
   const speaker = await speakerOf(ctx, object);
   const live = await liveOf(ctx, object, facts, speaker);
-  if (live.tail === undefined && live.status === undefined) return undefined;
+  if (live.tail === undefined && live.status === undefined && live.retry === undefined) return undefined;
   return {
     section: TRANSCRIPT,
     ...(live.tail === undefined ? {} : { tail: live.tail }),
     ...(live.status === undefined ? {} : { status: live.status }),
+    ...(live.retry === undefined ? {} : { retry: live.retry }),
   };
 }
 

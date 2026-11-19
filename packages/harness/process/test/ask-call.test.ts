@@ -177,6 +177,36 @@ describe("askRequest", () => {
   });
 });
 
+describe("a form's note", () => {
+  test("the person's note for the whole form goes back in the form's answer", async () => {
+    const sent: Array<Record<string, unknown>> = [];
+    const asker = createCallAsker({
+      ask: () => Promise.reject(new Error("a form is not an ask_call")),
+      askForm: async () => ({
+        decision: "answered",
+        answers: [{ id: "plan", choices: ["Request changes"] }],
+        note: "use the smaller loader",
+      }),
+      onStop: () => undefined,
+    });
+    await asker.handle(
+      JSON.stringify({ type: "ask_form", id: 3, questions: [{ id: "plan", text: "Plan" }], session: "s" }),
+      (text) => {
+        sent.push(JSON.parse(text) as Record<string, unknown>);
+      },
+    );
+    expect(sent).toEqual([
+      {
+        type: "ask_form_ack",
+        id: 3,
+        decision: "answered",
+        answers: [{ id: "plan", choices: ["Request changes"] }],
+        note: "use the smaller loader",
+      },
+    ]);
+  });
+});
+
 describe("createCallAsker", () => {
   function setup(
     answer: (request: AskRequest) => Promise<AskAnswer>,

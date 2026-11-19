@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, existsSync, writeFileSync
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { EFFORT_LEVELS, parseInput } from "../../src/protocol.ts";
-import { STREAM_GROUP_MS, serveWorker } from "../../src/worker.ts";
+import { STREAM_GROUP_MS, runWorker, serveWorker } from "../../src/worker.ts";
 import { waitForChange } from "@operad-io/engine/platform";
 import { TOOL_OUTPUT_CAP_BYTES } from "@operad-io/harness-process";
 import { fakeHooks } from "../fake-hooks.ts";
@@ -1983,6 +1983,159 @@ test("AskUserQuestion becomes one form, and the person's answer goes back as its
   });
   expect(kinds(run)).not.toContain("blocked");
   expect(last(run)).toMatchObject({ result: "done" });
+});
+
+// -- ExitPlanMode: the plan as one review question ---------------------------
+
+const PLAN = "# Change the loader\n\n1. Edit src/a.ts.\n2. Run bun test.";
+
+const PLAN_STEPS: FakeStep[] = [
+  { say: systemInit() },
+  { ask: { toolName: "ExitPlanMode", toolUseId: "p-1", input: { plan: PLAN } } },
+  { say: assistant("m1", "carrying it out") },
+  { say: result() },
+];
+
+async function planRun(answer: Line): Promise<{ run: Run; question: Line | undefined }> {
+  const s = setup();
+  const child = new Child(s.env({ steps: PLAN_STEPS }), s.recordFile);
+  child.sendLine(JSON.stringify(s.input));
+  const question = await child.untilLine("ask_form");
+  child.sendLine(JSON.stringify({ type: "ask_form_ack", id: question?.["id"], ...answer }));
+  child.endInput();
+  return { run: await child.finish(), question };
+}
+
+test("ExitPlanMode becomes a plan review: the title, the Markdown and two answers", async () => {
+  const { run, question } = await planRun({
+    decision: "answered",
+    answers: [{ id: "plan", choices: ["Approve"] }],
+  });
+  expect(question?.questions).toEqual([
+    {
+      id: "plan",
+      text: "Change the loader",
+      body: PLAN,
+      choices: [
+        { label: "Approve", description: "Leave plan mode and carry out the plan." },
+        {
+          label: "Request changes",
+          description: "Refuse this plan and end the reply so you can say what to change.",
+        },
+      ],
+    },
+  ]);
+  expect(answerOf(run)).toMatchObject({ behavior: "allow", updatedInput: { plan: PLAN } });
+  expect(kinds(run)).not.toContain("blocked");
+  expect(last(run)).toMatchObject({ result: "done" });
+});
+
+test("asking for changes refuses the call with the person's note and interrupts the reply", async () => {
+  const { run } = await planRun({
+    decision: "answered",
+    answers: [{ id: "plan", choices: ["Request changes"] }],
+    note: "Use the old loader.",
+  });
+  expect(answerOf(run)).toMatchObject({
+    behavior: "deny",
+    message: "Use the old loader.",
+    interrupt: true,
+  });
+  expect(kinds(run)).toContain("blocked");
+  expect(last(run)).toMatchObject({ result: "done" });
+});
+
+test("a plan whose review ran out of grace holds the call until the host ends the program", async () => {
+  const s = setup();
+  const child = new Child(s.env({ steps: PLAN_STEPS }), s.recordFile);
+  child.sendLine(JSON.stringify(s.input));
+  const question = await child.untilLine("ask_form");
+  child.sendLine(JSON.stringify({ type: "ask_form_ack", id: question?.["id"], decision: "stop" }));
+  await child.untilLine("ask_resolved");
+  child.signal("SIGTERM");
+  const run = await child.finish();
+  expect(kinds(run)).not.toContain("message_end");
+  expect(answerOf(run)["behavior"]).not.toBe("allow");
+});
+
+test("an empty plan is refused without asking the person", async () => {
+  const run = await runFake(setup(), {
+    steps: [
+      { say: systemInit() },
+      { ask: { toolName: "ExitPlanMode", toolUseId: "p-1", input: { plan: "" } } },
+      { say: assistant("m1", "no plan") },
+      { say: result() },
+    ],
+  });
+  expect(answerOf(run)).toMatchObject({
+    behavior: "deny",
+    message: expect.stringContaining("plan was empty"),
+  });
+  expect(kinds(run)).not.toContain("ask_form");
+});
+
+test("a plan that holds a secret value is refused without asking the person", async () => {
+  const s = setup();
+  s.input["secretValues"] = ["top-secret"];
+  const run = await runFake(s, {
+    steps: [
+      { say: systemInit() },
+      {
+        ask: {
+          toolName: "ExitPlanMode",
+          toolUseId: "p-1",
+          input: { plan: "# Plan\n\nUse top-secret." },
+        },
+      },
+      { say: assistant("m1", "no plan") },
+      { say: result() },
+    ],
+  });
+  expect(answerOf(run)).toMatchObject({
+    behavior: "deny",
+    message: "the plan holds a secret value, so nobody is asked about it",
+  });
+  expect(kinds(run)).not.toContain("ask_form");
+});
+
+test("a host without forms refuses the plan instead of letting it through", async () => {
+  const s = setup();
+  const cwd = s.input["cwd"];
+  if (typeof cwd !== "string") throw new Error("the setup has no cwd");
+  const lines: Line[] = [];
+  const code = await runWorker(
+    { prompt: "hello", cwd },
+    {
+      line: (line) => {
+        lines.push(line as Line);
+      },
+      log: () => undefined,
+      useGrant: () => Promise.resolve(false),
+      ask: () => Promise.resolve({ decision: "deny" }),
+    },
+    new AbortController().signal,
+    fakeHooks(s.env({ steps: PLAN_STEPS })),
+  );
+  expect(code).toBe(0);
+  expect(lines.some((line) => line["type"] === "ask_form")).toBe(false);
+  const reply = readFileSync(s.recordFile, "utf8")
+    .split("\n")
+    .filter((text) => text.length > 0)
+    .map((text) => JSON.parse(text) as Line)
+    .find((entry) => "askReply" in entry);
+  expect(reply).toMatchObject({
+    askReply: "ExitPlanMode",
+    answer: { behavior: "deny", message: "this host cannot put a plan to a person" },
+  });
+});
+
+test("a plan review the host rejected is refused and closed", async () => {
+  const { run } = await planRun({ decision: "rejected" });
+  expect(answerOf(run)).toMatchObject({
+    behavior: "deny",
+    message: "nobody reviewed the plan in time",
+  });
+  expect(kinds(run)).toContain("blocked");
 });
 
 test("a skipped question says so only to a claude that takes that field", async () => {
