@@ -434,6 +434,20 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 | T-0567-M1 | packages/chat/src/views.ts | the live tail flattened the text being written again | `chat transcript: after, mark and tail > text being written keeps its lines and their Markdown` |
 | T-0567-M2 | packages/chat/src/views.ts | `entryMarkdown` flattened a stored intermediate text entry again | `chat entries > stored intermediate text and thinking keep their lines and Markdown` |
 
+## T-0568 — a reply interrupted by a crash or restart
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0568-M1 | packages/chat/src/reply.ts | the recovered reply no longer read the agent's log, so it kept none of the entries the live view had | `a reply interrupted by a crash or restart > keeps the items it finished and a stopped line, and /retry continues the chat` |
+| T-0568-M2 | packages/chat/src/reply.ts | the recovered reply recorded no line saying it stopped | `a reply interrupted by a crash or restart > keeps the items it finished and a stopped line, and /retry continues the chat` |
+| T-0568-M3 | packages/chat/src/index.ts | `chat:retry` refused a stopped attempt, so it refused a reply a crash interrupted | `a reply interrupted by a crash or restart > keeps the items it finished and a stopped line, and /retry continues the chat` |
+| T-0568-M4 | packages/chat/src/reply.ts | the keep step added its stopped line after a reply step that had already returned interrupted | `a reply interrupted by a crash or restart > a step that returns interrupted keeps its one stopped line` |
+| T-0568-M5 | packages/chat/src/reply.ts | the keep step marked a reply already recorded for a run that owed no message | `a reply interrupted by a crash or restart > a reply already recorded and owing no message is not marked interrupted` |
+| T-0568-M6 | packages/chat/src/views.ts | the interrupted line was drawn as the agent's own words instead of one line of its own | `a reply interrupted by a crash or restart > keeps the items it finished and a stopped line, and /retry continues the chat` |
+| T-0568-M7 | packages/chat/src/model.ts | `entryOfFact` dropped the interrupted flag, so the stopped line lost its own shape | `a reply interrupted by a crash or restart > keeps the items it finished and a stopped line, and /retry continues the chat` |
+| T-0568-M8 | packages/chat/src/reply.ts | the keep step skipped every run with an assistant message, so an interrupted second round kept nothing | `a reply interrupted by a crash or restart > keeps the second round when an earlier round already recorded a reply` |
+| T-0568-M9 | packages/chat/src/reply.ts | the recovered log recorded the earlier round's entries again | `a reply interrupted by a crash or restart > keeps the second round when an earlier round already recorded a reply` |
+
 ## T-0570 — a running reply is pushed over the event stream
 
 | id | file | mutation | failing test |

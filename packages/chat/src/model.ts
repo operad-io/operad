@@ -34,6 +34,12 @@ export const STOP_FACT = "chat.stop";
 /** The fact type of messages an attempt took, when no reply message can name them. */
 export const ANSWER_FACT = "chat.answered";
 
+/**
+ * The fact type of an attempt that ended on its own. A recovered reply step
+ * reads it to tell a step that returned `interrupted` from one a crash left.
+ */
+export const ATTEMPT_END_FACT = "chat.attempt_end";
+
 /** How a tool call ended. */
 export type ToolResult = "done" | "failed" | "blocked" | "denied";
 
@@ -452,6 +458,8 @@ export interface EntryData {
   readonly reason?: string | undefined;
   /** On `failure`: the oldest message the failed reply was for. */
   readonly messageId?: string | undefined;
+  /** On `stopped`: the one line that says a crash or restart interrupted the reply. */
+  readonly interrupted?: boolean | undefined;
 }
 
 /** One entry with when its fact was recorded. */
@@ -500,6 +508,14 @@ export function stoppedRunAfter(
 export function answeredOfFact(fact: PluginFact): readonly string[] {
   if (fact.type !== ANSWER_FACT || !Array.isArray(fact.data.ids)) return [];
   return fact.data.ids.filter((id): id is string => typeof id === "string" && id.length > 0);
+}
+
+/** The run an attempt fact says ended on its own, or undefined for another fact. */
+export function attemptEndedOfFact(fact: PluginFact): string | undefined {
+  if (fact.type !== ATTEMPT_END_FACT) return undefined;
+  return typeof fact.data.runId === "string" && fact.data.runId.length > 0
+    ? fact.data.runId
+    : undefined;
 }
 
 /** What a close fact holds: who closed the chat. */
@@ -855,6 +871,7 @@ export function entryOfFact(fact: PluginFact): Entry | undefined {
     ...(typeof data.startedAt === "number" || data.startedAt === null ? { startedAt: data.startedAt } : {}),
     ...(typeof data.reason === "string" ? { reason: data.reason } : {}),
     ...(typeof data.messageId === "string" ? { messageId: data.messageId } : {}),
+    ...(data.interrupted === true ? { interrupted: true } : {}),
   };
   if (entryKind === "tool") {
     if (typeof data.callId !== "string" || typeof data.toolName !== "string" || !isToolResult(data.result)) {
