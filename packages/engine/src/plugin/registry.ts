@@ -1242,10 +1242,11 @@ export class PluginRegistry {
     }
   }
 
-  /** What an action's checks may read. */
-  actionEnv(): ActionEnv {
+  /** What an action's checks may read; `object` names the object it works on. */
+  actionEnv(object?: ObjectRef | undefined): ActionEnv {
     return {
       store: this.store,
+      ...(object === undefined ? {} : { object }),
       home: this.home,
       harnesses: this.loadedHarnesses(),
       models: this.loadedModels(),
@@ -1271,7 +1272,8 @@ export class PluginRegistry {
   ): Promise<ActionRun> {
     const object = options.object;
     const found = this.findAction(name, object.type);
-    const env = this.actionEnv();
+    const ref: ObjectRef = { type: object.type, id: object.id };
+    const env = this.actionEnv(ref);
     let holds: unknown;
     try {
       holds = await found.action.when(object.data, env);
@@ -1280,11 +1282,7 @@ export class PluginRegistry {
         `action "${found.plugin.name}:${found.action.name}" cannot run now: ${messageOf(error)}`,
       );
     }
-    if (holds !== true) {
-      throw new PluginError(
-        `action "${found.plugin.name}:${found.action.name}" cannot run now`,
-      );
-    }
+    if (holds !== true) throw new PluginError(await this.refusalLine(found, ref, env));
     const schema =
       found.action.argsFor?.(object, env) ?? found.action.args;
     const personArgs = validateActionArgs(
@@ -1304,6 +1302,27 @@ export class PluginRegistry {
     });
   }
 
+  /** The line a refusal prints: the plugin's `why`, else the plain one. */
+  private async refusalLine(
+    found: { readonly plugin: LoadedPlugin; readonly action: ActionTypeDefinition },
+    object: ObjectRef,
+    env: ActionEnv,
+  ): Promise<string> {
+    const plain = `action "${found.plugin.name}:${found.action.name}" cannot run now`;
+    if (found.action.why === undefined) return plain;
+    const stored = await this.store.get(object.type, object.id);
+    if (stored === undefined) return plain;
+    try {
+      const why = await found.action.why(stored, env);
+      return why !== undefined && why.length > 0 ? why : plain;
+    } catch (error) {
+      this.log(
+        `plugin "${found.plugin.name}": action "${found.action.name}": why failed: ${messageOf(error)}`,
+      );
+      return plain;
+    }
+  }
+
   /** Runs an action, by `plugin/action` or a unique plain name. */
   async runAction(
     name: string,
@@ -1313,10 +1332,9 @@ export class PluginRegistry {
     const object = options.object;
     const found = this.findAction(name, object?.type);
     const label = `action "${found.plugin.name}:${found.action.name}"`;
+    const env = this.actionEnv(object === undefined ? undefined : { type: object.type, id: object.id });
     const personArgs = validateActionArgs(
-      (object === undefined
-        ? undefined
-        : found.action.argsFor?.(object, this.actionEnv())) ?? found.action.args,
+      (object === undefined ? undefined : found.action.argsFor?.(object, env)) ?? found.action.args,
       args,
       label,
     );
@@ -1620,10 +1638,11 @@ export class PluginRegistry {
   /** The actions whose `when` holds for the object; a throwing `when` is logged and hidden. */
   private async actionsHolding(object: StoredObject): Promise<readonly PendingActionView[]> {
     const held: { plugin: string; action: string; rank: number }[] = [];
+    const env = this.actionEnv({ type: object.type, id: object.id });
     for (const { plugin, action } of this.actionsFor(object.type)) {
       let holds: unknown;
       try {
-        holds = await action.when(object.data, this.actionEnv());
+        holds = await action.when(object.data, env);
       } catch (error) {
         this.log(
           `plugin "${plugin.name}": action "${action.name}": when failed: ${messageOf(error)}`,
@@ -1852,7 +1871,7 @@ export class PluginRegistry {
 
   /** The actions declared on an object's type, each with whether it is available now. */
   private async actionInfosFor(object: RunObject): Promise<readonly ActionInfo[]> {
-    const env = this.actionEnv();
+    const env = this.actionEnv({ type: object.type, id: object.id });
     const holding = new Set<string>();
     for (const { plugin, action } of this.actionsFor(object.type)) {
       let holds: unknown;

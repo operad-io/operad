@@ -204,4 +204,94 @@ describe("an action that a chat may run as a command", () => {
     });
     expect(run.value).toBe("went through");
   });
+
+  test("a when reads the object it works on, and a refusal prints the why line", async () => {
+    const root = await tempRoot();
+    const store = new MemoryPluginStore({ root: join(root, "store") });
+    const seen: (string | undefined)[] = [];
+    const registry = new PluginRegistry(
+      [
+        def({
+          name: "a",
+          objects: [{ name: "note" }],
+          actions: [
+            {
+              name: "go",
+              on: "note",
+              when: (_state, env) => {
+                seen.push(env.object === undefined ? undefined : `${env.object.type}:${env.object.id}`);
+                return false;
+              },
+              why: (object) => `${object.id} is not ready yet`,
+              run: () => "went",
+            },
+          ],
+        }),
+      ],
+      { store },
+    );
+    await store.put("note", "n1", {}, "test");
+    const stored = await store.get("note", "n1");
+    if (stored === undefined) throw new Error("no note");
+    await expect(
+      registry.runActionChecked(
+        "a/go",
+        {},
+        { object: { type: "note", id: "n1", data: stored.data }, actor: { via: "test", id: "me" }, yes: true },
+      ),
+    ).rejects.toThrow("n1 is not ready yet");
+    expect(seen).toEqual(["note:n1"]);
+  });
+
+  test("a refusal without a why line keeps the plain one", async () => {
+    const root = await tempRoot();
+    const store = new MemoryPluginStore({ root: join(root, "store") });
+    const registry = new PluginRegistry(
+      [
+        def({
+          name: "a",
+          objects: [{ name: "note" }],
+          actions: [{ name: "go", on: "note", when: () => false, run: () => "went" }],
+        }),
+      ],
+      { store },
+    );
+    await store.put("note", "n1", {}, "test");
+    await expect(
+      registry.runActionChecked(
+        "a/go",
+        {},
+        { object: { type: "note", id: "n1", data: {} }, actor: { via: "test", id: "me" }, yes: true },
+      ),
+    ).rejects.toThrow('action "a:go" cannot run now');
+  });
+
+  test("a targetless action's when sees no object", async () => {
+    const root = await tempRoot();
+    const store = new MemoryPluginStore({ root: join(root, "store") });
+    const seen: unknown[] = [];
+    const registry = new PluginRegistry(
+      [
+        def({
+          name: "a",
+          actions: [
+            {
+              name: "wait",
+              when: (_state, env) => {
+                seen.push(env.object);
+                return false;
+              },
+              run: () => undefined,
+            },
+          ],
+        }),
+      ],
+      { store },
+    );
+    const views = createViews({ registry, store, onLog: () => undefined });
+    await expect(views.act("a:wait", undefined, { actor: { via: "test", id: "me" } })).rejects.toThrow(
+      "a:wait cannot run now",
+    );
+    expect(seen).toEqual([undefined]);
+  });
 });

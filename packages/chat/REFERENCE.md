@@ -56,6 +56,29 @@ client (`ios`, `telegram`, `cli`; any other client counts as `cli`), keyed by th
 message id and about the chat. Three default rules start `chat:reply` with `auto`
 on that event. A closed chat refuses the action and adds no message.
 
+## Queued messages
+
+A message is queued from when it is sent until a run takes it. A run takes the
+messages of its first prompt when it starts, and each message an agent takes
+mid-run when the inbox hands it over. A taken message stays taken, even when
+the attempt fails and a later run answers it. The fact `chat.taken` records the
+messages a run took; it is written before the agent starts or the message is
+handed over.
+
+The chat object keeps the queue of its messages in `queued`; the row returns it
+as `data.queued` with `data.queuedCount`, and has neither field when the queue is
+empty. The `transcript` section returns the same data on every read. Each entry
+has `id`, `text`, `at` and `attachments`.
+
+`chat:withdraw <chat> --message <id>` records a `chat.message_change` fact of
+kind `withdraw`; the message leaves the transcript and is never part of a
+prompt, and the transcript shows one history entry saying it was withdrawn.
+`chat:edit <chat> --message <id> --text <text>` records one of kind `text`; the
+transcript and the next prompt use the new text, and the attachments stay.
+Both refuse a message a run has taken with a line naming it. A take and either
+action take one lock per chat, so a message is never both taken and withdrawn or
+changed. Neither action is a chat command.
+
 ## Commands in a chat
 
 An action with `command` set to a one-line description can be typed after `/`.
@@ -119,12 +142,20 @@ already ended, it says so and changes nothing. Its button word is **Stop**.
 
 ## `chat:retry <chat>`
 
-Answers the last message again when the last attempt failed or was stopped: it
+Answers the last message again when the last attempt failed, was stopped or was
+interrupted by a serve stop, restart or crash, and no reply is being written: it
 sends one message event, keyed by that attempt's run id, so a repeated command
-before the reply begins does not answer twice. The failed or stopped attempt
-stays in the record and the new reply continues the chat's session. When the
-last reply finished normally, or the last attempt neither failed nor stopped, it
-refuses with a line saying so and starts nothing.
+before the reply begins does not answer twice. The failed, stopped or
+interrupted attempt stays in the record and the new reply continues the chat's
+session. It is offered only when it would start that reply: the chat is open, a
+message waits for a reply, the last attempt failed, was stopped or was
+interrupted, and no reply is being written. Otherwise it is not among the chat's
+actions and its `why` says why; a stop records its fact before the stopped half
+reply enters the record, so a retry works at once after `/stop`. One rule
+decides the offer and the run, and the run checks it again because a reply may
+start in between. Typing `/retry` when it is not offered answers with the same
+refusal line as before and starts nothing; a reply being written is the one new
+line.
 
 ## `chat:status <chat>`
 
@@ -241,7 +272,8 @@ view when the retry succeeds or the retries run out. Tool output is not shown. R
 tool lines only otherwise. Pages count messages, and a turn's entries stay on
 The page of its reply. Every read also carries `data.replies`, the structured form of each reply beside the Markdown: the reply's input, its process grouped per turn, and its answer and duration when it finished. Its window is the read's: a page carries that page's replies, a read with `after` carries the replies finished since the mark and the one still running, and the pushed `tail` carries the running reply; a client merges by `runId`. A process group carries the category ids `read`, `edit`, `run`, `search` and `other`; a tool item carries its call id, name, input, start, duration, result, whether it failed, and its recorded output with its line count and the file of the whole output. The size cap counts the replies with the Markdown and tail; when they do not fit, tool output text is cut first, with its line count kept and `truncated` set, and only then is Markdown shortened. A `full` read leaves the replies whole. ADR 0027 D3 has the shape. Every read also carries `context: { used, window?, model? }`,
 the last finished reply's context; a new session leaves it out until the next
-reply. The chat's object view carries the same `context`.
+reply. The chat's object view carries the same `context`. Every read also
+carries `data.queued` and `data.queuedCount`, the messages a run has not taken.
 
 ## The speaker
 

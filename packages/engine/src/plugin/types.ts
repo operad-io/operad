@@ -1088,6 +1088,11 @@ export interface ActionArgsSchema extends ActionArgSchema {
 /** What an action's checks may read: the object store, never write. */
 export interface ActionEnv {
   readonly store: ObjectStore;
+  /**
+   * The object the action works on now, as its type and id, so a `when` can
+   * read its facts with the store; absent for an action that targets no object.
+   */
+  readonly object?: ObjectRef | undefined;
   /** The operad home; an action's choices may be in its settings. */
   readonly home?: string | undefined;
   /** The harness plugins loaded now; the kernel always sets it. */

@@ -35,6 +35,16 @@ export const STOP_FACT = "chat.stop";
 export const ANSWER_FACT = "chat.answered";
 
 /**
+ * The fact type of messages a run took: the messages of its first prompt, and
+ * each message an agent took while the run was going. A message in one is never
+ * queued again, even when the attempt fails and a later run answers it.
+ */
+export const TAKEN_FACT = "chat.taken";
+
+/** The fact type of a change to a message that had not been taken: its text, or its withdrawal. */
+export const MESSAGE_CHANGE_FACT = "chat.message_change";
+
+/**
  * The fact type of an attempt that ended on its own. A recovered reply step
  * reads it to tell a step that returned `interrupted` from one a crash left.
  */
@@ -510,6 +520,162 @@ export function answeredOfFact(fact: PluginFact): readonly string[] {
   return fact.data.ids.filter((id): id is string => typeof id === "string" && id.length > 0);
 }
 
+/** The ids a `chat.answered` or `chat.taken` fact records as taken by one run. */
+export function takenOfFact(fact: PluginFact): readonly string[] {
+  if ((fact.type !== ANSWER_FACT && fact.type !== TAKEN_FACT) || !Array.isArray(fact.data.ids)) return [];
+  return fact.data.ids.filter((id): id is string => typeof id === "string" && id.length > 0);
+}
+
+/** Every message a run has taken: in its first prompt, handed over mid-run, or answered. */
+export function takenIds(facts: readonly PluginFact[]): ReadonlySet<string> {
+  const taken = new Set<string>();
+  for (const fact of facts) {
+    for (const id of takenOfFact(fact)) taken.add(id);
+    if (fact.type === MESSAGE_FACT && fact.data.role === "assistant" && Array.isArray(fact.data.replyTo)) {
+      for (const id of fact.data.replyTo) {
+        if (typeof id === "string" && id.length > 0) taken.add(id);
+      }
+    }
+  }
+  return taken;
+}
+
+/** What a message change fact holds: who changed which message, and how. */
+export interface MessageChangeData {
+  readonly [key: string]: unknown;
+  readonly id: string;
+  readonly kind: "text" | "withdraw";
+  readonly by: { readonly via: string; readonly id: string };
+  /** The new text, on a `text` change. */
+  readonly text?: string | undefined;
+}
+
+/** One message change with when its fact was recorded. */
+export interface MessageChange extends MessageChangeData {
+  readonly at: number;
+  readonly sequence: number;
+}
+
+/** The change a fact records, or undefined for another fact. */
+export function messageChangeOfFact(fact: PluginFact): MessageChange | undefined {
+  if (fact.type !== MESSAGE_CHANGE_FACT) return undefined;
+  const data = fact.data;
+  if (typeof data.id !== "string" || data.id.length === 0) return undefined;
+  if (data.kind !== "text" && data.kind !== "withdraw") return undefined;
+  if (data.kind === "text" && typeof data.text !== "string") return undefined;
+  const from = isRecord(data.by) ? data.by : {};
+  return {
+    id: data.id,
+    kind: data.kind,
+    by: {
+      via: typeof from.via === "string" ? from.via : "",
+      id: typeof from.id === "string" ? from.id : "",
+    },
+    ...(typeof data.text === "string" ? { text: data.text } : {}),
+    at: fact.at,
+    sequence: fact.sequence,
+  };
+}
+
+/** The changes to each message, oldest first: its latest text and its withdrawal. */
+export interface MessageChangeState {
+  readonly withdrawn?: MessageChange | undefined;
+  readonly text?: string | undefined;
+}
+
+export function messageChangesOf(facts: readonly PluginFact[]): ReadonlyMap<string, MessageChangeState> {
+  const changes = new Map<string, MessageChangeState>();
+  for (const fact of facts) {
+    const change = messageChangeOfFact(fact);
+    if (change === undefined) continue;
+    const before = changes.get(change.id) ?? {};
+    changes.set(
+      change.id,
+      change.kind === "withdraw"
+        ? { ...before, withdrawn: change }
+        : { ...before, text: change.text },
+    );
+  }
+  return changes;
+}
+
+/** The messages with their latest text, without the ones a person withdrew. */
+export function applyMessageChanges(
+  messages: readonly Message[],
+  changes: ReadonlyMap<string, MessageChangeState>,
+): readonly Message[] {
+  const found: Message[] = [];
+  for (const message of messages) {
+    const change = changes.get(message.id);
+    if (change?.withdrawn !== undefined) continue;
+    found.push(change?.text === undefined ? message : { ...message, text: change.text });
+  }
+  return found;
+}
+
+/** The message facts with their latest text, without the messages a person withdrew. */
+export function messageFactsInForce(
+  facts: readonly PluginFact[],
+  changes: ReadonlyMap<string, MessageChangeState> = messageChangesOf(facts),
+): readonly PluginFact[] {
+  const found: PluginFact[] = [];
+  for (const fact of facts) {
+    if (fact.type !== MESSAGE_FACT || fact.data.role !== "user") {
+      found.push(fact);
+      continue;
+    }
+    const id = typeof fact.data.id === "string" ? fact.data.id : undefined;
+    const change = id === undefined ? undefined : changes.get(id);
+    if (change?.withdrawn !== undefined) continue;
+    found.push(
+      change?.text === undefined ? fact : { ...fact, data: { ...fact.data, text: change.text } },
+    );
+  }
+  return found;
+}
+
+/** A queued message, in the shape a chat's row and section carry. */
+export interface QueuedMessage {
+  readonly id: string;
+  readonly text: string;
+  readonly at: number;
+  readonly attachments: readonly Attachment[];
+}
+
+/** The queued messages a chat shows a client, oldest first. */
+export function queuedMessages(
+  messages: readonly Message[],
+  facts: readonly PluginFact[],
+): readonly Message[] {
+  const taken = takenIds(facts);
+  return unanswered(messages, facts).filter((message) => !taken.has(message.id));
+}
+
+/** The queued messages as a client reads them. */
+export function queuedData(messages: readonly Message[]): readonly QueuedMessage[] {
+  return messages.map((message) => ({
+    id: message.id,
+    text: message.text,
+    at: message.at,
+    attachments: message.attachments,
+  }));
+}
+
+/** The queued messages a stored chat object carries, when it has them. */
+export function queuedOf(value: unknown): readonly QueuedMessage[] {
+  if (!Array.isArray(value)) return [];
+  const found: QueuedMessage[] = [];
+  for (const item of value) {
+    if (!isRecord(item)) continue;
+    if (typeof item.id !== "string" || item.id.length === 0) continue;
+    if (typeof item.text !== "string") continue;
+    const at = item.at;
+    if (typeof at !== "number" || !Number.isFinite(at)) continue;
+    found.push({ id: item.id, text: item.text, at, attachments: attachmentsOf(item.attachments) });
+  }
+  return found;
+}
+
 /** The run an attempt fact says ended on its own, or undefined for another fact. */
 export function attemptEndedOfFact(fact: PluginFact): string | undefined {
   if (fact.type !== ATTEMPT_END_FACT) return undefined;
@@ -918,16 +1084,13 @@ export function messagePage(
   }
 }
 
-/** Every message of a chat, oldest first. */
+/** Every message of a chat in force, oldest first: changed text, and no withdrawn message. */
 export function allMessages(store: ObjectStore, chat: string): readonly Message[] {
-  const found: Message[] = [];
-  let cursor: string | undefined;
-  do {
-    const page = messagePage(store, chat, cursor, 500);
-    found.push(...page.messages);
-    cursor = page.next;
-  } while (cursor !== undefined);
-  return found;
+  const facts = chatFacts(store, chat);
+  const messages = facts
+    .map(messageOfFact)
+    .filter((message): message is Message => message !== undefined);
+  return applyMessageChanges(messages, messageChangesOf(facts));
 }
 
 /** Every entry of a chat, oldest first. */
@@ -1072,10 +1235,17 @@ export function unanswered(
       for (const id of message.replyTo ?? []) answered.add(id);
     }
   }
+  const withdrawn = new Set<string>();
   for (const fact of facts) {
-    for (const id of answeredOfFact(fact)) answered.add(id);
+    for (const id of takenOfFact(fact)) {
+      if (fact.type === ANSWER_FACT) answered.add(id);
+    }
+    const change = messageChangeOfFact(fact);
+    if (change?.kind === "withdraw") withdrawn.add(change.id);
   }
-  return messages.filter((message) => message.role === "user" && !answered.has(message.id));
+  return messages.filter(
+    (message) => message.role === "user" && !answered.has(message.id) && !withdrawn.has(message.id),
+  );
 }
 
 /** The harness session after the last reply, else the chat's own reference. */

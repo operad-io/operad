@@ -51,7 +51,7 @@ actions: [
 | `why` | function | not set | `(object, env) => string \| undefined`; the one line a client prints when the action is not available. It starts with the object's own name and says when the action becomes possible | Each refusal | not checked |
 | `settled` | function | not set | `(object, args, env) => string \| undefined`; a line when the result is already true. The action then succeeds with that line and does not run. It is checked before `when`, with the arguments as sent. A throw is logged (`settled failed`) and ignored | Each run | not checked |
 
-`env` holds `store` (read it, never write), `harnesses` (the loaded harness plugins), `models` and `efforts` (by plugin name).
+`env` holds `store` (read it, never write), `object` (the type and id of the object an action on an object works on, so a `when` can read its facts; absent for an action that targets no object), `harnesses` (the loaded harness plugins), `models` and `efforts` (by plugin name).
 
 The context of an action on an object also carries `actions` (the actions declared on that type, with their `command` descriptions and whether each is available now) and `act(name, args, { yes })`, which runs another action on the same object with the same availability, argument and confirmation checks. A chat's `send` action uses them to run the command a person typed; `yes` answers an action that asks to confirm.
 A field named `note` is refused: `actions[<i>]: note: is no longer a field; declare a string property with role "note" in args`.

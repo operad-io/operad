@@ -10,7 +10,7 @@ A chat shows its reply as it is written. This is done within the section interfa
 
 ### D1: A live section reads only what is new, with an unfinished tail
 
-The result of `load` can carry more things beside the page: `mark`, an opaque position that says how far the finished content has gone; `tail`, a Markdown text that is the part still changing (a reply and thinking being written, a running tool call in a chat), always the whole text as it is now; `status` (D4); `retry` (D7); and `context` (D5). A client can read a section with `after: <mark>`; then `markdown` has only the content finished after that position, the client appends it to what it has, and replaces the old `tail` as a whole with the new one. Without `after`, one page is read as before, also carrying `mark` and `tail`, so a reconnect or coming back to the foreground needs only one re-read.
+The result of `load` can carry more things beside the page: `mark`, an opaque position that says how far the finished content has gone; `tail`, a Markdown text that is the part still changing (a reply and thinking being written, a running tool call in a chat), always the whole text as it is now; `status` (D4); `retry` (D7); `context` (D5); and `data` (D8). A client can read a section with `after: <mark>`; then `markdown` has only the content finished after that position, the client appends it to what it has, and replaces the old `tail` as a whole with the new one. Without `after`, one page is read as before, also carrying `mark` and `tail`, so a reconnect or coming back to the foreground needs only one re-read.
 
 ### D2: `events` says what changed, and pushes a live tail
 
@@ -37,3 +37,7 @@ A type's views may supply `tail(ctx, object)`, returning `{ section, tail?, stat
 ### D7: A section can carry a retry the agent is waiting for
 
 The result of `load` may carry `retry`, an object `{ "attempt": number, "maxAttempts": number, "until": number, "reason": string }`. The kernel checks that `attempt` and `maxAttempts` are whole numbers of at least 1, that `until` is a finite time in milliseconds since the epoch, and that `reason` is a string; it drops an item that does not have that shape and does not read the meaning. It passes a sound item through on every section read, including a read with `after`, and on a pushed `tail` event (D6), beside `tail` and `status`. A client that does not know it works as before and ignores it. `until` is a time, not a duration, so a client counts down from it.
+
+### D8: A section can carry data beside its text
+
+`load` may return `data`, an object the plugin defines for its clients, such as a chat's queued messages or the replies in its transcript. The kernel checks only that it is an object and leaves a value that is not an object out; it does not read any field. It passes the object through unchanged on every read, including a read with `after`, on a pushed `tail` event (D2), and serves it by the HTTP section read and the MCP `section` tool. The size cap counts it with `markdown` and `tail`; a plugin that carries data cuts its own parts before the kernel shortens Markdown. A client that does not know the plugin's shape ignores it.

@@ -1,7 +1,7 @@
 /** The chat plugin: a long conversation with an agent, and how a message is answered. */
 
 import pkg from "../package.json" with { type: "json" };
-import { defineFlow, definePlugin, isRecord, modelIds, type ActionArgsSchema, type ActionContext, type ActionTypeDefinition, type HarnessEfforts, type HarnessModels, type PluginFact, type UsageTokens } from "@operad-io/engine";
+import { defineFlow, definePlugin, isRecord, modelIds, type ActionArgsSchema, type ActionContext, type ActionTypeDefinition, type HarnessEfforts, type HarnessModels, type ObjectStore, type PluginFact, type UsageTokens } from "@operad-io/engine";
 import { ACCESS_LEVELS, isAccessLevel, updateLiveAccessLevel, type AccessLevel } from "@operad-io/access-match";
 import { stopKeptWorkers } from "@operad-io/engine/platform";
 import {
@@ -28,11 +28,13 @@ import {
   latestRunOf,
   MESSAGE_EVENT,
   MESSAGE_FACT,
+  MESSAGE_CHANGE_FACT,
   attachmentOf,
   MODEL_FACT,
   newMessageId,
   STOP_FACT,
   stoppedRunAfter,
+  takenIds,
   unanswered,
   writingReply,
   type AccessChangedData,
@@ -42,11 +44,13 @@ import {
   type EffortChangedData,
   type Message,
   type ModelChangedData,
+  type MessageChangeData,
   type MessageData,
   type StopData,
   type WritingReply,
 } from "./model.ts";
 import { keepInterrupted, runReply, withLevelFileDeny, WORKTREE_ALLOW_ALWAYS, WORKTREE_ALLOW_ONCE, WORKTREE_CHOICES, WORKTREE_DENY, WORKTREE_REPLY_EVENT, WORKTREE_YES, worktreeChoiceInfo } from "./reply.ts";
+import { syncQueuedLocked, withQueueLock } from "./queue.ts";
 import { chatCommands, findCommand, helpText, parseCommand, runCommand } from "./command.ts";
 import { readChatSkills } from "./skills.ts";
 import { chatViews } from "./views.ts";
@@ -129,6 +133,10 @@ export const replyFlow = defineFlow({
 export type SendContext = Pick<ActionContext, "facts" | "emit" | "actor"> & {
   /** The event source for a message a plugin writes itself; absent uses the client's. */
   readonly source?: string | undefined;
+  /** The store the chat lives in, so its row can show the queue at once. */
+  readonly store?: ActionContext["store"] | undefined;
+  /** The operad home, for the queue lock. */
+  readonly home?: string | undefined;
 };
 
 /**
@@ -158,7 +166,12 @@ export async function sendMessage(
     source: { kind: via, ref: ref ?? null },
   };
   // The message is a fact first; the event is what starts the answer.
-  await ctx.facts.append({ type: MESSAGE_FACT, object: chatRef(chatId), data: message });
+  const record = async (): Promise<void> => {
+    await ctx.facts.append({ type: MESSAGE_FACT, object: chatRef(chatId), data: message });
+    if (ctx.store !== undefined) await syncQueuedLocked(ctx.store, chatId, "action:chat/send");
+  };
+  if (ctx.home === undefined || ctx.store === undefined) await record();
+  else await withQueueLock(ctx.home, chatId, record);
   if (ctx.emit === undefined) return `recorded ${id}; it is answered when operad serve runs`;
   await ctx.emit({ source, type: MESSAGE_EVENT, key: id, object: `${CHAT_TYPE}:${chatId}` });
   return `sent ${id}`;
@@ -222,6 +235,109 @@ const sendAction: ActionTypeDefinition = {
       return result.outcome;
     }
     return sendMessage(ctx, ctx.object.id, text, input.ref, files);
+  },
+};
+
+/** The message an action on the queue names, when it is still there to change. */
+async function queuedMessage(
+  ctx: ActionContext,
+  messageId: string,
+  action: "withdrawn" | "changed",
+): Promise<Message> {
+  const message = allMessages(ctx.store, ctx.object.id).find((item) => item.id === messageId);
+  if (message === undefined || message.role !== "user") {
+    throw new Error(`chat ${ctx.object.id} has no queued message ${messageId}`);
+  }
+  if (takenIds(chatFacts(ctx.store, ctx.object.id)).has(messageId)) {
+    throw new Error(`message ${messageId} was taken by a run; it can no longer be ${action}`);
+  }
+  return message;
+}
+
+const withdrawAction: ActionTypeDefinition = {
+  name: "withdraw",
+  on: CHAT_TYPE,
+  args: {
+    type: "object",
+    properties: {
+      message: {
+        type: "string",
+        minLength: 1,
+        description: "The id of the queued message to withdraw.",
+      },
+    },
+    required: ["message"],
+    additionalProperties: false,
+  },
+  when: (state) => !chatData(state).closed,
+  why: (object) =>
+    chatData(object.data).closed ? `${object.id} is closed; it has no queued message` : undefined,
+  async run(ctx, args) {
+    const stored = await ctx.store.get(CHAT_TYPE, ctx.object.id);
+    if (stored === undefined) throw new Error(`there is no chat ${ctx.object.id}`);
+    if (chatData(stored.data).closed) {
+      throw new Error(`chat ${ctx.object.id} is closed; it has no queued message`);
+    }
+    const messageId = (args as { readonly message: string }).message;
+    return withQueueLock(ctx.home, ctx.object.id, async () => {
+      await queuedMessage(ctx, messageId, "withdrawn");
+      const change: MessageChangeData = {
+        id: messageId,
+        kind: "withdraw",
+        by: { via: ctx.actor.via, id: ctx.actor.id },
+      };
+      await ctx.facts.append({ type: MESSAGE_CHANGE_FACT, object: chatRef(ctx.object.id), data: change });
+      await syncQueuedLocked(ctx.store, ctx.object.id, "action:chat/withdraw");
+      return `withdrew message ${messageId}`;
+    });
+  },
+};
+
+const editAction: ActionTypeDefinition = {
+  name: "edit",
+  on: CHAT_TYPE,
+  args: {
+    type: "object",
+    properties: {
+      message: {
+        type: "string",
+        minLength: 1,
+        description: "The id of the queued message to change.",
+      },
+      text: {
+        type: "string",
+        description: "The text it now has. Its attachments stay.",
+      },
+    },
+    required: ["message", "text"],
+    additionalProperties: false,
+  },
+  when: (state) => !chatData(state).closed,
+  why: (object) =>
+    chatData(object.data).closed ? `${object.id} is closed; it has no queued message` : undefined,
+  async run(ctx, args) {
+    const stored = await ctx.store.get(CHAT_TYPE, ctx.object.id);
+    if (stored === undefined) throw new Error(`there is no chat ${ctx.object.id}`);
+    if (chatData(stored.data).closed) {
+      throw new Error(`chat ${ctx.object.id} is closed; it has no queued message`);
+    }
+    const input = args as { readonly message: string; readonly text: string };
+    return withQueueLock(ctx.home, ctx.object.id, async () => {
+      const message = await queuedMessage(ctx, input.message, "changed");
+      if (input.text.trim().length === 0 && message.attachments.length === 0) {
+        throw new Error("a message needs text or an attachment; pass --text <text>");
+      }
+      if (message.text === input.text) return `message ${input.message} already reads that`;
+      const change: MessageChangeData = {
+        id: input.message,
+        kind: "text",
+        by: { via: ctx.actor.via, id: ctx.actor.id },
+        text: input.text,
+      };
+      await ctx.facts.append({ type: MESSAGE_CHANGE_FACT, object: chatRef(ctx.object.id), data: change });
+      await syncQueuedLocked(ctx.store, ctx.object.id, "action:chat/edit");
+      return `changed message ${input.message}`;
+    });
   },
 };
 
@@ -625,43 +741,80 @@ const statusAction: ActionTypeDefinition = {
   },
 };
 
+/** Why `chat:retry` would start no reply now; absent when it would start one. */
+type RetryRefusal = "closed" | "finished" | "no-attempt" | "writing";
+
+/** What `chat:retry` would do now: start a reply for `runId`, or why it starts none. */
+interface RetryCheck {
+  readonly refused?: RetryRefusal | undefined;
+  /** The attempt a retry answers again, so a repeated command starts no second reply. */
+  readonly runId?: string | undefined;
+}
+
+/**
+ * Whether `chat:retry` would start a reply now, read the same way by the
+ * action's offer, its `why` and its run: the chat is open, a message waits for
+ * a reply, the last attempt failed, was stopped or was interrupted, and no
+ * reply is being written. A stop records its fact before the reply's own
+ * stopping finishes, so that fact counts before the stopped half reply is in
+ * the record.
+ */
+function retryCheck(store: ObjectStore, id: string, chat: ChatData): RetryCheck {
+  if (chat.closed) return { refused: "closed" };
+  const messages = allMessages(store, id);
+  const facts = chatFacts(store, id);
+  if (unanswered(messages, facts).length === 0) return { refused: "finished" };
+  const entries = allEntries(store, id);
+  let last = lastReplyOutcome(messages, entries);
+  if (last.kind !== "failed" && last.kind !== "stopped") {
+    const lastUser = [...messages].reverse().find((message) => message.role === "user");
+    const stoppedRun = lastUser === undefined ? undefined : stoppedRunAfter(facts, lastUser.sequence);
+    if (stoppedRun !== undefined) last = { kind: "stopped", runId: stoppedRun };
+  }
+  if (last.kind === "normal") return { refused: "finished" };
+  if (last.kind !== "failed" && last.kind !== "stopped") return { refused: "no-attempt" };
+  if (writingReply(facts, messages, entries) !== undefined) return { refused: "writing" };
+  return last.runId === undefined ? {} : { runId: last.runId };
+}
+
+/** The line a refused `chat:retry` answers with, for its `why` and its run alike. */
+function retryRefusalLine(refused: RetryRefusal, id: string): string {
+  switch (refused) {
+    case "closed":
+      return `chat ${id} is closed; there is nothing to retry`;
+    case "finished":
+      return "the last reply finished normally; there is nothing to retry";
+    case "no-attempt":
+      return "the last reply has not failed or stopped; there is nothing to retry";
+    case "writing":
+      return `chat ${id} is writing a reply; retry is offered once it ends`;
+  }
+}
+
 const retryAction: ActionTypeDefinition = {
   name: "retry",
   on: CHAT_TYPE,
-  command: "Answer the last message again after a reply failed or was stopped.",
-  when: (state) => !chatData(state).closed,
-  why: (object) =>
-    chatData(object.data).closed ? `${object.id} is closed; there is nothing to retry` : undefined,
+  command: "Answer the last message again after a reply failed, was stopped or was interrupted.",
+  // The offer answers the same question the run does: would this start a reply?
+  when: (state, env) =>
+    env.object !== undefined && retryCheck(env.store, env.object.id, chatData(state)).refused === undefined,
+  why: (object, env) => {
+    const refused = retryCheck(env.store, object.id, chatData(object.data)).refused;
+    return refused === undefined ? undefined : retryRefusalLine(refused, object.id);
+  },
   async run(ctx) {
     const stored = await ctx.store.get(CHAT_TYPE, ctx.object.id);
     if (stored === undefined) throw new Error(`there is no chat ${ctx.object.id}`);
-    if (chatData(stored.data).closed) throw new Error(`chat ${ctx.object.id} is closed; there is nothing to retry`);
-    const messages = allMessages(ctx.store, ctx.object.id);
-    const facts = chatFacts(ctx.store, ctx.object.id);
-    const pending = unanswered(messages, facts);
-    let last = lastReplyOutcome(messages, allEntries(ctx.store, ctx.object.id));
-    // A stop records its fact before the reply's own stopping finishes. That
-    // fact is enough to retry at once, without waiting for the stopped half
-    // reply to enter the record.
-    const lastUser = [...messages].reverse().find((message) => message.role === "user");
-    if (last.kind !== "failed" && last.kind !== "stopped" && lastUser !== undefined) {
-      const stoppedRun = stoppedRunAfter(facts, lastUser.sequence);
-      if (stoppedRun !== undefined) {
-        last = { kind: "stopped", runId: stoppedRun };
-      }
-    }
-    if (pending.length === 0) throw new Error("the last reply finished normally; there is nothing to retry");
-    if (last.kind === "normal") throw new Error("the last reply finished normally; there is nothing to retry");
-    if (last.kind !== "failed" && last.kind !== "stopped") {
-      throw new Error("the last reply has not failed or stopped; there is nothing to retry");
-    }
+    // The offer said a reply would start; a reply may have begun since, so the
+    // run asks the same question again.
+    const check = retryCheck(ctx.store, ctx.object.id, chatData(stored.data));
+    if (check.refused !== undefined) throw new Error(retryRefusalLine(check.refused, ctx.object.id));
     if (ctx.emit === undefined) {
       throw new Error("the reply cannot be started here; operad serve is not running");
     }
     const known = CHAT_SOURCES.find((name) => name === ctx.actor.via);
     const source = known ?? OTHER_SOURCE;
-    // One retry per failed or stopped attempt: a repeated command starts no second reply.
-    const key = last.runId === undefined ? newMessageId() : `retry:${last.runId}`;
+    const key = check.runId === undefined ? newMessageId() : `retry:${check.runId}`;
     await ctx.emit({
       source,
       type: MESSAGE_EVENT,
@@ -750,7 +903,7 @@ export function createChatPlugin() {
         mode: "auto" as const,
       },
     ],
-    actions: [sendAction, modelAction, effortAction, accessAction, stopAction, retryAction, statusAction, closeAction, helpAction],
+    actions: [sendAction, withdrawAction, editAction, modelAction, effortAction, accessAction, stopAction, retryAction, statusAction, closeAction, helpAction],
     views: { [CHAT_TYPE]: chatViews },
   });
 }
@@ -759,6 +912,7 @@ export default createChatPlugin();
 
 export * from "./model.ts";
 export * from "./command.ts";
+export * from "./queue.ts";
 export * from "./reply.ts";
 export * from "./skills.ts";
 export * from "./views.ts";

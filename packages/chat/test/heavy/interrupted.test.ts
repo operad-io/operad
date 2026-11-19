@@ -6,6 +6,7 @@ import {
   PluginRegistry,
   Runner,
   SqlitePluginStore,
+  Views,
   openLog,
   parseObjectKey,
   readState,
@@ -146,9 +147,16 @@ describe("a reply interrupted by a crash or restart", () => {
     );
     const object = (await store.get("chat", chat));
     if (object === undefined) throw new Error("no chat");
+    const views = new Views({ registry, store, onLog: () => undefined });
+    const offered = async (): Promise<readonly string[]> =>
+      (await views.get(`chat:${chat}`)).actions.map((action) => action.name);
 
     try {
+      // The recovery has not recorded the stopped line yet, so the crashed run
+      // is still the reply being written and a retry would start no reply.
+      expect(await offered()).not.toContain("chat:retry");
       expect(await run(registry, log, info.runId, chat, storeRoot, true)).toBe("ended");
+      expect(await offered()).toContain("chat:retry");
       const state = await readState(log, info.runId);
       expect(state.status).toBe("ended");
       expect(state.endedStatus).toBe("cancelled");
