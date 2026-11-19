@@ -560,8 +560,13 @@ export interface AskQuestionChoice {
 export interface AskQuestion {
   /** What an answer names this question by; unique within the form. */
   readonly id: string;
-  /** The question in full, as the agent asked it. */
+  /** The question in full, as the agent asked it; for a plan review, its title. */
   readonly text: string;
+  /**
+   * Long Markdown the question asks about, when its text alone cannot hold it:
+   * a plan review carries the plan here. Clients show it as written.
+   */
+  readonly body?: string | undefined;
   /** A short label a client shows beside the question. */
   readonly header?: string | undefined;
   /** The answers offered; absent or empty means free text only. */

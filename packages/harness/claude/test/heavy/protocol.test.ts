@@ -1985,6 +1985,79 @@ test("AskUserQuestion becomes one form, and the person's answer goes back as its
   expect(last(run)).toMatchObject({ result: "done" });
 });
 
+// -- ExitPlanMode: the plan as one review question ---------------------------
+
+const PLAN = "# Change the loader\n\n1. Edit src/a.ts.\n2. Run bun test.";
+
+const PLAN_STEPS: FakeStep[] = [
+  { say: systemInit() },
+  { ask: { toolName: "ExitPlanMode", toolUseId: "p-1", input: { plan: PLAN } } },
+  { say: assistant("m1", "carrying it out") },
+  { say: result() },
+];
+
+async function planRun(answer: Line): Promise<{ run: Run; question: Line | undefined }> {
+  const s = setup();
+  const child = new Child(s.env({ steps: PLAN_STEPS }), s.recordFile);
+  child.sendLine(JSON.stringify(s.input));
+  const question = await child.untilLine("ask_form");
+  child.sendLine(JSON.stringify({ type: "ask_form_ack", id: question?.["id"], ...answer }));
+  child.endInput();
+  return { run: await child.finish(), question };
+}
+
+test("ExitPlanMode becomes a plan review: the title, the Markdown and two answers", async () => {
+  const { run, question } = await planRun({
+    decision: "answered",
+    answers: [{ id: "plan", choices: ["Approve"] }],
+  });
+  expect(question?.questions).toEqual([
+    {
+      id: "plan",
+      text: "Change the loader",
+      body: PLAN,
+      choices: [
+        { label: "Approve", description: "Leave plan mode and carry out the plan." },
+        {
+          label: "Request changes",
+          description: "Refuse this plan and end the reply so you can say what to change.",
+        },
+      ],
+    },
+  ]);
+  expect(answerOf(run)).toMatchObject({ behavior: "allow", updatedInput: { plan: PLAN } });
+  expect(kinds(run)).not.toContain("blocked");
+  expect(last(run)).toMatchObject({ result: "done" });
+});
+
+test("asking for changes refuses the call with the person's note and interrupts the reply", async () => {
+  const { run } = await planRun({
+    decision: "answered",
+    answers: [{ id: "plan", choices: ["Request changes"] }],
+    note: "Use the old loader.",
+  });
+  expect(answerOf(run)).toMatchObject({
+    behavior: "deny",
+    message: "Use the old loader.",
+    interrupt: true,
+  });
+  expect(kinds(run)).toContain("blocked");
+  expect(last(run)).toMatchObject({ result: "done" });
+});
+
+test("a plan whose review ran out of grace holds the call until the host ends the program", async () => {
+  const s = setup();
+  const child = new Child(s.env({ steps: PLAN_STEPS }), s.recordFile);
+  child.sendLine(JSON.stringify(s.input));
+  const question = await child.untilLine("ask_form");
+  child.sendLine(JSON.stringify({ type: "ask_form_ack", id: question?.["id"], decision: "stop" }));
+  await child.untilLine("ask_resolved");
+  child.signal("SIGTERM");
+  const run = await child.finish();
+  expect(kinds(run)).not.toContain("message_end");
+  expect(answerOf(run)["behavior"]).not.toBe("allow");
+});
+
 test("a skipped question says so only to a claude that takes that field", async () => {
   const s = setup();
   const child = new Child(

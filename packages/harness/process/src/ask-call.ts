@@ -63,7 +63,11 @@ export function askFormRequest(form: AskForm): AskRequest {
 /** The program's answer from what `ctx.ask` returned. */
 export function formAnswer(answer: AskAnswer): FormAnswer {
   if (answer.rejected === true) return { decision: "rejected" };
-  return { decision: "answered", answers: answer.answers ?? [] };
+  return {
+    decision: "answered",
+    answers: answer.answers ?? [],
+    ...(answer.note === undefined ? {} : { note: answer.note }),
+  };
 }
 
 /** Puts one form through an asker and resolves with the program's answer. */
@@ -85,6 +89,7 @@ export function askedForm(
               ...(Array.isArray(ack.answers)
                 ? { answers: ack.answers as readonly AskQuestionAnswer[] }
                 : {}),
+              ...(typeof ack.note === "string" ? { note: ack.note } : {}),
             });
             return;
           }
@@ -152,6 +157,8 @@ export interface AskForm {
 export interface FormAnswer {
   readonly decision: "answered" | "rejected" | "stop";
   readonly answers?: readonly AskQuestionAnswer[] | undefined;
+  /** The person's note for the whole form, when they wrote one. */
+  readonly note?: string | undefined;
 }
 
 /** The `ask_form` line, if this is one. */
@@ -387,6 +394,7 @@ export function createCallAsker(options: CallAskerOptions): CallAsker {
         id,
         decision: form.decision,
         ...(form.answers === undefined ? {} : { answers: form.answers }),
+        ...(form.note === undefined ? {} : { note: form.note }),
       }),
     );
   };
@@ -411,7 +419,11 @@ export function createCallAsker(options: CallAskerOptions): CallAsker {
         answerForm(reply, form.id, { decision: "rejected" });
         return;
       }
-      answerForm(reply, form.id, { decision: "answered", answers: got.answers ?? [] });
+      answerForm(reply, form.id, {
+        decision: "answered",
+        answers: got.answers ?? [],
+        ...(got.note === undefined ? {} : { note: got.note }),
+      });
     } catch (error) {
       stop = { error };
       answerForm(reply, form.id, { decision: "stop" });

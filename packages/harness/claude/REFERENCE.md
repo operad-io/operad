@@ -105,7 +105,7 @@ One JSON object per line, flushed per line, each with a `type`:
 | `rate_limit` | `status`, `rateLimitType` (or null), `resetsAt` (or null) | claude reported its rate limit state |
 | `grant_use` | `id`, `waitId` | asks the host to use up a one-time permission; answered on stdin by `{"type":"grant_ack","id":n,"used":true\|false}` |
 | `ask_call` | `id`, `kind`, `value`, `tool` (path questions), `shown`, `session` | asks the host to ask a person whether one call may run (`askCommands`); `shown` is the command itself with its line breaks, even when the log says `<command not shown: could not read it safely>`; answered on stdin by `{"type":"ask_ack","id":n,"decision":"allow"\|"deny"\|"stop"}` |
-| `ask_form` | `id`, `questions`, `session` | asks the host to put the agent's own question to a person as one form (ADR 0026 D6); `questions` is the kernel's form, and answered on stdin by `{"type":"ask_form_ack","id":n,"decision":"answered"\|"rejected"\|"stop","answers"?}` |
+| `ask_form` | `id`, `questions`, `session` | asks the host to put the agent's own question, or a plan review, to a person as one form (ADR 0026 D6); `questions` is the kernel's form and a question may carry Markdown `body`; answered on stdin by `{"type":"ask_form_ack","id":n,"decision":"answered"\|"rejected"\|"stop","answers"?,"note"?}` |
 | `ask_resolved` | `id` | the question closed; the call goes on or is refused |
 | `result` | see below | always the last line |
 
@@ -262,6 +262,9 @@ A tool that is not in the table:
   too and are judged like any other. `AskUserQuestion` is not judged at all: it
   is the agent's own question, put to a person as a form (see
   [Asking the agent's own question](#asking-the-agents-own-question)).
+  `ExitPlanMode` is not judged by the profile either: the worker intercepts it
+  first and puts it to the person as a plan review (see
+  [Reviewing a plan](#reviewing-a-plan)).
 - Any other name (an MCP tool, a tool a later claude adds) is allowed only when
   the profile has no `denyPaths` and no `denyCommands`. With a rule set it is
   refused, because a rule that could match it cannot be checked.
@@ -282,6 +285,17 @@ host that is gone (stdin closed) and a host that fails all leave the call
 refused. A second identical call finds the grant used and is judged as usual.
 The host's half (`hasGrants`, `grantUse`, `answerGrant`) is in
 `@operad-io/harness-process`, shared with `pi`.
+
+### Reviewing a plan
+
+`ExitPlanMode` is the agent's plan, put to the person before plan mode ends. The
+worker makes the call one form question (ADR 0026 D6): `text` is the plan's
+first Markdown heading, else its first line, else `Plan`; `body` is the plan as
+written; the choices are `Approve` and `Request changes`. Approve lets the call
+run with its input unchanged, so claude leaves plan mode itself. Request
+changes writes `blocked`, closes the call and answers `deny` with the person's
+note as the message and `interrupt: true`, so the reply ends. An empty plan is
+refused without asking, and a plan holding a secret value is refused.
 
 ### Asking the agent's own question
 

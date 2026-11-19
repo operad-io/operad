@@ -1180,3 +1180,10 @@ the row fields.
 | T-0569-M13 | packages/engine/src/views/presentation.ts | a form's answer went through the action path when every label matched an action name, so a question whose label was `drop` ran `webtest:drop` | `http server > a form is answered as a form even when a label names an action` |
 | T-0569-M14 | packages/engine/src/runner/answer.ts | the flow wait's answer check was looser than a running question's, so a plain choice for a form of several questions, or an answer for a question of choices, was accepted and then dropped by `decide` with nobody told | `a form a step asks > a form the grace passed refuses an answer that does not fill it, and records nothing` and `http server > a plain choice is refused for a form of several questions, and the item stays pending` |
 | T-0569-M15 | packages/engine/src/views/history.ts | `answersLine` was not read for a form's answer, so History said `you chose an answer` instead of what the person answered | `a form a step asks > a form answer says in history what the person answered` |
+
+## T-0573 — a plan review's Markdown and a form through a worker
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0573-M1 | packages/engine/src/plugin/question-form.ts | `normalizeQuestions` dropped a question's `body`, so the plan's Markdown never reached the pending item | `a form a step asks > a question's Markdown body reaches the item while it runs and after the grace` |
+| T-0573-M2 | packages/engine/src/runner/step-worker.ts | the ask request sent to the parent left `questions` out, so a step in a worker lost its form | `step worker in this process > a form and its Markdown body reach the parent` |

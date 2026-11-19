@@ -301,3 +301,11 @@ setup it depends on, in the order they were recorded. The root
 |---|---|---|---|
 | T-0569-M7 | packages/harness/claude/src/worker.ts | the permission result dropped the person's `answers`, so the tool got no answer | `AskUserQuestion becomes one form, and the person's answer goes back as its answers` |
 | T-0569-M8 | packages/harness/claude/src/access.ts | `AskUserQuestion` was not inert, so the profile refused the agent's own question | `tools outside the table > an inert tool is allowed under any profile` |
+
+## T-0573 — ExitPlanMode is a plan review
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0573-M1 | packages/harness/claude/src/worker.ts | `canUseTool` no longer turned `ExitPlanMode` into a plan review, so the tool passed without a person seeing the plan | `ExitPlanMode becomes a plan review: the title, the Markdown and two answers` |
+| T-0573-M2 | packages/harness/claude/src/worker.ts | a request for changes no longer set `interrupt: true`, so the reply went on instead of ending | `asking for changes refuses the call with the person's note and interrupts the reply` |
+| T-0573-M3 | packages/harness/claude/src/worker.ts | `planReview` always titled the plan `Plan` instead of reading its first heading or line | `a plan's first heading is its title and its whole Markdown is its text` |
