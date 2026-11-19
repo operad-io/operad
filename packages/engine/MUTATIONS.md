@@ -1142,3 +1142,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0558-M4 | packages/engine/src/runner/ask.ts | a rechecked question wrote no note when it was answered `allow_once` | `ctx.ask > a question checked again and no longer needed is answered allow_once with its note` |
+
+## T-0561 — a removed store's journals stop a poll that meets an I/O error
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0561-M1 | packages/engine/src/plugin/sqlite-store.ts | `gone` checked only the database file, so an I/O error after the `-wal` and `-shm` were removed did not stop the poll | `a poll stops when the store's -wal and -shm are removed` |
