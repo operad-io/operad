@@ -1193,3 +1193,10 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0571-M5 | packages/engine/src/views/presentation.ts | `section` left the plugin's `data` out of its answer | `structured data beside a section > a read carries the plugin's data, and so does a read after a mark` |
+
+## T-0571 rework — a section's data and the pushed tail
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0571-M13 | packages/engine/src/views/presentation.ts | `finishSection` left `data` out of the size cap | `the size cap with structured data > data is counted with the Markdown, and a full read leaves both whole` |
+| T-0571-M14 | packages/engine/src/views/presentation.ts | `liveEvent` left the plugin's `data` out of the pushed tail | `a live log that grows without a fact > a pushed tail carries the live section's data` |

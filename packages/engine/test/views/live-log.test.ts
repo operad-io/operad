@@ -10,6 +10,7 @@ import {
   PluginRegistry,
   type LogBackend,
   type PluginDefinition,
+  type JsonValue,
   type ViewEvent,
   type Views,
 } from "../../src/index.ts";
@@ -177,6 +178,7 @@ const quiet = definePlugin({
 interface Pushed {
   readonly section: string;
   readonly tail?: string | undefined;
+  readonly data?: Readonly<Record<string, JsonValue>> | undefined;
 }
 
 /** A live item whose pushed tail a test controls; `hook` sees each call's number. */
@@ -497,6 +499,27 @@ describe("a live log that grows without a fact", () => {
       expect((await within(stream.next())).value).toEqual({ id: "one" });
       env.store.put("item", "two", { title: "Two changed" }, "seed");
       expect(await nextChange(stream, "two")).toEqual({ id: "two" });
+    } finally {
+      await stream.return?.();
+    }
+  });
+
+  test("a pushed tail carries the live section's data", async () => {
+    const data = { replies: [{ runId: "run-1", answer: null }] };
+    const { plugin } = pushingPlugin(() => ({ section: "log", tail: "tail 1", data }));
+    const env = await fixture({ logDir: true }, plugin);
+    const views = viewsOf(env);
+    const onChange = await env.watches.opened(env.directory);
+    const stream = views.events()[Symbol.asyncIterator]();
+    try {
+      onChange("agent.log");
+      expect(await nextTail(stream)).toEqual({
+        id: "one",
+        type: "item",
+        section: "log",
+        tail: "tail 1",
+        data,
+      });
     } finally {
       await stream.return?.();
     }

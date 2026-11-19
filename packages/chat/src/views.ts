@@ -1,6 +1,6 @@
 /** How a chat shows in a list and on its page: a row and a transcript. */
 
-import { attachmentUrl, decodeCursor, encodeCursor } from "@operad-io/engine";
+import { attachmentUrl, decodeCursor, DEFAULT_SECTION_CAP_BYTES, encodeCursor } from "@operad-io/engine";
 import type {
   JsonValue,
   ObjectRef,
@@ -457,72 +457,116 @@ interface LiveReply {
 }
 
 /** The structured form of each reply, with the live reply's unfinished items when one runs. */
-function replyBlocks(
-  facts: readonly PluginFact[],
-  messages: readonly Message[],
-  live: LiveReply | undefined,
-): readonly ReplyBlock[] {
+interface BuiltReply {
+  readonly block: ReplyBlock;
+  /** The finished chunk the reply came from; absent for a reply still being written. */
+  readonly chunk?: Chunk | undefined;
+  /** The answer's fact position; absent while the reply is still being written. */
+  readonly answerSequence?: number | undefined;
+}
+
+/** The replies already finished among `chunks`, in order. */
+function storedReplies(chunks: readonly Chunk[], messages: readonly Message[]): readonly BuiltReply[] {
   const byId = new Map(messages.map((message) => [message.id, message]));
-  const chunks = chunksOf(facts);
-  const blocks: ReplyBlock[] = [];
+  const blocks: BuiltReply[] = [];
   let previousAnswer = -1;
-  let target = -1;
-  if (live !== undefined) {
-    chunks.forEach((chunk, index) => {
-      if (chunk.runId === live.runId) target = index;
-    });
-  }
-  let targetHadAnswer = false;
-  chunks.forEach((chunk, index) => {
+  for (const chunk of chunks) {
     const answer = chunk.facts
       .map((fact) => (fact.type === MESSAGE_FACT ? messageFrom(fact) : undefined))
       .find((message) => message?.role === "assistant");
-    const runId = answer?.runId ?? chunk.runId;
-    if (answer !== undefined && runId !== undefined) {
-      if (index === target) targetHadAnswer = true;
-      const named = answer.replyTo === undefined || answer.replyTo.length === 0
-        ? []
-        : answer.replyTo
-            .map((id) => byId.get(id))
-            .filter((message): message is Message => message !== undefined && message.role === "user");
-      const input = named.length > 0
-        ? named
-        : messages.filter(
-            (message) =>
-              message.role === "user" &&
-              message.sequence > previousAnswer &&
-              message.sequence < answer.sequence,
-          );
-      blocks.push({
+    if (answer === undefined) continue;
+    const runId = answer.runId ?? chunk.runId;
+    if (runId === undefined) continue;
+    const named = answer.replyTo === undefined || answer.replyTo.length === 0
+      ? []
+      : answer.replyTo
+          .map((id) => byId.get(id))
+          .filter((message): message is Message => message !== undefined && message.role === "user");
+    const input = named.length > 0
+      ? named
+      : messages.filter(
+          (message) =>
+            message.role === "user" &&
+            message.sequence > previousAnswer &&
+            message.sequence < answer.sequence,
+        );
+    blocks.push({
+      block: {
         runId,
         input: messagesInTime(input),
         process: processOf(chunk),
         answer: replyMessage(answer),
         ...(answer.timings === undefined ? {} : { durationMs: answer.timings.totalMs }),
-      });
-      previousAnswer = answer.sequence;
-      return;
-    }
-    if (live !== undefined && index === target) {
-      if (runId === undefined) return;
-      blocks.push({
-        runId,
-        input: messagesInTime(unanswered(messages, facts)),
-        process: processOf(chunk, live.items),
-      });
-    }
-  });
-  if (live !== undefined && (target < 0 || targetHadAnswer)) {
-    const pending = unanswered(messages, facts);
-    if (pending.length > 0 || live.items.length > 0) {
-      blocks.push({
-        runId: live.runId,
-        input: messagesInTime(pending),
-        process: processOfItems(live.items),
-      });
-    }
+      },
+      chunk,
+      answerSequence: answer.sequence,
+    });
+    previousAnswer = answer.sequence;
   }
   return blocks;
+}
+
+/** The one reply still being written, with the log's unfinished items. */
+function liveReply(
+  facts: readonly PluginFact[],
+  messages: readonly Message[],
+  live: LiveReply,
+): BuiltReply | undefined {
+  const chunks = chunksOf(facts);
+  let target = -1;
+  chunks.forEach((chunk, index) => {
+    if (chunk.runId === live.runId) target = index;
+  });
+  const chunk = target < 0 ? undefined : chunks[target];
+  const answer = chunk?.facts
+    .map((fact) => (fact.type === MESSAGE_FACT ? messageFrom(fact) : undefined))
+    .find((message) => message?.role === "assistant");
+  if (chunk !== undefined && answer === undefined) {
+    return {
+      block: {
+        runId: chunk.runId ?? live.runId,
+        input: messagesInTime(unanswered(messages, facts)),
+        process: processOf(chunk, live.items),
+      },
+      chunk,
+    };
+  }
+  const pending = unanswered(messages, facts);
+  if (pending.length === 0 && live.items.length === 0) return undefined;
+  return {
+    block: {
+      runId: live.runId,
+      input: messagesInTime(pending),
+      process: processOfItems(live.items),
+    },
+  };
+}
+
+function jsonBytes(value: unknown): number {
+  return Buffer.byteLength(JSON.stringify(value), "utf8");
+}
+
+/** The transcript's data, with tool output text cut first when it is over its budget. */
+function replyData(
+  replies: readonly ReplyBlock[],
+  maxBytes: number,
+): Readonly<Record<string, JsonValue>> {
+  const whole = { replies } as unknown as Readonly<Record<string, JsonValue>>;
+  if (jsonBytes(whole) <= maxBytes) return whole;
+  const cut = replies.map((reply) => ({
+    ...reply,
+    process: reply.process.map((group) => ({
+      ...group,
+      items: group.items.map((item) => {
+        if (item.kind !== "tool" || item.output.text.length === 0) return item;
+        return {
+          ...item,
+          output: { ...item.output, text: "", truncated: true as const },
+        };
+      }),
+    })),
+  }));
+  return { replies: cut } as unknown as Readonly<Record<string, JsonValue>>;
 }
 
 /** One finished part of an answer as Markdown lines; tool output is never shown. */
@@ -1172,7 +1216,7 @@ async function load(
   ctx: ViewContext,
   object: StoredObject,
   sectionId: string,
-  options: { readonly cursor?: string | undefined; readonly after?: string | undefined },
+  options: { readonly cursor?: string | undefined; readonly after?: string | undefined; readonly full?: boolean | undefined },
 ): Promise<SectionContent> {
   if (sectionId !== TRANSCRIPT) return { markdown: "" };
   const ref = chatRef(object.id);
@@ -1182,24 +1226,33 @@ async function load(
   const live = await liveOf(ctx, object, facts, speaker);
   const { cut, run: liveRun, items: liveItems, ...liveContent } = live;
   const messages = facts.map(messageFrom).filter((message): message is Message => message !== undefined);
-  const data = {
-    replies: replyBlocks(
-      facts,
-      messages,
-      liveRun === undefined ? undefined : { runId: liveRun, items: liveItems ?? [] },
-    ),
-  } as unknown as Readonly<Record<string, JsonValue>>;
+  const liveBlock =
+    liveRun === undefined
+      ? undefined
+      : liveReply(facts, messages, { runId: liveRun, items: liveItems ?? [] });
+  const limit = options.full === true ? Number.POSITIVE_INFINITY : ctx.sectionCapBytes ?? DEFAULT_SECTION_CAP_BYTES;
   // A message the live tail holds stays unread as finished content until the
   // run ends, so the same facts then arrive together with the reply's items.
   const finished = cut === undefined ? facts : facts.filter((fact) => fact.sequence <= cut);
   const context = await chatContext(ctx, object);
   const since = markAfter(options.after);
+  const finishedChunks = chunksOf(finished);
   if (since !== undefined) {
     // Only what was recorded after the mark, in the same Markdown as a full read.
     const chunks = chunksOf(finished.filter((fact) => fact.sequence > since));
     const blocks = chunks.flatMap((chunk) => rendered(chunk, speaker, ctx.home, chat.harness));
+    const markdown = blocks.join("\n\n---\n\n");
+    // The replies whose answer is after the mark, and the one still running.
+    const changed = storedReplies(finishedChunks, messages).filter(
+      (reply) => reply.answerSequence !== undefined && reply.answerSequence > since,
+    );
+    const replies = liveBlock === undefined ? changed : [...changed, liveBlock];
+    const data = replyData(
+      replies.map((reply) => reply.block),
+      Math.max(0, limit - Buffer.byteLength(markdown, "utf8") - Buffer.byteLength(liveContent.tail ?? "", "utf8")),
+    );
     return {
-      markdown: blocks.join("\n\n---\n\n"),
+      markdown,
       mark: markOf(Math.max(since, chunks.at(-1)?.last ?? 0)),
       delta: true,
       ...liveContent,
@@ -1207,10 +1260,18 @@ async function load(
       data,
     };
   }
-  const pages = pagesOf(ref, chunksOf(finished));
+  const pages = pagesOf(ref, finishedChunks);
   const after = options.cursor === undefined ? undefined : cursorAfter(options.cursor);
   const index = pages.findIndex((page) => page.after === after);
   const selected = pages[index < 0 ? 0 : index] ?? pages[0];
+  const pageIndex = index < 0 ? 0 : index;
+  const onPage = new Set(selected?.chunks ?? []);
+  const onPageBlocks = storedReplies(finishedChunks, messages).filter(
+    (reply) => reply.chunk !== undefined && onPage.has(reply.chunk),
+  );
+  const pageReplies = pageIndex === pages.length - 1 && liveBlock !== undefined
+    ? [...onPageBlocks, liveBlock]
+    : onPageBlocks;
   const blocks = (selected?.chunks ?? []).flatMap((chunk) => rendered(chunk, speaker, ctx.home, chat.harness));
   const body = blocks.length === 0 && options.cursor === undefined ? "No messages yet." : blocks.join("\n\n---\n\n");
   // Every page says which agent answers, as the row does.
@@ -1218,6 +1279,10 @@ async function load(
     ? `Agent: ${agentLine(chat)}\n\n${body}`
     : body;
   const nextPage = index < 0 ? undefined : pages[index + 1];
+  const data = replyData(
+    pageReplies.map((reply) => reply.block),
+    Math.max(0, limit - Buffer.byteLength(markdown, "utf8") - Buffer.byteLength(liveContent.tail ?? "", "utf8")),
+  );
 
   // The table of contents: the cursor each page starts at, the first one without.
   const toc: SectionPage[] = pages.map((page, at) =>
@@ -1250,15 +1315,27 @@ function objectReader(ctx: ViewContext): ObjectReader {
 async function tailPush(
   ctx: ViewContext,
   object: StoredObject,
-): Promise<{ readonly section: string; readonly tail?: string; readonly status?: SectionStatus } | undefined> {
+): Promise<{ readonly section: string; readonly tail?: string; readonly status?: SectionStatus; readonly data?: Readonly<Record<string, JsonValue>> } | undefined> {
   const facts = allFacts(ctx, chatRef(object.id));
   const speaker = await speakerOf(ctx, object);
   const live = await liveOf(ctx, object, facts, speaker);
-  if (live.tail === undefined && live.status === undefined) return undefined;
+  const messages = facts.map(messageFrom).filter((message): message is Message => message !== undefined);
+  const liveBlock = live.run === undefined
+    ? undefined
+    : liveReply(facts, messages, { runId: live.run, items: live.items ?? [] });
+  const limit = ctx.sectionCapBytes ?? DEFAULT_SECTION_CAP_BYTES;
+  const data = liveBlock === undefined
+    ? undefined
+    : replyData(
+        [liveBlock.block],
+        Math.max(0, limit - Buffer.byteLength(live.tail ?? "", "utf8")),
+      );
+  if (live.tail === undefined && live.status === undefined && data === undefined) return undefined;
   return {
     section: TRANSCRIPT,
     ...(live.tail === undefined ? {} : { tail: live.tail }),
     ...(live.status === undefined ? {} : { status: live.status }),
+    ...(data === undefined ? {} : { data }),
   };
 }
 

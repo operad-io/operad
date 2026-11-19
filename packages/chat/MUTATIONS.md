@@ -479,3 +479,14 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 | T-0571-M4 | packages/chat/src/views.ts | `processOf` did not close a group at a message the reply took mid-run | `a reply's structured form > a reply with a mid-run message keeps both in time order and splits its process there` |
 | T-0571-M6 | packages/chat/src/views.ts | `load` left the live log's process items out of the reply data | `a reply's structured form > live: the input and the process are there, and the stored read adds the answer and the reply's duration` |
 | T-0571-M7 | packages/chat/src/views.ts | `messageFrom` dropped a reply's timings, so a finished reply had no duration | `a reply's structured form > live: the input and the process are there, and the stored read adds the answer and the reply's duration` |
+
+## T-0571 rework — a reply's window and the size cap
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0571-M8 | packages/chat/src/views.ts | a page read carried every reply instead of the replies on that page | `a reply's structured form > many replies: a page carries the replies on it, and an after read only what finished since its mark` |
+| T-0571-M9 | packages/chat/src/views.ts | a read with `after` carried every finished reply instead of the ones finished since the mark | `a reply's structured form > many replies: a page carries the replies on it, and an after read only what finished since its mark` |
+| T-0571-M10 | packages/chat/src/views.ts | `replyData` left the tool output text in place, so the replies went over the cap | `a reply's structured form > many replies: the cap cuts tool output text before it cuts the Markdown, keeping its lines` |
+| T-0571-M11 | packages/chat/src/views.ts | a `full` read cut the tool output text as a capped read did | `a reply's structured form > many replies: the cap cuts tool output text before it cuts the Markdown, keeping its lines` |
+| T-0571-M12 | packages/chat/src/views.ts | `tailPush` left the running reply's data out of the pushed part | `the chat's pushed tail > the running reply is structured in the push` |
+| T-0571-M15 | packages/chat/src/views.ts | a read with `after` left the one still-running reply out of its data | `a reply's structured form > live: the input and the process are there, and the stored read adds the answer and the reply's duration` |

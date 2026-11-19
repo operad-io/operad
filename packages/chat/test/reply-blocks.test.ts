@@ -33,7 +33,13 @@ async function write(ctx: StepContext, line: Record<string, unknown>): Promise<v
 async function view(
   r: Rig,
   chat: string,
-  options: { readonly running?: boolean } = {},
+  options: {
+    readonly running?: boolean;
+    readonly cursor?: string;
+    readonly after?: string;
+    readonly full?: boolean;
+    readonly sectionCapBytes?: number;
+  } = {},
 ): Promise<SectionContent> {
   const object = await r.store.get("chat", chat);
   if (object === undefined) throw new Error("no chat");
@@ -43,13 +49,18 @@ async function view(
     cwd: r.root,
     store: r.store,
     settings: {},
+    sectionCapBytes: options.sectionCapBytes ?? 256 * 1024,
     secrets: {
       names: async () => [],
       get: async () => undefined,
     },
     runTimes: async () => ({ startedAt: 1, endedAt: options.running === true ? null : 2, segments: [] }),
   } as unknown as ViewContext;
-  return chatViews.load(ctx, object, "transcript", {});
+  return chatViews.load(ctx, object, "transcript", {
+    ...(options.cursor === undefined ? {} : { cursor: options.cursor }),
+    ...(options.after === undefined ? {} : { after: options.after }),
+    ...(options.full === true ? { full: true } : {}),
+  });
 }
 
 function replies(content: SectionContent): readonly ReplyBlock[] {
@@ -67,10 +78,50 @@ function tool(replyBlock: ReplyBlock, name: string): ReplyToolItem {
   return found;
 }
 
+/** A chat with `count` finished replies, each with `tools` calls and an optional output. */
+async function chatWithReplies(
+  count: number,
+  tools: number,
+  outputFor?: (round: number, tool: number) => string | undefined,
+): Promise<{ readonly r: Rig; readonly chat: string }> {
+  const r = await rig(async (ctx) => {
+    const round = r.calls.length;
+    for (let index = 0; index < tools; index += 1) {
+      const callId = `r${round}-${index}`;
+      const toolName = index % 2 === 0 ? "Bash" : "Read";
+      await write(ctx, {
+        type: "tool_execution_start",
+        toolCallId: callId,
+        toolName,
+        input: `call ${round}-${index}`,
+        at: round * 100 + index,
+      });
+      const output = outputFor?.(round, index);
+      if (output !== undefined) await write(ctx, { type: "tool_output", toolCallId: callId, text: output });
+      await write(ctx, {
+        type: "tool_execution_end",
+        toolCallId: callId,
+        toolName,
+        isError: false,
+        durationMs: 1,
+      });
+    }
+    return reply(`answer ${round}`);
+  });
+  const chat = await r.chat();
+  for (let index = 1; index <= count; index += 1) {
+    await r.say(chat, `question ${index}`);
+    await r.round(chat);
+  }
+  return { r, chat };
+}
+
 describe("a reply's structured form", () => {
   test("live: the input and the process are there, and the stored read adds the answer and the reply's duration", async () => {
     let chat = "";
     let during: SectionContent | undefined;
+    let afterMark: SectionContent | undefined;
+    let emptyMark = "";
     const r = await rig(async (ctx) => {
       const at = Date.UTC(2026, 10, 12, 9, 5, 7);
       await write(ctx, { type: "thinking_end", text: "look first", receivedAt: at - 2 });
@@ -79,6 +130,7 @@ describe("a reply's structured form", () => {
       await write(ctx, { type: "tool_output", toolCallId: "t1", text: "a.txt\n" });
       await write(ctx, { type: "tool_execution_end", toolCallId: "t1", toolName: "Bash", isError: false, durationMs: 1_500 });
       during = await view(r, chat, { running: true });
+      afterMark = await view(r, chat, { running: true, after: emptyMark });
       return {
         result: "done",
         data: {
@@ -89,12 +141,18 @@ describe("a reply's structured form", () => {
       };
     });
     chat = await r.chat();
+    emptyMark = (await view(r, chat)).mark ?? "";
     await r.say(chat, "hello");
     await r.round(chat);
     if (during === undefined) throw new Error("the live view was not read");
+    if (afterMark === undefined) throw new Error("the after read was not made");
 
     const live = replies(during)[0];
     if (live === undefined) throw new Error("the live reply is not structured");
+    expect(afterMark.markdown).toContain("hello");
+    expect(afterMark.markdown).not.toContain("final answer");
+    expect(replies(afterMark).map((reply) => reply.runId)).toEqual(["run-1"]);
+    expect(replies(afterMark)[0]?.answer).toBeUndefined();
     expect(live.runId).toBe("run-1");
     expect(live.input.map((message) => message.text)).toEqual(["hello"]);
     expect(live.answer).toBeUndefined();
@@ -218,5 +276,63 @@ describe("a reply's structured form", () => {
     const stored = replies(await view(r, chat))[0];
     expect(stored?.answer?.text).toBe("final answer");
     expect(allMessages(r.store, chat).map((message) => message.role)).toEqual(["user", "user", "assistant"]);
+  });
+
+  test("many replies: a page carries the replies on it, and an after read only what finished since its mark", async () => {
+    const { r, chat } = await chatWithReplies(55, 1);
+    const pages: SectionContent[] = [];
+    let page = await view(r, chat);
+    for (;;) {
+      pages.push(page);
+      if (page.next === undefined) break;
+      page = await view(r, chat, { cursor: page.next });
+    }
+    expect(pages.length).toBeGreaterThan(1);
+
+    const seen = new Set<string>();
+    for (const one of pages) {
+      const onPage = replies(one);
+      expect(onPage.length).toBeGreaterThan(0);
+      for (const reply of onPage) {
+        expect(one.markdown).toContain(reply.answer?.text ?? "");
+        expect(seen.has(reply.runId)).toBe(false);
+        seen.add(reply.runId);
+      }
+    }
+    expect(seen.size).toBe(55);
+
+    const last = pages.at(-1);
+    if (last === undefined) throw new Error("the chat has no last page");
+    await r.say(chat, "question 56");
+    await r.round(chat);
+    const after = await view(r, chat, { after: last.mark ?? "" });
+    expect(after.markdown).toContain("answer 56");
+    expect(after.markdown).not.toContain("answer 55");
+    expect(replies(after).map((reply) => reply.answer?.text)).toEqual(["answer 56"]);
+  });
+
+  test("many replies: the cap cuts tool output text before it cuts the Markdown, keeping its lines", async () => {
+    const output = Array.from({ length: 2_000 }, () => "x").join("\n");
+    const { r, chat } = await chatWithReplies(20, 4, () => output);
+    const cap = 60_000;
+    const page = await view(r, chat, { sectionCapBytes: cap });
+    expect(page.markdown).not.toContain("[Truncated.");
+    const bytes =
+      Buffer.byteLength(page.markdown, "utf8") +
+      Buffer.byteLength(page.tail ?? "", "utf8") +
+      Buffer.byteLength(JSON.stringify(page.data), "utf8");
+    expect(bytes).toBeLessThanOrEqual(cap);
+
+    const shown = replies(page).flatMap(items).filter((item): item is ReplyToolItem => item.kind === "tool");
+    expect(shown).toHaveLength(80);
+    for (const call of shown) {
+      expect(call.output.text).toBe("");
+      expect(call.output.truncated).toBe(true);
+      expect(call.output.lines).toBe(2_000);
+    }
+
+    const full = await view(r, chat, { full: true });
+    const fullTool = replies(full).flatMap(items).find((item): item is ReplyToolItem => item.kind === "tool");
+    expect(fullTool?.output.text.length ?? 0).toBeGreaterThan(0);
   });
 });
