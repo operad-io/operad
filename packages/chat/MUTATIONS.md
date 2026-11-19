@@ -420,3 +420,9 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 | T-0565-M2 | packages/chat/src/views.ts | the live section did not stop finished content before a message it was holding in the tail | `the transcript places a message sent during a reply by its time > live: the tail puts the message among the reply's lines, and the stored read after the run keeps that order` |
 | T-0565-M3 | packages/chat/src/reply.ts | a text entry was recorded without the time its log line carried | `the transcript places a message sent during a reply by its time > stored: the reply's items before the message stay above it, and those after stay below it` |
 | T-0565-M4 | packages/chat/src/views.ts | `runChunks` fell back to the older chunks, so a mid-run message stayed in its own chunk above the whole reply | `the transcript places a message sent during a reply by its time > stored: the reply's items before the message stay above it, and those after stay below it` |
+
+## T-0566 — a message the run did not take stays out of its reply
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0566-M1 | packages/chat/src/views.ts | `runChunks` kept a message the reply did not name in the reply's items | `the transcript places a message sent during a reply by its time > stored: a message the run did not take stays out of the reply's items and waits below it` |

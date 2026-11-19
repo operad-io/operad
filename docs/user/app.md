@@ -165,11 +165,13 @@ The chat page is the `transcript` section plus the input box. Each user message
 shows its text, its attachments and who sent it (`ios`, `telegram`, `cli`, ...).
 The agent's reply and its process are shown as Markdown lines: intermediate
 text, `Thinking`, tool calls with their result, duration and a short output, and
-the final reply. A message sent while the reply is being written appears among
-those lines at the time it arrived; the message that started the reply stays
-above all of them. An older chat whose lines were recorded without a time keeps
-the order it was recorded in. A reply that fails leaves one line saying it failed
-and why.
+the final reply. A message the reply takes while it is being written appears
+among those lines at the time it arrived; the message that started the reply
+stays above all of them. A message the reply does not take, because its agent
+does not take messages mid-run or it has an attachment, waits for the next round
+and shows below the finished reply. An older chat whose lines were recorded
+without a time keeps the order it was recorded in. A reply that fails leaves one
+line saying it failed and why.
 Tool output is cut in the transcript; the full file is available to the agent
 from the chat's directory. A reply that is still being written shows its
 unfinished text and thinking as a tail that updates; the finished entries are
