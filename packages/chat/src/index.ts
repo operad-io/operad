@@ -28,11 +28,13 @@ import {
   latestRunOf,
   MESSAGE_EVENT,
   MESSAGE_FACT,
+  MESSAGE_CHANGE_FACT,
   attachmentOf,
   MODEL_FACT,
   newMessageId,
   STOP_FACT,
   stoppedRunAfter,
+  takenIds,
   unanswered,
   writingReply,
   type AccessChangedData,
@@ -42,11 +44,13 @@ import {
   type EffortChangedData,
   type Message,
   type ModelChangedData,
+  type MessageChangeData,
   type MessageData,
   type StopData,
   type WritingReply,
 } from "./model.ts";
 import { keepInterrupted, runReply, withLevelFileDeny, WORKTREE_ALLOW_ALWAYS, WORKTREE_ALLOW_ONCE, WORKTREE_CHOICES, WORKTREE_DENY, WORKTREE_REPLY_EVENT, WORKTREE_YES, worktreeChoiceInfo } from "./reply.ts";
+import { syncQueuedLocked, withQueueLock } from "./queue.ts";
 import { chatCommands, findCommand, helpText, parseCommand, runCommand } from "./command.ts";
 import { readChatSkills } from "./skills.ts";
 import { chatViews } from "./views.ts";
@@ -129,6 +133,10 @@ export const replyFlow = defineFlow({
 export type SendContext = Pick<ActionContext, "facts" | "emit" | "actor"> & {
   /** The event source for a message a plugin writes itself; absent uses the client's. */
   readonly source?: string | undefined;
+  /** The store the chat lives in, so its row can show the queue at once. */
+  readonly store?: ActionContext["store"] | undefined;
+  /** The operad home, for the queue lock. */
+  readonly home?: string | undefined;
 };
 
 /**
@@ -158,7 +166,12 @@ export async function sendMessage(
     source: { kind: via, ref: ref ?? null },
   };
   // The message is a fact first; the event is what starts the answer.
-  await ctx.facts.append({ type: MESSAGE_FACT, object: chatRef(chatId), data: message });
+  const record = async (): Promise<void> => {
+    await ctx.facts.append({ type: MESSAGE_FACT, object: chatRef(chatId), data: message });
+    if (ctx.store !== undefined) await syncQueuedLocked(ctx.store, chatId, "action:chat/send");
+  };
+  if (ctx.home === undefined || ctx.store === undefined) await record();
+  else await withQueueLock(ctx.home, chatId, record);
   if (ctx.emit === undefined) return `recorded ${id}; it is answered when operad serve runs`;
   await ctx.emit({ source, type: MESSAGE_EVENT, key: id, object: `${CHAT_TYPE}:${chatId}` });
   return `sent ${id}`;
@@ -222,6 +235,109 @@ const sendAction: ActionTypeDefinition = {
       return result.outcome;
     }
     return sendMessage(ctx, ctx.object.id, text, input.ref, files);
+  },
+};
+
+/** The message an action on the queue names, when it is still there to change. */
+async function queuedMessage(
+  ctx: ActionContext,
+  messageId: string,
+  action: "withdrawn" | "changed",
+): Promise<Message> {
+  const message = allMessages(ctx.store, ctx.object.id).find((item) => item.id === messageId);
+  if (message === undefined || message.role !== "user") {
+    throw new Error(`chat ${ctx.object.id} has no queued message ${messageId}`);
+  }
+  if (takenIds(chatFacts(ctx.store, ctx.object.id)).has(messageId)) {
+    throw new Error(`message ${messageId} was taken by a run; it can no longer be ${action}`);
+  }
+  return message;
+}
+
+const withdrawAction: ActionTypeDefinition = {
+  name: "withdraw",
+  on: CHAT_TYPE,
+  args: {
+    type: "object",
+    properties: {
+      message: {
+        type: "string",
+        minLength: 1,
+        description: "The id of the queued message to withdraw.",
+      },
+    },
+    required: ["message"],
+    additionalProperties: false,
+  },
+  when: (state) => !chatData(state).closed,
+  why: (object) =>
+    chatData(object.data).closed ? `${object.id} is closed; it has no queued message` : undefined,
+  async run(ctx, args) {
+    const stored = await ctx.store.get(CHAT_TYPE, ctx.object.id);
+    if (stored === undefined) throw new Error(`there is no chat ${ctx.object.id}`);
+    if (chatData(stored.data).closed) {
+      throw new Error(`chat ${ctx.object.id} is closed; it has no queued message`);
+    }
+    const messageId = (args as { readonly message: string }).message;
+    return withQueueLock(ctx.home, ctx.object.id, async () => {
+      await queuedMessage(ctx, messageId, "withdrawn");
+      const change: MessageChangeData = {
+        id: messageId,
+        kind: "withdraw",
+        by: { via: ctx.actor.via, id: ctx.actor.id },
+      };
+      await ctx.facts.append({ type: MESSAGE_CHANGE_FACT, object: chatRef(ctx.object.id), data: change });
+      await syncQueuedLocked(ctx.store, ctx.object.id, "action:chat/withdraw");
+      return `withdrew message ${messageId}`;
+    });
+  },
+};
+
+const editAction: ActionTypeDefinition = {
+  name: "edit",
+  on: CHAT_TYPE,
+  args: {
+    type: "object",
+    properties: {
+      message: {
+        type: "string",
+        minLength: 1,
+        description: "The id of the queued message to change.",
+      },
+      text: {
+        type: "string",
+        description: "The text it now has. Its attachments stay.",
+      },
+    },
+    required: ["message", "text"],
+    additionalProperties: false,
+  },
+  when: (state) => !chatData(state).closed,
+  why: (object) =>
+    chatData(object.data).closed ? `${object.id} is closed; it has no queued message` : undefined,
+  async run(ctx, args) {
+    const stored = await ctx.store.get(CHAT_TYPE, ctx.object.id);
+    if (stored === undefined) throw new Error(`there is no chat ${ctx.object.id}`);
+    if (chatData(stored.data).closed) {
+      throw new Error(`chat ${ctx.object.id} is closed; it has no queued message`);
+    }
+    const input = args as { readonly message: string; readonly text: string };
+    return withQueueLock(ctx.home, ctx.object.id, async () => {
+      const message = await queuedMessage(ctx, input.message, "changed");
+      if (input.text.trim().length === 0 && message.attachments.length === 0) {
+        throw new Error("a message needs text or an attachment; pass --text <text>");
+      }
+      if (message.text === input.text) return `message ${input.message} already reads that`;
+      const change: MessageChangeData = {
+        id: input.message,
+        kind: "text",
+        by: { via: ctx.actor.via, id: ctx.actor.id },
+        text: input.text,
+      };
+      await ctx.facts.append({ type: MESSAGE_CHANGE_FACT, object: chatRef(ctx.object.id), data: change });
+      await syncQueuedLocked(ctx.store, ctx.object.id, "action:chat/edit");
+      return `changed message ${input.message}`;
+    });
   },
 };
 
@@ -750,7 +866,7 @@ export function createChatPlugin() {
         mode: "auto" as const,
       },
     ],
-    actions: [sendAction, modelAction, effortAction, accessAction, stopAction, retryAction, statusAction, closeAction, helpAction],
+    actions: [sendAction, withdrawAction, editAction, modelAction, effortAction, accessAction, stopAction, retryAction, statusAction, closeAction, helpAction],
     views: { [CHAT_TYPE]: chatViews },
   });
 }
@@ -759,6 +875,7 @@ export default createChatPlugin();
 
 export * from "./model.ts";
 export * from "./command.ts";
+export * from "./queue.ts";
 export * from "./reply.ts";
 export * from "./skills.ts";
 export * from "./views.ts";

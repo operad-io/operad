@@ -50,6 +50,7 @@ import {
   newMessageId,
   promptFor,
   replyContextOf,
+  takenIds,
   unanswered,
   usageOf,
   worseQuality,
@@ -59,6 +60,7 @@ import {
   type Message,
   type MessageData,
 } from "./model.ts";
+import { queueTestHooks, syncQueuedLocked, takeLocked, withQueueLock } from "./queue.ts";
 import { agentLogPath, foldLogTail } from "./tail.ts";
 
 /**
@@ -1022,43 +1024,97 @@ function failureOf(result: PluginStepResult): { readonly reason: string; readonl
 /**
  * The inbox a chat passes to a harness that takes messages mid-run. It keeps
  * what arrives until the harness listens, then hands everything on in order,
- * and remembers only the messages the harness actually took. A message still
- * waiting when the run ends is left for the next round.
+ * and records only the messages the harness actually took. A take and a change
+ * of the same message take the chat's queue lock in turn, so exactly one wins.
+ * A message still waiting when the run ends is left for the next round.
  */
 interface ReplyInbox {
   readonly inbox: MessageInbox;
-  send(id: string, text: string): void;
+  send(id: string): void;
   /** The ids of the messages handed to the harness, in arrival order. */
   readonly handed: readonly string[];
-  close(): void;
+  close(): Promise<void>;
 }
 
-function replyInbox(): ReplyInbox {
+type Handed = "taken" | "left" | "wait";
+
+function replyInbox(
+  ctx: StepContext,
+  chat: string,
+  runId: string,
+  skills: ReturnType<typeof readSkills>,
+  loadsSkills: boolean,
+): ReplyInbox {
   let listener: ((text: string) => boolean | void) | undefined;
-  const waiting: { readonly id: string; readonly text: string }[] = [];
+  const waiting: string[] = [];
   const handed: string[] = [];
-  const hand = (message: { readonly id: string; readonly text: string }): void => {
-    if (listener?.(message.text) === false) return;
-    handed.push(message.id);
+  let open = true;
+  let pumping: Promise<void> | undefined;
+
+  const deliver = async (id: string): Promise<Handed> => {
+    await queueTestHooks.beforeTake?.(id);
+    return withQueueLock(ctx.home, chat, async () => {
+      if (!open || listener === undefined) return "wait";
+      const facts = chatFacts(ctx.store, chat);
+      if (takenIds(facts).has(id)) return "left";
+      const message = allMessages(ctx.store, chat).find((item) => item.id === id);
+      if (message === undefined || message.role !== "user") return "left";
+      if (listener(skillMessage(message.text, skills, loadsSkills)) === false) return "left";
+      await takeLocked(ctx.store, ctx.facts, chat, runId, [id], "step:chat/reply");
+      return "taken";
+    });
   };
+
+  const pump = (): Promise<void> => {
+    if (pumping !== undefined) return pumping;
+    const task = Promise.resolve().then(async () => {
+      try {
+        while (open && listener !== undefined && waiting.length > 0) {
+          const id = waiting[0];
+          if (id === undefined) break;
+          let outcome: Handed;
+          try {
+            outcome = await deliver(id);
+          } catch (error) {
+            await ctx.logger.write(
+              `a message could not be handed to the agent: ${error instanceof Error ? error.message : String(error)}`,
+            );
+            outcome = "left";
+          }
+          if (outcome === "wait") break;
+          if (waiting[0] === id) waiting.shift();
+          if (outcome === "taken") handed.push(id);
+        }
+      } finally {
+        pumping = undefined;
+        if (open && listener !== undefined && waiting.length > 0) void pump();
+      }
+    });
+    pumping = task;
+    return task;
+  };
+
   return {
     inbox: {
       listen(next) {
         listener = next;
-        for (const message of waiting.splice(0)) hand(message);
+        void pump();
         return () => {
           if (listener === next) listener = undefined;
         };
       },
     },
-    send(id, text) {
-      if (listener === undefined) waiting.push({ id, text });
-      else hand({ id, text });
+    send(id) {
+      if (!open) return;
+      waiting.push(id);
+      void pump();
     },
     handed,
-    close() {
+    async close() {
+      open = false;
       listener = undefined;
       waiting.length = 0;
+      await pumping;
     },
   };
 }
@@ -1184,25 +1240,33 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
   // message with an attachment waits for the next round: the mid-run inbox
   // carries text, and its image or file reaches the agent as a first message does.
   const midRun =
-    ctx.harnessCapabilities?.(chat.harness)?.takesMessagesMidRun === true ? replyInbox() : undefined;
+    ctx.harnessCapabilities?.(chat.harness)?.takesMessagesMidRun === true
+      ? replyInbox(ctx, object.id, ctx.runId, skills, loadsSkills)
+      : undefined;
+  const arrived = new Set<string>();
   let stopMidRun: (() => void) | undefined;
   if (midRun !== undefined) {
     const inbox = midRun;
-    const arrived = new Set<string>();
     stopMidRun = ctx.store.subscribe(chatRef(object.id), {}, (fact) => {
       if (fact.type !== MESSAGE_FACT) return;
       const data = fact.data;
       if (data.role !== "user" || typeof data.id !== "string" || typeof data.text !== "string") return;
       arrived.add(data.id);
-      if (attachmentsOf(data.attachments).length === 0) {
-        inbox.send(data.id, skillMessage(data.text, skills, loadsSkills));
-      }
+      if (attachmentsOf(data.attachments).length === 0) inbox.send(data.id);
     });
     // A message that came between the first read and this subscription is in
     // the facts now. It is delivered, not also put into the prompt.
     messages = allMessages(ctx.store, object.id);
     pending = unanswered(messages, chatFacts(ctx.store, object.id)).filter((message) => !arrived.has(message.id));
   }
+
+  const closeMidRun = async (): Promise<void> => {
+    if (stopMidRun !== undefined) {
+      stopMidRun();
+      stopMidRun = undefined;
+    }
+    await midRun?.close();
+  };
 
   const resumed = isRecord(params) ? params : {};
   const session =
@@ -1230,11 +1294,7 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
     // The reply that asked is already over. Open the worktree once, but do
     // not start another reply for the same message. The harness is not run,
     // so the mid-run inbox closes with this step.
-    if (stopMidRun !== undefined) {
-      stopMidRun();
-      stopMidRun = undefined;
-    }
-    midRun?.close();
+    await closeMidRun();
     await ctx.emit({
       type: WORKTREE_EVENT,
       key: "late",
@@ -1265,7 +1325,6 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
   // The files sent with a message: images as input where the harness takes
   // them, every file as a path, and the chat's own attachment directory open to reads.
   const directory = attachmentDir(ctx.home, CHAT_TYPE, object.id);
-  const images = imagesOf(pending, chat.harness, directory);
   const levelPath = accessLevelPath(ctx.home, object.id);
   const withReads = messages.some((message) => message.attachments.length > 0)
     ? withAttachmentReads(live.access, directory)
@@ -1318,18 +1377,36 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
     folded = foldLines([value], folded);
   };
 
+  // The messages this round starts with are taken now, under the queue lock,
+  // so a withdraw or change either comes before the run takes them or is
+  // refused. A message withdrawn after the first read leaves the prompt.
+  pending = await withQueueLock(ctx.home, object.id, async () => {
+    const facts = chatFacts(ctx.store, object.id);
+    const current = unanswered(allMessages(ctx.store, object.id), facts).filter(
+      (message) => !arrived.has(message.id),
+    );
+    await takeLocked(
+      ctx.store,
+      ctx.facts,
+      object.id,
+      ctx.runId,
+      current.map((message) => message.id),
+      "step:chat/reply",
+    );
+    return current;
+  });
+  if (pending.length === 0) {
+    await closeMidRun();
+    await syncChat(ctx, object.id, undefined);
+    return { result: "done", data: { answered: 0 } };
+  }
+  const images = imagesOf(pending, chat.harness, directory);
+
   // The run is a fact before the agent starts: a view finds the step's log by it.
   if (latestRunOf(chatFacts(ctx.store, object.id)) !== ctx.runId) {
     await ctx.facts.append({ type: RUN_FACT, object: chatRef(object.id), data: { runId: ctx.runId } });
   }
 
-  const closeMidRun = (): void => {
-    if (stopMidRun !== undefined) {
-      stopMidRun();
-      stopMidRun = undefined;
-    }
-    midRun?.close();
-  };
   const context = contextFor(chat, live, session);
   const prompt = promptFor(
     pending.map((message) => ({ ...message, text: skillMessage(message.text, skills, loadsSkills) })),
@@ -1375,7 +1452,7 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
       },
     );
   } catch (error) {
-    closeMidRun();
+    await closeMidRun();
     if (worktreeChosen.run || error instanceof WorktreeChosen) {
       await recordEntries(ctx, object.id, folded, { stopped: true });
       await ctx.emit({
@@ -1390,7 +1467,7 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
     return failedReply(ctx, object.id, "harness", messageOf(error), oldest);
   }
   if (worktreeChosen.run) {
-    closeMidRun();
+    await closeMidRun();
     await recordEntries(ctx, object.id, folded, { stopped: true });
     await ctx.emit({
       type: WORKTREE_EVENT,
@@ -1401,7 +1478,7 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
   }
   // From here on the harness can no longer take a message: one that arrives
   // now stays unanswered and is answered by the next round.
-  closeMidRun();
+  await closeMidRun();
 
   if (outcome.result === "waiting") {
     await recordEntries(ctx, object.id, folded, { stopped: true });

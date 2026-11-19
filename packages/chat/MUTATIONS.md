@@ -447,3 +447,14 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 | T-0568-M7 | packages/chat/src/model.ts | `entryOfFact` dropped the interrupted flag, so the stopped line lost its own shape | `a reply interrupted by a crash or restart > keeps the items it finished and a stopped line, and /retry continues the chat` |
 | T-0568-M8 | packages/chat/src/reply.ts | the keep step skipped every run with an assistant message, so an interrupted second round kept nothing | `a reply interrupted by a crash or restart > keeps the second round when an earlier round already recorded a reply` |
 | T-0568-M9 | packages/chat/src/reply.ts | the recovered log recorded the earlier round's entries again | `a reply interrupted by a crash or restart > keeps the second round when an earlier round already recorded a reply` |
+
+## T-0572 — a chat's queued messages
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0572-M1 | packages/chat/src/model.ts | `takenIds` ignored `chat.taken`, so a run's first message stayed queued and could still be changed | `a chat's queued messages > the row and the transcript say what is queued, and a run's first message stops being queued` |
+| T-0572-M2 | packages/chat/src/model.ts | `applyMessageChanges` kept a withdrawn message, so it stayed in the chat's messages | `a chat's queued messages > withdrawing a queued message removes it from the transcript, leaves a history entry, and sends nothing to the agent` |
+| T-0572-M3 | packages/chat/src/index.ts | `chat:edit` recorded the old text instead of the new one | `a chat's queued messages > changing a queued message's text keeps its attachments, and the agent gets the new text` |
+| T-0572-M4 | packages/chat/src/index.ts | the queued-message check no longer refused a message a run had taken | `a chat's queued messages > a message a run has taken cannot be withdrawn or changed` |
+| T-0572-M5 | packages/chat/src/reply.ts | the inbox handed a message without recording the take, so an action could still withdraw it | `a chat's queued messages > a take and a withdraw of the same message never both happen: the take wins when it starts first` |
+| T-0572-M6 | packages/chat/src/index.ts | `chat:send` no longer wrote the new queue to the chat object, so the row showed none | `a chat's queued messages > the row and the transcript say what is queued, and a run's first message stops being queued` |

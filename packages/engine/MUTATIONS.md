@@ -1148,3 +1148,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0561-M1 | packages/engine/src/plugin/sqlite-store.ts | `gone` checked only the database file, so an I/O error after the `-wal` and `-shm` were removed did not stop the poll | `a poll stops when the store's -wal and -shm are removed` |
+
+## T-0572 — structured data beside a section
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0572-M1 | packages/engine/src/views/presentation.ts | a section read dropped the plugin's `data` instead of passing it through | `structured data beside a section > a read carries the plugin's data, and so does a read after a mark` |
