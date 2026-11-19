@@ -1153,8 +1153,8 @@ the row fields.
 
 | id | file | mutation | failing test |
 |---|---|---|---|
-| T-0570-M1 | packages/engine/src/http/server.ts | `EventHub` treated a pushed tail as a normal change, so the stream carried no `tail` event | `http server > a pushed tail is its own event and is not part of the resume window` |
-| T-0570-M2 | packages/engine/src/plugin/validate.ts | `normalizeViews` dropped a type's `tail` function, so the registry never pushed its live part | `a live log that grows without a fact > a pushed tail is held to one per object per 50 ms and the last growth wins` |
+| T-0570-M1 | packages/engine/src/http/server.ts | `EventHub` treated a live part as a normal change, so the stream carried no `live` event | `http server > a live part is its own event and is not part of the resume window` |
+| T-0570-M2 | packages/engine/src/plugin/validate.ts | `normalizeViews` dropped a type's `live` function, so the registry never pushed its live part | `a running reply is pushed over the event stream > text, thinking and a tool call are the same tail the section returns` |
 
 ## T-0570 rework — the pushed tail's window, staleness and failures
 
@@ -1187,7 +1187,6 @@ the row fields.
 |---|---|---|---|
 | T-0573-M1 | packages/engine/src/plugin/question-form.ts | `normalizeQuestions` dropped a question's `body`, so the plan's Markdown never reached the pending item | `a form a step asks > a question's Markdown body reaches the item while it runs and after the grace` |
 | T-0573-M2 | packages/engine/src/runner/step-worker.ts | the ask request sent to the parent left `questions` out, so a step in a worker lost its form | `step worker in this process > a form and its Markdown body reach the parent` |
-
 ## T-0574 — a retry is a live transcript item
 
 | id | file | mutation | failing test |
@@ -1227,3 +1226,9 @@ the row fields.
 |---|---|---|---|
 | T-0576-M1 | packages/engine/src/views/presentation.ts | `pushLive` sent nothing when a tail function had nothing left to say, so a client that renders only from push kept the last tail | `a live log that grows without a fact > a pushed tail that has nothing left to say clears the client's tail` |
 | T-0576-M2 | packages/engine/src/runner/ask.ts | `resolveAnswer` let any choice through when the wait had no choices, so `decide` dropped the recorded answer and `/v1/answer` answered success | `http server > a choice for a wait with no choices is refused and records nothing` |
+
+The T-0570 rows earlier in this file predate the rename of the `live` hook and
+`live` event to `tail`; their current tests are `a live log that grows without a
+fact > a pushed tail is held to one per object per 50 ms and the last growth
+wins` and `http server > a pushed tail is its own event and is not part of the
+resume window`. Rows are append-only, so the old lines stay as history.
