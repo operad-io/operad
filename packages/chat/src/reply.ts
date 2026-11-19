@@ -1086,19 +1086,27 @@ export async function keepInterrupted(ctx: StepContext, _params: unknown): Promi
   }
   const stored = await ctx.store.get(CHAT_TYPE, object.id);
   if (stored === undefined) return { result: "done", data: {} };
-  if (allMessages(ctx.store, object.id).some((message) => message.role === "assistant" && message.runId === ctx.runId)) {
-    // The reply entered the record before the crash; there is nothing to mark.
+  const messages = allMessages(ctx.store, object.id);
+  const facts = chatFacts(ctx.store, object.id);
+  const pending = unanswered(messages, facts);
+  const replied = messages.some((message) => message.role === "assistant" && message.runId === ctx.runId);
+  if (replied && pending.length === 0) {
+    // The reply entered the record before the crash and owes no message: there is nothing to mark.
     await syncChat(ctx, object.id, undefined);
     return { result: "done", data: { kept: false } };
   }
-  const facts = chatFacts(ctx.store, object.id);
   if (facts.some((fact) => attemptEndedOfFact(fact) === ctx.runId)) {
     // The reply step ended on its own and recorded its entries first.
     return { result: "done", data: { kept: false } };
   }
   const chat = chatData(stored.data);
   const read = foldLogTail(agentLogPath(ctx.store.root, chat.harness, ctx.runId));
-  await recordEntries(ctx, object.id, read?.state ?? emptyFold, { stopped: true, interrupted: true });
+  const folded = read?.state ?? emptyFold;
+  // The log holds every round of the run; a round whose reply is already in
+  // the record is a prefix of it and is not recorded again.
+  const prior = allEntries(ctx.store, object.id).filter((entry) => entry.runId === ctx.runId).length;
+  const current = prior === 0 ? folded : { ...folded, entries: folded.entries.slice(prior) };
+  await recordEntries(ctx, object.id, current, { stopped: true, interrupted: true });
   return { result: "done", data: { kept: true } };
 }
 
