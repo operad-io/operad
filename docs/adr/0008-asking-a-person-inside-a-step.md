@@ -57,6 +57,11 @@ form beside its answers so the step can name each answer. A form that runs out
 of grace is carried on exactly as D2 to D5 carry a choice question, so the same
 item stays pending and a late answer still reaches the step.
 
+A question may also carry a `body`: Markdown too long for its `text` (a plan
+review's plan), bounded and carried unchanged, which a client shows as written.
+A form's answer may carry the person's `note` for the whole form beside its
+answers; it reaches the step with them and is never read as an answer.
+
 When a form has exactly one question that offers choices and is not multiple,
 the kernel also exposes that question's labels as the question's `choices`, so a
 client that knows only a choice still answers it. Any other form has none; such
