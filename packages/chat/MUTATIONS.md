@@ -468,3 +468,14 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0569-M10 | packages/chat/src/reply.ts | `isWriteQuestion` and `questionedCall` did not recognise a form, so a form whose text reads like a write question became the worktree question | `a form a chat's agent asks > it is never turned into the worktree question, and its answers reach the harness` |
+
+## T-0571 — a reply's structured form beside its Markdown
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0571-M1 | packages/chat/src/views.ts | `replyBlocks` left the answer out of a finished reply | `a reply's structured form > live: the input and the process are there, and the stored read adds the answer and the reply's duration` |
+| T-0571-M2 | packages/chat/src/views.ts | `addCategory` put every tool in `other` | `a reply's structured form > a failed tool keeps its name, input, duration and failure, and a long output keeps its first lines, count and file` |
+| T-0571-M3 | packages/chat/src/views.ts | `replyItemOfEntry` set `failed` false for a failed tool | `a reply's structured form > a failed tool keeps its name, input, duration and failure, and a long output keeps its first lines, count and file` |
+| T-0571-M4 | packages/chat/src/views.ts | `processOf` did not close a group at a message the reply took mid-run | `a reply's structured form > a reply with a mid-run message keeps both in time order and splits its process there` |
+| T-0571-M6 | packages/chat/src/views.ts | `load` left the live log's process items out of the reply data | `a reply's structured form > live: the input and the process are there, and the stored read adds the answer and the reply's duration` |
+| T-0571-M7 | packages/chat/src/views.ts | `messageFrom` dropped a reply's timings, so a finished reply had no duration | `a reply's structured form > live: the input and the process are there, and the stored read adds the answer and the reply's duration` |

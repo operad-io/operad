@@ -15,7 +15,6 @@ OpenClaw 是聊天优先，operad 到现在是流程优先。第一个要满足�
 
 - **iOS 的推送**沿用 arc iOS 今天的通道；hub 的会话路由在 chat 跑通之后退役（`operad.md` 待决 3 由此有答案）。
 - **第一版不导入 operad 之外开的会话**（终端里的 Claude Code、pi 的会话）。以后做时是 `chat` 插件加一个 `external: true` 的对象类型（`operad-contract.md` 决定 3），内核不动。（ADR 0026 的“不在此决定”写了不导入这一边界。）
-- **可折叠的工具卡片**需要显示接口有一种结构化的块，以后另议。
 - **`dev` 的 worker 活动以后改用同一份归并代码**（`harness-process` 里的共享条目类型）。
 - 逐字显示以后觉得不够顺再加一条推送的流，存的东西不用变。
 

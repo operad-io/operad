@@ -230,7 +230,7 @@ The message that started the turn stays above all its entries. A failed reply sh
 why, for every agent including radian. A stopped half reply is shown as stopped. Tool
 output is not shown. Radian chats show the
 tool lines only otherwise. Pages count messages, and a turn's entries stay on
-the page of its reply. Every read also carries `context: { used, window?, model? }`,
+the page of its reply. Every read also carries `data.replies`, the structured form of each reply beside the Markdown: the reply's input, its process grouped per turn, and its answer and duration when it finished. A process group carries the category ids `read`, `edit`, `run`, `search` and `other`; a tool item carries its call id, name, input, start, duration, result, whether it failed, and its recorded output with its line count and the file of the whole output. ADR 0027 D3 has the shape. Every read also carries `context: { used, window?, model? }`,
 the last finished reply's context; a new session leaves it out until the next
 reply. The chat's object view carries the same `context`.
 

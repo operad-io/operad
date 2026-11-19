@@ -178,6 +178,12 @@ export interface SectionContent {
       }
     | undefined;
   /**
+   * Structured data the plugin defines for its clients, passed through
+   * unchanged on every read. A client that does not know a plugin's shape
+   * ignores it.
+   */
+  readonly data?: Readonly<Record<string, JsonValue>> | undefined;
+  /**
    * `markdown` holds only what follows the requested `after`. Omit, or set
    * false, when the answer is a whole page; the kernel then tells the client
    * to replace instead of appending.
