@@ -5,7 +5,7 @@
  * a reply reads the file again, so an edit applies at once.
  */
 
-import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import { MCP_REPORT_DIR } from "./mcp-constants.ts";
@@ -289,14 +289,77 @@ function mergeInto(source: string, destination: string): void {
 
 /** What moving the default bot's old home needs from a caller. */
 export interface BotDirectoryMigration {
-  /** The bots in the settings; a directory with one of their names is left in place. */
+  /** Bot names whose default directory is under the old home; kept in place. */
   readonly botNames?: readonly string[] | undefined;
+  /** Every bot's working directory, including a named `cwd` and a removed bot's. */
+  readonly botPaths?: readonly string[] | undefined;
   /** Where claude keeps its per-directory sessions; the environment's own when absent. */
   readonly claudeProjects?: string | undefined;
   /** Where radian keeps session journals; the environment's own when absent. */
   readonly radianSessionDirs?: readonly string[] | undefined;
   /** Called after each top-level entry moved; a test stops a child process here. */
   readonly afterMove?: ((name: string) => void) | undefined;
+}
+
+/** The marker that says the old default home has been handled. */
+const MIGRATION_MARKER = ".moved-to-default";
+
+/** Reads only the first line of a file, without loading the rest. */
+function firstLine(file: string): string | undefined {
+  let descriptor: number | undefined;
+  try {
+    descriptor = openSync(file, "r");
+    const buffer = Buffer.alloc(4096);
+    const read = readSync(descriptor, buffer, 0, buffer.length, 0);
+    const text = buffer.subarray(0, read).toString("utf8");
+    const newline = text.indexOf("\n");
+    return newline < 0 ? text : text.slice(0, newline);
+  } catch {
+    return undefined;
+  } finally {
+    if (descriptor !== undefined) closeSync(descriptor);
+  }
+}
+
+/** The working directories of the bots the settings name now. */
+function configuredBotPaths(home: string): string[] {
+  const found: string[] = [];
+  try {
+    for (const [name, settings] of Object.entries(readBots(home))) {
+      if (name === DEFAULT_BOT) continue;
+      try {
+        found.push(workingDirectory(home, name, settings));
+      } catch {
+        // A bot whose directory is invalid has no path to protect here.
+      }
+    }
+  } catch {
+    // A settings file that cannot be read contributes no paths.
+  }
+  return found;
+}
+
+/** The top-level old-home entries that belong to some bot other than the default. */
+function protectedEntries(
+  root: string,
+  target: string,
+  options: BotDirectoryMigration,
+): Set<string> {
+  const found = new Set<string>();
+  const add = (path: string): void => {
+    if (!within(path, root) || samePath(path, target)) return;
+    const rel = relative(root, path);
+    if (rel === "") {
+      // A bot uses the whole old home, so no entry there is the default bot's.
+      for (const name of readdirSync(root)) found.add(name);
+      return;
+    }
+    const [first] = rel.split(/[\\/]/);
+    if (first !== undefined && first.length > 0) found.add(first);
+  };
+  for (const name of options.botNames ?? []) if (name !== DEFAULT_BOT) add(join(root, name));
+  for (const path of options.botPaths ?? []) add(path);
+  return found;
 }
 
 /** The directory claude names for a working directory. */
@@ -355,14 +418,8 @@ export function migrateRadianSessions(
     for (const name of readdirSync(directory)) {
       if (!name.endsWith(".jsonl")) continue;
       const file = join(directory, name);
-      let text: string;
-      try {
-        text = readFileSync(file, "utf8");
-      } catch {
-        continue;
-      }
-      const newline = text.indexOf("\n");
-      const head = newline < 0 ? text : text.slice(0, newline);
+      const head = firstLine(file);
+      if (head === undefined) continue;
       let first: unknown;
       try {
         first = JSON.parse(head);
@@ -371,6 +428,9 @@ export function migrateRadianSessions(
       }
       if (!isRecord(first) || first.event !== "SessionCreated" || !isRecord(first.data)) continue;
       if (first.data.workspace !== oldCwd) continue;
+      // Only a journal that names the old workspace is read in full, and rewritten once.
+      const text = readFileSync(file, "utf8");
+      const newline = text.indexOf("\n");
       const next = JSON.stringify({ ...first, data: { ...first.data, workspace: newCwd } });
       const temporary = join(directory, `.${name}.migrate-${process.pid}`);
       writeFileSync(temporary, next + (newline < 0 ? "" : text.slice(newline)));
@@ -388,12 +448,17 @@ export function migrateRadianSessions(
 export function migrateDefaultBotDir(home: string, options: BotDirectoryMigration = {}): readonly string[] {
   const root = botDir(home);
   const target = join(root, DEFAULT_BOT);
-  const otherBots = new Set((options.botNames ?? []).filter((name) => name !== DEFAULT_BOT));
+  const marker = join(target, MIGRATION_MARKER);
+  if (existsSync(marker)) return [];
+  const rootExists = existsSync(root);
   const moved: string[] = [];
-  if (existsSync(root)) {
+  if (rootExists) {
+    const protectedNames = protectedEntries(root, target, {
+      ...options,
+      botPaths: options.botPaths ?? configuredBotPaths(home),
+    });
     for (const entry of readdirSync(root, { withFileTypes: true })) {
-      if (entry.name === DEFAULT_BOT) continue;
-      if (entry.isDirectory() && otherBots.has(entry.name)) continue;
+      if (entry.name === DEFAULT_BOT || protectedNames.has(entry.name)) continue;
       mergeInto(join(root, entry.name), join(target, entry.name));
       moved.push(entry.name);
       options.afterMove?.(entry.name);
@@ -401,7 +466,17 @@ export function migrateDefaultBotDir(home: string, options: BotDirectoryMigratio
   }
   migrateClaudeSessions(root, target, options.claudeProjects);
   migrateRadianSessions(root, target, options.radianSessionDirs);
+  // Mark only after every entry and session moved, so a crash halfway runs again.
+  if (rootExists) {
+    mkdirSync(target, { recursive: true });
+    writeFileSync(marker, "");
+  }
   return moved;
+}
+
+/** Whether the old default bot home has already been handled. */
+export function defaultBotHomeMigrated(home: string): boolean {
+  return existsSync(join(botDir(home), DEFAULT_BOT, MIGRATION_MARKER));
 }
 
 /** The memory directory of a bot. */

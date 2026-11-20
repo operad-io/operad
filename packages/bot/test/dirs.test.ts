@@ -12,7 +12,7 @@ import {
   resolveBot,
   syncBots,
 } from "../src/index.ts";
-import { cleanupRoots, rig } from "./support.ts";
+import { cleanupRoots, rig, writeConfig } from "./support.ts";
 
 afterAll(cleanupRoots);
 
@@ -59,6 +59,51 @@ describe("the default bot's directory", () => {
     await syncBots(r.store, r.home, { bots: { reader: {} } });
     expect(readFileSync(join(target, "notes.md"), "utf8")).toBe("mine\n");
     expect(readFileSync(join(root, "reader", "private", "secret.md"), "utf8")).toBe("not mine\n");
+  });
+
+  test("a bot directory under another name, and a removed bot's directory, are not swept into default", async () => {
+    const r = await rig();
+    const root = join(r.home, "bot");
+    const target = join(root, DEFAULT_BOT);
+    const writer = join(root, "work");
+    const gone = join(root, "old-place");
+    mkdirSync(writer, { recursive: true });
+    mkdirSync(gone, { recursive: true });
+    writeFileSync(join(writer, "mine.md"), "writer\n");
+    writeFileSync(join(gone, "keep.md"), "gone but still theirs\n");
+    writeFileSync(join(root, "notes.md"), "default\n");
+    await r.store.put("bot", "gone", { name: "gone", cwd: gone, removed: false }, "test");
+
+    const settings = { writer: { cwd: writer } };
+    writeConfig(r.home, settings);
+    await syncBots(r.store, r.home, { bots: settings });
+
+    expect(readFileSync(join(writer, "mine.md"), "utf8")).toBe("writer\n");
+    expect(readFileSync(join(gone, "keep.md"), "utf8")).toBe("gone but still theirs\n");
+    expect(readFileSync(join(target, "notes.md"), "utf8")).toBe("default\n");
+    expect(existsSync(join(target, "work"))).toBe(false);
+    expect(existsSync(join(target, "old-place"))).toBe(false);
+  });
+
+  test("once the move is done, a later read moves no new entry and reads no journal", async () => {
+    const r = await rig();
+    const root = join(r.home, "bot");
+    const target = join(root, DEFAULT_BOT);
+    const sessions = join(r.root, "radian", "sessions");
+    writeFileSync(join(root, "first.md"), "first\n");
+    migrateDefaultBotDir(r.home, { botNames: ["default"] });
+    expect(readFileSync(join(target, "first.md"), "utf8")).toBe("first\n");
+
+    writeFileSync(join(root, "later.md"), "later\n");
+    mkdirSync(sessions, { recursive: true });
+    writeFileSync(
+      join(sessions, "after.jsonl"),
+      `${JSON.stringify({ event: "SessionCreated", data: { workspace: root } })}\n`,
+    );
+    expect(migrateDefaultBotDir(r.home, { botNames: ["default"], radianSessionDirs: [sessions] })).toEqual([]);
+    expect(existsSync(join(root, "later.md"))).toBe(true);
+    expect(existsSync(join(target, "later.md"))).toBe(false);
+    expect(readFileSync(join(sessions, "after.jsonl"), "utf8")).toContain(`"workspace":${JSON.stringify(root)}`);
   });
 
   test("a default bot with a written directory keeps it and its old home is left alone", async () => {

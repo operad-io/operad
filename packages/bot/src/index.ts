@@ -21,6 +21,7 @@ import {
   BOT_TYPE,
   BotError,
   botDir,
+  defaultBotHomeMigrated,
   ensureBotMemory,
   migrateDefaultBotDir,
   readBots,
@@ -75,7 +76,11 @@ function rowOf(bot: ResolvedBot): Record<string, JsonValue> {
 export const MCP_HARNESSES: readonly string[] = ["claude", "radian"];
 
 /** Moves the old default bot home once, unless the default bot names its own directory. */
-function migrateDefaultHome(home: string, written: Readonly<Record<string, BotSettings>>): void {
+async function migrateDefaultHome(
+  store: ObjectStore,
+  home: string,
+  written: Readonly<Record<string, BotSettings>>,
+): Promise<void> {
   const settings = written[DEFAULT_BOT];
   if (settings === undefined) return;
   try {
@@ -83,7 +88,29 @@ function migrateDefaultHome(home: string, written: Readonly<Record<string, BotSe
   } catch {
     return;
   }
-  migrateDefaultBotDir(home, { botNames: Object.keys(written) });
+  if (defaultBotHomeMigrated(home)) return;
+  // A bot's directory may have a different name from the bot and may already be gone
+  // from the settings; both its stored cwd and its default path are kept in place.
+  const botPaths: string[] = [];
+  for (const [name, bot] of Object.entries(written)) {
+    if (name === DEFAULT_BOT) continue;
+    try {
+      botPaths.push(workingDirectory(home, name, bot));
+    } catch {
+      botPaths.push(join(botDir(home), name));
+    }
+  }
+  let cursor: string | undefined;
+  do {
+    const page = await store.list(BOT_TYPE, { ...(cursor === undefined ? {} : { cursor }) });
+    for (const object of page.objects) {
+      if (object.id === DEFAULT_BOT) continue;
+      const cwd = object.data.cwd;
+      botPaths.push(typeof cwd === "string" && cwd.length > 0 ? cwd : join(botDir(home), object.id));
+    }
+    cursor = page.next;
+  } while (cursor !== undefined);
+  migrateDefaultBotDir(home, { botNames: Object.keys(written), botPaths });
 }
 
 const GUARD = fileURLToPath(new URL("./guard.ts", import.meta.url));
@@ -104,7 +131,7 @@ export async function syncBots(
   fallback: Readonly<Record<string, JsonValue>>,
 ): Promise<void> {
   const written = readBots(home, fallback);
-  migrateDefaultHome(home, written);
+  await migrateDefaultHome(store, home, written);
   const repositories = await repositoryPaths(store);
   for (const [name, settings] of Object.entries(written)) {
     let data: Record<string, JsonValue>;
@@ -158,7 +185,7 @@ export interface OpenChat {
 /** Opens a chat on a bot and returns its id. Refuses with a plain message. */
 export async function openChat(input: OpenChat): Promise<string> {
   const written = readBots(input.home, input.settings);
-  migrateDefaultHome(input.home, written);
+  await migrateDefaultHome(input.store, input.home, written);
   const settings = written[input.bot];
   if (settings === undefined) throw new BotError(`there is no bot "${input.bot}"`);
   const bot = resolveBot(input.home, input.bot, settings, await repositoryPaths(input.store));
@@ -508,7 +535,7 @@ export async function runSettings(ctx: StepContext, params: unknown): Promise<Pl
   try {
     await ingestReports(ctx.store, ctx.home);
     const bots = readBots(ctx.home, ctx.settings);
-    migrateDefaultHome(ctx.home, bots);
+    await migrateDefaultHome(ctx.store, ctx.home, bots);
     const written = bots[name];
     if (written === undefined) {
       return { result: "failed", data: { message: `bot "${name}" is no longer in the settings` } };
@@ -649,7 +676,7 @@ export function createBotPlugin() {
     // The bot is its own source for its scheduled prompts. It declares `start`
     // while staying a domain plugin, so `serve` starts it like any source.
     start: async (ctx) => {
-      migrateDefaultHome(ctx.home, readBots(ctx.home, ctx.settings));
+      await migrateDefaultHome(ctx.store, ctx.home, readBots(ctx.home, ctx.settings));
       return startScheduled(ctx);
     },
     views: { [BOT_TYPE]: botViews, [PROPOSAL_TYPE]: proposalViews },

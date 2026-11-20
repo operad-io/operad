@@ -214,3 +214,10 @@ changes for bots, in the order they were recorded. The root
 | T-0584-M5 | packages/bot/src/bot.ts | the default move left claude's old project directory in place | `harness sessions after the move > claude's project directory moves to the directory named for the new working directory` |
 | T-0584-M6 | packages/bot/src/bot.ts | the default move left radian's journal naming the old workspace | `harness sessions after the move > radian's journal records the new workspace and other journals are untouched` |
 | T-0584-M7 | packages/bot/src/bot.ts | the move deleted `default/` before each entry, so an entry moved before a crash was lost | `the default bot's directory > a crash in a child halfway through the move loses nothing, and the next run finishes it` |
+
+## T-0584 rework 1 — bot directories and a finished move
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0584-M8 | packages/bot/src/bot.ts | only a bot's name was protected, not the working directory a setting or a removed bot names | `the default bot's directory > a bot directory under another name, and a removed bot's directory, are not swept into default` |
+| T-0584-M9 | packages/bot/src/bot.ts | the marker of a finished move was ignored, so a later read moved a new entry and read the journals again | `the default bot's directory > once the move is done, a later read moves no new entry and reads no journal` |
