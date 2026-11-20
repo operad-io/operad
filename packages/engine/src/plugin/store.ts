@@ -197,6 +197,11 @@ export class MemoryPluginStore implements PluginStore {
     };
   }
 
+  latestFactSequence(object: ObjectRef): number {
+    const all = this.byObject.get(this.key(object.type, object.id)) ?? [];
+    return all.at(-1)?.sequence ?? 0;
+  }
+
   subscribe(listener: (object: ObjectRef) => void): () => void;
   subscribe(
     object: ObjectRef,

@@ -1252,3 +1252,10 @@ resume window`. Rows are append-only, so the old lines stay as history.
 |---|---|---|---|
 | T-0588-M12 | packages/engine/src/plugin/registry.ts | the source context no longer offered `harnessCapabilities` | `a source plugin's start gets the client API > it sees the loaded harness names and their declared capabilities` |
 | T-0588-M13 | packages/engine/src/plugin/validate.ts | an empty `capabilities.backgroundModel` passed validation | `harness capabilities > an empty or non-string background model is refused` |
+
+## T-0590 — memory v1 follow-ups, a cheap chat revision
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0590-M24 | packages/engine/src/plugin/store.ts | the in-memory store's `latestFactSequence` always returned 0 | `the latest fact sequence of an object > the in-memory store follows the object from no facts to two` |
+| T-0590-M25 | packages/engine/src/plugin/sqlite-store.ts | the SQLite store's `latestFactSequence` always returned 0 | `the latest fact sequence of an object > the SQLite store follows the object from no facts to two` |

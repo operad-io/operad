@@ -467,6 +467,12 @@ export interface ObjectStore {
   /** One page of one object's facts in sequence order. */
   facts(object: ObjectRef, options?: FactsOptions): FactsPage;
 
+  /**
+   * The sequence of the object's latest fact, or 0 when it has none. A cheap
+   * revision for a reader that need not read the facts themselves.
+   */
+  latestFactSequence?(object: ObjectRef): number;
+
   /** The distinct object types that have facts under this object id, sorted. */
   objectTypesOf(id: string): readonly string[];
 
