@@ -30,6 +30,12 @@ written into the skill.
 when they are missing and never overwrites them. A topic note is
 `topics/<name>.md`, linked from the index.
 
+`memoryNotes(memoryDir)` names the files a bot chat carries on its message: the
+index with `maxChars: MEMORY_INDEX_MAX` (8,000) and the instructions whole. A
+file that is not there yet is left out, and one created later is picked up by
+the next reply. `bot/settings` returns the list as `notes`; the chat plugin
+reads and hashes the files (ADR 0026 D18).
+
 ## The commit
 
 The plugin declares one step, `memory/commit`, called by a chat after a reply

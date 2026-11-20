@@ -86,6 +86,12 @@ again: tightening access or adding a skill applies to the next reply of the same
 chat. A bot taken out of the settings, or one that cannot be used, fails the
 reply; it is never answered from an older copy.
 
+The step also returns the bot's `memory/index.md` and `memory/instructions.md`
+as `notes`, read through `memoryNotes` from the memory plugin. The chat puts
+them on the message, whole for a new session or after a compaction and only
+when changed since the session last saw them otherwise (ADR 0026 D18). The
+index carries `maxChars` 8,000, the plugin's `MEMORY_INDEX_MAX`.
+
 ## `bot:create <bot> --name <name> --agent <agent>`
 
 Creates a new bot with exactly the skills and MCP servers chosen. The model,

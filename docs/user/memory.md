@@ -66,6 +66,18 @@ The layout has three layers and one file:
 The plugin creates `index.md`, `instructions.md` and `log/` when they are missing
 and never overwrites them.
 
+## What a reply carries
+
+A bot chat puts the memory index and the person's instructions on its message,
+not in the agent's system prompt. The first message of a new session, and the
+first after the agent compacts its context, carries both files whole. After
+that, a reply compares each file with what the session last saw: a file changed
+elsewhere (another chat of the same bot, a scheduled run, a tidy step) goes
+again in full, while a change the chat's own run wrote is not repeated. The
+index is cut at about 8,000 characters, with a line saying it was cut; keep the
+file shorter than that by moving detail into topic notes. These notes are not
+part of the transcript and do not change the message you sent.
+
 ## The memory skill
 
 While the plugin is enabled, every bot mounts the `memory` skill
