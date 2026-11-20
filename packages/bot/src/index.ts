@@ -32,7 +32,7 @@ import {
   type BotSettings,
   type ResolvedBot,
 } from "./bot.ts";
-import { MEMORY_COMMIT_STEP } from "@operad-io/memory";
+import { MEMORY_COMMIT_STEP, memoryNotes } from "@operad-io/memory";
 import { createBot, knownMcpServers, knownSkills } from "./create.ts";
 import { ingestReports, runMcpCommand } from "./mcp-proposals.ts";
 import {
@@ -565,6 +565,9 @@ export async function runSettings(ctx: StepContext, params: unknown): Promise<Pl
         skills: [...bot.skills],
         mcpServers,
         useOwnSettings: bot.useOwnSettings,
+        // The memory index and the person's instructions ride on the message,
+        // whole when this session has not seen them, under ADR 0026 D18.
+        notes: memoryNotes(join(bot.cwd, "memory")) as unknown as JsonValue,
         // The memory plugin records what this reply wrote, once the round ends.
         ...(ctx.stepLoaded !== undefined && ctx.stepLoaded(MEMORY_COMMIT_STEP) ? { after: MEMORY_COMMIT_STEP } : {}),
         context: scheduledChatContext(),

@@ -552,3 +552,16 @@ are append-only, so the old lines stay as history.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0585-M10 | packages/chat/src/reply.ts | `keepInterrupted` no longer ran the after step for a stopped or interrupted run | `the step a chat's refresh data names after a reply > runs after a stopped or interrupted reply, for the run the keep step finishes` |
+
+## T-0586 — the memory notes on a bot chat's message
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0586-M1 | packages/chat/src/notes.ts | `notesToAttach` returned no note for a new session | `the notes on a bot chat's message > a new session's first message carries the whole index and instructions` |
+| T-0586-M2 | packages/chat/src/notes.ts | the hash comparison was reversed, so an unchanged note went again and a changed one did not | `the notes on a bot chat's message > a file changed elsewhere is sent whole on the next message, once` |
+| T-0586-M3 | packages/chat/src/reply.ts | the hashes were taken from the text read before the run, so a change the run wrote was sent back | `the notes on a bot chat's message > a change this chat's run wrote is not sent back` |
+| T-0586-M4 | packages/chat/src/reply.ts | compaction was only the agent's flag, not a smaller context, so nothing went again after a compaction | `the notes on a bot chat's message > the first message after a compaction carries the whole notes again` |
+| T-0586-M5 | packages/chat/src/notes.ts | a note with a limit was never cut and carried no cut line | `the notes on a bot chat's message > the index is cut at its limit with a line saying so, and a change past the cut still resends it` |
+| T-0586-M6 | packages/chat/src/reply.ts | the stored hashes were merged with the old ones, so a file the refresh step no longer names stayed | `the notes on a bot chat's message > the stored hashes cover the files the refresh step names now, and no others` |
+| T-0586-M10 | packages/chat/src/notes.ts | every file changed during the run kept its hash after the run, so a change another chat wrote during the reply was taken as seen | `the notes on a bot chat's message > a change another chat wrote during the reply is sent on the next message` |
+| T-0586-M11 | packages/chat/src/notes.ts | no tool name counted as a write, so a change the run reported writing was sent back | `the notes on a bot chat's message > a change this chat's run wrote is not sent back` |

@@ -21,6 +21,9 @@ export const MEMORY_COMMIT_STEP = "memory/commit";
 /** The `memory` skill, mounted for every bot while the plugin is enabled. */
 export const MEMORY_SKILL_DIR = fileURLToPath(new URL("../skills/memory", import.meta.url));
 
+/** The most of the memory index a reply carries; the tidy step keeps the file below it. */
+export const MEMORY_INDEX_MAX = 8000;
+
 /** The wiki directory inside the operad home when the setting is not written. */
 export const DEFAULT_WIKI_NAME = "wiki";
 
@@ -182,6 +185,27 @@ export function ensureMemoryLayout(memoryDir: string): void {
   if (!existsSync(instructions)) {
     writeFileSync(instructions, "# Instructions\n\nA person's long-standing instructions to this bot.\n");
   }
+}
+
+/** A file a bot's reply carries on its message; the chat plugin reads it and decides what to attach. */
+export interface MemoryNote {
+  readonly name: string;
+  readonly path: string;
+  readonly maxChars?: number | undefined;
+}
+
+/**
+ * The files a bot's reply carries as notes: its memory index, cut at
+ * {@link MEMORY_INDEX_MAX}, and the person's instructions. A file that is not
+ * there yet is left out; one created later is picked up by the next reply.
+ */
+export function memoryNotes(memoryDir: string): readonly MemoryNote[] {
+  const notes: MemoryNote[] = [];
+  const index = join(memoryDir, "index.md");
+  if (existsSync(index)) notes.push({ name: "memory/index.md", path: index, maxChars: MEMORY_INDEX_MAX });
+  const instructions = join(memoryDir, "instructions.md");
+  if (existsSync(instructions)) notes.push({ name: "memory/instructions.md", path: instructions });
+  return notes;
 }
 
 /** A path inside `root`, as git takes it; `.` for the root itself. */

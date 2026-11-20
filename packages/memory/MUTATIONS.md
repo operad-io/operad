@@ -19,6 +19,13 @@ the row fields.
 |---|---|---|---|
 | T-0585-M13 | packages/memory/src/commit.ts | `botChatOf` accepted a chat whose parent was not a bot | `a bot run is recorded in git > a chat that is not a bot's is left alone` |
 
+## T-0586 — the memory files a reply carries
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0586-M7 | packages/memory/src/memory.ts | `memoryNotes` left the instructions out | `the files a bot chat carries as notes > the index is cut at 8,000 characters and the instructions are whole` |
+| T-0586-M8 | packages/memory/src/memory.ts | `MEMORY_INDEX_MAX` was 9,000 instead of 8,000 | `the memory notes a bot chat carries > a long index is cut at the memory plugin's limit` |
+
 ## T-0587 — the full-text index, its scopes and the search tool
 
 | id | file | mutation | failing test |
