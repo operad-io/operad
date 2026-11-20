@@ -298,8 +298,12 @@ export interface BotDirectoryMigration {
   readonly claudeProjects?: string | undefined;
   /** Where radian keeps session journals; the environment's own when absent. */
   readonly radianSessionDirs?: readonly string[] | undefined;
+  /** The grant files recording a working directory; `$OPERAD_HOME/access-user.json` when absent. */
+  readonly grantFiles?: readonly string[] | undefined;
   /** Called after each top-level entry moved; a test stops a child process here. */
   readonly afterMove?: ((name: string) => void) | undefined;
+  /** Called after a grant file's temporary copy is written and before it replaces the file. */
+  readonly beforeGrantRename?: ((temporary: string, file: string) => void) | undefined;
 }
 
 /** The marker that says the old default home has been handled. */
@@ -310,6 +314,9 @@ const OWNED_ENTRIES: ReadonlySet<string> = new Set(["skills", "memory"]);
 
 /** A marker with this content means only claude's project directory waits for a retry. */
 const CLAUDE_PENDING = "claude";
+
+/** The marker that says the grants which named the old home were rewritten. */
+const GRANT_MARKER = ".grants-moved-to-default";
 
 function markerState(marker: string): "done" | "claude" | undefined {
   if (!existsSync(marker)) return undefined;
@@ -323,6 +330,60 @@ function markerState(marker: string): "done" | "claude" | undefined {
 function writeMarker(marker: string, pending: boolean): void {
   mkdirSync(resolve(marker, ".."), { recursive: true });
   writeFileSync(marker, pending ? CLAUDE_PENDING : "");
+}
+
+function writeDoneMarker(marker: string): void {
+  mkdirSync(resolve(marker, ".."), { recursive: true });
+  const temporary = `${marker}.${process.pid}.tmp`;
+  writeFileSync(temporary, "");
+  renameSync(temporary, marker);
+}
+
+function escaped(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Rewrites the `cwd` of every grant made in the old default home to the new
+ * one. The file's other bytes stay as they were; a missing file, a file with
+ * no old cwd and a repeated run write nothing. The replacement is a temporary
+ * file renamed over the original, so a crash leaves the old or the new whole.
+ */
+function migrateGrantCwds(
+  oldCwd: string,
+  newCwd: string,
+  files: readonly string[],
+  beforeRename?: ((temporary: string, file: string) => void) | undefined,
+): boolean {
+  const quotedOld = JSON.stringify(oldCwd);
+  const quotedNew = JSON.stringify(newCwd);
+  const pattern = new RegExp(`("cwd"\\s*:\\s*)${escaped(quotedOld)}`, "g");
+  for (const file of new Set(files)) {
+    let text: string;
+    try {
+      text = readFileSync(file, "utf8");
+    } catch (error) {
+      if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") continue;
+      return false;
+    }
+    try {
+      JSON.parse(text);
+    } catch {
+      return false;
+    }
+    const next = text.replace(pattern, (_match: string, prefix: string) => `${prefix}${quotedNew}`);
+    if (next === text) continue;
+    const temporary = `${file}.${process.pid}.migrate.tmp`;
+    try {
+      const mode = statSync(file).mode & 0o777;
+      writeFileSync(temporary, next, { mode });
+      beforeRename?.(temporary, file);
+      renameSync(temporary, file);
+    } catch {
+      return false;
+    }
+  }
+  return true;
 }
 
 /** Whether a claude worker may still be writing under the old working directory. */
@@ -482,8 +543,13 @@ export function migrateDefaultBotDir(home: string, options: BotDirectoryMigratio
   const target = join(root, DEFAULT_BOT);
   const marker = join(target, MIGRATION_MARKER);
   const state = markerState(marker);
-  if (state === "done") return [];
   const rootExists = existsSync(root);
+  const grantMarker = join(target, GRANT_MARKER);
+  if (rootExists && !existsSync(grantMarker)) {
+    const grants = options.grantFiles ?? [join(home, "access-user.json")];
+    if (migrateGrantCwds(root, target, grants, options.beforeGrantRename)) writeDoneMarker(grantMarker);
+  }
+  if (state === "done") return [];
   const moved: string[] = [];
   if (rootExists && state === undefined) {
     const protectedNames = protectedEntries(root, target, {
@@ -508,9 +574,10 @@ export function migrateDefaultBotDir(home: string, options: BotDirectoryMigratio
   return moved;
 }
 
-/** Whether the old default bot home has already been handled, including claude's retry. */
+/** Whether the old default bot home has already been handled, including its grants and claude's retry. */
 export function defaultBotHomeMigrated(home: string): boolean {
-  return markerState(join(botDir(home), DEFAULT_BOT, MIGRATION_MARKER)) === "done";
+  const target = join(botDir(home), DEFAULT_BOT);
+  return markerState(join(target, MIGRATION_MARKER)) === "done" && existsSync(join(target, GRANT_MARKER));
 }
 
 /** The memory directory of a bot. */

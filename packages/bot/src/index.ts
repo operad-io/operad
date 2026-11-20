@@ -110,7 +110,13 @@ async function migrateDefaultHome(
     }
     cursor = page.next;
   } while (cursor !== undefined);
-  migrateDefaultBotDir(home, { botNames: Object.keys(written), botPaths });
+  const repositories = await repositoryPaths(store);
+  const grantFiles = [
+    join(home, "access-user.json"),
+    ...botPaths.map((path) => join(path, "access-user.json")),
+    ...repositories.map((path) => join(path, ".operad", "access-user.json")),
+  ];
+  migrateDefaultBotDir(home, { botNames: Object.keys(written), botPaths, grantFiles });
 }
 
 const GUARD = fileURLToPath(new URL("./guard.ts", import.meta.url));

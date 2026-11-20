@@ -194,6 +194,109 @@ describe("the default bot's directory", () => {
   });
 });
 
+describe("grants after the move", () => {
+  test("a grant made in the old home keeps matching, while every other grant stays byte for byte", async () => {
+    const r = await rig();
+    const root = join(r.home, "bot");
+    const target = join(root, DEFAULT_BOT);
+    const other = join(root, "reader");
+    const repository = join(r.root, "repository");
+    const grants = join(r.home, "access-user.json");
+    const entries = [
+      { kind: "command", value: "touch /tmp/operad-grant", cwd: root },
+      { kind: "path", value: "/tmp/operad-note", cwd: root, tool: "write" },
+      { kind: "command", value: "git status", cwd: other },
+      { kind: "path", value: "src/a.ts", cwd: repository, tool: "edit" },
+    ];
+    writeFileSync(grants, `${JSON.stringify(entries, null, 2)}\n`);
+    // A home handled by the earlier migration still gets its old grant cwd rewritten.
+    writeFileSync(join(target, ".moved-to-default"), "");
+    const moved = entries.map((entry) => (entry.cwd === root ? { ...entry, cwd: target } : entry));
+    const expected = `${JSON.stringify(moved, null, 2)}\n`;
+
+    migrateDefaultBotDir(r.home, {
+      botNames: ["default"],
+      grantFiles: [grants],
+      claudeProjects: join(r.root, "no-claude"),
+      radianSessionDirs: [],
+    });
+
+    expect(readFileSync(grants, "utf8")).toBe(expected);
+    const profile: AccessProfile = {
+      alwaysAllow: JSON.parse(expected) as NonNullable<AccessProfile["alwaysAllow"]>,
+    };
+    const home = join(r.root, "user");
+    expect(match(profile, { tool: "bash", input: { command: "touch /tmp/operad-grant" }, cwd: target }, { home })).toMatchObject({
+      allow: true,
+    });
+    expect(match(profile, { tool: "write", input: { path: "/tmp/operad-note" }, cwd: target }, { home }).allow).toBe(true);
+
+    migrateDefaultBotDir(r.home, {
+      botNames: ["default"],
+      grantFiles: [grants],
+      claudeProjects: join(r.root, "no-claude"),
+      radianSessionDirs: [],
+    });
+    expect(readFileSync(grants, "utf8")).toBe(expected);
+  });
+
+  test("a crash while writing grants leaves the old file whole, and the next run finishes it", async () => {
+    const r = await rig();
+    const root = join(r.home, "bot");
+    const target = join(root, DEFAULT_BOT);
+    const grants = join(r.home, "access-user.json");
+    const entries = [{ kind: "command", value: "touch /tmp/operad-grant", cwd: root }];
+    const original = `${JSON.stringify(entries, null, 2)}\n`;
+    writeFileSync(grants, original);
+    const source = pathToFileURL(join(import.meta.dir, "..", "src", "bot.ts")).href;
+    const options = {
+      botNames: ["default"],
+      grantFiles: [grants],
+      claudeProjects: join(r.root, "no-claude"),
+      radianSessionDirs: [],
+    };
+    const code = `
+      import { migrateDefaultBotDir } from ${JSON.stringify(source)};
+      migrateDefaultBotDir(${JSON.stringify(r.home)}, {
+        ...${JSON.stringify(options)},
+        beforeGrantRename(temporary, file) {
+          console.log(file);
+          Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10000);
+        }
+      });
+    `;
+    const child = Bun.spawn({
+      cmd: [process.execPath, "-e", code],
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "ignore",
+    });
+    try {
+      const reader = child.stdout.getReader();
+      const decoder = new TextDecoder();
+      let text = "";
+      while (!text.includes("\n")) {
+        const next = await reader.read();
+        if (next.done === true) throw new Error("the child ended before it wrote a grant file");
+        text += decoder.decode(next.value, { stream: true });
+      }
+      expect(text.slice(0, text.indexOf("\n"))).toBe(grants);
+      child.kill("SIGKILL");
+      expect(await child.exited).not.toBe(0);
+    } finally {
+      if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+      await child.exited;
+    }
+
+    expect(readFileSync(grants, "utf8")).toBe(original);
+    migrateDefaultBotDir(r.home, options);
+    const expected = `${JSON.stringify([{ ...entries[0], cwd: target }], null, 2)}\n`;
+    expect(readFileSync(grants, "utf8")).toBe(expected);
+    migrateDefaultBotDir(r.home, options);
+    expect(readFileSync(grants, "utf8")).toBe(expected);
+  });
+});
+
 describe("harness sessions after the move", () => {
   test("claude's project directory moves to the directory named for the new working directory", async () => {
     const root = await tempRoot();

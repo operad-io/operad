@@ -137,7 +137,9 @@ The full rule tables are in `packages/access-match/REFERENCE.md`.
 `$OPERAD_HOME/access-user.json` (see [the home](config.md#the-home)) holds the
 calls a person answered `allow_always` for. A missing file is an empty list. A
 file that cannot be read is reported by the step that reads it and treated as
-empty. A person adds an entry by answering `allow_always`; removing an entry is
+empty. When the default bot moves from the old `$OPERAD_HOME/bot` to
+`$OPERAD_HOME/bot/default`, an entry whose `cwd` is exactly the old home is
+rewritten once to the new directory; every other entry is left as it was. A person adds an entry by answering `allow_always`; removing an entry is
 deleting its object from the array. The file is written under a lock and
 replaced whole, so a crash does not leave it half written.
 

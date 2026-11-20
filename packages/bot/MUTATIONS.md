@@ -229,3 +229,9 @@ changes for bots, in the order they were recorded. The root
 | T-0584-M10 | packages/bot/src/bot.ts | every top-level entry in the old home was moved instead of only operad's `skills/` and `memory/` | `the default bot's directory > only skills and memory move; an unknown file and directory stay and the default bot can use them` |
 | T-0584-M11 | packages/bot/src/bot.ts | the default bot denied every old-home directory again instead of only another bot's | `the default bot's directory > only skills and memory move; an unknown file and directory stay and the default bot can use them` |
 | T-0584-M12 | packages/bot/src/bot.ts | claude's project directory moved while a claude kept worker was alive | `harness sessions after the move > claude's old project directory waits while a claude worker is alive, then moves on the next read` |
+
+## T-0584 rework 3 — grants that named the old home
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0584-M13 | packages/bot/src/bot.ts | a grant whose `cwd` was the old default home was left in place | `grants after the move > a grant made in the old home keeps matching, while every other grant stays byte for byte` |

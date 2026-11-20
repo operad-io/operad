@@ -30,8 +30,10 @@ digits, `-` and `_`. Fields: `cwd`, `harness` (the default agent),
   is another bot's directory is left alone. The move is idempotent and each
   entry is renamed, so a crash halfway leaves the rest for the next read. The
   default bot keeps read and write access to the rest of `~/.operad/bot`,
-  except every other bot's directory. A bot whose settings name a `cwd` keeps
-  it and no move happens.
+  except every other bot's directory. A grant whose `cwd` is exactly the old
+  home is rewritten once to `default/`, in `access-user.json` and any per-bot or
+  per-repo `access-user.json` the home knows; other grants keep their bytes. A
+  bot whose settings name a `cwd` keeps it and no move happens.
 - **Sessions after the move**: `claude` finds a session under the project
   directory named for its working directory, so its old project directory is
   moved beside the new one. `pi` stores a session file path under the operad
