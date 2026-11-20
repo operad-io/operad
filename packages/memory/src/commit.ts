@@ -26,7 +26,7 @@ import {
   lastTidyCommit,
   rewriteDrop,
 } from "./tidy.ts";
-import { parseNoteLinks, resolveNoteLink } from "./search/links.ts";
+import { parseNoteLinks, resolveNoteLink } from "./links.ts";
 
 /** The lock one home's memory commits take turns under. */
 export const COMMIT_LOCK = "memory-commit.lock";

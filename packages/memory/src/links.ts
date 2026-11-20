@@ -11,7 +11,7 @@
  * `.md`, and among files of the same name the one nearest the source note wins.
  */
 
-import type { NoteLink } from "./types.ts";
+import type { NoteLink } from "./search/types.ts";
 
 const FENCE = /^ {0,3}(`{3,}|~{3,})(.*)$/u;
 const WIKILINK = /\[\[([^[\]]+)\]\]/gu;

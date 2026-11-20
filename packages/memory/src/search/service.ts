@@ -11,7 +11,7 @@ import type { JsonValue, ObjectStore } from "@operad-io/engine";
 import { isRecord } from "@operad-io/engine";
 import { lineCountOf, queryTerms, snippetOf } from "./chunks.ts";
 import { splitMarkdown, titleFromName, titleOf } from "./frontmatter.ts";
-import { parseNoteLinks, resolveNoteLink } from "./links.ts";
+import { parseNoteLinks, resolveNoteLink } from "../links.ts";
 import { SqliteSearchBackend } from "./backend.ts";
 import {
   botMemoryDirectories,

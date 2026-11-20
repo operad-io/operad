@@ -4,7 +4,15 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MemoryPluginStore, PluginRegistry, isRecord } from "@operad-io/engine";
-import { createMemoryPlugin, memoryGit, parseNoteLinks, resolveNoteLink, withoutUntrustedLines } from "../src/index.ts";
+import {
+  MemorySearch,
+  createMemoryPlugin,
+  memoryGit,
+  parseNoteLinks,
+  resolveNoteLink,
+  searchDatabasePath,
+  withoutUntrustedLines,
+} from "../src/index.ts";
 
 const roots: string[] = [];
 
@@ -239,7 +247,7 @@ describe("a bot run is recorded in git", () => {
 });
 
 describe("one link parser for the index and the link table", () => {
-  test("the targets the link table reads are the ones the index commit drops", () => {
+  test("the targets the link table reads are the ones the index commit drops", async () => {
     const named: readonly { readonly line: string; readonly target: string; readonly note: string }[] = [
       { line: "- [[topics/from-web]]: a page said", target: "topics/from-web", note: "topics/from-web.md" },
       { line: "- [[topics/from-web|a page said]]: a page said", target: "topics/from-web", note: "topics/from-web.md" },
@@ -267,6 +275,21 @@ describe("one link parser for the index and the link table", () => {
     for (const sample of unnamed) {
       expect(parseNoteLinks(sample.line).map((link) => link.target)).toEqual([sample.target]);
       expect(withoutUntrustedLines(sample.line, ["topics/from-web.md"])).toBe(sample.line);
+    }
+
+    // The other caller is the link table: the same lines in a note give the
+    // same targets.
+    const r = await rig();
+    mkdirSync(join(r.home, "wiki"), { recursive: true });
+    writeFileSync(join(r.home, "wiki", "links.md"), named.map((sample) => sample.line).join("\n"));
+    const search = new MemorySearch(r.home, {}, { file: searchDatabasePath(r.home) });
+    try {
+      await search.refresh();
+      expect(search.linksFrom("wiki:links.md").map((link) => link.target)).toEqual(
+        named.map((sample) => sample.target),
+      );
+    } finally {
+      search.close();
     }
   });
 });

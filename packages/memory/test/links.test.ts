@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, renameSync, rmSync, unlinkSync, writeFileSync }
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SqliteSearchBackend } from "../src/search/backend.ts";
-import { parseNoteLinks, resolveNoteLink } from "../src/search/links.ts";
+import { parseNoteLinks, resolveNoteLink } from "../src/links.ts";
 import { MemorySearch, searchDatabasePath } from "../src/search/service.ts";
 import type { NoteLink } from "../src/search/types.ts";
 

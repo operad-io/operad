@@ -73,7 +73,7 @@ offers them to a bot as the `search` and `read` tools.
 ## The link table
 
 Beside the documents the index keeps a table of the links the notes write, in
-the same `search.sqlite` (ADR 0038 D8). `parseNoteLinks(text)` (`search/links.ts`)
+the same `search.sqlite` (ADR 0038 D8). `parseNoteLinks(text)` (`src/links.ts`)
 reads `[[target]]`, `[[target|text]]`, `[[target#Heading]]` and the table form
 `[[target\|text]]`, plus relative Markdown links `[text](path.md#heading)`.
 Markdown targets are percent-decoded and a target with a bare `%` is kept as
