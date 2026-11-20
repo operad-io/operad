@@ -52,6 +52,22 @@ describe("the step a chat's refresh data names after a reply", () => {
     expect(calls).toEqual([]);
   });
 
+  test("runs after a stopped or interrupted reply, for the run the keep step finishes", async () => {
+    const calls: { readonly chat: unknown; readonly result: string }[] = [];
+    const r = await rig(() => reply("ok", "s-1"), undefined, undefined, "fake", [steps(calls, "settings/record")]);
+    const chat = await r.chat({ refresh: "settings/refresh" });
+    await r.say(chat, "hello");
+    const stored = await r.store.get("chat", chat);
+    if (stored === undefined) throw new Error("no chat");
+    const kept = await r.registry.runStep("chat/keep", {}, {
+      runId: "run-keep",
+      object: { type: "chat", id: chat, data: stored.data },
+      params: null,
+    });
+    expect(kept.result).toBe("done");
+    expect(calls).toEqual([{ chat, result: "done" }]);
+  });
+
   test("a step that is not loaded leaves the answer as it is", async () => {
     const r = await rig(() => reply("ok", "s-1"), undefined, undefined, "fake", [steps([], "nowhere/record")]);
     const chat = await r.chat({ refresh: "settings/refresh" });

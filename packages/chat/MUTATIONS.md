@@ -546,3 +546,9 @@ are append-only, so the old lines stay as history.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0585-M9 | packages/chat/src/reply.ts | `runAfterStep` returned for every named step instead of running it | `the step a chat's refresh data names after a reply > runs once after the reply, with the chat` |
+
+## T-0585 rework 1 — the after step of a stopped run
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0585-M10 | packages/chat/src/reply.ts | `keepInterrupted` no longer ran the after step for a stopped or interrupted run | `the step a chat's refresh data names after a reply > runs after a stopped or interrupted reply, for the run the keep step finishes` |

@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { memoryGit } from "@operad-io/memory";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -88,6 +88,17 @@ describe("the memory skill and the commit step", () => {
     await r.say(chat, "hi");
     await r.reply(chat);
     expect(r.calls[0]?.params.skills).toContain(MEMORY_SKILL_DIR);
+  });
+
+  test("a bot's memory gets the three-layer layout when the plugin is enabled", async () => {
+    const h = await home();
+    writePlugins(h, { memory: {}, bot: { settings: { bots: { default: {}, reader: {} } } } });
+    const bots = readBots(h);
+    const bot = resolveBot(h, "reader", bots["reader"] ?? {});
+    const memory = join(bot.cwd, "memory");
+    expect(existsSync(join(memory, "index.md"))).toBe(true);
+    expect(existsSync(join(memory, "instructions.md"))).toBe(true);
+    expect(existsSync(join(memory, "log"))).toBe(true);
   });
 
   test("a reply that wrote to the bot's memory is committed, naming the bot and the chat", async () => {

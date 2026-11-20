@@ -867,6 +867,8 @@ export function createChatPlugin() {
       {
         name: "keep",
         resumable: false,
+        // The chat's `refresh` step and the after step it names are named by data.
+        callsNamedByData: true,
         results: ["done", "failed"],
         run: keepInterrupted,
       },
