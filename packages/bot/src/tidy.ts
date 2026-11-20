@@ -288,8 +288,8 @@ async function linkLists(
   home: string | undefined,
 ): Promise<TidyLinks> {
   if (home === undefined) return emptyTidyLinks();
+  const settings = { wikiDir: wikiDirectoryOfHome(home) };
   try {
-    const settings = { wikiDir: wikiDirectoryOfHome(home) };
     const search = openMemorySearch(home, settings);
     try {
       await search.refresh(store);

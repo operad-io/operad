@@ -90,6 +90,16 @@ describe("the link report a tidy reads", () => {
     r.search.close();
   });
 
+  test("a title a note already links to is not an unlinked mention", async () => {
+    const r = rig();
+    file(join(r.wiki, "a.md"), "# Alpha\n");
+    file(join(r.wiki, "b.md"), "# Beta\n\n[[a]] also names Alpha in the text.\n");
+    await r.search.refresh();
+
+    expect(linkReport(r.search, { scope: "wiki" }).unlinked).toEqual([]);
+    r.search.close();
+  });
+
   test("unlinked mentions stop at the cap", async () => {
     const r = rig();
     const lines = ["# Source", ""];

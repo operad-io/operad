@@ -305,6 +305,53 @@ describe("the link lists in the tidy prompt", () => {
       s.views.close();
     }
   });
+
+  test("the memory lists stay with this bot's memory", async () => {
+    const s = await setup();
+    try {
+      mkdirSync(join(s.r.home, "bot", "other", "memory", "topics"), { recursive: true });
+      writeFileSync(
+        join(s.r.home, "bot", "other", "memory", "topics", "other.md"),
+        "# Other\n\n[[other-missing]]\n",
+      );
+      note(s.memory, "tea.md", "# Tea\n\n[[nowhere]]\n");
+
+      const work = await tidyWork(s.r.store, "default", join(s.r.home, "bot", "default"), {
+        home: s.r.home,
+      });
+      expect(work.links.memory.broken.map((link) => link.path)).toEqual(["topics/tea.md"]);
+    } finally {
+      s.views.close();
+    }
+  });
+
+  test("a link table that cannot be opened leaves empty lists instead of failing the check", async () => {
+    const s = await setup();
+    try {
+      mkdirSync(join(s.r.home, "store", "search.sqlite"), { recursive: true });
+      note(s.memory, "tea.md", "# Tea\n\n[[nowhere]]\n");
+
+      const work = await tidyWork(s.r.store, "default", join(s.r.home, "bot", "default"), {
+        home: s.r.home,
+      });
+      expect(work.notes).toHaveLength(1);
+      expect(work.links).toEqual({ wiki: EMPTY_LINK_REPORT, memory: EMPTY_LINK_REPORT });
+    } finally {
+      s.views.close();
+    }
+  });
+
+  test("a check with no home reads no link table", async () => {
+    const s = await setup();
+    try {
+      note(s.memory, "tea.md", "# Tea\n\n[[nowhere]]\n");
+
+      const work = await tidyWork(s.r.store, "default", join(s.r.home, "bot", "default"));
+      expect(work.links).toEqual({ wiki: EMPTY_LINK_REPORT, memory: EMPTY_LINK_REPORT });
+    } finally {
+      s.views.close();
+    }
+  });
 });
 
 describe("Run and Skip", () => {
