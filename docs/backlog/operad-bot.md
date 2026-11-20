@@ -12,11 +12,11 @@
 ## 已定但还没做（留在这里，做完移入 ADR）
 
 1. **三个场景，按这个顺序**：长对话（`operad-conversation.md`）；个人知识库（second brain）；每日资料搜集（digest）。后两个是 flow 加 skill，不是新插件，取数据的步骤除外。
-2. **知识库是一个插件**：它处理信息、归档、找回；存储是可换的后台，用户现有的 Obsidian 库是其中一个（不要求用户改目录结构），Markdown 目录加 git 是另一个。它最关键的两件事是怎么组织、怎么检索；bot 的记忆是它里面的一个保留命名空间。这个插件和记忆的管理以后单独设计，合约上它需要的是外部对象（`operad-contract.md` 决定 3，留在 backlog）、`settings` 和 `secrets`（ADR 0010 D1、D2）。
+2. **知识库是一个插件**：插件叫 `memory`（owner，2026-11-20，原拟名 `brain`），它的 flow 是 `memory:capture`、`memory:review`，skill 也叫 `memory`。它处理信息、归档、找回；存储是可换的后台，用户现有的 Obsidian 库是其中一个（不要求用户改目录结构），Markdown 目录加 git 是另一个。它最关键的两件事是怎么组织、怎么检索；bot 的记忆是它里面的一个保留命名空间。这个插件和记忆的管理以后单独设计，合约上它需要的是外部对象（`operad-contract.md` 决定 3，留在 backlog）、`settings` 和 `secrets`（ADR 0010 D1、D2）。
 3. **知识库是三个 flow 加一个 skill**：
-   - `brain:capture`：来自 iOS、Telegram 或命令行的一条"记下"事件（文字、链接、转发），agent 按 skill 归档：选目录、写 frontmatter、补 `[[链接]]`、链接的页面抓正文存成附件；写完回一行"存到哪了"。
-   - `brain:review`：每天一次 cron，整理 `inbox/`，合并重复，提出三条值得回看的，送一张卡；卡上的动作只有"看过了"和"打开"。
-   - 对话里读写：`brain` skill 随 `chat` 的默认访问档一起给 bot，告诉它知识库在哪、怎么写、什么不能删（删除走 ask）。
+   - `memory:capture`：来自 iOS、Telegram 或命令行的一条"记下"事件（文字、链接、转发），agent 按 skill 归档：选目录、写 frontmatter、补 `[[链接]]`、链接的页面抓正文存成附件；写完回一行"存到哪了"。
+   - `memory:review`：每天一次 cron，整理 `inbox/`，合并重复，提出三条值得回看的，送一张卡；卡上的动作只有"看过了"和"打开"。
+   - 对话里读写：`memory` skill 随 `chat` 的默认访问档一起给 bot，告诉它知识库在哪、怎么写、什么不能删（删除走 ask）。
 4. **每日资料搜集是按主题配置的 cron flow** `digest:run`：配置 JSON `{ topic, schedule, sources: [...], deliver: [channel, …] }`，`sources` 的每一项指向一个来源插件（`docs/backlog/operad-channels.md` 的登录与读取一条）：怎么登录、怎么读都归插件，operad 只拿到统一形状的条目。候选插件：`hn`（免费 API）、`rss`（任意 feed）、`reddit`（要注册 OAuth 应用，每个 client 100 次/分，匿名 `.json` 已经关了）、`x`（只剩按量付费，每读一条 $0.005，默认不开，用不用按费用定）、`web`（给定查询词的搜索）。步骤顺序：来源插件的 `fetch` 步骤取条目 → agent 按 skill 去重、排序、写摘要 → 交给知识库插件归档 → 送一张卡（前 N 条，各带链接）。卡上的反应（有用、没用）记成事实，下一天的 prompt 里把最近的反应当资料带上；没有模型替用户改规则。
 5. **来源插件不让 agent 碰密钥，也不让来源内容进指令**：条目作为资料给 agent 读（ADR 0009 D1），登录态只在插件自己的 `secrets` 里（ADR 0010 D2）。
 6. **不做**：语音、Canvas、摄像头和屏幕一类设备动作、暴露在公网的网关、影子 judge 之外任何"模型替人决定"。按页面结构操作的自动化浏览器不在此列，见 `operad-bot-mcp.md` 决定 10。
@@ -26,7 +26,7 @@
 10. **技能里的脚本保留，operad 自己永远不执行**（ADR 0030 D7）。还没做的部分：导入来的脚本第一次跑要问（ADR 0025 D3 的精确 argv 加工作目录，再加脚本内容的摘要：内容变了重新问）；不是人当场发起的运行按 `docs/backlog/operad-sandbox.md` 的后台运行一条。不学 Rakazo 导入时丢掉脚本：说明文字本身就能让 bot 去下载并执行代码，防线是访问档，丢脚本挡不住什么，却废掉依赖脚本的技能。壳（ADR 0025 D6）做出来之前，批准一个带脚本的技能等于信任这段代码，确认页要把这一点和脚本清单写明。
 11. **chat 和 bot 的用户词**（来自 iOS 设计稿 `radian-ios/docs/design/operad/operad-ios-2026-11-11.html`）：`Allow once`、`Always allow`、`Deny`（工具调用和命令的许可，ADR 0025 D4；`Always allow` 的范围是发起它的 bot 或 repo）；`Continue`（原为费用上限到了以后继续；费用改成软提示后不再用于费用）、`Stop`（停下当前运行）；`I logged in`、`Log in again`（站点登录，`operad-bot-mcp.md` 决定 13、14；`I logged in` 只是提醒 bot 去看，不代替登录）；`repo`（chat 父对象类型的标签，和 `bot` 并列）；`period`（费用的统计周期）。`Review`、`approve`、`reject` 已在 ADR 0030 D4。说话人不是新词：harness 名（claude、pi、radian）只决定用哪个 agent，对话里显示的是 ADR 0026 D12 的称呼。
 12. **bot 页是这个 bot 的设置页**：上面是称呼、harness、模型、工作目录、本期花费和上限、技能、MCP 服务、登录过的站点；能直接改的项走设置接口（ADR 0017），技能和 MCP 服务的增加和更新走 `Review`。bot 页上没有 Chat 按钮，新建 chat 只从 chat 的入口进（ADR 0028 D5）。`bot` 不占自己的 tab，bot 列在设置下面（ADR 0018 D3）。
-13. **bot 写记忆不用人批准**（owner，2026-11-20）。事后靠知识库的 git 记录和 `brain:review` 的差异来看。必须遵守的规则不进记忆这一条不变，它们的改动仍走提议（ADR 0030 D4）。
+13. **bot 写记忆不用人批准**（owner，2026-11-20）。事后靠知识库的 git 记录和 `memory:review` 的差异来看。必须遵守的规则不进记忆这一条不变，它们的改动仍走提议（ADR 0030 D4）。
 14. **全文索引从知识库插件第一版就带**（owner，2026-11-20）。知识库和 chat 记录各建 SQLite FTS5 的索引（用 `bun:sqlite`），向量检索以后可选。两点要先做：中文分词要实测，FTS5 默认的 unicode61 把一整段汉字当成一个词，候选是 trigram；检索留成可换的后台，`tobi/qmd`（MIT，BM25 加向量加本地重排，有命令行、MCP 和库）是一个候选，先在 owner 的 Obsidian 库上试用，不做成 operad 的依赖（它带 `better-sqlite3`、`node-llama-cpp` 和约 2GB 的本地模型，也索引不到引擎里的 chat 记录）。可以借它的三点：每个目录挂一段说明、命中时随结果返回；查询由 agent 分成关键词式和语义式几条；按 frontmatter 字段过滤、按文档 ID 加行号范围取片段。
 15. **记忆的索引作为消息的附注带进去，不进系统提示，也不在会话内冻结**（owner，2026-11-20；Linger 的做法，见 `research/2026-11-19-linger.md`）。
    - 新会话的第一条消息和压缩后的第一条消息带上完整索引。
@@ -53,14 +53,14 @@
    用户给 bot 的长期指令单独一个文件，每次运行都加载。OpenClaw、Claude Code、NanoClaw、Letta、Anthropic 的文章都是这个形状。
 2. **必须遵守的规则不进记忆**。它们留在 bot 的说明和访问档里，改动走提议（ADR 0030 D4）。记忆只帮助回想；Codex、Copilot、Grok Bot 都这样分。
 3. **记忆只放查不到的**：偏好、纠正、验证过的规则。operad 里已经有的（计划、任务、历史）和知识库里已经有的笔记，存指针，不抄一份。
-4. **bot 当场写笔记，只给很轻的指引**：`brain` skill 告诉 bot 记忆是干什么用的，不规定怎么记。跑在较弱模型上的 bot 要有"先读记忆再回答"的提示。
-5. **`brain:review` 兼做记忆的整理**（细化上文第 3 条）。除了整理 `inbox/`、合并重复、提三条回看，再加：
+4. **bot 当场写笔记，只给很轻的指引**：`memory` skill 告诉 bot 记忆是干什么用的，不规定怎么记。跑在较弱模型上的 bot 要有"先读记忆再回答"的提示。
+5. **`memory:review` 兼做记忆的整理**（细化上文第 3 条）。除了整理 `inbox/`、合并重复、提三条回看，再加：
    - 对着 chat 记录核对记忆笔记，改掉写错和过期的；新的取代旧的，旧的留着并标明被取代，不直接删。
    - 把索引保持在上限内：细节挪到主题笔记，索引留一行链接。
    - 结果是一次 git 提交，卡上给差异的摘要。
    - 一次改写丢掉太多旧条目就作废，退回只追加（OpenClaw 的规则；Hermes 没有这条，出过删掉四条长期规则的事故）。
    - 记忆整理这一步按上文「已定但还没做」第 16 条先检查再问；整理 `inbox/` 的部分不变。
-6. **先让原始记录可搜**：知识库和 chat 记录都建 SQLite FTS5 的全文索引，`brain` skill 教 bot 多换几种说法去搜、先搜再答。向量检索以后可选。chat 记录的搜索记在 `operad-chat-next.md` 第 15 条。
+6. **先让原始记录可搜**：知识库和 chat 记录都建 SQLite FTS5 的全文索引，`memory` skill 教 bot 多换几种说法去搜、先搜再答。向量检索以后可选。chat 记录的搜索记在 `operad-chat-next.md` 第 15 条。
 7. **来源内容触发的写入要标来源**（细化上文第 5 条）。一次运行读过网页、来信、来源插件的条目之后写下的笔记，标为"来自不可信内容"，不进每次加载的索引，整理时也不提升。不做 OpenClaw 那种文件级的排除：知识库就是要让人和 Obsidian 直接改的，它的校验在人改过文件后会把整个文件永久排除。
 8. **`digest:run` 记下发过什么**（细化上文第 4 条）。下一天的 prompt 除了最近的反应，还带上最近发过的条目，避免重复推送。
 9. **范围按 bot**；多人场合（Telegram 群）不注入个人记忆。定时和事件发起的运行读它的 flow 需要的那部分，它写的东西按第 7 条处理。
@@ -82,7 +82,7 @@
 
 ## 顺序
 
-`operad-conversation`（ask 闭环 → `chat` 基础插件加 `dev:chat` → `bot` 插件的 bot 对象加 `bot:chat` → app 的输入框）→ `operad-sandbox` 第一版的其余部分 → Telegram 通道 → `brain` 三个 flow → `digest`（先 `hn` 和 `rss`，再 `reddit`，`x` 看费用）。
+`operad-conversation`（ask 闭环 → `chat` 基础插件加 `dev:chat` → `bot` 插件的 bot 对象加 `bot:chat` → app 的输入框）→ `operad-sandbox` 第一版的其余部分 → Telegram 通道 → `memory` 三个 flow → `digest`（先 `hn` 和 `rss`，再 `reddit`，`x` 看费用）。
 
 ## 待决问题（未定）
 
@@ -96,4 +96,4 @@
 
 ## 验收
 
-用它替掉自己的 OpenClaw 场景：连续两周无人值守，每天的 digest 按时到 Telegram 和 iPhone，知识库里每天多一个 digest 文件；两周内 `brain:capture` 用过至少 20 次，没有一次需要人去修权限或清理副作用；三个 flow 都是在新引擎上用 flow 文件加 skill 表达的，没有改内核。
+用它替掉自己的 OpenClaw 场景：连续两周无人值守，每天的 digest 按时到 Telegram 和 iPhone，知识库里每天多一个 digest 文件；两周内 `memory:capture` 用过至少 20 次，没有一次需要人去修权限或清理副作用；三个 flow 都是在新引擎上用 flow 文件加 skill 表达的，没有改内核。
