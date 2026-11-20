@@ -43,3 +43,17 @@ The MCP server a bot already receives offers `search` and `read`. `search` takes
 ### D7: The memory skill tells the bot to search first
 
 The `memory` skill says to search before saying it does not know, to try several phrasings (keywords and a natural question, Chinese and mixed text), to read the document a hit points at, and to use the directory notes that arrive with hits. The skill states what the scopes reach; the access profile still decides what the agent may read.
+
+### D8: A link table in the same index
+
+While the index is built or refreshed, each note's links are parsed and kept in one table in the same `search.sqlite`: the source document, the raw target, the resolved target document or none, the optional `#heading`, and the kind (`wikilink` or `markdown`). The table covers every note the index covers, the wiki and each bot's memory; a chat writes no links.
+
+A wikilink is `[[target]]`, `[[target|text]]`, `[[target#Heading]]`, or the table form `[[target\|text]]`, whose escaped pipe separates the target from the text so a surrounding Markdown table does not split its row. A Markdown link is relative, `[text](path.md#heading)` or `[text](notes/page.md)`; its target is percent-decoded, and a target that is not a valid escape, such as one with a bare `%`, is kept as written rather than refused. Code blocks and inline code are not links, and neither is an external link or an image embed.
+
+A target that names a path is taken from the scope root. A Markdown target that is not a path from the root is taken relative to the note that writes it. A bare name matches a file name with or without `.md`; among files of the same name the one nearest the source note wins, and the path breaks a tie. A link resolves only inside its own scope and owner, so a wiki note never resolves into a bot's memory.
+
+An unresolved link is kept: a link to a page nobody wrote yet stays in the table with no target, and takes the page when it is written. A link to a note that moved follows the note to its new path. A deleted note loses the links it wrote; the links that pointed at it stay, with no target.
+
+Like the text index the table is a cache. It is built from the files, updated on the same change events, and dropped and rebuilt when the index itself is rebuilt. It writes no note and makes no model call.
+
+The memory package answers four queries from the table: the links a note writes, the links that point at a note, the unresolved targets with how many links name each, and the notes no other note links to. No command and no user-visible output reads the table.
