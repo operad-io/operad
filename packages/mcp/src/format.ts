@@ -9,6 +9,7 @@ import type {
   ViewSectionContent,
   ViewTypeInfo,
 } from "@operad-io/engine";
+import { isRecord } from "@operad-io/engine";
 import type { MachineLoad } from "@operad-io/engine/platform";
 import type { McpViewObject } from "./policy.ts";
 
@@ -230,4 +231,55 @@ export function runningMarkdown(
     );
   }
   return `${lines.join("\n")}\n\n${loadLine}`;
+}
+
+function textValue(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function numberValue(value: unknown): string {
+  return typeof value === "number" && Number.isFinite(value) ? String(value) : "?";
+}
+
+/** One search result as the lines a reader scans, and the directory notes. */
+export function searchMarkdown(value: unknown): string {
+  if (!isRecord(value) || !Array.isArray(value["hits"])) return valueText(value);
+  const query = textValue(value["query"]);
+  const hits = value["hits"].filter(isRecord);
+  const lines = [`# Search: ${query}`, ""];
+  if (hits.length === 0) {
+    lines.push("No results.");
+  } else {
+    for (const hit of hits) {
+      const where = [hit["scope"], hit["path"], `lines ${numberValue(hit["lineStart"])}-${numberValue(hit["lineEnd"])}`]
+        .filter((part) => typeof part === "string" && part.length > 0)
+        .join(" · ");
+      lines.push(`- \`${textValue(hit["id"])}\` — ${textValue(hit["title"])} (${where})`);
+      const snippet = textValue(hit["snippet"]);
+      if (snippet.length > 0) lines.push(`  ${snippet}`);
+    }
+  }
+  const about = Array.isArray(value["about"]) ? value["about"].filter(isRecord) : [];
+  if (about.length > 0) {
+    lines.push("", "## Directory notes");
+    for (const note of about) {
+      lines.push(`### ${textValue(note["title"])}`, "", textValue(note["text"]));
+    }
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+/** One document, or the line range that was asked for. */
+export function readMarkdown(value: unknown): string {
+  if (!isRecord(value)) return valueText(value);
+  const lines = [`# ${textValue(value["title"])}`, ""];
+  lines.push(`- id: \`${textValue(value["id"])}\``);
+  const path = textValue(value["path"]);
+  if (path.length > 0) lines.push(`- path: ${path}`);
+  lines.push(
+    `- lines: ${numberValue(value["lineStart"])}-${numberValue(value["lineEnd"])} of ${numberValue(value["totalLines"])}`,
+  );
+  const text = textValue(value["text"]);
+  if (text.length > 0) lines.push("", text);
+  return `${lines.join("\n")}\n`;
 }

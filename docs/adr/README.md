@@ -53,3 +53,4 @@ An ADR states a decision that is in force, as if it had always been the decision
 | [0035](0035-sqlite-only-storage.md) | Storage Is `sqlite` Only | One implementation, `store.backend` accepts only `sqlite` |
 | [0036](0036-test-rules.md) | How Tests Are Kept Fast and Few | Simulation first, `test/heavy/`, no incident replays, slowest listed |
 | [0037](0037-chat-commands.md) | Chat Commands | `command` on an action, `chat:send` runs it, one transcript entry, `/help` |
+| [0038](0038-full-text-search.md) | Full-Text Search | One FTS5 index per home, trigram with a substring fallback, scopes bound to a bot, `search` and `read` tools |

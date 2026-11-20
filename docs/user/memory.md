@@ -15,8 +15,9 @@ Enable it like any other plugin:
 operad plugin enable memory
 ```
 
-The plugin owns one setting and one skill. The wiki is a Markdown directory with
-a git history; the bot's memory has the same history, one repository per bot.
+The plugin owns one setting, one skill and one index. The wiki is a Markdown
+directory with a git history; the bot's memory has the same history, one
+repository per bot.
 
 ## The wiki
 
@@ -66,47 +67,6 @@ The layout has three layers and one file:
 The plugin creates `index.md`, `instructions.md` and `log/` when they are missing
 and never overwrites them.
 
-## The nightly tidy
-
-Once a night the bot checks its memory for work. The check costs no model call:
-it asks whether the memory directory changed since the last tidy commit and
-whether `index.md` is over its 8,000-character limit. When neither holds, the
-night ends with no cost. The time is a bot setting, `tidyTime`, an `HH:MM` in
-the machine's local time zone, `03:30` by default. A night the machine slept
-through is caught up once, not once for every missed night; a changed time
-starts from the latest planned check.
-
-When there is work, the bot has one pending card with how many notes were added
-or changed, how many chats need checking and whether the index is over its
-limit. Its actions are **Run** (Chinese 运行) and **Skip** (Chinese 跳过). An
-unanswered card stays and never expires; the next check updates the same card's
-counts instead of making another. **Skip** closes it until the next check finds
-work. The bot setting **Run without asking** (Chinese 不询问直接运行) is off by
-default; when it is on, no card is made and the tidy runs directly. Only a
-change then sends one line through the `notify` command.
-
-The run reads the notes changed since the last tidy against the chats of that
-period, corrects wrong or out-of-date notes (the newer note replaces the older,
-and the old note stays marked as replaced rather than being deleted), and moves
-detail into topic notes when the index is over its limit. It ends in one memory
-commit. A rewrite that drops at least a quarter of the old index entries is
-void: the old entries stay and only additions are kept. A tidy does not start
-while any chat of the bot is writing a reply; an automatic night waits for the
-next check, and **Run** waits until that chat ends.
-
-The model is the bot's `backgroundModel` when written. Without it the bot's
-agent may declare a cheap model for background work; `claude` declares
-`haiku`, and `pi`, `codex` and `radian` leave it unset, so they use the bot's
-model, else the agent's default. operad does not compare prices. A run started
-from the card leaves a result card with its cost and a summary of the commit's
-diff; an automatic run leaves no card.
-
-| Setting | Type | Default | Allowed values | When it takes effect | Wrong value |
-|---|---|---|---|---|---|
-| `bot.bots.<name>.tidyTime` | string | `03:30` | `HH:MM` from `00:00` to `23:59`, in local time | The next nightly check | Refused by the schema |
-| `bot.bots.<name>.runWithoutAsking` | boolean | `false` | `true` or `false` | The next nightly check | Refused by the schema |
-| `bot.bots.<name>.backgroundModel` | string | the agent's declared background model, else the bot's model | a model the bot's agent lists | The next tidy run | Refused at the run when the agent does not list it |
-
 ## What a reply carries
 
 A bot chat puts the memory index and the person's instructions on its message,
@@ -133,6 +93,30 @@ The skill asks the bot to read its memory before answering, to write without
 asking, and to keep the index short. A person reviews what changed afterwards in
 the git history rather than approving each write.
 
+## Search
+
+The plugin keeps a full-text index of the wiki, each bot's memory and the chat
+records. It lives in `~/.operad/store/search.sqlite`. The index is a cache:
+anything it holds is rebuilt from the Markdown files and the chats, so deleting
+the file costs one rebuild and loses no note.
+
+A bot searches it with the `search` tool, which comes with the other operad
+tools. A search can cover the wiki, the bot's own memory or the bot's own chats;
+the wiki is shared, the memory and chats are not. A result names the document,
+its line range and a snippet. The `read` tool returns the document, or the range
+of lines a result points at. Frontmatter fields can narrow a search, and a
+directory's `_about.md` comes back with the hits found inside that directory.
+
+The index uses SQLite FTS5's `trigram` tokenizer, which works on Chinese as well
+as English: a two-character Chinese word inside a sentence is found by a
+substring fallback because trigram needs three characters. `unicode61`, the FTS5
+default, treats a whole run of Chinese characters as one word. On the repository
+fixture `unicode61` found 3 of 9 relevant documents and `trigram` found 9 of 9.
+
+A note a person edits in their own editor is found on the next search. A
+long-running `serve` also watches the wiki and memory directories and the store,
+so its index follows along between searches.
+
 ## What a bot wrote is recorded in git
 
 After a bot reply that changed its memory directory or the wiki, the plugin
@@ -144,12 +128,9 @@ memory: bot default, chat C-12
 wiki: bot default, chat C-12
 ```
 
-A reply that wrote nothing makes no commit. A tidy run uses
-`tidy: bot <bot>, chat <chat>` and always makes a memory commit, even when it
-changed no file, so the next check has a baseline. The commits are ordinary
-commits in ordinary repositories: review them with `git log`, or in an editor
-that shows them, and revert one like any other commit. Nothing is pushed
-anywhere.
+A reply that wrote nothing makes no commit. The commits are ordinary commits in
+ordinary repositories: review them with `git log`, or in an editor that shows
+them, and revert one like any other commit. Nothing is pushed anywhere.
 
 The plugin cannot tell your own uncommitted edit from the bot's: when a reply
 ends, every change under the wiki at that moment is committed with the bot and
@@ -180,5 +161,6 @@ mark stays as it is.
 
 ## Not here yet
 
-The plugin has no full-text index, and no capture flow yet. Those are planned;
-the wiki, the memory layout and the nightly tidy are usable now.
+No capture or review flow yet. Vector search is not built; the index is built so
+another search engine can replace it without changing the tools. The wiki, the
+memory layout and the nightly tidy are usable now.
