@@ -21,7 +21,7 @@ export const INIT_HARNESS_PLUGINS: readonly string[] = ["radian", "claude", "pi"
  * in the default config; `pool` is, and stays here so a home made before init
  * installed it can still enable it.
  */
-export const OPTIONAL_PLUGINS: readonly string[] = ["pi", "claude", "codex", "pool", "bot", "telegram"];
+export const OPTIONAL_PLUGINS: readonly string[] = ["pi", "claude", "codex", "pool", "bot", "telegram", "memory"];
 
 /** The plugins whose package is installed into the home rather than shipped with the CLI. */
 export const INSTALL_ON_ENABLE: readonly string[] = ["claude"];
