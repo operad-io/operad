@@ -256,3 +256,14 @@ changes for bots, in the order they were recorded. The root
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0586-M9 | packages/bot/src/index.ts | `bot/settings` stopped returning the memory notes | `the memory notes a bot chat carries > its index and instructions go on the message, never into the chat's own text` |
+
+## T-0588 — the nightly memory tidy
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0588-M4 | packages/bot/src/tidy.ts | the source returned before the planned check time, so a night never ran | `the nightly memory check > a night with work sends one card, and the next check updates the same card's counts` |
+| T-0588-M5 | packages/bot/src/tidy.ts | a pending card was stored under a new id for each night | `the nightly memory check > a night with work sends one card, and the next check updates the same card's counts` |
+| T-0588-M6 | packages/bot/src/tidy.ts | `skip` returned without changing the card's state | `Run and Skip > Run starts the tidy after no chat is replying, and Skip closes the result until the next check` |
+| T-0588-M7 | packages/bot/src/tidy.ts | the source ignored `runWithoutAsking` and always made a card | `Run without asking > the tidy runs with no card, and a change sends one notice line` |
+| T-0588-M8 | packages/bot/src/tidy.ts | `botChatReplying` always said no chat was replying | `Run and Skip > a Run waits while a chat of the bot is writing a reply` |
+| T-0588-M9 | packages/bot/src/tidy.ts | the bot's `backgroundModel` override was ignored | `Run without asking > the model is the harness's declared background model, and a bot setting overrides it` |

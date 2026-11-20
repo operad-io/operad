@@ -162,4 +162,5 @@ mark stays as it is.
 ## Not here yet
 
 No capture or review flow yet. Vector search is not built; the index is built so
-another search engine can replace it without changing the tools.
+another search engine can replace it without changing the tools. The wiki, the
+memory layout and the nightly tidy are usable now.

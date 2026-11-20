@@ -121,4 +121,5 @@ default bot writes and every other bot reads (ADR 0030).
 No `capture` or `review` flow, and no per-run record of the material a bot read:
 the `untrusted` mark is written by the bot itself, and the plugin only enforces
 that a marked note is not indexed. Vector search is not built; the backend
-interface is where another engine would provide it.
+interface is where another engine would provide it. The wiki, the memory layout
+and the nightly tidy are usable now.

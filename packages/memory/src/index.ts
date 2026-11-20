@@ -71,6 +71,7 @@ export default createMemoryPlugin();
 
 export * from "./memory.ts";
 export * from "./commit.ts";
+export * from "./tidy.ts";
 export * from "./search/types.ts";
 export * from "./search/backend.ts";
 export * from "./search/service.ts";

@@ -1245,3 +1245,10 @@ resume window`. Rows are append-only, so the old lines stay as history.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0579-M1 | packages/engine/src/views/live-logs.ts | `ensureDirectories` took the directory's whole content as its baseline, so lines written before the watch opened were never announced | `a live log that grows without a fact > lines written before a missing directory is watched are announced when it appears` |
+
+## T-0588 — a harness's background model and the source's view of it
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0588-M12 | packages/engine/src/plugin/registry.ts | the source context no longer offered `harnessCapabilities` | `a source plugin's start gets the client API > it sees the loaded harness names and their declared capabilities` |
+| T-0588-M13 | packages/engine/src/plugin/validate.ts | an empty `capabilities.backgroundModel` passed validation | `harness capabilities > an empty or non-string background model is refused` |

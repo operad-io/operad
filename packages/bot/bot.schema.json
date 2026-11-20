@@ -57,6 +57,25 @@
             "title": "Write the wiki",
             "description": "Whether this bot may write the shared wiki. Without it the default bot writes it and every other bot only reads it. Read access is always there; a bot that may not write it has the wiki refused for writing."
           },
+          "tidyTime": {
+            "type": "string",
+            "title": "Tidy time",
+            "default": "03:30",
+            "pattern": "^(?:[01]\\d|2[0-3]):[0-5]\\d$",
+            "description": "When the nightly memory check runs, as HH:MM in this machine's local time zone, between 03:00 and 03:59 by default. A missed night is caught up once after the machine wakes."
+          },
+          "runWithoutAsking": {
+            "type": "boolean",
+            "title": "Run without asking",
+            "description": "不询问直接运行. When on, the nightly memory tidy runs without a pending card; off, it waits for Run or Skip. Off by default.",
+            "default": false
+          },
+          "backgroundModel": {
+            "type": "string",
+            "title": "Background model",
+            "minLength": 1,
+            "description": "The model a memory tidy uses. Without it the bot's agent declares a cheap model for background work (claude: haiku); a bot with neither uses its own model, else the agent's default."
+          },
           "mcpServers": {
             "type": "object",
             "description": "The local MCP servers this bot's chats mount, by name. A server is added only through `bot mcp`, which a person approves; the digest is of its tool names and descriptions, and a chat that finds other tools does not mount the server.",

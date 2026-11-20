@@ -1096,11 +1096,28 @@ function normalizeCapabilities(value: unknown, kind: string, at: string): Harnes
   }
   if (!isRecord(value)) throw new PluginError(`${at}: capabilities: must be an object`);
   for (const key of Object.keys(value)) {
-    if (key !== "loadsSkills" && key !== "takesMessagesMidRun" && key !== "accessLevels") {
+    if (
+      key !== "backgroundModel" &&
+      key !== "loadsSkills" &&
+      key !== "takesMessagesMidRun" &&
+      key !== "accessLevels"
+    ) {
       throw new PluginError(`${at}: capabilities.${key}: not a capability`);
     }
   }
-  const result: { loadsSkills?: boolean; takesMessagesMidRun?: boolean; accessLevels?: readonly string[] } = {};
+  const result: {
+    backgroundModel?: string;
+    loadsSkills?: boolean;
+    takesMessagesMidRun?: boolean;
+    accessLevels?: readonly string[];
+  } = {};
+  const backgroundModel = value["backgroundModel"];
+  if (backgroundModel !== undefined) {
+    if (typeof backgroundModel !== "string" || backgroundModel.length === 0) {
+      throw new PluginError(`${at}: capabilities.backgroundModel: must be a non-empty string`);
+    }
+    result.backgroundModel = backgroundModel;
+  }
   for (const key of ["loadsSkills", "takesMessagesMidRun"] as const) {
     const capability = value[key];
     if (capability !== undefined && typeof capability !== "boolean") {

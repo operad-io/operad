@@ -320,3 +320,9 @@ setup it depends on, in the order they were recorded. The root
 |---|---|---|---|
 | T-0576-M1 | packages/harness/claude/src/worker.ts | `askQuestion` keyed the answers by the form's trimmed id instead of claude's raw question text, so a spaced or duplicate-text question was not looked up | `the answers are keyed by claude's own question text, which the form trims` |
 | T-0576-M2 | packages/harness/claude/src/worker.ts | claude's `api_retry` system message was ignored, so its retry never became a live item | `claude's own retry report becomes a retry line` |
+
+## T-0588 — the background model declaration
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0588-M10 | packages/harness/claude/src/index.ts | claude stopped declaring `backgroundModel: "haiku"` | `claude/agent > the plugin declares that it loads skills itself` |

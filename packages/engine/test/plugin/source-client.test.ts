@@ -112,6 +112,52 @@ function channelPlugin(channel: Channel) {
 }
 
 describe("a source plugin's start gets the client API", () => {
+  test("it sees the loaded harness names and their declared capabilities", async () => {
+    const root = await tempRoot();
+    const store = new MemoryPluginStore({ root: join(root, "store") });
+    let harnesses: readonly string[] | undefined;
+    let background: string | undefined;
+    let unknown: boolean | undefined;
+    const harness = definePlugin({
+      name: "claude",
+      kind: "harness",
+      version: "0.0.1",
+      capabilities: { backgroundModel: "haiku" },
+    });
+    const source = definePlugin({
+      name: "probe",
+      kind: "source",
+      version: "0.0.1",
+      start(ctx) {
+        harnesses = ctx.harnesses;
+        background = ctx.harnessCapabilities?.("claude")?.backgroundModel;
+        unknown = ctx.harnessCapabilities?.("missing") === undefined;
+        return { stop: () => undefined };
+      },
+    });
+    const registry = new PluginRegistry([harness, source], {
+      home: root,
+      cwd: root,
+      store,
+      onLog: () => undefined,
+    });
+    const views = createViews({ registry, store });
+    const handles = await registry.startSources({
+      rules: [],
+      clock: () => Date.now(),
+      emit: async () => undefined,
+      client: views,
+    });
+    try {
+      expect(harnesses).toEqual(["claude"]);
+      expect(background).toBe("haiku");
+      expect(unknown).toBe(true);
+    } finally {
+      for (const item of handles) await item.handle.stop();
+      views.close();
+    }
+  });
+
   test("it sees a waiting item, answers it with an actor, and history names the actor", async () => {
     const root = await tempRoot();
     const storeRoot = join(root, "store");

@@ -332,7 +332,7 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
     version: pkg.version,
     models: CLAUDE_MODELS,
     efforts: claudeEfforts,
-    capabilities: { loadsSkills: true, takesMessagesMidRun: true, accessLevels: ["plan", "ask", "edits", "full"] },
+    capabilities: { backgroundModel: "haiku", loadsSkills: true, takesMessagesMidRun: true, accessLevels: ["plan", "ask", "edits", "full"] },
     signedIn: (settings) => claudeSignedInCached(settings),
     settings: PLUGIN_SETTINGS,
     steps: [

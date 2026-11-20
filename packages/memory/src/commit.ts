@@ -18,6 +18,14 @@ import {
   pathIn,
   type Repository,
 } from "./memory.ts";
+import {
+  TIDY_APPEND_ONLY_NOTE,
+  TIDY_COMMIT_FACT,
+  TIDY_ORIGIN,
+  applyAppendOnly,
+  lastTidyCommit,
+  rewriteDrop,
+} from "./tidy.ts";
 
 /** The lock one home's memory commits take turns under. */
 export const COMMIT_LOCK = "memory-commit.lock";
@@ -116,13 +124,18 @@ export function stripUntrustedFromIndex(memoryDir: string): { readonly removed: 
  * An unchanged directory makes no commit, so a run that wrote nothing records
  * nothing. Returns undefined for that case.
  */
-export function commitChanges(repository: Repository, directory: string, message: string): CommitInfo | undefined {
+export function commitChanges(
+  repository: Repository,
+  directory: string,
+  message: string,
+  options: { readonly allowEmpty?: boolean | undefined } = {},
+): CommitInfo | undefined {
   const paths = pathIn(repository.root, directory);
   const status = memoryGit(repository.root, ["status", "--porcelain", "--", paths]);
   if (!status.ok) {
     throw new Error(`git status in ${repository.root} failed: ${status.err || "git wrote nothing"}`);
   }
-  if (status.out.length === 0) return undefined;
+  if (status.out.length === 0 && options.allowEmpty !== true) return undefined;
   const added = memoryGit(repository.root, ["add", "-A", "--", paths]);
   if (!added.ok) {
     throw new Error(`git add in ${repository.root} failed: ${added.err || "git wrote nothing"}`);
@@ -130,6 +143,7 @@ export function commitChanges(repository: Repository, directory: string, message
   const committed = memoryGit(repository.root, [
     ...COMMIT_IDENTITY,
     "commit",
+    ...(options.allowEmpty === true ? ["--allow-empty"] : []),
     "--no-verify",
     "-m",
     message,
@@ -156,6 +170,15 @@ interface BotChat {
   readonly bot: string;
   readonly chat: string;
   readonly cwd: string;
+  /** A tidy run's chat; its commit is what the next check measures from. */
+  readonly tidy: boolean;
+}
+
+function scheduledOrigin(stored: Readonly<Record<string, unknown>>): string | undefined {
+  const scheduled = stored["scheduled"];
+  return isRecord(scheduled) && typeof scheduled["entry"] === "string"
+    ? scheduled["entry"]
+    : undefined;
 }
 
 function botChatOf(stored: Readonly<Record<string, unknown>> | undefined, chat: string): BotChat | undefined {
@@ -163,14 +186,19 @@ function botChatOf(stored: Readonly<Record<string, unknown>> | undefined, chat: 
   const parent = typeof stored["parent"] === "string" ? stored["parent"] : "";
   const cwd = typeof stored["cwd"] === "string" ? stored["cwd"] : "";
   if (!parent.startsWith("bot:") || cwd.length === 0) return undefined;
-  return { bot: parent.slice("bot:".length), chat, cwd };
+  return {
+    bot: parent.slice("bot:".length),
+    chat,
+    cwd,
+    tidy: scheduledOrigin(stored) === TIDY_ORIGIN,
+  };
 }
 
 /**
  * The message a commit names the bot and the chat with. The two repositories
  * get a word each, so a person reading `git log` sees which part changed.
  */
-export function commitMessage(part: "memory" | "wiki", bot: string, chat: string): string {
+export function commitMessage(part: "memory" | "wiki" | "tidy", bot: string, chat: string): string {
   return `${part}: bot ${bot}, chat ${chat}`;
 }
 
@@ -186,7 +214,16 @@ export async function commitBotRun(
       const memoryDir = join(bot.cwd, "memory");
       ensureMemoryLayout(memoryDir);
       const index = stripUntrustedFromIndex(memoryDir);
-      const memory = commitChanges(ensureRepository(memoryDir), memoryDir, commitMessage("memory", bot.bot, bot.chat));
+      const repository = ensureRepository(memoryDir);
+      let message = commitMessage(bot.tidy ? "tidy" : "memory", bot.bot, bot.chat);
+      if (bot.tidy) {
+        const baseline = lastTidyCommit(repository, memoryDir, bot.bot);
+        if (baseline !== undefined && rewriteDrop(repository, memoryDir, baseline).voided) {
+          applyAppendOnly(repository, memoryDir, baseline);
+          message = `${message}\n\n${TIDY_APPEND_ONLY_NOTE}`;
+        }
+      }
+      const memory = commitChanges(repository, memoryDir, message, { allowEmpty: bot.tidy });
       const wiki = ensureWiki(home, settings);
       const wikiCommit = commitChanges(wiki, wiki.directory, commitMessage("wiki", bot.bot, bot.chat));
       return {
@@ -216,11 +253,23 @@ export async function runMemoryCommit(ctx: StepContext, params: unknown): Promis
   if (target === undefined) {
     return { result: "done", data: { skipped: "not a chat of a bot" } };
   }
+  let outcome: PluginStepResult;
   try {
     const data = await commitBotRun(ctx.home, target, ctx.settings);
-    return { result: "done", data: data as unknown as Record<string, JsonValue> };
+    outcome = { result: "done", data: data as unknown as Record<string, JsonValue> };
   } catch (error) {
-    return { result: "failed", data: { message: error instanceof Error ? error.message : String(error) } };
+    outcome = {
+      result: "failed",
+      data: { message: error instanceof Error ? error.message : String(error) },
+    };
   }
+  if (target.tidy) {
+    await ctx.facts.append({
+      type: TIDY_COMMIT_FACT,
+      object: { type: "chat", id: chat },
+      data: { chat, ok: outcome.result === "done" },
+    });
+  }
+  return outcome;
 }
 
