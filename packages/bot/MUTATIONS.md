@@ -267,3 +267,24 @@ changes for bots, in the order they were recorded. The root
 | T-0588-M7 | packages/bot/src/tidy.ts | the source ignored `runWithoutAsking` and always made a card | `Run without asking > the tidy runs with no card, and a change sends one notice line` |
 | T-0588-M8 | packages/bot/src/tidy.ts | `botChatReplying` always said no chat was replying | `Run and Skip > a Run waits while a chat of the bot is writing a reply` |
 | T-0588-M9 | packages/bot/src/tidy.ts | the bot's `backgroundModel` override was ignored | `Run without asking > the model is the harness's declared background model, and a bot setting overrides it` |
+
+## T-0590 — memory v1 follow-ups, bot directories and the nightly tidy
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0590-M1 | packages/bot/src/bot.ts | `mergeInto` removed a destination file and renamed the old one over it | `the default bot's directory > an old file with the same name does not write over the one already in default` |
+| T-0590-M2 | packages/bot/src/bot.ts | the move wrote no marker when the old home was absent, so a later read scanned journals | `the default bot's directory > a home without the old directory is marked done and reads no journal` |
+| T-0590-M3 | packages/bot/src/bot.ts | `siblingDirectories` skipped a bot directory not named in the settings when the bot was default | `memory and the other bots' directories > the default bot denies another bot's directory on disk even when the settings do not name it` |
+| T-0590-M4 | packages/bot/src/bot.ts | the grants rewrite used a lock of its own instead of the file's normal writer's lock | `grants after the move > the rewrite waits for the lock the grants file's normal writer holds` |
+| T-0590-M5 | packages/bot/src/bot.ts | an invalid grants file made the rewrite fail, so its marker was never written | `grants after the move > a grants file that is not JSON is left alone and marked as handled` |
+| T-0590-M6 | packages/bot/src/index.ts | the move ran even when the default bot named its own cwd | `the default bot's directory > a default bot with a written directory keeps it and its old home is left alone` |
+| T-0590-M7 | packages/bot/src/bot.ts | radian's journal rewrite changed every journal, not only one naming the old workspace | `harness sessions after the move > radian's journal records the new workspace and other journals are untouched` |
+| T-0590-M8 | packages/bot/src/bot.ts | claude's move deleted the new project directory before merging the old one | `harness sessions after the move > claude's project directory moves to the directory named for the new working directory` |
+| T-0590-M9 | packages/bot/src/tidy.ts | `launch` left the card running when `bot:chat` opened no chat | `Run and Skip > a launch that opens no chat leaves a failed card, not a running one` |
+| T-0590-M10 | packages/bot/src/tidy.ts | `resume` skipped a running card with no chat id | `Run and Skip > a running card with no chat is reported failed when the source resumes` |
+| T-0590-M11 | packages/bot/src/tidy.ts | an automatic tidy that failed sent no notice | `Run without asking > an automatic tidy that fails sends one notice line` |
+| T-0590-M12 | packages/bot/src/tidy.ts | a requested Run checked its work before waiting for a replying chat | `Run and Skip > a requested Run does not check its work on every tick while a chat is replying` |
+| T-0590-M13 | packages/bot/src/tidy.ts | an automatic tidy checked its work before waiting for a replying chat | `Run and Skip > an automatic tidy does not check its work on every tick while a chat is replying` |
+| T-0590-M14 | packages/bot/src/tidy.ts | `chatsToCheck` counted a tidy run's own chat as work | `the nightly memory check > a tidy's own chat is not counted as work for the next check` |
+| T-0590-M15 | packages/bot/src/tidy.ts | a failed tidy run was stored as a result | `Run and Skip > a tidy run that fails leaves a failed card` |
+| T-0590-M16 | packages/bot/src/tidy.ts | the first check ran the night it found instead of only setting a baseline | `the nightly memory check > the first check only sets a baseline` |

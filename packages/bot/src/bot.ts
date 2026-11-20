@@ -10,7 +10,7 @@ import { homedir } from "node:os";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import { MCP_REPORT_DIR } from "./mcp-constants.ts";
 import { defaultAccess as builtInAccess } from "@operad-io/access-match";
-import { readKeptWorkers } from "@operad-io/engine/platform";
+import { readKeptWorkers, withLockFile } from "@operad-io/engine/platform";
 import { MEMORY_SKILL_DIR, ensureMemoryLayout, memoryEnabled, wikiDirectoryOfHome } from "@operad-io/memory";
 import { configPath, isRecord, prepareSettings, type ActionArgsSchema, type JsonValue, type ObjectStore } from "@operad-io/engine";
 
@@ -319,8 +319,8 @@ function mergeInto(source: string, destination: string): void {
     rmSync(source, { recursive: true, force: true });
     return;
   }
-  rmSync(destination, { recursive: true, force: true });
-  renameSync(source, destination);
+  // The new home's copy wins; the old home's copy is dropped, never written over it.
+  rmSync(source, { recursive: true, force: true });
 }
 
 /** What moving the default bot's old home needs from a caller. */
@@ -384,36 +384,46 @@ function escaped(value: string): string {
  * no old cwd and a repeated run write nothing. The replacement is a temporary
  * file renamed over the original, so a crash leaves the old or the new whole.
  */
-function migrateGrantCwds(
+async function migrateGrantCwds(
   oldCwd: string,
   newCwd: string,
   files: readonly string[],
   beforeRename?: ((temporary: string, file: string) => void) | undefined,
-): boolean {
+): Promise<boolean> {
   const quotedOld = JSON.stringify(oldCwd);
   const quotedNew = JSON.stringify(newCwd);
   const pattern = new RegExp(`("cwd"\\s*:\\s*)${escaped(quotedOld)}`, "g");
   for (const file of new Set(files)) {
-    let text: string;
     try {
-      text = readFileSync(file, "utf8");
-    } catch (error) {
-      if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") continue;
-      return false;
-    }
-    try {
-      JSON.parse(text);
-    } catch {
-      return false;
-    }
-    const next = text.replace(pattern, (_match: string, prefix: string) => `${prefix}${quotedNew}`);
-    if (next === text) continue;
-    const temporary = `${file}.${process.pid}.migrate.tmp`;
-    try {
-      const mode = statSync(file).mode & 0o777;
-      writeFileSync(temporary, next, { mode });
-      beforeRename?.(temporary, file);
-      renameSync(temporary, file);
+      // The user layer's normal writer holds this same lock, so a grant added
+      // while the home moves is never dropped by the rewrite.
+      await withLockFile(
+        `${file}.lock`,
+        () => {
+          let text: string;
+          try {
+            text = readFileSync(file, "utf8");
+          } catch (error) {
+            if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") return;
+            throw error;
+          }
+          try {
+            JSON.parse(text);
+          } catch {
+            // A file that is not JSON cannot name the old cwd; leave it as it is
+            // and count the file as handled, so every read does not parse it again.
+            return;
+          }
+          const next = text.replace(pattern, (_match: string, prefix: string) => `${prefix}${quotedNew}`);
+          if (next === text) return;
+          const temporary = `${file}.${process.pid}.migrate.tmp`;
+          const mode = statSync(file).mode & 0o777;
+          writeFileSync(temporary, next, { mode });
+          beforeRename?.(temporary, file);
+          renameSync(temporary, file);
+        },
+        { label: "access user layer" },
+      );
     } catch {
       return false;
     }
@@ -573,16 +583,19 @@ export function migrateRadianSessions(
  * merged. Claude's project directory waits while a claude worker is alive, and
  * the marker says so, so the next read retries it without rescanning journals.
  */
-export function migrateDefaultBotDir(home: string, options: BotDirectoryMigration = {}): readonly string[] {
+export async function migrateDefaultBotDir(
+  home: string,
+  options: BotDirectoryMigration = {},
+): Promise<readonly string[]> {
   const root = botDir(home);
   const target = join(root, DEFAULT_BOT);
   const marker = join(target, MIGRATION_MARKER);
   const state = markerState(marker);
   const rootExists = existsSync(root);
   const grantMarker = join(target, GRANT_MARKER);
-  if (rootExists && !existsSync(grantMarker)) {
+  if (!existsSync(grantMarker)) {
     const grants = options.grantFiles ?? [join(home, "access-user.json")];
-    if (migrateGrantCwds(root, target, grants, options.beforeGrantRename)) writeDoneMarker(grantMarker);
+    if (await migrateGrantCwds(root, target, grants, options.beforeGrantRename)) writeDoneMarker(grantMarker);
   }
   if (state === "done") return [];
   const moved: string[] = [];
@@ -599,13 +612,15 @@ export function migrateDefaultBotDir(home: string, options: BotDirectoryMigratio
       options.afterMove?.(entry.name);
     }
   }
-  if (state === undefined) migrateRadianSessions(root, target, options.radianSessionDirs);
+  // A home without the old directory has no journals to read. Mark it done so
+  // it never scans them later when another bot brings the directory back.
+  if (state === undefined && rootExists) migrateRadianSessions(root, target, options.radianSessionDirs);
   const projects = options.claudeProjects ?? claudeProjectsDirectory();
   const oldProject = join(projects, claudeProjectDirectory(root));
   const claudePending = existsSync(oldProject) && claudeWorkerRunning(home);
   if (!claudePending) migrateClaudeSessions(root, target, projects);
   // Mark only after every entry and session moved, so a crash halfway runs again.
-  if (rootExists || state === CLAUDE_PENDING) writeMarker(marker, claudePending);
+  if (rootExists || state === CLAUDE_PENDING || state === undefined) writeMarker(marker, claudePending);
   return moved;
 }
 
@@ -644,11 +659,13 @@ function siblingDirectories(home: string, ownCwd: string, defaultBot: boolean): 
   };
   // The default bot kept access to the old bot home, so only another bot's
   // directory is denied there. Another bot still denies every entry it does
-  // not own, so the default bot's old files are not exposed to it.
-  if (!defaultBot && existsSync(root)) {
+  // not own, so the default bot's old files are not exposed to it. A bot
+  // directory has a `memory/`; a person's other old-home directory does not.
+  if (existsSync(root)) {
     for (const entry of readdirSync(root, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
       const path = join(root, entry.name);
+      if (defaultBot && !existsSync(join(path, "memory"))) continue;
       if (sibling(path)) found.add(path);
     }
   }
