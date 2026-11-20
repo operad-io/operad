@@ -1846,6 +1846,8 @@ export class PluginRegistry {
         signal: options.signal ?? new AbortController().signal,
         rules: options.rules,
         clock: options.clock,
+        harnesses: this.plugins.filter((item) => item.kind === "harness").map((item) => item.name),
+        harnessCapabilities: (name) => this.loadedCapabilities()[name],
         settings: this.settingsFor(plugin.name),
         secrets: this.secretsFor(plugin.name),
         emit,

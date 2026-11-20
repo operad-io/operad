@@ -1189,6 +1189,11 @@ export type HarnessEffortsSource =
 /** What a harness plugin's agent does itself, from ADR 0022's capability list. */
 export interface HarnessCapabilities {
   /**
+   * The model this harness prefers for background work such as a memory tidy.
+   * Left out: a bot uses its own model, else the harness's default model.
+   */
+  readonly backgroundModel?: string | undefined;
+  /**
    * True when the agent loads the skill directories the step gives it, so the
    * prompt needs no list of them. False or absent: the harness does not load
    * skills by itself.
@@ -1520,6 +1525,12 @@ export interface SourceContext extends PluginBaseContext {
   /** The routing rules, already checked. */
   readonly rules: readonly TriggerRule[];
   readonly clock: () => number;
+  /** The loaded harness plugin names, in load order. */
+  readonly harnesses?: readonly string[] | undefined;
+  /** What a loaded harness plugin declares it can do; undefined when it is not loaded. */
+  readonly harnessCapabilities?:
+    | ((harness: string) => HarnessCapabilities | undefined)
+    | undefined;
   /** Sends one event through the kernel's rules. */
   emit(event: SourceEvent): Promise<void>;
   /**

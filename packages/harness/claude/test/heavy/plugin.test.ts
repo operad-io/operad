@@ -363,6 +363,7 @@ describe("claude/agent", () => {
   test("the plugin declares that it loads skills itself", () => {
     const plugin = createClaudeHarnessPlugin();
     expect(plugin.capabilities).toEqual({
+      backgroundModel: "haiku",
       loadsSkills: true,
       takesMessagesMidRun: true,
       accessLevels: ["plan", "ask", "edits", "full"],

@@ -32,3 +32,4 @@ export default createMemoryPlugin();
 
 export * from "./memory.ts";
 export * from "./commit.ts";
+export * from "./tidy.ts";

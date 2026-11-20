@@ -36,6 +36,25 @@ file that is not there yet is left out, and one created later is picked up by
 the next reply. `bot/settings` returns the list as `notes`; the chat plugin
 reads and hashes the files (ADR 0026 D18).
 
+## The nightly tidy
+
+`memoryTidyState(memoryDir, bot?)` reads the last commit whose subject begins
+`tidy:` and names the bot, then reports the notes added or changed since it, the
+index size and whether it is over `MEMORY_INDEX_MAX`. With no bot it scopes the
+search by the directory path, so an empty tidy commit counts only when the bot
+is named. `rewriteDrop` reports how many old index entries a working rewrite
+drops; at `TIDY_MAX_DROP` (25%) or more it is void. `applyAppendOnly` restores
+deleted tracked files and keeps a changed file's old lines plus its additions.
+`tidyCommitForChat` and `tidyCommitSummary` read the commit a tidy chat made,
+including whether its body says the rewrite fell back to append only.
+
+The bot plugin owns the clock, the pending card and the run; this package owns
+which commit is the baseline and the guard. `runMemoryCommit` treats a chat whose
+`scheduled.entry` is `TIDY_ORIGIN` as a tidy chat: its subject is `tidy:`, it is
+allowed to be empty (so the next check has a baseline), and a rewrite the guard
+voids is put back to append only before the commit. After the commit attempt it
+appends a `memory.tidy` fact on the chat, which the bot source waits for.
+
 ## The commit
 
 The plugin declares one step, `memory/commit`, called by a chat after a reply
@@ -77,7 +96,6 @@ default bot writes and every other bot reads (ADR 0030).
 
 ## Not here yet
 
-No full-text index (`bun:sqlite` FTS5 is planned), no `capture` or `review`
-flow, and no per-run record of the material a bot read: the `untrusted` mark is
-written by the bot itself, and the plugin only enforces that a marked note is not
-indexed.
+No full-text index (`bun:sqlite` FTS5 is planned), no `capture` flow, and no
+per-run record of the material a bot read: the `untrusted` mark is written by
+the bot itself, and the plugin only enforces that a marked note is not indexed.

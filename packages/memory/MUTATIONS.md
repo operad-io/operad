@@ -25,3 +25,12 @@ the row fields.
 |---|---|---|---|
 | T-0586-M7 | packages/memory/src/memory.ts | `memoryNotes` left the instructions out | `the files a bot chat carries as notes > the index is cut at 8,000 characters and the instructions are whole` |
 | T-0586-M8 | packages/memory/src/memory.ts | `MEMORY_INDEX_MAX` was 9,000 instead of 8,000 | `the memory notes a bot chat carries > a long index is cut at the memory plugin's limit` |
+
+## T-0588 — the memory tidy's check and rewrite guard
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0588-M1 | packages/memory/src/tidy.ts | `memoryTidyState` returned no changed notes | `the memory tidy's check > a fresh memory has no work, a new note is work, and the index over its limit is work` |
+| T-0588-M2 | packages/memory/src/tidy.ts | `rewriteDrop` never reported a rewrite as voided | `the void-rewrite guard > a rewrite that drops at least a quarter of the old index entries is void, and append only keeps them` |
+| T-0588-M3 | packages/memory/src/tidy.ts | `applyAppendOnly` returned without restoring or merging any file | `the void-rewrite guard > a rewrite that drops at least a quarter of the old index entries is void, and append only keeps them` |
+| T-0588-M11 | packages/memory/src/commit.ts | a tidy that changed no file no longer made its empty commit | `Run without asking > a run that changes nothing makes the memory commit but sends no notice` |
