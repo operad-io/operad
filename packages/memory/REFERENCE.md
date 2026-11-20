@@ -112,6 +112,54 @@ existed, or with another version of it, is filled on the next refresh: opening
 it clears the stored modification time of its notes, so every note is read
 again.
 
+## The wiki objects
+
+The wiki is served to the apps as two read-only object types, declared by this
+plugin and shown by the generic `/v1` object interface. There are no actions.
+
+| Type name | Type title | What it is |
+|---|---|---|
+| `wiki` | Wiki | A folder; its children are its subfolders and notes. |
+| `note` | Note | A Markdown note. |
+
+`syncWikiObjects(store, home, settings, search?)` projects the wiki directory
+into those objects. The folder type's `prepare` runs it before the first list or
+get; a running `serve` runs it from the plugin's `start`, on the wiki and memory
+directory watches and on the store's change listener. It reads only
+`memory.wikiDir`, never a bot's memory directory. Files remain the only copy: the
+object data holds the path, title, modification time, untrusted flag and
+backlinks, and a section read reads the note's file again.
+
+A folder object's id is its path from the wiki root; a note object's id is its
+path with the Markdown extension. A row has no `mark`. A top-level row has no
+`parent`, a child's `parent` is its folder's id, so `list --root`,
+`list --parent <folder>` and the existing hierarchy work as they do for every
+plugin. The folder row's note is the number of notes under it, including its
+subfolders; the note row's note is its modification time, with `(untrusted)`
+after it when its frontmatter says `untrusted: true`. A path outside the wiki is
+refused by the types' `resolve`, and the content read checks the path again. A
+file that is gone is marked removed; the default `live` filter hides it, and the
+`removed` filter shows it.
+
+A note's `sections` are `content` (title Note) and, only when the link table has
+backlinks, `backlinks` (title Backlinks). The content section is the note body
+without frontmatter, paged at `WIKI_PAGE_CHARS` (20,000) characters with the
+usual `pages` and `next`. Its `data.links` is the parsed links in order:
+
+```json
+{ "target": "notes/tea", "heading": "Brewing", "kind": "wikilink", "object": "note:notes/tea.md" }
+```
+
+`target` is as written, `heading` is present when the link names one, `kind` is
+`wikilink` or `markdown`, and `object` is the full object id of the resolved
+target. `object` is left out while nothing matches. The Markdown is not
+rewritten.
+
+The Backlinks section's `data.backlinks` is the same list `readBacklinks` gives,
+with `object` added: `{ object, path, title, target, heading?, kind, line,
+excerpt, untrusted }`. Its Markdown is one bullet per backlink, linking the
+linking note's `operad://objects/<object>` address.
+
 ## The memory notes
 
 `memoryNotes(memoryDir)` names the files a bot chat carries on its message: the

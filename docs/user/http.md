@@ -224,6 +224,32 @@ full read leaves the text whole. A client shows the first lines, folds the rest
 and fetches `url` for all of it; the changed-file card and diff are not part of
 this shape.
 
+### A wiki's folders and notes
+
+The memory plugin serves the wiki as two read-only object types:
+`wiki` (title **Wiki**) for folders and `note` (title **Note**) for Markdown
+notes. Neither has actions. Their rows follow the usual hierarchy: a list with
+`root` (or without a parent) shows the wiki root's folders and notes, and
+`parent=<folder id>` lists a folder's subfolders and notes. A folder row's
+`note` is how many notes are under it, including its subfolders; a note row's
+`note` is its modification time, with `(untrusted)` after it when its
+frontmatter says `untrusted: true`. A row has no `mark`.
+
+A note has a `content` section (title **Note**) with its Markdown body, and a
+`backlinks` section (title **Backlinks**) only when other notes link to it.
+`content` is paged with `pages` and `next` like any long section. Its `data` is
+`{ "links": [{ "target", "heading"?, "kind", "object"? }] }`, the links in the
+note in order: `target` is as written, `kind` is `wikilink` or `markdown`, and
+`object` is the full object id of the note it resolves to, left out while
+nothing matches. A client uses this to follow `[[links]]` and relative Markdown
+links; the Markdown is unchanged.
+
+The `backlinks` section's Markdown is one bullet per linking note, already
+linked as `operad://objects/<id>`, with its line and excerpt. Its `data` is
+`{ "backlinks": [{ "object", "path", "title", "target", "heading"?, "kind",
+"line", "excerpt", "untrusted" }] }`. A path outside the wiki is refused, and a
+note that is not there is `not-found`.
+
 ## Settings
 
 `GET /v1/settings?scope=<scope>` reads the settings the same way `operad

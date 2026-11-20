@@ -125,6 +125,37 @@ A note a person edits in their own editor is found on the next search. A
 long-running `serve` also watches the wiki and memory directories and the store,
 so its index follows along between searches.
 
+## The wiki in the app
+
+The app reads the wiki through the same object interface as every other plugin,
+so the wiki has a list page and an object page without a separate file API. There
+are two read-only object types: a wiki **folder** and a wiki **note**. They have
+no actions. Only the directory in `memory.wikiDir` is shown; a bot's own memory
+directory is not.
+
+The top level is the wiki root: a list without a parent shows the folders and
+notes directly in it. Opening a folder lists its subfolders and notes, and a note
+opens on its content.
+
+| Object | Row |
+|---|---|
+| folder | its name as the title, and how many notes are under it, including its subfolders |
+| note | the first heading as the title, else the file name without `.md`, and the modification time |
+
+A folder's title is its directory name. A note whose frontmatter says
+`untrusted: true` is listed like any other note, with the same `(untrusted)`
+mark a search result carries. A row has no state mark.
+
+A note's page has a **Note** section with its Markdown content, and a
+**Backlinks** section when other notes link to it. Backlinks come from the same
+link table as `memory read`: each one opens the linking note's object. The
+Backlinks section is left out when there are none. Content longer than one page
+is paged with the section cursor, like any other long section.
+
+The content section also names the notes its links point at, so a client can
+follow `[[links]]` and relative Markdown links. A link to a page nobody wrote
+yet stays unresolved; the Markdown itself is not rewritten.
+
 ## What a bot wrote is recorded in git
 
 After a bot reply that changed its memory directory or the wiki, the plugin
