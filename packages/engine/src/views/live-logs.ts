@@ -229,7 +229,10 @@ export class LiveLogWatch {
           runLogDirectory(this.options.storeRoot, plugin, watched.runId),
         ),
     );
-    for (const directory of new Set([...watched.stops.keys(), ...watched.files.keys()])) {
+    for (const directory of new Set([
+      ...watched.stops.keys(),
+      ...watched.files.keys(),
+    ])) {
       if (wanted.has(directory)) continue;
       this.stopDirectory(watched, directory);
     }
