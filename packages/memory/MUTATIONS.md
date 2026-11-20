@@ -25,3 +25,13 @@ the row fields.
 |---|---|---|---|
 | T-0586-M7 | packages/memory/src/memory.ts | `memoryNotes` left the instructions out | `the files a bot chat carries as notes > the index is cut at 8,000 characters and the instructions are whole` |
 | T-0586-M8 | packages/memory/src/memory.ts | `MEMORY_INDEX_MAX` was 9,000 instead of 8,000 | `the memory notes a bot chat carries > a long index is cut at the memory plugin's limit` |
+
+## T-0587 — the full-text index, its scopes and the search tool
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0587-M1 | packages/memory/src/search/backend.ts | the trigram substring fallback was turned off, so a term shorter than three characters matched nothing | `the Chinese tokenizer measurement > trigram with its short-query fallback finds every fixture query` |
+| T-0587-M2 | packages/memory/src/search/backend.ts | the scope/owner condition was dropped, so one bot's memory and chats were reachable from another bot's search | `the full-text index > a bot sees only its own memory and chats beside the shared wiki` |
+| T-0587-M3 | packages/memory/src/search/service.ts | an existing document was always kept, so a changed file was never re-read | `the full-text index > a changed file is found on the next search, and a deleted one is gone` |
+| T-0587-M4 | packages/memory/src/search/backend.ts | the frontmatter field conditions were left out of the query | `the full-text index > frontmatter fields filter the results` |
+| T-0587-M5 | packages/memory/src/search/service.ts | the search skipped the `_about.md` lookup, so directory notes never came back | `the full-text index > a directory's _about.md is returned with its hits` |

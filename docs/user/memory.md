@@ -15,8 +15,9 @@ Enable it like any other plugin:
 operad plugin enable memory
 ```
 
-The plugin owns one setting and one skill. The wiki is a Markdown directory with
-a git history; the bot's memory has the same history, one repository per bot.
+The plugin owns one setting, one skill and one index. The wiki is a Markdown
+directory with a git history; the bot's memory has the same history, one
+repository per bot.
 
 ## The wiki
 
@@ -92,6 +93,30 @@ The skill asks the bot to read its memory before answering, to write without
 asking, and to keep the index short. A person reviews what changed afterwards in
 the git history rather than approving each write.
 
+## Search
+
+The plugin keeps a full-text index of the wiki, each bot's memory and the chat
+records. It lives in `~/.operad/store/search.sqlite`. The index is a cache:
+anything it holds is rebuilt from the Markdown files and the chats, so deleting
+the file costs one rebuild and loses no note.
+
+A bot searches it with the `search` tool, which comes with the other operad
+tools. A search can cover the wiki, the bot's own memory or the bot's own chats;
+the wiki is shared, the memory and chats are not. A result names the document,
+its line range and a snippet. The `read` tool returns the document, or the range
+of lines a result points at. Frontmatter fields can narrow a search, and a
+directory's `_about.md` comes back with the hits found inside that directory.
+
+The index uses SQLite FTS5's `trigram` tokenizer, which works on Chinese as well
+as English: a two-character Chinese word inside a sentence is found by a
+substring fallback because trigram needs three characters. `unicode61`, the FTS5
+default, treats a whole run of Chinese characters as one word. On the repository
+fixture `unicode61` found 3 of 9 relevant documents and `trigram` found 9 of 9.
+
+A note a person edits in their own editor is found on the next search. A
+long-running `serve` also watches the wiki and memory directories and the store,
+so its index follows along between searches.
+
 ## What a bot wrote is recorded in git
 
 After a bot reply that changed its memory directory or the wiki, the plugin
@@ -136,5 +161,5 @@ mark stays as it is.
 
 ## Not here yet
 
-The plugin has no full-text index, and no capture or review flow yet. Those are
-planned; the wiki and the memory layout are usable now.
+No capture or review flow yet. Vector search is not built; the index is built so
+another search engine can replace it without changing the tools.

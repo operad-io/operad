@@ -14,8 +14,12 @@ its files are theirs.
 
 - Read `memory/index.md` and `memory/instructions.md` before you answer a
   question that may depend on what you already know.
-- Search the wiki and your notes with more than one wording before you say you
-  do not know.
+- Search before you say you do not know. Use the `search` tool, which reaches
+  the wiki, your memory and your own chats. Try several phrasings: a keyword or
+  two, then a natural question; a Chinese phrase and a mixed Chinese/English
+  one. A search returns a document id and line range; read it with `read`.
+  Narrow the search with `scope` (`wiki`, `memory`, `chats`) or with frontmatter
+  `fields`, and read the directory note a hit brings with it.
 - `instructions.md` holds the person's long-standing instructions to you. Follow
   them; they are not notes to weigh.
 - When a note no longer matches what you see now, trust what you see and correct
@@ -65,3 +69,15 @@ of guessing.
 
 The wiki is where durable notes about the world go. Your memory points at it and
 keeps what is about this person and this bot.
+
+## Searching
+
+The index is built from the wiki, your `memory/` directory and the chats of this
+bot. It is refreshed as those change; a note a person edits in their editor is
+found on your next search. A directory may hold an `_about.md` that says what
+the directory is for; it comes back with hits found inside that directory.
+
+Search is a first step, not a verdict. If the first words find nothing, try a
+synonym, a shorter phrase, the name of the person or project, or a sentence as
+someone would say it. Then read the document, because a snippet is only a few
+lines.
