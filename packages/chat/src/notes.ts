@@ -10,6 +10,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import { isRecord } from "@operad-io/engine";
+import type { FoldEntry } from "@operad-io/harness-process";
 import type { ChatNoteHashes } from "./model.ts";
 
 /** One file a chat's refresh step gives as a note on the message. */
@@ -22,9 +23,11 @@ export interface NoteFile {
   readonly maxChars?: number | undefined;
 }
 
-/** A note as this reply reads it: the descriptor, its whole text and the hash of that text. */
+/** A note as this reply reads it: the descriptor, where it is, its whole text and that text's hash. */
 export interface NoteContent {
   readonly file: NoteFile;
+  /** The file's resolved path. */
+  readonly path: string;
   readonly text: string;
   readonly hash: string;
 }
@@ -66,7 +69,7 @@ export async function readNoteFiles(
     const path = isAbsolute(file.path) ? file.path : join(cwd, file.path);
     try {
       const text = await readFile(path, "utf8");
-      notes.push({ file, text, hash: noteHash(text) });
+      notes.push({ file, path, text, hash: noteHash(text) });
     } catch (error) {
       onProblem?.(`the note ${file.name} could not be read: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -87,16 +90,63 @@ export function notesToAttach(
   return notes.filter((note) => hashes.files[note.file.name] !== note.hash);
 }
 
-/** The state after this reply: the session, and the hash of each note it leaves knowing. */
-export function noteHashesAfter(
+/** The tool names that write a file; a run that reports one may have written that note itself. */
+const EDIT_TOOLS = new Set(["write", "edit", "multiedit", "notebookedit", "patch", "apply_patch"]);
+
+/** Whether a tool call's summarized input names this note. */
+function mentionsNote(input: string | null | undefined, note: NoteContent): boolean {
+  if (input === null || input === undefined || input.length === 0) return false;
+  return input.includes(note.path) || input.includes(note.file.path) || input.includes(note.file.name);
+}
+
+/**
+ * The notes this run wrote itself, from the tool calls it reported. A change no
+ * call of this run claims is somebody else's: another chat, a scheduled run or
+ * a tidy step, even when it happened while this reply was running.
+ */
+export function notesWrittenHere(
   notes: readonly NoteContent[],
+  entries: readonly FoldEntry[],
+): ReadonlySet<string> {
+  const written = new Set<string>();
+  for (const entry of entries) {
+    if (entry.kind !== "tool" || entry.result !== "done") continue;
+    if (!EDIT_TOOLS.has(entry.toolName.toLowerCase())) continue;
+    for (const note of notes) {
+      if (mentionsNote(entry.input, note)) written.add(note.file.name);
+    }
+  }
+  return written;
+}
+
+/**
+ * The state after this reply. The session knows the text it was given, so an
+ * unchanged file keeps the hash it had before the run. A file this run wrote
+ * itself keeps its hash after the run; a file somebody else changed during the
+ * run keeps the older hash, so the next message carries the new text whole.
+ * A compacted session knows none of them, so the next message carries them all.
+ */
+export function noteHashesAfter(
+  before: readonly NoteContent[],
+  after: readonly NoteContent[],
+  written: ReadonlySet<string>,
   session: string | undefined,
   compacted: boolean,
 ): ChatNoteHashes {
   const files: Record<string, string> = {};
-  // A compacted session knows none of them, so the next message carries them all.
   if (!compacted) {
-    for (const note of notes) files[note.file.name] = note.hash;
+    const now = new Map(after.map((note) => [note.file.name, note]));
+    for (const note of before) {
+      const name = note.file.name;
+      const latest = now.get(name);
+      files[name] = written.has(name) && latest !== undefined ? latest.hash : note.hash;
+    }
+    // A note that first appeared during the run is the session's only if this run wrote it.
+    for (const note of after) {
+      if (files[note.file.name] === undefined && written.has(note.file.name)) {
+        files[note.file.name] = note.hash;
+      }
+    }
   }
   return { ...(session === undefined ? {} : { session }), files };
 }

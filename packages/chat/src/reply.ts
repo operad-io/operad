@@ -61,7 +61,7 @@ import {
   type Message,
   type MessageData,
 } from "./model.ts";
-import { noteBlock, noteFilesOf, noteHashesAfter, notesToAttach, readNoteFiles, type NoteFile } from "./notes.ts";
+import { noteBlock, noteFilesOf, noteHashesAfter, notesToAttach, notesWrittenHere, readNoteFiles, type NoteFile } from "./notes.ts";
 import { queueTestHooks, syncQueuedLocked, takeLocked, withQueueLock } from "./queue.ts";
 import { agentLogPath, foldLogTail } from "./tail.ts";
 
@@ -1689,7 +1689,16 @@ async function replyOnce(
         : await readNoteFiles(live.notes ?? [], live.cwd, (problem) => {
             void ctx.logger.write(`${problem}\n`);
           });
-      await syncChat(ctx, object.id, undefined, undefined, noteHashesAfter(fresh, keptSession, compacted));
+      // A file this run's own tool calls wrote is what the session knows now;
+      // any other change during the run belongs to the next message.
+      const written = compacted ? new Set<string>() : notesWrittenHere(noteContents, folded.entries);
+      await syncChat(
+        ctx,
+        object.id,
+        undefined,
+        undefined,
+        noteHashesAfter(noteContents, fresh, written, keptSession, compacted),
+      );
     };
   }
 

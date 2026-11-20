@@ -98,8 +98,15 @@ describe("the notes on a bot chat's message", () => {
     let cwd = "";
     const path = () => join(cwd, "memory", "index.md");
     const r = await rig(
-      () => {
-        writeNote(path(), "WRITTEN BY THIS RUN\n");
+      (ctx) => {
+        const file = path();
+        ctx.receiver?.(
+          JSON.stringify({ type: "tool_execution_start", toolCallId: "c-own", toolName: "Write", at: 1, input: file }),
+        );
+        writeNote(file, "WRITTEN BY THIS RUN\n");
+        ctx.receiver?.(
+          JSON.stringify({ type: "tool_execution_end", toolCallId: "c-own", toolName: "Write", isError: false, durationMs: 1 }),
+        );
         return reply("ok", "s-1");
       },
       undefined,
@@ -124,6 +131,45 @@ describe("the notes on a bot chat's message", () => {
     await r.say(chat, "second");
     await r.round(chat);
     expect(r.calls[1]?.params.prompt).toBe("second");
+  });
+
+  test("a change another chat wrote during the reply is sent on the next message", async () => {
+    let cwd = "";
+    let runs = 0;
+    const path = () => join(cwd, "memory", "index.md");
+    const r = await rig(
+      () => {
+        runs += 1;
+        if (runs === 1) writeNote(path(), "WRITTEN ELSEWHERE DURING THE RUN\n");
+        return reply("ok", "s-1");
+      },
+      undefined,
+      undefined,
+      "fake",
+      [
+        refreshStep(
+          () => cwd,
+          () => [indexNote(cwd)],
+        ),
+      ],
+    );
+    cwd = r.root;
+    writeNote(path(), "BEFORE THE RUN\n");
+    const chat = await r.chat({ refresh: "settings/refresh" });
+
+    await r.say(chat, "first");
+    await r.round(chat);
+    expect(String(r.calls[0]?.params.prompt)).toContain("BEFORE THE RUN");
+
+    await r.say(chat, "second");
+    await r.round(chat);
+    const second = String(r.calls[1]?.params.prompt);
+    expect(second).toContain("[memory/index.md]\nWRITTEN ELSEWHERE DURING THE RUN");
+    expect(second).not.toContain("BEFORE THE RUN");
+
+    await r.say(chat, "third");
+    await r.round(chat);
+    expect(r.calls[2]?.params.prompt).toBe("third");
   });
 
   test("the first message after a compaction carries the whole notes again", async () => {
