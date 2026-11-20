@@ -221,3 +221,11 @@ changes for bots, in the order they were recorded. The root
 |---|---|---|---|
 | T-0584-M8 | packages/bot/src/bot.ts | only a bot's name was protected, not the working directory a setting or a removed bot names | `the default bot's directory > a bot directory under another name, and a removed bot's directory, are not swept into default` |
 | T-0584-M9 | packages/bot/src/bot.ts | the marker of a finished move was ignored, so a later read moved a new entry and read the journals again | `the default bot's directory > once the move is done, a later read moves no new entry and reads no journal` |
+
+## T-0584 rework 2 — only operad's entries move
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0584-M10 | packages/bot/src/bot.ts | every top-level entry in the old home was moved instead of only operad's `skills/` and `memory/` | `the default bot's directory > only skills and memory move; an unknown file and directory stay and the default bot can use them` |
+| T-0584-M11 | packages/bot/src/bot.ts | the default bot denied every old-home directory again instead of only another bot's | `the default bot's directory > only skills and memory move; an unknown file and directory stay and the default bot can use them` |
+| T-0584-M12 | packages/bot/src/bot.ts | claude's project directory moved while a claude kept worker was alive | `harness sessions after the move > claude's old project directory waits while a claude worker is alive, then moves on the next read` |

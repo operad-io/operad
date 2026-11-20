@@ -107,8 +107,11 @@ except the bot's own directory is denied (the names there now, and `store`,
 `secrets`, `config.json` and the MCP report directory), so a home other than
 `~/.operad` is covered too. The bot's own working directory under
 `~/.operad/bot` is the one part of the home the agent may use, including its
-`memory/` directory; every other bot's directory is denied for reading and
-writing. The path of a repository `dev` knows, and the path of a bot's skill
+`memory/` directory. For the default bot, the rest of `~/.operad/bot` is also
+allowed except another bot's directory: files and directories a person or the
+bot put in the old home stay there and remain readable and writable. Another
+bot denies the entries of `~/.operad/bot` it does not own. The path of a
+repository `dev` knows, and the path of a bot's skill
 directories, are added to `denyPaths`: the agent reaches a repository through
 `dev`'s actions, not by touching its files. The skill directories are also in
 `readPaths`, so the agent reads them; a write there is still refused. A bot's

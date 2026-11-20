@@ -10,6 +10,7 @@ import { homedir } from "node:os";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import { MCP_REPORT_DIR } from "./mcp-constants.ts";
 import { defaultAccess as builtInAccess } from "@operad-io/access-match";
+import { readKeptWorkers } from "@operad-io/engine/platform";
 import { configPath, isRecord, prepareSettings, type ActionArgsSchema, type JsonValue, type ObjectStore } from "@operad-io/engine";
 
 /** The object type of a bot. */
@@ -304,6 +305,35 @@ export interface BotDirectoryMigration {
 /** The marker that says the old default home has been handled. */
 const MIGRATION_MARKER = ".moved-to-default";
 
+/** What operad itself creates in the old default bot home; everything else stays there. */
+const OWNED_ENTRIES: ReadonlySet<string> = new Set(["skills", "memory"]);
+
+/** A marker with this content means only claude's project directory waits for a retry. */
+const CLAUDE_PENDING = "claude";
+
+function markerState(marker: string): "done" | "claude" | undefined {
+  if (!existsSync(marker)) return undefined;
+  try {
+    return readFileSync(marker, "utf8").trim() === CLAUDE_PENDING ? CLAUDE_PENDING : "done";
+  } catch {
+    return "done";
+  }
+}
+
+function writeMarker(marker: string, pending: boolean): void {
+  mkdirSync(resolve(marker, ".."), { recursive: true });
+  writeFileSync(marker, pending ? CLAUDE_PENDING : "");
+}
+
+/** Whether a claude worker may still be writing under the old working directory. */
+function claudeWorkerRunning(home: string): boolean {
+  try {
+    return readKeptWorkers(home, "claude").length > 0;
+  } catch {
+    return true;
+  }
+}
+
 /** Reads only the first line of a file, without loading the rest. */
 function firstLine(file: string): string | undefined {
   let descriptor: number | undefined;
@@ -440,43 +470,47 @@ export function migrateRadianSessions(
 }
 
 /**
- * Moves what the default bot had in the old bot home into `default/`. Another
- * bot's directory stays where it is. A custom `cwd` for the default bot is
- * left alone. The move can be repeated: each entry is renamed once, and
- * directories that exist on both sides are merged.
+ * Moves only what operad itself made in the old bot home into `default/`: the
+ * bot's `skills/` and `memory/`. Every other entry stays where it is, as does
+ * another bot's directory and a custom `cwd` for the default bot. The move can
+ * be repeated: each entry is renamed once, and directories on both sides are
+ * merged. Claude's project directory waits while a claude worker is alive, and
+ * the marker says so, so the next read retries it without rescanning journals.
  */
 export function migrateDefaultBotDir(home: string, options: BotDirectoryMigration = {}): readonly string[] {
   const root = botDir(home);
   const target = join(root, DEFAULT_BOT);
   const marker = join(target, MIGRATION_MARKER);
-  if (existsSync(marker)) return [];
+  const state = markerState(marker);
+  if (state === "done") return [];
   const rootExists = existsSync(root);
   const moved: string[] = [];
-  if (rootExists) {
+  if (rootExists && state === undefined) {
     const protectedNames = protectedEntries(root, target, {
       ...options,
       botPaths: options.botPaths ?? configuredBotPaths(home),
     });
     for (const entry of readdirSync(root, { withFileTypes: true })) {
       if (entry.name === DEFAULT_BOT || protectedNames.has(entry.name)) continue;
+      if (!OWNED_ENTRIES.has(entry.name)) continue;
       mergeInto(join(root, entry.name), join(target, entry.name));
       moved.push(entry.name);
       options.afterMove?.(entry.name);
     }
   }
-  migrateClaudeSessions(root, target, options.claudeProjects);
-  migrateRadianSessions(root, target, options.radianSessionDirs);
+  if (state === undefined) migrateRadianSessions(root, target, options.radianSessionDirs);
+  const projects = options.claudeProjects ?? claudeProjectsDirectory();
+  const oldProject = join(projects, claudeProjectDirectory(root));
+  const claudePending = existsSync(oldProject) && claudeWorkerRunning(home);
+  if (!claudePending) migrateClaudeSessions(root, target, projects);
   // Mark only after every entry and session moved, so a crash halfway runs again.
-  if (rootExists) {
-    mkdirSync(target, { recursive: true });
-    writeFileSync(marker, "");
-  }
+  if (rootExists || state === CLAUDE_PENDING) writeMarker(marker, claudePending);
   return moved;
 }
 
-/** Whether the old default bot home has already been handled. */
+/** Whether the old default bot home has already been handled, including claude's retry. */
 export function defaultBotHomeMigrated(home: string): boolean {
-  return existsSync(join(botDir(home), DEFAULT_BOT, MIGRATION_MARKER));
+  return markerState(join(botDir(home), DEFAULT_BOT, MIGRATION_MARKER)) === "done";
 }
 
 /** The memory directory of a bot. */
@@ -492,7 +526,7 @@ export function ensureBotMemory(cwd: string): string {
 }
 
 /** The directories no bot may read or write: every other bot's. */
-function siblingDirectories(home: string, ownCwd: string): string[] {
+function siblingDirectories(home: string, ownCwd: string, defaultBot: boolean): string[] {
   const root = botDir(home);
   const ownIsRoot = samePath(ownCwd, root);
   const found = new Set<string>();
@@ -502,7 +536,10 @@ function siblingDirectories(home: string, ownCwd: string): string[] {
     if (ownIsRoot && (samePath(path, join(root, "memory")) || samePath(path, join(root, "skills")))) return false;
     return true;
   };
-  if (existsSync(root)) {
+  // The default bot kept access to the old bot home, so only another bot's
+  // directory is denied there. Another bot still denies every entry it does
+  // not own, so the default bot's old files are not exposed to it.
+  if (!defaultBot && existsSync(root)) {
     for (const entry of readdirSync(root, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
       const path = join(root, entry.name);
@@ -560,6 +597,7 @@ export function accessFor(
   skillPaths: readonly string[] = [],
   readPaths: readonly string[] = [],
   cwd?: string,
+  defaultBot = false,
 ): Record<string, JsonValue> {
   const access = defaultAccess(home);
   // A repository is reached through operad's tools (dev's verbs), never by
@@ -568,7 +606,7 @@ export function accessFor(
   // for writing too; `readPaths` lets the agent read them without lifting the
   // deny (the harness still receives their paths as skills). Every other bot's
   // directory is denied too, for reading and writing.
-  const siblings = cwd === undefined ? [] : siblingDirectories(home, cwd);
+  const siblings = cwd === undefined ? [] : siblingDirectories(home, cwd, defaultBot);
   access.denyPaths = appended(access.denyPaths, [...repositories, ...skillPaths, ...siblings]);
   if (readPaths.length > 0) access.readPaths = appended(access.readPaths, readPaths);
   const own = settings.access ?? {};
@@ -728,7 +766,7 @@ export function resolveBot(
     effort: settings.effort ?? null,
     skills,
     speaker: settings.speaker ?? null,
-    access: accessFor(home, settings, repositories, skillPaths, skillPaths, cwd),
+    access: accessFor(home, settings, repositories, skillPaths, skillPaths, cwd, name === DEFAULT_BOT),
     mcpServers: settings.mcpServers ?? {},
   };
 }

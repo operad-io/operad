@@ -24,18 +24,22 @@ digits, `-` and `_`. Fields: `cwd`, `harness` (the default agent),
   `memory/`. A `cwd` that is the operad home, holds it, or is inside it outside
   `bot/` is refused: the chat works in a subdirectory, never the home. A bot's
   memory lives in `memory/` inside its directory; the knowledge base is shared
-  and is not part of a bot's directory. An old home at `~/.operad/bot/` is
-  moved into `default/` when the bots are read: its files, skills, memory and
-  anything else that is not another bot's directory. The move is idempotent and
-  each entry is renamed, so a crash halfway leaves the rest for the next read.
-  A bot whose settings name a `cwd` keeps it and no move happens.
+  and is not part of a bot's directory. An old home at `~/.operad/bot/` keeps
+  every entry a person or the bot put there. Only `skills/` and `memory/`, which
+  operad made there, move into `default/` when the bots are read; an entry that
+  is another bot's directory is left alone. The move is idempotent and each
+  entry is renamed, so a crash halfway leaves the rest for the next read. The
+  default bot keeps read and write access to the rest of `~/.operad/bot`,
+  except every other bot's directory. A bot whose settings name a `cwd` keeps
+  it and no move happens.
 - **Sessions after the move**: `claude` finds a session under the project
   directory named for its working directory, so its old project directory is
   moved beside the new one. `pi` stores a session file path under the operad
   home and `codex` resumes a thread id in its own home, so neither depends on
   the working directory. `radian` binds a session to the workspace recorded in
   its journal, so the old workspace is rewritten to the new one in the journals
-  that name it.
+  that name it. Claude's project directory waits while a kept claude worker is
+  alive; the next read retries it.
 - **Access profile**: the default one (no credentials, no shell profile writes, no
   `operad` command; the agent uses operad's tools) plus what the bot adds. A bot
   can tighten it, never loosen it. Everything in the operad home except `bot/` is
