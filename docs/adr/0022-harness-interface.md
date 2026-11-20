@@ -70,3 +70,17 @@ A model in a harness's `models.list` is either its id, as before, or a descripti
 The capabilities are `vision` (accepts images), `reasoning`, `tools` and `web` (has its own web search). A harness declares only what it knows: a field or capability it cannot tell is absent, never guessed. The `window` is the same fact as the `windows` entry of D10; a harness may give either, and both are exposed.
 
 The descriptions reach a client wherever `/v1` already gives a harness's models: the plugin list carries the harness's `models`, and an action argument that names a model carries the descriptions in its `info`, keyed by id. A client that reads only the ids keeps working. Clients may label the list and the capabilities in their own words; the server adds no user text. `claude` describes anthropic models with vision, reasoning and tools. `pi` takes the provider, name, vision and reasoning from its model registry. `codex` passes on what its app-server reports.
+
+### D12: A harness may declare its background model
+
+A harness's capabilities may carry `backgroundModel`, the model it prefers for
+work a person did not start and that should cost little, such as a bot's memory
+tidy (ADR 0030 D13). It is a model id the harness lists, so a chat that uses it
+still checks it against that harness's list. A harness that leaves it out has no
+cheap default and a bot falls back to the bot's own model, else the harness's
+default model. `claude` declares `haiku`; `pi`, `codex` and `radian` leave it
+unset. operad never compares prices: the choice is the harness's declaration,
+and a bot's own setting may override it.
+
+A source that needs it reads the declaration through
+`ctx.harnessCapabilities`, beside `ctx.harnesses`, the loaded harness names.
