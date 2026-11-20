@@ -241,6 +241,18 @@ function numberValue(value: unknown): string {
   return typeof value === "number" && Number.isFinite(value) ? String(value) : "?";
 }
 
+/** Whether a result or a backlink says its note came from untrusted content. */
+function untrustedOf(value: Readonly<Record<string, unknown>>): boolean {
+  if (value["untrusted"] === true) return true;
+  const fields = value["fields"];
+  if (!isRecord(fields)) return false;
+  const values = fields["untrusted"];
+  return (
+    Array.isArray(values) &&
+    values.some((item) => typeof item === "string" && item.trim().toLowerCase() === "true")
+  );
+}
+
 /** One search result as the lines a reader scans, and the directory notes. */
 export function searchMarkdown(value: unknown): string {
   if (!isRecord(value) || !Array.isArray(value["hits"])) return valueText(value);
@@ -254,7 +266,8 @@ export function searchMarkdown(value: unknown): string {
       const where = [hit["scope"], hit["path"], `lines ${numberValue(hit["lineStart"])}-${numberValue(hit["lineEnd"])}`]
         .filter((part) => typeof part === "string" && part.length > 0)
         .join(" · ");
-      lines.push(`- \`${textValue(hit["id"])}\` — ${textValue(hit["title"])} (${where})`);
+      const mark = untrustedOf(hit) ? " (untrusted)" : "";
+      lines.push(`- \`${textValue(hit["id"])}\` — ${textValue(hit["title"])} (${where})${mark}`);
       const snippet = textValue(hit["snippet"]);
       if (snippet.length > 0) lines.push(`  ${snippet}`);
     }
@@ -281,5 +294,17 @@ export function readMarkdown(value: unknown): string {
   );
   const text = textValue(value["text"]);
   if (text.length > 0) lines.push("", text);
+  const backlinks = Array.isArray(value["backlinks"]) ? value["backlinks"].filter(isRecord) : [];
+  if (backlinks.length > 0) {
+    lines.push("", "## Backlinks");
+    for (const entry of backlinks) {
+      const line = typeof entry["line"] === "number" && Number.isFinite(entry["line"]) ? ` line ${entry["line"]}` : "";
+      const mark = untrustedOf(entry) ? " (untrusted)" : "";
+      const excerpt = textValue(entry["excerpt"]);
+      lines.push(
+        `- \`${textValue(entry["path"])}\`${line}${mark}${excerpt.length > 0 ? ` — ${excerpt}` : ""}`,
+      );
+    }
+  }
   return `${lines.join("\n")}\n`;
 }

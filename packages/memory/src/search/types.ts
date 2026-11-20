@@ -44,6 +44,24 @@ export interface NoteLinkTarget {
   readonly targetId?: string | undefined;
 }
 
+/** One note that links to the note being read, with the place the link is written. */
+export interface Backlink {
+  /** The id of the note that writes the link. */
+  readonly id: string;
+  /** The path of the note that writes the link, inside its scope. */
+  readonly path: string;
+  readonly title: string;
+  readonly target: string;
+  readonly heading?: string | undefined;
+  readonly kind: NoteLinkKind;
+  /** The 1-based line of the link in the source note. */
+  readonly line: number;
+  /** The line around the link, shortened for reading. */
+  readonly excerpt: string;
+  /** Whether the linking note's frontmatter says `untrusted: true`. */
+  readonly untrusted: boolean;
+}
+
 /** One link as a query returns it, with both ends when the link resolved. */
 export interface NoteLinkInfo {
   /** The id of the note that writes the link. */
@@ -204,6 +222,8 @@ export interface ReadResult {
   readonly totalLines: number;
   readonly text: string;
   readonly fields: DocumentFields;
+  /** The notes that link to this one; empty when nothing does. */
+  readonly backlinks: readonly Backlink[];
 }
 
 /** A search or read that cannot be answered. */

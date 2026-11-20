@@ -12,7 +12,9 @@ import {
   historyMarkdown,
   listMarkdown,
   pendingMarkdown,
+  readMarkdown,
   runningMarkdown,
+  searchMarkdown,
   sectionMarkdown,
   showMarkdown,
   valueText,
@@ -333,5 +335,74 @@ describe("the running Markdown", () => {
     expect(text).toContain("| ops/T-0061-x | Check it | dev | verify | 5.0s | 10m 0s |");
     expect(text.match(/queued 9m 0s/g)).toHaveLength(1);
     expect(text).toContain("Load: 0 (1 minute), 1 cores");
+  });
+});
+
+describe("the read Markdown", () => {
+  const read = (extra: Record<string, unknown> = {}): Record<string, unknown> => ({
+    id: "wiki:notes/tea.md",
+    scope: "wiki",
+    title: "Tea",
+    path: "notes/tea.md",
+    lineStart: 1,
+    lineEnd: 3,
+    totalLines: 3,
+    text: "# Tea\n\nGreen tea brews cooler.",
+    fields: {},
+    ...extra,
+  });
+
+  test("ends with the notes that link to the document, with a line and excerpt", () => {
+    const text = readMarkdown(
+      read({
+        backlinks: [
+          {
+            path: "index.md",
+            line: 3,
+            excerpt: "- [[notes/tea|Tea]]",
+            untrusted: false,
+          },
+          {
+            path: "notes/about.md",
+            line: 2,
+            excerpt: "We discussed [[notes/tea]]",
+            untrusted: true,
+          },
+        ],
+      }),
+    );
+    expect(text).toContain("## Backlinks");
+    expect(text).toContain("- `index.md` line 3 — - [[notes/tea|Tea]]");
+    expect(text).toContain("- `notes/about.md` line 2 (untrusted) — We discussed [[notes/tea]]");
+    expect(text.indexOf("## Backlinks")).toBeGreaterThan(text.indexOf("Green tea brews cooler."));
+  });
+
+  test("leaves the section out when nothing links to the document", () => {
+    expect(readMarkdown(read({ backlinks: [] }))).not.toContain("## Backlinks");
+    expect(readMarkdown(read())).not.toContain("## Backlinks");
+  });
+});
+
+describe("the search Markdown", () => {
+  test("marks a result whose note is untrusted", () => {
+    const text = searchMarkdown({
+      query: "tea",
+      scopes: ["wiki"],
+      hits: [
+        {
+          id: "wiki:untrusted.md",
+          scope: "wiki",
+          title: "Untrusted",
+          path: "untrusted.md",
+          lineStart: 1,
+          lineEnd: 2,
+          snippet: "See [[notes/tea]].",
+          score: 1,
+          fields: { untrusted: ["true"] },
+        },
+      ],
+      about: [],
+    });
+    expect(text).toContain("(untrusted)");
   });
 });

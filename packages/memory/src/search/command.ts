@@ -13,7 +13,13 @@ import {
   requestedLimit,
   requestedScopes,
 } from "./service.ts";
-import { SEARCH_SCOPES, SearchError, type SearchScope } from "./types.ts";
+import {
+  SEARCH_SCOPES,
+  SearchError,
+  type Backlink,
+  type ReadResult,
+  type SearchScope,
+} from "./types.ts";
 
 function textOf(value: unknown, name: string): string {
   if (typeof value !== "string" || value.trim().length === 0) {
@@ -116,6 +122,7 @@ interface ReadInput {
   readonly id: string;
   readonly from?: number | undefined;
   readonly to?: number | undefined;
+  readonly json: boolean;
 }
 
 function lineNumber(value: unknown, name: string): number | undefined {
@@ -132,15 +139,45 @@ function readInput(ctx: CommandContext, argv: readonly string[]): ReadInput {
       id: textOf(parsed["id"], "id"),
       ...(parsed["from"] === undefined ? {} : { from: lineNumber(parsed["from"], "from") }),
       ...(parsed["to"] === undefined ? {} : { to: lineNumber(parsed["to"], "to") }),
+      json: true,
     };
   }
-  const id = argv[0];
+  const words: string[] = [];
+  let json = false;
+  for (const arg of argv) {
+    if (arg === "--json") json = true;
+    else words.push(arg);
+  }
+  const id = words[0];
   if (id === undefined || id.length === 0) throw new SearchError("read needs a document id");
   return {
     id,
-    ...(argv[1] === undefined ? {} : { from: lineNumber(argv[1], "from") }),
-    ...(argv[2] === undefined ? {} : { to: lineNumber(argv[2], "to") }),
+    ...(words[1] === undefined ? {} : { from: lineNumber(words[1], "from") }),
+    ...(words[2] === undefined ? {} : { to: lineNumber(words[2], "to") }),
+    json,
   };
+}
+
+/** One backlink as a line a reader can follow. */
+function backlinkLine(entry: Backlink): string {
+  const line = entry.line > 0 ? ` line ${entry.line}` : "";
+  const mark = entry.untrusted ? " (untrusted)" : "";
+  const excerpt = entry.excerpt.length > 0 ? ` — ${entry.excerpt}` : "";
+  return `- \`${entry.path}\`${line}${mark}${excerpt}`;
+}
+
+/** One document as the command prints it, ending with its backlinks. */
+export function readText(result: ReadResult): string {
+  const lines = [`# ${result.title}`, ""];
+  lines.push(`- id: \`${result.id}\``);
+  if (result.path !== undefined) lines.push(`- path: ${result.path}`);
+  lines.push(`- lines: ${result.lineStart}-${result.lineEnd} of ${result.totalLines}`);
+  if (result.text.length > 0) lines.push("", result.text);
+  if (result.backlinks.length > 0) {
+    lines.push("", "## Backlinks");
+    for (const entry of result.backlinks) lines.push(backlinkLine(entry));
+  }
+  return `${lines.join("\n")}\n`;
 }
 
 /** The `memory search` verb. */
@@ -167,7 +204,12 @@ export async function runMemoryRead(ctx: CommandContext, argv: readonly string[]
   const search = openMemorySearch(ctx.home, ctx.settings);
   try {
     await search.refresh(ctx.store);
-    return search.read(input);
+    const result = search.read({
+      id: input.id,
+      ...(input.from === undefined ? {} : { from: input.from }),
+      ...(input.to === undefined ? {} : { to: input.to }),
+    });
+    return input.json ? result : readText(result);
   } finally {
     search.close();
   }

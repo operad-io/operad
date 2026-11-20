@@ -25,7 +25,7 @@ export function createMemoryPlugin() {
     steps: [{ name: "commit", results: ["done", "failed"], run: runMemoryCommit }],
     commands: [
       { name: "search", args: "[--scope <scope>] [--field <name>=<value>] [--limit <n>] <query>", run: runMemorySearch },
-      { name: "read", args: "<id> [from] [to]", run: runMemoryRead },
+      { name: "read", args: "<id> [from] [to] [--json]", run: runMemoryRead },
     ],
     // The wiki is there before the first bot needs it; a directory that is
     // already a git repository is used as it is. The index is brought up to
