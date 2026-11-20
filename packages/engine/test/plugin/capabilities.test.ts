@@ -31,6 +31,38 @@ describe("harness capabilities", () => {
     expect(registryOf(plugin).loadedCapabilities()).toEqual({ a: { takesMessagesMidRun: true } });
   });
 
+  test("a harness declares its background model, and the registry exposes it", () => {
+    const plugin = definePlugin({
+      name: "a",
+      kind: "harness",
+      version: "0.0.1",
+      capabilities: { backgroundModel: "haiku" },
+    });
+    expect(plugin.capabilities).toEqual({ backgroundModel: "haiku" });
+    expect(registryOf(plugin).loadedCapabilities()).toEqual({
+      a: { backgroundModel: "haiku" },
+    });
+  });
+
+  test("an empty or non-string background model is refused", () => {
+    for (const backgroundModel of ["", 1, true]) {
+      try {
+        registryOf(
+          definePlugin({
+            name: "a",
+            kind: "harness",
+            version: "0.0.1",
+            capabilities: { backgroundModel } as unknown as { backgroundModel?: string },
+          }),
+        );
+        throw new Error("expected a PluginError");
+      } catch (error) {
+        if (!(error instanceof PluginError)) throw error;
+        expect(error.message).toContain("capabilities.backgroundModel");
+      }
+    }
+  });
+
   test("a harness declares the access levels it carries, and an absent list carries none", () => {
     const plugin = definePlugin({
       name: "a",
