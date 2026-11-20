@@ -63,3 +63,11 @@ the row fields.
 |---|---|---|---|
 | T-0595-M1 | packages/memory/src/commit.ts | `withoutUntrustedLines` read only Markdown links, so an index line with a wikilink to an untrusted note stayed | `a bot run is recorded in git > an index line that links to an untrusted note with a wikilink is removed too` |
 | T-0595-M2 | packages/memory/src/commit.ts | `withoutUntrustedLines` URL-decoded wikilink targets too, so a bare `%` threw and the commit step failed | `a bot run is recorded in git > a wikilink with a bare percent is not decoded and stays in the index` |
+
+## T-0596 — wikilink folders, table pipes and a Markdown target's bare percent
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0596-M1 | packages/memory/src/commit.ts | `wikilinkTarget` kept the backslash a table row escapes its alias pipe with, so the target never named the note | `a bot run is recorded in git > an index line that links to an untrusted note with a wikilink is removed too` |
+| T-0596-M2 | packages/memory/src/commit.ts | `wikilinkLinksNote` compared a bare name with a note's whole path, so `[[from-web]]` missed `topics/from-web.md` | `a bot run is recorded in git > an index line that links to an untrusted note with a wikilink is removed too` |
+| T-0596-M3 | packages/memory/src/commit.ts | `decodeLinkPath` called `decodeURIComponent` unguarded, so a Markdown target with a bare `%` threw and the commit step failed | `a bot run is recorded in git > a Markdown link with a bare percent is not decoded and stays in the index` |
