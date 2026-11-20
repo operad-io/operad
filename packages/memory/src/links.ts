@@ -12,6 +12,7 @@
  * note wins. A path is not reduced to its file name.
  */
 
+import { snippetOf } from "./search/chunks.ts";
 import type { NoteLink } from "./search/types.ts";
 
 const FENCE = /^ {0,3}(`{3,}|~{3,})(.*)$/u;
@@ -22,6 +23,35 @@ const MARKDOWN_EXTENSION = /\.(?:md|markdown)$/iu;
 /** One link a note writes, with the offset at which it starts in the body. */
 export interface PositionedNoteLink extends NoteLink {
   readonly at: number;
+}
+
+/** One link a note writes, with the line and excerpt a backlink will show. */
+export interface PlacedNoteLink extends PositionedNoteLink {
+  readonly line: number;
+  readonly excerpt: string;
+}
+
+/** The line and excerpt around a link that starts at an offset in its note. */
+export function linkPlaceAt(
+  text: string,
+  at: number,
+  target: string,
+): { readonly line: number; readonly excerpt: string } {
+  const before = text.slice(0, at);
+  const line = before.length === 0 ? 1 : before.split(/\r?\n/u).length;
+  const start = text.lastIndexOf("\n", at - 1) + 1;
+  const next = text.indexOf("\n", at);
+  const written = text.slice(start, next < 0 ? text.length : next).trim();
+  return { line, excerpt: snippetOf(written, [target]) };
+}
+
+/** The links a note's text writes, each with the place a backlink shows it. */
+export function placedNoteLinks(text: string): readonly PlacedNoteLink[] {
+  return parseNoteLinksWithPositions(text).map(({ at, ...link }) => ({
+    ...link,
+    at,
+    ...linkPlaceAt(text, at, link.target),
+  }));
 }
 
 /** Removes inline code spans from one line, keeping its length and its text around them. */

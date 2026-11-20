@@ -127,8 +127,12 @@ into those objects. The folder type's `prepare` runs it before the first list or
 get; a running `serve` runs it from the plugin's `start`, on the wiki and memory
 directory watches and on the store's change listener. It reads only
 `memory.wikiDir`, never a bot's memory directory. Files remain the only copy: the
-object data holds the path, title, modification time, untrusted flag and
-backlinks, and a section read reads the note's file again.
+object data holds the path, title, modification time, untrusted flag, links and
+backlinks, and a section read reads the note's file again. A note whose
+modification time did not change is not read again, and the folder type's
+`prepare` builds the projection from the directory rather than refreshing the
+search index. With a search given, `serve` also refreshes that index; a list or
+get passes none.
 
 A folder object's id is its path from the wiki root; a note object's id is its
 path with the Markdown extension. A row has no `mark`. A top-level row has no
@@ -141,10 +145,10 @@ refused by the types' `resolve`, and the content read checks the path again. A
 file that is gone is marked removed; the default `live` filter hides it, and the
 `removed` filter shows it.
 
-A note's `sections` are `content` (title Note) and, only when the link table has
-backlinks, `backlinks` (title Backlinks). The content section is the note body
-without frontmatter, paged at `WIKI_PAGE_CHARS` (20,000) characters with the
-usual `pages` and `next`. Its `data.links` is the parsed links in order:
+A note's `sections` are `content` (title Note) and, only when it has backlinks,
+`backlinks` (title Backlinks). The content section is the note body without
+frontmatter, paged at `WIKI_PAGE_CHARS` (20,000) characters with the usual
+`pages` and `next`. Its `data.links` is the parsed links in order:
 
 ```json
 { "target": "notes/tea", "heading": "Brewing", "kind": "wikilink", "object": "note:notes/tea.md" }

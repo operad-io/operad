@@ -11,7 +11,14 @@ import type { JsonValue, ObjectStore } from "@operad-io/engine";
 import { isRecord } from "@operad-io/engine";
 import { lineCountOf, queryTerms, snippetOf } from "./chunks.ts";
 import { splitMarkdown, titleFromName, titleOf } from "./frontmatter.ts";
-import { noteLookup, parseNoteLinksWithPositions, resolveNoteLink, type NoteLookup } from "../links.ts";
+import {
+  linkPlaceAt,
+  noteLookup,
+  parseNoteLinksWithPositions,
+  placedNoteLinks,
+  resolveNoteLink,
+  type NoteLookup,
+} from "../links.ts";
 import { SqliteSearchBackend } from "./backend.ts";
 import {
   botMemoryDirectories,
@@ -81,26 +88,9 @@ function digestOf(text: string): string {
   return createHash("sha256").update(text).digest("hex");
 }
 
-/** The line and excerpt a link's place in its note gives a backlink. */
-function linkPlaceAt(
-  text: string,
-  at: number,
-  target: string,
-): { readonly line: number; readonly excerpt: string } {
-  const before = text.slice(0, at);
-  const line = before.length === 0 ? 1 : before.split(/\r?\n/u).length;
-  const start = text.lastIndexOf("\n", at - 1) + 1;
-  const next = text.indexOf("\n", at);
-  const written = text.slice(start, next < 0 ? text.length : next).trim();
-  return { line, excerpt: snippetOf(written, [target]) };
-}
-
 /** The links a note writes, each with where a backlink will show it. */
 function indexedLinksOf(text: string): readonly IndexedNoteLink[] {
-  return parseNoteLinksWithPositions(text).map(({ at, ...link }) => ({
-    ...link,
-    ...linkPlaceAt(text, at, link.target),
-  }));
+  return placedNoteLinks(text).map(({ at: _at, ...link }) => link);
 }
 
 function rootsOf(home: string, settings: Readonly<Record<string, JsonValue>>): readonly FileRoot[] {
