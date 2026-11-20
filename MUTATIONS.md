@@ -14,6 +14,7 @@ Each package keeps its mutation checks in `MUTATIONS.md`; a row names the broken
 - [harness/process](packages/harness/process/MUTATIONS.md)
 - [harness/radian](packages/harness/radian/MUTATIONS.md)
 - [mcp](packages/mcp/MUTATIONS.md)
+- [memory](packages/memory/MUTATIONS.md)
 - [pool](packages/pool/MUTATIONS.md)
 - [review-grading](packages/review-grading/MUTATIONS.md)
 - [shell](packages/shell/MUTATIONS.md)

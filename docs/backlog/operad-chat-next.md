@@ -25,7 +25,6 @@
 10. **手机离线时消息先存着，连上后按顺序发。**（Orca）
 11. **导入在 operad 之外开的会话**（终端里的 Claude Code、pi）。`operad-conversation.md` 写了第一版不做。（Orca、Happy）
 12. **更多 agent**：OpenCode、Gemini CLI、Cursor 走现成的 ACP 客户端（`operad-harness.md` 待决 3）。
-13. **chat 记录可以全文搜索。** 给 chat 记录建 SQLite FTS5 的索引，bot 能搜自己过去的对话（Hermes 的 `session_search` 是纯 FTS5，不过模型；Obelisk 用一个 skill 教 agent 现场写查询）。2026-11-15 的记忆调研（`research/2026-11-15-memory.md`）加的：原始记录可搜是 bot 记忆的地基，research consultant 认为它应该排在整理过的笔记之前；排序由 owner 和 lead 定。要先定：谁能搜哪些 chat（一个 bot 只搜自己的），被压缩掉的部分是否仍可搜。
 
 ## 不做
 

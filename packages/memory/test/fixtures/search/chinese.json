@@ -1,0 +1,30 @@
+{
+  "documents": [
+    {
+      "path": "记忆方法.md",
+      "text": "# 记忆方法\n\n把要记住的内容分成小块，间隔重复比一次性背诵更有效。\n复习时先回想再看答案，记忆会变得更牢。"
+    },
+    {
+      "path": "泡茶.md",
+      "text": "# 泡茶\n\n泡茶的水温很关键。绿茶用八十度的水，红茶可以用沸水。\nThe temperature matters for tea."
+    },
+    {
+      "path": "project.md",
+      "text": "# Operad 项目\n\nOperad 是一个编排层，用来运行 coding agents。\n记忆不是聊天记录，索引要能搜到原始笔记。\nThe agent searches memory before answering."
+    },
+    {
+      "path": "garden.md",
+      "text": "# 花园\n\n浇水要等土干了再浇，春天可以多浇一点。"
+    }
+  ],
+  "queries": [
+    { "text": "记忆", "relevant": ["记忆方法.md", "project.md"] },
+    { "text": "间隔重复", "relevant": ["记忆方法.md"] },
+    { "text": "背诵", "relevant": ["记忆方法.md"] },
+    { "text": "泡茶", "relevant": ["泡茶.md"] },
+    { "text": "temperature tea", "relevant": ["泡茶.md"] },
+    { "text": "聊天记录", "relevant": ["project.md"] },
+    { "text": "索引", "relevant": ["project.md"] },
+    { "text": "coding agents", "relevant": ["project.md"] }
+  ]
+}

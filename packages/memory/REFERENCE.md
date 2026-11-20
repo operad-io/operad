@@ -30,6 +30,45 @@ written into the skill.
 when they are missing and never overwrites them. A topic note is
 `topics/<name>.md`, linked from the index.
 
+## The full-text index
+
+The plugin keeps a SQLite FTS5 index of the wiki, every bot's `memory/`
+directory and the chat records. It lives at `<home>/store/search.sqlite`; it is
+a cache, so deleting it costs one rebuild on the next search. No document in it
+is the only copy of anything.
+
+`openMemorySearch(home, settings)` opens the index through a `SearchBackend`
+(`search/types.ts`). `SqliteSearchBackend` is the default; another engine can
+implement the same small interface later. It stores one row per document, its
+frontmatter fields and line chunks, and matches with FTS5.
+
+Indexing is incremental: a file is re-read when its nanosecond modification time
+or size changes, and a chat is re-read by the digest of its messages. A document
+whose file or chat is gone is removed. `MemorySearch.refresh(store)` does this;
+`search` and `read` refresh first, so a change made by another process is visible
+without waiting for a watch. The plugin's `start` also watches the wiki and bot
+memory directories through `watchDirectory` (`@operad-io/engine/platform`) and
+listens to the store, for a long-running server.
+
+The tokenizer is `trigram`. On the fixture at
+`test/fixtures/search/chinese.json` (mixed Chinese and English), `unicode61`
+found 3 of 9 relevant documents (recall 0.333, MRR 0.375); `trigram` found 9 of
+9 (recall 1.000, MRR 1.000). Trigram cannot match a query shorter than three
+characters, so a shorter term (such as `记忆`) is found by a scoped `instr`
+substring scan over the same chunks. `unicode61` treats a whole run of Chinese
+characters as one token, so a word inside a sentence misses.
+
+A search is limited to the scopes the caller asks for. The wiki is shared; a
+bot's `memory` and `chats` are only the documents whose owner is that bot's
+working directory. `fields` filters on frontmatter keys. A directory's
+`_about.md`, when present, is returned with the hits found inside that directory
+as `about`.
+
+Two commands expose it: `memory search` and `memory read`. Both take JSON on
+stdin, and both accept words on the command line (`memory search --scope wiki
+--field tags=project tea`, `memory read <id> [from] [to]`). The operad MCP server
+offers them to a bot as the `search` and `read` tools.
+
 ## The commit
 
 The plugin declares one step, `memory/commit`, called by a chat after a reply
@@ -71,7 +110,7 @@ default bot writes and every other bot reads (ADR 0030).
 
 ## Not here yet
 
-No full-text index (`bun:sqlite` FTS5 is planned), no `capture` or `review`
-flow, and no per-run record of the material a bot read: the `untrusted` mark is
-written by the bot itself, and the plugin only enforces that a marked note is not
-indexed.
+No `capture` or `review` flow, and no per-run record of the material a bot read:
+the `untrusted` mark is written by the bot itself, and the plugin only enforces
+that a marked note is not indexed. Vector search is not built; the backend
+interface is where another engine would provide it.

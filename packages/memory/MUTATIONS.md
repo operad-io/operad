@@ -18,3 +18,13 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0585-M13 | packages/memory/src/commit.ts | `botChatOf` accepted a chat whose parent was not a bot | `a bot run is recorded in git > a chat that is not a bot's is left alone` |
+
+## T-0587 — the full-text index, its scopes and the search tool
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0587-M1 | packages/memory/src/search/backend.ts | the trigram substring fallback was turned off, so a term shorter than three characters matched nothing | `the Chinese tokenizer measurement > trigram with its short-query fallback finds every fixture query` |
+| T-0587-M2 | packages/memory/src/search/backend.ts | the scope/owner condition was dropped, so one bot's memory and chats were reachable from another bot's search | `the full-text index > a bot sees only its own memory and chats beside the shared wiki` |
+| T-0587-M3 | packages/memory/src/search/service.ts | an existing document was always kept, so a changed file was never re-read | `the full-text index > a changed file is found on the next search, and a deleted one is gone` |
+| T-0587-M4 | packages/memory/src/search/backend.ts | the frontmatter field conditions were left out of the query | `the full-text index > frontmatter fields filter the results` |
+| T-0587-M5 | packages/memory/src/search/service.ts | the search skipped the `_about.md` lookup, so directory notes never came back | `the full-text index > a directory's _about.md is returned with its hits` |

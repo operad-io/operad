@@ -102,3 +102,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0523-M1 | packages/mcp/src/format.ts | the pending Markdown dropped each choice's label, hint, role and note | `the pending Markdown > writes one section per item, with its choices, actions, object and link` |
+
+## T-0587 — the search and read tools
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0587-M6 | packages/mcp/src/tools.ts | the `search` tool called the memory plugin's `read` verb instead of `search`, so every search became a read without an id | `the search tool a bot gets > searches the wiki and the bot's memory and names the document and line range` |

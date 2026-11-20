@@ -29,7 +29,9 @@ import {
   historyMarkdown,
   listMarkdown,
   pendingMarkdown,
+  readMarkdown,
   runningMarkdown,
+  searchMarkdown,
   sectionMarkdown,
   showMarkdown,
   typesMarkdown,
@@ -248,6 +250,67 @@ export const TOOLS = [
     },
   },
   {
+    name: "search",
+    description:
+      "Search the shared wiki, this bot's memory and this bot's chats. Try several phrasings before answering that you do not know. Each result says its document id and line range; read the document with `read`.",
+    inputSchema: {
+      type: "object",
+      required: ["query"],
+      additionalProperties: false,
+      properties: {
+        query: {
+          type: "string",
+          minLength: 1,
+          description: "Words to look for. A phrase may be Chinese or mixed Chinese and English.",
+        },
+        scope: {
+          type: "string",
+          minLength: 1,
+          description: "One of wiki, memory or chats; a comma-separated list also works. The default is all three.",
+        },
+        scopes: {
+          type: "array",
+          items: { type: "string", minLength: 1 },
+          description: "The scopes to search, as a list instead of `scope`.",
+        },
+        fields: {
+          type: "object",
+          description:
+            "Frontmatter fields a result must have, such as {\"tags\":\"project\"}; a list means any of its values.",
+        },
+        limit: {
+          type: "integer",
+          description: "The most results to return, from 1 to 100; 20 by default.",
+        },
+      },
+    },
+  },
+  {
+    name: "read",
+    description:
+      "Read a document a search returned, or a line range of it. Lines start at 1.",
+    inputSchema: {
+      type: "object",
+      required: ["id"],
+      additionalProperties: false,
+      properties: {
+        id: {
+          type: "string",
+          minLength: 1,
+          description: "A document id from a search result.",
+        },
+        from: {
+          type: "integer",
+          description: "The first line to return, starting at 1.",
+        },
+        to: {
+          type: "integer",
+          description: "The last line to return.",
+        },
+      },
+    },
+  },
+  {
     name: "command",
     description: "Run a plugin verb the way the CLI does.",
     inputSchema: {
@@ -356,6 +419,23 @@ function structuredValue(value: unknown): object {
     return value;
   }
   return { value };
+}
+
+/** Runs one of the memory plugin's search verbs with JSON arguments. */
+async function runMemoryVerb(
+  context: ToolContext,
+  verb: "search" | "read",
+  input: Readonly<Record<string, unknown>>,
+): Promise<unknown> {
+  const argv = ["memory", verb];
+  const run = await context.registry.runCommand(argv, {
+    ...(context.cwd === undefined ? {} : { cwd: context.cwd }),
+    input: JSON.stringify(input),
+  });
+  if (run === undefined) {
+    throw new Error("the memory plugin is not loaded; enable it with `operad plugin enable memory`");
+  }
+  return run.value;
 }
 
 /**
@@ -532,6 +612,36 @@ export async function runTool(
         content: [text(historyMarkdown(result))],
         structuredContent: result,
       };
+    }
+    case "search": {
+      const input: Record<string, unknown> = { query: String(args.query) };
+      if (args.scope !== undefined) input["scope"] = String(args.scope);
+      if (args.scopes !== undefined) input["scopes"] = args.scopes;
+      if (args.fields !== undefined) input["fields"] = args.fields;
+      if (args.limit !== undefined) input["limit"] = args.limit;
+      try {
+        const value = await runMemoryVerb(context, "search", input);
+        return {
+          content: [text(searchMarkdown(value))],
+          structuredContent: structuredValue(value),
+        };
+      } catch (error) {
+        return toolError(messageOf(error));
+      }
+    }
+    case "read": {
+      const input: Record<string, unknown> = { id: String(args.id) };
+      if (args.from !== undefined) input["from"] = args.from;
+      if (args.to !== undefined) input["to"] = args.to;
+      try {
+        const value = await runMemoryVerb(context, "read", input);
+        return {
+          content: [text(readMarkdown(value))],
+          structuredContent: structuredValue(value),
+        };
+      } catch (error) {
+        return toolError(messageOf(error));
+      }
     }
     case "command": {
       const plugin = String(args.plugin);
