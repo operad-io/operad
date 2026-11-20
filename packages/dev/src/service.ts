@@ -492,6 +492,26 @@ function writeSettings(repositoryPath: string, name: string): void {
   );
 }
 
+/**
+ * Whether a repository has a remote. `git remote` prints nothing both for a
+ * repository with no remote and, under heavy load, sometimes for one that has
+ * one: git exits 0 with empty output. An empty answer is therefore confirmed by
+ * a query whose exit status is the answer: `git config --get-regexp` exits 1
+ * when no remote section is configured. Its output is not read.
+ */
+function repositoryHasRemote(
+  path: string,
+): { readonly present: boolean; readonly err: string } {
+  const remotes = git(path, ["remote"]);
+  if (remotes.out.length > 0) return { present: true, err: "" };
+  const configured = git(path, ["config", "--local", "--get-regexp", "^remote\\."]);
+  if (configured.ok) return { present: true, err: "" };
+  return {
+    present: false,
+    err: remotes.err.length > 0 ? remotes.err : configured.err,
+  };
+}
+
 /** Registers a git work tree that has a remote. */
 export async function addRepository(
   store: ObjectStore,
@@ -519,11 +539,11 @@ export async function addRepository(
   if (bare.ok && bare.out === "true") {
     throw new DevError("path", `"${path}" is a bare repository`);
   }
-  const remotes = git(path, ["remote"]);
-  if (!remotes.ok || remotes.out.length === 0) {
+  const remote = repositoryHasRemote(path);
+  if (!remote.present) {
     throw new DevError(
       "path",
-      `"${path}" has no remote${remotes.err.length > 0 ? `: ${remotes.err}` : ""}`,
+      `"${path}" has no remote${remote.err.length > 0 ? `: ${remote.err}` : ""}`,
     );
   }
 
