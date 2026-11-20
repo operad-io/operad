@@ -4,7 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MemoryPluginStore, PluginRegistry, isRecord } from "@operad-io/engine";
-import { createMemoryPlugin, memoryGit } from "../src/index.ts";
+import { createMemoryPlugin, memoryGit, parseNoteLinks, resolveNoteLink, withoutUntrustedLines } from "../src/index.ts";
 
 const roots: string[] = [];
 
@@ -235,5 +235,38 @@ describe("a bot run is recorded in git", () => {
     writeFileSync(join(wiki, "note.md"), "outside\n");
     await r.run("C-1", "run-1");
     expect(messages(wiki)).toEqual(["wiki: bot default, chat C-1"]);
+  });
+});
+
+describe("one link parser for the index and the link table", () => {
+  test("the targets the link table reads are the ones the index commit drops", () => {
+    const named: readonly { readonly line: string; readonly target: string; readonly note: string }[] = [
+      { line: "- [[topics/from-web]]: a page said", target: "topics/from-web", note: "topics/from-web.md" },
+      { line: "- [[topics/from-web|a page said]]: a page said", target: "topics/from-web", note: "topics/from-web.md" },
+      { line: "- [[topics/from-web#said]]: a page said", target: "topics/from-web", note: "topics/from-web.md" },
+      { line: "- [[topics/from-web.md]]: a page said", target: "topics/from-web.md", note: "topics/from-web.md" },
+      { line: "- [[from-web]]: a page said", target: "from-web", note: "topics/from-web.md" },
+      { line: "| [[topics/from-web\\|a page said]] | a page said |", target: "topics/from-web", note: "topics/from-web.md" },
+      { line: "- [Web](topics/from-web): a page said", target: "topics/from-web", note: "topics/from-web.md" },
+      { line: "- [Web](topics/from-web.md#said): a page said", target: "topics/from-web.md", note: "topics/from-web.md" },
+      { line: "- [Page](topics/my%20page.md): a page said", target: "topics/my page.md", note: "topics/my page.md" },
+    ];
+    for (const sample of named) {
+      const links = parseNoteLinks(sample.line);
+      expect(links.map((link) => link.target)).toEqual([sample.target]);
+      const link = links[0];
+      if (link === undefined) throw new Error(`no link in ${sample.line}`);
+      expect(resolveNoteLink("index.md", link, [sample.note])).toBe(sample.note);
+      expect(withoutUntrustedLines(sample.line, [sample.note])).toBe("");
+    }
+
+    const unnamed: readonly { readonly line: string; readonly target: string }[] = [
+      { line: "- [[50%|half]]: progress", target: "50%" },
+      { line: "- [Progress](100%.md): progress", target: "100%.md" },
+    ];
+    for (const sample of unnamed) {
+      expect(parseNoteLinks(sample.line).map((link) => link.target)).toEqual([sample.target]);
+      expect(withoutUntrustedLines(sample.line, ["topics/from-web.md"])).toBe(sample.line);
+    }
   });
 });

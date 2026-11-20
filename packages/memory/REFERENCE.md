@@ -121,7 +121,9 @@ fails is logged and never changes the answer.
    (`bot:<name>`) and `cwd`; a chat that is not a bot's is skipped;
 2. makes the memory layout, and removes from `memory/index.md` and from the
    wiki's `index.md` the lines that link to a note whose frontmatter says
-   `untrusted: true`;
+   `untrusted: true`. It reads the same link forms, with the same parser and
+   resolution as the search index (`parseNoteLinks`, `resolveNoteLink`), so the
+   index it cleans and the link table cannot disagree;
 3. makes the bot's `memory/` a repository of its own when it is no repository
    (a memory directory already inside a repository stays part of it);
 4. makes the wiki (`ensureWiki`) and commits each directory that changed.
