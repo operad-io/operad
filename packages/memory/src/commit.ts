@@ -225,13 +225,14 @@ export async function commitBotRun(
       }
       const memory = commitChanges(repository, memoryDir, message, { allowEmpty: bot.tidy });
       const wiki = ensureWiki(home, settings);
+      const wikiIndex = stripUntrustedFromIndex(wiki.directory);
       const wikiCommit = commitChanges(wiki, wiki.directory, commitMessage("wiki", bot.bot, bot.chat));
       return {
         bot: bot.bot,
         chat: bot.chat,
         memory: memory ?? null,
         wiki: wikiCommit ?? null,
-        unindexed: index.removed,
+        unindexed: [...new Set([...index.removed, ...wikiIndex.removed])],
       };
     },
     { label: "memory" },

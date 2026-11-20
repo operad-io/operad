@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, rmSync, unlinkSync, writeFileSync } from "node:f
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { MemoryPluginStore } from "@operad-io/engine";
+import { MemoryPluginStore, type FactsOptions, type ObjectRef } from "@operad-io/engine";
 import {
   MemorySearch,
   searchDatabasePath,
@@ -172,6 +172,45 @@ describe("the full-text index", () => {
     expect(r.search.search({ text: "first", cwd: r.botA, scopes: ["chats"] }).hits).toHaveLength(1);
     message(r.store, "C-1", "m2", "the second line mentions cardamom");
     await r.search.refresh(r.store);
+    expect(r.search.search({ text: "cardamom", cwd: r.botA, scopes: ["chats"] }).hits).toHaveLength(1);
+    r.search.close();
+  });
+
+  test("a chat's owner is compared as a resolved path", async () => {
+    const r = await rig();
+    await r.store.put(
+      "chat",
+      "C-1",
+      { parent: "bot:default", cwd: `${r.botA}/./`, title: "Test" },
+      "test",
+    );
+    message(r.store, "C-1", "m1", "the cardamom line");
+    await r.search.refresh(r.store);
+
+    const found = r.search.search({ text: "cardamom", cwd: r.botA, scopes: ["chats"] });
+    expect(found.hits.map((hit) => hit.id)).toEqual(["chat:C-1"]);
+    r.search.close();
+  });
+
+  test("an unchanged chat's facts are not read on the next refresh", async () => {
+    const r = await rig();
+    await r.store.put("chat", "C-1", { parent: "bot:default", cwd: r.botA, title: "Test" }, "test");
+    message(r.store, "C-1", "m1", "the first line");
+    await r.search.refresh(r.store);
+
+    const original = r.store.facts.bind(r.store);
+    let chatReads = 0;
+    r.store.facts = function (object?: ObjectRef, options?: FactsOptions) {
+      if (object?.type === "chat") chatReads += 1;
+      return object === undefined ? original() : original(object, options);
+    } as typeof r.store.facts;
+
+    await r.search.refresh(r.store);
+    expect(chatReads).toBe(0);
+
+    message(r.store, "C-1", "m2", "the cardamom line");
+    await r.search.refresh(r.store);
+    expect(chatReads).toBeGreaterThan(0);
     expect(r.search.search({ text: "cardamom", cwd: r.botA, scopes: ["chats"] }).hits).toHaveLength(1);
     r.search.close();
   });

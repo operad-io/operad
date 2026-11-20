@@ -13,6 +13,7 @@ import {
   memoryGit,
   memoryTidyState,
   rewriteDrop,
+  tidyCommitForChat,
   tidyCommitSummary,
 } from "../src/index.ts";
 
@@ -66,6 +67,21 @@ describe("the memory tidy's check", () => {
     expect(state.baseline).toBeString();
     expect(state.since).toBeNumber();
     expect(state.notes).toEqual(["topics/coffee.md", "topics/tea.md"]);
+  });
+
+  test("a tidy commit is found for its own chat, not one whose id has it as a prefix", async () => {
+    const h = await home();
+    const memory = join(h, "bot", "default", "memory");
+    mkdirSync(memory, { recursive: true });
+    ensureMemoryLayout(memory);
+    commit(memory, "tidy: bot default, chat C-1");
+    const one = memoryGit(memory, ["rev-parse", "HEAD"]).out;
+    commit(memory, "tidy: bot default, chat C-12");
+    const twelve = memoryGit(memory, ["rev-parse", "HEAD"]).out;
+    const repository = ensureRepository(memory);
+
+    expect(tidyCommitForChat(repository, memory, "C-1")).toBe(one);
+    expect(tidyCommitForChat(repository, memory, "C-12")).toBe(twelve);
   });
 });
 

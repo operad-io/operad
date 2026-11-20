@@ -249,13 +249,14 @@ export function tidyCommitForChat(
   directory: string,
   chat: string,
 ): string | undefined {
+  const escaped = chat.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const found = memoryGit(repository.root, [
     "log",
     "-1",
     "--format=%H",
-    "--fixed-strings",
+    "--extended-regexp",
     "--grep",
-    `chat ${chat}`,
+    `^tidy: bot .+, chat ${escaped}$`,
   ]);
   return found.ok && found.out.length > 0 ? found.out : undefined;
 }

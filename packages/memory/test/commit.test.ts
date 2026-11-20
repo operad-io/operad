@@ -116,6 +116,28 @@ describe("a bot run is recorded in git", () => {
     expect(readFileSync(join(memory, "topics", "from-web.md"), "utf8")).toContain("what a page said");
   });
 
+  test("a note marked as untrusted in the wiki is kept out of the wiki's index too", async () => {
+    const r = await rig();
+    await botChat(r, "C-1");
+    const wiki = join(r.home, "wiki");
+    mkdirSync(wiki, { recursive: true });
+    writeFileSync(join(wiki, "from-web.md"), "---\nuntrusted: true\n---\n\nwhat a page said\n");
+    writeFileSync(join(wiki, "own.md"), "a correction a person made\n");
+    writeFileSync(
+      join(wiki, "index.md"),
+      "# Wiki index\n\n- [Own](own.md): a person's note\n- [Web](from-web.md): a page said\n",
+    );
+
+    const outcome = await r.run("C-1", "run-1");
+    expect(outcome.result).toBe("done");
+    expect(outcome.data["unindexed"]).toContain("from-web.md");
+    const index = readFileSync(join(wiki, "index.md"), "utf8");
+    expect(index).toContain("](own.md)");
+    expect(index).not.toContain("from-web.md");
+    expect(readFileSync(join(wiki, "from-web.md"), "utf8")).toContain("what a page said");
+    expect(messages(wiki)).toEqual(["wiki: bot default, chat C-1"]);
+  });
+
   test("a chat that is not a bot's is left alone", async () => {
     const r = await rig();
     await r.store.put("chat", "C-2", { parent: "repo:one", cwd: r.cwd, title: "Repo" }, "test");

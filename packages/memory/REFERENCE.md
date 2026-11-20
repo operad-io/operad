@@ -43,8 +43,9 @@ implement the same small interface later. It stores one row per document, its
 frontmatter fields and line chunks, and matches with FTS5.
 
 Indexing is incremental: a file is re-read when its nanosecond modification time
-or size changes, and a chat is re-read by the digest of its messages. A document
-whose file or chat is gone is removed. `MemorySearch.refresh(store)` does this;
+or size changes, and a chat is re-read only when its latest fact sequence changes;
+its messages then decide its digest. A document whose file or chat is gone is
+removed. `MemorySearch.refresh(store)` does this;
 `search` and `read` refresh first, so a change made by another process is visible
 without waiting for a watch. The plugin's `start` also watches the wiki and bot
 memory directories through `watchDirectory` (`@operad-io/engine/platform`) and
@@ -82,17 +83,18 @@ reads and hashes the files (ADR 0026 D18).
 The plugin declares one step, `memory/commit`, called by a chat after a reply
 when its refresh data names it. `bot/settings` returns
 `after: "memory/commit"` only when the step is loaded (`ctx.stepLoaded`), so a
-home without the plugin is unaffected. `chat/reply` calls the named step after a
-round that ended `done` or `failed`, and `chat/keep` calls it for a run that was
-stopped or interrupted after writing. A step that fails is logged and never
-changes the answer.
+home without the plugin is unaffected. `chat/reply` calls the named step after the
+round that ends a run with `done` or `failed`, once for the run, and `chat/keep`
+calls it for a run that was stopped or interrupted after writing. A step that
+fails is logged and never changes the answer.
 
 `runMemoryCommit(ctx, params)`:
 
 1. reads the chat from `params.chat` (or `ctx.object`), and its `parent`
    (`bot:<name>`) and `cwd`; a chat that is not a bot's is skipped;
-2. makes the memory layout, and removes `memory/index.md` lines that link to a
-   note whose frontmatter says `untrusted: true`;
+2. makes the memory layout, and removes from `memory/index.md` and from the
+   wiki's `index.md` the lines that link to a note whose frontmatter says
+   `untrusted: true`;
 3. makes the bot's `memory/` a repository of its own when it is no repository
    (a memory directory already inside a repository stays part of it);
 4. makes the wiki (`ensureWiki`) and commits each directory that changed.

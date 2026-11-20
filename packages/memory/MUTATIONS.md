@@ -44,3 +44,15 @@ the row fields.
 | T-0588-M2 | packages/memory/src/tidy.ts | `rewriteDrop` never reported a rewrite as voided | `the void-rewrite guard > a rewrite that drops at least a quarter of the old index entries is void, and append only keeps them` |
 | T-0588-M3 | packages/memory/src/tidy.ts | `applyAppendOnly` returned without restoring or merging any file | `the void-rewrite guard > a rewrite that drops at least a quarter of the old index entries is void, and append only keeps them` |
 | T-0588-M11 | packages/memory/src/commit.ts | a tidy that changed no file no longer made its empty commit | `Run without asking > a run that changes nothing makes the memory commit but sends no notice` |
+
+## T-0590 — memory v1 follow-ups, the wiki and the search index
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0590-M17 | packages/memory/src/commit.ts | `commitBotRun` stripped untrusted links from the bot's index but not the wiki's | `a bot run is recorded in git > a note marked as untrusted in the wiki is kept out of the wiki's index too` |
+| T-0590-M18 | packages/memory/src/commit.ts | the wiki's removed untrusted links were left out of `unindexed` | `a bot run is recorded in git > a note marked as untrusted in the wiki is kept out of the wiki's index too` |
+| T-0590-M19 | packages/memory/src/tidy.ts | `tidyCommitForChat` matched the chat as a substring, so C-1 found C-12 | `the memory tidy's check > a tidy commit is found for its own chat, not one whose id has it as a prefix` |
+| T-0590-M20 | packages/memory/src/search/service.ts | `refreshChats` read every chat's facts instead of comparing the latest fact sequence | `the full-text index > an unchanged chat's facts are not read on the next refresh` |
+| T-0590-M21 | packages/memory/src/search/sources.ts | `chatOwner` returned the stored cwd string while a search resolved its owner | `the full-text index > a chat's owner is compared as a resolved path` |
+| T-0590-M22 | packages/memory/src/tidy.ts | `lastTidyCommit` returned undefined instead of the latest tidy commit | `Run without asking > a run that changes nothing makes the memory commit but sends no notice` |
+| T-0590-M23 | packages/memory/src/tidy.ts | `tidyCommitSummary` never reported a voided rewrite | `the void-rewrite guard > a tidy chat's commit voids the rewrite, keeps the old entries and records why` |
