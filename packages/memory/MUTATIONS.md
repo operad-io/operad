@@ -56,3 +56,9 @@ the row fields.
 | T-0590-M21 | packages/memory/src/search/sources.ts | `chatOwner` returned the stored cwd string while a search resolved its owner | `the full-text index > a chat's owner is compared as a resolved path` |
 | T-0590-M22 | packages/memory/src/tidy.ts | `lastTidyCommit` returned undefined instead of the latest tidy commit | `Run without asking > a run that changes nothing makes the memory commit but sends no notice` |
 | T-0590-M23 | packages/memory/src/tidy.ts | `tidyCommitSummary` never reported a voided rewrite | `the void-rewrite guard > a tidy chat's commit voids the rewrite, keeps the old entries and records why` |
+
+## T-0595 — untrusted notes are kept out of the index through wikilinks too
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0595-M1 | packages/memory/src/commit.ts | `withoutUntrustedLines` read only Markdown links, so an index line with a wikilink to an untrusted note stayed | `a bot run is recorded in git > an index line that links to an untrusted note with a wikilink is removed too` |

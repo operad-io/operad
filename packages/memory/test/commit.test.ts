@@ -116,6 +116,36 @@ describe("a bot run is recorded in git", () => {
     expect(readFileSync(join(memory, "topics", "from-web.md"), "utf8")).toContain("what a page said");
   });
 
+  test("an index line that links to an untrusted note with a wikilink is removed too", async () => {
+    const r = await rig();
+    await botChat(r, "C-1");
+    const memory = join(r.cwd, "memory");
+    mkdirSync(join(memory, "topics"), { recursive: true });
+    writeFileSync(join(memory, "topics", "from-web.md"), "---\nuntrusted: true\n---\n\nwhat a page said\n");
+    writeFileSync(join(memory, "topics", "own.md"), "a correction a person made\n");
+    writeFileSync(
+      join(memory, "index.md"),
+      [
+        "# Memory index",
+        "",
+        "- [[topics/from-web]]: a page said",
+        "- [[topics/from-web|a page said]]: a page said",
+        "- [[topics/from-web.md]]: a page said",
+        "- [Web](topics/from-web): a page said",
+        "- [[topics/own]]: a correction a person made",
+        "- [Own](topics/own): a correction a person made",
+        "",
+      ].join("\n"),
+    );
+
+    const outcome = await r.run("C-1", "run-1");
+    expect(outcome.result).toBe("done");
+    const index = readFileSync(join(memory, "index.md"), "utf8");
+    expect(index).not.toContain("from-web");
+    expect(index).toContain("[[topics/own]]");
+    expect(index).toContain("](topics/own)");
+  });
+
   test("a note marked as untrusted in the wiki is kept out of the wiki's index too", async () => {
     const r = await rig();
     await botChat(r, "C-1");

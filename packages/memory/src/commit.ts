@@ -91,16 +91,22 @@ function isUntrusted(path: string): boolean {
 
 /**
  * The index without the lines that link to an untrusted note. A whole line goes,
- * because one line is one entry; every other line stays as it was.
+ * because one line is one entry; every other line stays as it was. A link is a
+ * Markdown link or a wikilink, and either may leave out the note's `.md`.
  */
 export function withoutUntrustedLines(index: string, untrusted: readonly string[]): string {
   if (untrusted.length === 0) return index;
   const kept: string[] = [];
   for (const line of index.split("\n")) {
-    const links = [...line.matchAll(/\]\(([^)\s]+)\)/g)].map((match) => match[1] ?? "");
+    const links = [
+      ...[...line.matchAll(/\]\(([^)\s]+)\)/g)].map((match) => match[1] ?? ""),
+      ...[...line.matchAll(/\[\[([^[\]]+)\]\]/g)].map((match) => (match[1] ?? "").split("|")[0] ?? ""),
+    ];
     const marked = links.some((link) => {
-      const path = link.replace(/^\.\//, "").split("#")[0] ?? "";
-      return untrusted.some((note) => note === path || note === decodeURIComponent(path));
+      const path = link.trim().replace(/^\.\//, "").split("#")[0] ?? "";
+      return untrusted.some(
+        (note) => note === path || note === decodeURIComponent(path) || note === `${path}.md`,
+      );
     });
     if (!marked) kept.push(line);
   }
