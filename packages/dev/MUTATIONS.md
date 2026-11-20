@@ -1426,3 +1426,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0580-M1 | packages/dev/src/service.ts | `addRepository` believed one empty `git remote` and refused the repository | `git that succeeds without printing > repo add still registers when \`git remote\` prints nothing` |
+
+## T-0582 — a remote-named setting is not a remote
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0582-M1 | packages/dev/src/service.ts | the fallback matched `^remote\.` again, so `remote.pushDefault` counted as a remote | `dev repositories > a remote-named setting is not a remote` (packages/dev/test/heavy/service.test.ts) |

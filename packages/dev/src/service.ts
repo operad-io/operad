@@ -497,14 +497,16 @@ function writeSettings(repositoryPath: string, name: string): void {
  * repository with no remote and, under heavy load, sometimes for one that has
  * one: git exits 0 with empty output. An empty answer is therefore confirmed by
  * a query whose exit status is the answer: `git config --get-regexp` exits 1
- * when no remote section is configured. Its output is not read.
+ * when no remote is configured. Its output is not read. The pattern needs the
+ * second dot that makes the key a remote's own key (`remote.<name>.<key>`):
+ * `remote.pushDefault` is a key of the `remote` section, not a remote.
  */
 function repositoryHasRemote(
   path: string,
 ): { readonly present: boolean; readonly err: string } {
   const remotes = git(path, ["remote"]);
   if (remotes.out.length > 0) return { present: true, err: "" };
-  const configured = git(path, ["config", "--local", "--get-regexp", "^remote\\."]);
+  const configured = git(path, ["config", "--local", "--get-regexp", "^remote\\..*\\."]);
   if (configured.ok) return { present: true, err: "" };
   return {
     present: false,
