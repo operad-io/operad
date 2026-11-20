@@ -108,3 +108,11 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0587-M6 | packages/mcp/src/tools.ts | the `search` tool called the memory plugin's `read` verb instead of `search`, so every search became a read without an id | `the search tool a bot gets > searches the wiki and the bot's memory and names the document and line range` |
+
+## T-0598 — read and search mark untrusted notes
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0598-M1 | packages/mcp/src/format.ts | the read Markdown emitted a `Backlinks` heading even when the document had no backlinks | `the read Markdown > leaves the section out when nothing links to the document` |
+| T-0598-M2 | packages/mcp/src/format.ts | the read Markdown dropped the untrusted mark from a linking note | `the read Markdown > ends with the notes that link to the document, with a line and excerpt` |
+| T-0598-M3 | packages/mcp/src/format.ts | the search Markdown dropped the untrusted mark from a result | `the search Markdown > marks a result whose note is untrusted` |

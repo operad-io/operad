@@ -67,8 +67,9 @@ as `about`.
 
 Two commands expose it: `memory search` and `memory read`. Both take JSON on
 stdin, and both accept words on the command line (`memory search --scope wiki
---field tags=project tea`, `memory read <id> [from] [to]`). The operad MCP server
-offers them to a bot as the `search` and `read` tools.
+--field tags=project tea`, `memory read <id> [from] [to] [--json]`). The operad
+MCP server offers them to a bot as the `search` and `read` tools. A read prints
+text by default and JSON with `--json`; JSON input asks for JSON too.
 
 ## The link table
 
@@ -92,10 +93,13 @@ it, unresolved.
 
 Four queries answer from the table, after a refresh: `linksFrom(id)`,
 `backlinks(id)`, `unresolvedTargets(query)` and `orphanNotes(query)`. `query`
-narrows by `scope` and `owner`. Nothing in the command line or the operad tools
-reads the table yet. An index built before the table existed, or with another
-version of it, is filled on the next refresh: opening it clears the stored
-modification time of its notes, so every note is read again.
+narrows by `scope` and `owner`. `read` uses `readBacklinks(id)` to end a note
+with its `Backlinks`: each linking note's path, the line of the link, a short
+excerpt around it and whether the source is marked `untrusted`. The outgoing
+links stay in the note's own text and are not listed again. A `--json` read
+carries the same list as `backlinks`. An index built before the table existed,
+or with another version of it, is filled on the next refresh: opening it clears
+the stored modification time of its notes, so every note is read again.
 
 ## The memory notes
 

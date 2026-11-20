@@ -18,9 +18,9 @@ const WIKILINK = /\[\[([^[\]]+)\]\]/gu;
 const MARKDOWN_LINK = /(!?)\[([^\]]*)\]\(([^()\s]*)\)/gu;
 const MARKDOWN_EXTENSION = /\.(?:md|markdown)$/iu;
 
-interface PositionedLink {
+/** One link a note writes, with the offset at which it starts in the body. */
+export interface PositionedNoteLink extends NoteLink {
   readonly at: number;
-  readonly link: NoteLink;
 }
 
 /** Removes inline code spans from one line, keeping its length and its text around them. */
@@ -145,10 +145,10 @@ function external(target: string): boolean {
   return /^[A-Za-z][A-Za-z0-9+.-]*:/u.test(target) || target.startsWith("//");
 }
 
-/** The links a note's text writes, in the order they appear. */
-export function parseNoteLinks(text: string): readonly NoteLink[] {
+/** The links a note's text writes, with where they start, in the order they appear. */
+export function parseNoteLinksWithPositions(text: string): readonly PositionedNoteLink[] {
   const clean = withoutCode(text);
-  const found: PositionedLink[] = [];
+  const found: PositionedNoteLink[] = [];
 
   for (const match of clean.matchAll(WIKILINK)) {
     const inner = match[1] ?? "";
@@ -157,7 +157,9 @@ export function parseNoteLinks(text: string): readonly NoteLink[] {
     if (target.length === 0) continue;
     found.push({
       at: match.index ?? 0,
-      link: { target, ...(heading === undefined ? {} : { heading }), kind: "wikilink" },
+      target,
+      ...(heading === undefined ? {} : { heading }),
+      kind: "wikilink",
     });
   }
 
@@ -171,16 +173,19 @@ export function parseNoteLinks(text: string): readonly NoteLink[] {
     if (target.length === 0) continue;
     found.push({
       at: match.index ?? 0,
-      link: {
-        target,
-        ...(split.heading === undefined ? {} : { heading: decoded(split.heading) }),
-        kind: "markdown",
-      },
+      target,
+      ...(split.heading === undefined ? {} : { heading: decoded(split.heading) }),
+      kind: "markdown",
     });
   }
 
   found.sort((left, right) => left.at - right.at);
-  return found.map((entry) => entry.link);
+  return found;
+}
+
+/** The links a note's text writes, in the order they appear. */
+export function parseNoteLinks(text: string): readonly NoteLink[] {
+  return parseNoteLinksWithPositions(text).map(({ at: _at, ...link }) => link);
 }
 
 /** A path inside its scope root: `/` separators, no `.` or `..` parts. */

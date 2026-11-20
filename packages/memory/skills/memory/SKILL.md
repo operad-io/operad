@@ -80,4 +80,5 @@ the directory is for; it comes back with hits found inside that directory.
 Search is a first step, not a verdict. If the first words find nothing, try a
 synonym, a shorter phrase, the name of the person or project, or a sentence as
 someone would say it. Then read the document, because a snippet is only a few
-lines.
+lines. A read ends with a `Backlinks` section when other notes link to it; follow
+those notes when the one you read is thin or one-sided.

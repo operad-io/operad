@@ -95,3 +95,11 @@ the row fields.
 | T-0597-M17 | packages/memory/src/search/service.ts | the resolution pool no longer named the scope and owner, so a wiki note resolved a name in a bot's memory | `the link table > a link stays in the scope of the note that writes it` |
 | T-0597-M18 | packages/memory/src/search/backend.ts | an index without a link table (or with another version of it) no longer cleared its notes' stored modification time, so a refresh skipped every note and the table stayed empty | `the link table > an index built before the link table fills it on the next refresh`; `the link table > a link table from an older version is filled again from the notes` |
 | T-0597-M19 | packages/memory/src/commit.ts | `withoutUntrustedLines` matched the untrusted note against the line's text instead of the links `parseNoteLinks` reads and `resolveNoteLink` resolves, so a bare `[[from-web]]` stayed in the index | `one link parser for the index and the link table > the targets the link table reads are the ones the index commit drops`; `a bot run is recorded in git > an index line that links to an untrusted note with a wikilink is removed too` |
+
+## T-0598 — read lists the notes that link to it
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0598-M1 | packages/memory/src/search/service.ts | `read` returned an empty `backlinks` array instead of the links that point at the note | `the link table > a read lists the notes that link to it, with the line and excerpt` |
+| T-0598-M2 | packages/memory/src/search/service.ts | `readBacklinks` marked every linking note as trusted, ignoring its `untrusted: true` frontmatter | `the link table > a read lists the notes that link to it, with the line and excerpt`; `the memory search commands > read ends with Backlinks, and --json gives the backlinks array` |
+| T-0598-M3 | packages/memory/src/search/command.ts | `read` rendered text even when the caller asked for JSON with `--json` or JSON input | `the memory search commands > read ends with Backlinks, and --json gives the backlinks array` |
