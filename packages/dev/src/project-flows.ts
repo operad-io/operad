@@ -42,7 +42,7 @@ function targetsOf(step: Record<string, unknown>): string[] {
 /**
  * The reason a flow breaks a hard rule, or undefined when it keeps both: the
  * step before a finished end is integrate (or the cleanup that follows it), and
- * there is at least one check, review or human step.
+ * there is at least one test, review or human step.
  */
 export function flowProblem(flow: unknown): string | undefined {
   if (!isRecord(flow) || !Array.isArray(flow.steps) || typeof flow.entry !== "string") {
@@ -58,7 +58,7 @@ export function flowProblem(flow: unknown): string | undefined {
     );
     return asked || use === "dev/verify" || use === "dev/review";
   });
-  if (!decides) return "needs at least one check, review or human step";
+  if (!decides) return "needs at least one test, review or human step";
   if (!steps.some((step) => useOf(step) === "dev/integrate")) {
     return "has no integrate step: a change reaches main only through integrate";
   }
@@ -215,8 +215,8 @@ export interface FlowInfo {
  */
 export function defaultFlowStages(settings: DevSettings): DevStage[] {
   return [
-    { stage: "work", use: settings.worker.use, args: [...settings.worker.args] },
-    { stage: "check", commands: [...settings.gate.commands] },
+    { stage: "code", use: settings.worker.use, args: [...settings.worker.args] },
+    { stage: "test", commands: [...settings.gate.commands] },
     { stage: "review", use: settings.reviewer.use, args: [...settings.reviewer.args] },
     { stage: "human" },
   ];

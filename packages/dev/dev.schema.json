@@ -61,10 +61,16 @@
       "description": "One stage of a repository flow. A parameter left out falls back to its dev.json setting.",
       "oneOf": [
         {
-          "description": "A worker changes the task branch.",
+          "description": "A code stage: a worker changes the task branch.",
           "type": "object",
           "properties": {
-            "stage": { "const": "work" },
+            "stage": {
+              "description": "The stage kind: code, or its older name work, which still loads.",
+              "oneOf": [
+                { "const": "code" },
+                { "const": "work", "description": "Older name of code; still loads.", "deprecated": true }
+              ]
+            },
             "use": { "description": "The harness step, such as radian/agent; unset uses the repository's worker.", "type": "string", "minLength": 1 },
             "args": { "description": "Arguments for the harness step; unset uses the worker's own.", "type": "array", "items": { "type": "string" } },
             "pool": { "description": "The pool this stage takes its workers from; unset is default. The name must be in pools.", "type": "string", "minLength": 1 },
@@ -77,10 +83,16 @@
           "additionalProperties": false
         },
         {
-          "description": "Commands run in a gate checkout of the task commit.",
+          "description": "A test stage: commands run in a gate checkout of the task commit.",
           "type": "object",
           "properties": {
-            "stage": { "const": "check" },
+            "stage": {
+              "description": "The stage kind: test, or its older name check, which still loads.",
+              "oneOf": [
+                { "const": "test" },
+                { "const": "check", "description": "Older name of test; still loads.", "deprecated": true }
+              ]
+            },
             "commands": { "description": "The shell lines to run; unset uses gate.commands.", "type": "array", "items": { "$ref": "#/$defs/checkCommand" } },
             "rerun": { "description": "How many times a failed line list runs again; unset uses check.rerun.", "type": "integer", "minimum": 0 }
           },
@@ -112,7 +124,7 @@
       ]
     },
     "flow": {
-      "description": "One repository flow: its stages, in order. At least one stage must be check, review or human. A human stage asks a person; when it is last its merge goes to integrate, and when it is not it continues with the next stage.",
+      "description": "One repository flow: its stages, in order. At least one stage must be test, review or human. A human stage asks a person; when it is last its merge goes to integrate, and when it is not it continues with the next stage.",
       "type": "object",
       "properties": {
         "stages": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/stage" } }
@@ -246,7 +258,7 @@
       }
     },
     "pools": {
-      "description": "Groups of workers by pool name. dev uses the pool default, which must be defined here, unless a work stage names another pool; without pools, default holds every worker in the order written. A pool is a list of worker names, or an object with the list and a concurrency that caps the pool's running tasks below the sum of its workers' counts. Needs workers.",
+      "description": "Groups of workers by pool name. dev uses the pool default, which must be defined here, unless a code stage names another pool; without pools, default holds every worker in the order written. A pool is a list of worker names, or an object with the list and a concurrency that caps the pool's running tasks below the sum of its workers' counts. Needs workers.",
       "type": "object",
       "minProperties": 1,
       "additionalProperties": {

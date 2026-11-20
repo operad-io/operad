@@ -49,7 +49,7 @@ The plugin is `codex`, the package `@operad-io/harness-codex`, the step `codex/a
 
 - Usage: a subscription login has no money cost, so cost is recorded as unknown and does not block budget checks; each attempt records the number of image generation calls (the quota counts generations); each tool call from the app-server item stream is recorded in the step log so a rework can look it up. The reply's context comes from the app-server's last token usage, and its window from the `modelContextWindow` the app-server reports with it when it reports one.
 - Time: an image generation can take minutes without output, which is normal; the worker's `stallSecs` and `wallTimeSecs` set the limits, and the harness does not decide a stall of its own.
-- Sandbox and approvals: Codex's own sandbox stays on, and its approval policy and reviewer are set so Codex asks operad instead of deciding; the access profile answers each command and file-change request (D4). Codex's own sandbox cannot write `.git`, so a flow that uses it has its `work` stage set `commit` (ADR 0020 D9); it needs network access and write access to the task's working directory.
+- Sandbox and approvals: Codex's own sandbox stays on, and its approval policy and reviewer are set so Codex asks operad instead of deciding; the access profile answers each command and file-change request (D4). Codex's own sandbox cannot write `.git`, so a flow that uses it has its `code` stage set `commit` (ADR 0020 D9); it needs network access and write access to the task's working directory.
 
 ### D9: A harness that cannot load skills itself is told them in the prompt
 

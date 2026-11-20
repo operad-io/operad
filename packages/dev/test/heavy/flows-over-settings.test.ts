@@ -52,6 +52,7 @@ function flowFile(change: (steps: Step[]) => Step[] = (steps) => steps): string 
 }
 
 const GOOD = { stages: [{ stage: "work" }, { stage: "check", commands: ["bun test"] }] };
+const SAVED = { stages: [{ stage: "code" }, { stage: "test", commands: ["bun test"] }] };
 
 async function setup(devJson: object = {}) {
   const root = await tempRoot();
@@ -120,7 +121,7 @@ describe("dev.flows and dev.flowList in settings", () => {
     expect(byName.get("default")?.source).toBe("built-in");
     expect(byName.get("default")?.stages).toHaveLength(4);
     expect(byName.get("review")?.source).toBe("dev.json");
-    expect(byName.get("review")?.stages).toEqual(GOOD.stages);
+    expect(byName.get("review")?.stages).toEqual(SAVED.stages);
     const ts = byName.get("ts");
     expect(ts?.source).toBe("typescript");
     expect(ts?.steps?.some((step) => step.use === "dev/integrate")).toBe(true);
@@ -147,8 +148,8 @@ describe("dev.flows and dev.flowList in settings", () => {
       name: "default",
       source: "built-in",
       stages: [
-        { stage: "work", use: "claude/agent", args: ["--model", "opus"] },
-        { stage: "check", commands: ["bun test"] },
+        { stage: "code", use: "claude/agent", args: ["--model", "opus"] },
+        { stage: "test", commands: ["bun test"] },
         { stage: "review", use: "pi/agent", args: ["--model", "gpt"] },
         { stage: "human" },
       ],
@@ -158,7 +159,7 @@ describe("dev.flows and dev.flowList in settings", () => {
   test("a dev.json default is listed instead of the built-in one", async () => {
     const { options } = await setup({ flows: { default: GOOD } });
     const defaults = (await flowList(options)).filter((item) => item.name === "default");
-    expect(defaults).toEqual([{ name: "default", source: "dev.json", stages: GOOD.stages }]);
+    expect(defaults).toEqual([{ name: "default", source: "dev.json", stages: SAVED.stages }]);
   });
 
   test("a valid flow is saved whole or by name, and shows in the list", async () => {
@@ -168,6 +169,8 @@ describe("dev.flows and dev.flowList in settings", () => {
     const written = JSON.parse(readFileSync(devFile, "utf8"));
     expect(written.name).toBe("repo");
     expect(Object.keys(written.flows)).toEqual(["one", "two"]);
+    expect(written.flows.one).toEqual(SAVED);
+    expect(written.flows.two).toEqual(SAVED);
     expect((await flowList(options)).filter((item) => item.source === "dev.json")).toHaveLength(2);
     await setSetting(options, "dev.flows.two", null, { scope: "repo" });
     expect(Object.keys(JSON.parse(readFileSync(devFile, "utf8")).flows)).toEqual(["one"]);
@@ -202,7 +205,7 @@ describe("dev.flows and dev.flowList in settings", () => {
     );
     expect(refused.kind).toBe("refused");
     expect(refused.message).toContain(
-      "flows.bad.stages: needs at least one check, review or human stage",
+      "flows.bad.stages: needs at least one test, review or human stage",
     );
   });
 
@@ -214,7 +217,7 @@ describe("dev.flows and dev.flowList in settings", () => {
     );
     expect(noDecision.kind).toBe("refused");
     expect(noDecision.message).toBe(
-      "flows.bad.stages: needs at least one check, review or human stage",
+      "flows.bad.stages: needs at least one test, review or human stage",
     );
     const whole = await refusal(
       setSetting(options, "dev.flows", { bad: { stages: [{ stage: "work" }] } }, { scope: "repo" }),
@@ -242,13 +245,13 @@ describe("dev.flows and dev.flowList in settings", () => {
       "settings", "set", "dev.flows.mine", JSON.stringify(GOOD), "--repo", "repo",
     ]);
     expect(saved.code).toBe(0);
-    expect(JSON.parse(readFileSync(devFile, "utf8")).flows.mine).toEqual(GOOD);
+    expect(JSON.parse(readFileSync(devFile, "utf8")).flows.mine).toEqual(SAVED);
     const before = readFileSync(devFile, "utf8");
     const refused = await runInProcess(home, path, [
       "settings", "set", "dev.flows.bad", '{"stages":[{"stage":"work"}]}', "--repo", "repo",
     ]);
     expect(refused.code).toBe(2);
-    expect(refused.err).toContain("flows.bad.stages: needs at least one check, review or human stage");
+    expect(refused.err).toContain("flows.bad.stages: needs at least one test, review or human stage");
     expect(readFileSync(devFile, "utf8")).toBe(before);
   });
 
@@ -287,12 +290,13 @@ describe("dev.flows and dev.flowList in settings", () => {
       const refused = await post({ stages: [{ stage: "work" }] });
       expect(refused.status).toBe(422);
       expect(((await refused.json()) as { error: { message: string } }).error.message).toBe(
-        "flows.bad.stages: needs at least one check, review or human stage",
+        "flows.bad.stages: needs at least one test, review or human stage",
       );
       expect(readFileSync(devFile, "utf8")).toBe(before);
       const schemaRefused = await post({ stages: "not a list" });
       expect(schemaRefused.status).toBe(422);
       expect((await post(GOOD)).status).toBe(200);
+      expect(JSON.parse(readFileSync(devFile, "utf8")).flows.bad).toEqual(SAVED);
     } finally {
       await server.stop();
       views.close();

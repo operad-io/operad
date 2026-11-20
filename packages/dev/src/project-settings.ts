@@ -9,7 +9,7 @@
 
 import type { ProjectSettingsDeclaration } from "@operad-io/engine";
 import { flowClash, listRepositoryFlows } from "./project-flows.ts";
-import { defaultDevSettings, readDevSettings, settingsProblem, settingsValueProblem } from "./settings.ts";
+import { defaultDevSettings, readDevSettings, settingsProblem, settingsValueProblem, useNewStageNames } from "./settings.ts";
 import { listRepositories } from "./service.ts";
 import type { JsonValue } from "@operad-io/engine";
 
@@ -26,10 +26,11 @@ export const DEV_PROJECT_SETTINGS: ProjectSettingsDeclaration = {
       // block an unrelated setting.
       check: ({ repository, value, name }) => {
         if (name !== "dev.flows" && !name.startsWith("dev.flows.")) return undefined;
-        return (
+        const problem =
           settingsValueProblem(repository.path, value) ??
-          flowClash(repository.path, value.flows)
-        );
+          flowClash(repository.path, value.flows);
+        if (problem === undefined) useNewStageNames(value);
+        return problem;
       },
       derived: async ({ repository }) => {
         const problem = settingsProblem(repository.path);
@@ -115,7 +116,7 @@ export const DEV_PROJECT_SETTINGS: ProjectSettingsDeclaration = {
             title: "Custom flows",
             editable: true,
             description:
-              "The repository's own flows, by name. A flow is { \"stages\": [...] }, each stage one of work, check, review or human; dev checks the flow when it is saved and refuses one that breaks its rules. A name may also be changed on its own (dev.flows.<name>); null removes it.",
+              "The repository's own flows, by name. A flow is { \"stages\": [...] }, each stage one of code, test, review or human (the older names work and check still load); dev checks the flow when it is saved and refuses one that breaks its rules. A name may also be changed on its own (dev.flows.<name>); null removes it.",
             additionalProperties: {
               type: "object",
               properties: {

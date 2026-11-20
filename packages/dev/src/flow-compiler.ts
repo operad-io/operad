@@ -11,9 +11,12 @@ import type { CheckCommand } from "./settings.ts";
 import { DEV_MAX_VISITS } from "./timeouts.ts";
 import { WAIT_STEPS, WORK_QUESTION_CHOICES, WORK_QUESTION_LATE_CHOICES, waitChoiceInfo, waitChoices } from "./waits.ts";
 
-/** The worker stage: the harness changes the task branch. */
+/** The current names of the four stage kinds. */
+export type StageKind = "code" | "test" | "review" | "human";
+
+/** The code stage: the harness changes the task branch. `work` is its older name. */
 export interface WorkStage {
-  readonly stage: "work";
+  readonly stage: "code" | "work";
   /** The harness step; unset uses `worker`/the default pool from dev.json. */
   readonly use?: string | undefined;
   /** Arguments for the harness step; unset uses the worker's own. */
@@ -30,9 +33,9 @@ export interface WorkStage {
   readonly beforeAttempt?: string | undefined;
 }
 
-/** The check stage: commands run in a gate checkout. */
+/** The test stage: commands run in a gate checkout. `check` is its older name. */
 export interface CheckStage {
-  readonly stage: "check";
+  readonly stage: "test" | "check";
   /** The commands; unset uses `gate.commands` from dev.json. */
   readonly commands?: readonly CheckCommand[] | undefined;
   /** How often a failed line list runs again; unset uses `check.rerun`. */
@@ -70,8 +73,8 @@ export type DevFlows = Readonly<Record<string, DevFlowSpec>>;
 
 /** The stages a repository with no `flows` gets: today's dev flow. */
 export const DEFAULT_STAGES: readonly DevStage[] = [
-  { stage: "work" },
-  { stage: "check" },
+  { stage: "code" },
+  { stage: "test" },
   { stage: "review" },
   { stage: "human" },
 ];
@@ -246,6 +249,31 @@ const REVERIFY: StepShape = plugin(
   "unsafe",
 );
 
+/** The current name of a stage kind; the older `work` and `check` load as `code` and `test`. */
+function canonicalStage(stage: DevStage): DevStage {
+  if (stage.stage === "work") return { ...stage, stage: "code" };
+  if (stage.stage === "check") return { ...stage, stage: "test" };
+  return stage;
+}
+
+function canonicalStages(stages: readonly DevStage[]): DevStage[] {
+  return stages.map(canonicalStage);
+}
+
+/** The internal step id base of a stage, with the ids earlier runs recorded. */
+function stepNameOf(stage: DevStage): string {
+  switch (stage.stage) {
+    case "code":
+    case "work":
+      return "work";
+    case "test":
+    case "check":
+      return "check";
+    default:
+      return stage.stage;
+  }
+}
+
 /** True when the stages are the built-in default, so its old step ids stay. */
 function isDefaultStages(stages: readonly DevStage[]): boolean {
   if (stages.length !== DEFAULT_STAGES.length) return false;
@@ -256,7 +284,7 @@ function sameStage(left: DevStage, right: DevStage): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
-/** The params a check stage gives `dev/verify`; unset fields read dev.json. */
+/** The params a test stage gives `dev/verify`; unset fields read dev.json. */
 function checkParams(stage: CheckStage): Readonly<Record<string, unknown>> {
   return {
     ...(stage.commands === undefined ? {} : { commands: stage.commands }),
@@ -264,12 +292,12 @@ function checkParams(stage: CheckStage): Readonly<Record<string, unknown>> {
   };
 }
 
-/** The params a work stage gives `dev/work`; unset fields read dev.json. */
+/** The params a code stage gives `dev/worktree`; unset fields read dev.json. */
 function worktreeParams(work: WorkStage | undefined): Readonly<Record<string, unknown>> {
   return work?.beforeAttempt === undefined ? {} : { beforeAttempt: work.beforeAttempt };
 }
 
-/** The params a work stage gives `dev/work`; unset fields read dev.json. */
+/** The params a code stage gives `dev/work`; unset fields read dev.json. */
 function workParams(stage: WorkStage): Readonly<Record<string, unknown>> {
   return {
     ...(stage.use === undefined ? {} : { flowUse: stage.use }),
@@ -524,12 +552,13 @@ interface NamedStage {
 function namedStages(stages: readonly DevStage[]): NamedStage[] {
   const counts = new Map<string, number>();
   return stages.map((stage, index) => {
-    const seen = (counts.get(stage.stage) ?? 0) + 1;
-    counts.set(stage.stage, seen);
+    const base = stepNameOf(stage);
+    const seen = (counts.get(base) ?? 0) + 1;
+    counts.set(base, seen);
     return {
       index,
       stage,
-      id: seen === 1 ? stage.stage : `${stage.stage}_${seen}`,
+      id: seen === 1 ? base : `${base}_${seen}`,
     };
   });
 }
@@ -540,11 +569,11 @@ function generatedSteps(
   gradingName: string,
 ): StepShape[] {
   const named = namedStages(stages);
-  const firstWork = named.find((item) => item.stage.stage === "work");
+  const firstWork = named.find((item) => item.stage.stage === "code");
   const usedKinds = new Set(named.map((item) => item.stage.stage));
-  const hasReverify = usedKinds.has("check") || usedKinds.has("review");
+  const hasReverify = usedKinds.has("test") || usedKinds.has("review");
   const choices = waitChoices("person", hasReverify);
-  const lastWork = [...named].reverse().find((item) => item.stage.stage === "work");
+  const lastWork = [...named].reverse().find((item) => item.stage.stage === "code");
   const reverifyTarget =
     lastWork === undefined
       ? (named[0]?.id ?? "integrate")
@@ -558,11 +587,11 @@ function generatedSteps(
       ? "worktree"
       : firstWork.id;
 
-  /** The entry of the nearest work stage before a stage, or the wait. */
+  /** The entry of the nearest code stage before a stage, or the wait. */
   const workEntryBefore = (index: number): string | undefined => {
     for (let at = index - 1; at >= 0; at -= 1) {
       const item = named[at];
-      if (item?.stage.stage !== "work") continue;
+      if (item?.stage.stage !== "code") continue;
       return item.index === 0 ? "worktree" : item.id;
     }
     return undefined;
@@ -571,7 +600,7 @@ function generatedSteps(
   const nextAfter = (index: number): string =>
     named[index + 1]?.id ?? "integrate";
 
-  const firstWorkStage = firstWork?.stage.stage === "work" ? firstWork.stage : undefined;
+  const firstWorkStage = firstWork?.stage.stage === "code" ? firstWork.stage : undefined;
   const steps: StepShape[] = [];
   const waitId = WAIT_STEPS.person;
   steps.push({
@@ -652,7 +681,7 @@ function generatedSteps(
   for (const item of named) {
     const next = nextAfter(item.index);
     switch (item.stage.stage) {
-      case "work": {
+      case "code": {
         const id = item.id;
         steps.push(
           plugin(
@@ -713,7 +742,7 @@ function generatedSteps(
         );
         break;
       }
-      case "check": {
+      case "test": {
         const id = item.id;
         const target = workEntryBefore(item.index);
         if (target !== undefined) {
@@ -899,9 +928,10 @@ function visitsFor(stages: readonly DevStage[], defaults: boolean): number {
  */
 export function compileDevFlow(
   name: string,
-  stages: readonly DevStage[],
+  written: readonly DevStage[],
   options: { readonly gradingName?: string | undefined } = {},
 ): FlowDefinition {
+  const stages = canonicalStages(written);
   const defaults = isDefaultStages(stages);
   const steps = defaults
     ? defaultSteps(stages, options.gradingName ?? name)
