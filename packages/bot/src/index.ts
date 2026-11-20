@@ -53,6 +53,13 @@ import {
   scheduledPrompts,
   startScheduled,
 } from "./schedule.ts";
+import {
+  TIDY_TYPE,
+  startTidy,
+  tidyActions,
+  tidyItems,
+  tidyViews,
+} from "./tidy.ts";
 
 /** The step a chat calls at every reply to read its bot. */
 export const SETTINGS_STEP = "bot/settings";
@@ -646,6 +653,7 @@ export function createBotPlugin() {
           { name: "rejected", states: ["rejected"] },
         ],
       },
+      { name: TIDY_TYPE, index: ["bot", "state"] },
     ],
     steps: [{ name: "settings", results: ["done", "failed"], run: runSettings }],
     // A scheduled prompt opens a chat and sends its first message from the
@@ -659,7 +667,7 @@ export function createBotPlugin() {
         mode: "auto" as const,
       },
     ],
-    actions: [chatAction, createAction, ...proposalActions, ...scheduleActions],
+    actions: [chatAction, createAction, ...proposalActions, ...scheduleActions, ...tidyActions],
     commands: [
       {
         name: "skill",
@@ -685,15 +693,23 @@ export function createBotPlugin() {
     // A proposal waits for no run; each one is a pending item of its bot.
     standing: async (ctx) => {
       await ingestReports(ctx.store, ctx.home);
-      return proposalItems(ctx.store);
+      return [...(await proposalItems(ctx.store)), ...(await tidyItems(ctx.store))];
     },
-    // The bot is its own source for its scheduled prompts. It declares `start`
-    // while staying a domain plugin, so `serve` starts it like any source.
+    // The bot is its own source for its scheduled prompts and its nightly
+    // memory tidy. It declares `start` while staying a domain plugin, so
+    // `serve` starts it like any source.
     start: async (ctx) => {
       await migrateDefaultHome(ctx.store, ctx.home, readBots(ctx.home, ctx.settings));
-      return startScheduled(ctx);
+      const scheduled = await startScheduled(ctx);
+      const tidy = await startTidy(ctx);
+      return {
+        stop: async () => {
+          await scheduled.stop();
+          await tidy.stop();
+        },
+      };
     },
-    views: { [BOT_TYPE]: botViews, [PROPOSAL_TYPE]: proposalViews },
+    views: { [BOT_TYPE]: botViews, [PROPOSAL_TYPE]: proposalViews, [TIDY_TYPE]: tidyViews },
   });
 }
 
@@ -703,6 +719,7 @@ export * from "./bot.ts";
 export * from "./create.ts";
 export * from "./proposals.ts";
 export * from "./schedule.ts";
+export * from "./tidy.ts";
 export * from "./mcp.ts";
 export * from "./mcp-proposals.ts";
 export { runGuard, markedResult, MATERIAL_NOTE, reportPath } from "./guard.ts";

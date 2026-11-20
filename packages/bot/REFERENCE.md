@@ -17,7 +17,8 @@ The `bot` section of `config.json` (`plugins.bot.settings`), checked against
 
 `default` exists even when it is not written. A bot name is lowercase letters,
 digits, `-` and `_`. Fields: `cwd`, `harness` (the default agent),
-`useOwnSettings`, `skills`, `speaker`, `access`.
+`useOwnSettings`, `skills`, `speaker`, `writeWiki`, `tidyTime`,
+`runWithoutAsking`, `backgroundModel`, `mcpServers`, `mcpAllow` and `access`.
 
 - **Working directory**: `~/.operad/bot/<name>` for every bot, so the default
   bot is in `~/.operad/bot/default`, created when missing along with its
@@ -256,3 +257,30 @@ A schedule asked for in a chat goes through `bot schedule`, not through these
 actions: the chat's agent turns the words into a five-field cron expression and
 the proposal waits in Pending until a person approves it. `bot/settings` returns
 the line a bot chat starts with, saying that a schedule is proposed this way.
+
+
+## The nightly memory tidy
+
+`BotTidySource` is the bot's second source. It creates one `bot-tidy` object per
+bot (`TIDY_TYPE`, id the bot name) with the last planned check and the card's
+state. `tidyTime` (`03:30` by default) is read in local time, and a missed night
+is caught up once by checking only the latest planned time. The first check only
+sets a baseline. `tidyWork` reads `memoryTidyState` from the memory plugin and
+the bot's chats since the last tidy commit; a night with no changed note and an
+index under its limit writes no card and calls no model.
+
+With work and `runWithoutAsking` off, the object becomes a pending card. Its
+actions are `run` and `skip`, offered by the plugin on `TIDY_TYPE`; `tidyItems`
+turns the pending, result and failed states into the bot's pending items. `run`
+only marks the card requested, because an action has no client to open a chat;
+the source starts the chat on its next poll, and waits while any chat of the bot
+is writing a reply. The model is `backgroundModel`, else the harness's declared
+`capabilities.backgroundModel`, else the bot's model.
+
+The tidy chat is opened through `bot:chat` with the actor
+`{ via: "bot", id: TIDY_ORIGIN }`, so its chat data records the tidy origin and
+the memory plugin commits it as `tidy:`. The prompt carries the changed notes and
+the period's chat records. The source watches for the memory plugin's
+`memory.tidy` fact and then reads the commit's diff summary. A non-automatic run
+leaves a result card with the cost and diff; an automatic run returns to idle and
+calls `notify` only when the commit changed something.

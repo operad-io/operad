@@ -31,6 +31,7 @@ describe("bots", () => {
     expect(types.map((info) => [info.type, info.settings])).toEqual([
       ["bot", true],
       ["bot-proposal", true],
+      ["bot-tidy", true],
     ]);
   });
 

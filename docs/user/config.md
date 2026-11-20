@@ -257,6 +257,9 @@ A bot is read again at every reply, so an edit applies to the next reply. See
 | `bot.bots.<name>.effort` | string | the agent's default | an effort the chat's agent lists | When a new chat starts | Refused at chat start when the agent does not list it |
 | `bot.bots.<name>.speaker` | string | the `chat.speaker` value | non-empty text | Next reply | Refused by the schema |
 | `bot.bots.<name>.writeWiki` | boolean | `true` for `default`, `false` for every other bot | `true` or `false`; read access is always there | Next reply | Refused by the schema |
+| `bot.bots.<name>.tidyTime` | string | `03:30` | `HH:MM` from `00:00` to `23:59`, in the machine's local time zone | The next nightly memory check | Refused by the schema |
+| `bot.bots.<name>.runWithoutAsking` | boolean | `false` | `true` runs the nightly memory tidy with no pending card; `false` waits for Run or Skip | The next nightly check | Refused by the schema |
+| `bot.bots.<name>.backgroundModel` | string | the agent's declared background model, else the bot's `model` | a model the bot's agent lists | The next memory tidy run | Refused at the run when the agent does not list it |
 | `bot.bots.<name>.mcpServers` | object | `{}` | server name to a server object; add one with `operad bot mcp`, which a person approves | Next reply | Refused by the schema; a server whose tools changed is not mounted |
 | `bot.bots.<name>.mcpServers.<name>` | object | none | the keys below | Next reply | Refused by the schema |
 | `bot.bots.<name>.mcpServers.<name>.command` | string | none | the program that starts the server | Next reply | Refused by the schema; a missing command means the server cannot start |

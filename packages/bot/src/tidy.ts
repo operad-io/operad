@@ -1,0 +1,888 @@
+/**
+ * A bot's nightly memory tidy: the check that costs no model call, the pending
+ * card with Run and Skip, the automatic run, and the one commit the run leaves.
+ * The memory plugin owns what changed and the rewrite guard; this module owns
+ * when the botanist wakes and what a person sees.
+ */
+
+import { join } from "node:path";
+import {
+  CHAT_TYPE,
+  allEntries,
+  allMessages,
+  chatData,
+  chatFacts,
+  costText,
+  writingReply,
+} from "@operad-io/chat";
+import {
+  isRecord,
+  type ActionTypeDefinition,
+  type ClientApi,
+  type HarnessCapabilities,
+  type JsonValue,
+  type ObjectRow,
+  type ObjectStore,
+  type ObjectViews,
+  type SectionContent,
+  type StoredObject,
+} from "@operad-io/engine";
+import {
+  TIDY_COMMIT_FACT,
+  TIDY_ORIGIN,
+  ensureMemoryLayout,
+  ensureRepository,
+  memoryEnabled,
+  memoryTidyState,
+  tidyCommitForChat,
+  tidyCommitSummary,
+} from "@operad-io/memory";
+import {
+  BOT_TYPE,
+  BotError,
+  ensureBotMemory,
+  readBots,
+  workingDirectory,
+  type BotSettings,
+} from "./bot.ts";
+import {
+  SCHEDULE_SOURCE,
+  localDate,
+  notifyScheduledReply,
+  replySummary,
+  type ScheduleNotice,
+} from "./schedule.ts";
+
+/** The internal object type of one bot's tidy state and card. */
+export const TIDY_TYPE = "bot-tidy";
+
+/** The default time the nightly check runs, in local time. */
+export const DEFAULT_TIDY_TIME = "03:30";
+
+/** The longest an automatic tidy's notice is. */
+const NOTICE_MAX = 300;
+
+export type TidyState =
+  | "idle"
+  | "pending"
+  | "requested"
+  | "running"
+  | "result"
+  | "failed"
+  | "skipped";
+
+/** How much work the last check found. */
+export interface TidyCounts {
+  readonly notes: number;
+  readonly chats: number;
+  readonly indexOver: boolean;
+}
+
+/** What a finished tidy did and cost. */
+export interface TidyOutcome {
+  readonly chatId: string;
+  readonly at: number;
+  readonly costMicros: number | null;
+  readonly changed: boolean;
+  readonly voided: boolean;
+  /** The commit's diff-stat line, or why the run failed. */
+  readonly summary: string;
+  /** The agent's own one-line reply, when it gave one. */
+  readonly reply: string;
+}
+
+/** The state stored on one bot's tidy object. */
+export interface TidyData {
+  readonly [key: string]: unknown;
+  readonly bot: string;
+  readonly state: TidyState;
+  /** The latest planned check already handled. */
+  readonly plannedAt: number;
+  readonly checkedAt?: number;
+  readonly counts: TidyCounts;
+  readonly requestedAt?: number | undefined;
+  readonly chatId?: string | undefined;
+  readonly auto?: boolean | undefined;
+  readonly outcome?: TidyOutcome | undefined;
+  readonly lastOutcome?: TidyOutcome | undefined;
+}
+
+/** A note whose text the tidy sees. */
+export interface TidyNote {
+  readonly path: string;
+  readonly content: string;
+}
+
+/** One chat in the period the tidy checks. */
+export interface TidyChat {
+  readonly id: string;
+  readonly title: string;
+  readonly messages: readonly {
+    readonly role: string;
+    readonly text: string;
+    readonly at: number;
+  }[];
+}
+
+/** What the check found: the work the card counts and the run reads. */
+export interface TidyWork {
+  readonly notes: readonly TidyNote[];
+  readonly chats: readonly TidyChat[];
+  readonly indexOver: boolean;
+  readonly indexBytes: number;
+  readonly baseline: string | undefined;
+}
+
+function integer(value: unknown, fallback = 0): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function countsOf(value: unknown): TidyCounts {
+  if (!isRecord(value)) return { notes: 0, chats: 0, indexOver: false };
+  return {
+    notes: integer(value.notes),
+    chats: integer(value.chats),
+    indexOver: value.indexOver === true,
+  };
+}
+
+function outcomeOf(value: unknown): TidyOutcome | undefined {
+  if (!isRecord(value) || typeof value.chatId !== "string" || typeof value.summary !== "string") {
+    return undefined;
+  }
+  return {
+    chatId: value.chatId,
+    at: integer(value.at),
+    costMicros:
+      typeof value.costMicros === "number" && Number.isFinite(value.costMicros)
+        ? value.costMicros
+        : null,
+    changed: value.changed === true,
+    voided: value.voided === true,
+    summary: value.summary,
+    reply: typeof value.reply === "string" ? value.reply : "",
+  };
+}
+
+const STATES: ReadonlySet<string> = new Set([
+  "idle",
+  "pending",
+  "requested",
+  "running",
+  "result",
+  "failed",
+  "skipped",
+]);
+
+/** Reads a tidy object, or undefined when its state is unusable. */
+export function tidyDataOf(value: Readonly<Record<string, unknown>>): TidyData | undefined {
+  if (typeof value.bot !== "string" || !STATES.has(String(value.state))) return undefined;
+  const outcome = outcomeOf(value.outcome);
+  const last = outcomeOf(value.lastOutcome);
+  return {
+    bot: value.bot,
+    state: value.state as TidyState,
+    plannedAt: integer(value.plannedAt),
+    ...(typeof value.checkedAt === "number" ? { checkedAt: value.checkedAt } : {}),
+    counts: countsOf(value.counts),
+    ...(typeof value.requestedAt === "number" ? { requestedAt: value.requestedAt } : {}),
+    ...(typeof value.chatId === "string" ? { chatId: value.chatId } : {}),
+    ...(value.auto === true ? { auto: true } : {}),
+    ...(outcome === undefined ? {} : { outcome }),
+    ...(last === undefined ? {} : { lastOutcome: last }),
+  };
+}
+
+/** The tidy time a bot names, as hour and minute; the default is between 3 and 4. */
+export function tidyClock(settings: BotSettings): { readonly hour: number; readonly minute: number } {
+  const written = typeof settings.tidyTime === "string" ? settings.tidyTime : DEFAULT_TIDY_TIME;
+  const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(written);
+  if (match === null) return { hour: 3, minute: 30 };
+  return { hour: Number(match[1]), minute: Number(match[2]) };
+}
+
+/** The latest planned check at or before now, in the machine's local time zone. */
+export function latestTidyMinute(settings: BotSettings, now: number): number {
+  const { hour, minute } = tidyClock(settings);
+  const date = new Date(now);
+  const today = new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate(),
+    hour,
+    minute,
+    0,
+    0,
+  ).getTime();
+  if (today <= now) return today;
+  return new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate() - 1,
+    hour,
+    minute,
+    0,
+    0,
+  ).getTime();
+}
+
+function cut(text: string, max: number): string {
+  return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
+}
+
+async function listAll(store: ObjectStore, type: string): Promise<readonly StoredObject[]> {
+  const found: StoredObject[] = [];
+  let cursor: string | undefined;
+  do {
+    const page = await store.list(type, { ...(cursor === undefined ? {} : { cursor }) });
+    found.push(...page.objects);
+    cursor = page.next;
+  } while (cursor !== undefined);
+  return found;
+}
+
+/** The chats of one bot whose messages fall in the tidy period. */
+async function chatsToCheck(
+  store: ObjectStore,
+  bot: string,
+  since: number | undefined,
+): Promise<readonly TidyChat[]> {
+  const found: TidyChat[] = [];
+  for (const object of await listAll(store, CHAT_TYPE)) {
+    const chat = chatData(object.data);
+    if (chat.parent !== `${BOT_TYPE}:${bot}`) continue;
+    if (chat.scheduled?.entry === TIDY_ORIGIN) continue;
+    const messages = allMessages(store, object.id)
+      .filter((message) => since === undefined || message.at >= since)
+      .map((message) => ({
+        role: message.role,
+        text: cut(message.text, 1_500),
+        at: message.at,
+      }));
+    if (messages.length === 0) continue;
+    found.push({ id: object.id, title: chat.title, messages });
+  }
+  return found.sort((left, right) => left.id.localeCompare(right.id));
+}
+
+/** The work one bot's memory has for a tidy now. */
+export async function tidyWork(
+  store: ObjectStore,
+  bot: string,
+  cwd: string,
+): Promise<TidyWork> {
+  const memoryDir = join(cwd, "memory");
+  ensureMemoryLayout(memoryDir);
+  const memory = memoryTidyState(memoryDir, bot);
+  const notes: TidyNote[] = [];
+  for (const path of memory.notes) {
+    try {
+      notes.push({
+        path,
+        content: cut(await Bun.file(join(memoryDir, ...path.split("/"))).text(), 8_000),
+      });
+    } catch {
+      // A note that vanished between the check and this read is not work.
+    }
+  }
+  return {
+    notes,
+    chats: await chatsToCheck(store, bot, memory.since),
+    indexOver: memory.indexOver,
+    indexBytes: memory.indexBytes,
+    baseline: memory.baseline,
+  };
+}
+
+/** Whether any chat of this bot is writing a reply now. */
+export async function botChatReplying(store: ObjectStore, bot: string): Promise<boolean> {
+  for (const object of await listAll(store, CHAT_TYPE)) {
+    const chat = chatData(object.data);
+    if (chat.parent !== `${BOT_TYPE}:${bot}`) continue;
+    if (writingReply(chatFacts(store, object.id), allMessages(store, object.id), allEntries(store, object.id)) !== undefined) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** The prompt a tidy chat starts with. */
+export function tidyPrompt(bot: string, work: TidyWork): string {
+  const out = [
+    `Tidy the memory of bot ${bot}.`,
+    "",
+    "This is the nightly memory tidy. Work only from the notes and chat records below.",
+    "Fix notes that are wrong or out of date: the newer fact replaces the older one, and the old note stays where it is, marked as replaced; do not delete it.",
+    `Keep memory/index.md under 8,000 characters by moving detail into topic notes. It is ${work.indexBytes} bytes now.`,
+    "Check only the period since the last tidy. Do not change instructions.md. End with a short summary of what changed.",
+    "",
+    `## Notes added or changed since the last tidy (${work.notes.length})`,
+  ];
+  if (work.notes.length === 0) out.push("None.");
+  for (const note of work.notes) {
+    out.push("", `### ${note.path}`, "```markdown", note.content, "```");
+  }
+  out.push("", `## Chats in the period (${work.chats.length})`);
+  if (work.chats.length === 0) out.push("None.");
+  for (const chat of work.chats) {
+    out.push("", `### Chat ${chat.id}: ${chat.title}`);
+    for (const message of chat.messages) {
+      out.push(`${message.role}: ${message.text}`);
+    }
+  }
+  return out.join("\n");
+}
+
+function costPart(outcome: TidyOutcome): string {
+  return outcome.costMicros === null
+    ? "cost unknown"
+    : `cost ${costText(outcome.costMicros, undefined)}`;
+}
+
+/** The line a pending card and an automatic notice show. */
+export function tidyOutcomeLine(bot: string, outcome: TidyOutcome): string {
+  const changed = outcome.changed
+    ? outcome.summary
+    : outcome.summary === "No file statistics."
+      ? "no memory change"
+      : outcome.summary;
+  const voided = outcome.voided ? "; the rewrite dropped too many entries, so only additions were kept" : "";
+  return `${bot}: ${changed}; ${costPart(outcome)}${voided}`;
+}
+
+/** What a person reads on a bot's tidy card. */
+export function tidyCardPrompt(data: TidyData): string {
+  if (data.state === "pending" || data.state === "requested") {
+    const lines = [
+      `Memory tidy for bot ${data.bot}: ${data.counts.notes} new or changed note${data.counts.notes === 1 ? "" : "s"}, ${data.counts.chats} chat${data.counts.chats === 1 ? "" : "s"} to check.`,
+      data.counts.indexOver ? "The memory index is over its limit." : "The memory index is within its limit.",
+    ];
+    if (data.state === "requested") lines.push("It runs as soon as no chat of this bot is replying.");
+    return lines.join(" ");
+  }
+  if (data.state === "running") {
+    return `Memory tidy for bot ${data.bot} is running in chat ${data.chatId ?? "…"}.`;
+  }
+  const outcome = data.outcome ?? data.lastOutcome;
+  if (data.state === "failed") {
+    return `Memory tidy for bot ${data.bot} failed.${outcome === undefined ? "" : ` ${tidyOutcomeLine(data.bot, outcome)}`}`;
+  }
+  if (outcome === undefined) return `Memory tidy for bot ${data.bot}: nothing to show.`;
+  return `Memory tidy for bot ${data.bot} finished. ${tidyOutcomeLine(data.bot, outcome)}.${outcome.reply.length === 0 ? "" : ` Reply: ${outcome.reply}`}`;
+}
+
+/** The actions a tidy card offers: Run and Skip. */
+export const tidyActions: readonly ActionTypeDefinition[] = [
+  {
+    name: "run",
+    on: TIDY_TYPE,
+    when: (state) => state.state === "pending" || state.state === "failed",
+    async run(ctx) {
+      const data = tidyDataOf(ctx.object.data);
+      if (data === undefined) throw new BotError("this tidy card has no usable state");
+      await ctx.store.put(
+        TIDY_TYPE,
+        data.bot,
+        { ...data, state: "requested", requestedAt: Date.now(), outcome: undefined } as unknown as Record<string, JsonValue>,
+        "action:bot/run",
+      );
+      return `memory tidy for bot ${data.bot} will run when no chat of the bot is replying`;
+    },
+  },
+  {
+    name: "skip",
+    on: TIDY_TYPE,
+    when: (state) =>
+      state.state === "pending" || state.state === "result" || state.state === "failed",
+    async run(ctx) {
+      const data = tidyDataOf(ctx.object.data);
+      if (data === undefined) throw new BotError("this tidy card has no usable state");
+      await ctx.store.put(
+        TIDY_TYPE,
+        data.bot,
+        { ...data, state: "skipped", requestedAt: undefined } as unknown as Record<string, JsonValue>,
+        "action:bot/skip",
+      );
+      return `skipped the memory tidy of bot ${data.bot} until the next check finds work`;
+    },
+  },
+];
+
+/** The pending items the tidy cards make. */
+export async function tidyItems(
+  store: ObjectStore,
+): Promise<
+  readonly {
+    readonly id: string;
+    readonly prompt: string;
+    readonly object: { readonly type: string; readonly id: string };
+  }[]
+> {
+  const items = [];
+  for (const object of await listAll(store, TIDY_TYPE)) {
+    const data = tidyDataOf(object.data);
+    if (data === undefined) continue;
+    if (data.state !== "pending" && data.state !== "result" && data.state !== "failed") continue;
+    const bot = await store.get(BOT_TYPE, data.bot);
+    if (bot === undefined || bot.data.removed === true) continue;
+    items.push({
+      id: object.id,
+      prompt: tidyCardPrompt(data),
+      object: { type: TIDY_TYPE, id: object.id },
+    });
+  }
+  return items;
+}
+
+function tidyRow(object: StoredObject): ObjectRow {
+  const data = tidyDataOf(object.data);
+  if (data === undefined) {
+    return { id: object.id, title: "Memory tidy", state: "broken", parent: `${BOT_TYPE}:${object.id}` };
+  }
+  return {
+    id: object.id,
+    title: `Memory tidy for ${data.bot}`,
+    state: data.state,
+    parent: `${BOT_TYPE}:${data.bot}`,
+    ...(data.state === "pending" || data.state === "result" || data.state === "failed"
+      ? { waiting: true as const }
+      : {}),
+    ...(data.counts.notes === 0 && data.counts.chats === 0
+      ? {}
+      : { note: `${data.counts.notes} notes, ${data.counts.chats} chats` }),
+  };
+}
+
+/** How a tidy card shows when it is read as an object. */
+export const tidyViews: ObjectViews = {
+  row: tidyRow,
+  sections: () => [{ id: "tidy", title: "Memory tidy" }],
+  load: (_ctx, object): SectionContent => {
+    const data = tidyDataOf(object.data);
+    return {
+      markdown: data === undefined ? "This tidy card has no usable state." : tidyCardPrompt(data),
+    };
+  },
+};
+
+export interface TidySourceContext {
+  readonly store: ObjectStore;
+  readonly home: string;
+  readonly settings: Readonly<Record<string, JsonValue>>;
+  readonly clock: () => number;
+  readonly logger: { write(text: string): Promise<string> };
+  readonly client: ClientApi;
+  readonly harnesses?: readonly string[] | undefined;
+  readonly harnessCapabilities?: ((harness: string) => HarnessCapabilities | undefined) | undefined;
+}
+
+/** One firing the tidy source watches for its reply. */
+interface Watch {
+  readonly stop: () => void;
+  readonly check: () => Promise<void>;
+}
+
+function backgroundModel(
+  settings: BotSettings,
+  ctx: TidySourceContext,
+): string | undefined {
+  if (typeof settings.backgroundModel === "string" && settings.backgroundModel.length > 0) {
+    return settings.backgroundModel;
+  }
+  const harness = settings.harness ?? ctx.harnesses?.[0];
+  return harness === undefined ? undefined : ctx.harnessCapabilities?.(harness)?.backgroundModel;
+}
+
+function outcomeSummary(outcome: TidyOutcome): string {
+  const line = `${outcome.summary}${outcome.voided ? "; only additions were kept" : ""}`;
+  return line.length <= NOTICE_MAX ? line : `${line.slice(0, NOTICE_MAX - 1)}…`;
+}
+
+/** The bot's nightly tidy source. */
+export class BotTidySource {
+  private readonly ctx: TidySourceContext;
+  private readonly notify: (notice: ScheduleNotice) => Promise<void>;
+  private readonly watches = new Map<string, Watch>();
+  private readonly work = new Set<Promise<void>>();
+  private timer: ReturnType<typeof setInterval> | undefined;
+  private stopped = false;
+  private busy = false;
+  private lastCheck: number | undefined;
+
+  constructor(
+    ctx: TidySourceContext,
+    options: { readonly notify?: ((notice: ScheduleNotice) => Promise<void>) | undefined } = {},
+  ) {
+    this.ctx = ctx;
+    this.notify = options.notify ?? ((notice) => notifyScheduledReply(ctx.home, notice));
+  }
+
+  private async log(message: string): Promise<void> {
+    await this.ctx.logger.write(message);
+  }
+
+  private track(work: Promise<void>): void {
+    const tracked = work
+      .catch((error: unknown) => this.log(error instanceof Error ? error.message : String(error)))
+      .finally(() => this.work.delete(tracked));
+    this.work.add(tracked);
+  }
+
+  /** Waits for the checks that are running now; a test calls this after a reply. */
+  async settled(): Promise<void> {
+    while (this.work.size > 0) await Promise.allSettled([...this.work]);
+  }
+
+  private async put(bot: string, data: TidyData, cause: string): Promise<void> {
+    await this.ctx.store.put(TIDY_TYPE, bot, data as unknown as Record<string, JsonValue>, cause);
+  }
+
+  private async bots(): Promise<readonly StoredObject[]> {
+    return listAll(this.ctx.store, BOT_TYPE);
+  }
+
+  private async tidyObjects(): Promise<readonly StoredObject[]> {
+    return listAll(this.ctx.store, TIDY_TYPE);
+  }
+
+  /** Creates the first baseline, then checks at the planned time and catches up once. */
+  async poll(): Promise<void> {
+    if (this.stopped || this.busy) return;
+    this.busy = true;
+    try {
+      const now = this.ctx.clock();
+      this.lastCheck = now;
+      for (const object of await this.bots()) {
+        if (object.data.removed === true) continue;
+        await this.one(object, now);
+      }
+    } finally {
+      this.busy = false;
+    }
+  }
+
+  private async one(object: StoredObject, now: number): Promise<void> {
+    const bot = object.id;
+    let settings: BotSettings | undefined;
+    try {
+      settings = readBots(this.ctx.home, this.ctx.settings)[bot];
+    } catch (error) {
+      await this.log(`memory tidy: ${error instanceof Error ? error.message : String(error)}`);
+      return;
+    }
+    if (settings === undefined || !memoryEnabled(this.ctx.home)) return;
+    let cwd: string;
+    try {
+      cwd = workingDirectory(this.ctx.home, bot, settings);
+      ensureBotMemory(cwd, this.ctx.home);
+    } catch (error) {
+      await this.log(`memory tidy ${bot}: ${error instanceof Error ? error.message : String(error)}`);
+      return;
+    }
+    const stored = await this.ctx.store.get(TIDY_TYPE, bot);
+    if (stored === undefined) {
+      await this.put(
+        bot,
+        {
+          bot,
+          state: "idle",
+          plannedAt: latestTidyMinute(settings, now),
+          checkedAt: now,
+          counts: { notes: 0, chats: 0, indexOver: false },
+        },
+        "source:bot/tidy",
+      );
+      return;
+    }
+    const data = tidyDataOf(stored.data);
+    if (data === undefined) return;
+    if (data.state === "running") return;
+    if (data.state === "requested") {
+      const work = await tidyWork(this.ctx.store, bot, cwd);
+      if (work.notes.length === 0 && !work.indexOver) {
+        await this.put(
+          bot,
+          { ...data, state: "idle", counts: { notes: 0, chats: 0, indexOver: false } },
+          "source:bot/tidy",
+        );
+        return;
+      }
+      if (await botChatReplying(this.ctx.store, bot)) return;
+      await this.launch(bot, cwd, settings, data.plannedAt, work, false);
+      return;
+    }
+    const latest = latestTidyMinute(settings, now);
+    if (latest <= data.plannedAt) return;
+    const work = await tidyWork(this.ctx.store, bot, cwd);
+    const counts: TidyCounts = {
+      notes: work.notes.length,
+      chats: work.chats.length,
+      indexOver: work.indexOver,
+    };
+    if (work.notes.length === 0 && !work.indexOver) {
+      const keep = data.state === "result" || data.state === "failed" ? data.state : "idle";
+      await this.put(
+        bot,
+        { ...data, state: keep, plannedAt: latest, checkedAt: now, counts: { notes: 0, chats: 0, indexOver: false } },
+        "source:bot/tidy",
+      );
+      return;
+    }
+    if (settings.runWithoutAsking === true) {
+      // A reply is being written: try again on the next tick, without moving the
+      // planned time past a night that has not run.
+      if (await botChatReplying(this.ctx.store, bot)) return;
+      await this.launch(bot, cwd, settings, latest, work, true);
+      return;
+    }
+    await this.put(
+      bot,
+      {
+        ...data,
+        state: "pending",
+        plannedAt: latest,
+        checkedAt: now,
+        counts,
+        auto: false,
+        outcome: undefined,
+      },
+      "source:bot/tidy",
+    );
+  }
+
+  private async launch(
+    bot: string,
+    cwd: string,
+    settings: BotSettings,
+    plannedAt: number,
+    work: TidyWork,
+    auto: boolean,
+  ): Promise<void> {
+    const now = this.ctx.clock();
+    const counts: TidyCounts = {
+      notes: work.notes.length,
+      chats: work.chats.length,
+      indexOver: work.indexOver,
+    };
+    const running: TidyData = {
+      bot,
+      state: "running",
+      plannedAt,
+      checkedAt: now,
+      counts,
+      auto,
+    };
+    await this.put(bot, running, "source:bot/tidy");
+    const model = backgroundModel(settings, this.ctx);
+    let chatId: string | undefined;
+    try {
+      const run = await this.ctx.client.act("bot:chat", `${BOT_TYPE}:${bot}`, {
+        args: {
+          title: `Memory tidy (${localDate(now)})`.slice(0, 120),
+          message: tidyPrompt(bot, work),
+          ...(model === undefined ? {} : { model }),
+        },
+        actor: { via: SCHEDULE_SOURCE, id: TIDY_ORIGIN },
+      });
+      chatId = run.opens?.startsWith(`${CHAT_TYPE}:`) === true
+        ? run.opens.slice(CHAT_TYPE.length + 1)
+        : undefined;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await this.put(
+        bot,
+        {
+          ...running,
+          state: "failed",
+          outcome: {
+            chatId: "",
+            at: now,
+            costMicros: null,
+            changed: false,
+            voided: false,
+            summary: replySummary(`Could not start: ${message}`),
+            reply: "",
+          },
+        },
+        "source:bot/tidy",
+      );
+      await this.log(`memory tidy of bot ${bot} could not start: ${message}`);
+      return;
+    }
+    if (chatId === undefined) {
+      await this.log(`memory tidy of bot ${bot} opened no chat`);
+      return;
+    }
+    await this.put(bot, { ...running, chatId }, "source:bot/tidy");
+    await this.watch(bot, chatId, auto);
+  }
+
+  private async watch(bot: string, chatId: string, auto: boolean): Promise<void> {
+    if (this.watches.has(chatId)) return;
+    let running = false;
+    let stopped = false;
+    let unsubscribe: (() => void) | undefined;
+    const check = async (): Promise<void> => {
+      if (running || stopped) return;
+      running = true;
+      try {
+        const facts = chatFacts(this.ctx.store, chatId);
+        const messages = allMessages(this.ctx.store, chatId);
+        const entries = allEntries(this.ctx.store, chatId);
+        if (writingReply(facts, messages, entries) !== undefined) return;
+        const committed = facts.some(
+          (fact) =>
+            fact.type === TIDY_COMMIT_FACT &&
+            isRecord(fact.data) &&
+            fact.data["chat"] === chatId,
+        );
+        if (!committed) return;
+        const stored = await this.ctx.store.get(CHAT_TYPE, chatId);
+        if (stored === undefined) return;
+        const reply = [...messages].reverse().find((message) => message.role === "assistant");
+        const failure = [...entries].reverse().find((item) => item.kind === "failure");
+        if (reply === undefined && failure === undefined) return;
+        stopped = true;
+        unsubscribe?.();
+        this.watches.delete(chatId);
+        await this.finish(bot, chatId, stored, auto, reply?.text, failure?.text);
+      } finally {
+        running = false;
+      }
+    };
+    const blocking: Watch = {
+      stop: () => {
+        stopped = true;
+        unsubscribe?.();
+        this.watches.delete(chatId);
+      },
+      check,
+    };
+    this.watches.set(chatId, blocking);
+    unsubscribe = this.ctx.store.subscribe({ type: CHAT_TYPE, id: chatId }, {}, () => {
+      this.track(check());
+    });
+    this.track(check());
+  }
+
+  private async finish(
+    bot: string,
+    chatId: string,
+    stored: StoredObject,
+    auto: boolean,
+    replyText: string | undefined,
+    failureText: string | undefined,
+  ): Promise<void> {
+    const now = this.ctx.clock();
+    const chat = chatData(stored.data);
+    const memoryDir = join(chat.cwd, "memory");
+    ensureMemoryLayout(memoryDir);
+    const repository = ensureRepository(memoryDir);
+    const commit = tidyCommitForChat(repository, memoryDir, chatId);
+    const summary = commit === undefined ? undefined : tidyCommitSummary(repository, commit);
+    const costMicros =
+      typeof stored.data.costMicros === "number" && Number.isFinite(stored.data.costMicros)
+        ? stored.data.costMicros
+        : null;
+    const outcome: TidyOutcome = {
+      chatId,
+      at: now,
+      costMicros,
+      changed: summary?.changed === true,
+      voided: summary?.voided === true,
+      summary:
+        failureText === undefined
+          ? summary?.summary ?? "No memory change."
+          : replySummary(failureText),
+      reply: replyText === undefined ? "" : replySummary(replyText),
+    };
+    const data = tidyDataOf((await this.ctx.store.get(TIDY_TYPE, bot))?.data ?? {});
+    if (auto) {
+      await this.put(
+        bot,
+        {
+          ...(data ?? {
+            bot,
+            state: "idle",
+            plannedAt: now,
+            counts: { notes: 0, chats: 0, indexOver: false },
+          }),
+          state: "idle",
+          chatId: undefined,
+          outcome: undefined,
+          lastOutcome: outcome,
+        },
+        "source:bot/tidy",
+      );
+      if (outcome.changed) {
+        try {
+          await this.notify({
+            chatId,
+            title: typeof stored.data.title === "string" ? stored.data.title : "Memory tidy",
+            summary: tidyOutcomeLine(bot, { ...outcome, summary: outcomeSummary(outcome) }),
+          });
+        } catch (error) {
+          await this.log(
+            `memory tidy of bot ${bot}: notify: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+      }
+      return;
+    }
+    await this.put(
+      bot,
+      {
+        ...(data ?? {
+          bot,
+          state: "result",
+          plannedAt: now,
+          counts: { notes: 0, chats: 0, indexOver: false },
+        }),
+        state: outcome.changed || failureText === undefined ? "result" : "failed",
+        chatId: undefined,
+        outcome,
+      },
+      "source:bot/tidy",
+    );
+  }
+
+  private async resume(): Promise<void> {
+    for (const object of await this.tidyObjects()) {
+      const data = tidyDataOf(object.data);
+      if (data?.state !== "running" || data.chatId === undefined) continue;
+      await this.watch(data.bot, data.chatId, data.auto === true);
+    }
+  }
+
+  start(): { stop: () => void } {
+    this.timer = setInterval(() => {
+      this.track(this.poll());
+    }, 1_000);
+    if (typeof this.timer === "object" && "unref" in this.timer) {
+      this.timer.unref();
+    }
+    return {
+      stop: () => {
+        this.stopped = true;
+        if (this.timer !== undefined) clearInterval(this.timer);
+        for (const watch of [...this.watches.values()]) watch.stop();
+        this.watches.clear();
+      },
+    };
+  }
+
+  /** The source's first pass, after the bot plugin has made its objects. */
+  async begin(): Promise<void> {
+    await this.resume();
+    await this.poll();
+  }
+}
+
+/** Starts the tidy source; `begin` runs before the first interval. */
+export async function startTidy(
+  ctx: TidySourceContext,
+): Promise<{ stop: () => void }> {
+  const source = new BotTidySource(ctx);
+  await source.begin();
+  return source.start();
+}
