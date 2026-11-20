@@ -1,0 +1,25 @@
+{
+  "name": "@operad-io/memory",
+  "version": "0.1.1",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@operad-io/engine": "workspace:*"
+  },
+  "description": "operad: the memory plugin and the wiki",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/operad-io/operad.git",
+    "directory": "packages/memory"
+  },
+  "license": "MIT",
+  "files": [
+    "src",
+    "skills",
+    "memory.schema.json",
+    "README.md",
+    "LICENSE"
+  ]
+}

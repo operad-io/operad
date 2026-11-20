@@ -612,6 +612,8 @@ interface Live {
   readonly useOwnSettings: boolean;
   /** A repository chat's starting text; a bot chat gives none. */
   readonly context?: SessionContext | undefined;
+  /** A plugin step to call after the round ends, when the chat's refresh step names one. */
+  readonly after?: string | undefined;
 }
 
 function sessionContextOf(value: unknown): SessionContext | undefined {
@@ -663,6 +665,7 @@ async function liveSettings(
     return failed("settings", "the chat's settings came back in a shape the chat cannot use");
   }
   const context = sessionContextOf(data.context);
+  const after = typeof data.after === "string" && data.after.length > 0 ? data.after : undefined;
   return {
     cwd: data.cwd,
     access: data.access as Record<string, JsonValue>,
@@ -670,6 +673,7 @@ async function liveSettings(
     mcpServers: isRecord(data.mcpServers) ? (data.mcpServers as Record<string, JsonValue>) : {},
     useOwnSettings: data.useOwnSettings === true,
     ...(context === undefined ? {} : { context }),
+    ...(after === undefined ? {} : { after }),
   };
 }
 
@@ -1168,11 +1172,75 @@ export async function keepInterrupted(ctx: StepContext, _params: unknown): Promi
   const prior = allEntries(ctx.store, object.id).filter((entry) => entry.runId === ctx.runId).length;
   const current = prior === 0 ? folded : { ...folded, entries: folded.entries.slice(prior) };
   await recordEntries(ctx, object.id, current, { stopped: true, interrupted: true });
+  // A run that ended on its own is recorded by its last round; one that was
+  // stopped after writing still gets its changes recorded here.
+  await runAfterStep(ctx, await afterStepOfRefresh(ctx, chat, object), object, "done");
   return { result: "done", data: { kept: true } };
+}
+
+/**
+ * Runs the step a chat's refresh data names after a round, once the round is
+ * over. A plugin uses it to record what the round wrote (the memory plugin's
+ * commit). A failure is logged, never put in the chat: the answer is already
+ * written, and remembering it must not undo the answer.
+ */
+async function runAfterStep(ctx: StepContext, step: string | undefined, object: RunObject, result: string | undefined): Promise<void> {
+  if (step === undefined) return;
+  if (result !== undefined && result !== "done" && result !== "failed") return;
+  const runStep = ctx.runStep;
+  if (runStep === undefined) return;
+  if (ctx.stepLoaded !== undefined && !ctx.stepLoaded(step)) {
+    ctx.logger.write(`after ${step}: the step is not loaded\n`);
+    return;
+  }
+  try {
+    const outcome = await runStep(step, { chat: object.id }, { runId: ctx.runId, object, params: ctx.params, signal: ctx.signal });
+    if (outcome.result !== "done") {
+      const message = isRecord(outcome.data) && typeof outcome.data.message === "string" ? outcome.data.message : `it ended ${outcome.result}`;
+      ctx.logger.write(`after ${step}: ${message}\n`);
+    }
+  } catch (error) {
+    ctx.logger.write(`after ${step}: ${messageOf(error)}\n`);
+  }
+}
+
+/** The after step a chat's refresh step names now, read for a run that ended without a round. */
+async function afterStepOfRefresh(ctx: StepContext, chat: ChatData, object: RunObject): Promise<string | undefined> {
+  if (chat.refresh === undefined) return undefined;
+  const runStep = ctx.runStep;
+  if (runStep === undefined) return undefined;
+  if (ctx.stepLoaded !== undefined && !ctx.stepLoaded(chat.refresh)) return undefined;
+  try {
+    const outcome = await runStep(chat.refresh, { chat: object.id }, { runId: ctx.runId, object, params: ctx.params, signal: ctx.signal });
+    const data = isRecord(outcome.data) ? outcome.data : {};
+    return outcome.result === "done" && typeof data.after === "string" && data.after.length > 0 ? data.after : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** Runs one round of an answer; see the file's comment. */
 export async function runReply(ctx: StepContext, params: unknown): Promise<PluginStepResult> {
+  let after: string | undefined;
+  let result: string | undefined;
+  try {
+    const outcome = await replyOnce(ctx, params, (live) => {
+      after = live.after;
+    });
+    result = outcome.result;
+    return outcome;
+  } finally {
+    const object = ctx.object;
+    if (object !== undefined) await runAfterStep(ctx, after, object, result);
+  }
+}
+
+/** One round of an answer, before the after step runs. */
+async function replyOnce(
+  ctx: StepContext,
+  params: unknown,
+  onLive: (live: Live) => void,
+): Promise<PluginStepResult> {
   const object = ctx.object;
   if (object === undefined || object.type !== CHAT_TYPE) {
     return failed("object", "chat:reply runs on a chat");
@@ -1223,6 +1291,7 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
     return failedReply(ctx, object.id, why.reason, why.message, oldest);
   }
   const live = settled;
+  onLive(live);
   // A level reaches the harness only through an agent that declares it can
   // carry it; an agent that cannot refuses the reply by name, never ignores it.
   const level = chat.accessLevel ?? "ask";

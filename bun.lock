@@ -11,6 +11,7 @@
         "@operad-io/harness-codex": "workspace:*",
         "@operad-io/harness-pi": "workspace:*",
         "@operad-io/harness-radian": "workspace:*",
+        "@operad-io/memory": "workspace:*",
         "@operad-io/pool": "workspace:*",
         "@operad-io/source-cron": "workspace:*",
         "@operad-io/telegram": "workspace:*",
@@ -37,6 +38,7 @@
         "@operad-io/access-match": "workspace:*",
         "@operad-io/chat": "workspace:*",
         "@operad-io/engine": "workspace:*",
+        "@operad-io/memory": "workspace:*",
       },
     },
     "packages/chat": {
@@ -63,6 +65,7 @@
         "@operad-io/harness-pi": "workspace:*",
         "@operad-io/harness-radian": "workspace:*",
         "@operad-io/mcp": "workspace:*",
+        "@operad-io/memory": "workspace:*",
         "@operad-io/pool": "workspace:*",
         "@operad-io/shell": "workspace:*",
         "@operad-io/telegram": "workspace:*",
@@ -138,6 +141,13 @@
     },
     "packages/mcp": {
       "name": "@operad-io/mcp",
+      "version": "0.1.1",
+      "dependencies": {
+        "@operad-io/engine": "workspace:*",
+      },
+    },
+    "packages/memory": {
+      "name": "@operad-io/memory",
       "version": "0.1.1",
       "dependencies": {
         "@operad-io/engine": "workspace:*",
@@ -328,6 +338,8 @@
     "@operad-io/harness-radian": ["@operad-io/harness-radian@workspace:packages/harness/radian"],
 
     "@operad-io/mcp": ["@operad-io/mcp@workspace:packages/mcp"],
+
+    "@operad-io/memory": ["@operad-io/memory@workspace:packages/memory"],
 
     "@operad-io/pool": ["@operad-io/pool@workspace:packages/pool"],
 

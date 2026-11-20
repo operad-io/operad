@@ -142,13 +142,14 @@ const FILE_PAGES: Readonly<Record<string, string>> = {
   "dev.schema.json": "dev.md",
   "review.schema.json": "dev.md",
   "bot.schema.json": "config.md",
+  "memory.schema.json": "memory.md",
   "access-user.schema.json": "access.md",
   "access-grants.schema.json": "access.md",
   "telegram.schema.json": "telegram.md",
 };
 
 /** Plugin settings are sections of config.json, so their keys are on config.md, unless the plugin has a page. */
-const PLUGIN_PAGES: Readonly<Record<string, string>> = { telegram: "telegram.md" };
+const PLUGIN_PAGES: Readonly<Record<string, string>> = { telegram: "telegram.md", memory: "memory.md" };
 
 function schemaFiles(): string[] {
   return [

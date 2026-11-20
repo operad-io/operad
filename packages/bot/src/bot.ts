@@ -11,6 +11,7 @@ import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import { MCP_REPORT_DIR } from "./mcp-constants.ts";
 import { defaultAccess as builtInAccess } from "@operad-io/access-match";
 import { readKeptWorkers } from "@operad-io/engine/platform";
+import { MEMORY_SKILL_DIR, ensureMemoryLayout, memoryEnabled, wikiDirectoryOfHome } from "@operad-io/memory";
 import { configPath, isRecord, prepareSettings, type ActionArgsSchema, type JsonValue, type ObjectStore } from "@operad-io/engine";
 
 /** The object type of a bot. */
@@ -86,6 +87,12 @@ export const BOT_SETTINGS: ActionArgsSchema = {
             minLength: 1,
             description:
               "How a chat of this bot labels the model's messages in its transcript. Without it the chat plugin's speaker is used.",
+          },
+          writeWiki: {
+            type: "boolean",
+            title: "Write the wiki",
+            description:
+              "Whether this bot may write the shared wiki. Without it the default bot writes it and every other bot only reads it. Read access is always there; a bot that may not write it has the wiki refused for writing.",
           },
           mcpServers: {
             type: "object",
@@ -171,6 +178,7 @@ export interface BotSettings {
   readonly effort?: string;
   readonly skills?: readonly string[];
   readonly speaker?: string;
+  readonly writeWiki?: boolean | undefined;
   readonly access?: Readonly<Record<string, JsonValue>>;
 }
 
@@ -185,6 +193,8 @@ export interface ResolvedBot {
   /** Absolute directories, each with a SKILL.md. */
   readonly skills: readonly string[];
   readonly speaker: string | null;
+  /** Whether this bot may write the shared wiki. */
+  readonly writeWiki: boolean;
   readonly access: Readonly<Record<string, JsonValue>>;
   /** The local MCP servers the bot lists, by name. */
   readonly mcpServers: Readonly<Record<string, McpServerSettings>>;
@@ -585,10 +595,14 @@ export function memoryDir(cwd: string): string {
   return join(cwd, "memory");
 }
 
-/** Makes a bot's memory directory, returning it. */
-export function ensureBotMemory(cwd: string): string {
+/**
+ * Makes a bot's memory directory, returning it. With the home's memory plugin
+ * enabled, its three layers are made too; nothing that is there is overwritten.
+ */
+export function ensureBotMemory(cwd: string, home?: string): string {
   const memory = memoryDir(cwd);
   mkdirSync(memory, { recursive: true });
+  if (home !== undefined && memoryEnabled(home)) ensureMemoryLayout(memory);
   return memory;
 }
 
@@ -631,10 +645,19 @@ function siblingDirectories(home: string, ownCwd: string, defaultBot: boolean): 
  * operad keeps there. Paths are absolute, so a home other than `~/.operad` is
  * covered too. The agent reaches operad through its tools, never a shell.
  */
-export function defaultAccess(home: string): Record<string, JsonValue> {
+export function defaultAccess(home: string, wikiWrite = false): Record<string, JsonValue> {
   const inHome = new Set(["store", "secrets", "config.json", MCP_REPORT_DIR]);
+  // The wiki is named even when it does not exist yet, so a bot's reach does
+  // not change when the memory plugin creates it. A bot that may write it has
+  // the wiki's entry in the home deny left out; one that may only read it has
+  // the entry and a read path through it.
+  const wikiName = wikiHomeName(home, wikiDirectoryOfHome(home));
+  if (wikiName !== undefined && wikiName !== BOT_DIR && !wikiWrite) inHome.add(wikiName);
+  const skipped = wikiWrite && wikiName !== undefined ? wikiName : undefined;
   if (existsSync(home)) {
-    for (const name of readdirSync(home)) if (name !== BOT_DIR) inHome.add(name);
+    for (const name of readdirSync(home)) {
+      if (name !== BOT_DIR && name !== skipped) inHome.add(name);
+    }
   }
   const base = builtInAccess();
   return {
@@ -646,6 +669,14 @@ export function defaultAccess(home: string): Record<string, JsonValue> {
     askCommands: [...(base.askCommands ?? [])],
     askPaths: [...(base.askPaths ?? [])],
   };
+}
+
+/** The first path segment of the wiki under the home, when it is inside it. */
+function wikiHomeName(home: string, wiki: string): string | undefined {
+  const rel = relative(home, wiki);
+  if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) return undefined;
+  const [first] = rel.split(/[\\/]/);
+  return first !== undefined && first.length > 0 ? first : undefined;
 }
 
 function appended(base: JsonValue | undefined, extra: unknown): JsonValue[] {
@@ -666,7 +697,9 @@ export function accessFor(
   cwd?: string,
   defaultBot = false,
 ): Record<string, JsonValue> {
-  const access = defaultAccess(home);
+  const writeWiki = settings.writeWiki ?? defaultBot;
+  const wiki = wikiDirectoryOfHome(home);
+  const access = defaultAccess(home, writeWiki);
   // A repository is reached through operad's tools (dev's verbs), never by
   // touching its files, so its path is denied to the agent. Skill directories
   // are changed only through a proposal a person confirms, so they are denied
@@ -675,6 +708,12 @@ export function accessFor(
   // directory is denied too, for reading and writing.
   const siblings = cwd === undefined ? [] : siblingDirectories(home, cwd, defaultBot);
   access.denyPaths = appended(access.denyPaths, [...repositories, ...skillPaths, ...siblings]);
+  // A wiki a bot may not write is refused for writing wherever it is, and a
+  // read path lets it read through that deny.
+  if (!writeWiki) {
+    access.denyPaths = appended(access.denyPaths, [wiki]);
+    access.readPaths = appended(access.readPaths, [wiki]);
+  }
   if (readPaths.length > 0) access.readPaths = appended(access.readPaths, readPaths);
   const own = settings.access ?? {};
   for (const field of ["denyPaths", "denyCommands", "askCommands", "askPaths"] as const) {
@@ -820,10 +859,16 @@ export function resolveBot(
   repositories: readonly string[] = [],
 ): ResolvedBot {
   const cwd = workingDirectory(home, name, settings);
-  ensureBotMemory(cwd);
+  ensureBotMemory(cwd, home);
   const list = skillList(settings, cwd);
-  const skills = list.directories;
+  const skills = [...list.directories];
   const skillPaths = [...list.roots, join(cwd, "skills")];
+  // The memory skill is mounted for every bot while the memory plugin is
+  // enabled, so a bot that lists no skills still knows where its memory is.
+  if (memoryEnabled(home)) {
+    added(skills, MEMORY_SKILL_DIR);
+    added(skillPaths, MEMORY_SKILL_DIR);
+  }
   return {
     name,
     cwd,
@@ -833,6 +878,7 @@ export function resolveBot(
     effort: settings.effort ?? null,
     skills,
     speaker: settings.speaker ?? null,
+    writeWiki: settings.writeWiki ?? name === DEFAULT_BOT,
     access: accessFor(home, settings, repositories, skillPaths, skillPaths, cwd, name === DEFAULT_BOT),
     mcpServers: settings.mcpServers ?? {},
   };

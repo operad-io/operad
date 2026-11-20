@@ -8,7 +8,8 @@
   "dependencies": {
     "@operad-io/chat": "workspace:*",
     "@operad-io/engine": "workspace:*",
-    "@operad-io/access-match": "workspace:*"
+    "@operad-io/access-match": "workspace:*",
+    "@operad-io/memory": "workspace:*"
   },
   "description": "operad: the bot plugin",
   "repository": {

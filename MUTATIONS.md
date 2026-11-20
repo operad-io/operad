@@ -123,3 +123,9 @@ Each package keeps its mutation checks in `MUTATIONS.md`; a row names the broken
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0538-M1 | scripts/run-tests.sh | removed `set -m`, so the heartbeat stayed in the script's own process group and the test would not take a command substitution for it | `run-tests.sh > the heartbeat ends by itself when the script is killed without a chance to stop it` (timed out waiting) |
+
+## A package added later
+
+| file |
+|---|
+| [memory](packages/memory/MUTATIONS.md) |

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://operad.io/schemas/memory.schema.json",
+  "title": "operad memory settings",
+  "description": "The `memory` section of config.json, owned by the memory plugin.",
+  "type": "object",
+  "properties": {
+    "wikiDir": {
+      "type": "string",
+      "title": "Wiki directory",
+      "minLength": 1,
+      "default": "wiki",
+      "description": "The shared knowledge base: a Markdown directory every bot reads, and the bots whose access profile allows it write. Created when missing and made a git repository when it is not one; a directory that is already a git repository is used as it is, never re-initialised or restructured. `~` is your home directory and a relative path is under the operad home. Default: `wiki` in the operad home, so ~/.operad/wiki for the usual home; a person may point it at a notes library such as an Obsidian vault."
+    }
+  },
+  "additionalProperties": false
+}

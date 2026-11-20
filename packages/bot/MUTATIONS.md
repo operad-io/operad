@@ -235,3 +235,10 @@ changes for bots, in the order they were recorded. The root
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0584-M13 | packages/bot/src/bot.ts | a grant whose `cwd` was the old default home was left in place | `grants after the move > a grant made in the old home keeps matching, while every other grant stays byte for byte` |
+
+## T-0585 — the wiki, a bot's write setting and the memory skill
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0585-M7 | packages/bot/src/bot.ts | `accessFor` reversed the default write rule, so the default bot only read the wiki | `who may write the wiki > the default bot writes it and every other bot only reads it` |
+| T-0585-M8 | packages/bot/src/bot.ts | `resolveBot` did not add the memory skill to a bot | `the memory skill and the commit step > every bot mounts the memory skill while the plugin is enabled` |

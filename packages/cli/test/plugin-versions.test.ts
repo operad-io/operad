@@ -176,6 +176,7 @@ describe("plugin versions", () => {
       { file: join(packages, "dev", "dev.schema.json"), schema: projectFileSchema(dev, "dev"), skip: ["flowList"] },
       { file: join(packages, "review-grading", "review.schema.json"), schema: projectFileSchema(dev, "review"), skip: [] },
       { file: join(packages, "bot", "bot.schema.json"), schema: pluginSettings(pluginNamed("bot")), skip: [] },
+      { file: join(packages, "memory", "memory.schema.json"), schema: pluginSettings(pluginNamed("memory")), skip: [] },
       { file: join(packages, "telegram", "telegram.schema.json"), schema: pluginSettings(pluginNamed("telegram")), skip: [] },
     ];
     for (const item of cases) {

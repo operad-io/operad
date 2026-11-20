@@ -78,7 +78,18 @@ export function writeConfig(home: string, bots: Record<string, unknown>): void {
   );
 }
 
-export async function rig(bots: Record<string, unknown> = {}, harnesses = ["claude", "pi"], onEvent?: (event: TriggerEvent) => void) {
+/** Writes the whole `config.json`, for a test that also enables another plugin. */
+export function writePlugins(home: string, plugins: Record<string, unknown>): void {
+  mkdirSync(home, { recursive: true });
+  writeFileSync(join(home, "config.json"), JSON.stringify({ plugins }, null, 2));
+}
+
+export async function rig(
+  bots: Record<string, unknown> = {},
+  harnesses = ["claude", "pi"],
+  onEvent?: (event: TriggerEvent) => void,
+  extraPlugins: readonly unknown[] = [],
+) {
   const root = await mkdtemp(join(tmpdir(), "bot-test-"));
   roots.push(root);
   const home = join(root, "home");
@@ -86,7 +97,7 @@ export async function rig(bots: Record<string, unknown> = {}, harnesses = ["clau
   const calls: Call[] = [];
   const store = new MemoryPluginStore({ root: join(root, "store") });
   const registry = new PluginRegistry(
-    [createChatPlugin(), createBotPlugin(), ...harnesses.map((name) => fakeHarness(name, calls))],
+    [createChatPlugin(), createBotPlugin(), ...harnesses.map((name) => fakeHarness(name, calls)), ...extraPlugins],
     {
       home,
       cwd: root,
