@@ -12,7 +12,7 @@
 ## 已定但还没做（留在这里，做完移入 ADR）
 
 1. **三个场景，按这个顺序**：长对话（`operad-conversation.md`）；个人知识库（second brain）；每日资料搜集（digest）。后两个是 flow 加 skill，不是新插件，取数据的步骤除外。
-2. **知识库是一个插件**：插件叫 `memory`（owner，2026-11-20，原拟名 `brain`），它的 flow 是 `memory:capture`、`memory:review`，skill 也叫 `memory`。它处理信息、归档、找回；存储是可换的后台，用户现有的 Obsidian 库是其中一个（不要求用户改目录结构），Markdown 目录加 git 是另一个。它最关键的两件事是怎么组织、怎么检索；bot 的记忆是它里面的一个保留命名空间。这个插件和记忆的管理以后单独设计，合约上它需要的是外部对象（`operad-contract.md` 决定 3，留在 backlog）、`settings` 和 `secrets`（ADR 0010 D1、D2）。
+2. **知识库是一个插件**：插件叫 `memory`（owner，2026-11-20，原拟名 `brain`），它的 flow 是 `memory:capture`、`memory:review`，skill 也叫 `memory`。它处理信息、归档、找回；存储是一个 Markdown 目录加 git。Obsidian 是 owner 自己的设置，不是 operad 要支持的后台（owner，2026-11-20）：用户可以把这个目录指到自己的 Obsidian 库，operad 不为 Obsidian 做专门的东西，也不要求用户改目录结构。它最关键的两件事是怎么组织、怎么检索；bot 的记忆是它里面的一个保留命名空间。这个插件和记忆的管理以后单独设计，合约上它需要的是外部对象（`operad-contract.md` 决定 3，留在 backlog）、`settings` 和 `secrets`（ADR 0010 D1、D2）。
 3. **知识库是三个 flow 加一个 skill**：
    - `memory:capture`：来自 iOS、Telegram 或命令行的一条"记下"事件（文字、链接、转发），agent 按 skill 归档：选目录、写 frontmatter、补 `[[链接]]`、链接的页面抓正文存成附件；写完回一行"存到哪了"。
    - `memory:review`：每天一次 cron，整理 `inbox/`，合并重复，提出三条值得回看的，送一张卡；卡上的动作只有"看过了"和"打开"。
@@ -61,7 +61,7 @@
    - 一次改写丢掉太多旧条目就作废，退回只追加（OpenClaw 的规则；Hermes 没有这条，出过删掉四条长期规则的事故）。
    - 记忆整理这一步按上文「已定但还没做」第 16 条先检查再问；整理 `inbox/` 的部分不变。
 6. **先让原始记录可搜**：知识库和 chat 记录都建 SQLite FTS5 的全文索引，`memory` skill 教 bot 多换几种说法去搜、先搜再答。向量检索以后可选。chat 记录的搜索记在 `operad-chat-next.md` 第 15 条。
-7. **来源内容触发的写入要标来源**（细化上文第 5 条）。一次运行读过网页、来信、来源插件的条目之后写下的笔记，标为"来自不可信内容"，不进每次加载的索引，整理时也不提升。不做 OpenClaw 那种文件级的排除：知识库就是要让人和 Obsidian 直接改的，它的校验在人改过文件后会把整个文件永久排除。
+7. **来源内容触发的写入要标来源**（细化上文第 5 条）。一次运行读过网页、来信、来源插件的条目之后写下的笔记，标为"来自不可信内容"，不进每次加载的索引，整理时也不提升。不做 OpenClaw 那种文件级的排除：知识库就是要让人用自己的编辑器（比如 Obsidian）直接改的，它的校验在人改过文件后会把整个文件永久排除。
 8. **`digest:run` 记下发过什么**（细化上文第 4 条）。下一天的 prompt 除了最近的反应，还带上最近发过的条目，避免重复推送。
 9. **范围按 bot**；多人场合（Telegram 群）不注入个人记忆。定时和事件发起的运行读它的 flow 需要的那部分，它写的东西按第 7 条处理。
 10. **压缩前先落盘**：见 `operad-chat-next.md` 第 2 条。
