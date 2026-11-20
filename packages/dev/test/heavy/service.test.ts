@@ -34,7 +34,7 @@ import {
   type RepositoryData,
 } from "../../src/model.ts";
 import { cleanupTempRoots, guardLockHandles, makeGitRepository, storeAt, tempRoot } from "../support.ts";
-import { silentGit } from "../git-support.ts";
+import { gitOrThrow, silentGit } from "../git-support.ts";
 import { DEV_SETTINGS_SCHEMA } from "../../src/settings.ts";
 
 afterAll(cleanupTempRoots);
@@ -114,6 +114,16 @@ describe("dev repositories", () => {
     // A refused add writes nothing: no registration and no settings file.
     expect(await findRepository(store, "no-remote")).toBeUndefined();
     expect(existsSync(join(noRemote, ".operad", "dev.json"))).toBe(false);
+  });
+
+  test("a remote-named setting is not a remote", async () => {
+    const { root, store } = await setup();
+    const path = join(root, "push-default");
+    Bun.spawnSync({ cmd: ["git", "init", "-q", path] });
+    // `remote.pushDefault` belongs to the `remote` section but names no remote:
+    // the fallback must not take it for one.
+    gitOrThrow(path, ["config", "remote.pushDefault", "origin"]);
+    await expect(addRepository(store, { path })).rejects.toThrow(/has no remote/);
   });
 
   test("the current directory selects its repository, or --repo names one", async () => {
