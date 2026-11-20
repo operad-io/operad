@@ -156,6 +156,32 @@ test("blocker", async () => {
     }
   }, 60000);
 
+  test("SIGTERM to the script stops a test runner that ignores SIGTERM", async () => {
+    const dir = scratch();
+    const started = join(dir, "started");
+    const stubborn = join(dir, "stubborn.fixture.ts");
+    writeFileSync(
+      stubborn,
+      `import { test } from "bun:test";
+import { writeFileSync } from "node:fs";
+test("stubborn", async () => {
+  process.on("SIGTERM", () => {});
+  writeFileSync(${JSON.stringify(started)}, String(process.pid));
+  await new Promise(() => {});
+}, 60000);
+`,
+    );
+    const run = spawnStress(["--runs", "1", stubborn]);
+    try {
+      const testPid = await waitForNumber(started);
+      process.kill(run.pid, "SIGTERM");
+      expect(await run.child.exited).toBe(143);
+      await expectGone([run.pid, testPid]);
+    } finally {
+      run.kill();
+    }
+  }, 60000);
+
   describe("the machine-wide lock", () => {
     /** A test file that records its pid in `started`, then waits for `release` to exist. */
     function blocker(dir: string): { file: string; started: string; release: string } {

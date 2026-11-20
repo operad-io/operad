@@ -52,15 +52,19 @@ if [ "$cpus" -lt 1 ]; then echo "STRESS_CPUS wants a positive number" >&2; exit 
 [ "$load" -le "$cpus" ] || load="$cpus"
 
 helpers=()
-watcher=""
 stop_helpers() {
-  local all=(${helpers[@]+"${helpers[@]}"})
-  [ -z "$watcher" ] || all+=("$watcher")
+  local all=($(jobs -p))
   if [ ${#all[@]} -gt 0 ]; then
     kill "${all[@]}" 2>/dev/null
-    wait "${all[@]}" 2>/dev/null
-    helpers=()
-    watcher=""
+    # A child that ignores TERM, or got it before it was ready to stop, still
+    # has to go; give it a moment, then kill it. A child that already ended is
+    # not a job, so a pid the system reused is never signalled.
+    sleep 0.2
+    all=($(jobs -p))
+    if [ ${#all[@]} -gt 0 ]; then
+      kill -KILL "${all[@]}" 2>/dev/null
+      wait "${all[@]}" 2>/dev/null
+    fi
   fi
 }
 
@@ -180,7 +184,6 @@ stress_pid_alive() {
 # Stop with the process that started this script (the TERM trap then runs).
 ( while parent_alive && starter_alive; do sleep 2; done
   kill -TERM "$parent" 2>/dev/null ) </dev/null >/dev/null 2>&1 &
-watcher=$!
 
 [ "$use_lock" -eq 0 ] || acquire_lock
 
@@ -208,13 +211,11 @@ args=(test "${files[@]}" --rerun-each "$runs" --timeout 30000)
 # In the background, so that a trap runs while it works.
 bun "${args[@]}" > "$log" 2>&1 < /dev/null &
 bunpid=$!
-helpers+=("$bunpid")
 # A SIGKILL of this script runs no trap: stop the test runner from a watcher.
 ( while parent_alive; do sleep 0.2; done
   kill -TERM "$bunpid" 2>/dev/null
   sleep 0.2
   kill -KILL "$bunpid" 2>/dev/null ) </dev/null >/dev/null 2>&1 &
-helpers+=("$!")
 wait "$bunpid"
 status=$?
 stop_helpers

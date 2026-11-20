@@ -129,3 +129,9 @@ Each package keeps its mutation checks in `MUTATIONS.md`; a row names the broken
 | file |
 |---|
 | [memory](packages/memory/MUTATIONS.md) |
+
+## T-0592 — stress.sh stops a runner that ignores SIGTERM
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0592-M1 | scripts/stress.sh | `stop_helpers` sent only TERM and then waited, so a runner that ignored it blocked the script | `scripts/stress.sh > SIGTERM to the script stops a test runner that ignores SIGTERM` (timed out waiting) |
