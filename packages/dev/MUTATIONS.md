@@ -1420,3 +1420,9 @@ the row fields.
 | T-0539-M3 | packages/dev/src/flow-compiler.ts | the work step had no `waiting` edge to its question wait | `the built-in default keeps today's ids and edges` (packages/dev/test/heavy/flow-compiler.test.ts) |
 | T-0539-M4 | packages/dev/src/steps.ts | `dev/work` read the resume from the run's start params instead of the step's own, so the session and the answer were not passed on | `dev/work with workers > a resume's session and answer in the step's params reach the worker` |
 | T-0539-M5 | packages/dev/src/project-flows.ts | counted a worker's own question wait as the check, review or human step a flow must have | `a TS flow with no check, review or human step is refused` (packages/dev/test/heavy/project-flows.test.ts) |
+
+## T-0580 — a bare `git remote` that printed nothing is not "no remote"
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0580-M1 | packages/dev/src/service.ts | `addRepository` believed one empty `git remote` and refused the repository | `git that succeeds without printing > repo add still registers when \`git remote\` prints nothing` |

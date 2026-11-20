@@ -93,13 +93,15 @@ export async function commitIn(
 
 /**
  * A `git` first on PATH that logs each call whose arguments contain `match`
- * and answers the first `times` of them with exit 0 and no output; every other
- * call, and the later ones, run the real git.
+ * (or, with `where` set to `ends`, whose arguments end with it) and answers the
+ * first `times` of them with exit 0 and no output; every other call, and the
+ * later ones, run the real git.
  */
 export function silentGit(
   root: string,
   match: string,
   times: number,
+  where: "contains" | "ends" = "contains",
 ): { calls(): number; restore(): void } {
   const real = Bun.which("git");
   if (real === undefined) throw new Error("git is not on PATH");
@@ -109,11 +111,12 @@ export function silentGit(
   const left = join(bin, "left");
   writeFileSync(left, String(times));
   writeFileSync(log, "");
+  const pattern = where === "ends" ? `*'${match}'` : `*'${match}'*`;
   writeFileSync(
     join(bin, "git"),
     [
       "#!/bin/sh",
-      `case "$*" in *'${match}'*)`,
+      `case "$*" in ${pattern})`,
       `  echo x >> '${log}'`,
       `  n=$(cat '${left}')`,
       `  if [ "$n" -gt 0 ]; then echo $((n-1)) > '${left}'; exit 0; fi;;`,

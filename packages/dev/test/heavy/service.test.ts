@@ -701,6 +701,22 @@ describe("git that succeeds without printing", () => {
       stub.restore();
     }
   });
+
+  test("repo add still registers when `git remote` prints nothing", async () => {
+    const root = await tempRoot();
+    const path = await makeGitRepository(root, "quiet-remote");
+    const store = storeAt(root);
+    // Every bare `remote` answers empty, as git sometimes does under heavy load.
+    const stub = silentGit(root, " remote", 100, "ends");
+    try {
+      const repository = await addRepository(store, { path });
+      expect(repository.name).toBe("quiet-remote");
+      // The fallback asks a question whose exit status answers it.
+      expect(stub.calls()).toBe(1);
+    } finally {
+      stub.restore();
+    }
+  });
 });
 
 describe("dev checks inside the lock", () => {
