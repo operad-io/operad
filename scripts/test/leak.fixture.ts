@@ -7,7 +7,8 @@ import { spawnStress } from "./stress-group.ts";
 
 test("leak fixture", async () => {
   const pidfile = process.env.LEAK_PIDFILE ?? "";
-  const run = spawnStress(["--runs", "100000", "--load", "2", join(import.meta.dir, "steady.fixture.ts")], {
+  const file = process.env.LEAK_TEST_FILE ?? join(import.meta.dir, "steady.fixture.ts");
+  const run = spawnStress(["--runs", "100000", "--load", "2", file], {
     STRESS_PIDFILE: pidfile,
     STRESS_CPUS: "2",
   });

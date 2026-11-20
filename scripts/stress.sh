@@ -52,20 +52,43 @@ if [ "$cpus" -lt 1 ]; then echo "STRESS_CPUS wants a positive number" >&2; exit 
 [ "$load" -le "$cpus" ] || load="$cpus"
 
 helpers=()
+tracked=()
+tracked_starts=()
+# Records a child started below so stop_helpers can signal it. The start time
+# says the pid is still that child, so a pid the system reused is not killed.
+track() { # pid
+  tracked+=("$1")
+  tracked_starts+=("$(ps -p "$1" -o lstart= 2>/dev/null)")
+}
+track_alive() { # index
+  local start=${tracked_starts[$1]}
+  [ -n "$start" ] || return 1
+  same_process "${tracked[$1]}" "$start"
+}
 stop_helpers() {
-  local all=($(jobs -p))
-  if [ ${#all[@]} -gt 0 ]; then
-    kill "${all[@]}" 2>/dev/null
+  local i waited=0 remaining alive=()
+  for i in "${!tracked[@]}"; do
+    track_alive "$i" || continue
+    kill "${tracked[$i]}" 2>/dev/null && alive+=("$i")
+  done
+  if [ ${#alive[@]} -gt 0 ]; then
     # A child that ignores TERM, or got it before it was ready to stop, still
-    # has to go; give it a moment, then kill it. A child that already ended is
-    # not a job, so a pid the system reused is never signalled.
-    sleep 0.2
-    all=($(jobs -p))
-    if [ ${#all[@]} -gt 0 ]; then
-      kill -KILL "${all[@]}" 2>/dev/null
-      wait "${all[@]}" 2>/dev/null
-    fi
+    # has to go; give the others up to 0.2s to end, then kill what remains.
+    while [ "$waited" -lt 20 ]; do
+      sleep 0.01
+      waited=$((waited + 1))
+      remaining=0
+      for i in "${alive[@]}"; do
+        if track_alive "$i"; then remaining=1; break; fi
+      done
+      [ "$remaining" -eq 1 ] || break
+    done
+    for i in "${alive[@]}"; do
+      track_alive "$i" || continue
+      kill -KILL "${tracked[$i]}" 2>/dev/null
+    done
   fi
+  wait 2>/dev/null
 }
 
 lock=${STRESS_LOCK:-${HOME:-/tmp}/.operad-stress.lock}
@@ -184,6 +207,7 @@ stress_pid_alive() {
 # Stop with the process that started this script (the TERM trap then runs).
 ( while parent_alive && starter_alive; do sleep 2; done
   kill -TERM "$parent" 2>/dev/null ) </dev/null >/dev/null 2>&1 &
+track "$!"
 
 [ "$use_lock" -eq 0 ] || acquire_lock
 
@@ -198,6 +222,7 @@ while [ "$i" -lt "$load" ]; do
     ( while parent_alive; do :; done ) </dev/null >/dev/null 2>&1 &
   fi
   helpers+=("$!")
+  track "$!"
   i=$((i + 1))
 done
 if [ -n "${STRESS_PIDFILE:-}" ]; then
@@ -211,11 +236,13 @@ args=(test "${files[@]}" --rerun-each "$runs" --timeout 30000)
 # In the background, so that a trap runs while it works.
 bun "${args[@]}" > "$log" 2>&1 < /dev/null &
 bunpid=$!
+track "$bunpid"
 # A SIGKILL of this script runs no trap: stop the test runner from a watcher.
 ( while parent_alive; do sleep 0.2; done
   kill -TERM "$bunpid" 2>/dev/null
   sleep 0.2
   kill -KILL "$bunpid" 2>/dev/null ) </dev/null >/dev/null 2>&1 &
+track "$!"
 wait "$bunpid"
 status=$?
 stop_helpers

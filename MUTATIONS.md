@@ -135,3 +135,10 @@ Each package keeps its mutation checks in `MUTATIONS.md`; a row names the broken
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0592-M1 | scripts/stress.sh | `stop_helpers` sent only TERM and then waited, so a runner that ignored it blocked the script | `scripts/stress.sh > SIGTERM to the script stops a test runner that ignores SIGTERM` (timed out waiting) |
+
+## T-0594 — follow-ups to the stress.sh stop
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0594-M1 | scripts/stress.sh | `stop_helpers` sent TERM and then waited, so the child that ignored TERM kept the script alive after its starter was killed | `scripts/stress.sh > SIGKILL of the test runner stops a test file that ignores SIGTERM` (timed out waiting) |
+| T-0594-M2 | scripts/stress.sh | the KILL pass no longer checked that a tracked pid was still the same live child, so a child that had already ended was signalled | `scripts/stress.sh > a KILL never targets a pid the system has reused` |
