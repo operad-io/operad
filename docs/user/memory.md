@@ -161,5 +161,5 @@ mark stays as it is.
 
 ## Not here yet
 
-No capture or review flow yet. Vector search is not built; the index sits behind
-a small backend interface so another engine can provide it.
+No capture or review flow yet. Vector search is not built; the index is built so
+another search engine can replace it without changing the tools.

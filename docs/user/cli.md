@@ -90,6 +90,8 @@ and `operad help` print the whole table.
 | `operad bot mcp <bot> <name> [<command> [args…]]` | none of its own; the command's words are the server's | Proposes a local MCP server after reading its tools. With no command, reads a pasted `mcpServers` entry from stdin. |
 | `operad bot setting <bot>` | none | Proposes a settings change for one bot from JSON on stdin; a person approves it. |
 | `operad bot schedule <bot> add\|edit\|remove <name>` | `--words <text>`, `--schedule <cron>`, `--prompt <text>`, `--model <model>`, `--effort <effort>` | Proposes adding, changing or removing a scheduled prompt; a person approves it. |
+| `operad memory search <query>` | `--scope <scope>`, `--field <name>=<value>`, `--limit <n>` | Searches the shared wiki, the bot's memory and the bot's chats. Prints each result's document id, title, line range and snippet, then the directory notes that came back with it. `--scope` takes `wiki`, `memory` or `chats`; `--field` narrows by frontmatter; `--limit` caps the results. The same arguments may be given as JSON on stdin. |
+| `operad memory read <id>` | `from`, `to` | Reads one document a search returned, or the line range named by `from` and `to` (both 1-based). The id and range may also be given as JSON on stdin. |
 
 The scheduled flows verb is also reached with its plugin name as `operad cron scheduled ...`; the short `operad scheduled ...` is the same command.
 
@@ -106,7 +108,7 @@ A client of `serve` does the same over HTTP with `GET /v1/plugins` and `POST /v1
 | `--filter <name>` | `list` | The filter to use; `all` shows every row. A type without filters refuses it. |
 | `--repo <name>` | `list`, `show`, `settings`, `settings set`, actions, plugin commands | Keeps the list to one repository, or says which repository a bare id lives in. |
 | `--where <field=value>` | `list` | One exact match on a field the type's rows carry; may be repeated. |
-| `--limit <n>` | `list` | How many rows one page holds. |
+| `--limit <n>` | `list`, `memory search` | How many rows one page holds, or how many search results to return. |
 | `--cursor <c>` | `list`, `show` | The `next` cursor of an earlier page. |
 | `--parent <id>` | `list` | The rows whose parent is that object. Cannot be used with `--root`. |
 | `--root` | `list` | The rows with no parent. Cannot be used with `--parent`. |
@@ -141,6 +143,8 @@ A client of `serve` does the same over HTTP with `GET /v1/plugins` and `POST /v1
 | `--prompt <text>` | `bot schedule` | The first message of the chat a firing opens. |
 | `--model <model>` | `bot schedule` | The model a firing's chat uses; `--model ""` clears it. |
 | `--effort <effort>` | `bot schedule` | The effort a firing's chat uses; `--effort ""` clears it. |
+| `--scope <scope>` | `memory search` | The part of the index to search: `wiki`, `memory` or `chats`. The default is all three; a comma-separated list is accepted. |
+| `--field <name>=<value>` | `memory search` | One frontmatter field a result must have; may be repeated. A frontmatter field with several values matches any of them. |
 
 The flags of an action are made from its arguments: an argument named `note`
 becomes `--note <text>`, a boolean becomes `--flag` or `--flag=true`, and an
