@@ -63,3 +63,25 @@ the row fields.
 |---|---|---|---|
 | T-0595-M1 | packages/memory/src/commit.ts | `withoutUntrustedLines` read only Markdown links, so an index line with a wikilink to an untrusted note stayed | `a bot run is recorded in git > an index line that links to an untrusted note with a wikilink is removed too` |
 | T-0595-M2 | packages/memory/src/commit.ts | `withoutUntrustedLines` URL-decoded wikilink targets too, so a bare `%` threw and the commit step failed | `a bot run is recorded in git > a wikilink with a bare percent is not decoded and stays in the index` |
+
+## T-0597 — the link table in the search index
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0597-M1 | packages/memory/src/search/links.ts | `splitPipe` kept a `\|` in the target instead of splitting there, so a table wikilink named a note that does not exist | `the links a note writes > an escaped pipe in a table separates the target from the display text` |
+| T-0597-M2 | packages/memory/src/search/links.ts | `decoded` called `decodeURIComponent` without catching, so a bare `%` made parsing throw | `the links a note writes > a bare percent is kept as written instead of throwing` |
+| T-0597-M3 | packages/memory/src/search/links.ts | `withoutCode` returned the text unchanged, so a link shown as code was stored | `the links a note writes > code blocks and inline code are not links` |
+| T-0597-M4 | packages/memory/src/search/links.ts | `external` only rejected an empty target, so `https:`, `mailto:` and `//` were note links | `the links a note writes > external links and image embeds are not note links` |
+| T-0597-M5 | packages/memory/src/search/links.ts | `resolveNoteLink` tried the file name before the path from the scope root | `how a link resolves > a path from the scope root wins over a file of the same name` |
+| T-0597-M6 | packages/memory/src/search/links.ts | `nearestByName` sorted the same-named files by path instead of by distance from the source | `how a link resolves > among files of the same name the one nearest the source note wins` |
+| T-0597-M7 | packages/memory/src/search/links.ts | `resolveNoteLink` left out the source-relative candidates, so `../tea.md` fell through to the name match | `how a link resolves > a markdown target not at the root is taken relative to the source note` |
+| T-0597-M8 | packages/memory/src/search/backend.ts | `put` deleted every unresolved link row after storing a document's links, so a target nobody wrote was forgotten | `the link table > a note written under a name somebody linked to takes those links` |
+| T-0597-M9 | packages/memory/src/search/service.ts | `refresh` parsed the links only for a document it had not seen before, so an edited note kept no links | `the link table > editing a note replaces the links it wrote` |
+| T-0597-M10 | packages/memory/src/search/service.ts | `refresh` resolved the links before it read the files, so a renamed note did not get its links | `the link table > renaming a note points the links that named it at the new place` |
+| T-0597-M11 | packages/memory/src/search/backend.ts | `remove` kept the deleted document's own link rows | `the link table in the backend > removing a document drops its links and leaves the links to it unresolved` |
+| T-0597-M12 | packages/memory/src/search/backend.ts | `remove` left the incoming target ids pointing at the deleted document | `the link table in the backend > removing a document drops its links and leaves the links to it unresolved` |
+| T-0597-M13 | packages/memory/src/search/service.ts | `backlinks` selected the links a note writes instead of the links that point at it | `the link table > links from a note, backlinks and unresolved targets come from the same index` |
+| T-0597-M14 | packages/memory/src/search/service.ts | `unresolvedTargets` counted one link per target however many named it | `the link table > links from a note, backlinks and unresolved targets come from the same index` |
+| T-0597-M15 | packages/memory/src/search/service.ts | `orphanNotes` returned the notes other notes link to instead of the notes they do not | `the link table > a note no other note links to is an orphan` |
+| T-0597-M16 | packages/memory/src/search/backend.ts | a tokenizer change dropped the documents but not `search_links`, so the old links survived the rebuild | `the link table > a rebuild for another tokenizer drops the old link table` |
+| T-0597-M17 | packages/memory/src/search/service.ts | the resolution pool no longer named the scope and owner, so a wiki note resolved a name in a bot's memory | `the link table > a link stays in the scope of the note that writes it` |

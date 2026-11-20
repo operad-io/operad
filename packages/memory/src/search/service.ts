@@ -11,6 +11,7 @@ import type { JsonValue, ObjectStore } from "@operad-io/engine";
 import { isRecord } from "@operad-io/engine";
 import { lineCountOf, queryTerms, snippetOf } from "./chunks.ts";
 import { splitMarkdown, titleFromName, titleOf } from "./frontmatter.ts";
+import { parseNoteLinks, resolveNoteLink } from "./links.ts";
 import { SqliteSearchBackend } from "./backend.ts";
 import {
   botMemoryDirectories,
@@ -30,6 +31,9 @@ import {
   type AboutDocument,
   type BackendHit,
   type DocumentKey,
+  type LinkQuery,
+  type NoteLinkInfo,
+  type NoteLinkTarget,
   type ReadRequest,
   type ReadResult,
   type SearchBackend,
@@ -37,7 +41,9 @@ import {
   type SearchRequest,
   type SearchResult,
   type SearchScope,
+  type StoredNoteLink,
   type TokenizerName,
+  type UnresolvedTarget,
 } from "./types.ts";
 
 /** The index's file name under the operad home's `store/`. */
@@ -195,6 +201,7 @@ export class MemorySearch {
           mtimeMs: Number(stat.mtimeMs),
           mtimeNs,
           size,
+          links: parseNoteLinks(body),
         });
         indexed += 1;
       }
@@ -214,7 +221,45 @@ export class MemorySearch {
       unchanged += chats.unchanged;
       removed += chats.removed;
     }
+    this.resolveNoteLinks();
     return { indexed, removed, unchanged };
+  }
+
+  /**
+   * Points the stored links at the notes the index holds now. Links are kept
+   * when nothing matches them, so a note written under a name somebody already
+   * linked to takes those links on this pass. Only changed rows are written.
+   */
+  private resolveNoteLinks(): void {
+    const notes = this.backend.keys().filter((key) => key.file !== undefined && key.path !== undefined);
+    const byId = new Map<string, DocumentKey>();
+    const groups = new Map<string, { readonly paths: string[]; readonly ids: Map<string, string> }>();
+    for (const note of notes) {
+      byId.set(note.id, note);
+      const group = `${note.scope}\u0000${note.owner}`;
+      const entry = groups.get(group) ?? { paths: [], ids: new Map<string, string>() };
+      if (note.path !== undefined) {
+        entry.paths.push(note.path);
+        entry.ids.set(note.path, note.id);
+      }
+      groups.set(group, entry);
+    }
+    const updates: NoteLinkTarget[] = [];
+    for (const link of this.backend.allLinks()) {
+      const source = byId.get(link.docId);
+      if (source?.path === undefined) continue;
+      const group = groups.get(`${source.scope}\u0000${source.owner}`);
+      if (group === undefined) continue;
+      const resolved = resolveNoteLink(source.path, link, group.paths);
+      const targetId = resolved === undefined ? undefined : group.ids.get(resolved);
+      if (targetId === link.targetId) continue;
+      updates.push({
+        docId: link.docId,
+        ordinal: link.ordinal,
+        ...(targetId === undefined ? {} : { targetId }),
+      });
+    }
+    this.backend.setLinkTargets(updates);
   }
 
   private async refreshChats(store: ObjectStore): Promise<RefreshStats> {
@@ -347,9 +392,90 @@ export class MemorySearch {
     };
   }
 
+  /**
+   * The links a note writes, resolved or not. The index answers from what the
+   * last refresh stored; a caller refreshes first.
+   */
+  linksFrom(id: string): readonly NoteLinkInfo[] {
+    const notes = this.noteKeys();
+    return this.backend
+      .allLinks()
+      .filter((link) => link.docId === id)
+      .map((link) => linkInfo(link, notes));
+  }
+
+  /** The links that point at a note, from the notes that write them. */
+  backlinks(id: string): readonly NoteLinkInfo[] {
+    const notes = this.noteKeys();
+    return this.backend
+      .allLinks()
+      .filter((link) => link.targetId === id)
+      .map((link) => linkInfo(link, notes));
+  }
+
+  /** The targets nobody wrote a note for, and how many links name each. */
+  unresolvedTargets(query: LinkQuery = {}): readonly UnresolvedTarget[] {
+    const notes = this.noteKeys();
+    const counts = new Map<string, number>();
+    for (const link of this.backend.allLinks()) {
+      if (link.targetId !== undefined) continue;
+      const source = notes.get(link.docId);
+      if (source === undefined || !inQuery(source, query)) continue;
+      counts.set(link.target, (counts.get(link.target) ?? 0) + 1);
+    }
+    return [...counts.entries()]
+      .map(([target, count]) => ({ target, count }))
+      .sort((left, right) => right.count - left.count || left.target.localeCompare(right.target));
+  }
+
+  /** The notes no other note links to; a note that only links to itself is one. */
+  orphanNotes(query: LinkQuery = {}): readonly DocumentKey[] {
+    const notes = this.noteKeys();
+    const linked = new Set<string>();
+    for (const link of this.backend.allLinks()) {
+      if (link.targetId === undefined || link.targetId === link.docId) continue;
+      linked.add(link.targetId);
+    }
+    return [...notes.values()]
+      .filter((note) => inQuery(note, query) && !linked.has(note.id))
+      .sort((left, right) => (left.path ?? "").localeCompare(right.path ?? ""));
+  }
+
+  /** The note documents the index holds, by id; chats write no links. */
+  private noteKeys(): ReadonlyMap<string, DocumentKey> {
+    const found = new Map<string, DocumentKey>();
+    for (const key of this.backend.keys()) {
+      if (key.file === undefined) continue;
+      found.set(key.id, key);
+    }
+    return found;
+  }
+
   close(): void {
     this.backend.close();
   }
+}
+
+/** Whether a document is inside the scope a link query names. */
+function inQuery(document: DocumentKey, query: LinkQuery): boolean {
+  if (query.scope !== undefined && document.scope !== query.scope) return false;
+  if (query.owner !== undefined && document.owner !== query.owner) return false;
+  return true;
+}
+
+/** One stored link with the paths of both ends the index knows. */
+function linkInfo(link: StoredNoteLink, notes: ReadonlyMap<string, DocumentKey>): NoteLinkInfo {
+  const from = notes.get(link.docId);
+  const to = link.targetId === undefined ? undefined : notes.get(link.targetId);
+  return {
+    from: link.docId,
+    ...(from?.path === undefined ? {} : { fromPath: from.path }),
+    ...(link.targetId === undefined ? {} : { to: link.targetId }),
+    ...(to?.path === undefined ? {} : { toPath: to.path }),
+    target: link.target,
+    ...(link.heading === undefined ? {} : { heading: link.heading }),
+    kind: link.kind,
+  };
 }
 
 /** Opens the index a home uses, with the memory plugin's settings. */

@@ -40,7 +40,7 @@ is the only copy of anything.
 `openMemorySearch(home, settings)` opens the index through a `SearchBackend`
 (`search/types.ts`). `SqliteSearchBackend` is the default; another engine can
 implement the same small interface later. It stores one row per document, its
-frontmatter fields and line chunks, and matches with FTS5.
+frontmatter fields, its line chunks and its links, and matches with FTS5.
 
 Indexing is incremental: a file is re-read when its nanosecond modification time
 or size changes, and a chat is re-read only when its latest fact sequence changes;
@@ -69,6 +69,31 @@ Two commands expose it: `memory search` and `memory read`. Both take JSON on
 stdin, and both accept words on the command line (`memory search --scope wiki
 --field tags=project tea`, `memory read <id> [from] [to]`). The operad MCP server
 offers them to a bot as the `search` and `read` tools.
+
+## The link table
+
+Beside the documents the index keeps a table of the links the notes write, in
+the same `search.sqlite` (ADR 0038 D8). `parseNoteLinks(text)` (`search/links.ts`)
+reads `[[target]]`, `[[target|text]]`, `[[target#Heading]]` and the table form
+`[[target\|text]]`, plus relative Markdown links `[text](path.md#heading)`.
+Markdown targets are percent-decoded and a target with a bare `%` is kept as
+written. Code blocks, inline code, external links and image embeds are not
+links. The service stores each parsed link with the document: source, raw
+target, optional heading and kind.
+
+`MemorySearch.refresh` resolves the stored links after it has read the files.
+`resolveNoteLink(source, link, notes)` takes a target that names a path from the
+scope root, then (for a Markdown link) relative to the source note, then by file
+name with or without `.md`; among same-named files the one nearest the source
+wins. Resolution stays inside one scope and owner. A link that matches nothing
+is kept unresolved and takes the note when somebody writes it; a renamed note
+gives its links a new target, and a deleted note keeps the links that pointed at
+it, unresolved.
+
+Four queries answer from the table, after a refresh: `linksFrom(id)`,
+`backlinks(id)`, `unresolvedTargets(query)` and `orphanNotes(query)`. `query`
+narrows by `scope` and `owner`. Nothing in the command line or the operad tools
+reads the table yet.
 
 ## The memory notes
 

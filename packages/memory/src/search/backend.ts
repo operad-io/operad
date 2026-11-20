@@ -21,7 +21,9 @@ import {
   type DocumentFields,
   type DocumentKey,
   type IndexedDocument,
+  type NoteLinkTarget,
   type SearchBackend,
+  type StoredNoteLink,
   type SearchScope,
   type TokenizerName,
 } from "./types.ts";
@@ -62,6 +64,15 @@ interface MatchRow {
 
 interface VersionRow {
   readonly value: string;
+}
+
+interface LinkRow {
+  readonly doc_id: string;
+  readonly ordinal: number;
+  readonly target: string;
+  readonly heading: string | null;
+  readonly kind: string;
+  readonly target_id: string | null;
 }
 
 /** The options a backend opens with. */
@@ -160,11 +171,18 @@ export class SqliteSearchBackend implements SearchBackend {
       .query<VersionRow, []>("SELECT value FROM search_meta WHERE key = 'tokenizer'")
       .get();
     if (current !== null && current.value !== this.tokenizer) {
-      // The index is a cache: a different tokenizer means a fresh one.
+      // The index is a cache: a different tokenizer means a fresh one, links too.
       this.db.run("DROP TABLE IF EXISTS search_chunks");
+      this.db.run("DROP TABLE IF EXISTS search_links");
       this.db.run("DELETE FROM search_fields");
       this.db.run("DELETE FROM search_documents");
     }
+    this.db.run(
+      "CREATE TABLE IF NOT EXISTS search_links (" +
+        "doc_id TEXT NOT NULL, ordinal INTEGER NOT NULL, target TEXT NOT NULL, heading TEXT, " +
+        "kind TEXT NOT NULL, target_id TEXT, PRIMARY KEY (doc_id, ordinal))",
+    );
+    this.db.run("CREATE INDEX IF NOT EXISTS search_links_target ON search_links (target_id)");
     this.db.run(
       `CREATE VIRTUAL TABLE IF NOT EXISTS search_chunks USING fts5(` +
         `text, doc_id UNINDEXED, line_start UNINDEXED, line_end UNINDEXED, ` +
@@ -181,6 +199,7 @@ export class SqliteSearchBackend implements SearchBackend {
     writeImmediate(this.db, () => {
       this.db.run("DELETE FROM search_chunks WHERE doc_id = ?", [document.id]);
       this.db.run("DELETE FROM search_fields WHERE doc_id = ?", [document.id]);
+      this.db.run("DELETE FROM search_links WHERE doc_id = ?", [document.id]);
       this.db.run(
         "INSERT INTO search_documents " +
           "(id, scope, owner, file, path, directory, name, title, text, fields, line_count, digest, mtime_ms, mtime_ns, size) " +
@@ -220,6 +239,13 @@ export class SqliteSearchBackend implements SearchBackend {
       for (const piece of chunksOf(document.text)) {
         chunk.run(piece.text, document.id, piece.lineStart, piece.lineEnd);
       }
+      const link = this.db.query(
+        "INSERT INTO search_links (doc_id, ordinal, target, heading, kind, target_id) " +
+          "VALUES (?, ?, ?, ?, ?, NULL)",
+      );
+      (document.links ?? []).forEach((entry, ordinal) => {
+        link.run(document.id, ordinal, entry.target, entry.heading ?? null, entry.kind);
+      });
     });
   }
 
@@ -227,6 +253,10 @@ export class SqliteSearchBackend implements SearchBackend {
     writeImmediate(this.db, () => {
       this.db.run("DELETE FROM search_chunks WHERE doc_id = ?", [id]);
       this.db.run("DELETE FROM search_fields WHERE doc_id = ?", [id]);
+      this.db.run("DELETE FROM search_links WHERE doc_id = ?", [id]);
+      // A link to a note that is gone is kept, with no target, so the note
+      // that appears at that name takes it on the next resolution.
+      this.db.run("UPDATE search_links SET target_id = NULL WHERE target_id = ?", [id]);
       this.db.run("DELETE FROM search_documents WHERE id = ?", [id]);
     });
   }
@@ -263,6 +293,35 @@ export class SqliteSearchBackend implements SearchBackend {
       )
       .get(scope, owner, directory);
     return row === null ? undefined : documentOf(row);
+  }
+
+  allLinks(): readonly StoredNoteLink[] {
+    return this.db
+      .query<LinkRow, []>(
+        "SELECT doc_id, ordinal, target, heading, kind, target_id FROM search_links " +
+          "ORDER BY doc_id, ordinal",
+      )
+      .all()
+      .map((row) => ({
+        docId: row.doc_id,
+        ordinal: row.ordinal,
+        target: row.target,
+        ...(row.heading === null ? {} : { heading: row.heading }),
+        kind: row.kind === "wikilink" ? "wikilink" : "markdown",
+        ...(row.target_id === null ? {} : { targetId: row.target_id }),
+      }));
+  }
+
+  setLinkTargets(updates: readonly NoteLinkTarget[]): void {
+    if (updates.length === 0) return;
+    writeImmediate(this.db, () => {
+      const update = this.db.query(
+        "UPDATE search_links SET target_id = ? WHERE doc_id = ? AND ordinal = ?",
+      );
+      for (const entry of updates) {
+        update.run(entry.targetId ?? null, entry.docId, entry.ordinal);
+      }
+    });
   }
 
   search(query: BackendQuery): readonly BackendHit[] {
