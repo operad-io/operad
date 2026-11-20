@@ -22,7 +22,7 @@ for what waits, and `operad history <id>` for what a run did.
 | `operad: no run "<id>"` | `run-internal` named a run that does not exist. | This command is internal; start work through `serve` and `pending`. |
 | `operad: run "<id>": flow "<flow>" is not loaded` | The run uses a flow whose plugin is disabled or missing. | `operad plugin list`, enable the plugin, then `operad serve`. |
 | `operad: plugin "<name>" is disabled` | The command or action belongs to a disabled plugin. | `operad plugin enable <name>`. |
-| `operad: plugins.<name>: no such plugin` | `plugin enable` or `disable` named nothing the config knows. | Use a configured name, or a shipped optional plugin (`pi`, `claude`, `pool`, `bot`). |
+| `operad: plugins.<name>: no such plugin` | `plugin enable` or `disable` named nothing the config knows. | Use a configured name, or a shipped optional plugin (`pi`, `claude`, `codex`, `pool`, `bot`, `telegram`, `memory`). |
 | `operad: cannot disable "<name>": run "<id>" (<step>) is active` | A run is using one of the plugin's steps. | Let that run finish, or cancel it, then disable the plugin. |
 | `operad: lock <path>: run <pid> is still alive` (exit 4) | Another process holds the home or a run lock. | Wait for it, or stop the `serve` that owns it with `operad serve stop`. |
 | `operad: secret set: no value was read` | The terminal or stdin gave no value. | Run it again and type the value, or pipe one line. |
