@@ -131,9 +131,14 @@ describe("a bot run is recorded in git", () => {
         "- [[topics/from-web]]: a page said",
         "- [[topics/from-web|a page said]]: a page said",
         "- [[topics/from-web.md]]: a page said",
+        "- [[from-web]]: a page said",
+        "- [[from-web.md]]: a page said",
         "- [Web](topics/from-web): a page said",
+        "| [[topics/from-web\\|a page said]] | a page said |",
         "- [[topics/own]]: a correction a person made",
+        "- [[own]]: a correction a person made",
         "- [Own](topics/own): a correction a person made",
+        "| [[topics/own\\|a correction]] | a correction a person made |",
         "",
       ].join("\n"),
     );
@@ -143,7 +148,27 @@ describe("a bot run is recorded in git", () => {
     const index = readFileSync(join(memory, "index.md"), "utf8");
     expect(index).not.toContain("from-web");
     expect(index).toContain("[[topics/own]]");
+    expect(index).toContain("[[own]]");
     expect(index).toContain("](topics/own)");
+    expect(index).toContain("| [[topics/own\\|a correction]] |");
+  });
+
+  test("a Markdown link with a bare percent is not decoded and stays in the index", async () => {
+    const r = await rig();
+    await botChat(r, "C-1");
+    const memory = join(r.cwd, "memory");
+    mkdirSync(join(memory, "topics"), { recursive: true });
+    writeFileSync(join(memory, "topics", "from-web.md"), "---\nuntrusted: true\n---\n\nwhat a page said\n");
+    writeFileSync(
+      join(memory, "index.md"),
+      "# Memory index\n\n- [Progress](100%.md): progress\n- [Web](topics/from-web.md): a page said\n",
+    );
+
+    const outcome = await r.run("C-1", "run-1");
+    expect(outcome.result).toBe("done");
+    const index = readFileSync(join(memory, "index.md"), "utf8");
+    expect(index).toContain("](100%.md)");
+    expect(index).not.toContain("from-web");
   });
 
   test("a wikilink with a bare percent is not decoded and stays in the index", async () => {

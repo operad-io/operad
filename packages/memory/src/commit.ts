@@ -93,7 +93,8 @@ function isUntrusted(path: string): boolean {
  * The index without the lines that link to an untrusted note. A whole line goes,
  * because one line is one entry; every other line stays as it was. A link is a
  * Markdown link or a wikilink, and either may leave out the note's `.md`. Only a
- * Markdown target can be URL-encoded; a wikilink is read as it was written.
+ * Markdown target can be URL-encoded; a wikilink is read as it was written, and
+ * a wikilink with no folder names a note in any folder.
  */
 export function withoutUntrustedLines(index: string, untrusted: readonly string[]): string {
   if (untrusted.length === 0) return index;
@@ -101,24 +102,60 @@ export function withoutUntrustedLines(index: string, untrusted: readonly string[
   for (const line of index.split("\n")) {
     const links = [
       ...[...line.matchAll(/\]\(([^)\s]+)\)/g)].map((match) => ({
-        target: match[1] ?? "",
-        urlEncoded: true,
+        target: linkPath(match[1] ?? ""),
+        markdown: true,
       })),
       ...[...line.matchAll(/\[\[([^[\]]+)\]\]/g)].map((match) => ({
-        target: (match[1] ?? "").split("|")[0] ?? "",
-        urlEncoded: false,
+        target: linkPath(wikilinkTarget(match[1] ?? "")),
+        markdown: false,
       })),
     ];
-    const marked = links.some(({ target, urlEncoded }) => {
-      const path = target.trim().replace(/^\.\//, "").split("#")[0] ?? "";
-      return untrusted.some(
-        (note) =>
-          note === path || (urlEncoded && note === decodeURIComponent(path)) || note === `${path}.md`,
-      );
-    });
+    const marked = links.some(({ target, markdown }) =>
+      markdown ? markdownLinksNote(target, untrusted) : wikilinkLinksNote(target, untrusted),
+    );
     if (!marked) kept.push(line);
   }
   return kept.join("\n");
+}
+
+/** A wikilink's target without its alias; a table row escapes the pipe as `\|`. */
+function wikilinkTarget(body: string): string {
+  const target = body.split("|")[0] ?? "";
+  return target.endsWith("\\") ? target.slice(0, -1) : target;
+}
+
+/** A link target as a path: no `./`, no heading and no surrounding space. */
+function linkPath(target: string): string {
+  return target.trim().replace(/^\.\//, "").split("#")[0] ?? "";
+}
+
+/** `decodeURIComponent`, or undefined when a bare `%` makes the target unreadable. */
+function decodeLinkPath(path: string): string | undefined {
+  try {
+    return decodeURIComponent(path);
+  } catch {
+    return undefined;
+  }
+}
+
+/** Whether a Markdown link target names an untrusted note; the target is a path from the index. */
+function markdownLinksNote(path: string, untrusted: readonly string[]): boolean {
+  const decoded = decodeLinkPath(path);
+  return untrusted.some(
+    (note) =>
+      note === path || (decoded !== undefined && note === decoded) || note === `${path}.md`,
+  );
+}
+
+/** Whether a wikilink target names an untrusted note; a bare name names a note in any folder. */
+function wikilinkLinksNote(path: string, untrusted: readonly string[]): boolean {
+  if (path.length === 0) return false;
+  const name = path.replace(/\.md$/, "");
+  return untrusted.some((note) => {
+    const noteName = note.replace(/\.md$/, "");
+    const bare = path.includes("/") ? noteName : (noteName.split("/").pop() ?? "");
+    return bare === name;
+  });
 }
 
 /** Keeps untrusted notes out of the bot's index; returns the notes it removed a line for. */
