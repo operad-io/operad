@@ -38,13 +38,14 @@ describe("bots", () => {
     const r = await rig();
     expect(Object.keys(readBots(r.home, {}))).toEqual([DEFAULT_BOT]);
     const bot = resolveBot(r.home, DEFAULT_BOT, {});
-    expect(bot.cwd).toBe(join(r.home, "bot"));
+    expect(bot.cwd).toBe(join(r.home, "bot", "default"));
   });
 
   test("another bot defaults to a directory of its own, and a written cwd wins", async () => {
     const r = await rig();
     expect(resolveBot(r.home, "reader", {}).cwd).toBe(join(r.home, "bot", "reader"));
     expect(resolveBot(r.home, "elsewhere", { cwd: join(r.root, "work") }).cwd).toBe(join(r.root, "work"));
+    expect(resolveBot(r.home, DEFAULT_BOT, { cwd: join(r.root, "own") }).cwd).toBe(join(r.root, "own"));
   });
 
   test("using the owner's own agent settings is off unless the bot turns it on", async () => {
@@ -151,7 +152,7 @@ describe("the default access profile", () => {
     mkdirSync(join(r.home, "secrets"), { recursive: true });
     writeFileSync(join(r.home, "secrets", "token"), "t");
     writeFileSync(join(r.home, "serve.lock"), "1");
-    const cwd = join(r.home, "bot");
+    const cwd = join(r.home, "bot", "default");
     const chat = await r.open(DEFAULT_BOT);
     await r.say(chat, "hi");
     await r.reply(chat);
@@ -190,11 +191,14 @@ describe("the default access profile", () => {
       access: { denyPaths: ["~/notes"], readOnly: true, denyCommands: [] },
     }).access;
     const base = defaultAccess(r.home);
-    expect(tightened.denyPaths).toEqual([
-      ...(base.denyPaths as string[]),
-      join(r.home, "bot", "reader", "skills"),
-      "~/notes",
-    ]);
+    expect(tightened.denyPaths).toEqual(
+      expect.arrayContaining([
+        ...(base.denyPaths as string[]),
+        join(r.home, "bot", "reader", "skills"),
+        join(r.home, "bot", "default"),
+        "~/notes",
+      ]),
+    );
     expect(tightened.denyCommands).toEqual(base.denyCommands);
     expect(tightened.readOnly).toBe(true);
     expect(resolveBot(r.home, "plain", { access: { readOnly: false } }).access.readOnly).toBeUndefined();
@@ -285,7 +289,7 @@ describe("repositories", () => {
     await r.say(id, "hi");
     await r.reply(id);
     const access = accessOf(r.calls[0]?.access);
-    const cwd = join(r.home, "bot");
+    const cwd = join(r.home, "bot", "default");
     const home = join(r.root, "user");
     for (const call of [
       { tool: "write", input: { path: join(repository, "src", "file.ts") } },
@@ -469,7 +473,7 @@ describe("bot:chat", () => {
     const chat = chatData((await r.store.get(CHAT_TYPE, id))?.data ?? {});
     expect(chat.parent).toBe("bot:default");
     expect(chat.title).toBe("Morning");
-    expect(chat.cwd).toBe(join(r.home, "bot"));
+    expect(chat.cwd).toBe(join(r.home, "bot", "default"));
     expect(chat.accessLevel).toBe("ask");
     expect(chat.accessDefault).toBe("ask");
     expect(existsSync(chat.cwd)).toBe(true);
@@ -734,7 +738,7 @@ describe("a reply reads the bot again", () => {
     await r.say(id, "hi");
     await r.reply(id);
     expect(r.calls[0]?.params.operadTools).toEqual({ home: r.home });
-    expect(r.calls[0]?.params.cwd).toBe(join(r.home, "bot"));
+    expect(r.calls[0]?.params.cwd).toBe(join(r.home, "bot", "default"));
     expect(defaultAccess(r.home).denyCommands).toContain("operad");
   });
 });

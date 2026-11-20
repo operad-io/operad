@@ -106,13 +106,17 @@ A bot adds the operad home and the `operad` command: every entry of the home
 except the bot's own directory is denied (the names there now, and `store`,
 `secrets`, `config.json` and the MCP report directory), so a home other than
 `~/.operad` is covered too. The bot's own working directory under
-`~/.operad/bot` is the one part of the home the agent may use. The path of a
-repository `dev` knows, and the path of a bot's skill directories, are added to
-`denyPaths`: the agent reaches a repository through `dev`'s actions, not by
-touching its files. The skill directories are also in `readPaths`, so the agent
-reads them; a write there is still refused. A bot's own `access` lists are
-appended to these, and its `access.readOnly` can turn the working directory
-read-only.
+`~/.operad/bot` is the one part of the home the agent may use, including its
+`memory/` directory. For the default bot, the rest of `~/.operad/bot` is also
+allowed except another bot's directory: files and directories a person or the
+bot put in the old home stay there and remain readable and writable. Another
+bot denies the entries of `~/.operad/bot` it does not own. The path of a
+repository `dev` knows, and the path of a bot's skill
+directories, are added to `denyPaths`: the agent reaches a repository through
+`dev`'s actions, not by touching its files. The skill directories are also in
+`readPaths`, so the agent reads them; a write there is still refused. A bot's
+own `access` lists are appended to these, and its `access.readOnly` can turn
+the working directory read-only.
 
 A repository chat adds `operad` to `denyCommands` and starts read-only in the
 main clone, with its skill directories read-only there. A generated step that
@@ -133,7 +137,9 @@ The full rule tables are in `packages/access-match/REFERENCE.md`.
 `$OPERAD_HOME/access-user.json` (see [the home](config.md#the-home)) holds the
 calls a person answered `allow_always` for. A missing file is an empty list. A
 file that cannot be read is reported by the step that reads it and treated as
-empty. A person adds an entry by answering `allow_always`; removing an entry is
+empty. When the default bot moves from the old `$OPERAD_HOME/bot` to
+`$OPERAD_HOME/bot/default`, an entry whose `cwd` is exactly the old home is
+rewritten once to the new directory; every other entry is left as it was. A person adds an entry by answering `allow_always`; removing an entry is
 deleting its object from the array. The file is written under a lock and
 replaced whole, so a crash does not leave it half written.
 

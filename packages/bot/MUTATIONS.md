@@ -202,3 +202,36 @@ changes for bots, in the order they were recorded. The root
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0559-M1 | packages/bot/src/proposals.ts | the actions kept `review` first, so a client's main button showed the review instead of approving | `a bot proposes a skill > it is one pending item, shows SKILL.md and the files with scripts apart, and applies at the next reply` |
+
+## T-0584 — the default bot's own directory, memory and sessions
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0584-M1 | packages/bot/src/bot.ts | the default bot kept the old `~/.operad/bot` directory | `bots > the default bot exists without being written, with its own directory` |
+| T-0584-M2 | packages/bot/src/bot.ts | the move no longer kept another bot's directory out of the default bot's home | `the default bot's directory > the old home moves into default, while another bot's directory stays put` |
+| T-0584-M3 | packages/bot/src/bot.ts | resolving a bot no longer made its `memory/` directory | `memory and the other bots' directories > every bot gets memory, which it may write, while another bot's directory is denied` |
+| T-0584-M4 | packages/bot/src/bot.ts | another bot's directory was no longer added to the access profile | `memory and the other bots' directories > every bot gets memory, which it may write, while another bot's directory is denied` |
+| T-0584-M5 | packages/bot/src/bot.ts | the default move left claude's old project directory in place | `harness sessions after the move > claude's project directory moves to the directory named for the new working directory` |
+| T-0584-M6 | packages/bot/src/bot.ts | the default move left radian's journal naming the old workspace | `harness sessions after the move > radian's journal records the new workspace and other journals are untouched` |
+| T-0584-M7 | packages/bot/src/bot.ts | the move deleted `default/` before each entry, so an entry moved before a crash was lost | `the default bot's directory > a crash in a child halfway through the move loses nothing, and the next run finishes it` |
+
+## T-0584 rework 1 — bot directories and a finished move
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0584-M8 | packages/bot/src/bot.ts | only a bot's name was protected, not the working directory a setting or a removed bot names | `the default bot's directory > a bot directory under another name, and a removed bot's directory, are not swept into default` |
+| T-0584-M9 | packages/bot/src/bot.ts | the marker of a finished move was ignored, so a later read moved a new entry and read the journals again | `the default bot's directory > once the move is done, a later read moves no new entry and reads no journal` |
+
+## T-0584 rework 2 — only operad's entries move
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0584-M10 | packages/bot/src/bot.ts | every top-level entry in the old home was moved instead of only operad's `skills/` and `memory/` | `the default bot's directory > only skills and memory move; an unknown file and directory stay and the default bot can use them` |
+| T-0584-M11 | packages/bot/src/bot.ts | the default bot denied every old-home directory again instead of only another bot's | `the default bot's directory > only skills and memory move; an unknown file and directory stay and the default bot can use them` |
+| T-0584-M12 | packages/bot/src/bot.ts | claude's project directory moved while a claude kept worker was alive | `harness sessions after the move > claude's old project directory waits while a claude worker is alive, then moves on the next read` |
+
+## T-0584 rework 3 — grants that named the old home
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0584-M13 | packages/bot/src/bot.ts | a grant whose `cwd` was the old default home was left in place | `grants after the move > a grant made in the old home keeps matching, while every other grant stays byte for byte` |

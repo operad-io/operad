@@ -11,6 +11,7 @@
 
 import pkg from "../package.json" with { type: "json" };
 import { mkdirSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CHAT_TYPE, MESSAGE_EVENT, agentConditionals, type AgentChoices, type ScheduledChat, chatData, createChat, sendMessage, startingEffort, startingModel, titleFromMessage } from "@operad-io/chat";
 import { definePlugin, isRecord, modelIds, type ActionArgSchema, type ActionArgsSchema, type ActionTypeDefinition, type HarnessModelInfo, type HarnessModels, type JsonValue, type ObjectRow, type ObjectStore, type ObjectViews, type PluginStepResult, type SectionContent, type StepContext, type StoredObject } from "@operad-io/engine";
@@ -19,10 +20,16 @@ import {
   DEFAULT_BOT,
   BOT_TYPE,
   BotError,
+  botDir,
+  defaultBotHomeMigrated,
+  ensureBotMemory,
+  migrateDefaultBotDir,
   readBots,
   repositoryPaths,
   resolveBot,
   skillName,
+  workingDirectory,
+  type BotSettings,
   type ResolvedBot,
 } from "./bot.ts";
 import { createBot, knownMcpServers, knownSkills } from "./create.ts";
@@ -68,6 +75,50 @@ function rowOf(bot: ResolvedBot): Record<string, JsonValue> {
 /** The harnesses that take MCP servers natively; any other does not mount a bot's servers. */
 export const MCP_HARNESSES: readonly string[] = ["claude", "radian"];
 
+/** Moves the old default bot home once, unless the default bot names its own directory. */
+async function migrateDefaultHome(
+  store: ObjectStore,
+  home: string,
+  written: Readonly<Record<string, BotSettings>>,
+): Promise<void> {
+  const settings = written[DEFAULT_BOT];
+  if (settings === undefined) return;
+  try {
+    if (workingDirectory(home, DEFAULT_BOT, settings) !== join(botDir(home), DEFAULT_BOT)) return;
+  } catch {
+    return;
+  }
+  if (defaultBotHomeMigrated(home)) return;
+  // A bot's directory may have a different name from the bot and may already be gone
+  // from the settings; both its stored cwd and its default path are kept in place.
+  const botPaths: string[] = [];
+  for (const [name, bot] of Object.entries(written)) {
+    if (name === DEFAULT_BOT) continue;
+    try {
+      botPaths.push(workingDirectory(home, name, bot));
+    } catch {
+      botPaths.push(join(botDir(home), name));
+    }
+  }
+  let cursor: string | undefined;
+  do {
+    const page = await store.list(BOT_TYPE, { ...(cursor === undefined ? {} : { cursor }) });
+    for (const object of page.objects) {
+      if (object.id === DEFAULT_BOT) continue;
+      const cwd = object.data.cwd;
+      botPaths.push(typeof cwd === "string" && cwd.length > 0 ? cwd : join(botDir(home), object.id));
+    }
+    cursor = page.next;
+  } while (cursor !== undefined);
+  const repositories = await repositoryPaths(store);
+  const grantFiles = [
+    join(home, "access-user.json"),
+    ...botPaths.map((path) => join(path, "access-user.json")),
+    ...repositories.map((path) => join(path, ".operad", "access-user.json")),
+  ];
+  migrateDefaultBotDir(home, { botNames: Object.keys(written), botPaths, grantFiles });
+}
+
 const GUARD = fileURLToPath(new URL("./guard.ts", import.meta.url));
 
 /** What a harness starts for one of a bot's servers: the guard, which starts the server itself. */
@@ -86,6 +137,7 @@ export async function syncBots(
   fallback: Readonly<Record<string, JsonValue>>,
 ): Promise<void> {
   const written = readBots(home, fallback);
+  await migrateDefaultHome(store, home, written);
   const repositories = await repositoryPaths(store);
   for (const [name, settings] of Object.entries(written)) {
     let data: Record<string, JsonValue>;
@@ -138,9 +190,11 @@ export interface OpenChat {
 
 /** Opens a chat on a bot and returns its id. Refuses with a plain message. */
 export async function openChat(input: OpenChat): Promise<string> {
-  const written = readBots(input.home, input.settings)[input.bot];
-  if (written === undefined) throw new BotError(`there is no bot "${input.bot}"`);
-  const bot = resolveBot(input.home, input.bot, written, await repositoryPaths(input.store));
+  const written = readBots(input.home, input.settings);
+  await migrateDefaultHome(input.store, input.home, written);
+  const settings = written[input.bot];
+  if (settings === undefined) throw new BotError(`there is no bot "${input.bot}"`);
+  const bot = resolveBot(input.home, input.bot, settings, await repositoryPaths(input.store));
   const harness = input.harness ?? bot.harness ?? input.harnesses[0];
   if (harness === undefined) {
     throw new BotError("no agent is loaded; load one to chat with the bot");
@@ -161,6 +215,7 @@ export async function openChat(input: OpenChat): Promise<string> {
   }
   const effortDefault = input.efforts?.[harness]?.default ?? undefined;
   mkdirSync(bot.cwd, { recursive: true });
+  ensureBotMemory(bot.cwd);
   return createChat(
     input.store,
     {
@@ -485,12 +540,15 @@ export async function runSettings(ctx: StepContext, params: unknown): Promise<Pl
   const name = parent.slice(BOT_TYPE.length + 1);
   try {
     await ingestReports(ctx.store, ctx.home);
-    const written = readBots(ctx.home, ctx.settings)[name];
+    const bots = readBots(ctx.home, ctx.settings);
+    await migrateDefaultHome(ctx.store, ctx.home, bots);
+    const written = bots[name];
     if (written === undefined) {
       return { result: "failed", data: { message: `bot "${name}" is no longer in the settings` } };
     }
     const bot = resolveBot(ctx.home, name, written, await repositoryPaths(ctx.store));
     mkdirSync(bot.cwd, { recursive: true });
+    ensureBotMemory(bot.cwd);
     // Only the servers the bot lists, and only on a harness that takes MCP servers natively.
     const mounts = MCP_HARNESSES.includes(chatData(stored.data).harness);
     const mcpServers: Record<string, JsonValue> = {};
@@ -623,7 +681,10 @@ export function createBotPlugin() {
     },
     // The bot is its own source for its scheduled prompts. It declares `start`
     // while staying a domain plugin, so `serve` starts it like any source.
-    start: startScheduled,
+    start: async (ctx) => {
+      await migrateDefaultHome(ctx.store, ctx.home, readBots(ctx.home, ctx.settings));
+      return startScheduled(ctx);
+    },
     views: { [BOT_TYPE]: botViews, [PROPOSAL_TYPE]: proposalViews },
   });
 }

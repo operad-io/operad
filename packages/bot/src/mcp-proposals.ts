@@ -15,7 +15,7 @@ import {
   type JsonValue,
   type ObjectStore,
 } from "@operad-io/engine";
-import { BotError, accessFor, readBots, resolveBot, type McpServerSettings } from "./bot.ts";
+import { BotError, readBots, resolveBot, type McpServerSettings } from "./bot.ts";
 import { baseEnvironment, probeServer } from "./mcp-client.ts";
 import {
   commandLine,
@@ -76,7 +76,7 @@ export async function proposeMcp(
   const pinned = packageOfCommand(registration.command, registration.args);
   const resolved = resolveBot(home, bot, written);
   // The bot's access profile applies to starting the server, as it does to any command of the bot.
-  const verdict = match(accessFor(home, written), {
+  const verdict = match(resolved.access, {
     tool: "bash",
     input: { command: commandLine(registration.command, registration.args) },
     cwd: resolved.cwd,

@@ -5,11 +5,12 @@
  * a reply reads the file again, so an edit applies at once.
  */
 
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import { MCP_REPORT_DIR } from "./mcp-constants.ts";
 import { defaultAccess as builtInAccess } from "@operad-io/access-match";
+import { readKeptWorkers } from "@operad-io/engine/platform";
 import { configPath, isRecord, prepareSettings, type ActionArgsSchema, type JsonValue, type ObjectStore } from "@operad-io/engine";
 
 /** The object type of a bot. */
@@ -50,7 +51,7 @@ export const BOT_SETTINGS: ActionArgsSchema = {
             type: "string",
             minLength: 1,
             description:
-              "The working directory. Without it: ~/.operad/bot for `default`, ~/.operad/bot/<name> for any other. It must be inside ~/.operad/bot or outside the operad home.",
+              "The working directory. Without it: ~/.operad/bot/<name>, so the default bot is in ~/.operad/bot/default. It must be inside ~/.operad/bot or outside the operad home.",
           },
           harness: {
             type: "string",
@@ -251,6 +252,378 @@ function within(path: string, directory: string): boolean {
   return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
 }
 
+function samePath(left: string, right: string): boolean {
+  return resolve(left) === resolve(right);
+}
+
+function exists(path: string): boolean {
+  try {
+    lstatSync(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Moves one entry into a directory that may already hold the same name. Two
+ * directories are merged child by child, so a move killed halfway leaves every
+ * entry on one side or the other and the next run finishes it. A single file
+ * or link is renamed, which is atomic.
+ */
+function mergeInto(source: string, destination: string): void {
+  if (!exists(destination)) {
+    mkdirSync(resolve(destination, ".."), { recursive: true });
+    renameSync(source, destination);
+    return;
+  }
+  const from = lstatSync(source);
+  const to = lstatSync(destination);
+  if (from.isDirectory() && to.isDirectory()) {
+    for (const name of readdirSync(source)) mergeInto(join(source, name), join(destination, name));
+    rmSync(source, { recursive: true, force: true });
+    return;
+  }
+  rmSync(destination, { recursive: true, force: true });
+  renameSync(source, destination);
+}
+
+/** What moving the default bot's old home needs from a caller. */
+export interface BotDirectoryMigration {
+  /** Bot names whose default directory is under the old home; kept in place. */
+  readonly botNames?: readonly string[] | undefined;
+  /** Every bot's working directory, including a named `cwd` and a removed bot's. */
+  readonly botPaths?: readonly string[] | undefined;
+  /** Where claude keeps its per-directory sessions; the environment's own when absent. */
+  readonly claudeProjects?: string | undefined;
+  /** Where radian keeps session journals; the environment's own when absent. */
+  readonly radianSessionDirs?: readonly string[] | undefined;
+  /** The grant files recording a working directory; `$OPERAD_HOME/access-user.json` when absent. */
+  readonly grantFiles?: readonly string[] | undefined;
+  /** Called after each top-level entry moved; a test stops a child process here. */
+  readonly afterMove?: ((name: string) => void) | undefined;
+  /** Called after a grant file's temporary copy is written and before it replaces the file. */
+  readonly beforeGrantRename?: ((temporary: string, file: string) => void) | undefined;
+}
+
+/** The marker that says the old default home has been handled. */
+const MIGRATION_MARKER = ".moved-to-default";
+
+/** What operad itself creates in the old default bot home; everything else stays there. */
+const OWNED_ENTRIES: ReadonlySet<string> = new Set(["skills", "memory"]);
+
+/** A marker with this content means only claude's project directory waits for a retry. */
+const CLAUDE_PENDING = "claude";
+
+/** The marker that says the grants which named the old home were rewritten. */
+const GRANT_MARKER = ".grants-moved-to-default";
+
+function markerState(marker: string): "done" | "claude" | undefined {
+  if (!existsSync(marker)) return undefined;
+  try {
+    return readFileSync(marker, "utf8").trim() === CLAUDE_PENDING ? CLAUDE_PENDING : "done";
+  } catch {
+    return "done";
+  }
+}
+
+function writeMarker(marker: string, pending: boolean): void {
+  mkdirSync(resolve(marker, ".."), { recursive: true });
+  writeFileSync(marker, pending ? CLAUDE_PENDING : "");
+}
+
+function writeDoneMarker(marker: string): void {
+  mkdirSync(resolve(marker, ".."), { recursive: true });
+  const temporary = `${marker}.${process.pid}.tmp`;
+  writeFileSync(temporary, "");
+  renameSync(temporary, marker);
+}
+
+function escaped(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Rewrites the `cwd` of every grant made in the old default home to the new
+ * one. The file's other bytes stay as they were; a missing file, a file with
+ * no old cwd and a repeated run write nothing. The replacement is a temporary
+ * file renamed over the original, so a crash leaves the old or the new whole.
+ */
+function migrateGrantCwds(
+  oldCwd: string,
+  newCwd: string,
+  files: readonly string[],
+  beforeRename?: ((temporary: string, file: string) => void) | undefined,
+): boolean {
+  const quotedOld = JSON.stringify(oldCwd);
+  const quotedNew = JSON.stringify(newCwd);
+  const pattern = new RegExp(`("cwd"\\s*:\\s*)${escaped(quotedOld)}`, "g");
+  for (const file of new Set(files)) {
+    let text: string;
+    try {
+      text = readFileSync(file, "utf8");
+    } catch (error) {
+      if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") continue;
+      return false;
+    }
+    try {
+      JSON.parse(text);
+    } catch {
+      return false;
+    }
+    const next = text.replace(pattern, (_match: string, prefix: string) => `${prefix}${quotedNew}`);
+    if (next === text) continue;
+    const temporary = `${file}.${process.pid}.migrate.tmp`;
+    try {
+      const mode = statSync(file).mode & 0o777;
+      writeFileSync(temporary, next, { mode });
+      beforeRename?.(temporary, file);
+      renameSync(temporary, file);
+    } catch {
+      return false;
+    }
+  }
+  return true;
+}
+
+/** Whether a claude worker may still be writing under the old working directory. */
+function claudeWorkerRunning(home: string): boolean {
+  try {
+    return readKeptWorkers(home, "claude").length > 0;
+  } catch {
+    return true;
+  }
+}
+
+/** Reads only the first line of a file, without loading the rest. */
+function firstLine(file: string): string | undefined {
+  let descriptor: number | undefined;
+  try {
+    descriptor = openSync(file, "r");
+    const buffer = Buffer.alloc(4096);
+    const read = readSync(descriptor, buffer, 0, buffer.length, 0);
+    const text = buffer.subarray(0, read).toString("utf8");
+    const newline = text.indexOf("\n");
+    return newline < 0 ? text : text.slice(0, newline);
+  } catch {
+    return undefined;
+  } finally {
+    if (descriptor !== undefined) closeSync(descriptor);
+  }
+}
+
+/** The working directories of the bots the settings name now. */
+function configuredBotPaths(home: string): string[] {
+  const found: string[] = [];
+  try {
+    for (const [name, settings] of Object.entries(readBots(home))) {
+      if (name === DEFAULT_BOT) continue;
+      try {
+        found.push(workingDirectory(home, name, settings));
+      } catch {
+        // A bot whose directory is invalid has no path to protect here.
+      }
+    }
+  } catch {
+    // A settings file that cannot be read contributes no paths.
+  }
+  return found;
+}
+
+/** The top-level old-home entries that belong to some bot other than the default. */
+function protectedEntries(
+  root: string,
+  target: string,
+  options: BotDirectoryMigration,
+): Set<string> {
+  const found = new Set<string>();
+  const add = (path: string): void => {
+    if (!within(path, root) || samePath(path, target)) return;
+    const rel = relative(root, path);
+    if (rel === "") {
+      // A bot uses the whole old home, so no entry there is the default bot's.
+      for (const name of readdirSync(root)) found.add(name);
+      return;
+    }
+    const [first] = rel.split(/[\\/]/);
+    if (first !== undefined && first.length > 0) found.add(first);
+  };
+  for (const name of options.botNames ?? []) if (name !== DEFAULT_BOT) add(join(root, name));
+  for (const path of options.botPaths ?? []) add(path);
+  return found;
+}
+
+/** The directory claude names for a working directory. */
+export function claudeProjectDirectory(cwd: string): string {
+  return cwd.replace(/[^A-Za-z0-9]/g, "-");
+}
+
+/** Where claude keeps its project directories. */
+export function claudeProjectsDirectory(env: NodeJS.ProcessEnv = process.env): string {
+  const configured = env["CLAUDE_CONFIG_DIR"];
+  const root = configured !== undefined && configured.length > 0 ? configured : join(homedir(), ".claude");
+  return join(root, "projects");
+}
+
+/**
+ * Claude finds a session under the project directory named for the working
+ * directory. Moving the default bot's working directory moves that project
+ * directory too, so a chat started before the move still resumes.
+ */
+export function migrateClaudeSessions(
+  oldCwd: string,
+  newCwd: string,
+  projects: string = claudeProjectsDirectory(),
+): void {
+  const from = join(projects, claudeProjectDirectory(oldCwd));
+  const to = join(projects, claudeProjectDirectory(newCwd));
+  if (samePath(from, to) || !existsSync(from)) return;
+  mergeInto(from, to);
+}
+
+/** The directories radian may keep its session journals in. */
+export function radianSessionDirectories(env: NodeJS.ProcessEnv = process.env): string[] {
+  const found: string[] = [];
+  const explicit = env["RADIAN_SESSION_DIR"];
+  if (explicit !== undefined && explicit.length > 0) found.push(explicit);
+  const configured = env["RADIAN_HOME"];
+  const home = configured !== undefined && configured.length > 0 ? configured : join(homedir(), ".radian");
+  found.push(join(home, "sessions"));
+  found.push(join(homedir(), ".local", "share", "radian", "sessions"));
+  return [...new Set(found)];
+}
+
+/**
+ * Radian binds a session to the workspace in its `SessionCreated` event.
+ * Moving the default bot's old workspace rewrites that one line in every
+ * journal it belongs to, leaving the rest of the session as it was. Each
+ * rewrite uses a temporary file and a rename, so a crash leaves a whole file.
+ */
+export function migrateRadianSessions(
+  oldCwd: string,
+  newCwd: string,
+  directories: readonly string[] = radianSessionDirectories(),
+): void {
+  for (const directory of new Set(directories)) {
+    if (!isDirectory(directory)) continue;
+    for (const name of readdirSync(directory)) {
+      if (!name.endsWith(".jsonl")) continue;
+      const file = join(directory, name);
+      const head = firstLine(file);
+      if (head === undefined) continue;
+      let first: unknown;
+      try {
+        first = JSON.parse(head);
+      } catch {
+        continue;
+      }
+      if (!isRecord(first) || first.event !== "SessionCreated" || !isRecord(first.data)) continue;
+      if (first.data.workspace !== oldCwd) continue;
+      // Only a journal that names the old workspace is read in full, and rewritten once.
+      const text = readFileSync(file, "utf8");
+      const newline = text.indexOf("\n");
+      const next = JSON.stringify({ ...first, data: { ...first.data, workspace: newCwd } });
+      const temporary = join(directory, `.${name}.migrate-${process.pid}`);
+      writeFileSync(temporary, next + (newline < 0 ? "" : text.slice(newline)));
+      renameSync(temporary, file);
+    }
+  }
+}
+
+/**
+ * Moves only what operad itself made in the old bot home into `default/`: the
+ * bot's `skills/` and `memory/`. Every other entry stays where it is, as does
+ * another bot's directory and a custom `cwd` for the default bot. The move can
+ * be repeated: each entry is renamed once, and directories on both sides are
+ * merged. Claude's project directory waits while a claude worker is alive, and
+ * the marker says so, so the next read retries it without rescanning journals.
+ */
+export function migrateDefaultBotDir(home: string, options: BotDirectoryMigration = {}): readonly string[] {
+  const root = botDir(home);
+  const target = join(root, DEFAULT_BOT);
+  const marker = join(target, MIGRATION_MARKER);
+  const state = markerState(marker);
+  const rootExists = existsSync(root);
+  const grantMarker = join(target, GRANT_MARKER);
+  if (rootExists && !existsSync(grantMarker)) {
+    const grants = options.grantFiles ?? [join(home, "access-user.json")];
+    if (migrateGrantCwds(root, target, grants, options.beforeGrantRename)) writeDoneMarker(grantMarker);
+  }
+  if (state === "done") return [];
+  const moved: string[] = [];
+  if (rootExists && state === undefined) {
+    const protectedNames = protectedEntries(root, target, {
+      ...options,
+      botPaths: options.botPaths ?? configuredBotPaths(home),
+    });
+    for (const entry of readdirSync(root, { withFileTypes: true })) {
+      if (entry.name === DEFAULT_BOT || protectedNames.has(entry.name)) continue;
+      if (!OWNED_ENTRIES.has(entry.name)) continue;
+      mergeInto(join(root, entry.name), join(target, entry.name));
+      moved.push(entry.name);
+      options.afterMove?.(entry.name);
+    }
+  }
+  if (state === undefined) migrateRadianSessions(root, target, options.radianSessionDirs);
+  const projects = options.claudeProjects ?? claudeProjectsDirectory();
+  const oldProject = join(projects, claudeProjectDirectory(root));
+  const claudePending = existsSync(oldProject) && claudeWorkerRunning(home);
+  if (!claudePending) migrateClaudeSessions(root, target, projects);
+  // Mark only after every entry and session moved, so a crash halfway runs again.
+  if (rootExists || state === CLAUDE_PENDING) writeMarker(marker, claudePending);
+  return moved;
+}
+
+/** Whether the old default bot home has already been handled, including its grants and claude's retry. */
+export function defaultBotHomeMigrated(home: string): boolean {
+  const target = join(botDir(home), DEFAULT_BOT);
+  return markerState(join(target, MIGRATION_MARKER)) === "done" && existsSync(join(target, GRANT_MARKER));
+}
+
+/** The memory directory of a bot. */
+export function memoryDir(cwd: string): string {
+  return join(cwd, "memory");
+}
+
+/** Makes a bot's memory directory, returning it. */
+export function ensureBotMemory(cwd: string): string {
+  const memory = memoryDir(cwd);
+  mkdirSync(memory, { recursive: true });
+  return memory;
+}
+
+/** The directories no bot may read or write: every other bot's. */
+function siblingDirectories(home: string, ownCwd: string, defaultBot: boolean): string[] {
+  const root = botDir(home);
+  const ownIsRoot = samePath(ownCwd, root);
+  const found = new Set<string>();
+  const sibling = (path: string): boolean => {
+    if (samePath(path, ownCwd)) return false;
+    if (!ownIsRoot && (within(ownCwd, path) || within(path, ownCwd))) return false;
+    if (ownIsRoot && (samePath(path, join(root, "memory")) || samePath(path, join(root, "skills")))) return false;
+    return true;
+  };
+  // The default bot kept access to the old bot home, so only another bot's
+  // directory is denied there. Another bot still denies every entry it does
+  // not own, so the default bot's old files are not exposed to it.
+  if (!defaultBot && existsSync(root)) {
+    for (const entry of readdirSync(root, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const path = join(root, entry.name);
+      if (sibling(path)) found.add(path);
+    }
+  }
+  for (const [name, settings] of Object.entries(readBots(home))) {
+    try {
+      const path = workingDirectory(home, name, settings);
+      if (sibling(path)) found.add(path);
+    } catch {
+      // A bot whose own directory cannot be read contributes no path here.
+    }
+  }
+  return [...found].sort();
+}
+
 /**
  * The default access profile of a bot: the built-in default, with the operad
  * home and the operad command added. Everything in the operad home except the
@@ -290,14 +663,18 @@ export function accessFor(
   repositories: readonly string[] = [],
   skillPaths: readonly string[] = [],
   readPaths: readonly string[] = [],
+  cwd?: string,
+  defaultBot = false,
 ): Record<string, JsonValue> {
   const access = defaultAccess(home);
   // A repository is reached through operad's tools (dev's verbs), never by
   // touching its files, so its path is denied to the agent. Skill directories
   // are changed only through a proposal a person confirms, so they are denied
   // for writing too; `readPaths` lets the agent read them without lifting the
-  // deny (the harness still receives their paths as skills).
-  access.denyPaths = appended(access.denyPaths, [...repositories, ...skillPaths]);
+  // deny (the harness still receives their paths as skills). Every other bot's
+  // directory is denied too, for reading and writing.
+  const siblings = cwd === undefined ? [] : siblingDirectories(home, cwd, defaultBot);
+  access.denyPaths = appended(access.denyPaths, [...repositories, ...skillPaths, ...siblings]);
   if (readPaths.length > 0) access.readPaths = appended(access.readPaths, readPaths);
   const own = settings.access ?? {};
   for (const field of ["denyPaths", "denyCommands", "askCommands", "askPaths"] as const) {
@@ -407,12 +784,7 @@ export function skillName(path: string): string {
 /** The working directory of a bot; refused when it would put the operad home in reach. */
 export function workingDirectory(home: string, name: string, settings: BotSettings): string {
   const root = botDir(home);
-  const cwd =
-    settings.cwd === undefined
-      ? name === DEFAULT_BOT
-        ? root
-        : join(root, name)
-      : expand(settings.cwd, root);
+  const cwd = settings.cwd === undefined ? join(root, name) : expand(settings.cwd, root);
   if (within(home, cwd)) {
     throw new BotError(
       `bot "${name}": the working directory ${cwd} is the operad home or holds it; use a subdirectory of ${root}`,
@@ -440,7 +812,7 @@ export async function repositoryPaths(store: ObjectStore): Promise<string[]> {
   return found;
 }
 
-/** One bot as a chat uses it now; the working directory is not created here. */
+/** One bot as a chat uses it now; its working directory and memory are created here. */
 export function resolveBot(
   home: string,
   name: string,
@@ -448,6 +820,7 @@ export function resolveBot(
   repositories: readonly string[] = [],
 ): ResolvedBot {
   const cwd = workingDirectory(home, name, settings);
+  ensureBotMemory(cwd);
   const list = skillList(settings, cwd);
   const skills = list.directories;
   const skillPaths = [...list.roots, join(cwd, "skills")];
@@ -460,7 +833,7 @@ export function resolveBot(
     effort: settings.effort ?? null,
     skills,
     speaker: settings.speaker ?? null,
-    access: accessFor(home, settings, repositories, skillPaths, skillPaths),
+    access: accessFor(home, settings, repositories, skillPaths, skillPaths, cwd, name === DEFAULT_BOT),
     mcpServers: settings.mcpServers ?? {},
   };
 }
