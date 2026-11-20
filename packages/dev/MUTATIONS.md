@@ -1432,3 +1432,16 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0582-M1 | packages/dev/src/service.ts | the fallback matched `^remote\.` again, so `remote.pushDefault` counted as a remote | `dev repositories > a remote-named setting is not a remote` (packages/dev/test/heavy/service.test.ts) |
+
+## T-0583 — dev stage names `code` and `test`
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0583-M1 | packages/dev/src/flow-compiler.ts | `canonicalStage` kept the older names, so `work` and `code` compiled to different flows | `the older and new stage names load to the same compiled flow` |
+| T-0583-M2 | packages/dev/src/settings.ts | `useNewStageNames` returned before rewriting, so a settings write stored `work` and `check` | `a valid flow is saved whole or by name, and shows in the list` |
+| T-0583-M3 | packages/dev/src/project-flows.ts | `defaultFlowStages` kept the older stage names, so the built-in default listed them | `the built-in default lists the stages its worker, reviewer and gate give it` |
+| T-0583-M4 | packages/dev/src/flow-compiler.ts | `namedStages` took a stage's step id from its new kind, so it no longer recorded `work` and `check` | `a run started before the rename resumes on a dev.json that names the new stages` |
+| T-0583-M5 | packages/dev/src/settings.ts | the hard-rule refusal kept the older words `check, review or human` | `a save that breaks a rule is refused with dev's reason and writes nothing` |
+| T-0583-M6 | packages/dev/src/settings.ts | `stageOf` kept an older name instead of returning the new one | `the older and new stage names load to the same compiled flow` |
+| T-0583-M7 | packages/dev/src/project-flows.ts | `flowProblem` kept the older words `check, review or human` | `a TS flow with no test, review or human step is refused` |
+| T-0583-M8 | packages/dev/dev.schema.json | the schema dropped the older `work` name instead of accepting it as an older name | `the dev schema accepts both stage names and marks the older ones` |

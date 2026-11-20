@@ -11,21 +11,21 @@ The `dev` plugin runs plans and tasks on a repository. Its project settings are 
 A request becomes a plan, a plan holds tasks, and each task runs through the same path. You are in the loop at two points: when you confirm the plan, and at the merge.
 
 ```text
-plan -> tasks (draft) -> confirm -> ready -> work -> check -> review -> you merge -> main
+plan -> tasks (draft) -> confirm -> ready -> code -> test -> review -> you merge -> main
                                                ^       |        |
                                                +-------+--------+  rework
 ```
 
 1. **Plan and tasks.** A plan is one request (`operad dev plan add`). Each task in it has a brief, the instructions for the worker (`operad dev task add`). A task may wait for another with `--after`. `operad dev:confirm <plan>` moves the plan's draft tasks to ready; a confirmed plan is what `operad serve` schedules. A new plan's auto level is `off` (`autoDefault`), which waits for you to start its tasks: run `operad dev:auto <plan> --level run` after confirming and `serve` starts them.
 2. **Start.** `serve` starts ready tasks, up to the repository's `concurrency` and each pool's cap. Each task gets its own git worktree and branch, so tasks never touch each other or your checkout.
-3. **Work.** A worker, chosen from `workers` through a pool, runs in the task's worktree with the brief and commits there. A worker whose model is unavailable can hand the work to its `fallback`.
-4. **Check.** The commands in `gate.commands` run against the commit. A failing test is run again on its own first, so a flaky test is told apart from a real failure.
+3. **Code.** A worker, chosen from `workers` through a pool, runs in the task's worktree with the brief and commits there. A worker whose model is unavailable can hand the work to its `fallback`.
+4. **Test.** The commands in `gate.commands` run against the commit. A failing test is run again on its own first, so a flaky test is told apart from a real failure.
 5. **Review.** The reviewer reads the change and writes a report. Findings that reach `reviewer.fixLevel` (default `major`) fail the review.
-6. **Rework.** A failed check or a failed review sends the task back to the worker, up to `maxAutoRework` times (default `2`). After that the task waits for you.
-7. **Waiting for you.** A task that passed check and review waits in `operad pending` as `ready to merge`, with the actions `dev:merge`, `dev:reject`, `dev:rework`, `dev:reverify` and `dev:cancel`. A task also waits when something needs a person: review findings, a failed gate, the rework limit, a worker that added no commit. A worker's own question, such as a permission ask from its harness, is a pending item too; `allow_once` or `reject_once` answers it, and the same worker continues.
+6. **Rework.** A failed test or a failed review sends the task back to the worker, up to `maxAutoRework` times (default `2`). After that the task waits for you.
+7. **Waiting for you.** A task that passed test and review waits in `operad pending` as `ready to merge`, with the actions `dev:merge`, `dev:reject`, `dev:rework`, `dev:reverify` and `dev:cancel`. A task also waits when something needs a person: review findings, a failed gate, the rework limit, a worker that added no commit. A worker's own question, such as a permission ask from its harness, is a pending item too; `allow_once` or `reject_once` answers it, and the same worker continues.
 8. **Merge and clean up.** `dev:merge` puts the verified commit on main (`integration.style`), runs `integration.keyCommands`, and pushes to the remote. Then cleanup removes the task's worktrees and branches. Tasks of one repository integrate one at a time. If the remote refuses the push, nothing is written and the task waits with a note.
 
-Every step is recorded: `operad history <task>` shows what ran, what a check or review found, and what you chose. A run whose process died starts again from its last recorded step. A plan can go further without you: `operad dev:auto <plan> --level merge` merges reviewed work after the check passes, `--level run` starts the plan's tasks without you and still stops each one for you at the merge, and `--level off` waits for you at every start and merge. `autoDefault` sets the level for new plans.
+Every step is recorded: `operad history <task>` shows what ran, what a test or review found, and what you chose. A run whose process died starts again from its last recorded step. A plan can go further without you: `operad dev:auto <plan> --level merge` merges reviewed work after the test passes, `--level run` starts the plan's tasks without you and still stops each one for you at the merge, and `--level off` waits for you at every start and merge. `autoDefault` sets the level for new plans.
 
 The keys for each part are in the sections below: [the repository and its workers](#the-repository-and-its-workers), [the gate and its checks](#the-gate-and-its-checks), [work, review, integration and cleanup](#work-review-integration-and-cleanup) and [flows and their stages](#flows-and-their-stages).
 
@@ -108,7 +108,7 @@ harness. With no enabled harness both are `radian/agent`.
 ### A check command
 
 The same object may appear in `gate.commands`, `integration.keyCommands` and a
-flow's `check` stage.
+flow's `test` stage.
 
 | Key | Type | Default | Allowed values | When it takes effect | Wrong value |
 |---|---|---|---|---|---|
@@ -206,30 +206,30 @@ over HTTP ([Settings](http.md#settings)).
 |---|---|---|---|---|---|
 | `dev.flows` | object | absent: the built-in `default` flow | flow name to a flow object | When a plan or task starts a run of that flow | Refused: `flows: must be a JSON object`, `flows: a flow needs a non-empty name`, or the flow's own error |
 | `dev.flows.<name>` | object | none | `stages` only | When a task of that flow starts | Refused: `flows.<name>: must be a JSON object` or `flows.<name>.<key>: is not a flow setting` |
-| `dev.flows.<name>.stages` | array | required | at least one stage; at least one must be `check`, `review` or `human` | When a task of that flow starts | Refused: `flows.<name>.stages: must be an array of stages` or `flows.<name>.stages: needs at least one check, review or human stage` |
-| `dev.flows.<name>.stages.stage` | string | required | `work`, `check`, `review`, `human` | When the stage is reached | Refused: `flows.<name>.stages[<i>].stage: must be "work", "check", "review" or "human"` |
-| `dev.flows.<name>.stages.use` | string | the repository worker for `work`, `reviewer.use` for `review` | a step name | When that stage starts | Refused: `flows.<name>.stages[<i>].use: must be a non-empty string` |
+| `dev.flows.<name>.stages` | array | required | at least one stage; at least one must be `test`, `review` or `human` | When a task of that flow starts | Refused: `flows.<name>.stages: must be an array of stages` or `flows.<name>.stages: needs at least one test, review or human stage` |
+| `dev.flows.<name>.stages.stage` | string | required | `code`, `test`, `review`, `human` (the older `work` and `check` still load) | When the stage is reached | Refused: `flows.<name>.stages[<i>].stage: must be "code", "test", "review" or "human"` |
+| `dev.flows.<name>.stages.use` | string | the repository worker for `code`, `reviewer.use` for `review` | a step name | When that stage starts | Refused: `flows.<name>.stages[<i>].use: must be a non-empty string` |
 | `dev.flows.<name>.stages.args` | array of strings | the worker's or reviewer's own arguments | arguments for that step | When that stage starts | Refused: `flows.<name>.stages[<i>].args: must be an array of strings` |
-| `dev.flows.<name>.stages.pool` | string | `default` | a pool name from `pools` (a `work` stage only) | When the work stage starts, and for the running-task cap | Refused: `flows.<name>.stages[<i>].pool: no pool named "<pool>" in pools` |
-| `dev.flows.<name>.stages.workerBrief` | string | unset: the repository's `workerBrief` | a file path relative to the repository (an absolute path or one outside it is refused), read from the main clone; its text replaces the repository's worker brief for this stage (`brief` is still appended) | When the work stage starts | Refused when the file is missing: `flows.<name>.stages[<i>].workerBrief: <path> does not exist` |
-| `dev.flows.<name>.stages.commit` | boolean | `false`: the worker commits itself | `true`: after the worker ends done, dev commits every change left in the worktree (tracked and untracked, honouring `.gitignore`) on the task branch as `<task id>: <task title>`; nothing to commit is fine. It runs before the check. For workers whose sandbox cannot write `.git` | When the work stage ends | Refused: `flows.<name>.stages[<i>].commit: must be true or false` |
-| `dev.flows.<name>.stages.brief` | string | unset | extra instructions appended to the worker prompt | When the work stage starts | Refused: `flows.<name>.stages[<i>].brief: must be a non-empty string` |
-| `dev.flows.<name>.stages.beforeAttempt` | string | unset: the worktree step's merge stays in force | `merge-main`, `none` | Before the work stage runs | Refused: `flows.<name>.stages[<i>].beforeAttempt: must be "merge-main" or "none"` |
-| `dev.flows.<name>.stages.commands` | array | `gate.commands` | check commands | When the check stage starts | Refused: `flows.<name>.stages[<i>].commands: must be an array of commands` or the command's own error |
+| `dev.flows.<name>.stages.pool` | string | `default` | a pool name from `pools` (a `code` stage only) | When the code stage starts, and for the running-task cap | Refused: `flows.<name>.stages[<i>].pool: no pool named "<pool>" in pools` |
+| `dev.flows.<name>.stages.workerBrief` | string | unset: the repository's `workerBrief` | a file path relative to the repository (an absolute path or one outside it is refused), read from the main clone; its text replaces the repository's worker brief for this stage (`brief` is still appended) | When the code stage starts | Refused when the file is missing: `flows.<name>.stages[<i>].workerBrief: <path> does not exist` |
+| `dev.flows.<name>.stages.commit` | boolean | `false`: the worker commits itself | `true`: after the worker ends done, dev commits every change left in the worktree (tracked and untracked, honouring `.gitignore`) on the task branch as `<task id>: <task title>`; nothing to commit is fine. It runs before the test. For workers whose sandbox cannot write `.git` | When the code stage ends | Refused: `flows.<name>.stages[<i>].commit: must be true or false` |
+| `dev.flows.<name>.stages.brief` | string | unset | extra instructions appended to the worker prompt | When the code stage starts | Refused: `flows.<name>.stages[<i>].brief: must be a non-empty string` |
+| `dev.flows.<name>.stages.beforeAttempt` | string | unset: the worktree step's merge stays in force | `merge-main`, `none` | Before the code stage runs | Refused: `flows.<name>.stages[<i>].beforeAttempt: must be "merge-main" or "none"` |
+| `dev.flows.<name>.stages.commands` | array | `gate.commands` | check commands | When the test stage starts | Refused: `flows.<name>.stages[<i>].commands: must be an array of commands` or the command's own error |
 | `dev.flows.<name>.stages.rerun` | integer | `check.rerun` | `0` or more | When a check line list fails | Refused: `flows.<name>.stages[<i>].rerun: must be zero or a positive integer` |
 | `dev.flows.<name>.stages.later` | array of strings | unset: `reviewer` arguments | arguments for every review after the first in an attempt | When a later review starts | Refused: `flows.<name>.stages[<i>].later: must be an array of strings` |
 | `dev.flows.<name>.stages.grading` | string | unset: the flow's own name | an entry in `.operad/review.json` | When the review is graded | Refused: `flows.<name>.stages[<i>].grading: must be a non-empty string`; a missing entry falls back to `default` |
 
 An image flow: a different pool of workers, their own brief, dev commits for
-them, a check, and no review stage.
+them, a test, and no review stage.
 
 ```json
 {
   "flows": {
     "image": {
       "stages": [
-        { "stage": "work", "pool": "image", "workerBrief": ".operad/image-brief.md", "commit": true },
-        { "stage": "check" },
+        { "stage": "code", "pool": "image", "workerBrief": ".operad/image-brief.md", "commit": true },
+        { "stage": "test" },
         { "stage": "human" }
       ]
     }
@@ -878,7 +878,7 @@ which carries whatever the task's branch had when it started.
 | Field | Type | What it does |
 |---|---|---|
 | `workers` | object | The repository's workers. Same fields as in [A flow: `workers` and `pools`](#a-flow-workers-and-pools); that table is the one place the worker fields, defaults and refusals are listed. |
-| `pools` | object | Pool groups. A pool is a list of worker names, or an object `{ "workers": [...], "concurrency": n }`. A work stage takes its workers from the pool its `pool` field names; with none it uses `default`, so a `pools` setting must define `default`. Without `pools`, `default` holds every worker in the order written. |
+| `pools` | object | Pool groups. A pool is a list of worker names, or an object `{ "workers": [...], "concurrency": n }`. A code stage takes its workers from the pool its `pool` field names; with none it uses `default`, so a `pools` setting must define `default`. Without `pools`, `default` holds every worker in the order written. |
 | `concurrency` | integer, 1 or more | An extra cap on running tasks; see below. |
 
 <!-- schema: dev.schema.json -->
@@ -914,7 +914,7 @@ its harness like any worker's. A file that has both `worker` and `workers`, or
 
 **How many tasks run at once.** Each pool has its own cap: the sum of the
 `count` of its workers, or its `concurrency` when that is smaller. A task counts
-against the pool of the flow it runs: its first `work` stage's `pool`, or
+against the pool of the flow it runs: its first `code` stage's `pool`, or
 `default`. A full code pool does not stop a task of a flow that uses another
 pool from starting, and the other way round. When the file sets `concurrency`
 it caps all pools together and never raises one pool's cap. A plan's own

@@ -150,16 +150,16 @@ cleanup at the end, so a repository writes neither.
   "flows": {
     "default": {
       "stages": [
-        { "stage": "work" },
-        { "stage": "check" },
+        { "stage": "code" },
+        { "stage": "test" },
         { "stage": "review", "grading": "default" },
         { "stage": "human" }
       ]
     },
     "quick": {
       "stages": [
-        { "stage": "work" },
-        { "stage": "check", "commands": ["bun test"] },
+        { "stage": "code" },
+        { "stage": "test", "commands": ["bun test"] },
         { "stage": "human" }
       ]
     }
@@ -167,14 +167,15 @@ cleanup at the end, so a repository writes neither.
 }
 ```
 
-A repository that writes no `flows` runs the built-in `default` flow: work,
-check, review, human. A flow named `default` is the one a task starts with; a
+A repository that writes no `flows` runs the built-in `default` flow: code,
+test, review, human. The older stage names `work` and `check` still load as
+`code` and `test`. A flow named `default` is the one a task starts with; a
 plan or task may choose another with `--flow <name>`, and once a task's first
 attempt starts it keeps that flow (`task update --flow` refuses after it). A task
 without `--flow` takes its plan's flow, and a plan without one takes `default`. A task whose
 flow dev.json does not define stays ready, and its row and its plan's row say `flow <name>
 is not defined in .operad/dev.json`. When a repository defines more than one flow, the task
-row and the Brief name the task's flow, and history names it on each run start. Every flow needs at least one `check`,
+row and the Brief name the task's flow, and history names it on each run start. Every flow needs at least one `test`,
 `review` or `human` stage. A `human` stage asks a person; when it is the last
 stage, its merge answer goes to integrate, and when it is not, that answer
 continues with the next stage. A flow whose last stage is not `human` goes
@@ -186,19 +187,19 @@ naming the flow and the rule.
 
 | stage | parameters | what it does | results |
 |---|---|---|---|
-| `work` | `use`, `args`, `brief`, `beforeAttempt` | a worker changes the task branch; `use` and `args` replace the harness step and its arguments, `brief` is appended to the worker's prompt, and `beforeAttempt` is the preparation before the attempt: `merge-main` fetches and merges the latest main, `none` leaves the branch as it is | `done`, `nothing`, `failed`, `unavailable`, `cancelled`, `interrupted`, `waiting` |
-| `check` | `commands`, `rerun` | runs the commands in a gate checkout of the verified commit; unset values come from `gate.commands` and `check.rerun` | `pass`, `fail`, `cancelled` |
+| `code` | `use`, `args`, `brief`, `beforeAttempt` | a worker changes the task branch; `use` and `args` replace the harness step and its arguments, `brief` is appended to the worker's prompt, and `beforeAttempt` is the preparation before the attempt: `merge-main` fetches and merges the latest main, `none` leaves the branch as it is | `done`, `nothing`, `failed`, `unavailable`, `cancelled`, `interrupted`, `waiting` |
+| `test` | `commands`, `rerun` | runs the commands in a gate checkout of the verified commit; unset values come from `gate.commands` and `check.rerun` | `pass`, `fail`, `cancelled` |
 | `review` | `use`, `args`, `later`, `grading` | a reviewer reads the diff from the merge base to the verified commit; unset values come from `reviewer`, `later` replaces the arguments of every review round after the first of a task, and `grading` names the entry in `.operad/review.json` (unset means the flow's own name) | `pass`, `fail`, `failed`, `unavailable`, `timed_out`, `exhausted`, `out_of_time`, `cancelled` |
 | `human` | none | waits for a person to merge, reject, rework or reverify | the person's choice |
 
-A failed `check` or `review` appends its rework section and goes back to the
-nearest `work` stage before it. With no `work` before it, the run waits for a
+A failed `test` or `review` appends its rework section and goes back to the
+nearest `code` stage before it. With no `code` before it, the run waits for a
 person instead. The retry steps, the unavailable-model waits, the review
 timeout waits, cancellation and the announcements are the ones the built-in
 flow has, one set per stage.
 
-A work stage passes its harness override as the step params `flowUse`,
-`flowArgs` and `flowBrief`; a check stage passes `commands` and `rerun`, and a
+A code stage passes its harness override as the step params `flowUse`,
+`flowArgs` and `flowBrief`; a test stage passes `commands` and `rerun`, and a
 review stage passes `use`, `args`, `later` and `grading`. A hand-written flow
 passes the same names to `dev/work`, `dev/verify` and `dev/review`.
 
@@ -234,7 +235,7 @@ dev loads each `.operad/flows/<name>.flow.ts` whose default export is a
 `defineFlow` value as a flow named `<name>`, and a plan or task chooses it with
 `--flow <name>`. It refuses the file, with the reason, when a step other than
 integrate (or the cleanup right after it) leads to the end, when there is no
-integrate step, when there is no check, review or human step, or when
+integrate step, when there is no test, review or human step, or when
 `dev.json` also defines `<name>`. A refused name starts no task.
 
 ## Steps

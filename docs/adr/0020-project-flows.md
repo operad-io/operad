@@ -4,7 +4,7 @@ Status: accepted
 
 ## Background
 
-The `dev` plugin supplies the skeleton of a development flow and its steps: a worktree, work, checks, review, a person's decision, and integrate. The concrete flow is the project's to choose, because projects differ in what they check, who reviews and whether a person decides. A flow written as a fixed state machine inside the plugin would force every project into one shape.
+The `dev` plugin supplies the skeleton of a development flow and its steps: a worktree, code, tests, review, a person's decision, and integrate. The concrete flow is the project's to choose, because projects differ in what they check, who reviews and whether a person decides. A flow written as a fixed state machine inside the plugin would force every project into one shape.
 
 ## Decisions
 
@@ -14,23 +14,25 @@ The project's `.operad/dev.json` is JSON with a JSON Schema. `flows.<name>` is o
 
 ### D2: A flow is an ordered list of stages
 
-`work` is a stage too. There are four kinds:
+`code` is a stage too. There are four kinds:
 
-- `work`: a worker changes the code. Parameters: `use`, `args`, `brief` (an extra paragraph added to the worker's prompt), `beforeAttempt` (for example `merge-main`), `pool`, `workerBrief`, `commit`.
-- `check`: runs commands. Parameters: `commands`, `rerun`.
+- `code`: a worker changes the code. Parameters: `use`, `args`, `brief` (an extra paragraph added to the worker's prompt), `beforeAttempt` (for example `merge-main`), `pool`, `workerBrief`, `commit`.
+- `test`: runs commands. Parameters: `commands`, `rerun`.
 - `review`: a model reviews. Parameters: `use`, `args`, `later` (the arguments of the reviews after the first), and a grading name (the flow's entry in `.operad/review.json`).
 - `human`: waits for a person to decide.
 
+The older names `work` and `check` still load as `code` and `test`; a stage written through settings is stored with the new names.
+
 ### D3: `dev` completes the route
 
-When a stage fails, the run returns to the nearest `work` stage before it and redoes it; with no `work` stage before it, the run waits for a person. Retries, timeouts, cancellation and the wait for an unavailable model behave as they do for the built-in flow. `dev` adds the worktree preparation at the start and integrate at the end. The plan's `auto` setting decides whether a `human` stage ends in waiting for a person or in an automatic merge.
+When a stage fails, the run returns to the nearest `code` stage before it and redoes it; with no `code` stage before it, the run waits for a person. Retries, timeouts, cancellation and the wait for an unavailable model behave as they do for the built-in flow. `dev` adds the worktree preparation at the start and integrate at the end. The plan's `auto` setting decides whether a `human` stage ends in waiting for a person or in an automatic merge.
 
 ### D4: Two hard rules
 
 `dev` checks them when it loads a flow and refuses a flow that breaks one, saying why:
 
 - The last step is integrate; a change reaches main only through it.
-- A flow has at least one `check`, `review` or `human` stage.
+- A flow has at least one `test`, `review` or `human` stage.
 
 Everything else is the project's decision. A flow that wants no model review has no `review` stage.
 
@@ -50,7 +52,7 @@ A repository that writes no `flows` runs the built-in flow. The existing `worker
 
 The grading entries in `.operad/review.json` correspond one to one to flow names.
 
-### D9: `pool`, `workerBrief` and `commit` of a `work` stage
+### D9: `pool`, `workerBrief` and `commit` of a `code` stage
 
 These serve flows whose work differs from writing code, such as producing images with rules opposite to those for code.
 

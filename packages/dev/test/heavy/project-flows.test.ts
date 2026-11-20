@@ -27,7 +27,7 @@ const ENGINE = fileURLToPath(new URL("../../../engine/src/index.ts", import.meta
 
 type Step = { readonly id: string; readonly next?: Record<string, string> };
 
-/** A project flow file: dev's steps for [work, check, human], through defineFlow. */
+/** A project flow file: dev's steps for [code, test, human], through defineFlow. */
 function flowFile(change: (steps: Step[]) => Step[] = (steps) => steps): string {
   const flow = compileDevFlow("mine", [{ stage: "work" }, { stage: "check" }, { stage: "human" }]);
   const steps = change(flow.steps.map((step) => ({ ...step }) as Step));
@@ -115,7 +115,7 @@ test("a TS flow that leads to the end from another step than integrate is refuse
   expect(found.refused.get("mine")).toContain('ends without integrate: step "check"');
 });
 
-test("a TS flow with no check, review or human step is refused", async () => {
+test("a TS flow with no test, review or human step is refused", async () => {
   const { path } = await repositoryWith({
     "mine.flow.ts": flowFile((steps) =>
       steps
@@ -136,7 +136,7 @@ test("a TS flow with no check, review or human step is refused", async () => {
     ),
   });
   const found = await loadProjectFlows(path, "repo", validateDevSettings({}));
-  expect(found.refused.get("mine")).toContain("needs at least one check, review or human step");
+  expect(found.refused.get("mine")).toContain("needs at least one test, review or human step");
 });
 
 test("a name defined in dev.json and as a TS file is refused, and plan add says so", async () => {
