@@ -1247,7 +1247,7 @@ function poolParams(
   };
 }
 
-/** The harness overrides a work stage wrote in its params. */
+/** The harness overrides a code stage wrote in its params. */
 function stageParamsOf(params: unknown): {
   readonly use?: string | undefined;
   readonly args?: readonly string[] | undefined;
@@ -1272,7 +1272,7 @@ function stageParamsOf(params: unknown): {
   };
 }
 
-/** The preparation a work stage asks for before its attempt. */
+/** The preparation a code stage asks for before its attempt. */
 type BeforeAttempt = "merge-main" | "none";
 
 function beforeAttemptOf(params: unknown): BeforeAttempt | undefined {

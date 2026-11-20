@@ -36,6 +36,7 @@ import {
   type DevFlowSpec,
   type DevFlows,
   type DevStage,
+  type StageKind,
 } from "./flow-compiler.ts";
 
 /** Where a repository keeps its dev settings. */
@@ -1128,19 +1129,19 @@ export function repositoryTaskCap(settings: DevSettings): number {
   return settings.concurrencySet ? Math.min(total, settings.concurrency) : total;
 }
 
-/** The pool a flow's tasks count against: its first work stage's pool, or `default`. */
+/** The pool a flow's tasks count against: its first code stage's pool, or `default`. */
 export function flowPool(settings: DevSettings, flowName: string | undefined): string {
   const spec = settings.flows[flowName ?? "default"];
   for (const stage of spec?.stages ?? []) {
-    if (stage.stage === "work") return stage.pool ?? DEFAULT_POOL;
+    if (stage.stage === "code" || stage.stage === "work") return stage.pool ?? DEFAULT_POOL;
   }
   return DEFAULT_POOL;
 }
 
 /** The fields a stage of each kind may name. */
-const STAGE_FIELDS: Readonly<Record<DevStage["stage"], readonly string[]>> = {
-  work: ["stage", "use", "args", "pool", "workerBrief", "commit", "brief", "beforeAttempt"],
-  check: ["stage", "commands", "rerun"],
+const STAGE_FIELDS: Readonly<Record<StageKind, readonly string[]>> = {
+  code: ["stage", "use", "args", "pool", "workerBrief", "commit", "brief", "beforeAttempt"],
+  test: ["stage", "commands", "rerun"],
   review: ["stage", "use", "args", "later", "grading"],
   human: ["stage"],
 };
@@ -1149,18 +1150,23 @@ function stageOf(value: unknown, field: string): DevStage {
   if (!isRecord(value)) {
     throw new DevError(field, "must be a JSON object");
   }
-  const kind = value.stage;
+  const written = value.stage;
   if (
-    kind !== "work" &&
-    kind !== "check" &&
-    kind !== "review" &&
-    kind !== "human"
+    written !== "code" &&
+    written !== "test" &&
+    written !== "review" &&
+    written !== "human" &&
+    written !== "work" &&
+    written !== "check"
   ) {
     throw new DevError(
       `${field}.stage`,
-      'must be "work", "check", "review" or "human"',
+      'must be "code", "test", "review" or "human"',
     );
   }
+  // The older names load as the same stages; everything written back uses the new names.
+  const kind: StageKind =
+    written === "work" ? "code" : written === "check" ? "test" : written;
   for (const key of Object.keys(value)) {
     if (!STAGE_FIELDS[kind].includes(key)) {
       throw new DevError(`${field}.${key}`, "is not a stage setting");
@@ -1171,7 +1177,7 @@ function stageOf(value: unknown, field: string): DevStage {
   const optionalList = (key: string): readonly string[] | undefined =>
     value[key] === undefined ? undefined : settingsStringList(value[key], `${field}.${key}`);
   switch (kind) {
-    case "work": {
+    case "code": {
       const use = optionalString("use");
       const args = optionalList("args");
       const pool = optionalString("pool");
@@ -1193,7 +1199,7 @@ function stageOf(value: unknown, field: string): DevStage {
         );
       }
       return {
-        stage: "work",
+        stage: "code",
         ...(use === undefined ? {} : { use }),
         ...(args === undefined ? {} : { args }),
         ...(pool === undefined ? {} : { pool }),
@@ -1203,7 +1209,7 @@ function stageOf(value: unknown, field: string): DevStage {
         ...(beforeAttempt === undefined ? {} : { beforeAttempt }),
       };
     }
-    case "check": {
+    case "test": {
       const commands =
         value.commands === undefined
           ? undefined
@@ -1213,7 +1219,7 @@ function stageOf(value: unknown, field: string): DevStage {
           ? undefined
           : nonNegativeInteger(value.rerun, `${field}.rerun`);
       return {
-        stage: "check",
+        stage: "test",
         ...(commands === undefined ? {} : { commands }),
         ...(rerun === undefined ? {} : { rerun }),
       };
@@ -1255,7 +1261,7 @@ function flowSpecOf(value: unknown, field: string): DevFlowSpec {
 }
 
 /**
- * The repository's flows, and the two hard rules: a flow needs a check, review
+ * The repository's flows, and the two hard rules: a flow needs a test, review
  * or human stage, and its last stage is human because integrate is the step
  * that puts a change on main.
  */
@@ -1274,14 +1280,14 @@ function flowsOf(
     }
     const field = `flows.${name}`;
     const flow = flowSpecOf(raw, field);
-    if (!flow.stages.some((stage) => stage.stage !== "work")) {
+    if (!flow.stages.some((stage) => stage.stage !== "code")) {
       throw new DevError(
         `${field}.stages`,
-        "needs at least one check, review or human stage",
+        "needs at least one test, review or human stage",
       );
     }
     flow.stages.forEach((stage, index) => {
-      if (stage.stage === "work" && stage.pool !== undefined && pools[stage.pool] === undefined) {
+      if (stage.stage === "code" && stage.pool !== undefined && pools[stage.pool] === undefined) {
         throw new DevError(
           `${field}.stages[${index}].pool`,
           `no pool named "${stage.pool}" in pools`,
@@ -1291,6 +1297,22 @@ function flowsOf(
     flows[name] = flow;
   }
   return flows;
+}
+
+/**
+ * Rewrites the older stage names in a dev.json value that has already passed
+ * validation, so a settings write stores the new names.
+ */
+export function useNewStageNames(value: unknown): void {
+  if (!isRecord(value) || !isRecord(value.flows)) return;
+  for (const flow of Object.values(value.flows)) {
+    if (!isRecord(flow) || !Array.isArray(flow.stages)) continue;
+    for (const stage of flow.stages) {
+      if (!isRecord(stage)) continue;
+      if (stage.stage === "work") stage.stage = "code";
+      else if (stage.stage === "check") stage.stage = "test";
+    }
+  }
 }
 
 /**
@@ -1422,7 +1444,7 @@ function settingsFromText(
   });
   for (const [name, flow] of Object.entries(settings.flows ?? {})) {
     flow.stages.forEach((stage, index) => {
-      if (stage.stage !== "work" || stage.workerBrief === undefined) return;
+      if (stage.stage !== "code" || stage.workerBrief === undefined) return;
       const field = `flows.${name}.stages[${index}].workerBrief`;
       if (isAbsolute(stage.workerBrief)) {
         throw new DevError(field, "must be a path relative to the repository");

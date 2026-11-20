@@ -28,7 +28,7 @@ export type WaitKind = keyof typeof WAIT_STEPS;
 export const WORK_QUESTION_CHOICES = ["allow_once", "reject_once"] as const;
 export const WORK_QUESTION_LATE_CHOICES = ["allow_always"] as const;
 
-/** True for the wait a worker's own question goes to (one per work stage). */
+/** True for the wait a worker's own question goes to (one per code stage). */
 export function isWorkQuestionWait(id: string): boolean {
   const base = WAIT_STEPS["work-question"];
   return id === base || id.startsWith(`${base}_`);

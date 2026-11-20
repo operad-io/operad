@@ -1,6 +1,6 @@
 import { afterAll, expect, test } from "bun:test";
 import { createChatPlugin } from "@operad-io/chat";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { PluginRegistry } from "@operad-io/engine";
@@ -73,6 +73,70 @@ test("the built-in default keeps today's ids and edges", () => {
     merge: "integrate",
     reverify: "reverify",
   });
+});
+
+test("the older and new stage names load to the same compiled flow", () => {
+  const oldDefault = compileDevFlow("dev", [
+    { stage: "work" },
+    { stage: "check" },
+    { stage: "review" },
+    { stage: "human" },
+  ]);
+  const newDefault = compileDevFlow("dev", [
+    { stage: "code" },
+    { stage: "test" },
+    { stage: "review" },
+    { stage: "human" },
+  ]);
+  expect(newDefault).toEqual(oldDefault);
+
+  const oldStages: readonly DevStage[] = [{ stage: "work" }, { stage: "check" }, { stage: "human" }];
+  const newStages: readonly DevStage[] = [{ stage: "code" }, { stage: "test" }, { stage: "human" }];
+  expect(compileDevFlow("mine", newStages)).toEqual(compileDevFlow("mine", oldStages));
+  expect(flowNameFor("repo", "default", { stages: newStages })).toBe(
+    flowNameFor("repo", "default", { stages: oldStages }),
+  );
+  expect(validateDevSettings({ flows: { default: { stages: oldStages } } }).flows.default?.stages).toEqual(
+    newStages,
+  );
+});
+
+test("the dev schema accepts both stage names and marks the older ones", () => {
+  const schema = JSON.parse(
+    readFileSync(join(import.meta.dir, "..", "..", "dev.schema.json"), "utf8"),
+  ) as {
+    readonly $defs: {
+      readonly stage: {
+        readonly oneOf: readonly {
+          readonly properties: {
+            readonly stage: {
+              readonly const: string;
+              readonly description?: string;
+              readonly deprecated?: boolean;
+            } | {
+              readonly oneOf: readonly {
+                readonly const: string;
+                readonly description?: string;
+                readonly deprecated?: boolean;
+              }[];
+            };
+          };
+        }[];
+      };
+    };
+  };
+  const kinds = schema.$defs.stage.oneOf.flatMap((branch) => {
+    const stage = branch.properties.stage;
+    return "oneOf" in stage ? stage.oneOf : [stage];
+  });
+  expect(kinds.map((kind) => kind.const)).toEqual(
+    expect.arrayContaining(["code", "test", "review", "human", "work", "check"]),
+  );
+  for (const older of ["work", "check"]) {
+    const found = kinds.find((kind) => kind.const === older);
+    expect(found?.description).toContain("Older name");
+    expect(found?.deprecated).toBe(true);
+  }
 });
 
 test("every task wait says what its choices are, and its prompt is the reason", () => {
@@ -226,7 +290,7 @@ test("a flow with no gate is refused by name", () => {
     validateDevSettings({
       flows: { gate: { stages: [{ stage: "work" }, { stage: "work" }] } },
     }),
-  ).toThrow(/flows\.gate\.stages: needs at least one check, review or human stage/);
+  ).toThrow(/flows\.gate\.stages: needs at least one test, review or human stage/);
 });
 
 test("a flow's stage settings are read and unknown fields refused", () => {
@@ -249,14 +313,14 @@ test("a flow's stage settings are read and unknown fields refused", () => {
     },
   });
   expect(settings.flows.default?.stages[0]).toEqual({
-    stage: "work",
+    stage: "code",
     use: "claude/agent",
     args: ["--model", "sonnet"],
     brief: "Keep the diff small.",
     beforeAttempt: "merge-main",
   });
   expect(settings.flows.default?.stages[1]).toEqual({
-    stage: "check",
+    stage: "test",
     commands: ["bun test"],
     rerun: 0,
   });
@@ -433,6 +497,57 @@ test("plan add --flow and task add --flow store the choice and refuse an unknown
       { cwd: repositoryPath, input: "request\n" },
     ),
   ).rejects.toThrow(/no flow "missing" in repository "repo"/);
+});
+
+test("a run started before the rename resumes on a dev.json that names the new stages", async () => {
+  const root = await tempRoot();
+  const repositoryPath = await makeGitRepository(root);
+  const store = storeAt(root);
+  const repository = await addRepository(store, { path: repositoryPath, name: "repo" });
+  const plan = await addPlan(store, { repository, slug: "plan", title: "Plan" });
+  const task = await addTask(store, {
+    plan: plan.id,
+    slug: "task",
+    title: "Task",
+    brief: "Do it.",
+  });
+  const oldStages: readonly DevStage[] = [{ stage: "work" }, { stage: "check" }, { stage: "human" }];
+  const newStages: readonly DevStage[] = [{ stage: "code" }, { stage: "test" }, { stage: "human" }];
+  const oldFlow = compileDevFlow(flowNameFor("repo", "default", { stages: oldStages }), oldStages);
+  // A run from before the rename keeps the step ids it recorded.
+  expect(oldFlow.steps.map((step) => step.id)).toContain("work");
+  expect(oldFlow.steps.map((step) => step.id)).toContain("check");
+  expect(oldFlow.steps.map((step) => step.id)).not.toContain("code");
+  expect(oldFlow.steps.map((step) => step.id)).not.toContain("test");
+  await store.put(
+    "task",
+    task.id,
+    {
+      ...taskData((await store.get("task", task.id))?.data ?? {}),
+      phase: "waiting",
+      flowName: oldFlow.name,
+      flowGraph: oldFlow,
+    },
+    "test:started-before-the-rename",
+  );
+  mkdirSync(join(repositoryPath, ".operad"), { recursive: true });
+  writeFileSync(
+    join(repositoryPath, ".operad", "dev.json"),
+    JSON.stringify({ flows: { default: { stages: newStages } } }),
+  );
+  const registry = new PluginRegistry([createChatPlugin(), createDevPlugin()], {
+    home: root,
+    cwd: repositoryPath,
+    store,
+    storeRoot: store.root,
+  });
+  await registry.tick();
+  expect(flowNameFor("repo", "default", { stages: newStages })).toBe(oldFlow.name);
+  const resumed = registry.flow(oldFlow.name);
+  expect(resumed?.flow.entry).toBe("worktree");
+  expect(resumed?.flow.steps.map((step) => step.id)).toEqual(oldFlow.steps.map((step) => step.id));
+  const stored = taskData((await store.get("task", task.id))?.data ?? {});
+  expect(stored.flowName).toBe(oldFlow.name);
 });
 
 test("changing dev.json leaves a running attempt on the graph it started with", async () => {

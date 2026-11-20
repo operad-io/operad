@@ -227,7 +227,7 @@ function plansOf(
 
 /**
  * Whether a task's flow has a configured human stage that no review stage
- * comes before, and the work and check before it finished well: the wait the
+ * comes before, and the code and test before it finished well: the wait the
  * task is in is that stage. A review before the human stage is answered
  * through its pass; a review after it has not run yet at that wait.
  */
