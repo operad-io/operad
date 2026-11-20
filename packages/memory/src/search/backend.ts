@@ -81,6 +81,12 @@ export interface SqliteSearchBackendOptions {
   readonly tokenizer?: TokenizerName | undefined;
 }
 
+/**
+ * The version of the link table. A table from another version, and an index
+ * built before there was one, is filled from the notes again.
+ */
+const LINK_TABLE_VERSION = "1";
+
 function scopeOf(value: string): SearchScope {
   if (value === "wiki" || value === "chats") return value;
   return "memory";
@@ -177,12 +183,29 @@ export class SqliteSearchBackend implements SearchBackend {
       this.db.run("DELETE FROM search_fields");
       this.db.run("DELETE FROM search_documents");
     }
+    // The link table is part of the same cache as the chunks. An index built
+    // before it, or with another version of it, holds notes whose links were
+    // never parsed, and a refresh skips a note whose modification time and
+    // size did not change. Clearing that stored time makes the next refresh
+    // read every note again and fill the table.
+    const links = this.db
+      .query<VersionRow, []>("SELECT value FROM search_meta WHERE key = 'links'")
+      .get();
+    if (links === null || links.value !== LINK_TABLE_VERSION) {
+      this.db.run("DROP TABLE IF EXISTS search_links");
+      this.db.run("UPDATE search_documents SET mtime_ns = NULL WHERE scope != 'chats'");
+    }
     this.db.run(
       "CREATE TABLE IF NOT EXISTS search_links (" +
         "doc_id TEXT NOT NULL, ordinal INTEGER NOT NULL, target TEXT NOT NULL, heading TEXT, " +
         "kind TEXT NOT NULL, target_id TEXT, PRIMARY KEY (doc_id, ordinal))",
     );
     this.db.run("CREATE INDEX IF NOT EXISTS search_links_target ON search_links (target_id)");
+    this.db.run(
+      "INSERT INTO search_meta (key, value) VALUES ('links', ?) " +
+        "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+      [LINK_TABLE_VERSION],
+    );
     this.db.run(
       `CREATE VIRTUAL TABLE IF NOT EXISTS search_chunks USING fts5(` +
         `text, doc_id UNINDEXED, line_start UNINDEXED, line_end UNINDEXED, ` +

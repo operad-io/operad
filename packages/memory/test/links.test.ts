@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
+import { Database } from "bun:sqlite";
 import { mkdirSync, mkdtempSync, renameSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -20,6 +21,18 @@ function wikilink(target: string): NoteLink {
 function file(path: string, text: string): void {
   mkdirSync(join(path, ".."), { recursive: true });
   writeFileSync(path, text);
+}
+
+/** Makes an index look like one built before the link table, or with an older one. */
+function forgetLinks(database: string, mode: "missing" | "older"): void {
+  const db = new Database(database);
+  try {
+    db.run("DELETE FROM search_links");
+    if (mode === "missing") db.run("DELETE FROM search_meta WHERE key = 'links'");
+    else db.run("UPDATE search_meta SET value = '0' WHERE key = 'links'");
+  } finally {
+    db.close();
+  }
 }
 
 interface LinkRig {
@@ -317,6 +330,45 @@ describe("the link table", () => {
       "wiki:index.md",
     ]);
     r.search.close();
+  });
+
+  test("an index built before the link table fills it on the next refresh", async () => {
+    const r = rig();
+    file(join(r.wiki, "a.md"), "# A\n\n[[b]]\n");
+    file(join(r.wiki, "b.md"), "# B\n");
+    await r.search.refresh();
+    expect(r.search.backlinks("wiki:b.md")).toHaveLength(1);
+    r.search.close();
+
+    forgetLinks(searchDatabasePath(r.home), "missing");
+
+    const upgraded = new MemorySearch(r.home);
+    try {
+      await upgraded.refresh();
+      expect(upgraded.linksFrom("wiki:a.md")[0]?.to).toBe("wiki:b.md");
+      expect(upgraded.backlinks("wiki:b.md").map((back) => back.from)).toEqual(["wiki:a.md"]);
+      expect(upgraded.orphanNotes({ scope: "wiki" }).map((note) => note.path)).toEqual(["a.md"]);
+    } finally {
+      upgraded.close();
+    }
+  });
+
+  test("a link table from an older version is filled again from the notes", async () => {
+    const r = rig();
+    file(join(r.wiki, "a.md"), "# A\n\n[[b]]\n");
+    file(join(r.wiki, "b.md"), "# B\n");
+    await r.search.refresh();
+    r.search.close();
+
+    forgetLinks(searchDatabasePath(r.home), "older");
+
+    const upgraded = new MemorySearch(r.home);
+    try {
+      await upgraded.refresh();
+      expect(upgraded.backlinks("wiki:b.md")).toHaveLength(1);
+    } finally {
+      upgraded.close();
+    }
   });
 
   test("a rebuilt index gives the same table", async () => {
