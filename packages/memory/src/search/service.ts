@@ -11,7 +11,7 @@ import type { JsonValue, ObjectStore } from "@operad-io/engine";
 import { isRecord } from "@operad-io/engine";
 import { lineCountOf, queryTerms, snippetOf } from "./chunks.ts";
 import { splitMarkdown, titleFromName, titleOf } from "./frontmatter.ts";
-import { parseNoteLinks, parseNoteLinksWithPositions, resolveNoteLink } from "../links.ts";
+import { noteLookup, parseNoteLinksWithPositions, resolveNoteLink, type NoteLookup } from "../links.ts";
 import { SqliteSearchBackend } from "./backend.ts";
 import {
   botMemoryDirectories,
@@ -33,6 +33,7 @@ import {
   type Backlink,
   type DocumentFields,
   type DocumentKey,
+  type IndexedNoteLink,
   type LinkQuery,
   type NoteLinkInfo,
   type NoteLinkTarget,
@@ -78,6 +79,28 @@ interface FileRoot {
 
 function digestOf(text: string): string {
   return createHash("sha256").update(text).digest("hex");
+}
+
+/** The line and excerpt a link's place in its note gives a backlink. */
+function linkPlaceAt(
+  text: string,
+  at: number,
+  target: string,
+): { readonly line: number; readonly excerpt: string } {
+  const before = text.slice(0, at);
+  const line = before.length === 0 ? 1 : before.split(/\r?\n/u).length;
+  const start = text.lastIndexOf("\n", at - 1) + 1;
+  const next = text.indexOf("\n", at);
+  const written = text.slice(start, next < 0 ? text.length : next).trim();
+  return { line, excerpt: snippetOf(written, [target]) };
+}
+
+/** The links a note writes, each with where a backlink will show it. */
+function indexedLinksOf(text: string): readonly IndexedNoteLink[] {
+  return parseNoteLinksWithPositions(text).map(({ at, ...link }) => ({
+    ...link,
+    ...linkPlaceAt(text, at, link.target),
+  }));
 }
 
 function rootsOf(home: string, settings: Readonly<Record<string, JsonValue>>): readonly FileRoot[] {
@@ -155,6 +178,7 @@ export class MemorySearch {
     const seen = new Set<string>();
     let indexed = 0;
     let unchanged = 0;
+    let notesChanged = false;
 
     for (const root of rootsOf(this.home, this.settings)) {
       for (const file of markdownFiles(root.directory)) {
@@ -203,9 +227,10 @@ export class MemorySearch {
           mtimeMs: Number(stat.mtimeMs),
           mtimeNs,
           size,
-          links: parseNoteLinks(body),
+          links: indexedLinksOf(body),
         });
         indexed += 1;
+        notesChanged = true;
       }
     }
 
@@ -215,6 +240,7 @@ export class MemorySearch {
       if (seen.has(key.id)) continue;
       this.backend.remove(key.id);
       removed += 1;
+      notesChanged = true;
     }
 
     if (store !== undefined) {
@@ -223,14 +249,15 @@ export class MemorySearch {
       unchanged += chats.unchanged;
       removed += chats.removed;
     }
-    this.resolveNoteLinks();
+    if (notesChanged) this.resolveNoteLinks();
     return { indexed, removed, unchanged };
   }
 
   /**
    * Points the stored links at the notes the index holds now. Links are kept
    * when nothing matches them, so a note written under a name somebody already
-   * linked to takes those links on this pass. Only changed rows are written.
+   * linked to takes those links on this pass. Only changed rows are written,
+   * and a refresh that changed no note has nothing to resolve.
    */
   private resolveNoteLinks(): void {
     const notes = this.backend.keys().filter((key) => key.file !== undefined && key.path !== undefined);
@@ -246,14 +273,18 @@ export class MemorySearch {
       }
       groups.set(group, entry);
     }
+    const lookups = new Map<string, NoteLookup>();
+    for (const [group, entry] of groups) lookups.set(group, noteLookup(entry.paths));
     const updates: NoteLinkTarget[] = [];
     for (const link of this.backend.allLinks()) {
       const source = byId.get(link.docId);
       if (source?.path === undefined) continue;
-      const group = groups.get(`${source.scope}\u0000${source.owner}`);
-      if (group === undefined) continue;
-      const resolved = resolveNoteLink(source.path, link, group.paths);
-      const targetId = resolved === undefined ? undefined : group.ids.get(resolved);
+      const group = `${source.scope}\u0000${source.owner}`;
+      const lookup = lookups.get(group);
+      const ids = groups.get(group)?.ids;
+      if (lookup === undefined || ids === undefined) continue;
+      const resolved = resolveNoteLink(source.path, link, lookup);
+      const targetId = resolved === undefined ? undefined : ids.get(resolved);
       if (targetId === link.targetId) continue;
       updates.push({
         docId: link.docId,
@@ -402,12 +433,16 @@ export class MemorySearch {
   readBacklinks(id: string): readonly Backlink[] {
     const notes = this.noteKeys();
     const found: Backlink[] = [];
-    for (const link of this.backend.allLinks()) {
-      if (link.targetId !== id) continue;
+    for (const link of this.backend.linksTo(id)) {
+      // A note's link to itself is not something that links to it.
+      if (link.docId === id) continue;
       const source = notes.get(link.docId);
       const document = this.backend.get(link.docId);
       if (source === undefined || document === undefined) continue;
-      const place = backlinkPlace(document.text, link);
+      const place =
+        link.line === undefined || link.excerpt === undefined
+          ? backlinkPlace(document.text, link)
+          : { line: link.line, excerpt: link.excerpt };
       found.push({
         id: source.id,
         path: source.path ?? source.id,
@@ -492,7 +527,7 @@ export function untrustedFields(fields: DocumentFields): boolean {
   return fields["untrusted"]?.some((value) => value.trim().toLowerCase() === "true") === true;
 }
 
-/** The line of a stored link and a short piece of the line around it. */
+/** The line of a stored link and a short piece of the line around it, from a note not stored with one. */
 function backlinkPlace(text: string, link: StoredNoteLink): { readonly line: number; readonly excerpt: string } {
   const links = parseNoteLinksWithPositions(text);
   const place =
@@ -504,12 +539,7 @@ function backlinkPlace(text: string, link: StoredNoteLink): { readonly line: num
         entry.heading === link.heading,
     );
   if (place === undefined) return { line: 0, excerpt: "" };
-  const before = text.slice(0, place.at);
-  const line = before.length === 0 ? 1 : before.split(/\r?\n/u).length;
-  const start = text.lastIndexOf("\n", place.at - 1) + 1;
-  const next = text.indexOf("\n", place.at);
-  const written = text.slice(start, next < 0 ? text.length : next).trim();
-  return { line, excerpt: snippetOf(written, [link.target]) };
+  return linkPlaceAt(text, place.at, link.target);
 }
 
 /** Whether a document is inside the scope a link query names. */

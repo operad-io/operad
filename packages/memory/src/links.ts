@@ -7,15 +7,16 @@
  *
  * A link resolves the way Obsidian resolves one. A target that names a path is
  * taken from the scope root; a Markdown target that is not there is taken
- * relative to the note itself. A bare name matches a file name with or without
- * `.md`, and among files of the same name the one nearest the source note wins.
+ * relative to the note itself. A bare wikilink name matches a file name with or
+ * without `.md`, and among files of the same name the one nearest the source
+ * note wins. A path is not reduced to its file name.
  */
 
 import type { NoteLink } from "./search/types.ts";
 
 const FENCE = /^ {0,3}(`{3,}|~{3,})(.*)$/u;
 const WIKILINK = /\[\[([^[\]]+)\]\]/gu;
-const MARKDOWN_LINK = /(!?)\[([^\]]*)\]\(([^()\s]*)\)/gu;
+const MARKDOWN_LINK = /(!?)\[([^\]]*)\]\(\s*(?:<([^>\n]*)>|([^)\n]*?))\s*\)/gu;
 const MARKDOWN_EXTENSION = /\.(?:md|markdown)$/iu;
 
 /** One link a note writes, with the offset at which it starts in the body. */
@@ -62,33 +63,66 @@ function withoutInlineCode(line: string): string {
   return kept;
 }
 
+/** A line with its text blanked, keeping its length so link offsets stay exact. */
+function blankLine(line: string, carriage: boolean): string {
+  return " ".repeat(line.length) + (carriage ? "\r" : "");
+}
+
+/** A Markdown block that ends a paragraph, so an indented line after it is code. */
+const BLOCK_START = /^ {0,3}(?:#{1,6}(?:\s|$)|>|(?:[-*_]\s*){3,}|\|?\s*:?-{3,}:?\s*\|?)/u;
+
 /**
- * The text with code left out: fenced code blocks and inline code spans are
- * blanked, so a link that is shown as code is not a link. Line breaks stay, so
- * the text around the code is not joined across a removed piece.
+ * The text with code left out: fenced and indented code blocks and inline code
+ * spans are blanked, so a link that is shown as code is not a link. Each
+ * blanked line keeps its length, and line breaks stay, so the text around the
+ * code is neither joined across a removed piece nor shifted for a reader.
  */
 export function withoutCode(text: string): string {
   const lines: string[] = [];
   let fence: { readonly character: string; readonly length: number } | undefined;
-  for (const line of text.split(/\r?\n/u)) {
-    const match = FENCE.exec(line);
-    if (fence === undefined) {
-      if (match !== null) {
-        const run = match[1] ?? "";
-        fence = { character: run[0] ?? "`", length: run.length };
-        lines.push("");
-        continue;
-      }
-      lines.push(withoutInlineCode(line));
+  let indented = false;
+  // An indented code block cannot interrupt a paragraph; ordinary text does.
+  let paragraph = false;
+  for (const line of text.split("\n")) {
+    const carriage = line.endsWith("\r");
+    const content = carriage ? line.slice(0, -1) : line;
+    const match = FENCE.exec(content);
+    if (fence !== undefined) {
+      const closes =
+        match !== null &&
+        (match[1] ?? "").startsWith(fence.character) &&
+        (match[1] ?? "").length >= fence.length &&
+        (match[2] ?? "").trim().length === 0;
+      if (closes) fence = undefined;
+      lines.push(blankLine(content, carriage));
+      paragraph = false;
       continue;
     }
-    const closes =
-      match !== null &&
-      (match[1] ?? "").startsWith(fence.character) &&
-      (match[1] ?? "").length >= fence.length &&
-      (match[2] ?? "").trim().length === 0;
-    if (closes) fence = undefined;
-    lines.push("");
+    if (match !== null) {
+      const run = match[1] ?? "";
+      fence = { character: run[0] ?? "`", length: run.length };
+      indented = false;
+      lines.push(blankLine(content, carriage));
+      paragraph = false;
+      continue;
+    }
+    const isIndented = /^(?: {4}|\t)/u.test(content);
+    if (indented) {
+      if (isIndented || content.trim().length === 0) {
+        lines.push(blankLine(content, carriage));
+        paragraph = false;
+        continue;
+      }
+      indented = false;
+    }
+    if (isIndented && !paragraph) {
+      indented = true;
+      lines.push(blankLine(content, carriage));
+      paragraph = false;
+      continue;
+    }
+    lines.push(withoutInlineCode(content) + (carriage ? "\r" : ""));
+    paragraph = content.trim().length > 0 && !BLOCK_START.test(content);
   }
   return lines.join("\n");
 }
@@ -154,7 +188,8 @@ export function parseNoteLinksWithPositions(text: string): readonly PositionedNo
     const inner = match[1] ?? "";
     const first = splitPipe(inner)[0] ?? "";
     const { target, heading } = splitHeading(first);
-    if (target.length === 0) continue;
+    // `[[#Heading]]` names a heading in the note that writes it.
+    if (target.length === 0 && heading === undefined) continue;
     found.push({
       at: match.index ?? 0,
       target,
@@ -166,8 +201,9 @@ export function parseNoteLinksWithPositions(text: string): readonly PositionedNo
   for (const match of clean.matchAll(MARKDOWN_LINK)) {
     // `![alt](image.png)` embeds an image; it does not link to a note.
     if ((match[1] ?? "") === "!") continue;
-    const written = match[3] ?? "";
-    if (written.length === 0 || external(written)) continue;
+    // A destination may be enclosed in angle brackets; either form may hold a space.
+    const written = match[4] ?? match[3] ?? "";
+    if (written.trim().length === 0 || external(written.trim())) continue;
     const split = splitHeading(written);
     const target = decoded(split.target);
     if (target.length === 0) continue;
@@ -231,41 +267,65 @@ function directorySteps(from: string, to: string): number {
   return source.length - common + target.length - common;
 }
 
-function firstOf(candidates: readonly string[], notes: readonly string[]): string | undefined {
-  for (const candidate of candidates) {
-    if (notes.includes(candidate)) return candidate;
-  }
-  return undefined;
+/** A note set prepared for many resolutions: path lookup and file-name lookup. */
+export interface NoteLookup {
+  /** Whether a path from the scope root names a note. */
+  has(path: string): boolean;
+  /** The same-named note nearest the source note, with the path breaking a tie. */
+  nearestByName(written: string, source: string): string | undefined;
 }
 
-/** The same-named note nearest the source note, with the path breaking a tie. */
-function nearestByName(written: string, source: string, notes: readonly string[]): string | undefined {
-  const name = nameOf(written.replace(/\/+$/u, ""));
-  if (name.length === 0) return undefined;
-  const forms = withExtension(name);
-  const matches = notes.filter((note) => forms.includes(nameOf(note)));
-  if (matches.length === 0) return undefined;
-  const from = directoryOf(source);
-  return [...matches].sort(
-    (left, right) =>
-      directorySteps(from, directoryOf(left)) - directorySteps(from, directoryOf(right)) ||
-      left.localeCompare(right),
-  )[0];
+/** Prepares a note set once, so resolving many links does not scan it per link. */
+export function noteLookup(notes: readonly string[]): NoteLookup {
+  const paths = new Set(notes);
+  const byName = new Map<string, string[]>();
+  for (const note of notes) {
+    const name = nameOf(note);
+    const list = byName.get(name) ?? [];
+    list.push(note);
+    byName.set(name, list);
+  }
+  return {
+    has: (path) => paths.has(path),
+    nearestByName: (written, source) => {
+      const name = nameOf(written.replace(/\/+$/u, ""));
+      if (name.length === 0) return undefined;
+      const matches = withExtension(name).flatMap((form) => byName.get(form) ?? []);
+      if (matches.length === 0) return undefined;
+      const from = directoryOf(source);
+      return [...matches].sort(
+        (left, right) =>
+          directorySteps(from, directoryOf(left)) - directorySteps(from, directoryOf(right)) ||
+          left.localeCompare(right),
+      )[0];
+    },
+  };
+}
+
+function asLookup(notes: readonly string[] | NoteLookup): NoteLookup {
+  return isNoteLookup(notes) ? notes : noteLookup(notes);
+}
+
+function isNoteLookup(notes: readonly string[] | NoteLookup): notes is NoteLookup {
+  return !Array.isArray(notes);
 }
 
 /**
  * The note a link points at, or undefined while nothing matches it. A path is
  * taken from the scope root first; a Markdown target that is not there is taken
- * relative to the source note; then a bare name matches a file name. A path
- * that climbs above the scope root matches nothing.
+ * relative to the source note. Only a bare wikilink name matches a file name. A
+ * path that climbs above the scope root matches nothing.
  */
 export function resolveNoteLink(
   source: string,
   link: NoteLink,
-  notes: readonly string[],
+  notes: readonly string[] | NoteLookup,
 ): string | undefined {
+  const lookup = asLookup(notes);
   const written = link.target.trim();
-  if (written.length === 0) return undefined;
+  if (written.length === 0) {
+    return link.heading !== undefined && lookup.has(source) ? source : undefined;
+  }
 
   const fromRoot = normaliseNotePath(written.replace(/^\/+/u, ""));
   const candidates: string[] = [];
@@ -280,7 +340,9 @@ export function resolveNoteLink(
     }
   }
 
-  const byPath = firstOf(candidates, notes);
+  const byPath = candidates.find((candidate) => lookup.has(candidate));
   if (byPath !== undefined) return byPath;
-  return nearestByName(written, source, notes);
+  // Only a bare wikilink name falls back to a file name; a path is a path.
+  if (link.kind !== "wikilink" || written.includes("/")) return undefined;
+  return lookup.nearestByName(written, source);
 }

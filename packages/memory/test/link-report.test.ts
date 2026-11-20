@@ -100,6 +100,41 @@ describe("the link report a tidy reads", () => {
     r.search.close();
   });
 
+  test("a short title inside another word is not an unlinked mention", async () => {
+    const r = rig();
+    file(join(r.wiki, "tea.md"), "# Tea\n");
+    file(join(r.wiki, "a.md"), "# A\n");
+    file(join(r.wiki, "source.md"), "# Source\n\nSteam rises. Apple pie.\n");
+    await r.search.refresh();
+
+    expect(linkReport(r.search, { scope: "wiki" }).unlinked).toEqual([]);
+    r.search.close();
+  });
+
+  test("a note marked untrusted is left out of every list", async () => {
+    const r = rig();
+    file(join(r.wiki, "index.md"), "# Index\n");
+    file(join(r.wiki, "trusted-a.md"), "# Always\n\n[[wanted]]\n");
+    file(join(r.wiki, "trusted-b.md"), "# Better\n\n[[wanted]]\n");
+    file(
+      join(r.wiki, "untrusted.md"),
+      "---\nuntrusted: true\n---\n\n# Secret\n\n[[wanted]] and [[missing]] and Target.\n",
+    );
+    file(join(r.wiki, "target.md"), "# Target\n\n[[untrusted]]\n");
+    file(join(r.wiki, "source.md"), "# Source\n\nSecret is not linked here.\n");
+    await r.search.refresh();
+
+    const report = linkReport(r.search, { scope: "wiki" });
+    expect(report.broken).toEqual([
+      { path: "trusted-a.md", line: 3, target: "wanted" },
+      { path: "trusted-b.md", line: 3, target: "wanted" },
+    ]);
+    expect(report.unlinked).toEqual([]);
+    expect(report.wanted).toEqual([]);
+    expect(report.orphans).toEqual(["source.md", "target.md", "trusted-a.md", "trusted-b.md"]);
+    r.search.close();
+  });
+
   test("unlinked mentions stop at the cap", async () => {
     const r = rig();
     const lines = ["# Source", ""];

@@ -118,3 +118,17 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0599-M5 | packages/memory/src/link-report.ts | unlinked mentions did not skip a source note that already links the target | `the link report a tidy reads > a title a note already links to is not an unlinked mention` |
+
+## T-0600 — the followups on the link table, backlinks and the tidy's lists
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0600-M1 | packages/memory/src/links.ts | `withoutCode` treated only eight leading spaces as an indented code block, so a four-space one kept its link | `the links a note writes > an indented code block is not links, but an indented paragraph line is` |
+| T-0600-M2 | packages/memory/src/links.ts | a Markdown link read only the bare destination, so an angle-bracketed target was dropped | `the links a note writes > a markdown target may have a space or be enclosed in angle brackets` |
+| T-0600-M3 | packages/memory/src/links.ts | a wikilink with a heading and no target was skipped, so `[[#Heading]]` did not point at its own note | `the links a note writes > a wikilink may name a heading in its own note`; `the link table > a read leaves out a note's link to itself and keeps a link's place after code` |
+| T-0600-M4 | packages/memory/src/links.ts | a wikilink that names a path fell back to a same-named file anywhere | `how a link resolves > a target with a path is not reduced to a file name` |
+| T-0600-M5 | packages/memory/src/links.ts | a Markdown target fell back to a file name, so an index line naming `from-web.md` matched `topics/from-web.md` | `how a link resolves > a target with a path is not reduced to a file name`; `one link parser for the index and the link table > the targets the link table reads are the ones the index commit drops` |
+| T-0600-M6 | packages/memory/src/search/service.ts | a stored link's line was always 1, so a backlink pointed at the top of its note | `the link table > a read lists the notes that link to it, with the line and excerpt`; `the link table > a read leaves out a note's link to itself and keeps a link's place after code` |
+| T-0600-M7 | packages/memory/src/search/service.ts | `readBacklinks` kept a note's link to itself | `the link table > a read leaves out a note's link to itself and keeps a link's place after code` |
+| T-0600-M8 | packages/memory/src/link-report.ts | an unlinked mention used a substring match, so `Tea` matched inside `Steam` | `the link report a tidy reads > a short title inside another word is not an unlinked mention` |
+| T-0600-M9 | packages/memory/src/link-report.ts | every note was trusted, so an untrusted note stayed in the lists | `the link report a tidy reads > a note marked untrusted is left out of every list` |
