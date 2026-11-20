@@ -77,7 +77,7 @@ describe("a bot proposes a skill", () => {
       views.close();
     }
 
-    const target = join(r.home, "bot", "skills", "brain");
+    const target = join(r.home, "bot", "default", "skills", "brain");
     expect(existsSync(join(target, "SKILL.md"))).toBe(false);
     expect(botConfig(r.home).default).toBeUndefined();
 
@@ -107,7 +107,7 @@ describe("a bot proposes a skill", () => {
       ["default", "digest"],
       skillInput("---\nname: digest\n---\nCollect the day.\n"),
     );
-    const target = join(r.home, "bot", "skills", "digest", "SKILL.md");
+    const target = join(r.home, "bot", "default", "skills", "digest", "SKILL.md");
     expect(existsSync(target)).toBe(false);
     expect((await r.registry.standing()).map((item) => item.id)).toHaveLength(1);
     // Reading the item or opening a chat applies nothing.

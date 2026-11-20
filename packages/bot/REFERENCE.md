@@ -19,18 +19,33 @@ The `bot` section of `config.json` (`plugins.bot.settings`), checked against
 digits, `-` and `_`. Fields: `cwd`, `harness` (the default agent),
 `useOwnSettings`, `skills`, `speaker`, `access`.
 
-- **Working directory**: `~/.operad/bot/` for `default`, `~/.operad/bot/<name>`
-  for another bot, created when missing. A `cwd` that is the operad home, holds
-  it, or is inside it outside `bot/` is refused: the chat works in a
-  subdirectory, never the home.
+- **Working directory**: `~/.operad/bot/<name>` for every bot, so the default
+  bot is in `~/.operad/bot/default`, created when missing along with its
+  `memory/`. A `cwd` that is the operad home, holds it, or is inside it outside
+  `bot/` is refused: the chat works in a subdirectory, never the home. A bot's
+  memory lives in `memory/` inside its directory; the knowledge base is shared
+  and is not part of a bot's directory. An old home at `~/.operad/bot/` is
+  moved into `default/` when the bots are read: its files, skills, memory and
+  anything else that is not another bot's directory. The move is idempotent and
+  each entry is renamed, so a crash halfway leaves the rest for the next read.
+  A bot whose settings name a `cwd` keeps it and no move happens.
+- **Sessions after the move**: `claude` finds a session under the project
+  directory named for its working directory, so its old project directory is
+  moved beside the new one. `pi` stores a session file path under the operad
+  home and `codex` resumes a thread id in its own home, so neither depends on
+  the working directory. `radian` binds a session to the workspace recorded in
+  its journal, so the old workspace is rewritten to the new one in the journals
+  that name it.
 - **Access profile**: the default one (no credentials, no shell profile writes, no
   `operad` command; the agent uses operad's tools) plus what the bot adds. A bot
   can tighten it, never loosen it. Everything in the operad home except `bot/` is
   in `denyPaths` (what is there now, and `store`, `secrets`, `config.json`), so
-  the fact log, secrets and the token are out of reach. The bot's skill
-  directories, and `<cwd>/skills`, are in `denyPaths` for writing and in
-  `readPaths` for reading: the agent can read a skill but proposes a change
-  through operad's tools and never writes one itself.
+  the fact log, secrets and the token are out of reach. The bot's own directory,
+  including its `memory/`, is what it may use; every other bot's directory is in
+  `denyPaths` for reading and writing. The bot's skill directories, and
+  `<cwd>/skills`, are in `denyPaths` for writing and in `readPaths` for reading:
+  the agent can read a skill but proposes a change through operad's tools and
+  never writes one itself.
 - **Use my own agent settings**: `useOwnSettings` is off by default. With it
   on, the bot's agent reads your own configuration of that agent. For `claude`
   that is your settings, `CLAUDE.md` files, memory, skills, commands, subagents,

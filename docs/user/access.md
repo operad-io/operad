@@ -106,13 +106,14 @@ A bot adds the operad home and the `operad` command: every entry of the home
 except the bot's own directory is denied (the names there now, and `store`,
 `secrets`, `config.json` and the MCP report directory), so a home other than
 `~/.operad` is covered too. The bot's own working directory under
-`~/.operad/bot` is the one part of the home the agent may use. The path of a
-repository `dev` knows, and the path of a bot's skill directories, are added to
-`denyPaths`: the agent reaches a repository through `dev`'s actions, not by
-touching its files. The skill directories are also in `readPaths`, so the agent
-reads them; a write there is still refused. A bot's own `access` lists are
-appended to these, and its `access.readOnly` can turn the working directory
-read-only.
+`~/.operad/bot` is the one part of the home the agent may use, including its
+`memory/` directory; every other bot's directory is denied for reading and
+writing. The path of a repository `dev` knows, and the path of a bot's skill
+directories, are added to `denyPaths`: the agent reaches a repository through
+`dev`'s actions, not by touching its files. The skill directories are also in
+`readPaths`, so the agent reads them; a write there is still refused. A bot's
+own `access` lists are appended to these, and its `access.readOnly` can turn
+the working directory read-only.
 
 A repository chat adds `operad` to `denyCommands` and starts read-only in the
 main clone, with its skill directories read-only there. A generated step that

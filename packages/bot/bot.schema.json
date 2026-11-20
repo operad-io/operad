@@ -16,7 +16,7 @@
           "cwd": {
             "type": "string",
             "minLength": 1,
-            "description": "The working directory. Without it: ~/.operad/bot for `default`, ~/.operad/bot/<name> for any other. It must be inside ~/.operad/bot or outside the operad home."
+            "description": "The working directory. Without it: ~/.operad/bot/<name>, so the default bot is in ~/.operad/bot/default. It must be inside ~/.operad/bot or outside the operad home."
           },
           "harness": {
             "type": "string",

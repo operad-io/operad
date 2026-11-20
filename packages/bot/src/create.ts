@@ -44,7 +44,7 @@ function cwdOf(home: string, name: string, settings: BotSettings): string {
   try {
     return workingDirectory(home, name, settings);
   } catch {
-    return name === DEFAULT_BOT ? botDir(home) : join(botDir(home), name);
+    return join(botDir(home), name);
   }
 }
 
