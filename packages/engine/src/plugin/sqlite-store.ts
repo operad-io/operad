@@ -523,6 +523,15 @@ export class SqlitePluginStore implements PluginStore {
     };
   }
 
+  latestFactSequence(object: ObjectRef): number {
+    const row = this.db
+      .query(
+        "SELECT COALESCE(MAX(sequence), 0) AS sequence FROM facts WHERE object_type = ? AND object_id = ?",
+      )
+      .get(object.type, object.id) as { sequence: number } | null;
+    return row?.sequence ?? 0;
+  }
+
   subscribe(listener: (object: ObjectRef) => void): () => void;
   subscribe(
     object: ObjectRef,

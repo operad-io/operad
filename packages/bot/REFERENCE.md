@@ -29,7 +29,9 @@ digits, `-` and `_`. Fields: `cwd`, `harness` (the default agent),
   every entry a person or the bot put there. Only `skills/` and `memory/`, which
   operad made there, move into `default/` when the bots are read; an entry that
   is another bot's directory is left alone. The move is idempotent and each
-  entry is renamed, so a crash halfway leaves the rest for the next read. The
+  entry is renamed, so a crash halfway leaves the rest for the next read; when
+  both homes hold the same file, the new home's copy stays. A home with no old
+  directory is marked handled once, so its journals are not read again. The
   default bot keeps read and write access to the rest of `~/.operad/bot`,
   except every other bot's directory. A grant whose `cwd` is exactly the old
   home is rewritten once to `default/`, in `access-user.json` and any per-bot or
@@ -282,5 +284,7 @@ The tidy chat is opened through `bot:chat` with the actor
 the memory plugin commits it as `tidy:`. The prompt carries the changed notes and
 the period's chat records. The source watches for the memory plugin's
 `memory.tidy` fact and then reads the commit's diff summary. A non-automatic run
-leaves a result card with the cost and diff; an automatic run returns to idle and
-calls `notify` only when the commit changed something.
+leaves a result card with the cost and diff; a failure leaves a failed card. An
+automatic run returns to idle and calls `notify` when the commit changed something
+or the run failed. A card left running without a chat, such as after a crash
+between starting the chat and recording it, becomes a failed card on the next start.

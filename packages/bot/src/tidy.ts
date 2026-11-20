@@ -474,6 +474,8 @@ export interface TidySourceContext {
   readonly client: ClientApi;
   readonly harnesses?: readonly string[] | undefined;
   readonly harnessCapabilities?: ((harness: string) => HarnessCapabilities | undefined) | undefined;
+  /** How the check reads its work; a test replaces it to see whether it ran. */
+  readonly work?: ((store: ObjectStore, bot: string, cwd: string) => Promise<TidyWork>) | undefined;
 }
 
 /** One firing the tidy source watches for its reply. */
@@ -598,7 +600,9 @@ export class BotTidySource {
     if (data === undefined) return;
     if (data.state === "running") return;
     if (data.state === "requested") {
-      const work = await tidyWork(this.ctx.store, bot, cwd);
+      // Wait for the chats to finish before the check spawns git or reads notes.
+      if (await botChatReplying(this.ctx.store, bot)) return;
+      const work = await this.workFor(bot, cwd);
       if (work.notes.length === 0 && !work.indexOver) {
         await this.put(
           bot,
@@ -607,13 +611,29 @@ export class BotTidySource {
         );
         return;
       }
-      if (await botChatReplying(this.ctx.store, bot)) return;
       await this.launch(bot, cwd, settings, data.plannedAt, work, false);
       return;
     }
     const latest = latestTidyMinute(settings, now);
     if (latest <= data.plannedAt) return;
-    const work = await tidyWork(this.ctx.store, bot, cwd);
+    if (settings.runWithoutAsking === true) {
+      // A reply is being written: try again on the next tick, without moving the
+      // planned time past a night that has not run, and without checking its work.
+      if (await botChatReplying(this.ctx.store, bot)) return;
+      const work = await this.workFor(bot, cwd);
+      if (work.notes.length === 0 && !work.indexOver) {
+        const keep = data.state === "result" || data.state === "failed" ? data.state : "idle";
+        await this.put(
+          bot,
+          { ...data, state: keep, plannedAt: latest, checkedAt: now, counts: { notes: 0, chats: 0, indexOver: false } },
+          "source:bot/tidy",
+        );
+        return;
+      }
+      await this.launch(bot, cwd, settings, latest, work, true);
+      return;
+    }
+    const work = await this.workFor(bot, cwd);
     const counts: TidyCounts = {
       notes: work.notes.length,
       chats: work.chats.length,
@@ -626,13 +646,6 @@ export class BotTidySource {
         { ...data, state: keep, plannedAt: latest, checkedAt: now, counts: { notes: 0, chats: 0, indexOver: false } },
         "source:bot/tidy",
       );
-      return;
-    }
-    if (settings.runWithoutAsking === true) {
-      // A reply is being written: try again on the next tick, without moving the
-      // planned time past a night that has not run.
-      if (await botChatReplying(this.ctx.store, bot)) return;
-      await this.launch(bot, cwd, settings, latest, work, true);
       return;
     }
     await this.put(
@@ -648,6 +661,47 @@ export class BotTidySource {
       },
       "source:bot/tidy",
     );
+  }
+
+  private workFor(bot: string, cwd: string): Promise<TidyWork> {
+    return (this.ctx.work ?? tidyWork)(this.ctx.store, bot, cwd);
+  }
+
+  /** A run that started but can no longer be watched is reported, not left running. */
+  private async failStart(bot: string, data: TidyData, summary: string): Promise<void> {
+    const now = this.ctx.clock();
+    const outcome: TidyOutcome = {
+      chatId: data.chatId ?? "",
+      at: now,
+      costMicros: null,
+      changed: false,
+      voided: false,
+      summary: replySummary(summary),
+      reply: "",
+    };
+    const auto = data.auto === true;
+    await this.put(
+      bot,
+      {
+        ...data,
+        state: auto ? "idle" : "failed",
+        ...(auto ? { outcome: undefined, lastOutcome: outcome } : { outcome }),
+      },
+      "source:bot/tidy",
+    );
+    if (auto) {
+      try {
+        await this.notify({
+          chatId: outcome.chatId,
+          title: "Memory tidy",
+          summary: tidyOutcomeLine(bot, outcome),
+        });
+      } catch (error) {
+        await this.log(
+          `memory tidy of bot ${bot}: notify: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
   }
 
   private async launch(
@@ -689,27 +743,12 @@ export class BotTidySource {
         : undefined;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      await this.put(
-        bot,
-        {
-          ...running,
-          state: "failed",
-          outcome: {
-            chatId: "",
-            at: now,
-            costMicros: null,
-            changed: false,
-            voided: false,
-            summary: replySummary(`Could not start: ${message}`),
-            reply: "",
-          },
-        },
-        "source:bot/tidy",
-      );
+      await this.failStart(bot, running, `Could not start: ${message}`);
       await this.log(`memory tidy of bot ${bot} could not start: ${message}`);
       return;
     }
     if (chatId === undefined) {
+      await this.failStart(bot, running, "Could not start: it opened no chat");
       await this.log(`memory tidy of bot ${bot} opened no chat`);
       return;
     }
@@ -814,7 +853,7 @@ export class BotTidySource {
         },
         "source:bot/tidy",
       );
-      if (outcome.changed) {
+      if (outcome.changed || failureText !== undefined) {
         try {
           await this.notify({
             chatId,
@@ -849,7 +888,12 @@ export class BotTidySource {
   private async resume(): Promise<void> {
     for (const object of await this.tidyObjects()) {
       const data = tidyDataOf(object.data);
-      if (data?.state !== "running" || data.chatId === undefined) continue;
+      if (data?.state !== "running") continue;
+      if (data.chatId === undefined) {
+        // The process died after marking the run but before recording its chat.
+        await this.failStart(data.bot, data, "Could not start: the tidy chat was not recorded");
+        continue;
+      }
       await this.watch(data.bot, data.chatId, data.auto === true);
     }
   }

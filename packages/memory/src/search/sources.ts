@@ -188,10 +188,10 @@ export function chatTitle(id: string, data: Readonly<Record<string, unknown>>): 
   return typeof title === "string" && title.length > 0 ? title : id;
 }
 
-/** A chat's working directory, which is the owner a bot search compares. */
+/** A chat's working directory, path-resolved to the owner a bot search compares. */
 export function chatOwner(data: Readonly<Record<string, unknown>>): string | undefined {
   const cwd = data["cwd"];
-  return typeof cwd === "string" && cwd.length > 0 ? cwd : undefined;
+  return typeof cwd === "string" && cwd.length > 0 ? resolve(cwd) : undefined;
 }
 
 /** The path a file document is shown under: relative to its root. */

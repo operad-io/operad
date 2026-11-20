@@ -125,7 +125,7 @@ async function migrateDefaultHome(
     ...botPaths.map((path) => join(path, "access-user.json")),
     ...repositories.map((path) => join(path, ".operad", "access-user.json")),
   ];
-  migrateDefaultBotDir(home, { botNames: Object.keys(written), botPaths, grantFiles });
+  await migrateDefaultBotDir(home, { botNames: Object.keys(written), botPaths, grantFiles });
 }
 
 const GUARD = fileURLToPath(new URL("./guard.ts", import.meta.url));

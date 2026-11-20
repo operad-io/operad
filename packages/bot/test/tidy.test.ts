@@ -2,13 +2,14 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { CHAT_TYPE, allMessages } from "@operad-io/chat";
-import { createViews, type ClientApi, type JsonValue } from "@operad-io/engine";
+import { createViews, type ClientApi, type JsonValue, type ObjectStore } from "@operad-io/engine";
 import { TIDY_ORIGIN, createMemoryPlugin, ensureRepository, lastTidyCommit, memoryGit, tidyCommitForChat } from "@operad-io/memory";
 import {
   BotTidySource,
   TIDY_TYPE,
   tidyDataOf,
   type ScheduleNotice,
+  type TidyWork,
 } from "../src/index.ts";
 import { cleanupRoots, rig, writePlugins } from "./support.ts";
 
@@ -20,16 +21,25 @@ interface Clock {
   value: number;
 }
 
+interface SetupOptions {
+  readonly client?: ClientApi | undefined;
+  readonly work?: ((store: ObjectStore, bot: string, cwd: string) => Promise<TidyWork>) | undefined;
+  readonly prepare?: ((memory: string) => void) | undefined;
+}
+
 async function setup(
   bots: Readonly<Record<string, JsonValue>> = { default: { tidyTime: "03:30" } },
   clockAt = "2026-01-01T02:00:00Z",
   capabilities: (harness: string) => { readonly backgroundModel?: string } = () => ({}),
+  options: SetupOptions = {},
 ) {
   const r = await rig({ default: {} }, ["pi"], undefined, [createMemoryPlugin()]);
   writePlugins(r.home, { memory: {}, bot: { settings: { bots } } });
   const views = createViews({ registry: r.registry, store: r.store, home: r.home, onLog: () => undefined });
   const clock: Clock = { value: Date.parse(clockAt) };
   const notices: ScheduleNotice[] = [];
+  const memory = join(r.home, "bot", "default", "memory");
+  options.prepare?.(memory);
   const source = new BotTidySource(
     {
       store: r.store,
@@ -37,9 +47,10 @@ async function setup(
       settings: { bots },
       clock: () => clock.value,
       logger: { write: async () => "" },
-      client: views as unknown as ClientApi,
+      client: options.client ?? (views as unknown as ClientApi),
       harnesses: ["pi"],
       harnessCapabilities: capabilities,
+      ...(options.work === undefined ? {} : { work: options.work }),
     },
     {
       notify: async (notice) => {
@@ -48,7 +59,7 @@ async function setup(
     },
   );
   await source.begin();
-  return { r, views, clock, notices, source, memory: join(r.home, "bot", "default", "memory") };
+  return { r, views, clock, notices, source, memory };
 }
 
 async function chats(r: Awaited<ReturnType<typeof rig>>): Promise<readonly string[]> {
@@ -70,6 +81,31 @@ async function tidy(r: Awaited<ReturnType<typeof rig>>) {
 function note(memory: string, name: string, text: string): void {
   mkdirSync(join(memory, "topics"), { recursive: true });
   writeFileSync(join(memory, "topics", name), text);
+}
+
+async function failChat(r: Awaited<ReturnType<typeof rig>>, chat: string): Promise<void> {
+  await r.store.append({
+    type: "chat.entry",
+    object: { type: CHAT_TYPE, id: chat },
+    cause: "test",
+    data: { runId: "run-failed", kind: "failure", text: "The reply failed: quota" },
+  });
+  await r.store.append({
+    type: "memory.tidy",
+    object: { type: CHAT_TYPE, id: chat },
+    cause: "test",
+    data: { chat, ok: false },
+  });
+}
+
+function noteWork(): TidyWork {
+  return {
+    notes: [{ path: "topics/tea.md", content: "likes tea\n" }],
+    chats: [],
+    indexOver: false,
+    indexBytes: 0,
+    baseline: undefined,
+  };
 }
 
 describe("the nightly memory check", () => {
@@ -136,6 +172,85 @@ describe("the nightly memory check", () => {
     }
   });
 });
+
+  test("the first check only sets a baseline", async () => {
+    const s = await setup(
+      { default: { tidyTime: "03:30" } },
+      "2026-01-01T03:31:00Z",
+      () => ({}),
+      { prepare: (memory) => note(memory, "tea.md", "likes tea\n") },
+    );
+    try {
+      expect(await chats(s.r)).toEqual([]);
+      expect(await s.r.registry.standing()).toEqual([]);
+      expect((await tidy(s.r))?.state).toBe("idle");
+
+      s.clock.value = Date.parse("2026-01-02T03:31:00Z");
+      await s.source.poll();
+      expect((await tidy(s.r))?.state).toBe("pending");
+    } finally {
+      s.views.close();
+    }
+  });
+
+  test("a tidy's own chat is not counted as work for the next check", async () => {
+    const s = await setup();
+    try {
+      note(s.memory, "tea.md", "likes tea\n");
+      s.clock.value = Date.parse("2026-01-01T03:31:00Z");
+      await s.source.poll();
+      await s.r.act(TIDY_TYPE, "default", "bot/run");
+      await s.source.poll();
+      const id = (await chats(s.r))[0];
+      if (id === undefined) throw new Error("no tidy chat");
+      await s.r.reply(id);
+      await s.source.settled();
+      await s.r.say(id, "a later message in the tidy chat");
+
+      note(s.memory, "coffee.md", "likes coffee\n");
+      s.clock.value = Date.parse("2026-01-02T03:31:00Z");
+      await s.source.poll();
+      const data = await tidy(s.r);
+      expect(data).toMatchObject({ state: "pending", counts: { notes: 1, chats: 0 } });
+    } finally {
+      s.views.close();
+    }
+  });
+
+  test("a running card with no chat is reported failed when the source resumes", async () => {
+    const s = await setup();
+    try {
+      const before = await tidy(s.r);
+      if (before === undefined) throw new Error("no tidy state");
+      await s.r.store.put(
+        TIDY_TYPE,
+        "default",
+        { ...before, state: "running", auto: false },
+        "test",
+      );
+      await s.source.begin();
+      expect((await tidy(s.r))?.state).toBe("failed");
+      expect((await s.r.registry.standing())[0]?.prompt).toContain("failed");
+    } finally {
+      s.views.close();
+    }
+  });
+
+  test("a launch that opens no chat leaves a failed card, not a running one", async () => {
+    const client = { act: async () => ({}) } as unknown as ClientApi;
+    const s = await setup(undefined, undefined, undefined, { client });
+    try {
+      note(s.memory, "tea.md", "likes tea\n");
+      s.clock.value = Date.parse("2026-01-01T03:31:00Z");
+      await s.source.poll();
+      await s.r.act(TIDY_TYPE, "default", "bot/run");
+      await s.source.poll();
+      expect((await tidy(s.r))?.state).toBe("failed");
+      expect((await s.r.registry.standing())[0]?.prompt).toContain("opened no chat");
+    } finally {
+      s.views.close();
+    }
+  });
 
 describe("Run and Skip", () => {
   test("Run starts the tidy after no chat is replying, and Skip closes the result until the next check", async () => {
@@ -222,6 +337,87 @@ describe("Run and Skip", () => {
       s.views.close();
     }
   });
+
+  test("a requested Run does not check its work on every tick while a chat is replying", async () => {
+    let workCalls = 0;
+    const s = await setup(undefined, undefined, undefined, {
+      work: async () => {
+        workCalls += 1;
+        return noteWork();
+      },
+    });
+    try {
+      s.clock.value = Date.parse("2026-01-01T03:31:00Z");
+      await s.source.poll();
+      expect(workCalls).toBe(1);
+
+      const busy = await s.r.open("default");
+      await s.r.say(busy, "still talking");
+      await s.r.store.append({
+        type: "chat.run",
+        object: { type: CHAT_TYPE, id: busy },
+        cause: "test",
+        data: { runId: "run-live" },
+      });
+      await s.r.act(TIDY_TYPE, "default", "bot/run");
+      await s.source.poll();
+      expect((await tidy(s.r))?.state).toBe("requested");
+      expect(workCalls).toBe(1);
+    } finally {
+      s.views.close();
+    }
+  });
+
+  test("an automatic tidy does not check its work on every tick while a chat is replying", async () => {
+    let workCalls = 0;
+    const s = await setup(
+      { default: { tidyTime: "03:30", runWithoutAsking: true } },
+      undefined,
+      undefined,
+      {
+        work: async () => {
+          workCalls += 1;
+          return noteWork();
+        },
+      },
+    );
+    try {
+      const busy = await s.r.open("default");
+      await s.r.say(busy, "still talking");
+      await s.r.store.append({
+        type: "chat.run",
+        object: { type: CHAT_TYPE, id: busy },
+        cause: "test",
+        data: { runId: "run-live" },
+      });
+      s.clock.value = Date.parse("2026-01-01T03:31:00Z");
+      await s.source.poll();
+      expect(workCalls).toBe(0);
+      expect(await chats(s.r)).toEqual([busy]);
+    } finally {
+      s.views.close();
+    }
+  });
+
+  test("a tidy run that fails leaves a failed card", async () => {
+    const s = await setup();
+    try {
+      note(s.memory, "tea.md", "likes tea\n");
+      s.clock.value = Date.parse("2026-01-01T03:31:00Z");
+      await s.source.poll();
+      await s.r.act(TIDY_TYPE, "default", "bot/run");
+      await s.source.poll();
+      const id = (await chats(s.r))[0];
+      if (id === undefined) throw new Error("no tidy chat");
+      await failChat(s.r, id);
+      await s.source.settled();
+
+      expect((await tidy(s.r))?.state).toBe("failed");
+      expect((await s.r.registry.standing())[0]?.prompt).toContain("failed");
+    } finally {
+      s.views.close();
+    }
+  });
 });
 
 describe("Run without asking", () => {
@@ -283,6 +479,25 @@ describe("Run without asking", () => {
       expect((await overridden.r.store.get(CHAT_TYPE, first))?.data.model).toBe("pi-b");
     } finally {
       overridden.views.close();
+    }
+  });
+
+  test("an automatic tidy that fails sends one notice line", async () => {
+    const s = await setup({ default: { tidyTime: "03:30", runWithoutAsking: true } });
+    try {
+      note(s.memory, "tea.md", "likes tea\n");
+      s.clock.value = Date.parse("2026-01-01T03:31:00Z");
+      await s.source.poll();
+      const id = (await chats(s.r))[0];
+      if (id === undefined) throw new Error("no tidy chat");
+      await failChat(s.r, id);
+      await s.source.settled();
+
+      expect((await tidy(s.r))?.state).toBe("idle");
+      expect(s.notices).toHaveLength(1);
+      expect(s.notices[0]?.summary).toContain("The reply failed: quota");
+    } finally {
+      s.views.close();
     }
   });
 

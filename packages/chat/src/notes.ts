@@ -93,10 +93,24 @@ export function notesToAttach(
 /** The tool names that write a file; a run that reports one may have written that note itself. */
 const EDIT_TOOLS = new Set(["write", "edit", "multiedit", "notebookedit", "patch", "apply_patch"]);
 
+/** The tool names that run a shell command; one may write a note through redirection. */
+const SHELL_TOOLS = new Set(["bash", "sh", "shell", "exec", "exec_command", "run_shell_command", "terminal"]);
+
+/** A shell command that writes a file: redirection, tee, in-place edit, or a file operation. */
+const SHELL_WRITE = /(?:>>?|\btee\b|\b(?:rm|mv|cp|touch|truncate|dd|install)\b|\bsed\b[^\n]*\s-i\b|\bperl\b[^\n]*\s-[a-z]*i)/;
+
 /** Whether a tool call's summarized input names this note. */
 function mentionsNote(input: string | null | undefined, note: NoteContent): boolean {
   if (input === null || input === undefined || input.length === 0) return false;
   return input.includes(note.path) || input.includes(note.file.path) || input.includes(note.file.name);
+}
+
+/** Whether a tool call is one that may write the note it names. */
+function writesNamedNote(entry: FoldEntry, note: NoteContent): boolean {
+  if (entry.kind !== "tool" || !mentionsNote(entry.input, note)) return false;
+  const tool = entry.toolName.toLowerCase();
+  if (EDIT_TOOLS.has(tool)) return true;
+  return SHELL_TOOLS.has(tool) && SHELL_WRITE.test(entry.input ?? "");
 }
 
 /**
@@ -111,9 +125,8 @@ export function notesWrittenHere(
   const written = new Set<string>();
   for (const entry of entries) {
     if (entry.kind !== "tool" || entry.result !== "done") continue;
-    if (!EDIT_TOOLS.has(entry.toolName.toLowerCase())) continue;
     for (const note of notes) {
-      if (mentionsNote(entry.input, note)) written.add(note.file.name);
+      if (writesNamedNote(entry, note)) written.add(note.file.name);
     }
   }
   return written;

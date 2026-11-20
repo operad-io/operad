@@ -6,7 +6,7 @@
 
 import { createHash } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import type { JsonValue, ObjectStore } from "@operad-io/engine";
 import { isRecord } from "@operad-io/engine";
 import { lineCountOf, queryTerms, snippetOf } from "./chunks.ts";
@@ -137,7 +137,8 @@ export class MemorySearch {
 
   /**
    * Brings file documents and chat records up to date. A file whose size and
-   * modification time did not change is left alone; a chat is compared by the
+   * modification time did not change is left alone; a chat is left alone when
+   * its latest fact sequence did not change, and is otherwise compared by the
    * digest of its messages. A document whose file or chat is gone is removed.
    */
   async refresh(store?: ObjectStore | undefined): Promise<RefreshStats> {
@@ -228,11 +229,18 @@ export class MemorySearch {
         if (owner === undefined) continue;
         const id = `chat:${object.id}`;
         seen.add(id);
+        const revision = store.latestFactSequence?.({ type: "chat", id: object.id });
+        const before = this.backend.get(id);
+        // The latest fact sequence changes for a message and for the object
+        // itself, so an unchanged chat is left alone without reading its facts.
+        if (revision !== undefined && before?.mtimeNs === String(revision)) {
+          unchanged += 1;
+          continue;
+        }
         const title = chatTitle(object.id, object.data);
         const text = chatDocument(object.id, title, chatMessages(store, object.id));
         const digest = digestOf(text);
-        const before = this.backend.get(id);
-        if (before?.digest === digest) {
+        if (revision === undefined && before?.digest === digest) {
           unchanged += 1;
           continue;
         }
@@ -247,6 +255,7 @@ export class MemorySearch {
           fields: {},
           lineCount: lineCountOf(text),
           digest,
+          ...(revision === undefined ? {} : { mtimeNs: String(revision) }),
         });
         indexed += 1;
       }
@@ -271,7 +280,7 @@ export class MemorySearch {
     const hits = this.backend.search({
       text: query,
       scopes,
-      owner: request.cwd,
+      owner: resolve(request.cwd),
       ...(fields === undefined ? {} : { fields }),
       limit,
     });
