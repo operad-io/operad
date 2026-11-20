@@ -56,4 +56,6 @@ An unresolved link is kept: a link to a page nobody wrote yet stays in the table
 
 Like the text index the table is a cache. It is built from the files, updated on the same change events, and dropped and rebuilt when the index itself is rebuilt. It writes no note and makes no model call.
 
-The memory package answers four queries from the table: the links a note writes, the links that point at a note, the unresolved targets with how many links name each, and the notes no other note links to. No command and no user-visible output reads the table.
+The memory package answers four queries from the table: the links a note writes, the links that point at a note, the unresolved targets with how many links name each, and the notes no other note links to.
+
+A `read` of a note ends with a `Backlinks` section when other notes link to it. The section lists each linking note by path, with the line of the link and a short excerpt around it. A linking note whose frontmatter says `untrusted: true` is listed with the same mark a search result carries. The links the note itself writes are already in its text, so they are not listed again. With no backlinks the section is left out. `--json` carries the same list as a `backlinks` array.
