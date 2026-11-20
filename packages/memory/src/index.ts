@@ -1,18 +1,41 @@
 /**
  * The memory plugin: the shared wiki and the bot's memory. It owns the wiki
  * directory setting, the `memory` skill every bot mounts, and the commit that
- * records what a reply wrote. It declares no objects: what a bot wrote stays a
- * file a person sees in the memory directory or the wiki.
+ * records what a reply wrote. The wiki is also read-only objects for the apps:
+ * its folders and notes, projected from the Markdown directory.
  */
 
 import pkg from "../package.json" with { type: "json" };
-import { definePlugin } from "@operad-io/engine";
+import { definePlugin, type JsonValue, type ObjectStore } from "@operad-io/engine";
 import { watchDirectory } from "@operad-io/engine/platform";
 import { MEMORY_SETTINGS, ensureWiki, wikiDirectory } from "./memory.ts";
 import { runMemoryCommit } from "./commit.ts";
 import { openMemorySearch } from "./search/service.ts";
 import { runMemoryRead, runMemorySearch } from "./search/command.ts";
 import { botMemoryDirectories } from "./search/sources.ts";
+import {
+  WIKI_FOLDER_TYPE,
+  WIKI_NOTE_TYPE,
+  resolveWikiFolderId,
+  resolveWikiNoteId,
+  syncWikiObjects,
+  wikiFolderViews,
+  wikiNoteViews,
+} from "./wiki.ts";
+
+const WIKI_FILTERS = [
+  { name: "live", states: ["open"], default: true },
+  { name: "removed", states: ["removed"] },
+] as const;
+
+/** The one scan both wiki types share, so a read does not rebuild it twice. */
+function prepareWiki(
+  store: ObjectStore,
+  home: string,
+  settings: Readonly<Record<string, JsonValue>>,
+): Promise<void> {
+  return syncWikiObjects(store, home, settings);
+}
 
 /** Builds the memory plugin. */
 export function createMemoryPlugin() {
@@ -22,6 +45,20 @@ export function createMemoryPlugin() {
     // The version comes from package.json so the two cannot drift apart.
     version: pkg.version,
     settings: MEMORY_SETTINGS,
+    objects: [
+      {
+        name: WIKI_FOLDER_TYPE,
+        filters: WIKI_FILTERS,
+        resolve: (_ctx, _type, id) => resolveWikiFolderId(id),
+        // This scan writes the notes too, so only one type declares it.
+        prepare: ({ store, home, settings }) => prepareWiki(store, home, settings),
+      },
+      {
+        name: WIKI_NOTE_TYPE,
+        filters: WIKI_FILTERS,
+        resolve: (_ctx, _type, id) => resolveWikiNoteId(id),
+      },
+    ],
     steps: [{ name: "commit", results: ["done", "failed"], run: runMemoryCommit }],
     commands: [
       { name: "search", args: "[--scope <scope>] [--field <name>=<value>] [--limit <n>] <query>", run: runMemorySearch },
@@ -39,8 +76,7 @@ export function createMemoryPlugin() {
       let pending: Promise<void> | undefined;
       const refresh = (): void => {
         if (stopped || pending !== undefined) return;
-        pending = search
-          .refresh(ctx.store)
+        pending = syncWikiObjects(ctx.store, ctx.home, ctx.settings, search)
           .then(() => undefined)
           .catch(() => undefined)
           .finally(() => {
@@ -64,6 +100,10 @@ export function createMemoryPlugin() {
         },
       };
     },
+    views: {
+      [WIKI_FOLDER_TYPE]: wikiFolderViews,
+      [WIKI_NOTE_TYPE]: wikiNoteViews,
+    },
   });
 }
 
@@ -81,3 +121,4 @@ export * from "./links.ts";
 export * from "./link-report.ts";
 export * from "./search/sources.ts";
 export * from "./search/command.ts";
+export * from "./wiki.ts";

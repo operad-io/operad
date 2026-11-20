@@ -118,3 +118,18 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0599-M5 | packages/memory/src/link-report.ts | unlinked mentions did not skip a source note that already links the target | `the link report a tidy reads > a title a note already links to is not an unlinked mention` |
+
+## T-0601 — the wiki as read-only objects
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0601-M1 | packages/memory/src/wiki.ts | `scanWiki` left folders out of the projection, so the root listed notes only | `the wiki objects > the root lists the top-level folders and notes` |
+| T-0601-M2 | packages/memory/src/wiki.ts | a folder row dropped its `parent`, so a folder page listed no subfolders | `the wiki objects > a folder lists its subfolders and notes, and nothing else` |
+| T-0601-M3 | packages/memory/src/wiki.ts | the projection stored no backlinks, so a note had no Backlinks section | `the wiki objects > a note shows its content, its backlinks and its untrusted mark` |
+| T-0601-M4 | packages/memory/src/wiki.ts | `resolveWikiNoteId` returned another note's key, so a missing note resolved and opened | `the wiki objects > a missing note is not found` |
+| T-0601-M5 | packages/memory/src/wiki.ts | `wikiObjectPath` kept `..` and absolute paths instead of refusing them | `the wiki objects > a path outside the wiki is refused` |
+| T-0601-M6 | packages/memory/src/wiki.ts | `linksIn` stopped resolving a link to its target note's object id | `the wiki objects > the links in a note resolve to the object ids a client opens` |
+| T-0601-M7 | packages/memory/src/wiki.ts | `textPages` returned a large note whole instead of paging it | `the wiki objects > a large note is paged by the section read` |
+| T-0601-M8 | packages/memory/src/wiki.ts | a note row ignored its `untrusted` flag, so the mark was not shown | `the wiki objects > a note shows its content, its backlinks and its untrusted mark` |
+| T-0601-M9 | packages/memory/src/index.ts | the memory plugin declared an action on a note | `the wiki objects > a note shows its content, its backlinks and its untrusted mark` |
+| T-0601-M10 | packages/memory/src/wiki.ts | `syncWikiObjects` scanned the whole home instead of the wiki, so the root lost its notes | `the wiki objects > only the wiki is listed, not a bot's memory` |
