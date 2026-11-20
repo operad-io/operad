@@ -75,21 +75,24 @@ text by default and JSON with `--json`; JSON input asks for JSON too.
 
 Beside the documents the index keeps a table of the links the notes write, in
 the same `search.sqlite` (ADR 0038 D8). `parseNoteLinks(text)` (`src/links.ts`)
-reads `[[target]]`, `[[target|text]]`, `[[target#Heading]]` and the table form
-`[[target\|text]]`, plus relative Markdown links `[text](path.md#heading)`.
-Markdown targets are percent-decoded and a target with a bare `%` is kept as
-written. Code blocks, inline code, external links and image embeds are not
-links. The service stores each parsed link with the document: source, raw
-target, optional heading and kind.
+reads `[[target]]`, `[[target|text]]`, `[[target#Heading]]`, `[[#Heading]]`
+to a heading in the same note, and the table form `[[target\|text]]`, plus
+relative Markdown links `[text](path.md#heading)`, whose destination may have
+spaces or be enclosed in angle brackets. Markdown targets are percent-decoded
+and a target with a bare `%` is kept as written. Fenced and indented code
+blocks, inline code, external links and image embeds are not links. The service
+stores each parsed link with the document: source, raw target, optional heading,
+kind, and the line and excerpt a backlink shows.
 
-`MemorySearch.refresh` resolves the stored links after it has read the files.
-`resolveNoteLink(source, link, notes)` takes a target that names a path from the
-scope root, then (for a Markdown link) relative to the source note, then by file
-name with or without `.md`; among same-named files the one nearest the source
-wins. Resolution stays inside one scope and owner. A link that matches nothing
-is kept unresolved and takes the note when somebody writes it; a renamed note
-gives its links a new target, and a deleted note keeps the links that pointed at
-it, unresolved.
+`MemorySearch.refresh` resolves the stored links after it has read the files,
+and only when a note changed. `resolveNoteLink(source, link, notes)` takes a
+target that names a path from the scope root, then (for a Markdown link)
+relative to the source note. A bare wikilink name matches a file name with or
+without `.md`; among same-named files the one nearest the source wins. A path
+that names a note is not reduced to its file name. Resolution stays inside one
+scope and owner. A link that matches nothing is kept unresolved and takes the
+note when somebody writes it; a renamed note gives its links a new target, and
+a deleted note keeps the links that pointed at it, unresolved.
 
 Four queries answer from the table, after a refresh: `linksFrom(id)`,
 `backlinks(id)`, `unresolvedTargets(query)` and `orphanNotes(query)`. `query`
@@ -102,8 +105,9 @@ carries the same list as `backlinks`. `linkReport(search, query)`
 with their source path and 1-based line, orphan notes (leaving out `index.md`,
 `instructions.md`, `_about.md` and anything under `log/`), unresolved targets
 that three or more different notes link to, and up to 20 mentions where one
-note's body contains another note's title but writes no link to it. The tidy
-report is not a command or tool output. An index built before the table
+note's body contains another note's title as a word but writes no link to it.
+A note marked `untrusted: true` is left out of every list, as a source or as a
+target. The tidy report is not a command or tool output. An index built before the table
 existed, or with another version of it, is filled on the next refresh: opening
 it clears the stored modification time of its notes, so every note is read
 again.
