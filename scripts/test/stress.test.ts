@@ -182,6 +182,76 @@ test("stubborn", async () => {
     }
   }, 60000);
 
+  test("SIGKILL of the test runner stops a test file that ignores SIGTERM", async () => {
+    const dir = scratch();
+    const pidfile = join(dir, "pids");
+    const started = join(dir, "started");
+    const stubborn = join(dir, "stubborn.fixture.ts");
+    writeFileSync(
+      stubborn,
+      `import { test } from "bun:test";
+import { writeFileSync } from "node:fs";
+test("stubborn", async () => {
+  process.on("SIGTERM", () => {});
+  writeFileSync(${JSON.stringify(started)}, String(process.pid));
+  await new Promise(() => {});
+}, 60000);
+`,
+    );
+    const runner = Bun.spawn(["bun", "test", leak], {
+      cwd: root,
+      env: { ...process.env, LEAK_PIDFILE: pidfile, LEAK_TEST_FILE: stubborn },
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "ignore",
+    });
+    let pids: number[] = [];
+    try {
+      pids = await readReady(runner.stdout);
+      const testPid = await waitForNumber(started);
+      // The runner that started stress.sh is killed, so the script stops on
+      // its parent watcher alone; its test child ignores TERM and must still
+      // be killed.
+      runner.kill("SIGKILL");
+      await runner.exited;
+      await expectGone([...pids, testPid], 5000);
+    } finally {
+      runner.kill("SIGKILL");
+      if (pids[0] !== undefined) killProcessGroup(pids[0], "SIGKILL");
+    }
+  }, 60000);
+
+  test("a KILL never targets a pid the system has reused", async () => {
+    const dir = scratch();
+    const log = join(dir, "kills");
+    const rc = join(dir, "bash-env.sh");
+    writeFileSync(
+      rc,
+      `kill() {
+  printf '%s\\n' "$*" >> "$KILL_LOG"
+  if [ "$1" = "-KILL" ]; then
+    case "$2" in
+      ''|*[!0-9]*) ;;
+      *)
+        local ppid
+        ppid=$(ps -o ppid= -p "$2" 2>/dev/null)
+        [ "$(printf '%s' "$ppid" | tr -d ' ')" = "$$" ] || printf 'not-child %s\\n' "$2" >> "$KILL_LOG"
+        ;;
+    esac
+  fi
+  builtin kill "$@"
+}
+`,
+    );
+    const { code } = await runStress(["--runs", "1", "--load", "2", steady], {
+      BASH_ENV: rc,
+      KILL_LOG: log,
+    });
+    expect(code).toBe(0);
+    const lines = readFileSync(log, "utf8").split("\n").filter(Boolean);
+    expect(lines.filter((line) => line.startsWith("not-child "))).toEqual([]);
+  }, 60000);
+
   describe("the machine-wide lock", () => {
     /** A test file that records its pid in `started`, then waits for `release` to exist. */
     function blocker(dir: string): { file: string; started: string; release: string } {
