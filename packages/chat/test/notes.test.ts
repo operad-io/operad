@@ -1,9 +1,9 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { definePlugin, type PluginStepResult } from "@operad-io/engine";
-import { chatData } from "../src/index.ts";
-import { cleanupRoots, reply, rig } from "./support.ts";
+import { PluginRegistry, definePlugin, type PluginStepResult } from "@operad-io/engine";
+import { chatData, createChatPlugin } from "../src/index.ts";
+import { cleanupRoots, fakeHarness, reply, rig, type Call } from "./support.ts";
 
 afterAll(cleanupRoots);
 
@@ -133,6 +133,44 @@ describe("the notes on a bot chat's message", () => {
     expect(r.calls[1]?.params.prompt).toBe("second");
   });
 
+  test("a note written through a shell command is not sent back either", async () => {
+    let cwd = "";
+    const path = () => join(cwd, "memory", "index.md");
+    const r = await rig(
+      (ctx) => {
+        const file = path();
+        ctx.receiver?.(
+          JSON.stringify({ type: "tool_execution_start", toolCallId: "c-shell", toolName: "Bash", at: 1, input: `printf 'WRITTEN BY THIS RUN\n' > ${file}` }),
+        );
+        writeNote(file, "WRITTEN BY THIS RUN\n");
+        ctx.receiver?.(
+          JSON.stringify({ type: "tool_execution_end", toolCallId: "c-shell", toolName: "Bash", isError: false, durationMs: 1 }),
+        );
+        return reply("ok", "s-1");
+      },
+      undefined,
+      undefined,
+      "fake",
+      [
+        refreshStep(
+          () => cwd,
+          () => [indexNote(cwd)],
+        ),
+      ],
+    );
+    cwd = r.root;
+    writeNote(path(), "BEFORE THE RUN\n");
+    const chat = await r.chat({ refresh: "settings/refresh" });
+
+    await r.say(chat, "first");
+    await r.round(chat);
+    expect(String(r.calls[0]?.params.prompt)).toContain("BEFORE THE RUN");
+
+    await r.say(chat, "second");
+    await r.round(chat);
+    expect(r.calls[1]?.params.prompt).toBe("second");
+  });
+
   test("a change another chat wrote during the reply is sent on the next message", async () => {
     let cwd = "";
     let runs = 0;
@@ -211,6 +249,79 @@ describe("the notes on a bot chat's message", () => {
     await r.say(chat, "third");
     await r.round(chat);
     expect(String(r.calls[2]?.params.prompt)).toContain("[memory/index.md]\nINDEX A");
+  });
+
+  test("the agent's own compaction flag brings the whole notes back", async () => {
+    let cwd = "";
+    let count = 0;
+    const r = await rig(
+      () => {
+        count += 1;
+        return {
+          result: "done",
+          data: { finalMessage: "ok", sessionId: "s-1", ...(count === 1 ? { compacted: true } : {}) },
+        };
+      },
+      undefined,
+      undefined,
+      "fake",
+      [
+        refreshStep(
+          () => cwd,
+          () => [indexNote(cwd)],
+        ),
+      ],
+    );
+    cwd = r.root;
+    writeNote(join(cwd, "memory", "index.md"), "INDEX A\n");
+    const chat = await r.chat({ refresh: "settings/refresh" });
+
+    await r.say(chat, "first");
+    await r.round(chat);
+    expect(String(r.calls[0]?.params.prompt)).toContain("INDEX A");
+
+    await r.say(chat, "second");
+    await r.round(chat);
+    expect(String(r.calls[1]?.params.prompt)).toContain("[memory/index.md]\nINDEX A");
+  });
+
+  test("a restart keeps the hashes, so an unchanged note stays off the message", async () => {
+    let cwd = "";
+    const r = await rig(() => reply("ok", "s-1"), undefined, undefined, "fake", [
+      refreshStep(
+        () => cwd,
+        () => [indexNote(cwd)],
+      ),
+    ]);
+    cwd = r.root;
+    writeNote(join(cwd, "memory", "index.md"), "INDEX A\n");
+    const chat = await r.chat({ refresh: "settings/refresh" });
+    await r.say(chat, "first");
+    await r.round(chat);
+    expect(String(r.calls[0]?.params.prompt)).toContain("INDEX A");
+
+    // A new registry over the same store stands for a restarted serve.
+    const calls: Call[] = [];
+    const registry = new PluginRegistry(
+      [
+        createChatPlugin(),
+        fakeHarness("fake", () => reply("ok", "s-1"), calls),
+        refreshStep(
+          () => cwd,
+          () => [indexNote(cwd)],
+        ),
+      ],
+      { home: join(r.root, "home"), cwd: r.root, store: r.store, onLog: () => undefined },
+    );
+    await r.say(chat, "second");
+    const stored = await r.store.get("chat", chat);
+    if (stored === undefined) throw new Error("no chat");
+    await registry.runStep("chat/reply", {}, {
+      runId: "restart",
+      object: { type: "chat", id: chat, data: stored.data },
+      params: null,
+    });
+    expect(calls[0]?.params.prompt).toBe("second");
   });
 
   test("the index is cut at its limit with a line saying so, and a change past the cut still resends it", async () => {

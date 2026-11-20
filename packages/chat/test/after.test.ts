@@ -43,6 +43,26 @@ describe("the step a chat's refresh data names after a reply", () => {
     expect(calls).toEqual([{ chat, result: "done" }]);
   });
 
+  test("runs once for a run that takes more than one round, not once per round", async () => {
+    const calls: { readonly chat: unknown; readonly result: string }[] = [];
+    let chat = "";
+    const r = await rig(
+      async () => {
+        if (r.calls.length === 1) await r.say(chat, "second");
+        return reply("ok", `s-${r.calls.length}`);
+      },
+      undefined,
+      undefined,
+      "fake",
+      [steps(calls, "settings/record")],
+    );
+    chat = await r.chat({ refresh: "settings/refresh" });
+    await r.say(chat, "first");
+    expect((await r.round(chat)).result).toBe("more");
+    expect((await r.round(chat)).result).toBe("done");
+    expect(calls).toEqual([{ chat, result: "done" }]);
+  });
+
   test("does not run when the refresh step names none", async () => {
     const calls: { readonly chat: unknown; readonly result: string }[] = [];
     const r = await rig(() => reply("ok", "s-1"), undefined, undefined, "fake", [steps(calls)]);

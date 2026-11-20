@@ -565,3 +565,11 @@ are append-only, so the old lines stay as history.
 | T-0586-M6 | packages/chat/src/reply.ts | the stored hashes were merged with the old ones, so a file the refresh step no longer names stayed | `the notes on a bot chat's message > the stored hashes cover the files the refresh step names now, and no others` |
 | T-0586-M10 | packages/chat/src/notes.ts | every file changed during the run kept its hash after the run, so a change another chat wrote during the reply was taken as seen | `the notes on a bot chat's message > a change another chat wrote during the reply is sent on the next message` |
 | T-0586-M11 | packages/chat/src/notes.ts | no tool name counted as a write, so a change the run reported writing was sent back | `the notes on a bot chat's message > a change this chat's run wrote is not sent back` |
+
+## T-0590 — memory v1 follow-ups, shell writes and one after step per run
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0590-M26 | packages/chat/src/notes.ts | a shell command that wrote a note was not counted as this run's write | `the notes on a bot chat's message > a note written through a shell command is not sent back either` |
+| T-0590-M27 | packages/chat/src/reply.ts | `runAfterStep` ran after every round, including one that ended `more` | `the step a chat's refresh data names after a reply > runs once for a run that takes more than one round, not once per round` |
+| T-0590-M28 | packages/chat/src/reply.ts | compaction ignored the agent's `data.compacted` flag | `the notes on a bot chat's message > the agent's own compaction flag brings the whole notes back` |
