@@ -235,7 +235,7 @@ dev loads each `.operad/flows/<name>.flow.ts` whose default export is a
 `defineFlow` value as a flow named `<name>`, and a plan or task chooses it with
 `--flow <name>`. It refuses the file, with the reason, when a step other than
 integrate (or the cleanup right after it) leads to the end, when there is no
-integrate step, when there is no check, review or human step, or when
+integrate step, when there is no test, review or human step, or when
 `dev.json` also defines `<name>`. A refused name starts no task.
 
 ## Steps
