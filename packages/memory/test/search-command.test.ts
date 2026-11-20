@@ -87,6 +87,49 @@ describe("the memory search commands", () => {
     expect(value["lineEnd"]).toBe(3);
   });
 
+  test("read ends with Backlinks, and --json gives the backlinks array", async () => {
+    const r = rig();
+    writeFileSync(join(r.home, "wiki", "index.md"), "# Index\n\n- [[notes/tea|Tea]]\n");
+    writeFileSync(
+      join(r.home, "wiki", "untrusted.md"),
+      "---\nuntrusted: true\n---\n\nSee [[notes/tea]].\n",
+    );
+
+    const text = String(
+      (await r.registry.runCommand(["memory", "read", "wiki:notes/tea.md"], { cwd: r.bot }))?.value,
+    );
+    expect(text).toContain("## Backlinks");
+    expect(text).toContain("- `index.md` line 3 — - [[notes/tea|Tea]]");
+    expect(text).toContain("- `untrusted.md` line 2 (untrusted) — See [[notes/tea]].");
+    expect(text.indexOf("## Backlinks")).toBeGreaterThan(text.indexOf("# Tea"));
+
+    const json = record(
+      (await r.registry.runCommand(["memory", "read", "wiki:notes/tea.md", "--json"], { cwd: r.bot }))
+        ?.value,
+    );
+    expect(json["backlinks"]).toMatchObject([
+      { path: "index.md", line: 3, untrusted: false },
+      { path: "untrusted.md", line: 2, untrusted: true },
+    ]);
+
+    const alone = String(
+      (
+        await r.registry.runCommand(["memory", "read", `memory:${r.bot}:note.md`], {
+          cwd: r.bot,
+        })
+      )?.value,
+    );
+    expect(alone).not.toContain("## Backlinks");
+    const aloneJson = record(
+      (
+        await r.registry.runCommand(["memory", "read", `memory:${r.bot}:note.md`, "--json"], {
+          cwd: r.bot,
+        })
+      )?.value,
+    );
+    expect(aloneJson["backlinks"]).toEqual([]);
+  });
+
   test("a scope that is not one of the three is refused", async () => {
     const r = rig();
     await expect(

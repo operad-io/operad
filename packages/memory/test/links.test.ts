@@ -180,6 +180,45 @@ describe("the link table in the backend", () => {
 });
 
 describe("the link table", () => {
+  test("a read lists the notes that link to it, with the line and excerpt", async () => {
+    const r = rig();
+    file(join(r.wiki, "notes", "tea.md"), "# Tea\n\nGreen tea brews cooler.\n");
+    file(join(r.wiki, "index.md"), "# Index\n\n- [[notes/tea|Tea]]\n");
+    file(
+      join(r.wiki, "notes", "about.md"),
+      "---\nuntrusted: true\n---\n\nWe discussed [[notes/tea]] last week.\n",
+    );
+    await r.search.refresh();
+
+    const read = r.search.read({ id: "wiki:notes/tea.md" });
+    expect(read.backlinks).toHaveLength(2);
+    expect(read.backlinks[0]).toMatchObject({
+      id: "wiki:index.md",
+      path: "index.md",
+      title: "Index",
+      target: "notes/tea",
+      kind: "wikilink",
+      line: 3,
+      untrusted: false,
+    });
+    expect(read.backlinks[0]?.excerpt).toContain("[[notes/tea|Tea]]");
+    expect(read.backlinks[1]).toMatchObject({
+      id: "wiki:notes/about.md",
+      path: "notes/about.md",
+      title: "about",
+      target: "notes/tea",
+      kind: "wikilink",
+      line: 2,
+      untrusted: true,
+    });
+    expect(read.backlinks[1]?.excerpt).toContain("We discussed [[notes/tea]]");
+
+    file(join(r.wiki, "alone.md"), "# Alone\n\nNothing points here.\n");
+    await r.search.refresh();
+    expect(r.search.read({ id: "wiki:alone.md" }).backlinks).toEqual([]);
+    r.search.close();
+  });
+
   test("links from a note, backlinks and unresolved targets come from the same index", async () => {
     const r = rig();
     file(

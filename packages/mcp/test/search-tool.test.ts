@@ -92,6 +92,22 @@ describe("the search tool a bot gets", () => {
     }
   });
 
+  test("a read ends with the notes that link to the document", async () => {
+    const h = await home();
+    writeFileSync(join(h.home, "wiki", "index.md"), "# Index\n\n- [[notes/tea|Tea]]\n");
+    const tools = await openMcpTools({ home: h.home, cwd: h.bot });
+    try {
+      const result = await tools.call("read", { id: "wiki:notes/tea.md" });
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]?.text).toContain("## Backlinks");
+      expect(result.content[0]?.text).toContain("- `index.md` line 3 — - [[notes/tea|Tea]]");
+      const value = record(result.structuredContent);
+      expect(value["backlinks"]).toMatchObject([{ path: "index.md", line: 3, untrusted: false }]);
+    } finally {
+      await tools.close();
+    }
+  });
+
   test("a chat is not reachable when the bot's own has no message", async () => {
     const h = await home();
     const tools = await openMcpTools({ home: h.home, cwd: h.bot });

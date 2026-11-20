@@ -107,6 +107,14 @@ its line range and a snippet. The `read` tool returns the document, or the range
 of lines a result points at. Frontmatter fields can narrow a search, and a
 directory's `_about.md` comes back with the hits found inside that directory.
 
+A read also shows the notes that link to the one you read. When there are any,
+it ends with a `Backlinks` section: each linking note's path, the line of the
+link and a short excerpt around it. A linking note whose frontmatter says
+`untrusted: true` is marked, just as a search result is. The note's own outgoing
+links are already in its text, so they are not listed again. With no backlinks
+the section is left out. The `read` command prints this text; `--json` gives the
+same list as a `backlinks` array instead.
+
 The index uses SQLite FTS5's `trigram` tokenizer, which works on Chinese as well
 as English: a two-character Chinese word inside a sentence is found by a
 substring fallback because trigram needs three characters. `unicode61`, the FTS5

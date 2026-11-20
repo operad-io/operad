@@ -11,7 +11,7 @@ import type { JsonValue, ObjectStore } from "@operad-io/engine";
 import { isRecord } from "@operad-io/engine";
 import { lineCountOf, queryTerms, snippetOf } from "./chunks.ts";
 import { splitMarkdown, titleFromName, titleOf } from "./frontmatter.ts";
-import { parseNoteLinks, resolveNoteLink } from "../links.ts";
+import { parseNoteLinks, parseNoteLinksWithPositions, resolveNoteLink } from "../links.ts";
 import { SqliteSearchBackend } from "./backend.ts";
 import {
   botMemoryDirectories,
@@ -30,6 +30,8 @@ import {
   SearchError,
   type AboutDocument,
   type BackendHit,
+  type Backlink,
+  type DocumentFields,
   type DocumentKey,
   type LinkQuery,
   type NoteLinkInfo,
@@ -389,7 +391,36 @@ export class MemorySearch {
       totalLines: total,
       text: total === 0 ? "" : lines.slice(from - 1, to).join("\n"),
       fields: document.fields,
+      backlinks: this.readBacklinks(document.id),
     };
+  }
+
+  /**
+   * The notes that link to a note, with the line and excerpt around each link.
+   * A linking note marked untrusted is still listed, and says so.
+   */
+  readBacklinks(id: string): readonly Backlink[] {
+    const notes = this.noteKeys();
+    const found: Backlink[] = [];
+    for (const link of this.backend.allLinks()) {
+      if (link.targetId !== id) continue;
+      const source = notes.get(link.docId);
+      const document = this.backend.get(link.docId);
+      if (source === undefined || document === undefined) continue;
+      const place = backlinkPlace(document.text, link);
+      found.push({
+        id: source.id,
+        path: source.path ?? source.id,
+        title: document.title,
+        target: link.target,
+        ...(link.heading === undefined ? {} : { heading: link.heading }),
+        kind: link.kind,
+        line: place.line,
+        excerpt: place.excerpt,
+        untrusted: untrustedFields(document.fields),
+      });
+    }
+    return found;
   }
 
   /**
@@ -454,6 +485,31 @@ export class MemorySearch {
   close(): void {
     this.backend.close();
   }
+}
+
+/** Whether a note's frontmatter marks it as coming from untrusted content. */
+export function untrustedFields(fields: DocumentFields): boolean {
+  return fields["untrusted"]?.some((value) => value.trim().toLowerCase() === "true") === true;
+}
+
+/** The line of a stored link and a short piece of the line around it. */
+function backlinkPlace(text: string, link: StoredNoteLink): { readonly line: number; readonly excerpt: string } {
+  const links = parseNoteLinksWithPositions(text);
+  const place =
+    links[link.ordinal] ??
+    links.find(
+      (entry) =>
+        entry.kind === link.kind &&
+        entry.target === link.target &&
+        entry.heading === link.heading,
+    );
+  if (place === undefined) return { line: 0, excerpt: "" };
+  const before = text.slice(0, place.at);
+  const line = before.length === 0 ? 1 : before.split(/\r?\n/u).length;
+  const start = text.lastIndexOf("\n", place.at - 1) + 1;
+  const next = text.indexOf("\n", place.at);
+  const written = text.slice(start, next < 0 ? text.length : next).trim();
+  return { line, excerpt: snippetOf(written, [link.target]) };
 }
 
 /** Whether a document is inside the scope a link query names. */

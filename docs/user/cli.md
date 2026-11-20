@@ -91,7 +91,7 @@ and `operad help` print the whole table.
 | `operad bot setting <bot>` | none | Proposes a settings change for one bot from JSON on stdin; a person approves it. |
 | `operad bot schedule <bot> add\|edit\|remove <name>` | `--words <text>`, `--schedule <cron>`, `--prompt <text>`, `--model <model>`, `--effort <effort>` | Proposes adding, changing or removing a scheduled prompt; a person approves it. |
 | `operad memory search <query>` | `--scope <scope>`, `--field <name>=<value>`, `--limit <n>` | Searches the shared wiki, the bot's memory and the bot's chats. Prints each result's document id, title, line range and snippet, then the directory notes that came back with it. `--scope` takes `wiki`, `memory` or `chats`; `--field` narrows by frontmatter; `--limit` caps the results. The same arguments may be given as JSON on stdin. |
-| `operad memory read <id>` | `from`, `to` | Reads one document a search returned, or the line range named by `from` and `to` (both 1-based). The id and range may also be given as JSON on stdin. |
+| `operad memory read <id>` | `from`, `to`, `--json` | Reads one document a search returned, or the line range named by `from` and `to` (both 1-based). A read of a note another note links to ends with its `Backlinks`, each with the linking note's path, line and an excerpt. Prints text by default; `--json` gives the same result, including a `backlinks` array. The id and range may also be given as JSON on stdin. |
 
 The scheduled flows verb is also reached with its plugin name as `operad cron scheduled ...`; the short `operad scheduled ...` is the same command.
 
@@ -104,7 +104,7 @@ A client of `serve` does the same over HTTP with `GET /v1/plugins` and `POST /v1
 | `--help` | the commands the CLI owns | Prints the usage of that command. A plugin verb gets its arguments as they are, so `--help` is passed to the plugin and may be refused as an unknown option; use `operad help` for the command table. `operad --help` prints the whole table. |
 | `--version`, `-V` | `operad` | Prints `operad <version>`. |
 | `--timeout <secs>` | `serve stop` | How long to wait for the stopped `serve`: a whole number from 1, default 30. `0`, a missing value or a non-number is a usage error. |
-| `--json` | `pending`, `history`, `running`, `flows`, `list`, `show`, `settings`, `scheduled list` | Prints JSON instead of lines. `settings set` does not take it. |
+| `--json` | `pending`, `history`, `running`, `flows`, `list`, `show`, `settings`, `scheduled list`, `memory read` | Prints JSON instead of lines. `settings set` does not take it. |
 | `--filter <name>` | `list` | The filter to use; `all` shows every row. A type without filters refuses it. |
 | `--repo <name>` | `list`, `show`, `settings`, `settings set`, actions, plugin commands | Keeps the list to one repository, or says which repository a bare id lives in. |
 | `--where <field=value>` | `list` | One exact match on a field the type's rows carry; may be repeated. |
