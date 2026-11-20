@@ -62,3 +62,4 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0595-M1 | packages/memory/src/commit.ts | `withoutUntrustedLines` read only Markdown links, so an index line with a wikilink to an untrusted note stayed | `a bot run is recorded in git > an index line that links to an untrusted note with a wikilink is removed too` |
+| T-0595-M2 | packages/memory/src/commit.ts | `withoutUntrustedLines` URL-decoded wikilink targets too, so a bare `%` threw and the commit step failed | `a bot run is recorded in git > a wikilink with a bare percent is not decoded and stays in the index` |
