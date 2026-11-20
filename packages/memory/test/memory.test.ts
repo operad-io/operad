@@ -4,6 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  MEMORY_INDEX_MAX,
   MEMORY_PLUGIN,
   MEMORY_SETTINGS,
   MEMORY_SKILL_DIR,
@@ -14,6 +15,7 @@ import {
   expandMemoryPath,
   memoryEnabled,
   memoryGit,
+  memoryNotes,
   wikiDirectory,
   wikiDirectoryOfHome,
 } from "../src/index.ts";
@@ -161,5 +163,29 @@ describe("the plugin declaration", () => {
     expect(plugin.kind).toBe("domain");
     expect(plugin.steps?.map((step) => step.name)).toEqual(["commit"]);
     expect(plugin.settings).toEqual(MEMORY_SETTINGS);
+  });
+});
+
+describe("the files a bot chat carries as notes", () => {
+  test("the index is cut at 8,000 characters and the instructions are whole", async () => {
+    const h = await home();
+    const memory = join(h, "bot", "default", "memory");
+    mkdirSync(memory, { recursive: true });
+    writeFileSync(join(memory, "index.md"), "index\n");
+    writeFileSync(join(memory, "instructions.md"), "instructions\n");
+    const notes = memoryNotes(memory);
+    expect(MEMORY_INDEX_MAX).toBe(8000);
+    expect(notes).toEqual([
+      { name: "memory/index.md", path: join(memory, "index.md"), maxChars: MEMORY_INDEX_MAX },
+      { name: "memory/instructions.md", path: join(memory, "instructions.md") },
+    ]);
+  });
+
+  test("a file that is not there yet is left out", async () => {
+    const h = await home();
+    const memory = join(h, "bot", "default", "memory");
+    mkdirSync(memory, { recursive: true });
+    writeFileSync(join(memory, "index.md"), "index\n");
+    expect(memoryNotes(memory).map((note) => note.name)).toEqual(["memory/index.md"]);
   });
 });

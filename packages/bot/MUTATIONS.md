@@ -250,3 +250,9 @@ changes for bots, in the order they were recorded. The root
 | T-0585-M11 | packages/bot/src/index.ts | `runSettings` named the commit step even when `memory/commit` was not loaded | `the memory skill and the commit step > the bot's settings name the commit step only when the memory plugin is loaded` |
 | T-0585-M12 | packages/bot/src/bot.ts | `accessFor` ignored the bot's `writeWiki` setting and used the default bot rule for every bot | `who may write the wiki > a bot's writeWiki setting decides for that bot` |
 | T-0585-M14 | packages/bot/src/bot.ts | `ensureBotMemory` no longer made the memory layout when the plugin was enabled | `the memory skill and the commit step > a bot's memory gets the three-layer layout when the plugin is enabled` |
+
+## T-0586 — the bot's notes on a chat message
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0586-M9 | packages/bot/src/index.ts | `bot/settings` stopped returning the memory notes | `the memory notes a bot chat carries > its index and instructions go on the message, never into the chat's own text` |

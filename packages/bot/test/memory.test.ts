@@ -5,7 +5,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { match } from "@operad-io/access-match";
-import { MEMORY_SKILL_DIR, createMemoryPlugin } from "@operad-io/memory";
+import { MEMORY_INDEX_MAX, MEMORY_SKILL_DIR, createMemoryPlugin } from "@operad-io/memory";
 import { readBots, resolveBot } from "../src/index.ts";
 import { cleanupRoots, rig, writePlugins } from "./support.ts";
 
@@ -135,5 +135,70 @@ describe("the memory skill and the commit step", () => {
       params: null,
     });
     expect((plainSettings.data as Record<string, unknown>)["after"]).toBeUndefined();
+  });
+});
+
+describe("the memory notes a bot chat carries", () => {
+  test("its index and instructions go on the message, never into the chat's own text", async () => {
+    const r = await rig({ default: {} }, ["pi"], undefined, [createMemoryPlugin()]);
+    writePlugins(r.home, { memory: {}, bot: { settings: { bots: { default: {} } } } });
+    const chat = await r.open("default");
+    const memory = join(r.home, "bot", "default", "memory");
+    writeFileSync(join(memory, "index.md"), "INDEX FOR THE FIRST REPLY\n");
+    writeFileSync(join(memory, "instructions.md"), "THE PERSON'S RULES\n");
+    await r.say(chat, "hi");
+    await r.reply(chat);
+
+    const prompt = String(r.calls[0]?.params.prompt);
+    expect(prompt).toContain("[memory/index.md]\nINDEX FOR THE FIRST REPLY");
+    expect(prompt).toContain("[memory/instructions.md]\nTHE PERSON'S RULES");
+    // The message the person sent stays as it was; the notes are not in it.
+    expect(JSON.stringify(r.store.facts())).not.toContain("INDEX FOR THE FIRST REPLY");
+  });
+
+  test("a change made elsewhere is sent whole on the next reply, once", async () => {
+    const r = await rig({ default: {} }, ["pi"], undefined, [createMemoryPlugin()]);
+    writePlugins(r.home, { memory: {}, bot: { settings: { bots: { default: {} } } } });
+    const chat = await r.open("default");
+    const memory = join(r.home, "bot", "default", "memory");
+    writeFileSync(join(memory, "index.md"), "INDEX ONE\n");
+    await r.say(chat, "first");
+    await r.reply(chat);
+
+    writeFileSync(join(memory, "index.md"), "INDEX TWO\n");
+    await r.say(chat, "second");
+    await r.reply(chat);
+    const second = String(r.calls[1]?.params.prompt);
+    expect(second).toContain("[memory/index.md]\nINDEX TWO");
+    expect(second).not.toContain("INDEX ONE");
+
+    await r.say(chat, "third");
+    await r.reply(chat);
+    expect(r.calls[2]?.params.prompt).toBe("third");
+  });
+
+  test("every agent's bot chat carries the notes", async () => {
+    for (const agent of ["claude", "pi", "codex", "radian"]) {
+      const r = await rig({ default: {} }, ["claude", "pi", "codex", "radian"], undefined, [createMemoryPlugin()]);
+      writePlugins(r.home, { memory: {}, bot: { settings: { bots: { default: {} } } } });
+      const chat = await r.open("default", { agent });
+      const memory = join(r.home, "bot", "default", "memory");
+      writeFileSync(join(memory, "index.md"), `INDEX FOR ${agent}\n`);
+      await r.say(chat, "hi");
+      await r.reply(chat);
+      expect(String(r.calls[0]?.params.prompt)).toContain(`[memory/index.md]\nINDEX FOR ${agent}`);
+    }
+  });
+
+  test("a long index is cut at the memory plugin's limit", async () => {
+    const r = await rig({ default: {} }, ["pi"], undefined, [createMemoryPlugin()]);
+    writePlugins(r.home, { memory: {}, bot: { settings: { bots: { default: {} } } } });
+    const chat = await r.open("default");
+    const memory = join(r.home, "bot", "default", "memory");
+    writeFileSync(join(memory, "index.md"), `INDEX${"x".repeat(MEMORY_INDEX_MAX + 100)}`);
+    await r.say(chat, "hi");
+    await r.reply(chat);
+    const prompt = String(r.calls[0]?.params.prompt);
+    expect(prompt).toContain("[memory/index.md was cut at 8000 characters.]");
   });
 });

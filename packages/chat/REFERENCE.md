@@ -197,7 +197,14 @@ session reference and looks again for messages that arrived meanwhile: if there
 are some its result is `more` and the flow runs it again. Each unanswered message
 is its own block in the prompt, separated by a blank line and `---`, so two
 messages never read as one and a message that starts with `/` is text to the
-agent rather than one of its commands. A failed reply leaves its messages
+agent rather than one of its commands. A refresh step may also name `notes`:
+files whose whole text rides on the message as `[name]` ... `[End of name]`.
+The first message of a session and the first after a compaction carry them all;
+later replies carry only a file whose hash differs from what this session last
+saw, and a change the reply itself wrote is not sent back. The hashes are the
+chat object's `noteHashes`, so a restart keeps them, and a note with `maxChars`
+is cut with a line saying it was cut. A chat whose refresh step names no notes
+gets none (ADR 0026 D18). A failed reply leaves its messages
 unanswered for the next reply, as ADR 0026 D14 says; an empty failure twice in a
 row for the same oldest message records that message as taken, so it is not sent
 a third time. The flow's `maxVisits`

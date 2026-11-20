@@ -39,6 +39,7 @@ import {
   chatData,
   chosenEffort,
   type ChatData,
+  type ChatNoteHashes,
   type CostQuality,
   type Entry,
   chatRef,
@@ -60,6 +61,7 @@ import {
   type Message,
   type MessageData,
 } from "./model.ts";
+import { noteBlock, noteFilesOf, noteHashesAfter, notesToAttach, readNoteFiles, type NoteFile } from "./notes.ts";
 import { queueTestHooks, syncQueuedLocked, takeLocked, withQueueLock } from "./queue.ts";
 import { agentLogPath, foldLogTail } from "./tail.ts";
 
@@ -73,12 +75,14 @@ async function syncChat(
   id: string,
   session: string | undefined,
   contextCwd?: string | undefined,
+  noteHashes?: ChatNoteHashes | undefined,
 ): Promise<void> {
   const fresh = await ctx.store.get(CHAT_TYPE, id);
   if (fresh === undefined) return;
   const next: Record<string, unknown> = { ...fresh.data };
   if (session !== undefined) next.session = session;
   if (contextCwd !== undefined) next.contextCwd = contextCwd;
+  if (noteHashes !== undefined) next.noteHashes = noteHashes;
   let micros: number | undefined;
   let quality: CostQuality | undefined;
   let costMissing = false;
@@ -612,6 +616,8 @@ interface Live {
   readonly useOwnSettings: boolean;
   /** A repository chat's starting text; a bot chat gives none. */
   readonly context?: SessionContext | undefined;
+  /** Files put on the message as notes; a bot gives its memory index and instructions. */
+  readonly notes?: readonly NoteFile[] | undefined;
   /** A plugin step to call after the round ends, when the chat's refresh step names one. */
   readonly after?: string | undefined;
 }
@@ -626,6 +632,17 @@ function contextFor(chat: ChatData, live: Live, session: string | undefined): st
   if (live.context === undefined) return undefined;
   if (session === undefined) return live.context.text;
   if (chat.contextCwd !== undefined && chat.contextCwd !== live.cwd) return live.context.where;
+  return undefined;
+}
+
+/** The context the last reply of this session ended with, when it reported one. */
+function lastContextUsed(messages: readonly Message[], session: string | undefined): number | undefined {
+  if (session === undefined) return undefined;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message?.role !== "assistant" || message.context === undefined) continue;
+    return message.session === session ? message.context.used : undefined;
+  }
   return undefined;
 }
 
@@ -665,6 +682,7 @@ async function liveSettings(
     return failed("settings", "the chat's settings came back in a shape the chat cannot use");
   }
   const context = sessionContextOf(data.context);
+  const notes = noteFilesOf(data.notes);
   const after = typeof data.after === "string" && data.after.length > 0 ? data.after : undefined;
   return {
     cwd: data.cwd,
@@ -673,6 +691,7 @@ async function liveSettings(
     mcpServers: isRecord(data.mcpServers) ? (data.mcpServers as Record<string, JsonValue>) : {},
     useOwnSettings: data.useOwnSettings === true,
     ...(context === undefined ? {} : { context }),
+    ...(notes === undefined ? {} : { notes }),
     ...(after === undefined ? {} : { after }),
   };
 }
@@ -1219,19 +1238,34 @@ async function afterStepOfRefresh(ctx: StepContext, chat: ChatData, object: RunO
   }
 }
 
+/** What one round leaves for the work after it: the after step, and the note hashes it records. */
+interface ReplyState {
+  after?: string | undefined;
+  keepNotes?: (() => Promise<void>) | undefined;
+}
+
 /** Runs one round of an answer; see the file's comment. */
 export async function runReply(ctx: StepContext, params: unknown): Promise<PluginStepResult> {
-  let after: string | undefined;
+  const state: ReplyState = {};
   let result: string | undefined;
   try {
-    const outcome = await replyOnce(ctx, params, (live) => {
-      after = live.after;
-    });
+    const outcome = await replyOnce(ctx, params, state);
     result = outcome.result;
     return outcome;
   } finally {
     const object = ctx.object;
-    if (object !== undefined) await runAfterStep(ctx, after, object, result);
+    if (object !== undefined) {
+      await runAfterStep(ctx, state.after, object, result);
+      if (state.keepNotes !== undefined) {
+        try {
+          await state.keepNotes();
+        } catch (error) {
+          await ctx.logger.write(
+            `the note hashes could not be recorded: ${error instanceof Error ? error.message : String(error)}\n`,
+          );
+        }
+      }
+    }
   }
 }
 
@@ -1239,7 +1273,7 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
 async function replyOnce(
   ctx: StepContext,
   params: unknown,
-  onLive: (live: Live) => void,
+  state: ReplyState,
 ): Promise<PluginStepResult> {
   const object = ctx.object;
   if (object === undefined || object.type !== CHAT_TYPE) {
@@ -1291,7 +1325,15 @@ async function replyOnce(
     return failedReply(ctx, object.id, why.reason, why.message, oldest);
   }
   const live = settled;
-  onLive(live);
+  state.after = live.after;
+  // The notes this message may carry: a bot's memory index and instructions. A
+  // file that cannot be read is logged and left out; it never fails the answer.
+  const noteContents =
+    live.notes === undefined
+      ? []
+      : await readNoteFiles(live.notes, live.cwd, (problem) => {
+          void ctx.logger.write(`${problem}\n`);
+        });
   // A level reaches the harness only through an agent that declares it can
   // carry it; an agent that cannot refuses the reply by name, never ignores it.
   const level = chat.accessLevel ?? "ask";
@@ -1345,6 +1387,9 @@ async function replyOnce(
   const resumed = isRecord(params) ? params : {};
   const session =
     typeof resumed.resumeSession === "string" ? resumed.resumeSession : currentSession(chat, messages);
+  // The context the last reply in this session ended with; a smaller one after
+  // this reply means the agent compacted the session.
+  const previousUsed = lastContextUsed(messages, session);
   const readOnly = leveled.readOnly === true;
   // The worktree question belongs to a repository chat; a bot chat at `plan`
   // is read-only without one.
@@ -1482,16 +1527,22 @@ async function replyOnce(
   }
 
   const context = contextFor(chat, live, session);
-  const prompt = promptFor(
+  const carried =
+    live.notes === undefined ? [] : notesToAttach(noteContents, chat.noteHashes, session);
+  const noteText = carried.length === 0 ? undefined : noteBlock(carried);
+  const messagePrompt = promptFor(
     pending.map((message) => ({ ...message, text: skillMessage(message.text, skills, loadsSkills) })),
     new Set(images.map((image) => image.path)),
   );
+  const prompt = [context, noteText, messagePrompt]
+    .filter((part): part is string => part !== undefined && part.length > 0)
+    .join("\n\n");
   let outcome: PluginStepResult;
   try {
     outcome = await runStep(
       use,
       {
-        prompt: context === undefined ? prompt : `${context}\n\n${prompt}`,
+        prompt,
         ...(images.length === 0 ? {} : { images }),
         cwd: live.cwd,
         ...(chat.model === undefined && effort === undefined
@@ -1592,6 +1643,12 @@ async function replyOnce(
   const usage = usageOf(data.usage);
   const timings = timingsOf(data.timings);
   const replyContext = replyContextOf(data.context);
+  // A session is compacted when the agent says so, or when this reply ended with
+  // less context than the one before it in the same session. The next message
+  // then carries every note whole again.
+  const compacted =
+    data.compacted === true ||
+    (previousUsed !== undefined && replyContext !== undefined && replyContext.used < previousUsed);
   const windows = ctx.harnessModels?.(chat.harness)?.windows;
   const window =
     replyContext?.window ??
@@ -1622,6 +1679,19 @@ async function replyOnce(
 
   // The chat's own reference follows; read again, so a change made meanwhile stays.
   await syncChat(ctx, object.id, sessionId, live.context === undefined ? undefined : live.cwd);
+  if (live.notes !== undefined) {
+    const keptSession = sessionId ?? session;
+    state.keepNotes = async () => {
+      // Read after the after step, so a change that step wrote (the memory
+      // commit removing an untrusted index line) is what the session now knows.
+      const fresh = compacted
+        ? []
+        : await readNoteFiles(live.notes ?? [], live.cwd, (problem) => {
+            void ctx.logger.write(`${problem}\n`);
+          });
+      await syncChat(ctx, object.id, undefined, undefined, noteHashesAfter(fresh, keptSession, compacted));
+    };
+  }
 
   const left = unanswered(allMessages(ctx.store, object.id), chatFacts(ctx.store, object.id));
   const answered = pending.length + (midRun?.handed.length ?? 0);

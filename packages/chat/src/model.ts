@@ -140,6 +140,13 @@ export function scheduledChatOf(value: unknown): ScheduledChat | undefined {
   return { bot: value.bot, entry: value.entry };
 }
 
+/** The hashes of the notes a chat's session last saw, keyed by the note's name. */
+export interface ChatNoteHashes {
+  /** The harness session the hashes belong to; absent for a session with no reference yet. */
+  readonly session?: string | undefined;
+  readonly files: Readonly<Record<string, string>>;
+}
+
 /** What a chat stores. The creating plugin gives every field but `session`. */
 export interface ChatData {
   readonly [key: string]: unknown;
@@ -163,6 +170,8 @@ export interface ChatData {
   readonly session?: string | null | undefined;
   /** The working directory the session's starting text was built for; never shown. */
   readonly contextCwd?: string | undefined;
+  /** The hashes of the notes this session last saw; never shown. */
+  readonly noteHashes?: ChatNoteHashes | undefined;
   /** The channels (`telegram:<chat>`) whose messages land here. */
   readonly channels: readonly string[];
   /**
@@ -737,10 +746,23 @@ function fallbackAccessLevel(data: Readonly<Record<string, unknown>>): AccessLev
   return isRecord(data.access) && data.access.readOnly === true ? "plan" : "ask";
 }
 
+function noteHashesOf(value: unknown): ChatNoteHashes | undefined {
+  if (!isRecord(value) || !isRecord(value.files)) return undefined;
+  const files: Record<string, string> = {};
+  for (const [name, hash] of Object.entries(value.files)) {
+    if (name.length > 0 && typeof hash === "string" && hash.length > 0) files[name] = hash;
+  }
+  return {
+    ...(typeof value.session === "string" && value.session.length > 0 ? { session: value.session } : {}),
+    files,
+  };
+}
+
 /** The chat fields of a stored object, with the lists and the access level defaulted. */
 export function chatData(data: Readonly<Record<string, unknown>>): ChatData {
   const tokens = usageTokensOf(data.tokens);
   const scheduled = scheduledChatOf(data.scheduled);
+  const noteHashes = noteHashesOf(data.noteHashes);
   const accessDefault = isAccessLevel(data.accessDefault)
     ? data.accessDefault
     : fallbackAccessLevel(data);
@@ -759,6 +781,7 @@ export function chatData(data: Readonly<Record<string, unknown>>): ChatData {
     ...(typeof data.refresh === "string" && data.refresh.length > 0 ? { refresh: data.refresh } : {}),
     ...(typeof data.accessAction === "string" && data.accessAction.length > 0 ? { accessAction: data.accessAction } : {}),
     ...(typeof data.contextCwd === "string" && data.contextCwd.length > 0 ? { contextCwd: data.contextCwd } : {}),
+    ...(noteHashes === undefined ? {} : { noteHashes }),
     ...(typeof data.model === "string" && data.model.length > 0 ? { model: data.model } : {}),
     ...(typeof data.effort === "string" && data.effort.length > 0 ? { effort: data.effort } : {}),
     ...(typeof data.effortDefault === "string" && data.effortDefault.length > 0 ? { effortDefault: data.effortDefault } : {}),
