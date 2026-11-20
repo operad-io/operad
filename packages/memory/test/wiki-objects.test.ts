@@ -7,6 +7,7 @@ import {
   PluginRegistry,
   ViewError,
   createViews,
+  type ObjectTypeDefinition,
   type Views,
 } from "@operad-io/engine";
 import {
@@ -149,6 +150,27 @@ describe("the wiki objects", () => {
       name: "ViewError",
       kind: "not-found",
     });
+  });
+
+  test("a bare id the wiki does not hold is not claimed by the wiki types", async () => {
+    const root = mkdtempSync(join(tmpdir(), "memory-wiki-claim-"));
+    roots.push(root);
+    const home = join(root, "home");
+    file(join(home, "wiki", "topics", "tea.md"), "# Tea\n");
+    const store = new MemoryPluginStore({ root: join(root, "plugins") });
+    const plugin = createMemoryPlugin();
+    const types: readonly ObjectTypeDefinition[] = plugin.objects ?? [];
+    for (const type of types) await type.prepare?.({ store, home, settings: {} });
+    const claim = async (type: string, id: string): Promise<string | undefined> => {
+      const definition = types.find((entry) => entry.name === type);
+      return definition?.resolve?.({ cwd: root, store }, type, id);
+    };
+    // A task id is a valid relative path, but no wiki folder or note has it.
+    // Claiming it would make every bare task id ambiguous next to the task type.
+    expect(await claim(WIKI_FOLDER_TYPE, "T-0597-wiki-link-table")).toBeUndefined();
+    expect(await claim(WIKI_NOTE_TYPE, "T-0597-wiki-link-table.md")).toBeUndefined();
+    expect(await claim(WIKI_FOLDER_TYPE, "topics")).toBe("topics");
+    expect(await claim(WIKI_NOTE_TYPE, "topics/tea.md")).toBe("topics/tea.md");
   });
 
   test("a path outside the wiki is refused", async () => {

@@ -37,6 +37,20 @@ function prepareWiki(
   return syncWikiObjects(store, home, settings);
 }
 
+/**
+ * A wiki path is claimed only when the wiki holds it, so a bare id that names
+ * another plugin's object (a task such as `T-0597-...`) is not made ambiguous
+ * by a folder or note that does not exist.
+ */
+async function claimIfStored(
+  store: ObjectStore,
+  type: string,
+  path: string | undefined,
+): Promise<string | undefined> {
+  if (path === undefined) return undefined;
+  return (await store.get(type, path)) === undefined ? undefined : path;
+}
+
 /** Builds the memory plugin. */
 export function createMemoryPlugin() {
   return definePlugin({
@@ -49,14 +63,14 @@ export function createMemoryPlugin() {
       {
         name: WIKI_FOLDER_TYPE,
         filters: WIKI_FILTERS,
-        resolve: (_ctx, _type, id) => resolveWikiFolderId(id),
+        resolve: (ctx, type, id) => claimIfStored(ctx.store, type, resolveWikiFolderId(id)),
         // This scan writes the notes too, so only one type declares it.
         prepare: ({ store, home, settings }) => prepareWiki(store, home, settings),
       },
       {
         name: WIKI_NOTE_TYPE,
         filters: WIKI_FILTERS,
-        resolve: (_ctx, _type, id) => resolveWikiNoteId(id),
+        resolve: (ctx, type, id) => claimIfStored(ctx.store, type, resolveWikiNoteId(id)),
       },
     ],
     steps: [{ name: "commit", results: ["done", "failed"], run: runMemoryCommit }],

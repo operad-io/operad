@@ -146,3 +146,9 @@ the row fields.
 | T-0601-M8 | packages/memory/src/wiki.ts | a note row ignored its `untrusted` flag, so the mark was not shown | `the wiki objects > a note shows its content, its backlinks and its untrusted mark` |
 | T-0601-M9 | packages/memory/src/index.ts | the memory plugin declared an action on a note | `the wiki objects > a note shows its content, its backlinks and its untrusted mark` |
 | T-0601-M10 | packages/memory/src/wiki.ts | `syncWikiObjects` scanned the whole home instead of the wiki, so the root lost its notes | `the wiki objects > only the wiki is listed, not a bot's memory` |
+
+## T-0601 follow-up (lead) — the wiki types claim only what the wiki holds
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0601-M11 | packages/memory/src/index.ts | `claimIfStored` returned the path without checking the store, so the wiki folder type claimed every bare id that is a valid path (a task id became ambiguous) | `the wiki objects > a bare id the wiki does not hold is not claimed by the wiki types` |
