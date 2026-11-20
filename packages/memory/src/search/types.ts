@@ -27,8 +27,16 @@ export interface NoteLink {
   readonly kind: NoteLinkKind;
 }
 
+/** One link a note writes, with the line and excerpt a backlink shows. */
+export interface IndexedNoteLink extends NoteLink {
+  /** The 1-based line of the link in the source note. */
+  readonly line?: number | undefined;
+  /** The line around the link, shortened for reading. */
+  readonly excerpt?: string | undefined;
+}
+
 /** One stored link, with the document it points at when the index resolved it. */
-export interface StoredNoteLink extends NoteLink {
+export interface StoredNoteLink extends IndexedNoteLink {
   /** The note that writes the link. */
   readonly docId: string;
   /** The link's place in the source note, counting from zero. */
@@ -112,7 +120,7 @@ export interface IndexedDocument {
   readonly mtimeNs?: string | undefined;
   readonly size?: number | undefined;
   /** The links its text writes, parsed but not yet resolved. */
-  readonly links?: readonly NoteLink[] | undefined;
+  readonly links?: readonly IndexedNoteLink[] | undefined;
 }
 
 /** What a backend needs to know about a document without reading it. */
@@ -161,6 +169,8 @@ export interface SearchBackend {
   about(scope: SearchScope, owner: string, directory: string): IndexedDocument | undefined;
   /** Every link the index holds, resolved or not, in document and ordinal order. */
   allLinks(): readonly StoredNoteLink[];
+  /** The links that point at one document, in document and ordinal order. */
+  linksTo(targetId: string): readonly StoredNoteLink[];
   /** Sets the resolved target of the links named; no target leaves a link unresolved. */
   setLinkTargets(updates: readonly NoteLinkTarget[]): void;
   close(): void;

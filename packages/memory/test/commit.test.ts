@@ -277,6 +277,13 @@ describe("one link parser for the index and the link table", () => {
       expect(withoutUntrustedLines(sample.line, ["topics/from-web.md"])).toBe(sample.line);
     }
 
+    // A Markdown link names a path from the index; only a bare wikilink name
+    // reaches into another folder.
+    expect(withoutUntrustedLines("- [Web](from-web.md): a page said", ["topics/from-web.md"])).toBe(
+      "- [Web](from-web.md): a page said",
+    );
+    expect(withoutUntrustedLines("- [[from-web]]: a page said", ["topics/from-web.md"])).toBe("");
+
     // The other caller is the link table: the same lines in a note give the
     // same targets.
     const r = await rig();

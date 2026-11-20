@@ -80,6 +80,29 @@ describe("the links a note writes", () => {
     ]);
   });
 
+  test("a markdown target may have a space or be enclosed in angle brackets", () => {
+    const links = parseNoteLinks(
+      "[tea](notes/my tea.md) and [other](<notes/other page.md#Top>)",
+    );
+    expect(links).toEqual([
+      { target: "notes/my tea.md", kind: "markdown" },
+      { target: "notes/other page.md", heading: "Top", kind: "markdown" },
+    ]);
+  });
+
+  test("a wikilink may name a heading in its own note", () => {
+    expect(parseNoteLinks("[[#Brewing]]")).toEqual([
+      { target: "", heading: "Brewing", kind: "wikilink" },
+    ]);
+    expect(
+      resolveNoteLink(
+        "notes/tea.md",
+        { target: "", heading: "Brewing", kind: "wikilink" },
+        ["notes/tea.md"],
+      ),
+    ).toBe("notes/tea.md");
+  });
+
   test("a bare percent is kept as written instead of throwing", () => {
     expect(parseNoteLinks("[odd](100%.md)")).toEqual([{ target: "100%.md", kind: "markdown" }]);
   });
@@ -97,6 +120,17 @@ describe("the links a note writes", () => {
       "~~~~",
     ].join("\n");
     expect(parseNoteLinks(text)).toEqual([{ target: "real", kind: "wikilink" }]);
+  });
+
+  test("an indented code block is not links, but an indented paragraph line is", () => {
+    const text = [
+      "    [[indented]]",
+      "\t[[tabbed]]",
+      "",
+      "prose",
+      "    [[continuation]]",
+    ].join("\n");
+    expect(parseNoteLinks(text)).toEqual([{ target: "continuation", kind: "wikilink" }]);
   });
 
   test("external links and image embeds are not note links", () => {
@@ -134,6 +168,18 @@ describe("how a link resolves", () => {
       resolveNoteLink("notes/sub/a.md", { target: "../tea.md", kind: "markdown" }, notes),
     ).toBe("notes/tea.md");
     expect(resolveNoteLink("notes/sub/a.md", wikilink("tea"), notes)).toBe("notes/sub/tea.md");
+  });
+
+  test("a target with a path is not reduced to a file name", () => {
+    const notes = ["tea.md", "other/tea.md", "notes/a.md"];
+    expect(resolveNoteLink("notes/a.md", wikilink("other/tea"), notes)).toBe("other/tea.md");
+    expect(resolveNoteLink("notes/a.md", wikilink("elsewhere/tea"), notes)).toBeUndefined();
+    expect(
+      resolveNoteLink("notes/a.md", { target: "elsewhere/tea.md", kind: "markdown" }, notes),
+    ).toBeUndefined();
+    expect(
+      resolveNoteLink("notes/a.md", { target: "tea.md", kind: "markdown" }, ["other/tea.md"]),
+    ).toBeUndefined();
   });
 
   test("a target nobody wrote resolves to nothing", () => {
@@ -216,6 +262,28 @@ describe("the link table", () => {
     file(join(r.wiki, "alone.md"), "# Alone\n\nNothing points here.\n");
     await r.search.refresh();
     expect(r.search.read({ id: "wiki:alone.md" }).backlinks).toEqual([]);
+    r.search.close();
+  });
+
+  test("a read leaves out a note's link to itself and keeps a link's place after code", async () => {
+    const r = rig();
+    file(
+      join(r.wiki, "self.md"),
+      ["# Self", "", "```", "[[self]]", "```", "", "[[self]] and [[#Self]]", ""].join("\n"),
+    );
+    file(
+      join(r.wiki, "code.md"),
+      ["# Code", "", "```md", "[[target]]", "```", "", "then [[target]]", ""].join("\n"),
+    );
+    file(join(r.wiki, "target.md"), "# Target\n");
+    await r.search.refresh();
+
+    expect(r.search.read({ id: "wiki:self.md" }).backlinks).toEqual([]);
+    expect(r.search.linksFrom("wiki:self.md")).toHaveLength(2);
+    const back = r.search.read({ id: "wiki:target.md" }).backlinks;
+    expect(back).toHaveLength(1);
+    expect(back[0]).toMatchObject({ path: "code.md", line: 7 });
+    expect(back[0]?.excerpt).toContain("then [[target]]");
     r.search.close();
   });
 

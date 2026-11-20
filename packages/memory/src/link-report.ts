@@ -7,7 +7,7 @@
  */
 
 import { parseNoteLinksWithPositions, withoutCode } from "./links.ts";
-import type { MemorySearch } from "./search/service.ts";
+import { untrustedFields, type MemorySearch } from "./search/service.ts";
 import type { DocumentKey, IndexedDocument, LinkQuery } from "./search/types.ts";
 
 /** How many unlinked mentions one report suggests at most. */
@@ -83,6 +83,23 @@ function lineAt(text: string, at: number): number {
   return line;
 }
 
+/** Whether a character belongs to a word, so a title does not match inside one. */
+function wordCharacter(character: string | undefined): boolean {
+  return character !== undefined && /[\p{L}\p{N}_]/u.test(character);
+}
+
+/** Whether a body names a title as a word rather than as part of a longer word. */
+function mentions(body: string, title: string): boolean {
+  let at = body.indexOf(title);
+  while (at >= 0) {
+    const before = at === 0 ? undefined : body[at - 1];
+    const after = at + title.length >= body.length ? undefined : body[at + title.length];
+    if (!wordCharacter(before) && !wordCharacter(after)) return true;
+    at = body.indexOf(title, at + 1);
+  }
+  return false;
+}
+
 /**
  * The link lists for one scope, or one owner's memory. The index must have
  * been refreshed; links stored before a refresh still name their old targets.
@@ -97,7 +114,21 @@ export function linkReport(
     .filter((key) => key.file !== undefined && key.path !== undefined && inQuery(key, query))
     .sort((left, right) => (left.path ?? "").localeCompare(right.path ?? ""));
   const byId = new Map(notes.map((note) => [note.id, note]));
-  const links = search.backend.allLinks().filter((link) => byId.has(link.docId));
+  const documents = new Map<string, IndexedDocument>();
+  for (const note of notes) {
+    const document = search.backend.get(note.id);
+    if (document !== undefined) documents.set(note.id, document);
+  }
+  // An untrusted note is never pointed at, as a source or as a target.
+  const trusted = new Set(
+    notes
+      .filter((note) => {
+        const document = documents.get(note.id);
+        return document !== undefined && !untrustedFields(document.fields);
+      })
+      .map((note) => note.id),
+  );
+  const links = search.backend.allLinks().filter((link) => trusted.has(link.docId));
 
   const linked = new Set<string>();
   const linkedBySource = new Map<string, Set<string>>();
@@ -118,7 +149,7 @@ export function linkReport(
 
     let sourceLines = lines.get(link.docId);
     if (sourceLines === undefined) {
-      const document = search.backend.get(link.docId);
+      const document = documents.get(link.docId);
       sourceLines =
         document === undefined
           ? []
@@ -146,7 +177,13 @@ export function linkReport(
   );
 
   const orphans = notes
-    .filter((note) => note.path !== undefined && !structural(note.path) && !linked.has(note.id))
+    .filter(
+      (note) =>
+        note.path !== undefined &&
+        trusted.has(note.id) &&
+        !structural(note.path) &&
+        !linked.has(note.id),
+    )
     .map((note) => note.path ?? note.id);
 
   const wanted = [...sourcesByTarget.entries()]
@@ -157,7 +194,8 @@ export function linkReport(
   const unlinked: UnlinkedMention[] = [];
   if (unlinkedLimit > 0) {
     const targets = notes
-      .map((note) => ({ note, document: search.backend.get(note.id) }))
+      .filter((note) => trusted.has(note.id))
+      .map((note) => ({ note, document: documents.get(note.id) }))
       .filter(
         (entry): entry is { note: DocumentKey; document: IndexedDocument } =>
           entry.document !== undefined,
@@ -170,7 +208,7 @@ export function linkReport(
         if (target.note.id === source.note.id || target.note.path === undefined) continue;
         if (already.has(target.note.id)) continue;
         const title = target.document.title;
-        if (title.length === 0 || !body.includes(title)) continue;
+        if (title.length === 0 || !mentions(body, title)) continue;
         unlinked.push({
           path: source.note.path,
           title,

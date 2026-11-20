@@ -73,6 +73,8 @@ interface LinkRow {
   readonly heading: string | null;
   readonly kind: string;
   readonly target_id: string | null;
+  readonly line: number | null;
+  readonly excerpt: string | null;
 }
 
 /** The options a backend opens with. */
@@ -85,7 +87,7 @@ export interface SqliteSearchBackendOptions {
  * The version of the link table. A table from another version, and an index
  * built before there was one, is filled from the notes again.
  */
-const LINK_TABLE_VERSION = "1";
+const LINK_TABLE_VERSION = "2";
 
 function scopeOf(value: string): SearchScope {
   if (value === "wiki" || value === "chats") return value;
@@ -125,6 +127,19 @@ function documentOf(row: DocumentRow): IndexedDocument {
     ...(row.mtime_ms === null ? {} : { mtimeMs: row.mtime_ms }),
     ...(row.mtime_ns === null ? {} : { mtimeNs: row.mtime_ns }),
     ...(row.size === null ? {} : { size: row.size }),
+  };
+}
+
+function linkOf(row: LinkRow): StoredNoteLink {
+  return {
+    docId: row.doc_id,
+    ordinal: row.ordinal,
+    target: row.target,
+    ...(row.heading === null ? {} : { heading: row.heading }),
+    kind: row.kind === "wikilink" ? "wikilink" : "markdown",
+    ...(row.target_id === null ? {} : { targetId: row.target_id }),
+    ...(row.line === null ? {} : { line: row.line }),
+    ...(row.excerpt === null ? {} : { excerpt: row.excerpt }),
   };
 }
 
@@ -198,7 +213,8 @@ export class SqliteSearchBackend implements SearchBackend {
     this.db.run(
       "CREATE TABLE IF NOT EXISTS search_links (" +
         "doc_id TEXT NOT NULL, ordinal INTEGER NOT NULL, target TEXT NOT NULL, heading TEXT, " +
-        "kind TEXT NOT NULL, target_id TEXT, PRIMARY KEY (doc_id, ordinal))",
+        "kind TEXT NOT NULL, target_id TEXT, line INTEGER, excerpt TEXT, " +
+        "PRIMARY KEY (doc_id, ordinal))",
     );
     this.db.run("CREATE INDEX IF NOT EXISTS search_links_target ON search_links (target_id)");
     this.db.run(
@@ -263,11 +279,19 @@ export class SqliteSearchBackend implements SearchBackend {
         chunk.run(piece.text, document.id, piece.lineStart, piece.lineEnd);
       }
       const link = this.db.query(
-        "INSERT INTO search_links (doc_id, ordinal, target, heading, kind, target_id) " +
-          "VALUES (?, ?, ?, ?, ?, NULL)",
+        "INSERT INTO search_links (doc_id, ordinal, target, heading, kind, target_id, line, excerpt) " +
+          "VALUES (?, ?, ?, ?, ?, NULL, ?, ?)",
       );
       (document.links ?? []).forEach((entry, ordinal) => {
-        link.run(document.id, ordinal, entry.target, entry.heading ?? null, entry.kind);
+        link.run(
+          document.id,
+          ordinal,
+          entry.target,
+          entry.heading ?? null,
+          entry.kind,
+          entry.line ?? null,
+          entry.excerpt ?? null,
+        );
       });
     });
   }
@@ -321,18 +345,21 @@ export class SqliteSearchBackend implements SearchBackend {
   allLinks(): readonly StoredNoteLink[] {
     return this.db
       .query<LinkRow, []>(
-        "SELECT doc_id, ordinal, target, heading, kind, target_id FROM search_links " +
+        "SELECT doc_id, ordinal, target, heading, kind, target_id, line, excerpt FROM search_links " +
           "ORDER BY doc_id, ordinal",
       )
       .all()
-      .map((row) => ({
-        docId: row.doc_id,
-        ordinal: row.ordinal,
-        target: row.target,
-        ...(row.heading === null ? {} : { heading: row.heading }),
-        kind: row.kind === "wikilink" ? "wikilink" : "markdown",
-        ...(row.target_id === null ? {} : { targetId: row.target_id }),
-      }));
+      .map(linkOf);
+  }
+
+  linksTo(targetId: string): readonly StoredNoteLink[] {
+    return this.db
+      .query<LinkRow, [string]>(
+        "SELECT doc_id, ordinal, target, heading, kind, target_id, line, excerpt FROM search_links " +
+          "WHERE target_id = ? ORDER BY doc_id, ordinal",
+      )
+      .all(targetId)
+      .map(linkOf);
   }
 
   setLinkTargets(updates: readonly NoteLinkTarget[]): void {

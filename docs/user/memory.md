@@ -159,8 +159,9 @@ untrusted: true
 
 A note marked that way is never linked from `memory/index.md`: the plugin removes
 an index line that points at it before it commits, and the note itself stays
-where it was written. The bot is asked to keep it out of the index in the first
-place.
+where it was written. The nightly tidy also leaves such a note out of its link
+lists, so it is never suggested for linking. The bot is asked to keep it out of
+the index in the first place.
 
 operad cannot yet tell by itself that a bot run read such content: the agent's
 reads and the text a local MCP server returns are not recorded per run. Until

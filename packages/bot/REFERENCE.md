@@ -289,7 +289,8 @@ the period's chat records and, when there is link work, the wiki's and the bot
 memory's broken links with their source lines, orphans, targets three or more
 notes link to, and unlinked mentions, with guidance to fix a clear broken link,
 leave a link to an unwritten page, consider linking an orphan, and suggest but
-not force linking a mention. The source watches for the memory plugin's
+not force linking a mention. A note marked `untrusted: true` is left out of
+those lists, so the tidy is never pointed at one to link. The source watches for the memory plugin's
 `memory.tidy` fact and then reads the commit's diff summary. A non-automatic run
 leaves a result card with the cost and diff; a failure leaves a failed card. An
 automatic run returns to idle and calls `notify` when the commit changed something
