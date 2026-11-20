@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -7,6 +7,8 @@ import {
   PluginRegistry,
   ViewError,
   createViews,
+  type ListOptions,
+  type ListPage,
   type ObjectTypeDefinition,
   type Views,
 } from "@operad-io/engine";
@@ -29,6 +31,17 @@ interface Rig {
   readonly home: string;
   readonly wiki: string;
   readonly views: Views;
+  readonly store: CountingStore;
+}
+
+/** A store that counts its lists, so a read that scans the notes is visible. */
+class CountingStore extends MemoryPluginStore {
+  lists = 0;
+
+  override list(type: string, options: ListOptions = {}): ListPage {
+    this.lists += 1;
+    return super.list(type, options);
+  }
 }
 
 function file(path: string, text: string): void {
@@ -43,7 +56,7 @@ function rig(write: (wiki: string) => void): Rig {
   const wiki = join(home, "wiki");
   mkdirSync(wiki, { recursive: true });
   write(wiki);
-  const store = new MemoryPluginStore({ root: join(root, "plugins") });
+  const store = new CountingStore({ root: join(root, "plugins") });
   const registry = new PluginRegistry([createMemoryPlugin()], {
     home,
     cwd: root,
@@ -52,7 +65,7 @@ function rig(write: (wiki: string) => void): Rig {
     onLog: () => undefined,
   });
   const views = createViews({ registry, store, home, onLog: () => undefined });
-  return { home, wiki, views };
+  return { home, wiki, views, store };
 }
 
 describe("the wiki objects", () => {
@@ -92,6 +105,61 @@ describe("the wiki objects", () => {
     expect(folders.rows.map((row) => row.id)).toEqual(["notes/deep"]);
     const notes = await r.views.list(WIKI_NOTE_TYPE, { parent: "notes" });
     expect(notes.rows.map((row) => row.id)).toEqual(["notes/tea.md"]);
+  });
+
+  test("a folder whose name ends in .md is a folder, not a note", async () => {
+    const root = mkdtempSync(join(tmpdir(), "memory-wiki-md-folder-"));
+    roots.push(root);
+    const home = join(root, "home");
+    file(join(home, "wiki", "topics.md", "tea.md"), "# Tea\n");
+    const store = new MemoryPluginStore({ root: join(root, "plugins") });
+    const plugin = createMemoryPlugin();
+    const types: readonly ObjectTypeDefinition[] = plugin.objects ?? [];
+    for (const type of types) await type.prepare?.({ store, home, settings: {} });
+    const claim = async (type: string, id: string): Promise<string | undefined> => {
+      const definition = types.find((entry) => entry.name === type);
+      return definition?.resolve?.({ cwd: root, store }, type, id);
+    };
+    expect(await claim(WIKI_FOLDER_TYPE, "topics.md")).toBe("topics.md");
+    expect(await claim(WIKI_NOTE_TYPE, "topics.md")).toBeUndefined();
+  });
+
+  test("a list does not build the search index", async () => {
+    const r = rig((wiki) => {
+      file(join(wiki, "tea.md"), "# Tea\n");
+    });
+    await r.views.list(WIKI_NOTE_TYPE, { root: true });
+    expect(existsSync(join(r.home, "store", "search.sqlite"))).toBe(false);
+  });
+
+  test("a section read does not list the note objects again", async () => {
+    const r = rig((wiki) => {
+      file(join(wiki, "tea.md"), "# Tea\n\nSee [[other]].\n");
+      file(join(wiki, "other.md"), "# Other\n");
+    });
+    const object = await r.views.get(`${WIKI_NOTE_TYPE}:tea.md`);
+    const lists = r.store.lists;
+    const content = await r.views.section(object.id, WIKI_CONTENT_SECTION);
+    expect(content.data?.["links"]).toMatchObject([
+      { target: "other", kind: "wikilink", object: "note:other.md" },
+    ]);
+    expect(r.store.lists).toBe(lists);
+  });
+
+  test("a note edited after its first read is projected before its next section", async () => {
+    const r = rig((wiki) => {
+      file(join(wiki, "tea.md"), "# Tea\n\nSee [[old]].\n");
+      file(join(wiki, "old.md"), "# Old\n");
+    });
+    const object = await r.views.get(`${WIKI_NOTE_TYPE}:tea.md`);
+    file(join(r.wiki, "new.md"), "# New\n");
+    file(join(r.wiki, "tea.md"), "# Tea\n\nSee [[new]].\n");
+    const later = new Date(Date.now() + 5_000);
+    utimesSync(join(r.wiki, "tea.md"), later, later);
+    const content = await r.views.section(object.id, WIKI_CONTENT_SECTION);
+    expect(content.data?.["links"]).toMatchObject([
+      { target: "new", kind: "wikilink", object: "note:new.md" },
+    ]);
   });
 
   test("a note shows its content, its backlinks and its untrusted mark", async () => {

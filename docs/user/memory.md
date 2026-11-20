@@ -147,8 +147,8 @@ A folder's title is its directory name. A note whose frontmatter says
 mark a search result carries. A row has no state mark.
 
 A note's page has a **Note** section with its Markdown content, and a
-**Backlinks** section when other notes link to it. Backlinks come from the same
-link table as `memory read`: each one opens the linking note's object. The
+**Backlinks** section when other notes link to it. Backlinks follow the same
+link rules as `memory read`: each one opens the linking note's object. The
 Backlinks section is left out when there are none. Content longer than one page
 is paged with the section cursor, like any other long section.
 

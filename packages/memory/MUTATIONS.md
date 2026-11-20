@@ -152,3 +152,12 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0601-M11 | packages/memory/src/index.ts | `claimIfStored` returned the path without checking the store, so the wiki folder type claimed every bare id that is a valid path (a task id became ambiguous) | `the wiki objects > a bare id the wiki does not hold is not claimed by the wiki types` |
+
+## T-0602 — the wiki projection's reads and a folder named like a note
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0602-M1 | packages/memory/src/wiki.ts | `resolveWikiFolderId` still treated a path ending in `.md` as a note, so a folder named `topics.md` was not claimed | `the wiki objects > a folder whose name ends in .md is a folder, not a note` |
+| T-0602-M2 | packages/memory/src/wiki.ts | the content section listed every note object again instead of using the links the projection stored | `the wiki objects > a section read does not list the note objects again` |
+| T-0602-M3 | packages/memory/src/index.ts | `prepareWiki` opened and refreshed its own search index again, so a list built it | `the wiki objects > a list does not build the search index` |
+| T-0602-M4 | packages/memory/src/wiki.ts | a note whose file changed was not projected before its next section, so its old links were returned | `the wiki objects > a note edited after its first read is projected before its next section` |

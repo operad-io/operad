@@ -19,10 +19,9 @@ import {
   type ViewContext,
   type ViewSection,
 } from "@operad-io/engine";
-import { parseNoteLinksWithPositions, resolveNoteLink, normaliseNotePath } from "./links.ts";
+import { placedNoteLinks, resolveNoteLink, normaliseNotePath, noteLookup } from "./links.ts";
 import { splitMarkdown, titleFromName, titleOf } from "./search/frontmatter.ts";
-import { openMemorySearch, untrustedFields, type MemorySearch } from "./search/service.ts";
-import type { Backlink } from "./search/types.ts";
+import { untrustedFields, type MemorySearch } from "./search/service.ts";
 import { wikiDirectory } from "./memory.ts";
 
 /** The object type of a wiki folder; its title is `Wiki`. */
@@ -49,6 +48,9 @@ interface NoteData {
   readonly untrusted: boolean;
   readonly removed: boolean;
   readonly backlinks: readonly BacklinkData[];
+  readonly links: readonly NoteLinkData[];
+  /** Whether the stored data has a links list, so an index from before it is read again. */
+  readonly linksKnown: boolean;
 }
 
 /** One note that links to a note, as the Backlinks section returns it. */
@@ -80,6 +82,16 @@ interface LinkData {
   readonly heading?: string | undefined;
   readonly kind: "wikilink" | "markdown";
   /** The full object id of the target note; absent while nothing matches it. */
+  readonly object?: string | undefined;
+}
+
+/** A link as the projection keeps it, with the place a backlink will show. */
+interface NoteLinkData {
+  readonly target: string;
+  readonly heading?: string | undefined;
+  readonly kind: "wikilink" | "markdown";
+  readonly line: number;
+  readonly excerpt: string;
   readonly object?: string | undefined;
 }
 
@@ -131,6 +143,22 @@ function noteOf(object: StoredObject): NoteData {
         );
       })
     : [];
+  const rawLinks = data["links"];
+  const linksKnown = Array.isArray(rawLinks);
+  const links = linksKnown
+    ? rawLinks.filter((entry): entry is NoteLinkData => {
+        if (typeof entry !== "object" || entry === null) return false;
+        const record = entry as Record<string, unknown>;
+        return (
+          typeof record["target"] === "string" &&
+          (record["heading"] === undefined || typeof record["heading"] === "string") &&
+          (record["kind"] === "wikilink" || record["kind"] === "markdown") &&
+          typeof record["line"] === "number" &&
+          typeof record["excerpt"] === "string" &&
+          (record["object"] === undefined || typeof record["object"] === "string")
+        );
+      })
+    : [];
   return {
     path: textOf(data["path"]) ?? object.id,
     title: textOf(data["title"]) ?? basename(object.id),
@@ -139,6 +167,8 @@ function noteOf(object: StoredObject): NoteData {
     untrusted: removedFlag(data["untrusted"]),
     removed: removedFlag(data["removed"]),
     backlinks,
+    links,
+    linksKnown,
   };
 }
 
@@ -182,22 +212,22 @@ export function wikiObjectPath(id: string): string | undefined {
   return normaliseNotePath(id);
 }
 
-/** The folder path an id names; a path outside the wiki is refused. */
+/** The folder path an id names; whether the wiki holds that folder is the caller's lookup. */
 export function resolveWikiFolderId(id: string): string | undefined {
   const path = wikiObjectPath(id);
   if (path === undefined) {
     throw new ViewError("args", `"${id}" is not a path inside the wiki`);
   }
-  return /\.(?:md|markdown)$/iu.test(path) ? undefined : path;
+  return path;
 }
 
-/** The note path an id names; a path outside the wiki is refused. */
+/** The note path an id names; whether the wiki holds that note is the caller's lookup. */
 export function resolveWikiNoteId(id: string): string | undefined {
   const path = wikiObjectPath(id);
   if (path === undefined) {
     throw new ViewError("args", `"${id}" is not a path inside the wiki`);
   }
-  return /\.(?:md|markdown)$/iu.test(path) ? path : undefined;
+  return path;
 }
 
 /** The file an id names under `root`, or undefined when it leaves the wiki. */
@@ -216,6 +246,7 @@ interface ScannedNote {
   readonly title: string;
   readonly mtimeMs: number;
   readonly untrusted: boolean;
+  readonly links: readonly NoteLinkData[];
 }
 
 interface WikiScan {
@@ -223,8 +254,12 @@ interface WikiScan {
   readonly notes: readonly ScannedNote[];
 }
 
-/** Every folder and Markdown note under the wiki, hidden directories left out. */
-function scanWiki(root: string): WikiScan {
+/**
+ * Every folder and Markdown note under the wiki, hidden directories left out.
+ * A note whose modification time matches the projection is not read again: its
+ * title, mark and links are already stored.
+ */
+function scanWiki(root: string, known: ReadonlyMap<string, NoteData>): WikiScan {
   const folders: string[] = [];
   const notes: ScannedNote[] = [];
   const visit = (directory: string): void => {
@@ -244,40 +279,64 @@ function scanWiki(root: string): WikiScan {
         continue;
       }
       if (!entry.isFile() || !/\.(?:md|markdown)$/iu.test(entry.name)) continue;
-      let raw: string;
       let stat;
       try {
-        raw = readFileSync(file, "utf8");
         stat = statSync(file);
+      } catch {
+        continue;
+      }
+      const path = relative(root, file).split(sep).join("/");
+      const before = known.get(path);
+      if (before !== undefined && before.linksKnown && before.mtimeMs === stat.mtimeMs) {
+        notes.push({
+          path,
+          file,
+          title: before.title,
+          mtimeMs: stat.mtimeMs,
+          untrusted: before.untrusted,
+          links: before.links,
+        });
+        continue;
+      }
+      let raw: string;
+      try {
+        raw = readFileSync(file, "utf8");
       } catch {
         continue;
       }
       const { fields, body } = splitMarkdown(raw);
       notes.push({
-        path: relative(root, file).split(sep).join("/"),
+        path,
         file,
         title: titleOf({}, body, titleFromName(entry.name)),
         mtimeMs: stat.mtimeMs,
         untrusted: untrustedFields(fields),
+        links: placedNoteLinks(body).map(({ at: _at, ...link }) => link),
       });
     }
   };
   visit(root);
+  folders.sort((left, right) => left.localeCompare(right));
+  notes.sort((left, right) => left.path.localeCompare(right.path));
   return { folders, notes };
 }
 
-function backlinkData(entries: readonly Backlink[]): readonly BacklinkData[] {
-  return entries.map((entry) => ({
-    object: `${WIKI_NOTE_TYPE}:${entry.path}`,
-    path: entry.path,
-    title: entry.title,
-    target: entry.target,
-    ...(entry.heading === undefined ? {} : { heading: entry.heading }),
-    kind: entry.kind,
-    line: entry.line,
-    excerpt: entry.excerpt,
-    untrusted: entry.untrusted,
-  }));
+/** The notes the store still shows, by path, so a reader does not scan them again. */
+async function projectedNotes(store: ObjectStore): Promise<ReadonlyMap<string, NoteData>> {
+  const found = new Map<string, NoteData>();
+  let cursor: string | undefined;
+  do {
+    const page = await store.list(WIKI_NOTE_TYPE, {
+      ...(cursor === undefined ? {} : { cursor }),
+      limit: 1000,
+    });
+    for (const object of page.objects) {
+      const note = noteOf(object);
+      if (!note.removed) found.set(note.path, note);
+    }
+    cursor = page.next;
+  } while (cursor !== undefined);
+  return found;
 }
 
 async function putIfChanged(
@@ -307,10 +366,53 @@ async function markRemoved(
   } while (cursor !== undefined);
 }
 
+/** The links each note writes, resolved, and the backlinks they give their targets. */
+function projectLinks(notes: readonly ScannedNote[]): {
+  readonly links: ReadonlyMap<string, readonly NoteLinkData[]>;
+  readonly backlinks: ReadonlyMap<string, readonly BacklinkData[]>;
+} {
+  const lookup = noteLookup(notes.map((note) => note.path));
+  const links = new Map<string, readonly NoteLinkData[]>();
+  const backlinks = new Map<string, BacklinkData[]>();
+  for (const note of notes) {
+    const resolved = note.links.map((link): NoteLinkData => {
+      const target = resolveNoteLink(note.path, link, lookup);
+      return {
+        target: link.target,
+        ...(link.heading === undefined ? {} : { heading: link.heading }),
+        kind: link.kind,
+        line: link.line,
+        excerpt: link.excerpt,
+        ...(target === undefined ? {} : { object: `${WIKI_NOTE_TYPE}:${target}` }),
+      };
+    });
+    links.set(note.path, resolved);
+    for (const link of resolved) {
+      const target = link.object?.slice(WIKI_NOTE_TYPE.length + 1);
+      if (target === undefined || target === note.path) continue;
+      const found = backlinks.get(target) ?? [];
+      found.push({
+        object: `${WIKI_NOTE_TYPE}:${note.path}`,
+        path: note.path,
+        title: note.title,
+        target: link.target,
+        ...(link.heading === undefined ? {} : { heading: link.heading }),
+        kind: link.kind,
+        line: link.line,
+        excerpt: link.excerpt,
+        untrusted: note.untrusted,
+      });
+      backlinks.set(target, found);
+    }
+  }
+  return { links, backlinks };
+}
+
 /**
- * Brings the wiki objects up to date with the Markdown directory, using the
- * link table for a note's backlinks. With a search given, the caller owns it;
- * without one, this opens and closes its own.
+ * Brings the wiki objects up to date with the Markdown directory. The scan and
+ * the links in it are the projection's own, so a list or get does not read the
+ * search index. With a search given, the caller owns it and this refreshes the
+ * index too; a list or get passes none.
  */
 export async function syncWikiObjects(
   store: ObjectStore,
@@ -319,87 +421,51 @@ export async function syncWikiObjects(
   search: MemorySearch | undefined = undefined,
 ): Promise<void> {
   const root = wikiDirectory(home, settings);
-  const scanned = scanWiki(root);
-  const own = search ?? openMemorySearch(home, settings);
-  try {
-    await own.refresh(store);
-    const counts = new Map<string, number>();
-    for (const note of scanned.notes) {
-      let parent = parentPath(note.path);
-      while (parent !== undefined) {
-        counts.set(parent, (counts.get(parent) ?? 0) + 1);
-        parent = parentPath(parent);
-      }
+  const scanned = scanWiki(root, await projectedNotes(store));
+  const projected = projectLinks(scanned.notes);
+  const counts = new Map<string, number>();
+  for (const note of scanned.notes) {
+    let parent = parentPath(note.path);
+    while (parent !== undefined) {
+      counts.set(parent, (counts.get(parent) ?? 0) + 1);
+      parent = parentPath(parent);
     }
-
-    const seenFolders = new Set<string>();
-    for (const path of scanned.folders) {
-      const parent = parentPath(path);
-      const data: Record<string, unknown> = {
-        path,
-        title: path.slice(path.lastIndexOf("/") + 1),
-        noteCount: counts.get(path) ?? 0,
-        removed: false,
-      };
-      if (parent !== undefined) data["parent"] = parent;
-      seenFolders.add(path);
-      await putIfChanged(store, WIKI_FOLDER_TYPE, path, data);
-    }
-
-    const seenNotes = new Set<string>();
-    for (const note of scanned.notes) {
-      const backlinks = backlinkData(own.readBacklinks(`wiki:${note.path}`));
-      const parent = parentPath(note.path);
-      const data: Record<string, unknown> = {
-        path: note.path,
-        title: note.title,
-        mtimeMs: note.mtimeMs,
-        untrusted: note.untrusted,
-        removed: false,
-        backlinks,
-      };
-      if (parent !== undefined) data["parent"] = parent;
-      seenNotes.add(note.path);
-      await putIfChanged(store, WIKI_NOTE_TYPE, note.path, data);
-    }
-
-    await markRemoved(store, WIKI_FOLDER_TYPE, seenFolders);
-    await markRemoved(store, WIKI_NOTE_TYPE, seenNotes);
-  } finally {
-    if (search === undefined) own.close();
   }
-}
 
-/** Every note path the store holds now, for resolving a link. */
-async function notePaths(store: ObjectStore): Promise<readonly string[]> {
-  const found: string[] = [];
-  let cursor: string | undefined;
-  do {
-    const page = await store.list(WIKI_NOTE_TYPE, {
-      ...(cursor === undefined ? {} : { cursor }),
-      limit: 1000,
-    });
-    for (const object of page.objects) {
-      const note = noteOf(object);
-      if (!note.removed) found.push(note.path);
-    }
-    cursor = page.next;
-  } while (cursor !== undefined);
-  return found;
-}
-
-/** The links in a note's body, with the note each one resolves to. */
-async function linksIn(store: ObjectStore, source: string, body: string): Promise<readonly LinkData[]> {
-  const notes = await notePaths(store);
-  return parseNoteLinksWithPositions(body).map(({ at: _at, ...link }) => {
-    const target = resolveNoteLink(source, link, notes);
-    return {
-      target: link.target,
-      ...(link.heading === undefined ? {} : { heading: link.heading }),
-      kind: link.kind,
-      ...(target === undefined ? {} : { object: `${WIKI_NOTE_TYPE}:${target}` }),
+  const seenFolders = new Set<string>();
+  for (const path of scanned.folders) {
+    const parent = parentPath(path);
+    const data: Record<string, unknown> = {
+      path,
+      title: path.slice(path.lastIndexOf("/") + 1),
+      noteCount: counts.get(path) ?? 0,
+      removed: false,
     };
-  });
+    if (parent !== undefined) data["parent"] = parent;
+    seenFolders.add(path);
+    await putIfChanged(store, WIKI_FOLDER_TYPE, path, data);
+  }
+
+  const seenNotes = new Set<string>();
+  for (const note of scanned.notes) {
+    const parent = parentPath(note.path);
+    const data: Record<string, unknown> = {
+      path: note.path,
+      title: note.title,
+      mtimeMs: note.mtimeMs,
+      untrusted: note.untrusted,
+      removed: false,
+      backlinks: projected.backlinks.get(note.path) ?? [],
+      links: projected.links.get(note.path) ?? [],
+    };
+    if (parent !== undefined) data["parent"] = parent;
+    seenNotes.add(note.path);
+    await putIfChanged(store, WIKI_NOTE_TYPE, note.path, data);
+  }
+
+  await markRemoved(store, WIKI_FOLDER_TYPE, seenFolders);
+  await markRemoved(store, WIKI_NOTE_TYPE, seenNotes);
+  if (search !== undefined) await search.refresh(store);
 }
 
 function escapeLabel(text: string): string {
@@ -461,8 +527,29 @@ async function loadNote(
   sectionId: string,
   cursor: string | undefined,
 ): Promise<SectionContent> {
-  const note = noteOf(object);
+  let note = noteOf(object);
   if (note.removed) throw new Error(`the wiki note "${note.path}" is gone`);
+  const root = wikiDirectory(ctx.home, ctx.settings);
+  const file = wikiNoteFile(root, note.path);
+  if (file !== undefined) {
+    let mtimeMs: number | undefined;
+    try {
+      mtimeMs = statSync(file).mtimeMs;
+    } catch {
+      mtimeMs = undefined;
+    }
+    if (
+      mtimeMs !== undefined &&
+      mtimeMs !== note.mtimeMs &&
+      ctx.refreshedObject !== undefined
+    ) {
+      // The folder type owns the scan that projects the notes too.
+      await ctx.refreshedObject(WIKI_FOLDER_TYPE, note.path);
+      const refreshed = await ctx.store.get(WIKI_NOTE_TYPE, note.path);
+      if (refreshed !== undefined) note = noteOf(refreshed);
+      if (note.removed) throw new Error(`the wiki note "${note.path}" is gone`);
+    }
+  }
   if (sectionId === WIKI_BACKLINKS_SECTION) {
     return {
       markdown: backlinkMarkdown(note.backlinks),
@@ -470,8 +557,6 @@ async function loadNote(
     };
   }
   if (sectionId !== WIKI_CONTENT_SECTION) return { markdown: "" };
-  const root = wikiDirectory(ctx.home, ctx.settings);
-  const file = wikiNoteFile(root, note.path);
   if (file === undefined) {
     throw new ViewError("args", `the wiki note "${note.path}" is outside the wiki`);
   }
@@ -482,7 +567,9 @@ async function loadNote(
     throw new Error(`the wiki note "${note.path}" cannot be read`);
   }
   const { body } = splitMarkdown(raw);
-  const links = await linksIn(ctx.store, note.path, body);
+  const links: readonly LinkData[] = note.links.map(
+    ({ line: _line, excerpt: _excerpt, ...link }) => link,
+  );
   return {
     ...pageOf(body, cursor),
     data: { links: links as unknown as JsonValue },
