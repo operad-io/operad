@@ -103,3 +103,18 @@ the row fields.
 | T-0598-M1 | packages/memory/src/search/service.ts | `read` returned an empty `backlinks` array instead of the links that point at the note | `the link table > a read lists the notes that link to it, with the line and excerpt` |
 | T-0598-M2 | packages/memory/src/search/service.ts | `readBacklinks` marked every linking note as trusted, ignoring its `untrusted: true` frontmatter | `the link table > a read lists the notes that link to it, with the line and excerpt`; `the memory search commands > read ends with Backlinks, and --json gives the backlinks array` |
 | T-0598-M3 | packages/memory/src/search/command.ts | `read` rendered text even when the caller asked for JSON with `--json` or JSON input | `the memory search commands > read ends with Backlinks, and --json gives the backlinks array` |
+
+## T-0599 — the tidy's link check
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0599-M1 | packages/memory/src/link-report.ts | every broken link reported line 1 instead of the line that writes it | `the link report a tidy reads > a fixture wiki gives broken links with their line, orphans, wanted targets and unlinked mentions` |
+| T-0599-M2 | packages/memory/src/link-report.ts | `structural` treated `index.md`, `_about.md` and `log/` notes as ordinary orphans | `the link report a tidy reads > the index, the log and a directory description are never orphans` |
+| T-0599-M3 | packages/memory/src/link-report.ts | a target was wanted when two notes linked to it instead of three | `the link report a tidy reads > a target is wanted only when three different notes link to it` |
+| T-0599-M4 | packages/memory/src/link-report.ts | `UNLINKED_MENTION_LIMIT` was 25, so the list was not capped at 20 | `the link report a tidy reads > unlinked mentions stop at the cap` |
+
+## T-0599 rework 1 — the tidy's link check
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0599-M5 | packages/memory/src/link-report.ts | unlinked mentions did not skip a source note that already links the target | `the link report a tidy reads > a title a note already links to is not an unlinked mention` |

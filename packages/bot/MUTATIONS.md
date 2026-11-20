@@ -288,3 +288,19 @@ changes for bots, in the order they were recorded. The root
 | T-0590-M14 | packages/bot/src/tidy.ts | `chatsToCheck` counted a tidy run's own chat as work | `the nightly memory check > a tidy's own chat is not counted as work for the next check` |
 | T-0590-M15 | packages/bot/src/tidy.ts | a failed tidy run was stored as a result | `Run and Skip > a tidy run that fails leaves a failed card` |
 | T-0590-M16 | packages/bot/src/tidy.ts | the first check ran the night it found instead of only setting a baseline | `the nightly memory check > the first check only sets a baseline` |
+
+## T-0599 — the nightly tidy's link lists
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0599-M1 | packages/bot/src/tidy.ts | `linkPrompt` added its heading and guidance even when every list was empty | `the link lists in the tidy prompt > a list with something to look at is in the prompt, and empty lists add nothing` |
+| T-0599-M2 | packages/bot/src/tidy.ts | the prompt passed an empty report to `linkPrompt` instead of the work's lists | `the link lists in the tidy prompt > the check reads the wiki and this bot's memory from the link table` |
+| T-0599-M3 | packages/bot/src/tidy.ts | `tidyWork` returned empty link lists instead of reading the link table | `the link lists in the tidy prompt > the check reads the wiki and this bot's memory from the link table` |
+
+## T-0599 rework 1 — the nightly tidy's link lists
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0599-M4 | packages/bot/src/tidy.ts | `linkLists` read a link table even with no home to locate it | `the link lists in the tidy prompt > a check with no home reads no link table` |
+| T-0599-M5 | packages/bot/src/tidy.ts | the memory report covered every bot's memory instead of this bot's owner | `the link lists in the tidy prompt > the memory lists stay with this bot's memory` |
+| T-0599-M6 | packages/bot/src/tidy.ts | a link table that could not be opened failed the check instead of leaving empty lists | `the link lists in the tidy prompt > a link table that cannot be opened leaves empty lists instead of failing the check` |

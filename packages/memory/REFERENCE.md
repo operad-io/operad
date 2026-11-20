@@ -97,9 +97,16 @@ narrows by `scope` and `owner`. `read` uses `readBacklinks(id)` to end a note
 with its `Backlinks`: each linking note's path, the line of the link, a short
 excerpt around it and whether the source is marked `untrusted`. The outgoing
 links stay in the note's own text and are not listed again. A `--json` read
-carries the same list as `backlinks`. An index built before the table existed,
-or with another version of it, is filled on the next refresh: opening it clears
-the stored modification time of its notes, so every note is read again.
+carries the same list as `backlinks`. `linkReport(search, query)`
+(`src/link-report.ts`) builds the lists the nightly tidy reads: broken links
+with their source path and 1-based line, orphan notes (leaving out `index.md`,
+`instructions.md`, `_about.md` and anything under `log/`), unresolved targets
+that three or more different notes link to, and up to 20 mentions where one
+note's body contains another note's title but writes no link to it. The tidy
+report is not a command or tool output. An index built before the table
+existed, or with another version of it, is filled on the next refresh: opening
+it clears the stored modification time of its notes, so every note is read
+again.
 
 ## The memory notes
 
