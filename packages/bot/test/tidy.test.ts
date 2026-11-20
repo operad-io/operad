@@ -3,11 +3,13 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { CHAT_TYPE, allMessages } from "@operad-io/chat";
 import { createViews, type ClientApi, type JsonValue, type ObjectStore } from "@operad-io/engine";
-import { TIDY_ORIGIN, createMemoryPlugin, ensureRepository, lastTidyCommit, memoryGit, tidyCommitForChat } from "@operad-io/memory";
+import { EMPTY_LINK_REPORT, TIDY_ORIGIN, createMemoryPlugin, ensureRepository, lastTidyCommit, memoryGit, tidyCommitForChat } from "@operad-io/memory";
 import {
   BotTidySource,
   TIDY_TYPE,
   tidyDataOf,
+  tidyPrompt,
+  tidyWork,
   type ScheduleNotice,
   type TidyWork,
 } from "../src/index.ts";
@@ -102,6 +104,7 @@ function noteWork(): TidyWork {
   return {
     notes: [{ path: "topics/tea.md", content: "likes tea\n" }],
     chats: [],
+    links: { wiki: EMPTY_LINK_REPORT, memory: EMPTY_LINK_REPORT },
     indexOver: false,
     indexBytes: 0,
     baseline: undefined,
@@ -251,6 +254,58 @@ describe("the nightly memory check", () => {
       s.views.close();
     }
   });
+
+describe("the link lists in the tidy prompt", () => {
+  test("a list with something to look at is in the prompt, and empty lists add nothing", () => {
+    const report = {
+      broken: [{ path: "notes/a.md", line: 4, target: "notes/missing" }],
+      orphans: ["notes/c.md"],
+      wanted: [{ target: "notes/wanted", notes: 3 }],
+      unlinked: [{ path: "notes/d.md", title: "Alpha", target: "notes/a.md" }],
+    };
+    const prompt = tidyPrompt("default", {
+      ...noteWork(),
+      links: { wiki: report, memory: EMPTY_LINK_REPORT },
+    });
+    expect(prompt).toContain("## Links to look after");
+    expect(prompt).toContain("Fix a broken link when the right target is clear");
+    expect(prompt).toContain("### Wiki");
+    expect(prompt).toContain("notes/a.md:4 -> notes/missing");
+    expect(prompt).toContain("notes/c.md");
+    expect(prompt).toContain("notes/wanted (linked from 3 notes)");
+    expect(prompt).toContain('notes/d.md mentions "Alpha" (notes/a.md)');
+    expect(prompt).not.toContain("### Bot memory");
+
+    const empty = tidyPrompt("default", noteWork());
+    expect(empty).not.toContain("Links to look after");
+    expect(empty).not.toContain("Broken links");
+  });
+
+  test("the check reads the wiki and this bot's memory from the link table", async () => {
+    const s = await setup();
+    try {
+      mkdirSync(join(s.r.home, "wiki", "notes"), { recursive: true });
+      writeFileSync(join(s.r.home, "wiki", "notes", "a.md"), "# Alpha\n\n[[missing]]\n");
+      note(s.memory, "tea.md", "# Tea\n\n[[nowhere]]\n");
+
+      const work = await tidyWork(s.r.store, "default", join(s.r.home, "bot", "default"), {
+        home: s.r.home,
+      });
+      expect(work.links.wiki.broken).toEqual([
+        { path: "notes/a.md", line: 3, target: "missing" },
+      ]);
+      expect(work.links.memory.broken).toEqual([
+        { path: "topics/tea.md", line: 3, target: "nowhere" },
+      ]);
+      const prompt = tidyPrompt("default", work);
+      expect(prompt).toContain("## Links to look after");
+      expect(prompt).toContain("notes/a.md:3 -> missing");
+      expect(prompt).toContain("topics/tea.md:3 -> nowhere");
+    } finally {
+      s.views.close();
+    }
+  });
+});
 
 describe("Run and Skip", () => {
   test("Run starts the tidy after no chat is replying, and Skip closes the result until the next check", async () => {

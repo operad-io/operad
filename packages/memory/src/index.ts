@@ -78,5 +78,6 @@ export * from "./search/service.ts";
 export * from "./search/frontmatter.ts";
 export * from "./search/chunks.ts";
 export * from "./links.ts";
+export * from "./link-report.ts";
 export * from "./search/sources.ts";
 export * from "./search/command.ts";

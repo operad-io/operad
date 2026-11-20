@@ -288,3 +288,11 @@ changes for bots, in the order they were recorded. The root
 | T-0590-M14 | packages/bot/src/tidy.ts | `chatsToCheck` counted a tidy run's own chat as work | `the nightly memory check > a tidy's own chat is not counted as work for the next check` |
 | T-0590-M15 | packages/bot/src/tidy.ts | a failed tidy run was stored as a result | `Run and Skip > a tidy run that fails leaves a failed card` |
 | T-0590-M16 | packages/bot/src/tidy.ts | the first check ran the night it found instead of only setting a baseline | `the nightly memory check > the first check only sets a baseline` |
+
+## T-0599 — the nightly tidy's link lists
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0599-M1 | packages/bot/src/tidy.ts | `linkPrompt` added its heading and guidance even when every list was empty | `the link lists in the tidy prompt > a list with something to look at is in the prompt, and empty lists add nothing` |
+| T-0599-M2 | packages/bot/src/tidy.ts | the prompt passed an empty report to `linkPrompt` instead of the work's lists | `the link lists in the tidy prompt > the check reads the wiki and this bot's memory from the link table` |
+| T-0599-M3 | packages/bot/src/tidy.ts | `tidyWork` returned empty link lists instead of reading the link table | `the link lists in the tidy prompt > the check reads the wiki and this bot's memory from the link table` |

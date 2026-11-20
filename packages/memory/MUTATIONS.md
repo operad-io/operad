@@ -95,3 +95,12 @@ the row fields.
 | T-0597-M17 | packages/memory/src/search/service.ts | the resolution pool no longer named the scope and owner, so a wiki note resolved a name in a bot's memory | `the link table > a link stays in the scope of the note that writes it` |
 | T-0597-M18 | packages/memory/src/search/backend.ts | an index without a link table (or with another version of it) no longer cleared its notes' stored modification time, so a refresh skipped every note and the table stayed empty | `the link table > an index built before the link table fills it on the next refresh`; `the link table > a link table from an older version is filled again from the notes` |
 | T-0597-M19 | packages/memory/src/commit.ts | `withoutUntrustedLines` matched the untrusted note against the line's text instead of the links `parseNoteLinks` reads and `resolveNoteLink` resolves, so a bare `[[from-web]]` stayed in the index | `one link parser for the index and the link table > the targets the link table reads are the ones the index commit drops`; `a bot run is recorded in git > an index line that links to an untrusted note with a wikilink is removed too` |
+
+## T-0599 — the tidy's link check
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0599-M1 | packages/memory/src/link-report.ts | every broken link reported line 1 instead of the line that writes it | `the link report a tidy reads > a fixture wiki gives broken links with their line, orphans, wanted targets and unlinked mentions` |
+| T-0599-M2 | packages/memory/src/link-report.ts | `structural` treated `index.md`, `_about.md` and `log/` notes as ordinary orphans | `the link report a tidy reads > the index, the log and a directory description are never orphans` |
+| T-0599-M3 | packages/memory/src/link-report.ts | a target was wanted when two notes linked to it instead of three | `the link report a tidy reads > a target is wanted only when three different notes link to it` |
+| T-0599-M4 | packages/memory/src/link-report.ts | `UNLINKED_MENTION_LIMIT` was 25, so the list was not capped at 20 | `the link report a tidy reads > unlinked mentions stop at the cap` |

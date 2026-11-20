@@ -269,7 +269,10 @@ state. `tidyTime` (`03:30` by default) is read in local time, and a missed night
 is caught up once by checking only the latest planned time. The first check only
 sets a baseline. `tidyWork` reads `memoryTidyState` from the memory plugin and
 the bot's chats since the last tidy commit; a night with no changed note and an
-index under its limit writes no card and calls no model.
+index under its limit writes no card and calls no model. It also refreshes the
+link index and asks `linkReport` for the wiki and this bot's memory. Those lists
+never decide whether a run happens; when every list is empty the prompt gains
+nothing about links.
 
 With work and `runWithoutAsking` off, the object becomes a pending card. Its
 actions are `run` and `skip`, offered by the plugin on `TIDY_TYPE`; `tidyItems`
@@ -281,8 +284,12 @@ is writing a reply. The model is `backgroundModel`, else the harness's declared
 
 The tidy chat is opened through `bot:chat` with the actor
 `{ via: "bot", id: TIDY_ORIGIN }`, so its chat data records the tidy origin and
-the memory plugin commits it as `tidy:`. The prompt carries the changed notes and
-the period's chat records. The source watches for the memory plugin's
+the memory plugin commits it as `tidy:`. The prompt carries the changed notes,
+the period's chat records and, when there is link work, the wiki's and the bot
+memory's broken links with their source lines, orphans, targets three or more
+notes link to, and unlinked mentions, with guidance to fix a clear broken link,
+leave a link to an unwritten page, consider linking an orphan, and suggest but
+not force linking a mention. The source watches for the memory plugin's
 `memory.tidy` fact and then reads the commit's diff summary. A non-automatic run
 leaves a result card with the cost and diff; a failure leaves a failed card. An
 automatic run returns to idle and calls `notify` when the commit changed something

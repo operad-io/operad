@@ -92,10 +92,16 @@ it, unresolved.
 
 Four queries answer from the table, after a refresh: `linksFrom(id)`,
 `backlinks(id)`, `unresolvedTargets(query)` and `orphanNotes(query)`. `query`
-narrows by `scope` and `owner`. Nothing in the command line or the operad tools
-reads the table yet. An index built before the table existed, or with another
-version of it, is filled on the next refresh: opening it clears the stored
-modification time of its notes, so every note is read again.
+narrows by `scope` and `owner`. `linkReport(search, query)` (`src/link-report.ts`)
+builds the lists the nightly tidy reads: broken links with their source path and
+1-based line, orphan notes (leaving out `index.md`, `instructions.md`,
+`_about.md` and anything under `log/`), unresolved targets that three or more
+different notes link to,
+and up to 20 mentions where one note's body contains another note's title but
+writes no link to it. Nothing in the command line or the operad tools reads the
+table yet. An index built before the table existed, or with another version of
+it, is filled on the next refresh: opening it clears the stored modification
+time of its notes, so every note is read again.
 
 ## The memory notes
 

@@ -5,7 +5,7 @@
  * when the botanist wakes and what a person sees.
  */
 
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import {
   CHAT_TYPE,
   allEntries,
@@ -28,14 +28,19 @@ import {
   type StoredObject,
 } from "@operad-io/engine";
 import {
+  EMPTY_LINK_REPORT,
   TIDY_COMMIT_FACT,
   TIDY_ORIGIN,
   ensureMemoryLayout,
   ensureRepository,
+  linkReport,
   memoryEnabled,
   memoryTidyState,
+  openMemorySearch,
   tidyCommitForChat,
   tidyCommitSummary,
+  wikiDirectoryOfHome,
+  type LinkReport,
 } from "@operad-io/memory";
 import {
   BOT_TYPE,
@@ -124,10 +129,17 @@ export interface TidyChat {
   }[];
 }
 
+/** The link lists for the shared wiki and this bot's memory. */
+export interface TidyLinks {
+  readonly wiki: LinkReport;
+  readonly memory: LinkReport;
+}
+
 /** What the check found: the work the card counts and the run reads. */
 export interface TidyWork {
   readonly notes: readonly TidyNote[];
   readonly chats: readonly TidyChat[];
+  readonly links: TidyLinks;
   readonly indexOver: boolean;
   readonly indexBytes: number;
   readonly baseline: string | undefined;
@@ -265,11 +277,40 @@ async function chatsToCheck(
   return found.sort((left, right) => left.id.localeCompare(right.id));
 }
 
+function emptyTidyLinks(): TidyLinks {
+  return { wiki: EMPTY_LINK_REPORT, memory: EMPTY_LINK_REPORT };
+}
+
+/** The link table's lists for the wiki and this bot's memory; never blocks the check. */
+async function linkLists(
+  store: ObjectStore,
+  cwd: string,
+  home: string | undefined,
+): Promise<TidyLinks> {
+  if (home === undefined) return emptyTidyLinks();
+  try {
+    const settings = { wikiDir: wikiDirectoryOfHome(home) };
+    const search = openMemorySearch(home, settings);
+    try {
+      await search.refresh(store);
+      return {
+        wiki: linkReport(search, { scope: "wiki" }),
+        memory: linkReport(search, { scope: "memory", owner: resolve(cwd) }),
+      };
+    } finally {
+      search.close();
+    }
+  } catch {
+    return emptyTidyLinks();
+  }
+}
+
 /** The work one bot's memory has for a tidy now. */
 export async function tidyWork(
   store: ObjectStore,
   bot: string,
   cwd: string,
+  options: { readonly home?: string | undefined } = {},
 ): Promise<TidyWork> {
   const memoryDir = join(cwd, "memory");
   ensureMemoryLayout(memoryDir);
@@ -288,6 +329,7 @@ export async function tidyWork(
   return {
     notes,
     chats: await chatsToCheck(store, bot, memory.since),
+    links: await linkLists(store, cwd, options.home),
     indexOver: memory.indexOver,
     indexBytes: memory.indexBytes,
     baseline: memory.baseline,
@@ -304,6 +346,48 @@ export async function botChatReplying(store: ObjectStore, bot: string): Promise<
     }
   }
   return false;
+}
+
+/** The link lists for one scope, with no heading when every list is empty. */
+function linkSection(title: string, report: LinkReport): string[] {
+  const lines: string[] = [];
+  if (report.broken.length > 0) {
+    lines.push("", `Broken links (${report.broken.length}):`);
+    for (const link of report.broken) {
+      lines.push(`- ${link.path}:${link.line} -> ${link.target}`);
+    }
+  }
+  if (report.orphans.length > 0) {
+    lines.push("", `Notes nothing links to (${report.orphans.length}):`);
+    for (const path of report.orphans) lines.push(`- ${path}`);
+  }
+  if (report.wanted.length > 0) {
+    lines.push("", `Targets several notes link to (${report.wanted.length}):`);
+    for (const wanted of report.wanted) {
+      lines.push(`- ${wanted.target} (linked from ${wanted.notes} notes)`);
+    }
+  }
+  if (report.unlinked.length > 0) {
+    lines.push("", `Mentions that are not links (${report.unlinked.length}):`);
+    for (const mention of report.unlinked) {
+      lines.push(`- ${mention.path} mentions "${mention.title}" (${mention.target})`);
+    }
+  }
+  return lines.length === 0 ? [] : [`### ${title}`, ...lines];
+}
+
+/** The link guidance and lists, or nothing when there is no link work. */
+function linkPrompt(links: TidyLinks): string[] {
+  const wiki = linkSection("Wiki", links.wiki);
+  const memory = linkSection("Bot memory", links.memory);
+  if (wiki.length === 0 && memory.length === 0) return [];
+  return [
+    "",
+    "## Links to look after",
+    "Fix a broken link when the right target is clear. Leave a link to a page nobody wrote yet. Consider linking an orphan from the index or a related note. Suggest, never force, turning a mention into a link. Never put an untrusted note into the index.",
+    ...wiki,
+    ...memory,
+  ];
 }
 
 /** The prompt a tidy chat starts with. */
@@ -330,6 +414,7 @@ export function tidyPrompt(bot: string, work: TidyWork): string {
       out.push(`${message.role}: ${message.text}`);
     }
   }
+  out.push(...linkPrompt(work.links));
   return out.join("\n");
 }
 
@@ -664,7 +749,8 @@ export class BotTidySource {
   }
 
   private workFor(bot: string, cwd: string): Promise<TidyWork> {
-    return (this.ctx.work ?? tidyWork)(this.ctx.store, bot, cwd);
+    if (this.ctx.work !== undefined) return this.ctx.work(this.ctx.store, bot, cwd);
+    return tidyWork(this.ctx.store, bot, cwd, { home: this.ctx.home });
   }
 
   /** A run that started but can no longer be watched is reported, not left running. */
