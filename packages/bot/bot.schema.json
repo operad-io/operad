@@ -52,6 +52,11 @@
             "minLength": 1,
             "description": "How a chat of this bot labels the model's messages in its transcript. Without it the chat plugin's speaker is used."
           },
+          "writeWiki": {
+            "type": "boolean",
+            "title": "Write the wiki",
+            "description": "Whether this bot may write the shared wiki. Without it the default bot writes it and every other bot only reads it. Read access is always there; a bot that may not write it has the wiki refused for writing."
+          },
           "mcpServers": {
             "type": "object",
             "description": "The local MCP servers this bot's chats mount, by name. A server is added only through `bot mcp`, which a person approves; the digest is of its tool names and descriptions, and a chat that finds other tools does not mount the server.",

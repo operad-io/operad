@@ -22,7 +22,8 @@
     "@operad-io/harness-radian": "workspace:*",
     "@operad-io/pool": "workspace:*",
     "@operad-io/bot": "workspace:*",
-    "@operad-io/telegram": "workspace:*"
+    "@operad-io/telegram": "workspace:*",
+    "@operad-io/memory": "workspace:*"
   },
   "license": "MIT",
   "files": [

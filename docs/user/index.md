@@ -20,6 +20,7 @@ operad is an open orchestration layer for coding agents. It runs an agent (radia
 - [tailscale](tailscale.md): reaching `serve` over a Tailscale network, and the HTTPS name the phone app needs.
 - [mcp](mcp.md): the MCP server for a lead agent.
 - [chats-and-bots](chats-and-bots.md): chats with an agent, and bots.
+- [memory](memory.md): a bot's memory, the shared wiki and the git history of what a bot wrote.
 - [telegram](telegram.md): write to a bot and answer what waits for you from Telegram.
 - [notifications](notifications.md): the notify command.
 - [checks](checks.md): checking a change, and reproducing a flaky test.

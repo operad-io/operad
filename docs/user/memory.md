@@ -1,0 +1,128 @@
+---
+description: The memory plugin: the shared wiki, a bot's memory and the git history of what a bot wrote.
+---
+
+# Memory and the wiki
+
+The `memory` plugin gives a bot two places to keep what it knows:
+
+- the **wiki**, one shared knowledge base every bot reads and some bots write;
+- the bot's **memory**, a directory of its own inside its working directory.
+
+Enable it like any other plugin:
+
+```sh
+operad plugin enable memory
+```
+
+The plugin owns one setting and one skill. The wiki is a Markdown directory with
+a git history; the bot's memory has the same history, one repository per bot.
+
+## The wiki
+
+The wiki is a reserved directory that every bot shares. It is meant for notes
+about the world that outlive a chat: a person may point it at their own notes
+library, such as an Obsidian vault, and edit it there.
+
+| Setting | Type | Default | Allowed values | When it takes effect | Wrong value |
+|---|---|---|---|---|---|
+| `memory.wikiDir` | string | `wiki` in the operad home, so `~/.operad/wiki` for the usual home | a directory; `~` is your home directory and a relative path is under the operad home | At the next bot reply and at the next `serve` start | Refused by the settings call with the schema's reason |
+
+The directory is created when it is missing and made a git repository when it is
+not one. A directory that is already a git repository is used as it is: it is
+never initialised again and its files are never restructured. So pointing the
+setting at an existing vault keeps that vault's history, branches and layout.
+
+Who may write the wiki is each bot's access profile, not a global switch (see
+[Access](access.md)). By default the `default` bot writes it and every other bot
+only reads it. A bot's own setting changes that:
+
+| Setting | Type | Default | Allowed values | When it takes effect | Wrong value |
+|---|---|---|---|---|---|
+| `bot.bots.<name>.writeWiki` | boolean | `true` for `default`, `false` for every other bot | `true` or `false` | At the next bot reply | Refused by the schema |
+
+Read access is always there. A bot that may not write the wiki has the directory
+refused for writing, not merely questioned, so a misreading cannot change a
+person's notes by accident.
+
+## A bot's memory
+
+A bot's memory lives in `memory/` inside its working directory, so `default`'s
+is `~/.operad/bot/default/memory/`. It is not shared: another bot cannot read it.
+The directory is a git repository of its own, created when it is missing, so one
+bot's history stays apart from every other bot's. A working directory that is
+already inside a repository keeps that repository: the plugin commits only the
+`memory/` part.
+
+The layout has three layers and one file:
+
+| Path | What it holds |
+|---|---|
+| `memory/index.md` | the index: one line per entry, a link and a few words. It stays small; the detail belongs in a topic note |
+| `memory/log/YYYY-MM-DD.md` | an append-only daily log of what happened |
+| `memory/topics/<name>.md` | topic notes, linked from the index |
+| `memory/instructions.md` | a person's long-standing instructions to that bot |
+
+The plugin creates `index.md`, `instructions.md` and `log/` when they are missing
+and never overwrites them.
+
+## The memory skill
+
+While the plugin is enabled, every bot mounts the `memory` skill
+(`SKILL.md`) next to the skills it lists. The skill tells the bot what a
+memory is for: the things it cannot look up, such as a person's preferences, a
+correction they made and a rule they verified. It points at operad's own history
+and the wiki instead of copying them. It also says that rules the bot must obey
+do not belong in memory: they live in the bot's instructions and its access
+profile, and changing one is a proposal for a person.
+
+The skill asks the bot to read its memory before answering, to write without
+asking, and to keep the index short. A person reviews what changed afterwards in
+the git history rather than approving each write.
+
+## What a bot wrote is recorded in git
+
+After a bot reply that changed its memory directory or the wiki, the plugin
+makes one commit in each repository the reply changed. The message names the bot
+and the chat it was talking in, for example:
+
+```
+memory: bot default, chat C-12
+wiki: bot default, chat C-12
+```
+
+A reply that wrote nothing makes no commit. The commits are ordinary commits in
+ordinary repositories: review them with `git log`, or in an editor that shows
+them, and revert one like any other commit. Nothing is pushed anywhere.
+
+The plugin cannot tell your own uncommitted edit from the bot's: when a reply
+ends, every change under the wiki at that moment is committed with the bot and
+the chat in the message. Commit your own edits before a bot writes, or commit
+them separately afterwards.
+
+## Notes a bot found outside
+
+A note written after a bot read a web page, mail or an item a source plugin
+fetched can come from content someone else controls. The skill asks the bot to
+mark such a note in its frontmatter:
+
+```md
+---
+untrusted: true
+---
+```
+
+A note marked that way is never linked from `memory/index.md`: the plugin removes
+an index line that points at it before it commits, and the note itself stays
+where it was written. The bot is asked to keep it out of the index in the first
+place.
+
+operad cannot yet tell by itself that a bot run read such content: the agent's
+reads and the text a local MCP server returns are not recorded per run. Until
+they are, the mark depends on the bot writing it, and a note the bot does not
+mark stays as it is.
+
+## Not here yet
+
+The plugin has no full-text index, and no capture or review flow yet. Those are
+planned; the wiki and the memory layout are usable now.

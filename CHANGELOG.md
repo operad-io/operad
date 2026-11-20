@@ -7,6 +7,14 @@ the same version.
 
 ## [Unreleased]
 
+### Added
+
+- The `memory` plugin: the shared wiki, whose directory is a setting and which
+  is created and made a git repository when it is not one; a `memory` skill every
+  bot mounts; and a git commit after each bot reply that wrote to the bot's
+  memory or the wiki. The default bot writes the wiki and every other bot reads
+  it; each bot's `writeWiki` setting changes that.
+
 ### Fixed
 
 - `operad init` now enables `radian`, `claude` and `pi` for the agent commands

@@ -182,7 +182,7 @@ still loads, and `serve` and `operad plugin check` print the line that says why.
 through pool), and enables `radian`, `claude` and `pi` when their commands are on
 `PATH` as it creates the home. A new home that enables `claude` also gets
 `@operad-io/harness-claude` and its Agent SDK in `~/.operad/plugins`. `codex`,
-`bot` and `telegram` are shipped but not installed; enable one with
+`bot`, `telegram` and `memory` are shipped but not installed; enable one with
 `operad plugin enable <name>`.
 
 ### `store`
@@ -256,6 +256,7 @@ A bot is read again at every reply, so an edit applies to the next reply. See
 | `bot.bots.<name>.model` | string | the agent's default | a model the chat's agent lists | When a new chat starts | Refused at chat start when the agent does not list it |
 | `bot.bots.<name>.effort` | string | the agent's default | an effort the chat's agent lists | When a new chat starts | Refused at chat start when the agent does not list it |
 | `bot.bots.<name>.speaker` | string | the `chat.speaker` value | non-empty text | Next reply | Refused by the schema |
+| `bot.bots.<name>.writeWiki` | boolean | `true` for `default`, `false` for every other bot | `true` or `false`; read access is always there | Next reply | Refused by the schema |
 | `bot.bots.<name>.mcpServers` | object | `{}` | server name to a server object; add one with `operad bot mcp`, which a person approves | Next reply | Refused by the schema; a server whose tools changed is not mounted |
 | `bot.bots.<name>.mcpServers.<name>` | object | none | the keys below | Next reply | Refused by the schema |
 | `bot.bots.<name>.mcpServers.<name>.command` | string | none | the program that starts the server | Next reply | Refused by the schema; a missing command means the server cannot start |
@@ -286,6 +287,11 @@ The default profile and the meaning of each access field are on
 | `chat.speaker` | string | `"Operad Bot"` | non-empty text | When a chat transcript is rendered | Refused by the schema |
 
 A bot chat uses its bot's `speaker` instead. See [Chats and bots](chats-and-bots.md).
+
+### `memory`
+
+The `memory` plugin is optional; its `wikiDir` setting is on
+[the memory page](memory.md).
 
 ### `telegram`
 

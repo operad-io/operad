@@ -540,3 +540,15 @@ are append-only, so the old lines stay as history.
 |---|---|---|---|
 | T-0577-M1 | packages/chat/src/views.ts | `replyOutput` left `url` out, so a client got no address for the whole output | `a tool's whole output carries the server address that serves it, and no local path` |
 | T-0577-M2 | packages/chat/src/views.ts | the chat's `file` check allowed every path instead of only the files its facts name | `the attachment route refuses a file the chat does not name, and one outside the chat` |
+
+## T-0585 — the step a chat's refresh data names after a reply
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0585-M9 | packages/chat/src/reply.ts | `runAfterStep` returned for every named step instead of running it | `the step a chat's refresh data names after a reply > runs once after the reply, with the chat` |
+
+## T-0585 rework 1 — the after step of a stopped run
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0585-M10 | packages/chat/src/reply.ts | `keepInterrupted` no longer ran the after step for a stopped or interrupted run | `the step a chat's refresh data names after a reply > runs after a stopped or interrupted reply, for the run the keep step finishes` |

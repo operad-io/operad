@@ -41,6 +41,7 @@ packages=(
   harness/process
   shell
   chat
+  memory
   review-grading
   pool
   dev

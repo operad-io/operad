@@ -32,6 +32,7 @@ import {
   type BotSettings,
   type ResolvedBot,
 } from "./bot.ts";
+import { MEMORY_COMMIT_STEP } from "@operad-io/memory";
 import { createBot, knownMcpServers, knownSkills } from "./create.ts";
 import { ingestReports, runMcpCommand } from "./mcp-proposals.ts";
 import {
@@ -67,6 +68,7 @@ function rowOf(bot: ResolvedBot): Record<string, JsonValue> {
     effort: bot.effort,
     skills: [...bot.skills],
     speaker: bot.speaker,
+    writeWiki: bot.writeWiki,
     access: bot.access,
     mcpServers: Object.keys(bot.mcpServers),
   };
@@ -215,7 +217,7 @@ export async function openChat(input: OpenChat): Promise<string> {
   }
   const effortDefault = input.efforts?.[harness]?.default ?? undefined;
   mkdirSync(bot.cwd, { recursive: true });
-  ensureBotMemory(bot.cwd);
+  ensureBotMemory(bot.cwd, input.home);
   return createChat(
     input.store,
     {
@@ -548,7 +550,7 @@ export async function runSettings(ctx: StepContext, params: unknown): Promise<Pl
     }
     const bot = resolveBot(ctx.home, name, written, await repositoryPaths(ctx.store));
     mkdirSync(bot.cwd, { recursive: true });
-    ensureBotMemory(bot.cwd);
+    ensureBotMemory(bot.cwd, ctx.home);
     // Only the servers the bot lists, and only on a harness that takes MCP servers natively.
     const mounts = MCP_HARNESSES.includes(chatData(stored.data).harness);
     const mcpServers: Record<string, JsonValue> = {};
@@ -563,6 +565,8 @@ export async function runSettings(ctx: StepContext, params: unknown): Promise<Pl
         skills: [...bot.skills],
         mcpServers,
         useOwnSettings: bot.useOwnSettings,
+        // The memory plugin records what this reply wrote, once the round ends.
+        ...(ctx.stepLoaded !== undefined && ctx.stepLoaded(MEMORY_COMMIT_STEP) ? { after: MEMORY_COMMIT_STEP } : {}),
         context: scheduledChatContext(),
       },
     };
@@ -582,6 +586,7 @@ function botMarkdown(object: StoredObject): string {
     ? data.skills.filter((path): path is string => typeof path === "string")
     : [];
   lines.push(skills.length === 0 ? "No skills." : `Skills: ${skills.map(skillName).join(", ")}`);
+  lines.push(data.writeWiki === true ? "Wiki: read and write." : "Wiki: read only.");
   const servers = Array.isArray(data.mcpServers) ? data.mcpServers : [];
   if (servers.length > 0) {
     lines.push(

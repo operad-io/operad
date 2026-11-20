@@ -5,6 +5,7 @@
   "references": [
     { "path": "../access-match" },
     { "path": "../chat" },
-    { "path": "../engine" }
+    { "path": "../engine" },
+    { "path": "../memory" }
   ]
 }
