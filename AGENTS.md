@@ -114,7 +114,7 @@ It runs `bun install --frozen-lockfile`, `bunx tsc -b` and `bun test`.
 A task that changes how checks run (the gate, integration or rerun commands in
 `.operad/dev.json`, `scripts/remote-check.sh`, `scripts/run-tests.sh`,
 `scripts/check-changed.sh`, `scripts/verify.sh`) runs each changed command once
-through `scripts/remote-check.sh` on the check host before it is done, including
+through `scripts/remote-check.sh` on the test host before it is done, including
 the rerun of one failing test, and its final answer gives the command and the
 result. dev reads these commands from main, so a task's own check runs the old
 ones and cannot show the new ones work (T-0234's rerun broke every check after
