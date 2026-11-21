@@ -15,7 +15,6 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   isRecord,
-  paramsObject,
   definePlugin,
   type HarnessEfforts,
   type HarnessModelContext,
@@ -40,7 +39,6 @@ import {
   promptFlowOf,
   readAgentStep,
   runWorkerStep,
-  secs,
   STALL_SETTING,
   STEP_TIMEOUT_SECS,
   stringListParam,

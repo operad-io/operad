@@ -11,7 +11,6 @@ import pkg from "../package.json" with { type: "json" };
 import { fileURLToPath } from "node:url";
 import {
   isRecord,
-  paramsObject,
   definePlugin,
   type HarnessEfforts,
   type PluginStepResult,
@@ -36,7 +35,6 @@ import {
   promptFlowOf,
   readAgentStep,
   runWorkerStep,
-  secs,
   STALL_SETTING,
   STEP_TIMEOUT_SECS,
   stringListParam,
