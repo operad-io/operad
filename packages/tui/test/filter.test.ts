@@ -9,7 +9,6 @@ import {
   type TuiView,
 } from "../src/index.ts";
 import {
-  footerText,
   initialState,
   KEY_LIST,
   reduce,
@@ -17,7 +16,7 @@ import {
 } from "../src/state.ts";
 import { BUILTIN_THEMES, toRgba } from "../src/theme.ts";
 import { drawState } from "../src/view/index.ts";
-import { immediateClock } from "./support.ts";
+import { footerOf, immediateClock, treeRows } from "./support.ts";
 
 const FILTERS = [
   { name: "active", states: ["proposed", "running"] },
@@ -37,13 +36,13 @@ function start(width = 120, types: readonly (typeof TASK | typeof PLAIN)[] = [TA
 }
 
 function load(state: TuiState, rows: ViewRow[], hidden?: number, filter?: string): TuiState {
-  return reduce(state, {
-    type: "page",
-    tabId: "plugin:task",
-    replace: true,
-    page: { rows, ...(hidden === undefined ? {} : { hidden }) },
-    ...(filter === undefined ? {} : { filter }),
-  });
+  return reduce(
+    state,
+    treeRows("plugin:task", rows, {
+      ...(hidden === undefined ? {} : { hidden }),
+      ...(filter === undefined ? {} : { filter }),
+    }),
+  );
 }
 
 const key = (state: TuiState, name: string, shift = false): TuiState =>
@@ -148,27 +147,6 @@ describe("filters: state", () => {
     state = load(state, [row("a"), row("b"), row("z", "merged")], undefined, "all");
     expect(ids(state)).toEqual(["done1"]);
     expect(task(state)?.hidden).toBe(5);
-    // an appended page of the old filter is dropped too
-    state = reduce(state, {
-      type: "page",
-      tabId: "plugin:task",
-      page: { rows: [row("old")] },
-      filter: "all",
-    });
-    expect(ids(state)).toEqual(["done1"]);
-  });
-
-  test("a page for the old list version is dropped after a cycle", () => {
-    let state = onTasks();
-    const version = task(state)?.list.version;
-    state = key(state, "f");
-    state = reduce(state, {
-      type: "page",
-      tabId: "plugin:task",
-      page: { rows: [row("late")] },
-      version,
-    });
-    expect(ids(state)).toEqual(["a", "b", "c"]);
   });
 
   test("a live event that takes the selected object out of the filter moves to the next row", () => {
@@ -305,14 +283,8 @@ describe("filters: view", () => {
       state = reduce(state, { type: "filter-launched" });
     }
     expect(task(state)?.filter).toBe("active");
-    const page = (id: string, filterSeq: number | undefined): TuiStateEvent => ({
-      type: "page",
-      tabId: "plugin:task",
-      replace: true,
-      page: { rows: [row(id)] },
-      filter: "active",
-      filterSeq,
-    });
+    const page = (id: string, filterSeq: number | undefined): TuiStateEvent =>
+      treeRows("plugin:task", [row(id)], { filter: "active", filterSeq });
     state = reduce(state, page("new", asked[3]));
     state = reduce(state, page("old", 0));
     expect(ids(state)).toEqual(["new"]);
@@ -320,16 +292,16 @@ describe("filters: view", () => {
 
   test("the footer offers f filter only on a tab that has filters", () => {
     const on = onTasks();
-    expect(footerText(on)).toContain("f filter");
-    expect(footerText(key(on, "1"))).not.toContain("f filter");
-    expect(footerText(key(on, "2"))).not.toContain("f filter");
-    expect(footerText(key(on, "4"))).not.toContain("f filter");
+    expect(footerOf(on)).toContain("f filter");
+    expect(footerOf(key(on, "1"))).not.toContain("f filter");
+    expect(footerOf(key(on, "2"))).not.toContain("f filter");
+    expect(footerOf(key(on, "4"))).not.toContain("f filter");
   });
 
   test("the footer keeps f full with a narrow object open, and the key list names f", () => {
     const narrow = reduce(key(onTasks(), "enter"), { type: "resize", width: 80, height: 24 });
-    expect(footerText(narrow)).toContain("f full");
-    expect(footerText(narrow)).not.toContain("f filter");
+    expect(footerOf(narrow)).toContain("f full");
+    expect(footerOf(narrow)).not.toContain("f filter");
     expect(KEY_LIST.some(([k, what]) => k === "f" && what.includes("filter"))).toBe(true);
   });
 });

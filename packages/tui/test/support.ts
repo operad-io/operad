@@ -3,6 +3,8 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { TuiClock } from "../src/live.ts";
+import type { TuiState, TuiStateEvent } from "../src/state.ts";
+import { drawState } from "../src/view/index.ts";
 import {
   MemoryPluginStore,
   createViews,
@@ -15,6 +17,7 @@ import {
   type HttpServerHandle,
   type LogBackend,
   type PluginRegistry,
+  type ViewRow,
   type Views,
 } from "@operad-io/engine";
 
@@ -172,4 +175,40 @@ export class ManualClock implements TuiClock {
   get pending(): number {
     return this.timers.size;
   }
+}
+
+/** A whole list of plugin rows, the way the shell answers a load. */
+export function treeRows(
+  tabId: string,
+  rows: readonly ViewRow[],
+  extra: {
+    readonly hidden?: number | undefined;
+    readonly filter?: string | undefined;
+    readonly filterSeq?: number | undefined;
+    readonly generation?: number | undefined;
+  } = {},
+): TuiStateEvent {
+  const fallback = tabId.startsWith("plugin:") ? tabId.slice("plugin:".length) : tabId;
+  const typeOf = (row: ViewRow): string =>
+    row.id.includes(":") ? row.id.slice(0, row.id.indexOf(":")) : fallback;
+  return {
+    type: "tree",
+    tabId,
+    level: "roots",
+    entries: rows.map((row) => ({ row, type: typeOf(row) })),
+    ...(extra.hidden === undefined ? {} : { hidden: extra.hidden }),
+    ...(extra.filter === undefined ? {} : { filter: extra.filter }),
+    ...(extra.filterSeq === undefined ? {} : { filterSeq: extra.filterSeq }),
+    ...(extra.generation === undefined ? {} : { generation: extra.generation }),
+  };
+}
+
+/** The header line the screen draws. */
+export function headerOf(state: TuiState): string {
+  return drawState(state).header.chunks.map((chunk) => chunk.text).join("");
+}
+
+/** The footer line the screen draws. */
+export function footerOf(state: TuiState): string {
+  return drawState(state).footer.chunks.map((chunk) => chunk.text).join("").trimStart();
 }

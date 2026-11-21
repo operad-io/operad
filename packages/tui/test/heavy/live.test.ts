@@ -33,7 +33,7 @@ import {
   type TuiState,
   type TuiView,
 } from "../../src/index.ts";
-import { ManualClock, makeHarness } from "../support.ts";
+import { ManualClock, makeHarness, treeRows } from "../support.ts";
 
 function row(id: string, title = id): ViewRow {
   return { id, title, state: "new", waiting: false, running: false };
@@ -606,7 +606,7 @@ describe("the states a session meets", () => {
     state = reduce(state, { type: "types", types: [{ type: "item", title: "Item" }] });
     state = reduce(state, { type: "pending", items: [] });
     expect(text(drawState(state).list)).toContain("nothing waits for you");
-    state = reduce(state, { type: "page", tabId: "plugin:item", page: { rows: [] } });
+    state = reduce(state, treeRows("plugin:item", []));
     state = reduce(state, { type: "key", key: "3", text: "3" });
     expect(text(drawState(state).list)).toContain("nothing in item");
     state = reduce(state, { type: "connection", connection: "unreachable" });
@@ -617,7 +617,7 @@ describe("the states a session meets", () => {
     let state = initialState({ width: 100, height: 20 });
     state = reduce(state, { type: "pending", items: [] });
     state = reduce(state, { type: "types", types: [{ type: "item", title: "Item" }] });
-    state = reduce(state, { type: "page", tabId: "plugin:item", page: { rows: [row("a")] } });
+    state = reduce(state, treeRows("plugin:item", [row("a")]));
     state = reduce(state, { type: "key", key: "3", text: "3" });
     const colours = (s: TuiState): string[] =>
       drawState(s).list.chunks.map((part) => JSON.stringify(part.fg ?? null));
@@ -631,7 +631,7 @@ describe("the states a session meets", () => {
   test("a section that failed shows its message and r asks for it again", () => {
     let state = initialState({ width: 120, height: 20 });
     state = reduce(state, { type: "types", types: [{ type: "item", title: "Item" }] });
-    state = reduce(state, { type: "page", tabId: "plugin:item", page: { rows: [row("a")] } });
+    state = reduce(state, treeRows("plugin:item", [row("a")]));
     state = reduce(state, { type: "key", key: "3", text: "3" });
     state = reduce(state, { type: "key", key: "return" });
     state = reduce(state, {

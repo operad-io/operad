@@ -4,8 +4,8 @@ import { layoutMarkdown } from "../src/layout.ts";
 import { createTestRenderer } from "@opentui/core/testing";
 import type { ViewObject, ViewRow } from "@operad-io/engine";
 import { initialState, reduce, type TuiState } from "../src/state.ts";
-import { TUI_PALETTE, createTuiView } from "../src/view/index.ts";
-import { markdownLines } from "../src/markdown.ts";
+import { TUI_PALETTE, createTuiView, drawState } from "../src/view/index.ts";
+import { treeRows } from "./support.ts";
 
 const MARKDOWN = [
   "| name | value |",
@@ -48,17 +48,12 @@ function object(): ViewObject {
   };
 }
 
-function state(): TuiState {
-  let next = reduce(initialState({ width: 120, height: 30 }), {
+function state(markdown = MARKDOWN, width = 120, height = 30): TuiState {
+  let next = reduce(initialState({ width, height }), {
     type: "types",
     types: [{ type: "item", title: "Item" }],
   });
-  next = reduce(next, {
-    type: "page",
-    tabId: "plugin:item",
-    replace: true,
-    page: { rows: [row("one")] },
-  });
+  next = reduce(next, treeRows("plugin:item", [row("one")]));
   next = reduce(next, { type: "key", key: "3" });
   next = reduce(next, { type: "key", key: "enter" });
   next = reduce(next, { type: "object", object: object(), version: 1 });
@@ -66,7 +61,7 @@ function state(): TuiState {
     type: "section",
     objectId: "one",
     sectionId: "info",
-    content: { markdown: MARKDOWN },
+    content: { markdown },
   });
 }
 
@@ -103,36 +98,34 @@ describe("the TUI Markdown", () => {
     }
   });
 
-  test("the engine's lines keep fenced code marked for a monospace client", () => {
-    const lines = markdownLines(MARKDOWN, TUI_PALETTE.dark);
-    const diff = lines.find((line) => line.text.includes("+hello"));
-    const mermaid = lines.find((line) => line.text.includes("A-->B"));
-    expect(diff?.code).toBe(true);
-    expect(mermaid?.code).toBe(true);
-    expect(lines.some((line) => line.text.includes("mermaid"))).toBe(false);
-    expect(lines.find((line) => line.text.includes("alpha"))?.code).toBe(false);
+  test("the screen keeps fenced code marked for a monospace client", () => {
+    const chunks = drawState(state()).right.chunks;
+    const drawn = chunks.map((chunk) => chunk.text).join("");
+    const coded = (needle: string): boolean =>
+      chunks.find((chunk) => chunk.text.includes(needle))?.bg !== undefined;
+    expect(coded("+hello")).toBe(true);
+    expect(coded("A-->B")).toBe(true);
+    expect(drawn).not.toContain("mermaid");
+    expect(chunks.find((chunk) => chunk.text.includes("alpha"))?.bg).toBeUndefined();
   });
 
   test("a four-backtick diff colours + and - lines and keeps indentation", () => {
-    const lines = markdownLines(
-      "````diff\n--- a/f\n+++ b/f\n docs/manual.md | 2 +-\n docs/other.md | 1 +\n@@ -1 +1 @@\n-old\n+```\n+new\n````",
-      TUI_PALETTE.dark,
-    );
-    const colourOf = (needle: string): string | undefined => {
-      const found = lines.find((line) => line.text.includes(needle));
-      const fg = found?.chunks.find((chunk) => chunk.fg !== undefined)?.fg;
-      return fg?.toInts().join(",");
-    };
-    const ints = (hex: string): string => RGBA.fromHex(hex).toInts().join(",");
+    const chunks = drawState(
+      state(
+        "````diff\n--- a/f\n+++ b/f\n docs/manual.md | 2 +-\n docs/other.md | 1 +\n@@ -1 +1 @@\n-old\n+```\n+new\n````",
+      ),
+    ).right.chunks;
+    const colourOf = (needle: string): string | undefined =>
+      chunks.find((chunk) => chunk.text.includes(needle))?.fg?.toInts().join(",");
     expect(colourOf("+new")).toBe(ints(TUI_PALETTE.dark.add));
     expect(colourOf("+```")).toBe(ints(TUI_PALETTE.dark.add));
     expect(colourOf("-old")).toBe(ints(TUI_PALETTE.dark.remove));
     expect(colourOf("+++ b/f")).toBe(ints(TUI_PALETTE.dark.add));
     expect(colourOf("--- a/f")).toBe(ints(TUI_PALETTE.dark.remove));
     expect(colourOf("@@")).toBe(ints(TUI_PALETTE.dark.accent));
-    const texts = lines.map((line) => line.text);
-    expect(texts).toContain("  docs/manual.md | 2 +-");
-    expect(texts).toContain("  docs/other.md | 1 +");
+    const drawn = chunks.map((chunk) => chunk.text).join("");
+    expect(drawn).toContain("  docs/manual.md | 2 +-");
+    expect(drawn).toContain("  docs/other.md | 1 +");
   });
 });
 
@@ -148,20 +141,22 @@ describe("tables fit the pane", () => {
   ].join("\n");
 
   test("13 tasks at 100 columns take 15 rows none wider than the pane, and a resize re-lays them", () => {
-    const wide = markdownLines(tasks, TUI_PALETTE.dark, 100);
+    const wide = layoutMarkdown(tasks, 100);
     expect(wide).toHaveLength(15);
     for (const line of wide) {
-      expect([...line.text].length).toBeLessThanOrEqual(100);
+      expect(Bun.stringWidth(line.text)).toBeLessThanOrEqual(100);
     }
-    const header = layoutMarkdown(tasks, 100)[0];
+    const header = wide[0];
     expect(header?.runs[0]?.style.role).toBe("weak");
     expect((header?.runs[0]?.style.attributes ?? 0) & TextAttributes.BOLD).not.toBe(0);
-    const narrow = markdownLines(tasks, TUI_PALETTE.dark, 60);
+    const narrow = layoutMarkdown(tasks, 60);
     expect(narrow).toHaveLength(15);
     for (const line of narrow) {
-      expect([...line.text].length).toBeLessThanOrEqual(60);
+      expect(Bun.stringWidth(line.text)).toBeLessThanOrEqual(60);
     }
     expect(narrow[5]?.text).not.toBe(wide[5]?.text);
+    const drawn = drawState(state(tasks, 141, 40)).right.chunks.map((chunk) => chunk.text).join("");
+    expect(drawn).toContain("A long task title number 13");
   });
 });
 
@@ -171,4 +166,3 @@ describe("the TUI inline code", () => {
     expect(rows[0]?.text).toBe("tool Bash 3s echo `date`");
   });
 });
-
