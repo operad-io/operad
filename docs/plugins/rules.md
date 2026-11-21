@@ -29,6 +29,7 @@ Plugins use `@operad-io/engine/platform` for processes, locks and watching. A te
 | `linkSync(` | `linkExclusive` or `withLockFile` |
 | `process.kill(-` (a signal to a process group) | `killProcessGroup` or `runLine` |
 | `fs.watch(`, or `import { watch } from "node:fs"` | `watchDirectory` or `waitForChange` |
+| a temporary file name in a template literal ending in `.tmp` | `writeFileAtomic` or `writeJsonAtomic` |
 
 Open every SQLite database with `setBusyTimeout`, `enableWal` and `writeImmediate`; do not sleep and retry. See [the platform module](platform.md).
 

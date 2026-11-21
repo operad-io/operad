@@ -24,12 +24,14 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
-  renameSync,
   rmSync,
-  writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { waitForChange, withLockFile } from "@operad-io/engine/platform";
+import {
+  waitForChange,
+  withLockFile,
+  writeJsonAtomicSync,
+} from "@operad-io/engine/platform";
 import { repositoryPathKey } from "./repository-key.ts";
 
 /**
@@ -148,9 +150,7 @@ function landLockPath(directory: string): string {
 }
 
 function writeAtomic(path: string, value: unknown): void {
-  const temporary = `${path}.${process.pid}.tmp`;
-  writeFileSync(temporary, JSON.stringify(value));
-  renameSync(temporary, path);
+  writeJsonAtomicSync(path, value, { newline: false });
 }
 
 function parseTicket(text: string): Ticket | undefined {

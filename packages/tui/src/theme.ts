@@ -6,10 +6,10 @@
  */
 
 import { messageOf } from "@operad-io/engine";
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { RGBA } from "@opentui/core";
-import { watchDirectory } from "@operad-io/engine/platform";
+import { watchDirectory, writeJsonAtomicSync } from "@operad-io/engine/platform";
 import { repeatEvery } from "@operad-io/engine";
 import { SHIPPED_THEMES, THEME_FAMILIES, shippedThemeFile } from "./themes.ts";
 
@@ -398,10 +398,7 @@ function saveTuiChoice(home: string, key: "theme" | "layout", value: string): vo
   const existing: Record<string, unknown> = existsSync(file)
     ? (JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>)
     : {};
-  mkdirSync(home, { recursive: true });
-  const temporary = `${file}.${process.pid}.tmp`;
-  writeFileSync(temporary, `${JSON.stringify({ ...existing, [key]: value }, null, 2)}\n`);
-  renameSync(temporary, file);
+  writeJsonAtomicSync(file, { ...existing, [key]: value }, { space: 2 });
 }
 
 /**

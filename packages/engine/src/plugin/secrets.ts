@@ -4,9 +4,9 @@
  * log's existing refusal still protects it.
  */
 
-import { randomUUID } from "node:crypto";
-import { chmod, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, unlink } from "node:fs/promises";
 import { join } from "node:path";
+import { writeJsonAtomic } from "../platform/index.ts";
 import { Secret } from "../log/secret.ts";
 import type { SecretStore } from "./types.ts";
 import { isMissingFile, isRecord } from "../util.ts";
@@ -120,15 +120,9 @@ export class FileSecretStore implements SecretStore {
       }
       return;
     }
-    const temporary = `${path}.${randomUUID()}.tmp`;
     try {
-      await writeFile(temporary, `${JSON.stringify(values, null, 2)}\n`, {
-        mode: 0o600,
-      });
-      await chmod(temporary, 0o600);
-      await rename(temporary, path);
+      await writeJsonAtomic(path, values, { space: 2, mode: 0o600 });
     } catch (error) {
-      await unlink(temporary).catch(() => undefined);
       throw new Error(
         `secrets for plugin "${this.#plugin}": cannot write: ${String(error)}`,
       );

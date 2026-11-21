@@ -23,7 +23,6 @@ import {
   isRecord,
   messageOf,
   prepareSettings,
-  writeFileAtomic,
   type ActionTypeDefinition,
   type CommandContext,
   type JsonValue,
@@ -33,7 +32,7 @@ import {
   type SectionContent,
   type StoredObject,
 } from "@operad-io/engine";
-import { withLockFile } from "@operad-io/engine/platform";
+import { withLockFile, writeFileAtomic } from "@operad-io/engine/platform";
 import {
   BOT_SETTINGS,
   BOT_TYPE,

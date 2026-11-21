@@ -2,8 +2,9 @@
 
 import { messageOf } from "@operad-io/engine";
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { writeJsonAtomicSync } from "@operad-io/engine/platform";
 import {
   cronMatches,
   type CronField,
@@ -126,11 +127,7 @@ function readRules(home: string): readonly TriggerRule[] {
 }
 
 function writeRules(home: string, rules: readonly TriggerRule[]): void {
-  const file = triggersFile(home);
-  mkdirSync(dirname(file), { recursive: true });
-  const temporary = `${file}.${process.pid}.tmp`;
-  writeFileSync(temporary, `${JSON.stringify(rules, null, 2)}\n`, "utf8");
-  renameSync(temporary, file);
+  writeJsonAtomicSync(triggersFile(home), rules, { space: 2 });
 }
 
 function scheduled(rules: readonly TriggerRule[]): readonly TriggerRule[] {

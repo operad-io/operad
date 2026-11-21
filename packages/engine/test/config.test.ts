@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdir, readdir, readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -168,9 +168,14 @@ describe("operad config", () => {
     const home = join(root, "home");
     const written = JSON.stringify({ store: { path: "s" } });
     await Bun.write(join(home, "config.json"), written);
-    // A directory where the temp file goes makes the write fail.
-    await mkdir(join(home, "config.json.tmp"));
-    await expect(ensureConfig(home)).rejects.toThrow();
+    // A hook that refuses the write leaves the target as it was.
+    await expect(
+      ensureConfig(home, defaultConfig(home), {
+        beforeRename: () => {
+          throw new Error("disk full");
+        },
+      }),
+    ).rejects.toThrow("disk full");
     expect(await readFile(join(home, "config.json"), "utf8")).toBe(written);
   });
 

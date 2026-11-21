@@ -5,11 +5,10 @@
  * needs a list before one exists can wait for that refresh.
  */
 
-import { randomUUID } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
-import { mkdir, rename, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { isRecord, type HarnessModelCapability, type HarnessModelInfo } from "@operad-io/engine";
+import { writeJsonAtomic } from "@operad-io/engine/platform";
 
 /** How long `pi --list-models` may take before pi counts as not answering. */
 export const PI_LIST_TIMEOUT_MS = 10_000;
@@ -363,8 +362,6 @@ async function writeKept(
   at: number,
 ): Promise<void> {
   const path = piModelListPath(options.home);
-  const temporary = join(dirname(path), `.${MODEL_LIST_FILE}.${process.pid}.${randomUUID()}.tmp`);
-  await mkdir(dirname(path), { recursive: true });
   const windows: Record<string, number> = {};
   const info: Record<string, HarnessModelInfo> = {};
   for (const row of rows) {
@@ -383,8 +380,7 @@ async function writeKept(
     ...(Object.keys(windows).length === 0 ? {} : { windows }),
     ...(Object.keys(info).length === 0 ? {} : { info }),
   };
-  await writeFile(temporary, `${JSON.stringify(kept)}\n`);
-  await rename(temporary, path);
+  await writeJsonAtomic(path, kept);
 }
 
 /**

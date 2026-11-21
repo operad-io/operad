@@ -5,9 +5,10 @@
  * and the event key keeps it one.
  */
 
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { isRecord } from "@operad-io/engine";
+import { writeJsonAtomicSync } from "@operad-io/engine/platform";
 
 /** The directory the plugin keeps its own files in. */
 export function telegramStateDirectory(home: string): string {
@@ -34,11 +35,7 @@ export function readOffset(home: string): number {
 
 /** Records the next offset and the time it was written. */
 export function writeOffset(home: string, offset: number, at: number): void {
-  const path = telegramStatePath(home);
-  mkdirSync(dirname(path), { recursive: true });
-  const temporary = `${path}.${process.pid}.tmp`;
-  writeFileSync(temporary, `${JSON.stringify({ offset, at })}\n`, "utf8");
-  renameSync(temporary, path);
+  writeJsonAtomicSync(telegramStatePath(home), { offset, at });
 }
 
 /** What was sent of one assistant message. */
@@ -122,11 +119,7 @@ export function readSent(home: string): SentState | undefined {
 
 /** Records the sends, replacing the file whole. */
 export function writeSent(home: string, state: SentState): void {
-  const path = telegramSentPath(home);
-  mkdirSync(dirname(path), { recursive: true });
-  const temporary = `${path}.${process.pid}.tmp`;
-  writeFileSync(temporary, `${JSON.stringify(state)}\n`, "utf8");
-  renameSync(temporary, path);
+  writeJsonAtomicSync(telegramSentPath(home), state);
 }
 
 /** One thing a message of the pending side offers. */
@@ -257,11 +250,7 @@ export function readPending(home: string): PendingState {
 
 /** Records the pending sends, replacing the file whole. */
 export function writePending(home: string, state: PendingState): void {
-  const path = telegramPendingPath(home);
-  mkdirSync(dirname(path), { recursive: true });
-  const temporary = `${path}.${process.pid}.tmp`;
-  writeFileSync(temporary, `${JSON.stringify(state)}\n`, "utf8");
-  renameSync(temporary, path);
+  writeJsonAtomicSync(telegramPendingPath(home), state);
 }
 
 /** One command sent without its one choice, as it waits for a tap. */
@@ -360,11 +349,7 @@ export function readCommands(home: string): CommandState {
 
 /** Records the choice keyboards, replacing the file whole. */
 export function writeCommands(home: string, state: CommandState): void {
-  const path = telegramCommandsPath(home);
-  mkdirSync(dirname(path), { recursive: true });
-  const temporary = `${path}.${process.pid}.tmp`;
-  writeFileSync(temporary, `${JSON.stringify(state)}\n`, "utf8");
-  renameSync(temporary, path);
+  writeJsonAtomicSync(telegramCommandsPath(home), state);
 }
 
 /** One progress message a reply is shown in: where it lives and what it last said. */
@@ -416,9 +401,5 @@ export function readProgress(home: string): ProgressState {
 
 /** Records the progress messages, replacing the file whole. */
 export function writeProgress(home: string, state: ProgressState): void {
-  const path = telegramProgressPath(home);
-  mkdirSync(dirname(path), { recursive: true });
-  const temporary = `${path}.${process.pid}.tmp`;
-  writeFileSync(temporary, `${JSON.stringify(state)}\n`, "utf8");
-  renameSync(temporary, path);
+  writeJsonAtomicSync(telegramProgressPath(home), state);
 }

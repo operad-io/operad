@@ -3,8 +3,9 @@
  * last. It is the TUI's, not the server's; a missing or broken file is empty.
  */
 
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { writeJsonAtomicSync } from "@operad-io/engine/platform";
 import { RECENT_ENTRIES } from "./actions.ts";
 
 export function stateFile(home: string): string {
@@ -29,11 +30,7 @@ export function loadRecent(home: string): readonly string[] {
 /** Writes the list; a failure is ignored, since losing it costs only a convenience. */
 export function saveRecent(home: string, recent: readonly string[]): void {
   try {
-    mkdirSync(home, { recursive: true });
-    const file = stateFile(home);
-    const temporary = `${file}.${process.pid}.tmp`;
-    writeFileSync(temporary, `${JSON.stringify({ recent }, null, 2)}\n`);
-    renameSync(temporary, file);
+    writeJsonAtomicSync(stateFile(home), { recent }, { space: 2 });
   } catch {
     // Nothing to do: the next change writes again.
   }
