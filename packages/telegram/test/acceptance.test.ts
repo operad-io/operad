@@ -16,6 +16,7 @@ import {
   defineFlow,
   definePlugin,
   serveOnce,
+  type ClientApi,
   type SourceContext,
 } from "@operad-io/engine";
 import { fakeClock, type FakeClock } from "@operad-io/engine/testing";
@@ -373,6 +374,31 @@ test("the telegram plugin starts and stops typing through a real chat reply run"
 
   release?.();
   await Promise.all(runners);
+  await w.close();
+});
+
+test("the plugin follows the client's events once", async () => {
+  const root = await mkdtemp(join(tmpdir(), "telegram-events-once-"));
+  roots.push(root);
+  const w = await createTelegramWorld({ root, users: [42], follow: true });
+  const api = new LongPollApi();
+  const clock = fakeClock();
+  let subscriptions = 0;
+  const client: ClientApi = {
+    ...w.ctx.client,
+    events: () => {
+      subscriptions += 1;
+      return w.ctx.client.events();
+    },
+  };
+  const plugin = createTelegramPlugin({ api, clock: () => clock.now(), wait: clockWait(clock) });
+  const start = plugin.start;
+  if (start === undefined) throw new Error("the plugin does not start");
+  const handle = await start({ ...w.ctx, client });
+  await nextTurn();
+  await nextTurn();
+  expect(subscriptions).toBe(1);
+  await handle.stop();
   await w.close();
 });
 

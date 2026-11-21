@@ -10,7 +10,7 @@ import {
   MESSAGE_FACT,
   chatRef,
 } from "@operad-io/chat";
-import { Secret } from "@operad-io/engine";
+import { Secret, type ClientApi, type SourceContext, type ViewEvent } from "@operad-io/engine";
 import {
   BotApiError,
   ReplySender,
@@ -93,6 +93,64 @@ function chatFactTypes(w: TelegramWorld, chat: string): string[] {
 
 const never = (): Promise<void> => new Promise(() => undefined);
 const instant = async (): Promise<void> => undefined;
+
+/** A client the test wakes with an event, delegating everything else to the real views. */
+class EventClient implements ClientApi {
+  private wake: ((result: IteratorResult<ViewEvent>) => void) | undefined;
+  private readonly queued: ViewEvent[] = [];
+  private readonly views: TelegramWorld["views"];
+
+  constructor(views: TelegramWorld["views"]) {
+    this.views = views;
+  }
+
+  announce(event: ViewEvent): void {
+    if (this.wake !== undefined) {
+      const wake = this.wake;
+      this.wake = undefined;
+      wake({ done: false, value: event });
+    } else {
+      this.queued.push(event);
+    }
+  }
+
+  list: ClientApi["list"] = (type, options) => this.views.list(type, options);
+
+  get: ClientApi["get"] = (id) => this.views.get(id);
+
+  section: ClientApi["section"] = (id, sectionId, cursor, options) =>
+    this.views.section(id, sectionId, cursor, options);
+
+  events(): AsyncIterable<ViewEvent> {
+    return {
+      [Symbol.asyncIterator]: () => ({
+        next: () => {
+          const queued = this.queued.shift();
+          if (queued !== undefined) return Promise.resolve({ done: false, value: queued });
+          return new Promise<IteratorResult<ViewEvent>>((resolve) => {
+            this.wake = resolve;
+          });
+        },
+        return: async () => {
+          this.wake?.({ done: true, value: undefined });
+          this.wake = undefined;
+          return { done: true, value: undefined };
+        },
+      }),
+    };
+  }
+
+  act: ClientApi["act"] = (name, id, options) => this.views.act(name, id, options);
+
+  pending: ClientApi["pending"] = () => this.views.pending();
+
+  answer: ClientApi["answer"] = (options) => this.views.answer(options);
+}
+
+/** Lets work already woken by an event run before the next assertion. */
+function nextTurn(): Promise<void> {
+  return new Promise<void>((resolve) => setImmediate(resolve));
+}
 
 function sender(w: TelegramWorld, api: FakeApi, wait: (ms: number, signal: AbortSignal) => Promise<void> = instant) {
   return new ReplySender(w.ctx, { api, wait, retry: { attempts: 4, baseMs: 100, maxMs: 1_000 } });
@@ -230,6 +288,37 @@ describe("sending a reply", () => {
     await w.close();
   });
 
+  test("an unrelated stored change and a live tail read nothing", async () => {
+    const { w, chat } = await bound();
+    const api = new FakeApi();
+    const client = new EventClient(w.views);
+    const ctx: SourceContext = { ...w.ctx, client };
+    const watcher = new ReplySender(ctx, { api, wait: instant });
+    const handle = watcher.start();
+    await handle.ready;
+    await nextTurn();
+    await nextTurn();
+
+    let reads = 0;
+    const original = w.store.get.bind(w.store);
+    w.store.get = ((type: string, id: string) => {
+      reads += 1;
+      return original(type, id);
+    }) as typeof w.store.get;
+
+    client.announce({ id: "task:t1", type: "task" });
+    await nextTurn();
+    expect(reads).toBe(0);
+
+    client.announce({ id: chat, type: "chat", section: "transcript", tail: "writing" });
+    await nextTurn();
+    expect(reads).toBe(0);
+
+    w.store.get = original as typeof w.store.get;
+    await handle.stop();
+    await w.close();
+  });
+
   test("a chat not bound to Telegram and a reply older than the first start send nothing", async () => {
     const { w, chat } = await bound();
     const api = new FakeApi();
@@ -288,6 +377,22 @@ describe("sending a reply", () => {
     await w.close();
   });
 });
+
+  test("a burst of events queues at most one sweep of a chat", async () => {
+    const { w, chat } = await bound();
+    const api = new FakeApi();
+    let reads = 0;
+    const original = w.store.get.bind(w.store);
+    w.store.get = ((type: string, id: string) => {
+      reads += 1;
+      return original(type, id);
+    }) as typeof w.store.get;
+    const watcher = sender(w, api);
+    await Promise.all(Array.from({ length: 10 }, () => watcher.sweepChat(chat)));
+    expect(reads).toBe(1);
+    w.store.get = original as typeof w.store.get;
+    await w.close();
+  });
 
 describe("the sent state file", () => {
   test("keeps an unfinished send and the done records within the margin of since", async () => {

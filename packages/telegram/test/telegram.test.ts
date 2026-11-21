@@ -281,6 +281,35 @@ describe("the telegram source", () => {
     await w.close();
   });
 
+  test("dedupe reads an old closed chat only while it is recently changed", async () => {
+    const w = await world({ users: [42] });
+    const api = new FakeApi();
+    api.updates = [update(100, 42, 555, "first")];
+    const telegram = source(w, api);
+    await telegram.poll();
+    const first = (await w.store.list(CHAT_TYPE)).objects[0];
+    if (first === undefined) throw new Error("no chat was opened");
+    await w.views.act("chat:close", first.id, {
+      yes: true,
+      actor: { via: "telegram", id: "42" },
+    });
+    api.updates = [update(101, 42, 555, "second")];
+    await telegram.poll();
+
+    // A new source has no recent chats yet; the old closed chat is not read.
+    const reads: string[] = [];
+    const original = w.store.facts.bind(w.store);
+    w.store.facts = ((object: Parameters<typeof original>[0], options?: Parameters<typeof original>[1]) => {
+      if (object?.type === CHAT_TYPE) reads.push(object.id);
+      return original(object, options);
+    }) as typeof w.store.facts;
+    api.updates = [update(100, 42, 555, "first")];
+    await source(w, api).poll();
+    w.store.facts = original as typeof w.store.facts;
+    expect(reads).not.toContain(first.id);
+    await w.close();
+  });
+
   test("an update that cannot be handled does not stop the later ones, and is retried", async () => {
     const w = await world({ users: [42] });
     const api = new FakeApi();
