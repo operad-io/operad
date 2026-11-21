@@ -24,10 +24,14 @@ const CITATIONS: readonly RegExp[] = [
   /第\s*\d+\s*(?:条|项)/,
 ];
 
+/** A cheap check that a line can hold any citation before a pattern backtracks over a long line. */
+const CITATION_MARKER = /\.md|决定|第|decision|item|point|section/i;
+
 /** `file:line: why` for each line that cites a backlog decision by number. */
 export function backlogDecisionCitations(file: string, text: string): string[] {
   const found: string[] = [];
   text.split("\n").forEach((line, index) => {
+    if (!CITATION_MARKER.test(line)) return;
     if (CITATIONS.some((pattern) => pattern.test(line))) {
       found.push(`${file}:${index + 1}: cites a backlog decision by number`);
     }
