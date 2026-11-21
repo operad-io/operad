@@ -299,6 +299,24 @@ describe("a command in a Telegram chat", () => {
     await w.close();
   });
 
+  test("a tap runs the command on the typed chat id even when another type holds the same id", async () => {
+    const w = await world({ users: [42], models: MODELS });
+    const api = new FakeApi();
+    const { source } = rig(w, api);
+    const chat = await bound(w, api, source);
+
+    api.updates = [update(100, 42, 555, "/model")];
+    await source.poll();
+    await w.store.put("bot-tidy", chat, {}, "test");
+
+    api.updates = [tap(101, 42, 555, 9_001, "c:0")];
+    await source.poll();
+    expect(api.edits.at(-1)?.text).toEndWith("chosen: m0");
+    const stored = await w.store.get(CHAT_TYPE, chat);
+    expect(chatData(stored?.data ?? {}).model).toBe("m0");
+    await w.close();
+  });
+
   test("a command gets no reaction", async () => {
     const w = await world({ users: [42] });
     const api = new FakeApi();

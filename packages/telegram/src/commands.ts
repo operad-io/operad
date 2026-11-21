@@ -444,7 +444,7 @@ export class CommandSender implements CommandResponder {
   /** Runs the command with the chosen value as its text; the words the message ends with. */
   private async run(sent: SentCommand, choice: string, userId: number): Promise<string> {
     try {
-      const result = await this.ctx.client.act("chat:send", sent.chatId, {
+      const result = await this.ctx.client.act("chat:send", `chat:${sent.chatId}`, {
         args: { note: `/${sent.name} ${choice}` },
         actor: { via: VIA, id: String(userId) },
       });

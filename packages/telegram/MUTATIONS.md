@@ -165,3 +165,12 @@ T-0588 added the `bot-tidy` type, which stores one object per bot under the bot'
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0588-M14 | packages/telegram/src/source.ts | `openBoundChat` passed the bare bot id to `bot:chat` again | `the telegram source > a chat opens on the bot even when another type holds an object of the same id` |
+
+## T-0607 — a Telegram chat is named by its typed id
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0607-M1 | packages/telegram/src/source.ts | a message's `chat:send` passed the bare chat id again | `the telegram source > a later message sends on the typed chat id even when another type holds the same id` |
+| T-0607-M2 | packages/telegram/src/commands.ts | a tapped command's `chat:send` passed the bare chat id again | `a command in a Telegram chat > a tap runs the command on the typed chat id even when another type holds the same id` |
+| T-0607-M3 | packages/telegram/src/progress.ts | the transcript section was read by the bare chat id again | `the progress message of a reply > reads its chat by the typed id even when another type holds the same id` |
+| T-0607-M4 | packages/telegram/src/progress.ts | the running flag was read by the bare chat id again, so a working run looked ended and its progress message was deleted | `the progress message of a reply > reads its chat by the typed id even when another type holds the same id` |

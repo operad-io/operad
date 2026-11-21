@@ -640,8 +640,10 @@ describe("the pending command", () => {
       ...ctx.client,
       act: async (name, id, options) => {
         if (name !== "chat:send") return ctx.client.act(name, id, options);
+        // The source names the chat by its typed id; prepare takes its bare id.
+        const chatId = id?.startsWith(`${CHAT_TYPE}:`) === true ? id.slice(CHAT_TYPE.length + 1) : id;
         // The command runs and holds the pass, then the act itself fails.
-        await sender.prepare(id ?? "", true);
+        await sender.prepare(chatId ?? "", true);
         throw new Error("the run log is full");
       },
     };
