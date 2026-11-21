@@ -39,7 +39,7 @@ import {
   promptWithSkills,
   secs,
   serverCommand,
-  standardUsage,
+  refuseResult,
   StepTimings,
   stringListParam,
   text,
@@ -538,45 +538,24 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
           // radian has no hook that sees a tool call, so it cannot let one
           // call through and no other: a one-time permission is refused.
           if (isRecord(access) && Array.isArray(access.grants) && access.grants.length > 0) {
-            const message = `${at}: radian cannot enforce a one-time permission (no hook sees its tool calls); ask with pi, or without a grant`;
-            const log = await ctx.logger.write(message);
-            const timing = timings.finish();
-            return withTimings({
-              result: "failed",
-              data: {
-                reason: "grant_unsupported",
-                message,
-                exitCode: null,
-                signal: null,
-                sessionId: null,
-                finalMessage: null,
-                usage: standardUsage(who, undefined, null),
-                log,
-                durationMs: timing.totalMs,
-                stderr: [message],
-              },
-            }, timing);
+            return await refuseResult({
+              log: (message) => ctx.logger.write(message),
+              timings,
+              who,
+              reason: "grant_unsupported",
+              message: `${at}: radian cannot enforce a one-time permission (no hook sees its tool calls); ask with pi, or without a grant`,
+            });
           }
 
           const cwdProblem = await directoryError(cwd);
           if (cwdProblem !== undefined) {
-            const log = await ctx.logger.write(cwdProblem);
-            const timing = timings.finish();
-            return withTimings({
-              result: "failed",
-              data: {
-                reason: "cwd",
-                message: cwdProblem,
-                exitCode: null,
-                signal: null,
-                sessionId: null,
-                finalMessage: null,
-                usage: standardUsage(who, undefined, null),
-                log,
-                durationMs: timing.totalMs,
-                stderr: [cwdProblem],
-              },
-            }, timing);
+            return await refuseResult({
+              log: (message) => ctx.logger.write(message),
+              timings,
+              who,
+              reason: "cwd",
+              message: cwdProblem,
+            });
           }
 
           // Operad's tools: radian starts the server named in this file.

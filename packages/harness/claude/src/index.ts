@@ -8,7 +8,6 @@
  */
 
 import pkg from "../package.json" with { type: "json" };
-import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
   isRecord,
@@ -19,6 +18,7 @@ import {
   type StepContext,
 } from "@operad-io/engine";
 import {
+  assertWorkerAvailable,
   CONCURRENCY_SETTING,
   createCachedProbe,
   DEFAULT_STALL_SECS,
@@ -347,12 +347,7 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
       // The user's own claude: found, version-checked and asked who is logged
       // in. Only the login kind is reported.
       const claude = inspectClaude(claudeCommand);
-      if (options.command === undefined && !existsSync(process.execPath)) {
-        throw new Error("bun was not found");
-      }
-      if (options.args === undefined && !existsSync(WORKER_PATH)) {
-        throw new Error(`the worker program is missing: ${WORKER_PATH}`);
-      }
+      assertWorkerAvailable({ command: options.command, args: options.args, workerPath: WORKER_PATH });
       const sdk = await sdkVersion();
       return (
         `claude ${claude.version} at ${claude.path} (floor ${CLAUDE_FLOOR}); ` +

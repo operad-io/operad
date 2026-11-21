@@ -4,6 +4,7 @@
  * needs removed or ignored.
  */
 
+import { existsSync } from "node:fs";
 import { serveKeptWorker, type ParsedInput, type WorkerAdapter } from "./keep.ts";
 
 /** Reads one input object; invalid JSON is a parse failure. */
@@ -18,6 +19,26 @@ export function decodeWorkerInput<TInput>(
     return { ok: false, message: "the input is not valid JSON" };
   }
   return parse(decoded);
+}
+
+/** What a plugin's `check` knows about its worker program. */
+export interface WorkerAvailability {
+  /** The executable a test injected; the running Bun when it is unset. */
+  readonly command?: string | undefined;
+  /** The arguments a test injected; the worker program when they are unset. */
+  readonly args?: readonly string[] | undefined;
+  /** The worker program the plugin starts. */
+  readonly workerPath: string;
+}
+
+/** Refuses `check` when the running Bun or the worker program is not there. */
+export function assertWorkerAvailable(availability: WorkerAvailability): void {
+  if (availability.command === undefined && !existsSync(process.execPath)) {
+    throw new Error("bun was not found");
+  }
+  if (availability.args === undefined && !existsSync(availability.workerPath)) {
+    throw new Error(`the worker program is missing: ${availability.workerPath}`);
+  }
 }
 
 /** What a program's entry needs beyond its adapter. */

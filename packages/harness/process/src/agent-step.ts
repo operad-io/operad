@@ -26,9 +26,10 @@ import { eventNote } from "./event-note.ts";
 import { hasGrants } from "./grants.ts";
 import { inboxOf } from "./inbox.ts";
 import { flagValue } from "./limit.ts";
+import { refuseResult } from "./refusal.ts";
 import { optionalText, parseStepFlags, secs, stringListParam, text, type StepFlagSpec } from "./step.ts";
-import { StepTimings, withTimings } from "./timings.ts";
-import { standardUsage, type UsageSource } from "./usage.ts";
+import { StepTimings } from "./timings.ts";
+import type { UsageSource } from "./usage.ts";
 
 /** What one harness adds to the shared reading of an `agent` step. */
 export interface AgentStepSpec<Level extends string> {
@@ -138,29 +139,15 @@ export async function readAgentStep<Level extends string>(
     typeof flags === "string" ? (flagValue(args, "--model") ?? settingModel) : (flags.model ?? settingModel);
   const early: UsageSource = { harness: spec.harness, model: knownModel ?? null };
 
-  const refuse = async (reason: string, message: string): Promise<PluginStepResult> => {
-    const log = await ctx.logger.write(message);
-    const timing = timings.finish();
-    return withTimings(
-      {
-        result: "failed",
-        data: {
-          reason,
-          message,
-          exitCode: null,
-          signal: null,
-          sessionId: null,
-          finalMessage: null,
-          usage: standardUsage(early, undefined, null),
-          log,
-          durationMs: timing.totalMs,
-          stderr: [message],
-          ...spec.refusalExtra,
-        },
-      },
-      timing,
-    );
-  };
+  const refuse = (reason: string, message: string): Promise<PluginStepResult> =>
+    refuseResult({
+      log: (text) => ctx.logger.write(text),
+      timings,
+      who: early,
+      reason,
+      message,
+      extra: spec.refusalExtra,
+    });
 
   if (typeof flags === "string") return { refused: await refuse("invalid_args", `${at}: ${flags}`) };
 

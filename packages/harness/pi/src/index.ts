@@ -8,7 +8,7 @@
  */
 
 import pkg from "../package.json" with { type: "json" };
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
@@ -24,6 +24,7 @@ import {
   type StepContext,
 } from "@operad-io/engine";
 import {
+  assertWorkerAvailable,
   CONCURRENCY_SETTING,
   DEFAULT_STALL_SECS,
   DEFAULT_WALL_TIME_SECS,
@@ -566,12 +567,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
       const piCommand = optionalText(ctx.settings.command, "pi: settings.command");
       // The user's own pi: found and version-checked, not loaded.
       const pi = findPi(piCommand ?? DEFAULT_PI_COMMAND);
-      if (options.command === undefined && !existsSync(process.execPath)) {
-        throw new Error("bun was not found");
-      }
-      if (options.args === undefined && !existsSync(WORKER_PATH)) {
-        throw new Error(`the worker program is missing: ${WORKER_PATH}`);
-      }
+      assertWorkerAvailable({ command: options.command, args: options.args, workerPath: WORKER_PATH });
       return `pi ${pi.version} at ${pi.dir} (floor ${PI_FLOOR}); the worker program is available`;
     },
   });
