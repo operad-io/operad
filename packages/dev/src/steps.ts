@@ -13,7 +13,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import {
   isRecord,
   messageOf,
@@ -308,25 +308,74 @@ export function conflictedFiles(worktree: string): readonly string[] {
     .sort();
 }
 
-/**
- * The files `git status` calls changed, untracked included. Read from
- * `--porcelain -z`: names are not quoted or trimmed, a name may hold spaces, and
- * a rename or copy is followed by its old path, which is skipped (the new path
- * is the changed file).
- */
-export function changedFiles(worktree: string): readonly string[] {
-  const result = git(worktree, ["status", "--porcelain", "-z"], true);
+// One `git status --porcelain` entry: its two status letters and its path.
+interface CheckoutEntry {
+  readonly code: string;
+  readonly path: string;
+}
+
+// The status entries of a checkout, read from `--porcelain -z`: names are not
+// quoted or trimmed, a name may hold spaces or newlines, and a rename or copy
+// is followed by its old path, which is skipped. `--no-optional-locks` stops git
+// from refreshing the index, so reading the checkout writes no metadata.
+function checkoutEntries(checkout: string): readonly CheckoutEntry[] {
+  const result = git(checkout, ["--no-optional-locks", "status", "--porcelain", "-z"], true);
   if (!result.ok || result.out.length === 0) return [];
   const entries = result.out.split("\0");
-  const files: string[] = [];
+  const status: CheckoutEntry[] = [];
   for (let index = 0; index < entries.length; index += 1) {
     const entry = entries[index] ?? "";
     if (entry.length < 4) continue;
-    files.push(entry.slice(3));
     const code = entry.slice(0, 2);
+    status.push({ code, path: entry.slice(3) });
     if (code.includes("R") || code.includes("C")) index += 1;
   }
-  return [...new Set(files)].filter((file) => file !== PROGRESS_FILE).sort();
+  return status;
+}
+
+function checkoutEntryKey(entry: CheckoutEntry): string {
+  return `${entry.code}\0${entry.path}`;
+}
+
+// True when a status path is the task's worktree or lies inside it.
+function insideWorktree(checkout: string, worktree: string, path: string): boolean {
+  const root = relative(checkout, worktree).replace(/\\/g, "/");
+  if (root.length === 0) return true;
+  if (root.startsWith("..")) return false;
+  const candidate = path.replace(/\\/g, "/");
+  return candidate === root || candidate.startsWith(`${root}/`);
+}
+
+// The paths whose status in the main checkout is new since `before`, leaving
+// out the task's own worktree, whose presence there the worktree explains.
+function newCheckoutChanges(
+  checkout: string,
+  worktree: string,
+  before: readonly CheckoutEntry[],
+): readonly string[] {
+  const seen = new Set(before.map(checkoutEntryKey));
+  return [
+    ...new Set(
+      checkoutEntries(checkout)
+        .filter((entry) => !seen.has(checkoutEntryKey(entry)))
+        .map((entry) => entry.path)
+        .filter((path) => !insideWorktree(checkout, worktree, path)),
+    ),
+  ].sort();
+}
+
+// The files `git status` calls changed, untracked included. Read from
+// `--porcelain -z`: names are not quoted or trimmed, a name may hold spaces, and
+// a rename or copy is followed by its old path, which is skipped (the new path
+// is the changed file).
+export function changedFiles(worktree: string): readonly string[] {
+  return [
+    ...new Set(
+      checkoutEntries(worktree)
+        .map((entry) => entry.path)
+        .filter((file) => file !== PROGRESS_FILE),
+    ),
+  ].sort();
 }
 
 export interface Prepared {
@@ -1712,6 +1761,7 @@ export async function runWork(ctx: StepContext, stepParams?: unknown): Promise<P
     stageParamsOf(stage),
   );
   if (askAnswer !== undefined) poolCall.askAnswer = askAnswer;
+  const mainCheckoutBefore = checkoutEntries(context.repository.path);
   try {
     outcome = await withWorkerReports(
       { placed: workerPlaced, started: workerStarted },
@@ -1736,6 +1786,11 @@ export async function runWork(ctx: StepContext, stepParams?: unknown): Promise<P
     for (const timer of [...timers, ...runTimers]) clock.clearTimeout(timer);
     ctx.signal.removeEventListener("abort", forwardAbort);
   }
+  const mainChanges = newCheckoutChanges(
+    context.repository.path,
+    path,
+    mainCheckoutBefore,
+  );
   const outcomeData =
     outcome !== undefined &&
     typeof outcome.data === "object" &&
@@ -1783,6 +1838,23 @@ export async function runWork(ctx: StepContext, stepParams?: unknown): Promise<P
     extra: Readonly<Record<string, unknown>>,
     waitsForModel = false,
   ): Promise<PluginStepResult> => {
+    const mainLine =
+      mainChanges.length === 0
+        ? undefined
+        : `changed the main checkout: ${mainChanges.join(", ")}`;
+    const said = (message: string | undefined): string | undefined => {
+      if (mainLine === undefined) return message;
+      return message === undefined || message.length === 0
+        ? mainLine
+        : `${message}; ${mainLine}`;
+    };
+    const mainMessage = said(
+      typeof extra.message === "string" ? extra.message : undefined,
+    );
+    const data: Readonly<Record<string, unknown>> = {
+      ...extra,
+      ...(mainMessage === undefined ? {} : { message: mainMessage }),
+    };
     const note = readNote(path);
     const progress: Progress | undefined =
       note === null && !timedOutRun
@@ -1791,8 +1863,17 @@ export async function runWork(ctx: StepContext, stepParams?: unknown): Promise<P
     nextAttempt = {
       ...nextAttempt,
       result,
+      ...(mainLine === undefined
+        ? {}
+        : {
+            finalMessage:
+              typeof nextAttempt.finalMessage === "string" &&
+              nextAttempt.finalMessage.trim().length > 0
+                ? `${nextAttempt.finalMessage}\n\n${mainLine}`
+                : mainLine,
+          }),
       workNote:
-        result !== "done" && typeof extra.message === "string" ? extra.message : null,
+        result !== "done" && typeof data.message === "string" ? data.message : null,
       ...(waitsForModel ? {} : { workRetryAt: null }),
       // An attempt that left no note keeps the one before it for later attempts.
       progress: progress ?? progressOf(attempt.previousProgress) ?? null,
@@ -1833,6 +1914,9 @@ export async function runWork(ctx: StepContext, stepParams?: unknown): Promise<P
         run: ctx.runId,
         attempts,
         attempt: nextAttempt,
+        ...(mainLine === undefined
+          ? {}
+          : { brief: appendChange(task.brief, mainLine) }),
         ...(reading.cost === null
           ? {}
           : { cost: reading.cost, costQuality: reading.costQuality }),
@@ -1860,7 +1944,7 @@ export async function runWork(ctx: StepContext, stepParams?: unknown): Promise<P
                 ? { fallbackFrom: nextAttempt.fallbackFrom }
                 : {}),
             }),
-        ...extra,
+        ...data,
       }),
     };
   };

@@ -319,6 +319,11 @@ review step then fails rather than guessing a grading.
 
 When the worker adds no commit, the task waits with `work did nothing` if the branch has nothing beyond main or its latest commit already passed verify. If the branch already holds commits not on main and its latest commit has not passed verify (an earlier run stopped before verify ended), the task does not wait: history says `the branch already has unchecked work; checking it` and the task goes on to verify.
 
+Before a worker starts, the work step records the main checkout's `git status`.
+When the step ends, a change there that the worktree does not explain is named
+in the task's Changes, the step's history and the worker's answer as
+`changed the main checkout: <files>`. `dev` does not undo it.
+
 ## Moving a repository's folder
 
 A registered repository keeps its name, plans and tasks when its folder moves.
