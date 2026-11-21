@@ -100,7 +100,7 @@ A repository that is not registered: `no registered repository "<r>"; registered
 
 ## Secrets
 
-`ctx.secrets` is the plugin's own store: `get(name)` returns a `Secret<string>` or `undefined`, `set(name, value)`, `delete(name)` and `names()`.
+`ctx.secrets` is the plugin's own store: `get(name)` returns a `Secret<string>` or `undefined`, `set(name, value)`, `delete(name)`, `names()` and `values()`, the last reading every value in one pass for masking.
 Secrets are one `0600` JSON file per plugin (`<home>/secrets/<plugin>.json`) in a `0700` directory, outside the fact log. A name is letters, digits, dot, dash or underscore and starts with a letter or a digit (`secret "<n>": must be letters, digits, dot, dash or underscore`).
 A `Secret` hides its value: `toString()` gives `[Secret]`, and `JSON.stringify` throws (`SecretSerializationError`), so a secret cannot reach a fact by accident. Call `.reveal()` on purpose, where the value is used; `secret(value)` makes one.
 A person manages them with `operad secret set|list|delete <plugin> <name>`; a value is read from the terminal without echo, or from the first line of stdin.

@@ -121,7 +121,7 @@ Each hook (`run` of a step, action or command, `load`, `onTick`, `standing`, `st
 | `logger` | `PluginLogger` | `write(text)` appends a line to a log file under the store and returns its path; `path` is that file. Put the path in a fact; never put process output in one. |
 | `signal` | `AbortSignal` | Aborted when the call is cancelled. |
 | `settings` | record | The plugin's `config.json` section, validated, with defaults filled. |
-| `secrets` | `SecretStore` | `get`, `set`, `delete` and `names` of this plugin's [secrets](settings.md#secrets). |
+| `secrets` | `SecretStore` | `get`, `set`, `delete`, `names` and `values` of this plugin's [secrets](settings.md#secrets). |
 | `runs` | `RunControl` | `cancel(runId)` of a run this plugin owns, true when it cancelled an active run; set when the host can cancel. |
 
 Steps, actions, ticks and sources add fields of their own; they are on [Steps](steps.md#the-step-context), [Actions](actions.md#the-action-context), [`onTick`](#ontick) and [Events](events.md#a-source-plugin).

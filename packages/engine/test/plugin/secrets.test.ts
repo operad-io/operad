@@ -49,6 +49,7 @@ describe("plugin secrets", () => {
     expect(found).toBeInstanceOf(Secret);
     expect(found?.reveal()).toBe("s3cr3t");
     expect(await store.names()).toEqual(["token"]);
+    expect(await store.values()).toEqual(["s3cr3t"]);
 
     const directory = await stat(secretsDirectory(home));
     expect(directory.mode & 0o777).toBe(0o700);

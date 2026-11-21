@@ -64,6 +64,7 @@ describe("chat:close", () => {
               set: () => Promise.resolve(),
               delete: () => Promise.resolve(),
               names: () => Promise.resolve([]),
+              values: () => Promise.resolve([]),
             },
           },
           object,

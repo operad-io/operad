@@ -7,15 +7,15 @@ import { join } from "node:path";
 import { safeFileName, type FactWriter, type MaybePromise, type ObjectStore } from "@operad-io/engine";
 import { withLockFile } from "@operad-io/engine/platform";
 import {
-  allMessages,
   CHAT_TYPE,
-  chatFacts,
   chatRef,
   queuedData,
   queuedMessages,
   queuedOf,
+  readChat,
   TAKEN_FACT,
   takenIds,
+  type ChatRead,
 } from "./model.ts";
 
 /** Where a chat's queue lock lives. */
@@ -37,9 +37,13 @@ export async function syncQueuedLocked(
   store: ObjectStore,
   chat: string,
   cause: string,
+  read: ChatRead = readChat(store, chat),
+  taken: readonly string[] = [],
 ): Promise<void> {
-  const facts = chatFacts(store, chat);
-  const queued = queuedData(queuedMessages(allMessages(store, chat), facts));
+  const justTaken = new Set(taken);
+  const queued = queuedData(
+    queuedMessages(read.messages, read.facts).filter((message) => !justTaken.has(message.id)),
+  );
   const stored = await store.get(CHAT_TYPE, chat);
   if (stored === undefined) return;
   const before = queuedOf(stored.data.queued);
@@ -68,8 +72,9 @@ export async function takeLocked(
   runId: string,
   ids: readonly string[],
   cause: string,
+  read: ChatRead = readChat(store, chat),
 ): Promise<void> {
-  const seen = takenIds(chatFacts(store, chat));
+  const seen = takenIds(read.facts);
   const fresh = ids.filter((id) => !seen.has(id));
   if (fresh.length > 0) {
     await facts.append({
@@ -79,7 +84,7 @@ export async function takeLocked(
       cause,
     });
   }
-  await syncQueuedLocked(store, chat, cause);
+  await syncQueuedLocked(store, chat, cause, read, fresh);
 }
 
 /** A test waits here before a message is taken, to start an action against it. */

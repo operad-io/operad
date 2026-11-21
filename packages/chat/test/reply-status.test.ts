@@ -34,6 +34,7 @@ async function view(
     secrets: {
       names: async () => [],
       get: async () => undefined,
+      values: async () => [],
     },
     runTimes: async () => options.times,
   } as unknown as ViewContext;
