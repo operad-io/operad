@@ -263,3 +263,10 @@ the row fields.
 | T-0574-M3 | packages/harness/pi/src/worker.ts | a task's worker turned pi's retry on | `a task keeps pi's retry off, and a chat whose retries run out fails as before` |
 | T-0574-M4 | packages/harness/pi/src/worker.ts | the worker wrote no `retry_start` line for the chat's live view | `a chat turns pi's retry on, with pi's attempts and backoff, and reports the wait` |
 | T-0574-M5 | packages/harness/pi/src/worker.ts | a successful message did not clear the earlier failed attempt's error | `a chat turns pi's retry on, with pi's attempts and backoff, and reports the wait` |
+
+## T-0620 — one read of the model files
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0620-M1 | packages/harness/pi/src/index.ts | `piModels` computed windows and info without the kept list it had just read, so each read the file again | `the models pi declares > one models read reads each pi file once and leaves an unchanged registry unread` |
+| T-0620-M2 | packages/harness/pi/src/model-list.ts | the registry parse was reused even after the file's mtime or size changed | `the models pi declares > a changed registry file is read again and its new description is seen` |

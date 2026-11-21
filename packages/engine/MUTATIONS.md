@@ -1294,3 +1294,9 @@ resume window`. Rows are append-only, so the old lines stay as history.
 |---|---|---|---|
 | T-0634-M1 | packages/engine/src/views/presentation.ts | an oversized live part was announced as a tail again, so each push sent a part over one event line | `a live log that grows without a fact > a live part too large for one event line is not pushed as a tail` |
 | T-0634-M2 | packages/engine/src/http/server.ts | an oversized live part became a replayable change entry again, so each push added a new seq and filled the window | `SSE event size > a tail one byte over is dropped, and the growth change asks for the reread` and `SSE event size > no line of a random tail exceeds the limit, including multi-byte UTF-8` |
+
+## T-0620 — one harness model listing per request
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0620-M1 | packages/engine/src/plugin/registry.ts | `loadedModelFor` built every harness's models to return one | `a harness plugin's models > one harness's models are read without reading another harness's` |
