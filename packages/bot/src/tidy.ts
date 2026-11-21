@@ -52,6 +52,7 @@ import {
   workingDirectory,
   type BotSettings,
 } from "./bot.ts";
+import { ChatWatches } from "./chat-watch.ts";
 import {
   SCHEDULE_SOURCE,
   localDate,
@@ -561,12 +562,6 @@ export interface TidySourceContext {
   readonly work?: ((store: ObjectStore, bot: string, cwd: string) => Promise<TidyWork>) | undefined;
 }
 
-/** One firing the tidy source watches for its reply. */
-interface Watch {
-  readonly stop: () => void;
-  readonly check: () => Promise<void>;
-}
-
 function backgroundModel(
   settings: BotSettings,
   ctx: TidySourceContext,
@@ -587,8 +582,7 @@ function outcomeSummary(outcome: TidyOutcome): string {
 export class BotTidySource {
   private readonly ctx: TidySourceContext;
   private readonly notify: (notice: ScheduleNotice) => Promise<void>;
-  private readonly watches = new Map<string, Watch>();
-  private readonly work = new Set<Promise<void>>();
+  private readonly chatWatches: ChatWatches;
   private timer: ReturnType<typeof setInterval> | undefined;
   private stopped = false;
   private busy = false;
@@ -600,22 +594,12 @@ export class BotTidySource {
   ) {
     this.ctx = ctx;
     this.notify = options.notify ?? ((notice) => notifyScheduledReply(ctx.home, notice));
-  }
-
-  private async log(message: string): Promise<void> {
-    await this.ctx.logger.write(message);
-  }
-
-  private track(work: Promise<void>): void {
-    const tracked = work
-      .catch((error: unknown) => this.log(messageOf(error)))
-      .finally(() => this.work.delete(tracked));
-    this.work.add(tracked);
+    this.chatWatches = new ChatWatches(ctx.logger, ctx.store);
   }
 
   /** Waits for the checks that are running now; a test calls this after a reply. */
   async settled(): Promise<void> {
-    while (this.work.size > 0) await Promise.allSettled([...this.work]);
+    await this.chatWatches.settled();
   }
 
   private async put(bot: string, data: TidyData, cause: string): Promise<void> {
@@ -652,7 +636,7 @@ export class BotTidySource {
     try {
       settings = readBots(this.ctx.home, this.ctx.settings)[bot];
     } catch (error) {
-      await this.log(`memory tidy: ${messageOf(error)}`);
+      await this.chatWatches.log(`memory tidy: ${messageOf(error)}`);
       return;
     }
     if (settings === undefined || !memoryEnabled(this.ctx.home)) return;
@@ -661,7 +645,7 @@ export class BotTidySource {
       cwd = workingDirectory(this.ctx.home, bot, settings);
       ensureBotMemory(cwd, this.ctx.home);
     } catch (error) {
-      await this.log(`memory tidy ${bot}: ${messageOf(error)}`);
+      await this.chatWatches.log(`memory tidy ${bot}: ${messageOf(error)}`);
       return;
     }
     const stored = await this.ctx.store.get(TIDY_TYPE, bot);
@@ -781,7 +765,7 @@ export class BotTidySource {
           summary: tidyOutcomeLine(bot, outcome),
         });
       } catch (error) {
-        await this.log(
+        await this.chatWatches.log(
           `memory tidy of bot ${bot}: notify: ${messageOf(error)}`,
         );
       }
@@ -828,12 +812,12 @@ export class BotTidySource {
     } catch (error) {
       const message = messageOf(error);
       await this.failStart(bot, running, `Could not start: ${message}`);
-      await this.log(`memory tidy of bot ${bot} could not start: ${message}`);
+      await this.chatWatches.log(`memory tidy of bot ${bot} could not start: ${message}`);
       return;
     }
     if (chatId === undefined) {
       await this.failStart(bot, running, "Could not start: it opened no chat");
-      await this.log(`memory tidy of bot ${bot} opened no chat`);
+      await this.chatWatches.log(`memory tidy of bot ${bot} opened no chat`);
       return;
     }
     await this.put(bot, { ...running, chatId }, "source:bot/tidy");
@@ -841,51 +825,28 @@ export class BotTidySource {
   }
 
   private async watch(bot: string, chatId: string, auto: boolean): Promise<void> {
-    if (this.watches.has(chatId)) return;
-    let running = false;
-    let stopped = false;
-    let unsubscribe: (() => void) | undefined;
-    const check = async (): Promise<void> => {
-      if (running || stopped) return;
-      running = true;
-      try {
-        const facts = chatFacts(this.ctx.store, chatId);
-        const messages = allMessages(this.ctx.store, chatId);
-        const entries = allEntries(this.ctx.store, chatId);
-        if (writingReply(facts, messages, entries) !== undefined) return;
-        const committed = facts.some(
+    this.chatWatches.watchChatReply(
+      chatId,
+      chatId,
+      async (read) => {
+        const committed = read.facts.some(
           (fact) =>
             fact.type === TIDY_COMMIT_FACT &&
             isRecord(fact.data) &&
             fact.data["chat"] === chatId,
         );
-        if (!committed) return;
+        if (!committed) return undefined;
         const stored = await this.ctx.store.get(CHAT_TYPE, chatId);
-        if (stored === undefined) return;
-        const reply = [...messages].reverse().find((message) => message.role === "assistant");
-        const failure = [...entries].reverse().find((item) => item.kind === "failure");
-        if (reply === undefined && failure === undefined) return;
-        stopped = true;
-        unsubscribe?.();
-        this.watches.delete(chatId);
-        await this.finish(bot, chatId, stored, auto, reply?.text, failure?.text);
-      } finally {
-        running = false;
-      }
-    };
-    const blocking: Watch = {
-      stop: () => {
-        stopped = true;
-        unsubscribe?.();
-        this.watches.delete(chatId);
+        if (stored === undefined) return undefined;
+        const reply = [...read.messages].reverse().find((message) => message.role === "assistant");
+        const failure = [...read.entries].reverse().find((item) => item.kind === "failure");
+        if (reply === undefined && failure === undefined) return undefined;
+        return { stored, replyText: reply?.text, failureText: failure?.text };
       },
-      check,
-    };
-    this.watches.set(chatId, blocking);
-    unsubscribe = this.ctx.store.subscribe({ type: CHAT_TYPE, id: chatId }, {}, () => {
-      this.track(check());
-    });
-    this.track(check());
+      async ({ stored, replyText, failureText }) => {
+        await this.finish(bot, chatId, stored, auto, replyText, failureText);
+      },
+    );
   }
 
   private async finish(
@@ -945,7 +906,7 @@ export class BotTidySource {
             summary: tidyOutcomeLine(bot, { ...outcome, summary: outcomeSummary(outcome) }),
           });
         } catch (error) {
-          await this.log(
+          await this.chatWatches.log(
             `memory tidy of bot ${bot}: notify: ${messageOf(error)}`,
           );
         }
@@ -984,7 +945,7 @@ export class BotTidySource {
 
   start(): { stop: () => void } {
     this.timer = setInterval(() => {
-      this.track(this.poll());
+      this.chatWatches.track(this.poll());
     }, 1_000);
     if (typeof this.timer === "object" && "unref" in this.timer) {
       this.timer.unref();
@@ -993,8 +954,7 @@ export class BotTidySource {
       stop: () => {
         this.stopped = true;
         if (this.timer !== undefined) clearInterval(this.timer);
-        for (const watch of [...this.watches.values()]) watch.stop();
-        this.watches.clear();
+        this.chatWatches.stopAll();
       },
     };
   }
