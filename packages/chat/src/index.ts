@@ -1,7 +1,7 @@
 /** The chat plugin: a long conversation with an agent, and how a message is answered. */
 
 import pkg from "../package.json" with { type: "json" };
-import { defineFlow, definePlugin, isRecord, modelIds, type ActionArgsSchema, type ActionContext, type ActionTypeDefinition, type HarnessEfforts, type HarnessModels, type ObjectStore, type PluginFact, type UsageTokens } from "@operad-io/engine";
+import { defineFlow, definePlugin, formatElapsed, isRecord, modelIds, type ActionArgsSchema, type ActionContext, type ActionTypeDefinition, type HarnessEfforts, type HarnessModels, type ObjectStore, type PluginFact, type UsageTokens } from "@operad-io/engine";
 import { ACCESS_LEVELS, isAccessLevel, updateLiveAccessLevel, type AccessLevel } from "@operad-io/access-match";
 import { stopKeptWorkers } from "@operad-io/engine/platform";
 import {
@@ -659,18 +659,6 @@ function statusTokens(tokens: UsageTokens | undefined, incomplete = false): stri
   return `${incomplete ? "at least " : ""}${tokenCount(tokens.input)} in / ${tokenCount(tokens.output)} out tokens`;
 }
 
-/** A short duration for a reply's first output. */
-function statusDuration(ms: number): string {
-  if (ms < 1000) return "<1s";
-  const secs = ms / 1000;
-  if (secs < 60) return `${secs.toFixed(1)}s`;
-  const total = Math.round(secs);
-  const minutes = Math.floor(total / 60);
-  return minutes < 60
-    ? `${minutes}m${String(total % 60).padStart(2, "0")}s`
-    : `${Math.floor(minutes / 60)}h${String(minutes % 60).padStart(2, "0")}m`;
-}
-
 /** When a running reply began, in UTC, to the second. */
 function statusClock(at: number): string {
   return new Date(at).toISOString().slice(0, 19).replace("T", " ");
@@ -696,7 +684,7 @@ function statusText(
             ? "cost unknown"
             : costText(last.costMicros, last.costQuality),
           statusTokens(last.tokens),
-          ...(first === undefined ? [] : [`first output ${statusDuration(first)}`]),
+          ...(first === undefined ? [] : [`first output ${formatElapsed(first)}`]),
         ];
   return [
     `Agent: ${chat.harness}`,

@@ -573,3 +573,9 @@ are append-only, so the old lines stay as history.
 | T-0590-M26 | packages/chat/src/notes.ts | a shell command that wrote a note was not counted as this run's write | `the notes on a bot chat's message > a note written through a shell command is not sent back either` |
 | T-0590-M27 | packages/chat/src/reply.ts | `runAfterStep` ran after every round, including one that ended `more` | `the step a chat's refresh data names after a reply > runs once for a run that takes more than one round, not once per round` |
 | T-0590-M28 | packages/chat/src/reply.ts | compaction ignored the agent's `data.compacted` flag | `the notes on a bot chat's message > the agent's own compaction flag brings the whole notes back` |
+
+## T-0635 — one elapsed format
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0635-M7 | packages/chat/src/views.ts | a tool call's duration added a second | `chat entries > the transcript shows done, failed, blocked and denied tool calls, and thinking as an unlabeled quote` |
