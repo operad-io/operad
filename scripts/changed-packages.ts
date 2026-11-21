@@ -1,11 +1,13 @@
 /**
  * Which workspace packages a task's check tests: every package with a changed
  * file, and every package whose files refer to one of those, directly or
- * through others. A package refers to another when its code imports it
- * (`@operad-io/<name>`, or a relative path into `packages/<name>/`, `packages/<group>/<name>/`). Code that
- * imports changed code is changed code too, transitively; a package whose
- * tests (and not its code) load changed code has its tests run, and that goes
- * no further.
+ * through others. A package refers to another when its code loads it
+ * (`@operad-io/<name>`, or a relative path into `packages/<name>/`, `packages/<group>/<name>/`),
+ * through an import, `import.meta.resolve`, `require` or `new URL`, or when any
+ * source or test file quotes the package name (a plugin module can be data).
+ * Code that imports changed code is changed code too, transitively; a package
+ * whose tests (and not its code) load changed code has its tests run, and that
+ * goes no further.
  *
  * A changed file outside `packages/` (root manifests, the lockfile, tsconfig,
  * scripts, docs that tests read, `.operad/`) selects every package.
@@ -73,7 +75,63 @@ function sourceFiles(dir: string, out: string[]): void {
   }
 }
 
-const SPECIFIER = /(?:\bfrom|\bimport\s*\(|\bimport|\brequire\s*\(|\bnew URL\s*\()\s*["']([^"']+)["']/g;
+const SPECIFIER = /(?:\bfrom|\bimport\s*\(|\bimport\.meta\.resolve\s*\(|\bimport|\brequire\s*\(|\bnew URL\s*\()\s*["']([^"']+)["']/g;
+
+/** A quoted `@operad-io/<name>` anywhere outside a comment: plugin modules may be named in a test's data. */
+const QUOTED_OPERAD = /["'](@operad-io\/[^"'\s]+)["']/g;
+
+/**
+ * `text` with its comments removed, so a quoted package name in a comment is
+ * not taken for a dependency. Strings are kept, escapes included.
+ */
+function withoutComments(text: string): string {
+  let out = "";
+  let i = 0;
+  while (i < text.length) {
+    if (text.startsWith("//", i)) {
+      const end = text.indexOf("\n", i + 2);
+      if (end === -1) break;
+      out += "\n";
+      i = end + 1;
+      continue;
+    }
+    if (text.startsWith("/*", i)) {
+      const end = text.indexOf("*/", i + 2);
+      if (end === -1) break;
+      out += "\n";
+      i = end + 2;
+      continue;
+    }
+    const char = text[i] ?? "";
+    if (char === '"' || char === "'" || char === "`") {
+      out += char;
+      i += 1;
+      while (i < text.length) {
+        const current = text[i] ?? "";
+        out += current;
+        i += 1;
+        if (current === "\\" && i < text.length) {
+          out += text[i] ?? "";
+          i += 1;
+          continue;
+        }
+        if (current === char) break;
+      }
+      continue;
+    }
+    out += char;
+    i += 1;
+  }
+  return out;
+}
+
+/** Every module specifier in `text`: imports, resolved names, and any quoted @operad-io package. */
+function specifiers(text: string): string[] {
+  const uncommented = withoutComments(text);
+  const found = [...uncommented.matchAll(SPECIFIER)].map((match) => match[1] ?? "");
+  for (const match of uncommented.matchAll(QUOTED_OPERAD)) found.push(match[1] ?? "");
+  return found;
+}
 
 /** The other package directories that `files` load code from. */
 function loads(
@@ -87,8 +145,7 @@ function loads(
   const known = new Set(byName.values());
   for (const file of files) {
     const text = readFileSync(file, "utf8");
-    for (const match of text.matchAll(SPECIFIER)) {
-      const spec = match[1] ?? "";
+    for (const spec of specifiers(text)) {
       let dir: string | undefined;
       if (spec.startsWith("@operad-io/")) {
         dir = byName.get(spec.split("/").slice(0, 2).join("/"));

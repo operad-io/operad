@@ -76,6 +76,20 @@ describe("selectPackages", () => {
     expect(packages(root, ["packages/core/src/index.ts"])).toEqual(["app", "core", "group/inner", "lib", "probe"]);
   });
 
+  test("a quoted package name in a comment is not a load", () => {
+    expect(packages(workspace(), ["packages/core/src/index.ts"])).not.toContain("leaf");
+  });
+
+  test("import.meta.resolve of a relative path is a load", () => {
+    const root = workspace();
+    write(
+      root,
+      "packages/leaf/src/index.ts",
+      'const path = import.meta.resolve("../../core/src/index.ts");\nexport { path };\n',
+    );
+    expect(packages(root, ["packages/core/src/index.ts"])).toEqual(["app", "core", "leaf", "lib", "probe"]);
+  });
+
   test("no change picks nothing", () => {
     expect(packages(workspace(), [])).toEqual([]);
   });

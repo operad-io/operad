@@ -160,3 +160,12 @@ Each package keeps its mutation checks in `MUTATIONS.md`; a row names the broken
 |---|---|---|---|
 | T-0640-M1 | scripts/test/adr-references.test.ts | a word pre-filter skipped a line before the citation patterns ran, and it named only `.md` and `第`, so the `决定` form was lost | `a backlog decision is cited by its ADR > a citation is reported with the file and the line` (the `决定` sample line was not reported) |
 | T-0640-M2 | scripts/test/adr-references.test.ts | lines longer than 4 KiB were skipped, so a citation after a long run of one character was lost | `a backlog decision is cited by its ADR > a citation is reported with the file and the line` (the long-line sample was not reported) |
+
+## T-0630 — the changed-packages selector sees every way one package loads another
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0630-M1 | scripts/changed-packages.ts | dropped the quoted `@operad-io/<name>` fallback, so a plugin module named only in a test was not a load | `check-changed.sh > a quoted plugin module in a test selects cli when telegram changes` |
+| T-0630-M2 | scripts/changed-packages.ts | dropped `import.meta.resolve(` from the specifier pattern, so a resolved relative path was not a load | `selectPackages > import.meta.resolve of a relative path is a load` |
+| T-0630-M3 | scripts/changed-packages.ts | read comments too (`uncommented = text`), so a quoted package name in a comment became a load | `selectPackages > a quoted package name in a comment is not a load` |
+
