@@ -1,6 +1,7 @@
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, spyOn, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
+import * as engine from "@operad-io/engine";
 import {
   cronMatches,
   latestCronMinute,
@@ -11,6 +12,7 @@ import {
 } from "@operad-io/engine";
 import { cleanupTempRoots, tempRoot } from "../../engine/test/plugin/support.ts";
 import { CronSource, dueMinute, scheduledId } from "../src/index.ts";
+import { readCronState } from "../src/state.ts";
 
 process.env.TZ = "America/New_York";
 
@@ -73,11 +75,38 @@ function cronRule(schedule: string): SourceContext["rules"] {
   ];
 }
 
+function pausedCronRule(schedule: string): SourceContext["rules"] {
+  return cronRule(schedule).map((rule) => ({ ...rule, paused: true }));
+}
+
 async function sourceHome(): Promise<string> {
   const root = await tempRoot();
   const home = join(root, "home");
   mkdirSync(home, { recursive: true });
   return home;
+}
+
+interface Scans {
+  count(): number;
+  limits(): readonly (number | undefined)[];
+  restore(): void;
+}
+
+/** Counts the backward scans a poll makes and the lookback each one asks for. */
+function countScans(): Scans {
+  const real = engine.latestCronMinute;
+  const limits: (number | undefined)[] = [];
+  const spy = spyOn(engine, "latestCronMinute").mockImplementation(
+    (schedule, time, limitDays) => {
+      limits.push(limitDays);
+      return real(schedule, time, limitDays);
+    },
+  );
+  return {
+    count: () => limits.length,
+    limits: () => limits,
+    restore: () => spy.mockRestore(),
+  };
 }
 
 describe("the cron source", () => {
@@ -176,6 +205,10 @@ describe("missed runs", () => {
     await source.poll();
     await source.poll();
     expect(later).toHaveLength(0);
+    // The missed year stays the recorded last time; it is not reset to the poll.
+    expect(Object.values(readCronState(home).rules).map((entry) => entry.last)).toEqual([
+      Date.parse("2025-01-01T03:00:00-05:00"),
+    ]);
   });
 
   test("a wake catches up the same way", async () => {
@@ -304,6 +337,131 @@ describe("missed runs", () => {
     expect(emitted).toHaveLength(1);
     expect(emitted[0]?.key).toBe(`${cronKey("* * * * *")}:2026-01-01T00:01:00.000Z`);
     expect(emitted[0]?.data).toBeUndefined();
+  });
+});
+
+describe("scan cost", () => {
+  test("a rule still fires in the minute it is due, once", async () => {
+    const home = await sourceHome();
+    const clock = { value: Date.parse("2026-01-01T07:59:50Z") };
+    const emitted: Emitted[] = [];
+    const source = new CronSource(
+      context(cronRule("*/5 * * * *"), () => clock.value, emitted, home),
+    );
+    await source.poll();
+    expect(emitted).toHaveLength(0);
+
+    clock.value = Date.parse("2026-01-01T08:00:10Z");
+    await source.poll();
+    expect(emitted).toHaveLength(1);
+    expect(emitted[0]?.key).toBe(`${cronKey("*/5 * * * *")}:2026-01-01T08:00:00.000Z`);
+
+    clock.value = Date.parse("2026-01-01T08:00:50Z");
+    await source.poll();
+    expect(emitted).toHaveLength(1);
+  });
+
+  test("a missed minute is still caught up after a gap, scanning back only to the last time", async () => {
+    const home = await sourceHome();
+    const clock = { value: Date.parse("2026-01-01T07:00:10Z") };
+    const emitted: Emitted[] = [];
+    const source = new CronSource(
+      context(cronRule("0 * * * *"), () => clock.value, emitted, home),
+    );
+    await source.poll();
+    expect(emitted).toHaveLength(0);
+
+    clock.value = Date.parse("2026-01-01T10:00:30Z");
+    const scans = countScans();
+    try {
+      await source.poll();
+      expect(scans.limits()).toEqual([(3 * 3_600_000) / 86_400_000]);
+    } finally {
+      scans.restore();
+    }
+    expect(emitted).toHaveLength(1);
+    expect(emitted[0]?.key).toBe(`${cronKey("0 * * * *")}:2026-01-01T10:00:00.000Z`);
+    expect(emitted[0]?.summary).toContain("2026-01-01T08:00:00.000Z");
+    expect(emitted[0]?.summary).toContain("2026-01-01T09:00:00.000Z");
+
+    clock.value = Date.parse("2026-01-01T10:00:50Z");
+    await source.poll();
+    expect(emitted).toHaveLength(1);
+  });
+
+  test("a poll inside an already handled minute does no scan", async () => {
+    const home = await sourceHome();
+    const clock = { value: Date.parse("2026-01-01T07:59:50Z") };
+    const emitted: Emitted[] = [];
+    const source = new CronSource(
+      context(cronRule("* * * * *"), () => clock.value, emitted, home),
+    );
+    const scans = countScans();
+    try {
+      await source.poll();
+      expect(scans.count()).toBe(1);
+
+      clock.value = Date.parse("2026-01-01T07:59:59Z");
+      await source.poll();
+      expect(scans.count()).toBe(1);
+      expect(emitted).toHaveLength(0);
+
+      clock.value = Date.parse("2026-01-01T08:00:10Z");
+      await source.poll();
+      expect(scans.count()).toBe(2);
+      expect(emitted).toHaveLength(1);
+
+      clock.value = Date.parse("2026-01-01T08:00:40Z");
+      await source.poll();
+      expect(scans.count()).toBe(2);
+      expect(emitted).toHaveLength(1);
+    } finally {
+      scans.restore();
+    }
+  });
+
+  test("the backward scan stops at the recorded last time", async () => {
+    const home = await sourceHome();
+    const clock = { value: Date.parse("2026-01-01T07:00:10Z") };
+    const emitted: Emitted[] = [];
+    // 31 February never comes, so the baseline records the poll's own minute.
+    const source = new CronSource(
+      context(cronRule("0 0 31 2 *"), () => clock.value, emitted, home),
+    );
+    await source.poll();
+    expect(emitted).toHaveLength(0);
+
+    clock.value = Date.parse("2026-01-01T07:01:10Z");
+    const scans = countScans();
+    try {
+      await source.poll();
+      expect(emitted).toHaveLength(0);
+      expect(scans.count()).toBe(1);
+      expect(scans.limits()).toEqual([60_000 / 86_400_000]);
+    } finally {
+      scans.restore();
+    }
+  });
+
+  test("a paused rule scans no further back than its recorded last time", async () => {
+    const home = await sourceHome();
+    const clock = { value: Date.parse("2026-01-01T07:00:10Z") };
+    const emitted: Emitted[] = [];
+    const source = new CronSource(
+      context(pausedCronRule("* * * * *"), () => clock.value, emitted, home),
+    );
+    await source.poll();
+    expect(emitted).toHaveLength(0);
+
+    clock.value = Date.parse("2026-01-01T07:05:10Z");
+    const scans = countScans();
+    try {
+      await source.poll();
+      expect(scans.limits()).toEqual([(5 * 60_000) / 86_400_000]);
+    } finally {
+      scans.restore();
+    }
+    expect(emitted).toHaveLength(0);
   });
 });
 

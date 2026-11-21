@@ -36,6 +36,21 @@ interface CronRule {
   baseline: boolean;
 }
 
+/**
+ * The days to look back from `now` to reach `last`, so that a recorded last
+ * time stops the backward scan. Never wider than `limitDays` and never
+ * negative: a clock that jumped back asks for no scan at all.
+ */
+function daysBackTo(
+  now: number,
+  last: number | null,
+  limitDays: number,
+): number {
+  if (last === null) return limitDays;
+  const days = (minuteStart(now) - last) / DAY_MS;
+  return Math.min(limitDays, Math.max(0, days));
+}
+
 /** The pure part: which minute a rule should emit next, if any. */
 export function dueMinute(
   schedule: CronSchedule,
@@ -44,7 +59,11 @@ export function dueMinute(
   lookbackDays = 366 * 2,
 ): number | null {
   if (last !== null) {
-    const candidate = latestCronMinute(schedule, now);
+    const candidate = latestCronMinute(
+      schedule,
+      now,
+      daysBackTo(now, last, lookbackDays),
+    );
     if (candidate === null || candidate <= last) return null;
     return candidate;
   }
@@ -105,6 +124,15 @@ export class CronSource {
       const previous = this.lastCheck;
       this.lastCheck = now;
       const catchUp = previous === undefined || now - previous > WAKE_GAP_MS;
+      // The latest planned minute cannot change before the next minute starts,
+      // so a poll in a minute already handled finds nothing and scans nothing.
+      if (
+        !catchUp &&
+        previous !== undefined &&
+        minuteStart(previous) === minuteStart(now)
+      ) {
+        return;
+      }
       let changed = false;
       for (const entry of this.rules) {
         if (entry.baseline) {
@@ -118,7 +146,11 @@ export class CronSource {
           // A pause does not collect missed times: its recorded minute follows
           // the clock, so resuming waits for the next planned minute.
           const latest =
-            latestCronMinute(entry.schedule, now, CATCH_UP_DAYS) ?? minuteStart(now);
+            latestCronMinute(
+              entry.schedule,
+              now,
+              daysBackTo(now, entry.last, CATCH_UP_DAYS),
+            ) ?? minuteStart(now);
           if (entry.last === null || latest > entry.last) {
             entry.last = latest;
             changed = true;
@@ -163,8 +195,16 @@ export class CronSource {
   ):
     | { kind: "tick"; minute: number; skipped: readonly number[] }
     | { kind: "baseline"; last: number } {
-    const latest = latestCronMinute(entry.schedule, now, CATCH_UP_DAYS);
-    if (latest === null) return { kind: "baseline", last: minuteStart(now) };
+    const latest = latestCronMinute(
+      entry.schedule,
+      now,
+      daysBackTo(now, entry.last, CATCH_UP_DAYS),
+    );
+    // Nothing planned after the recorded last time: keep it, so a miss that is
+    // older than the window is not mistaken for a fresh baseline.
+    if (latest === null) {
+      return { kind: "baseline", last: entry.last ?? minuteStart(now) };
+    }
     if (entry.last !== null && latest <= entry.last) {
       return { kind: "baseline", last: entry.last };
     }
