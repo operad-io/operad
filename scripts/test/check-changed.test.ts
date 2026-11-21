@@ -31,6 +31,22 @@ function git(cwd: string, ...args: string[]): string {
   return result.stdout.trim();
 }
 
+function commit(root: string, message: string): string {
+  git(root, "add", ".");
+  git(root, "commit", "-q", "-m", message);
+  return git(root, "rev-parse", "HEAD");
+}
+
+/** A package whose test prints its directory, so a check's output shows it ran. */
+function addPackage(root: string, dir: string, name: string, source: string): void {
+  write(join(root, "packages", dir, "package.json"), JSON.stringify({ name }));
+  write(join(root, "packages", dir, "src", "index.ts"), source);
+  write(
+    join(root, "packages", dir, "test", "probe.test.ts"),
+    `import { test } from "bun:test";\ntest("${dir} probe", () => {});\n`,
+  );
+}
+
 function write(path: string, text: string): void {
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, text);
@@ -115,5 +131,40 @@ describe("check-changed.sh", () => {
     expect(out).toContain("check-changed: testing none");
     expect(out).not.toContain("package probe");
     expect(out).toContain("scripts probe");
+  });
+
+  test("a change under packages/mcp runs harness/process, which resolves it", () => {
+    const { root } = repository();
+    addPackage(root, "mcp", "@operad-io/mcp", "export const mcp = 1;\n");
+    addPackage(
+      root,
+      "harness/process",
+      "@operad-io/harness-process",
+      'const script = import.meta.resolve("@operad-io/mcp/stdio");\nexport { script };\n',
+    );
+    const base = commit(root, "packages");
+    write(join(root, "packages", "mcp", "src", "index.ts"), "export const mcp = 2;\n");
+    const { code, out } = run(root, base);
+    expect(code, out).toBe(0);
+    expect(out).toContain("check-changed: testing harness/process mcp");
+    expect(out).toContain("mcp probe");
+    expect(out).toContain("harness/process probe");
+  });
+
+  test("a quoted plugin module in a test selects cli when telegram changes", () => {
+    const { root } = repository();
+    addPackage(root, "telegram", "@operad-io/telegram", "export const telegram = 1;\n");
+    addPackage(root, "cli", "@operad-io/cli", "export const cli = 1;\n");
+    write(
+      join(root, "packages", "cli", "test", "plugin.test.ts"),
+      'import { test } from "bun:test";\nconst plugin = { module: "@operad-io/telegram" };\ntest("cli plugin probe", () => { if (plugin.module.length === 0) throw new Error("empty"); });\n',
+    );
+    const base = commit(root, "packages");
+    write(join(root, "packages", "telegram", "src", "index.ts"), "export const telegram = 2;\n");
+    const { code, out } = run(root, base);
+    expect(code, out).toBe(0);
+    expect(out).toContain("check-changed: testing cli telegram");
+    expect(out).toContain("telegram probe");
+    expect(out).toContain("cli plugin probe");
   });
 });
