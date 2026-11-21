@@ -26,6 +26,7 @@ async function pushed(
     secrets: {
       names: async () => [],
       get: async () => undefined,
+      values: async () => [],
     },
     runTimes: async () => ({ startedAt: 1, endedAt: null, segments: [] }),
   } as unknown as ViewContext;

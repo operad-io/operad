@@ -1107,31 +1107,32 @@ export function messagePage(
   }
 }
 
-/** Every message of a chat in force, oldest first: changed text, and no withdrawn message. */
-export function allMessages(store: ObjectStore, chat: string): readonly Message[] {
-  const facts = chatFacts(store, chat);
+/** The messages among a chat's facts, with changed text and no withdrawn message. */
+function messagesOfFacts(facts: readonly PluginFact[]): readonly Message[] {
   const messages = facts
     .map(messageOfFact)
     .filter((message): message is Message => message !== undefined);
   return applyMessageChanges(messages, messageChangesOf(facts));
 }
 
+/** The entries among a chat's facts. */
+function entriesOfFacts(facts: readonly PluginFact[]): readonly Entry[] {
+  const found: Entry[] = [];
+  for (const fact of facts) {
+    const entry = entryOfFact(fact);
+    if (entry !== undefined) found.push(entry);
+  }
+  return found;
+}
+
+/** Every message of a chat in force, oldest first: changed text, and no withdrawn message. */
+export function allMessages(store: ObjectStore, chat: string): readonly Message[] {
+  return messagesOfFacts(chatFacts(store, chat));
+}
+
 /** Every entry of a chat, oldest first. */
 export function allEntries(store: ObjectStore, chat: string): readonly Entry[] {
-  const found: Entry[] = [];
-  let cursor: string | undefined;
-  do {
-    const page = store.facts(chatRef(chat), {
-      ...(cursor === undefined ? {} : { cursor }),
-      limit: 500,
-    });
-    for (const fact of page.facts) {
-      const entry = entryOfFact(fact);
-      if (entry !== undefined) found.push(entry);
-    }
-    cursor = page.next;
-  } while (cursor !== undefined);
-  return found;
+  return entriesOfFacts(chatFacts(store, chat));
 }
 
 /** Every fact of a chat, oldest first. */
@@ -1144,6 +1145,23 @@ export function chatFacts(store: ObjectStore, chat: string): readonly PluginFact
     cursor = page.next;
   } while (cursor !== undefined);
   return facts;
+}
+
+/** Everything a reader needs from a chat's facts, from one scan. */
+export interface ChatRead {
+  readonly facts: readonly PluginFact[];
+  readonly messages: readonly Message[];
+  readonly entries: readonly Entry[];
+}
+
+/** Reads a chat's facts once and derives its messages and entries from them. */
+export function readChat(store: ObjectStore, chat: string): ChatRead {
+  const facts = chatFacts(store, chat);
+  return {
+    facts,
+    messages: messagesOfFacts(facts),
+    entries: entriesOfFacts(facts),
+  };
 }
 
 /** The run id of the latest reply run recorded on a chat, if any. */

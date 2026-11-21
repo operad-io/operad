@@ -26,6 +26,7 @@ async function view(
     secrets: {
       names: async () => ["token"],
       get: async () => ({ reveal: () => "s3cr3t-value" }),
+      values: async () => ["s3cr3t-value"],
     },
     runTimes: async () => ({ startedAt: 1, endedAt: options.running === false ? 2 : null, segments: [] }),
   } as unknown as ViewContext;

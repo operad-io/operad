@@ -273,6 +273,8 @@ export interface SecretStore {
   set(name: string, value: string | Secret<string>): Promise<void>;
   delete(name: string): Promise<void>;
   names(): Promise<readonly string[]>;
+  /** Every value, from one read of the store, so masking costs one file read. */
+  values(): Promise<readonly string[]>;
 }
 
 /** How one object type appears to every client. */

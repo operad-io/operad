@@ -1301,3 +1301,9 @@ resume window`. Rows are append-only, so the old lines stay as history.
 | T-0610-M1 | packages/engine/src/log/sqlite.ts | `openCandidateRoutes` stopped excluding a candidate route whose input has a resolve outcome | `log backend: sqlite > openCandidateRoutes keeps the candidate routes with no resolve` |
 | T-0610-M2 | packages/engine/src/log/sqlite.ts | `startRoutesWithoutRun` stopped excluding a start route whose input already has a run | `log backend: sqlite > startRoutesWithoutRun keeps start routes whose input has no run` |
 | T-0610-M3 | packages/engine/src/trigger/kernel.ts | `candidates` read every input and outcome again instead of the open candidate routes | `candidates reads only the unresolved candidates after many resolved inputs` |
+
+## T-0617 — every secret value from one read
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0617-M6 | packages/engine/src/plugin/secrets.ts | `FileSecretStore.values` returned no values | `plugin secrets > set/get round-trips and writes 0600 in a 0700 directory` |

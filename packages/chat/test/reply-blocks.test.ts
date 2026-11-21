@@ -56,6 +56,7 @@ async function view(
     secrets: {
       names: async () => [],
       get: async () => undefined,
+      values: async () => [],
     },
     runTimes: async () => ({ startedAt: 1, endedAt: options.running === true ? null : 2, segments: [] }),
   } as unknown as ViewContext;
