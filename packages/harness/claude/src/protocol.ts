@@ -90,6 +90,8 @@ export interface WorkerModelError {
   readonly message: string;
   readonly rateLimitType: string | null;
   readonly resetsAt: number | null;
+  /** How long until the reset, in seconds; null when claude gave no reset time. */
+  readonly retry_after_secs: number | null;
 }
 
 /** The last line of stdout. */

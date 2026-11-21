@@ -31,6 +31,14 @@ export function reviewWaitMs(retrySecs: number, n: number): number {
 }
 
 /**
+ * The longest a model's `retry_after_secs` is waited out by dev. Past it, or
+ * on a usage limit, the task waits for a person: half an hour is as long as a
+ * review wait is allowed to last, and a longer wait is usually a quota period
+ * the owner must decide about (switch the worker or wait for the reset).
+ */
+export const MAX_MODEL_RETRY_SECS = 30 * 60;
+
+/**
  * How many times one review round may wait for an unavailable model before it
  * waits for a person instead. It was 36 waits of a flat `retrySecs` (about 72
  * minutes at the default 120 seconds); it is now 6 waits that double (2, 4, 8,
@@ -42,8 +50,8 @@ export const MAX_REVIEW_WAITS = 6;
 
 /**
  * How many times one attempt's work step may wait for an unavailable model
- * before the failure goes to a person. The work wait stays flat at
- * `reviewer.retrySecs`.
+ * before the failure goes to a person. The work wait is the model's
+ * `retry_after_secs` when it gives one, else flat at `reviewer.retrySecs`.
  */
 export const MAX_WORK_WAITS = 36;
 

@@ -467,13 +467,18 @@ lines of its error output count only if one reads `HTTP 429`, `status 429` or
 does not. The same round runs once on `reviewer.fallback` at once; a list runs its
 entries in order, the next one after a fallback that is unavailable or does not
 write the report. If the repository sets no fallback, or every fallback failed, the task waits
-with `retryAt` set to `now + reviewer.retrySecs` and does not rework. When the
-time comes, `dev/review_due` lets the flow run the review again, with no new
-attempt and no other step. A round uses its fallback at most once: a retry that
-finds the primary unavailable again waits instead of trying the fallback a
-second time. A wait longer than one step run is split into pieces below the
-three-hour step timeout, so any positive `reviewer.retrySecs` is waited out and
-the review runs a model again only at `retryAt`.
+with `retryAt` set to `now + retry_after_secs` when the model gave one, else
+`now + reviewer.retrySecs`, and does not rework. When the time comes,
+`dev/review_due` lets the flow run the review again, with no new attempt and no
+other step. A round uses its fallback at most once: a retry that finds the
+primary unavailable again waits instead of trying the fallback a second time.
+A usage limit (`kind` `usage_limit`), or a `retry_after_secs` longer than
+`MAX_MODEL_RETRY_SECS` (30 minutes), is not waited out: the round ends
+`exhausted` and the task waits for a person at once, with the model's message
+and the time it resets. A wait longer than one step run is split into pieces
+below the three-hour step timeout, so a positive `reviewer.retrySecs` or
+`retry_after_secs` is waited out and the review runs a model again only at
+`retryAt`.
 
 The waits are bounded. A round waits at most 6 times (`MAX_REVIEW_WAITS`); the first wait is
 `reviewer.retrySecs` and each further wait doubles, up to 30 minutes (2, 4, 8, 16,

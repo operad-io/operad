@@ -844,6 +844,10 @@ class ClaudeSession {
             message: `usage limit reached${rateLimitType === null ? "" : ` (${rateLimitType})`}`,
             rateLimitType,
             resetsAt,
+            retry_after_secs:
+              resetsAt === null
+                ? null
+                : Math.max(0, Math.ceil(resetsAt - Date.now() / 1000)),
           };
         }
         break;

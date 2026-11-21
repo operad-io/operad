@@ -1500,3 +1500,11 @@ the row fields.
 |---|---|---|---|
 | T-0650-M1 | packages/dev/src/gate.ts | dev added no major finding of its own, so a reviewer that passed an attempt with a main-checkout change let it through | `dev/review and the main checkout > an attempt that changed the main checkout fails with that major finding` |
 | T-0650-M2 | packages/dev/src/gate.ts | the review prompt left out the main-checkout line and the instruction to call it a major finding | `dev/review and the main checkout > an attempt that changed the main checkout fails with that major finding` |
+
+## T-0654 — a model's retry-after decides the wait
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0654-M1 | packages/dev/src/model-error.ts | `modelWaitsForPerson` never said a usage limit or a long retry-after goes to a person | `dev/work > usage_limit: a retry-after goes to a person and does not retry` and `dev/review fallback and retry > a usage limit with no fallback waits for a person instead of retrying` |
+| T-0654-M2 | packages/dev/src/steps.ts | the work wait took `reviewer.retrySecs` even when the model gave a retry-after | `dev/work > unavailable: a short retry-after is the wait, not retrySecs` |
+| T-0654-M3 | packages/dev/src/gate.ts | the review wait took `reviewer.retrySecs` even when the model gave a retry-after | `dev/review fallback and retry > an unavailable review waits the retry-after it was given, not retrySecs` |

@@ -337,3 +337,9 @@ setup it depends on, in the order they were recorded. The root
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0620-M1 | packages/harness/claude/src/index.ts | `claudeSignedInCached` ran its probe directly instead of through the shared cache, so two callers spawned two processes | `claude's signedIn answer > two clients asking at once share one probe` |
+
+## T-0654 — claude's rate limit carries its retry-after
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0654-M1 | packages/harness/claude/src/worker.ts | a rejected rate limit carried no `retry_after_secs` | `a rejected rate limit carries the time until its reset` |

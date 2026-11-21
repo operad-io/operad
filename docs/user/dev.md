@@ -372,11 +372,14 @@ outside a repository works when only one repository has it. The rules are in
 A review whose harness reports a model error (`unavailable` or `usage_limit`), or
 whose error output says `HTTP 429`, does not lose the attempt. The same review
 round runs once on `reviewer.fallback` when `.operad/dev.json` sets one. Without a
-fallback, or when the fallback is unavailable too, the task waits
-`reviewer.retrySecs` (default 120 seconds; each further wait doubles, up to 30
-minutes) and then runs the review again. It does not start a worker and does not
-count a rework. A round uses its fallback at most once, so a retry that finds the
-primary unavailable again waits rather than calling the fallback a second time.
+fallback, or when the fallback is unavailable too, the task waits the model's
+`retry_after_secs` when it gave one, else `reviewer.retrySecs` (default 120
+seconds; each further wait doubles, up to 30 minutes), and then runs the review
+again. It does not start a worker and does not count a rework. A round uses its
+fallback at most once, so a retry that finds the primary unavailable again waits
+rather than calling the fallback a second time. A usage limit, or a retry-after
+longer than half an hour, is not waited out: the task waits for a person at once,
+and the line carries the model's message and the time it resets.
 
 A round waits at most 6 times (about 90 minutes at the default). Then the task
 waits for a person, and its prompt says `review did not finish (model unavailable)`. A
@@ -943,11 +946,13 @@ one (`waiting for the image pool's slot (T-0007)`); one past a worker's own
 A worker listed in two pools has one `count`: its places are shared by both pools. A task keeps counting against the pool of the flow it started with, even if `dev.json` changes while it runs.
 
 A pool whose workers have no `fallback` never hands its work to a worker of
-another pool: when the model is unavailable or its usage limit is reached, the
-work waits and tries again, and after the allowed waits it goes to a person.
-Choose a task's flow with `task add --flow <name>` (the `command` tool of MCP
-passes it like the CLI) or `task update <id> --flow <name>`; the update is
-refused once the task has started its first attempt.
+another pool: when the model is unavailable, the work waits the model's
+`retry_after_secs` when it gave one, else `reviewer.retrySecs`, and after the
+allowed waits it goes to a person. A usage limit, or a retry-after longer than
+half an hour, goes to a person at once, with the model's message and the time it
+resets. Choose a task's flow with `task add --flow <name>` (the `command` tool
+of MCP passes it like the CLI) or `task update <id> --flow <name>`; the update
+is refused once the task has started its first attempt.
 
 **Which worker.** The work step passes the stage's pool (`default` unless the
 stage names another) and the key `<repository>/<pool>` to `pool/agent`. The attempt records the `worker` that

@@ -44,6 +44,9 @@ import {
 } from "./settings.ts";
 import { reviewWaitKind } from "./waits.ts";
 import { appendChange } from "./model.ts";
+import { reviewTestHooks } from "./clock.ts";
+export { reviewTestHooks };
+import { modelErrorIn, modelWaitsForPerson, type ModelErrorInfo } from "./model-error.ts";
 import { commitOf, git } from "./git.ts";
 import {
   briefText,
@@ -1034,6 +1037,8 @@ interface ReviewerCall {
     | "failed";
   readonly report?: Report | undefined;
   readonly message: string;
+  /** What the model error said, when the run ended on one. */
+  readonly modelError?: ModelErrorInfo | undefined;
 }
 
 /** The largest review report the gate reads; anything bigger is not a report. */
@@ -1201,6 +1206,7 @@ function writeReviewOutcome(path: string, call: ReviewerCall): void {
         outcome: call.outcome,
         message: call.message,
         ...(call.report === undefined ? {} : { report: call.report }),
+        ...(call.modelError === undefined ? {} : { modelError: call.modelError }),
       }),
     );
   } catch {
@@ -1237,8 +1243,13 @@ function readReviewOutcome(resultPath: string): ReviewerCall | undefined {
     return undefined;
   }
   const message = typeof value.message === "string" ? value.message : "";
+  const modelError = modelErrorIn(value);
   if (outcome !== "report") {
-    return { outcome: outcome as ReviewerCall["outcome"], message };
+    return {
+      outcome: outcome as ReviewerCall["outcome"],
+      message,
+      ...(modelError === undefined ? {} : { modelError }),
+    };
   }
   const report = parseReport(JSON.stringify(value.report));
   if (report === undefined) return undefined;
@@ -1504,7 +1515,12 @@ async function callReviewerOnce(
         : `the reviewer ended "${outcome.result}"`;
     const kind = failureOutcome(data, message);
     if (kind === "timed_out" || kind === "unavailable") {
-      return { outcome: kind, message };
+      const modelError = modelErrorIn(data);
+      return {
+        outcome: kind,
+        message,
+        ...(modelError === undefined ? {} : { modelError }),
+      };
     }
   }
   return { outcome: "no_report", message: lastMessageOf(outcome) };
@@ -1709,27 +1725,6 @@ function reviewMessage(
   }
   return parts.join("; ");
 }
-
-/** Test-only hooks: a child process crashes at a named point in a review. */
-export const reviewTestHooks: {
-  now?: (() => number) | undefined;
-  /** Waits instead of the real timer, so a test can move the clock. */
-  wait?:
-    | ((ms: number, signal: AbortSignal | undefined) => Promise<boolean>)
-    | undefined;
-  beforeRun?:
-    | ((run: { readonly role: ReviewRunRole; readonly reason: ReviewRunReason }) => void)
-    | undefined;
-  /** Runs after the reviewer answered and before its run is written. */
-  afterCall?:
-    | ((run: { readonly role: ReviewRunRole; readonly reason: ReviewRunReason }) => void)
-    | undefined;
-  afterRunSaved?: ((run: ReviewRunRecord) => void) | undefined;
-  /** Runs after the reviewer wrote a valid report, before the store copy. */
-  beforeCopy?: (() => void) | undefined;
-  /** Runs while a workspace report is open, before the folders are checked again. */
-  afterOpen?: (() => void) | undefined;
-} = {};
 
 /** The task's notes with this round's findings that did not fail it. */
 function notesOf(
@@ -2577,6 +2572,7 @@ export async function runReview(
         outcome: call.outcome,
         run: ctx.runId,
         ...(call.message.length === 0 ? {} : { message: call.message }),
+        ...(call.modelError === undefined ? {} : { modelError: call.modelError }),
       };
     }
     runs.push(runRecord);
@@ -2600,6 +2596,16 @@ export async function runReview(
     if (!written) return cancelledStep();
     reviewTestHooks.afterRunSaved?.(runRecord);
     next = nextReviewAction(runs, settings.fallback);
+    if (
+      next === "wait-unavailable" &&
+      runRecord.modelError !== undefined &&
+      runRecord.modelError !== null &&
+      modelWaitsForPerson(runRecord.modelError)
+    ) {
+      // A usage limit, or a wait past half an hour, is not an outage dev can
+      // wait out: the task goes to a person who can change the worker.
+      next = "wait-exhausted";
+    }
   }
 
   const last = runs[runs.length - 1];
@@ -2683,7 +2689,13 @@ export async function runReview(
     const why = exhausted
       ? "review did not finish (model unavailable)"
       : "review did not finish (out of time)";
-    const message = [reviewMessage("passed", runs), why]
+    const reset =
+      exhausted && last?.modelError?.retryAfterSecs !== undefined
+        ? `; the model can serve again at ${new Date(
+            clock() + last.modelError.retryAfterSecs * 1000,
+          ).toISOString()}`
+        : "";
+    const message = [reviewMessage("passed", runs), why + reset]
       .filter((piece) => piece.length > 0)
       .join("; ");
     const timedOut = !exhausted && last?.outcome === "timed_out";
@@ -2711,9 +2723,12 @@ export async function runReview(
     const waits = runs.filter(
       (run) => run.role === "primary" && run.outcome === "unavailable",
     ).length;
+    const retryAfterSecs = last?.modelError?.retryAfterSecs;
     const retryAt =
-      (reviewTestHooks.now?.() ?? Date.now()) +
-      reviewWaitMs(settings.retrySecs, waits);
+      clock() +
+      (retryAfterSecs === undefined
+        ? reviewWaitMs(settings.retrySecs, waits)
+        : retryAfterSecs * 1000);
     const message = reviewMessage("unavailable", runs, retryAt);
     const record: ReviewRecord = {
       result: "unavailable",

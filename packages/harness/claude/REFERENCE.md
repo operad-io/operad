@@ -123,7 +123,7 @@ One JSON object per line, flushed per line, each with a `type`:
 | `model` | string or null | the first key of the result's `modelUsage` |
 | `reason` | string | on `failed`: `invalid_input`, `session_missing` (claude has no such session) or `model_error` (also: claude is not installed, or it ended with no result) |
 | `message` | string | on `failed`: human text; on `done` with no text and no usage: why claude ended without calling the model (its subtype, any errors, and a local command it ran) |
-| `modelError` | `{kind: "usage_limit", message, rateLimitType, resetsAt}` | on `failed`, when claude reported a rejected rate limit |
+| `modelError` | `{kind: "usage_limit", message, rateLimitType, resetsAt, retry_after_secs}` | on `failed`, when claude reported a rejected rate limit; `retry_after_secs` is how long until `resetsAt` |
 
 A result with `is_error`, or any subtype but `success` (`error_max_turns`,
 `error_max_budget_usd`, ...), is `failed` with reason `model_error`.
@@ -215,7 +215,8 @@ The `claude` section of `config.json`. A step param (`wallTimeSecs`,
 As `pi`'s table. A worker `failed` with reason `model_error` also sets
 `data.modelError`: a rate limit the worker saw is `usage_limit`; otherwise the
 kind is derived from the message text as in `pi` (`usage_limit`,
-`unavailable` or `protocol`). `retry_after_secs` is `null`.
+`unavailable` or `protocol`). A rejected rate limit carries `retry_after_secs`,
+how long until its `resetsAt`; otherwise `retry_after_secs` is `null`.
 
 ### `operad plugin check`
 

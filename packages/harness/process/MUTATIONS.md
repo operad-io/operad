@@ -246,3 +246,9 @@ and the row fields.
 | T-0627-M2 | packages/harness/process/src/process.ts | `trimKept` always trimmed above the cap, so the pre-start path left one worker too many | `trimKept > before a worker starts the cap trims at it, oldest first` |
 | T-0627-M3 | packages/harness/process/src/refusal.ts | the early refusal dropped the harness's extra data, so codex's `imageGenCalls` was missing | `the early refusal > names the reason and the field, with the data every harness writes` |
 | T-0627-M4 | packages/harness/process/src/version.ts | the strict comparison returned 0 instead of ordering the semver parts, so a prerelease equalled its release | `compareVersions > the strict form orders prereleases and refuses a version it cannot read` |
+
+## T-0654 — a worker's retry-after reaches the step result
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0654-M1 | packages/harness/process/src/step.ts | a worker's `modelError.retry_after_secs` was always written as `null` | `resultFor > a model error keeps the retry after the worker reported` |

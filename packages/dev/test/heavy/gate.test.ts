@@ -304,6 +304,20 @@ function fakeReviewer(options: FakeReviewerOptions = {}): FakeReviewer {
               },
             };
           }
+          if (mode === "unavailable-retry") {
+            return {
+              result: "failed",
+              data: {
+                reason: "exit",
+                modelError: {
+                  kind: "unavailable",
+                  status: 429,
+                  retry_after_secs: 60,
+                },
+                message: "the model is busy",
+              },
+            };
+          }
           if (mode === "429" || (mode === "429-once" && count === 1)) {
             return {
               result: "failed",
@@ -1647,6 +1661,27 @@ describe("dev/review fallback and retry", () => {
     expect(task.attempt?.review?.reviewSettings).toEqual(used);
   });
 
+  test("an unavailable review waits the retry-after it was given, not retrySecs", async () => {
+    const state = await fixture({
+      reviewerArgs: ["unavailable-retry", "--model", "primary"],
+      retrySecs: 120,
+    });
+    await verify(state);
+    let clock = 10_000;
+    const restoreHooks = useHooks({ now: () => clock });
+    try {
+      const first = await review(state, "review-retry-after");
+      expect(first.result).toBe("unavailable");
+      expect(first.data?.retryAt).toBe(clock + 60_000);
+      const task = await taskOf(state);
+      expect(task.attempt?.review?.retryAt).toBe(clock + 60_000);
+      expect(task.retryAt).toBe(clock + 60_000);
+      expect(state.reviewer.calls).toHaveLength(1);
+    } finally {
+      restoreHooks();
+    }
+  }, 30_000);
+
   test("no fallback and a 429 wait for retrySecs, then run the review only", async () => {
     const state = await fixture({
       reviewerArgs: ["429-once", "--model", "primary"],
@@ -2036,6 +2071,32 @@ describe("dev/review hardening", () => {
     const result = await review(state, "review-usage-limit");
     expect(result.result).toBe("pass");
     expect(state.reviewer.calls).toHaveLength(2);
+  }, 30_000);
+
+  test("a usage limit with no fallback waits for a person instead of retrying", async () => {
+    const state = await fixture({
+      reviewerArgs: ["usage-limit", "--model", "primary"],
+      retrySecs: 120,
+    });
+    await verify(state);
+    let clock = 10_000;
+    const restoreHooks = useHooks({ now: () => clock });
+    try {
+      const result = await review(state, "review-usage-limit-person");
+      expect(result.result).toBe("exhausted");
+      expect(state.reviewer.calls).toHaveLength(1);
+      const task = await taskOf(state);
+      expect(task.phase).toBe("waiting");
+      expect(task.attempt?.review?.decision).toBe("unavailable");
+      expect(task.attempt?.review?.reason).toBe("exhausted");
+      expect(task.attempt?.review?.retryAt ?? null).toBeNull();
+      expect(task.retryAt ?? null).toBeNull();
+      const message = String(result.data?.message);
+      expect(message).toContain("the usage limit is reached");
+      expect(message).toContain(new Date(clock + 3_600_000).toISOString());
+    } finally {
+      restoreHooks();
+    }
   }, 30_000);
 
   for (const mode of ["report-then-exit", "report-then-wall"]) {
