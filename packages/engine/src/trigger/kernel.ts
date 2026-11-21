@@ -540,22 +540,11 @@ export class Kernel {
 
   /** The candidates still waiting for a person, oldest first. */
   async candidates(): Promise<readonly TriggerCandidate[]> {
-    const inputs = new Map<string, InputRecord>();
-    for await (const input of this.log.readInputs()) {
-      inputs.set(input.inputId, input);
-    }
-    const resolved = new Set<string>();
-    const routes: InputOutcome[] = [];
-    for await (const outcome of this.log.readOutcomes()) {
-      if (outcome.kind === RESOLVE) resolved.add(outcome.inputId);
-      if (outcome.kind === ROUTE && valueOf(outcome) === "candidate") {
-        routes.push(outcome);
-      }
-    }
+    const routes = await this.log.openCandidateRoutes();
     const list: TriggerCandidate[] = [];
     for (const outcome of routes) {
-      if (resolved.has(outcome.inputId)) continue;
-      const candidate = this.candidateFrom(outcome, inputs.get(outcome.inputId));
+      const input = await this.findInput(outcome.inputId);
+      const candidate = this.candidateFrom(outcome, input);
       if (candidate !== undefined) list.push(candidate);
     }
     return list.sort(
@@ -572,29 +561,16 @@ export class Kernel {
   async refusedStarts(): Promise<readonly RefusedStart[]> {
     const list: RefusedStart[] = [];
     const runs = await this.log.runs();
-    const resolvedStarts = new Set<string>();
-    const outcomes: InputOutcome[] = [];
-    for await (const outcome of this.log.readOutcomes()) {
-      outcomes.push(outcome);
-      if (outcome.kind === RESOLVE && valueOf(outcome) === "started") {
-        resolvedStarts.add(outcome.inputId);
-      }
+    const startedInputs = new Set<string>();
+    for (const run of runs) {
+      if (run.startInputId !== null) startedInputs.add(run.startInputId);
     }
+    const outcomes = await this.log.startRoutesWithoutRun();
     for (const outcome of outcomes) {
-      // A route that starts, or a candidate a person already chose to start.
-      if (
-        outcome.kind !== ROUTE ||
-        !(
-          valueOf(outcome) === "started" ||
-          (valueOf(outcome) === "candidate" && resolvedStarts.has(outcome.inputId))
-        )
-      ) {
-        continue;
-      }
+      if (startedInputs.has(outcome.inputId)) continue;
       const flow = field(outcome.payload, "flow");
       const object = field(outcome.payload, "object");
       if (flow === undefined || object === undefined) continue;
-      if (runs.some((run) => run.startInputId === outcome.inputId)) continue;
       const reason = this.registry.startProblem(flow);
       if (reason !== undefined) {
         list.push({ inputId: outcome.inputId, flow, object, reason });

@@ -6,7 +6,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { mkdir, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { HarnessModelCapability, HarnessModelInfo } from "@operad-io/engine";
@@ -128,6 +128,8 @@ export interface PiModelListOptions {
   readonly log?: ((message: string) => void) | undefined;
   /** pi's registry store, beside its models file; the display names come from it. */
   readonly registryPath?: string | undefined;
+  /** Test seam: reads a file as text; defaults to `readFileSync(path, "utf8")`. */
+  readonly readFile?: ((path: string) => string) | undefined;
 }
 
 interface KeptRead {
@@ -212,11 +214,32 @@ export function parsePiRegistry(value: unknown): Readonly<Record<string, Harness
   return info;
 }
 
+interface RegistryCache {
+  readonly mtimeMs: number;
+  readonly size: number;
+  readonly info: Readonly<Record<string, HarnessModelInfo>>;
+}
+
+const registryCache = new Map<string, RegistryCache>();
+
+function readText(options: PiModelListOptions, path: string): string {
+  return (options.readFile ?? ((file: string) => readFileSync(file, "utf8")))(path);
+}
+
 function registryOf(options: PiModelListOptions): Readonly<Record<string, HarnessModelInfo>> {
   if (options.registryPath === undefined) return {};
+  const path = options.registryPath;
   try {
-    return parsePiRegistry(JSON.parse(readFileSync(options.registryPath, "utf8")));
+    const stat = statSync(path);
+    const kept = registryCache.get(path);
+    if (kept !== undefined && kept.mtimeMs === stat.mtimeMs && kept.size === stat.size) {
+      return kept.info;
+    }
+    const info = parsePiRegistry(JSON.parse(readText(options, path)));
+    registryCache.set(path, { mtimeMs: stat.mtimeMs, size: stat.size, info });
+    return info;
   } catch {
+    registryCache.delete(path);
     return {};
   }
 }
@@ -269,7 +292,7 @@ function keptOf(value: unknown): KeptList | undefined {
 /** The list the home keeps for this command, or undefined when there is none. */
 export function readPiModelList(options: PiModelListOptions): KeptRead | undefined {
   try {
-    const value: unknown = JSON.parse(readFileSync(piModelListPath(options.home), "utf8"));
+    const value: unknown = JSON.parse(readText(options, piModelListPath(options.home)));
     const kept = keptOf(value);
     return kept === undefined
       ? undefined
@@ -410,11 +433,13 @@ export function refreshPiModelList(options: PiModelListOptions): Promise<readonl
  * The kept list, starting a background refresh when it is old enough. This
  * never waits for pi: a missing list is empty and a refresh fills it later.
  */
-export function piModelList(options: PiModelListOptions): readonly string[] {
-  const kept = readPiModelList(options);
-  if (kept !== undefined && options.now() - kept.at < PI_LIST_CACHE_MS) return kept.list;
+export function piModelList(
+  options: PiModelListOptions,
+  known: KeptRead | null = readPiModelList(options) ?? null,
+): readonly string[] {
+  if (known !== null && options.now() - known.at < PI_LIST_CACHE_MS) return known.list;
   void refreshPiModelList(options).catch(() => undefined);
-  return kept?.list ?? [];
+  return known?.list ?? [];
 }
 
 /**
@@ -422,20 +447,25 @@ export function piModelList(options: PiModelListOptions): readonly string[] {
  * that exists is returned at once; an old one starts its refresh in the
  * background and the kept rows answer meanwhile.
  */
-export async function piModelListReady(options: PiModelListOptions): Promise<readonly string[]> {
-  const kept = readPiModelList(options);
-  if (kept !== undefined) {
-    if (options.now() - kept.at >= PI_LIST_CACHE_MS) {
+export async function piModelListReady(
+  options: PiModelListOptions,
+  known: KeptRead | null = readPiModelList(options) ?? null,
+): Promise<readonly string[]> {
+  if (known !== null) {
+    if (options.now() - known.at >= PI_LIST_CACHE_MS) {
       void refreshPiModelList(options).catch(() => undefined);
     }
-    return kept.list;
+    return known.list;
   }
   return await refreshPiModelList(options);
 }
 
 /** The context windows of the kept model list, by provider/id; empty when none are kept. */
-export function piModelWindows(options: PiModelListOptions): Readonly<Record<string, number>> {
-  return readPiModelList(options)?.windows ?? {};
+export function piModelWindows(
+  options: PiModelListOptions,
+  known: KeptRead | null = readPiModelList(options) ?? null,
+): Readonly<Record<string, number>> {
+  return known?.windows ?? {};
 }
 
 /**
@@ -443,8 +473,11 @@ export function piModelWindows(options: PiModelListOptions): Readonly<Record<str
  * provider/id; the kept list wins where both know a field. Empty when neither
  * knows any model.
  */
-export function piModelInfo(options: PiModelListOptions): Readonly<Record<string, HarnessModelInfo>> {
-  const kept = readPiModelList(options)?.info ?? {};
+export function piModelInfo(
+  options: PiModelListOptions,
+  known: KeptRead | null = readPiModelList(options) ?? null,
+): Readonly<Record<string, HarnessModelInfo>> {
+  const kept = known?.info ?? {};
   const registry = registryOf(options);
   const info: Record<string, HarnessModelInfo> = {};
   for (const [id, model] of Object.entries(registry)) info[id] = mergeInfo(undefined, model);

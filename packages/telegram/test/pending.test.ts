@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -12,12 +13,17 @@ import {
   type ViewEvent,
 } from "@operad-io/engine";
 import {
+  PENDING_STATE_MAX,
   PendingSender,
   TelegramSource,
   createTelegramPlugin,
   readPending,
+  telegramPendingPath,
+  writePending,
   type CommandResponder,
   type PendingResponder,
+  type PendingState,
+  type SentItem,
 } from "../src/index.ts";
 import { FakeApi, createTelegramWorld, replyUpdate, tap, update, type TelegramWorld } from "./support.ts";
 
@@ -43,11 +49,16 @@ class StubClient {
   refuse = false;
   /** What the history section of a chat reads. */
   history = "";
+  /** How often the pending items were read. */
+  pendingReads = 0;
   private wake: ((result: IteratorResult<ViewEvent>) => void) | undefined;
   private readonly woken: ViewEvent[] = [];
 
   announce(): void {
-    const event = { id: "x" };
+    this.announceEvent({ id: "x" });
+  }
+
+  announceEvent(event: ViewEvent): void {
     if (this.wake !== undefined) this.wake({ done: false, value: event });
     else this.woken.push(event);
   }
@@ -82,7 +93,10 @@ class StubClient {
           },
         }),
       }),
-      pending: async () => this.items,
+      pending: async () => {
+        this.pendingReads += 1;
+        return this.items;
+      },
       act: async (name, id, options) => {
         // What the source does for a chat is the real client's work.
         if (name.startsWith("chat:") || name.startsWith("bot:")) return w.views.act(name, id, options);
@@ -130,7 +144,12 @@ function holdWaits(): { readonly wait: (ms: number, signal: AbortSignal) => Prom
   };
 }
 
-async function setup(options: { pending?: readonly string[]; bind?: boolean; wait?: (ms: number, signal: AbortSignal) => Promise<void> } = {}) {
+/** Lets work already woken by the test run before the next assertion. */
+function nextTurn(): Promise<void> {
+  return new Promise<void>((resolve) => setImmediate(resolve));
+}
+
+async function setup(options: { pending?: readonly string[]; bind?: boolean; wait?: (ms: number, signal: AbortSignal) => Promise<void>; state?: PendingState } = {}) {
   const root = await mkdtemp(join(tmpdir(), "telegram-pending-"));
   roots.push(root);
   const w = await createTelegramWorld({ root, users: [42], ...(options.pending === undefined ? {} : { pending: options.pending }) });
@@ -143,6 +162,7 @@ async function setup(options: { pending?: readonly string[]; bind?: boolean; wai
     api.updates = [];
     api.sent.length = 0;
   }
+  if (options.state !== undefined) writePending(w.home, options.state);
   const client = new StubClient();
   const ctx: SourceContext = { ...w.ctx, client: client.asClient(w) };
   const sender = new PendingSender(ctx, { api, ...(options.wait === undefined ? {} : { wait: options.wait }) });
@@ -341,6 +361,42 @@ describe("pending items go to Telegram", () => {
     await w.close();
   });
 
+  test("a burst of stored changes reads the pending items once", async () => {
+    const waits = holdWaits();
+    const { w, api, client, ctx } = await setup({ pending: ["dev"], bind: false, wait: waits.wait });
+    const running = new PendingSender(ctx, { api, wait: waits.wait }).start();
+    await running.ready;
+    const before = client.pendingReads;
+    client.items = [item({ runId: "d1", object: "task:t1", actions: [ACT_MERGE], flow: "dev" })];
+    for (let index = 0; index < 10; index += 1) client.announce();
+    await nextTurn();
+    expect(client.pendingReads).toBe(before);
+
+    waits.fire();
+    await api.nextSend();
+    expect(client.pendingReads).toBe(before + 1);
+    await running.stop();
+    await w.close();
+  });
+
+  test("a live tail does not wake the pending side", async () => {
+    const waits = holdWaits();
+    const { w, api, client, ctx } = await setup({ pending: ["dev"], bind: false, wait: waits.wait });
+    const running = new PendingSender(ctx, { api, wait: waits.wait }).start();
+    await running.ready;
+    const before = client.pendingReads;
+    client.items = [item({ runId: "d1", object: "task:t1", actions: [ACT_MERGE], flow: "dev" })];
+    client.announceEvent({ id: "chat:x", type: "chat", section: "transcript", tail: "writing" });
+    await nextTurn();
+    await nextTurn();
+    waits.fire();
+    await nextTurn();
+    expect(client.pendingReads).toBe(before);
+    expect(api.sent).toHaveLength(0);
+    await running.stop();
+    await w.close();
+  });
+
   test("a tap on a choice answers the question as the telegram user, and every copy of the item reads answered: X", async () => {
     const { w, api, chat, client, sender, source } = await setup({ pending: ["dev"] });
     client.items = [
@@ -503,6 +559,71 @@ describe("pending items go to Telegram", () => {
     await sender.sync();
     expect(api.edits).toHaveLength(1);
     expect(api.edits[0]?.text).toEndWith("answered: allow");
+    await w.close();
+  });
+  test("the pending state file keeps an open item and the newest answered ones", async () => {
+    const state: Record<string, SentItem> = {};
+    const answered = PENDING_STATE_MAX + 10;
+    for (let index = 0; index < answered; index += 1) {
+      state[`run-${index}/wait:${index}/42`] = {
+        runId: `run-${index}`,
+        waitId: `wait:${index}`,
+        chatId: 42,
+        messageId: 9_000 + index,
+        text: "old",
+        options: [{ label: "merge", how: "act", action: "dev:merge" }],
+        at: index,
+        answered: "merge",
+      };
+    }
+    const openKey = "open/wait:open/42";
+    state[openKey] = {
+      runId: "open",
+      waitId: "wait:open",
+      chatId: 42,
+      messageId: 1,
+      text: "still open",
+      options: [{ label: "merge", how: "act", action: "dev:merge" }],
+      at: answered,
+    };
+    const { w, api, source } = await setup({ pending: ["dev"], bind: false, state });
+    const kept = `run-${answered - 1}/wait:${answered - 1}/42`;
+    api.updates = [tap(200, 42, 42, 9_000 + answered - 1, "o:0")];
+    await source.poll();
+    // The kept answered message is still known, so its tap says so instead of acting again.
+    expect(api.callbacks.at(-1)?.text).toBe("already answered: merge");
+
+    const pruned = readPending(w.home);
+    expect(pruned[openKey]).toBeDefined();
+    expect(pruned[kept]).toBeDefined();
+    expect(pruned["run-0/wait:0/42"]).toBeUndefined();
+    expect(Object.keys(pruned)).toHaveLength(PENDING_STATE_MAX);
+    await w.close();
+  });
+
+  test("a settle rewrites the pending state file no larger than its cap", async () => {
+    const state: Record<string, SentItem> = {};
+    for (let index = 0; index < PENDING_STATE_MAX; index += 1) {
+      state[`run-${index}/wait:${index}/42`] = {
+        runId: `run-${index}`,
+        waitId: `wait:${index}`,
+        chatId: 42,
+        messageId: 9_000 + index,
+        text: "old",
+        options: [],
+        at: index,
+        answered: "merge",
+      };
+    }
+    const { w, client, sender } = await setup({ pending: ["dev"], bind: false, state });
+    client.items = [item({ runId: "fresh", object: "task:fresh", actions: [ACT_MERGE], flow: "dev" })];
+    await sender.sync();
+
+    const written = JSON.parse(readFileSync(telegramPendingPath(w.home), "utf8")) as Record<string, unknown>;
+    expect(Object.keys(written)).toHaveLength(PENDING_STATE_MAX);
+    expect(written["fresh//42"]).toBeDefined();
+    expect(written["run-0/wait:0/42"]).toBeUndefined();
+    expect(written[`run-${PENDING_STATE_MAX - 1}/wait:${PENDING_STATE_MAX - 1}/42`]).toBeDefined();
     await w.close();
   });
 });

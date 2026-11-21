@@ -100,6 +100,30 @@ describe("a harness plugin's models", () => {
     );
   });
 
+  test("one harness's models are read without reading another harness's", () => {
+    const reads: string[] = [];
+    const withModels = (name: string) =>
+      definePlugin({
+        name,
+        kind: "harness",
+        version: "0.0.0",
+        models: () => {
+          reads.push(name);
+          return { list: [name], default: name };
+        },
+        steps: [{ name: "agent", results: ["done"], run: () => ({ result: "done" }) }],
+      });
+    const registry = new PluginRegistry([withModels("a"), withModels("b")], {
+      home: "/tmp/none",
+      cwd: "/tmp",
+      store: new MemoryPluginStore({ root: "/tmp/none-store" }),
+      onLog: () => undefined,
+    });
+    expect(registry.loadedModelFor("a")).toEqual({ list: ["a"], default: "a" });
+    expect(reads).toEqual(["a"]);
+    expect(registry.loadedModelFor("none")).toBeUndefined();
+  });
+
   test("a function is called with the plugin's settings each time the list is read", () => {
     let calls = 0;
     let received: unknown;

@@ -202,7 +202,7 @@ export function lateText(seconds: number): string {
   if (minutes < 60) return `${minutes} minute${minutes === 1 ? "" : "s"}`;
   const hours = Math.floor(minutes / 60);
   const rest = minutes % 60;
-  return `${hours} hour${hours === 1 ? "" : "s"}${rest === 0 ? "" : ` ${rest} minutes`}`;
+  return `${hours} hour${hours === 1 ? "" : "s"}${rest === 0 ? "" : ` ${rest} minute${rest === 1 ? "" : "s"}`}`;
 }
 
 /** The one line a catch-up adds to the prompt. It is not added to an on-time run. */

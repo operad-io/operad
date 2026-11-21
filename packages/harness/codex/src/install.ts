@@ -7,7 +7,7 @@
  * never reads or writes them.
  */
 
-import { readFileSync, realpathSync } from "node:fs";
+import { closeSync, openSync, readSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { HarnessModelCapability, HarnessModelInfo, HarnessModels } from "@operad-io/engine";
 
@@ -99,13 +99,28 @@ function run(argv: readonly string[], args: readonly string[]): Ran {
   }
 }
 
+/** How much of a command's file is read to see whether its shebang names node. */
+export const CODEX_HEAD_BYTES = 128;
+
+/** The first bytes of a command's file, enough for its shebang line. */
+export function codexFileHead(path: string): string {
+  const descriptor = openSync(path, "r");
+  try {
+    const bytes = Buffer.alloc(CODEX_HEAD_BYTES);
+    const read = readSync(descriptor, bytes, 0, CODEX_HEAD_BYTES, 0);
+    return bytes.subarray(0, read).toString("utf8");
+  } finally {
+    closeSync(descriptor);
+  }
+}
+
 /** The Codex command: its script run by bun when its shebang names node. */
 export function codexCommand(bun: string, path: string | undefined = process.env.PATH): readonly string[] | undefined {
   const found = Bun.which("codex", { PATH: path ?? "" });
   if (found === null) return undefined;
   const real = realpathSync(found);
   try {
-    const head = readFileSync(real, "utf8").slice(0, 120).split("\n")[0] ?? "";
+    const head = codexFileHead(real).split("\n")[0] ?? "";
     if (head.startsWith("#!") && head.includes("node")) return [bun, real];
   } catch {
     // A native binary is not text.

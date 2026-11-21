@@ -165,7 +165,7 @@ const CASES: readonly Case[] = [
       return w.show(92);
     },
     row: "| running verify |",
-    line: "**#1** worktree 2s · work 1m00s · verify 30s (running)",
+    line: "**#1** worktree 2s · work 1m · verify 30s (running)",
   },
   {
     name: "a retried review: the retry wait runs, then the review with its pending run",
@@ -190,7 +190,7 @@ const CASES: readonly Case[] = [
       return w.show(107);
     },
     row: "| running review |",
-    line: "worktree 2s · work 1m00s · verify 10s · review 30s (running) · review retry 5s",
+    line: "worktree 2s · work 1m · verify 10s · review 30s (running) · review retry 5s",
   },
   {
     name: "a work retry after an unavailable model: the wait runs and verify never did",
@@ -220,7 +220,7 @@ const CASES: readonly Case[] = [
       return w.show(114);
     },
     row: "| running reverify |",
-    line: "worktree 2s · work 1m00s · reverify 4s (running) · verify 10s · review 20s",
+    line: "worktree 2s · work 1m · reverify 4s (running) · verify 10s · review 20s",
   },
   {
     name: "an integrate in flight while the task waits",
@@ -239,7 +239,7 @@ const CASES: readonly Case[] = [
       return w.show(117);
     },
     row: "| running integrate |",
-    line: "worktree 2s · work 1m00s · verify 10s · review 20s · integrate 7s (running)",
+    line: "worktree 2s · work 1m · verify 10s · review 20s · integrate 7s (running)",
   },
   {
     name: "a failed worktree ends the run: nothing runs and no later step is shown",
@@ -269,7 +269,7 @@ const CASES: readonly Case[] = [
       return w.show(80);
     },
     row: "| verify failed |",
-    line: "**#1** worktree 2s · work 1m00s · verify 10s",
+    line: "**#1** worktree 2s · work 1m · verify 10s",
   },
 ];
 
@@ -290,10 +290,10 @@ const TIMES: readonly Lines[] = [
       return (await w.show(1100)).text;
     },
     lines: [
-      "| 1 | 2m | – | review passed |",
-      "| total | 2m | – | |",
-      "**#1** worktree 2s · work 1m00s · verify 10s · review 20s",
-      "**Waiting for a person** 16m48s (waiting)",
+      "| 1 | 1m 32s | – | review passed |",
+      "| total | 1m 32s | – | |",
+      "**#1** worktree 2s · work 1m · verify 10s · review 20s",
+      "**Waiting for a person** 16m 48s (waiting)",
     ],
     absent: ["(running)", "…"],
   },
@@ -309,7 +309,7 @@ const TIMES: readonly Lines[] = [
       await w.cancelTask();
       return (await w.show(1500)).text;
     },
-    lines: ["| 1 | 20m | – | cancelled |", "| total | 20m | – | |", "**#1** worktree 2s · work 19m58s"],
+    lines: ["| 1 | 20m | – | cancelled |", "| total | 20m | – | |", "**#1** worktree 2s · work 19m 58s"],
     absent: ["(running)", "Waiting for a person"],
   },
   {
@@ -323,7 +323,7 @@ const TIMES: readonly Lines[] = [
       await w.cancelTask();
       return (await w.show(1500)).text;
     },
-    lines: ["| 1 | 19m | – | cancelled |", "**#1** worktree 2s · work 1m00s · verify 10s · review 18m01s"],
+    lines: ["| 1 | 19m 13s | – | cancelled |", "**#1** worktree 2s · work 1m · verify 10s · review 18m 1s"],
     absent: ["(running)"],
   },
   {
@@ -335,10 +335,10 @@ const TIMES: readonly Lines[] = [
       return (await w.show(1200)).text;
     },
     lines: [
-      "| 1 | 2m | – | cancelled |",
-      "| total | 2m | – | |",
-      "**#1** worktree 2s · work 1m00s · verify 10s · review 20s",
-      "**Waiting for a person** 16m48s",
+      "| 1 | 1m 32s | – | cancelled |",
+      "| total | 1m 32s | – | |",
+      "**#1** worktree 2s · work 1m · verify 10s · review 20s",
+      "**Waiting for a person** 16m 48s",
     ],
     absent: ["(running)", "(waiting)"],
   },
@@ -352,11 +352,11 @@ const TIMES: readonly Lines[] = [
       return (await w.show(114)).text;
     },
     lines: [
-      "| 1 | 2m | – | review passed |",
+      "| 1 | 1m 32s | – | review passed |",
       "| 2 | 4s … | – | running worktree |",
-      "| total | 2m | – | |",
+      "| total | 1m 36s | – | |",
       "**#2** worktree 4s (running)",
-      "**#1** worktree 2s · work 1m00s · verify 10s · review 20s",
+      "**#1** worktree 2s · work 1m · verify 10s · review 20s",
       "**Waiting for a person** 18s",
     ],
   },
@@ -369,9 +369,9 @@ const TIMES: readonly Lines[] = [
       return (await w.show(114)).text;
     },
     lines: [
-      "| 1 | 2m | – | review passed |",
+      "| 1 | 1m 32s | – | review passed |",
       "| 2 | 4s … | – | running worktree |",
-      "| total | 2m | – | |",
+      "| total | 1m 36s | – | |",
       "**#2** worktree 4s (running)",
       "**Waiting for a person** 18s",
     ],
@@ -407,8 +407,8 @@ const TIMES: readonly Lines[] = [
       return (await w.show(107)).text;
     },
     lines: [
-      "| 1 | 2m … | – | running review |",
-      "**#1** worktree 2s · work 1m00s · verify 10s · review 30s (running) · review retry 5s",
+      "| 1 | 1m 47s … | – | running review |",
+      "**#1** worktree 2s · work 1m · verify 10s · review 30s (running) · review retry 5s",
     ],
     absent: ["Waiting for a person"],
   },

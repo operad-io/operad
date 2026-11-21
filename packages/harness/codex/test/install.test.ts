@@ -5,8 +5,10 @@ import { fileURLToPath } from "node:url";
 import { cleanupTempRoots, tempRoot, waitForFile, waitForGone, waitForPid } from "../../process/test/support.ts";
 import { CODEX_EFFORTS, createCodexHarnessPlugin } from "../src/index.ts";
 import {
+  CODEX_HEAD_BYTES,
   MODELS_EMPTY_RETRY_MS,
   codexCommand,
+  codexFileHead,
   codexModels,
   commandOf,
   defaultCommand,
@@ -67,6 +69,16 @@ describe("the command that starts codex app-server", () => {
     expect(() => commandOf("codex")).toThrow("settings.command");
     expect(() => commandOf([])).toThrow("settings.command");
     expect(() => commandOf(["codex", 3])).toThrow("settings.command");
+  });
+
+  test("only the first bytes of a command file are read for its shebang", async () => {
+    const root = await tempRoot();
+    const path = join(root, "long-codex");
+    const shebang = "#!/usr/bin/env node\n";
+    writeFileSync(path, `${shebang}${"x".repeat(1_000)}`);
+    const head = codexFileHead(path);
+    expect(head).toBe(`${shebang}${"x".repeat(CODEX_HEAD_BYTES - shebang.length)}`);
+    expect(head.length).toBe(CODEX_HEAD_BYTES);
   });
 
   test("a codex script with a node shebang is run by bun; none on PATH is unknown", async () => {

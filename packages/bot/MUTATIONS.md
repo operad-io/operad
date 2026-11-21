@@ -304,3 +304,9 @@ changes for bots, in the order they were recorded. The root
 | T-0599-M4 | packages/bot/src/tidy.ts | `linkLists` read a link table even with no home to locate it | `the link lists in the tidy prompt > a check with no home reads no link table` |
 | T-0599-M5 | packages/bot/src/tidy.ts | the memory report covered every bot's memory instead of this bot's owner | `the link lists in the tidy prompt > the memory lists stay with this bot's memory` |
 | T-0599-M6 | packages/bot/src/tidy.ts | a link table that could not be opened failed the check instead of leaving empty lists | `the link lists in the tidy prompt > a link table that cannot be opened leaves empty lists instead of failing the check` |
+
+## T-0635 — one elapsed format
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0635-M8 | packages/bot/src/schedule.ts | `lateText` wrote the minutes after an hour in the plural always | `lateText > counts hours and the minute left in words, singular or plural` |

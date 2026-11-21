@@ -130,7 +130,11 @@ A result with `is_error`, or any subtype but `success` (`error_max_turns`,
 
 Every text of a new line (`text_delta`, `thinking_delta`, `text_end`,
 `thinking_end`, `tool_output`) has each value of `secretValues` replaced with
-`***`, as the existing command and error lines do.
+`***`, as the existing command and error lines do. An increment that would end
+inside a secret value, or inside its JSON-escaped spelling, holds the rest of it
+back for the next increment, so a receiver that joins the increments never sees
+the value whole; when a block or the run ends, what is still held is written
+before the Result.
 
 ## Exit codes
 

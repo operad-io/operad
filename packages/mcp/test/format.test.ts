@@ -329,11 +329,11 @@ describe("the running Markdown", () => {
       ],
       { load1: 0, cores: 1 },
     );
-    expect(text).toContain("| ops/T-0061-x | Check it | dev | verify | 500ms | 500ms |");
+    expect(text).toContain("| ops/T-0061-x | Check it | dev | verify | <1s | <1s |");
     expect(text).toContain("| run-2 |  | dev | - | - | 1m 5s |");
-    expect(text).toContain("| ops/T-3 | Third | dev | verify | 5.0s (queued 9m 0s) | 10m 0s |");
-    expect(text).toContain("| ops/T-0061-x | Check it | dev | verify | 5.0s | 10m 0s |");
-    expect(text.match(/queued 9m 0s/g)).toHaveLength(1);
+    expect(text).toContain("| ops/T-3 | Third | dev | verify | 5s (queued 9m) | 10m |");
+    expect(text).toContain("| ops/T-0061-x | Check it | dev | verify | 5s | 10m |");
+    expect(text.match(/queued 9m/g)).toHaveLength(1);
     expect(text).toContain("Load: 0 (1 minute), 1 cores");
   });
 });

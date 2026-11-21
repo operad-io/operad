@@ -283,6 +283,14 @@ class CrashLog implements LogBackend {
     return this.inner.readOutcomes();
   }
 
+  openCandidateRoutes(): Promise<InputOutcome[]> {
+    return this.inner.openCandidateRoutes();
+  }
+
+  startRoutesWithoutRun(): Promise<InputOutcome[]> {
+    return this.inner.startRoutesWithoutRun();
+  }
+
   readInputsAfter(position: number): Promise<InputsAfter> {
     return this.inner.readInputsAfter(position);
   }

@@ -248,6 +248,13 @@ function describePass(names: readonly string[]): string | undefined {
     : `passed on rerun: ${names.join("; ")}`;
 }
 
+export interface RunCheckBase {
+  readonly cwd: string;
+  readonly timeoutSecs?: number | undefined;
+  /** The environment added to the check line; the shell inherits the rest. */
+  readonly env?: Readonly<Record<string, string>> | undefined;
+}
+
 /**
  * Runs a list of check commands. A list of plain strings is one `shell/check`
  * with the whole-list rerun. A command with `failed` runs alone; when it exits
@@ -255,7 +262,7 @@ function describePass(names: readonly string[]): string | undefined {
  */
 export async function runCheckCommands(
   runStep: NonNullable<StepContext["runStep"]>,
-  base: { readonly cwd: string; readonly timeoutSecs?: number },
+  base: RunCheckBase,
   commands: readonly CheckCommand[],
   options: StepRunOptions,
   rerun: number,

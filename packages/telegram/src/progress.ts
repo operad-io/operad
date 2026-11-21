@@ -3,21 +3,22 @@
  * edited to the unfinished part of the chat's transcript, the text being
  * written and the tool calls in progress.
  *
- * It wakes on the client API's `events()`, names a bound chat and reads its
- * transcript section with `after`, the way a client does (ADR 0019); the
- * unfinished `tail` is what it shows, with a last line made from the section's
- * `status` (what the reply is doing and for how long). The first status or tail
- * creates the message. Edits happen at most once every two seconds per chat and
- * only when the reduced Markdown changed. When the reply
- * is recorded, the reply side sends the final reply as new message(s) first and
- * this side deletes the progress message. A failed edit is only logged; it
- * never stops the final reply. What is remembered in `<home>/telegram/` is the
- * message id, so a restart can delete a message a killed serve left behind.
+ * The plugin's one event loop hands it a stored chat change, or the live
+ * `transcript` tail itself. A tail carries the whole text and status, so it is
+ * shown without reading the section again; the throttle is checked before any
+ * read, so a tail inside the two-second window costs nothing. The first status
+ * or tail creates the message. Edits happen at most once every two seconds per
+ * chat and only when the reduced Markdown changed. When the reply is recorded,
+ * the reply side sends the final reply as new message(s) first and this side
+ * deletes the progress message. A failed edit is only logged; it never stops
+ * the final reply. What is remembered in `<home>/telegram/` is the message id,
+ * so a restart can delete a message a killed serve left behind.
  */
 
 import { CHAT_TYPE, TRANSCRIPT, allEntries, allMessages, chatData } from "@operad-io/chat";
 import { messageOf, type SourceContext } from "@operad-io/engine";
 import { BotApiError, type BotApi } from "./api.ts";
+import { TelegramEvents, type TelegramEvent } from "./events.ts";
 import { progressStatusLine, telegramProgress, type TelegramChunk } from "./format.ts";
 import { telegramChatsOf } from "./replies.ts";
 import { delay } from "./source.ts";
@@ -42,12 +43,17 @@ export interface ProgressSenderOptions {
 
 /** One chat's progress message and when it may next be changed. */
 interface ChatProgress {
-  target: number | undefined;
+  /** The Telegram chat this bound chat writes to. */
+  readonly target: number;
   messageId: number | undefined;
   /** The reduced Markdown last taken by Telegram, so an unchanged text is not edited. */
   text: string | undefined;
   nextAt: number;
   dirty: boolean;
+  /** A manual check reads the section even before a message exists. */
+  probe: boolean;
+  /** The newest live tail waiting for this chat, already carrying its whole text. */
+  live: TelegramEvent | undefined;
   timer: AbortController | undefined;
 }
 
@@ -72,9 +78,13 @@ export class ProgressSender {
   private readonly chats = new Map<string, ChatProgress>();
   private readonly working = new Map<string, Promise<void>>();
   private readonly marks = new Map<string, string>();
+  /** Live tails that arrived before their chat was known to be bound. */
+  private readonly pendingLive = new Map<string, TelegramEvent>();
+  /** Chats a manual check must bind even without a live event. */
+  private readonly probes = new Set<string>();
   private state: ProgressState;
   private stopped = false;
-  private iterator: AsyncIterator<{ readonly id: string }> | undefined;
+  private following: { readonly stop: () => Promise<void> } | undefined;
   private watching: Promise<void> = Promise.resolve();
 
   constructor(ctx: SourceContext, options: ProgressSenderOptions) {
@@ -89,32 +99,18 @@ export class ProgressSender {
     else ctx.signal.addEventListener("abort", () => this.controller.abort(), { once: true });
   }
 
-  /** Deletes a message a killed serve left behind, then follows the client's events. */
-  start(): { readonly stop: () => Promise<void>; readonly ready: Promise<void> } {
+  /** Deletes a message a killed serve left behind, then follows changes, alone or through the plugin's one loop. */
+  start(events?: TelegramEvents): { readonly stop: () => Promise<void>; readonly ready: Promise<void> } {
+    const local = events === undefined ? new TelegramEvents(this.ctx, { wait: this.wait }) : undefined;
     const initial = this.cleanLeftovers().catch((error: unknown) =>
       this.log(`could not clean a progress message: ${messageOf(error)}`),
     );
     this.watching = (async () => {
       await initial;
-      const iterator = this.ctx.client.events()[Symbol.asyncIterator]();
-      this.iterator = iterator;
-      try {
-        while (!this.stopped) {
-          const next = await iterator.next();
-          if (next.done === true || this.stopped) return;
-          const id = next.value.id;
-          if (id.length > 0) this.wake(id);
-        }
-      } catch (error) {
-        if (!this.stopped) await this.log(`could not follow changes for progress: ${messageOf(error)}`);
-      } finally {
-        if (this.iterator === iterator) this.iterator = undefined;
-        try {
-          await iterator.return?.();
-        } catch {
-          // A stream that failed may refuse to close; stop is still complete.
-        }
-      }
+      if (this.stopped) return;
+      this.following = local?.start({
+        progress: (event) => this.handleEvent(event),
+      });
     })();
     return {
       ready: initial,
@@ -122,21 +118,32 @@ export class ProgressSender {
         this.stopped = true;
         this.controller.abort();
         for (const chat of this.chats.values()) this.cancelTimer(chat);
-        try {
-          await this.iterator?.return?.();
-        } catch {
-          // The stream is already unusable; stopping is still complete.
-        }
+        await this.following?.stop();
         await this.watching.catch(() => undefined);
         await Promise.all([...this.working.values()]);
       },
     };
   }
 
-  /** Checks one chat now, as an event does; resolves when this check is over. */
+  /** One event from the plugin's one loop: a live tail, or a stored chat change. */
+  handleEvent(event: TelegramEvent): void {
+    if (event.id.length === 0) return;
+    const chat = this.chats.get(event.id);
+    if (event.section !== undefined) {
+      const tail = event.tail;
+      // An empty tail with no status and no message to finish has nothing to show.
+      if (chat === undefined && (tail === undefined || tail.trim().length === 0) && event.status === undefined) return;
+      void this.wake(event.id, event, false);
+      return;
+    }
+    // A stored change matters only while a progress message is on the chat.
+    if (chat?.messageId === undefined) return;
+    void this.wake(event.id, event, false);
+  }
+
+  /** Checks one chat now, as a manual read does; resolves when this check is over. */
   syncChat(chatId: string): Promise<void> {
-    this.wake(chatId);
-    return this.working.get(chatId) ?? Promise.resolve();
+    return this.wake(chatId, undefined, true);
   }
 
   /** Waits for the checks asked so far. */
@@ -168,24 +175,71 @@ export class ProgressSender {
     writeProgress(this.ctx.home, this.state);
   }
 
-  private chatOf(chatId: string): ChatProgress {
+  /** Creates a chat's state only once its binding, and so its Telegram chat, is known. */
+  private chatOf(chatId: string, target: number): ChatProgress {
     const existing = this.chats.get(chatId);
     if (existing !== undefined) return existing;
     const created: ChatProgress = {
-      target: undefined,
+      target,
       messageId: undefined,
       text: undefined,
       nextAt: 0,
       dirty: false,
+      probe: false,
+      live: undefined,
       timer: undefined,
     };
     this.chats.set(chatId, created);
     return created;
   }
 
-  private wake(chatId: string): void {
+  private wake(chatId: string, event: TelegramEvent | undefined, manual: boolean): Promise<void> {
+    if (this.stopped) return Promise.resolve();
+    const existing = this.chats.get(chatId);
+    if (existing !== undefined) {
+      this.request(chatId, existing, event, manual);
+      return this.working.get(chatId) ?? Promise.resolve();
+    }
+    if (event?.section !== undefined) this.pendingLive.set(chatId, event);
+    else if (manual) this.probes.add(chatId);
+    else return Promise.resolve();
+    const work = this.working.get(chatId);
+    if (work !== undefined) return work;
+    const run = this.bindAndPump(chatId)
+      .catch((error: unknown) => this.log(`could not show progress: ${messageOf(error)}`))
+      .finally(() => {
+        if (this.working.get(chatId) === run) this.working.delete(chatId);
+        const chat = this.chats.get(chatId);
+        if (chat?.dirty === true && !this.stopped) this.pump(chatId);
+      });
+    this.working.set(chatId, run);
+    return run;
+  }
+
+  private async bindAndPump(chatId: string): Promise<void> {
+    const stored = await this.ctx.store.get(CHAT_TYPE, chatId);
     if (this.stopped) return;
-    const chat = this.chatOf(chatId);
+    const target = stored === undefined ? undefined : telegramChatsOf(chatData(stored.data).channels)[0];
+    if (target === undefined) {
+      this.pendingLive.delete(chatId);
+      this.probes.delete(chatId);
+      return;
+    }
+    const live = this.pendingLive.get(chatId);
+    this.pendingLive.delete(chatId);
+    const probe = this.probes.delete(chatId);
+    if (live === undefined && !probe) return;
+    const chat = this.chatOf(chatId, target);
+    if (live !== undefined) chat.live = live;
+    chat.probe = probe;
+    chat.dirty = true;
+    await this.loop(chatId, chat);
+  }
+
+  private request(chatId: string, chat: ChatProgress, event: TelegramEvent | undefined, manual: boolean): void {
+    if (this.stopped) return;
+    chat.live = event?.section === undefined ? undefined : event;
+    if (manual) chat.probe = true;
     chat.dirty = true;
     this.cancelTimer(chat);
     this.pump(chatId);
@@ -193,31 +247,70 @@ export class ProgressSender {
 
   private pump(chatId: string): void {
     if (this.stopped || this.working.has(chatId)) return;
-    const run = this.loop(chatId)
+    const run = this.loopFor(chatId)
       .catch((error: unknown) => this.log(`could not show progress: ${messageOf(error)}`))
       .finally(() => {
         if (this.working.get(chatId) === run) this.working.delete(chatId);
-        const chat = this.chatOf(chatId);
-        if (chat.dirty && !this.stopped) this.pump(chatId);
+        const chat = this.chats.get(chatId);
+        if (chat?.dirty === true && !this.stopped) this.pump(chatId);
       });
     this.working.set(chatId, run);
   }
 
-  private async loop(chatId: string): Promise<void> {
-    const chat = this.chatOf(chatId);
+  private async loopFor(chatId: string): Promise<void> {
+    const chat = this.chats.get(chatId);
+    if (chat === undefined) return;
+    await this.loop(chatId, chat);
+  }
+
+  private async loop(chatId: string, chat: ChatProgress): Promise<void> {
     while (!this.stopped && chat.dirty) {
       chat.dirty = false;
-      await this.step(chatId, chat);
+      const live = chat.live;
+      chat.live = undefined;
+      await this.step(chatId, chat, live);
     }
   }
 
-  private async step(chatId: string, chat: ChatProgress): Promise<void> {
+  private async step(chatId: string, chat: ChatProgress, live: TelegramEvent | undefined): Promise<void> {
     if (this.stopped) return;
-    const stored = await this.ctx.store.get(CHAT_TYPE, chatId);
-    if (stored === undefined) return;
-    const target = telegramChatsOf(chatData(stored.data).channels)[0];
-    if (target === undefined) return;
-    chat.target = target;
+    const now = this.clock();
+    // The throttle comes before every read: a tail inside the window is not even
+    // looked at, and the next wake reads the section's whole current tail.
+    if (chat.messageId !== undefined && now < chat.nextAt) {
+      this.schedule(chatId, chat, chat.nextAt - now);
+      return;
+    }
+    if (live?.section !== undefined) {
+      const tail = live.tail;
+      const status = live.status;
+      const statusLine = status === undefined ? undefined : progressStatusLine(status, now);
+      if ((tail === undefined || tail.trim().length === 0) && statusLine === undefined) {
+        if (chat.messageId !== undefined) {
+          // A cancelled run may send no event at all: look again while it says
+          // the run still goes on, and delete the message once it has ended.
+          if (await this.running(chatId)) this.later(chatId, chat);
+          else await this.finish(chatId, chat, false);
+        }
+        return;
+      }
+      const chunk = telegramProgress(tail ?? "", statusLine);
+      if (chunk === undefined) {
+        this.later(chatId, chat);
+        return;
+      }
+      if (chat.messageId !== undefined && chat.text === chunk.html) {
+        this.later(chatId, chat);
+        return;
+      }
+      await this.apply(chatId, chat, chunk);
+      this.later(chatId, chat);
+      return;
+    }
+
+    const probe = chat.probe;
+    chat.probe = false;
+    if (chat.messageId === undefined && !probe) return;
 
     const messages = allMessages(this.ctx.store, chatId);
     const entries = allEntries(this.ctx.store, chatId);
@@ -252,13 +345,7 @@ export class ProgressSender {
       this.later(chatId, chat);
       return;
     }
-
-    const now = this.clock();
-    if (chat.messageId !== undefined && now < chat.nextAt) {
-      this.schedule(chatId, chat, chat.nextAt - now);
-      return;
-    }
-    await this.apply(chatId, chat, target, chunk);
+    await this.apply(chatId, chat, chunk);
     this.later(chatId, chat);
   }
 
@@ -305,7 +392,8 @@ export class ProgressSender {
   }
 
   /** Sends the first progress message or edits the one that is there. */
-  private async apply(chatId: string, chat: ChatProgress, target: number, chunk: TelegramChunk): Promise<void> {
+  private async apply(chatId: string, chat: ChatProgress, chunk: TelegramChunk): Promise<void> {
+    const target = chat.target;
     chat.nextAt = this.clock() + this.intervalMs;
     let plain = false;
     let creating = chat.messageId === undefined;
@@ -332,7 +420,6 @@ export class ProgressSender {
         }
         const messageId = chat.messageId;
         if (messageId === undefined) return;
-        chat.target = target;
         chat.text = chunk.html;
         this.remember(chatId, { target, messageId, text: chunk.html });
         return;
@@ -377,7 +464,6 @@ export class ProgressSender {
       return;
     }
     chat.messageId = undefined;
-    chat.target = undefined;
     chat.text = undefined;
     this.forget(chatId);
   }

@@ -11,6 +11,7 @@ import pkg from "../package.json" with { type: "json" };
 import { definePlugin, type SourceHandle } from "@operad-io/engine";
 import { createBotApi, type BotApi } from "./api.ts";
 import { CommandSender, pendingCommandAction } from "./commands.ts";
+import { TelegramEvents } from "./events.ts";
 import { TELEGRAM_SETTINGS, TOKEN_SECRET } from "./settings.ts";
 import { PendingSender } from "./pending.ts";
 import { ProgressSender } from "./progress.ts";
@@ -46,6 +47,7 @@ export function createTelegramPlugin(options: TelegramPluginOptions = {}) {
       }
       const api = options.api ?? createBotApi({ token });
       const wait = options.wait ?? delay;
+      const events = new TelegramEvents(ctx, { wait });
       const pending = new PendingSender(ctx, { api, wait });
       pendingSender = pending;
       const commands = new CommandSender(ctx, { api });
@@ -55,22 +57,35 @@ export function createTelegramPlugin(options: TelegramPluginOptions = {}) {
         wait,
         ...(options.intervalMs === undefined ? {} : { intervalMs: options.intervalMs }),
       });
-      const typing = typingSender.start();
+      const typing = typingSender.start(events);
       const replySender = new ReplySender(ctx, { api, wait });
-      const replies = replySender.start();
-      const progress = new ProgressSender(ctx, {
+      const replies = replySender.start(events);
+      const progressSender = new ProgressSender(ctx, {
         api,
         replies: replySender,
         ...(options.clock === undefined ? {} : { clock: options.clock }),
         wait,
-      }).start();
-      const source = new TelegramSource(ctx, { api, pending, commands, typing: typingSender }).start();
-      const menu = commands.start();
-      const sent = pending.start();
+      });
+      const progress = progressSender.start(events);
+      const telegram = new TelegramSource(ctx, { api, pending, commands, typing: typingSender });
+      const source = telegram.start();
+      const menu = commands.start(events);
+      const sent = pending.start(events);
+      const watching = events.start({
+        progress: (event) => progressSender.handleEvent(event),
+        replies: (event) => replySender.handleEvent(event),
+        typing: (event) => typingSender.handleEvent(event),
+        pending: (event) => pending.handleEvent(event),
+        commands: () => {
+          void commands.refresh();
+        },
+        source: (chatId) => telegram.changed(chatId),
+      });
       return {
         stop: async () => {
           await source.stop();
           await menu.stop();
+          await watching.stop();
           await typing.stop();
           await progress.stop();
           await replies.stop();

@@ -4,6 +4,7 @@
  * touches the terminal, so a test drives it as a plain value.
  */
 
+import { formatElapsed } from "@operad-io/engine";
 import type {
   ChoiceInfo,
   PendingItem,
@@ -812,13 +813,7 @@ export type TuiStateEvent =
   | { readonly type: "row-gone"; readonly id: string };
 
 /** A duration as the Running list writes it. */
-export function formatElapsed(ms: number): string {
-  const value = Number.isFinite(ms) ? Math.max(0, ms) : 0;
-  if (value < 1000) return `${Math.floor(value)}ms`;
-  if (value < 60_000) return `${(value / 1000).toFixed(1)}s`;
-  const whole = Math.floor(value / 1000);
-  return `${Math.floor(whole / 60)}m ${whole % 60}s`;
-}
+export { formatElapsed };
 
 function rowId(row: ViewRow): string {
   return row.scope === undefined ? row.id : `${row.scope}/${row.id}`;

@@ -413,7 +413,7 @@ describe("the tail is drawn after the content", () => {
       s.client.status = { text: "Running Bash", since: 1_000 };
       await changeAndRead(s);
       const drawn = drawState(s.shell.state, "dark", 3_500).right;
-      expect(text(drawn)).toContain("Running Bash · 2.5s");
+      expect(text(drawn)).toContain("Running Bash · 2s");
       expect(coloursOf(drawn, "Running Bash")).toEqual([weak()]);
 
       s.client.status = undefined;

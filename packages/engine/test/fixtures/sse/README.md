@@ -6,8 +6,9 @@ chunked. A client test may split a file at any byte, including in the middle of
 a multi-byte character, if it decodes with streaming.
 
 `MAX_SSE_EVENT_BYTES` is `65536` (64 KiB): the most bytes one line may hold,
-including the `data: ` prefix. The server never writes a longer line, and a live
-part that would need one becomes the object's change event instead.
+including the `data: ` prefix. The server never writes a longer line; a live
+part that would need one is not pushed, and the object's change event beside
+the growth asks the client to read the section again.
 
 | File | What it is |
 |---|---|

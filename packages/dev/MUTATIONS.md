@@ -1445,3 +1445,22 @@ the row fields.
 | T-0583-M6 | packages/dev/src/settings.ts | `stageOf` kept an older name instead of returning the new one | `the older and new stage names load to the same compiled flow` |
 | T-0583-M7 | packages/dev/src/project-flows.ts | `flowProblem` kept the older words `check, review or human` | `a TS flow with no test, review or human step is refused` |
 | T-0583-M8 | packages/dev/dev.schema.json | the schema dropped the older `work` name instead of accepting it as an older name | `the dev schema accepts both stage names and marks the older ones` |
+
+## T-0635 — one elapsed format
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0635-M6 | packages/dev/src/views.ts | an attempt's time subtracted a second | `metrics times come from the run's own facts > a normal run to its person wait: the wait is its own line, inside no attempt or step` |
+| T-0635-M10 | packages/dev/src/throughput.ts | the step time table's median subtracted a second, so `20m` read `19m 59s` | `repository metrics > counts per hour and per day, cost per merge, and step times` |
+| T-0635-M11 | packages/dev/src/views.ts | a tool call's duration added a second | `dev views > a tool call is one line with what ran and how long it took` |
+| T-0635-M12 | packages/dev/src/views.ts | the time a person waited added a second, so `16m 48s` read `16m 49s` | `metrics times come from the run's own facts > a normal run to its person wait: the wait is its own line, inside no attempt or step` |
+| T-0635-M13 | packages/dev/src/views.ts | a worker's total time added a second | `dev views > the metrics section splits cost, time and first pass by worker` |
+## T-0636 — the check host is a setting and a missing host is loud
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0636-M1 | packages/dev/src/check-host.ts | `checkEnvironment` let the setting override an explicit `OPERAD_CHECK_HOST` | `the check host and slots from the home's settings > an explicit variable in serve's own environment wins, including an empty host` |
+| T-0636-M2 | packages/dev/src/check-host.ts | `checkHostWarning` always returned undefined, so a missing host was silent | `a check command that uses scripts/remote-check.sh without a check host > says one line naming the script and how to set the host` |
+| T-0636-M3 | packages/dev/src/gate.ts | the gate's `shell/check` lost the home settings' environment | `the check host and slots of the home's settings > a gate command gets the host and slots from the setting` |
+| T-0636-M4 | packages/dev/src/integrate.ts | the integration's key commands lost the home settings' environment | `dev/integrate > an integration check gets the check host and slots from the home's settings` |
+| T-0636-M5 | packages/dev/src/standing.ts | the pending list stopped showing the missing check host | `a check command that uses remote-check.sh without a check host > the log says it once and pending shows it; a local command says nothing` |

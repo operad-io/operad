@@ -9,7 +9,7 @@ import type {
   ViewSectionContent,
   ViewTypeInfo,
 } from "@operad-io/engine";
-import { isRecord } from "@operad-io/engine";
+import { formatElapsed, isRecord } from "@operad-io/engine";
 import type { MachineLoad } from "@operad-io/engine/platform";
 import type { McpViewObject } from "./policy.ts";
 
@@ -205,15 +205,6 @@ export function pendingMarkdown(pending: readonly PendingItem[]): string {
   return `${lines.join("\n")}\n`;
 }
 
-function elapsed(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  const whole = Math.floor(ms / 1000);
-  if (whole < 60) return `${(ms / 1000).toFixed(1)}s`;
-  const minutes = Math.floor(whole / 60);
-  const rest = whole % 60;
-  return `${minutes}m ${rest}s`;
-}
-
 /** Every active run as a Markdown table. */
 export function runningMarkdown(
   running: readonly RunningItem[],
@@ -227,7 +218,7 @@ export function runningMarkdown(
   ];
   for (const item of running) {
     lines.push(
-      `| ${cell(item.object ?? item.runId)} | ${cell(item.title ?? "")} | ${cell(item.flow)} | ${cell(item.stepLabel ?? "-")} | ${item.stepElapsedMs === null ? "-" : elapsed(item.stepElapsedMs)}${item.queuedMs === undefined || item.queuedMs <= 0 ? "" : ` (queued ${elapsed(item.queuedMs)})`} | ${elapsed(item.elapsedMs)} |`,
+      `| ${cell(item.object ?? item.runId)} | ${cell(item.title ?? "")} | ${cell(item.flow)} | ${cell(item.stepLabel ?? "-")} | ${item.stepElapsedMs === null ? "-" : formatElapsed(item.stepElapsedMs)}${item.queuedMs === undefined || item.queuedMs <= 0 ? "" : ` (queued ${formatElapsed(item.queuedMs)})`} | ${formatElapsed(item.elapsedMs)} |`,
     );
   }
   return `${lines.join("\n")}\n\n${loadLine}`;

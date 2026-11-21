@@ -303,7 +303,7 @@ describe("the TUI reducer", () => {
       id: "run-2",
       title: "flow",
       state: "work",
-      note: "1.5s",
+      note: "1s",
       running: true,
     });
 
@@ -314,8 +314,8 @@ describe("the TUI reducer", () => {
     expect(state.tabs.find((tab) => tab.id === "running")?.list.rows[0]).toMatchObject({
       id: "dev/T-1",
       title: "A title",
-      note: "2.5s",
-      detail: ["work", "2.5s", "1.5s", "dev"],
+      note: "2s",
+      detail: ["work", "2s", "1s", "dev"],
     });
     expect(runningRow === undefined ? undefined : rowMark(runningRow)).toBe("running");
 
@@ -382,9 +382,9 @@ describe("the TUI reducer", () => {
     expect(state.pageRequest).toBeUndefined();
   });
 
-  test("formatElapsed writes milliseconds, seconds and minutes", () => {
-    expect(formatElapsed(0)).toBe("0ms");
-    expect(formatElapsed(1_500)).toBe("1.5s");
+  test("formatElapsed writes one elapsed format", () => {
+    expect(formatElapsed(0)).toBe("<1s");
+    expect(formatElapsed(1_500)).toBe("1s");
     expect(formatElapsed(61_000)).toBe("1m 1s");
   });
 

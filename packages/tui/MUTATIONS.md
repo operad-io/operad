@@ -522,3 +522,17 @@ the row fields.
 | T-0524-M2 | packages/tui/src/view/index.ts | a destructive choice was drawn in the text colour, not the error colour | `a question whose choices say what they are > each line shows its label and hint, the primary is selected, and a destructive line is in the error colour` |
 | T-0524-M3 | packages/tui/src/actions.ts | a choice with a note answered at once instead of opening the note input | `a question whose choices say what they are > a choice whose note is required opens the note input before it answers` and `... a choice whose note is optional offers the note input and answers without one on Enter` |
 | T-0524-M4 | packages/tui/src/view/index.ts | a choice's line left out its hint | `a question whose choices say what they are > each line shows its label and hint, the primary is selected, and a destructive line is in the error colour` |
+
+## T-0635 — one elapsed format
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0635-M4 | packages/tui/src/state.ts | a running row's step time added a second | `the TUI reducer > each list maps its own flags to a row mark` |
+
+## T-0619 — throttled lists, an action's own refetch, and the chat cache
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0619-M1 | packages/tui/src/live.ts | the lists shared the short window instead of their own longer one | `live updates in the shell > ten events inside the list window make one Pending and one Running request` |
+| T-0619-M2 | packages/tui/src/app.ts | an action's success ran the whole refresh again | `live updates in the shell > an action refetches only its object and row, never the lists` |
+| T-0619-M3 | packages/tui/src/chat.ts | `chatMarkdown` built its text again instead of reading the cache | `chatMarkdown keeps its result for the same inputs, and the same local day` |

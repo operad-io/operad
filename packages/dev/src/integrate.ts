@@ -13,6 +13,7 @@ import {
   recreateGateWorktree,
 } from "./gate.ts";
 import { mainCloneRunner, runPrepare, stepOptions } from "./prepare.ts";
+import { checkEnvironment } from "./check-host.ts";
 import { checkPlaces } from "./places.ts";
 import {
   IntegrationQueue,
@@ -652,6 +653,7 @@ export async function runIntegrate(
                 ...(settings.gate.stallSecs === undefined
                   ? {}
                   : { stallSecs: settings.gate.stallSecs }),
+                env: checkEnvironment(ctx.settings),
               },
               keyCommands,
               stepOptions(ctx, gate),
@@ -1015,6 +1017,7 @@ export async function runIntegrate(
                 ...(settings.gate.stallSecs === undefined
                   ? {}
                   : { stallSecs: settings.gate.stallSecs }),
+                env: checkEnvironment(ctx.settings),
               },
               keyCommands,
               stepOptions(ctx, gate),

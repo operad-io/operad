@@ -10,6 +10,9 @@ import { sameObject, type TuiConnection } from "./state.ts";
 /** At most one batch of refetches per this many milliseconds. */
 export const LIVE_DEBOUNCE_MS = 250;
 
+/** The lists refetch at most once per this many milliseconds, apart from rows. */
+export const LIVE_LISTS_DEBOUNCE_MS = 1500;
+
 /** What the shell needs from time: one timer that can be cancelled. */
 export interface TuiClock {
   /** Calls `run` once after `ms`; the returned function cancels it. */
@@ -73,36 +76,68 @@ export function mergeRefetch(a: Refetch, b: Refetch): Refetch {
   };
 }
 
+function hasWork(targets: Refetch): boolean {
+  return targets.all || targets.lists || targets.rows.length > 0 || targets.object;
+}
+
 /**
  * Collects targets and hands them over once per window. The first push opens
- * the window; pushes inside it join the same batch.
+ * the window; pushes inside it join the same batch. The lists have a longer
+ * window of their own, so a stream of output does not fetch Pending and
+ * Running on every short batch; the changed row and the open object stay on
+ * the short one. A `reset` fetches everything on the short window and drops
+ * any list batch it already covers.
  */
 export class LiveBatcher {
   private batch: Refetch = NO_REFETCH;
+  private lists: Refetch = NO_REFETCH;
   private cancel: (() => void) | undefined;
+  private listsCancel: (() => void) | undefined;
 
   constructor(
     private readonly clock: TuiClock,
     private readonly flush: (targets: Refetch) => void,
     private readonly windowMs = LIVE_DEBOUNCE_MS,
+    private readonly listsWindowMs = LIVE_LISTS_DEBOUNCE_MS,
   ) {}
 
   push(targets: Refetch): void {
-    this.batch = mergeRefetch(this.batch, targets);
-    if (this.cancel !== undefined) return;
+    if (targets.lists) {
+      this.lists = mergeRefetch(this.lists, { ...NO_REFETCH, lists: true });
+      if (this.listsCancel === undefined) {
+        this.listsCancel = this.clock.after(() => {
+          const ready = this.lists;
+          this.lists = NO_REFETCH;
+          this.listsCancel = undefined;
+          if (ready.lists) this.flush(ready);
+        }, this.listsWindowMs);
+      }
+    }
+    this.batch = mergeRefetch(this.batch, { ...targets, lists: false });
+    if (!hasWork(this.batch) || this.cancel !== undefined) return;
     this.cancel = this.clock.after(() => {
       const ready = this.batch;
       this.batch = NO_REFETCH;
       this.cancel = undefined;
+      // A full refresh already fetches the lists; their later batch would be a
+      // second read of the same lists.
+      if (ready.all) {
+        this.listsCancel?.();
+        this.listsCancel = undefined;
+        this.lists = NO_REFETCH;
+      }
       this.flush(ready);
     }, this.windowMs);
   }
 
-  /** Drops the batch and the timer. */
+  /** Drops the batches and their timers. */
   stop(): void {
     this.cancel?.();
     this.cancel = undefined;
     this.batch = NO_REFETCH;
+    this.listsCancel?.();
+    this.listsCancel = undefined;
+    this.lists = NO_REFETCH;
   }
 }
 

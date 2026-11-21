@@ -116,3 +116,9 @@ the row fields.
 | T-0598-M1 | packages/mcp/src/format.ts | the read Markdown emitted a `Backlinks` heading even when the document had no backlinks | `the read Markdown > leaves the section out when nothing links to the document` |
 | T-0598-M2 | packages/mcp/src/format.ts | the read Markdown dropped the untrusted mark from a linking note | `the read Markdown > ends with the notes that link to the document, with a line and excerpt` |
 | T-0598-M3 | packages/mcp/src/format.ts | the search Markdown dropped the untrusted mark from a result | `the search Markdown > marks a result whose note is untrusted` |
+
+## T-0635 — one elapsed format
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0635-M3 | packages/mcp/src/format.ts | the running table's run time subtracted a second | `the running Markdown > writes one row per run and formats each duration` |

@@ -39,12 +39,13 @@ import {
   type TaskData,
 } from "./model.ts";
 import { placeWaitNote } from "./place-wait.ts";
+import { checkHostWarning } from "./check-host.ts";
 import { planMark, repositoryMark, taskBadge, taskMark } from "./marks.ts";
 import { git, workBranch } from "./steps.ts";
 import { repositoryMetrics } from "./throughput.ts";
 import { findRepository, listRepositories } from "./service.ts";
 import { DEV_SETTINGS_FILE, readDevSettings, settingsProblem } from "./settings.ts";
-import { oneLine } from "@operad-io/engine";
+import { formatElapsed, oneLine } from "@operad-io/engine";
 
 function costNote(cost: unknown, quality?: unknown): string | undefined {
   if (typeof cost === "number" && Number.isFinite(cost)) {
@@ -154,6 +155,10 @@ export const repoViews: ObjectViews = {
     try {
       const settings = await readDevSettings(repository.path);
       const problem = settingsProblem(repository.path);
+      const hostWarning =
+        problem === undefined
+          ? checkHostWarning(repository.name, settings, ctx.settings)
+          : undefined;
       const file = join(repository.path, DEV_SETTINGS_FILE);
       lines.push(
         `- Default branch: \`${settings.mainBranch}\` on \`${settings.remote}\``,
@@ -167,6 +172,7 @@ export const repoViews: ObjectViews = {
         `- Worker: \`${settings.worker.use}\``,
         `- Reviewer: \`${settings.reviewer.use}\``,
       );
+      if (hostWarning !== undefined) lines.push(`- Check host: not set; ${hostWarning}`);
     } catch (error) {
       lines.push(
         `- ${DEV_SETTINGS_FILE}: ${error instanceof Error ? error.message : String(error)}`,
@@ -442,7 +448,7 @@ export function readableLog(lines: readonly string[], options: { readonly worktr
         end !== undefined
           ? end.durationMs === undefined
             ? ""
-            : ` ${seconds(end.durationMs)}`
+            : ` ${formatElapsed(end.durationMs)}`
           : finished
             ? ` no end logged${at === undefined ? "" : ` (started ${clockTime(at)})`}`
             : ` running${at === undefined ? "" : ` since ${clockTime(at)}`}`;
@@ -938,13 +944,6 @@ async function diffSection(
 
 const METRIC_STEPS = ["worktree", "work", "reverify", "verify", "review", "integrate"] as const;
 
-function seconds(ms: number): string {
-  if (ms < 1000) return "<1s";
-  const total = Math.round(ms / 1000);
-  const minutes = Math.floor(total / 60);
-  return minutes === 0 ? `${total}s` : `${minutes}m${String(total % 60).padStart(2, "0")}s`;
-}
-
 interface AttemptMetrics {
   readonly number: number;
   /** The runs that ran it, in the order the task first named them. */
@@ -986,15 +985,6 @@ function attemptCycles(segments: RunTimes["segments"]): RunTimes["segments"][num
 /** A token count: whole below 10k, then in k with one decimal. */
 export function tokenCount(count: number): string {
   return count < 10_000 ? String(count) : `${(count / 1000).toFixed(1)}k`;
-}
-
-/** A wall time for the narrow table: seconds, minutes, or hours and minutes. */
-function wallTime(ms: number): string {
-  const total = Math.max(0, Math.round(ms / 1000));
-  if (total < 60) return `${total}s`;
-  const minutes = Math.round(total / 60);
-  if (minutes < 60) return `${minutes}m`;
-  return `${Math.floor(minutes / 60)}h${String(minutes % 60).padStart(2, "0")}m`;
 }
 
 function findingsText(review: ReviewRecord): string {
@@ -1189,13 +1179,13 @@ export async function metrics(
       if (last.costQuality === "incomplete") quality = "incomplete";
       else if (last.costQuality === "estimated" && quality === "") quality = "estimated";
     }
-    const time = entry.timed ? `${wallTime(entry.ms)}${entry.running === undefined ? "" : " …"}` : "–";
+    const time = entry.timed ? `${formatElapsed(entry.ms)}${entry.running === undefined ? "" : " …"}` : "–";
     lines.push(
       `| ${entry.number} | ${time} | ${costNote(last?.cost, last?.costQuality) ?? "–"} | ${attemptResult(entry, entry.number === newest, phase, entry.running)} |`,
     );
   }
   lines.push(
-    `| total | ${anyTimed ? wallTime(totalMs) : "–"} | ${costed ? costNote(totalCost, quality) : "–"} | |`,
+    `| total | ${anyTimed ? formatElapsed(totalMs) : "–"} | ${costed ? costNote(totalCost, quality) : "–"} | |`,
   );
   const perAttempt = [...entries].reverse().map((entry) => {
     const mark = " (running)";
@@ -1204,12 +1194,12 @@ export async function metrics(
     // time (a retry wait, a rework) follows, and the one running always shows.
     for (const name of METRIC_STEPS) {
       const spent = entry.steps.get(name);
-      if (spent !== undefined) parts.push(`${name} ${seconds(spent)}${entry.running === name ? mark : ""}`);
+      if (spent !== undefined) parts.push(`${name} ${formatElapsed(spent)}${entry.running === name ? mark : ""}`);
     }
     for (const [name, spent] of entry.steps) {
       if ((METRIC_STEPS as readonly string[]).includes(name)) continue;
       if (spent < 1000 && entry.running !== name) continue;
-      parts.push(`${name.replaceAll("_", " ")} ${seconds(spent)}${entry.running === name ? mark : ""}`);
+      parts.push(`${name.replaceAll("_", " ")} ${formatElapsed(spent)}${entry.running === name ? mark : ""}`);
     }
     const tokens = entry.last?.tokens;
     if (tokens !== undefined && tokens !== null) {
@@ -1219,7 +1209,7 @@ export async function metrics(
   });
   const waitLine =
     waitedMs > 0 || waiting
-      ? [`**Waiting for a person** ${seconds(waitedMs)}${waiting ? " (waiting)" : ""}`]
+      ? [`**Waiting for a person** ${formatElapsed(waitedMs)}${waiting ? " (waiting)" : ""}`]
       : [];
   const summary = [lines.join("\n"), perAttempt.join("\n\n"), ...waitLine].join("\n\n");
   const perWorker = workerTable(entries);
@@ -1265,7 +1255,7 @@ function workerTable(entries: readonly AttemptMetrics[]): string | undefined {
     const cost = row.costed ? `$${row.cost.toFixed(2)}` : "-";
     const first = row.reviewed === 0 ? "-" : `${row.first}/${row.reviewed}`;
     lines.push(
-      `| ${cell(worker)} | ${row.attempts} | ${cost} | ${seconds(row.ms)} | ${first} |`,
+      `| ${cell(worker)} | ${row.attempts} | ${cost} | ${formatElapsed(row.ms)} | ${first} |`,
     );
   }
   return lines.join("\n");

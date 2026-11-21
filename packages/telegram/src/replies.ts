@@ -18,9 +18,10 @@
 import { CHAT_TYPE, allEntries, allMessages, chatData } from "@operad-io/chat";
 import { messageOf, type SourceContext } from "@operad-io/engine";
 import { BotApiError, type BotApi } from "./api.ts";
+import { TelegramEvents, type TelegramEvent } from "./events.ts";
 import { telegramChunks, type TelegramChunk } from "./format.ts";
 import { TELEGRAM_SOURCE } from "./source.ts";
-import { readSent, writeSent, type SentRecord, type SentState } from "./state.ts";
+import { readSent, writeSent, pruneSent, SENT_STATE_MARGIN_MS, type SentRecord, type SentState } from "./state.ts";
 
 /** How a failed send is tried again. */
 export interface RetryPolicy {
@@ -82,6 +83,9 @@ export class ReplySender {
   private readonly retry: RetryPolicy;
   private readonly controller = new AbortController();
   private readonly queues = new Map<string, Promise<void>>();
+  /** At most one sweep waits behind the one running for each chat. */
+  private readonly queuedSweeps = new Map<string, Promise<void>>();
+  private following: { readonly stop: () => Promise<void> } | undefined;
   private state: SentState;
   private stopped = false;
   private watching: Promise<void> = Promise.resolve();
@@ -99,34 +103,38 @@ export class ReplySender {
     else ctx.signal.addEventListener("abort", () => this.controller.abort(), { once: true });
   }
 
-  /** Sends what is waiting on every bound chat, then follows the client's events. */
-  start(): { readonly stop: () => Promise<void>; readonly ready: Promise<void> } {
-    const iterator = this.ctx.client.events()[Symbol.asyncIterator]();
-    // Wake-ups are pulled before the sweep so a change during it is not missed.
+  /** Sends what is waiting on every bound chat, then follows changes, alone or through the plugin's one loop. */
+  start(events?: TelegramEvents): { readonly stop: () => Promise<void>; readonly ready: Promise<void> } {
+    const local = events === undefined ? new TelegramEvents(this.ctx, { wait: this.wait }) : undefined;
     const initial = this.sweepAll().catch((error: unknown) => this.log(`could not send replies: ${messageOf(error)}`));
     this.watching = (async () => {
       await initial;
-      while (!this.stopped) {
-        const next = await iterator.next();
-        if (next.done === true || this.stopped) return;
-        const id = next.value.id;
-        if (id.length > 0) void this.sweepChat(id).catch((error: unknown) => this.log(`could not send replies: ${messageOf(error)}`));
-      }
+      if (this.stopped) return;
+      this.following = local?.start({
+        replies: (event) => this.handleEvent(event),
+      });
     })();
     return {
       ready: initial,
       stop: async () => {
         this.stopped = true;
         this.controller.abort();
-        await iterator.return?.();
+        await this.following?.stop();
         await this.watching.catch(() => undefined);
         await Promise.all([...this.queues.values()]);
       },
     };
   }
 
+  /** One stored change of a chat, as the plugin's one event loop hands it over. */
+  handleEvent(event: TelegramEvent): void {
+    if (event.section !== undefined) return;
+    void this.sweepChat(event.id).catch((error: unknown) => this.log(`could not send replies: ${messageOf(error)}`));
+  }
+
   /** Sweeps every chat bound to Telegram once. */
   async sweepAll(): Promise<void> {
+    const startedAt = this.clock();
     const ids: string[] = [];
     let cursor: string | undefined;
     do {
@@ -137,13 +145,27 @@ export class ReplySender {
       cursor = page.next;
     } while (cursor !== undefined);
     await Promise.all(ids.map((id) => this.sweepChat(id)));
+    // Every message older than this sweep's start was read, so nothing before
+    // it can still be new. Moving `since` a margin behind the start lets the
+    // done records behind it go without risking a message written around the
+    // boundary.
+    const since = Math.max(this.state.since, startedAt - SENT_STATE_MARGIN_MS);
+    if (this.stopped || since <= this.state.since) return;
+    this.state = pruneSent({ since, sent: this.state.sent });
+    writeSent(this.ctx.home, this.state);
   }
 
-  /** Sends the unsent replies and failure lines of one chat; one sweep of a chat runs at a time. */
+  /** Sends the unsent replies and failure lines of one chat; at most one sweep waits per chat. */
   sweepChat(chatId: string): Promise<void> {
+    const queued = this.queuedSweeps.get(chatId);
+    if (queued !== undefined) return queued;
     const previous = this.queues.get(chatId) ?? Promise.resolve();
-    const run = previous.then(() => this.sweep(chatId));
+    const run = previous.then(() => {
+      if (this.queuedSweeps.get(chatId) === run) this.queuedSweeps.delete(chatId);
+      return this.sweep(chatId);
+    });
     const settled = run.catch(() => undefined);
+    this.queuedSweeps.set(chatId, run);
     this.queues.set(chatId, settled);
     void settled.then(() => {
       if (this.queues.get(chatId) === settled) this.queues.delete(chatId);
@@ -190,7 +212,7 @@ export class ReplySender {
     let sent = record?.chunks ?? 0;
     let telegramId = record?.telegramId;
     if (chunks.length === 0) {
-      this.remember(key, { chunks: 0, done: true });
+      this.remember(key, { chunks: 0, done: true, at: message.at });
       return;
     }
     while (sent < chunks.length) {
@@ -203,12 +225,12 @@ export class ReplySender {
         if (this.stopped) return;
         const tries = error instanceof SendGaveUp ? error.tries : 1;
         await this.giveUp(chatId, message, sent, chunks.length, tries, error instanceof SendGaveUp ? error.last : error);
-        this.remember(key, { chunks: sent, ...(telegramId === undefined ? {} : { telegramId }), done: true, failed: true });
+        this.remember(key, { chunks: sent, ...(telegramId === undefined ? {} : { telegramId }), done: true, failed: true, at: message.at });
         return;
       }
       sent += 1;
       telegramId = id;
-      this.remember(key, { chunks: sent, telegramId, done: sent >= chunks.length });
+      this.remember(key, { chunks: sent, telegramId, done: sent >= chunks.length, at: message.at });
     }
   }
 
@@ -260,7 +282,7 @@ export class ReplySender {
   }
 
   private remember(key: string, record: SentRecord): void {
-    this.state = { since: this.state.since, sent: { ...this.state.sent, [key]: record } };
+    this.state = pruneSent({ since: this.state.since, sent: { ...this.state.sent, [key]: record } });
     writeSent(this.ctx.home, this.state);
   }
 

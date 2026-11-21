@@ -40,3 +40,14 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0534-M1 | packages/shell/src/index.ts | the outward guard got no flow, so it could not use or record a target grant | `shell/command > always for this flow and target lifts the next run's outward question` |
+
+## T-0615 — shell test fixtures stay outside the repository
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0615-M7 | packages/shell/test/support.ts | `tempRoot` made its scratch directory under the repository again, so an outward line could reach the real remote | `shell/command > shell/probe checks an outward line before it runs it` |
+## T-0636 — a check line gets the environment a plugin passes
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0636-M6 | packages/shell/src/index.ts | `shell/check` no longer passed `params.env` to each line | `shell/check > env is added to every line's environment` |

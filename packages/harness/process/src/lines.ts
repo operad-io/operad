@@ -155,6 +155,195 @@ export function maskSecrets(line: string, secrets: readonly string[]): string {
   return masked;
 }
 
+/** The shortest time between two increment lines of one stream, in milliseconds. */
+export const STREAM_GROUP_MS = 100;
+
+/** The spellings `maskSecrets` masks for one value: the value and, if it differs, its JSON text. */
+function spellingsOf(secret: string): readonly string[] {
+  if (secret.length === 0) return [];
+  const escaped = JSON.stringify(secret).slice(1, -1);
+  return escaped === secret ? [secret] : [secret, escaped];
+}
+
+/**
+ * Splits an increment so that no line ends inside a secret: the longest suffix
+ * of `text` that is a proper prefix of a secret value is held back and joined
+ * to the next increment, where the completed secret is masked. A secret that
+ * is wholly in the emitted part is masked there. Both the value as written and
+ * its JSON-escaped spelling count, as `maskSecrets` masks both.
+ */
+export function splitSecretPrefix(
+  text: string,
+  secrets: readonly string[],
+): { readonly emit: string; readonly held: string } {
+  let held = 0;
+  for (const secret of secrets.flatMap(spellingsOf)) {
+    const longest = Math.min(secret.length - 1, text.length);
+    for (let length = longest; length > held; length -= 1) {
+      if (text.endsWith(secret.slice(0, length))) {
+        held = length;
+        break;
+      }
+    }
+  }
+  if (held === 0) return { emit: text, held: "" };
+  return { emit: text.slice(0, text.length - held), held: text.slice(text.length - held) };
+}
+
+export type IncrementKind = "text" | "thinking";
+
+/** A line an increment writes: new text or thinking, or the full text that ends it. */
+export interface IncrementLine {
+  readonly type: "text_delta" | "thinking_delta" | "text_end" | "thinking_end";
+  readonly text: string;
+}
+
+/** Where increments are written. */
+export interface IncrementSink {
+  line(line: IncrementLine): void;
+}
+
+export interface IncrementsOptions {
+  /**
+   * Write the first part of a stream as soon as it arrives. A harness that
+   * groups from the first part instead (claude) passes false: it writes when
+   * the next part comes after `STREAM_GROUP_MS`, or when the block ends.
+   */
+  readonly firstImmediately?: boolean;
+}
+
+/**
+ * Assistant text and thinking as they stream. A line carries the new text
+ * only, and each stream writes at most one per `STREAM_GROUP_MS`: a message
+ * that arrives faster is grouped. Secret values are masked in every line, and
+ * a suffix that could start one is held back until the next part completes it
+ * or the stream ends.
+ */
+export class Increments {
+  #text = "";
+  #thinking = "";
+  #textAt: number | undefined;
+  #thinkingAt: number | undefined;
+  readonly #firstImmediately: boolean;
+
+  constructor(
+    private readonly io: IncrementSink,
+    private readonly now: () => number,
+    private readonly secrets: readonly string[],
+    options: IncrementsOptions = {},
+  ) {
+    this.#firstImmediately = options.firstImmediately ?? true;
+  }
+
+  text(delta: string): void {
+    if (delta.length === 0) return;
+    const at = this.now();
+    if (this.#firstImmediately) {
+      this.#text += delta;
+      if (this.#textAt === undefined || at - this.#textAt >= STREAM_GROUP_MS) this.#writeText(at, false);
+      return;
+    }
+    if (this.#textAt !== undefined && at - this.#textAt >= STREAM_GROUP_MS) this.#writeText(at, false);
+    if (this.#textAt === undefined) this.#textAt = at;
+    this.#text += delta;
+  }
+
+  thinking(delta: string): void {
+    if (delta.length === 0) return;
+    const at = this.now();
+    if (this.#firstImmediately) {
+      this.#thinking += delta;
+      if (this.#thinkingAt === undefined || at - this.#thinkingAt >= STREAM_GROUP_MS) {
+        this.#writeThinking(at, false);
+      }
+      return;
+    }
+    if (this.#thinkingAt !== undefined && at - this.#thinkingAt >= STREAM_GROUP_MS) {
+      this.#writeThinking(at, false);
+    }
+    if (this.#thinkingAt === undefined) this.#thinkingAt = at;
+    this.#thinking += delta;
+  }
+
+  /**
+   * Writes what a stream has buffered. A complete flush writes a held suffix
+   * too, when the block ends and no later part can complete it; an incomplete
+   * one keeps the suffix that could start a secret.
+   */
+  flush(kind: IncrementKind, complete: boolean): void {
+    if (kind === "text") {
+      if (this.#text.length === 0) {
+        if (complete) this.#textAt = undefined;
+        return;
+      }
+      this.#writeText(undefined, complete);
+      return;
+    }
+    if (this.#thinking.length === 0) {
+      if (complete) this.#thinkingAt = undefined;
+      return;
+    }
+    this.#writeThinking(undefined, complete);
+  }
+
+  /** A thinking block finished: its full text follows the increments. */
+  endThinking(text: string): void {
+    this.#thinking = "";
+    this.#thinkingAt = undefined;
+    if (text.length > 0) this.io.line({ type: "thinking_end", text: maskSecrets(text, this.secrets) });
+  }
+
+  /** An assistant message finished: its full text follows the increments. */
+  endMessage(text: string): void {
+    if (text.length > 0) {
+      this.#text = "";
+      this.#textAt = undefined;
+      this.io.line({ type: "text_end", text: maskSecrets(text, this.secrets) });
+    } else if (this.#text.length > 0) {
+      this.#writeText(this.now(), false);
+    }
+    // A thinking block that ended wrote its own full text; anything left is
+    // a block the run stopped in, and the increments are all it has.
+    if (this.#thinking.length > 0) this.#writeThinking(this.now(), false);
+  }
+
+  /**
+   * The stream is ending and no later text can complete a held prefix: write
+   * it now, masked when it holds a whole secret. Every end path calls this
+   * before its Result, so a stopped reply keeps what it had reached.
+   */
+  release(): void {
+    if (this.#text.length > 0) {
+      this.io.line({ type: "text_delta", text: maskSecrets(this.#text, this.secrets) });
+      this.#text = "";
+      this.#textAt = undefined;
+    }
+    if (this.#thinking.length > 0) {
+      this.io.line({ type: "thinking_delta", text: maskSecrets(this.#thinking, this.secrets) });
+      this.#thinking = "";
+      this.#thinkingAt = undefined;
+    }
+  }
+
+  #writeText(at: number | undefined, complete: boolean): void {
+    const { emit, held } = complete
+      ? { emit: this.#text, held: "" }
+      : splitSecretPrefix(this.#text, this.secrets);
+    if (emit.length > 0) this.io.line({ type: "text_delta", text: maskSecrets(emit, this.secrets) });
+    this.#text = held;
+    this.#textAt = complete ? undefined : at ?? this.#textAt;
+  }
+
+  #writeThinking(at: number | undefined, complete: boolean): void {
+    const { emit, held } = complete
+      ? { emit: this.#thinking, held: "" }
+      : splitSecretPrefix(this.#thinking, this.secrets);
+    if (emit.length > 0) this.io.line({ type: "thinking_delta", text: maskSecrets(emit, this.secrets) });
+    this.#thinking = held;
+    this.#thinkingAt = complete ? undefined : at ?? this.#thinkingAt;
+  }
+}
+
 /**
  * Hands a line that was written to the log to the caller's receiver, with the
  * secret values masked. A receiver that throws does not stop the step: the log

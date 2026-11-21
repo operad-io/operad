@@ -5,6 +5,7 @@ import { join } from "node:path";
 import {
   createViews,
   definePlugin,
+  MAX_SSE_EVENT_BYTES,
   MemoryPluginStore,
   openLog,
   PluginRegistry,
@@ -239,6 +240,8 @@ function manualLog(inner: LogBackend): {
     recordOutcome: (inputId, kind, payload) =>
       inner.recordOutcome(inputId, kind, payload),
     readOutcomes: () => inner.readOutcomes(),
+    openCandidateRoutes: () => inner.openCandidateRoutes(),
+    startRoutesWithoutRun: () => inner.startRoutesWithoutRun(),
     close: () => inner.close(),
   };
   return {
@@ -670,6 +673,30 @@ describe("a live log that grows without a fact", () => {
         tail: "tail 2",
       });
       expect(state.calls).toBe(2);
+    } finally {
+      await stream.return?.();
+    }
+  });
+
+  test("a live part too large for one event line is not pushed as a tail", async () => {
+    const { plugin, state } = pushingPlugin(() => ({
+      section: "log",
+      tail: "x".repeat(MAX_SSE_EVENT_BYTES),
+    }));
+    const env = await fixture({ logDir: true }, plugin);
+    const views = viewsOf(env);
+    const onChange = await env.watches.opened(env.directory);
+    const stream = views.events()[Symbol.asyncIterator]();
+    try {
+      onChange("agent.log");
+      // Let the plugin answer and the dropped part settle before the next read.
+      for (let turn = 0; turn < 4; turn += 1) await Promise.resolve();
+      expect(state.calls).toBe(1);
+      // The growth change is the only event; an oversized tail was dropped.
+      expect((await within(stream.next())).value).toEqual({ id: "one" });
+
+      env.store.put("item", "two", { title: "Two changed" }, "seed");
+      expect((await within(stream.next())).value).toEqual({ id: "two" });
     } finally {
       await stream.return?.();
     }

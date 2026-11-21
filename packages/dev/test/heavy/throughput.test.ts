@@ -170,12 +170,12 @@ describe("repository metrics", () => {
     expect(rows.filter((row) => /^\| 2026-11-\d\d \|/.test(row))).toHaveLength(7);
     // Work: 10m, 30m, 50m, 20m (the fifth has no run on record). Nearest rank: median 20m, p90 50m.
     expect(rows).toContain("| work | 20m | 50m |");
-    expect(rows).toContain("| verify | 0s | 30m |");
+    expect(rows).toContain("| verify | <1s | 30m |");
     // The first task waited 10 minutes for a person; the others none.
-    expect(rows).toContain("| wait for a person | 0s | 10m |");
+    expect(rows).toContain("| wait for a person | <1s | 10m |");
     // 4 minutes of the first task's 20-minute integrate was waiting for its turn.
-    expect(rows).toContain("| waiting to integrate | 0s | 4m |");
-    expect(rows).toContain("| integrate | 0s | 16m |");
+    expect(rows).toContain("| waiting to integrate | <1s | 4m |");
+    expect(rows).toContain("| integrate | <1s | 16m |");
     expect(rows).toContain("| rework rounds | 0 | 2 |");
     expect(text).toContain("_Times are from 4 of 6 tasks; the others have no run on record._");
     // Two of five stopped for a person; review findings count once per task.

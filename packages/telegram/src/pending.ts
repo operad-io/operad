@@ -33,10 +33,11 @@ import {
 } from "@operad-io/engine";
 import { BotApiError, type BotApi, type InlineButton, type TelegramCallback, type TelegramMessage } from "./api.ts";
 import { PENDING_NOTHING } from "./commands.ts";
+import { TelegramEvents, type TelegramEvent } from "./events.ts";
 import { telegramChatsOf } from "./replies.ts";
 import { delay } from "./source.ts";
 import { telegramSettings, type TelegramSettings } from "./settings.ts";
-import { readPending, writePending, type PendingState, type SentItem, type SentOption } from "./state.ts";
+import { prunePending, readPending, writePending, type PendingState, type SentItem, type SentOption } from "./state.ts";
 
 /** The `via` of every answer this plugin gives. */
 const VIA = "telegram";
@@ -46,6 +47,9 @@ const TEXT_MAX = 3_500;
 
 /** How long `/pending` waits for its count line before it sends the items anyway. */
 export const HOLD_MS = 30_000;
+
+/** How long stored changes are gathered before one pending pass reads them. */
+export const PENDING_DEBOUNCE_MS = 100;
 
 /** What the source asks of the pending side for a tap or a reply. */
 export interface PendingResponder {
@@ -133,6 +137,9 @@ export class PendingSender implements PendingResponder {
   private state: PendingState;
   private stopped = false;
   private watching: Promise<void> = Promise.resolve();
+  private following: { readonly stop: () => Promise<void> } | undefined;
+  /** The one wait that gathers a burst of stored changes into a pass. */
+  private debounce: AbortController | undefined;
   /** Everything that reads or writes the state runs one at a time. */
   private tail: Promise<unknown> = Promise.resolve();
   private queued = false;
@@ -151,29 +158,50 @@ export class PendingSender implements PendingResponder {
     else ctx.signal.addEventListener("abort", () => this.controller.abort(), { once: true });
   }
 
-  /** Sends what waits now, then follows the client's events. */
-  start(): { readonly stop: () => Promise<void>; readonly ready: Promise<void> } {
-    const iterator = this.client.events()[Symbol.asyncIterator]();
+  /** Sends what waits now, then follows changes, alone or through the plugin's one loop. */
+  start(events?: TelegramEvents): { readonly stop: () => Promise<void>; readonly ready: Promise<void> } {
+    const local = events === undefined ? new TelegramEvents(this.ctx, { wait: this.wait }) : undefined;
     const initial = this.sync();
     this.watching = (async () => {
       await initial;
-      while (!this.stopped) {
-        const next = await iterator.next();
-        if (next.done === true || this.stopped) return;
-        void this.sync();
-      }
+      if (this.stopped) return;
+      this.following = local?.start({
+        pending: (event) => this.handleEvent(event),
+      });
     })();
     return {
       ready: initial,
       stop: async () => {
         this.stopped = true;
         this.controller.abort();
+        this.debounce?.abort();
+        this.debounce = undefined;
         this.releaseHeld();
-        await iterator.return?.();
+        await this.following?.stop();
         await this.watching.catch(() => undefined);
         await this.tail.catch(() => undefined);
       },
     };
+  }
+
+  /** A stored change; a burst of them is gathered into one later pending pass. */
+  handleEvent(event: TelegramEvent): void {
+    if (event.section !== undefined || this.stopped) return;
+    this.debounce?.abort();
+    const timer = new AbortController();
+    this.debounce = timer;
+    void this.wait(PENDING_DEBOUNCE_MS, timer.signal).then(
+      () => {
+        if (this.debounce !== timer) return;
+        this.debounce = undefined;
+        void this.sync().catch((error: unknown) =>
+          this.ctx.logger.write(`could not send pending items: ${messageOf(error)}`),
+        );
+      },
+      () => {
+        if (this.debounce === timer) this.debounce = undefined;
+      },
+    );
   }
 
   /**
@@ -544,7 +572,7 @@ export class PendingSender implements PendingResponder {
   }
 
   private remember(key: string, item: SentItem): void {
-    this.state = { ...this.state, [key]: item };
+    this.state = prunePending({ ...this.state, [key]: item });
     writePending(this.ctx.home, this.state);
   }
 

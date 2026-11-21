@@ -13,13 +13,23 @@ const root = resolve(import.meta.dir, "..", "..");
 const self = "scripts/test/adr-references.test.ts";
 const backlogFile = /(^|\/)docs\/backlog\//;
 
+/**
+ * Every pattern is tried on every line, and a line can hold tens of kilobytes,
+ * as the SSE fixtures do. Nothing skips a line first: a word list for that
+ * would have to name every word a pattern can match, and a new pattern that
+ * brings another word would silently lose its lines. A new pattern stays
+ * linear instead, starting at a token boundary as the path rule below does,
+ * so a long run of one character costs one pass.
+ */
 const CITATIONS: readonly RegExp[] = [
   /决定\s*\d+/,
   // "decision 13", but not "two decisions 3 days later".
   /\bdecisions?\s+(?:no\.?\s*)?\d+\b(?![\s-]*(?:seconds?|minutes?|hours?|days?|weeks?|months?|years?|times?)\b)/i,
   // "item 13 of operad.md" and "operad.md item 13".
   /\b(?:items?|points?|sections?)\s+(?:no\.?\s*)?\d+\s+(?:of|in)\s+[`\w./-]+\.md\b/i,
-  /[`\w./-]+\.md\s+(?:items?|points?|sections?)\s+(?:no\.?\s*)?\d+\b/i,
+  // Start at a token boundary; matching from every position backtracks for
+  // seconds over a line of tens of kilobytes, such as an SSE fixture.
+  /(?:^|[^\w./`-])[`\w/-]+(?:\.[`\w/-]+)*\.md\s+(?:items?|points?|sections?)\s+(?:no\.?\s*)?\d+\b/i,
   // "第 4 条", "第 4 项".
   /第\s*\d+\s*(?:条|项)/,
 ];
@@ -61,13 +71,21 @@ describe("a backlog decision is cited by its ADR", () => {
   });
 
   test("a citation is reported with the file and the line", () => {
-    expect(backlogDecisionCitations("a.ts", "one\n// operad.md decision 13\ntwo\n决定 4\nthree\n// operad-bot.md 第 4 条\nfour\n// item 13 of operad.md\n")).toEqual([
+    expect(backlogDecisionCitations("a.ts", "one\n// operad.md decision 13\ntwo\n决定 4\nthree\n// operad-bot.md 第 4 条\nfour\n// item 13 of operad.md\nfive\n// see packages/operad.md section 3\nsix\n")).toEqual([
       "a.ts:2: cites a backlog decision by number",
       "a.ts:4: cites a backlog decision by number",
       "a.ts:6: cites a backlog decision by number",
       "a.ts:8: cites a backlog decision by number",
+      "a.ts:10: cites a backlog decision by number",
     ]);
     expect(backlogDecisionCitations("a.md", "ADR 0002 D1 to D4 and ADR 0025 D3.")).toEqual([]);
     expect(backlogDecisionCitations("a.md", "two decisions 3 days later")).toEqual([]);
+    // A long line is scanned to its end, and a long run of one character is
+    // not mistaken for a citation.
+    const long = "x".repeat(64 * 1024);
+    expect(backlogDecisionCitations("a.sse", `${long} operad.md item 13`)).toEqual([
+      "a.sse:1: cites a backlog decision by number",
+    ]);
+    expect(backlogDecisionCitations("a.sse", `section ${long}`)).toEqual([]);
   });
 });

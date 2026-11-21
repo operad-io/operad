@@ -281,6 +281,35 @@ describe("the telegram source", () => {
     await w.close();
   });
 
+  test("dedupe reads an old closed chat only while it is recently changed", async () => {
+    const w = await world({ users: [42] });
+    const api = new FakeApi();
+    api.updates = [update(100, 42, 555, "first")];
+    const telegram = source(w, api);
+    await telegram.poll();
+    const first = (await w.store.list(CHAT_TYPE)).objects[0];
+    if (first === undefined) throw new Error("no chat was opened");
+    await w.views.act("chat:close", first.id, {
+      yes: true,
+      actor: { via: "telegram", id: "42" },
+    });
+    api.updates = [update(101, 42, 555, "second")];
+    await telegram.poll();
+
+    // A new source has no recent chats yet; the old closed chat is not read.
+    const reads: string[] = [];
+    const original = w.store.facts.bind(w.store);
+    w.store.facts = ((object: Parameters<typeof original>[0], options?: Parameters<typeof original>[1]) => {
+      if (object?.type === CHAT_TYPE) reads.push(object.id);
+      return original(object, options);
+    }) as typeof w.store.facts;
+    api.updates = [update(100, 42, 555, "first")];
+    await source(w, api).poll();
+    w.store.facts = original as typeof w.store.facts;
+    expect(reads).not.toContain(first.id);
+    await w.close();
+  });
+
   test("an update that cannot be handled does not stop the later ones, and is retried", async () => {
     const w = await world({ users: [42] });
     const api = new FakeApi();
@@ -370,6 +399,47 @@ describe("the telegram source", () => {
     if (start === undefined) throw new Error("the plugin does not start");
     const error = await Promise.resolve(start(w.ctx)).catch((caught: unknown) => caught);
     expect(String(error)).toContain("operad secret set telegram token");
+    await w.close();
+  });
+
+  test("a poll that returned is followed at once, and only a failed poll waits", async () => {
+    const w = await world({ users: [42] });
+    const api = new FakeApi();
+    const updates = [update(100, 42, 555, "first"), update(101, 42, 555, "second")];
+    let calls = 0;
+    api.getUpdates = async () => {
+      calls += 1;
+      const next = updates.shift();
+      if (next === undefined) throw new Error("Telegram is unreachable");
+      return [next];
+    };
+    const waits: number[] = [];
+    let stop = (): void => {};
+    let waited: (() => void) | undefined;
+    const reachedWait = new Promise<void>((resolve) => {
+      waited = resolve;
+    });
+    const telegram = new TelegramSource(w.ctx, {
+      api,
+      wait: async (ms) => {
+        waits.push(ms);
+        waited?.();
+        stop();
+      },
+    });
+    const handle = telegram.start();
+    stop = () => handle.stop();
+    await reachedWait;
+    handle.stop();
+
+    // Both updates came from successful polls, so the third call is the one
+    // that failed and the only one that waited.
+    expect(calls).toBe(3);
+    expect(waits).toEqual([1_000]);
+    const chats = (await w.store.list(CHAT_TYPE)).objects;
+    const chat = chats[0];
+    if (chat === undefined) throw new Error("no chat was opened");
+    expect(allMessages(w.store, chat.id).map((message) => message.source.ref)).toEqual(["100", "101"]);
     await w.close();
   });
 

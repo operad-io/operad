@@ -1,6 +1,6 @@
 /** How a chat shows in a list and on its page: a row and a transcript. */
 
-import { attachmentDir, attachmentUrl, decodeCursor, DEFAULT_SECTION_CAP_BYTES, encodeCursor } from "@operad-io/engine";
+import { attachmentDir, attachmentUrl, decodeCursor, DEFAULT_SECTION_CAP_BYTES, encodeCursor, formatElapsed } from "@operad-io/engine";
 import type {
   JsonValue,
   ObjectRef,
@@ -165,13 +165,6 @@ function messageFrom(fact: {
   };
 }
 
-function seconds(ms: number): string {
-  if (ms < 1000) return "<1s";
-  const total = Math.round(ms / 1000);
-  const minutes = Math.floor(total / 60);
-  return minutes === 0 ? `${total}s` : `${minutes}m${String(total % 60).padStart(2, "0")}s`;
-}
-
 function flat(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
@@ -204,7 +197,7 @@ interface ShownTool {
 /** One tool call as a log line: what ran, how long it took and how it ended. */
 function toolMarkdown(entry: ShownTool): string {
   const name = entry.toolName ?? "tool";
-  const took = entry.durationMs === undefined ? "" : ` ${seconds(entry.durationMs)}`;
+  const took = entry.durationMs === undefined ? "" : ` ${formatElapsed(entry.durationMs)}`;
   const input = entry.input === undefined || entry.input === null ? "" : flat(entry.input);
   const what = input.length === 0 ? "" : ` ${inlineCode(input.length <= 160 ? input : `${input.slice(0, 159)}…`)}`;
   const head = `tool ${name}${took}${what}`;

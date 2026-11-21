@@ -141,3 +141,10 @@ recorded. The root [MUTATIONS.md](../../../MUTATIONS.md) explains the format and
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0576-M1 | packages/harness/codex/src/app-server.ts | `personQuestions` passed a secret question to the person, so its answer would be kept in the fact log and the pending item | `a secret question is parsed, and is never put to the person` |
+
+## T-0620 — a shared login probe and a short command read
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0620-M1 | packages/harness/codex/src/install.ts | `codexFileHead` read the whole command file instead of its first 128 bytes | `the command that starts codex app-server > only the first bytes of a command file are read for its shebang` |
+| T-0620-M2 | packages/harness/codex/src/index.ts | `codexSignedInCached` ran its probe directly instead of through the shared cache, so two callers spawned two processes | `codex's signedIn answer > two clients asking at once share one probe` |

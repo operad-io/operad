@@ -334,3 +334,9 @@ the row fields.
 |---|---|---|---|
 | T-0607-M5 | packages/cli/src/main.ts | `show` listed a parent's children by the bare id again, so another type holding that id made the parent ambiguous | `operad list hierarchy > show lists a parent's children by its typed id even when another type holds the same id` |
 | T-0607-M6 | packages/cli/src/main.ts | `history` kept only the resolved object's bare id, so a run of another type under the same id was shown | `operad command > history keeps a typed object's type when another type has a run under the same bare id` |
+
+## T-0635 — one elapsed format
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0635-M2 | packages/cli/src/main.ts | the run age subtracted a minute, so every run time was a minute short | `operad running line > object, step, step time, title, then the run age` |

@@ -297,6 +297,7 @@ export function createShellPlugin(options: ShellPluginOptions = {}) {
             );
           }
           const cwd = cwdParam(ctx, input, at);
+          const env = envParam(input, at);
           const timeout = timeoutParam(input, at);
           const stall = stallParam(input, at);
           const start = await logStart(ctx.logger);
@@ -350,6 +351,7 @@ export function createShellPlugin(options: ShellPluginOptions = {}) {
             const outcome = await runLine({
               line,
               cwd,
+              env,
               timeoutMs: timeout.ms,
               stallMs: stall.ms,
               signal: ctx.signal,

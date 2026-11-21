@@ -170,6 +170,22 @@ export function createDevPlugin() {
           description:
             "How many checks (a task's verify, and the checks before a merge) may run at the same time on this machine, across all repositories.",
         },
+        checkHost: {
+          type: "string",
+          title: "Check host",
+          minLength: 1,
+          editable: true,
+          description:
+            "The ssh destination, such as user@host, that gate, integration and rerun commands run on through remote-check.sh. Unset runs them here. An OPERAD_CHECK_HOST already in serve's own environment wins over this setting.",
+        },
+        checkSlots: {
+          type: "integer",
+          title: "Check slots",
+          minimum: 1,
+          editable: true,
+          description:
+            "How many checks run at once on the check host. Unset lets remote-check.sh use its default of 1. An OPERAD_CHECK_SLOTS already in serve's own environment wins over this setting.",
+        },
       },
       additionalProperties: false,
     },
@@ -219,6 +235,7 @@ export * from "./actions.ts";
 export * from "./announce.ts";
 export * from "./chat.ts";
 export * from "./check.ts";
+export * from "./check-host.ts";
 export * from "./commands.ts";
 export * from "./create-actions.ts";
 export * from "./gate.ts";
