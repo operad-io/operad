@@ -203,3 +203,9 @@ Each package keeps its mutation checks in `MUTATIONS.md`; a row names the broken
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0653-M1 | scripts/test/mutations-append-only.test.ts | removed the allowance for an edited header line, so a header change failed as a moved row | `MUTATIONS.md files are append-only > an edited header line passes` |
+
+## T-0659 — the stress stop does not wait on a finished job
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0659-M1 | scripts/stress.sh | the stop ended with a bare `wait` after `wait <pids>`, so bash 5's finished job entry stalled the stop on Linux | `scripts/stress.sh > SIGKILL of the test runner stops a test file that ignores SIGTERM` |
