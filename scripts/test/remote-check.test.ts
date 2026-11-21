@@ -119,14 +119,14 @@ describe("remote-check.sh", () => {
     const result = await run(local, { OPERAD_CHECK_HOST: "" }, "echo ran");
     expect(result.code).toBe(0);
     expect(result.out).toContain("ran");
-    expect(result.err).toContain("remote-check: no check host set; running the check here");
+    expect(result.err).toContain("remote-check: no test host set; running the check here");
   });
 
   test("with a host it does not say the check runs here", async () => {
     const { local, env } = setup();
     const result = await run(local, env, "true");
     expect(result.code).toBe(0);
-    expect(result.err).not.toContain("no check host set");
+    expect(result.err).not.toContain("no test host set");
   });
 
   test("on the host it checks out exactly HEAD and returns the command's exit code", async () => {

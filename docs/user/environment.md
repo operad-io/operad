@@ -7,7 +7,7 @@ description: Every OPERAD_ environment variable and the other variables operad r
 Every `OPERAD_*` variable that `operad` or its scripts read, or that a command it
 starts receives, and the other variables `operad` reads. [config.json](config.md)
 holds the settings that belong in a file; use the environment for a value that
-changes per shell or per check host.
+changes per shell or per test host.
 
 The tables give the type, the default, the values accepted and when the value is
 read. A value outside the allowed set is either ignored or refused with the
@@ -41,7 +41,7 @@ message named in the row.
 | `OPERAD_TEST_TIMES` | path | `~/.operad-test-times` | A file path | Where each full test run appends one line of timings (`run-tests.sh` and `test-times.ts`). |
 
 A `dev` task's gate, integration and rerun commands get `OPERAD_CHECK_HOST`
-and `OPERAD_CHECK_SLOTS` from the home's `dev.checkHost` and `dev.checkSlots`
+and `OPERAD_CHECK_SLOTS` from the home's `dev.testHost` and `dev.testSlots`
 settings when `serve`'s own environment does not already have them. An explicit
 variable wins, including an empty `OPERAD_CHECK_HOST`, which runs the check
 here. Both settings are unset by default. See [config.json](config.md#dev).

@@ -173,7 +173,7 @@ export const repoViews: ObjectViews = {
         `- Worker: \`${settings.worker.use}\``,
         `- Reviewer: \`${settings.reviewer.use}\``,
       );
-      if (hostWarning !== undefined) lines.push(`- Check host: not set; ${hostWarning}`);
+      if (hostWarning !== undefined) lines.push(`- Test host: not set; ${hostWarning}`);
     } catch (error) {
       lines.push(
         `- ${DEV_SETTINGS_FILE}: ${messageOf(error)}`,

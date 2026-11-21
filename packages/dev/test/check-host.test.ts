@@ -14,29 +14,29 @@ function repositorySettings(commands: readonly unknown[], extra: Readonly<Record
   return validateDevSettings({ gate: { commands }, ...extra });
 }
 
-describe("the check host and slots from the home's settings", () => {
+describe("the test host and slots from the home's settings", () => {
   test("a setting becomes the command's environment when serve's environment names neither", () => {
-    expect(checkEnvironment({ checkHost: "hai@192.0.2.1", checkSlots: 2 }, {})).toEqual({
+    expect(checkEnvironment({ testHost: "hai@192.0.2.1", testSlots: 2 }, {})).toEqual({
       OPERAD_CHECK_HOST: "hai@192.0.2.1",
       OPERAD_CHECK_SLOTS: "2",
     });
-    expect(checkHostOf({ checkHost: "hai@192.0.2.1" }, {})).toBe("hai@192.0.2.1");
+    expect(checkHostOf({ testHost: "hai@192.0.2.1" }, {})).toBe("hai@192.0.2.1");
   });
 
   test("an explicit variable in serve's own environment wins, including an empty host", () => {
     expect(
       checkEnvironment(
-        { checkHost: "setting@host", checkSlots: 2 },
+        { testHost: "setting@host", testSlots: 2 },
         { OPERAD_CHECK_HOST: "env@host", OPERAD_CHECK_SLOTS: "3" },
       ),
     ).toEqual({});
     expect(
       checkEnvironment(
-        { checkHost: "setting@host", checkSlots: 2 },
+        { testHost: "setting@host", testSlots: 2 },
         { OPERAD_CHECK_HOST: "" },
       ),
     ).toEqual({ OPERAD_CHECK_SLOTS: "2" });
-    expect(checkHostOf({ checkHost: "setting@host" }, { OPERAD_CHECK_HOST: "" })).toBeUndefined();
+    expect(checkHostOf({ testHost: "setting@host" }, { OPERAD_CHECK_HOST: "" })).toBeUndefined();
   });
 
   test("neither the setting nor the variable sets nothing", () => {
@@ -45,18 +45,18 @@ describe("the check host and slots from the home's settings", () => {
   });
 });
 
-describe("a check command that uses scripts/remote-check.sh without a check host", () => {
+describe("a check command that uses scripts/remote-check.sh without a test host", () => {
   test("says one line naming the script and how to set the host", () => {
     const warning = checkHostWarning("operad", repositorySettings([REMOTE]), {}, {});
     expect(warning).toContain("remote-check.sh");
-    expect(warning).toContain("no check host is set");
+    expect(warning).toContain("no test host is set");
     expect(warning).toContain("they run here");
-    expect(warning).toContain("dev.checkHost or OPERAD_CHECK_HOST");
+    expect(warning).toContain("dev.testHost or OPERAD_CHECK_HOST");
   });
 
   test("is not said when the setting or serve's own variable names a host", () => {
     expect(
-      checkHostWarning("operad", repositorySettings([REMOTE]), { checkHost: "hai@host" }, {}),
+      checkHostWarning("operad", repositorySettings([REMOTE]), { testHost: "hai@host" }, {}),
     ).toBeUndefined();
     expect(
       checkHostWarning("operad", repositorySettings([REMOTE]), {}, { OPERAD_CHECK_HOST: "hai@host" }),

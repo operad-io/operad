@@ -1525,3 +1525,9 @@ the row fields.
 | T-0656-M2 | packages/dev/src/steps.ts | the reset line counted from when the step read the result, not when the model reported it | `dev/work > usage_limit: the reset time is counted from when the model reported it` |
 | T-0656-M3 | packages/dev/src/gate.ts | the review wait counted the retry-after from when the step read the result, not when the model reported it | `dev/review fallback and retry > an unavailable review waits the retry-after it was given, not retrySecs` |
 | T-0656-M4 | packages/dev/src/gate.ts | the exhausted review reset line counted from when the step read the result, not when the model reported it | `dev/review hardening > a usage limit's reset time is counted from when the model reported it` |
+
+## T-0645 — the check host settings are named test host
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0645-M1 | packages/dev/src/check-host.ts | `hostSetting` read `settings.checkHost` instead of `settings.testHost`, so the test host setting was ignored | `the test host and slots from the home's settings > a setting becomes the command's environment when serve's environment names neither` |

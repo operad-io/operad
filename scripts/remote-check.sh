@@ -53,7 +53,7 @@ fi
 
 host=${OPERAD_CHECK_HOST:-}
 if [ -z "$host" ]; then
-  echo "remote-check: no check host set; running the check here" >&2
+  echo "remote-check: no test host set; running the check here" >&2
   if [ ${#argv[@]} -gt 0 ]; then exec "${argv[@]}"; fi
   exec bash -c "$command"
 fi
