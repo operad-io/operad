@@ -1265,3 +1265,10 @@ resume window`. Rows are append-only, so the old lines stay as history.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0607-M7 | packages/engine/test/plugin/client-ids.test.ts | the scan took a typed id for a bare one and a bare id for a typed one, so no bare client call was reported | `a plugin's client calls name a typed object id > the scan finds a bare id on act, get, section and a list parent` |
+
+## T-0608 — follow-ups to the typed object id guard
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0608-M1 | packages/engine/test/plugin/client-ids.test.ts | the alias scan ignored a variable or property assigned from the client, so a bare id through another receiver name was not caught | `a plugin's client calls name a typed object id > the scan follows an alias and a ClientApi property to a client call` |
+| T-0608-M2 | packages/engine/test/plugin/client-ids.test.ts | a declared `object` field was trusted whatever its type said, so an untyped `object` field slipped through as a typed id | `a plugin's client calls name a typed object id > the scan allows a written id, a typed template and a declared typed object` |
