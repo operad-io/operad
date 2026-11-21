@@ -57,6 +57,8 @@ const crashing: LogBackend = {
   findInput: (inputId) => log.findInput(inputId),
   readOutcome: (inputId, kind) => log.readOutcome(inputId, kind),
   readOutcomesAfter: (seq) => log.readOutcomesAfter(seq),
+  openCandidateRoutes: () => log.openCandidateRoutes(),
+  startRoutesWithoutRun: () => log.startRoutesWithoutRun(),
   close: () => log.close(),
 };
 

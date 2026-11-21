@@ -441,6 +441,155 @@ export function runLogConformance(factory: LogConformanceFactory): void {
       }
     });
 
+    test("openCandidateRoutes keeps the candidate routes with no resolve", async () => {
+      const directory = tempDirectory("candidate-routes");
+      const backend = await openStore(factory, directory, { clock: fixedClock() });
+      try {
+        const open = await backend.recordInput(null, "source", "open", {});
+        const dismissed = await backend.recordInput(null, "source", "dismissed", {});
+        const started = await backend.recordInput(null, "source", "started", {});
+        const observed = await backend.recordInput(null, "source", "observed", {});
+        const plain = await backend.recordInput(null, "source", "plain", {});
+
+        const openRoute = await backend.recordOutcome(open.inputId, "route", {
+          value: "candidate",
+          flow: "flow-a",
+          object: "object:1",
+        });
+        await backend.recordOutcome(dismissed.inputId, "route", {
+          value: "candidate",
+          flow: "flow-a",
+          object: "object:2",
+        });
+        await backend.recordOutcome(dismissed.inputId, "resolve", {
+          value: "dismissed",
+        });
+        await backend.recordOutcome(started.inputId, "route", {
+          value: "candidate",
+          flow: "flow-a",
+          object: "object:3",
+        });
+        await backend.recordOutcome(started.inputId, "resolve", {
+          value: "started",
+        });
+        const observedRoute = await backend.recordOutcome(observed.inputId, "route", {
+          value: "candidate",
+          flow: "flow-a",
+          object: "object:4",
+        });
+        // Only a resolve outcome closes a candidate; another kind does not.
+        await backend.recordOutcome(observed.inputId, "observed", {
+          value: "dismissed",
+        });
+        await backend.recordOutcome(plain.inputId, "route", {
+          value: "started",
+          flow: "flow-a",
+          object: "object:5",
+        });
+        await backend.recordOutcome(open.inputId, "other", {
+          value: "candidate",
+        });
+
+        const routes = await backend.openCandidateRoutes();
+        expect(routes.map((outcome) => outcome.inputId)).toEqual([
+          open.inputId,
+          observed.inputId,
+        ]);
+        expect(routes.map((outcome) => outcome.seq)).toEqual([
+          openRoute.outcome.seq,
+          observedRoute.outcome.seq,
+        ]);
+      } finally {
+        await backend.close();
+        removeDirectory(directory);
+      }
+    });
+
+    test("startRoutesWithoutRun keeps start routes whose input has no run", async () => {
+      const directory = tempDirectory("start-routes");
+      const backend = await openStore(factory, directory, { clock: fixedClock() });
+      try {
+        const plain = await backend.recordInput(null, "source", "plain", {});
+        const plainWithRun = await backend.recordInput(null, "source", "plain-run", {});
+        const candidate = await backend.recordInput(null, "source", "candidate", {});
+        const candidateWithRun = await backend.recordInput(
+          null,
+          "source",
+          "candidate-run",
+          {},
+        );
+        const dismissed = await backend.recordInput(null, "source", "dismissed", {});
+        const unresolved = await backend.recordInput(null, "source", "unresolved", {});
+        const observed = await backend.recordInput(null, "source", "observed", {});
+
+        const plainRoute = await backend.recordOutcome(plain.inputId, "route", {
+          value: "started",
+          flow: "flow-a",
+          object: "object:1",
+        });
+        const plainRunRoute = await backend.recordOutcome(
+          plainWithRun.inputId,
+          "route",
+          { value: "started", flow: "flow-a", object: "object:2" },
+        );
+        await backend.startRun("flow-a", "object:2", plainWithRun.inputId);
+        await backend.recordOutcome(candidate.inputId, "route", {
+          value: "candidate",
+          flow: "flow-a",
+          object: "object:3",
+        });
+        const candidateStarted = await backend.recordOutcome(
+          candidate.inputId,
+          "resolve",
+          { value: "started" },
+        );
+        await backend.recordOutcome(candidateWithRun.inputId, "route", {
+          value: "candidate",
+          flow: "flow-a",
+          object: "object:4",
+        });
+        await backend.recordOutcome(candidateWithRun.inputId, "resolve", {
+          value: "started",
+        });
+        await backend.startRun("flow-a", "object:4", candidateWithRun.inputId);
+        await backend.recordOutcome(dismissed.inputId, "route", {
+          value: "candidate",
+          flow: "flow-a",
+          object: "object:5",
+        });
+        await backend.recordOutcome(dismissed.inputId, "resolve", {
+          value: "dismissed",
+        });
+        await backend.recordOutcome(unresolved.inputId, "route", {
+          value: "candidate",
+          flow: "flow-a",
+          object: "object:6",
+        });
+        await backend.recordOutcome(observed.inputId, "route", {
+          value: "observed",
+          flow: "flow-a",
+          object: "object:7",
+        });
+
+        const routes = await backend.startRoutesWithoutRun();
+        expect(routes.map((outcome) => outcome.inputId)).toEqual([
+          plain.inputId,
+          candidate.inputId,
+        ]);
+        expect(routes.map((outcome) => outcome.seq)).toEqual(
+          [plainRoute.outcome.seq, candidateStarted.outcome.seq - 1].sort(
+            (left, right) => left - right,
+          ),
+        );
+        expect(routes.some((outcome) => outcome.inputId === plainRunRoute.outcome.inputId)).toBe(
+          false,
+        );
+      } finally {
+        await backend.close();
+        removeDirectory(directory);
+      }
+    });
+
     test("global facts keep their order across reopen", async () => {
       const directory = tempDirectory("global-facts");
       let backend = await openStore(factory, directory, { clock: fixedClock() });

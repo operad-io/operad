@@ -63,6 +63,8 @@ const dying: LogBackend = {
   findInput: (inputId) => log.findInput(inputId),
   readOutcome: (inputId, kind) => log.readOutcome(inputId, kind),
   readOutcomesAfter: (seq) => log.readOutcomesAfter(seq),
+  openCandidateRoutes: () => log.openCandidateRoutes(),
+  startRoutesWithoutRun: () => log.startRoutesWithoutRun(),
   subscribe: (listener) => log.subscribe?.(listener) ?? (() => undefined),
   close: () => log.close(),
 };
