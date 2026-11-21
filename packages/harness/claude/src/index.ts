@@ -30,6 +30,7 @@ import {
   modelLimit,
   mountedServersOf,
   operadToolsOf,
+  optionalPositive,
   optionalText,
   parseStepFlags,
   promptFlowOf,
@@ -181,14 +182,6 @@ export const PLUGIN_SETTINGS = {
   additionalProperties: false as const,
 };
 
-function optionalNumber(value: unknown, at: string, integer: boolean): number | undefined {
-  if (value === undefined) return undefined;
-  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0 || (integer && !Number.isInteger(value))) {
-    throw new Error(`${at}: must be a positive ${integer ? "integer" : "number"}`);
-  }
-  return value;
-}
-
 /** The spelling of this harness's step `args`. */
 const STEP_FLAGS = { levelFlag: "--effort", levels: EFFORT_LEVELS, modelHint: "<name>" } as const;
 
@@ -265,9 +258,9 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
             levelSetting: "effort",
             now,
             beforeDirectory() {
-              maxTurns = optionalNumber(ctx.settings.maxTurns, `${at}: settings.maxTurns`, true);
-              budgetUsd = optionalNumber(ctx.settings.budgetUsd, `${at}: settings.budgetUsd`, false);
-              bashTimeoutSecs = optionalNumber(
+              maxTurns = optionalPositive(ctx.settings.maxTurns, `${at}: settings.maxTurns`, true);
+              budgetUsd = optionalPositive(ctx.settings.budgetUsd, `${at}: settings.budgetUsd`, false);
+              bashTimeoutSecs = optionalPositive(
                 ctx.settings.bashTimeoutSecs,
                 `${at}: settings.bashTimeoutSecs`,
                 true,

@@ -34,6 +34,7 @@ import {
   MAX_WALL_TIME_SECS,
   modelLimit,
   operadToolsOf,
+  optionalPositive,
   optionalText,
   parseStepFlags,
   promptFlowOf,
@@ -216,14 +217,6 @@ const PLUGIN_SETTINGS = {
   },
   additionalProperties: false as const,
 };
-
-function optionalPositiveInteger(value: unknown, at: string): number | undefined {
-  if (value === undefined) return undefined;
-  if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
-    throw new Error(`${at}: must be a positive integer`);
-  }
-  return value;
-}
 
 /** The spelling of this harness's step `args`; the parsing is harness-process's. */
 const STEP_FLAGS: StepFlagSpec<WorkerThinkingLevel> = {
@@ -447,9 +440,10 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
             levelSetting: "thinkingLevel",
             now,
             async beforeDirectory(read) {
-              bashTimeoutSecs = optionalPositiveInteger(
+              bashTimeoutSecs = optionalPositive(
                 ctx.settings.bashTimeoutSecs,
                 `${at}: settings.bashTimeoutSecs`,
+                true,
               );
               authPath = expandHome(
                 text(ctx.settings.authPath ?? DEFAULT_AUTH_PATH, `${at}: settings.authPath`),
