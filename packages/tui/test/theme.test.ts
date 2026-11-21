@@ -9,7 +9,6 @@ import {
   THEME_NAMES,
   TUI_TOKENS,
   chooseSelection,
-  chooseTheme,
   resolveSelection,
   watchThemes,
   type ThemeHolder,
@@ -18,8 +17,8 @@ import {
   tuiConfigPath,
 } from "../src/theme.ts";
 import { runTui } from "../src/app.ts";
-import { markdownLines } from "../src/markdown.ts";
 import { drawState } from "../src/view/index.ts";
+import { treeRows } from "./support.ts";
 
 function home(config?: string): string {
   const dir = mkdtempSync(join(tmpdir(), "operad-theme-"));
@@ -122,9 +121,21 @@ describe("rules, text and the selected row", () => {
   });
 
   test("plain markdown text and code use the text token", () => {
-    const lines = markdownLines("plain prose\n\n```\ncode\n```", BUILTIN_THEMES.dark);
-    const prose = lines.find((line) => line.text.includes("plain prose"));
-    expect(prose?.chunks[0]?.fg?.toInts().join(",")).toBe(ints(BUILTIN_THEMES.dark.text));
+    let state = initialState({ width: 120, height: 30, theme: "dark" });
+    state = reduce(state, { type: "types", types: [{ type: "item", title: "Item" }] });
+    state = reduce(state, treeRows("plugin:item", [{ id: "item:one", title: "One", state: "new", waiting: false, running: false }]));
+    state = reduce(state, { type: "key", key: "3" });
+    state = reduce(state, { type: "key", key: "enter" });
+    state = reduce(state, {
+      type: "object",
+      object: { id: "item:one", type: "item", link: "x", row: { id: "item:one", title: "One", state: "new", waiting: false, running: false }, sections: [{ id: "info", title: "Info" }], actions: [] },
+      version: 1,
+    });
+    state = reduce(state, { type: "section", objectId: "item:one", sectionId: "info", content: { markdown: "plain prose\n\n```\ncode\n```" } });
+    const chunks = drawState(state, "dark").right.chunks;
+    const prose = chunks.find((chunk) => chunk.text.includes("plain prose"));
+    expect(prose?.fg?.toInts().join(",")).toBe(ints(BUILTIN_THEMES.dark.text));
+    expect(chunks.find((chunk) => chunk.text.includes("code"))?.bg).toBeDefined();
   });
 
   test("an unselected list label uses the text token", () => {
@@ -144,11 +155,12 @@ describe("rules, text and the selected row", () => {
   test("note text and unselected palette entries use the text token", () => {
     let state = initialState({ width: 120, height: 24, theme: "dark" });
     state = reduce(state, { type: "types", types: [{ type: "item", title: "Item" }] });
-    state = reduce(state, {
-      type: "rows",
-      tabId: "plugin:item",
-      rows: [{ id: "item:one", title: "One", state: "new", waiting: false, running: false }],
-    });
+    state = reduce(
+      state,
+      treeRows("plugin:item", [
+        { id: "item:one", title: "One", state: "new", waiting: false, running: false },
+      ]),
+    );
     state = reduce(state, { type: "key", key: "3" });
     state = reduce(state, { type: "key", key: "enter" });
     state = reduce(state, {
@@ -190,27 +202,27 @@ describe("rules, text and the selected row", () => {
 
 describe("choosing the theme", () => {
   test("the default is auto", () => {
-    expect(chooseTheme({ home: home() })).toBe("auto");
+    expect(chooseSelection({ home: home() }).name).toBe("auto");
   });
 
   test("tui.json names the theme and --theme beats it", () => {
     const dir = home('{ "theme": "terminal" }');
-    expect(chooseTheme({ home: dir })).toBe("terminal");
-    expect(chooseTheme({ home: dir, flag: "light" })).toBe("light");
+    expect(chooseSelection({ home: dir }).name).toBe("terminal");
+    expect(chooseSelection({ home: dir, flag: "light" }).name).toBe("light");
   });
 
   test("an unknown name is an error that lists the names", () => {
-    expect(() => chooseTheme({ home: home(), flag: "neon" })).toThrow(
+    expect(() => chooseSelection({ home: home(), flag: "neon" })).toThrow(
       `unknown theme "neon"; the themes are ${THEME_NAMES.join(", ")}`,
     );
     const dir = home('{ "theme": "neon" }');
-    expect(() => chooseTheme({ home: dir })).toThrow(tuiConfigPath(dir));
+    expect(() => chooseSelection({ home: dir })).toThrow(tuiConfigPath(dir));
   });
 
   test("a broken tui.json is an error naming the file, even with --theme", () => {
     for (const text of ["{ nope", "[]", '{ "theme": 3 }', '{ "colour": "dark" }']) {
       const dir = home(text);
-      expect(() => chooseTheme({ home: dir, flag: "dark" })).toThrow(tuiConfigPath(dir));
+      expect(() => chooseSelection({ home: dir, flag: "dark" })).toThrow(tuiConfigPath(dir));
     }
   });
 
@@ -296,14 +308,14 @@ describe("file themes", () => {
 
   test("a file with the name of a built-in is refused", () => {
     const dir = withThemes({ dark: "{}" }, '{ "theme": "dark" }');
-    expect(() => chooseTheme({ home: dir })).toThrow(/dark\.json has the name of the built-in theme/);
-    expect(() => chooseTheme({ home: dir, flag: "light" })).not.toThrow();
+    expect(() => chooseSelection({ home: dir })).toThrow(/dark\.json has the name of the built-in theme/);
+    expect(() => chooseSelection({ home: dir, flag: "light" })).not.toThrow();
   });
 
   test("tui.json and --theme may name a file theme", () => {
     const dir = withThemes({ mine: "{}" }, '{ "theme": "mine" }');
-    expect(chooseTheme({ home: dir })).toBe("mine");
-    expect(() => chooseTheme({ home: dir, flag: "other" })).toThrow(/the themes are .*mine/);
+    expect(chooseSelection({ home: dir }).name).toBe("mine");
+    expect(() => chooseSelection({ home: dir, flag: "other" })).toThrow(/the themes are .*mine/);
   });
 
   test("a file theme is what the view draws", () => {

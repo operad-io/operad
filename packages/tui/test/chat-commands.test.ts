@@ -3,13 +3,12 @@ import type { ViewAction, ViewObject } from "@operad-io/engine";
 import {
   chatCommands,
   commandEntries,
-  commandHint,
-  commandOptions,
   type TuiChatCommand,
 } from "../src/commands.ts";
 import { paletteEntries } from "../src/actions.ts";
 import { initialState, reduce, type TuiState, type TuiStateEvent } from "../src/state.ts";
 import { drawState } from "../src/view/index.ts";
+import { treeRows } from "./support.ts";
 
 const NOTE = { type: "string", role: "note" } as const;
 
@@ -55,7 +54,7 @@ function opened(actions: readonly ViewAction[] = ACTIONS): TuiState {
   };
   let state = initialState({ width: 120 });
   state = reduce(state, { type: "types", types: [{ type: "chat", title: "Chat" }] });
-  state = reduce(state, { type: "rows", tabId: "plugin:chat", rows: [row] });
+  state = reduce(state, treeRows("plugin:chat", [row]));
   state = reduce(state, { type: "key", key: "3" });
   state = reduce(state, { type: "key", key: "enter" });
   return reduce(state, { type: "object", object });
@@ -185,8 +184,11 @@ describe("a chat's input lists its commands on /", () => {
     const model = commandEntries(listed)[0];
     expect(model).toBeDefined();
     if (model === undefined) return;
-    expect(commandOptions(model).map((option) => option.label)).toEqual(["sonnet", "opus"]);
-    expect(commandHint(model)).toContain("sonnet");
+    const field = model.fields[0];
+    expect(field?.kind).toBe("pick");
+    if (field?.kind !== "pick") return;
+    expect(field.options.map((option) => option.label)).toEqual(["sonnet", "opus"]);
+    expect(model.hint).toContain("sonnet");
     // Choosing fills the line; it does not run the action.
     const chosen = press(listed, "enter");
     expect(chosen.actionRequest).toBeUndefined();

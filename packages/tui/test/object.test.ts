@@ -6,6 +6,7 @@ import {
   reduce,
   type TuiState,
 } from "../src/state.ts";
+import { treeRows } from "./support.ts";
 
 const TYPES = [{ type: "item", title: "Item" }] as const;
 
@@ -24,12 +25,7 @@ function opened(rowId = "one"): TuiState {
     type: "types",
     types: TYPES,
   });
-  state = reduce(state, {
-    type: "page",
-    tabId: "plugin:item",
-    replace: true,
-    page: { rows: [row(rowId)] },
-  });
+  state = reduce(state, treeRows("plugin:item", [row(rowId)]));
   state = reduce(state, { type: "key", key: "3" });
   state = reduce(state, { type: "key", key: "enter" });
   return reduce(state, {
@@ -60,12 +56,7 @@ describe("the object pane reducer", () => {
       type: "types",
       types: TYPES,
     });
-    state = reduce(state, {
-      type: "page",
-      tabId: "plugin:item",
-      replace: true,
-      page: { rows: [row("one"), row("two")], next: "more" },
-    });
+    state = reduce(state, treeRows("plugin:item", [row("one"), row("two")]));
     state = reduce(state, { type: "key", key: "3" });
     state = reduce(state, { type: "key", key: "down" });
     state = reduce(state, { type: "key", key: "return" });
@@ -262,12 +253,7 @@ describe("the object pane reducer", () => {
       type: "types",
       types: TYPES,
     });
-    state = reduce(state, {
-      type: "page",
-      tabId: "plugin:item",
-      replace: true,
-      page: { rows: [row("one"), row("two")] },
-    });
+    state = reduce(state, treeRows("plugin:item", [row("one"), row("two")]));
     state = reduce(state, { type: "key", key: "3" });
     state = reduce(state, { type: "key", key: "enter" });
     state = reduce(state, {

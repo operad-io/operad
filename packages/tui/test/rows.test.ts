@@ -3,6 +3,7 @@ import type { RunningItem } from "@operad-io/engine";
 import { initialState, reduce, type TuiState } from "../src/state.ts";
 import { BUILTIN_THEMES, toRgba } from "../src/theme.ts";
 import { drawState } from "../src/view/index.ts";
+import { treeRows } from "./support.ts";
 
 interface Colour {
   toInts(): readonly number[];
@@ -55,12 +56,11 @@ function running(width: number, items: readonly RunningItem[], height = 24): Tui
 function typeList(width: number, count: number, height = 24): TuiState {
   let state = initialState({ width, height, theme: "dark" });
   state = reduce(state, { type: "types", types: [{ type: "item", title: "Item" }] });
-  state = reduce(state, {
-    type: "page",
-    tabId: "plugin:item",
-    replace: true,
-    page: {
-      rows: Array.from({ length: count }, (_, at) => ({
+  state = reduce(
+    state,
+    treeRows(
+      "plugin:item",
+      Array.from({ length: count }, (_, at) => ({
         id: `ops/T-${String(at).padStart(4, "0")}-flaky-survey`,
         title: "Survey the flaky tests",
         state: "running",
@@ -69,8 +69,8 @@ function typeList(width: number, count: number, height = 24): TuiState {
         waiting: false,
         running: true,
       })),
-    },
-  });
+    ),
+  );
   return reduce(state, { type: "key", key: "3" });
 }
 

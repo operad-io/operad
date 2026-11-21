@@ -10,7 +10,6 @@ import type {
 import {
   drawState,
   initialState,
-  markdownLineCount,
   reduce,
   rightX,
   sectionLayout,
@@ -21,9 +20,10 @@ import {
   type TuiState,
   type TuiView,
 } from "../src/index.ts";
-import { layoutStats } from "../src/layout.ts";
+import { layoutMarkdown, layoutStats } from "../src/layout.ts";
 import { sanitize } from "../src/sanitize.ts";
-import { textWidth, wrapText } from "../src/wrap.ts";
+import { wrapText } from "../src/wrap.ts";
+import { treeRows } from "./support.ts";
 
 /** Every control character a terminal could act on, except \n and \t. */
 const CONTROL = /[\x00-\x08\x0b-\x1f\x7f-\x9f]/;
@@ -203,14 +203,12 @@ function openedWith(markdown: string, width = 120, height = 24): TuiState {
     type: "types",
     types: [{ type: "item", title: "Item" }],
   });
-  state = reduce(state, {
-    type: "page",
-    tabId: "plugin:item",
-    replace: true,
-    page: {
-      rows: [{ id: "one", title: "One", state: "new", waiting: false, running: false }],
-    },
-  });
+  state = reduce(
+    state,
+    treeRows("plugin:item", [
+      { id: "one", title: "One", state: "new", waiting: false, running: false },
+    ]),
+  );
   state = reduce(state, { type: "key", key: "3" });
   state = reduce(state, { type: "key", key: "enter" });
   state = reduce(state, {
@@ -258,10 +256,6 @@ describe("a large section is laid out once", () => {
 
 describe("wrapping is by display width", () => {
   test("CJK and emoji take two columns, combining marks none", () => {
-    expect(textWidth("ab")).toBe(2);
-    expect(textWidth("你好")).toBe(4);
-    expect(textWidth("😀")).toBe(2);
-    expect(textWidth("é")).toBe(1);
     expect(wrapText("你好世界你好", 4)).toEqual(["你好", "世界", "你好"]);
     expect(wrapText("a😀b😀c", 3)).toEqual(["a😀", "b😀", "c"]);
     expect(wrapText("ééé", 2)).toEqual(["éé", "é"]);
@@ -275,9 +269,9 @@ describe("wrapping is by display width", () => {
     const section = state.object?.sections[0];
     if (section === undefined) throw new Error("no section");
     const layout = sectionLayout(state, section);
-    expect(layout.length).toBe(markdownLineCount(text, 120 - rightX(state) - 1));
+    expect(layout.length).toBe(layoutMarkdown(text, 120 - rightX(state) - 1).length);
     for (const line of layout) {
-      expect(textWidth(line.text)).toBeLessThanOrEqual(120 - rightX(state) - 1);
+      expect(Bun.stringWidth(line.text)).toBeLessThanOrEqual(120 - rightX(state) - 1);
     }
     expect(layout.length).toBeGreaterThan(1);
   });

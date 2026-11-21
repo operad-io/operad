@@ -12,7 +12,6 @@ import type {
   RowMark,
   RunningItem,
   SectionStatus,
-  ViewListPage,
   ViewAction,
   ViewObject,
   ViewRow,
@@ -336,26 +335,15 @@ export interface TuiSectionRequest {
   readonly objectVersion: number;
 }
 
-/** A list page the reducer wants the caller to fetch next. */
-export interface TuiPageRequest {
-  readonly tabId: string;
-  readonly cursor: string;
-  /** The list version the page was asked for; a newer list drops the answer. */
-  readonly version: number;
-}
-
-/** The rows, cursor and paging state of one tab. */
+/** The rows, cursor and load state of one tab. */
 export interface TuiList {
   readonly rows: readonly TuiRow[];
   readonly cursor: number;
-  readonly next?: string | undefined;
-  /** The first page has arrived. */
+  /** The whole list has arrived. */
   readonly loaded: boolean;
-  /** A next page is being fetched; a second request waits for its result. */
-  readonly loading: boolean;
-  /** A failed page fetch, kept until the next successful page. */
+  /** A failed list fetch, kept until the next successful one. */
   readonly error?: string | undefined;
-  /** Grows with each replace; an appended page for an older one is dropped. */
+  /** Grows with each replace; an answer for an older list is dropped. */
   readonly version: number;
   /** The filter changed and the rows of the new one have not arrived yet. */
   readonly switching?: boolean | undefined;
@@ -420,8 +408,6 @@ export interface TuiState {
   readonly refreshRequested: boolean;
   /** Set when `f` chose a filter and its first page must be fetched. */
   readonly filterRequest?: TuiFilterRequest | undefined;
-  /** Set when the cursor nears the end of a list that has another page. */
-  readonly pageRequest?: TuiPageRequest | undefined;
   /** The open object, if any. */
   readonly object?: TuiObject | undefined;
   /** The version of the next open; it never restarts, even after a close. */
@@ -486,9 +472,6 @@ export interface TuiState {
 /** What the last request said about the server. */
 export type TuiConnection = "ok" | "unreachable" | "unauthorized";
 
-/** The number of rows from the end that make the reducer ask for a page. */
-export const PAGE_AHEAD = 2;
-
 /** Initial dimensions, matching a conventional 80 by 24 terminal. */
 export const DEFAULT_WIDTH = 80;
 export const DEFAULT_HEIGHT = 24;
@@ -509,7 +492,6 @@ function makeList(): TuiList {
     rows: [],
     cursor: 0,
     loaded: false,
-    loading: false,
     version: 0,
   };
 }
@@ -545,13 +527,6 @@ function filtersOf(types: readonly TuiTypeInfo[] | undefined): readonly TuiFilte
     }
   }
   return out.length === 0 ? undefined : out;
-}
-
-/** The filter to ask a type for: the tab's, when the type declares it. */
-export function filterFor(tab: TuiTab, info: TuiTypeInfo): string | undefined {
-  const name = tab.filter;
-  if (name === undefined) return undefined;
-  return info.filters?.some((f) => f.name === name) === true ? name : undefined;
 }
 
 /** The plugin tab or settings list that holds `type`, if any. */
@@ -595,9 +570,6 @@ export function initialState(options: TuiStateOptions = {}): TuiState {
     ...(options.url === undefined ? {} : { url: options.url }),
   };
 }
-
-/** A short alias for callers that build the first state. */
-export const createInitialState = initialState;
 
 /** One row of a plugin tab's list, with its type and, first in a group, the group's heading. */
 export interface TuiTreeEntry {
@@ -666,28 +638,6 @@ export type TuiStateEvent =
       readonly generation?: number | undefined;
     }
   | {
-      readonly type: "page";
-      readonly tabId: string;
-      readonly page: ViewListPage;
-      /** Replace the list instead of appending one page. */
-      readonly replace?: boolean | undefined;
-      /** The filter the page was asked under; a page for another one is dropped. */
-      readonly filter?: string | undefined;
-      /** The filter-cycle count it was asked under; an older one is dropped. */
-      readonly filterSeq?: number | undefined;
-      /** For a replace: the refresh it belongs to. */
-      readonly generation?: number | undefined;
-      /** For an append: the list version it was asked for. */
-      readonly version?: number | undefined;
-    }
-  | {
-      readonly type: "rows";
-      readonly tabId: string;
-      readonly rows: readonly ViewRow[];
-      readonly next?: string | undefined;
-      readonly replace?: boolean | undefined;
-    }
-  | {
       readonly type: "page-error";
       readonly tabId: string;
       readonly message: string;
@@ -743,8 +693,6 @@ export type TuiStateEvent =
   | { readonly type: "section-launched" }
   /** A refresh began; answers to the one before it are dropped. */
   | { readonly type: "refresh-start" }
-  /** The caller launched the pending page request; it is asked for once. */
-  | { readonly type: "page-launched" }
   /** Show a failure in the footer, or clear it with no message. */
   | {
       readonly type: "status";
@@ -1119,46 +1067,8 @@ function withTab(state: TuiState, tabId: string, patch: (tab: TuiTab) => TuiTab)
   return { ...state, tabs };
 }
 
-function nearEnd(tab: TuiTab): boolean {
-  const { list } = tab;
-  if (list.rows.length === 0) return false;
-  return list.cursor >= Math.max(0, list.rows.length - PAGE_AHEAD);
-}
-
-/** Sets one page request for a tab, and never a second while one is loading. */
-function requestPage(state: TuiState, tab: TuiTab): TuiState {
-  const { list } = tab;
-  if (!nearEnd(tab) || list.next === undefined || list.loading) return state;
-  if (state.pageRequest?.tabId === tab.id && state.pageRequest.cursor === list.next) {
-    return state;
-  }
-  const updated = withTab(state, tab.id, (current) => ({
-    ...current,
-    list: { ...current.list, loading: true },
-  }));
-  return {
-    ...updated,
-    pageRequest: { tabId: tab.id, cursor: list.next, version: list.version },
-  };
-}
-
 function activeTabOf(state: TuiState): TuiTab | undefined {
   return state.tabs[state.active];
-}
-
-/**
- * The rows a section's Markdown takes once wrapped to the pane, without its
- * trailing blank. `width` defaults to no wrapping for callers that only want
- * the renderer's own line count.
- */
-export function markdownLineCount(
-  markdown: string,
-  width = Number.POSITIVE_INFINITY,
-): number {
-  return layoutMarkdown(
-    markdown,
-    Number.isFinite(width) ? width : undefined,
-  ).length;
 }
 
 /**
@@ -2034,14 +1944,8 @@ function move(state: TuiState, delta: number): TuiState {
     ...tab.list,
     cursor: tab.list.cursor + delta,
   });
-  if (next === tab.list.cursor) {
-    // At the last row a further Down still asks for the page the previous
-    // failed attempt or the end of the loaded rows left unread.
-    return delta > 0 ? requestPage(state, tab) : state;
-  }
-  const moved = moveCursor(state, tab.id, next);
-  const updated = activeTabOf(moved);
-  return updated === undefined ? moved : requestPage(moved, updated);
+  if (next === tab.list.cursor) return state;
+  return moveCursor(state, tab.id, next);
 }
 
 /** Moves a tab's cursor; the object pane follows it after the shell's debounce. */
@@ -2058,9 +1962,7 @@ function jump(state: TuiState, to: "top" | "bottom"): TuiState {
   if (tab === undefined) return state;
   const cursor = to === "top" ? 0 : Math.max(0, tab.list.rows.length - 1);
   if (cursor === tab.list.cursor) return state;
-  const moved = moveCursor(state, tab.id, cursor);
-  const updated = activeTabOf(moved);
-  return updated === undefined ? moved : requestPage(moved, updated);
+  return moveCursor(state, tab.id, cursor);
 }
 
 function activate(state: TuiState, index: number): TuiState {
@@ -2453,20 +2355,16 @@ function cycleFilter(state: TuiState): TuiState {
     filter: next,
     filterSeq: (current.filterSeq ?? 0) + 1,
     hidden: undefined,
-    // The rows stay until the new ones arrive; a page of the old filter is
-    // dropped by its version, and its paging cursor is no longer valid.
+    // The rows stay until the new ones arrive; a list of the old filter is
+    // dropped by its version.
     list: {
       ...current.list,
-      next: undefined,
-      loading: false,
       switching: true,
       version: current.list.version + 1,
     },
   }));
-  const quiet =
-    changed.pageRequest?.tabId === tab.id ? { ...changed, pageRequest: undefined } : changed;
   return {
-    ...quiet,
+    ...changed,
     filterRequest: { tabId: tab.id, filter: next, seq: (tab.filterSeq ?? 0) + 1 },
   };
 }
@@ -2739,7 +2637,6 @@ function removeRow(state: TuiState, id: string): TuiState {
 function replaceRows(
   tab: TuiTab,
   rows: readonly TuiRow[],
-  next: string | undefined,
 ): TuiTab {
   const cursor = cursorAfterReplace(tab.list, rows);
   return {
@@ -2748,21 +2645,12 @@ function replaceRows(
       ...tab.list,
       rows,
       cursor,
-      next,
       loaded: true,
-      // The page that was in flight for the old rows is dropped when it lands.
-      loading: false,
       error: undefined,
       switching: undefined,
       version: tab.list.version + 1,
     },
   };
-}
-
-function clearRequest(before: TuiState, after: TuiState, tabId: string): TuiState {
-  return before.pageRequest?.tabId === tabId
-    ? { ...after, pageRequest: undefined }
-    : after;
 }
 
 /**
@@ -2791,7 +2679,7 @@ function selectedAnswer(state: TuiState): TuiAnswer | undefined {
 function applyPending(state: TuiState, items: readonly PendingItem[]): TuiState {
   const rows = items.map(rowFromPending);
   return followLoaded(
-    withTab(state, "pending", (tab) => replaceRows(tab, rows, undefined)),
+    withTab(state, "pending", (tab) => replaceRows(tab, rows)),
     "pending",
   );
 }
@@ -2799,7 +2687,7 @@ function applyPending(state: TuiState, items: readonly PendingItem[]): TuiState 
 function applyRunning(state: TuiState, items: readonly RunningItem[]): TuiState {
   const rows = items.map(rowFromRunning);
   return followLoaded(
-    withTab(state, "running", (tab) => replaceRows(tab, rows, undefined)),
+    withTab(state, "running", (tab) => replaceRows(tab, rows)),
     "running",
   );
 }
@@ -2808,9 +2696,6 @@ function appendPage(
   state: TuiState,
   tabId: string,
   rows: readonly TuiRow[],
-  next: string | undefined,
-  replace: boolean,
-  version: number | undefined,
   filter?: string | undefined,
   hidden?: number | undefined,
   filterSeq?: number | undefined,
@@ -2818,40 +2703,19 @@ function appendPage(
   const tab = state.tabs.find((candidate) => candidate.id === tabId);
   if (tab === undefined) return state;
   if (filterSeq !== undefined && filterSeq !== (tab.filterSeq ?? 0)) return state;
-  if (!replace && version !== undefined && version !== tab.list.version) {
-    return state;
-  }
   // An answer to a filter that is no longer the chosen one is never shown.
   if (filter !== undefined && tab.filter !== undefined && filter !== tab.filter) {
     return state;
   }
-  const wasSwitching = replace && tab.list.switching === true;
-  const updated = withTab(state, tabId, (current) => {
-    if (replace) return { ...replaceRows(current, rows, next), hidden };
-    const list: TuiList = {
-      ...current.list,
-      rows: [...current.list.rows, ...rows],
-      loaded: true,
-      loading: false,
-      next,
-      error: undefined,
-    };
-    return {
-      ...current,
-      ...(hidden === undefined ? {} : { hidden }),
-      list: { ...list, cursor: clampCursor(list) },
-    };
-  });
-  const cleared = clearRequest(state, updated, tabId);
+  const wasSwitching = tab.list.switching === true;
+  const updated = withTab(state, tabId, (current) => ({
+    ...replaceRows(current, rows),
+    hidden,
+  }));
   // `f` keeps the open object even when the new filter hides its row or leaves
   // no row at all; its next level follows the new filter.
-  if (wasSwitching || !replace) return cleared;
-  return followLoaded(cleared, tabId);
-}
-
-/** The type a page of a tab's rows is of: the tab's first. */
-function firstType(state: TuiState, tabId: string): string | undefined {
-  return state.tabs.find((tab) => tab.id === tabId)?.types?.[0]?.type;
+  if (wasSwitching) return updated;
+  return followLoaded(updated, tabId);
 }
 
 function rowOfEntry(entry: TuiTreeEntry): TuiRow {
@@ -2945,15 +2809,10 @@ function applyPageError(
   const current = state.tabs.find((candidate) => candidate.id === tabId);
   if (current === undefined) return state;
   if (version !== undefined && version !== current.list.version) return state;
-  const updated = withTab(state, tabId, (tab) => ({
+  return withTab(state, tabId, (tab) => ({
     ...tab,
-    list: { ...tab.list, loading: false, error: sanitize(message) },
+    list: { ...tab.list, error: sanitize(message) },
   }));
-  if (updated === state) return state;
-  if (state.pageRequest?.tabId === tabId) {
-    return { ...updated, pageRequest: undefined };
-  }
-  return updated;
 }
 
 /** An answer to a refresh that is no longer the current one. */
@@ -2976,19 +2835,6 @@ export function reduce(state: TuiState, event: TuiStateEvent): TuiState {
       return stale(state, event.generation)
         ? state
         : applyRunning(state, event.items);
-    case "page":
-      if (event.replace === true && stale(state, event.generation)) return state;
-      return appendPage(
-        state,
-        event.tabId,
-        event.page.rows.map((row) => rowFromView(row, firstType(state, event.tabId))),
-        event.page.next,
-        event.replace === true,
-        event.version,
-        event.filter,
-        event.page.hidden,
-        event.filterSeq,
-      );
     case "tree": {
       if (stale(state, event.generation)) return state;
       const rows = event.entries.flatMap((entry) => rowsOfEntry(state, entry));
@@ -2996,9 +2842,6 @@ export function reduce(state: TuiState, event: TuiStateEvent): TuiState {
         state,
         event.tabId,
         rows,
-        undefined,
-        true,
-        undefined,
         event.filter,
         event.hidden,
         event.filterSeq,
@@ -3022,15 +2865,6 @@ export function reduce(state: TuiState, event: TuiStateEvent): TuiState {
       return state.filterRequest === undefined
         ? state
         : { ...state, filterRequest: undefined };
-    case "rows":
-      return appendPage(
-        state,
-        event.tabId,
-        event.rows.map((row) => rowFromView(row, firstType(state, event.tabId))),
-        event.next,
-        event.replace === true,
-        undefined,
-      );
     case "page-error":
       return applyPageError(state, event.tabId, event.message, event.version);
     case "object":
@@ -3066,10 +2900,6 @@ export function reduce(state: TuiState, event: TuiStateEvent): TuiState {
       return follow(state);
     case "refresh-start":
       return { ...state, generation: state.generation + 1 };
-    case "page-launched":
-      return state.pageRequest === undefined
-        ? state
-        : { ...state, pageRequest: undefined };
     case "object-launched":
       return state.objectRequest === undefined
         ? state
@@ -3141,7 +2971,7 @@ export function reduce(state: TuiState, event: TuiStateEvent): TuiState {
       if (tab === undefined) return state;
       return {
         ...state,
-        settingsTab: replaceRows(tab, event.entries.map(rowOfEntry), undefined),
+        settingsTab: replaceRows(tab, event.entries.map(rowOfEntry)),
       };
     }
     case "action-done": {
@@ -3185,33 +3015,6 @@ export function twoPane(state: TuiState): boolean {
 /** The active tab, if any. */
 export function activeTab(state: TuiState): TuiTab | undefined {
   return state.tabs[state.active];
-}
-
-/** The tab whose cursor the keys move. */
-export function activeRows(state: TuiState): readonly TuiRow[] {
-  return activeTab(state)?.list.rows ?? [];
-}
-
-/** The label a tab shows, with Pending's badge count. */
-export function tabLabel(tab: TuiTab): string {
-  if (tab.kind === "pending" && tab.list.rows.length > 0) {
-    return `${tab.title} ${tab.list.rows.length}`;
-  }
-  return tab.title;
-}
-
-/** The header line, exactly as the design names it. */
-export function headerText(state: TuiState): string {
-  const pending = state.tabs.find((tab) => tab.kind === "pending");
-  const running = state.tabs.find((tab) => tab.kind === "running");
-  const types = state.tabs
-    .filter((tab) => tab.kind === "plugin")
-    .map((tab) => tab.title);
-  return `operad ─ ${[
-    `Pending ${pending?.list.rows.length ?? 0}`,
-    `Running ${running?.list.rows.length ?? 0}`,
-    ...types,
-  ].join(" · ")}`;
 }
 
 /** One footer hint: its key, when it has one, and what the key does. */
@@ -3276,13 +3079,6 @@ export function footerSegments(state: TuiState): readonly TuiFooterSegment[] {
   return segments;
 }
 
-/** The footer for the current screen. */
-export function footerText(state: TuiState): string {
-  return footerSegments(state)
-    .map((segment) => (segment.key === undefined ? segment.hint : `${segment.key} ${segment.hint}`))
-    .join(" · ");
-}
-
 /** Groups of keys, shown with a blank line between them. */
 export const KEY_GROUPS: readonly (readonly (readonly [string, string])[])[] = [
   [
@@ -3338,7 +3134,7 @@ export function rowLines(row: TuiRow): number {
 
 /**
  * The rows `[start, end)` that fit in `available` lines around the cursor. The
- * lines after the rows (`loading more…` and a page error) are kept free.
+ * line after the rows (a list error) is kept free.
  */
 export function listWindow(
   list: TuiList,
@@ -3346,7 +3142,7 @@ export function listWindow(
 ): { readonly start: number; readonly end: number } {
   const count = list.rows.length;
   if (count === 0) return { start: 0, end: 0 };
-  const tail = (list.loading ? 1 : 0) + (list.error === undefined ? 0 : 1);
+  const tail = list.error === undefined ? 0 : 1;
   // The blank line after the last object is not drawn, so it needs no room.
   const room = Math.max(1, Math.trunc(available) - tail + 1);
   const cursor = Math.min(Math.max(0, list.cursor), count - 1);

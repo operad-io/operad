@@ -15,7 +15,6 @@ export {
   CHANNEL_CAPABILITY,
   CHANNEL_INSTRUCTIONS,
   CHANNEL_METHOD,
-  CHANNEL_PERMISSION_CAPABILITY,
   ChannelNotifyError,
   ChannelTypeError,
   type ChannelReason,
