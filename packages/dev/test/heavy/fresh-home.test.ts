@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { makeRemote } from "../git-support.ts";
 import { cleanupTempRoots, osTempRoot } from "../support.ts";
+import { operad as runCli } from "@operad-io/test-support";
 
 afterAll(cleanupTempRoots);
 
@@ -16,28 +17,16 @@ interface RunResult {
   readonly err: string;
 }
 
-async function operad(
+function runOperad(
   home: string,
   cwd: string,
   args: readonly string[],
   input?: string,
 ): Promise<RunResult> {
-  const child = Bun.spawn({
-    cmd: [process.execPath, CLI_ENTRY, ...args],
+  return runCli(home, args, {
     cwd,
-    env: { ...process.env, OPERAD_HOME: home },
-    stdin: "pipe",
-    stdout: "pipe",
-    stderr: "pipe",
+    ...(input === undefined ? {} : { input }),
   });
-  if (input !== undefined) child.stdin.write(input);
-  child.stdin.end();
-  const [out, err, code] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-    child.exited,
-  ]);
-  return { out, err, code };
 }
 
 /** A worker that fails at once, so nothing after the start runs. */
@@ -72,7 +61,7 @@ describe("a fresh home follows the Quickstart", () => {
     const workerPath = join(root, "fake-worker.ts");
     writeFileSync(workerPath, workerSource());
 
-    const init = await operad(home, repository, ["init"]);
+    const init = await runOperad(home, repository, ["init"]);
     // init exits 1 when a plugin check fails, such as a harness missing from this machine's PATH;
     // the config is written either way, and the checks are not what this test is about.
     expect(init.out).toContain("created");
@@ -90,7 +79,7 @@ describe("a fresh home follows the Quickstart", () => {
     config.http = { ...config.http, enabled: false };
     writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
 
-    const add = await operad(home, repository, ["dev", "repo", "add", "."]);
+    const add = await runOperad(home, repository, ["dev", "repo", "add", "."]);
     expect(add.code).toBe(0);
     writeFileSync(
       join(repository, ".operad", "dev.json"),
@@ -101,7 +90,7 @@ describe("a fresh home follows the Quickstart", () => {
         reviewer: { use: "fake/agent" },
       })}\n`,
     );
-    const plan = await operad(
+    const plan = await runOperad(
       home,
       repository,
       ["dev", "plan", "add", "--slug", "hello", "--title", "Add a greeting"],
@@ -109,16 +98,16 @@ describe("a fresh home follows the Quickstart", () => {
     );
     expect(plan.code).toBe(0);
     expect(plan.out.trim()).toBe("P-0001-hello");
-    const task = await operad(
+    const task = await runOperad(
       home,
       repository,
       ["dev", "task", "add", "--plan", "P-0001-hello", "--slug", "greet", "--title", "Print the greeting"],
       "Print hello.\n",
     );
     expect(task.code).toBe(0);
-    expect((await operad(home, repository, ["dev:confirm", "P-0001-hello"])).code).toBe(0);
+    expect((await runOperad(home, repository, ["dev:confirm", "P-0001-hello"])).code).toBe(0);
     // Step 2: a new plan's auto level is off, so the Quickstart starts the plan's tasks itself.
-    const auto = await operad(home, repository, ["dev:auto", "P-0001-hello", "--level", "run"]);
+    const auto = await runOperad(home, repository, ["dev:auto", "P-0001-hello", "--level", "run"]);
     expect(auto.code).toBe(0);
 
     const serve = Bun.spawn({
@@ -139,7 +128,7 @@ describe("a fresh home follows the Quickstart", () => {
         Bun.sleep(20_000).then(() => "no start in 20 seconds"),
       ]);
       expect(said).toContain("T-0001-greet ready -> running");
-      const pending = await operad(home, repository, ["pending"]);
+      const pending = await runOperad(home, repository, ["pending"]);
       expect(pending.out).not.toContain("plugin pool is not loaded");
     } finally {
       serve.kill();

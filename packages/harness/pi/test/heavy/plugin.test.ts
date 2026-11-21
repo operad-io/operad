@@ -16,8 +16,10 @@ import {
 } from "@operad-io/engine";
 import { match, type AccessProfile } from "@operad-io/access-match";
 import { EVENT_NOTE_TEMPLATE, FLUSH_MS, modelErrorOf } from "@operad-io/harness-process";
-import { createPiHarnessPlugin, piModelListPath, piToolEvent } from "../../src/index.ts";
+import { createPiHarnessPlugin, piToolEvent } from "../../src/index.ts";
+import { piModelListPath } from "../../src/model-list.ts";
 import {
+  alive,
   cleanupTempRoots,
   manualClock,
   tempRoot,
@@ -105,15 +107,6 @@ async function gone(pid: number): Promise<boolean> {
     await new Promise((r) => setTimeout(r, 5));
   }
   return true;
-}
-
-function alive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 function recorded(env: TestEnv): Record<string, unknown> {
@@ -625,6 +618,8 @@ describe("pi/agent", () => {
     const error = dataOf(result).modelError as Record<string, unknown>;
     expect(error.kind).toBe("unavailable");
     expect(error.status).toBe(429);
+    expect(error.retry_after_secs).toBe(45);
+    expect(typeof error.reported_at).toBe("number");
   });
 
   test("a model_error failure about a usage limit is usage_limit", async () => {

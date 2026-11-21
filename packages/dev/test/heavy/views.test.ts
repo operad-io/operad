@@ -1,13 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import {
-  addPlan,
-  addRepository,
-  addRework,
-  addTask,
-  getPlan,
-  getTask,
-  setTaskPhase,
-} from "../../src/service.ts";
+import { addPlan, addRepository, addTask, getPlan, getTask } from "../../src/service.ts";
 import { MemoryPluginStore, SqlitePluginStore, type StepContext } from "@operad-io/engine";
 import { taskPlaceWait } from "../../src/place-wait.ts";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -24,8 +16,8 @@ import {
 } from "../../src/views.ts";
 import { planNote } from "../../src/model.ts";
 import { commitIn, gitOrThrow, makeRemote } from "../git-support.ts";
-import { bareId, planData, taskData } from "../../src/model.ts";
-import { cleanupTempRoots, guardLockHandles, makeGitRepository, storeAt, tempRoot } from "../support.ts";
+import { idOfKey, planData, taskData } from "../../src/model.ts";
+import { cleanupTempRoots, guardLockHandles, makeGitRepository, storeAt, tempRoot, setTaskPhase, addRework } from "../support.ts";
 
 afterAll(cleanupTempRoots);
 guardLockHandles();
@@ -114,9 +106,9 @@ describe("dev views", () => {
       slug: "second",
       title: "Second",
       brief: "# Brief\n\nx",
-      after: [bareId(task.id)],
+      after: [idOfKey(task.id)],
     });
-    expect(taskViews.row(await getTask(store, second.id)).after).toEqual([bareId(task.id)]);
+    expect(taskViews.row(await getTask(store, second.id)).after).toEqual([idOfKey(task.id)]);
   });
 
   test("a task row reads the phase and the cost", async () => {
@@ -513,7 +505,7 @@ describe("dev views", () => {
     const repository = await addRepository(store, { path: remote.repository, name: "repository" });
     const plan = await addPlan(store, { repository, slug: "p", title: "P", request: "r" });
     const task = await addTask(store, { plan: plan.id, slug: "one", title: "One", brief: "b" });
-    const branch = `work/${bareId(task.id)}`;
+    const branch = `work/${idOfKey(task.id)}`;
     gitOrThrow(remote.repository, ["checkout", "-q", "-b", branch]);
     await commitIn(remote.repository, "merged.txt", "from the task\n", "task change");
     gitOrThrow(remote.repository, ["checkout", "-q", "main"]);
@@ -583,7 +575,7 @@ describe("dev views", () => {
         attempt: {
           number: 1,
           run: "run-1",
-          branch: `work/${bareId(task.id)}`,
+          branch: `work/${idOfKey(task.id)}`,
           integration: { result: "merged", candidate: sha },
         },
       },
@@ -616,7 +608,7 @@ describe("dev views", () => {
       {
         ...stored,
         phase: "merged",
-        attempt: { number: 1, run: "run-1", branch: `work/${bareId(task.id)}` },
+        attempt: { number: 1, run: "run-1", branch: `work/${idOfKey(task.id)}` },
       },
       "test:merged",
     );
@@ -645,7 +637,7 @@ describe("dev views", () => {
       {
         ...stored,
         phase: "cancelled",
-        attempt: { number: 1, run: "run-1", branch: `work/${bareId(task.id)}` },
+        attempt: { number: 1, run: "run-1", branch: `work/${idOfKey(task.id)}` },
       },
       "test:cancelled",
     );
@@ -681,7 +673,7 @@ describe("dev views", () => {
         attempt: {
           number: 1,
           run: "run-1",
-          branch: `work/${bareId(task.id)}`,
+          branch: `work/${idOfKey(task.id)}`,
           integration: { result: "merged", candidate: base, base },
         },
       },

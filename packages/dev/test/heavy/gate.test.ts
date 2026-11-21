@@ -12,7 +12,6 @@ import {
   readdirSync,
   rmSync,
   symlinkSync,
-  watch,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -32,7 +31,11 @@ import {
 } from "@operad-io/engine";
 import { createShellPlugin } from "@operad-io/shell";
 import { withDefaultAccess, type AccessProfile } from "@operad-io/access-match";
-import { setTaskPhase } from "../../src/service.ts";
+import {
+  manualClock,
+  waitForFile,
+  type ManualClock,
+} from "@operad-io/engine/testing";
 import { notCodeTestHooks } from "../../src/notcode.ts";
 import type { CheckCommand } from "../../src/settings.ts";
 import { listRerunCounts } from "../../src/reruns.ts";
@@ -66,7 +69,14 @@ import {
   makeRemote,
   type RemoteSetup,
 } from "../git-support.ts";
-import { cleanupTempRoots, guardLockHandles, osTempRoot, storeAt, tempRoot } from "../support.ts";
+import {
+  cleanupTempRoots,
+  guardLockHandles,
+  osTempRoot,
+  setTaskPhase,
+  storeAt,
+  tempRoot,
+} from "../support.ts";
 
 afterAll(cleanupTempRoots);
 
@@ -80,65 +90,6 @@ guardLockHandles();
 const REVIEW_CRASH_CHILD = fileURLToPath(
   new URL("../fixtures/review-crash-child.ts", import.meta.url),
 );
-
-interface ManualClock {
-  setTimeout(handler: () => void, ms: number): unknown;
-  clearTimeout(handle: unknown): void;
-  sleep(ms: number): Promise<void>;
-  fireTimeouts(): number;
-  /** Fires only the timeouts set for `ms`; the others stay armed. */
-  fireTimeoutsOf(ms: number): number;
-}
-
-/** A clock a test drives: a timeout runs only when the test fires it. */
-function manualClock(): ManualClock {
-  const timers = new Set<{ readonly handler: () => void; readonly ms: number }>();
-  return {
-    setTimeout(handler, ms) {
-      const timer = { handler, ms };
-      timers.add(timer);
-      return timer;
-    },
-    clearTimeout(handle) {
-      timers.delete(handle as { readonly handler: () => void; readonly ms: number });
-    },
-    sleep() {
-      return Promise.resolve();
-    },
-    fireTimeouts() {
-      const due = [...timers];
-      timers.clear();
-      for (const timer of due) timer.handler();
-      return due.length;
-    },
-    fireTimeoutsOf(ms) {
-      const due = [...timers].filter((timer) => timer.ms === ms);
-      for (const timer of due) timers.delete(timer);
-      for (const timer of due) timer.handler();
-      return due.length;
-    },
-  };
-}
-
-/**
- * Resolves when the file exists. A directory watch wakes it at once; a watch
- * can miss an event under load, so a look every 100 ms backs it.
- */
-function waitForFile(path: string): Promise<void> {
-  if (existsSync(path)) return Promise.resolve();
-  return new Promise((resolve) => {
-    const check = (): void => {
-      if (!existsSync(path)) return;
-      watcher.close();
-      clearInterval(timer);
-      resolve();
-    };
-    const watcher = watch(dirname(path), check);
-    watcher.on("error", check);
-    const timer = setInterval(check, 100);
-    check();
-  });
-}
 
 interface ReviewCall {
   readonly prompt: string;
@@ -194,6 +145,8 @@ interface FakeReviewerOptions {
   readonly retryInvalid?: boolean;
   /** Append one line per model call, so a test can count calls across processes. */
   readonly callLog?: string;
+  /** When the model reported its wait, for the modes that carry one. */
+  readonly modelErrorReportedAt?: number;
 }
 
 function fakeReviewer(options: FakeReviewerOptions = {}): FakeReviewer {
@@ -299,8 +252,28 @@ function fakeReviewer(options: FakeReviewerOptions = {}): FakeReviewer {
                   kind: "usage_limit",
                   status: null,
                   retry_after_secs: 3600,
+                  ...(options.modelErrorReportedAt === undefined
+                    ? {}
+                    : { reported_at: options.modelErrorReportedAt }),
                 },
                 message: "the usage limit is reached",
+              },
+            };
+          }
+          if (mode === "unavailable-retry") {
+            return {
+              result: "failed",
+              data: {
+                reason: "exit",
+                modelError: {
+                  kind: "unavailable",
+                  status: 429,
+                  retry_after_secs: 60,
+                  ...(options.modelErrorReportedAt === undefined
+                    ? {}
+                    : { reported_at: options.modelErrorReportedAt }),
+                },
+                message: "the model is busy",
               },
             };
           }
@@ -532,6 +505,8 @@ interface FixtureOptions {
   readonly retrySecs?: number;
   /** A file the fake reviewer appends one line to per call. */
   readonly callLog?: string;
+  /** When the model reported its wait in the fake reviewer's model errors. */
+  readonly modelErrorReportedAt?: number;
   /** Add one small committed file after the worktree is created. */
   readonly commit?: boolean;
   readonly clock?: ManualClock;
@@ -625,6 +600,9 @@ async function fixture(options: FixtureOptions = {}): Promise<Fixture> {
   const reviewer = fakeReviewer({
     retryInvalid: options.retryInvalid === true,
     ...(options.callLog === undefined ? {} : { callLog: options.callLog }),
+    ...(options.modelErrorReportedAt === undefined
+      ? {}
+      : { modelErrorReportedAt: options.modelErrorReportedAt }),
   });
   const registry = new PluginRegistry(
     [
@@ -739,6 +717,32 @@ async function taskOf(state: Fixture): Promise<TaskData> {
 
 async function head(state: Fixture): Promise<string> {
   return gitOrThrow(state.worktree, ["rev-parse", "HEAD"]);
+}
+
+/**
+ * Marks the task's current attempt as one whose work left a change in the main
+ * checkout, the way `dev/work` records it (T-0646): the line in the worker's
+ * answer and in the task's Changes.
+ */
+async function changedMainCheckout(
+  state: Fixture,
+  files: readonly string[] = ["main-only.txt"],
+): Promise<string> {
+  const object = await state.store.get("task", state.taskKey);
+  if (object === undefined) throw new Error("task disappeared");
+  const task = taskData(object.data);
+  const line = `changed the main checkout: ${files.join(", ")}`;
+  await state.store.put(
+    "task",
+    state.taskKey,
+    {
+      ...task,
+      brief: `${task.brief ?? ""}\n\n## Changes\n- ${line}`,
+      attempt: { ...task.attempt, finalMessage: line },
+    },
+    "test:main-checkout",
+  );
+  return line;
 }
 
 function deferredPlace(): { promise: Promise<void>; release: () => void } {
@@ -1514,6 +1518,68 @@ describe("dev/review", () => {
   });
 });
 
+describe("dev/review and the main checkout", () => {
+  test("an attempt that changed the main checkout fails with that major finding", async () => {
+    const state = await fixture({ reviewerArgs: ["none"] });
+    await verify(state);
+    writeFileSync(
+      join(state.remote.repository, "main-only.txt"),
+      "changed outside the worktree\n",
+    );
+    const line = await changedMainCheckout(state);
+
+    const result = await review(state);
+    expect(result.result).toBe("fail");
+    expect(result.data?.decision).toBe("findings");
+    expect(result.data?.counted).toBe(1);
+    expect(result.data?.findings).toEqual([
+      {
+        file: "main-only.txt",
+        line: 0,
+        severity: "major",
+        summary: "the work changed this file in the main checkout",
+        trigger: "the work must make this change in its own worktree instead",
+      },
+    ]);
+    // The reviewer was told the line and what to call it.
+    const prompt = state.reviewer.calls[0]?.prompt ?? "";
+    expect(prompt).toContain(line);
+    expect(prompt).toContain("This is a major finding");
+
+    // The task goes to rework with the finding, and the main checkout stays.
+    const back = await rework(state);
+    expect(back.result).toBe("again");
+    const task = await taskOf(state);
+    expect(task.brief).toContain("the work changed this file in the main checkout");
+    expect(task.brief).toContain("make this change in its own worktree");
+    expect(readFileSync(join(state.remote.repository, "main-only.txt"), "utf8")).toBe(
+      "changed outside the worktree\n",
+    );
+  });
+
+  test("an attempt without a main-checkout change is reviewed as before", async () => {
+    const state = await fixture({ reviewerArgs: ["none"] });
+    await verify(state);
+    const result = await review(state);
+    expect(result.result).toBe("pass");
+    expect(result.data?.findings).toEqual([]);
+    expect(state.reviewer.calls[0]?.prompt ?? "").not.toContain(
+      "## The main checkout",
+    );
+  });
+
+  test("an empty diff with a main-checkout change still fails", async () => {
+    const state = await fixture({ commit: false, reviewerArgs: ["none"] });
+    await verify(state);
+    await changedMainCheckout(state);
+    const result = await review(state);
+    expect(result.result).toBe("fail");
+    expect(result.data?.reason).toBe("findings");
+    expect(result.data?.counted).toBe(1);
+    expect(state.reviewer.calls).toHaveLength(0);
+  });
+});
+
 describe("dev/review fallback and retry", () => {
   test("a 429 falls back once, and the round passes without a rework", async () => {
     const state = await fixture({
@@ -1558,6 +1624,30 @@ describe("dev/review fallback and retry", () => {
     expect(used.sources.timeoutSecs).toBe("default");
     expect(task.attempt?.review?.reviewSettings).toEqual(used);
   });
+
+  test("an unavailable review waits the retry-after it was given, not retrySecs", async () => {
+    const reportedAt = 4_000;
+    const state = await fixture({
+      reviewerArgs: ["unavailable-retry", "--model", "primary"],
+      retrySecs: 120,
+      modelErrorReportedAt: reportedAt,
+    });
+    await verify(state);
+    const clock = 10_000;
+    const restoreHooks = useHooks({ now: () => clock });
+    try {
+      const first = await review(state, "review-retry-after");
+      expect(first.result).toBe("unavailable");
+      // The report was six seconds before this step read it.
+      expect(first.data?.retryAt).toBe(reportedAt + 60_000);
+      const task = await taskOf(state);
+      expect(task.attempt?.review?.retryAt).toBe(reportedAt + 60_000);
+      expect(task.retryAt).toBe(reportedAt + 60_000);
+      expect(state.reviewer.calls).toHaveLength(1);
+    } finally {
+      restoreHooks();
+    }
+  }, 30_000);
 
   test("no fallback and a 429 wait for retrySecs, then run the review only", async () => {
     const state = await fixture({
@@ -1948,6 +2038,52 @@ describe("dev/review hardening", () => {
     const result = await review(state, "review-usage-limit");
     expect(result.result).toBe("pass");
     expect(state.reviewer.calls).toHaveLength(2);
+  }, 30_000);
+
+  test("a usage limit with no fallback waits for a person instead of retrying", async () => {
+    const state = await fixture({
+      reviewerArgs: ["usage-limit", "--model", "primary"],
+      retrySecs: 120,
+    });
+    await verify(state);
+    const clock = 10_000;
+    const restoreHooks = useHooks({ now: () => clock });
+    try {
+      const result = await review(state, "review-usage-limit-person");
+      expect(result.result).toBe("exhausted");
+      expect(state.reviewer.calls).toHaveLength(1);
+      const task = await taskOf(state);
+      expect(task.phase).toBe("waiting");
+      expect(task.attempt?.review?.decision).toBe("unavailable");
+      expect(task.attempt?.review?.reason).toBe("exhausted");
+      expect(task.attempt?.review?.retryAt ?? null).toBeNull();
+      expect(task.retryAt ?? null).toBeNull();
+      const message = String(result.data?.message);
+      expect(message).toContain("the usage limit is reached");
+      expect(message).toContain(new Date(clock + 3_600_000).toISOString());
+    } finally {
+      restoreHooks();
+    }
+  }, 30_000);
+
+  test("a usage limit's reset time is counted from when the model reported it", async () => {
+    const reportedAt = 1_000;
+    const state = await fixture({
+      reviewerArgs: ["usage-limit", "--model", "primary"],
+      retrySecs: 120,
+      modelErrorReportedAt: reportedAt,
+    });
+    await verify(state);
+    const restoreHooks = useHooks({ now: () => 10_000 });
+    try {
+      const result = await review(state, "review-usage-limit-reported");
+      expect(result.result).toBe("exhausted");
+      expect(String(result.data?.message)).toContain(
+        new Date(reportedAt + 3_600_000).toISOString(),
+      );
+    } finally {
+      restoreHooks();
+    }
   }, 30_000);
 
   for (const mode of ["report-then-exit", "report-then-wall"]) {

@@ -121,8 +121,6 @@ export const CHAT_SOURCES = ["ios", "telegram", "cli", "tui"] as const;
 /** The event source of a message from a client the chat does not know by name. */
 export const OTHER_SOURCE = "other";
 
-export type ChatSource = (typeof CHAT_SOURCES)[number];
-
 /** Who wrote a message: the person, or the assistant. */
 export type MessageRole = "user" | "assistant";
 
@@ -1080,31 +1078,6 @@ export function entryOfFact(fact: PluginFact): Entry | undefined {
   return typeof data.text === "string" ? { ...base, text: data.text } : undefined;
 }
 
-/** One page of a chat's messages from `cursor`, and where the next page starts. */
-export function messagePage(
-  store: ObjectStore,
-  chat: string,
-  cursor: string | undefined,
-  limit: number,
-): { readonly messages: readonly Message[]; readonly next: string | undefined } {
-  const messages: Message[] = [];
-  let at = cursor;
-  for (;;) {
-    const page = store.facts(chatRef(chat), {
-      ...(at === undefined ? {} : { cursor: at }),
-      limit,
-    });
-    for (const fact of page.facts) {
-      const message = messageOfFact(fact);
-      if (message !== undefined) messages.push(message);
-    }
-    if (page.next === undefined || messages.length >= limit) {
-      return { messages, next: page.next };
-    }
-    at = page.next;
-  }
-}
-
 /** The messages among a chat's facts, with a person's changed text and withdrawal. */
 function messagesOfFacts(facts: readonly PluginFact[]): readonly Message[] {
   const changes = messageChangesOf(facts);
@@ -1143,16 +1116,21 @@ export function allEntries(store: ObjectStore, chat: string): readonly Entry[] {
   return entriesOfFacts(chatFacts(store, chat));
 }
 
-/** Every fact of a chat, oldest first. */
-export function chatFacts(store: ObjectStore, chat: string): readonly PluginFact[] {
+/** Every fact of one object, oldest first. */
+export function factsOf(store: ObjectStore, ref: ObjectRef): readonly PluginFact[] {
   const facts: PluginFact[] = [];
   let cursor: string | undefined;
   do {
-    const page = store.facts(chatRef(chat), { ...(cursor === undefined ? {} : { cursor }), limit: 500 });
+    const page = store.facts(ref, { ...(cursor === undefined ? {} : { cursor }), limit: 500 });
     facts.push(...page.facts);
     cursor = page.next;
   } while (cursor !== undefined);
   return facts;
+}
+
+/** Every fact of a chat, oldest first. */
+export function chatFacts(store: ObjectStore, chat: string): readonly PluginFact[] {
+  return factsOf(store, chatRef(chat));
 }
 
 /** Everything a reader needs from a chat's facts, from one scan. */

@@ -5,22 +5,9 @@ import { fileURLToPath } from "node:url";
 import { PluginRegistry } from "@operad-io/engine";
 import { createChatPlugin } from "@operad-io/chat";
 import plugin from "../../src/index.ts";
-import {
-  addPlan,
-  addRepository,
-  addTask,
-  claimWaitingTask,
-  getTask,
-  setTaskPhase,
-} from "../../src/service.ts";
+import { addPlan, addRepository, addTask, claimWaitingTask, getTask } from "../../src/service.ts";
 import { taskData, type TaskAttempt, type TaskData } from "../../src/model.ts";
-import {
-  cleanupTempRoots,
-  guardLockHandles,
-  makeGitRepository,
-  storeAt,
-  tempRoot,
-} from "../support.ts";
+import { cleanupTempRoots, guardLockHandles, makeGitRepository, storeAt, tempRoot, setTaskPhase } from "../support.ts";
 
 afterAll(cleanupTempRoots);
 guardLockHandles();

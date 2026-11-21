@@ -11,7 +11,7 @@
 
 import type { ObjectStore, StoredObject } from "@operad-io/engine";
 import {
-  bareId,
+  idOfKey,
   changeClock,
   listAll,
   parseId,
@@ -81,7 +81,7 @@ function linesOf(tasks: readonly StoredObject[]): Line[] {
     for (const round of taskData(object.data).reviewNotes ?? []) {
       for (const note of round.findings) {
         const key = JSON.stringify([note.file, note.line, textOf(note)]);
-        const line = { note, task: bareId(object.id), round: round.round };
+        const line = { note, task: idOfKey(object.id), round: round.round };
         const at = seen.get(key);
         if (at !== undefined) {
           lines[at] = line;
@@ -129,7 +129,7 @@ async function markCollected(
   for (const object of tasks) {
     const task = taskData(object.data);
     if (task.repository !== repository) continue;
-    if (!ids.includes(bareId(object.id)) || task.followups?.state !== "collect") continue;
+    if (!ids.includes(idOfKey(object.id)) || task.followups?.state !== "collect") continue;
     await store.put(
       "task",
       object.id,
@@ -170,7 +170,7 @@ export async function collectFollowups(
     for (const planObject of await listAll(store, "plan", { repository })) {
       const plan = planData(planObject.data);
       if (plan.status !== "confirmed") continue;
-      const planId = bareId(planObject.id);
+      const planId = idOfKey(planObject.id);
       const tasks = (await listAll(store, "task", { repository })).filter(
         (object) => taskData(object.data).plan === planId,
       );
@@ -194,11 +194,11 @@ export async function collectFollowups(
       if (lines.length === 0) continue;
       const taken = new Set<string>();
       for (const object of await listAll(store, "task", { repository })) {
-        const slug = parseId(bareId(object.id), "task")?.slug;
+        const slug = parseId(idOfKey(object.id), "task")?.slug;
         if (slug !== undefined) taken.add(slug);
       }
       const planSlug = parseId(planId, "plan")?.slug ?? "plan";
-      const ids = marked.map((object) => bareId(object.id));
+      const ids = marked.map((object) => idOfKey(object.id));
       const task = await addTaskLocked(
         store,
         {
@@ -214,7 +214,7 @@ export async function collectFollowups(
       );
       await followupTestHooks.afterPropose?.();
       await markCollected(store, repository, ids, marked);
-      proposed.push(bareId(task.id));
+      proposed.push(idOfKey(task.id));
     }
     return proposed;
   });

@@ -246,7 +246,7 @@ integrate step, when there is no test, review or human step, or when
 | `dev/reverify` | `ready`, `conflict`, `failed` | the first step of a reverify: fetches and merges the current main into the task branch in the existing worktree, keeping the attempt; `ready` goes to verify, `conflict` to the worker |
 | `dev/work` | `done`, `nothing`, `failed`, `waiting` | builds the worker prompt, runs the configured harness step in the worktree, then requires new commits, a clean tree and a pushed branch. A worker's own question that outlives its grace ends `waiting` and becomes a pending item on the task; its answer resumes the same worker |
 | `dev/verify` | `pass`, `fail`, `not_code` | recreates `<worktreeRoot>/<task id>-gate` detached at the branch head, runs `gate.commands` through `shell/check`, and records the verified commit. A check result that says nothing about the code (see Checks that are not the code) does not go to the worker: verify waits for a quiet machine, runs the check once more, and a second such result ends `not_code`, which waits for a person |
-| `dev/review` | `pass`, `fail`, `failed`, `unavailable`, `timed_out` | runs the reviewer harness step in the gate worktree on the diff from the merge base to the verified commit; the previous review is the newest report for another commit (see Rework rounds); in a rework round a finding far from the task's own change and from the previous review's findings is moved out of the failing set as pre-existing, while a critical one or one without a place still fails |
+| `dev/review` | `pass`, `fail`, `failed`, `unavailable`, `timed_out` | runs the reviewer harness step in the gate worktree on the diff from the merge base to the verified commit; the previous review is the newest report for another commit (see Rework rounds); in a rework round a finding far from the task's own change and from the previous review's findings is moved out of the failing set as pre-existing, while a critical one or one without a place still fails; an attempt whose work left `changed the main checkout: <files>` gets a `## The main checkout` section in its prompt and a major finding per named file added by dev itself, whatever the reviewer reported |
 | `dev/review_due` | `ready`, `interrupted` | the wait a review enters after a model was unavailable; it lets the flow run the same review round again at the recorded time |
 | `dev/retry` | `again`, `hold`, `ask`, `give_up`, `cancelled` | runs in front of the announcement of a work, worktree or reverify step that stopped. A stop that is not the task's own work (the run stopped, a process killed by a signal nobody sent, a step that is not loaded, settings that cannot be read) runs the step once more in the same attempt, without a person and without counting toward `maxAutoRework`; a work step that ended on a dropped connection to the harness or the model (the socket closed, a reset) is the same kind of stop, with the cause `model connection dropped during work`. A second stop, or a wait that ran out, goes to a person and the waiting line names the cause (for example `pool/agent is not loaded`) |
 | `dev/retry_due` | `ready`, `waiting`, `interrupted` | the wait a retry enters while a step is not loaded or the settings cannot be read; it ends when they are there, or after `retry.environmentWaitMinutes` (default 60) |
@@ -279,6 +279,19 @@ A conflict leaves the worktree mid-merge. The next `dev/work` prompt starts by
 asking the worker to resolve it. A failed attempt names the uncommitted files.
 The task records its attempt count, phase, session id and cost while these steps
 run.
+
+Before the worker starts, `dev/work` records the main checkout's `git status`
+and the content of the files it already calls changed. When the step ends, a
+change there that the worktree does not explain is named in the task's Changes,
+in the step's history and in the worker's answer as
+`changed the main checkout: <files>`: a new status entry, or a further edit to a
+file that was already changed there. The comparison is the step's own window,
+so a change another session makes in the main checkout while the worker runs is
+named too: `dev` cannot tell which process wrote a file. `dev` does not undo it.
+A review of that attempt gets, whatever the reviewer reported, a major finding
+per named file and a `## The main checkout` section that tells the reviewer to
+report it; the task goes to rework, where the work makes those changes in its
+own worktree instead.
 
 ### What a step cleans up
 
@@ -458,13 +471,20 @@ lines of its error output count only if one reads `HTTP 429`, `status 429` or
 does not. The same round runs once on `reviewer.fallback` at once; a list runs its
 entries in order, the next one after a fallback that is unavailable or does not
 write the report. If the repository sets no fallback, or every fallback failed, the task waits
-with `retryAt` set to `now + reviewer.retrySecs` and does not rework. When the
-time comes, `dev/review_due` lets the flow run the review again, with no new
-attempt and no other step. A round uses its fallback at most once: a retry that
-finds the primary unavailable again waits instead of trying the fallback a
-second time. A wait longer than one step run is split into pieces below the
-three-hour step timeout, so any positive `reviewer.retrySecs` is waited out and
-the review runs a model again only at `retryAt`.
+with `retryAt` set to the model's `retry_after_secs` from when it reported it when
+the model gave one, else to `now + reviewer.retrySecs`, and does not rework. When
+the time comes,
+`dev/review_due` lets the flow run the review again, with no new attempt and no
+other step. A round uses its fallback at most once: a retry that finds the
+primary unavailable again waits instead of trying the fallback a second time.
+A usage limit (`kind` `usage_limit`), or a `retry_after_secs` longer than
+`MAX_MODEL_RETRY_SECS` (30 minutes), is not waited out: the round ends
+`exhausted` and the task waits for a person at once, with the model's message
+and the time it resets, counted from when the model reported it. A wait longer
+than one step run is split into pieces
+below the three-hour step timeout, so a positive `reviewer.retrySecs` or
+`retry_after_secs` is waited out and the review runs a model again only at
+`retryAt`.
 
 The waits are bounded. A round waits at most 6 times (`MAX_REVIEW_WAITS`); the first wait is
 `reviewer.retrySecs` and each further wait doubles, up to 30 minutes (2, 4, 8, 16,

@@ -8,80 +8,55 @@
  */
 
 import pkg from "../package.json" with { type: "json" };
-import { hasLiveAccess, secretValuesOf, withDefaultAccess, type AccessProfile } from "@operad-io/access-match";
-import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
   isRecord,
-  paramsObject,
-  defineFlow,
   definePlugin,
-  AskTimeoutError,
-  type AgentResultData,
   type HarnessEfforts,
   type PluginStepResult,
   type StepContext,
 } from "@operad-io/engine";
 import {
-  ALLOW_ALWAYS,
-  accessWithAlwaysAllow,
-  alwaysAllowFromGrant,
-  appendAlwaysAllow,
-  answerGrant,
-  askFormRequest,
-  askToolEvent,
-  canAsk,
-  createCallAsker,
+  assertWorkerAvailable,
   CONCURRENCY_SETTING,
   createCachedProbe,
-  eventNote,
-  askNote,
+  DEFAULT_STALL_SECS,
+  DEFAULT_WALL_TIME_SECS,
   flagValue,
-  hasGrants,
-  keepKeyOf,
-  directoryError,
-  inboxOf,
-  optionalText,
-  resultValue,
-  parseStepFlags,
-  personStarted,
-  readAlwaysAllow,
-  recordTargetGrantFromAnswer,
-  resultFor,
-  secs,
-  stringListParam,
-  text,
   imageInputsOf,
-  operadToolsOf,
-  mountedServersOf,
-  JsonlLog,
-  deliverLine,
+  keepKeyOf,
+  MAX_WALL_TIME_SECS,
   modelLimit,
-  standardUsage,
-  StepTimings,
-  formAnswer,
-  withTimings,
-  type UsageSource,
-  runAgent,
+  mountedServersOf,
+  operadToolsOf,
+  optionalPositive,
+  optionalText,
+  parseStepFlags,
+  promptFlowOf,
+  readAgentStep,
+  runWorkerStep,
+  STALL_SETTING,
+  STEP_TIMEOUT_SECS,
+  stringListParam,
   systemClock,
+  text,
+  toolExecutionEvent,
+  WALL_TIME_SETTING,
   type Clock,
   type KeptRunOptions,
-  type ToolEvent,
 } from "@operad-io/harness-process";
 import { CLAUDE_FLOOR, DEFAULT_CLAUDE_COMMAND, claudeSignedIn, inspectClaude, sdkVersion } from "./claude-install.ts";
-import { DEFAULT_BASH_TIMEOUT_SECS, CLAUDE_CONTEXT_WINDOWS, EFFORT_LEVELS, type WorkerResult } from "./protocol.ts";
+import { DEFAULT_BASH_TIMEOUT_SECS, CLAUDE_CONTEXT_WINDOWS, EFFORT_LEVELS } from "./protocol.ts";
 
-/** How long an agent may run before the step stops it. */
-export const DEFAULT_WALL_TIME_SECS = 3600;
+export {
+  DEFAULT_STALL_SECS,
+  DEFAULT_WALL_TIME_SECS,
+  MAX_WALL_TIME_SECS,
+  STEP_TIMEOUT_SECS,
+};
 
-/** How long an agent may go without a new output line. */
-export const DEFAULT_STALL_SECS = 600;
-
-/** One run of the step may take this long; it is above every allowed wall time. */
-export const STEP_TIMEOUT_SECS = 8 * 3600;
-
-/** The longest wall time a run may ask for: the step timeout minus a margin. */
-export const MAX_WALL_TIME_SECS = STEP_TIMEOUT_SECS - 300;
+/** The tool call one claude line starts or settles, or undefined for another line. */
+export { toolExecutionEvent as claudeToolEvent } from "@operad-io/harness-process";
 
 /** How long the answer of `claude auth status` is kept before it is asked again. */
 export const SIGNED_IN_CACHE_MS = 30_000;
@@ -90,23 +65,6 @@ const WORKER_PATH = fileURLToPath(new URL("./worker.ts", import.meta.url));
 
 /** The name the plugin goes by in usage and limit keys. */
 const HARNESS = "claude";
-
-/**
- * Reads one worker line and reports the tool call it starts or settles. The
- * worker writes `tool_execution_start` and `tool_execution_end` under `type`.
- */
-export function claudeToolEvent(line: string): ToolEvent | undefined {
-  let value: unknown;
-  try {
-    value = JSON.parse(line);
-  } catch {
-    return undefined;
-  }
-  if (!isRecord(value)) return undefined;
-  if (value.type === "tool_execution_start") return "tool-start";
-  if (value.type === "tool_execution_end") return "tool-end";
-  return undefined;
-}
 
 /** What a test injects: the clock and the program the step starts. */
 export interface ClaudeHarnessOptions {
@@ -167,17 +125,6 @@ export const CLAUDE_MODELS = {
   info: CLAUDE_MODEL_INFO,
 } as const;
 
-/**
- * The efforts a chat may pick with this agent, and its own flag. The default is
- * the configured `effort` when there is one: claude's built-in default is not
- * known without guessing, so no default is declared otherwise.
- */
-export const CLAUDE_EFFORTS = {
-  list: EFFORT_LEVELS,
-  default: null,
-  flag: "--effort",
-} as const;
-
 function claudeEfforts(settings: Readonly<Record<string, unknown>>): HarnessEfforts {
   const configured = EFFORT_LEVELS.find((level) => level === settings.effort) ?? null;
   return { list: EFFORT_LEVELS, default: configured, flag: "--effort" };
@@ -226,33 +173,12 @@ export const PLUGIN_SETTINGS = {
       description:
         "The longest one Bash call may run, in seconds. Nothing runs in the background, so a long gate runs in the foreground within this time.",
     },
-    wallTimeSecs: {
-      type: "number" as const,
-      title: "Run time limit",
-      minimum: 1,
-      maximum: MAX_WALL_TIME_SECS,
-      default: DEFAULT_WALL_TIME_SECS,
-      description: "The longest one agent run may take.",
-    },
-    stallSecs: {
-      type: "number" as const,
-      title: "Stall limit",
-      minimum: 1,
-      default: DEFAULT_STALL_SECS,
-      description: "How long an agent may be silent while no tool call is open.",
-    },
+    wallTimeSecs: WALL_TIME_SETTING,
+    stallSecs: STALL_SETTING,
     concurrency: CONCURRENCY_SETTING,
   },
   additionalProperties: false as const,
 };
-
-function optionalNumber(value: unknown, at: string, integer: boolean): number | undefined {
-  if (value === undefined) return undefined;
-  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0 || (integer && !Number.isInteger(value))) {
-    throw new Error(`${at}: must be a positive ${integer ? "integer" : "number"}`);
-  }
-  return value;
-}
 
 /** The spelling of this harness's step `args`. */
 const STEP_FLAGS = { levelFlag: "--effort", levels: EFFORT_LEVELS, modelHint: "<name>" } as const;
@@ -281,40 +207,7 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
     return await signedInProbe(key, () => claudeSignedIn(commandSetting));
   }
 
-  const promptFlow = defineFlow({
-    name: "claude:prompt",
-    entry: "agent",
-    steps: [
-      {
-        id: "agent",
-        kind: "plugin",
-        params: { use: "claude/agent", params: {} },
-        replay: "unsafe",
-        next: { done: "done", failed: "failed", interrupted: "cancelled", waiting: "person" },
-      },
-      {
-        // A question about a call ran out of grace. The answer sends the run
-        // back to the agent, which continues the session with it.
-        id: "person",
-        kind: "wait_person",
-        params: {
-          prompt: "The agent asked about a call.",
-          choices: ["allow_once", "reject_once"],
-          lateChoices: ["allow_always"],
-        },
-        replay: "safe",
-        next: {
-          allow_once: "agent",
-          allow_always: "agent",
-          reject_once: "agent",
-          interrupted: "cancelled",
-        },
-      },
-      { id: "done", kind: "end", params: { status: "done" }, replay: "safe" },
-      { id: "failed", kind: "end", params: { status: "failed" }, replay: "safe" },
-      { id: "cancelled", kind: "end", params: { status: "cancelled" }, replay: "safe" },
-    ],
-  });
+  const promptFlow = promptFlowOf("claude:prompt", "claude/agent");
 
   return definePlugin({
     name: HARNESS,
@@ -343,129 +236,57 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
         }),
         async run(ctx: StepContext, params: unknown): Promise<PluginStepResult> {
           const at = "claude/agent";
-          const timings = new StepTimings(now);
-          const input = paramsObject(params, at);
-          const flow = isRecord(ctx.params) ? ctx.params : {};
+          let maxTurns: number | undefined;
+          let budgetUsd: number | undefined;
+          let bashTimeoutSecs: number | undefined;
+          let operadTools: ReturnType<typeof operadToolsOf>;
+          let skills: readonly string[] = [];
+          let ownSettings: unknown;
+          let mcpServers: ReturnType<typeof mountedServersOf>;
+          let images: readonly ReturnType<typeof imageInputsOf>[number][] = [];
+          let claudeCommand: string | undefined;
 
-          const prompt = text(input.prompt ?? flow.prompt, `${at}: params.prompt`);
-          const note = eventNote(ctx.trigger);
-          const rawAskAnswer = input.askAnswer ?? flow.askAnswer;
-          const answerNote = askNote(rawAskAnswer);
-          const promptWithNote = [prompt, note, answerNote]
-            .filter((part): part is string => part !== undefined)
-            .join("\n\n");
-          const cwd = text(input.cwd ?? flow.cwd, `${at}: params.cwd`);
-          const flags = parseStepFlags(
-            stringListParam(input.args === undefined ? flow.args : input.args, `${at}: params.args`),
-            STEP_FLAGS,
-          );
-          const settingModel = typeof ctx.settings.model === "string" ? ctx.settings.model : undefined;
-          // The model the step will use, known before anything can fail.
-          const knownModel =
-            typeof flags === "string"
-              ? (flagValue(input.args === undefined ? flow.args : input.args, "--model") ?? settingModel)
-              : (flags.model ?? settingModel);
-          const early: UsageSource = { harness: HARNESS, model: knownModel ?? null };
-          const refuse = async (reason: string, message: string): Promise<PluginStepResult> => {
-            const log = await ctx.logger.write(message);
-            const timing = timings.finish();
-            return withTimings({
-              result: "failed",
-              data: {
-                reason,
-                message,
-                exitCode: null,
-                signal: null,
-                sessionId: null,
-                finalMessage: null,
-                usage: standardUsage(early, undefined, null),
-                log,
-                durationMs: timing.totalMs,
-                stderr: [message],
-              },
-            }, timing);
-          };
-          if (typeof flags === "string") return refuse("invalid_args", `${at}: ${flags}`);
-
-          const resumeSession = optionalText(
-            input.resumeSession ?? flow.resumeSession,
-            `${at}: params.resumeSession`,
-          );
-          const wallTimeSecs = secs(
-            input.wallTimeSecs ?? ctx.settings.wallTimeSecs ?? DEFAULT_WALL_TIME_SECS,
-            `${at}: params.wallTimeSecs`,
-          );
-          if (wallTimeSecs > MAX_WALL_TIME_SECS) {
-            throw new Error(`${at}: params.wallTimeSecs: must be at most ${MAX_WALL_TIME_SECS}`);
-          }
-          const stallSecs = secs(
-            input.stallSecs ?? ctx.settings.stallSecs ?? DEFAULT_STALL_SECS,
-            `${at}: params.stallSecs`,
-          );
-          const model = flags.model ?? optionalText(ctx.settings.model, `${at}: settings.model`);
-          const effort =
-            flags.level ??
-            optionalText(input.effort, `${at}: params.effort`) ??
-            optionalText(ctx.settings.effort, `${at}: settings.effort`);
-          const maxTurns = optionalNumber(ctx.settings.maxTurns, `${at}: settings.maxTurns`, true);
-          const budgetUsd = optionalNumber(ctx.settings.budgetUsd, `${at}: settings.budgetUsd`, false);
-          const bashTimeoutSecs = optionalNumber(
-            ctx.settings.bashTimeoutSecs,
-            `${at}: settings.bashTimeoutSecs`,
-            true,
-          );
-
-          const cwdProblem = await directoryError(cwd);
-          if (cwdProblem !== undefined) return refuse("cwd", cwdProblem);
-
-          const operadTools = operadToolsOf(input.operadTools ?? flow.operadTools);
-          const skills = stringListParam(
-            input.skills === undefined ? flow.skills : input.skills,
-            `${at}: params.skills`,
-          );
-          const ownSettings = input.useOwnSettings ?? flow.useOwnSettings;
-          if (ownSettings !== undefined && typeof ownSettings !== "boolean") {
-            throw new Error(`${at}: params.useOwnSettings: must be a boolean`);
-          }
-          const mcpServers = mountedServersOf(input.mcpServers ?? flow.mcpServers);
-          const images = imageInputsOf(input.images ?? flow.images);
-          const claudeCommand = optionalText(ctx.settings.command, `${at}: settings.command`);
-          // A generated step that names no profile still starts from the default.
-          const startAccess = withDefaultAccess(ctx.access as AccessProfile | undefined);
-          const storeSecrets = await secretValuesOf(ctx.secrets);
-          const allowAlways = personStarted(ctx.trigger);
-          // A run no person's message started asks about every outward write.
-          const access = allowAlways ? startAccess : { ...startAccess, background: true };
-          if (allowAlways && isRecord(rawAskAnswer) && rawAskAnswer["choice"] === ALLOW_ALWAYS) {
-            const entry = alwaysAllowFromGrant(access, cwd);
-            if (entry !== undefined) {
-              try {
-                await appendAlwaysAllow(ctx.home, entry);
-              } catch (error) {
-                await ctx.logger.write(
-                  `allow_always could not be written to the user access file: ${String(error)}; this call runs once`,
-                );
-              }
-            }
-          }
-          if (ctx.flow !== undefined) {
-            try {
-              await recordTargetGrantFromAnswer(ctx.home, ctx.flow, access, rawAskAnswer, now);
-            } catch (error) {
-              await ctx.logger.write(
-                `the target grant could not be written: ${String(error)}; this call runs once`,
+          const step = await readAgentStep(ctx, params, {
+            at,
+            harness: HARNESS,
+            flags: STEP_FLAGS,
+            defaultWallTimeSecs: DEFAULT_WALL_TIME_SECS,
+            defaultStallSecs: DEFAULT_STALL_SECS,
+            maxWallTimeSecs: MAX_WALL_TIME_SECS,
+            levelSetting: "effort",
+            now,
+            beforeDirectory() {
+              maxTurns = optionalPositive(ctx.settings.maxTurns, `${at}: settings.maxTurns`, true);
+              budgetUsd = optionalPositive(ctx.settings.budgetUsd, `${at}: settings.budgetUsd`, false);
+              bashTimeoutSecs = optionalPositive(
+                ctx.settings.bashTimeoutSecs,
+                `${at}: settings.bashTimeoutSecs`,
+                true,
               );
-            }
-          }
-          let runAccess = accessWithAlwaysAllow(access, [], false);
-          if (allowAlways) {
-            const user = await readAlwaysAllow(ctx.home);
-            if (user.problem !== undefined) await ctx.logger.write(user.problem);
-            runAccess = accessWithAlwaysAllow(access, user.entries, true);
-          }
+            },
+            afterDirectory(read) {
+              operadTools = operadToolsOf(read.input.operadTools ?? read.flow.operadTools);
+              skills = stringListParam(
+                read.input.skills === undefined ? read.flow.skills : read.input.skills,
+                `${at}: params.skills`,
+              );
+              ownSettings = read.input.useOwnSettings ?? read.flow.useOwnSettings;
+              if (ownSettings !== undefined && typeof ownSettings !== "boolean") {
+                throw new Error(`${at}: params.useOwnSettings: must be a boolean`);
+              }
+              mcpServers = mountedServersOf(read.input.mcpServers ?? read.flow.mcpServers);
+              images = imageInputsOf(read.input.images ?? read.flow.images);
+              claudeCommand = optionalText(ctx.settings.command, `${at}: settings.command`);
+            },
+          });
+          if ("refused" in step) return step.refused;
+
+          const { values, access } = step;
+          const { resumeSession, wallTimeSecs, stallSecs, model, level: effort } = values;
+
           const stdin: Record<string, unknown> = {
-            prompt: promptWithNote,
-            cwd,
+            prompt: values.promptWithNote,
+            cwd: values.cwd,
             ...(claudeCommand === undefined ? {} : { command: claudeCommand }),
             ...(resumeSession === undefined ? {} : { resumeSession }),
             ...(model === undefined ? {} : { model }),
@@ -478,13 +299,12 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
             ...(images.length === 0 ? {} : { images }),
             ...(skills.length === 0 ? {} : { skills }),
             ...(ownSettings === true ? { useOwnSettings: true } : {}),
-            ...(runAccess === undefined ? {} : { access: runAccess }),
-            ...(storeSecrets.length === 0 ? {} : { secretValues: storeSecrets }),
+            ...(access.runAccess === undefined ? {} : { access: access.runAccess }),
+            ...(access.secrets.length === 0 ? {} : { secretValues: access.secrets }),
           };
 
-          const keepRequested = input.keepWorker === true;
           const keep: KeptRunOptions | undefined =
-            keepRequested && ctx.object !== undefined
+            values.input.keepWorker === true && ctx.object !== undefined
               ? {
                   home: ctx.home,
                   name: HARNESS,
@@ -496,78 +316,19 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
                 }
               : undefined;
 
-          const inbox = inboxOf(params);
-          const jsonl = new JsonlLog(ctx.logger, clock, now);
-          let result: WorkerResult | undefined;
-          // Ends the program when a question about a call runs out of grace.
-          const stopper = new AbortController();
-          const asker = createCallAsker({
-            ask: (request) => ctx.ask(request),
-            // The agent's own questions are one form the person fills in.
-            async askForm(form) {
-              try {
-                return formAnswer(await ctx.ask(askFormRequest(form)));
-              } catch (error) {
-                if (error instanceof AskTimeoutError) return { decision: "stop" };
-                throw error;
-              }
-            },
-            onStop: () => stopper.abort(),
-            secrets: storeSecrets,
-            ...(allowAlways ? { alwaysAllow: { home: ctx.home, cwd } } : {}),
-            ...(ctx.flow === undefined ? {} : { targetGrants: { home: ctx.home, flow: ctx.flow } }),
-            onLog: (message) => {
-              void ctx.logger.write(message);
-            },
-          });
-
-          const outcome = await runAgent({
+          return await runWorkerStep({
+            values,
+            access,
             command,
             args: commandArgs,
-            cwd,
-            stdin: JSON.stringify(stdin),
-            // The program may ask to use a one-time permission; it needs a reply.
-            // A live level can lower to one that asks, so keep the reply channel open.
-            interactive: hasGrants(access) || canAsk(access) || hasLiveAccess(access) || inbox !== undefined,
-            inbox,
-            ...(keep === undefined ? {} : { keep }),
-            wallMs: wallTimeSecs * 1000,
-            stallMs: stallSecs * 1000,
-            signal: AbortSignal.any([ctx.signal, stopper.signal]),
+            stdin,
+            keep,
             clock,
-            toolEvent: (line) => claudeToolEvent(line) ?? askToolEvent(line),
-            async onLine(line, reply) {
-              const received = jsonl.stamp(line);
-              timings.record(received.value, received.at);
-              await answerGrant(received.text, (waitId) => ctx.useGrant(waitId), reply);
-              await asker.handle(received.text, reply);
-              const writing = jsonl.pushStamped(received);
-              deliverLine(ctx.receiver, received.text, storeSecrets);
-              const parsed = resultValue<WorkerResult>(received.value);
-              if (parsed !== undefined) result = parsed;
-              return writing;
-            },
+            now,
+            toolEvent: toolExecutionEvent,
+            forms: true,
+            modelFromResult: true,
           });
-          await jsonl.end();
-
-          // The grace passed with a question open: the program was ended on
-          // purpose. The kernel turns this into the result `waiting`, and the
-          // answer comes back with the session and a one-time grant.
-          const unanswered = asker.stopped();
-          if (unanswered !== undefined && !ctx.signal.aborted) throw unanswered.error;
-
-          const timing = timings.finish();
-          const stepResult = resultFor(
-            // The step's own model, else the one claude reports having used.
-            { harness: HARNESS, model: model ?? result?.model ?? null },
-            outcome,
-            result,
-            ctx.logger.path,
-            timing.totalMs,
-            { wallTimeSecs, stallSecs },
-            command,
-          );
-          return withTimings(stepResult, timing);
         },
       },
     ],
@@ -577,12 +338,7 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
       // The user's own claude: found, version-checked and asked who is logged
       // in. Only the login kind is reported.
       const claude = inspectClaude(claudeCommand);
-      if (options.command === undefined && !existsSync(process.execPath)) {
-        throw new Error("bun was not found");
-      }
-      if (options.args === undefined && !existsSync(WORKER_PATH)) {
-        throw new Error(`the worker program is missing: ${WORKER_PATH}`);
-      }
+      assertWorkerAvailable({ command: options.command, args: options.args, workerPath: WORKER_PATH });
       const sdk = await sdkVersion();
       return (
         `claude ${claude.version} at ${claude.path} (floor ${CLAUDE_FLOOR}); ` +

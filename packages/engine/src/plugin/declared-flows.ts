@@ -5,14 +5,9 @@
  */
 
 import { createHash } from "node:crypto";
-import {
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  renameSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { writeJsonAtomicSync } from "../platform/index.ts";
 import type { FlowDefinition } from "../flow/types.ts";
 import { isRecord } from "../util.ts";
 
@@ -42,10 +37,8 @@ export function writeDeclaredFlow(
   const file = fileOf(root, flow.name);
   const directory = directoryOf(root);
   mkdirSync(directory, { recursive: true });
-  const temporary = `${file}.${process.pid}.tmp`;
   const record: StoredDeclaredFlow = { plugin, flow };
-  writeFileSync(temporary, `${JSON.stringify(record)}\n`, "utf8");
-  renameSync(temporary, file);
+  writeJsonAtomicSync(file, record);
 }
 
 /** Every declaration kept under the store root. A torn file says nothing. */

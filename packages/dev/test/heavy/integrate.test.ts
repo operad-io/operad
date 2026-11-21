@@ -22,27 +22,7 @@ import { fileURLToPath } from "node:url";
 import { defineFlow, SqlitePluginStore, PluginRegistry } from "@operad-io/engine";
 import { OUTWARD_ALLOW_TARGET, readTargetGrants } from "@operad-io/access-match";
 import { createShellPlugin } from "@operad-io/shell";
-import {
-  addPlan,
-  addRepository,
-  addTask,
-  cancelPlan,
-  cancelTask,
-  confirmPlan,
-  createDevPlugin,
-  getPlan,
-  integrateTestHooks,
-  planData,
-  planState,
-  schedulerTestHooks,
-  setAuto,
-  setTaskPhase,
-  taskData,
-  taskRowState,
-  taskViews,
-  type IntegrationStyle,
-  type TaskData,
-} from "../../src/index.ts";
+import { addPlan, addRepository, addTask, cancelPlan, cancelTask, confirmPlan, createDevPlugin, getPlan, integrateTestHooks, planData, planState, schedulerTestHooks, setAuto, taskData, taskRowState, taskViews, type IntegrationStyle, type TaskData } from "../../src/index.ts";
 import {
   advanceMain,
   commitIn,
@@ -51,13 +31,7 @@ import {
   makeRemote,
   type RemoteSetup,
 } from "../git-support.ts";
-import {
-  cleanupTempRoots,
-  guardLockHandles,
-  osTempRoot,
-  storeAt,
-  tempRoot,
-} from "../support.ts";
+import { cleanupTempRoots, guardLockHandles, osTempRoot, storeAt, tempRoot, setTaskPhase } from "../support.ts";
 
 afterAll(cleanupTempRoots);
 afterEach(() => {

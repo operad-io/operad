@@ -5,15 +5,11 @@
  */
 
 import { messageOf } from "@operad-io/engine";
-import { createHash } from "node:crypto";
 import {
   existsSync,
-  mkdirSync,
   readFileSync,
   realpathSync,
   statSync,
-  renameSync,
-  writeFileSync,
 } from "node:fs";
 import {
   basename,
@@ -33,7 +29,9 @@ import {
   type WorkerDefinition,
 } from "@operad-io/pool";
 import { defaultOperadHome, isRecord } from "@operad-io/engine";
+import { writeJsonAtomicSync } from "@operad-io/engine/platform";
 import { DevError, type AutoMode } from "./model.ts";
+import { repositoryPathKey } from "./repository-key.ts";
 import {
   type DevFlowSpec,
   type DevFlows,
@@ -1581,7 +1579,7 @@ function readSettingsNow(repositoryPath: string): ReadSettings {
 const lastValid = new Map<string, ReadSettings>();
 
 function keptFile(home: string, repositoryPath: string): string {
-  const key = createHash("sha1").update(repositoryPath).digest("hex");
+  const key = repositoryPathKey(repositoryPath);
   return join(home, "dev", "settings", `${key}.json`);
 }
 
@@ -1598,10 +1596,11 @@ function keep(repositoryPath: string, read: ReadSettings): void {
   if (home === undefined) return;
   try {
     const file = keptFile(home, repositoryPath);
-    mkdirSync(dirname(file), { recursive: true });
-    const temporary = `${file}.${process.pid}.tmp`;
-    writeFileSync(temporary, JSON.stringify({ path: repositoryPath, text: read.text }));
-    renameSync(temporary, file);
+    writeJsonAtomicSync(
+      file,
+      { path: repositoryPath, text: read.text },
+      { newline: false },
+    );
   } catch {
     // The copy is a convenience for the next process; the memory copy stays.
   }
@@ -1701,9 +1700,6 @@ export function settingsProblem(repositoryPath: string): string | undefined {
 export function hasValidSettings(repositoryPath: string): boolean {
   return recall(repositoryPath) !== undefined;
 }
-
-/** An alias for callers that name the file rather than the plugin. */
-export const readRepositorySettings = readDevSettings;
 
 /** The absolute path of the brief a worker reads, whether it exists or not. */
 export function workerBriefPath(

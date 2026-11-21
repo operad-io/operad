@@ -1,12 +1,17 @@
 /** The objects the dev plugin owns, and the pure rules that change them. */
 
-import type { FlowDefinition, ObjectStore, StoredObject } from "@operad-io/engine";
+import type {
+  FlowDefinition,
+  ObjectStore,
+  PluginFact,
+  StoredObject,
+} from "@operad-io/engine";
 import type { ReviewHistoryEntry, ReviewSettingsUsed } from "./rework.ts";
+import type { ModelErrorInfo } from "./model-error.ts";
 import type { WaitKind } from "./waits.ts";
 import { isRecord, oneLine } from "@operad-io/engine";
 
-/**
- * Every object of a type, following the store's pages. The store returns one
+/** Every object of a type, following the store's pages. The store returns one
  * page at a time; an id scan must not stop at its default limit.
  */
 export async function listAll(
@@ -23,6 +28,24 @@ export async function listAll(
     });
     objects.push(...page.objects);
     if (page.next === undefined) return objects;
+    cursor = page.next;
+  }
+}
+
+/** Every fact of one object, following the store's pages. */
+export async function allFactsOf(
+  store: ObjectStore,
+  object: Pick<StoredObject, "type" | "id">,
+): Promise<PluginFact[]> {
+  const facts: PluginFact[] = [];
+  let cursor: string | undefined;
+  for (;;) {
+    const page = await store.facts(
+      { type: object.type, id: object.id },
+      cursor === undefined ? {} : { cursor },
+    );
+    facts.push(...page.facts);
+    if (page.next === undefined) return facts;
     cursor = page.next;
   }
 }
@@ -242,6 +265,8 @@ export interface ReviewRunRecord {
   readonly outcome: ReviewRunOutcome;
   readonly run?: string | null;
   readonly message?: string | null;
+  /** What the model error said, when this run ended on one. */
+  readonly modelError?: ModelErrorInfo | null;
   /** The findings a report run returned, with pre-existing marks. */
   readonly findings?: readonly ReviewFinding[] | null;
   readonly verified?: readonly string[] | null;
@@ -722,7 +747,7 @@ function numberById(
   let highest = 0;
   for (const object of objects) {
     // The store key carries the repository; the number lives in the bare id.
-    const parsed = parseId(bareId(object.id), kind);
+    const parsed = parseId(idOfKey(object.id), kind);
     if (parsed !== undefined && parsed.number > highest) {
       highest = parsed.number;
     }
@@ -740,7 +765,7 @@ export function storeKey(repository: string, id: string): string {
 }
 
 /** The id a person sees and types: the key without its repository prefix. */
-export function bareId(key: string): string {
+export function idOfKey(key: string): string {
   const at = key.indexOf("/");
   return at < 0 ? key : key.slice(at + 1);
 }
@@ -756,7 +781,7 @@ export function dependencyKey(repository: string, entry: string): string {
 
 /** How a dependency is named in a note: bare in its own repository. */
 export function dependencyLabel(repository: string, key: string): string {
-  return keyRepository(key) === repository ? bareId(key) : key;
+  return keyRepository(key) === repository ? idOfKey(key) : key;
 }
 
 /** The repository part of a store key. */
@@ -1035,16 +1060,6 @@ export function briefBody(brief: string): string {
   return splitBrief(brief).body;
 }
 
-/** The Markdown of the rework sections, without the changes section. */
-export function reworkBody(brief: string): string {
-  return splitBrief(brief).reworks;
-}
-
-/** The Markdown of the trailing changes section. */
-export function changesBody(brief: string): string {
-  return splitBrief(brief).changes;
-}
-
 /** Replaces the body and records the edit, unless the body did not change. */
 export function editBrief(brief: string, body: string): string {
   if (briefBody(brief) === body.replace(/\r\n/g, "\n").trimEnd()) return brief;
@@ -1150,21 +1165,8 @@ export function planNote(plan: PlanData): string {
   return `${parts.join(" · ")} // ${plan.concurrency}`;
 }
 
-export function planDataOf(data: Record<string, unknown>): PlanData {
-  return planData(data);
-}
-
-export function taskDataOf(data: Record<string, unknown>): TaskData {
-  return taskData(data);
-}
-
 export function priorityIndex(priority: Priority): number {
   return PRIORITIES.indexOf(priority);
-}
-
-export function higherPriority(priority: Priority): Priority | undefined {
-  const index = priorityIndex(priority);
-  return index <= 0 ? undefined : PRIORITIES[index - 1];
 }
 
 /** A task is open until it merged or was cancelled. */

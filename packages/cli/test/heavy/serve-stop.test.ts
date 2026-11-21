@@ -17,17 +17,20 @@ import {
   serveStop,
 } from "../../src/serve-stop.ts";
 import { cleanupTempRoots, tempRoot } from "../../../engine/test/plugin/support.ts";
+import {
+  freePort,
+  makeHome as makeTestHome,
+} from "@operad-io/engine/testing";
+import { operad, type OperadResult as Result } from "@operad-io/test-support";
 
 afterAll(cleanupTempRoots);
 
 const CLI_ENTRY = fileURLToPath(new URL("../../bin/operad.ts", import.meta.url));
 const IGNORE_TERM = fileURLToPath(new URL("../fixtures/ignore-term.ts", import.meta.url));
 
-async function makeHome(): Promise<{ root: string; home: string; lock: string }> {
-  const root = await tempRoot();
-  const home = join(root, "home");
-  mkdirSync(home, { recursive: true });
-  return { root, home, lock: join(home, "serve.lock") };
+async function makeStopHome(): Promise<{ root: string; home: string; lock: string }> {
+  const made = await makeTestHome();
+  return { ...made, lock: join(made.home, "serve.lock") };
 }
 
 function writeLock(path: string, pid: number): void {
@@ -43,36 +46,6 @@ async function waitGone(pid: number, ms: number): Promise<boolean> {
   return !pidAlive(pid);
 }
 
-async function freePort(): Promise<number> {
-  const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response("") });
-  const port = server.port;
-  await server.stop(true);
-  if (port === undefined) throw new Error("no free port");
-  return port;
-}
-
-interface Result {
-  readonly code: number;
-  readonly out: string;
-  readonly err: string;
-}
-
-async function operad(home: string, args: readonly string[]): Promise<Result> {
-  const child = Bun.spawn({
-    cmd: [process.execPath, CLI_ENTRY, ...args],
-    cwd: home,
-    env: { ...testEnv(), OPERAD_HOME: home },
-    stdin: "ignore",
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  const [code, out, err] = await Promise.all([
-    child.exited,
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-  ]);
-  return { code, out, err };
-}
 
 async function until(
   child: Bun.Subprocess<"ignore", "pipe", "pipe">,
@@ -112,14 +85,14 @@ function spawnIdleWorker(argument: string): IdleWorker {
 
 describe("operad serve stop", () => {
   test("no lock: says so and exits 0", async () => {
-    const { home } = await makeHome();
+    const { home } = await makeStopHome();
     const result = await operad(home, ["serve", "stop"]);
     expect(result.code).toBe(0);
     expect(result.out).toBe(`no operad serve runs for ${home}\n`);
   });
 
   test("kept workers of the home end even when no serve is running", async () => {
-    const { home } = await makeHome();
+    const { home } = await makeStopHome();
     const slot = newKeptWorkerSlot(home, "pi");
     const worker = spawnIdleWorker(keptWorkerArgument(slot.token));
     const pid = worker.pid;
@@ -149,7 +122,7 @@ describe("operad serve stop", () => {
   });
 
   test("serve shutdown ends the home's kept workers", async () => {
-    const { root, home } = await makeHome();
+    const { root, home } = await makeStopHome();
     writeFileSync(
       join(home, "config.json"),
       JSON.stringify({
@@ -220,7 +193,7 @@ describe("operad serve stop", () => {
   }, 30_000);
 
   test("a stale lock: says so, exits 0, signals nothing and leaves the file", async () => {
-    const { home, lock } = await makeHome();
+    const { home, lock } = await makeStopHome();
     const gone = Bun.spawn({ cmd: ["true"], stdout: "ignore", stderr: "ignore" });
     await gone.exited;
     writeLock(lock, gone.pid);
@@ -242,7 +215,7 @@ describe("operad serve stop", () => {
   });
 
   test("stops a real serve: the lock is gone and the process has exited", async () => {
-    const { root, home, lock } = await makeHome();
+    const { root, home, lock } = await makeStopHome();
     const port = await freePort();
     writeFileSync(
       join(home, "config.json"),
@@ -278,7 +251,7 @@ describe("operad serve stop", () => {
   }, 30_000);
 
   test("a ps that answers nothing for a live serve is asked again, then the serve is stopped", async () => {
-    const { home, lock } = await makeHome();
+    const { home, lock } = await makeStopHome();
     writeLock(lock, 4242);
     let alive = true;
     let asks = 0;
@@ -302,7 +275,7 @@ describe("operad serve stop", () => {
   });
 
   test("a ps that never answers for a live process refuses without signalling", async () => {
-    const { home, lock } = await makeHome();
+    const { home, lock } = await makeStopHome();
     writeLock(lock, 4242);
     const signalled: number[] = [];
     let asks = 0;
@@ -329,7 +302,7 @@ describe("operad serve stop", () => {
   });
 
   test("a process that dies during the empty answers is a lock with no serve, not a refusal", async () => {
-    const { home, lock } = await makeHome();
+    const { home, lock } = await makeStopHome();
     writeLock(lock, 4242);
     const written: string[] = [];
     const signalled: number[] = [];
@@ -352,7 +325,7 @@ describe("operad serve stop", () => {
   });
 
   test("refuses a live process that is not a serve, and never signals it", async () => {
-    const { home, lock } = await makeHome();
+    const { home, lock } = await makeStopHome();
     const other = Bun.spawn({ cmd: ["sleep", "300"], stdout: "ignore", stderr: "ignore" });
     try {
       writeLock(lock, other.pid);
@@ -371,7 +344,7 @@ describe("operad serve stop", () => {
   });
 
   test("--timeout: a serve that ignores SIGTERM is an error that says how to force it", async () => {
-    const { home, lock } = await makeHome();
+    const { home, lock } = await makeStopHome();
     const stubborn = spawnReady([process.execPath, IGNORE_TERM, "serve"]);
     try {
       await until(stubborn, "ready");
@@ -389,7 +362,7 @@ describe("operad serve stop", () => {
   }, 30_000);
 
   test("--timeout takes a whole number of seconds, at least 1", async () => {
-    const { home } = await makeHome();
+    const { home } = await makeStopHome();
     for (const args of [
       ["--timeout", "0"],
       ["--timeout"],
@@ -416,7 +389,7 @@ describe("operad serve stop", () => {
   });
 
   test("a bare serve still takes no arguments", async () => {
-    const { home } = await makeHome();
+    const { home } = await makeStopHome();
     const result = await operad(home, ["serve", "now"]);
     expect(result.code).toBe(2);
     expect(result.err).toContain("serve takes no arguments");

@@ -1349,3 +1349,23 @@ resume window`. Rows are append-only, so the old lines stay as history.
 | T-0644-M1 | packages/engine/src/trigger/kernel.ts | `refusedStarts` read the whole runs table again instead of trusting the start-route query | `refusedStarts reads only the start routes without a run` |
 | T-0644-M2 | packages/engine/src/runner/service.ts | `appendInput` did not keep the state it had just evolved from the appended facts | `appendInput keeps the state it appended` |
 | T-0644-M3 | packages/engine/src/runner/service.ts | `readState` kept returning an ended run's cached state | `an ended run's state is not kept` |
+
+## T-0625 — one atomic write across the workspace
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0625-M1 | packages/engine/src/config/config.ts | `setPluginEnabled` wrote config.json with a plain `writeFile` instead of the atomic write | `enabling a plugin writes config.json whole > a writer killed before the rename leaves the old config whole` |
+| T-0625-M2 | packages/engine/src/platform/atomic-write.ts | the temporary name dropped the pid and the random value, so two writers shared `${file}.tmp` | `enabling a plugin writes config.json whole > two writers at once both leave valid JSON` |
+
+## T-0627 — a version text for the shared comparison
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0627-M5 | packages/engine/src/plugin/semver.ts | `compareVersionText` stopped after the core and made every prerelease equal to its release | `compareVersionText > puts a prerelease below its release` |
+
+## T-0655 — config writes the reviews found untested
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0655-M1 | packages/engine/src/config/config.ts | `addPluginEntry` wrote config.json with a plain `writeFile` instead of the atomic write | `writing config.json whole > adding a plugin entry writes the file atomically` |
+| T-0655-M2 | packages/engine/src/config/config.ts | `addDefaultPlugins` wrote config.json with a plain `writeFile` instead of the atomic write | `writing config.json whole > filling a missing plugins section writes the file atomically` |

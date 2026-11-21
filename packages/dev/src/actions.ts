@@ -6,10 +6,11 @@ import type {
   ObjectStore,
   StoredObject,
 } from "@operad-io/engine";
+import { isRecord } from "@operad-io/engine";
 import {
   appendChange,
   appendRework,
-  bareId,
+  idOfKey,
   DevError,
   DevRefusal,
   isIntegrating,
@@ -64,7 +65,7 @@ async function planOfTask(
 /** What a task action's line needs to know about the task. */
 async function taskFacts(store: ObjectStore, object: StoredObject): Promise<Facts> {
   const task = taskData(object.data);
-  const id = bareId(object.id);
+  const id = idOfKey(object.id);
   return task.phase === "proposed"
     ? { id, plan: await planOfTask(store, task) }
     : { id };
@@ -93,14 +94,14 @@ export function planRefusal(
   action: PlanActionName,
   object: StoredObject,
 ): string | undefined {
-  const said = planLine(action, planData(object.data), { id: bareId(object.id) });
+  const said = planLine(action, planData(object.data), { id: idOfKey(object.id) });
   return said?.kind === "refuse" ? said.text : undefined;
 }
 
 /** Whether a set-a-value action gets the value the plan already has. */
 function sameValue(action: PlanActionName, plan: PlanData, args: unknown): string | number | undefined {
   const given =
-    typeof args === "object" && args !== null ? (args as Record<string, unknown>) : {};
+    isRecord(args) ? args : {};
   if (action === "auto" && given.level === plan.auto) return plan.auto;
   if (action === "priority" && given.level === plan.priority) return plan.priority;
   if (action === "concurrency" && given.count === plan.concurrency) return plan.concurrency;
@@ -116,7 +117,7 @@ const planWhy = (action: PlanActionName) =>
 /** The line for a task action whose result is already true. */
 const taskSettled = (action: TaskActionName) =>
   (object: StoredObject): string | undefined => {
-    const said = taskLine(action, taskData(object.data), { id: bareId(object.id) });
+    const said = taskLine(action, taskData(object.data), { id: idOfKey(object.id) });
     return said?.kind === "done" ? said.text : undefined;
   };
 
@@ -125,7 +126,7 @@ const planSettled = (action: PlanActionName) =>
   (object: StoredObject, args: unknown): string | undefined => {
     const plan = planData(object.data);
     const value = sameValue(action, plan, args);
-    const said = planLine(action, plan, { id: bareId(object.id), value }, value !== undefined);
+    const said = planLine(action, plan, { id: idOfKey(object.id), value }, value !== undefined);
     return said?.kind === "done" ? said.text : undefined;
   };
 
@@ -186,10 +187,10 @@ function enumArgument<T extends string>(
   field: string,
   allowed: readonly T[],
 ): T {
-  if (typeof args !== "object" || args === null) {
+  if (!isRecord(args)) {
     throw new DevError(field, `must be one of ${allowed.join(", ")}`);
   }
-  const raw = (args as Record<string, unknown>)[field];
+  const raw = args[field];
   if (typeof raw !== "string" || !(allowed as readonly string[]).includes(raw)) {
     throw new DevError(field, `must be one of ${allowed.join(", ")}`);
   }
@@ -250,7 +251,7 @@ async function claimAndAnswer(
   // action that starts after a competing one wrote must still lose.
   const seen = ctx.object.version ?? object.version;
   if (ctx.answer === undefined) {
-    throw new DevRefusal(`${bareId(ctx.object.id)} is not waiting for an answer now`);
+    throw new DevRefusal(`${idOfKey(ctx.object.id)} is not waiting for an answer now`);
   }
   const claim = await claimWaitingTask(
     ctx.store,
@@ -288,7 +289,7 @@ const mergeTask: ActionTypeDefinition = {
         // The merge step would refuse later, in the background; say so now.
         throw new DevError(
           "merge",
-          `${bareId(ctx.object.id)} has no verified commit; run operad dev:reverify ${bareId(ctx.object.id)} first`,
+          `${idOfKey(ctx.object.id)} has no verified commit; run operad dev:reverify ${idOfKey(ctx.object.id)} first`,
         );
       }
       return { ...latest, brief: appendChange(latest.brief, "merge requested") };
@@ -433,9 +434,7 @@ const repoAddAction: ActionTypeDefinition = {
   },
   async run(ctx, args) {
     const given =
-      typeof args === "object" && args !== null
-        ? (args as Record<string, unknown>)
-        : {};
+      isRecord(args) ? args : {};
     const path = given.path;
     const name = given.name;
     if (typeof path !== "string") {
@@ -504,7 +503,7 @@ export const actions: readonly ActionTypeDefinition[] = [
       });
       return cancelled.merged.length === 0
         ? undefined
-        : `${cancelled.merged.map(bareId).join(", ")} merged before the cancel and stays merged`;
+        : `${cancelled.merged.map(idOfKey).join(", ")} merged before the cancel and stays merged`;
     },
   },
   {
@@ -614,7 +613,7 @@ export const actions: readonly ActionTypeDefinition[] = [
     async run(ctx, args) {
       const level = enumArgument(args, "level", PRIORITIES);
       await setPriority(ctx.store, ctx.object.id, level);
-      const id = bareId(ctx.object.id);
+      const id = idOfKey(ctx.object.id);
       if (planData((await getPlan(ctx.store, ctx.object.id)).data).auto === "off") {
         return `${id} has auto off: the scheduler does not start its tasks; run operad dev:auto ${id} --level merge`;
       }
@@ -645,10 +644,7 @@ export const actions: readonly ActionTypeDefinition[] = [
     why: planWhy("concurrency"),
     settled: planSettled("concurrency"),
     async run(ctx, args) {
-      const count =
-        typeof args === "object" && args !== null
-          ? (args as Record<string, unknown>).count
-          : undefined;
+      const count = isRecord(args) ? args.count : undefined;
       await setConcurrency(ctx.store, ctx.object.id, validatePlanConcurrency(count));
     },
   },

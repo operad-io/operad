@@ -7,23 +7,9 @@ import poolPlugin from "@operad-io/pool";
 import { createChatPlugin } from "@operad-io/chat";
 import plugin from "../../src/index.ts";
 import { schedulerTestHooks } from "../../src/schedule.ts";
-import {
-  addPlan,
-  addRepository,
-  addTask,
-  confirmPlan,
-  getTask,
-  setAuto,
-  setTaskPhase,
-} from "../../src/service.ts";
+import { addPlan, addRepository, addTask, confirmPlan, getTask, setAuto } from "../../src/service.ts";
 import { taskData, type RepositoryData } from "../../src/model.ts";
-import {
-  cleanupTempRoots,
-  guardLockHandles,
-  makeGitRepository,
-  storeAt,
-  tempRoot,
-} from "../support.ts";
+import { cleanupTempRoots, guardLockHandles, makeGitRepository, storeAt, tempRoot, setTaskPhase } from "../support.ts";
 
 afterAll(cleanupTempRoots);
 guardLockHandles();

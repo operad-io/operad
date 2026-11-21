@@ -20,7 +20,7 @@ import {
   type SourceContext,
 } from "@operad-io/engine";
 import { fakeClock, type FakeClock } from "@operad-io/engine/testing";
-import devPlugin, { addPlan, addRepository, addTask, confirmPlan, getTask, setTaskPhase, taskData } from "@operad-io/dev";
+import devPlugin, { addPlan, addRepository, addTask, confirmPlan, getTask, moveTaskPhase, taskData } from "@operad-io/dev";
 import {
   PendingSender,
   ReplySender,
@@ -562,7 +562,8 @@ test("a wait created after the pending sender's first pass still sends its card"
   await addTask(w.store, { plan: plan.id, slug: "first", title: "First" });
   await confirmPlan(w.store, plan.id);
   const waiting = await addTask(w.store, { plan: plan.id, slug: "third", title: "Third" });
-  await setTaskPhase(w.store, waiting.id, "waiting");
+  const waitingPhase = taskData((await getTask(w.store, waiting.id)).data).phase;
+  await moveTaskPhase(w.store, waiting.id, waitingPhase, "waiting");
   const current = taskData((await getTask(w.store, waiting.id)).data);
   await w.store.put("task", waiting.id, { ...current, attempt: { number: 1, run: "run-1", verified: "abc123" } }, "test:verified");
 
@@ -594,7 +595,8 @@ test("a proposed task and a task waiting for a merge are answered from Telegram 
   const proposed = await addTask(w.store, { plan: plan.id, slug: "second", title: "Second", openedBy: "dev" });
   // A task whose review is done waits for a merge, as a run of its flow would leave it.
   const waiting = await addTask(w.store, { plan: plan.id, slug: "third", title: "Third" });
-  await setTaskPhase(w.store, waiting.id, "waiting");
+  const waitingPhase = taskData((await getTask(w.store, waiting.id)).data).phase;
+  await moveTaskPhase(w.store, waiting.id, waitingPhase, "waiting");
   const current = taskData((await getTask(w.store, waiting.id)).data);
   await w.store.put("task", waiting.id, { ...current, attempt: { number: 1, run: "run-1", verified: "abc123" } }, "test:verified");
   const started = await w.kernel.start({ flow: "waits:review", object: `task:${waiting.id}` });

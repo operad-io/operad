@@ -1,3 +1,4 @@
+import { alive } from "@operad-io/engine/testing";
 import { killProcessGroup } from "@operad-io/engine/platform";
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -11,15 +12,6 @@ const leak = join(import.meta.dir, "leak.fixture.ts");
 
 function scratch(): string {
   return mkdtempSync(join(tmpdir(), "stress-test-"));
-}
-
-function alive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 describe("scripts/stress.sh", () => {
@@ -218,6 +210,40 @@ test("stubborn", async () => {
     } finally {
       runner.kill("SIGKILL");
       if (pids[0] !== undefined) killProcessGroup(pids[0], "SIGKILL");
+    }
+  }, 60000);
+
+  test("SIGTERM stops a watcher's sleep with the watcher", async () => {
+    const run = spawnStress(["--runs", "100000", "--load", "1", steady]);
+    try {
+      const sleepPid = await waitForWatcherSleep(run.pid);
+      process.kill(run.pid, "SIGTERM");
+      expect(await run.child.exited).toBe(143);
+      await expectGone([sleepPid], 1000);
+    } finally {
+      run.kill();
+    }
+  }, 60000);
+
+  test("a normal stop does not wait out the grace when the children end at once", async () => {
+    const dir = scratch();
+    const rc = join(dir, "bash-env.sh");
+    writeFileSync(
+      rc,
+      `sleep() {
+  if [ "$1" = "0.2" ]; then command sleep 30; else command sleep "$@"; fi
+}
+`,
+    );
+    const run = spawnStress(["--runs", "1", "--no-lock", steady], { BASH_ENV: rc });
+    try {
+      const result = await Promise.race([
+        run.child.exited,
+        Bun.sleep(10000).then(() => "timeout" as const),
+      ]);
+      expect(result).toBe(0);
+    } finally {
+      run.kill();
     }
   }, 60000);
 
@@ -504,6 +530,40 @@ async function readReady(stream: ReadableStream<Uint8Array>): Promise<number[]> 
     if (m) return (m[1] ?? "").split(" ").map(Number);
   }
   throw new Error("the runner ended before it was ready");
+}
+
+interface ProcessRow {
+  readonly pid: number;
+  readonly ppid: number;
+  readonly command: string;
+}
+
+function processTable(): ProcessRow[] {
+  const ps = Bun.spawnSync(["ps", "-axo", "pid=,ppid=,command="], { stderr: "ignore", stdout: "pipe" });
+  if (ps.exitCode !== 0) throw new Error("ps failed");
+  const rows: ProcessRow[] = [];
+  for (const line of ps.stdout.toString().split("\n")) {
+    const m = /^\s*(\d+)\s+(\d+)\s+(.*)$/.exec(line);
+    const pid = m?.[1];
+    const ppid = m?.[2];
+    const command = m?.[3];
+    if (pid === undefined || ppid === undefined || command === undefined) continue;
+    rows.push({ pid: Number(pid), ppid: Number(ppid), command });
+  }
+  return rows;
+}
+
+/** Waits for the parent watcher's sleep, a grandchild of the script. */
+async function waitForWatcherSleep(scriptPid: number): Promise<number> {
+  const deadline = Date.now() + 3000;
+  for (;;) {
+    const processes = processTable();
+    const watchers = new Set(processes.filter((p) => p.ppid === scriptPid).map((p) => p.pid));
+    const sleep = processes.find((p) => watchers.has(p.ppid) && /(^|\/)sleep 2$/.test(p.command));
+    if (sleep !== undefined) return sleep.pid;
+    if (Date.now() > deadline) throw new Error("the parent watcher did not start a sleep");
+    await Bun.sleep(5);
+  }
 }
 
 /** A pid that is not a child has no exit event; wait for it with a bound. */

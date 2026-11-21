@@ -4,27 +4,11 @@ import { PluginRegistry } from "@operad-io/engine";
 import poolPlugin from "@operad-io/pool";
 import { createChatPlugin } from "@operad-io/chat";
 import plugin from "../../src/index.ts";
-import {
-  addPlan,
-  addRepository,
-  addTask,
-  confirmPlan,
-  removeRepository,
-  getTask,
-  setAuto,
-  setTaskPhase,
-  updateTask,
-} from "../../src/service.ts";
+import { addPlan, addRepository, addTask, confirmPlan, removeRepository, getTask, setAuto, updateTask } from "../../src/service.ts";
 import { taskViews } from "../../src/views.ts";
-import { bareId, taskData, type RepositoryData } from "../../src/model.ts";
+import { idOfKey, taskData, type RepositoryData } from "../../src/model.ts";
 import { schedulerTestHooks } from "../../src/schedule.ts";
-import {
-  cleanupTempRoots,
-  guardLockHandles,
-  makeGitRepository,
-  storeAt,
-  tempRoot,
-} from "../support.ts";
+import { cleanupTempRoots, guardLockHandles, makeGitRepository, storeAt, tempRoot, setTaskPhase } from "../support.ts";
 
 afterAll(cleanupTempRoots);
 afterEach(() => {
@@ -71,7 +55,7 @@ describe("--after across plans and repositories", () => {
     const planA = await s.plan(s.main, "a");
     const planB = await s.plan(s.main, "b");
     const first = await s.task(planA, "first");
-    const second = await s.task(planB, "second", [bareId(first)]);
+    const second = await s.task(planB, "second", [idOfKey(first)]);
     expect(taskData((await getTask(s.store, second)).data).after).toEqual([first]);
     await confirmPlan(s.store, planA);
     await confirmPlan(s.store, planB);
@@ -79,8 +63,8 @@ describe("--after across plans and repositories", () => {
     await s.tick();
     const blocked = await getTask(s.store, second);
     expect(taskViews.row(blocked).mark).toBe("blocked");
-    expect(taskViews.row(blocked).note).toContain(`waiting for ${bareId(first)}`);
-    expect(taskViews.row(blocked).after).toEqual([bareId(first)]);
+    expect(taskViews.row(blocked).note).toContain(`waiting for ${idOfKey(first)}`);
+    expect(taskViews.row(blocked).after).toEqual([idOfKey(first)]);
 
     await setTaskPhase(s.store, first, "merged");
     const started = await s.tick();

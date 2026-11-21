@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { openPluginStore, readHttpToken } from "@operad-io/engine";
 import { main, type CliIo } from "../../src/main.ts";
 import { cleanupTempRoots, tempRoot } from "../../../engine/test/plugin/support.ts";
+import { makeHome } from "@operad-io/engine/testing";
 
 afterAll(cleanupTempRoots);
 afterEach(() => {
@@ -24,7 +25,7 @@ interface Run {
   readonly err: string;
 }
 
-async function operad(home: string, ...args: string[]): Promise<Run> {
+async function runOperad(home: string, ...args: string[]): Promise<Run> {
   let out = "";
   let err = "";
   const io: CliIo = {
@@ -40,62 +41,54 @@ async function operad(home: string, ...args: string[]): Promise<Run> {
   return { code, out, err };
 }
 
-async function makeHome(plugin = settingsPlugin, extra: Record<string, unknown> = {}) {
-  const root = await tempRoot();
-  const home = join(root, "home");
-  const repo = join(root, "alpha");
-  mkdirSync(home, { recursive: true });
+async function makeSettingsHome(plugin = settingsPlugin, extra: Record<string, unknown> = {}) {
+  const made = await makeHome({
+    plugins: { demo: { module: plugin, settings: { limit: 3 } } },
+    extra: { notes: ["keep", "me"], ...extra },
+  });
+  const repo = join(made.root, "alpha");
   mkdirSync(repo, { recursive: true });
-  const config = join(home, "config.json");
-  writeFileSync(
-    config,
-    `${JSON.stringify(
-      {
-        plugins: { demo: { module: plugin, settings: { limit: 3 } } },
-        store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
-        notes: ["keep", "me"],
-        ...extra,
-      },
-      null,
-      2,
-    )}\n`,
-  );
   process.env.OPERAD_TEST_REPOS = JSON.stringify([{ name: "alpha", path: repo }]);
-  return { root, home, repo, config };
+  return {
+    root: made.root,
+    home: made.home,
+    repo,
+    config: join(made.home, "config.json"),
+  };
 }
 
 describe("operad settings", () => {
   test("lists every setting, as text and as JSON", async () => {
-    const { home } = await makeHome();
-    const text = await operad(home, "settings");
+    const { home } = await makeSettingsHome();
+    const text = await runOperad(home, "settings");
     expect(text.code).toBe(0);
     expect(text.out).toContain("global  demo.limit  3  default 2  editable  Limit items  Items at once.");
     expect(text.out).toContain("global  demo.mode  \"a\"  default \"a\"  editable,confirm");
     expect(text.out).toContain("global  demo.fixed  \"x\"  default \"x\"  read-only");
     expect(text.out).toContain("alpha  demo.review.level  \"low\"");
 
-    const json = await operad(home, "settings", "--json", "--repo", "alpha");
+    const json = await runOperad(home, "settings", "--json", "--repo", "alpha");
     const parsed = JSON.parse(json.out) as { name: string; scope: string }[];
     expect(parsed.map((item) => item.name)).toEqual(["demo.review.level"]);
     expect(parsed[0]?.scope).toBe("alpha");
 
-    const titled = JSON.parse((await operad(home, "settings", "--json")).out) as {
+    const titled = JSON.parse((await runOperad(home, "settings", "--json")).out) as {
       name: string;
       title?: string;
     }[];
     expect(titled.find((item) => item.name === "demo.limit")?.title).toBe("Limit items");
 
-    const missing = await operad(home, "settings", "--repo", "beta");
+    const missing = await runOperad(home, "settings", "--repo", "beta");
     expect(missing.code).toBe(1);
     expect(missing.err).toContain('no registered repository "beta"');
   });
 
   test("set parses JSON, falls back to a string, and keeps the rest of the file", async () => {
-    const { home, config } = await makeHome();
-    const number = await operad(home, "settings", "set", "demo.limit", "9");
+    const { home, config } = await makeSettingsHome();
+    const number = await runOperad(home, "settings", "set", "demo.limit", "9");
     expect(number.code).toBe(0);
     expect(number.out).toBe("demo.limit = 9\n");
-    const text = await operad(home, "settings", "set", "demo.label", "hello world");
+    const text = await runOperad(home, "settings", "set", "demo.label", "hello world");
     expect(text.code).toBe(0);
     const file = JSON.parse(readFileSync(config, "utf8"));
     expect(file.plugins.demo.settings).toEqual({ limit: 9, label: "hello world" });
@@ -104,40 +97,40 @@ describe("operad settings", () => {
   });
 
   test("set refuses an invalid value, a read-only setting and a missing confirmation", async () => {
-    const { home, config } = await makeHome();
+    const { home, config } = await makeSettingsHome();
     const before = readFileSync(config, "utf8");
-    const invalid = await operad(home, "settings", "set", "demo.limit", "0");
+    const invalid = await runOperad(home, "settings", "set", "demo.limit", "0");
     expect(invalid.code).toBe(2);
     expect(invalid.err).toContain("must be at least 1");
-    const readOnly = await operad(home, "settings", "set", "demo.fixed", "y");
+    const readOnly = await runOperad(home, "settings", "set", "demo.fixed", "y");
     expect(readOnly.code).toBe(3);
-    const unconfirmed = await operad(home, "settings", "set", "demo.mode", "b");
+    const unconfirmed = await runOperad(home, "settings", "set", "demo.mode", "b");
     expect(unconfirmed.code).toBe(2);
     expect(unconfirmed.err).toContain("--yes");
     expect(readFileSync(config, "utf8")).toBe(before);
 
-    const confirmed = await operad(home, "settings", "set", "demo.mode", "b", "--yes");
+    const confirmed = await runOperad(home, "settings", "set", "demo.mode", "b", "--yes");
     expect(confirmed.code).toBe(0);
     expect(JSON.parse(readFileSync(config, "utf8")).plugins.demo.settings.mode).toBe("b");
-    expect((await operad(home, "settings", "set", "demo.limit")).code).toBe(2);
+    expect((await runOperad(home, "settings", "set", "demo.limit")).code).toBe(2);
   });
 
   test("set with a deeper name changes one entry and keeps the others", async () => {
-    const { home, config } = await makeHome();
-    await operad(home, "settings", "set", "demo.items", '{"a":{"size":1},"b":{"size":2}}', "--yes");
+    const { home, config } = await makeSettingsHome();
+    await runOperad(home, "settings", "set", "demo.items", '{"a":{"size":1},"b":{"size":2}}', "--yes");
     // a client that read the map earlier changes `a`; `b` was changed by someone else meanwhile
-    const other = await operad(home, "settings", "set", "demo.items.b.size", "7", "--yes");
+    const other = await runOperad(home, "settings", "set", "demo.items.b.size", "7", "--yes");
     expect(other.code).toBe(0);
     expect(other.out).toBe("demo.items.b.size = 7\n");
-    const mine = await operad(home, "settings", "set", "demo.items.a", '{"tag":"x"}', "--yes");
+    const mine = await runOperad(home, "settings", "set", "demo.items.a", '{"tag":"x"}', "--yes");
     expect(mine.out).toBe('demo.items.a = {"tag":"x"}\n');
     expect(JSON.parse(readFileSync(config, "utf8")).plugins.demo.settings.items).toEqual({
       a: { tag: "x" },
       b: { size: 7 },
     });
-    const added = await operad(home, "settings", "set", "demo.items.c.tag", "new", "--yes");
+    const added = await runOperad(home, "settings", "set", "demo.items.c.tag", "new", "--yes");
     expect(added.code).toBe(0);
-    const removed = await operad(home, "settings", "set", "demo.items.a", "null", "--yes");
+    const removed = await runOperad(home, "settings", "set", "demo.items.a", "null", "--yes");
     expect(removed.code).toBe(0);
     expect(JSON.parse(readFileSync(config, "utf8")).plugins.demo.settings.items).toEqual({
       b: { size: 7 },
@@ -146,29 +139,29 @@ describe("operad settings", () => {
   });
 
   test("set with a deeper name follows the same schema, confirm and editable rules", async () => {
-    const { home, config } = await makeHome();
-    await operad(home, "settings", "set", "demo.items.a.size", "1", "--yes");
+    const { home, config } = await makeSettingsHome();
+    await runOperad(home, "settings", "set", "demo.items.a.size", "1", "--yes");
     const before = readFileSync(config, "utf8");
-    const invalid = await operad(home, "settings", "set", "demo.items.a.size", "0", "--yes");
+    const invalid = await runOperad(home, "settings", "set", "demo.items.a.size", "0", "--yes");
     expect(invalid.code).toBe(2);
     expect(invalid.err).toContain("must be at least 1");
-    const unknownField = await operad(home, "settings", "set", "demo.items.a.nope", "1", "--yes");
+    const unknownField = await runOperad(home, "settings", "set", "demo.items.a.nope", "1", "--yes");
     expect(unknownField.code).not.toBe(0);
     expect(unknownField.err).toContain('no setting "demo.items.a.nope"');
-    const unconfirmed = await operad(home, "settings", "set", "demo.items.a.size", "3");
+    const unconfirmed = await runOperad(home, "settings", "set", "demo.items.a.size", "3");
     expect(unconfirmed.code).toBe(2);
     expect(unconfirmed.err).toContain("--yes");
     // `locked` is not editable, so neither is any entry of it
-    const readOnly = await operad(home, "settings", "set", "demo.locked.k", "v");
+    const readOnly = await runOperad(home, "settings", "set", "demo.locked.k", "v");
     expect(readOnly.code).toBe(3);
     expect(readOnly.err).toContain("cannot be changed here");
     expect(readFileSync(config, "utf8")).toBe(before);
   });
 
   test("--repo changes the file under that repository's .operad", async () => {
-    const { home, repo, config } = await makeHome();
+    const { home, repo, config } = await makeSettingsHome();
     const before = readFileSync(config, "utf8");
-    const result = await operad(home, "settings", "set", "demo.review.level", "high", "--repo", "alpha");
+    const result = await runOperad(home, "settings", "set", "demo.review.level", "high", "--repo", "alpha");
     expect(result.code).toBe(0);
     expect(result.out).toBe("demo.review.level = \"high\" (alpha)\n");
     expect(JSON.parse(readFileSync(join(repo, ".operad", "review.json"), "utf8"))).toEqual({
@@ -238,7 +231,7 @@ describe("operad settings", () => {
       });
       expect(acted.status).toBe(200);
       expect(((await acted.json()) as { value: unknown }).value).toBe(6);
-      const shown = await operad(home, "settings");
+      const shown = await runOperad(home, "settings");
       expect(shown.out).toContain("global  webtest.limit  6  default 2");
     } finally {
       child.kill("SIGTERM");

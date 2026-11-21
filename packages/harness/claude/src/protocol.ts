@@ -3,10 +3,29 @@
  * tables; `test/heavy/protocol.test.ts` checks the program against them.
  */
 
-import { readProfile } from "@operad-io/access-match";
-import { parseImageInputs, type ImageInput, type SharedLine, type WorkerKeep } from "@operad-io/harness-process";
-import { isRecord, type CostQuality } from "@operad-io/engine";
-import { mountedServersOf } from "@operad-io/harness-process";
+import {
+  mountedServersOf,
+  readAccess,
+  readBoolean,
+  readImages,
+  readKeep,
+  readOperadTools,
+  readOptionalString,
+  readPositiveInteger,
+  readPositiveNumber,
+  readRequiredStrings,
+  readSecrets,
+  readStringList,
+  readUnknownFields,
+  type ImageInput,
+  type SharedLine,
+  type WorkerKeep,
+  type WorkerResultName,
+  type WorkerUsage,
+} from "@operad-io/harness-process";
+import { isRecord } from "@operad-io/engine";
+
+export type { AskAck, GrantAck, WorkerResultName, WorkerUsage } from "@operad-io/harness-process";
 
 export const EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"] as const;
 export type WorkerEffort = (typeof EFFORT_LEVELS)[number];
@@ -62,24 +81,21 @@ export type { WorkerKeep } from "@operad-io/harness-process";
 /** A gate such as a full test run must finish in the foreground; claude's own default is 120 s. */
 export const DEFAULT_BASH_TIMEOUT_SECS = 1800;
 
-export interface WorkerUsage {
-  input?: number;
-  output?: number;
-  cache_read?: number;
-  cache_write?: number;
-}
-
-export type WorkerResultName = "done" | "failed" | "cancelled";
-
 export type FailureReason = "invalid_input" | "session_missing" | "model_error";
 
-export type { CostQuality };
+/** `estimated` for a subscription login (an API-price figure), `exact` for an API key. */
+export type CostQuality = "estimated" | "exact";
+
 /** Set when the run stopped at a rate limit. */
 export interface WorkerModelError {
   readonly kind: "usage_limit";
   readonly message: string;
   readonly rateLimitType: string | null;
   readonly resetsAt: number | null;
+  /** How long until the reset, in seconds; null when claude gave no reset time. */
+  readonly retry_after_secs: number | null;
+  /** When the rate limit was reported, in epoch milliseconds; null without a reset time. */
+  readonly reported_at: number | null;
 }
 
 /** The last line of stdout. */
@@ -129,25 +145,6 @@ export type WorkerLine =
   | SharedLine
   | WorkerResult;
 
-/** A stdin line after the input: the host's answer to a `grant_use` line. */
-export interface GrantAck {
-  readonly type: "grant_ack";
-  readonly id: number;
-  readonly used: boolean;
-}
-
-/**
- * A stdin line after the input: the host's answer to an `ask_call` line.
- * `allow` lets this one call run; `deny` refuses it; `stop` means the wait
- * ended and the program is about to be ended: it holds the call.
- */
-export interface AskAck {
-  readonly type: "ask_ack";
-  readonly id: number;
-  readonly decision: "allow" | "deny" | "stop";
-  readonly reason?: string;
-}
-
 export type ParsedInput =
   | { readonly ok: true; readonly input: WorkerInput }
   | { readonly ok: false; readonly message: string };
@@ -181,31 +178,20 @@ export function parseInput(value: unknown): ParsedInput {
 
   // A field the program does not know is refused, never ignored: a flag that
   // is silently dropped would hide a wrong model.
-  for (const key of Object.keys(value)) {
-    if (!(INPUT_FIELDS as readonly string[]).includes(key)) {
-      return { ok: false, message: `${key} is not an input field` };
-    }
-  }
+  const unknown = readUnknownFields(value, INPUT_FIELDS);
+  if (!unknown.ok) return unknown;
 
-  const text = (field: "prompt" | "cwd" | "command" | "resumeSession" | "model", required: boolean): string | undefined | Error => {
-    const got = value[field];
-    if (got === undefined) return required ? new Error(`${field} is required`) : undefined;
-    if (typeof got !== "string" || got.length === 0) return new Error(`${field} must be a non-empty string`);
-    return got;
-  };
-  const prompt = text("prompt", true);
-  if (prompt instanceof Error) return { ok: false, message: prompt.message };
-  const cwd = text("cwd", true);
-  if (cwd instanceof Error) return { ok: false, message: cwd.message };
-  const command = text("command", false);
-  if (command instanceof Error) return { ok: false, message: command.message };
-  const resumeSession = text("resumeSession", false);
-  if (resumeSession instanceof Error) return { ok: false, message: resumeSession.message };
-  if (resumeSession !== undefined && !SESSION_ID.test(resumeSession)) {
+  const required = readRequiredStrings(value, ["prompt", "cwd"]);
+  if (!required.ok) return required;
+  const command = readOptionalString(value, "command");
+  if (!command.ok) return command;
+  const resumeSession = readOptionalString(value, "resumeSession");
+  if (!resumeSession.ok) return resumeSession;
+  if (resumeSession.value !== undefined && !SESSION_ID.test(resumeSession.value)) {
     return { ok: false, message: "resumeSession must be a session id (a UUID)" };
   }
-  const model = text("model", false);
-  if (model instanceof Error) return { ok: false, message: model.message };
+  const model = readOptionalString(value, "model");
+  if (!model.ok) return model;
 
   const level = value["effort"];
   let effort: WorkerEffort | undefined;
@@ -217,106 +203,59 @@ export function parseInput(value: unknown): ParsedInput {
     effort = known;
   }
 
-  const secretValues = value["secretValues"];
-  if (secretValues !== undefined && (!Array.isArray(secretValues) || !secretValues.every((v): v is string => typeof v === "string"))) {
-    return { ok: false, message: "secretValues must be an array of strings" };
-  }
+  const secretValues = readSecrets(value);
+  if (!secretValues.ok) return secretValues;
 
-  const images = parseImageInputs(value["images"]);
-  if (typeof images === "string") return { ok: false, message: images };
+  const images = readImages(value);
+  if (!images.ok) return images;
 
-  const skills = value["skills"];
-  if (skills !== undefined && (!Array.isArray(skills) || !skills.every((v): v is string => typeof v === "string"))) {
-    return { ok: false, message: "skills must be an array of strings" };
-  }
+  const skills = readStringList(value, "skills");
+  if (!skills.ok) return skills;
 
-  const useOwnSettings = value["useOwnSettings"];
-  if (useOwnSettings !== undefined && typeof useOwnSettings !== "boolean") {
-    return { ok: false, message: "useOwnSettings must be a boolean" };
-  }
+  const useOwnSettings = readBoolean(value, "useOwnSettings");
+  if (!useOwnSettings.ok) return useOwnSettings;
 
-  const maxTurns = value["maxTurns"];
-  if (maxTurns !== undefined && (typeof maxTurns !== "number" || !Number.isInteger(maxTurns) || maxTurns < 1)) {
-    return { ok: false, message: "maxTurns must be a positive integer" };
-  }
-  const budgetUsd = value["budgetUsd"];
-  if (budgetUsd !== undefined && (typeof budgetUsd !== "number" || !Number.isFinite(budgetUsd) || budgetUsd <= 0)) {
-    return { ok: false, message: "budgetUsd must be a positive number" };
-  }
+  const maxTurns = readPositiveInteger(value, "maxTurns");
+  if (!maxTurns.ok) return maxTurns;
+  const budgetUsd = readPositiveNumber(value, "budgetUsd");
+  if (!budgetUsd.ok) return budgetUsd;
+  const bashTimeoutSecs = readPositiveInteger(value, "bashTimeoutSecs");
+  if (!bashTimeoutSecs.ok) return bashTimeoutSecs;
 
-  const bashTimeoutSecs = value["bashTimeoutSecs"];
-  if (
-    bashTimeoutSecs !== undefined &&
-    (typeof bashTimeoutSecs !== "number" || !Number.isInteger(bashTimeoutSecs) || bashTimeoutSecs < 1)
-  ) {
-    return { ok: false, message: "bashTimeoutSecs must be a positive integer" };
-  }
-
-  const operadTools = value["operadTools"];
-  if (operadTools !== undefined && (!isRecord(operadTools) || typeof operadTools["home"] !== "string" || operadTools["home"].length === 0)) {
-    return { ok: false, message: "operadTools must be an object with a home" };
-  }
+  const operadTools = readOperadTools(value);
+  if (!operadTools.ok) return operadTools;
 
   const mcpServers = mountedServersOf(value["mcpServers"]);
   if (value["mcpServers"] !== undefined && (!isRecord(value["mcpServers"]) || (Object.keys(value["mcpServers"]).length > 0 && mcpServers === undefined))) {
     return { ok: false, message: "mcpServers must be an object of servers, each with a command" };
   }
 
-  const access = value["access"];
-  if (access !== undefined && !isRecord(access)) {
-    return { ok: false, message: "access must be an object" };
-  }
-  if (access !== undefined) {
-    const profile = readProfile(access);
-    if (!profile.ok) return { ok: false, message: `access.${profile.message}` };
-  }
+  const access = readAccess(value);
+  if (!access.ok) return access;
 
-  const keepValue = value["keep"];
-  let keep: WorkerKeep | undefined;
-  if (keepValue !== undefined) {
-    if (!isRecord(keepValue)) return { ok: false, message: "keep must be an object" };
-    const fields: Record<string, string> = {};
-    for (const field of ["socket", "meta", "token", "scope", "key"] as const) {
-      const found = keepValue[field];
-      if (typeof found !== "string" || found.length === 0) {
-        return { ok: false, message: `keep.${field} must be a non-empty string` };
-      }
-      fields[field] = found;
-    }
-    const timeoutMs = keepValue["timeoutMs"];
-    if (typeof timeoutMs !== "number" || !Number.isFinite(timeoutMs) || timeoutMs <= 0) {
-      return { ok: false, message: "keep.timeoutMs must be a positive number" };
-    }
-    keep = {
-      socket: fields.socket ?? "",
-      meta: fields.meta ?? "",
-      token: fields.token ?? "",
-      scope: fields.scope ?? "",
-      key: fields.key ?? "",
-      timeoutMs,
-    };
-  }
+  const keep = readKeep(value);
+  if (!keep.ok) return keep;
 
   return {
     ok: true,
     input: {
-      prompt: prompt ?? "",
-      cwd: cwd ?? "",
-      command,
-      resumeSession,
-      model,
+      prompt: required.value["prompt"] ?? "",
+      cwd: required.value["cwd"] ?? "",
+      command: command.value,
+      resumeSession: resumeSession.value,
+      model: model.value,
       effort,
-      access,
-      maxTurns,
-      budgetUsd,
-      bashTimeoutSecs,
-      operadTools: operadTools === undefined ? undefined : { home: String(operadTools["home"]) },
+      access: access.value,
+      maxTurns: maxTurns.value,
+      budgetUsd: budgetUsd.value,
+      bashTimeoutSecs: bashTimeoutSecs.value,
+      operadTools: operadTools.value,
       mcpServers,
-      secretValues,
-      images: images.length === 0 ? undefined : images,
-      skills: skills === undefined || skills.length === 0 ? undefined : skills,
-      useOwnSettings,
-      keep,
+      secretValues: secretValues.value,
+      images: images.value.length === 0 ? undefined : images.value,
+      skills: skills.value === undefined || skills.value.length === 0 ? undefined : skills.value,
+      useOwnSettings: useOwnSettings.value,
+      keep: keep.value,
     },
   };
 }

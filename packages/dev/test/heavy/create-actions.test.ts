@@ -12,15 +12,9 @@ import {
   startHttpServer,
   storeRootOf,
 } from "@operad-io/engine";
-import { addRepository, cancelPlan, removeRepository, setTaskPhase } from "../../src/service.ts";
-import { bareId, planData, taskData } from "../../src/model.ts";
-import {
-  cleanupTempRoots,
-  guardLockHandles,
-  makeGitRepository,
-  runInProcess,
-  tempRoot,
-} from "../support.ts";
+import { addRepository, cancelPlan, removeRepository } from "../../src/service.ts";
+import { idOfKey, planData, taskData } from "../../src/model.ts";
+import { cleanupTempRoots, guardLockHandles, makeGitRepository, runInProcess, tempRoot, setTaskPhase } from "../support.ts";
 
 afterAll(cleanupTempRoots);
 guardLockHandles();
@@ -455,7 +449,7 @@ describe("dev:plan and dev:task", () => {
       let commandMessage = "";
       try {
         await fixture.registry.runCommand(
-          ["dev", "task", "add", "--plan", bareId(planKey), "--slug", "too-late", "--title", "Too late"],
+          ["dev", "task", "add", "--plan", idOfKey(planKey), "--slug", "too-late", "--title", "Too late"],
           { cwd: fixture.path, input: "brief\n" },
         );
       } catch (error) {

@@ -36,6 +36,8 @@ import {
   OPERAD_SERVER,
   readGivenSkills,
   readImage,
+  decodeWorkerInput,
+  runWorkerMain,
   serveKeptWorker,
   serveOne,
   serverCommand,
@@ -842,6 +844,11 @@ class ClaudeSession {
             message: `usage limit reached${rateLimitType === null ? "" : ` (${rateLimitType})`}`,
             rateLimitType,
             resetsAt,
+            retry_after_secs:
+              resetsAt === null
+                ? null
+                : Math.max(0, Math.ceil(resetsAt - Date.now() / 1000)),
+            reported_at: resetsAt === null ? null : Date.now(),
           };
         }
         break;
@@ -1365,23 +1372,12 @@ export async function runWorker(
   return session.first();
 }
 
-/** Reads one input object; invalid JSON is a parse failure. */
-function inputOf(text: string): ReturnType<typeof parseInput> {
-  let decoded: unknown;
-  try {
-    decoded = JSON.parse(text);
-  } catch {
-    return { ok: false, message: "the input is not valid JSON" };
-  }
-  return parseInput(decoded);
-}
-
 /** The adapter the shared worker process calls for claude's program. */
 function claudeAdapter(hooks: WorkerHooks): WorkerAdapter<WorkerInput> {
   let current: ClaudeSession | undefined;
   let session: string | null = null;
   return {
-    parse: (text) => inputOf(text),
+    parse: (text) => decodeWorkerInput(text, parseInput),
     invalidInput: (message) => failure("invalid_input", message),
     error: (message) => failure("model_error", message),
     keep: (input) => input.keep,
@@ -1439,29 +1435,7 @@ export async function serveWorkerProcess(
 
 /** The process entry: stdin in, stdout lines out, exit code out. */
 export async function main(hooks: WorkerHooks = {}): Promise<never> {
-  const flush = (): Promise<void> =>
-    new Promise((resolve) => {
-      process.stdout.write("", () => resolve());
-    });
-  // Anything that prints to stdout by accident would corrupt the protocol.
-  console.log = (...args: unknown[]): void => {
-    process.stderr.write(`${args.map(String).join(" ")}\n`);
-  };
-  const controller = new AbortController();
-  process.on("SIGTERM", () => controller.abort());
-  const code = await serveWorkerProcess(
-    Bun.stdin.stream(),
-    {
-      write: (text) => {
-        process.stdout.write(text);
-      },
-      log: (text) => process.stderr.write(`${text}\n`),
-    },
-    controller.signal,
-    hooks,
-  );
-  await flush();
-  process.exit(code);
+  return runWorkerMain(claudeAdapter(hooks));
 }
 
 if (import.meta.main) await main();

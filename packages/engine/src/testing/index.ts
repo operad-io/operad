@@ -16,6 +16,24 @@ import type {
 } from "./types.ts";
 
 export { fakeClock } from "./clock.ts";
+export { writeConfig } from "./config.ts";
+export { manualClock, type ManualClock } from "./clock-manual.ts";
+export {
+  alive,
+  cleanupTempRoots,
+  freePort,
+  makeDirectory,
+  osTempRoot,
+  pidValue,
+  signalable,
+  tempRoot,
+  tempRoots,
+  waitForFile,
+  waitForGone,
+  waitForPid,
+  waitUntil,
+} from "./fs.ts";
+export { makeHome, type MakeHomeOptions, type TestHome } from "./home.ts";
 export { answerRun, type AnswerOptions } from "./answer.ts";
 export { cleanup, memoryStore, testWorld };
 export type {

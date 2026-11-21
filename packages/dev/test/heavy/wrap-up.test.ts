@@ -22,6 +22,7 @@ import { validateDevSettings } from "../../src/settings.ts";
 import { waitingReason } from "../../src/announce.ts";
 import { gitOrThrow, makeRemote } from "../git-support.ts";
 import { cleanupTempRoots, guardLockHandles, storeAt, tempRoot } from "../support.ts";
+import { manualClock } from "@operad-io/engine/testing";
 
 afterAll(cleanupTempRoots);
 guardLockHandles();
@@ -35,28 +36,6 @@ afterEach(() => {
 const LIMIT_MS = STEP_TIMEOUT_SECS * 1000;
 const WRAP_MS = Math.floor(LIMIT_MS * 0.85);
 const HARD_MS = LIMIT_MS - 30_000;
-
-/** A clock a test drives: a timer runs only when the test moves time past it. */
-class ManualClock {
-  readonly timers: { readonly handler: () => void; readonly ms: number; live: boolean }[] = [];
-  setTimeout(handler: () => void, ms: number): unknown {
-    const timer = { handler, ms, live: true };
-    this.timers.push(timer);
-    return timer;
-  }
-  clearTimeout(handle: unknown): void {
-    const timer = this.timers.find((candidate) => candidate === handle);
-    if (timer !== undefined) timer.live = false;
-  }
-  advanceTo(ms: number): void {
-    for (const timer of [...this.timers].sort((a, b) => a.ms - b.ms)) {
-      if (timer.live && timer.ms <= ms) {
-        timer.live = false;
-        timer.handler();
-      }
-    }
-  }
-}
 
 type Mode = "wrap-up" | "ignore" | "deaf" | "plain" | "wall" | "commits-note" | "never-starts" | "late";
 
@@ -208,7 +187,7 @@ async function fixture(modes: Mode[], extra: Record<string, unknown> = {}, runMs
 
 describe("a work step that runs out of time", () => {
   test("the wrap-up message arrives at the share of the limit, not before", async () => {
-    const clock = new ManualClock();
+    const clock = manualClock();
     stepTestHooks.workClock = clock;
     const state = await fixture(["wrap-up"]);
     const running = state.work();
@@ -225,7 +204,7 @@ describe("a work step that runs out of time", () => {
   });
 
   test("a step that commits and writes its note before the limit keeps the note in the history", async () => {
-    const clock = new ManualClock();
+    const clock = manualClock();
     stepTestHooks.workClock = clock;
     const state = await fixture(["wrap-up"]);
     const running = state.work();
@@ -242,7 +221,7 @@ describe("a work step that runs out of time", () => {
   });
 
   test("a step that ignores the message and times out gets a work-in-progress commit and its note kept", async () => {
-    const clock = new ManualClock();
+    const clock = manualClock();
     stepTestHooks.workClock = clock;
     const state = await fixture(["ignore"]);
     const running = state.work();
@@ -265,7 +244,7 @@ describe("a work step that runs out of time", () => {
   });
 
   test("the next attempt's prompt starts with the note and the commits, and the worktree keeps them", async () => {
-    const clock = new ManualClock();
+    const clock = manualClock();
     stepTestHooks.workClock = clock;
     const state = await fixture(["ignore", "plain"]);
     const first = state.work();
@@ -287,7 +266,7 @@ describe("a work step that runs out of time", () => {
   });
 
   test("a harness that cannot take messages still times out with a commit, and the next attempt continues", async () => {
-    const clock = new ManualClock();
+    const clock = manualClock();
     stepTestHooks.workClock = clock;
     const state = await fixture(["deaf", "plain"]);
     const first = state.work();
@@ -346,7 +325,7 @@ async function waitFor(seen: Seen[], count: number): Promise<Seen> {
 
 describe("the limit a harness reports", () => {
   test("nothing is timed from the step's start but the backstop; the wrap-up is timed from the harness's own begin", async () => {
-    const clock = new ManualClock();
+    const clock = manualClock();
     stepTestHooks.workClock = clock;
     const state = await fixture(["wrap-up"]);
     const running = state.work();
@@ -359,7 +338,7 @@ describe("the limit a harness reports", () => {
   });
 
   test("a harness that reports a shorter wall time is wrapped up and stopped by that wall, not the step's limit", async () => {
-    const clock = new ManualClock();
+    const clock = manualClock();
     stepTestHooks.workClock = clock;
     const state = await fixture(["wrap-up"], {}, 7_200_000);
     const running = state.work();
@@ -374,7 +353,7 @@ describe("the limit a harness reports", () => {
   });
 
   test("a harness that never reports a run leaves only the backstop", async () => {
-    const clock = new ManualClock();
+    const clock = manualClock();
     stepTestHooks.workClock = clock;
     const state = await fixture(["deaf"]);
     const running = state.work();
@@ -402,7 +381,7 @@ describe("work.wrapUpAt", () => {
   });
 
   test("the share moves the wrap-up message", async () => {
-    const clock = new ManualClock();
+    const clock = manualClock();
     stepTestHooks.workClock = clock;
     const state = await fixture(["wrap-up"], { work: { wrapUpAt: 0.5 } });
     const running = state.work();
@@ -416,7 +395,7 @@ describe("work.wrapUpAt", () => {
 
 describe("the reason a timed-out task waits", () => {
   test("work timed out, with the step's message as the detail", async () => {
-    const clock = new ManualClock();
+    const clock = manualClock();
     stepTestHooks.workClock = clock;
     const state = await fixture(["deaf"]);
     const running = state.work();
@@ -455,8 +434,8 @@ function watchWaits(): { readonly next: (match: (text: string | null) => boolean
 
 describe("a work step that holds a worker's place and does not start it (T-0349)", () => {
   test("the task says the worker has not started, and says when it has", async () => {
-    const limit = new ManualClock();
-    const start = new ManualClock();
+    const limit = manualClock();
+    const start = manualClock();
     stepTestHooks.workClock = limit;
     stepTestHooks.workerStartClock = start;
     const waits = watchWaits();
@@ -476,8 +455,8 @@ describe("a work step that holds a worker's place and does not start it (T-0349)
   });
 
   test("a note still being written when the step ends does not overwrite the step's result", async () => {
-    const limit = new ManualClock();
-    const start = new ManualClock();
+    const limit = manualClock();
+    const start = manualClock();
     stepTestHooks.workClock = limit;
     stepTestHooks.workerStartClock = start;
     const state = await fixture(["late"]);
@@ -523,7 +502,7 @@ describe("a work step that holds a worker's place and does not start it (T-0349)
   });
 
   test("a worker that starts in time says nothing", async () => {
-    const start = new ManualClock();
+    const start = manualClock();
     stepTestHooks.workerStartClock = start;
     const waits = watchWaits();
     const state = await fixture(["plain"]);

@@ -1,6 +1,6 @@
 # Mutation records
 
-Each package keeps its mutation checks in `MUTATIONS.md`; a row names the broken file, what was broken and the failing test, with an id like `TK0001-M1`.
+Each package keeps its mutation checks in `MUTATIONS.md`; a row names the broken file, what was broken and the failing test, with an id like `T-0001-M1`.
 
 - [access-match](packages/access-match/MUTATIONS.md)
 - [bot](packages/bot/MUTATIONS.md)
@@ -181,3 +181,25 @@ Each package keeps its mutation checks in `MUTATIONS.md`; a row names the broken
 |---|---|---|---|
 | T-0643-M1 | scripts/changed-packages.ts | treated every `/` as a division or a comment start, so a `//` inside a regex literal removed the rest of its line, the import included | `selectPackages > a regex literal holding a quote does not hide the imports after it` |
 | T-0643-M2 | scripts/changed-packages.ts | dropped the quoted `@operad-io/<name>` fallback, so the dynamic import of `@operad-io/tui/app` was no longer a load | `selectPackages > a dynamic import through a quoted @operad-io/tui/app is a load` |
+
+## T-0641 — stress.sh stops the test runner even when a stop races its start
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0641-M1 | scripts/stress.sh | the KILL pass used only the load-helper pids instead of the job table, so a test runner that ignores TERM survived | `scripts/stress.sh > SIGKILL of the test runner stops a test file that ignores SIGTERM` |
+| T-0641-M2 | scripts/stress.sh | the stop signalled only a saved list of load-helper pids instead of the live job table, so the watcher and a test runner forked just before the stop were left running | `scripts/stress.sh > SIGKILL to the test runner mid-test leaves no stress.sh or helper` |
+| T-0641-M3 | scripts/stress.sh | the grace waited for a fixed count of sleeps instead of one short sleep, so the stop ran past its bound | `scripts/stress.sh > SIGKILL to the test runner mid-test leaves no stress.sh or helper` |
+
+## T-0647 — stress stop follow-ups
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0647-M1 | scripts/stress.sh | the parent watcher had no TERM trap, so killing it left its sleep running | `scripts/stress.sh > SIGTERM stops a watcher's sleep with the watcher` |
+| T-0647-M2 | scripts/stress.sh | the stop slept 0.2s unconditionally instead of cancelling a timer once the children ended | `scripts/stress.sh > a normal stop does not wait out the grace when the children end at once` |
+| T-0647-M3 | scripts/stress.sh | the grace timer did not KILL a child that outlived TERM | `scripts/stress.sh > SIGKILL of the test runner stops a test file that ignores SIGTERM` |
+
+## T-0653 — the mutation id format
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0653-M1 | scripts/test/mutations-append-only.test.ts | removed the allowance for an edited header line, so a header change failed as a moved row | `MUTATIONS.md files are append-only > an edited header line passes` |

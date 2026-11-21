@@ -13,6 +13,7 @@ import type { StepContext } from "@operad-io/engine";
 import { taskPlaceWait } from "./place-wait.ts";
 import { withLockFile, waitForChange } from "@operad-io/engine/platform";
 import { WaitEntry, type CheckKind } from "./place-order.ts";
+import { repositoryPathKey } from "./repository-key.ts";
 
 export { VERIFY_STARVATION_MS, type CheckKind } from "./place-order.ts";
 
@@ -105,9 +106,8 @@ class PlaceBusy extends Error {
 
 /** The lock files of the repository's places, next to the home's. */
 function repositoryKey(repository: RepositoryPlaces): string {
-  const hash = new Bun.CryptoHasher("sha1").update(repository.path).digest("hex");
   const name = repository.name.replace(/[^A-Za-z0-9._-]/g, "_");
-  return `repo-${name}-${hash.slice(0, 8)}`;
+  return `repo-${name}-${repositoryPathKey(repository.path).slice(0, 8)}`;
 }
 
 /**

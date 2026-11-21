@@ -240,13 +240,15 @@ An open tool call is therefore not a stall by design; `bashTimeoutSecs` is what 
 ### Model errors
 
 A worker failure with reason `model_error` also sets `data.modelError`, the
-shape `radian` gives: `{ kind, status, retry_after_secs, message }`.
+shape `radian` gives: `{ kind, status, retry_after_secs, reported_at, message }`.
 `kind` is derived from the error text the worker passes on: a usage limit
 (`usage limit`, `quota`, `out of credits`) is `usage_limit`; otherwise a 429, 503
 or 529, `overloaded`, `rate limit` or `too many requests` is `unavailable`; any
 other text is `protocol`. `status` is that number when the text has one, else
-`null`; `retry_after_secs` is `null` because pi does not report it. `dev`'s
-review and work waits read `kind` and so treat both harnesses alike.
+`null`; `retry_after_secs` is the wait the text names (such as `retry after 30
+seconds` or `resets in 2d`), else `null`; with a wait, `reported_at` is when the
+harness read the result. `dev`'s review and work waits read `kind` and the wait
+and so treat both harnesses alike.
 
 A chat reply turns pi's automatic retry on (ADR 0023 D3): pi retries the
 request with its own attempt count and backoff, and the worker writes

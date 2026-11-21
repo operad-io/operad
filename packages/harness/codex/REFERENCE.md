@@ -175,7 +175,11 @@ method when no question is expected gets the method-not-found error, as before.
   `sessionBudgetExceeded` are a `model_error` of kind `usage_limit`;
   `serverOverloaded`, `modelNotFound`, `flexUnavailable` and
   `policyCapacityUnavailable` are `unavailable`; `unauthorized` is
-  `not_logged_in`. With no fallback configured the task waits (ADR 0021 D9).
+  `not_logged_in`. A model error carries the status and any wait its message
+  names, such as `retry after 30 seconds` or `resets in 2d`, as
+  `retry_after_secs`; with a wait, `reported_at` is when the harness read it,
+  in epoch milliseconds. With no fallback configured an unavailable model waits,
+  while a usage limit goes to a person at once (ADR 0021 D9).
 
 ## Not done
 

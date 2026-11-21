@@ -9,7 +9,8 @@ import { expect, test } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runAgent, type Clock } from "../../src/index.ts";
+import { manualClock } from "@operad-io/engine/testing";
+import { runAgent } from "../../src/index.ts";
 
 function piToolEvent(line: string): "tool-start" | "tool-end" | undefined {
   let value: unknown;
@@ -25,47 +26,6 @@ function piToolEvent(line: string): "tool-start" | "tool-end" | undefined {
   if (record.type === "tool_execution_start") return "tool-start";
   if (record.type === "tool_execution_end") return "tool-end";
   return undefined;
-}
-
-interface ManualClock extends Clock {
-  /** Fires every timeout whose requested delay is at most `maxMs`. */
-  fireUpTo(maxMs?: number): number;
-  /** How many timers were cancelled, which shows a stall timer was reset. */
-  readonly clears: number;
-}
-
-interface Timer {
-  readonly handler: () => void;
-  readonly ms: number;
-}
-
-/** A clock a test drives; no test waits for real time. */
-function manualClock(): ManualClock {
-  const timers = new Set<Timer>();
-  let clears = 0;
-  return {
-    setTimeout(handler, ms) {
-      const timer = { handler, ms };
-      timers.add(timer);
-      return timer;
-    },
-    clearTimeout(handle) {
-      clears += 1;
-      timers.delete(handle as Timer);
-    },
-    sleep() {
-      return Promise.resolve();
-    },
-    fireUpTo(maxMs = Number.POSITIVE_INFINITY) {
-      const due = [...timers].filter((timer) => timer.ms <= maxMs);
-      for (const timer of due) timers.delete(timer);
-      for (const timer of due) timer.handler();
-      return due.length;
-    },
-    get clears() {
-      return clears;
-    },
-  };
 }
 
 test("a pi tool call pauses the stall timer until its end line", async () => {

@@ -6,27 +6,12 @@ import poolPlugin from "@operad-io/pool";
 import { createShellPlugin } from "@operad-io/shell";
 import { createChatPlugin } from "@operad-io/chat";
 import plugin from "../../src/index.ts";
-import {
-  addPlan,
-  addRepository,
-  addTask,
-  confirmPlan,
-  getPlan,
-  getTask,
-  refreshPlanCounts,
-  setAuto,
-  setTaskPhase,
-} from "../../src/service.ts";
-import { bareId, planData, taskData } from "../../src/model.ts";
+import { addPlan, addRepository, addTask, confirmPlan, getPlan, getTask, refreshPlanCounts, setAuto } from "../../src/service.ts";
+import { idOfKey, planData, taskData } from "../../src/model.ts";
 import { schedulerTestHooks } from "../../src/schedule.ts";
 import { taskViews } from "../../src/views.ts";
 import { commitIn, git, gitOrThrow, makeRemote } from "../git-support.ts";
-import {
-  cleanupTempRoots,
-  guardLockHandles,
-  storeAt,
-  tempRoot,
-} from "../support.ts";
+import { cleanupTempRoots, guardLockHandles, storeAt, tempRoot, setTaskPhase } from "../support.ts";
 
 afterAll(cleanupTempRoots);
 afterEach(() => {
@@ -111,7 +96,7 @@ describe("dev:pause and dev:resume", () => {
     expect(paused.run).toBeNull();
     expect(paused.claim).toBeNull();
     expect(paused.attempts).toBe(1);
-    expect(paused.attempt?.branch).toBe(`work/${bareId(first)}`);
+    expect(paused.attempt?.branch).toBe(`work/${idOfKey(first)}`);
     expect(existsSync(worktree)).toBe(true);
     expect(git(worktree, ["log", "--format=%s", "-n", "1"]).out).toBe("partial work");
     expect(taskViews.row(await getTask(s.store, first)).mark).toBe("paused");
@@ -133,7 +118,7 @@ describe("dev:pause and dev:resume", () => {
   test("a paused ready task is not started, and its dependent stays queued", async () => {
     const s = await setup();
     const first = await s.add("first");
-    const second = await s.add("second", [bareId(first)]);
+    const second = await s.add("second", [idOfKey(first)]);
     await confirmPlan(s.store, s.plan.id);
     await act(s, "pause", first);
     expect((await task(s, first)).phase).toBe("paused");
@@ -236,7 +221,7 @@ describe("dev:pause and dev:resume", () => {
     const s = await setup();
     const first = await s.add("first");
     const other = await s.add("other");
-    const second = await s.add("second", [bareId(first)]);
+    const second = await s.add("second", [idOfKey(first)]);
     await confirmPlan(s.store, s.plan.id);
     await setTaskPhase(s.store, first, "cancelled");
     await setTaskPhase(s.store, other, "merged");
@@ -247,14 +232,14 @@ describe("dev:pause and dev:resume", () => {
     const blocked = await s.registry.runStep("dev/worktree", {}, {
       runId: "run-blocked",
       object: { type: "task", id: second, data: {} },
-      params: { blockedBy: bareId(first), token: claim?.token ?? "" },
+      params: { blockedBy: idOfKey(first), token: claim?.token ?? "" },
     });
     expect(blocked.result).toBe("blocked");
     expect((await task(s, second)).phase).toBe("waiting");
 
     await refreshPlanCounts(s.store, await getPlan(s.store, s.plan.id));
     expect(planData((await getPlan(s.store, s.plan.id)).data).waitingCount).toBe(1);
-    await s.registry.runCommand(["dev", "task", "update", bareId(second), "--after", bareId(other)]);
+    await s.registry.runCommand(["dev", "task", "update", idOfKey(second), "--after", idOfKey(other)]);
 
     expect(s.cancelled).toEqual(["run-blocked"]);
     const released = await task(s, second);
@@ -270,7 +255,7 @@ describe("dev:pause and dev:resume", () => {
   test("task update --after \"\" clears the dependencies and releases the wait", async () => {
     const s = await setup();
     const first = await s.add("first");
-    const second = await s.add("second", [bareId(first)]);
+    const second = await s.add("second", [idOfKey(first)]);
     await confirmPlan(s.store, s.plan.id);
     await setTaskPhase(s.store, first, "cancelled");
     await tick(s);
@@ -278,12 +263,12 @@ describe("dev:pause and dev:resume", () => {
       runId: "run-blocked",
       object: { type: "task", id: second, data: {} },
       params: {
-        blockedBy: bareId(first),
+        blockedBy: idOfKey(first),
         token: (await task(s, second)).claim?.token ?? "",
       },
     });
 
-    await s.registry.runCommand(["dev", "task", "update", bareId(second), "--after", ""]);
+    await s.registry.runCommand(["dev", "task", "update", idOfKey(second), "--after", ""]);
 
     const released = await task(s, second);
     expect(released.phase).toBe("ready");
@@ -296,7 +281,7 @@ describe("dev:pause and dev:resume", () => {
     const first = await s.add("first");
     await setTaskPhase(s.store, first, "waiting", { run: "run-5" });
     await expect(
-      s.registry.runCommand(["dev", "task", "update", bareId(first), "--after", ""]),
+      s.registry.runCommand(["dev", "task", "update", idOfKey(first), "--after", ""]),
     ).rejects.toThrow(/only proposed or ready/);
   });
 });

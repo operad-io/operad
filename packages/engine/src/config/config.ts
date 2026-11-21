@@ -1,10 +1,15 @@
 /** The operad home config: JSON, read by the kernel, never by a plugin kind. */
 
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { defaultOperadHome } from "../plugin/home.ts";
 import { MAX_ASK_GRACE_SECS } from "../plugin/types.ts";
-import { withLockFile, type LockFileOptions } from "../platform/index.ts";
+import {
+  withLockFile,
+  writeJsonAtomic,
+  type AsyncAtomicWriteOptions,
+  type LockFileOptions,
+} from "../platform/index.ts";
 import {
   openLog,
   type LogBackend,
@@ -476,7 +481,11 @@ export function configJson(config: OperadConfig): Record<string, unknown> {
  * A config that does not mention `plugins` is a config someone wrote for the
  * store only; `init` installs the given plugins into it and leaves the rest.
  */
-async function addDefaultPlugins(defaults: OperadConfig, file: string): Promise<void> {
+async function addDefaultPlugins(
+  defaults: OperadConfig,
+  file: string,
+  hooks: AsyncAtomicWriteOptions,
+): Promise<void> {
   let raw: unknown;
   try {
     raw = JSON.parse(await readFile(file, "utf8"));
@@ -485,26 +494,19 @@ async function addDefaultPlugins(defaults: OperadConfig, file: string): Promise<
   }
   if (!isRecord(raw) || raw.plugins !== undefined) return;
   const plugins = configJson(defaults).plugins;
-  // Write beside the config and rename over it, so a crash or a full disk
-  // leaves the old file whole instead of a truncated one.
-  const temp = `${file}.tmp`;
-  try {
-    await writeFile(temp, `${JSON.stringify({ ...raw, plugins }, null, 2)}\n`);
-    await rename(temp, file);
-  } catch (error) {
-    await rm(temp, { force: true }).catch(() => undefined);
-    throw error;
-  }
+  await writeJsonAtomic(file, { ...raw, plugins }, { ...hooks, space: 2 });
 }
 
 /**
  * Writes `defaults` (the distribution's config for a new home) when the home
  * has none. An existing file is kept; only a missing `plugins` section is
- * filled in from `defaults`. Idempotent.
+ * filled in from `defaults`. Idempotent. `hooks` lets a test stop the write
+ * before it replaces the file.
  */
 export async function ensureConfig(
   home: string,
   defaults: OperadConfig = defaultConfig(home),
+  hooks: AsyncAtomicWriteOptions = {},
 ): Promise<{
   readonly created: boolean;
   readonly path: string;
@@ -525,7 +527,7 @@ export async function ensureConfig(
       "code" in error &&
       error.code === "EEXIST"
     ) {
-      await addDefaultPlugins(defaults, file);
+      await addDefaultPlugins(defaults, file, hooks);
       return { created: false, path: file, config: await readConfig(home) };
     }
     throw error;
@@ -544,12 +546,14 @@ export interface PluginOffer {
  * Turns one configured plugin on or off, preserving the rest of the file.
  * A plugin in `offer.optional` that the file does not list is added.
  * The change takes effect at the next command or `serve` reload.
+ * `hooks` lets a test stop the write before it replaces the file.
  */
 export async function setPluginEnabled(
   home: string,
   name: string,
   enabled: boolean,
   offer: PluginOffer = { optional: {} },
+  hooks: AsyncAtomicWriteOptions = {},
 ): Promise<void> {
   const file = configPath(home);
   let raw: Record<string, unknown> = {};
@@ -589,7 +593,7 @@ export async function setPluginEnabled(
     throw new ConfigError(`${file}: plugins.${name}: must be a module name or an object`);
   }
   await mkdir(home, { recursive: true });
-  await writeFile(file, `${JSON.stringify(raw, null, 2)}\n`);
+  await writeJsonAtomic(file, raw, { ...hooks, space: 2 });
 }
 
 /**
@@ -603,7 +607,7 @@ export async function addPluginEntry(
   home: string,
   name: string,
   module: string,
-  options: LockFileOptions = {},
+  options: LockFileOptions & AsyncAtomicWriteOptions = {},
 ): Promise<void> {
   const file = configPath(home);
   return withLockFile(`${file}.lock`, async () => {
@@ -636,7 +640,7 @@ export async function addPluginEntry(
     }
     raw.plugins[name] = { module, enabled: false };
     await mkdir(home, { recursive: true });
-    await writeFile(file, `${JSON.stringify(raw, null, 2)}\n`);
+    await writeJsonAtomic(file, raw, { ...options, space: 2 });
   }, options);
 }
 

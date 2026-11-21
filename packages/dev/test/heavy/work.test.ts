@@ -4,6 +4,7 @@ import { match, withDefaultAccess, type AccessProfile } from "@operad-io/access-
 import { afterAll, describe, expect, test } from "bun:test";
 import { createChatPlugin } from "@operad-io/chat";
 import {
+  appendFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -138,6 +139,13 @@ function fakeHarness(record: string) {
             return { result: "done", data: { sessionId: "fake-session" } };
           }
           if (mode === "throw") throw new Error("the fake harness crashed");
+          if (mode === "throw-main-change") {
+            writeFileSync(
+              join(input.cwd, "..", "..", "main-only.txt"),
+              "changed outside the worktree\n",
+            );
+            throw new Error("the fake harness crashed");
+          }
           if (mode === "fail") {
             return {
               result: "failed",
@@ -149,12 +157,32 @@ function fakeHarness(record: string) {
             };
           }
           if (mode === "unavailable" || mode === "usage_limit") {
+            const retry = args[1];
+            const retryAfter =
+              typeof retry === "string" && retry.length > 0
+                ? Number(retry)
+                : undefined;
+            const reported = args[3];
+            const reportedAt =
+              typeof reported === "string" && reported.length > 0
+                ? Number(reported)
+                : undefined;
+            const message =
+              typeof args[2] === "string" ? args[2] : "the model is busy";
             return {
               result: "failed",
               data: {
                 sessionId: "fake-session",
-                message: "the model is busy",
-                modelError: { kind: mode },
+                message,
+                modelError: {
+                  kind: mode,
+                  ...(retryAfter !== undefined && Number.isFinite(retryAfter)
+                    ? { retry_after_secs: retryAfter }
+                    : {}),
+                  ...(reportedAt !== undefined && Number.isFinite(reportedAt)
+                    ? { reported_at: reportedAt }
+                    : {}),
+                },
               },
             };
           }
@@ -168,6 +196,18 @@ function fakeHarness(record: string) {
                 message: "the fake harness left work behind",
               },
             };
+          }
+          if (mode === "main-change") {
+            writeFileSync(
+              join(input.cwd, "..", "..", "main-only.txt"),
+              "changed outside the worktree\n",
+            );
+          }
+          if (mode === "main-change-again") {
+            appendFileSync(
+              join(input.cwd, "..", "..", "before.txt"),
+              "edited again outside the worktree\n",
+            );
           }
           if (mode === "commit" || mode === "commit-standard" || mode === "commit-incomplete" || mode === "commit-broken" || mode === "commit-unknown-cost") {
             writeFileSync(join(input.cwd, "worker.txt"), "done\n");
@@ -654,19 +694,142 @@ describe("dev/work", () => {
     expect((await taskDataOf(state)).attempts).toBe(2);
   });
 
-  test("unavailable: a model error waits for the model instead of a person", async () => {
-    for (const mode of ["unavailable", "usage_limit"]) {
-      const state = await fixture(mode);
-      const before = Date.now();
+  test("unavailable: a model error without a retry-after waits retrySecs", async () => {
+    const state = await fixture("unavailable");
+    let clock = 10_000;
+    reviewTestHooks.now = () => clock;
+    try {
       const result = await runWork(state);
-      expect(result.result).toBe("unavailable");
       const retryAt = result.data?.retryAt;
-      expect(typeof retryAt).toBe("number");
-      expect(retryAt as number).toBeGreaterThanOrEqual(before + 120_000);
+      expect(result.result).toBe("unavailable");
+      expect(retryAt).toBe(clock + 120_000);
       const task = await taskDataOf(state);
       expect(task.phase).toBe("running");
       expect(task.attempt?.workWaits).toBe(1);
       expect(task.attempt?.workRetryAt).toBe(retryAt as number);
+    } finally {
+      reviewTestHooks.now = undefined;
+    }
+  });
+
+  test("unavailable: a short retry-after is the wait, not retrySecs", async () => {
+    const state = await fixture("unavailable", {
+      args: ["unavailable", "30"],
+    });
+    let clock = 10_000;
+    reviewTestHooks.now = () => clock;
+    try {
+      const result = await runWork(state);
+      expect(result.result).toBe("unavailable");
+      expect(result.data?.retryAt).toBe(clock + 30_000);
+      const task = await taskDataOf(state);
+      expect(task.attempt?.workWaits).toBe(1);
+      expect(task.attempt?.workRetryAt).toBe(clock + 30_000);
+      clock += 30_000;
+    } finally {
+      reviewTestHooks.now = undefined;
+    }
+  });
+
+  test("unavailable: a retry-after is counted from when the model reported it", async () => {
+    const reportedAt = 1_000;
+    const state = await fixture("unavailable", {
+      args: ["unavailable", "30", "the model is busy", String(reportedAt)],
+    });
+    let clock = 10_000;
+    reviewTestHooks.now = () => clock;
+    try {
+      const result = await runWork(state);
+      expect(result.result).toBe("unavailable");
+      // The report was ten seconds before this step read it.
+      expect(result.data?.retryAt).toBe(reportedAt + 30_000);
+      const task = await taskDataOf(state);
+      expect(task.attempt?.workRetryAt).toBe(reportedAt + 30_000);
+      clock += 30_000;
+    } finally {
+      reviewTestHooks.now = undefined;
+    }
+  });
+
+  test("unavailable: a retry-after past the bound goes to a person", async () => {
+    const state = await fixture("unavailable", {
+      args: ["unavailable", "3600", "the provider is overloaded"],
+    });
+    let clock = 10_000;
+    reviewTestHooks.now = () => clock;
+    try {
+      const result = await runWork(state);
+      expect(result.result).toBe("failed");
+      expect(result.data?.reason).toBe("model_unavailable");
+      expect(String(result.data?.message)).toContain(
+        "the provider is overloaded",
+      );
+      expect(String(result.data?.message)).toContain(
+        new Date(clock + 3_600_000).toISOString(),
+      );
+      const task = await taskDataOf(state);
+      expect(task.phase).toBe("waiting");
+      expect(task.attempt?.workWaits ?? 0).toBe(0);
+      expect(task.attempt?.workRetryAt ?? null).toBeNull();
+    } finally {
+      reviewTestHooks.now = undefined;
+    }
+  });
+
+  test("usage_limit: a retry-after goes to a person and does not retry", async () => {
+    const state = await fixture("unavailable", {
+      args: ["usage_limit", "175958", "OpenCode Go usage limit reached (monthly, resets in 2d)"],
+    });
+    let clock = 10_000;
+    reviewTestHooks.now = () => clock;
+    try {
+      const result = await runWork(state);
+      expect(result.result).toBe("failed");
+      expect(result.data?.reason).toBe("model_unavailable");
+      expect(String(result.data?.message)).toContain(
+        "OpenCode Go usage limit reached (monthly, resets in 2d)",
+      );
+      expect(String(result.data?.message)).toContain(
+        new Date(clock + 175_958_000).toISOString(),
+      );
+      const task = await taskDataOf(state);
+      expect(task.phase).toBe("waiting");
+      expect(task.attempt?.workWaits ?? 0).toBe(0);
+      expect(task.attempt?.workRetryAt ?? null).toBeNull();
+      const retry = await state.registry.runStep(
+        "dev/retry",
+        { from: "work", result: "failed" },
+        {
+          runId: "retry-run",
+          object: { type: "task", id: state.taskKey, data: {} },
+        },
+      );
+      expect(retry.result).toBe("ask");
+    } finally {
+      reviewTestHooks.now = undefined;
+    }
+  });
+
+  test("usage_limit: the reset time is counted from when the model reported it", async () => {
+    const reportedAt = 1_000;
+    const state = await fixture("unavailable", {
+      args: [
+        "usage_limit",
+        "3600",
+        "the usage limit is reached",
+        String(reportedAt),
+      ],
+    });
+    let clock = 10_000;
+    reviewTestHooks.now = () => clock;
+    try {
+      const result = await runWork(state);
+      expect(result.result).toBe("failed");
+      expect(String(result.data?.message)).toContain(
+        new Date(reportedAt + 3_600_000).toISOString(),
+      );
+    } finally {
+      reviewTestHooks.now = undefined;
     }
   });
 
@@ -745,6 +908,58 @@ describe("dev/work", () => {
     expect(result.data?.reason).toBe("harness");
     expect(result.data?.files).toEqual(["dirty.txt"]);
     expect(String(result.data?.message)).toContain("dirty.txt");
+  });
+
+  test("a new change in the main checkout is reported and left alone", async () => {
+    const state = await fixture("main-change");
+    const main = state.remote.repository;
+    writeFileSync(join(main, "before.txt"), "already changed\n");
+
+    const result = await runWork(state);
+    expect(result.result).toBe("nothing");
+    const line = "changed the main checkout: main-only.txt";
+    const task = await taskDataOf(state);
+    expect(task.brief).toContain(line);
+    expect(task.brief).not.toContain("before.txt");
+    expect(task.attempt?.finalMessage).toBe(line);
+    expect(String(result.data?.message)).toContain(line);
+    expect(readFileSync(join(main, "main-only.txt"), "utf8")).toBe(
+      "changed outside the worktree\n",
+    );
+  });
+
+  test("a further edit to a file the main checkout already had changed is reported", async () => {
+    const state = await fixture("main-change-again");
+    const main = state.remote.repository;
+    writeFileSync(join(main, "before.txt"), "already changed\n");
+
+    const result = await runWork(state);
+    expect(result.result).toBe("nothing");
+    const line = "changed the main checkout: before.txt";
+    const task = await taskDataOf(state);
+    expect(task.brief).toContain(line);
+    expect(task.attempt?.finalMessage).toBe(line);
+    expect(String(result.data?.message)).toContain(line);
+    expect(readFileSync(join(main, "before.txt"), "utf8")).toBe(
+      "already changed\nedited again outside the worktree\n",
+    );
+  });
+
+  test("a change in the main checkout is reported even when the worker crashes", async () => {
+    const state = await fixture("throw-main-change");
+    const main = state.remote.repository;
+
+    const result = await runWork(state);
+    expect(result.result).toBe("failed");
+    expect(result.data?.reason).toBe("harness");
+    const line = "changed the main checkout: main-only.txt";
+    const task = await taskDataOf(state);
+    expect(task.brief).toContain(line);
+    expect(task.attempt?.finalMessage).toBe(line);
+    expect(String(result.data?.message)).toContain(line);
+    expect(readFileSync(join(main, "main-only.txt"), "utf8")).toBe(
+      "changed outside the worktree\n",
+    );
   });
 
   test("an empty worker.args is passed, not the flow's args", async () => {
@@ -1246,15 +1461,19 @@ describe("dev/work with workers", () => {
     expect((JSON.parse(readFileSync(state.record, "utf8")) as { args: string[] }).args).toEqual(["throw"]);
   });
 
-  test("a pool without a fallback waits on usage_limit and never takes another pool's worker (T-0379)", async () => {
-    for (const mode of ["usage_limit", "unavailable"]) {
+  test("a pool without a fallback never takes another pool's worker (T-0379)", async () => {
+    for (const mode of ["unavailable", "usage_limit"]) {
       const state = await fixture("nothing", {
         workers: { claude: fake("commit"), codex: fake(mode) },
         pools: { default: ["claude"], image: ["codex"] },
       });
       const result = await runWork(state, "run-1", undefined, { flowPool: "image" });
-      expect(result.result).toBe("unavailable");
-      expect(typeof result.data?.retryAt).toBe("number");
+      expect(result.result).toBe(mode === "usage_limit" ? "failed" : "unavailable");
+      if (mode === "unavailable") {
+        expect(typeof result.data?.retryAt).toBe("number");
+      } else {
+        expect(result.data?.retryAt ?? null).toBeNull();
+      }
       // The code worker never ran: the harness's last record is the image worker's.
       expect((JSON.parse(readFileSync(state.record, "utf8")) as { args: string[] }).args).toEqual([mode]);
       expect((await taskDataOf(state)).attempt?.worker).toBe("codex");

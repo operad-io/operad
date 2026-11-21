@@ -59,7 +59,7 @@ class FakeTimer {
 }
 
 /** Resolves when `check` holds, looking again after each change to the log. */
-function waitUntil(log: LogBackend, check: () => Promise<boolean>): Promise<void> {
+function waitForLog(log: LogBackend, check: () => Promise<boolean>): Promise<void> {
   return new Promise((resolve, reject) => {
     let busy = false;
     let again = false;
@@ -132,7 +132,7 @@ async function setup() {
       askTimer: timer.timer,
     });
   const opened = async (n: number): Promise<void> =>
-    waitUntil(log, async () => count(await facts(log, info.runId), "ask_opened") >= n);
+    waitForLog(log, async () => count(await facts(log, info.runId), "ask_opened") >= n);
   return {
     root,
     log,

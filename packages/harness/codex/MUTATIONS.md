@@ -160,3 +160,9 @@ recorded. The root [MUTATIONS.md](../../../MUTATIONS.md) explains the format and
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0644-M2 | packages/harness/codex/src/install.ts | `defaultCommand` remembered the resolved codex path for the PATH, so a codex moved to a new path by an upgrade was not found | `the command that starts codex app-server > a codex that moved to a new path is found again` |
+
+## T-0656 — codex's model error carries the wait its message names
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0656-M1 | packages/harness/codex/src/index.ts | `modelErrorFrom` dropped the status and retry-after the error message named | `codex/agent: model errors > the error info maps to the kinds dev and pool act on` |

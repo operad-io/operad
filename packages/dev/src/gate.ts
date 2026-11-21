@@ -31,7 +31,7 @@ import {
   strictestFixLevel,
   type Grading,
 } from "@operad-io/review-grading";
-import { isRecord, messageOf, type PluginStepResult, type StepContext, type StepRunOptions } from "@operad-io/engine";
+import { isRecord, messageOf, type PluginStepResult, type StepContext } from "@operad-io/engine";
 import { appendRework, DevError, type PendingReviewRun, type ReviewFinding, type ReviewNote, type ReviewNotes, type ReviewRecord, type ReviewResult, type ReviewRunRecord, type ReviewRunReason, type ReviewRunRole, type ReworkRecord, type TaskAttempt, type TaskData, type VerifyRecord, type VerifyResult } from "./model.ts";
 import {
   assertInsideRepository,
@@ -44,12 +44,14 @@ import {
 } from "./settings.ts";
 import { reviewWaitKind } from "./waits.ts";
 import { appendChange } from "./model.ts";
+import { reviewTestHooks } from "./clock.ts";
+export { reviewTestHooks };
+import { modelErrorIn, modelWaitsForPerson, type ModelErrorInfo } from "./model-error.ts";
+import { commitOf, git } from "./git.ts";
 import {
   briefText,
   cancelledStep,
   claimAllows,
-  git,
-  headOf,
   isRegistered,
   saveTaskGuarded,
   taskContext,
@@ -58,7 +60,6 @@ import {
 } from "./steps.ts";
 import {
   addedLinesOf,
-  filePatches,
   incrementOf,
   type Increment,
   fixedCount,
@@ -68,6 +69,7 @@ import {
   reviewSettingsOf,
   previousLine,
   previousReview,
+  severityRank,
   type LineMap,
   type PreviousFinding,
   type ReviewHistoryEntry,
@@ -97,20 +99,9 @@ export function branchHead(
   workName: string,
 ): string | undefined {
   const branch = workBranch(workName);
-  const local = git(repositoryPath, [
-    "rev-parse",
-    "--verify",
-    "--quiet",
-    `${branch}^{commit}`,
-  ]);
-  if (local.ok && local.out.length > 0) return local.out;
-  const remote = git(repositoryPath, [
-    "rev-parse",
-    "--verify",
-    "--quiet",
-    `refs/remotes/${settings.remote}/${branch}^{commit}`,
-  ]);
-  return remote.ok && remote.out.length > 0 ? remote.out : undefined;
+  const local = commitOf(repositoryPath, branch);
+  if (local !== undefined) return local;
+  return commitOf(repositoryPath, `refs/remotes/${settings.remote}/${branch}`);
 }
 
 /** The commit the task branched from: the merge base of main and the commit. */
@@ -710,19 +701,76 @@ export function leftOutLine(file: FileDiff): string {
   return `- ${file.path} (+${file.added}/-${file.removed}) — ${file.leftOut ?? "left out"}`;
 }
 
-function severityRank(severity: string): number {
-  if (severity === "critical") return 3;
-  if (severity === "major") return 2;
-  if (severity === "minor") return 1;
-  return 0;
-}
-
 function levelRank(level: FixLevel): number {
   return severityRank(level);
 }
 
 function atOrAbove(severity: string, level: FixLevel): boolean {
   return severityRank(severity) >= levelRank(level);
+}
+
+/** The line `dev/work` writes into the worker's answer for a main-checkout change. */
+const MAIN_CHECKOUT_CHANGE = "changed the main checkout:";
+
+/**
+ * The paths an attempt's work changed outside its worktree, read from the line
+ * the work step wrote into the worker's answer (T-0646).
+ */
+function mainCheckoutChanges(attempt: TaskAttempt): readonly string[] {
+  const message = attempt.finalMessage;
+  if (typeof message !== "string") return [];
+  const paths: string[] = [];
+  for (const line of message.split("\n")) {
+    const said = line.trim();
+    if (!said.startsWith(`${MAIN_CHECKOUT_CHANGE} `)) continue;
+    for (const path of said.slice(MAIN_CHECKOUT_CHANGE.length + 1).split(", ")) {
+      const named = path.trim();
+      if (named.length > 0 && !paths.includes(named)) paths.push(named);
+    }
+  }
+  return paths;
+}
+
+/**
+ * The major findings dev adds itself for an attempt whose work changed the main
+ * checkout: one per named file that no report already blocks on. They are
+ * added whatever the reviewer reported, so such an attempt carries the major
+ * finding without asking the reviewer for it; the work must make those changes
+ * in its own worktree instead.
+ */
+function mainCheckoutFindings(
+  paths: readonly string[],
+  reported: readonly ReviewFinding[],
+): ReviewFinding[] {
+  const blocked = new Set(
+    reported
+      .filter(
+        (finding) =>
+          finding.preExisting !== true &&
+          finding.pre_existing !== true &&
+          atOrAbove(finding.severity, "major"),
+      )
+      .map((finding) => normalizePath(finding.file)),
+  );
+  return paths
+    .filter((path) => !blocked.has(normalizePath(path)))
+    .map((path) => ({
+      file: path,
+      line: 0,
+      severity: "major",
+      summary: "the work changed this file in the main checkout",
+      trigger: "the work must make this change in its own worktree instead",
+    }));
+}
+
+/** The counted findings of a failed review, as the task's history and brief show them. */
+function describeFindings(findings: readonly ReviewFinding[]): string {
+  return findings
+    .map(
+      (finding) =>
+        `${finding.file}:${finding.line} ${finding.severity}: ${finding.summary}`,
+    )
+    .join("; ");
 }
 
 interface FindingShape {
@@ -887,12 +935,22 @@ function reviewPrompt(
   prepare: readonly string[] = [],
   rework?: ReworkPrompt,
   checks: readonly string[] = [],
+  mainCheckout: readonly string[] = [],
 ): string {
   const pieces: string[] = [
     `Review the changes of task ${task.title}.`,
     "## Brief",
     briefText(task).trim(),
   ];
+  if (mainCheckout.length > 0) {
+    pieces.push(
+      "## The main checkout",
+      [
+        `The work of this attempt left this line in its answer: \`${MAIN_CHECKOUT_CHANGE} ${mainCheckout.join(", ")}\`. It means the work changed files outside its worktree, in the main checkout, and must make those changes in its own worktree instead.`,
+        "This is a major finding: report it as a major finding on each of those files.",
+      ].join("\n"),
+    );
+  }
   const graded = gradingLines(grading);
   if (graded.length > 0) pieces.push("## Grading", graded.join("\n"));
   if (rework !== undefined) {
@@ -979,6 +1037,8 @@ interface ReviewerCall {
     | "failed";
   readonly report?: Report | undefined;
   readonly message: string;
+  /** What the model error said, when the run ended on one. */
+  readonly modelError?: ModelErrorInfo | undefined;
 }
 
 /** The largest review report the gate reads; anything bigger is not a report. */
@@ -1146,6 +1206,7 @@ function writeReviewOutcome(path: string, call: ReviewerCall): void {
         outcome: call.outcome,
         message: call.message,
         ...(call.report === undefined ? {} : { report: call.report }),
+        ...(call.modelError === undefined ? {} : { modelError: call.modelError }),
       }),
     );
   } catch {
@@ -1182,8 +1243,13 @@ function readReviewOutcome(resultPath: string): ReviewerCall | undefined {
     return undefined;
   }
   const message = typeof value.message === "string" ? value.message : "";
+  const modelError = modelErrorIn(value);
   if (outcome !== "report") {
-    return { outcome: outcome as ReviewerCall["outcome"], message };
+    return {
+      outcome: outcome as ReviewerCall["outcome"],
+      message,
+      ...(modelError === undefined ? {} : { modelError }),
+    };
   }
   const report = parseReport(JSON.stringify(value.report));
   if (report === undefined) return undefined;
@@ -1449,7 +1515,12 @@ async function callReviewerOnce(
         : `the reviewer ended "${outcome.result}"`;
     const kind = failureOutcome(data, message);
     if (kind === "timed_out" || kind === "unavailable") {
-      return { outcome: kind, message };
+      const modelError = modelErrorIn(data);
+      return {
+        outcome: kind,
+        message,
+        ...(modelError === undefined ? {} : { modelError }),
+      };
     }
   }
   return { outcome: "no_report", message: lastMessageOf(outcome) };
@@ -1655,27 +1726,6 @@ function reviewMessage(
   return parts.join("; ");
 }
 
-/** Test-only hooks: a child process crashes at a named point in a review. */
-export const reviewTestHooks: {
-  now?: (() => number) | undefined;
-  /** Waits instead of the real timer, so a test can move the clock. */
-  wait?:
-    | ((ms: number, signal: AbortSignal | undefined) => Promise<boolean>)
-    | undefined;
-  beforeRun?:
-    | ((run: { readonly role: ReviewRunRole; readonly reason: ReviewRunReason }) => void)
-    | undefined;
-  /** Runs after the reviewer answered and before its run is written. */
-  afterCall?:
-    | ((run: { readonly role: ReviewRunRole; readonly reason: ReviewRunReason }) => void)
-    | undefined;
-  afterRunSaved?: ((run: ReviewRunRecord) => void) | undefined;
-  /** Runs after the reviewer wrote a valid report, before the store copy. */
-  beforeCopy?: (() => void) | undefined;
-  /** Runs while a workspace report is open, before the folders are checked again. */
-  afterOpen?: (() => void) | undefined;
-} = {};
-
 /** The task's notes with this round's findings that did not fail it. */
 function notesOf(
   task: TaskData,
@@ -1842,6 +1892,9 @@ export async function runReview(
   if (!claimAllows(ctx, context.task)) return cancelledStep();
   const task = context.task;
   const attempt = attemptOf(ctx, task);
+  // The attempt being reviewed changed the main checkout: the work must make
+  // those changes in its own worktree instead, and dev holds the review to it.
+  const mainPaths = mainCheckoutChanges(attempt);
   const reviews =
     typeof attempt.reviews === "number" ? attempt.reviews : 0;
   const round = reviews + 1;
@@ -2230,6 +2283,33 @@ export async function runReview(
   // review to ask a model for. A change made only of left-out files still runs
   // the reviewer: the list is what tells it those files exist.
   if (prepared.files.length === 0) {
+    // A main-checkout change fails even without a diff: no reviewer is asked,
+    // and dev adds the major finding itself.
+    const findings = mainCheckoutFindings(mainPaths, []);
+    if (findings.length > 0) {
+      const counted = findings.filter((finding) =>
+        atOrAbove(finding.severity, context.settings.reviewer.fixLevel),
+      ).length;
+      const message = describeFindings(findings);
+      const record: ReviewRecord = {
+        result: "findings",
+        decision: "findings",
+        run: ctx.runId,
+        sha,
+        round,
+        runs: [],
+        findings,
+        verified: [],
+        reason: "findings",
+        message,
+      };
+      return finish(record, "fail", {
+        reason: "findings",
+        counted,
+        message,
+        leftOut: prepared.leftOut.map(leftOutLine),
+      });
+    }
     const record: ReviewRecord = {
       result: "passed",
       decision: "passed",
@@ -2352,6 +2432,7 @@ export async function runReview(
       context.settings.prepare,
       reworkPrompt,
       verifiedCommands(attempt.verify),
+      mainPaths,
     );
     // A resumed call asks with the prompt it recorded, not one built again.
     const recorded =
@@ -2491,6 +2572,7 @@ export async function runReview(
         outcome: call.outcome,
         run: ctx.runId,
         ...(call.message.length === 0 ? {} : { message: call.message }),
+        ...(call.modelError === undefined ? {} : { modelError: call.modelError }),
       };
     }
     runs.push(runRecord);
@@ -2514,31 +2596,42 @@ export async function runReview(
     if (!written) return cancelledStep();
     reviewTestHooks.afterRunSaved?.(runRecord);
     next = nextReviewAction(runs, settings.fallback);
+    if (
+      next === "wait-unavailable" &&
+      runRecord.modelError !== undefined &&
+      runRecord.modelError !== null &&
+      modelWaitsForPerson(runRecord.modelError)
+    ) {
+      // A usage limit, or a wait past half an hour, is not an outage dev can
+      // wait out: the task goes to a person who can change the worker.
+      next = "wait-exhausted";
+    }
   }
 
   const last = runs[runs.length - 1];
   if (next === "done" && last !== undefined) {
-    const counted = last.counted ?? 0;
-    const decision = counted === 0 ? "passed" : "findings";
-    const stepResult = decision === "passed" ? "pass" : "fail";
-    const result: ReviewResult = decision;
-    const findings = last.findings ?? [];
+    // A reviewer that passed an attempt with a main-checkout change cannot let
+    // it through: dev adds the major finding itself.
+    const reported = last.findings ?? [];
+    const findings = [
+      ...reported,
+      ...mainCheckoutFindings(mainPaths, reported),
+    ];
     const countedFindings = findings.filter(
       (finding) =>
         finding.preExisting !== true &&
         finding.pre_existing !== true &&
         atOrAbove(finding.severity, settings.fixLevel),
     );
+    const counted = countedFindings.length;
+    const decision = counted === 0 ? "passed" : "findings";
+    const stepResult = decision === "passed" ? "pass" : "fail";
+    const result: ReviewResult = decision;
     const preExistingCount = findings.filter(
       (finding) =>
         finding.preExisting === true || finding.pre_existing === true,
     ).length;
-    const findingsMessage = countedFindings
-      .map(
-        (finding) =>
-          `${finding.file}:${finding.line} ${finding.severity}: ${finding.summary}`,
-      )
-      .join("; ");
+    const findingsMessage = describeFindings(countedFindings);
     const reworkLine =
       rework === undefined
         ? ""
@@ -2596,7 +2689,14 @@ export async function runReview(
     const why = exhausted
       ? "review did not finish (model unavailable)"
       : "review did not finish (out of time)";
-    const message = [reviewMessage("passed", runs), why]
+    const reset =
+      exhausted && last?.modelError?.retryAfterSecs !== undefined
+        ? `; the model can serve again at ${new Date(
+            (last.modelError.reportedAt ?? clock()) +
+              last.modelError.retryAfterSecs * 1000,
+          ).toISOString()}`
+        : "";
+    const message = [reviewMessage("passed", runs), why + reset]
       .filter((piece) => piece.length > 0)
       .join("; ");
     const timedOut = !exhausted && last?.outcome === "timed_out";
@@ -2624,9 +2724,14 @@ export async function runReview(
     const waits = runs.filter(
       (run) => run.role === "primary" && run.outcome === "unavailable",
     ).length;
+    const retryAfterSecs = last?.modelError?.retryAfterSecs;
     const retryAt =
-      (reviewTestHooks.now?.() ?? Date.now()) +
-      reviewWaitMs(settings.retrySecs, waits);
+      (retryAfterSecs === undefined
+        ? clock()
+        : last?.modelError?.reportedAt ?? clock()) +
+      (retryAfterSecs === undefined
+        ? reviewWaitMs(settings.retrySecs, waits)
+        : retryAfterSecs * 1000);
     const message = reviewMessage("unavailable", runs, retryAt);
     const record: ReviewRecord = {
       result: "unavailable",
@@ -2937,16 +3042,5 @@ export async function runRework(
       brief: next.brief,
     },
   };
-}
-
-/** The recorded verified commit of a task, for a caller that wants to look. */
-export function verifiedCommitOf(task: TaskData): string | undefined {
-  const sha = task.attempt?.verified;
-  return typeof sha === "string" && sha.length > 0 ? sha : undefined;
-}
-
-/** The branch head a task's worktree is on, for tests and views. */
-export function taskHead(path: string): string | undefined {
-  return headOf(path);
 }
 

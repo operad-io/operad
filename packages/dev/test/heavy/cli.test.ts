@@ -17,16 +17,9 @@ import {
 } from "@operad-io/engine";
 import { commandTestHooks } from "../../src/commands.ts";
 import { withRepositoryLock } from "../../src/lock.ts";
-import { bareId, listAll } from "../../src/model.ts";
-import { addPlan, addRepository, addTask, setTaskPhase } from "../../src/service.ts";
-import {
-  cleanupTempRoots,
-  guardLockHandles,
-  makeGitRepository,
-  runInProcess,
-  tempRoot,
-  type RunResult,
-} from "../support.ts";
+import { idOfKey, listAll } from "../../src/model.ts";
+import { addPlan, addRepository, addTask } from "../../src/service.ts";
+import { cleanupTempRoots, guardLockHandles, makeGitRepository, runInProcess, tempRoot, type RunResult, setTaskPhase } from "../support.ts";
 
 afterAll(cleanupTempRoots);
 guardLockHandles();
@@ -311,7 +304,7 @@ describe("operad with the dev plugin", () => {
     const storeRoot = storeRootOf(config);
     const store = new SqlitePluginStore({ root: storeRoot });
     const taskObject = (await listAll(store, "task")).find(
-      (object) => bareId(object.id) === taskId,
+      (object) => idOfKey(object.id) === taskId,
     );
     if (taskObject === undefined) throw new Error("the task is missing");
 
@@ -823,7 +816,7 @@ describe("operad with the dev plugin", () => {
       request: "r",
     });
     const addTaskTo = async (planId: string, slug: string): Promise<string> =>
-      bareId(
+      idOfKey(
         (
           await addTask(store, {
             plan: planId,

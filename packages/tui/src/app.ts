@@ -778,7 +778,7 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     } catch (error) {
       if (abort.signal.aborted) return;
       noteConnection(error);
-      dispatch({ type: "page-error", tabId: request.tabId, message: messageOf(error) });
+      dispatch({ type: "list-error", tabId: request.tabId, message: messageOf(error) });
       report(error);
     }
   }
@@ -853,7 +853,7 @@ export function startShell(deps: TuiShellDeps): TuiShell {
               });
             } else {
               dispatch({
-                type: "page-error",
+                type: "list-error",
                 tabId: tab.id,
                 message: messageOf(result.error),
               });

@@ -11,7 +11,8 @@
  */
 
 import { messageOf } from "@operad-io/engine";
-import { CHAT_TYPE, allEntries, allMessages, chatFacts, writingReply } from "@operad-io/chat";
+import { CHAT_TYPE } from "@operad-io/chat";
+import { ChatWatches } from "./chat-watch.ts";
 import {
   cronMatches,
   cronMinutesBetween,
@@ -663,18 +664,11 @@ interface ScheduledSource {
   readonly client: SourceContext["client"];
 }
 
-/** One firing the source is watching for its reply. */
-interface Watch {
-  readonly stop: () => void;
-  readonly check: () => Promise<void>;
-}
-
 /** The bot's own source for scheduled prompts. */
 export class BotScheduleSource {
   private readonly ctx: ScheduledSource;
   private readonly notify: (notice: ScheduleNotice) => Promise<void>;
-  private readonly watches = new Map<string, Watch>();
-  private readonly work = new Set<Promise<void>>();
+  private readonly chatWatches: ChatWatches;
   private timer: ReturnType<typeof setInterval> | undefined;
   private stopped = false;
   private busy = false;
@@ -686,22 +680,12 @@ export class BotScheduleSource {
   ) {
     this.ctx = ctx;
     this.notify = options.notify ?? ((notice) => notifyScheduledReply(ctx.home, notice));
-  }
-
-  private async log(message: string): Promise<void> {
-    await this.ctx.logger.write(message);
-  }
-
-  private track(work: Promise<void>): void {
-    const tracked = work
-      .catch((error: unknown) => this.log(messageOf(error)))
-      .finally(() => this.work.delete(tracked));
-    this.work.add(tracked);
+    this.chatWatches = new ChatWatches(ctx.logger, ctx.store);
   }
 
   /** Waits for the checks that are running now; a test calls this after a reply. */
   async settled(): Promise<void> {
-    while (this.work.size > 0) await Promise.allSettled([...this.work]);
+    await this.chatWatches.settled();
   }
 
   /** Emits at most one tick per entry, for the latest due or missed minute. */
@@ -835,7 +819,7 @@ export class BotScheduleSource {
       return;
     }
     if (chatId === undefined) {
-      await this.log(`scheduled prompt "${entry.name}" of bot ${bot} opened no chat`);
+      await this.chatWatches.log(`scheduled prompt "${entry.name}" of bot ${bot} opened no chat`);
       return;
     }
     const changed = await replaceEntry(
@@ -851,7 +835,7 @@ export class BotScheduleSource {
     if (changed === undefined) return;
     await this.watch(bot, entry.name, minute, chatId);
     if (skipped.length > 0) {
-      await this.log(
+      await this.chatWatches.log(
         `scheduled prompt "${entry.name}" of bot ${bot}: skipped ${skipped
           .map((time) => new Date(time).toISOString())
           .join(", ")}; only the latest missed run is caught up`,
@@ -871,32 +855,25 @@ export class BotScheduleSource {
 
   private async watch(bot: string, name: string, plannedAt: number, chatId: string): Promise<void> {
     const key = `${bot}\u0000${name}\u0000${plannedAt}\u0000${chatId}`;
-    if (this.watches.has(key)) return;
-    let running = false;
-    let stopped = false;
-    let unsubscribe: (() => void) | undefined;
-    const check = async (): Promise<void> => {
-      if (running || stopped) return;
-      running = true;
-      try {
+    this.chatWatches.watchChatReply(
+      key,
+      chatId,
+      async (read) => {
         const chat = await this.ctx.store.get(CHAT_TYPE, chatId);
-        if (chat === undefined) return;
-        const messages = allMessages(this.ctx.store, chatId);
-        const entries = allEntries(this.ctx.store, chatId);
-        // A reply that goes round again is not finished at its first message.
-        if (writingReply(chatFacts(this.ctx.store, chatId), messages, entries) !== undefined) return;
-        const reply = [...messages].reverse().find((message) => message.role === "assistant");
-        const failure = [...entries].reverse().find((item) => item.kind === "failure");
+        if (chat === undefined) return undefined;
+        const reply = [...read.messages].reverse().find((message) => message.role === "assistant");
+        const failure = [...read.entries].reverse().find((item) => item.kind === "failure");
         const result =
           reply === undefined
             ? failure === undefined
               ? undefined
               : replySummary(failure.text ?? "The reply failed.")
             : replySummary(reply.text);
-        if (result === undefined) return;
-        stopped = true;
-        unsubscribe?.();
-        this.watches.delete(key);
+        if (result === undefined) return undefined;
+        const title = typeof chat.data.title === "string" ? chat.data.title : chatId;
+        return { result, title };
+      },
+      async ({ result, title }) => {
         await replaceEntry(
           this.ctx.store,
           bot,
@@ -907,11 +884,10 @@ export class BotScheduleSource {
               : undefined,
           "step:bot/scheduled",
         );
-        const title = typeof chat.data.title === "string" ? chat.data.title : chatId;
         try {
           await this.notify({ chatId, title, summary: result });
         } catch (error) {
-          await this.log(
+          await this.chatWatches.log(
             `scheduled prompt "${name}" of bot ${bot}: notify: ${messageOf(error)}`,
           );
         }
@@ -925,23 +901,8 @@ export class BotScheduleSource {
               : undefined,
           "step:bot/scheduled",
         );
-      } finally {
-        running = false;
-      }
-    };
-    const blocking = {
-      stop: () => {
-        stopped = true;
-        unsubscribe?.();
-        this.watches.delete(key);
       },
-      check,
-    };
-    this.watches.set(key, blocking);
-    unsubscribe = this.ctx.store.subscribe({ type: CHAT_TYPE, id: chatId }, {}, () => {
-      this.track(check());
-    });
-    this.track(check());
+    );
   }
 
   /** Watches a firing that was already started, such as one from before a restart. */
@@ -958,7 +919,7 @@ export class BotScheduleSource {
 
   start(): SourceHandle {
     this.timer = setInterval(() => {
-      this.track(this.poll());
+      this.chatWatches.track(this.poll());
     }, CHECK_INTERVAL_MS);
     if (typeof this.timer === "object" && "unref" in this.timer) {
       this.timer.unref();
@@ -967,8 +928,7 @@ export class BotScheduleSource {
       stop: () => {
         this.stopped = true;
         if (this.timer !== undefined) clearInterval(this.timer);
-        for (const watch of [...this.watches.values()]) watch.stop();
-        this.watches.clear();
+        this.chatWatches.stopAll();
       },
     };
   }
@@ -978,16 +938,11 @@ export class BotScheduleSource {
     try {
       await this.ctx.client.list(BOT_TYPE);
     } catch (error) {
-      await this.log(`scheduled prompts: ${messageOf(error)}`);
+      await this.chatWatches.log(`scheduled prompts: ${messageOf(error)}`);
     }
     await this.resumeWatches();
     await this.poll();
   }
-}
-
-/** Confirms that a message from this source is not a person's. */
-export function scheduledMessageSource(): string {
-  return SCHEDULE_SOURCE;
 }
 
 /** The source the bot plugin declares; `begin` runs before the first interval. */

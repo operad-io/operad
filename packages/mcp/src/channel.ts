@@ -10,8 +10,8 @@
  * differs or its waiting flag turns on, and never repeats the row it last sent.
  */
 
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { readFile } from "node:fs/promises";
+import { writeJsonAtomic } from "@operad-io/engine/platform";
 import {
   CHANNEL_NOTIFY_KINDS,
   DEFAULT_MCP_CHANNEL,
@@ -379,10 +379,9 @@ class ClaudeChannel implements ChannelHandle {
   private async saveSent(): Promise<void> {
     if (this.sentFile === undefined) return;
     try {
-      await mkdir(dirname(this.sentFile), { recursive: true });
-      const temp = `${this.sentFile}.${process.pid}.tmp`;
-      await writeFile(temp, JSON.stringify(Object.fromEntries(this.sent)));
-      await rename(temp, this.sentFile);
+      await writeJsonAtomic(this.sentFile, Object.fromEntries(this.sent), {
+        newline: false,
+      });
     } catch (error) {
       this.onLog(`channel: the sent rows could not be saved: ${messageOf(error)}`);
     }

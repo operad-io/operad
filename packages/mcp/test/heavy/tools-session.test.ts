@@ -1,9 +1,8 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { makeHome } from "@operad-io/engine/testing";
 import { openMcpTools, TOOLS } from "../../src/index.ts";
-import { cleanupTempRoots, tempRoot } from "../../../engine/test/plugin/support.ts";
+import { cleanupTempRoots } from "../../../engine/test/plugin/support.ts";
 
 afterAll(cleanupTempRoots);
 
@@ -12,20 +11,13 @@ const pluginPath = fileURLToPath(
   new URL("../../../engine/test/fixtures/plugins/presentation.ts", import.meta.url),
 );
 
-async function makeHome(): Promise<string> {
-  const root = await tempRoot();
-  const home = join(root, "home");
-  mkdirSync(home, { recursive: true });
-  writeFileSync(
-    join(home, "config.json"),
-    JSON.stringify({ plugins: [pluginPath], store: { backend: "sqlite", path: join(root, "store", "log.sqlite") } }),
-  );
-  return home;
+async function makeMcpSessionHome(): Promise<string> {
+  return (await makeHome({ plugins: [pluginPath] })).home;
 }
 
 describe("the tools opened in a harness's own process", () => {
   test("offer the server's tools and run them against the home", async () => {
-    const home = await makeHome();
+    const home = await makeMcpSessionHome();
     const tools = await openMcpTools({ home, cwd: home });
     try {
       expect(tools.tools).toBe(TOOLS);
@@ -38,7 +30,7 @@ describe("the tools opened in a harness's own process", () => {
   });
 
   test("an unknown tool and a bad argument are error results, not throws", async () => {
-    const home = await makeHome();
+    const home = await makeMcpSessionHome();
     const tools = await openMcpTools({ home, cwd: home });
     try {
       expect(await tools.call("nothing", {})).toMatchObject({ isError: true });
@@ -52,7 +44,7 @@ describe("the tools opened in a harness's own process", () => {
 
 describe("the stdio program", () => {
   test("answers tools/list for the home it is given and exits when its input ends", async () => {
-    const home = await makeHome();
+    const home = await makeMcpSessionHome();
     const child = Bun.spawn({
       cmd: [process.execPath, STDIO, "--home", home],
       cwd: home,

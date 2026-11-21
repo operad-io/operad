@@ -21,6 +21,7 @@ import {
 } from "../../src/index.ts";
 import { openSession } from "../session.ts";
 import { cleanupTempRoots, tempRoot } from "../../../engine/test/plugin/support.ts";
+import { makeHome } from "@operad-io/engine/testing";
 
 afterAll(cleanupTempRoots);
 
@@ -73,19 +74,8 @@ interface Home {
   readonly home: string;
 }
 
-async function makeHome(extra: Record<string, unknown> = {}): Promise<Home> {
-  const root = await tempRoot();
-  const home = join(root, "home");
-  mkdirSync(home, { recursive: true });
-  writeFileSync(
-    join(home, "config.json"),
-    JSON.stringify({
-      plugins: [pluginPath],
-      store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
-      ...extra,
-    }),
-  );
-  return { root, home };
+function makeMcpHome(extra: Record<string, unknown> = {}): Promise<Home> {
+  return makeHome({ plugins: [pluginPath], extra });
 }
 
 function git(cwd: string, args: readonly string[]): void {
@@ -411,7 +401,7 @@ function errorOf(response: Record<string, unknown>): Record<string, unknown> {
 
 describe("operad mcp", () => {
   test("the operad mcp command serves initialize and tools/list on stdio", async () => {
-    const { home } = await makeHome();
+    const { home } = await makeMcpHome();
     const child = startProcess(home);
     try {
       const initialized = await child.request(1, "initialize", {
@@ -427,7 +417,7 @@ describe("operad mcp", () => {
   });
 
   test("accepts the parameters the MCP specification allows on ping and tools/list", async () => {
-    const { home } = await makeHome();
+    const { home } = await makeMcpHome();
     const child = openSession(home);
     try {
       // radian 0.4.0 (rmcp 3.5.1) sends `_meta.progressToken` on every request,
@@ -459,7 +449,7 @@ describe("operad mcp", () => {
   });
 
   test("the types tool lists every type and marks the ones a plugin puts under settings", async () => {
-    const { home } = await makeHome({ plugins: [settingsPluginPath] });
+    const { home } = await makeMcpHome({ plugins: [settingsPluginPath] });
     const child = openSession(home);
     try {
       const listed = await child.request(1, "tools/call", {
@@ -484,7 +474,7 @@ describe("operad mcp", () => {
   });
 
   test("initializes, lists the table and reads every tool on fixture objects", async () => {
-    const { home } = await makeHome({
+    const { home } = await makeMcpHome({
       mcp: {
         actions: ["demo:approve", "demo:drop"],
         confirmActions: ["demo:drop"],
@@ -733,7 +723,7 @@ describe("operad mcp", () => {
   });
 
   test("refuses malformed requests with the JSON-RPC codes and answers no notification", async () => {
-    const { home } = await makeHome();
+    const { home } = await makeMcpHome();
     const child = openSession(home);
     try {
       const next = async () =>
@@ -805,7 +795,7 @@ describe("operad mcp", () => {
   });
 
   test("reads CRLF lines and a last line without a newline", async () => {
-    const { home } = await makeHome();
+    const { home } = await makeMcpHome();
     const child = openSession(home);
     child.sendText(
       `${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping", params: {} })}\r\n`,
@@ -821,7 +811,7 @@ describe("operad mcp", () => {
   });
 
   test("a refused plugin is logged to stderr and the server still serves", async () => {
-    const { home } = await makeHome({ plugins: [refusedPluginPath] });
+    const { home } = await makeMcpHome({ plugins: [refusedPluginPath] });
     const child = openSession(home);
     try {
       const listed = await child.request(1, "tools/list", {});
@@ -834,7 +824,7 @@ describe("operad mcp", () => {
   });
 
   test("a sent-rows file that cannot be read is logged to stderr", async () => {
-    const { root, home } = await makeHome();
+    const { root, home } = await makeMcpHome();
     const hash = new Bun.CryptoHasher("sha1")
       .update(join(root, "store"))
       .digest("hex")
@@ -852,7 +842,7 @@ describe("operad mcp", () => {
   });
 
   test("writes only JSON-RPC to stdout when a view logs a failure", async () => {
-    const { home } = await makeHome();
+    const { home } = await makeMcpHome();
     seed(home, "async", { title: "Async", state: "new", mode: "async" });
     const child = openSession(home);
     try {
@@ -875,7 +865,7 @@ describe("operad mcp", () => {
     }
   });
   test("splits show actions into the lead's and the owner's", async () => {
-    const { home } = await makeHome({
+    const { home } = await makeMcpHome({
       mcp: {
         actions: ["demo:approve", "demo:drop"],
         confirmActions: [],
@@ -906,7 +896,7 @@ describe("operad mcp", () => {
   });
 
   test("pending lists only the actions the lead may run", async () => {
-    const { home } = await makeHome({
+    const { home } = await makeMcpHome({
       mcp: {
         actions: ["demo:approve", "demo:drop"],
         confirmActions: [],
@@ -1000,7 +990,7 @@ describe("operad mcp", () => {
   });
 
   test("command runs a plugin verb whose name is also a kernel verb", async () => {
-    const { home } = await makeHome({ plugins: [kernelCommandPluginPath] });
+    const { home } = await makeMcpHome({ plugins: [kernelCommandPluginPath] });
     const child = openSession(home);
     try {
       await child.request(1, "initialize", { protocolVersion: PROTOCOL_VERSION });
@@ -1017,7 +1007,7 @@ describe("operad mcp", () => {
   });
 
   test("command refuses a plugin whose name is also a kernel verb", async () => {
-    const { home } = await makeHome({ plugins: [kernelNamePluginPath] });
+    const { home } = await makeMcpHome({ plugins: [kernelNamePluginPath] });
     const child = openSession(home);
     try {
       await child.request(1, "initialize", { protocolVersion: PROTOCOL_VERSION });
@@ -1036,7 +1026,7 @@ describe("operad mcp", () => {
   });
 
   test("command refuses settings, tui and check-load too", async () => {
-    const { home } = await makeHome({ plugins: [kernelSettingsPluginPath] });
+    const { home } = await makeMcpHome({ plugins: [kernelSettingsPluginPath] });
     const child = openSession(home);
     try {
       await child.request(1, "initialize", { protocolVersion: PROTOCOL_VERSION });
@@ -1061,7 +1051,7 @@ describe("operad mcp", () => {
   });
 
   test("answer refuses a run the log does not know", async () => {
-    const { home } = await makeHome();
+    const { home } = await makeMcpHome();
     const child = openSession(home);
     try {
       await child.request(1, "initialize", { protocolVersion: PROTOCOL_VERSION });
@@ -1078,7 +1068,7 @@ describe("operad mcp", () => {
   });
 
   test("act routes an event an action emits through the opened kernel", async () => {
-    const { home } = await makeHome({
+    const { home } = await makeMcpHome({
       plugins: [emitPluginPath],
       mcp: { actions: ["talk:say"], confirmActions: [] },
     });
@@ -1109,7 +1099,7 @@ describe("operad mcp", () => {
   });
 
   test("act sees whether a run is active, as the command line does", async () => {
-    const { home } = await makeHome({
+    const { home } = await makeMcpHome({
       plugins: [emitPluginPath],
       mcp: { actions: ["talk:active"], confirmActions: [] },
     });
@@ -1206,7 +1196,7 @@ describe("operad mcp", () => {
   });
 
   test("act passes opens through when it names an existing object and drops it when not", async () => {
-    const { home } = await makeHome({
+    const { home } = await makeMcpHome({
       plugins: [
         fileURLToPath(new URL("../../../engine/test/fixtures/plugins/opens.ts", import.meta.url)),
       ],
@@ -1237,7 +1227,7 @@ describe("operad mcp", () => {
   });
 
   test("act says why a file argument cannot be passed, and still runs the action without one", async () => {
-    const { home } = await makeHome({
+    const { home } = await makeMcpHome({
       plugins: [fileURLToPath(new URL("../fixtures/attach.ts", import.meta.url))],
       mcp: { actions: ["filer:attach"], confirmActions: [] },
     });
@@ -1566,7 +1556,7 @@ describe("operad mcp", () => {
 
 describe("operad mcp --claude-channel", () => {
   test("reports a phase change with its meta and stays silent for the rest", async () => {
-    const { home } = await makeHome({
+    const { home } = await makeMcpHome({
       plugins: [channelPluginPath],
       mcp: { channel: { notify: ["changes"] } },
     });
@@ -1658,7 +1648,7 @@ describe("operad mcp --claude-channel", () => {
   });
 
   test("--types limits the channel to the named object types", async () => {
-    const { home } = await makeHome({
+    const { home } = await makeMcpHome({
       plugins: [channelPluginPath],
       mcp: { channel: { notify: ["changes"] } },
     });
@@ -1711,7 +1701,7 @@ describe("operad mcp --claude-channel", () => {
   });
 
   test("without the flag there is no capability and no notification", async () => {
-    const { home } = await makeHome({
+    const { home } = await makeMcpHome({
       plugins: [channelPluginPath],
       mcp: { channel: { notify: ["changes"] } },
     });
@@ -1743,7 +1733,7 @@ describe("operad mcp --claude-channel", () => {
   });
 
   test("a flipped running flag alone is not reported", async () => {
-    const { home } = await makeHome({
+    const { home } = await makeMcpHome({
       plugins: [channelPluginPath],
       mcp: { channel: { notify: ["changes"] } },
     });
@@ -1772,7 +1762,7 @@ describe("operad mcp --claude-channel", () => {
   });
 
   test("nothing is written before notifications/initialized arrives", async () => {
-    const { home } = await makeHome({
+    const { home } = await makeMcpHome({
       plugins: [channelPluginPath],
       mcp: { channel: { notify: ["changes"] } },
     });
@@ -1799,7 +1789,7 @@ describe("operad mcp --claude-channel", () => {
   });
 
   test("a new object reports new -> state, and a --types list names several types", async () => {
-    const { home } = await makeHome({
+    const { home } = await makeMcpHome({
       plugins: [channelPluginPath],
       mcp: { channel: { notify: ["changes"] } },
     });
@@ -1832,7 +1822,7 @@ describe("operad mcp --claude-channel", () => {
   });
 
   test("--types names an unknown type, and a missing value, as a usage error", async () => {
-    const { home } = await makeHome({
+    const { home } = await makeMcpHome({
       plugins: [channelPluginPath],
       mcp: { channel: { notify: ["changes"] } },
     });
@@ -1851,7 +1841,7 @@ describe("operad mcp --claude-channel", () => {
 
 describe("operad mcp hierarchy", () => {
   test("list takes root and parent, with or without a type", async () => {
-    const { home } = await makeHome({ plugins: [treePluginPath] });
+    const { home } = await makeMcpHome({ plugins: [treePluginPath] });
     putObject(home, "group", "g1", { title: "G1" });
     putObject(home, "leaf", "a", { state: "open", parent: "group:g1" });
     putObject(home, "leaf", "b", { state: "merged", parent: "group:g1" });

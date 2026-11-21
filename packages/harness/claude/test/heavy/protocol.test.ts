@@ -548,6 +548,29 @@ test("a rejected rate limit event becomes a usage_limit modelError on the failed
   });
 });
 
+test("a rejected rate limit carries the time until its reset", async () => {
+  const resetsAt = Math.floor(Date.now() / 1000) + 3600;
+  const run = await runFake(setup(), {
+    steps: [
+      { say: systemInit() },
+      { say: rateLimit({ status: "rejected", rateLimitType: "five_hour", resetsAt }) },
+      { say: result({ is_error: true, result: "limit" }) },
+    ],
+  });
+
+  const modelError = last(run)["modelError"] as {
+    readonly resetsAt?: unknown;
+    readonly retry_after_secs?: unknown;
+    readonly reported_at?: unknown;
+  };
+  expect(modelError.resetsAt).toBe(resetsAt);
+  expect(typeof modelError.retry_after_secs).toBe("number");
+  expect(typeof modelError.reported_at).toBe("number");
+  const retryAfter = modelError.retry_after_secs as number;
+  expect(retryAfter).toBeGreaterThan(3590);
+  expect(retryAfter).toBeLessThanOrEqual(3600);
+});
+
 test("a warning-only rate limit event does not change a run that ends well", async () => {
   const run = await runFake(setup(), {
     steps: [

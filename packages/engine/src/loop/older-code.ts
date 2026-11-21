@@ -8,8 +8,9 @@
  * serve is another process, so the item leaves with it.
  */
 
-import { readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { writeJsonAtomicSync } from "../platform/index.ts";
 import { pidAlive, readLockPid, serveLockPath } from "../runner/lock.ts";
 
 function noticePath(home: string): string {
@@ -34,9 +35,7 @@ export function olderCodeNotice(home: string, pid: number = process.pid): {
         clear();
         return;
       }
-      const temporary = `${noticePath(home)}.${pid}.tmp`;
-      writeFileSync(temporary, `${JSON.stringify({ pid })}\n`);
-      renameSync(temporary, noticePath(home));
+      writeJsonAtomicSync(noticePath(home), { pid });
     },
     clear,
   };

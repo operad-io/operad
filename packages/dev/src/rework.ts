@@ -30,6 +30,14 @@ export const CHANGE_WINDOW = 3;
 /** How near a finding must be to a previous blocking finding to stay blocking. */
 export const PREVIOUS_WINDOW = 10;
 
+/** How serious a finding or a fix level is: critical, major, minor, then none. */
+export function severityRank(severity: string): number {
+  if (severity === "critical") return 3;
+  if (severity === "major") return 2;
+  if (severity === "minor") return 1;
+  return 0;
+}
+
 /**
  * The review the next one follows: the newest review report of the task, in
  * any attempt, for a commit other than `sha`. A review of the same commit is

@@ -1,5 +1,5 @@
 import { mkdirSync, writeFileSync } from "node:fs";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { TuiClock } from "../src/live.ts";
@@ -21,19 +21,17 @@ import {
   type Views,
 } from "@operad-io/engine";
 
+import { freePort, tempRoot as sharedTempRoot } from "@operad-io/engine/testing";
+
 /**
- * A scratch directory under `.radian/`.
- *
- * The TUI keeps its own roots instead of using the engine test helper: Bun runs
- * test files concurrently in one process, so one file's cleanup would delete a
- * root another file, or another package's suite, is still using. A harness
- * removes its own root in `close()`.
+ * A scratch directory for one harness. It stays out of the shared cleanup
+ * roots: the harness removes its own root in `close()`.
  */
-export async function tempRoot(): Promise<string> {
-  const base = join(process.cwd(), ".radian", "tmp");
-  await mkdir(base, { recursive: true });
-  return mkdtemp(join(base, "tui-test-"));
+export function testRoot(): Promise<string> {
+  return sharedTempRoot("tui-test-", { track: false });
 }
+
+export { freePort };
 
 const pluginPath = fileURLToPath(
   new URL("./fixtures/plugin.ts", import.meta.url),
@@ -57,22 +55,10 @@ export interface TuiHarnessOptions {
   readonly maxEventIds?: number | undefined;
 }
 
-export async function freePort(): Promise<number> {
-  const server = Bun.serve({
-    hostname: "127.0.0.1",
-    port: 0,
-    fetch: () => new Response(""),
-  });
-  const port = server.port;
-  await server.stop(true);
-  if (port === undefined) throw new Error("the free-port probe bound no port");
-  return port;
-}
-
 export async function makeHarness(
   options: TuiHarnessOptions = {},
 ): Promise<TuiHarness> {
-  const root = await tempRoot();
+  const root = await testRoot();
   const home = join(root, "home");
   mkdirSync(home, { recursive: true });
   const port = await freePort();

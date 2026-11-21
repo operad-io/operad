@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { HarnessEfforts } from "@operad-io/engine";
-import { createPiHarnessPlugin, PI_BUILTIN_THINKING_LEVEL, PI_EFFORTS } from "../src/index.ts";
+import { createPiHarnessPlugin, PI_BUILTIN_THINKING_LEVEL } from "../src/index.ts";
 import { THINKING_LEVELS } from "../src/protocol.ts";
 
 const roots: string[] = [];
@@ -36,7 +36,6 @@ describe("the efforts pi declares", () => {
     expect(efforts.default).toBe(PI_BUILTIN_THINKING_LEVEL);
     expect(efforts.list).toContain(PI_BUILTIN_THINKING_LEVEL);
     expect(efforts.flag).toBe("--thinking");
-    expect(efforts).toEqual(PI_EFFORTS);
   });
 
   test("the default is pi's own defaultThinkingLevel when pi names one", () => {

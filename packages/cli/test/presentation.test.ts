@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -9,8 +9,9 @@ import {
   readConfig,
   storeRootOf,
 } from "@operad-io/engine";
+import { makeHome } from "@operad-io/engine/testing";
 import { main, type CliIo } from "../src/main.ts";
-import { cleanupTempRoots, tempRoot } from "../../engine/test/plugin/support.ts";
+import { cleanupTempRoots } from "../../engine/test/plugin/support.ts";
 
 afterAll(cleanupTempRoots);
 
@@ -43,23 +44,14 @@ function capture(lines?: readonly string[]): Output {
   };
 }
 
-async function makeHome(): Promise<{
+async function makePresentationHome(): Promise<{
   readonly root: string;
   readonly home: string;
   readonly storeRoot: string;
 }> {
-  const root = await tempRoot();
-  const home = join(root, "home");
-  mkdirSync(home, { recursive: true });
-  writeFileSync(
-    join(home, "config.json"),
-    JSON.stringify({
-      plugins: [pluginPath],
-      store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
-    }),
-  );
-  const config = await readConfig(home);
-  return { root, home, storeRoot: storeRootOf(config) };
+  const made = await makeHome({ plugins: [pluginPath] });
+  const config = await readConfig(made.home);
+  return { root: made.root, home: made.home, storeRoot: storeRootOf(config) };
 }
 
 function seed(home: string, data: Record<string, unknown>, id = "one"): void {
@@ -119,7 +111,7 @@ function assertUserWords(text: string): void {
 
 describe("operad presentation commands", () => {
   test("list shows rows and flags; --json gives the kernel fields", async () => {
-    const { home } = await makeHome();
+    const { home } = await makePresentationHome();
     seed(home, { title: "First", state: "new", note: "$1" }, "one");
     seed(home, { title: "Second", state: "open" }, "two");
     await addWaitingRun(home, "item:one");
@@ -147,7 +139,7 @@ describe("operad presentation commands", () => {
   });
 
   test("a row's badge prints after its state, and a row without one keeps its line", async () => {
-    const { home } = await makeHome();
+    const { home } = await makePresentationHome();
     seed(home, { title: "First", state: "new", note: "$1", badge: "#2" }, "one");
     seed(home, { title: "Second", state: "open" }, "two");
 
@@ -162,7 +154,7 @@ describe("operad presentation commands", () => {
   });
 
   test("list filters on indexed fields and pages with --limit and --cursor", async () => {
-    const { home } = await makeHome();
+    const { home } = await makePresentationHome();
     seed(home, { title: "One", state: "new", plan: "P1" }, "one");
     seed(home, { title: "Two", state: "open", plan: "P1" }, "two");
     seed(home, { title: "Three", state: "new", plan: "P1" }, "three");
@@ -217,7 +209,7 @@ describe("operad presentation commands", () => {
   });
 
   test("list and actions use the configured sqlite store", async () => {
-    const { root, home } = await makeHome();
+    const { root, home } = await makePresentationHome();
     writeFileSync(
       join(home, "config.json"),
       JSON.stringify({
@@ -251,7 +243,7 @@ describe("operad presentation commands", () => {
   });
 
   test("list shows a Promise row as an error row", async () => {
-    const { home } = await makeHome();
+    const { home } = await makePresentationHome();
     seed(home, { title: "Async", mode: "async" }, "async");
     const output = capture();
     expect(await main(["list", "item"], { home, io: output.io })).toBe(0);
@@ -261,7 +253,7 @@ describe("operad presentation commands", () => {
   });
 
   test("show renders a section, its table, diff and mermaid code", async () => {
-    const { home } = await makeHome();
+    const { home } = await makePresentationHome();
     seed(home, { title: "First", state: "new", note: "$1" }, "one");
 
     const output = capture();
@@ -300,7 +292,7 @@ describe("operad presentation commands", () => {
   });
 
   test("show lays a table out for the terminal's width; a pipe keeps the old output", async () => {
-    const { home } = await makeHome();
+    const { home } = await makePresentationHome();
     seed(home, { title: "First", state: "new", note: "$1" }, "one");
 
     const tty = capture();
@@ -328,7 +320,7 @@ describe("operad presentation commands", () => {
   });
 
   test("show prints the row, the sections, the actions and the first section", async () => {
-    const { home } = await makeHome();
+    const { home } = await makePresentationHome();
     seed(home, { title: "First", state: "new" }, "one");
     const output = capture();
     expect(await main(["show", "item:one"], { home, io: output.io })).toBe(0);
@@ -341,7 +333,7 @@ describe("operad presentation commands", () => {
   });
 
   test("show on an unknown id fails clearly", async () => {
-    const { home } = await makeHome();
+    const { home } = await makePresentationHome();
     const output = capture();
     expect(await main(["show", "item:nope"], { home, io: output.io })).toBe(1);
     expect(output.errors()).toContain('no object "item:nope"');
@@ -349,7 +341,7 @@ describe("operad presentation commands", () => {
   });
 
   test("show keeps the history when the plugin is no longer loaded", async () => {
-    const { root, home } = await makeHome();
+    const { root, home } = await makePresentationHome();
     seed(home, { title: "Gone" }, "gone");
     await addWaitingRun(home, "item:gone");
     writeFileSync(
@@ -370,7 +362,7 @@ describe("operad presentation commands", () => {
   });
 
   test("actions run by plugin:action, plugin action and the bare verb", async () => {
-    const { home } = await makeHome();
+    const { home } = await makePresentationHome();
     seed(home, { title: "One", state: "new" }, "one");
     seed(home, { title: "Two", state: "new" }, "two");
     seed(home, { title: "Three", state: "new" }, "three");
@@ -406,7 +398,7 @@ describe("operad presentation commands", () => {
   });
 
   test("an enum argument is listed in help and validated", async () => {
-    const { home } = await makeHome();
+    const { home } = await makePresentationHome();
     seed(home, { title: "One", state: "new" }, "one");
 
     const shown = capture();
@@ -444,7 +436,7 @@ describe("operad presentation commands", () => {
   });
 
   test("schema flags accept values that look like ids or negative numbers", async () => {
-    const { home } = await makeHome();
+    const { home } = await makePresentationHome();
     seed(home, { title: "One", state: "new" }, "one");
 
     const idLike = capture();
@@ -476,7 +468,7 @@ describe("operad presentation commands", () => {
   });
 
   test("a required note outside a terminal is a usage error", async () => {
-    const { home } = await makeHome();
+    const { home } = await makePresentationHome();
     seed(home, { title: "One", state: "new" }, "one");
     const output = capture();
     expect(
@@ -487,7 +479,7 @@ describe("operad presentation commands", () => {
   });
 
   test("a note is prompted in a terminal, ending with an empty line", async () => {
-    const { home } = await makeHome();
+    const { home } = await makePresentationHome();
     seed(home, { title: "One", state: "new" }, "one");
     const output = capture(["line one", "line two", ""]);
     expect(
@@ -503,7 +495,7 @@ describe("operad presentation commands", () => {
   });
 
   test("confirm needs --yes outside a terminal and asks in one", async () => {
-    const { home } = await makeHome();
+    const { home } = await makePresentationHome();
     seed(home, { title: "One", state: "new" }, "one");
     seed(home, { title: "Two", state: "new" }, "two");
 
@@ -543,7 +535,7 @@ describe("operad presentation commands", () => {
   });
 
   test("pending lists actions as plugin:action", async () => {
-    const { home } = await makeHome();
+    const { home } = await makePresentationHome();
     seed(home, { title: "One", state: "new" }, "one");
     await addWaitingRun(home, "item:one");
     const output = capture();
@@ -555,7 +547,7 @@ describe("operad presentation commands", () => {
   });
 
   test("keys.json overrides a plugin's default key", async () => {
-    const { home } = await makeHome();
+    const { home } = await makePresentationHome();
     seed(home, { title: "One", state: "new" }, "one");
     writeFileSync(join(home, "keys.json"), JSON.stringify({ m: "demo:drop" }));
     const output = capture();
@@ -565,7 +557,7 @@ describe("operad presentation commands", () => {
   });
 
   test("show --json includes the section content", async () => {
-    const { home } = await makeHome();
+    const { home } = await makePresentationHome();
     seed(home, { title: "One", state: "new" }, "one");
     const output = capture();
     expect(
@@ -584,7 +576,7 @@ describe("operad presentation commands", () => {
   });
 
   test("show --page takes a number as a position before a label", async () => {
-    const { home } = await makeHome();
+    const { home } = await makePresentationHome();
     seed(home, { title: "One", state: "new" }, "one");
     const page = async (value: string): Promise<string> => {
       const output = capture();
@@ -600,7 +592,7 @@ describe("operad presentation commands", () => {
   });
 
   test("show --page of the first page reads it once; another page costs one more read", async () => {
-    const { home } = await makeHome();
+    const { home } = await makePresentationHome();
     seed(home, { title: "One", state: "new" }, "one");
     const read = async (value: string): Promise<number> => {
       const output = capture();
@@ -619,7 +611,7 @@ describe("operad presentation commands", () => {
   });
 
   test("show --page prints one page by number or by label", async () => {
-    const { home } = await makeHome();
+    const { home } = await makePresentationHome();
     seed(home, { title: "One", state: "new" }, "one");
     const page = async (value: string): Promise<{ code: number; text: string; error: string }> => {
       const output = capture();
@@ -643,7 +635,7 @@ describe("operad presentation commands", () => {
   });
 
   test("colours follow only waiting and running", async () => {
-    const { home } = await makeHome();
+    const { home } = await makePresentationHome();
     seed(home, { title: "Plain", state: "new" }, "plain");
     seed(home, { title: "Waits", state: "new" }, "waits");
     await addWaitingRun(home, "item:waits");
@@ -662,7 +654,7 @@ describe("operad presentation commands", () => {
   });
 
   test("show styles Markdown for a terminal and stays plain otherwise", async () => {
-    const { home } = await makeHome();
+    const { home } = await makePresentationHome();
     seed(home, { title: "One", state: "new" }, "one");
 
     const plain = capture();
@@ -706,7 +698,7 @@ describe("operad presentation commands", () => {
     expect(raw.text()).toContain("```diff");
   });
   test("list applies the default filter, --filter all shows everything, and a hidden line counts the rest", async () => {
-    const { root, home } = await makeHome();
+    const { root, home } = await makePresentationHome();
     writeFileSync(
       join(home, "config.json"),
       JSON.stringify({
@@ -754,7 +746,7 @@ describe("operad presentation commands", () => {
     expect(unknown.errors()).toContain("allowed: active, all, done");
   });
   test("the printed next: command shell-quotes the repo value", async () => {
-    const { root, home } = await makeHome();
+    const { root, home } = await makePresentationHome();
     writeFileSync(
       join(home, "config.json"),
       JSON.stringify({
@@ -781,7 +773,7 @@ describe("operad presentation commands", () => {
 
 describe("operad list hierarchy", () => {
   test("--root and --parent list one level; show prints the parent", async () => {
-    const { root, home } = await makeHome();
+    const { root, home } = await makePresentationHome();
     writeFileSync(
       join(home, "config.json"),
       JSON.stringify({
@@ -829,7 +821,7 @@ describe("operad list hierarchy", () => {
   });
 
   test("show lists a parent's children by its typed id even when another type holds the same id", async () => {
-    const { root, home } = await makeHome();
+    const { root, home } = await makePresentationHome();
     writeFileSync(
       join(home, "config.json"),
       JSON.stringify({
@@ -849,7 +841,7 @@ describe("operad list hierarchy", () => {
   });
 
   test("show prints an object's children as rows between the row and the sections", async () => {
-    const { root, home } = await makeHome();
+    const { root, home } = await makePresentationHome();
     writeFileSync(
       join(home, "config.json"),
       JSON.stringify({

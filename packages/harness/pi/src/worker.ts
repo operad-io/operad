@@ -34,6 +34,8 @@ import {
   maskSecrets,
   readGivenSkills,
   readImage,
+  decodeWorkerInput,
+  runWorkerMain,
   serveKeptWorker,
   serveOne,
   toolOutputLines,
@@ -706,7 +708,7 @@ export async function runWorker(
 function piAdapter(hooks: WorkerHooks): WorkerAdapter<WorkerInput> {
   let session: string | null = null;
   return {
-    parse: (text) => inputOf(text),
+    parse: (text) => decodeWorkerInput(text, parseInput),
     invalidInput: (message) => failure("invalid_input", message),
     error: (message) => failure("model_error", message),
     keep: (input) => input.keep,
@@ -716,17 +718,6 @@ function piAdapter(hooks: WorkerHooks): WorkerAdapter<WorkerInput> {
     },
     run: (input, io, cancel) => runWorker(input, io as WorkerIo, cancel, hooks),
   };
-}
-
-/** Reads the input of one reply; invalid JSON is a parse failure. */
-function inputOf(text: string): ReturnType<typeof parseInput> {
-  let decoded: unknown;
-  try {
-    decoded = JSON.parse(text);
-  } catch {
-    return { ok: false, message: "the input is not valid JSON" };
-  }
-  return parseInput(decoded);
 }
 
 /**
@@ -760,38 +751,12 @@ export async function serveWorkerProcess(
 
 /** The process entry: stdin in, stdout lines out, exit code out. */
 export async function main(hooks: WorkerHooks = {}): Promise<never> {
-  const flush = (): Promise<void> =>
-    new Promise((resolve) => {
-      process.stdout.write("", () => resolve());
-    });
-  // Anything that prints to stdout by accident would corrupt the protocol.
-  console.log = (...args: unknown[]): void => {
-    process.stderr.write(`${args.map(String).join(" ")}\n`);
-  };
-
   // pi runs bash non-interactively (`bash -c`): no aliases or functions from the
   // user's rc files. BASH_ENV and ENV are the two ways a non-interactive shell
   // is made to read a file, so the agent's shell does not get them.
-  delete process.env["BASH_ENV"];
-  delete process.env["ENV"];
-
-  const controller = new AbortController();
-  process.on("SIGTERM", () => controller.abort());
-  process.stdout.on("error", () => undefined);
-  process.stderr.on("error", () => undefined);
-  const code = await serveWorkerProcess(
-    Bun.stdin.stream(),
-    {
-      write: (text) => {
-        process.stdout.write(text);
-      },
-      log: (text) => process.stderr.write(`${text}\n`),
-    },
-    controller.signal,
-    hooks,
-  );
-  await flush();
-  process.exit(code);
+  return runWorkerMain(piAdapter(hooks), {
+    envToDelete: ["BASH_ENV", "ENV"],
+  });
 }
 
 if (import.meta.main) await main();

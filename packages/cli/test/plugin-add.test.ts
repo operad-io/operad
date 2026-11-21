@@ -4,8 +4,9 @@ import { join } from "node:path";
 import {
   type InstallRunner,
 } from "@operad-io/engine";
+import { makeHome } from "@operad-io/engine/testing";
 import { main, type CliIo } from "../src/main.ts";
-import { cleanupTempRoots, tempRoot } from "../../engine/test/plugin/support.ts";
+import { cleanupTempRoots } from "../../engine/test/plugin/support.ts";
 
 afterAll(cleanupTempRoots);
 
@@ -90,21 +91,8 @@ function fakeInstall(
   };
 }
 
-async function makeHome(plugins: Record<string, unknown> = {}): Promise<{
-  readonly root: string;
-  readonly home: string;
-}> {
-  const root = await tempRoot();
-  const home = join(root, "home");
-  mkdirSync(home, { recursive: true });
-  writeFileSync(
-    join(home, "config.json"),
-    JSON.stringify({
-      plugins,
-      store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
-    }),
-  );
-  return { root, home };
+function makePluginHome(plugins: Record<string, unknown> = {}) {
+  return makeHome({ plugins });
 }
 
 function configOf(home: string): {
@@ -124,7 +112,7 @@ function declarationFor(name: string): string {
 
 describe("plugin add", () => {
   test("installs an npm package, prints it, and leaves it off until enable", async () => {
-    const { home } = await makeHome();
+    const { home } = await makePluginHome();
     const calls: { cwd: string; args: readonly string[] }[] = [];
     const run = fakeInstall(
       new Map([["fixture-plugin", { version: "1.2.3", declaration: addedDeclaration }]]),
@@ -163,7 +151,7 @@ describe("plugin add", () => {
   });
 
   test("a package with no version asks for the latest", async () => {
-    const { home } = await makeHome();
+    const { home } = await makePluginHome();
     const run = fakeInstall(
       new Map([["latest-plugin", { version: "9.9.9", declaration: addedDeclaration }]]),
     );
@@ -173,7 +161,7 @@ describe("plugin add", () => {
   });
 
   test("refuses a name npm does not allow", async () => {
-    const { home } = await makeHome();
+    const { home } = await makePluginHome();
     const calls: { cwd: string; args: readonly string[] }[] = [];
     const run = fakeInstall(new Map(), calls);
     const before = readFileSync(join(home, "config.json"), "utf8");
@@ -188,7 +176,7 @@ describe("plugin add", () => {
   });
 
   test("refuses a version that is not exact", async () => {
-    const { home } = await makeHome();
+    const { home } = await makePluginHome();
     const calls: { cwd: string; args: readonly string[] }[] = [];
     const run = fakeInstall(new Map(), calls);
     const before = readFileSync(join(home, "config.json"), "utf8");
@@ -207,7 +195,7 @@ describe("plugin add", () => {
   });
 
   test("accepts a legacy npm name with capitals or a leading dot or underscore", async () => {
-    const { home } = await makeHome();
+    const { home } = await makePluginHome();
     const run = fakeInstall(
       new Map([
         ["Legacy.Plugin", { version: "1.0.0", declaration: declarationFor("legacy-capitals") }],
@@ -227,7 +215,7 @@ describe("plugin add", () => {
   });
 
   test("refuses a package that is not an operad plugin", async () => {
-    const { home } = await makeHome();
+    const { home } = await makePluginHome();
     const before = readFileSync(join(home, "config.json"), "utf8");
     const run = fakeInstall(
       new Map([
@@ -247,7 +235,7 @@ describe("plugin add", () => {
   });
 
   test("a refused package does not stay in the home project", async () => {
-    const { home } = await makeHome();
+    const { home } = await makePluginHome();
     const before = readFileSync(join(home, "config.json"), "utf8");
     const calls: { cwd: string; args: readonly string[] }[] = [];
     const run = fakeInstall(
@@ -275,7 +263,7 @@ describe("plugin add", () => {
   });
 
   test("a refused add leaves a package the project already had", async () => {
-    const { home } = await makeHome({ existing: { module: "kept-package", enabled: true } });
+    const { home } = await makePluginHome({ existing: { module: "kept-package", enabled: true } });
     const project = join(home, "plugins");
     const kept = join(project, "node_modules", "kept-package");
     mkdirSync(kept, { recursive: true });
@@ -313,7 +301,7 @@ describe("plugin add", () => {
   });
 
   test("refuses a plugin declaration the check rejects", async () => {
-    const { home } = await makeHome();
+    const { home } = await makePluginHome();
     const before = readFileSync(join(home, "config.json"), "utf8");
     const run = fakeInstall(
       new Map([
@@ -334,7 +322,7 @@ describe("plugin add", () => {
   });
 
   test("refuses a declared name that a configured plugin already uses", async () => {
-    const { home } = await makeHome({ added: { module: "@operad-io/shell", enabled: false } });
+    const { home } = await makePluginHome({ added: { module: "@operad-io/shell", enabled: false } });
     const before = readFileSync(join(home, "config.json"), "utf8");
     const run = fakeInstall(
       new Map([
@@ -352,7 +340,7 @@ describe("plugin add", () => {
   });
 
   test("a package whose declaration needs its install script says so", async () => {
-    const { home } = await makeHome();
+    const { home } = await makePluginHome();
     const run = fakeInstall(
       new Map([
         [

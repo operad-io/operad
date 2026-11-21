@@ -11,15 +11,15 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import {
   isRecord,
   messageOf,
   readUsage,
   type CostQuality,
-  type JsonValue,
   type PluginStepResult,
   type StepContext,
   type StepEvent,
@@ -27,7 +27,7 @@ import {
 } from "@operad-io/engine";
 import {
   appendChange,
-  bareId,
+  idOfKey,
   DevError,
   listAll,
   repositoryData,
@@ -46,7 +46,15 @@ import {
   WAITING_EVENT,
   type WorkerDefinition,
 } from "@operad-io/pool";
-import { git, type GitResult } from "./git.ts";
+import { now as devNow } from "./clock.ts";
+import { modelErrorIn, modelWaitsForPerson } from "./model-error.ts";
+import {
+  branchExists,
+  git,
+  headOf,
+  isAncestor,
+  type GitResult,
+} from "./git.ts";
 import { runPrepare, taskStepAccess } from "./prepare.ts";
 import { classifyStop, isConnectionError, STOP_REASONS } from "./stops.ts";
 import { findRepository, putTaskKeepingPlanCost, withRepoLock } from "./service.ts";
@@ -67,8 +75,6 @@ import {
   readWorkerBrief,
   type DevSettings,
 } from "./settings.ts";
-
-export { git, type GitResult };
 
 function resolvePath(path: string): string {
   try {
@@ -98,10 +104,9 @@ export function workBranch(taskId: string): string {
 
 /** The step a host error says was not loaded; undefined for any other error. */
 function notLoadedStep(error: unknown): string | undefined {
-  if (typeof error !== "object" || error === null) return undefined;
-  const record = error as { readonly kind?: unknown; readonly use?: unknown };
-  return record.kind === "step_not_loaded" && typeof record.use === "string"
-    ? record.use
+  if (!isRecord(error)) return undefined;
+  return error.kind === "step_not_loaded" && typeof error.use === "string"
+    ? error.use
     : undefined;
 }
 
@@ -156,7 +161,7 @@ async function taskParts(
   let stored = await ctx.store.get("task", object.id);
   if (stored === undefined && !object.id.includes("/")) {
     const matches = (await listAll(ctx.store, "task")).filter(
-      (candidate) => bareId(candidate.id) === object.id,
+      (candidate) => idOfKey(candidate.id) === object.id,
     );
     if (matches.length === 1) stored = matches[0];
   }
@@ -169,7 +174,7 @@ async function taskParts(
     );
   }
   const repository = repositoryData(found.data);
-  const taskId = bareId(stored?.id ?? object.id);
+  const taskId = idOfKey(stored?.id ?? object.id);
   let taskKey = stored?.id ?? object.id;
   if ((await ctx.store.get("task", taskKey)) === undefined) {
     taskKey = storeKey(repository.name, taskId);
@@ -245,42 +250,6 @@ function currentBranch(path: string): string | undefined {
   return result.ok && result.out.length > 0 ? result.out : undefined;
 }
 
-export function headOf(path: string): string | undefined {
-  const result = git(path, ["rev-parse", "HEAD"]);
-  return result.ok && result.out.length > 0 ? result.out : undefined;
-}
-
-/** True when `ancestor` is reachable from `descendant`, so it is not new work. */
-function isAncestor(
-  path: string,
-  ancestor: string,
-  descendant: string,
-): boolean {
-  return git(path, ["merge-base", "--is-ancestor", ancestor, descendant]).ok;
-}
-
-function branchExists(repositoryPath: string, branch: string): boolean {
-  return git(repositoryPath, [
-    "show-ref",
-    "--verify",
-    "--quiet",
-    `refs/heads/${branch}`,
-  ]).ok;
-}
-
-function remoteBranchExists(
-  repositoryPath: string,
-  remote: string,
-  branch: string,
-): boolean {
-  return git(repositoryPath, [
-    "show-ref",
-    "--verify",
-    "--quiet",
-    `refs/remotes/${remote}/${branch}`,
-  ]).ok;
-}
-
 function gitDirOf(worktree: string): string | undefined {
   const result = git(worktree, ["rev-parse", "--git-dir"]);
   if (!result.ok || result.out.length === 0) return undefined;
@@ -308,25 +277,107 @@ export function conflictedFiles(worktree: string): readonly string[] {
     .sort();
 }
 
-/**
- * The files `git status` calls changed, untracked included. Read from
- * `--porcelain -z`: names are not quoted or trimmed, a name may hold spaces, and
- * a rename or copy is followed by its old path, which is skipped (the new path
- * is the changed file).
- */
-export function changedFiles(worktree: string): readonly string[] {
-  const result = git(worktree, ["status", "--porcelain", "-z"], true);
+// One `git status --porcelain` entry: its two status letters and its path.
+interface CheckoutEntry {
+  readonly code: string;
+  readonly path: string;
+  /** What the path held when it was read, when it is a readable file. */
+  readonly content?: string | undefined;
+}
+
+// The status entries of a checkout, read from `--porcelain -z`: names are not
+// quoted or trimmed, a name may hold spaces or newlines, and a rename or copy
+// is followed by its old path, which is skipped. `--no-optional-locks` stops git
+// from refreshing the index, so reading the checkout writes no metadata.
+function checkoutEntries(checkout: string): readonly CheckoutEntry[] {
+  const result = git(checkout, ["--no-optional-locks", "status", "--porcelain", "-z"], true);
   if (!result.ok || result.out.length === 0) return [];
   const entries = result.out.split("\0");
-  const files: string[] = [];
+  const status: CheckoutEntry[] = [];
   for (let index = 0; index < entries.length; index += 1) {
     const entry = entries[index] ?? "";
     if (entry.length < 4) continue;
-    files.push(entry.slice(3));
     const code = entry.slice(0, 2);
+    status.push({ code, path: entry.slice(3) });
     if (code.includes("R") || code.includes("C")) index += 1;
   }
-  return [...new Set(files)].filter((file) => file !== PROGRESS_FILE).sort();
+  return status;
+}
+
+function checkoutEntryKey(entry: CheckoutEntry): string {
+  return `${entry.code}\0${entry.path}`;
+}
+
+/**
+ * What a status path holds, so a further edit to a file that was already
+ * changed before the step is a change too: its status letters and path stay the
+ * same when it is edited again. A deleted file, a collapsed untracked directory
+ * and any other unreadable path have none, and their status letters are all
+ * they compare by. Only a checkout that is already dirty is read, so a clean
+ * main checkout costs nothing.
+ */
+function checkoutContent(checkout: string, path: string): string | undefined {
+  const file = join(checkout, path);
+  try {
+    if (!statSync(file).isFile()) return undefined;
+    return Bun.hash(readFileSync(file)).toString(16);
+  } catch {
+    return undefined;
+  }
+}
+
+/** The status entries of a checkout, with what each readable file holds. */
+function checkoutSnapshot(checkout: string): readonly CheckoutEntry[] {
+  return checkoutEntries(checkout).map((entry) => {
+    const content = checkoutContent(checkout, entry.path);
+    return content === undefined ? entry : { ...entry, content };
+  });
+}
+
+// True when a status path is the task's worktree or lies inside it.
+function insideWorktree(checkout: string, worktree: string, path: string): boolean {
+  const root = relative(checkout, worktree).replace(/\\/g, "/");
+  if (root.length === 0) return true;
+  if (root.startsWith("..")) return false;
+  const candidate = path.replace(/\\/g, "/");
+  return candidate === root || candidate.startsWith(`${root}/`);
+}
+
+// The paths whose status in the main checkout is new since `before`, or whose
+// file was edited again since then, leaving out the task's own worktree, whose
+// presence there the worktree explains.
+function newCheckoutChanges(
+  checkout: string,
+  worktree: string,
+  before: readonly CheckoutEntry[],
+): readonly string[] {
+  const seen = new Map(before.map((entry) => [checkoutEntryKey(entry), entry]));
+  const changed: string[] = [];
+  for (const entry of checkoutEntries(checkout)) {
+    const was = seen.get(checkoutEntryKey(entry));
+    // The same status letters and path: only a further edit to the file itself
+    // is a change. A path that was unreadable then has no content to compare.
+    if (was !== undefined) {
+      if (was.content === undefined) continue;
+      if (checkoutContent(checkout, entry.path) === was.content) continue;
+    }
+    if (!insideWorktree(checkout, worktree, entry.path)) changed.push(entry.path);
+  }
+  return [...new Set(changed)].sort();
+}
+
+// The files `git status` calls changed, untracked included. Read from
+// `--porcelain -z`: names are not quoted or trimmed, a name may hold spaces, and
+// a rename or copy is followed by its old path, which is skipped (the new path
+// is the changed file).
+export function changedFiles(worktree: string): readonly string[] {
+  return [
+    ...new Set(
+      checkoutEntries(worktree)
+        .map((entry) => entry.path)
+        .filter((file) => file !== PROGRESS_FILE),
+    ),
+  ].sort();
 }
 
 export interface Prepared {
@@ -642,7 +693,7 @@ export function prepareWorktree(
   if (branchExists(repository.path, branch)) {
     add = git(repository.path, ["worktree", "add", path, branch]);
     reused = true;
-  } else if (remoteBranchExists(repository.path, settings.remote, branch)) {
+  } else if (branchExists(repository.path, branch, settings.remote)) {
     add = git(repository.path, [
       "worktree",
       "add",
@@ -685,10 +736,8 @@ export async function saveTask(
 /** The claim token the scheduler put in the run's start parameters. */
 export function runToken(ctx: StepContext): string | undefined {
   const params = ctx.params;
-  if (typeof params !== "object" || params === null || Array.isArray(params)) {
-    return undefined;
-  }
-  const token = (params as Record<string, unknown>).token;
+  if (!isRecord(params)) return undefined;
+  const token = params.token;
   return typeof token === "string" && token.length > 0 ? token : undefined;
 }
 
@@ -712,17 +761,6 @@ export function claimAllows(ctx: StepContext, task: TaskData): boolean {
   if (runToken(ctx) !== claim.token) return false;
   if (task.run === null && task.phase !== claim.phase) return false;
   return true;
-}
-
-/** The task as it is now, when the current step may still write it. */
-export async function guardTask(
-  ctx: StepContext,
-  key: string,
-): Promise<TaskData | undefined> {
-  const object = await ctx.store.get("task", key);
-  if (object === undefined) return undefined;
-  const task = taskData(object.data);
-  return claimAllows(ctx, task) ? task : undefined;
 }
 
 /**
@@ -847,19 +885,15 @@ export function cancelledStep(): PluginStepResult {
 
 /** The step a repair run says stopped, when the scheduler asked for one. */
 function runStoppedAt(params: unknown): string | undefined {
-  if (typeof params !== "object" || params === null || Array.isArray(params)) {
-    return undefined;
-  }
-  const value = (params as Record<string, unknown>).runStoppedAt;
+  if (!isRecord(params)) return undefined;
+  const value = params.runStoppedAt;
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
 /** The cancelled dependency a blocked start names, when the flow carries one. */
 function blockedDependency(params: unknown): string | undefined {
-  if (typeof params !== "object" || params === null || Array.isArray(params)) {
-    return undefined;
-  }
-  const value = (params as Record<string, unknown>).blockedBy;
+  if (!isRecord(params)) return undefined;
+  const value = params.blockedBy;
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
@@ -1291,15 +1325,6 @@ function workLine(attempt: TaskAttempt): string {
   ].join("");
 }
 
-/** Step `dev/work`: run the configured harness step and decide what it left. */
-/** True when the harness reported that its model is unavailable or at its usage limit. */
-function modelUnavailable(data: Record<string, unknown>): boolean {
-  const error = data.modelError;
-  if (typeof error !== "object" || error === null) return false;
-  const kind = (error as { readonly kind?: unknown }).kind;
-  return kind === "unavailable" || kind === "usage_limit";
-}
-
 /** The lines of a step's `stderr` data, which may be a string or a list. */
 function stderrLines(value: unknown): readonly string[] {
   if (typeof value === "string") return [value];
@@ -1332,6 +1357,7 @@ function hasUncheckedWork(
   return ahead.ok && Number(ahead.out) > 0;
 }
 
+/** Step `dev/work`: run the configured harness step and decide what it left. */
 export async function runWork(ctx: StepContext, stepParams?: unknown): Promise<PluginStepResult> {
   // The step's own params (a flow stage writes them) and the run's start params
   // (a direct call writes them) both reach this step; the step's own win.
@@ -1629,9 +1655,8 @@ export async function runWork(ctx: StepContext, stepParams?: unknown): Promise<P
         : [];
       const mine = entries.filter(
         (entry): entry is { worker?: unknown; holders?: unknown } =>
-          typeof entry === "object" &&
-          entry !== null &&
-          (asked === undefined || (entry as { worker?: unknown }).worker === asked),
+          isRecord(entry) &&
+          (asked === undefined || entry.worker === asked),
       );
       const names = mine.flatMap((entry) =>
         typeof entry.worker === "string" ? [entry.worker] : [],
@@ -1712,6 +1737,8 @@ export async function runWork(ctx: StepContext, stepParams?: unknown): Promise<P
     stageParamsOf(stage),
   );
   if (askAnswer !== undefined) poolCall.askAnswer = askAnswer;
+  const mainCheckoutBefore = checkoutSnapshot(context.repository.path);
+  let mainChanges: readonly string[] = [];
   try {
     outcome = await withWorkerReports(
       { placed: workerPlaced, started: workerStarted },
@@ -1726,6 +1753,13 @@ export async function runWork(ctx: StepContext, stepParams?: unknown): Promise<P
     hostError = messageOf(error);
     notLoaded = notLoadedStep(error);
   } finally {
+    // Reading the main checkout is part of ending the step, so a worker call
+    // that throws still reports what the step left there.
+    mainChanges = newCheckoutChanges(
+      context.repository.path,
+      path,
+      mainCheckoutBefore,
+    );
     if (startTimer !== undefined) startClock.clearTimeout(startTimer);
     sayClosed = true;
     await sayChain;
@@ -1737,11 +1771,7 @@ export async function runWork(ctx: StepContext, stepParams?: unknown): Promise<P
     ctx.signal.removeEventListener("abort", forwardAbort);
   }
   const outcomeData =
-    outcome !== undefined &&
-    typeof outcome.data === "object" &&
-    outcome.data !== null
-      ? (outcome.data as Record<string, unknown>)
-      : {};
+    outcome !== undefined && isRecord(outcome.data) ? outcome.data : {};
   const reading = harnessReading(outcomeData, (problem) => {
     // A usage the harness got wrong is the harness's bug; say which run.
     void ctx.logger
@@ -1783,6 +1813,23 @@ export async function runWork(ctx: StepContext, stepParams?: unknown): Promise<P
     extra: Readonly<Record<string, unknown>>,
     waitsForModel = false,
   ): Promise<PluginStepResult> => {
+    const mainLine =
+      mainChanges.length === 0
+        ? undefined
+        : `changed the main checkout: ${mainChanges.join(", ")}`;
+    const said = (message: string | undefined): string | undefined => {
+      if (mainLine === undefined) return message;
+      return message === undefined || message.length === 0
+        ? mainLine
+        : `${message}; ${mainLine}`;
+    };
+    const mainMessage = said(
+      typeof extra.message === "string" ? extra.message : undefined,
+    );
+    const data: Readonly<Record<string, unknown>> = {
+      ...extra,
+      ...(mainMessage === undefined ? {} : { message: mainMessage }),
+    };
     const note = readNote(path);
     const progress: Progress | undefined =
       note === null && !timedOutRun
@@ -1791,8 +1838,17 @@ export async function runWork(ctx: StepContext, stepParams?: unknown): Promise<P
     nextAttempt = {
       ...nextAttempt,
       result,
+      ...(mainLine === undefined
+        ? {}
+        : {
+            finalMessage:
+              typeof nextAttempt.finalMessage === "string" &&
+              nextAttempt.finalMessage.trim().length > 0
+                ? `${nextAttempt.finalMessage}\n\n${mainLine}`
+                : mainLine,
+          }),
       workNote:
-        result !== "done" && typeof extra.message === "string" ? extra.message : null,
+        result !== "done" && typeof data.message === "string" ? data.message : null,
       ...(waitsForModel ? {} : { workRetryAt: null }),
       // An attempt that left no note keeps the one before it for later attempts.
       progress: progress ?? progressOf(attempt.previousProgress) ?? null,
@@ -1833,6 +1889,9 @@ export async function runWork(ctx: StepContext, stepParams?: unknown): Promise<P
         run: ctx.runId,
         attempts,
         attempt: nextAttempt,
+        ...(mainLine === undefined
+          ? {}
+          : { brief: appendChange(task.brief, mainLine) }),
         ...(reading.cost === null
           ? {}
           : { cost: reading.cost, costQuality: reading.costQuality }),
@@ -1860,7 +1919,7 @@ export async function runWork(ctx: StepContext, stepParams?: unknown): Promise<P
                 ? { fallbackFrom: nextAttempt.fallbackFrom }
                 : {}),
             }),
-        ...extra,
+        ...data,
       }),
     };
   };
@@ -1945,8 +2004,36 @@ export async function runWork(ctx: StepContext, stepParams?: unknown): Promise<P
 
   if (outcome !== undefined && outcome.result !== "done") {
     const waits = typeof attempt.workWaits === "number" ? attempt.workWaits : 0;
-    if (modelUnavailable(outcomeData) && waits < MAX_WORK_WAITS) {
-      const retryAt = Date.now() + context.settings.reviewer.retrySecs * 1000;
+    const modelError = modelErrorIn(outcomeData);
+    if (modelError !== undefined && modelWaitsForPerson(modelError)) {
+      // A usage limit, or a wait past the bound, is not an outage dev can wait
+      // out: the work fails to a person who can change the worker or wait.
+      const reported =
+        modelError.message ??
+        (typeof outcomeData.message === "string"
+          ? outcomeData.message
+          : "the worker's model cannot serve");
+      const reset =
+        modelError.retryAfterSecs === undefined
+          ? ""
+          : `; the model can serve again at ${new Date(
+              (modelError.reportedAt ?? devNow()) +
+                modelError.retryAfterSecs * 1000,
+            ).toISOString()}`;
+      return finish("failed", {
+        reason: "model_unavailable",
+        message: `${reported}${reset}`,
+        ...(dirty.length === 0 ? {} : { files: dirty }),
+      });
+    }
+    if (modelError !== undefined && waits < MAX_WORK_WAITS) {
+      const waitSecs =
+        modelError.retryAfterSecs ?? context.settings.reviewer.retrySecs;
+      const retryAt =
+        (modelError.retryAfterSecs === undefined
+          ? devNow()
+          : modelError.reportedAt ?? devNow()) +
+        waitSecs * 1000;
       nextAttempt = { ...nextAttempt, workWaits: waits + 1, workRetryAt: retryAt };
       return finish(
         "unavailable",

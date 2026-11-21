@@ -3,7 +3,7 @@
  * this process once it reads "ready" on stdout.
  * Usage: bun atomic-write-child.ts <target> <text>
  */
-import { writeFileAtomic } from "../../src/index.ts";
+import { writeFileAtomic } from "../../src/platform/index.ts";
 
 const [target, text] = process.argv.slice(2);
 if (target === undefined || text === undefined) {

@@ -7,6 +7,8 @@ import { networkInterfaces } from "node:os";
 import { readHttpToken, readLockPid } from "../../../engine/src/index.ts";
 import { waitForChange } from "../../../engine/src/platform/index.ts";
 import { cleanupTempRoots, tempRoot } from "../../../engine/test/plugin/support.ts";
+import { freePort } from "@operad-io/engine/testing";
+import { operad as runCli } from "@operad-io/test-support";
 
 afterAll(cleanupTempRoots);
 
@@ -262,10 +264,11 @@ function spawnOperad(setupValue: Setup, args: readonly string[]): Bun.Subprocess
   });
 }
 
-async function operad(setupValue: Setup, args: readonly string[]): Promise<string> {
-  const child = spawnOperad(setupValue, args);
-  const [, out] = await Promise.all([child.exited, new Response(child.stdout).text()]);
-  return out;
+async function runOperad(setupValue: Setup, args: readonly string[]): Promise<string> {
+  const result = await runCli(setupValue.home, args, {
+    env: childEnv(setupValue.env),
+  });
+  return result.out;
 }
 
 /** `operad trigger` prints the run id and then stays; the test ends it. */
@@ -279,7 +282,7 @@ async function trigger(setupValue: Setup): Promise<string> {
 }
 
 async function stopServe(setupValue: Setup): Promise<void> {
-  await operad(setupValue, ["serve", "stop"]);
+  await runOperad(setupValue, ["serve", "stop"]);
 }
 
 /** The files a process has open, when the system can list them. */
@@ -324,7 +327,7 @@ async function runFirstCase(): Promise<void> {
     expect(readFileSync(join(s.work, "hold-finished"), "utf8")).toBe("v1");
     expect(readFileSync(join(s.work, "stamp"), "utf8")).toBe("v2");
 
-    const history = await operad(s, ["history", runId]);
+    const history = await runOperad(s, ["history", runId]);
     expect(history.split("\n").filter((line) => line.includes("continuing on updated code"))).toHaveLength(1);
 
     // A serve that came from a reload reloads again, under the same process.
@@ -626,14 +629,6 @@ function secondAddress(): string {
   return "::1";
 }
 
-async function freePort(): Promise<number> {
-  const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response("") });
-  const port = server.port;
-  await server.stop(true);
-  if (port === undefined) throw new Error("no free port");
-  return port;
-}
-
 function urlOf(address: string, port: number): string {
   return address.includes(":") ? `http://[${address}]:${port}` : `http://${address}:${port}`;
 }
@@ -683,7 +678,7 @@ describe("a reload with two listen addresses", () => {
       expect(await answers(urlOf(second, port))).toBe(true);
       expect(output.text).not.toContain("Failed to start server");
       // The new code took over: serve runs what is on disk, so nothing is pending about it.
-      expect(await operad(s, ["pending", "--json"])).not.toContain("serve runs older code");
+      expect(await runOperad(s, ["pending", "--json"])).not.toContain("serve runs older code");
     } finally {
       closeStream?.();
       await stopServe(s);
@@ -726,9 +721,9 @@ describe("a reload with two listen addresses", () => {
         // leaves it on older code; it does not try that change again.
         if (changed === "engine") {
           await waitForFileNamed(join(s.home, "serve-older.json"));
-          expect(await operad(s, ["pending", "--json"])).toContain("serve runs older code than the files on disk");
+          expect(await runOperad(s, ["pending", "--json"])).toContain("serve runs older code than the files on disk");
         } else {
-          expect(await operad(s, ["pending", "--json"])).not.toContain("serve runs older code");
+          expect(await runOperad(s, ["pending", "--json"])).not.toContain("serve runs older code");
         }
         expect(output.text.match(/reloading: /g)).toHaveLength(1);
         expect(await answers(urlOf("127.0.0.1", port))).toBe(true);

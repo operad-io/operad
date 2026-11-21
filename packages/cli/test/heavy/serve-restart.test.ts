@@ -8,6 +8,7 @@ import { cleanupTempRoots, tempRoot } from "../../../engine/test/plugin/support.
 import { SUPERVISED_ENV } from "../../src/code-reload.ts";
 import { testEnv } from "../env.ts";
 import { waitForFile, waitForPid } from "../../../shell/test/support.ts";
+import { operad as runCli } from "@operad-io/test-support";
 
 afterAll(cleanupTempRoots);
 
@@ -54,25 +55,12 @@ interface Finished {
   readonly err: string;
 }
 
-async function operad(
+function runOperad(
   home: string,
   env: Record<string, string>,
   args: readonly string[],
 ): Promise<Finished> {
-  const child = Bun.spawn({
-    cmd: [process.execPath, CLI_ENTRY, ...args],
-    cwd: home,
-    env: { ...testEnv(env), OPERAD_HOME: home },
-    stdin: "ignore",
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  const [code, out, err] = await Promise.all([
-    child.exited,
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-  ]);
-  return { code, out, err };
+  return runCli(home, args, { env });
 }
 
 /**
@@ -216,7 +204,7 @@ describe("a serve restart while a check runs", () => {
       expect(runId).not.toBe("");
       await waitForPid(started);
 
-      const stopped = await operad(home, env, ["serve", "stop"]);
+      const stopped = await runOperad(home, env, ["serve", "stop"]);
       expect(stopped.code).toBe(0);
       expect(stopped.out).toContain("stopped");
       await serve.exited;
@@ -238,7 +226,7 @@ describe("a serve restart while a check runs", () => {
 
       // The run ends done: the check passed with exit 0.
       await waitForEnded(home, runId);
-      const history = (await operad(home, env, ["history", runId])).out;
+      const history = (await runOperad(home, env, ["history", runId])).out;
       expect(history).toContain("run done");
       // The log path is not the run's words: a checkout path may contain "fail".
       expect(history.replace(/log at \S+/g, "")).not.toMatch(/fail|interrupt/i);

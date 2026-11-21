@@ -237,3 +237,30 @@ and the row fields.
 |---|---|---|---|
 | T-0642-M1 | packages/harness/process/src/lines.ts | `splitSecretPrefix` checked only the raw secret value, not its JSON-escaped spelling | `lines > splitSecretPrefix holds back an escaped secret split across grouped increments` |
 | T-0642-M2 | packages/harness/process/src/lines.ts | `Increments` ignored `firstImmediately`, so claude wrote its first increment at once instead of grouping it | `lines > Increments groups its first text and thinking when firstImmediately is false` |
+
+## T-0627 — the shared step of the harness plugins
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0627-M1 | packages/harness/process/src/process.ts | `watchRun` never started the wall timer, so a kept run outlived its wall time | `watchRun > the wall timer stops the run once` |
+| T-0627-M2 | packages/harness/process/src/process.ts | `trimKept` always trimmed above the cap, so the pre-start path left one worker too many | `trimKept > before a worker starts the cap trims at it, oldest first` |
+| T-0627-M3 | packages/harness/process/src/refusal.ts | the early refusal dropped the harness's extra data, so codex's `imageGenCalls` was missing | `the early refusal > names the reason and the field, with the data every harness writes` |
+| T-0627-M4 | packages/harness/process/src/version.ts | the strict comparison returned 0 instead of ordering the semver parts, so a prerelease equalled its release | `compareVersions > the strict form orders prereleases and refuses a version it cannot read` |
+
+## T-0654 — a worker's retry-after reaches the step result
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0654-M1 | packages/harness/process/src/step.ts | a worker's `modelError.retry_after_secs` was always written as `null` | `resultFor > a model error keeps the retry after the worker reported` |
+
+## T-0656 — a model's message carries its wait and report time
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0656-M1 | packages/harness/process/src/step.ts | `modelErrorOf` threw away the retry-after or reset wait the message named | `modelErrorOf > a retry-after or reset the text names is the wait` |
+| T-0656-M2 | packages/harness/process/src/step.ts | `resultFor` dropped the worker's `reported_at` from a model error that carries a wait | `resultFor > a model error keeps the retry after the worker reported` |
+## T-0655 — follow-ups the scan reviews found
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0655-M3 | packages/harness/process/src/worker-entry.ts | `runWorkerMain` left a closed stdout unhandled, so the worker wrote an EPIPE to stderr after its host closed the pipe | `a worker entry survives a host that closes stdout` |

@@ -23,7 +23,6 @@ import {
   isRecord,
   messageOf,
   prepareSettings,
-  writeFileAtomic,
   type ActionTypeDefinition,
   type CommandContext,
   type JsonValue,
@@ -33,7 +32,7 @@ import {
   type SectionContent,
   type StoredObject,
 } from "@operad-io/engine";
-import { withLockFile } from "@operad-io/engine/platform";
+import { withLockFile, writeFileAtomic } from "@operad-io/engine/platform";
 import {
   BOT_SETTINGS,
   BOT_TYPE,
@@ -597,21 +596,6 @@ export function proposalReview(object: StoredObject): string {
   return out.join("\n");
 }
 
-export async function readBotsFile(home: string): Promise<Record<string, unknown>> {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(readFileSync(configPath(home), "utf8"));
-  } catch (error) {
-    if (isMissingFile(error)) return {};
-    throw new BotError(`${configPath(home)}: cannot read the bot settings: ${messageOf(error)}`);
-  }
-  const plugins = isRecord(parsed) ? parsed.plugins : undefined;
-  const entry = isRecord(plugins) ? plugins.bot : undefined;
-  const settings = isRecord(entry) ? entry.settings : undefined;
-  const bots = isRecord(settings) ? settings.bots : undefined;
-  return isRecord(bots) ? { ...bots } : {};
-}
-
 /** Reads, changes and writes the `bots` map under one lock, keeping the rest of config.json. */
 async function changeBotsFile(
   home: string,
@@ -644,14 +628,6 @@ async function changeBotsFile(
     parsed.plugins = plugins;
     await writeFileAtomic(file, `${JSON.stringify(parsed, null, 2)}\n`);
   });
-}
-
-/** Writes the whole `bots` map, keeping the rest of config.json. */
-export async function writeBotsFile(
-  home: string,
-  bots: Readonly<Record<string, unknown>>,
-): Promise<void> {
-  await changeBotsFile(home, () => bots);
 }
 
 /** Changes the `bots` map under the config lock, so two writers do not drop each other's change. */

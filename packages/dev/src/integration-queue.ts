@@ -24,12 +24,16 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
-  renameSync,
   rmSync,
-  writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { waitForChange, withLockFile } from "@operad-io/engine/platform";
+import {
+  waitForChange,
+  withLockFile,
+  writeJsonAtomicSync,
+} from "@operad-io/engine/platform";
+import { isRecord } from "@operad-io/engine";
+import { repositoryPathKey } from "./repository-key.ts";
 
 /**
  * How long a waiter accepts a live holder of the land lock. The holder is
@@ -124,7 +128,7 @@ export function integrationQueueDirectory(
   home: string,
   repository: { readonly name: string; readonly path: string },
 ): string {
-  const hash = new Bun.CryptoHasher("sha1").update(repository.path).digest("hex");
+  const hash = repositoryPathKey(repository.path);
   const name = repository.name.replace(/[^A-Za-z0-9._-]/g, "_");
   return join(home, "dev", "integration-queue", `${name}-${hash.slice(0, 8)}`);
 }
@@ -147,16 +151,14 @@ function landLockPath(directory: string): string {
 }
 
 function writeAtomic(path: string, value: unknown): void {
-  const temporary = `${path}.${process.pid}.tmp`;
-  writeFileSync(temporary, JSON.stringify(value));
-  renameSync(temporary, path);
+  writeJsonAtomicSync(path, value, { newline: false });
 }
 
 function parseTicket(text: string): Ticket | undefined {
   try {
     const value: unknown = JSON.parse(text);
-    if (typeof value !== "object" || value === null) return undefined;
-    const record = value as Record<string, unknown>;
+    if (!isRecord(value)) return undefined;
+    const record = value;
     if (
       typeof record.seq !== "number" ||
       typeof record.task !== "string" ||

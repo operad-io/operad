@@ -6,7 +6,7 @@
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { SqlitePluginStore } from "../../src/index.ts";
-import { waitForFile } from "../wait-for-file.ts";
+import { waitForFile } from "../../src/testing/index.ts";
 
 const root = process.argv[2] ?? "";
 const name = process.argv[3] ?? "a";

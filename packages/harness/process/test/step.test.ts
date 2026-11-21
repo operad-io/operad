@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { modelErrorOf, parseResult, parseStepFlags, resultFor, type AgentWorkerResult } from "../src/index.ts";
+import { modelErrorOf, parseStepFlags, resultFor, resultValue, type AgentWorkerResult } from "../src/index.ts";
 
 // Moved from packages/harness/claude/test/heavy/plugin.test.ts.
 describe("modelErrorOf", () => {
@@ -7,6 +7,15 @@ describe("modelErrorOf", () => {
     expect(modelErrorOf("429 usage limit reached").kind).toBe("usage_limit");
     expect(modelErrorOf("provider is overloaded").kind).toBe("unavailable");
     expect(modelErrorOf("a 4290 tokens message").kind).toBe("protocol");
+  });
+
+  test("a retry-after or reset the text names is the wait", () => {
+    expect(modelErrorOf("try again in 30 seconds").retry_after_secs).toBe(30);
+    expect(modelErrorOf("retry-after: 2m").retry_after_secs).toBe(120);
+    expect(modelErrorOf("the quota resets in 2d").retry_after_secs).toBe(172_800);
+    expect(modelErrorOf("the quota resets in 1 week").retry_after_secs).toBe(604_800);
+    expect(modelErrorOf("resets in 1 fortnight").retry_after_secs).toBeNull();
+    expect(modelErrorOf("the model is busy").retry_after_secs).toBeNull();
   });
 });
 
@@ -39,6 +48,110 @@ describe("parseStepFlags", () => {
 });
 
 describe("resultFor", () => {
+  test("a model error keeps the retry after the worker reported", () => {
+    const outcome = {
+      exitCode: 1,
+      signal: null,
+      cancelled: false,
+      wall: false,
+      stall: false,
+      lineTooLong: false,
+      missing: false,
+      spawnError: undefined,
+      stderrTail: [],
+    };
+    const worker: AgentWorkerResult = {
+      type: "result",
+      result: "failed",
+      sessionId: "s",
+      usage: {},
+      cost: null,
+      finalMessage: null,
+      reason: "model_error",
+      message: "the model is busy",
+      modelError: { kind: "unavailable", status: 429, retry_after_secs: 42 },
+    };
+    const step = resultFor(
+      { harness: "fake", model: null },
+      outcome,
+      worker,
+      "/tmp/log",
+      1,
+      { wallTimeSecs: 1, stallSecs: 1 },
+      "fake",
+    );
+    expect(step.data?.modelError).toEqual({
+      kind: "unavailable",
+      status: 429,
+      retry_after_secs: 42,
+      reported_at: expect.any(Number),
+      message: "the model is busy",
+    });
+  });
+
+  test("a model error without a wait keeps no report time, and a message's wait is carried", () => {
+    const outcome = {
+      exitCode: 1,
+      signal: null,
+      cancelled: false,
+      wall: false,
+      stall: false,
+      lineTooLong: false,
+      missing: false,
+      spawnError: undefined,
+      stderrTail: [],
+    };
+    const worker = (message: string, modelError?: AgentWorkerResult["modelError"]): AgentWorkerResult => ({
+      type: "result",
+      result: "failed",
+      sessionId: "s",
+      usage: {},
+      cost: null,
+      finalMessage: null,
+      reason: "model_error",
+      message,
+      ...(modelError === undefined ? {} : { modelError }),
+    });
+    const plain = resultFor(
+      { harness: "fake", model: null },
+      outcome,
+      worker("the model is busy", { kind: "unavailable", status: 429, retry_after_secs: null }),
+      "/tmp/log",
+      1,
+      { wallTimeSecs: 1, stallSecs: 1 },
+      "fake",
+    );
+    expect(plain.data?.modelError).toEqual({
+      kind: "unavailable",
+      status: 429,
+      retry_after_secs: null,
+      message: "the model is busy",
+    });
+
+    const reportedAt = 12_000;
+    const text = resultFor(
+      { harness: "fake", model: null },
+      outcome,
+      worker("429 too many requests; try again in 30 seconds", {
+        kind: "unavailable",
+        status: 429,
+        retry_after_secs: null,
+        reported_at: reportedAt,
+      }),
+      "/tmp/log",
+      1,
+      { wallTimeSecs: 1, stallSecs: 1 },
+      "fake",
+    );
+    expect(text.data?.modelError).toEqual({
+      kind: "unavailable",
+      status: 429,
+      retry_after_secs: 30,
+      reported_at: reportedAt,
+      message: "429 too many requests; try again in 30 seconds",
+    });
+  });
+
   test("a done result keeps the reason the worker gave for answering with nothing", () => {
     const outcome = {
       exitCode: 0,
@@ -74,11 +187,11 @@ describe("resultFor", () => {
   });
 });
 
-describe("parseResult", () => {
-  test("reads a result line and nothing else", () => {
-    expect(parseResult('{"type":"result","result":"done"}')?.result).toBe("done");
-    expect(parseResult('{"type":"result","result":"weird"}')).toBeUndefined();
-    expect(parseResult('{"type":"message_end"}')).toBeUndefined();
-    expect(parseResult("not json")).toBeUndefined();
+describe("resultValue", () => {
+  test("reads a result value and nothing else", () => {
+    expect(resultValue({ type: "result", result: "done" })?.result).toBe("done");
+    expect(resultValue({ type: "result", result: "weird" })).toBeUndefined();
+    expect(resultValue({ type: "message_end" })).toBeUndefined();
+    expect(resultValue({ type: "result" })).toBeUndefined();
   });
 });

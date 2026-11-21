@@ -15,7 +15,7 @@ import {
   type PluginStore,
 } from "../../src/index.ts";
 import { type ImmediateWriter, writeImmediate } from "../../src/platform/index.ts";
-import { waitForFile } from "../wait-for-file.ts";
+import { waitForFile } from "../../src/testing/index.ts";
 import { cleanupTempRoots, tempRoot } from "../plugin/support.ts";
 
 afterAll(cleanupTempRoots);

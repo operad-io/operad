@@ -1,9 +1,9 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { FileSecretStore, readHttpToken } from "@operad-io/engine";
+import { makeHome } from "@operad-io/engine/testing";
 import { main, type CliIo } from "../src/main.ts";
-import { cleanupTempRoots, tempRoot } from "../../engine/test/plugin/support.ts";
+import { cleanupTempRoots } from "../../engine/test/plugin/support.ts";
 import { decode, matrixFromRender } from "./qr-decode.ts";
 
 afterAll(cleanupTempRoots);
@@ -34,18 +34,8 @@ function capture(): Output {
   };
 }
 
-async function makeHome(http: Record<string, unknown>): Promise<string> {
-  const root = await tempRoot();
-  const home = join(root, "home");
-  mkdirSync(home, { recursive: true });
-  writeFileSync(
-    join(home, "config.json"),
-    JSON.stringify({
-      plugins: [],
-      store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
-      http,
-    }),
-  );
+async function makePairHome(http: Record<string, unknown>): Promise<string> {
+  const { home } = await makeHome({ extra: { http } });
   await new FileSecretStore({ home, plugin: "http" }).set("token", TOKEN);
   return home;
 }
@@ -55,7 +45,7 @@ const LAN = { enabled: true, port: 9000, listen: ["127.0.0.1", "192.168.1.20"] }
 
 describe("operad pair", () => {
   test("prints the url, the token and a QR code that decodes to the pairing link", async () => {
-    const home = await makeHome(LAN);
+    const home = await makePairHome(LAN);
     const output = capture();
     expect(await main(["pair"], { home, io: output.io, isTTY: true })).toBe(0);
     const text = output.text();
@@ -69,7 +59,7 @@ describe("operad pair", () => {
   });
 
   test("--url names the address, such as a Tailscale HTTPS name", async () => {
-    const home = await makeHome({ enabled: true, listen: ["127.0.0.1"] });
+    const home = await makePairHome({ enabled: true, listen: ["127.0.0.1"] });
     const output = capture();
     expect(
       await main(["pair", "--url", "https://mac.tail1234.ts.net/"], {
@@ -85,14 +75,14 @@ describe("operad pair", () => {
   });
 
   test("an IPv6 listen address is bracketed in the url", async () => {
-    const home = await makeHome({ enabled: true, port: 9000, listen: ["fd7a:115c:a1e0::1"] });
+    const home = await makePairHome({ enabled: true, port: 9000, listen: ["fd7a:115c:a1e0::1"] });
     const output = capture();
     expect(await main(["pair"], { home, io: output.io, isTTY: true })).toBe(0);
     expect(output.text()).toContain("url http://[fd7a:115c:a1e0::1]:9000\n");
   });
 
   test("refuses without a terminal and prints nothing of the token", async () => {
-    const home = await makeHome(LAN);
+    const home = await makePairHome(LAN);
     const output = capture();
     expect(await main(["pair"], { home, io: output.io, isTTY: false })).toBe(2);
     expect(output.text()).toBe("");
@@ -101,7 +91,7 @@ describe("operad pair", () => {
   });
 
   test("--show-token prints url, token and link without a terminal, and no QR", async () => {
-    const home = await makeHome(LAN);
+    const home = await makePairHome(LAN);
     const output = capture();
     expect(
       await main(["pair", "--show-token"], { home, io: output.io, isTTY: false }),
@@ -117,7 +107,7 @@ describe("operad pair", () => {
   });
 
   test("no other command prints the token", async () => {
-    const home = await makeHome(LAN);
+    const home = await makePairHome(LAN);
     for (const argv of [["http", "token", "rotate"], ["plugin", "list"], ["pending"]]) {
       const output = capture();
       await main(argv, { home, io: output.io, isTTY: true });
@@ -128,12 +118,12 @@ describe("operad pair", () => {
 
   test("refuses when http is off, when only loopback is listened on, and a bad --url", async () => {
     const off = capture();
-    const offHome = await makeHome({ enabled: false, listen: ["192.168.1.20"] });
+    const offHome = await makePairHome({ enabled: false, listen: ["192.168.1.20"] });
     expect(await main(["pair"], { home: offHome, io: off.io, isTTY: true })).toBe(2);
     expect(off.errors()).toContain("http.enabled");
 
     const loop = capture();
-    const loopHome = await makeHome({ enabled: true, listen: ["127.0.0.1"] });
+    const loopHome = await makePairHome({ enabled: true, listen: ["127.0.0.1"] });
     expect(await main(["pair"], { home: loopHome, io: loop.io, isTTY: true })).toBe(2);
     expect(loop.errors()).toContain("--url");
 
@@ -148,7 +138,7 @@ describe("operad pair", () => {
   });
 
   test("with no http section pair is on by default: loopback only, so it asks for --url", async () => {
-    const home = await makeHome({});
+    const home = await makePairHome({});
     // `{}` still means the defaults: enabled, 127.0.0.1, port 8765.
     const plain = capture();
     expect(await main(["pair"], { home, io: plain.io, isTTY: true })).toBe(2);

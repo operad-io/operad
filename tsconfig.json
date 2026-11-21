@@ -2,6 +2,7 @@
   "files": [],
   "references": [
     { "path": "packages/engine" },
+    { "path": "packages/test-support" },
     { "path": "packages/mcp" },
     { "path": "packages/shell" },
     { "path": "packages/chat" },

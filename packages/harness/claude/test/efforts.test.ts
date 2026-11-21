@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { HarnessEfforts } from "@operad-io/engine";
-import { createClaudeHarnessPlugin, CLAUDE_EFFORTS } from "../src/index.ts";
+import { createClaudeHarnessPlugin } from "../src/index.ts";
 import { EFFORT_LEVELS } from "../src/protocol.ts";
 
 function effortsOf(settings: Record<string, unknown> = {}): HarnessEfforts {
@@ -15,7 +15,6 @@ describe("the efforts claude declares", () => {
     expect(efforts.list).toEqual([...EFFORT_LEVELS]);
     expect(efforts.default).toBeNull();
     expect(efforts.flag).toBe("--effort");
-    expect(efforts).toEqual(CLAUDE_EFFORTS);
   });
 
   test("the configured effort is the default", () => {

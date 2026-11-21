@@ -1,7 +1,7 @@
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { join } from "node:path";
 import { defineFlow, definePlugin } from "../../../src/index.ts";
-import { waitForChange } from "../../../src/platform/index.ts";
+import { waitForFile } from "../../../src/testing/index.ts";
 import { isRecord } from "../../../src/util.ts";
 
 interface Info {
@@ -14,13 +14,6 @@ function infoOf(params: unknown): Info {
     throw new Error("the flow needs { name, dir }");
   }
   return { name: params.name, dir: params.dir };
-}
-
-/** Resolves when the file exists: a directory watch, re-checked on a timer. */
-async function waitForFile(path: string): Promise<void> {
-  while (!existsSync(path)) {
-    await waitForChange(dirname(path), basename(path), 200);
-  }
 }
 
 function flow(

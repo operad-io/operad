@@ -20,7 +20,7 @@ plan -> tasks (draft) -> confirm -> ready -> code -> test -> review -> you merge
 2. **Start.** `serve` starts ready tasks, up to the repository's `concurrency` and each pool's cap. Each task gets its own git worktree and branch, so tasks never touch each other or your checkout.
 3. **Code.** A worker, chosen from `workers` through a pool, runs in the task's worktree with the brief and commits there. A worker whose model is unavailable can hand the work to its `fallback`.
 4. **Test.** The commands in `gate.commands` run against the commit. A failing test is run again on its own first, so a flaky test is told apart from a real failure.
-5. **Review.** The reviewer reads the change and writes a report. Findings that reach `reviewer.fixLevel` (default `major`) fail the review.
+5. **Review.** The reviewer reads the change and writes a report. Findings that reach `reviewer.fixLevel` (default `major`) fail the review. An attempt whose work left the line `changed the main checkout: <files>` gets a major finding from dev itself, on each named file, whether or not the reviewer reports one.
 6. **Rework.** A failed test or a failed review sends the task back to the worker, up to `maxAutoRework` times (default `2`). After that the task waits for you.
 7. **Waiting for you.** A task that passed test and review waits in `operad pending` as `ready to merge`, with the actions `dev:merge`, `dev:reject`, `dev:rework`, `dev:reverify` and `dev:cancel`. A task also waits when something needs a person: review findings, a failed gate, the rework limit, a worker that added no commit. A worker's own question, such as a permission ask from its harness, is a pending item too; `allow_once` or `reject_once` answers it, and the same worker continues.
 8. **Merge and clean up.** `dev:merge` puts the verified commit on main (`integration.style`), runs `integration.keyCommands`, and pushes to the remote. Then cleanup removes the task's worktrees and branches. Tasks of one repository integrate one at a time. If the remote refuses the push, nothing is written and the task waits with a note.
@@ -319,6 +319,18 @@ review step then fails rather than guessing a grading.
 
 When the worker adds no commit, the task waits with `work did nothing` if the branch has nothing beyond main or its latest commit already passed verify. If the branch already holds commits not on main and its latest commit has not passed verify (an earlier run stopped before verify ended), the task does not wait: history says `the branch already has unchecked work; checking it` and the task goes on to verify.
 
+Before a worker starts, the work step records the main checkout's `git status`
+and the content of the files it already calls changed. When the step ends, a
+change there that the worktree does not explain is named in the task's Changes,
+the step's history and the worker's answer as
+`changed the main checkout: <files>`: a new status entry, or a further edit to a
+file that was already changed there. `dev` does not undo it. The comparison is
+the step's own window, and `dev` cannot tell which process wrote a file, so a
+change another session makes in the main checkout while the worker runs is named
+too. A review of that attempt gets a major finding from `dev` itself, on each
+named file, in its report and in the review prompt; the task goes to rework,
+where the worker makes those changes in its own worktree instead.
+
 ## Moving a repository's folder
 
 A registered repository keeps its name, plans and tasks when its folder moves.
@@ -364,11 +376,15 @@ outside a repository works when only one repository has it. The rules are in
 A review whose harness reports a model error (`unavailable` or `usage_limit`), or
 whose error output says `HTTP 429`, does not lose the attempt. The same review
 round runs once on `reviewer.fallback` when `.operad/dev.json` sets one. Without a
-fallback, or when the fallback is unavailable too, the task waits
-`reviewer.retrySecs` (default 120 seconds; each further wait doubles, up to 30
-minutes) and then runs the review again. It does not start a worker and does not
-count a rework. A round uses its fallback at most once, so a retry that finds the
-primary unavailable again waits rather than calling the fallback a second time.
+fallback, or when the fallback is unavailable too, the task waits the model's
+`retry_after_secs` from the time the model reported it when it gave one, else
+`reviewer.retrySecs` (default 120
+seconds; each further wait doubles, up to 30 minutes), and then runs the review
+again. It does not start a worker and does not count a rework. A round uses its
+fallback at most once, so a retry that finds the primary unavailable again waits
+rather than calling the fallback a second time. A usage limit, or a retry-after
+longer than half an hour, is not waited out: the task waits for a person at once,
+and the line carries the model's message and the time it resets.
 
 A round waits at most 6 times (about 90 minutes at the default). Then the task
 waits for a person, and its prompt says `review did not finish (model unavailable)`. A
@@ -935,11 +951,14 @@ one (`waiting for the image pool's slot (T-0007)`); one past a worker's own
 A worker listed in two pools has one `count`: its places are shared by both pools. A task keeps counting against the pool of the flow it started with, even if `dev.json` changes while it runs.
 
 A pool whose workers have no `fallback` never hands its work to a worker of
-another pool: when the model is unavailable or its usage limit is reached, the
-work waits and tries again, and after the allowed waits it goes to a person.
-Choose a task's flow with `task add --flow <name>` (the `command` tool of MCP
-passes it like the CLI) or `task update <id> --flow <name>`; the update is
-refused once the task has started its first attempt.
+another pool: when the model is unavailable, the work waits the model's
+`retry_after_secs` from the time the model reported it when it gave one, else
+`reviewer.retrySecs`, and after the
+allowed waits it goes to a person. A usage limit, or a retry-after longer than
+half an hour, goes to a person at once, with the model's message and the time it
+resets. Choose a task's flow with `task add --flow <name>` (the `command` tool
+of MCP passes it like the CLI) or `task update <id> --flow <name>`; the update
+is refused once the task has started its first attempt.
 
 **Which worker.** The work step passes the stage's pool (`default` unless the
 stage names another) and the key `<repository>/<pool>` to `pool/agent`. The attempt records the `worker` that

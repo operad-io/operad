@@ -57,7 +57,7 @@ function widthOf<T>(glyphs: readonly WrapGlyph<T>[]): number {
 }
 
 /** Cuts a word wider than a row into rows of at most `limit` columns. */
-function cut<T>(
+function cutGlyphs<T>(
   token: readonly WrapGlyph<T>[],
   limit: number,
 ): { readonly full: WrapGlyph<T>[][]; readonly rest: WrapGlyph<T>[]; readonly used: number } {
@@ -130,7 +130,7 @@ export function wrapGlyphs<T>(
       used = 0;
     }
 
-    const pieces = cut(token, limit);
+    const pieces = cutGlyphs(token, limit);
     lines.push(...pieces.full);
     line = pieces.rest;
     used = pieces.used;

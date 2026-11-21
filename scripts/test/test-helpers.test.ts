@@ -36,6 +36,8 @@ const SHARED_HELPERS = new Set([
   "isRecord",
   "messageOf",
   "oneLine",
+  "cut",
+  "bareId",
   "parseObjectId",
   "objectKey",
   "definitionName",

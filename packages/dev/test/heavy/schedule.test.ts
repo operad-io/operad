@@ -21,28 +21,10 @@ import {
 import poolPlugin from "@operad-io/pool";
 import { createChatPlugin } from "@operad-io/chat";
 import plugin from "../../src/index.ts";
-import {
-  addPlan,
-  addRepository,
-  addTask,
-  confirmPlan,
-  getPlan,
-  getTask,
-  setAuto,
-  setPriority,
-  cancelTask,
-  claimTaskStart,
-  setTaskPhase,
-  updateTask,
-  setConcurrency,
-  recordMergeReported,
-  recordPlanFinishedReported,
-  recordPlanStart,
-  withRepoLock,
-} from "../../src/service.ts";
+import { addPlan, addRepository, addTask, confirmPlan, getPlan, getTask, setAuto, setPriority, cancelTask, claimTaskStart, updateTask, setConcurrency, recordMergeReported, recordPlanFinishedReported, recordPlanStart, withRepoLock } from "../../src/service.ts";
 import { taskViews } from "../../src/views.ts";
 import {
-  bareId,
+  idOfKey,
   changeClock,
   planData,
   taskData,
@@ -52,13 +34,7 @@ import {
   type TaskPhase,
 } from "../../src/model.ts";
 import { schedulerTestHooks } from "../../src/schedule.ts";
-import {
-  cleanupTempRoots,
-  guardLockHandles,
-  makeGitRepository,
-  storeAt,
-  tempRoot,
-} from "../support.ts";
+import { cleanupTempRoots, guardLockHandles, makeGitRepository, storeAt, tempRoot, setTaskPhase } from "../support.ts";
 
 afterAll(cleanupTempRoots);
 afterEach(() => {
@@ -158,7 +134,7 @@ async function makePlan(
       "test",
     );
   }
-  return { key: plan.id, id: bareId(plan.id) };
+  return { key: plan.id, id: idOfKey(plan.id) };
 }
 
 async function makeTask(
@@ -173,7 +149,7 @@ async function makeTask(
     title: slug,
     after,
   });
-  return { key: object.id, id: bareId(object.id) };
+  return { key: object.id, id: idOfKey(object.id) };
 }
 
 async function confirm(fixture: Fixture, planKey: string): Promise<void> {
@@ -1313,7 +1289,7 @@ describe("dev scheduling", () => {
     const held = taskData((await getTask(fixture.store, second.id)).data);
     expect(held.phase).toBe("ready");
     expect(taskViews.row(await getTask(fixture.store, second.id)).note).toBe(
-      `$0.00 · waiting for area core (${bareId(first.id)})`,
+      `$0.00 · waiting for area core (${idOfKey(first.id)})`,
     );
 
     // The holder is still running: later ticks keep holding the second task.
@@ -1460,7 +1436,7 @@ describe("dev scheduling", () => {
 
     await tick(fixture);
     const note = async (id: string) => taskViews.row(await getTask(fixture.store, id)).note;
-    const holder = bareId(first.id);
+    const holder = idOfKey(first.id);
     expect(await note(fourth.id)).toBe(`$0.00 · waiting for area core (${holder}), 2 ahead`);
     expect(await note(second.id)).toBe(`$0.00 · waiting for area core (${holder})`);
     expect(await note(third.id)).toBe(`$0.00 · waiting for area core (${holder}), 1 ahead`);
@@ -1484,8 +1460,8 @@ describe("dev scheduling", () => {
       // One slot is free and the low plan has waited longest: it is next, so
       // the urgent plan's task has it ahead.
       const note = async (id: string) => taskViews.row(await getTask(fixture.store, id)).note;
-      expect(await note(urgentNext.id)).toBe(`$0.00 · waiting for area core (${bareId(holder.id)}), 1 ahead`);
-      expect(await note(lowNext.id)).toBe(`$0.00 · waiting for area core (${bareId(holder.id)})`);
+      expect(await note(urgentNext.id)).toBe(`$0.00 · waiting for area core (${idOfKey(holder.id)}), 1 ahead`);
+      expect(await note(lowNext.id)).toBe(`$0.00 · waiting for area core (${idOfKey(holder.id)})`);
     } finally {
       changeClock.now = () => Date.now();
     }
@@ -1542,7 +1518,7 @@ describe("dev scheduling", () => {
     await tick(fixture);
     await putTask(fixture, first.id, { run: "run-1" });
     expect(taskData((await getTask(fixture.store, second.id)).data).areaHeldBy).toBe(
-      bareId(first.id),
+      idOfKey(first.id),
     );
 
     await updateTask(fixture.store, second.id, { area: "docs" });

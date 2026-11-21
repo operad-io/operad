@@ -36,7 +36,13 @@ export interface AgentWorkerResult {
   readonly reason?: string;
   readonly message?: string;
   /** Set when the worker saw a rate limit: it is a usage limit whatever the text says. */
-  readonly modelError?: { readonly kind: string };
+  readonly modelError?: {
+    readonly kind: string;
+    readonly status?: number | null;
+    readonly retry_after_secs?: number | null;
+    /** When the model gave the error, in epoch milliseconds, when the worker can tell. */
+    readonly reported_at?: number | null;
+  };
 }
 
 export function text(value: unknown, at: string): string {
@@ -53,6 +59,15 @@ export function optionalText(value: unknown, at: string): string | undefined {
 export function secs(value: unknown, at: string): number {
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
     throw new Error(`${at}: must be a positive number of seconds`);
+  }
+  return value;
+}
+
+/** A positive number in a setting, or undefined when it is unset; names the field when it is not. */
+export function optionalPositive(value: unknown, at: string, integer: boolean): number | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0 || (integer && !Number.isInteger(value))) {
+    throw new Error(`${at}: must be a positive ${integer ? "integer" : "number"}`);
   }
   return value;
 }
@@ -129,25 +144,55 @@ export function resultValue<Result extends AgentWorkerResult>(value: unknown): R
   return value as unknown as Result;
 }
 
-/** Reads a `result` line of the worker, or undefined for any other line. */
-export function parseResult<Result extends AgentWorkerResult>(line: string): Result | undefined {
-  let value: unknown;
-  try {
-    value = JSON.parse(line);
-  } catch {
-    return undefined;
-  }
-  return resultValue<Result>(value);
-}
-
 const UNAVAILABLE = /\b429\b|\b(?:503|529)\b|overloaded|rate[ _-]?limit|too many requests/i;
 const USAGE_LIMIT = /usage[ _-]?limit|quota|exceeded your (?:current )?(?:usage|plan|quota)|insufficient[ _-]credit|out of credits/i;
+/** A provider's own retry-after or reset wait: the number and its unit. */
+const RETRY_AFTER = /\b(?:retry[- ]after|try again (?:in|after)|retry in|available(?: again)? in|resets? in)\s*[:=]?\s*(\d+(?:\.\d+)?)\s*(ms|milliseconds?|s|secs?|seconds?|m|mins?|minutes?|h|hrs?|hours?|d|days?|w|weeks?|mo(?:nths?)?)?(?![a-z])/i;
+
+/**
+ * The seconds a model's message says to wait, from a retry-after or reset
+ * phrase. A bare number after such a phrase is seconds. Undefined when the
+ * message gives no such wait; a date or a time of day is not read, because its
+ * day is unknown.
+ */
+export function retryAfterSecsOf(message: string): number | undefined {
+  const found = RETRY_AFTER.exec(message);
+  if (found === null) return undefined;
+  const unit = found[2];
+  // A word after the number is a unit this parser does not know, not seconds.
+  if (
+    unit === undefined &&
+    /^\s*[a-z]/i.test(message.slice(found.index + found[0].length))
+  ) {
+    return undefined;
+  }
+  const value = Number(found[1]);
+  if (!Number.isFinite(value) || value <= 0) return undefined;
+  const unitName = (unit ?? "s").toLowerCase();
+  const factor =
+    unitName.startsWith("millisecond") || unitName === "ms"
+      ? 1 / 1000
+      : unitName.startsWith("min") || unitName === "m"
+        ? 60
+        : unitName.startsWith("h")
+          ? 60 * 60
+          : unitName.startsWith("mo")
+            ? 30 * 24 * 60 * 60
+            : unitName.startsWith("w")
+              ? 7 * 24 * 60 * 60
+              : unitName.startsWith("d")
+                ? 24 * 60 * 60
+                : 1;
+  const seconds = Math.ceil(value * factor);
+  return seconds > 0 ? seconds : undefined;
+}
 
 /**
  * The `modelError` of a worker failure with reason `model_error`, in the shape
  * `radian` gives. `kind` comes from the message: a usage limit is
  * `usage_limit`, a 429 or an overloaded provider is `unavailable`, anything else
- * is `protocol`. A usage-limit message wins over a 429 in the same text.
+ * is `protocol`. A usage-limit message wins over a 429 in the same text. A wait
+ * the message names is `retry_after_secs`; without one it is null.
  */
 export function modelErrorOf(message: string): Record<string, unknown> {
   const status = /\b(429|503|529)\b/.exec(message);
@@ -157,7 +202,7 @@ export function modelErrorOf(message: string): Record<string, unknown> {
   return {
     kind,
     status: status === null ? null : Number(status[1]),
-    retry_after_secs: null,
+    retry_after_secs: retryAfterSecsOf(message) ?? null,
     message,
   };
 }
@@ -286,10 +331,31 @@ export function resultFor(
   if (result.result === "failed") {
     const message = result.message ?? "the harness failed";
     // A rate limit the worker saw is a usage limit whatever the text says.
+    const byText = modelErrorOf(message);
+    const given = result.modelError;
+    const positive = (value: unknown): number | undefined =>
+      typeof value === "number" && Number.isFinite(value) && value > 0
+        ? value
+        : undefined;
+    const retryAfterSecs =
+      positive(given?.retry_after_secs) ?? positive(byText["retry_after_secs"]);
     const modelError =
-      result.modelError !== undefined
-        ? { kind: result.modelError.kind, status: null, retry_after_secs: null, message }
-        : modelErrorOf(message);
+      given !== undefined
+        ? {
+            kind: given.kind,
+            status: positive(given.status) ?? positive(byText["status"]) ?? null,
+            retry_after_secs: retryAfterSecs ?? null,
+            ...(retryAfterSecs === undefined
+              ? {}
+              : { reported_at: positive(given.reported_at) ?? Date.now() }),
+            message,
+          }
+        : {
+            ...byText,
+            ...(retryAfterSecs === undefined
+              ? {}
+              : { reported_at: Date.now() }),
+          };
     return fail({
       reason: result.reason ?? "exit",
       message,

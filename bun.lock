@@ -49,6 +49,10 @@
         "@operad-io/engine": "workspace:*",
         "@operad-io/harness-process": "workspace:*",
       },
+      "devDependencies": {
+        "@operad-io/harness-claude": "workspace:*",
+        "@operad-io/harness-pi": "workspace:*",
+      },
     },
     "packages/cli": {
       "name": "@operad-io/cli",
@@ -70,6 +74,9 @@
         "@operad-io/shell": "workspace:*",
         "@operad-io/telegram": "workspace:*",
       },
+      "devDependencies": {
+        "@operad-io/test-support": "workspace:*",
+      },
     },
     "packages/dev": {
       "name": "@operad-io/dev",
@@ -83,6 +90,7 @@
       },
       "devDependencies": {
         "@operad-io/shell": "workspace:*",
+        "@operad-io/test-support": "workspace:*",
       },
     },
     "packages/engine": {
@@ -190,8 +198,13 @@
         "@operad-io/engine": "workspace:*",
       },
       "devDependencies": {
+        "@operad-io/bot": "workspace:*",
         "@operad-io/dev": "workspace:*",
       },
+    },
+    "packages/test-support": {
+      "name": "@operad-io/test-support",
+      "version": "0.0.0",
     },
     "packages/tui": {
       "name": "@operad-io/tui",
@@ -350,6 +363,8 @@
     "@operad-io/source-cron": ["@operad-io/source-cron@workspace:packages/source-cron"],
 
     "@operad-io/telegram": ["@operad-io/telegram@workspace:packages/telegram"],
+
+    "@operad-io/test-support": ["@operad-io/test-support@workspace:packages/test-support"],
 
     "@operad-io/tui": ["@operad-io/tui@workspace:packages/tui"],
 
