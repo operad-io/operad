@@ -176,13 +176,29 @@ function noteCountText(count: number): string {
   return `${count} ${count === 1 ? "note" : "notes"}`;
 }
 
-function modifiedText(mtimeMs: number): string {
-  return mtimeMs > 0 ? new Date(mtimeMs).toISOString() : "";
+/**
+ * A note's modification time as `YYYY-MM-DD HH:mm` in the given time zone, or
+ * the process's local zone when none is given; empty for a zero time.
+ */
+export function wikiModifiedText(mtimeMs: number, timeZone?: string): string {
+  if (mtimeMs <= 0) return "";
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    ...(timeZone === undefined ? {} : { timeZone }),
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date(mtimeMs));
+  const part = (type: Intl.DateTimeFormatPartTypes): string =>
+    parts.find((entry) => entry.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")} ${part("hour")}:${part("minute")}`;
 }
 
 function noteRow(object: StoredObject): ObjectRow {
   const note = noteOf(object);
-  const modified = modifiedText(note.mtimeMs);
+  const modified = wikiModifiedText(note.mtimeMs);
   const noteLine = note.untrusted
     ? `${modified}${modified.length === 0 ? "" : " "}(untrusted)`
     : modified;

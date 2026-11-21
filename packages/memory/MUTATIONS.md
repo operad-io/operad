@@ -161,3 +161,9 @@ the row fields.
 | T-0602-M2 | packages/memory/src/wiki.ts | the content section listed every note object again instead of using the links the projection stored | `the wiki objects > a section read does not list the note objects again` |
 | T-0602-M3 | packages/memory/src/index.ts | `prepareWiki` opened and refreshed its own search index again, so a list built it | `the wiki objects > a list does not build the search index` |
 | T-0602-M4 | packages/memory/src/wiki.ts | a note whose file changed was not projected before its next section, so its old links were returned | `the wiki objects > a note edited after its first read is projected before its next section` |
+
+## T-0603 — a wiki note row's modified time
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0603-M1 | packages/memory/src/wiki.ts | `wikiModifiedText` ignored the time zone it was given and always formatted in UTC | `the wiki objects > a note's modified time is formatted in the given zone` |

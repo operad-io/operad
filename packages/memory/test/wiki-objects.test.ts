@@ -19,6 +19,7 @@ import {
   WIKI_NOTE_TYPE,
   WIKI_PAGE_CHARS,
   createMemoryPlugin,
+  wikiModifiedText,
 } from "../src/index.ts";
 
 const roots: string[] = [];
@@ -69,6 +70,33 @@ function rig(write: (wiki: string) => void): Rig {
 }
 
 describe("the wiki objects", () => {
+  test("a note's modified time is formatted in the given zone", () => {
+    const instant = Date.UTC(2026, 10, 20, 15, 4, 5);
+    expect(wikiModifiedText(instant, "UTC")).toBe("2026-11-20 15:04");
+    expect(wikiModifiedText(instant, "Asia/Shanghai")).toBe("2026-11-20 23:04");
+    expect(wikiModifiedText(instant, "America/New_York")).toBe("2026-11-20 10:04");
+    expect(wikiModifiedText(0, "UTC")).toBe("");
+  });
+
+  test("a note row shows its local modified time, with no time at zero", async () => {
+    const instant = Date.UTC(2026, 10, 20, 15, 4, 5);
+    const r = rig((wiki) => {
+      file(join(wiki, "tea.md"), "# Tea\n");
+      file(join(wiki, "untrusted.md"), "---\nuntrusted: true\n---\n\n# Untrusted\n");
+      file(join(wiki, "zero.md"), "# Zero\n");
+      const at = new Date(instant);
+      utimesSync(join(wiki, "tea.md"), at, at);
+      utimesSync(join(wiki, "untrusted.md"), at, at);
+      utimesSync(join(wiki, "zero.md"), 0, 0);
+    });
+    const page = await r.views.list(WIKI_NOTE_TYPE, { root: true });
+    const note = (id: string): string | undefined =>
+      page.rows.find((row) => row.id === id)?.note;
+    expect(note("tea.md")).toBe(wikiModifiedText(instant));
+    expect(note("untrusted.md")).toBe(`${wikiModifiedText(instant)} (untrusted)`);
+    expect(note("zero.md")).toBeUndefined();
+  });
+
   test("the root lists the top-level folders and notes", async () => {
     const r = rig((wiki) => {
       file(join(wiki, "index.md"), "# Index\n");
