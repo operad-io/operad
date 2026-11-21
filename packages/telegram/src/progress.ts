@@ -82,6 +82,8 @@ export class ProgressSender {
   private readonly pendingLive = new Map<string, TelegramEvent>();
   /** Chats a manual check must bind even without a live event. */
   private readonly probes = new Set<string>();
+  /** Chats already found not bound to Telegram, so their tails do not read again. */
+  private readonly unbound = new Set<string>();
   private state: ProgressState;
   private stopped = false;
   private following: { readonly stop: () => Promise<void> } | undefined;
@@ -136,7 +138,9 @@ export class ProgressSender {
       void this.wake(event.id, event, false);
       return;
     }
-    // A stored change matters only while a progress message is on the chat.
+    // A stored change matters only while a progress message is on the chat. A
+    // chat that changed may now be bound, so its earlier "not bound" is stale.
+    this.unbound.delete(event.id);
     if (chat?.messageId === undefined) return;
     void this.wake(event.id, event, false);
   }
@@ -200,6 +204,8 @@ export class ProgressSender {
       this.request(chatId, existing, event, manual);
       return this.working.get(chatId) ?? Promise.resolve();
     }
+    if (manual) this.unbound.delete(chatId);
+    if (event?.section !== undefined && this.unbound.has(chatId)) return Promise.resolve();
     if (event?.section !== undefined) this.pendingLive.set(chatId, event);
     else if (manual) this.probes.add(chatId);
     else return Promise.resolve();
@@ -221,10 +227,12 @@ export class ProgressSender {
     if (this.stopped) return;
     const target = stored === undefined ? undefined : telegramChatsOf(chatData(stored.data).channels)[0];
     if (target === undefined) {
+      this.unbound.add(chatId);
       this.pendingLive.delete(chatId);
       this.probes.delete(chatId);
       return;
     }
+    this.unbound.delete(chatId);
     const live = this.pendingLive.get(chatId);
     this.pendingLive.delete(chatId);
     const probe = this.probes.delete(chatId);

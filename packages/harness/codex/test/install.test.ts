@@ -1,5 +1,5 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
-import { chmodSync, realpathSync, writeFileSync } from "node:fs";
+import { chmodSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { cleanupTempRoots, tempRoot, waitForFile, waitForGone, waitForPid } from "../../process/test/support.ts";
@@ -48,6 +48,30 @@ describe("the command that starts codex app-server", () => {
     const { root } = await pathWith("bun", "codex");
     const command = defaultCommand(root);
     expect(command).toEqual([join(root, "bun"), realpathSync(join(root, "codex")), "app-server"]);
+  });
+
+  test("a codex that moved to a new path is found again", async () => {
+    const { root } = await pathWith("bun");
+    const first = join(root, "codex-v1");
+    const second = join(root, "codex-v2");
+    writeFileSync(first, "#!/usr/bin/env node\n");
+    writeFileSync(second, "#!/usr/bin/env node\n");
+    chmodSync(first, 0o755);
+    chmodSync(second, 0o755);
+    symlinkSync(first, join(root, "codex"));
+    expect(defaultCommand(root)).toEqual([
+      join(root, "bun"),
+      realpathSync(first),
+      "app-server",
+    ]);
+
+    rmSync(join(root, "codex"));
+    symlinkSync(second, join(root, "codex"));
+    expect(defaultCommand(root)).toEqual([
+      join(root, "bun"),
+      realpathSync(second),
+      "app-server",
+    ]);
   });
 
   test("without a bun on PATH this bun runs the codex script", async () => {

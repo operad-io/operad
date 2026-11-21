@@ -55,14 +55,27 @@ export class CodexInstallError extends Error {
  * one up (fnm), so a script is run by the `bun` of PATH, or by this bun.
  */
 export function defaultCommand(path: string | undefined = process.env.PATH): readonly string[] {
-  const bun = Bun.which("bun", { PATH: path ?? "" }) ?? process.execPath;
-  const codex = codexCommand(bun, path);
-  if (codex === undefined) {
+  const key = path ?? "";
+  // Look codex up on every read: under fnm an upgrade moves it into a new node
+  // version directory, so a path remembered for the process would outlive it.
+  const found = Bun.which("codex", { PATH: key });
+  if (found === null) {
     throw new CodexInstallError(
       "no `codex` was found on PATH; install Codex (https://developers.openai.com/codex) or set the command setting",
     );
   }
-  return [...codex, "app-server"];
+  const real = realpathSync(found);
+  let command: readonly string[] = [real, "app-server"];
+  try {
+    const head = codexFileHead(real).split("\n")[0] ?? "";
+    if (head.startsWith("#!") && head.includes("node")) {
+      const bun = Bun.which("bun", { PATH: key }) ?? process.execPath;
+      command = [bun, real, "app-server"];
+    }
+  } catch {
+    // A native binary is not text.
+  }
+  return command;
 }
 
 /** The argv of the `command` setting, or the default one. */

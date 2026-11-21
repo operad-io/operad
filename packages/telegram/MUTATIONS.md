@@ -205,3 +205,11 @@ T-0588 added the `bot-tidy` type, which stores one object per bot under the bot'
 | T-0616-M8 | packages/telegram/src/progress.ts | a chat's progress entry was created before the chat was known to be bound | `the progress message of a reply > a chat that is not bound creates no progress entry` |
 | T-0616-M9 | packages/telegram/src/source.ts | dedupe read every closed chat ever bound to the channel instead of only the open and recently changed ones | `the telegram source > dedupe reads an old closed chat only while it is recently changed` |
 | T-0616-M10 | packages/telegram/src/typing.ts | the event type was imported from `@operad-io/engine` again, a name the plugin docs allow only for the host | `the plugin docs > a name a plugin package imports is never on the allow list` |
+
+## T-0644 — a refused stream, a bounded debounce and unbound chats
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0644-M1 | packages/telegram/src/events.ts | the stream was requested before the `try`, so a synchronous refusal ended the one event loop | `the plugin's one event loop > a stream refused synchronously is retried instead of ending the loop` |
+| T-0644-M2 | packages/telegram/src/pending.ts | every stored change restarted the debounce, so a steady stream postponed the pending pass | `pending items go to Telegram > continuous stored changes do not postpone the one pending pass` |
+| T-0644-M3 | packages/telegram/src/progress.ts | a chat already found not bound read its chat again for every live tail | `the progress message of a reply > a live tail of a chat that is not bound does not read the chat again` |

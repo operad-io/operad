@@ -49,7 +49,7 @@ import {
   pageActions,
 } from "./actions.ts";
 import { chatCommands } from "./commands.ts";
-import { chatMarkdown, chatRunRows } from "./chat.ts";
+import { chatMarkdown, chatRunRows, type ChatMarkdownOptions } from "./chat.ts";
 
 
 /** The two terminal themes the view knows. */
@@ -1177,6 +1177,50 @@ function chatTranscript(state: TuiState, section: TuiSection): boolean {
   return state.object?.type === "chat" && section.id === "transcript";
 }
 
+/** How many chat Markdown strings were built, for a test that checks the cache is used. */
+export const chatStats = { computed: 0 };
+
+const CHAT_MARKDOWN_CACHE_MAX = 32;
+const chatMarkdowns = new Map<string, string>();
+
+/** The local day a chat header compares against. */
+function chatDayOf(now: number, timeZone: string | undefined): string {
+  try {
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date(now));
+  } catch {
+    return String(now);
+  }
+}
+
+/** A chat transcript's Markdown, kept while its text, local day and folds stay the same. */
+export function chatMarkdownCached(
+  markdown: string,
+  options: ChatMarkdownOptions,
+): string {
+  const day = chatDayOf(options.now ?? Date.now(), options.timeZone);
+  const open = [...(options.open ?? [])].sort().join("\u0000");
+  const key = `${markdown}\u0000${day}\u0000${options.timeZone ?? ""}\u0000${open}\u0000${options.fold !== false}\u0000${options.prefix ?? "c"}`;
+  const kept = chatMarkdowns.get(key);
+  if (kept !== undefined) {
+    chatMarkdowns.delete(key);
+    chatMarkdowns.set(key, kept);
+    return kept;
+  }
+  chatStats.computed += 1;
+  const result = chatMarkdown(markdown, options);
+  chatMarkdowns.set(key, result);
+  if (chatMarkdowns.size > CHAT_MARKDOWN_CACHE_MAX) {
+    const oldest = chatMarkdowns.keys().next().value;
+    if (oldest !== undefined) chatMarkdowns.delete(oldest);
+  }
+  return result;
+}
+
 export function sectionLayout(
   state: TuiState,
   section: TuiSection,
@@ -1185,7 +1229,7 @@ export function sectionLayout(
   const object = state.object;
   const key = `${object?.version ?? 0}\u0000${object?.id ?? ""}\u0000${section.id}`;
   const markdown = chatTranscript(state, section)
-    ? chatMarkdown(section.markdown, {
+    ? chatMarkdownCached(section.markdown, {
         ...(options.now === undefined ? {} : { now: options.now }),
         ...(options.timeZone === undefined ? {} : { timeZone: options.timeZone }),
         ...(section.folds === undefined ? {} : { open: section.folds }),
@@ -1215,7 +1259,7 @@ export function sectionTailLayout(
   const key = `${object?.version ?? 0}\u0000${object?.id ?? ""}\u0000${section.id}\u0000tail`;
   const tail =
     section.tail !== undefined && section.tail !== "" && chatTranscript(state, section)
-      ? chatMarkdown(section.tail, {
+      ? chatMarkdownCached(section.tail, {
           ...(options.now === undefined ? {} : { now: options.now }),
           ...(options.timeZone === undefined ? {} : { timeZone: options.timeZone }),
           ...(section.folds === undefined ? {} : { open: section.folds }),

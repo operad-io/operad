@@ -4,6 +4,7 @@ import {
   MemoryPluginStore,
   PluginRegistry,
   Runner,
+  appendInput,
   openLog,
   readState,
   replay,
@@ -135,6 +136,73 @@ test("an unchanged run reads no fact on the second readState", async () => {
     ]);
     await readState(log, run.runId);
     expect(rows()).toBe(firstRows + 1);
+  } finally {
+    await inner.close();
+  }
+});
+
+test("an ended run's state is not kept", async () => {
+  const root = await tempRoot();
+  const inner = openLog({
+    backend: "sqlite",
+    path: join(root, "log.sqlite"),
+  });
+  const { log, rows, reads } = countingFacts(inner);
+  try {
+    const run = await inner.startRun("incremental", "job:1");
+    await inner.append(run.runId, 0, [
+      { kind: "run_started", payload: { flow: "incremental" }, cause: 1 },
+    ]);
+    await readState(log, run.runId);
+    const firstRows = rows();
+    const firstReads = reads();
+    await inner.endRun(run.runId);
+
+    await readState(log, run.runId);
+    // The ended state is dropped, though this call still answers from it.
+    expect(reads()).toBe(firstReads + 1);
+    expect(rows()).toBe(firstRows);
+    await readState(log, run.runId);
+    expect(reads()).toBe(firstReads + 2);
+    expect(rows()).toBe(firstRows + 1);
+  } finally {
+    await inner.close();
+  }
+});
+
+test("appendInput keeps the state it appended", async () => {
+  const root = await tempRoot();
+  const storeRoot = join(root, "store");
+  const inner = openLog({
+    backend: "sqlite",
+    path: join(storeRoot, "log.sqlite"),
+  });
+  const { log, rows } = countingFacts(inner);
+  try {
+    const registry = new PluginRegistry([plugin], {
+      home: root,
+      storeRoot,
+      store: new MemoryPluginStore({ root: storeRoot }),
+    });
+    const found = registry.flow("simple");
+    if (found === undefined) throw new Error("missing simple flow");
+    const run = await inner.startRun("simple", "job:1");
+    const state = await readState(log, run.runId);
+    const before = rows();
+
+    const appended = await appendInput(
+      log,
+      found.flow,
+      run.runId,
+      state,
+      { kind: "start" },
+      1_700_000_000_000,
+    );
+    const afterAppend = rows();
+    const kept = await readState(log, run.runId);
+    expect(rows()).toBe(afterAppend);
+    expect(afterAppend).toBe(before);
+    expect(kept).toEqual(appended.state);
   } finally {
     await inner.close();
   }

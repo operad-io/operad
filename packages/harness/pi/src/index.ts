@@ -407,32 +407,29 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
     };
   }
 
-  /** The models a chat may pick and the default among them, from the kept list. */
+  /** The models a chat may pick, from the kept list; `ready` waits for a first list. */
   function piModels(
     settings: Readonly<Record<string, unknown>>,
     context: HarnessModelContext,
-  ): PiDeclaredModels {
-    const configured = stringList(settings.models);
-    const options = listOptions(piCommandOf(settings), context, modelsPathOf(settings));
-    const kept = readPiModelList(options) ?? null;
-    const list = configured ?? piModelList(options, kept);
-    return declaredModels(settings, options, kept, list);
-  }
-
-  /**
-   * The models a chat may pick, waiting for pi's first list when the home has
-   * none yet. A configured `models` setting asks nothing and wins as it always did.
-   */
-  async function piModelsReady(
+  ): PiDeclaredModels;
+  function piModels(
     settings: Readonly<Record<string, unknown>>,
     context: HarnessModelContext,
-  ): Promise<PiDeclaredModels> {
+    ready: true,
+  ): Promise<PiDeclaredModels>;
+  function piModels(
+    settings: Readonly<Record<string, unknown>>,
+    context: HarnessModelContext,
+    ready = false,
+  ): PiDeclaredModels | Promise<PiDeclaredModels> {
     const configured = stringList(settings.models);
     const options = listOptions(piCommandOf(settings), context, modelsPathOf(settings));
     const first = readPiModelList(options) ?? null;
-    const list = configured ?? (await piModelListReady(options, first));
-    const kept = first ?? readPiModelList(options) ?? null;
-    return declaredModels(settings, options, kept, list);
+    if (configured !== undefined) return declaredModels(settings, options, first, configured);
+    if (!ready) return declaredModels(settings, options, first, piModelList(options, first));
+    return piModelListReady(options, first).then((list) =>
+      declaredModels(settings, options, first ?? readPiModelList(options) ?? null, list),
+    );
   }
 
   /**
@@ -488,7 +485,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
     kind: "harness",
     version: pkg.version,
     models: piModels,
-    modelsReady: piModelsReady,
+    modelsReady: (settings, context) => piModels(settings, context, true),
     efforts: piEfforts,
     capabilities: { loadsSkills: true, takesMessagesMidRun: true, accessLevels: ["plan", "ask", "edits", "full"] },
     signedIn: async (settings) => {

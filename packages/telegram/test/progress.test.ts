@@ -322,6 +322,25 @@ describe("the progress message of a reply", () => {
     await f.stop();
   });
 
+  test("a live tail of a chat that is not bound does not read the chat again", async () => {
+    const f = await setup();
+    let reads = 0;
+    const store = f.w.store;
+    const original = store.get.bind(store);
+    store.get = ((type: string, id: string) => {
+      if (type === CHAT_TYPE) reads += 1;
+      return original(type, id);
+    }) as typeof store.get;
+    f.client.announceEvent({ id: "not-a-chat", section: "transcript", tail: "writing" });
+    await nextTurn();
+    f.client.announceEvent({ id: "not-a-chat", section: "transcript", tail: "writing more" });
+    await nextTurn();
+    await f.progress.settled();
+    expect(reads).toBe(1);
+    store.get = original as typeof store.get;
+    await f.stop();
+  });
+
   test("a chat that is not bound creates no progress entry", async () => {
     const f = await setup();
     await f.progress.syncChat("not-a-chat");

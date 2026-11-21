@@ -1,6 +1,6 @@
 /** How a chat shows in a list and on its page: a row and a transcript. */
 
-import { attachmentDir, attachmentUrl, decodeCursor, DEFAULT_SECTION_CAP_BYTES, encodeCursor, formatElapsed } from "@operad-io/engine";
+import { attachmentDir, attachmentUrl, decodeCursor, DEFAULT_SECTION_CAP_BYTES, encodeCursor, formatElapsed, isRecord } from "@operad-io/engine";
 import type {
   JsonValue,
   ObjectRef,
@@ -138,12 +138,16 @@ function messageFrom(fact: {
   const data = fact.data;
   if (typeof data.id !== "string" || typeof data.text !== "string") return undefined;
   if (data.role !== "user" && data.role !== "assistant") return undefined;
+  const from = isRecord(data.from) ? data.from : {};
   const source = typeof data.source === "object" && data.source !== null ? (data.source as Record<string, unknown>) : {};
   const timings = timingsOf(data.timings);
   return {
     id: data.id,
     role: data.role,
-    from: { via: "", id: "" },
+    from: {
+      via: typeof from.via === "string" ? from.via : "",
+      id: typeof from.id === "string" ? from.id : "",
+    },
     text: data.text,
     attachments: attachmentsOf(data.attachments),
     source: {

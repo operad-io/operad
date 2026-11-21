@@ -1478,3 +1478,12 @@ the row fields.
 | T-0614-M7 | packages/dev/src/schedule.ts | the declared-name set was not checked, so every pass declared a content-addressed flow again | `the dev scheduler's repeated pass > a content-addressed flow is declared once, while dev and a refused graph are tried each pass` |
 | T-0614-M8 | packages/dev/src/schedule.ts | every flow name counted as content-addressed, so the built-in `dev` was remembered as declared | `the dev scheduler's repeated pass > a content-addressed flow is declared once, while dev and a refused graph are tried each pass` |
 | T-0614-M9 | packages/dev/src/schedule.ts | a content-addressed name was remembered before the kernel accepted its graph, so a refused graph was not retried | `the dev scheduler's repeated pass > a content-addressed flow is declared once, while dev and a refused graph are tried each pass` |
+
+## T-0644 — in-memory declarations and a bounded settings read
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0644-M1 | packages/dev/src/schedule.ts | only a file store remembered a declared content-addressed flow, so an in-memory store declared it every pass | `the dev scheduler's repeated pass > an in-memory store declares a content-addressed flow once too` |
+| T-0644-M2 | packages/dev/src/settings.ts | the settings text was read again even when the file's stat had not changed | `the dev scheduler's repeated pass > an unchanged settings file is not read again` |
+| T-0644-M3 | packages/dev/src/settings.ts | the parse cache returned one shared settings object to every caller | `the dev scheduler's repeated pass > a settings read does not hand out the cached object to be changed` |
+| T-0644-M4 | packages/dev/src/model.ts | `listAll` ignored its `where` filter, so a repository's ids counted another repository's objects | `dev per-repository ids > two repositories may both hold T-0001-work under different keys` |

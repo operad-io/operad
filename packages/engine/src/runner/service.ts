@@ -15,10 +15,21 @@ interface KeptState {
 /** The last state each log has given for a run, and the sequence it covers. */
 const keptStates = new WeakMap<LogBackend, Map<string, KeptState>>();
 
+/** Keeps the state a caller just built by evolving appended facts. */
+export function keepState(log: LogBackend, runId: string, state: KernelState): void {
+  let kept = keptStates.get(log);
+  if (kept === undefined) {
+    kept = new Map();
+    keptStates.set(log, kept);
+  }
+  kept.set(runId, { lastSeq: state.lastSeq, state });
+}
+
 /**
  * Rebuild a run's state by streaming the facts the kept state does not cover.
  * The run's last sequence comes from its info, so an unchanged run reads no
- * fact at all; a state that a full replay would not give is never kept.
+ * fact at all; a state that a full replay would not give is never kept, and an
+ * ended run is dropped rather than held for every run the process has read.
  */
 export async function readState(
   log: LogBackend,
@@ -29,7 +40,9 @@ export async function readState(
   const kept = keptStates.get(log);
   const previous = kept?.get(runId);
   if (previous !== undefined && previous.lastSeq === info.lastSeq) {
-    return previous.state;
+    if (info.active) return previous.state;
+    // An ended run is not held; the call still answers from the state just read.
+    kept?.delete(runId);
   }
   let state = previous?.state ?? initialState();
   let lastSeq = previous?.lastSeq ?? 0;
@@ -40,9 +53,8 @@ export async function readState(
     state = evolve(state, fact);
     lastSeq = fact.seq;
   }
-  const next = { lastSeq, state };
-  if (kept === undefined) keptStates.set(log, new Map([[runId, next]]));
-  else kept.set(runId, next);
+  if (info.active) keepState(log, runId, state);
+  else kept?.delete(runId);
   return state;
 }
 
@@ -68,6 +80,7 @@ export async function endRunDirectly(
       },
     ]);
     for (const fact of appended.facts) state = evolve(state, fact);
+    keepState(log, runId, state);
   }
   await log.endRun(runId);
   return state;
@@ -151,6 +164,7 @@ export async function appendInput(
   if (decision.facts.length > 0) {
     const appended = await log.append(runId, state.lastSeq, decision.facts);
     for (const fact of appended.facts) next = evolve(next, fact);
+    keepState(log, runId, next);
   }
   return { state: next, decision };
 }

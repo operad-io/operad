@@ -1,7 +1,8 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { join } from "node:path";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import type { FactsOptions, FactsPage, ObjectRef, ObjectStore, PluginFact, ViewContext } from "@operad-io/engine";
-import { chatViews, CHAT_TYPE, RUN_FACT } from "../src/index.ts";
+import { agentLogPath, allMessages, chatViews, CHAT_TYPE, MESSAGE_CHANGE_FACT, MESSAGE_FACT, RUN_FACT } from "../src/index.ts";
 import { cleanupRoots, reply, rig } from "./support.ts";
 
 afterAll(cleanupRoots);
@@ -103,4 +104,113 @@ describe("what reading a chat costs", () => {
     }
     expect(counted.scans()).toBeLessThanOrEqual(4);
   });
+});
+
+test("a live tail keeps the stored speaker while a load refreshes a renamed bot", async () => {
+  const r = await rig(() => reply("x"));
+  const chat = await r.chat({ parent: "bot:default" });
+  const oldBot = await r.store.put("bot", "default", { speaker: "Nova" }, "test");
+  await r.say(chat, "go");
+  const run = "run-speaker";
+  await r.store.append({
+    type: RUN_FACT,
+    object: { type: CHAT_TYPE, id: chat },
+    cause: "test",
+    data: { runId: run },
+  });
+  const path = agentLogPath(r.store.root, "fake", run);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(
+    path,
+    `${JSON.stringify({ type: "text_delta", text: "hello", receivedAt: 1 })}\n`,
+  );
+  const object = await r.store.get(CHAT_TYPE, chat);
+  if (object === undefined) throw new Error("no chat");
+
+  const store = Object.create(r.store) as ObjectStore;
+  const original = r.store.get.bind(r.store);
+  store.get = ((type: string, id: string) =>
+    type === "bot" ? oldBot : original(type, id)) as ObjectStore["get"];
+  const ctx = {
+    plugin: "chat",
+    home: join(r.root, "home"),
+    cwd: r.root,
+    store,
+    settings: {},
+    secrets: {
+      names: async (): Promise<readonly string[]> => [],
+      get: async () => undefined,
+      values: async (): Promise<readonly string[]> => [],
+    },
+    runTimes: async () => ({ startedAt: 1, endedAt: null, segments: [] }),
+    refreshedObject: async (type: string, id: string) => r.store.get(type, id),
+  } as unknown as ViewContext;
+
+  const live = chatViews.tail;
+  if (live === undefined) throw new Error("the chat type pushes no tail");
+  expect((await live(ctx, object))?.tail).toContain("**Nova:** hello");
+
+  await r.store.put("bot", "default", { speaker: "Ada" }, "test");
+  await r.store.append({
+    type: MESSAGE_FACT,
+    object: { type: CHAT_TYPE, id: chat },
+    cause: "test",
+    data: {
+      id: "m-stored",
+      role: "assistant",
+      from: { via: "agent", id: "default" },
+      text: "stored hello",
+      attachments: [],
+      source: { kind: "agent", ref: null },
+      runId: run,
+    },
+  });
+  const loaded = await chatViews.load(ctx, object, "transcript", {});
+  expect(loaded.markdown).toContain("**Ada**");
+  expect(loaded.markdown).not.toContain("**Nova**");
+});
+
+test("a withdrawal removes a person's message but never an answer", async () => {
+  const r = await rig(() => reply("x"));
+  const chat = await r.chat();
+  await r.say(chat, "go");
+  const answer = "m-answer";
+  await r.store.append({
+    type: MESSAGE_FACT,
+    object: { type: CHAT_TYPE, id: chat },
+    cause: "test",
+    data: {
+      id: answer,
+      role: "assistant",
+      from: { via: "agent", id: "default" },
+      text: "the answer stays",
+      attachments: [],
+      source: { kind: "agent", ref: null },
+    },
+  });
+  await r.store.append({
+    type: MESSAGE_CHANGE_FACT,
+    object: { type: CHAT_TYPE, id: chat },
+    cause: "test",
+    data: { id: answer, kind: "withdraw", by: { via: "tui", id: "1" } },
+  });
+  const object = await r.store.get(CHAT_TYPE, chat);
+  if (object === undefined) throw new Error("no chat");
+  const ctx = {
+    plugin: "chat",
+    home: join(r.root, "home"),
+    cwd: r.root,
+    store: r.store,
+    settings: {},
+    secrets: {
+      names: async (): Promise<readonly string[]> => [],
+      get: async () => undefined,
+      values: async (): Promise<readonly string[]> => [],
+    },
+  } as unknown as ViewContext;
+  const loaded = await chatViews.load(ctx, object, "transcript", {});
+  expect(loaded.markdown).toContain("the answer stays");
+  expect(allMessages(r.store, chat).map((message) => message.text)).toContain(
+    "the answer stays",
+  );
 });

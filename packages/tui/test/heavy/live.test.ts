@@ -25,6 +25,7 @@ import {
   statusText,
   type Refetch,
   type TuiActInput,
+  type TuiAnswerRequest,
   type TuiBinding,
   type TuiEvent,
   type TuiEventSource,
@@ -62,6 +63,7 @@ class CountingClient implements TuiShellClient {
   pendingCalls = 0;
   runningCalls = 0;
   actionCalls = 0;
+  answerCalls = 0;
   objectsCalls = 0;
   objectCalls: string[] = [];
   sectionCalls: string[] = [];
@@ -91,6 +93,12 @@ class CountingClient implements TuiShellClient {
   async act(_input: TuiActInput): Promise<unknown> {
     this.actionCalls += 1;
     this.check();
+    return {};
+  }
+  async answer(input: TuiAnswerRequest): Promise<unknown> {
+    this.answerCalls += 1;
+    this.check();
+    this.pendingItems = this.pendingItems.filter((item) => item.waitId !== input.waitId);
     return {};
   }
   async objects(_t?: string, _c?: string, _s?: AbortSignal, _f?: string, level?: { readonly parent?: string | undefined }): Promise<ViewListPage> {
@@ -342,10 +350,46 @@ describe("live updates in the shell", () => {
     await s.view.until((state) => state.object?.row.title === "A2");
     await settled();
     expect(s.client.actionCalls).toBe(1);
-    expect(s.client.objectCalls.length).toBe(objectsBefore + 1);
+    // One read of the open object and one of its row, not a whole refresh.
+    expect(s.client.objectCalls.length).toBe(objectsBefore + 2);
     expect(s.client.pendingCalls).toBe(pendingBefore);
     expect(s.client.runningCalls).toBe(runningBefore);
     expect(s.client.objectsCalls).toBe(listsBefore);
+    s.shell.stop();
+  });
+
+  test("an answer refetches the object and row, and removes the Pending item at once", async () => {
+    const s = start((client) => {
+      client.pendingItems = [
+        {
+          runId: "run-1",
+          flow: "f",
+          step: null,
+          prompt: "Answer?",
+          choices: ["yes", "no"],
+          actions: [],
+          waitId: "wait:1",
+          row: row("a", "A"),
+          object: "item:a",
+        },
+      ];
+    });
+    await s.view.until(
+      (state) =>
+        state.tabs.find((tab) => tab.id === "pending")?.list.rows.length === 1,
+    );
+    const pendingBefore = s.client.pendingCalls;
+    s.shell.key({ name: "a" });
+    s.shell.key({ name: "return" });
+    await s.view.until(
+      (state) =>
+        !state.acting &&
+        state.answerRequest === undefined &&
+        state.tabs.find((tab) => tab.id === "pending")?.list.rows.length === 0,
+    );
+    expect(s.client.answerCalls).toBe(1);
+    // The Pending list is read once for the answer, not at the next list window.
+    expect(s.client.pendingCalls).toBe(pendingBefore + 1);
     s.shell.stop();
   });
 

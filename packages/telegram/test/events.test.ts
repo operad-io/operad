@@ -17,6 +17,8 @@ class EventClient implements ClientApi {
   private wake: ((result: IteratorResult<ViewEvent>) => void) | undefined;
   private readonly queued: ViewEvent[] = [];
   private readonly views: TelegramWorld["views"];
+  /** How many synchronous refusals of the stream are still to happen. */
+  refuseEvents = 0;
 
   constructor(views: TelegramWorld["views"]) {
     this.views = views;
@@ -40,6 +42,10 @@ class EventClient implements ClientApi {
     this.views.section(id, sectionId, cursor, options);
 
   events(): AsyncIterable<ViewEvent> {
+    if (this.refuseEvents > 0) {
+      this.refuseEvents -= 1;
+      throw new Error("the stream is not ready");
+    }
     return {
       [Symbol.asyncIterator]: () => ({
         next: () => {
@@ -132,6 +138,30 @@ describe("the plugin's one event loop", () => {
     expect(source).toEqual(["chat-1"]);
     expect(commands).toBe(2);
 
+    await handle.stop();
+    await w.close();
+  });
+
+  test("a stream refused synchronously is retried instead of ending the loop", async () => {
+    const root = await mkdtemp(join(tmpdir(), "telegram-events-"));
+    roots.push(root);
+    const w = await createTelegramWorld({ root, users: [42] });
+    const client = new EventClient(w.views);
+    client.refuseEvents = 1;
+    const ctx: SourceContext = { ...w.ctx, client };
+    let waits = 0;
+    const events = new TelegramEvents(ctx, { wait: async () => {
+      waits += 1;
+    } });
+    const pending: TelegramEvent[] = [];
+    const handle = events.start({ pending: (event) => pending.push(event) });
+    await nextTurn();
+    await nextTurn();
+    expect(waits).toBe(1);
+
+    client.announce({ id: "task:t1", type: "task" });
+    await nextTurn();
+    expect(pending).toHaveLength(1);
     await handle.stop();
     await w.close();
   });

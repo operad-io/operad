@@ -560,14 +560,10 @@ export class Kernel {
    */
   async refusedStarts(): Promise<readonly RefusedStart[]> {
     const list: RefusedStart[] = [];
-    const runs = await this.log.runs();
-    const startedInputs = new Set<string>();
-    for (const run of runs) {
-      if (run.startInputId !== null) startedInputs.add(run.startInputId);
-    }
+    // The query already leaves out a start route whose input has a run, so the
+    // whole runs table is not read to ask the same question again.
     const outcomes = await this.log.startRoutesWithoutRun();
     for (const outcome of outcomes) {
-      if (startedInputs.has(outcome.inputId)) continue;
       const flow = field(outcome.payload, "flow");
       const object = field(outcome.payload, "object");
       if (flow === undefined || object === undefined) continue;

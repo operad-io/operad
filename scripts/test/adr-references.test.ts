@@ -29,7 +29,7 @@ const CITATIONS: readonly RegExp[] = [
   /\b(?:items?|points?|sections?)\s+(?:no\.?\s*)?\d+\s+(?:of|in)\s+[`\w./-]+\.md\b/i,
   // Start at a token boundary; matching from every position backtracks for
   // seconds over a line of tens of kilobytes, such as an SSE fixture.
-  /(?:^|[^\w./`-])[`\w/-]+(?:\.[`\w/-]+)*\.md\s+(?:items?|points?|sections?)\s+(?:no\.?\s*)?\d+\b/i,
+  /(?:^|[^\w./`-])(?:\.{1,2}\/)*[`\w/-]+(?:\.[`\w/-]+)*\.md\s+(?:items?|points?|sections?)\s+(?:no\.?\s*)?\d+\b/i,
   // "第 4 条", "第 4 项".
   /第\s*\d+\s*(?:条|项)/,
 ];
@@ -71,12 +71,14 @@ describe("a backlog decision is cited by its ADR", () => {
   });
 
   test("a citation is reported with the file and the line", () => {
-    expect(backlogDecisionCitations("a.ts", "one\n// operad.md decision 13\ntwo\n决定 4\nthree\n// operad-bot.md 第 4 条\nfour\n// item 13 of operad.md\nfive\n// see packages/operad.md section 3\nsix\n")).toEqual([
+    expect(backlogDecisionCitations("a.ts", "one\n// operad.md decision 13\ntwo\n决定 4\nthree\n// operad-bot.md 第 4 条\nfour\n// item 13 of operad.md\nfive\n// see packages/operad.md section 3\nsix\n// ./docs/operad.md item 13\nseven\n// ../operad.md item 13\neight\n")).toEqual([
       "a.ts:2: cites a backlog decision by number",
       "a.ts:4: cites a backlog decision by number",
       "a.ts:6: cites a backlog decision by number",
       "a.ts:8: cites a backlog decision by number",
       "a.ts:10: cites a backlog decision by number",
+      "a.ts:12: cites a backlog decision by number",
+      "a.ts:14: cites a backlog decision by number",
     ]);
     expect(backlogDecisionCitations("a.md", "ADR 0002 D1 to D4 and ADR 0025 D3.")).toEqual([]);
     expect(backlogDecisionCitations("a.md", "two decisions 3 days later")).toEqual([]);

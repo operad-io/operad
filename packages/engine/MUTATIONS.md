@@ -1341,3 +1341,11 @@ resume window`. Rows are append-only, so the old lines stay as history.
 | T-0613-M5 | packages/engine/src/runner/grants.ts | `useGrant` took its last sequence from the fact scan instead of the run info | `a grant uses the run's latest sequence when its fact scan is stale` |
 | T-0613-M6 | packages/engine/src/runner/service.ts | `appendInput` evolved the decision's input facts instead of the facts the log returned | `appendInput keeps the facts the log appended` |
 | T-0613-M7 | packages/engine/src/runner/runner.ts | `markStarted` returned a fresh read of the run instead of evolving the facts the log returned | `markStarted keeps the facts the log appended` |
+
+## T-0644 — refused starts and the kept run state
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0644-M1 | packages/engine/src/trigger/kernel.ts | `refusedStarts` read the whole runs table again instead of trusting the start-route query | `refusedStarts reads only the start routes without a run` |
+| T-0644-M2 | packages/engine/src/runner/service.ts | `appendInput` did not keep the state it had just evolved from the appended facts | `appendInput keeps the state it appended` |
+| T-0644-M3 | packages/engine/src/runner/service.ts | `readState` kept returning an ended run's cached state | `an ended run's state is not kept` |

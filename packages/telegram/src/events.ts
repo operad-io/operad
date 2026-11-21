@@ -81,9 +81,12 @@ export class TelegramEvents {
 
   private async follow(sinks: EventSinks): Promise<void> {
     while (!this.stopped) {
-      const iterator = this.ctx.client.events()[Symbol.asyncIterator]();
-      this.iterator = iterator;
+      let iterator: AsyncIterator<TelegramEvent> | undefined;
       try {
+        // A client that refuses the stream synchronously is a failure like any
+        // other: log it, wait, and take the stream again.
+        iterator = this.ctx.client.events()[Symbol.asyncIterator]();
+        this.iterator = iterator;
         while (!this.stopped) {
           const next = await iterator.next();
           if (next.done === true || this.stopped) return;
@@ -94,6 +97,7 @@ export class TelegramEvents {
         void this.ctx.logger.write(`could not follow changes: ${messageOf(error)}`).catch(() => undefined);
         await this.wait(EVENT_RETRY_MS, this.controller.signal).catch(() => undefined);
       } finally {
+        if (iterator === undefined) continue;
         if (this.iterator === iterator) this.iterator = undefined;
         try {
           await iterator.return?.();

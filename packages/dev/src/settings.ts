@@ -10,6 +10,7 @@ import {
   mkdirSync,
   readFileSync,
   realpathSync,
+  statSync,
   renameSync,
   writeFileSync,
 } from "node:fs";
@@ -1417,16 +1418,28 @@ interface ParsedSettings {
   readonly worktreeField: string;
 }
 
-/** The last parsed text of each settings file, by its path. */
-const parsedSettings = new Map<
-  string,
-  { readonly text: string; readonly value: ParsedSettings }
->();
+/** How many parsed settings texts and last-read files are kept. */
+const SETTINGS_CACHE_MAX = 64;
 
-/** Parses and validates a settings text, reusing the last result while it is unchanged. */
+/** The last parsed value of each settings text, bounded like the file cache. */
+const parsedSettings = new Map<string, ParsedSettings>();
+
+/** A copy of a parsed value, so one caller cannot change what another reads. */
+function copyParsed(value: ParsedSettings): ParsedSettings {
+  return {
+    settings: structuredClone(value.settings),
+    worktreeField: value.worktreeField,
+  };
+}
+
+/** Parses and validates a settings text, reusing the last result for that text. */
 function parseSettingsText(path: string, text: string): ParsedSettings {
-  const kept = parsedSettings.get(path);
-  if (kept !== undefined && kept.text === text) return kept.value;
+  const kept = parsedSettings.get(text);
+  if (kept !== undefined) {
+    parsedSettings.delete(text);
+    parsedSettings.set(text, kept);
+    return copyParsed(kept);
+  }
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
@@ -1441,8 +1454,53 @@ function parseSettingsText(path: string, text: string): ParsedSettings {
       ? "worktrees"
       : "worktreeRoot";
   const value = { settings, worktreeField };
-  parsedSettings.set(path, { text, value });
-  return value;
+  parsedSettings.set(text, value);
+  if (parsedSettings.size > SETTINGS_CACHE_MAX) {
+    const oldest = parsedSettings.keys().next().value;
+    if (oldest !== undefined) parsedSettings.delete(oldest);
+  }
+  return copyParsed(value);
+}
+
+interface CachedSettingsText {
+  readonly mtimeNs: bigint;
+  readonly ctimeNs: bigint;
+  readonly size: bigint;
+  readonly ino: bigint;
+  readonly text: string;
+}
+
+/** The last text read from each settings file, with the stat that matched it. */
+const settingsTexts = new Map<string, CachedSettingsText>();
+
+/** Reads a settings file, unless its stat says it is the file already read. */
+function readSettingsText(path: string): string {
+  const stat = statSync(path, { bigint: true });
+  const kept = settingsTexts.get(path);
+  if (
+    kept !== undefined &&
+    kept.mtimeNs === stat.mtimeNs &&
+    kept.ctimeNs === stat.ctimeNs &&
+    kept.size === stat.size &&
+    kept.ino === stat.ino
+  ) {
+    settingsTexts.delete(path);
+    settingsTexts.set(path, kept);
+    return kept.text;
+  }
+  const text = readFileSync(path, "utf8");
+  settingsTexts.set(path, {
+    mtimeNs: stat.mtimeNs,
+    ctimeNs: stat.ctimeNs,
+    size: stat.size,
+    ino: stat.ino,
+    text,
+  });
+  if (settingsTexts.size > SETTINGS_CACHE_MAX) {
+    const oldest = settingsTexts.keys().next().value;
+    if (oldest !== undefined) settingsTexts.delete(oldest);
+  }
+  return text;
 }
 
 /**
@@ -1507,7 +1565,7 @@ function readSettingsNow(repositoryPath: string): ReadSettings {
   }
   let text: string;
   try {
-    text = readFileSync(path, "utf8");
+    text = readSettingsText(path);
   } catch (error) {
     throw new DevError("dev.json", `cannot read ${path}: ${String(error)}`);
   }

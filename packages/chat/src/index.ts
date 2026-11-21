@@ -9,8 +9,6 @@ import {
   CHAT_SOURCES,
   OTHER_SOURCE,
   CHAT_TYPE,
-  allEntries,
-  allMessages,
   chatData,
   chatFacts,
   chatRef,
@@ -32,6 +30,7 @@ import {
   attachmentOf,
   MODEL_FACT,
   newMessageId,
+  readChat,
   STOP_FACT,
   stoppedRunAfter,
   takenIds,
@@ -244,11 +243,12 @@ async function queuedMessage(
   messageId: string,
   action: "withdrawn" | "changed",
 ): Promise<Message> {
-  const message = allMessages(ctx.store, ctx.object.id).find((item) => item.id === messageId);
+  const read = readChat(ctx.store, ctx.object.id);
+  const message = read.messages.find((item) => item.id === messageId);
   if (message === undefined || message.role !== "user") {
     throw new Error(`chat ${ctx.object.id} has no queued message ${messageId}`);
   }
-  if (takenIds(chatFacts(ctx.store, ctx.object.id)).has(messageId)) {
+  if (takenIds(read.facts).has(messageId)) {
     throw new Error(`message ${messageId} was taken by a run; it can no longer be ${action}`);
   }
   return message;
@@ -710,9 +710,10 @@ const statusAction: ActionTypeDefinition = {
     if (chatData(stored.data).closed) {
       throw new Error(`chat ${ctx.object.id} is closed; there is no status to show`);
     }
-    const facts = chatFacts(ctx.store, ctx.object.id);
-    const messages = allMessages(ctx.store, ctx.object.id);
-    const entries = allEntries(ctx.store, ctx.object.id);
+    const read = readChat(ctx.store, ctx.object.id);
+    const facts = read.facts;
+    const messages = read.messages;
+    const entries = read.entries;
     const writing = writingReply(facts, messages, entries);
     // A run a crash left without a failure or stopped entry is not writing.
     // A host that cannot tell leaves the fact-only answer as it was.
@@ -749,10 +750,11 @@ interface RetryCheck {
  */
 function retryCheck(store: ObjectStore, id: string, chat: ChatData): RetryCheck {
   if (chat.closed) return { refused: "closed" };
-  const messages = allMessages(store, id);
-  const facts = chatFacts(store, id);
+  const read = readChat(store, id);
+  const messages = read.messages;
+  const facts = read.facts;
   if (unanswered(messages, facts).length === 0) return { refused: "finished" };
-  const entries = allEntries(store, id);
+  const entries = read.entries;
   let last = lastReplyOutcome(messages, entries);
   if (last.kind !== "failed" && last.kind !== "stopped") {
     const lastUser = [...messages].reverse().find((message) => message.role === "user");
