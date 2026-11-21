@@ -129,17 +129,6 @@ export function resultValue<Result extends AgentWorkerResult>(value: unknown): R
   return value as unknown as Result;
 }
 
-/** Reads a `result` line of the worker, or undefined for any other line. */
-export function parseResult<Result extends AgentWorkerResult>(line: string): Result | undefined {
-  let value: unknown;
-  try {
-    value = JSON.parse(line);
-  } catch {
-    return undefined;
-  }
-  return resultValue<Result>(value);
-}
-
 const UNAVAILABLE = /\b429\b|\b(?:503|529)\b|overloaded|rate[ _-]?limit|too many requests/i;
 const USAGE_LIMIT = /usage[ _-]?limit|quota|exceeded your (?:current )?(?:usage|plan|quota)|insufficient[ _-]credit|out of credits/i;
 

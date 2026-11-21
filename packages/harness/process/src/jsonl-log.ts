@@ -33,13 +33,6 @@ function receivedAtOf(value: Record<string, unknown> | undefined): number | unde
   return typeof at === "number" && Number.isFinite(at) ? at : undefined;
 }
 
-/** A line with its receipt time; a line that is not a JSON object is left as it is. */
-export function withReceivedAt(line: string, at: number): string {
-  const value = objectOf(line);
-  if (value === undefined || receivedAtOf(value) !== undefined) return line;
-  return JSON.stringify({ ...value, [RECEIVED_AT]: at });
-}
-
 /** A line as the host logs it, with the parse kept so a caller need not do it again. */
 export interface StampedLine {
   readonly text: string;
@@ -75,18 +68,9 @@ export class JsonlLog {
     return { text: JSON.stringify({ ...value, [RECEIVED_AT]: at }), value, at };
   }
 
-  /** Adds one line the caller already stamped. */
+  /** Adds one line the caller already stamped, returning the write to wait for once the buffer is full. */
   pushStamped(stamped: StampedLine): Promise<void> | undefined {
     return this.add(stamped.text);
-  }
-
-  /**
-   * Adds one line. Once the buffer is full, returns the write to wait for; the
-   * caller that awaits it keeps at most one buffered chunk and one write in
-   * memory. Before that it returns nothing.
-   */
-  push(line: string): Promise<void> | undefined {
-    return this.add(this.stamp(line).text);
   }
 
   private add(line: string): Promise<void> | undefined {

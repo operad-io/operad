@@ -16,7 +16,8 @@ import {
 } from "@operad-io/engine";
 import { match, type AccessProfile } from "@operad-io/access-match";
 import { EVENT_NOTE_TEMPLATE, FLUSH_MS, modelErrorOf } from "@operad-io/harness-process";
-import { createPiHarnessPlugin, piModelListPath, piToolEvent } from "../../src/index.ts";
+import { createPiHarnessPlugin, piToolEvent } from "../../src/index.ts";
+import { piModelListPath } from "../../src/model-list.ts";
 import {
   cleanupTempRoots,
   manualClock,
