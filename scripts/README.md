@@ -39,11 +39,13 @@ The measurements are:
 | `eventLatencyP50`, `eventLatencyP95` | `tail` event's plugin timestamp to the client reading it |
 | `pendingP50`, `pendingP95`, `runningP50`, `runningP95` | HTTP response time for those requests |
 | `eventsPerSecond` | change, tail and reset events over the measured time |
+| `logReadsPerSecond` | requests for an object's `log` section over the measured time |
 | `requests` | request counts by endpoint |
 
-Log reads are not counted: the script changes no product code, so there is no
-counter in the log backend. The request counts and event rates are the proxy for
-how much work the clients made.
+`logReadsPerSecond` counts the log section requests the clients made, not reads
+inside serve: the script changes no product code, so there is no counter in the
+log backend. The request counts and event rates show the rest of the work the
+clients made.
 
 `--repeat N` runs the whole scenario N times, each in a new temp home, and
 reports the median of each per-run metric plus its own summary. Every run prints
