@@ -66,7 +66,7 @@ export interface TelegramSourceOptions {
   readonly clock?: (() => number) | undefined;
   /** How long Telegram may hold a long poll open. */
   readonly longPollSecs?: number | undefined;
-  /** The pause between two polls once one returns. */
+  /** The pause after a poll that failed. */
   readonly pollIntervalMs?: number | undefined;
   readonly wait?: ((ms: number, signal: AbortSignal) => Promise<void>) | undefined;
   /** Takes the taps on pending items' buttons and the replies to their messages. */
@@ -186,14 +186,19 @@ export class TelegramSource {
     let stopped = false;
     const loop = async (): Promise<void> => {
       while (!stopped && !this.controller.signal.aborted) {
+        let failed = false;
         try {
           await this.poll();
         } catch (error) {
           if (stopped || this.controller.signal.aborted) return;
+          failed = true;
           await this.ctx.logger.write(`could not read updates: ${messageOf(error)}`);
         }
         if (stopped || this.controller.signal.aborted) return;
-        await this.wait(this.pollIntervalMs, this.controller.signal);
+        // getUpdates already holds the request open when there is nothing new,
+        // so a poll that came back is followed at once. Only a failed poll
+        // waits, so a broken connection cannot spin.
+        if (failed) await this.wait(this.pollIntervalMs, this.controller.signal);
       }
     };
     void loop();
