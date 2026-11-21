@@ -783,14 +783,15 @@ async function commandList(
 async function writeChildren(
   context: Context,
   io: CliIo,
-  id: string,
+  object: { readonly type: string; readonly id: string },
   tty: boolean,
 ): Promise<void> {
   let cursor: string | undefined;
   let hidden = 0;
   for (;;) {
+    // The parent's type is known here; another type may hold the same bare id.
     const page = await context.views.listTree(undefined, {
-      parent: id,
+      parent: `${object.type}:${object.id}`,
       ...(cursor === undefined ? {} : { cursor }),
     });
     for (const row of page.rows) {
@@ -800,7 +801,7 @@ async function writeChildren(
     if (page.next === undefined) break;
     cursor = page.next;
   }
-  if (hidden > 0) io.write(`${hidden} hidden (operad list --parent ${shellQuote(id)} --filter all)\n`);
+  if (hidden > 0) io.write(`${hidden} hidden (operad list --parent ${shellQuote(object.id)} --filter all)\n`);
 }
 
 function firstSection(object: ViewObject): string | undefined {
@@ -962,7 +963,7 @@ async function commandShow(
   if (object.unavailable !== undefined) {
     io.error(`operad: ${object.unavailable}\n`);
   }
-  await writeChildren(context, io, object.id, tty);
+  await writeChildren(context, io, object, tty);
   io.write(
     `sections: ${object.sections.map((section) => (section.live === true ? `${section.title} (live)` : section.title)).join(", ")}\n`,
   );
@@ -1541,12 +1542,14 @@ async function commandHistory(
 ): Promise<void> {
   const types = context.registry.objectTypes().map((entry) => entry.type);
   let runs = await findHistoryRuns(context.log, types, id);
+  // A plugin may scope a bare id to a namespace of its own, as `dev` does for
+  // a repository. Resolve through the views so the run's object key matches,
+  // and keep the type with the id: another type may hold the same bare id.
+  let resolved: string | undefined;
   if (runs.length === 0) {
-    // A plugin may scope a bare id to a namespace of its own, as `dev` does for
-    // a repository. Resolve through the views so the run's object key matches.
-    let resolved: string | undefined;
     try {
-      resolved = (await context.views.get(id)).id;
+      const found = await context.views.get(id);
+      resolved = `${found.type}:${found.id}`;
     } catch {
       resolved = undefined;
     }
@@ -1586,7 +1589,7 @@ async function commandHistory(
     // An object that never had a run still has the actions people ran on it.
     let own: readonly string[] = [];
     try {
-      own = await context.views.objectHistory(id);
+      own = await context.views.objectHistory(resolved ?? id);
     } catch {
       own = [];
     }

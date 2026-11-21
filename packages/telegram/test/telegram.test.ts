@@ -97,6 +97,24 @@ describe("the telegram source", () => {
     await w.close();
   });
 
+  test("a later message sends on the typed chat id even when another type holds the same id", async () => {
+    const w = await world({ users: [42] });
+    const api = new FakeApi();
+    api.updates = [update(100, 42, 555, "hello")];
+    const telegram = source(w, api);
+    await telegram.poll();
+    const chat = (await w.store.list(CHAT_TYPE)).objects[0];
+    if (chat === undefined) throw new Error("no chat was opened");
+    // Another type may hold an object under the chat's bare id.
+    await w.store.put("bot-tidy", chat.id, {}, "test");
+
+    api.updates = [update(101, 42, 555, "again")];
+    await telegram.poll();
+    expect(allMessages(w.store, chat.id).map((message) => message.text)).toEqual(["hello", "again"]);
+    expect(readOffset(w.home)).toBe(102);
+    await w.close();
+  });
+
   test("an accepted message gets the eyes reaction on its Telegram message", async () => {
     const w = await world({ users: [42] });
     const api = new FakeApi();

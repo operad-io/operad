@@ -327,3 +327,10 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0591-M1 | packages/cli/src/defaults.ts | `memory` was left out of `OPTIONAL_PLUGINS`, so `plugin enable memory` refused with `plugins.memory: no such plugin` | `plugin enable > memory is added from the shipped package and listed as enabled` |
+
+## T-0607 — plugin and client calls name an object's type
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0607-M5 | packages/cli/src/main.ts | `show` listed a parent's children by the bare id again, so another type holding that id made the parent ambiguous | `operad list hierarchy > show lists a parent's children by its typed id even when another type holds the same id` |
+| T-0607-M6 | packages/cli/src/main.ts | `history` kept only the resolved object's bare id, so a run of another type under the same id was shown | `operad command > history keeps a typed object's type when another type has a run under the same bare id` |

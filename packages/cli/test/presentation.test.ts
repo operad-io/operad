@@ -828,6 +828,26 @@ describe("operad list hierarchy", () => {
     expect(topShown.text()).not.toContain("parent:");
   });
 
+  test("show lists a parent's children by its typed id even when another type holds the same id", async () => {
+    const { root, home } = await makeHome();
+    writeFileSync(
+      join(home, "config.json"),
+      JSON.stringify({
+        plugins: [treePath],
+        store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
+      }),
+    );
+    const store = freshStore(home);
+    store.put("group", "g1", { title: "G1" }, "seed");
+    store.put("leaf", "a", { state: "open", title: "Alpha", parent: "group:g1" }, "seed");
+    // The same bare id in another type makes the untyped parent ambiguous.
+    store.put("leaf", "g1", { state: "open", title: "Shadow" }, "seed");
+
+    const shown = capture();
+    expect(await main(["show", "group:g1"], { home, io: shown.io })).toBe(0);
+    expect(shown.text()).toContain("a  open  Alpha");
+  });
+
   test("show prints an object's children as rows between the row and the sections", async () => {
     const { root, home } = await makeHome();
     writeFileSync(

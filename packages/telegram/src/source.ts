@@ -292,7 +292,8 @@ export class TelegramSource {
     const pendingCommand =
       command !== undefined && command.info.action === PENDING_COMMAND && command.info.plugin === TELEGRAM_SOURCE;
     try {
-      const result = await this.ctx.client.act("chat:send", chatId, {
+      // The chat's type is known here; another type may hold the same bare id.
+      const result = await this.ctx.client.act("chat:send", `chat:${chatId}`, {
         args: { note: text, ref: key },
         actor: { via: TELEGRAM_SOURCE, id: String(from) },
       });
@@ -363,8 +364,8 @@ export class TelegramSource {
     // A typed id: another plugin's type may hold an object under the same bare
     // id (the bot plugin's nightly tidy keeps one per bot), and a bare id is
     // then ambiguous.
-    const bot = this.bot.startsWith("bot:") ? this.bot : `bot:${this.bot}`;
-    const opened = await this.ctx.client.act("bot:chat", bot, {
+    const botName = this.bot.startsWith("bot:") ? this.bot.slice("bot:".length) : this.bot;
+    const opened = await this.ctx.client.act("bot:chat", `bot:${botName}`, {
       args: { title: (text === undefined ? undefined : titleFromMessage(text)) ?? "Telegram", channels: [channel] },
       actor: { via: TELEGRAM_SOURCE, id: String(userId) },
     });

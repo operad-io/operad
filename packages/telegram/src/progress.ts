@@ -227,7 +227,7 @@ export class ProgressSender {
     }
 
     const mark = this.marks.get(chatId);
-    const section = await this.ctx.client.section(chatId, TRANSCRIPT, undefined, {
+    const section = await this.ctx.client.section(`chat:${chatId}`, TRANSCRIPT, undefined, {
       ...(mark === undefined ? {} : { after: mark }),
     });
     if (section.mark !== undefined) this.marks.set(chatId, section.mark);
@@ -271,7 +271,7 @@ export class ProgressSender {
   /** Whether the client still says a run works on the chat. */
   private async running(chatId: string): Promise<boolean> {
     try {
-      const view = await this.ctx.client.get(chatId);
+      const view = await this.ctx.client.get(`chat:${chatId}`);
       return view.row.running === true;
     } catch {
       return false;

@@ -30,6 +30,8 @@ class ProgressClient implements ClientApi {
   readonly running = new Map<string, boolean>();
   /** The `after` marks the progress side read with, in order. */
   readonly afters: (string | undefined)[] = [];
+  /** Every object id the progress side asked the client about, in order. */
+  readonly ids: string[] = [];
   private mark = 0;
   private wake: ((result: IteratorResult<ViewEvent>) => void) | undefined;
   private fail: ((error: unknown) => void) | undefined;
@@ -54,11 +56,14 @@ class ProgressClient implements ClientApi {
 
   list: ClientApi["list"] = (type, options) => this.views.list(type, options);
   get: ClientApi["get"] = async (id) => {
+    this.ids.push(id);
     const object = await this.views.get(id);
-    return { ...object, row: { ...object.row, running: this.running.get(id) ?? false } };
+    const bare = id.includes(":") ? id.slice(id.indexOf(":") + 1) : id;
+    return { ...object, row: { ...object.row, running: this.running.get(bare) ?? false } };
   };
 
-  section: ClientApi["section"] = async (_id, sectionId, _cursor, options?: SectionOptions) => {
+  section: ClientApi["section"] = async (id, sectionId, _cursor, options?: SectionOptions) => {
+    this.ids.push(id);
     this.afters.push(options?.after);
     if (sectionId !== "transcript") return { markdown: "" };
     const mark = String(this.mark);
@@ -391,6 +396,23 @@ describe("the progress message of a reply", () => {
     await f.progress.syncChat(f.chat);
     expect(f.api.sent).toHaveLength(1);
     expect(f.api.deleted[0]).toMatchObject({ chatId: 555, messageId: progressId });
+    await f.stop();
+  });
+
+  test("reads its chat by the typed id even when another type holds the same id", async () => {
+    const f = await setup();
+    await f.w.store.put("bot-tidy", f.chat, {}, "test");
+    f.client.tail = "partial";
+    await f.progress.syncChat(f.chat);
+    await f.api.until(() => f.api.sent.length >= 1);
+
+    // The tail is gone, but the run still works: this reads the row by id.
+    f.client.tail = undefined;
+    f.client.running.set(f.chat, true);
+    await f.progress.syncChat(f.chat);
+    expect(f.api.deleted).toHaveLength(0);
+    expect(f.client.ids.length).toBeGreaterThanOrEqual(2);
+    expect(f.client.ids.every((id) => id === `chat:${f.chat}`)).toBe(true);
     await f.stop();
   });
 

@@ -545,6 +545,19 @@ describe("operad command", () => {
     expect(briefOutput.text()).not.toContain("waiting for you");
   });
 
+  test("history keeps a typed object's type when another type has a run under the same bare id", async () => {
+    const { home } = await makeHome();
+    const config = await readConfig(home);
+    new SqlitePluginStore({ root: storeRootOf(config) }).put("task", "42", { title: "Task" }, "seed");
+    await startRun(home, "pause", "brief:42");
+
+    const output = capture();
+    expect(await main(["history", "task:42"], { home, io: output.io })).toBe(0);
+    expect(output.text()).toContain("changed by seed");
+    expect(output.text()).not.toContain("pause");
+    expect(output.text()).not.toContain("run started");
+  });
+
   test("history does not resolve an object type no plugin declares", async () => {
     const { home } = await makeHome();
     await startRun(home, "ask", "bogus:42");
