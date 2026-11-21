@@ -69,6 +69,8 @@ import {
 /** Where a scheduler change goes: the kernel loop's output. */
 export const schedulerTestHooks: {
   write?: ((line: string) => void) | undefined;
+  /** Called before a generated flow is handed to the kernel; a test counts them. */
+  declare?: ((flow: FlowDefinition) => void) | undefined;
 } = {};
 
 export function writeSchedulerLine(line: string): void {
@@ -98,6 +100,81 @@ interface RepositoryFlows {
   readonly refused: ReadonlyMap<string, string>;
 }
 
+/** The compiled settings flows of one repository, keyed by the settings' content. */
+interface CompiledFlows {
+  readonly starts: ReadonlyMap<string, StartFlow>;
+}
+
+/** The compiled settings flows of each store's repositories, by repository name. */
+const compiledFlows = new WeakMap<ObjectStore, Map<string, { readonly key: string; readonly value: CompiledFlows }>>();
+
+/** The content-addressed flow names this process already declared in a store. */
+const declaredFlowNames = new WeakMap<ObjectStore, Set<string>>();
+
+function settingsKey(settings: DevSettings): string {
+  return JSON.stringify(settings);
+}
+
+/** Compiles a repository's settings flows once for each settings text. */
+function compiledSettingsFlows(
+  store: ObjectStore,
+  repository: RepositoryData,
+  settings: DevSettings,
+): CompiledFlows {
+  let byRepository = compiledFlows.get(store);
+  if (byRepository === undefined) {
+    byRepository = new Map();
+    compiledFlows.set(store, byRepository);
+  }
+  const key = `${repository.name}\n${settingsKey(settings)}`;
+  const kept = byRepository.get(repository.name);
+  if (kept !== undefined && kept.key === key) return kept.value;
+  const starts = new Map<string, StartFlow>();
+  for (const [flowName, spec] of Object.entries(settings.flows)) {
+    const name = flowNameFor(repository.name, flowName, spec);
+    starts.set(flowName, {
+      name,
+      graph: compileDevFlow(name, spec.stages, { gradingName: flowName }),
+    });
+  }
+  const value = { starts };
+  byRepository.set(repository.name, { key, value });
+  return value;
+}
+
+/** A generated name carries a hash of its graph; the built-in `dev` does not. */
+function contentAddressed(name: string): boolean {
+  return /^dev\/[^/]+\/[^/]+\/[0-9a-f]{12}$/.test(name);
+}
+
+/** True when the store keeps declarations for a later process to load. */
+function keepsDeclarations(store: ObjectStore): boolean {
+  return "kind" in store && store.kind === "file";
+}
+
+/**
+ * Declares a content-addressed flow once per store. A file store loads the
+ * declarations a later process wrote, so this process can remember them too;
+ * an in-memory store cannot, so its declarations are made every pass.
+ */
+function declareFlowOnce(ctx: TickContext, graph: FlowDefinition): void {
+  const name = graph.name;
+  if (contentAddressed(name) && keepsDeclarations(ctx.store)) {
+    let declared = declaredFlowNames.get(ctx.store);
+    if (declared?.has(name)) return;
+    schedulerTestHooks.declare?.(graph);
+    ctx.declareFlow(graph);
+    if (declared === undefined) {
+      declared = new Set();
+      declaredFlowNames.set(ctx.store, declared);
+    }
+    declared.add(name);
+    return;
+  }
+  schedulerTestHooks.declare?.(graph);
+  ctx.declareFlow(graph);
+}
+
 /**
  * Declares every flow the repository sets. A repository that writes no `flows`
  * runs the built-in `dev` flow, so its old runs and tests keep their ids.
@@ -111,20 +188,16 @@ async function declareRepositoryFlows(
   let fallback: StartFlow = { name: DEFAULT_FLOW_NAME };
   const project = await loadProjectFlows(repository.path, repository.name, settings);
   const refused = new Map(project.refused);
-  for (const [flowName, spec] of Object.entries(settings.flows)) {
+  const compiled = compiledSettingsFlows(ctx.store, repository, settings);
+  for (const [flowName, start] of compiled.starts) {
     if (refused.has(flowName)) continue;
-    const name = flowNameFor(repository.name, flowName, spec);
-    const start = {
-      name,
-      graph: compileDevFlow(name, spec.stages, { gradingName: flowName }),
-    };
-    ctx.declareFlow(start.graph);
+    if (start.graph !== undefined) declareFlowOnce(ctx, start.graph);
     named.set(flowName, start);
     if (flowName === "default") fallback = start;
   }
   for (const [flowName, graph] of project.flows) {
     try {
-      ctx.declareFlow(graph);
+      declareFlowOnce(ctx, graph);
     } catch (error) {
       refused.set(
         flowName,
@@ -181,7 +254,7 @@ function declareStoredFlow(ctx: TickContext, object: StoredObject): boolean {
   const graph = taskData(object.data).flowGraph;
   if (graph === undefined) return false;
   try {
-    ctx.declareFlow(graph);
+    declareFlowOnce(ctx, graph);
     reportedStoredFlows.delete(object.id);
     return true;
   } catch (error) {
@@ -436,7 +509,8 @@ async function startOne(
 async function reportIntegrationResults(
   store: ObjectStore,
   tasks: readonly StoredObject[],
-): Promise<void> {
+): Promise<boolean> {
+  let changed = false;
   for (const object of tasks) {
     const task = taskData(object.data);
     const attempt = task.attempt;
@@ -451,8 +525,10 @@ async function reportIntegrationResults(
     else if (result === "conflict" || result === "fail") phase = "running";
     if (phase === undefined) continue;
     if (!(await recordMergeReported(store, object.id, attempt.number))) continue;
+    changed = true;
     writeSchedulerLine(`${bareId(object.id)} integrating -> ${phase}`);
   }
+  return changed;
 }
 
 /** Marks a plan finished once, when every task has merged or been cancelled. */
@@ -516,9 +592,10 @@ async function reconcileTaskRuns(
   tasks: readonly StoredObject[],
   canStartWork: boolean,
   flows: RepositoryFlows,
-): Promise<void> {
+): Promise<boolean> {
   const runs = ctx.runLookup;
-  if (runs === undefined) return;
+  if (runs === undefined) return false;
+  let changed = false;
   for (const object of tasksOf(tasks, repository)) {
     const task = taskData(object.data);
     if (task.phase !== "waiting" && task.phase !== "running" && task.phase !== "review") {
@@ -534,6 +611,7 @@ async function reconcileTaskRuns(
           run: run.runId,
         });
         if (moved === undefined) continue;
+        changed = true;
         writeSchedulerLine(`${bareId(object.id)} ${task.phase} -> waiting`);
       }
       continue;
@@ -564,12 +642,14 @@ async function reconcileTaskRuns(
           run: null,
         });
         if (moved !== undefined) {
+          changed = true;
           writeSchedulerLine(`${bareId(object.id)} ${task.phase} -> waiting (${reason})`);
         }
       }
       continue;
     }
     if ((await reopenTask(ctx.store, object.id)) === undefined) continue;
+    changed = true;
     try {
       if (await startOne(ctx, object, { runStoppedAt: step ?? "the run" }, false, selected)) {
         writeSchedulerLine(
@@ -580,6 +660,7 @@ async function reconcileTaskRuns(
       if (!(error instanceof ActiveRunError)) throw error;
     }
   }
+  return changed;
 }
 
 /** What the scheduler last said about each repository's settings file. */
@@ -634,12 +715,44 @@ function reportCheckHostProblem(
   console.error(`dev: ${warning}`);
 }
 
+/** The tasks and plans one pass reads, and the tasks it refreshes after a write. */
+interface PassSnapshot {
+  readonly store: ObjectStore;
+  tasks: StoredObject[];
+  readonly plans: readonly StoredObject[];
+}
+
+/** Replaces one repository's tasks in the pass snapshot; other repositories stay as read. */
+async function refreshRepositoryTasks(
+  snapshot: PassSnapshot,
+  repository: string,
+): Promise<void> {
+  const fresh = await listAll(snapshot.store, "task", { repository });
+  snapshot.tasks = [
+    ...snapshot.tasks.filter(
+      (object) => taskData(object.data).repository !== repository,
+    ),
+    ...fresh,
+  ];
+}
+
+/** The versions of a plan's tasks, so an unchanged finished plan is left alone. */
+const planTaskSignatures = new WeakMap<ObjectStore, Map<string, string>>();
+
+function taskSignature(tasks: readonly StoredObject[]): string {
+  return tasks
+    .map((object) => `${object.id}:${object.version}`)
+    .sort()
+    .join("\n");
+}
+
 async function scheduleRepository(
   ctx: TickContext,
   repository: RepositoryData,
-  initialTasks: readonly StoredObject[],
-  initialPlans: readonly StoredObject[],
+  snapshot: PassSnapshot,
 ): Promise<void> {
+  let dirty = false;
+  const initialTasks = tasksOf(snapshot.tasks, repository.name);
   reportSettingsProblem(repository);
   // A cancelled task's run ends whether or not the settings can be read.
   if (ctx.runLookup !== undefined) {
@@ -662,11 +775,18 @@ async function scheduleRepository(
   // and a graph recorded there is declared again below so a fresh process
   // resumes a running attempt on the graph it started with.
   const flows = await declareRepositoryFlows(ctx, repository, settings);
-  declareStoredFlows(ctx, tasksOf(initialTasks, repository.name));
+  declareStoredFlows(ctx, tasksOf(snapshot.tasks, repository.name));
 
   // Repair a run that ended without an edge, or one whose phase was left
   // behind, before the scheduler reads phases and starts anything else.
-  await reconcileTaskRuns(ctx, repository.name, initialTasks, canStartWork, flows);
+  dirty =
+    (await reconcileTaskRuns(
+      ctx,
+      repository.name,
+      tasksOf(snapshot.tasks, repository.name),
+      canStartWork,
+      flows,
+    )) || dirty;
 
   // A claim is not durable until the kernel records the run. A task left
   // running with no run is a start that never landed (a crash or a kernel
@@ -676,7 +796,7 @@ async function scheduleRepository(
   // A claim whose run the kernel already holds is a start still landing: the
   // run's first step records its id moments later. Releasing it would cancel
   // that run and start another one on the next tick, forever.
-  for (const object of tasksOf(initialTasks, repository.name)) {
+  for (const object of tasksOf(snapshot.tasks, repository.name)) {
     const task = taskData(object.data);
     if ((task.phase !== "running" && task.phase !== "review") || task.run !== null) continue;
     if (
@@ -686,23 +806,32 @@ async function scheduleRepository(
       continue;
     }
     if ((await releaseTaskClaim(ctx.store, object.id)) === undefined) continue;
+    dirty = true;
     writeSchedulerLine(`${bareId(object.id)} running -> ready`);
   }
 
   // Findings that did not fail a review become one follow-up task once the
   // plan has no open task; this runs before a plan can be reported finished.
-  await collectFollowups(ctx.store, repository.name, settings);
+  const followupsPending = snapshot.tasks.some((object) => {
+    const task = taskData(object.data);
+    return task.repository === repository.name && task.followups?.state === "collect";
+  });
+  await collectFollowups(ctx.store, repository.name, settings, snapshot.tasks);
+  if (followupsPending) dirty = true;
 
   // A recovered claim changes the store; read the phases again before counting.
-  const allCurrent = await listAll(ctx.store, "task");
-  const current = tasksOf(allCurrent, repository.name);
-  const plans = orderPlans(plansOf(initialPlans, repository.name));
+  if (dirty) {
+    await refreshRepositoryTasks(snapshot, repository.name);
+    dirty = false;
+  }
+  const current = tasksOf(snapshot.tasks, repository.name);
+  const plans = orderPlans(plansOf(snapshot.plans, repository.name));
   const tasksById = new Map(
-    allCurrent.map((object) => [object.id, taskData(object.data)]),
+    snapshot.tasks.map((object) => [object.id, taskData(object.data)]),
   );
   declareStoredFlows(ctx, current);
 
-  await reportIntegrationResults(ctx.store, current);
+  dirty = (await reportIntegrationResults(ctx.store, current)) || dirty;
   await reportFinishedPlans(ctx.store, plans, current);
 
   const planActive = new Map<string, number>();
@@ -839,6 +968,7 @@ async function scheduleRepository(
         if (
           await startOne(ctx, object, { blockedBy: dependencies.cancelled }, false, selected)
         ) {
+          dirty = true;
           writeSchedulerLine(`${bareId(object.id)} ready -> waiting`);
           started.add(object.id);
         }
@@ -869,6 +999,7 @@ async function scheduleRepository(
           failed.add(pick.id);
           break;
         }
+        dirty = true;
         const task = taskData(pick.data);
         writeSchedulerLine(`${bareId(pick.id)} ready -> running`);
         planActive.set(planId, (planActive.get(planId) ?? 0) + 1);
@@ -905,6 +1036,7 @@ async function scheduleRepository(
         continue;
       }
       await recordAutoMerge(ctx.store, object.id, attempt.number);
+      dirty = true;
       writeSchedulerLine(`${bareId(object.id)} waiting -> integrating`);
     }
   }
@@ -913,7 +1045,7 @@ async function scheduleRepository(
   for (const object of current) {
     const task = taskData(object.data);
     if (task.oldestPlanSlot === true && !isActive(task)) {
-      await clearOldestPlanSlot(ctx.store, object.id);
+      dirty = (await clearOldestPlanSlot(ctx.store, object.id)) || dirty;
     }
   }
 
@@ -924,6 +1056,14 @@ async function scheduleRepository(
     (task, plan) => plan.auto !== "off" && task.startRequested !== true,
     flows,
   );
+
+  // Starts and repairs changed the tasks; read them once before the notes and
+  // counts below. A pass that changed nothing keeps the snapshot it read.
+  if (dirty) {
+    await refreshRepositoryTasks(snapshot, repository.name);
+    dirty = false;
+  }
+  const latest = tasksOf(snapshot.tasks, repository.name);
 
   // The queue of each area: ready tasks in the order the scheduler considers
   // them, manual starts first, so a waiting task can say how many are ahead.
@@ -958,21 +1098,24 @@ async function scheduleRepository(
 
   // Say why a ready task whose dependencies are met is not starting: its area
   // is held. The record is cleared once the area is free or the task started.
-  for (const object of current) {
+  for (const object of latest) {
     const task = taskData(object.data);
     if (task.phase !== "ready" || started.has(object.id)) continue;
     const holder =
       task.area !== undefined && dependencyState(task, tasksById).ready
         ? areaActive.get(task.area)
         : undefined;
-    await setAreaHold(ctx.store, object.id, holder, aheadOf(object));
+    dirty =
+      (await setAreaHold(ctx.store, object.id, holder, aheadOf(object), task)) || dirty;
     const dependencies = dependencyState(task, tasksById);
-    await setDependencyHold(
-      ctx.store,
-      object.id,
-      !dependencies.ready && dependencies.cancelled === undefined,
-      dependencies.waitingFor,
-    );
+    dirty =
+      (await setDependencyHold(
+        ctx.store,
+        object.id,
+        !dependencies.ready && dependencies.cancelled === undefined,
+        dependencies.waitingFor,
+        task,
+      )) || dirty;
   }
 
   const plansById = new Map(plans.map((object) => [bareId(object.id), planData(object.data)]));
@@ -984,7 +1127,7 @@ async function scheduleRepository(
     return more.length === 0 ? first : `${first} and ${more.length} more`;
   };
   const activeIds = (inPlan: string | undefined): readonly string[] =>
-    current
+    latest
       .filter((object) => {
         const task = taskData(object.data);
         return (isActive(task) || started.has(object.id)) && (inPlan === undefined || task.plan === inPlan);
@@ -992,7 +1135,7 @@ async function scheduleRepository(
       .map((object) => bareId(object.id))
       .sort();
   const missing = missingPlugins(ctx.loaded).map((plugin) => plugin.name);
-  for (const object of current) {
+  for (const object of latest) {
     const task = taskData(object.data);
     if (task.phase !== "ready" || started.has(object.id)) continue;
     let note: string | undefined;
@@ -1010,7 +1153,7 @@ async function scheduleRepository(
         note = `waiting for the plan's slot (${heldBy(holders)})`;
       } else {
         const pool = poolOf(task);
-        const inPool = current
+        const inPool = latest
           .filter((other) => {
             const otherTask = taskData(other.data);
             return (isActive(otherTask) || started.has(other.id)) && poolOf(otherTask) === pool;
@@ -1028,31 +1171,60 @@ async function scheduleRepository(
         }
       }
     }
-    await setSlotHold(ctx.store, object.id, note);
+    dirty = (await setSlotHold(ctx.store, object.id, note, task)) || dirty;
   }
 
   // Name each open task's flow when the repository defines more than one, and
   // say why a ready task whose flow is not defined does not start.
-  for (const object of await listAll(ctx.store, "task")) {
+  for (const object of latest) {
     const task = taskData(object.data);
-    if (task.repository !== repository.name) continue;
     const requested = task.flow ?? plansById.get(task.plan)?.flow ?? "default";
     const missing =
       (task.phase === "ready" ||
         (task.phase === "waiting" && task.run === null)) &&
       task.flowName === undefined &&
       flowFor(flows, requested) === undefined;
-    await setFlowNote(ctx.store, object.id, {
-      shown: flows.named.size > 1 ? requested : undefined,
-      held: missing
-        ? (flows.refused.get(requested) ?? `flow ${requested} is not defined in .operad/dev.json`)
-        : undefined,
-    });
+    dirty =
+      (await setFlowNote(
+        ctx.store,
+        object.id,
+        {
+          shown: flows.named.size > 1 ? requested : undefined,
+          held: missing
+            ? (flows.refused.get(requested) ?? `flow ${requested} is not defined in .operad/dev.json`)
+            : undefined,
+        },
+        task,
+      )) || dirty;
+  }
+
+  if (dirty) {
+    await refreshRepositoryTasks(snapshot, repository.name);
+    dirty = false;
+  }
+  const final = tasksOf(snapshot.tasks, repository.name);
+  const tasksByPlan = new Map<string, StoredObject[]>();
+  for (const object of final) {
+    const plan = taskData(object.data).plan;
+    const mine = tasksByPlan.get(plan);
+    if (mine === undefined) tasksByPlan.set(plan, [object]);
+    else mine.push(object);
+  }
+  let signatures = planTaskSignatures.get(ctx.store);
+  if (signatures === undefined) {
+    signatures = new Map();
+    planTaskSignatures.set(ctx.store, signatures);
   }
 
   // Keep each plan's cached counts, and with them its row's mark, current.
   for (const planObject of plans) {
-    await refreshPlanCounts(ctx.store, await getPlan(ctx.store, planObject.id));
+    const id = bareId(planObject.id);
+    const mine = tasksByPlan.get(id) ?? [];
+    const signature = taskSignature(mine);
+    const changed = signatures.get(planObject.id) !== signature;
+    if (planData(planObject.data).finishedReported === true && !changed) continue;
+    await refreshPlanCounts(ctx.store, await getPlan(ctx.store, planObject.id), mine);
+    signatures.set(planObject.id, signature);
   }
 }
 
@@ -1102,11 +1274,14 @@ export function runScheduler(ctx: TickContext): Promise<void> {
 async function runPass(ctx: TickContext): Promise<void> {
   const repositories = await listRepositories(ctx.store);
   if (repositories.length === 0) return;
-  const tasks = await listAll(ctx.store, "task");
-  const plans = await listAll(ctx.store, "plan");
+  const snapshot: PassSnapshot = {
+    store: ctx.store,
+    tasks: await listAll(ctx.store, "task"),
+    plans: await listAll(ctx.store, "plan"),
+  };
   for (const repository of repositories) {
     try {
-      await scheduleRepository(ctx, repository, tasks, plans);
+      await scheduleRepository(ctx, repository, snapshot);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.error(`dev: repository "${repository.name}": ${message}`);

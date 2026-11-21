@@ -147,18 +147,19 @@ export async function collectFollowups(
   store: ObjectStore,
   repository: string,
   settings: DevSettings,
+  knownTasks?: readonly StoredObject[] | undefined,
 ): Promise<string[]> {
   // A tick that has nothing to collect must not wait for the repository lock.
-  const pending = (await listAll(store, "task")).some((object) => {
-    const task = taskData(object.data);
-    return task.repository === repository && task.followups?.state === "collect";
-  });
+  const pending = (knownTasks ?? (await listAll(store, "task", { repository }))).some(
+    (object) => {
+      const task = taskData(object.data);
+      return task.repository === repository && task.followups?.state === "collect";
+    },
+  );
   if (!pending) return [];
   return withRepoLock(store, repository, async (fresh) => {
     // Finish a collection a crash cut short: a follow-up names its tasks.
-    const before = (await listAll(store, "task")).filter(
-      (object) => taskData(object.data).repository === repository,
-    );
+    const before = await listAll(store, "task", { repository });
     for (const object of before) {
       const of = taskData(object.data).followupOf;
       if (of !== undefined) await markCollected(store, repository, of, before);
@@ -166,14 +167,12 @@ export async function collectFollowups(
     if (!settings.reviewer.followups) return [];
 
     const proposed: string[] = [];
-    for (const planObject of await listAll(store, "plan")) {
+    for (const planObject of await listAll(store, "plan", { repository })) {
       const plan = planData(planObject.data);
-      if (plan.repository !== repository || plan.status !== "confirmed") continue;
+      if (plan.status !== "confirmed") continue;
       const planId = bareId(planObject.id);
-      const tasks = (await listAll(store, "task")).filter(
-        (object) =>
-          taskData(object.data).repository === repository &&
-          taskData(object.data).plan === planId,
+      const tasks = (await listAll(store, "task", { repository })).filter(
+        (object) => taskData(object.data).plan === planId,
       );
       if (tasks.some((object) => OPEN_PHASES.includes(taskData(object.data).phase))) continue;
       const marked = tasks
@@ -194,8 +193,7 @@ export async function collectFollowups(
       const lines = linesOf(marked);
       if (lines.length === 0) continue;
       const taken = new Set<string>();
-      for (const object of await listAll(store, "task")) {
-        if (taskData(object.data).repository !== repository) continue;
+      for (const object of await listAll(store, "task", { repository })) {
         const slug = parseId(bareId(object.id), "task")?.slug;
         if (slug !== undefined) taken.add(slug);
       }
