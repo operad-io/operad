@@ -1500,3 +1500,10 @@ the row fields.
 |---|---|---|---|
 | T-0650-M1 | packages/dev/src/gate.ts | dev added no major finding of its own, so a reviewer that passed an attempt with a main-checkout change let it through | `dev/review and the main checkout > an attempt that changed the main checkout fails with that major finding` |
 | T-0650-M2 | packages/dev/src/gate.ts | the review prompt left out the main-checkout line and the instruction to call it a major finding | `dev/review and the main checkout > an attempt that changed the main checkout fails with that major finding` |
+
+## T-0651 — follow-ups from the worktree-escape reviews
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0651-M1 | packages/dev/src/steps.ts | `newCheckoutChanges` compared only the status letters and path, so a further edit to a file the main checkout already called changed was not noticed | `dev/work > a further edit to a file the main checkout already had changed is reported` |
+| T-0651-M2 | packages/dev/src/gate.ts | the empty-diff path added no major finding of its own, so an attempt with no diff and a main-checkout change passed unread | `dev/review and the main checkout > an empty diff with a main-checkout change still fails` |
