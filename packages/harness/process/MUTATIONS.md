@@ -222,11 +222,18 @@ and the row fields.
 
 | id | file | mutation | failing test |
 |---|---|---|---|
-| T-0632-M1 | packages/harness/process/src/lines.ts | `splitSecretPrefix` checked only the raw secret value, not its JSON-escaped spelling | `lines > splitSecretPrefix holds back an escaped secret split across grouped increments` (in `packages/harness/process/test/lines.test.ts`) |
-| T-0632-M3 | packages/harness/process/src/lines.ts | `Increments` ignored `firstImmediately`, so claude wrote its first increment at once instead of grouping it | `lines > Increments groups its first text and thinking when firstImmediately is false` (in `packages/harness/process/test/lines.test.ts`) |
+| T-0632-M1 | packages/harness/process/src/lines.ts | `splitSecretPrefix` checked only the raw secret value, not its JSON-escaped spelling | `a JSON-escaped secret split across grouped increments is not exposed by joining the deltas` |
+| T-0632-M3 | packages/harness/process/src/lines.ts | `Increments` ignored `firstImmediately`, so claude wrote its first increment at once instead of grouping it | `increments are grouped to one line per 100 ms for text and for thinking` |
 ## T-0620 — a cached, shared probe
 
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0620-M1 | packages/harness/process/src/probe-cache.ts | the in-flight probe was not shared, so concurrent callers each started one | `a cached probe > concurrent callers of one key share one probe` |
 | T-0620-M2 | packages/harness/process/src/probe-cache.ts | a fresh answer was not reused, so every caller ran its probe again | `a cached probe > keeps an answer for its time, and asks again after it` |
+
+## T-0642 — process tests for the shared lines helpers
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0642-M1 | packages/harness/process/src/lines.ts | `splitSecretPrefix` checked only the raw secret value, not its JSON-escaped spelling | `lines > splitSecretPrefix holds back an escaped secret split across grouped increments` |
+| T-0642-M2 | packages/harness/process/src/lines.ts | `Increments` ignored `firstImmediately`, so claude wrote its first increment at once instead of grouping it | `lines > Increments groups its first text and thinking when firstImmediately is false` |
