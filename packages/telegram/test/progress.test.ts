@@ -43,7 +43,10 @@ class ProgressClient implements ClientApi {
   }
 
   announce(id: string): void {
-    const event = { id };
+    this.announceEvent({ id });
+  }
+
+  announceEvent(event: ViewEvent): void {
     if (this.wake !== undefined) {
       const wake = this.wake;
       this.wake = undefined;
@@ -253,7 +256,8 @@ describe("the progress message of a reply", () => {
     f.client.tail = "third";
     await f.progress.syncChat(f.chat);
     expect(f.api.edits).toHaveLength(0);
-    expect(f.client.afters[1]).toBe("0");
+    // Inside the two-second window the tail is not even read.
+    expect(f.client.afters).toHaveLength(1);
 
     f.clock.advance(PROGRESS_INTERVAL_MS - 1);
     await nextTurn();
@@ -263,6 +267,7 @@ describe("the progress message of a reply", () => {
     await f.api.until(() => f.api.edits.length >= 1);
     expect(f.api.edits).toHaveLength(1);
     expect(f.api.edits[0]?.text).toBe("third");
+    expect(f.client.afters.at(-1)).toBe("0");
 
     // The same text again, after the interval, is still not an edit.
     f.clock.advance(PROGRESS_INTERVAL_MS);
@@ -274,6 +279,54 @@ describe("the progress message of a reply", () => {
     await f.progress.syncChat(f.chat);
     await f.api.until(() => f.api.edits.length >= 2);
     expect(f.api.edits[1]?.text).toBe("fourth");
+    await f.stop();
+  });
+
+  test("a live tail is shown from the event itself without reading the section", async () => {
+    const f = await setup();
+    f.client.announceEvent({
+      id: f.chat,
+      type: "chat",
+      section: "transcript",
+      tail: "from the event",
+      status: { text: "Running", since: 0 },
+    });
+    await f.api.until(() => f.api.sent.length >= 1);
+    expect(f.api.sent[0]?.text).toBe("from the event\n\nRunning · &lt;1s");
+    expect(f.client.afters).toHaveLength(0);
+    await f.stop();
+  });
+
+  test("a stored change inside the two-second window reads nothing", async () => {
+    const f = await setup();
+    f.client.tail = "first";
+    await f.progress.syncChat(f.chat);
+    await f.api.until(() => f.api.sent.length >= 1);
+
+    let facts = 0;
+    const store = f.w.store;
+    const original = store.facts.bind(store);
+    store.facts = ((object: Parameters<typeof original>[0], options?: Parameters<typeof original>[1]) => {
+      facts += 1;
+      return original(object, options);
+    }) as typeof store.facts;
+
+    f.client.tail = "second";
+    f.client.announce(f.chat);
+    await nextTurn();
+    await f.progress.settled();
+    expect(f.api.edits).toHaveLength(0);
+    expect(f.client.afters).toHaveLength(1);
+    expect(facts).toBe(0);
+    store.facts = original as typeof store.facts;
+    await f.stop();
+  });
+
+  test("a chat that is not bound creates no progress entry", async () => {
+    const f = await setup();
+    await f.progress.syncChat("not-a-chat");
+    const chats = (f.progress as unknown as { chats: Map<string, unknown> }).chats;
+    expect(chats.has("not-a-chat")).toBe(false);
     await f.stop();
   });
 
@@ -353,6 +406,7 @@ describe("the progress message of a reply", () => {
     const progressId = 9_000 + f.api.sent.length;
 
     await appendReply(f, "the answer");
+    f.clock.advance(PROGRESS_INTERVAL_MS);
     f.client.announce(f.chat);
     await f.api.until(() => f.api.deleted.length >= 1);
     expect(f.api.sent.map((request) => request.text)).toEqual(["partial", "the answer"]);
@@ -369,6 +423,7 @@ describe("the progress message of a reply", () => {
     const progressId = 9_000 + f.api.sent.length;
 
     await appendFailure(f, "The reply failed: boom");
+    f.clock.advance(PROGRESS_INTERVAL_MS);
     await f.progress.syncChat(f.chat);
     expect(f.api.sent.map((request) => request.text)).toEqual(["partial", "The reply failed: boom"]);
     expect(f.api.deleted[0]).toMatchObject({ chatId: 555, messageId: progressId });
@@ -393,6 +448,7 @@ describe("the progress message of a reply", () => {
     expect(f.api.deleted).toHaveLength(0);
 
     f.client.running.set(f.chat, false);
+    f.clock.advance(PROGRESS_INTERVAL_MS);
     await f.progress.syncChat(f.chat);
     expect(f.api.sent).toHaveLength(1);
     expect(f.api.deleted[0]).toMatchObject({ chatId: 555, messageId: progressId });
@@ -409,6 +465,7 @@ describe("the progress message of a reply", () => {
     // The tail is gone, but the run still works: this reads the row by id.
     f.client.tail = undefined;
     f.client.running.set(f.chat, true);
+    f.clock.advance(PROGRESS_INTERVAL_MS);
     await f.progress.syncChat(f.chat);
     expect(f.api.deleted).toHaveLength(0);
     expect(f.client.ids.length).toBeGreaterThanOrEqual(2);
@@ -452,6 +509,7 @@ describe("the progress message of a reply", () => {
     expect(f.api.deleted).toHaveLength(0);
 
     await appendReply(f, "the answer");
+    f.clock.advance(PROGRESS_INTERVAL_MS);
     f.client.announce(f.chat);
     await f.api.until(() => f.api.deleted.length >= 1);
     expect(f.api.sent.map((request) => request.text)).toEqual(["partial", "the answer"]);

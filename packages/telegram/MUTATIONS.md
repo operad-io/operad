@@ -190,3 +190,17 @@ T-0588 added the `bot-tidy` type, which stores one object per bot under the bot'
 | T-0615-M4 | packages/telegram/src/state.ts | `readSent` returned every recorded send instead of the bounded state | `the sent state file > keeps an unfinished send and the done records within the margin of since` |
 | T-0615-M5 | packages/telegram/src/replies.ts | a full sweep did not move `since` forward, so no done record ever became old enough to drop | `the sent state file > a full sweep moves since forward and drops the done records behind it` |
 | T-0615-M6 | packages/telegram/src/state.ts | a done record written before `at` existed kept no time, so it never became old enough to drop | `the sent state file > a full sweep moves since forward and drops the done records behind it` |
+
+## T-0616 — one event loop, and each sender reads only what its event needs
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0616-M1 | packages/telegram/src/index.ts | the typing side started a second `events()` loop beside the plugin's one | `the plugin follows the client's events once` |
+| T-0616-M2 | packages/telegram/src/events.ts, packages/telegram/src/pending.ts | a live tail was handed to the pending side, which no longer ignored a section event | `pending items go to Telegram > a live tail does not wake the pending side` |
+| T-0616-M3 | packages/telegram/src/progress.ts | the throttle was checked after the reads, so a stored change inside the two-second window read and edited at once | `the progress message of a reply > a stored change inside the two-second window reads nothing` |
+| T-0616-M4 | packages/telegram/src/progress.ts | a live tail read the section again instead of using the event's own tail and status | `the progress message of a reply > a live tail is shown from the event itself without reading the section` |
+| T-0616-M5 | packages/telegram/src/replies.ts | each event queued its own sweep instead of at most one behind the running sweep | `a burst of events queues at most one sweep of a chat` |
+| T-0616-M6 | packages/telegram/src/pending.ts | a stored change read the pending items at once instead of after the debounce | `pending items go to Telegram > a burst of stored changes reads the pending items once` |
+| T-0616-M7 | packages/telegram/src/typing.ts | the periodic pass read every bound chat instead of only a chat with an indicator or an open message to answer | `the typing indicator > the periodic check reads only a chat with an indicator or an open message to answer` |
+| T-0616-M8 | packages/telegram/src/progress.ts | a chat's progress entry was created before the chat was known to be bound | `the progress message of a reply > a chat that is not bound creates no progress entry` |
+| T-0616-M9 | packages/telegram/src/source.ts | dedupe read every closed chat ever bound to the channel instead of only the open and recently changed ones | `the telegram source > dedupe reads an old closed chat only while it is recently changed` |

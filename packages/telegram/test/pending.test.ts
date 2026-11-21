@@ -49,11 +49,16 @@ class StubClient {
   refuse = false;
   /** What the history section of a chat reads. */
   history = "";
+  /** How often the pending items were read. */
+  pendingReads = 0;
   private wake: ((result: IteratorResult<ViewEvent>) => void) | undefined;
   private readonly woken: ViewEvent[] = [];
 
   announce(): void {
-    const event = { id: "x" };
+    this.announceEvent({ id: "x" });
+  }
+
+  announceEvent(event: ViewEvent): void {
     if (this.wake !== undefined) this.wake({ done: false, value: event });
     else this.woken.push(event);
   }
@@ -88,7 +93,10 @@ class StubClient {
           },
         }),
       }),
-      pending: async () => this.items,
+      pending: async () => {
+        this.pendingReads += 1;
+        return this.items;
+      },
       act: async (name, id, options) => {
         // What the source does for a chat is the real client's work.
         if (name.startsWith("chat:") || name.startsWith("bot:")) return w.views.act(name, id, options);
@@ -134,6 +142,11 @@ function holdWaits(): { readonly wait: (ms: number, signal: AbortSignal) => Prom
       for (const finish of [...waiting]) finish();
     },
   };
+}
+
+/** Lets work already woken by the test run before the next assertion. */
+function nextTurn(): Promise<void> {
+  return new Promise<void>((resolve) => setImmediate(resolve));
 }
 
 async function setup(options: { pending?: readonly string[]; bind?: boolean; wait?: (ms: number, signal: AbortSignal) => Promise<void>; state?: PendingState } = {}) {
@@ -344,6 +357,42 @@ describe("pending items go to Telegram", () => {
     client.announce();
     await api.nextSend();
     expect(api.sent).toHaveLength(1);
+    await running.stop();
+    await w.close();
+  });
+
+  test("a burst of stored changes reads the pending items once", async () => {
+    const waits = holdWaits();
+    const { w, api, client, ctx } = await setup({ pending: ["dev"], bind: false, wait: waits.wait });
+    const running = new PendingSender(ctx, { api, wait: waits.wait }).start();
+    await running.ready;
+    const before = client.pendingReads;
+    client.items = [item({ runId: "d1", object: "task:t1", actions: [ACT_MERGE], flow: "dev" })];
+    for (let index = 0; index < 10; index += 1) client.announce();
+    await nextTurn();
+    expect(client.pendingReads).toBe(before);
+
+    waits.fire();
+    await api.nextSend();
+    expect(client.pendingReads).toBe(before + 1);
+    await running.stop();
+    await w.close();
+  });
+
+  test("a live tail does not wake the pending side", async () => {
+    const waits = holdWaits();
+    const { w, api, client, ctx } = await setup({ pending: ["dev"], bind: false, wait: waits.wait });
+    const running = new PendingSender(ctx, { api, wait: waits.wait }).start();
+    await running.ready;
+    const before = client.pendingReads;
+    client.items = [item({ runId: "d1", object: "task:t1", actions: [ACT_MERGE], flow: "dev" })];
+    client.announceEvent({ id: "chat:x", type: "chat", section: "transcript", tail: "writing" });
+    await nextTurn();
+    await nextTurn();
+    waits.fire();
+    await nextTurn();
+    expect(client.pendingReads).toBe(before);
+    expect(api.sent).toHaveLength(0);
     await running.stop();
     await w.close();
   });

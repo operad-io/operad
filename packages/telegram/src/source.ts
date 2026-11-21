@@ -38,6 +38,9 @@ export const RECEIVED_REACTION = "👀";
 /** The longest summary an update event carries. */
 const SUMMARY_MAX = 300;
 
+/** How many recently changed chats the source keeps for a resent message. */
+export const RECENT_CHATS_MAX = 8;
+
 /** A delay that ends early when the signal is aborted. */
 export function delay(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
@@ -137,6 +140,8 @@ export class TelegramSource {
   private readonly typing: TypingResponder | undefined;
   private readonly users: readonly number[];
   private readonly bot: string;
+  /** Chats that changed recently, newest last; dedupe reads only these and the open chat. */
+  private readonly recent = new Set<string>();
 
   constructor(ctx: SourceContext, options: TelegramSourceOptions) {
     this.ctx = ctx;
@@ -210,6 +215,21 @@ export class TelegramSource {
     };
   }
 
+  /** A chat changed; keep it for the short dedupe list a resent update may need. */
+  changed(chatId: string): void {
+    this.remember(chatId);
+  }
+
+  private remember(chatId: string): void {
+    this.recent.delete(chatId);
+    this.recent.add(chatId);
+    while (this.recent.size > RECENT_CHATS_MAX) {
+      const oldest = this.recent.values().next().value;
+      if (oldest === undefined) return;
+      this.recent.delete(oldest);
+    }
+  }
+
   private async handle(update: TelegramUpdate): Promise<void> {
     const key = String(update.update_id);
     if (update.callback_query !== undefined) {
@@ -255,7 +275,10 @@ export class TelegramSource {
 
     const channel = telegramChannel(message.chat.id);
     const bound = await this.boundChats(channel);
+    // Dedupe against the open chat and the chats that changed recently, not
+    // every chat this Telegram chat was ever bound to.
     for (const chat of bound) {
+      if (chat.closed && !this.recent.has(chat.id)) continue;
       const previous = this.messageFrom(chat.id, key);
       if (previous === undefined) continue;
       // The message is already written; recording the event sendMessage uses
@@ -268,6 +291,7 @@ export class TelegramSource {
           object: `chat:${previous.chatId}`,
         });
       }
+      this.remember(previous.chatId);
       await this.record(key, previous.chatId, summary);
       return;
     }
@@ -277,6 +301,7 @@ export class TelegramSource {
     // A chat opened by a command is not titled by the command's text.
     const title = parsed === undefined ? text : undefined;
     const chatId = open?.id ?? (await this.openBoundChat(channel, title, from));
+    this.remember(chatId);
     const command =
       parsed === undefined || this.commands === undefined
         ? undefined

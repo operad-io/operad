@@ -33,9 +33,10 @@ import {
   type InlineButton,
   type TelegramCallback,
 } from "./api.ts";
+import { TelegramEvents } from "./events.ts";
 import { telegramChunks } from "./format.ts";
 import { telegramSettings, type TelegramSettings } from "./settings.ts";
-import { boundChats } from "./source.ts";
+import { boundChats, delay } from "./source.ts";
 import {
   pruneCommands,
   readCommands,
@@ -193,6 +194,7 @@ export class CommandSender implements CommandResponder {
   private state: CommandState;
   private stopped = false;
   private watching: Promise<void> = Promise.resolve();
+  private following: { readonly stop: () => Promise<void> } | undefined;
   /** Everything that reads or writes the state runs one at a time. */
   private tail: Promise<unknown> = Promise.resolve();
   private queued = false;
@@ -210,24 +212,25 @@ export class CommandSender implements CommandResponder {
     else ctx.signal.addEventListener("abort", () => this.controller.abort(), { once: true });
   }
 
-  /** Registers the menu now, then again whenever the client changes a chat. */
-  start(): { readonly ready: Promise<void>; readonly stop: () => Promise<void> } {
-    const iterator = this.ctx.client.events()[Symbol.asyncIterator]();
+  /** Registers the menu now, then again on stored changes, alone or through the plugin's one loop. */
+  start(events?: TelegramEvents): { readonly ready: Promise<void>; readonly stop: () => Promise<void> } {
+    const local = events === undefined ? new TelegramEvents(this.ctx, { wait: delay }) : undefined;
     const initial = this.refresh();
     this.watching = (async () => {
       await initial;
-      while (!this.stopped) {
-        const next = await iterator.next();
-        if (next.done === true || this.stopped) return;
-        void this.refresh();
-      }
+      if (this.stopped) return;
+      this.following = local?.start({
+        commands: () => {
+          void this.refresh();
+        },
+      });
     })();
     return {
       ready: initial,
       stop: async () => {
         this.stopped = true;
         this.controller.abort();
-        await iterator.return?.();
+        await this.following?.stop();
         await this.watching.catch(() => undefined);
         await this.tail.catch(() => undefined);
       },

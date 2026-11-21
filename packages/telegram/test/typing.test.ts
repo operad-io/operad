@@ -318,6 +318,19 @@ describe("the typing indicator", () => {
     await f.stop();
   });
 
+  test("the periodic check reads only a chat with an indicator or an open message to answer", async () => {
+    const f = await setup();
+    await appendReply(f);
+    await f.sender.syncChat(f.chat);
+    const lists = f.client.lists;
+    const gets = f.client.gets;
+    f.clock.advance(TYPING_INTERVAL_MS * 3);
+    await f.sender.settled();
+    expect(f.client.lists).toBe(lists);
+    expect(f.client.gets).toBe(gets);
+    await f.stop();
+  });
+
   test("starts when the client's events name a running chat, and stop ends it", async () => {
     const f = await setup();
     f.client.running.set(f.chat, true);

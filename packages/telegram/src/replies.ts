@@ -16,8 +16,9 @@
  */
 
 import { CHAT_TYPE, allEntries, allMessages, chatData } from "@operad-io/chat";
-import { messageOf, type SourceContext } from "@operad-io/engine";
+import { messageOf, type SourceContext, type ViewEvent } from "@operad-io/engine";
 import { BotApiError, type BotApi } from "./api.ts";
+import { TelegramEvents } from "./events.ts";
 import { telegramChunks, type TelegramChunk } from "./format.ts";
 import { TELEGRAM_SOURCE } from "./source.ts";
 import { readSent, writeSent, pruneSent, SENT_STATE_MARGIN_MS, type SentRecord, type SentState } from "./state.ts";
@@ -82,6 +83,9 @@ export class ReplySender {
   private readonly retry: RetryPolicy;
   private readonly controller = new AbortController();
   private readonly queues = new Map<string, Promise<void>>();
+  /** At most one sweep waits behind the one running for each chat. */
+  private readonly queuedSweeps = new Map<string, Promise<void>>();
+  private following: { readonly stop: () => Promise<void> } | undefined;
   private state: SentState;
   private stopped = false;
   private watching: Promise<void> = Promise.resolve();
@@ -99,30 +103,33 @@ export class ReplySender {
     else ctx.signal.addEventListener("abort", () => this.controller.abort(), { once: true });
   }
 
-  /** Sends what is waiting on every bound chat, then follows the client's events. */
-  start(): { readonly stop: () => Promise<void>; readonly ready: Promise<void> } {
-    const iterator = this.ctx.client.events()[Symbol.asyncIterator]();
-    // Wake-ups are pulled before the sweep so a change during it is not missed.
+  /** Sends what is waiting on every bound chat, then follows changes, alone or through the plugin's one loop. */
+  start(events?: TelegramEvents): { readonly stop: () => Promise<void>; readonly ready: Promise<void> } {
+    const local = events === undefined ? new TelegramEvents(this.ctx, { wait: this.wait }) : undefined;
     const initial = this.sweepAll().catch((error: unknown) => this.log(`could not send replies: ${messageOf(error)}`));
     this.watching = (async () => {
       await initial;
-      while (!this.stopped) {
-        const next = await iterator.next();
-        if (next.done === true || this.stopped) return;
-        const id = next.value.id;
-        if (id.length > 0) void this.sweepChat(id).catch((error: unknown) => this.log(`could not send replies: ${messageOf(error)}`));
-      }
+      if (this.stopped) return;
+      this.following = local?.start({
+        replies: (event) => this.handleEvent(event),
+      });
     })();
     return {
       ready: initial,
       stop: async () => {
         this.stopped = true;
         this.controller.abort();
-        await iterator.return?.();
+        await this.following?.stop();
         await this.watching.catch(() => undefined);
         await Promise.all([...this.queues.values()]);
       },
     };
+  }
+
+  /** One stored change of a chat, as the plugin's one event loop hands it over. */
+  handleEvent(event: ViewEvent): void {
+    if (event.section !== undefined) return;
+    void this.sweepChat(event.id).catch((error: unknown) => this.log(`could not send replies: ${messageOf(error)}`));
   }
 
   /** Sweeps every chat bound to Telegram once. */
@@ -148,11 +155,17 @@ export class ReplySender {
     writeSent(this.ctx.home, this.state);
   }
 
-  /** Sends the unsent replies and failure lines of one chat; one sweep of a chat runs at a time. */
+  /** Sends the unsent replies and failure lines of one chat; at most one sweep waits per chat. */
   sweepChat(chatId: string): Promise<void> {
+    const queued = this.queuedSweeps.get(chatId);
+    if (queued !== undefined) return queued;
     const previous = this.queues.get(chatId) ?? Promise.resolve();
-    const run = previous.then(() => this.sweep(chatId));
+    const run = previous.then(() => {
+      if (this.queuedSweeps.get(chatId) === run) this.queuedSweeps.delete(chatId);
+      return this.sweep(chatId);
+    });
     const settled = run.catch(() => undefined);
+    this.queuedSweeps.set(chatId, run);
     this.queues.set(chatId, settled);
     void settled.then(() => {
       if (this.queues.get(chatId) === settled) this.queues.delete(chatId);

@@ -289,6 +289,22 @@ describe("sending a reply", () => {
   });
 });
 
+  test("a burst of events queues at most one sweep of a chat", async () => {
+    const { w, chat } = await bound();
+    const api = new FakeApi();
+    let reads = 0;
+    const original = w.store.get.bind(w.store);
+    w.store.get = ((type: string, id: string) => {
+      reads += 1;
+      return original(type, id);
+    }) as typeof w.store.get;
+    const watcher = sender(w, api);
+    await Promise.all(Array.from({ length: 10 }, () => watcher.sweepChat(chat)));
+    expect(reads).toBe(1);
+    w.store.get = original as typeof w.store.get;
+    await w.close();
+  });
+
 describe("the sent state file", () => {
   test("keeps an unfinished send and the done records within the margin of since", async () => {
     const { w } = await bound();

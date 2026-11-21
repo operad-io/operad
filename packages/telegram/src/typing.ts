@@ -13,16 +13,16 @@
  */
 
 import { CHAT_TYPE, allEntries, allMessages, chatData, unanswered } from "@operad-io/chat";
-import { messageOf, type ClientApi, type SourceContext } from "@operad-io/engine";
+import { messageOf, type ClientApi, type SourceContext, type ViewEvent } from "@operad-io/engine";
 import type { BotApi } from "./api.ts";
+import { TelegramEvents } from "./events.ts";
 import { telegramChatsOf } from "./replies.ts";
 import { delay } from "./source.ts";
 
 /** How often the indicator is renewed; Telegram shows it for about five seconds. */
 export const TYPING_INTERVAL_MS = 4_000;
 
-/** How long to wait before following the client's events again after a failure. */
-export const EVENT_RETRY_MS = 1_000;
+export { EVENT_RETRY_MS } from "./events.ts";
 
 export interface TypingSenderOptions {
   readonly api: BotApi;
@@ -52,9 +52,11 @@ export class TypingSender {
   private readonly loops = new Set<Promise<void>>();
   /** Chat ids whose state should be read next; repeated ids coalesce. */
   private readonly wanted = new Set<string>();
+  /** Open chats with a message still to answer, the only ones a periodic pass reads. */
+  private readonly queued = new Set<string>();
   private checking: Promise<void> | undefined;
   private reconciling: Promise<void> | undefined;
-  private iterator: AsyncIterator<{ readonly id: string }> | undefined;
+  private following: { readonly stop: () => Promise<void> } | undefined;
   private stopped = false;
   private watching: Promise<void> = Promise.resolve();
 
@@ -73,14 +75,19 @@ export class TypingSender {
     else ctx.signal.addEventListener("abort", abort, { once: true });
   }
 
-  /** Checks every bound chat once, then follows the client's events. */
-  start(): { readonly stop: () => Promise<void>; readonly ready: Promise<void> } {
+  /** Checks every bound chat once, then follows changes, alone or through the plugin's one loop. */
+  start(events?: TelegramEvents): { readonly stop: () => Promise<void>; readonly ready: Promise<void> } {
+    const local = events === undefined ? new TelegramEvents(this.ctx, { wait: this.wait }) : undefined;
     const initial = this.syncAll().catch((error: unknown) => this.log(`could not show typing: ${messageOf(error)}`));
     this.watching = (async () => {
       await initial;
+      if (this.stopped) return;
+      this.following = local?.start({
+        typing: (event) => this.handleEvent(event),
+      });
       // The periodic pass also ends an indicator whose run-end event was lost
       // by a bounded event stream.
-      await Promise.all([this.follow(), this.reconcile()]);
+      await this.reconcile();
     })();
     return {
       ready: initial,
@@ -88,11 +95,7 @@ export class TypingSender {
         this.stopped = true;
         this.controller.abort();
         for (const typing of this.active.values()) typing.controller.abort();
-        try {
-          await this.iterator?.return?.();
-        } catch {
-          // The stream is already unusable; stopping is still complete.
-        }
+        await this.following?.stop();
         await this.watching.catch(() => undefined);
         while (this.checking !== undefined) await this.checking.catch(() => undefined);
         await Promise.all([...this.loops]);
@@ -100,36 +103,13 @@ export class TypingSender {
     };
   }
 
-  /** Follows the client's events, taking the stream again after a failure. */
-  private async follow(): Promise<void> {
-    while (!this.stopped) {
-      const iterator = this.client.events()[Symbol.asyncIterator]();
-      this.iterator = iterator;
-      try {
-        while (!this.stopped) {
-          const next = await iterator.next();
-          if (next.done === true || this.stopped) return;
-          const id = next.value.id;
-          if (id.length > 0) {
-            void this.syncChat(id).catch((error: unknown) => this.log(`could not show typing: ${messageOf(error)}`));
-          }
-        }
-      } catch (error) {
-        if (this.stopped) return;
-        void this.log(`could not follow changes for typing: ${messageOf(error)}`).catch(() => undefined);
-        await this.wait(EVENT_RETRY_MS, this.controller.signal).catch(() => undefined);
-      } finally {
-        if (this.iterator === iterator) this.iterator = undefined;
-        try {
-          await iterator.return?.();
-        } catch {
-          // A stream that failed may refuse to close; the next stream is new.
-        }
-      }
-    }
+  /** One stored change of a chat, as the plugin's one event loop hands it over. */
+  handleEvent(event: ViewEvent): void {
+    if (event.section !== undefined) return;
+    void this.syncChat(event.id).catch((error: unknown) => this.log(`could not show typing: ${messageOf(error)}`));
   }
 
-  /** Checks every bound chat once per interval, so a lost event cannot leave typing on. */
+  /** Checks only chats with an indicator or an open message still to answer, once per interval. */
   private async reconcile(): Promise<void> {
     while (!this.stopped) {
       try {
@@ -138,7 +118,11 @@ export class TypingSender {
         return;
       }
       if (this.stopped) return;
-      const pass = this.syncAll().catch((error: unknown) => this.log(`could not show typing: ${messageOf(error)}`));
+      const ids = new Set([...this.active.keys(), ...this.queued]);
+      if (ids.size === 0) continue;
+      const pass = Promise.all([...ids].map((id) => this.syncChat(id)))
+        .then(() => undefined)
+        .catch((error: unknown) => this.log(`could not show typing: ${messageOf(error)}`));
       this.reconciling = pass;
       try {
         await pass;
@@ -155,7 +139,8 @@ export class TypingSender {
     do {
       const page = await this.ctx.store.list(CHAT_TYPE, { ...(cursor === undefined ? {} : { cursor }) });
       for (const object of page.objects) {
-        if (telegramChatsOf(chatData(object.data).channels).length > 0) ids.push(object.id);
+        const data = chatData(object.data);
+        if (!data.closed && telegramChatsOf(data.channels).length > 0) ids.push(object.id);
       }
       cursor = page.next;
     } while (cursor !== undefined);
@@ -212,9 +197,17 @@ export class TypingSender {
     for (const chatId of ids) {
       if (this.stopped) return;
       const stored = await this.ctx.store.get(CHAT_TYPE, chatId);
-      if (stored === undefined) continue;
-      const target = telegramChatsOf(chatData(stored.data).channels)[0];
-      if (target === undefined) continue;
+      if (stored === undefined) {
+        this.queued.delete(chatId);
+        continue;
+      }
+      const data = chatData(stored.data);
+      const target = telegramChatsOf(data.channels)[0];
+      if (target === undefined || data.closed) {
+        this.queued.delete(chatId);
+        await this.stopTyping(chatId);
+        continue;
+      }
       bound.push({ chatId, target });
     }
     if (this.stopped || bound.length === 0) return;
@@ -246,9 +239,11 @@ export class TypingSender {
       }
       const failed = lastFailure > lastUser && lastFailure === lastEntry;
       if (unanswered(messages).length === 0 || failed) {
+        this.queued.delete(chat.chatId);
         await this.stopTyping(chat.chatId);
         continue;
       }
+      this.queued.add(chat.chatId);
       if (running.get(chat.chatId) === true) {
         this.startTyping(chat.chatId, chat.target);
         const active = this.active.get(chat.chatId);
