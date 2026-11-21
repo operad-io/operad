@@ -40,6 +40,7 @@
   "@operad-io/engine:DEFAULT_NOTIFY": "reads or writes config.json or triggers.json for the host; a plugin receives its own section as ctx.settings and its rules as `rules`",
   "@operad-io/engine:DEFAULT_RETRY_MS": "serve's loop and code watch: host code, not used by a plugin",
   "@operad-io/engine:DEFAULT_STOP_TIMEOUT_MS": "the HTTP server, its token or the app's links: host code, not used by a plugin",
+  "@operad-io/engine:MAX_SSE_EVENT_BYTES": "the SSE stream's line limit: the server and its clients use it; a plugin never does",
   "@operad-io/engine:Decision": "the kernel's fact, input and state types: a plugin returns results and never builds them",
   "@operad-io/engine:ENGINE_CODE_ROOT": "`serve`'s code watch: fingerprints the plugin files so a change is taken up; a plugin does not call it",
   "@operad-io/engine:EdgeTakenPayload": "the kernel's fact, input and state types: a plugin returns results and never builds them",
