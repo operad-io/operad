@@ -577,6 +577,12 @@ describe("radian/agent", () => {
     expect(data.reason).toBe("exit");
     expect(data.exitCode).toBe(1);
     expect(data.sessionId).toBe("fake-session");
+
+    // Radian's old copy said only "the harness exited 1"; the shared mapping
+    // names the Result it had already read.
+    const old = { result: "failed", reason: "exit", message: "the harness exited 1" } as const;
+    expect(old).not.toEqual({ result: result.result, reason: data.reason, message: data.message });
+    expect(String(data.message)).toBe("the harness exited 1 after a done Result");
   });
 
   test("a Result record's model_error is passed through as data", async () => {
@@ -642,6 +648,11 @@ describe("radian/agent", () => {
       const shared = sharedFor(result);
       const data = dataOf(result);
 
+      // Radian's old copy returned failed/exit with just the kill line; keep
+      // those values beside the shared mapping's result.
+      const old = { result: "failed", reason: "exit", message: "the harness was killed by SIGKILL" } as const;
+      expect(old).not.toEqual({ result: result.result, reason: data.reason, message: data.message });
+
       // A signal nobody here sent is an interruption, not a verdict of the agent.
       expect(result.result).toBe("interrupted");
       expect(data.reason).toBe("signal");
@@ -660,10 +671,30 @@ describe("radian/agent", () => {
       const shared = sharedFor(result);
       const data = dataOf(result);
 
+      // Radian's old copy checked the exit code first and returned failed/exit.
+      const old = { result: "failed", reason: "exit", message: "the harness exited 1" } as const;
+      expect(old).not.toEqual({ result: result.result, reason: data.reason, message: data.message });
+
       // There was no Result, so the missing result names the failure, not the exit.
       expect(result.result).toBe("failed");
       expect(data.reason).toBe("no_result");
       expect(String(data.message)).toContain("without a Result line");
+      expect({ result: result.result, reason: data.reason, message: data.message }).toEqual({
+        result: shared.result,
+        reason: dataOf(shared).reason,
+        message: dataOf(shared).message,
+      });
+    });
+
+    test("a no_result failure carries the last stderr lines, as the shared mapping says", async () => {
+      const env = await setup("exit-no-result");
+      setEnv("FAKE_RADIAN_STDERR", "first line\nlast line");
+      const result = await runAgent(env, { prompt: "hello", cwd: env.root });
+      const shared = sharedFor(result);
+      const data = dataOf(result);
+
+      expect(data.reason).toBe("no_result");
+      expect(String(data.message)).toContain("without a Result line: first line | last line");
       expect({ result: result.result, reason: data.reason, message: data.message }).toEqual({
         result: shared.result,
         reason: dataOf(shared).reason,

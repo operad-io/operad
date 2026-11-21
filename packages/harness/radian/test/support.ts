@@ -218,6 +218,9 @@ function line(value) {
   console.log(JSON.stringify(value));
 }
 
+const stderrText = process.env.FAKE_RADIAN_STDERR;
+if (stderrText) process.stderr.write(stderrText.endsWith("\n") ? stderrText : stderrText + "\n");
+
 if (mode === "tool-detail") {
   line({ type: "journal", event: "ToolExecutionStarted", toolCallId: "t1", toolName: "Bash", input: { command: "token=supersecret make test" } });
   line({ type: "journal", event: "ToolExecutionSettled", toolCallId: "t1", toolName: "Bash", isError: true, error: "boom\nSECRET OUTPUT" });
