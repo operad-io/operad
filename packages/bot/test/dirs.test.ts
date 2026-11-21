@@ -13,7 +13,7 @@ import {
   resolveBot,
   syncBots,
 } from "../src/index.ts";
-import { cleanupRoots, rig, writeConfig } from "./support.ts";
+import { cleanupRoots, rig, writeBotConfig } from "./support.ts";
 
 afterAll(cleanupRoots);
 
@@ -141,7 +141,7 @@ describe("the default bot's directory", () => {
     await r.store.put("bot", "gone", { name: "gone", cwd: gone, removed: false }, "test");
 
     const settings = { writer: { cwd: writer } };
-    writeConfig(r.home, settings);
+    writeBotConfig(r.home, settings);
     await syncBots(r.store, r.home, { bots: settings });
 
     expect(readFileSync(join(writer, "mine.md"), "utf8")).toBe("writer\n");

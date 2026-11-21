@@ -1,13 +1,14 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { setPluginEnabled } from "../../src/index.ts";
-import type { AsyncAtomicWriteOptions } from "../../src/platform/index.ts";
-import { cleanupTempRoots, tempRoot } from "../plugin/support.ts";
+import { cleanupTempRoots, tempRoot, waitForFile } from "../plugin/support.ts";
 
 afterAll(cleanupTempRoots);
 
-const CHILD = join(import.meta.dir, "..", "fixtures", "config-enable-child.ts");
+const ENABLE_CHILD = join(import.meta.dir, "..", "fixtures", "config-enable-child.ts");
+const ADD_CHILD = join(import.meta.dir, "..", "fixtures", "config-add-child.ts");
+const ENSURE_CHILD = join(import.meta.dir, "..", "fixtures", "config-ensure-child.ts");
+const TWO_WRITERS_CHILD = join(import.meta.dir, "..", "fixtures", "config-two-writers-child.ts");
 
 const CONFIG = `${JSON.stringify(
   {
@@ -21,11 +22,16 @@ const CONFIG = `${JSON.stringify(
   2,
 )}\n`;
 
-async function homeWithConfig(): Promise<{ readonly home: string; readonly file: string }> {
+const WITHOUT_PLUGINS = `${JSON.stringify({ store: { path: "s" } }, null, 2)}\n`;
+
+async function homeWithConfig(text = CONFIG): Promise<{
+  readonly home: string;
+  readonly file: string;
+}> {
   const home = join(await tempRoot(), "home");
   const file = join(home, "config.json");
   mkdirSync(home, { recursive: true });
-  writeFileSync(file, CONFIG);
+  writeFileSync(file, text);
   return { home, file };
 }
 
@@ -44,49 +50,93 @@ async function firstLine(child: {
   return text.slice(0, text.indexOf("\n"));
 }
 
-describe("enabling a plugin writes config.json whole", () => {
+/** Kills the child once it reaches the atomic rename; anything else is a failure. */
+async function killAtRename(child: {
+  readonly stdout: ReadableStream<Uint8Array>;
+  readonly stderr: ReadableStream<Uint8Array>;
+  kill(signal: NodeJS.Signals): void;
+  readonly exited: Promise<number>;
+}): Promise<void> {
+  const line = await firstLine(child);
+  if (line !== "ready") {
+    child.kill("SIGKILL");
+    await child.exited;
+    throw new Error(
+      `the write did not reach the atomic rename: ${await new Response(child.stderr).text()}`,
+    );
+  }
+  child.kill("SIGKILL");
+  await child.exited;
+}
+
+function temporaryFiles(home: string): readonly string[] {
+  return readdirSync(home).filter((name) => name.includes(".tmp"));
+}
+
+describe("writing config.json whole", () => {
   test("a writer killed before the rename leaves the old config whole", async () => {
     const { home, file } = await homeWithConfig();
-    const child = Bun.spawn([process.execPath, CHILD, home, "dev"], {
+    await killAtRename(Bun.spawn([process.execPath, ENABLE_CHILD, home, "dev"], {
       stdin: "ignore",
       stdout: "pipe",
       stderr: "pipe",
-    });
-    const line = await firstLine(child);
-    if (line !== "ready") {
-      child.kill("SIGKILL");
-      await child.exited;
-      throw new Error(
-        `the write did not reach the atomic rename: ${await new Response(child.stderr).text()}`,
-      );
-    }
-    child.kill("SIGKILL");
-    await child.exited;
+    }));
     expect(readFileSync(file, "utf8")).toBe(CONFIG);
-    expect(() => JSON.parse(readFileSync(file, "utf8"))).not.toThrow();
+  });
+
+  test("adding a plugin entry writes the file atomically", async () => {
+    const { home, file } = await homeWithConfig();
+    await killAtRename(Bun.spawn([process.execPath, ADD_CHILD, home, "pool", "@operad-io/pool"], {
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+    }));
+    expect(readFileSync(file, "utf8")).toBe(CONFIG);
+  });
+
+  test("filling a missing plugins section writes the file atomically", async () => {
+    const { home, file } = await homeWithConfig(WITHOUT_PLUGINS);
+    await killAtRename(Bun.spawn([process.execPath, ENSURE_CHILD, home], {
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+    }));
+    expect(readFileSync(file, "utf8")).toBe(WITHOUT_PLUGINS);
   });
 
   test("two writers at once both leave valid JSON", async () => {
     const { home, file } = await homeWithConfig();
-    let arrived = 0;
-    let release: () => void = () => undefined;
-    const both = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const gate = async (): Promise<void> => {
-      arrived += 1;
-      if (arrived === 2) release();
-      await both;
-    };
-    const hooks: AsyncAtomicWriteOptions = { beforeRename: gate };
+    const firstReady = join(home, "first.ready");
+    const secondReady = join(home, "second.ready");
+    const go = join(home, "go");
+    const deadline = Date.now() + 5_000;
+    const children = [
+      Bun.spawn([process.execPath, TWO_WRITERS_CHILD, home, "dev", firstReady, go], {
+        stdin: "ignore",
+        stdout: "pipe",
+        stderr: "pipe",
+      }),
+      Bun.spawn([process.execPath, TWO_WRITERS_CHILD, home, "shell", secondReady, go], {
+        stdin: "ignore",
+        stdout: "pipe",
+        stderr: "pipe",
+      }),
+    ];
     await Promise.all([
-      setPluginEnabled(home, "dev", false, { optional: {} }, hooks),
-      setPluginEnabled(home, "shell", false, { optional: {} }, hooks),
+      waitForFile(firstReady, deadline),
+      waitForFile(secondReady, deadline),
     ]);
-    expect(arrived).toBe(2);
+    const temporaries = [readFileSync(firstReady, "utf8"), readFileSync(secondReady, "utf8")];
+    expect(temporaries[0]).not.toBe(temporaries[1]);
+
+    writeFileSync(go, "go\n");
+    expect(await Promise.all(children.map((child) => child.exited))).toEqual([0, 0]);
+
     const parsed = JSON.parse(readFileSync(file, "utf8")) as {
-      plugins?: unknown;
+      plugins: Record<string, { enabled: boolean }>;
     };
-    expect(typeof parsed.plugins).toBe("object");
+    expect(Object.keys(parsed.plugins).sort()).toEqual(["dev", "shell"]);
+    expect([parsed.plugins.dev?.enabled, parsed.plugins.shell?.enabled].filter((enabled) => enabled === false)).toHaveLength(1);
+    expect(temporaryFiles(home)).toEqual([]);
   });
 });

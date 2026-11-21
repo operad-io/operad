@@ -2,9 +2,18 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { chmod, mkdir, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { waitForChange } from "@operad-io/engine/platform";
-import { tempRoots } from "@operad-io/engine/testing";
+import { tempRoot as sharedTempRoot } from "@operad-io/engine/testing";
 
-export { tempRoot, tempRoots } from "@operad-io/engine/testing";
+export { tempRoots } from "@operad-io/engine/testing";
+
+let current: string[] = [];
+
+/** A scratch directory, also remembered for this test file's process stop. */
+export async function testRoot(): Promise<string> {
+  const root = await sharedTempRoot();
+  current.push(root);
+  return root;
+}
 
 interface LiveProcess {
   readonly pid: number;
@@ -75,7 +84,8 @@ async function waitForPathsGone(
  * its fake radian behind.
  */
 export async function stopTestProcesses(): Promise<void> {
-  const paths = tempRoots();
+  const paths = current;
+  current = [];
   if (paths.length === 0) return;
   const matches = liveProcesses().filter((process) =>
     paths.some((path) => process.command.includes(path)),

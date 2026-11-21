@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import type { StoredObject } from "@operad-io/engine";
 import { actions } from "../../src/actions.ts";
-import { bareId, PLAN_STATES, planData, taskData } from "../../src/model.ts";
+import { idOfKey, PLAN_STATES, planData, taskData } from "../../src/model.ts";
 import {
   PLAN_ACTIONS,
   PLAN_LINES,
@@ -203,22 +203,22 @@ describe("the table agrees with what each action does", () => {
       actions.find((a) => a.name === name && a.on === on)?.settled?.(object, args, env);
 
     const merged = await taskIn(store, repository, "m", "merged");
-    expect(await settle("merge", "task", merged)).toBe(`${bareId(merged.id)} is already merged; nothing to do`);
+    expect(await settle("merge", "task", merged)).toBe(`${idOfKey(merged.id)} is already merged; nothing to do`);
     const cancelled = await taskIn(store, repository, "c", "cancelled");
-    expect(await settle("cancel", "task", cancelled)).toBe(`${bareId(cancelled.id)} is already cancelled; nothing to do`);
+    expect(await settle("cancel", "task", cancelled)).toBe(`${idOfKey(cancelled.id)} is already cancelled; nothing to do`);
     const ready = await taskIn(store, repository, "r", "ready");
-    expect(await settle("confirm", "task", ready)).toBe(`${bareId(ready.id)} is already ready; nothing to do`);
+    expect(await settle("confirm", "task", ready)).toBe(`${idOfKey(ready.id)} is already ready; nothing to do`);
 
     const plan = await addPlan(store, { repository, slug: "pc", title: "Work" });
     const draft = await getPlan(store, plan.id);
     expect(await settle("confirm", "plan", draft)).toBeUndefined();
     await store.put("plan", plan.id, { ...planData(draft.data), status: "confirmed" }, "test:confirm");
     expect(await settle("confirm", "plan", await getPlan(store, plan.id))).toBe(
-      `${bareId(plan.id)} is already confirmed; nothing to do`,
+      `${idOfKey(plan.id)} is already confirmed; nothing to do`,
     );
     await store.put("plan", plan.id, { ...planData(draft.data), status: "cancelled" }, "test:cancel");
     expect(await settle("cancel", "plan", await getPlan(store, plan.id))).toBe(
-      `${bareId(plan.id)} is already cancelled; nothing to do`,
+      `${idOfKey(plan.id)} is already cancelled; nothing to do`,
     );
     // The other states of those objects have something to do.
     expect(await settle("merge", "task", ready)).toBeUndefined();
@@ -233,7 +233,7 @@ describe("the table agrees with what each action does", () => {
     const confirm = actions.find((a) => a.name === "confirm" && a.on === "plan");
     expect(await confirm?.when(object.data, env)).toBe(false);
     expect(await confirm?.why?.(object, env)).toBe(
-      `${bareId(plan.id)} is a draft with no tasks; dev:confirm works once it has a task`,
+      `${idOfKey(plan.id)} is a draft with no tasks; dev:confirm works once it has a task`,
     );
     await addTask(store, { plan: plan.id, slug: "t", title: "T" });
     const filled = await getPlan(store, plan.id);
@@ -249,14 +249,14 @@ describe("the table agrees with what each action does", () => {
     const settle = (name: PlanActionName, args: unknown) =>
       actions.find((a) => a.name === name && a.on === "plan")?.settled?.(object, args, env);
     expect(await settle("auto", { level: data.auto })).toBe(
-      `${bareId(plan.id)} already has auto ${data.auto}; nothing to do`,
+      `${idOfKey(plan.id)} already has auto ${data.auto}; nothing to do`,
     );
     expect(await settle("auto", { level: data.auto === "off" ? "run" : "off" })).toBeUndefined();
     expect(await settle("priority", { level: data.priority })).toBe(
-      `${bareId(plan.id)} already has priority ${data.priority}; nothing to do`,
+      `${idOfKey(plan.id)} already has priority ${data.priority}; nothing to do`,
     );
     expect(await settle("concurrency", { count: data.concurrency })).toBe(
-      `${bareId(plan.id)} already has concurrency ${data.concurrency}; nothing to do`,
+      `${idOfKey(plan.id)} already has concurrency ${data.concurrency}; nothing to do`,
     );
     expect(await settle("concurrency", { count: data.concurrency + 1 })).toBeUndefined();
     expect(await settle("auto", "not an object")).toBeUndefined();

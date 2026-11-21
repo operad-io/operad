@@ -13,7 +13,7 @@ import {
   type ServeSpawner,
 } from "../../src/index.ts";
 import { makeHome } from "@operad-io/engine/testing";
-import { freePort, tempRoot } from "../support.ts";
+import { freePort, testRoot } from "../support.ts";
 
 const CLI_ENTRY = join(import.meta.dir, "..", "..", "..", "cli", "bin", "operad.ts");
 
@@ -63,7 +63,7 @@ describe("probeServer", () => {
 
 describe("ensureServer", () => {
   test("a fresh home with no config starts serve, waits for it and returns the address", async () => {
-    const root = await tempRoot();
+    const root = await testRoot();
     try {
       const home = join(root, "home");
       mkdirSync(home, { recursive: true });

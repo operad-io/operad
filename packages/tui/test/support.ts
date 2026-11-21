@@ -21,9 +21,17 @@ import {
   type Views,
 } from "@operad-io/engine";
 
-import { freePort, tempRoot } from "@operad-io/engine/testing";
+import { freePort, tempRoot as sharedTempRoot } from "@operad-io/engine/testing";
 
-export { freePort, tempRoot };
+/**
+ * A scratch directory for one harness. It stays out of the shared cleanup
+ * roots: the harness removes its own root in `close()`.
+ */
+export function testRoot(): Promise<string> {
+  return sharedTempRoot("tui-test-", { track: false });
+}
+
+export { freePort };
 
 const pluginPath = fileURLToPath(
   new URL("./fixtures/plugin.ts", import.meta.url),
@@ -50,7 +58,7 @@ export interface TuiHarnessOptions {
 export async function makeHarness(
   options: TuiHarnessOptions = {},
 ): Promise<TuiHarness> {
-  const root = await tempRoot();
+  const root = await testRoot();
   const home = join(root, "home");
   mkdirSync(home, { recursive: true });
   const port = await freePort();

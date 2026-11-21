@@ -14,7 +14,7 @@ import {
   readConfig,
   storeRootOf,
 } from "../src/index.ts";
-import { writeConfig } from "../src/testing/config.ts";
+import { writeConfig } from "@operad-io/engine/testing";
 import { withLockFile } from "../src/platform/index.ts";
 import { cleanupTempRoots, tempRoot } from "./plugin/support.ts";
 

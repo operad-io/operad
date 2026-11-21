@@ -13,7 +13,7 @@ import type {
 import { PLAN_CREATE_TASK_RANK } from "./actions.ts";
 import { createPlan, createTask } from "./commands.ts";
 import {
-  bareId,
+  idOfKey,
   DevError,
   planData,
   repositoryData,
@@ -156,7 +156,7 @@ const planAction: ActionTypeDefinition = {
       ...(input.request === undefined ? {} : { request: input.request }),
       ...(input.flow === undefined ? {} : { flow: input.flow }),
     });
-    return { text: bareId(plan.id), opens: `plan:${plan.id}` };
+    return { text: idOfKey(plan.id), opens: `plan:${plan.id}` };
   },
 };
 
@@ -168,7 +168,7 @@ const taskAction: ActionTypeDefinition = {
   args: taskArgs([], []),
   argsFor: (object, env) => {
     const plan = planData(object.data);
-    const id = bareId(object.id);
+    const id = idOfKey(object.id);
     const repository = repositoryNow(env.store, plan.repository);
     return taskArgs(
       flowChoices(repository),
@@ -176,7 +176,7 @@ const taskAction: ActionTypeDefinition = {
         .filter(
           (task) => !TASK_FINAL_STATES.includes(taskData(task.data).phase),
         )
-        .map((task) => bareId(task.id)),
+        .map((task) => idOfKey(task.id)),
     );
   },
   when: () => true,
@@ -195,14 +195,14 @@ const taskAction: ActionTypeDefinition = {
     }
     const task = await createTask(ctx.store, {
       repository: repositoryData(repository.data),
-      plan: bareId(ctx.object.id),
+      plan: idOfKey(ctx.object.id),
       ...(input.slug === undefined ? {} : { slug: input.slug }),
       title: input.title ?? "",
       ...(input.brief === undefined ? {} : { brief: input.brief }),
       ...(input.flow === undefined ? {} : { flow: input.flow }),
       ...(input.after === undefined ? {} : { after: input.after }),
     });
-    return { text: bareId(task.id), opens: `task:${task.id}` };
+    return { text: idOfKey(task.id), opens: `task:${task.id}` };
   },
 };
 

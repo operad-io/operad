@@ -747,7 +747,7 @@ function numberById(
   let highest = 0;
   for (const object of objects) {
     // The store key carries the repository; the number lives in the bare id.
-    const parsed = parseId(bareId(object.id), kind);
+    const parsed = parseId(idOfKey(object.id), kind);
     if (parsed !== undefined && parsed.number > highest) {
       highest = parsed.number;
     }
@@ -765,7 +765,7 @@ export function storeKey(repository: string, id: string): string {
 }
 
 /** The id a person sees and types: the key without its repository prefix. */
-export function bareId(key: string): string {
+export function idOfKey(key: string): string {
   const at = key.indexOf("/");
   return at < 0 ? key : key.slice(at + 1);
 }
@@ -781,7 +781,7 @@ export function dependencyKey(repository: string, entry: string): string {
 
 /** How a dependency is named in a note: bare in its own repository. */
 export function dependencyLabel(repository: string, key: string): string {
-  return keyRepository(key) === repository ? bareId(key) : key;
+  return keyRepository(key) === repository ? idOfKey(key) : key;
 }
 
 /** The repository part of a store key. */

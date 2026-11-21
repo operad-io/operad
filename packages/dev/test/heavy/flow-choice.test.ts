@@ -8,7 +8,7 @@ import { createChatPlugin } from "@operad-io/chat";
 import plugin from "../../src/index.ts";
 import { addPlan, addRepository, addTask, confirmPlan, getPlan, getTask, setAuto, updateTask } from "../../src/service.ts";
 import { taskViews, planViews } from "../../src/views.ts";
-import { bareId, planData, storeKey, taskData, type RepositoryData } from "../../src/model.ts";
+import { idOfKey, planData, storeKey, taskData, type RepositoryData } from "../../src/model.ts";
 import { schedulerTestHooks } from "../../src/schedule.ts";
 import { cleanupTempRoots, guardLockHandles, makeGitRepository, storeAt, tempRoot, setTaskPhase } from "../support.ts";
 
@@ -117,7 +117,7 @@ describe("choosing a flow", () => {
     const cwd = fixture.repository.path;
     const plan = await addPlan(fixture.store, { repository: fixture.repository, slug: "p", title: "p" });
     // The `command` tool resolves the verb and runs it with the arguments it was given.
-    const argv = ["dev", "task", "add", "--plan", bareId(plan.id), "--slug", "a", "--title", "A", "--flow", "quick"];
+    const argv = ["dev", "task", "add", "--plan", idOfKey(plan.id), "--slug", "a", "--title", "A", "--flow", "quick"];
     expect(fixture.registry.resolveCommand(argv)?.command).toBe("task");
     const made = await fixture.registry.runCommand(argv, { cwd, input: "brief\n" });
     const id = String(made?.value);

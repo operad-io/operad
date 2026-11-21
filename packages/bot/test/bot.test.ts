@@ -13,7 +13,7 @@ import {
   resolveBot,
   syncBots,
 } from "../src/index.ts";
-import { cleanupRoots, rig, writeConfig } from "./support.ts";
+import { cleanupRoots, rig, writeBotConfig } from "./support.ts";
 
 afterAll(cleanupRoots);
 
@@ -66,7 +66,7 @@ describe("bots", () => {
 
   test("a bot name that could leave the bot directory is refused", async () => {
     const r = await rig();
-    writeConfig(r.home, { "../escape": {} });
+    writeBotConfig(r.home, { "../escape": {} });
     expect(() => readBots(r.home, {})).toThrow("a name is lowercase letters");
   });
 
@@ -120,7 +120,7 @@ describe("bots", () => {
     const skill = join(r.root, "folder");
     mkdirSync(skill, { recursive: true });
     writeFileSync(join(skill, "SKILL.md"), "---\nname: brain\n---\n");
-    writeConfig(r.home, { reader: { skills: [skill] } });
+    writeBotConfig(r.home, { reader: { skills: [skill] } });
     await syncBots(r.store, r.home, { bots: { reader: { skills: [skill] } } });
     const views = createViews({ registry: r.registry, store: r.store, onLog: () => undefined });
     try {
@@ -138,7 +138,7 @@ describe("bots", () => {
     try {
       const listed = await views.list("bot");
       expect(listed.rows.map((row) => row.id).sort()).toEqual(["default", "reader"]);
-      writeConfig(r.home, {});
+      writeBotConfig(r.home, {});
       await syncBots(r.store, r.home, {});
       expect((await r.store.get("bot", "reader"))?.data.removed).toBe(true);
     } finally {
@@ -212,7 +212,7 @@ describe("skills", () => {
     const skill = join(r.root, "skills", "brain");
     mkdirSync(skill, { recursive: true });
     writeFileSync(join(skill, "SKILL.md"), "---\nname: brain\n---\n");
-    writeConfig(r.home, { reader: { skills: [skill] } });
+    writeBotConfig(r.home, { reader: { skills: [skill] } });
     await syncBots(r.store, r.home, { bots: { reader: { skills: [skill] } } });
     const chat = await r.open("reader");
     await r.say(chat, "hi");
@@ -244,7 +244,7 @@ describe("skills", () => {
     const brain = join(parent, "brain");
     mkdirSync(brain, { recursive: true });
     writeFileSync(join(brain, "SKILL.md"), "---\nname: brain\n---\n");
-    writeConfig(r.home, { reader: { skills: [parent] } });
+    writeBotConfig(r.home, { reader: { skills: [parent] } });
     await syncBots(r.store, r.home, { bots: { reader: { skills: [parent] } } });
     const chat = await r.open("reader");
     await r.say(chat, "one");
@@ -265,7 +265,7 @@ describe("skills", () => {
     const brain = join(agents, "skills", "brain");
     mkdirSync(brain, { recursive: true });
     writeFileSync(join(brain, "SKILL.md"), "---\nname: brain\n---\n");
-    writeConfig(r.home, { reader: { skills: [agents] } });
+    writeBotConfig(r.home, { reader: { skills: [agents] } });
     await syncBots(r.store, r.home, { bots: { reader: { skills: [agents] } } });
     const chat = await r.open("reader");
     await r.say(chat, "one");
@@ -545,7 +545,7 @@ describe("bot:chat", () => {
     const r = await rig({ reader: { harness: "pi" } });
     await syncBots(r.store, r.home, {});
     const id = await r.open("reader");
-    writeConfig(r.home, { reader: { harness: "claude" } });
+    writeBotConfig(r.home, { reader: { harness: "claude" } });
     await r.say(id, "hi");
     await r.reply(id);
     expect((await r.store.get(CHAT_TYPE, id))?.data.harness).toBe("pi");
@@ -630,7 +630,7 @@ describe("a reply reads the bot again", () => {
     expect(accessOf(r.calls[0]?.access).readOnly).toBeUndefined();
     expect(accessOf(r.calls[0]?.access).denyPaths).not.toContain("~/private");
 
-    writeConfig(r.home, { reader: { access: { readOnly: true, denyPaths: ["~/private"] } } });
+    writeBotConfig(r.home, { reader: { access: { readOnly: true, denyPaths: ["~/private"] } } });
     await r.say(id, "two");
     await r.reply(id);
     const access = accessOf(r.calls[1]?.access);
@@ -646,7 +646,7 @@ describe("a reply reads the bot again", () => {
     await r.reply(id);
     expect(r.calls[0]?.params.useOwnSettings).toBeUndefined();
 
-    writeConfig(r.home, { reader: { useOwnSettings: true } });
+    writeBotConfig(r.home, { reader: { useOwnSettings: true } });
     await r.say(id, "two");
     await r.reply(id);
     expect(r.calls[1]?.params.useOwnSettings).toBe(true);
@@ -663,7 +663,7 @@ describe("a reply reads the bot again", () => {
     const skill = join(r.root, "skills", "brain");
     mkdirSync(skill, { recursive: true });
     writeFileSync(join(skill, "SKILL.md"), "---\nname: brain\n---\n");
-    writeConfig(r.home, { reader: { skills: [skill] } });
+    writeBotConfig(r.home, { reader: { skills: [skill] } });
     await r.say(id, "two");
     await r.reply(id);
     expect(r.calls[1]?.params.skills).toEqual([skill]);
@@ -673,7 +673,7 @@ describe("a reply reads the bot again", () => {
     const r = await rig({ reader: {} });
     await syncBots(r.store, r.home, {});
     const id = await r.open("reader");
-    writeConfig(r.home, { reader: { skills: [join(r.root, "nothing")] } });
+    writeBotConfig(r.home, { reader: { skills: [join(r.root, "nothing")] } });
     await r.say(id, "hi");
     const result = await r.reply(id);
     expect(result.result).toBe("failed");
@@ -686,7 +686,7 @@ describe("a reply reads the bot again", () => {
     const r = await rig({ reader: {} });
     await syncBots(r.store, r.home, {});
     const id = await r.open("reader");
-    writeConfig(r.home, {});
+    writeBotConfig(r.home, {});
     await r.say(id, "hi");
     const result = await r.reply(id);
     expect(result.result).toBe("failed");
@@ -724,7 +724,7 @@ describe("a reply reads the bot again", () => {
     try {
       const first = await views.section(`chat:${id}`, "transcript", undefined, {});
       expect(first.markdown).toContain("**Operad Bot**");
-      writeConfig(r.home, { reader: { speaker: "Nova" } });
+      writeBotConfig(r.home, { reader: { speaker: "Nova" } });
       const second = await views.section(`chat:${id}`, "transcript", undefined, {});
       expect(second.markdown).toContain("**Nova**");
     } finally {

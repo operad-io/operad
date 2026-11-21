@@ -8,7 +8,7 @@ import type {
 } from "@operad-io/engine";
 import {
   DevError,
-  bareId,
+  idOfKey,
   briefBody,
   slugFromTitle,
   storeKey,
@@ -246,7 +246,7 @@ async function runPlan(
     concurrency: one(parsed, "--concurrency"),
     flow: one(parsed, "--flow"),
   });
-  return bareId(plan.id);
+  return idOfKey(plan.id);
 }
 
 function editable(task: StoredObject): void {
@@ -383,7 +383,7 @@ async function runTask(
       flow: one(parsed, "--flow"),
       chat: one(parsed, "--chat"),
     });
-    return bareId(task.id);
+    return idOfKey(task.id);
   }
 
   const id = call.rest[0];
@@ -412,7 +412,7 @@ async function runTask(
   const area = one(parsed, "--area");
   const flow = flowFlag(one(parsed, "--flow"));
   if (flow !== undefined) await assertFlow(target.repository, flow);
-  return bareId(
+  return idOfKey(
     (
       await updateTask(ctx.store, key, {
         ...(title === undefined ? {} : { title }),

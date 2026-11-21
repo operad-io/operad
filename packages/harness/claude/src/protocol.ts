@@ -23,7 +23,7 @@ import {
   type WorkerResultName,
   type WorkerUsage,
 } from "@operad-io/harness-process";
-import { isRecord, type CostQuality } from "@operad-io/engine";
+import { isRecord } from "@operad-io/engine";
 
 export type { AskAck, GrantAck, WorkerResultName, WorkerUsage } from "@operad-io/harness-process";
 
@@ -83,7 +83,9 @@ export const DEFAULT_BASH_TIMEOUT_SECS = 1800;
 
 export type FailureReason = "invalid_input" | "session_missing" | "model_error";
 
-export type { CostQuality };
+/** `estimated` for a subscription login (an API-price figure), `exact` for an API key. */
+export type CostQuality = "estimated" | "exact";
+
 /** Set when the run stopped at a rate limit. */
 export interface WorkerModelError {
   readonly kind: "usage_limit";

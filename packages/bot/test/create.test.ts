@@ -11,7 +11,7 @@ import {
   syncBots,
   type McpServerSettings,
 } from "../src/index.ts";
-import { cleanupRoots, rig, writeConfig } from "./support.ts";
+import { cleanupRoots, rig, writeBotConfig } from "./support.ts";
 
 afterAll(cleanupRoots);
 
@@ -66,7 +66,7 @@ describe("bot:create offers what the home already knows", () => {
     const plan = skillAt(parent, "plan");
     const other = skillAt(join(r.root, "other"), "other");
     const standard = skillAt(join(r.root, "user", ".agents", "skills"), "standard");
-    writeConfig(r.home, {
+    writeBotConfig(r.home, {
       default: { skills: [parent], mcpServers: { notes: NOTES, calendar: CALENDAR } },
       reader: { skills: [other] },
     });
@@ -93,7 +93,7 @@ describe("creating a bot with chosen skills and MCP servers", () => {
     const digest = skillAt(parent, "digest");
     skillAt(parent, "plan");
     const other = skillAt(join(r.root, "other"), "other");
-    writeConfig(r.home, {
+    writeBotConfig(r.home, {
       default: { skills: [parent], mcpServers: { notes: NOTES, calendar: CALENDAR } },
       reader: { skills: [other] },
     });
@@ -141,7 +141,7 @@ describe("creating a bot with chosen skills and MCP servers", () => {
     const r = await rig();
     const parent = join(r.root, "skills");
     skillAt(parent, "brain");
-    writeConfig(r.home, {
+    writeBotConfig(r.home, {
       default: { harness: "pi", skills: [parent], mcpServers: { notes: NOTES }, mcpAllow: ["notes.echo"] },
     });
     await syncBots(r.store, r.home, {});
@@ -170,7 +170,7 @@ describe("creating a bot with chosen skills and MCP servers", () => {
 
   test("a copied server keeps its pin, tools and digest, and starts without a new approval", async () => {
     const r = await rig({}, ["claude", "pi"]);
-    writeConfig(r.home, { default: { mcpServers: { notes: NOTES, calendar: CALENDAR } } });
+    writeBotConfig(r.home, { default: { mcpServers: { notes: NOTES, calendar: CALENDAR } } });
     await syncBots(r.store, r.home, {});
 
     await create(r, { name: "copy", agent: "claude", mcpServers: ["notes"] });
@@ -192,7 +192,7 @@ describe("creating a bot with chosen skills and MCP servers", () => {
   test("the result names the secrets the copied servers need", async () => {
     const r = await rig();
     const needs: McpServerSettings = { ...NOTES, secrets: ["TOKEN", "API_KEY"] };
-    writeConfig(r.home, { default: { mcpServers: { notes: needs } } });
+    writeBotConfig(r.home, { default: { mcpServers: { notes: needs } } });
     await syncBots(r.store, r.home, {});
 
     const run = await create(r, { name: "secretive", agent: "claude", mcpServers: ["notes"] });
@@ -226,7 +226,7 @@ describe("creating a bot with chosen skills and MCP servers", () => {
 describe("refusals while creating a bot", () => {
   test("a server that was never approved is refused and nothing is written", async () => {
     const r = await rig();
-    writeConfig(r.home, { default: { mcpServers: { notes: NOTES } } });
+    writeBotConfig(r.home, { default: { mcpServers: { notes: NOTES } } });
     await syncBots(r.store, r.home, {});
     await expect(create(r, { name: "odd", agent: "claude", mcpServers: ["calendar"] })).rejects.toThrow(/calendar/);
     expect(readBots(r.home).odd).toBeUndefined();

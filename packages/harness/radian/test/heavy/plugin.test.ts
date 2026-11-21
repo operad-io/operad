@@ -37,6 +37,7 @@ import {
   fakeRadianNamed,
   processesUnder,
   stopTestProcesses,
+  testRoot,
   tempRoots,
   waitForJson,
 } from "../support.ts";
@@ -45,7 +46,6 @@ import {
   alive,
   cleanupTempRoots,
   manualClock,
-  tempRoot,
   waitForFile,
   waitForPid,
   waitUntil,
@@ -90,7 +90,7 @@ async function setup(
   settings: RadianHarnessSettings = {},
   registrySettings?: Readonly<Record<string, unknown>>,
 ): Promise<TestEnv> {
-  const root = await tempRoot();
+  const root = await testRoot();
   const bin = await fakeRadian(root);
   const previousPath = process.env.PATH;
   process.env.PATH = `${bin}${delimiter}${previousPath ?? ""}`;
@@ -1095,7 +1095,7 @@ describe("radian check", () => {
   });
 
   test("names a missing radian as a failed check", async () => {
-    const root = await tempRoot();
+    const root = await testRoot();
     const empty = join(root, "empty");
     await mkdir(empty, { recursive: true });
     const previous = process.env.PATH;
@@ -1122,7 +1122,7 @@ const realTest = process.env.OPERAD_TEST_RADIAN === "1" ? test : test.skip;
 realTest(
   "runs the real radian (set OPERAD_TEST_RADIAN=1 to enable this test)",
   async () => {
-    const root = await tempRoot();
+    const root = await testRoot();
     const plugin = createRadianHarnessPlugin();
     const registry = new PluginRegistry([plugin], {
       home: root,
@@ -1149,7 +1149,7 @@ realTest(
 );
 
 test("the guard sees a process whose command line names a temp directory", async () => {
-  const root = await tempRoot();
+  const root = await testRoot();
   const child = Bun.spawn({
     cmd: [process.execPath, "-e", "await Bun.sleep(30000)", root],
     stdout: "ignore",
@@ -1174,7 +1174,7 @@ test("a marker wait survives a directory that appears after it starts", async ()
   // No watch can be armed on a directory that is not there yet, so only the
   // fallback look can find the marker; the same look covers an event the
   // platform dropped while the machine was loaded.
-  const root = await tempRoot();
+  const root = await testRoot();
   const directory = join(root, "late");
   const marker = join(directory, "marker");
   const waiting = waitForFile(marker);
@@ -1189,7 +1189,7 @@ test("a marker wait survives a directory that appears after it starts", async ()
 test("a marker wait reads JSON only once the file holds it", async () => {
   // The file exists, empty, between its creation and its write. A read that
   // took it then would see `JSON.parse("")` throw; the wait must look again.
-  const root = await tempRoot();
+  const root = await testRoot();
   const marker = join(root, "marker.json");
   writeFileSync(marker, "");
   const waiting = waitForJson(marker);
@@ -1256,7 +1256,7 @@ describe("radian: a question is reject_once", () => {
   }
 
   async function registryOf(run: Run) {
-    const root = await tempRoot();
+    const root = await testRoot();
     return new PluginRegistry([probe(run)], {
       home: root,
       cwd: root,

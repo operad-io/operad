@@ -8,14 +8,23 @@ import { waitForChange } from "../platform/index.ts";
 
 const roots: string[] = [];
 
+/** Whether a scratch directory is removed by `cleanupTempRoots`. */
+export interface TempRootOptions {
+  /** Register it for cleanup; true by default. A test that removes its own root sets false. */
+  readonly track?: boolean | undefined;
+}
+
 /**
  * A scratch directory under the OS temporary directory, removed by
  * `cleanupTempRoots`. It is outside the repository, so a file a test leaves
  * behind is never in a tree that tools search.
  */
-export async function tempRoot(prefix = "operad-test-"): Promise<string> {
+export async function tempRoot(
+  prefix = "operad-test-",
+  options: TempRootOptions = {},
+): Promise<string> {
   const root = await mkdtemp(`${realpathSync(tmpdir())}/${prefix}`);
-  roots.push(root);
+  if (options.track !== false) roots.push(root);
   return root;
 }
 

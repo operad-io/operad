@@ -19,7 +19,7 @@ import { withdrawIntegration } from "./integration-queue.ts";
 import { withRepositoryLock } from "./lock.ts";
 import {
   appendChange,
-  bareId,
+  idOfKey,
   dependencyKey,
   dependencyLabel,
   DevError,
@@ -655,7 +655,7 @@ async function tasksOfPlan(
   planKey: string,
 ): Promise<readonly StoredObject[]> {
   const repository = keyRepository(planKey);
-  const plan = bareId(planKey);
+  const plan = idOfKey(planKey);
   return (await allTasks(store)).filter((object) => {
     const task = taskData(object.data);
     return task.repository === repository && task.plan === plan;
@@ -676,14 +676,14 @@ function refuseTask(
   if (action === "confirm" && task.phase === "proposed" && plan?.state === "confirmed") {
     return false;
   }
-  const said = taskLine(action, task, { id: bareId(key), plan });
+  const said = taskLine(action, task, { id: idOfKey(key), plan });
   if (said?.kind === "refuse") throw new DevRefusal(said.text);
   return said !== undefined;
 }
 
 /** As `refuseTask`, for a plan action. */
 function refusePlan(action: PlanActionName, plan: PlanData, key: string): boolean {
-  const said = planLine(action, plan, { id: bareId(key) });
+  const said = planLine(action, plan, { id: idOfKey(key) });
   if (said?.kind === "refuse") throw new DevRefusal(said.text);
   return said !== undefined;
 }
@@ -694,7 +694,7 @@ export async function getPlan(
 ): Promise<StoredObject> {
   const object = await store.get(PLAN_TYPE, key);
   if (object === undefined) {
-    throw new DevError("plan", `no plan "${bareId(key)}"`);
+    throw new DevError("plan", `no plan "${idOfKey(key)}"`);
   }
   return object;
 }
@@ -705,7 +705,7 @@ export async function getTask(
 ): Promise<StoredObject> {
   const object = await store.get(TASK_TYPE, key);
   if (object === undefined) {
-    throw new DevError("task", `no task "${bareId(key)}"`);
+    throw new DevError("task", `no task "${idOfKey(key)}"`);
   }
   return object;
 }
@@ -1056,7 +1056,7 @@ export async function addTask(
   const plan = await getPlan(store, options.plan);
   const planObject = planData(plan.data);
   if (planObject.status === "cancelled") {
-    throw new DevError("plan", `plan "${bareId(plan.id)}" is cancelled`);
+    throw new DevError("plan", `plan "${idOfKey(plan.id)}" is cancelled`);
   }
   await devTestHooks.beforeLock?.("task-add");
   const names = await afterLockNames(
@@ -1082,13 +1082,13 @@ export async function addTaskLocked(
   if (current.status === "cancelled") {
     throw new DevError(
       "plan",
-      `plan "${bareId(currentPlan.id)}" is cancelled`,
+      `plan "${idOfKey(currentPlan.id)}" is cancelled`,
     );
   }
   if (current.repository !== repository.name) {
     throw new DevError(
       "plan",
-      `plan "${bareId(currentPlan.id)}" is not in repository "${repository.name}"`,
+      `plan "${idOfKey(currentPlan.id)}" is not in repository "${repository.name}"`,
     );
   }
   const id = await nextId(store, "task", repository.name, slug);
@@ -1105,7 +1105,7 @@ export async function addTaskLocked(
     options.area === undefined ? undefined : validateArea(options.area);
   const data: TaskData = {
     repository: repository.name,
-    plan: bareId(currentPlan.id),
+    plan: idOfKey(currentPlan.id),
     title,
     brief,
     after,
@@ -1318,7 +1318,7 @@ export async function moveTaskPhase(
   return changeTaskPhase(store, id, from, to, options);
 }
 
-async function changeTaskPhase(
+export async function changeTaskPhase(
   store: ObjectStore,
   id: string,
   from: TaskPhase | undefined,
@@ -1418,7 +1418,7 @@ export async function areaHolder(
     const task = taskData(object.data);
     if (task.repository !== repository || task.area !== area) continue;
     if (task.phase === "running" || task.phase === "review") {
-      return bareId(object.id);
+      return idOfKey(object.id);
     }
   }
   return undefined;
@@ -1725,7 +1725,7 @@ export async function requestTaskStart(
 ): Promise<StoredObject> {
   const initial = await getTask(store, id);
   const data = taskData(initial.data);
-  const at = `task "${bareId(id)}"`;
+  const at = `task "${idOfKey(id)}"`;
   if (data.phase !== "ready") {
     throw new DevError(
       "phase",
@@ -1796,12 +1796,12 @@ export async function claimWaitingTask(
     const latest = taskData(current.data);
     // Where the task is now: the table's line for this action. A result that
     // is already true (another merge won) succeeds with its line.
-    const said = taskLine(action, latest, { id: bareId(id) });
+    const said = taskLine(action, latest, { id: idOfKey(id) });
     if (said?.kind === "done") return { settled: said.text };
     refuseTask(action, latest, id);
     if (current.version !== seen) {
       throw new DevRefusal(
-        `${bareId(id)} changed since you looked; look again, then dev:${action}`,
+        `${idOfKey(id)} changed since you looked; look again, then dev:${action}`,
       );
     }
     const claimed = await writeTask(
@@ -1928,7 +1928,7 @@ async function cancelTasks(
       const withdrawal = await withdrawIntegration(
         home,
         { name: data.repository, path: repositoryPath },
-        bareId(object.id),
+        idOfKey(object.id),
       );
       if (withdrawal.kind === "merged") {
         merged.push(object.id);
@@ -2020,7 +2020,7 @@ export async function cancelTask(
         const withdrawal = await withdrawIntegration(
           home,
           { name: data.repository, path: fresh.path },
-          bareId(id),
+          idOfKey(id),
         );
         if (withdrawal.kind === "merged") {
           return { task, runs: [], merged: true };
@@ -2049,7 +2049,7 @@ export async function cancelTask(
     task: cancelled.task,
     runs: cancelled.runs,
     ...(cancelled.merged
-      ? { alreadyMerged: `${bareId(id)} was merged; nothing can be cancelled` }
+      ? { alreadyMerged: `${idOfKey(id)} was merged; nothing can be cancelled` }
       : {}),
   };
 }

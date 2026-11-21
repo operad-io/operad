@@ -45,8 +45,6 @@ export function assertWorkerAvailable(availability: WorkerAvailability): void {
 export interface WorkerMainOptions {
   /** Environment variables the program's own runtime must not see. */
   readonly envToDelete?: readonly string[] | undefined;
-  /** True when a closed stdout or stderr must not fail the program. */
-  readonly ignoreStreamErrors?: boolean | undefined;
 }
 
 /** The process entry: stdin in, stdout lines out, exit code out. */
@@ -66,10 +64,10 @@ export async function runWorkerMain<TInput>(
 
   const controller = new AbortController();
   process.on("SIGTERM", () => controller.abort());
-  if (options.ignoreStreamErrors === true) {
-    process.stdout.on("error", () => undefined);
-    process.stderr.on("error", () => undefined);
-  }
+  // A host that closes its end of stdout or stderr has ended the conversation;
+  // it must not turn the worker's next write into an unhandled stream error.
+  process.stdout.on("error", () => undefined);
+  process.stderr.on("error", () => undefined);
   const code = await serveKeptWorker(
     Bun.stdin.stream(),
     {

@@ -607,7 +607,7 @@ export async function addPluginEntry(
   home: string,
   name: string,
   module: string,
-  options: LockFileOptions = {},
+  options: LockFileOptions & AsyncAtomicWriteOptions = {},
 ): Promise<void> {
   const file = configPath(home);
   return withLockFile(`${file}.lock`, async () => {
@@ -640,7 +640,7 @@ export async function addPluginEntry(
     }
     raw.plugins[name] = { module, enabled: false };
     await mkdir(home, { recursive: true });
-    await writeJsonAtomic(file, raw, { space: 2 });
+    await writeJsonAtomic(file, raw, { ...options, space: 2 });
   }, options);
 }
 

@@ -2,7 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { addPlan, addRepository, addTask, cancelPlan, cancelTask, confirmPlan, confirmTask, devTestHooks, editTaskBrief, findRepository, getPlan, getTask, listRepositories, removeRepository, resolveRepository, setAuto, setPriority, updateTask } from "../../src/service.ts";
-import { bareId, briefBody, listAll, repositoryData, storeKey, taskData, type RepositoryData } from "../../src/model.ts";
+import { idOfKey, briefBody, listAll, repositoryData, storeKey, taskData, type RepositoryData } from "../../src/model.ts";
 import { cleanupTempRoots, guardLockHandles, makeGitRepository, storeAt, tempRoot, setTaskPhase, addRework, changesBody } from "../support.ts";
 import { gitOrThrow, silentGit } from "../git-support.ts";
 import { DEV_SETTINGS_SCHEMA } from "../../src/settings.ts";
@@ -231,7 +231,7 @@ describe("dev plans and tasks", () => {
       title: "Storage",
       request: "write it",
     });
-    expect(bareId(plan.id)).toBe("P-0001-storage");
+    expect(idOfKey(plan.id)).toBe("P-0001-storage");
     expect(plan.data).toMatchObject({
       repository: "repository",
       title: "Storage",
@@ -244,7 +244,7 @@ describe("dev plans and tasks", () => {
       mergedCount: 0,
     });
     expect(
-      bareId(
+      idOfKey(
         (
           await addPlan(store, {
             repository,
@@ -264,7 +264,7 @@ describe("dev plans and tasks", () => {
       title: "Empty",
     });
     await expect(confirmPlan(store, empty.id)).rejects.toMatchObject({
-      message: `${bareId(empty.id)} is a draft with no tasks; dev:confirm works once it has a task`,
+      message: `${idOfKey(empty.id)} is a draft with no tasks; dev:confirm works once it has a task`,
     });
 
     const plan = await addPlan(store, {
@@ -344,16 +344,16 @@ describe("dev plans and tasks", () => {
       plan: plan.id,
       slug: "first",
       title: "First",
-      after: [bareId(external.id)],
+      after: [idOfKey(external.id)],
     });
     const second = await addTask(store, {
       plan: plan.id,
       slug: "second",
       title: "Second",
-      after: [bareId(first.id)],
+      after: [idOfKey(first.id)],
     });
     await expect(
-      updateTask(store, first.id, { after: [bareId(second.id)] }),
+      updateTask(store, first.id, { after: [idOfKey(second.id)] }),
     ).rejects.toThrow(/cycle/);
     expect(taskData((await getTask(store, first.id)).data).after).toEqual([
       external.id,
@@ -509,8 +509,8 @@ describe("dev per-repository ids", () => {
       title: "Second",
     });
 
-    expect(bareId(firstTask.id)).toBe("T-0001-work");
-    expect(bareId(secondTask.id)).toBe("T-0001-work");
+    expect(idOfKey(firstTask.id)).toBe("T-0001-work");
+    expect(idOfKey(secondTask.id)).toBe("T-0001-work");
     expect(firstTask.id).toBe(storeKey("one", "T-0001-work"));
     expect(secondTask.id).toBe(storeKey("two", "T-0001-work"));
     expect((await getTask(store, firstTask.id)).data.title).toBe("First");
@@ -529,8 +529,8 @@ describe("dev per-repository ids", () => {
       slug: "beta",
       title: "Beta",
     });
-    expect(bareId(alpha.id)).toBe("P-0001-alpha");
-    expect(bareId(beta.id)).toBe("P-0002-beta");
+    expect(idOfKey(alpha.id)).toBe("P-0001-alpha");
+    expect(idOfKey(beta.id)).toBe("P-0002-beta");
 
     const first = await addTask(store, {
       plan: beta.id,
@@ -542,8 +542,8 @@ describe("dev per-repository ids", () => {
       slug: "two",
       title: "Two",
     });
-    expect(bareId(first.id)).toBe("T-0001-one");
-    expect(bareId(second.id)).toBe("T-0002-two");
+    expect(idOfKey(first.id)).toBe("T-0001-one");
+    expect(idOfKey(second.id)).toBe("T-0002-two");
   });
 
   test("new ids count past old ids in either form", async () => {
@@ -586,13 +586,13 @@ describe("dev per-repository ids", () => {
       slug: "new",
       title: "New plan",
     });
-    expect(bareId(plan.id)).toBe("P-0004-new");
+    expect(idOfKey(plan.id)).toBe("P-0004-new");
     const task = await addTask(store, {
       plan: plan.id,
       slug: "new",
       title: "New task",
     });
-    expect(bareId(task.id)).toBe("T-0008-new");
+    expect(idOfKey(task.id)).toBe("T-0008-new");
   });
 
   test("after accepts an old id and a new id, exactly", async () => {
@@ -602,7 +602,7 @@ describe("dev per-repository ids", () => {
       slug: "work",
       title: "Work",
     });
-    const planId = bareId(plan.id);
+    const planId = idOfKey(plan.id);
     store.put(
       "task",
       storeKey("repository", "TK0001-old"),
@@ -623,7 +623,7 @@ describe("dev per-repository ids", () => {
       slug: "newer",
       title: "Newer task",
     });
-    expect(bareId(newer.id)).toBe("T-0002-newer");
+    expect(idOfKey(newer.id)).toBe("T-0002-newer");
 
     const afterOld = await addTask(store, {
       plan: plan.id,
@@ -637,7 +637,7 @@ describe("dev per-repository ids", () => {
       plan: plan.id,
       slug: "after-new",
       title: "After new",
-      after: [bareId(newer.id)],
+      after: [idOfKey(newer.id)],
     });
     expect(taskData(afterNew.data).after).toEqual([newer.id]);
 

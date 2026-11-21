@@ -259,3 +259,8 @@ and the row fields.
 |---|---|---|---|
 | T-0656-M1 | packages/harness/process/src/step.ts | `modelErrorOf` threw away the retry-after or reset wait the message named | `modelErrorOf > a retry-after or reset the text names is the wait` |
 | T-0656-M2 | packages/harness/process/src/step.ts | `resultFor` dropped the worker's `reported_at` from a model error that carries a wait | `resultFor > a model error keeps the retry after the worker reported` |
+## T-0655 — follow-ups the scan reviews found
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0655-M3 | packages/harness/process/src/worker-entry.ts | `runWorkerMain` left a closed stdout unhandled, so the worker wrote an EPIPE to stderr after its host closed the pipe | `a worker entry survives a host that closes stdout` |

@@ -6,15 +6,9 @@
  */
 
 import { messageOf, type PluginBaseContext } from "@operad-io/engine";
-import { git as runGit, type GitResult } from "./git.ts";
+import { git } from "./git.ts";
 import { listRepositories } from "./service.ts";
 import { readDevSettings } from "./settings.ts";
-
-function git(cwd: string, args: readonly string[]): GitResult {
-  // The init check must never wait for a credential prompt; the shared runner
-  // retries an empty success under load.
-  return runGit(cwd, args, { env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } });
-}
 
 /** Git's own explanation, every line of it, or a plain note when it said nothing. */
 function detail(text: string): string {
@@ -34,11 +28,14 @@ async function checkRepository(
   repository: { readonly name: string; readonly path: string },
 ): Promise<string> {
   const settings = await readDevSettings(repository.path);
+  // The init check must never wait for a credential prompt; the shared runner
+  // retries an empty success under load.
+  const env = { ...process.env, GIT_TERMINAL_PROMPT: "0" };
   const remote = git(repository.path, [
     "remote",
     "get-url",
     settings.remote,
-  ]);
+  ], { env });
   if (!remote.ok || remote.out.length === 0) {
     throw new Error(`remote "${settings.remote}" does not exist`);
   }
@@ -48,7 +45,7 @@ async function checkRepository(
     "--heads",
     settings.remote,
     settings.mainBranch,
-  ]);
+  ], { env });
   if (!listed.ok) {
     throw new Error(
       `cannot reach remote "${settings.remote}": ${detail(listed.err)}`,

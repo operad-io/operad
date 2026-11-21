@@ -15,24 +15,18 @@ import {
   type PluginFact,
   type StoredObject,
 } from "@operad-io/engine";
+import { openWaitHandleCount as openLockHandleCount } from "@operad-io/engine/platform";
 import {
-  openWaitHandleCount as openLockHandleCount,
-  isBusy,
-} from "@operad-io/engine/platform";
-import {
-  appendChange,
   appendRework,
   listAll,
   splitBrief,
-  storeKey,
   taskData,
   type TaskPhase,
 } from "../src/model.ts";
 import {
-  getPlan,
+  changeTaskPhase,
   getTask,
   putTaskKeepingPlanCost,
-  refreshPlanCounts,
   withRepoLock,
 } from "../src/service.ts";
 
@@ -104,34 +98,9 @@ export async function setTaskPhase(
   phase: TaskPhase,
   options: { readonly run?: string | null | undefined } = {},
 ): Promise<StoredObject> {
-  const initial = await getTask(store, id);
-  const data = taskData(initial.data);
-  return withRepoLock(store, data.repository, async () => {
-    const current = await getTask(store, id);
-    const latest = taskData(current.data);
-    const run =
-      options.run === undefined
-        ? phase === "running" || phase === "review" || phase === "waiting"
-          ? latest.run
-          : null
-        : options.run;
-    const brief = appendChange(latest.brief, `phase: ${phase}`);
-    const written = await putTaskKeepingPlanCost(
-      store,
-      id,
-      { ...latest, phase, run, brief },
-      `dev:task-${phase}`,
-    );
-    try {
-      await refreshPlanCounts(
-        store,
-        await getPlan(store, storeKey(latest.repository, latest.plan)),
-      );
-    } catch (error) {
-      if (!isBusy(error)) throw error;
-    }
-    return written;
-  });
+  const written = await changeTaskPhase(store, id, undefined, phase, options);
+  if (written === undefined) throw new Error(`no task "${id}"`);
+  return written;
 }
 
 /** Appends a rework section to a task, as the dev action does; a test helper. */

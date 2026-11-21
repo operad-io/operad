@@ -19,7 +19,7 @@ import {
 import { join } from "node:path";
 import {
   allFactsOf,
-  bareId,
+  idOfKey,
   hasRework,
   PLAN_FINAL_STATES,
   TASK_FINAL_STATES,
@@ -188,7 +188,7 @@ export const planViews: ObjectViews = {
   row(object: StoredObject): ObjectRow {
     const plan = planData(object.data);
     return {
-      id: bareId(object.id),
+      id: idOfKey(object.id),
       title: plan.title,
       state: planState(plan),
       note: planNote(plan),
@@ -243,7 +243,7 @@ export const taskViews: ObjectViews = {
       .filter((part): part is string => part !== undefined)
       .join(" · ");
     return {
-      id: bareId(object.id),
+      id: idOfKey(object.id),
       title: task.title,
       state: taskRowState(task),
       note,
@@ -345,20 +345,18 @@ function clockTime(at: number): string {
 }
 
 function tokenText(usage: unknown): string | undefined {
-  if (typeof usage !== "object" || usage === null) return undefined;
-  const record = usage as Record<string, unknown>;
-  const input = numberField(record, "input");
-  const output = numberField(record, "output");
+  if (!isRecord(usage)) return undefined;
+  const input = numberField(usage, "input");
+  const output = numberField(usage, "output");
   if (input === undefined && output === undefined) return undefined;
   return `${input ?? 0} in / ${output ?? 0} out tokens`;
 }
 
 /** The cost a log line carries, as dollars: pi's `total`, or `micros`. */
 function costText(cost: unknown): string | undefined {
-  if (typeof cost !== "object" || cost === null) return undefined;
-  const record = cost as Record<string, unknown>;
-  const micros = numberField(record, "micros");
-  const dollars = micros !== undefined ? micros / 1e6 : numberField(record, "total");
+  if (!isRecord(cost)) return undefined;
+  const micros = numberField(cost, "micros");
+  const dollars = micros !== undefined ? micros / 1e6 : numberField(cost, "total");
   return dollars === undefined ? undefined : `$${dollars.toFixed(4)}`;
 }
 
@@ -561,10 +559,10 @@ export function readableLogLine(line: string): string | undefined {
   } catch {
     return oneLine(text, LOG_LINE_CHARS);
   }
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+  if (!isRecord(value)) {
     return oneLine(text, LOG_LINE_CHARS);
   }
-  const record = value as Record<string, unknown>;
+  const record = value;
   const kind = stringField(record, ["type"]) ?? "";
   const tool = stringField(record, ["tool", "tool_name", "toolName", "name"]);
   const event = stringField(record, ["event"]) ?? "";
@@ -853,7 +851,7 @@ async function diffSection(
   if (found === undefined) return { markdown: "_The repository is not registered._" };
   const repository = repositoryData(found.data);
   const settings = await readDevSettings(repository.path);
-  const branch = task.attempt?.branch ?? workBranch(task.worktree ?? bareId(object.id));
+  const branch = task.attempt?.branch ?? workBranch(task.worktree ?? idOfKey(object.id));
   const main = `${settings.remote}/${settings.mainBranch}`;
   const merged = task.phase === "merged";
   const recorded = merged ? mergedCommitOf(task) : undefined;

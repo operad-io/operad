@@ -6,7 +6,7 @@
  */
 
 import type { StandingContext, StandingItem } from "@operad-io/engine";
-import { bareId, listAll, planData, storeKey, taskData } from "./model.ts";
+import { idOfKey, listAll, planData, storeKey, taskData } from "./model.ts";
 import { listRepositories } from "./service.ts";
 import { hasValidSettings, readDevSettings, settingsProblem } from "./settings.ts";
 import { checkHostWarning } from "./check-host.ts";
@@ -73,7 +73,7 @@ export async function devStanding(ctx: StandingContext): Promise<readonly Standi
     const plan = await ctx.store.get("plan", planKey);
     if (plan !== undefined && planData(plan.data).status === "draft") {
       const draft = drafts.get(planKey) ?? { titles: [], tasks: [], byDev: false };
-      draft.titles.push(`${bareId(object.id)}`);
+      draft.titles.push(`${idOfKey(object.id)}`);
       draft.tasks.push({ type: "task", id: object.id });
       draft.byDev = draft.byDev || task.openedBy === "dev";
       drafts.set(planKey, draft);
@@ -82,7 +82,7 @@ export async function devStanding(ctx: StandingContext): Promise<readonly Standi
     const by = task.openedBy === "dev" ? "dev" : "a person";
     items.push({
       id: `task:${object.id}`,
-      prompt: `task ${bareId(object.id)} is proposed by ${by} and waits for you: ${task.title}`,
+      prompt: `task ${idOfKey(object.id)} is proposed by ${by} and waits for you: ${task.title}`,
       object: { type: "task", id: object.id },
       // A person who added the task knows of it; the lead is told of dev's own.
       announce: task.openedBy === "dev",
@@ -91,7 +91,7 @@ export async function devStanding(ctx: StandingContext): Promise<readonly Standi
   for (const [planKey, draft] of drafts) {
     items.push({
       id: `plan:${planKey}`,
-      prompt: `plan ${bareId(planKey)} is a draft whose tasks wait for you: ${draft.titles.join(", ")}; confirm the plan to start them`,
+      prompt: `plan ${idOfKey(planKey)} is a draft whose tasks wait for you: ${draft.titles.join(", ")}; confirm the plan to start them`,
       object: { type: "plan", id: planKey },
       covers: draft.tasks,
       announce: draft.byDev,
