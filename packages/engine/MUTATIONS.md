@@ -1319,3 +1319,13 @@ resume window`. Rows are append-only, so the old lines stay as history.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0617-M6 | packages/engine/src/plugin/secrets.ts | `FileSecretStore.values` returned no values | `plugin secrets > set/get round-trips and writes 0600 in a 0700 directory` |
+
+## T-0633 — one context for the command line and MCP
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0633-M1 | packages/engine/src/plugin/context.ts | `settings` was left out of `KERNEL_VERBS`, so the MCP command tool reached a plugin with that name | `operad mcp > command refuses settings, tui and check-load too` |
+| T-0633-M2 | packages/engine/src/runner/answer.ts | `recordAnswer` read the state of an unknown run instead of refusing with `no run`, so MCP answered a run the log does not know | `operad mcp > answer refuses a run the log does not know` |
+| T-0633-M3 | packages/engine/src/plugin/context.ts | the registry got no `onEvent`, so an action through MCP had no emit and sent no event | `operad mcp > act routes an event an action emits through the opened kernel` |
+| T-0633-M4 | packages/engine/src/plugin/context.ts | the registry got no `onRunActive`, so an action through MCP saw every run as not active | `operad mcp > act sees whether a run is active, as the command line does` |
+| T-0633-M5 | packages/engine/src/plugin/context.ts | the kernel opened without the views as its client, so a source could not start | `opening a home > the kernel it opens gives its sources the same views the client uses` |

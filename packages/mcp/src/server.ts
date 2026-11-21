@@ -3,7 +3,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Kernel, ViewError, cancelRun, createViews, defaultOperadHome, isRecord, listPending, loadPluginRegistry, messageOf, openConfigLog, openPluginStore, readConfig, recordAnswer, storeRootOf, type ActionInfo, type LogBackend, type OperadConfig, type PluginRegistry, type Views } from "@operad-io/engine";
+import { Kernel, ViewError, defaultOperadHome, isRecord, listPending, loadTriggerRules, messageOf, openHome, type ActionInfo, type LogBackend, type OperadConfig, type PluginRegistry, type Views } from "@operad-io/engine";
 import { InvalidToolArguments } from "./arguments.ts";
 import { actionInfoNamed, actionMayRun, mcpPolicy } from "./policy.ts";
 import {
@@ -181,63 +181,41 @@ async function openContext(
   onLog: (message: string) => void | Promise<void>,
   installOnEnable: readonly string[] | undefined,
 ): Promise<OpenContext> {
-  const config: OperadConfig = await readConfig(home);
-  const storeRoot = storeRootOf(config);
-  const store = openPluginStore({
-    backend: config.store.backend,
-    root: storeRoot,
-  });
-  const log = openConfigLog(config);
-  let loaded: PluginRegistry | undefined;
-  const registry = await loadPluginRegistry({
+  const opened = await openHome({
     home,
     cwd,
-    store,
+    clock,
     ...(installOnEnable === undefined ? {} : { installOnEnable }),
-    onCancelRun: (runId, graph) =>
-      cancelRun({
-        log,
-        flow: (name) => loaded?.flow(name)?.flow,
-        runId,
-        graph,
-        clock,
-        source: "mcp",
-      }),
-    onAnswer: async (runId, choice, note, actor) => {
-      await recordAnswer({
-        log,
-        runId,
-        choice,
-        ...(note === undefined ? {} : { note }),
-        actor,
-      });
-    },
+    cancelSource: "mcp",
     onLog: (message) => {
       void onLog(message);
     },
-  });
-  loaded = registry;
-  const views = createViews({
-    registry,
-    store,
-    log,
-    cwd,
-    clock,
-    onLog: (message) => {
-      void onLog(message);
+    // An action may emit an event. Route it like an event from any other
+    // client; a rule file that does not read is reported and records only.
+    loadRules: async (registry) => {
+      try {
+        return await loadTriggerRules({
+          home,
+          registry,
+          onLog: (message) => {
+            void onLog(message);
+          },
+        });
+      } catch (error) {
+        await onLog(messageOf(error));
+        return [];
+      }
     },
   });
-  const kernel = new Kernel({
-    log,
-    registry,
-    home,
-    storeRoot,
-    clock,
-    onLog: (message) => {
-      void onLog(message);
-    },
-  });
-  return { views, log, registry, kernel, mcp: config.mcp, cwd, storeRoot };
+  return {
+    views: opened.views,
+    log: opened.log,
+    registry: opened.registry,
+    kernel: opened.kernel,
+    mcp: opened.config.mcp,
+    cwd: opened.cwd,
+    storeRoot: opened.storeRoot,
+  };
 }
 
 function toolContext(
