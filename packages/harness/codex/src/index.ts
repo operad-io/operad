@@ -316,6 +316,7 @@ export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
         async run(ctx: StepContext, params: unknown): Promise<PluginStepResult> {
           const at = "codex/agent";
           let promptText = "";
+          let skills: readonly string[] = [];
           let command: readonly string[] = [];
           let program = "";
           let mcpServers: AppServerMcpServer[] = [];
@@ -331,11 +332,13 @@ export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
             levelSetting: "effort",
             now,
             refusalExtra: { imageGenCalls: 0 },
-            afterDirectory(read) {
-              const skills = stringListParam(
-                read.input.skills === undefined ? read.flow.skills : read.input.skills,
+            early(input, flow) {
+              skills = stringListParam(
+                input.skills === undefined ? flow.skills : input.skills,
                 `${at}: params.skills`,
               );
+            },
+            afterDirectory(read) {
               promptText = [promptWithSkills(read.prompt, skills), read.note, read.answerNote]
                 .filter((part): part is string => part !== undefined)
                 .join("\n\n");

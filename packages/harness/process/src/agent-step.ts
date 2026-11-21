@@ -47,6 +47,15 @@ export interface AgentStepSpec<Level extends string> {
   /** Milliseconds now, from the injected clock. */
   readonly now: () => number;
   /**
+   * Reads a param this harness uses in its prompt, from the prompt on and
+   * before the shared note, directory and flags.
+   */
+  readonly early?: (
+    input: Readonly<Record<string, unknown>>,
+    flow: Readonly<Record<string, unknown>>,
+    prompt: string,
+  ) => void;
+  /**
    * Reads this harness's own settings and params, after the shared fields and
    * before the directory check. A returned result refuses the step.
    */
@@ -125,6 +134,7 @@ export async function readAgentStep<Level extends string>(
   const flow = isRecord(ctx.params) ? ctx.params : {};
 
   const prompt = text(input.prompt ?? flow.prompt, `${at}: params.prompt`);
+  spec.early?.(input, flow, prompt);
   const note = eventNote(ctx.trigger);
   const rawAskAnswer = input.askAnswer ?? flow.askAnswer;
   const answerNote = askNote(rawAskAnswer);
