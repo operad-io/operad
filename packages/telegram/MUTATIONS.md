@@ -174,3 +174,14 @@ T-0588 added the `bot-tidy` type, which stores one object per bot under the bot'
 | T-0607-M2 | packages/telegram/src/commands.ts | a tapped command's `chat:send` passed the bare chat id again | `a command in a Telegram chat > a tap runs the command on the typed chat id even when another type holds the same id` |
 | T-0607-M3 | packages/telegram/src/progress.ts | the transcript section was read by the bare chat id again | `the progress message of a reply > reads its chat by the typed id even when another type holds the same id` |
 | T-0607-M4 | packages/telegram/src/progress.ts | the running flag was read by the bare chat id again, so a working run looked ended and its progress message was deleted | `the progress message of a reply > reads its chat by the typed id even when another type holds the same id` |
+
+## T-0615 — a returned poll does not wait, and the state files stay bounded
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0615-M1 | packages/telegram/src/source.ts | the loop waited after every poll, so a message after an update waited for a poll interval | `the telegram source > a poll that returned is followed at once, and only a failed poll waits` |
+| T-0615-M2 | packages/telegram/src/state.ts | `readPending` returned every recorded item instead of the bounded state | `pending items go to Telegram > the pending state file keeps an open item and the newest answered ones` |
+| T-0615-M3 | packages/telegram/src/pending.ts | settling an answer wrote the whole state without pruning it | `pending items go to Telegram > a settle rewrites the pending state file no larger than its cap` |
+| T-0615-M4 | packages/telegram/src/state.ts | `readSent` returned every recorded send instead of the bounded state | `the sent state file > keeps an unfinished send and the done records within the margin of since` |
+| T-0615-M5 | packages/telegram/src/replies.ts | a full sweep did not move `since` forward, so no done record ever became old enough to drop | `the sent state file > a full sweep moves since forward and drops the done records behind it` |
+| T-0615-M6 | packages/telegram/src/state.ts | a done record written before `at` existed kept no time, so it never became old enough to drop | `the sent state file > a full sweep moves since forward and drops the done records behind it` |

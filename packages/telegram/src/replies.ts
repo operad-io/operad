@@ -20,7 +20,7 @@ import { messageOf, type SourceContext } from "@operad-io/engine";
 import { BotApiError, type BotApi } from "./api.ts";
 import { telegramChunks, type TelegramChunk } from "./format.ts";
 import { TELEGRAM_SOURCE } from "./source.ts";
-import { readSent, writeSent, type SentRecord, type SentState } from "./state.ts";
+import { readSent, writeSent, pruneSent, SENT_STATE_MARGIN_MS, type SentRecord, type SentState } from "./state.ts";
 
 /** How a failed send is tried again. */
 export interface RetryPolicy {
@@ -127,6 +127,7 @@ export class ReplySender {
 
   /** Sweeps every chat bound to Telegram once. */
   async sweepAll(): Promise<void> {
+    const startedAt = this.clock();
     const ids: string[] = [];
     let cursor: string | undefined;
     do {
@@ -137,6 +138,14 @@ export class ReplySender {
       cursor = page.next;
     } while (cursor !== undefined);
     await Promise.all(ids.map((id) => this.sweepChat(id)));
+    // Every message older than this sweep's start was read, so nothing before
+    // it can still be new. Moving `since` a margin behind the start lets the
+    // done records behind it go without risking a message written around the
+    // boundary.
+    const since = Math.max(this.state.since, startedAt - SENT_STATE_MARGIN_MS);
+    if (this.stopped || since <= this.state.since) return;
+    this.state = pruneSent({ since, sent: this.state.sent });
+    writeSent(this.ctx.home, this.state);
   }
 
   /** Sends the unsent replies and failure lines of one chat; one sweep of a chat runs at a time. */
@@ -190,7 +199,7 @@ export class ReplySender {
     let sent = record?.chunks ?? 0;
     let telegramId = record?.telegramId;
     if (chunks.length === 0) {
-      this.remember(key, { chunks: 0, done: true });
+      this.remember(key, { chunks: 0, done: true, at: message.at });
       return;
     }
     while (sent < chunks.length) {
@@ -203,12 +212,12 @@ export class ReplySender {
         if (this.stopped) return;
         const tries = error instanceof SendGaveUp ? error.tries : 1;
         await this.giveUp(chatId, message, sent, chunks.length, tries, error instanceof SendGaveUp ? error.last : error);
-        this.remember(key, { chunks: sent, ...(telegramId === undefined ? {} : { telegramId }), done: true, failed: true });
+        this.remember(key, { chunks: sent, ...(telegramId === undefined ? {} : { telegramId }), done: true, failed: true, at: message.at });
         return;
       }
       sent += 1;
       telegramId = id;
-      this.remember(key, { chunks: sent, telegramId, done: sent >= chunks.length });
+      this.remember(key, { chunks: sent, telegramId, done: sent >= chunks.length, at: message.at });
     }
   }
 
@@ -260,7 +269,7 @@ export class ReplySender {
   }
 
   private remember(key: string, record: SentRecord): void {
-    this.state = { since: this.state.since, sent: { ...this.state.sent, [key]: record } };
+    this.state = pruneSent({ since: this.state.since, sent: { ...this.state.sent, [key]: record } });
     writeSent(this.ctx.home, this.state);
   }
 

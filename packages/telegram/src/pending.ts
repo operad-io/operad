@@ -36,7 +36,7 @@ import { PENDING_NOTHING } from "./commands.ts";
 import { telegramChatsOf } from "./replies.ts";
 import { delay } from "./source.ts";
 import { telegramSettings, type TelegramSettings } from "./settings.ts";
-import { readPending, writePending, type PendingState, type SentItem, type SentOption } from "./state.ts";
+import { prunePending, readPending, writePending, type PendingState, type SentItem, type SentOption } from "./state.ts";
 
 /** The `via` of every answer this plugin gives. */
 const VIA = "telegram";
@@ -544,7 +544,7 @@ export class PendingSender implements PendingResponder {
   }
 
   private remember(key: string, item: SentItem): void {
-    this.state = { ...this.state, [key]: item };
+    this.state = prunePending({ ...this.state, [key]: item });
     writePending(this.ctx.home, this.state);
   }
 

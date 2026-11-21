@@ -14,12 +14,14 @@ import { Secret } from "@operad-io/engine";
 import {
   BotApiError,
   ReplySender,
+  SENT_STATE_MARGIN_MS,
   TelegramSource,
   createBotApi,
   markdownToTelegramHtml,
   readSent,
   splitMarkdown,
   telegramChunks,
+  writeSent,
 } from "../src/index.ts";
 import { FakeApi, createTelegramWorld, update, type TelegramWorld } from "./support.ts";
 
@@ -283,6 +285,51 @@ describe("sending a reply", () => {
     expect(api.sent).toHaveLength(1);
     expect(api.sent[0]).toMatchObject({ text: "**odd**" });
     expect(api.sent[0]?.parseMode).toBeUndefined();
+    await w.close();
+  });
+});
+
+describe("the sent state file", () => {
+  test("keeps an unfinished send and the done records within the margin of since", async () => {
+    const { w } = await bound();
+    const since = 1_700_000_000_000;
+    writeSent(w.home, {
+      since,
+      sent: {
+        "chat:1/theirs": { chunks: 1, done: true, at: since - SENT_STATE_MARGIN_MS - 1 },
+        "chat:1/open": { chunks: 0, done: false, at: since - SENT_STATE_MARGIN_MS * 10 },
+        "chat:1/kept": { chunks: 1, done: true, at: since - SENT_STATE_MARGIN_MS + 1 },
+      },
+    });
+
+    const state = readSent(w.home);
+    expect(state?.sent["chat:1/open"]).toBeDefined();
+    expect(state?.sent["chat:1/kept"]).toBeDefined();
+    expect(state?.sent["chat:1/theirs"]).toBeUndefined();
+    await w.close();
+  });
+
+  test("a full sweep moves since forward and drops the done records behind it", async () => {
+    const { w, chat } = await bound();
+    const api = new FakeApi();
+    const since = 1_700_000_000_000 - SENT_STATE_MARGIN_MS * 10;
+    writeSent(w.home, {
+      since,
+      sent: {
+        [`${chat}/m-old`]: { chunks: 1, done: true, at: since + 1 },
+        [`${chat}/m-legacy`]: { chunks: 1, done: true },
+      },
+    });
+    await reply(w, chat, "fresh");
+    await new ReplySender(w.ctx, { api, wait: instant }).sweepAll();
+
+    expect(api.sent.map((request) => request.text)).toEqual(["fresh"]);
+    const state = readSent(w.home);
+    expect(state?.since).toBeGreaterThan(since);
+    expect(state?.sent[`${chat}/m-old`]).toBeUndefined();
+    expect(state?.sent[`${chat}/m-legacy`]).toBeUndefined();
+    const fresh = Object.entries(state?.sent ?? {}).find(([key]) => key.startsWith(`${chat}/`));
+    expect(fresh?.[1]).toMatchObject({ done: true });
     await w.close();
   });
 });
