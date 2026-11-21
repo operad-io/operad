@@ -218,3 +218,4 @@ Each package keeps its mutation checks in `MUTATIONS.md`; a row names the broken
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0659-M1 | scripts/stress.sh | the stop ended with a bare `wait` after `wait <pids>`, so bash 5's finished job entry stalled the stop on Linux | `scripts/stress.sh > SIGKILL of the test runner stops a test file that ignores SIGTERM` |
+| T-0659-M2 | scripts/stress.sh | `starter_alive` judged the starter only by `lstart`, so a reused pid in the same second kept the parent watcher from stopping the script | `scripts/stress.sh > SIGKILL of the test runner stops a test file that ignores SIGTERM` |
