@@ -37,6 +37,7 @@ function counting(inner: LogBackend): { log: LogBackend; reads: Reads } {
       count("read");
       return inner.read(runId);
     },
+    run: (runId) => inner.run(runId),
     runs: (options) => {
       count(options?.active === true ? "runs(active)" : "runs(all)");
       return inner.runs(options);

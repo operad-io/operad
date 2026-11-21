@@ -320,6 +320,7 @@ function schemaNeedsWork(database: Database): boolean {
     !hasTable(database, "outcomes") ||
     !hasIndex(database, "runs_one_active") ||
     !hasIndex(database, "runs_object") ||
+    !hasIndex(database, "runs_start_input") ||
     inputsNeedMigration(database) ||
     !tableColumns(database, "runs").some((item) => item.name === "start_input_id") ||
     !tableColumns(database, "global_facts").some((item) => item.name === "unique_key") ||
@@ -334,6 +335,9 @@ function ensureSchema(database: Database, path: string): void {
     // the file at the same time waits in the busy handler, then finds it done.
     writeImmediate(database, () => {
       database.exec(SCHEMA);
+      database.exec(
+        "CREATE INDEX IF NOT EXISTS runs_start_input ON runs (start_input_id)",
+      );
       database.run("INSERT OR IGNORE INTO schema_version (id, version) VALUES (1, ?)", [
         SCHEMA_VERSION,
       ]);
@@ -375,6 +379,9 @@ function ensureSchema(database: Database, path: string): void {
     if (!runsHaveStartInput) {
       database.exec("ALTER TABLE runs ADD COLUMN start_input_id TEXT");
     }
+    database.exec(
+      "CREATE INDEX IF NOT EXISTS runs_start_input ON runs (start_input_id)",
+    );
     // A store written before global facts could be unique gains the column.
     const globalHasUniqueKey = tableColumns(database, "global_facts").some(
       (item) => item.name === "unique_key",
@@ -597,19 +604,27 @@ class SqliteLogBackend implements LogBackend {
     return this.#read(runId);
   }
 
+  async run(runId: string): Promise<RunInfo | undefined> {
+    this.#assertOpen();
+    const row = this.#runRow(runId);
+    return row === null ? undefined : this.#toRunInfo(row);
+  }
+
   async runs(options: RunsOptions = {}): Promise<RunInfo[]> {
     this.#assertOpen();
     const activeOnly = options.active === true ? 1 : 0;
     const object = options.object ?? null;
+    const startInputId = options.startInputId ?? null;
     const rows = this.#database
-      .query<RunRow, [number, string | null, string | null]>(
+      .query<RunRow, [number, string | null, string | null, string | null, string | null]>(
         "SELECT r.run_id, r.flow, r.object, r.started_at, r.ended_at, r.start_input_id, r.access, " +
           "COALESCE((SELECT MAX(seq) FROM facts WHERE run_id = r.run_id), 0) AS last_seq " +
           "FROM runs r " +
           "WHERE (? = 0 OR r.ended_at IS NULL) AND (? IS NULL OR r.object = ?) " +
+          "AND (? IS NULL OR r.start_input_id = ?) " +
           "ORDER BY r.started_at, r.run_id",
       )
-      .all(activeOnly, object, object);
+      .all(activeOnly, object, object, startInputId, startInputId);
     return rows.map((row) => this.#toRunInfo(row));
   }
 

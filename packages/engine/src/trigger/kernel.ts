@@ -682,8 +682,7 @@ export class Kernel {
   async emitRunEnd(runId: string, state: KernelState): Promise<void> {
     const status = state.endedStatus;
     if (status === null) return;
-    const runs = await this.log.runs();
-    const run = runs.find((candidate) => candidate.runId === runId);
+    const run = await this.log.run(runId);
     if (run === undefined) return;
     const type = `run.${status}`;
     const event: TriggerEvent = {
@@ -861,8 +860,8 @@ export class Kernel {
     flow: string,
     object: string,
   ): Promise<RunInfo | undefined> {
-    const active = await this.log.runs({ active: true });
-    return active.find((run) => run.flow === flow && run.object === object);
+    const active = await this.log.runs({ active: true, object });
+    return active.find((run) => run.flow === flow);
   }
 
   /** Appends a run fact once per input id; a sequence conflict is retried. */
@@ -1102,9 +1101,7 @@ export class Kernel {
       if (error instanceof ActiveRunError) {
         // This start created no run; the record must not be adopted later.
         this.store.dropPendingStart(pendingId);
-        const active = (await this.log.runs()).find(
-          (run) => run.runId === error.runId,
-        );
+        const active = await this.log.run(error.runId);
         if (active !== undefined) {
           if (inputId !== undefined && active.startInputId === inputId) {
             this.ensureStartFiles(active, inputId, params, object, input, access);
@@ -1167,8 +1164,7 @@ export class Kernel {
 
   /** The run the log says this input started, if any. */
   private async startedRun(inputId: string): Promise<RunInfo | undefined> {
-    const runs = await this.log.runs();
-    return runs.find((run) => run.startInputId === inputId);
+    return (await this.log.runs({ startInputId: inputId }))[0];
   }
 
   /** A candidate from a route outcome and the input it points at. */

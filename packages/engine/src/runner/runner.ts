@@ -788,8 +788,7 @@ export class Runner {
   /** The profile given to the runner, or the one the log recorded at start. */
   private async initialAccess(): Promise<JsonValue | undefined> {
     if (this.access !== undefined) return this.access;
-    const runs = await this.log.runs();
-    return runs.find((run) => run.runId === this.runId)?.access;
+    return (await this.log.run(this.runId))?.access;
   }
 
   /** The step type's own `timeoutSecs`, or the runner's step timeout. */
