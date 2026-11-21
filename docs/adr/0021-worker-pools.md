@@ -49,9 +49,9 @@ The `dev` flow uses the repository's `default` pool. Another flow names a pool i
 
 A worker may name `fallback: <another worker of the same repository>`. It triggers only when the harness reports that the model is unavailable or the quota is used up (`unavailable` and `usage_limit` of the model error) or when the harness process cannot start. A timeout (`wallTimeSecs`, `stallSecs`) does not trigger it: the worktree may hold half-finished work, which is for the lead to judge. The fallback takes the fallback worker's own `count` and its harness total, and waits when they are busy. A fallback chain is at most one step and has no cycle; both are checked at load.
 
-### D9: A worker with no fallback waits
+### D9: A worker with no fallback waits out a short outage, then goes to a person
 
-A pool whose workers name no fallback, such as an image pool with only `codex`, waits as the built-in `retry_wait` does when the quota is used up or the model is unavailable, and when waiting no longer works it turns into waiting for a person. It never switches to another worker, because another harness may lack the tool (an image tool) and would produce the result by other means (drawing with code).
+A pool whose workers name no fallback, such as an image pool with only `codex`, waits as the built-in `retry_wait` does when the model is unavailable, using the model's `retry_after_secs` when it gave one and the configured retry time otherwise, and when waiting no longer works it turns into waiting for a person. A usage limit, or a retry time longer than half an hour, does not wait: it turns into waiting for a person at once, with the model's message and the time it resets, so the owner can switch the worker or wait. It never switches to another worker, because another harness may lack the tool (an image tool) and would produce the result by other means (drawing with code).
 
 ### D10: The worker is recorded
 
