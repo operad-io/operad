@@ -33,9 +33,9 @@ describe("the running list", () => {
       load,
     );
     expect(waiting).toContain("verify queued (check place, 1 ahead)");
-    expect(waiting).toContain("(queued 9m 0s)");
+    expect(waiting).toContain("(queued 9m)");
     const taken = runningMarkdown([item({ queuedMs: 540_000 })], load);
-    expect(taken).toContain("| verify | 5.0s (queued 9m 0s) |");
+    expect(taken).toContain("| verify | 5s (queued 9m) |");
     expect(taken).not.toContain("queued (");
   });
 });
