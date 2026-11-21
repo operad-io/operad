@@ -495,6 +495,20 @@ client that does not know `tail` ignores it and keeps reading the section after
 each change event, as before. A client merges the running reply into its replies
 by `runId`.
 
+The most bytes one line of this stream may hold is `MAX_SSE_EVENT_BYTES`,
+65536 (64 KiB), the `data: ` prefix included. The iOS app already drops a line
+over 64 KiB, so an event at the limit is one it accepts; the terminal client
+uses the same line bound. The server never writes a longer line. A live part
+whose `data:` line would be longer is not cut. The server sends the object's
+ordinary change event instead, with the usual `id:` and `data: {"id":"<id>"}`,
+and the client reads the open live section again. That section read is not an
+event and may carry a `tail` longer than one event line; `full=true` skips the
+section's size cap. The raw streams in
+`packages/engine/test/fixtures/sse/` are the shared samples for client tests:
+one event exactly at the limit, one byte over that the server never sends, a
+line with no newline, a frame split across chunks, and a reset after a
+reconnect.
+
 An `id:` is an opaque string. It changes on every change event and starts with a
 value the process chose at boot, so an id from an earlier `serve` is not
 resumable. A client that reconnects with `Last-Event-ID` receives the events it

@@ -16,7 +16,7 @@ The result of `load` can carry more things beside the page: `mark`, an opaque po
 
 `events` says which object changed. A change of unfinished content also counts as the object having changed, and the kernel limits such change notifications to one per object per 250 milliseconds.
 
-A live section whose plugin supplies its changing part (D6) is also pushed as a `tail` event on the same event stream. It carries the object type, the section's id, its whole current `tail`, `status` and `retry`, and the plugin's `data`, in the shapes a section read uses, and is limited to one per object per 50 milliseconds. A `tail` event has no resume id and is not replayed: a client that reconnects reads the section again. A client that does not know `tail` ignores it and keeps its change-event reads.
+A live section whose plugin supplies its changing part (D6) is also pushed as a `tail` event on the same event stream. It carries the object type, the section's id, its whole current `tail`, `status` and `retry`, and the plugin's `data`, in the shapes a section read uses, and is limited to one per object per 50 milliseconds. A `tail` event has no resume id and is not replayed: a client that reconnects reads the section again. A client that does not know `tail` ignores it and keeps its change-event reads. Every line the event stream writes is at most `MAX_SSE_EVENT_BYTES`, 64 KiB. A live part that would be larger is never cut: the server sends the object's change event instead, and the client reads the open section again.
 
 ### D3: Compatibility
 
