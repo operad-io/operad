@@ -52,6 +52,12 @@ const kernelCommandPluginPath = fileURLToPath(
 const kernelNamePluginPath = fileURLToPath(
   new URL("../fixtures/kernel-plugin-name.ts", import.meta.url),
 );
+const kernelSettingsPluginPath = fileURLToPath(
+  new URL("../fixtures/kernel-settings-name.ts", import.meta.url),
+);
+const emitPluginPath = fileURLToPath(
+  new URL("../fixtures/emit.ts", import.meta.url),
+);
 const channelPluginPath = fileURLToPath(
   new URL("../fixtures/channel.ts", import.meta.url),
 );
@@ -1023,6 +1029,101 @@ describe("operad mcp", () => {
       expect(textOf(refused)).toContain("serve");
       expect(textOf(refused)).toContain("kernel verb");
       expect(textOf(refused)).not.toContain("plugin start");
+    } finally {
+      const closed = await child.close();
+      expect(closed.code).toBe(0);
+    }
+  });
+
+  test("command refuses settings, tui and check-load too", async () => {
+    const { home } = await makeHome({ plugins: [kernelSettingsPluginPath] });
+    const child = openSession(home);
+    try {
+      await child.request(1, "initialize", { protocolVersion: PROTOCOL_VERSION });
+      for (const [name, verb, args] of [
+        ["settings", "start", ["hello"]],
+        ["tui", "open", []],
+        ["check-load", "run", []],
+      ] as const) {
+        const refused = await child.request(2, "tools/call", {
+          name: "command",
+          arguments: { plugin: name, verb, args: [...args] },
+        });
+        expect(resultOf(refused).isError).toBe(true);
+        expect(textOf(refused)).toContain(name);
+        expect(textOf(refused)).toContain("kernel verb");
+        expect(textOf(refused)).not.toContain("plugin start");
+      }
+    } finally {
+      const closed = await child.close();
+      expect(closed.code).toBe(0);
+    }
+  });
+
+  test("answer refuses a run the log does not know", async () => {
+    const { home } = await makeHome();
+    const child = openSession(home);
+    try {
+      await child.request(1, "initialize", { protocolVersion: PROTOCOL_VERSION });
+      const refused = await child.request(2, "tools/call", {
+        name: "answer",
+        arguments: { runId: "run-nope", waitId: "wait:1", choice: "yes" },
+      });
+      expect(resultOf(refused).isError).toBe(true);
+      expect(textOf(refused)).toContain('no run "run-nope"');
+    } finally {
+      const closed = await child.close();
+      expect(closed.code).toBe(0);
+    }
+  });
+
+  test("act routes an event an action emits through the opened kernel", async () => {
+    const { home } = await makeHome({
+      plugins: [emitPluginPath],
+      mcp: { actions: ["talk:say"], confirmActions: [] },
+    });
+    putObject(home, "thing", "a", {});
+    const child = openSession(home);
+    try {
+      await child.request(1, "initialize", { protocolVersion: PROTOCOL_VERSION });
+      const said = await child.request(2, "tools/call", {
+        name: "act",
+        arguments: { action: "talk:say", id: "thing:a" },
+      });
+      expect(resultOf(said).isError).toBeUndefined();
+      expect(textOf(said).trim()).toBe("sent");
+    } finally {
+      const closed = await child.close();
+      expect(closed.code).toBe(0);
+    }
+    const log = openConfigLog(await readConfig(home));
+    const inputs = [];
+    try {
+      for await (const input of log.readInputs()) inputs.push(input);
+    } finally {
+      await log.close();
+    }
+    expect(
+      inputs.find((input) => input.source === "mcp" && input.sourceKey === "k1")?.payload,
+    ).toMatchObject({ type: "said", object: "thing:a" });
+  });
+
+  test("act sees whether a run is active, as the command line does", async () => {
+    const { home } = await makeHome({
+      plugins: [emitPluginPath],
+      mcp: { actions: ["talk:active"], confirmActions: [] },
+    });
+    putObject(home, "thing", "a", {});
+    const runId = await addRun(home, "thing:a", undefined);
+    const child = openSession(home);
+    try {
+      await child.request(1, "initialize", { protocolVersion: PROTOCOL_VERSION });
+      const active = await child.request(2, "tools/call", {
+        name: "act",
+        arguments: { action: "talk:active", id: "thing:a", args: { runId } },
+      });
+      expect(resultOf(active).isError).toBeUndefined();
+      expect(textOf(active).trim()).toBe("active");
     } finally {
       const closed = await child.close();
       expect(closed.code).toBe(0);

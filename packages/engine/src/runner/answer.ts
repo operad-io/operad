@@ -82,6 +82,8 @@ function answerInput(
  * a short-lived command never executes a step in its own process.
  */
 export async function recordAnswer(options: RecordAnswerOptions): Promise<void> {
+  const run = await options.log.run(options.runId);
+  if (run === undefined) throw new StateError(`no run "${options.runId}"`);
   const state = await readState(options.log, options.runId);
   const wait = state.wait;
   const named =

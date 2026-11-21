@@ -15,6 +15,7 @@ import type {
 import {
   fileProperties,
   HISTORY_SECTION,
+  KERNEL_VERBS,
   listPending,
   listRunning,
   listTypes,
@@ -68,25 +69,6 @@ export interface ToolDefinition {
   readonly description: string;
   readonly inputSchema: InputSchema;
 }
-
-/** Kernel command names; a plugin verb is never reachable through MCP. */
-const KERNEL_VERBS = new Set([
-  "init",
-  "serve",
-  "pending",
-  "history",
-  "running",
-  "flows",
-  "trigger",
-  "list",
-  "show",
-  "plugin",
-  "secret",
-  "http",
-  "pair",
-  "run-internal",
-  "mcp",
-]);
 
 /** The tools this server offers, in the order it lists them. */
 export const TOOLS = [
@@ -646,7 +628,7 @@ export async function runTool(
     case "command": {
       const plugin = String(args.plugin);
       const verb = String(args.verb);
-      if (KERNEL_VERBS.has(plugin)) {
+      if (KERNEL_VERBS.some((name) => name === plugin)) {
         return toolError(
           `"${plugin}" is a kernel verb; it is not reachable through MCP`,
         );
@@ -661,7 +643,7 @@ export async function runTool(
         resolved.plugin !== plugin ||
         resolved.command !== verb
       ) {
-        if (KERNEL_VERBS.has(verb)) {
+        if (KERNEL_VERBS.some((name) => name === verb)) {
           return toolError(
             `"${verb}" is a kernel verb; it is not reachable through MCP`,
           );

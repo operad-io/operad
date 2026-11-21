@@ -22,8 +22,6 @@ import {
   TriggerError,
   ViewError,
   applyInput,
-  cancelRun,
-  createViews,
   defaultOperadHome,
   ensureConfig,
   ensureInstalledPackage,
@@ -41,7 +39,6 @@ import {
   loadTriggerRules,
   lockHeld,
   messageOf,
-  openConfigLog,
   Notifier,
   CodeWatch,
   DEFAULT_CHECK_TIMEOUT_MS,
@@ -51,7 +48,9 @@ import {
   ensureHttpToken,
   listenAddressKind,
   pairLink,
+  openHome,
   openPluginStore,
+  KERNEL_VERBS,
   formatElapsed,
   parseObjectKey,
   readConfig,
@@ -59,7 +58,6 @@ import {
   readStoredStart,
   runningFromWorkspace,
   readStoredTrigger,
-  recordAnswer,
   removePackage,
   rotateHttpToken,
   serve,
@@ -82,13 +80,13 @@ import {
   type HttpServerHandle,
   type InstallRunner,
   type OperadConfig,
+  type OpenedHome,
   type RunInfo,
   type TriggerEvent,
   type TriggerRule,
   type ViewAction,
   type ViewObject,
   type ViewRow,
-  type Views,
 } from "@operad-io/engine";
 import { stopAllKeptWorkers } from "@operad-io/engine/platform";
 import { ChannelTypeError, runMcpServer } from "@operad-io/mcp";
@@ -258,27 +256,6 @@ export interface TuiCommand {
 
 export type TuiRunner = (command: TuiCommand) => Promise<number>;
 
-const KERNEL_VERBS = [
-  "init",
-  "serve",
-  "pending",
-  "history",
-  "running",
-  "flows",
-  "trigger",
-  "list",
-  "show",
-  "plugin",
-  "secret",
-  "settings",
-  "http",
-  "pair",
-  "tui",
-  "run-internal",
-  "check-load",
-  "mcp",
-] as const;
-
 const KERNEL_ACTIONS = ["operad:start", "operad:dismiss"] as const;
 
 const HELP = [
@@ -346,17 +323,7 @@ function rowLine(row: ViewRow, tty: boolean): string {
   return `${name}  ${state}${badge}  ${row.title}${note}`;
 }
 
-interface Context {
-  readonly home: string;
-  readonly cwd: string;
-  readonly config: OperadConfig;
-  readonly registry: PluginRegistry;
-  readonly log: LogBackend;
-  readonly storeRoot: string;
-  readonly views: Views;
-  readonly disabled: readonly string[];
-  /** What did not load, one line each, as the registry reported it. */
-  readonly problems: string[];
+interface Context extends OpenedHome {
   /** The code this process loaded, when the caller asked to keep track. */
   readonly code: CodeSnapshot | undefined;
 }
@@ -393,99 +360,54 @@ export async function openContext(
   // Taken before anything loads: a file that changes while loading then
   // counts as changed, never as loaded.
   const code = trackCode ? takeCodeSnapshot(home, config.plugins) : undefined;
-  const problems: string[] = [];
-  const storeRoot = storeRootOf(config);
-  const store = openPluginStore({
-    backend: config.store.backend,
-    root: storeRoot,
-    follow,
-  });
-  const log = openConfigLog(config, { follow });
-  let loaded: PluginRegistry | undefined;
-  const registry = await loadPluginRegistry({
-    installOnEnable: INSTALL_ON_ENABLE,
+  // The kernel that emitted events use. `serve` and each command that builds
+  // a kernel with rules hands it over, so serve does not build a second one.
+  let eventKernel: Kernel | undefined;
+  let opened: OpenedHome | undefined;
+  const context = await openHome({
     home,
     cwd,
-    store,
-    kernelVerbs: KERNEL_VERBS,
-    onLog: (message) => {
-      problems.push(message);
-      io.error(`${message}\n`);
-    },
-    onAnswer: async (runId, choice, note, actor) => {
-      const run = await log.run(runId);
-      if (run === undefined) throw new StateError(`no run "${runId}"`);
-      await recordAnswer({
-        log,
-        runId,
-        choice,
-        ...(note === undefined ? {} : { note }),
-        actor,
-      });
+    config,
+    follow,
+    installOnEnable: INSTALL_ON_ENABLE,
+    ...(scope === undefined ? {} : { scope }),
+    ...(viewsCwd === undefined ? {} : { viewsCwd }),
+    cancelSource: "cli",
+    onLog: (message) => io.error(`${message}\n`),
+    afterAnswer: async () => {
       if (!lockHeld(serveLockPath(home))) {
         io.write("recorded; it runs when `operad serve` is running\n");
       }
     },
     onEvent: async (event) => {
-      if (loaded === undefined) return;
+      if (eventKernel !== undefined) {
+        await eventKernel.receive(event);
+        return;
+      }
+      if (opened === undefined) return;
       const rules = await loadTriggerRules({
         home,
-        registry: loaded,
+        registry: opened.registry,
         onLog: (message) => io.error(`${message}\n`),
       });
       const kernel = new Kernel({
-        log,
-        registry: loaded,
+        log: opened.log,
+        registry: opened.registry,
         home,
-        storeRoot,
+        storeRoot: opened.storeRoot,
         rules,
         onLog: (message) => io.error(`${message}\n`),
       });
       await kernel.receive(event);
     },
-    onCancelRun: (runId, graph) =>
-      cancelRun({
-        log,
-        flow: (name) => loaded?.flow(name)?.flow,
-        runId,
-        graph,
-        source: "cli",
-      }),
-    onRunActive: async (runId) => (await log.runs({ active: true })).some((run) => run.runId === runId),
-  }).catch((error: unknown) => {
-    // A retry opens again: what this attempt opened must not stay open.
-    for (const close of [() => closePluginStore(store), () => log.close()]) {
-      try {
-        void Promise.resolve(close()).catch(() => undefined);
-      } catch {
-        // The load error below is the one to report.
-      }
-    }
-    throw error;
   });
-  loaded = registry;
+  opened = context;
   return {
-    home,
-    cwd,
-    config,
-    registry,
-    log,
-    storeRoot,
-    problems,
+    ...context,
     code,
-    disabled: config.plugins
-      .filter((entry) => !entry.enabled)
-      .map((entry) => entry.name)
-      .filter((name): name is string => name !== undefined),
-    views: createViews({
-      registry,
-      store,
-      log,
-      cwd: viewsCwd ?? cwd,
-      follow,
-      ...(scope === undefined ? {} : { scope }),
-      onLog: (message) => io.error(`${message}\n`),
-    }),
+    useKernelForEvents(kernel: Kernel): void {
+      eventKernel = kernel;
+    },
   };
 }
 
@@ -505,6 +427,7 @@ function kernelFor(
   });
   // A source plugin's `pending` shows the candidates HTTP shows.
   context.views.useCandidates(kernel);
+  context.useKernelForEvents(kernel);
   return kernel;
 }
 
