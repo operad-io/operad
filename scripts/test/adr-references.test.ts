@@ -19,10 +19,9 @@ const CITATIONS: readonly RegExp[] = [
   /\bdecisions?\s+(?:no\.?\s*)?\d+\b(?![\s-]*(?:seconds?|minutes?|hours?|days?|weeks?|months?|years?|times?)\b)/i,
   // "item 13 of operad.md" and "operad.md item 13".
   /\b(?:items?|points?|sections?)\s+(?:no\.?\s*)?\d+\s+(?:of|in)\s+[`\w./-]+\.md\b/i,
-  // The path takes one class character before ".md", not `+`: this pattern has
-  // no anchor, so a repeated class rescans every offset of a very long line,
-  // and the SSE fixtures hold 64 KiB lines.
-  /[`\w./-]\.md\s+(?:items?|points?|sections?)\s+(?:no\.?\s*)?\d+\b/i,
+  // Start at a token boundary; matching from every position backtracks for
+  // seconds over a line of tens of kilobytes, such as an SSE fixture.
+  /(?:^|[^\w./`-])[`\w/-]+(?:\.[`\w/-]+)*\.md\s+(?:items?|points?|sections?)\s+(?:no\.?\s*)?\d+\b/i,
   // "第 4 条", "第 4 项".
   /第\s*\d+\s*(?:条|项)/,
 ];
