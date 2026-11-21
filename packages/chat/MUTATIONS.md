@@ -579,3 +579,4 @@ are append-only, so the old lines stay as history.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0635-M7 | packages/chat/src/views.ts | a tool call's duration added a second | `chat entries > the transcript shows done, failed, blocked and denied tool calls, and thinking as an unlabeled quote` |
+| T-0635-M14 | packages/chat/src/index.ts | a reply's first output added a second, so `1s` read `2s` | `chat:status > shows each line: agent, model, effort, reply, waiting, session usage and the last reply` |

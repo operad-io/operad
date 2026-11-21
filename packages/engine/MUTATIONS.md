@@ -1287,3 +1287,4 @@ resume window`. Rows are append-only, so the old lines stay as history.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0635-M1 | packages/engine/src/util.ts | `formatElapsed` treated a value under one second as `0s` instead of `<1s` | `formatElapsed > matches the shared sample table` |
+| T-0635-M9 | packages/engine/src/views/history.ts | a step attempt's duration added a minute, so `8m 1s` read `9m 1s` | `readable run history > one line per step attempt with time, outcome and duration` |
