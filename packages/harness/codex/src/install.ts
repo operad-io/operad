@@ -10,6 +10,9 @@
 import { closeSync, openSync, readSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { HarnessModelCapability, HarnessModelInfo, HarnessModels } from "@operad-io/engine";
+import { versionAtLeast } from "@operad-io/harness-process";
+
+export { versionAtLeast };
 
 /** How long one probe may take. */
 const PROBE_TIMEOUT_MS = 30_000;
@@ -147,25 +150,6 @@ function versionOf(stdout: string): string | undefined {
   if (line === undefined) return undefined;
   const found = /\d+\.\d+\.\d+\S*/.exec(line);
   return found?.[0];
-}
-
-function versionParts(version: string): readonly [number, number, number] | undefined {
-  const found = /^(\d+)\.(\d+)\.(\d+)/.exec(version);
-  if (found === null) return undefined;
-  return [Number(found[1]), Number(found[2]), Number(found[3])];
-}
-
-/** Whether `version` is at least `floor`; an unreadable version is not compared. */
-export function versionAtLeast(version: string, floor: string): boolean {
-  const left = versionParts(version);
-  const right = versionParts(floor);
-  if (left === undefined || right === undefined) return true;
-  for (let index = 0; index < 3; index += 1) {
-    const a = left[index] ?? 0;
-    const b = right[index] ?? 0;
-    if (a !== b) return a > b;
-  }
-  return true;
 }
 
 /** The login kind from `codex login status`: only the kind, never an account or a key. */

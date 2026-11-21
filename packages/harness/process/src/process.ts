@@ -219,10 +219,10 @@ function emptyOutcome(overrides: Partial<AgentRunOutcome>): AgentRunOutcome {
 }
 
 /** Why one run is being stopped; `cancel` is the host's signal. */
-type StopKind = "cancel" | "wall" | "stall" | "line";
+export type StopKind = "cancel" | "wall" | "stall" | "line";
 
 /** What one run watches: the wall time, a stalled stream, the host's signal and mid-run messages. */
-interface WatchedRun {
+export interface WatchedRun {
   /** Counts a tool call in a line and restarts the stall timer; call for every line. */
   line(line: string): void;
   /** Starts the wall and stall timers; before the run's program is spoken to. */
@@ -237,7 +237,7 @@ interface WatchedRun {
   readonly stoppingFor: StopKind | undefined;
 }
 
-interface WatchOptions {
+export interface WatchOptions {
   readonly clock: Clock;
   readonly wallMs: number;
   readonly stallMs: number;
@@ -255,7 +255,7 @@ interface WatchOptions {
  * restarts the stall only while no tool call is open: a tool may run as long as
  * it needs, and only the wall limit watches it.
  */
-function watchRun(options: WatchOptions): WatchedRun {
+export function watchRun(options: WatchOptions): WatchedRun {
   const { clock } = options;
   let finished = false;
   let stoppingFor: StopKind | undefined;
@@ -327,7 +327,7 @@ function watchRun(options: WatchOptions): WatchedRun {
  * `over` decides whether the count is too high: a reply that just finished
  * trims above the cap, and a reply about to start a worker trims at it.
  */
-async function trimKept(
+export async function trimKept(
   keep: KeptRunOptions,
   clock: Clock,
   over: (count: number, max: number) => boolean,

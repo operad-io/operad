@@ -31,6 +31,7 @@ export * from "./timings.ts";
 export * from "./limit.ts";
 export * from "./tool-events.ts";
 export * from "./usage.ts";
+export * from "./version.ts";
 export * from "./wire.ts";
 export * from "./worker-entry.ts";
 export * from "./worker-step.ts";

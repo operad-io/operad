@@ -279,6 +279,7 @@ describe("codex/agent: a prompt run", () => {
     expect(refused.result).toBe("failed");
     expect(dataOf(refused).reason).toBe("invalid_args");
     expect(String(dataOf(refused).message)).toContain('unknown entry "--sandbox"');
+    expect(dataOf(refused).imageGenCalls).toBe(0);
   });
 
   test("operad's tools and mounted servers reach Codex as mcp_servers config", async () => {

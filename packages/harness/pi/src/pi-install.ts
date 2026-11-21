@@ -6,7 +6,8 @@
  * `exports["."]` names is the library. Nothing here installs or bundles pi.
  */
 
-import { messageOf } from "@operad-io/engine";
+import { messageOf, readVersionText } from "@operad-io/engine";
+import { strictVersionCompare } from "@operad-io/harness-process";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -104,53 +105,8 @@ export function entryOf(exportsField: unknown): string | undefined {
   return undefined;
 }
 
-interface Semver {
-  readonly core: readonly [number, number, number];
-  readonly pre: readonly string[];
-}
-
-function parseSemver(version: string): Semver | undefined {
-  const match = /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+.*)?$/.exec(version.trim());
-  if (match === null) return undefined;
-  return {
-    core: [Number(match[1]), Number(match[2]), Number(match[3])],
-    pre: match[4] === undefined ? [] : match[4].split("."),
-  };
-}
-
 /** Negative, zero or positive as `a` is below, equal to or above `b`. */
-export function compareVersions(a: string, b: string): number {
-  const left = parseSemver(a);
-  const right = parseSemver(b);
-  if (left === undefined || right === undefined) {
-    throw new PiInstallError(`not a version: ${left === undefined ? a : b}`);
-  }
-  for (let at = 0; at < 3; at += 1) {
-    const diff = (left.core[at] ?? 0) - (right.core[at] ?? 0);
-    if (diff !== 0) return diff;
-  }
-  // A prerelease is below its release.
-  if (left.pre.length === 0 && right.pre.length === 0) return 0;
-  if (left.pre.length === 0) return 1;
-  if (right.pre.length === 0) return -1;
-  for (let at = 0; at < Math.max(left.pre.length, right.pre.length); at += 1) {
-    const l = left.pre[at];
-    const r = right.pre[at];
-    if (l === undefined) return -1;
-    if (r === undefined) return 1;
-    const ln = /^\d+$/.test(l);
-    const rn = /^\d+$/.test(r);
-    if (ln && rn) {
-      const diff = Number(l) - Number(r);
-      if (diff !== 0) return diff;
-    } else if (ln !== rn) {
-      return ln ? -1 : 1;
-    } else if (l !== r) {
-      return l < r ? -1 : 1;
-    }
-  }
-  return 0;
-}
+export const compareVersions = strictVersionCompare((version) => new PiInstallError(`not a version: ${version}`));
 
 /** Finds the installed pi and checks its version against the floor. */
 export function findPi(command: string = DEFAULT_PI_COMMAND, options: FindPiOptions = {}): PiInstall {
@@ -191,7 +147,7 @@ export function findPi(command: string = DEFAULT_PI_COMMAND, options: FindPiOpti
   }
 
   const version = manifest.version;
-  if (typeof version !== "string" || parseSemver(version) === undefined) {
+  if (typeof version !== "string" || readVersionText(version) === undefined) {
     throw new PiInstallError(`${join(packageDir, "package.json")}: version is missing or not a version`);
   }
   if (compareVersions(version, floor) < 0) {

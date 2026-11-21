@@ -26,6 +26,58 @@ function compare(left: Version, right: Version): number {
   return 0;
 }
 
+/** A full version as text, with the prerelease parts a range does not read. */
+export interface VersionText {
+  readonly major: number;
+  readonly minor: number;
+  readonly patch: number;
+  readonly prerelease: readonly string[];
+}
+
+/**
+ * Reads a full `x.y.z` version, with an optional leading `v`, a prerelease and
+ * a build suffix. Undefined for anything else, including a two-part version.
+ */
+export function readVersionText(value: string): VersionText | undefined {
+  const match = /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+.*)?$/.exec(value.trim());
+  if (match === null) return undefined;
+  return {
+    major: Number(match[1]),
+    minor: Number(match[2]),
+    patch: Number(match[3]),
+    prerelease: match[4] === undefined ? [] : match[4].split("."),
+  };
+}
+
+/**
+ * Negative, zero or positive as version `a` is below, equal to or above `b`.
+ * A prerelease is below its release, and its parts are compared as semver does.
+ */
+export function compareVersionText(left: VersionText, right: VersionText): number {
+  const core = compare(left, right);
+  if (core !== 0) return core;
+  if (left.prerelease.length === 0 && right.prerelease.length === 0) return 0;
+  if (left.prerelease.length === 0) return 1;
+  if (right.prerelease.length === 0) return -1;
+  for (let at = 0; at < Math.max(left.prerelease.length, right.prerelease.length); at += 1) {
+    const l = left.prerelease[at];
+    const r = right.prerelease[at];
+    if (l === undefined) return -1;
+    if (r === undefined) return 1;
+    const ln = /^\d+$/.test(l);
+    const rn = /^\d+$/.test(r);
+    if (ln && rn) {
+      const diff = Number(l) - Number(r);
+      if (diff !== 0) return diff;
+    } else if (ln !== rn) {
+      return ln ? -1 : 1;
+    } else if (l !== r) {
+      return l < r ? -1 : 1;
+    }
+  }
+  return 0;
+}
+
 function atLeast(value: Version, base: Version): boolean {
   return compare(value, base) >= 0;
 }
