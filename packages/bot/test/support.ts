@@ -70,7 +70,7 @@ function fakeHarness(name: string, calls: Call[]) {
 }
 
 /** Writes the `bot` section the way a person editing config.json would. */
-export function writeConfig(home: string, bots: Record<string, unknown>): void {
+export function writeBotConfig(home: string, bots: Record<string, unknown>): void {
   mkdirSync(home, { recursive: true });
   writeFileSync(
     join(home, "config.json"),
@@ -93,7 +93,7 @@ export async function rig(
   const root = await mkdtemp(join(tmpdir(), "bot-test-"));
   roots.push(root);
   const home = join(root, "home");
-  writeConfig(home, bots);
+  writeBotConfig(home, bots);
   const calls: Call[] = [];
   const store = new MemoryPluginStore({ root: join(root, "store") });
   const registry = new PluginRegistry(

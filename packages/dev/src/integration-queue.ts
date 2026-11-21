@@ -32,6 +32,7 @@ import {
   withLockFile,
   writeJsonAtomicSync,
 } from "@operad-io/engine/platform";
+import { isRecord } from "@operad-io/engine";
 import { repositoryPathKey } from "./repository-key.ts";
 
 /**
@@ -156,8 +157,8 @@ function writeAtomic(path: string, value: unknown): void {
 function parseTicket(text: string): Ticket | undefined {
   try {
     const value: unknown = JSON.parse(text);
-    if (typeof value !== "object" || value === null) return undefined;
-    const record = value as Record<string, unknown>;
+    if (!isRecord(value)) return undefined;
+    const record = value;
     if (
       typeof record.seq !== "number" ||
       typeof record.task !== "string" ||

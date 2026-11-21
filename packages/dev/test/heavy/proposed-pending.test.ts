@@ -14,7 +14,7 @@ import plugin from "../../src/index.ts";
 import { saveTaskGuarded } from "../../src/steps.ts";
 import { trackFlakyTests } from "../../src/flaky.ts";
 import { repositoryMark } from "../../src/marks.ts";
-import { bareId, listAll, planData, repositoryData, taskData } from "../../src/model.ts";
+import { idOfKey, listAll, planData, repositoryData, taskData } from "../../src/model.ts";
 import { addPlan, addRepository, addTask, cancelTask, confirmPlan, confirmTask } from "../../src/service.ts";
 import { cleanupTempRoots, guardLockHandles, makeGitRepository, storeAt, tempRoot, setTaskPhase } from "../support.ts";
 
@@ -161,7 +161,7 @@ describe("a proposed task is pending", () => {
     expect(planItems[0]?.covers).toHaveLength(1);
     await confirmPlan(s.store, draft.id);
     expect((await s.items()).filter((item) => item.object === `plan:${draft.id}`)).toEqual([]);
-    expect(bareId(draft.id)).toBeTruthy();
+    expect(idOfKey(draft.id)).toBeTruthy();
   });
 });
 

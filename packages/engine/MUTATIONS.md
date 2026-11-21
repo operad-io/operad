@@ -1362,3 +1362,10 @@ resume window`. Rows are append-only, so the old lines stay as history.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0627-M5 | packages/engine/src/plugin/semver.ts | `compareVersionText` stopped after the core and made every prerelease equal to its release | `compareVersionText > puts a prerelease below its release` |
+
+## T-0655 — config writes the reviews found untested
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0655-M1 | packages/engine/src/config/config.ts | `addPluginEntry` wrote config.json with a plain `writeFile` instead of the atomic write | `writing config.json whole > adding a plugin entry writes the file atomically` |
+| T-0655-M2 | packages/engine/src/config/config.ts | `addDefaultPlugins` wrote config.json with a plain `writeFile` instead of the atomic write | `writing config.json whole > filling a missing plugins section writes the file atomically` |

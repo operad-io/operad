@@ -18,7 +18,7 @@ import {
 import {
   freePort,
   makeHarness,
-  tempRoot,
+  testRoot,
   type TuiHarness,
 } from "../support.ts";
 
@@ -355,7 +355,7 @@ describe("TuiClient", () => {
   });
 
   test("a missing http section means the default address", async () => {
-    const root = await tempRoot();
+    const root = await testRoot();
     try {
       const home = join(root, "home");
       mkdirSync(home, { recursive: true });

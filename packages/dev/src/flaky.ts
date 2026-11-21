@@ -16,7 +16,7 @@ import type { ObjectStore, StoredObject } from "@operad-io/engine";
 import { isRecord, messageOf, type SecretStore } from "@operad-io/engine";
 import type { MachineLoad } from "@operad-io/engine/platform";
 import type { CheckLoad } from "./notcode.ts";
-import { bareId, changeClock, isOpenTask, keyRepository, listAll, parseId, planData, planState, splitBrief, taskData, type PlanData, type RepositoryData } from "./model.ts";
+import { idOfKey, changeClock, isOpenTask, keyRepository, listAll, parseId, planData, planState, splitBrief, taskData, type PlanData, type RepositoryData } from "./model.ts";
 import { anchoredPattern, shellQuote } from "./rerun.ts";
 import type { FailedRerun } from "./settings.ts";
 import { addConfirmedPlanLocked, addTaskLocked, withRepoLock } from "./service.ts";
@@ -353,7 +353,7 @@ async function newestConfirmedPlan(
   for (const object of await listAll(store, "plan")) {
     const plan = planData(object.data);
     if (plan.repository !== repository || plan.status !== "confirmed") continue;
-    const number = parseId(bareId(object.id), "plan")?.number ?? -1;
+    const number = parseId(idOfKey(object.id), "plan")?.number ?? -1;
     if (best === undefined || number > best.number) best = { object, number };
   }
   return best?.object;
@@ -380,7 +380,7 @@ async function flakyPlanFor(
 ): Promise<{ readonly plan: StoredObject; readonly missing: string | undefined }> {
   let missing: string | undefined;
   if (configured !== undefined) {
-    const named = await store.get("plan", `${repository.name}/${bareId(configured)}`);
+    const named = await store.get("plan", `${repository.name}/${idOfKey(configured)}`);
     if (named !== undefined) {
       const data = planData(named.data);
       if (data.repository === repository.name && !isEnded(data)) {
@@ -394,13 +394,13 @@ async function flakyPlanFor(
       const data = planData(object.data);
       return (
         data.repository === repository.name &&
-        parseId(bareId(object.id), "plan")?.slug === FLAKY_PLAN_SLUG &&
+        parseId(idOfKey(object.id), "plan")?.slug === FLAKY_PLAN_SLUG &&
         !isEnded(data)
       );
     })
     .sort(
       (x, y) =>
-        (parseId(bareId(y.id), "plan")?.number ?? -1) - (parseId(bareId(x.id), "plan")?.number ?? -1),
+        (parseId(idOfKey(y.id), "plan")?.number ?? -1) - (parseId(idOfKey(x.id), "plan")?.number ?? -1),
     )[0];
   if (own !== undefined) return { plan: own, missing };
   const model = await newestConfirmedPlan(store, repository.name);
@@ -528,7 +528,7 @@ export async function trackFlakyTests(input: FlakyInput): Promise<string | undef
         // the count restarts when that task ends, however few passes came before.
         const existing = await namingTask(store, fresh.name, name);
         if (existing !== undefined) {
-          record = { ...record, task: bareId(existing.id) };
+          record = { ...record, task: idOfKey(existing.id) };
           await store.put(FLAKY_TYPE, key, writableOf(record), "dev:flaky-task");
         }
       }
@@ -579,7 +579,7 @@ async function propose(
     await store.put(
       FLAKY_TYPE,
       key,
-      writableOf({ ...record, task: bareId(existing.id) }),
+      writableOf({ ...record, task: idOfKey(existing.id) }),
       "dev:flaky-task",
     );
     return undefined;
@@ -589,7 +589,7 @@ async function propose(
   const fallback =
     missing === undefined
       ? undefined
-      : `check.flakyPlan "${missing}" does not name an open plan of this repository; the task went into "${bareId(plan.id)}"`;
+      : `check.flakyPlan "${missing}" does not name an open plan of this repository; the task went into "${idOfKey(plan.id)}"`;
   try {
     const task = await addTaskLocked(
       store,
@@ -605,7 +605,7 @@ async function propose(
     await store.put(
       FLAKY_TYPE,
       key,
-      writableOf({ ...record, task: bareId(task.id) }),
+      writableOf({ ...record, task: idOfKey(task.id) }),
       "dev:flaky-task",
     );
     return fallback;

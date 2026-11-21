@@ -638,7 +638,7 @@ export type TuiStateEvent =
       readonly generation?: number | undefined;
     }
   | {
-      readonly type: "page-error";
+      readonly type: "list-error";
       readonly tabId: string;
       readonly message: string;
       readonly version?: number | undefined;
@@ -2800,7 +2800,7 @@ function applyChildren(
   }));
 }
 
-function applyPageError(
+function applyListError(
   state: TuiState,
   tabId: string,
   message: string,
@@ -2865,8 +2865,8 @@ export function reduce(state: TuiState, event: TuiStateEvent): TuiState {
       return state.filterRequest === undefined
         ? state
         : { ...state, filterRequest: undefined };
-    case "page-error":
-      return applyPageError(state, event.tabId, event.message, event.version);
+    case "list-error":
+      return applyListError(state, event.tabId, event.message, event.version);
     case "object":
       return applyObject(state, event.object, event.version);
     case "object-error":

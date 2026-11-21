@@ -6,7 +6,7 @@ import type { CommandContext } from "@operad-io/engine";
 import { commands } from "../../src/commands.ts";
 import { listRerunCounts, recordRerunPasses } from "../../src/reruns.ts";
 import { failureExcerpt, flakyTasksByName, flakyTestHooks, namesTest, trackFlakyTests } from "../../src/flaky.ts";
-import { appendChange, bareId, changeClock, listAll, planData, repositoryData, taskData, type RepositoryData } from "../../src/model.ts";
+import { appendChange, idOfKey, changeClock, listAll, planData, repositoryData, taskData, type RepositoryData } from "../../src/model.ts";
 import { addPlan, addRepository, addTask, cancelPlan, cancelTask, confirmPlan, setAuto, setPriority } from "../../src/service.ts";
 import { validateDevSettings, type FailedRerun } from "../../src/settings.ts";
 import { cleanupTempRoots, guardLockHandles, makeGitRepository, storeAt, tempRoot, setTaskPhase } from "../support.ts";
@@ -89,12 +89,12 @@ describe("a flaky test proposes a task", () => {
     const tasks = await s.flaky();
     expect(tasks).toHaveLength(1);
     const task = taskData(tasks[0]?.data ?? {});
-    expect(bareId(tasks[0]?.id ?? "")).toMatch(/^T-\d{4}-flaky-widget-keeps-its-shape$/);
+    expect(idOfKey(tasks[0]?.id ?? "")).toMatch(/^T-\d{4}-flaky-widget-keeps-its-shape$/);
     expect(task.title).toBe(`Fix the flaky test: ${TEST}`);
     expect(task.area).toBeUndefined();
     expect(task.phase).toBe("proposed");
-    const own = (await listAll(s.store, "plan")).find((object) => bareId(object.id).endsWith("-flaky-tests"));
-    expect(task.plan).toBe(bareId(own?.id ?? ""));
+    const own = (await listAll(s.store, "plan")).find((object) => idOfKey(object.id).endsWith("-flaky-tests"));
+    expect(task.plan).toBe(idOfKey(own?.id ?? ""));
     expect(task.brief).toContain(`\`${TEST}\` in \`${FILE}\``);
     expect(task.brief).toContain("2 times");
     expect(task.brief).toContain("- T-0001-a at 2026-11-08T10:01:00.000Z");
@@ -209,7 +209,7 @@ describe("a flaky test proposes a task", () => {
     expect(await s.flaky()).toHaveLength(0);
     // The open task is the one that counts: reruns shows it, and its end restarts the count.
     const mine = (await listAll(s.store, "task")).find((object) => taskData(object.data).title === "Look at the shape");
-    expect((await flakyTasksByName(s.store)).get(TEST)).toBe(bareId(mine?.id ?? ""));
+    expect((await flakyTasksByName(s.store)).get(TEST)).toBe(idOfKey(mine?.id ?? ""));
     await setTaskPhase(s.store, mine?.id ?? "", "merged");
     await s.track("T-0002-b", logWith(TEST), 2);
     expect(await s.flaky()).toHaveLength(0);
@@ -230,7 +230,7 @@ describe("a flaky test proposes a task", () => {
     const s = await setup(true);
     const mine = await addTask(s.store, { plan: s.planId ?? "", slug: "mine", title: "Look at the shape", brief: `The flaky one:\n${TEST}\n` });
     await s.track("T-0001-a", logWith(TEST), 2);
-    expect((await flakyTasksByName(s.store)).get(TEST)).toBe(bareId(mine.id));
+    expect((await flakyTasksByName(s.store)).get(TEST)).toBe(idOfKey(mine.id));
     await setTaskPhase(s.store, mine.id, "merged");
     await s.track("T-0002-b", logWith(TEST), 2);
     expect(await s.flaky()).toHaveLength(0);
@@ -347,7 +347,7 @@ describe("a flaky test proposes a task", () => {
     const plans = await listAll(s.store, "plan");
     expect(plans).toHaveLength(1);
     const plan = planData(plans[0]?.data ?? {});
-    expect(bareId(plans[0]?.id ?? "")).toMatch(/^P-\d{4}-flaky-tests$/);
+    expect(idOfKey(plans[0]?.id ?? "")).toMatch(/^P-\d{4}-flaky-tests$/);
     expect([plan.title, plan.status, plan.auto, plan.priority]).toEqual(["Flaky tests", "confirmed", "off", "P3"]);
     expect(await s.flaky()).toHaveLength(2);
     expect(s.notices).toEqual([]);
@@ -358,17 +358,17 @@ describe("a flaky test proposes a task", () => {
     await setAuto(s.store, s.planId ?? "", "merge");
     await setPriority(s.store, s.planId ?? "", "P1");
     await s.track("T-0001-a", logWith(TEST), 1);
-    const own = (await listAll(s.store, "plan")).find((object) => bareId(object.id).endsWith("-flaky-tests"));
+    const own = (await listAll(s.store, "plan")).find((object) => idOfKey(object.id).endsWith("-flaky-tests"));
     const plan = planData(own?.data ?? {});
     expect([plan.auto, plan.priority]).toEqual(["merge", "P1"]);
-    expect(taskData((await s.flaky())[0]?.data ?? {}).plan).toBe(bareId(own?.id ?? ""));
+    expect(taskData((await s.flaky())[0]?.data ?? {}).plan).toBe(idOfKey(own?.id ?? ""));
   });
 
   test("check.flakyPlan names the plan the tasks go into", async () => {
     const s = await setup(true);
-    s.options.plan = bareId(s.planId ?? "");
+    s.options.plan = idOfKey(s.planId ?? "");
     await s.track("T-0001-a", logWith(TEST), 1);
-    expect(taskData((await s.flaky())[0]?.data ?? {}).plan).toBe(bareId(s.planId ?? ""));
+    expect(taskData((await s.flaky())[0]?.data ?? {}).plan).toBe(idOfKey(s.planId ?? ""));
     expect(await listAll(s.store, "plan")).toHaveLength(1);
   });
 
@@ -378,18 +378,18 @@ describe("a flaky test proposes a task", () => {
     const only = await addTask(s.store, { plan: done.id, slug: "only", title: "Only" });
     await confirmPlan(s.store, done.id);
     await setTaskPhase(s.store, only.id, "merged");
-    s.options.plan = bareId(done.id);
+    s.options.plan = idOfKey(done.id);
     await s.track("T-0001-a", logWith(TEST), 1);
     s.options.plan = "P-9999-missing";
     await s.track("T-0002-b", logWith("other"), 1, ["other"]);
-    const flakyPlans = (await listAll(s.store, "plan")).filter((object) => bareId(object.id).endsWith("-flaky-tests"));
+    const flakyPlans = (await listAll(s.store, "plan")).filter((object) => idOfKey(object.id).endsWith("-flaky-tests"));
     expect(flakyPlans).toHaveLength(1);
     const tasks = await s.flaky();
-    expect(tasks.map((object) => taskData(object.data).plan)).toEqual([bareId(flakyPlans[0]?.id ?? ""), bareId(flakyPlans[0]?.id ?? "")]);
+    expect(tasks.map((object) => taskData(object.data).plan)).toEqual([idOfKey(flakyPlans[0]?.id ?? ""), idOfKey(flakyPlans[0]?.id ?? "")]);
     await cancelPlan(s.store, flakyPlans[0]?.id ?? "", {});
     s.options.plan = undefined;
     await s.track("T-0003-c", logWith("third"), 1, ["third"]);
-    expect((await listAll(s.store, "plan")).filter((object) => bareId(object.id).endsWith("-flaky-tests"))).toHaveLength(2);
+    expect((await listAll(s.store, "plan")).filter((object) => idOfKey(object.id).endsWith("-flaky-tests"))).toHaveLength(2);
   });
 
   test("check.flakyPlan that names no plan says so and still proposes in flaky-tests", async () => {
@@ -489,7 +489,7 @@ describe("a flaky test proposes a task", () => {
     const reruns = commands.find((command) => command.name === "reruns");
     const context = { store: s.store } as unknown as CommandContext;
     const shown = String((await reruns?.run(context, [])) ?? "");
-    const task = bareId((await s.flaky())[0]?.id ?? "");
+    const task = idOfKey((await s.flaky())[0]?.id ?? "");
     expect(shown.split("\n")).toEqual([`2\t${TEST}\t${task}`, "1\tother"]);
     await setTaskPhase(s.store, (await s.flaky())[0]?.id ?? "", "merged");
     expect(await reruns?.run(context, [])).toBe(`2\t${TEST}\n1\tother`);

@@ -27,7 +27,7 @@ import {
 } from "@operad-io/engine";
 import {
   appendChange,
-  bareId,
+  idOfKey,
   DevError,
   listAll,
   repositoryData,
@@ -160,7 +160,7 @@ async function taskParts(
   let stored = await ctx.store.get("task", object.id);
   if (stored === undefined && !object.id.includes("/")) {
     const matches = (await listAll(ctx.store, "task")).filter(
-      (candidate) => bareId(candidate.id) === object.id,
+      (candidate) => idOfKey(candidate.id) === object.id,
     );
     if (matches.length === 1) stored = matches[0];
   }
@@ -173,7 +173,7 @@ async function taskParts(
     );
   }
   const repository = repositoryData(found.data);
-  const taskId = bareId(stored?.id ?? object.id);
+  const taskId = idOfKey(stored?.id ?? object.id);
   let taskKey = stored?.id ?? object.id;
   if ((await ctx.store.get("task", taskKey)) === undefined) {
     taskKey = storeKey(repository.name, taskId);

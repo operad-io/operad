@@ -756,7 +756,6 @@ export async function main(hooks: WorkerHooks = {}): Promise<never> {
   // is made to read a file, so the agent's shell does not get them.
   return runWorkerMain(piAdapter(hooks), {
     envToDelete: ["BASH_ENV", "ENV"],
-    ignoreStreamErrors: true,
   });
 }
 

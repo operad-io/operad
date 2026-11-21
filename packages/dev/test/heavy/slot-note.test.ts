@@ -8,7 +8,7 @@ import { createChatPlugin } from "@operad-io/chat";
 import plugin from "../../src/index.ts";
 import { addPlan, addRepository, addTask, confirmPlan, getPlan, getTask, setAuto } from "../../src/service.ts";
 import { taskViews } from "../../src/views.ts";
-import { bareId, planData } from "../../src/model.ts";
+import { idOfKey, planData } from "../../src/model.ts";
 import { schedulerTestHooks } from "../../src/schedule.ts";
 import { cleanupTempRoots, guardLockHandles, makeGitRepository, storeAt, tempRoot, setTaskPhase } from "../support.ts";
 
@@ -65,14 +65,14 @@ describe("a ready task says what holds it back", () => {
     if (first === undefined || second === undefined || third === undefined) throw new Error("tasks");
     await fixture.registry.tick();
     expect(await note(fixture, second)).toBe(
-      `$0.00 · waiting for the plan's slot (${bareId(first)})`,
+      `$0.00 · waiting for the plan's slot (${idOfKey(first)})`,
     );
     expect(await note(fixture, first)).not.toContain("slot");
 
     await setTaskPhase(fixture.store, first, "merged");
     await fixture.registry.tick();
     expect(await note(fixture, third)).toBe(
-      `$0.00 · waiting for the plan's slot (${bareId(second)})`,
+      `$0.00 · waiting for the plan's slot (${idOfKey(second)})`,
     );
     expect(await note(fixture, second)).not.toContain("slot");
   });
@@ -83,7 +83,7 @@ describe("a ready task says what holds it back", () => {
     if (a === undefined || b === undefined || c === undefined) throw new Error("tasks");
     await fixture.registry.tick();
     expect(await note(fixture, c)).toBe(
-      `$0.00 · waiting for the plan's slot (${bareId(a)} and 1 more)`,
+      `$0.00 · waiting for the plan's slot (${idOfKey(a)} and 1 more)`,
     );
   });
 
@@ -96,7 +96,7 @@ describe("a ready task says what holds it back", () => {
     const waiting = (await note(fixture, first)).includes("slot") ? first : second;
     const holder = waiting === first ? second : first;
     expect(await note(fixture, waiting)).toBe(
-      `$0.00 · waiting for the repository's slot (${bareId(holder)})`,
+      `$0.00 · waiting for the repository's slot (${idOfKey(holder)})`,
     );
     expect(await note(fixture, holder)).not.toContain("slot");
   });

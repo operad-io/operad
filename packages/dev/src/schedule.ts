@@ -17,7 +17,7 @@ import {
   type TickContext,
 } from "@operad-io/engine";
 import {
-  bareId,
+  idOfKey,
   changeClock,
   dependencyKey,
   dependencyLabel,
@@ -232,7 +232,7 @@ function reportFlowProblem(
   if (reportedFlowProblems.get(id) === wanted) return;
   reportedFlowProblems.set(id, wanted);
   writeSchedulerLine(
-    `${bareId(id)} ready -> ready (${refused ?? `no flow "${wanted}" in dev.json`})`,
+    `${idOfKey(id)} ready -> ready (${refused ?? `no flow "${wanted}" in dev.json`})`,
   );
 }
 
@@ -258,7 +258,7 @@ function declareStoredFlow(ctx: TickContext, object: StoredObject): boolean {
     if (reportedStoredFlows.get(object.id) !== reason) {
       reportedStoredFlows.set(object.id, reason);
       writeSchedulerLine(
-        `${bareId(object.id)} keeps no recorded flow: ${reason}; a new start uses the repository's flow`,
+        `${idOfKey(object.id)} keeps no recorded flow: ${reason}; a new start uses the repository's flow`,
       );
     }
     return false;
@@ -389,7 +389,7 @@ function orderPlans(plans: readonly StoredObject[]): readonly StoredObject[] {
     const byPriority =
       priorityIndex(leftPlan.priority) - priorityIndex(rightPlan.priority);
     if (byPriority !== 0) return byPriority;
-    return bareId(left.id).localeCompare(bareId(right.id));
+    return idOfKey(left.id).localeCompare(idOfKey(right.id));
   });
 }
 
@@ -519,7 +519,7 @@ async function reportIntegrationResults(
     if (phase === undefined) continue;
     if (!(await recordMergeReported(store, object.id, attempt.number))) continue;
     changed = true;
-    writeSchedulerLine(`${bareId(object.id)} integrating -> ${phase}`);
+    writeSchedulerLine(`${idOfKey(object.id)} integrating -> ${phase}`);
   }
   return changed;
 }
@@ -535,7 +535,7 @@ async function reportFinishedPlans(
     if (plan.status !== "confirmed" || plan.finishedReported === true) {
       continue;
     }
-    const mine = planTasks(tasks, bareId(object.id));
+    const mine = planTasks(tasks, idOfKey(object.id));
     if (mine.length === 0) continue;
     const finished = mine.every((task) => {
       const phase = taskData(task.data).phase;
@@ -543,7 +543,7 @@ async function reportFinishedPlans(
     });
     if (!finished) continue;
     if (!(await recordPlanFinishedReported(store, object.id))) continue;
-    writeSchedulerLine(`${bareId(object.id)} confirmed -> finished`);
+    writeSchedulerLine(`${idOfKey(object.id)} confirmed -> finished`);
   }
 }
 
@@ -605,7 +605,7 @@ async function reconcileTaskRuns(
         });
         if (moved === undefined) continue;
         changed = true;
-        writeSchedulerLine(`${bareId(object.id)} ${task.phase} -> waiting`);
+        writeSchedulerLine(`${idOfKey(object.id)} ${task.phase} -> waiting`);
       }
       continue;
     }
@@ -636,7 +636,7 @@ async function reconcileTaskRuns(
         });
         if (moved !== undefined) {
           changed = true;
-          writeSchedulerLine(`${bareId(object.id)} ${task.phase} -> waiting (${reason})`);
+          writeSchedulerLine(`${idOfKey(object.id)} ${task.phase} -> waiting (${reason})`);
         }
       }
       continue;
@@ -646,7 +646,7 @@ async function reconcileTaskRuns(
     try {
       if (await startOne(ctx, object, { runStoppedAt: step ?? "the run" }, false, selected)) {
         writeSchedulerLine(
-          `${bareId(object.id)} ${task.phase} -> waiting (run stopped during ${step ?? "the run"})`,
+          `${idOfKey(object.id)} ${task.phase} -> waiting (run stopped during ${step ?? "the run"})`,
         );
       }
     } catch (error) {
@@ -800,7 +800,7 @@ async function scheduleRepository(
     }
     if ((await releaseTaskClaim(ctx.store, object.id)) === undefined) continue;
     dirty = true;
-    writeSchedulerLine(`${bareId(object.id)} running -> ready`);
+    writeSchedulerLine(`${idOfKey(object.id)} running -> ready`);
   }
 
   // Findings that did not fail a review become one follow-up task once the
@@ -829,7 +829,7 @@ async function scheduleRepository(
 
   const planActive = new Map<string, number>();
   for (const planObject of plans) {
-    const id = bareId(planObject.id);
+    const id = idOfKey(planObject.id);
     planActive.set(
       id,
       planTasks(current, id).filter((object) =>
@@ -841,7 +841,7 @@ async function scheduleRepository(
     isActive(taskData(object.data)),
   ).length;
   // A task counts against the pool of the flow it runs.
-  const plansByName = new Map(plans.map((object) => [bareId(object.id), planData(object.data)]));
+  const plansByName = new Map(plans.map((object) => [idOfKey(object.id), planData(object.data)]));
   // A task that has started runs the graph it started with, so its pool is
   // that graph's; dev.json changing meanwhile does not move it.
   const poolOf = (task: TaskData): string =>
@@ -860,7 +860,7 @@ async function scheduleRepository(
   for (const object of current) {
     const task = taskData(object.data);
     if (task.area !== undefined && isActive(task) && !areaActive.has(task.area)) {
-      areaActive.set(task.area, bareId(object.id));
+      areaActive.set(task.area, idOfKey(object.id));
     }
   }
 
@@ -868,17 +868,17 @@ async function scheduleRepository(
   const oldestPlanHeld = new Set<string>();
   const lastStarted = new Map<string, number>(
     plans.map((object) => [
-      bareId(object.id),
+      idOfKey(object.id),
       planData(object.data).lastStartedAt ?? 0,
     ]),
   );
   const turnOf = (object: StoredObject): number =>
-    lastStarted.get(bareId(object.id)) ?? 0;
+    lastStarted.get(idOfKey(object.id)) ?? 0;
   const byUrgency = (left: StoredObject, right: StoredObject): number =>
     priorityIndex(planData(left.data).priority) -
     priorityIndex(planData(right.data).priority);
   const byId = (left: StoredObject, right: StoredObject): number =>
-    bareId(left.id).localeCompare(bareId(right.id));
+    idOfKey(left.id).localeCompare(idOfKey(right.id));
   /** Priority first; within one priority the plan that started longest ago. */
   const turnOrder = (): readonly StoredObject[] =>
     [...plans].sort(
@@ -936,7 +936,7 @@ async function scheduleRepository(
     const scoped = (planObject: StoredObject): readonly StoredObject[] => {
       const plan = planData(planObject.data);
       if (plan.status !== "confirmed") return [];
-      return planTasks(current, bareId(planObject.id))
+      return planTasks(current, idOfKey(planObject.id))
         .filter((object) => {
           const task = taskData(object.data);
           return task.phase === "ready" && inScope(task, plan);
@@ -962,7 +962,7 @@ async function scheduleRepository(
           await startOne(ctx, object, { blockedBy: dependencies.cancelled }, false, selected)
         ) {
           dirty = true;
-          writeSchedulerLine(`${bareId(object.id)} ready -> waiting`);
+          writeSchedulerLine(`${idOfKey(object.id)} ready -> waiting`);
           started.add(object.id);
         }
       }
@@ -974,7 +974,7 @@ async function scheduleRepository(
       let progress = false;
       for (const planObject of order) {
         const plan = planData(planObject.data);
-        const planId = bareId(planObject.id);
+        const planId = idOfKey(planObject.id);
         const pick = scoped(planObject).find(
           (object) =>
             !failed.has(object.id) && canStart(object, plan, planId),
@@ -994,12 +994,12 @@ async function scheduleRepository(
         }
         dirty = true;
         const task = taskData(pick.data);
-        writeSchedulerLine(`${bareId(pick.id)} ready -> running`);
+        writeSchedulerLine(`${idOfKey(pick.id)} ready -> running`);
         planActive.set(planId, (planActive.get(planId) ?? 0) + 1);
         repositoryActive += 1;
         const startedPool = poolOf(task);
         poolActive.set(startedPool, (poolActive.get(startedPool) ?? 0) + 1);
-        if (task.area !== undefined) areaActive.set(task.area, bareId(pick.id));
+        if (task.area !== undefined) areaActive.set(task.area, idOfKey(pick.id));
         started.add(pick.id);
         if (useOldestPlan) oldestPlanHeld.add(pick.id);
         const at = changeClock.now();
@@ -1015,7 +1015,7 @@ async function scheduleRepository(
     const plan = planData(planObject.data);
     if (plan.status !== "confirmed" || plan.auto !== "merge") continue;
 
-    for (const object of planTasks(current, bareId(planObject.id))) {
+    for (const object of planTasks(current, idOfKey(planObject.id))) {
       const task = taskData(object.data);
       const attempt = task.attempt;
       if (!autoMergeWaits(task) || attempt === undefined || task.run === null) {
@@ -1030,7 +1030,7 @@ async function scheduleRepository(
       }
       await recordAutoMerge(ctx.store, object.id, attempt.number);
       dirty = true;
-      writeSchedulerLine(`${bareId(object.id)} waiting -> integrating`);
+      writeSchedulerLine(`${idOfKey(object.id)} waiting -> integrating`);
     }
   }
 
@@ -1067,7 +1067,7 @@ async function scheduleRepository(
     for (const planObject of keptSlotNext() ? oldestPlanOrder() : turnOrder()) {
       const plan = planData(planObject.data);
       if (plan.status !== "confirmed") continue;
-      for (const object of [...planTasks(current, bareId(planObject.id))].sort(byId)) {
+      for (const object of [...planTasks(current, idOfKey(planObject.id))].sort(byId)) {
         const task = taskData(object.data);
         if (task.phase !== "ready" || started.has(object.id)) continue;
         if (queuedIds.has(object.id) || !inScope(task, plan)) continue;
@@ -1111,7 +1111,7 @@ async function scheduleRepository(
       )) || dirty;
   }
 
-  const plansById = new Map(plans.map((object) => [bareId(object.id), planData(object.data)]));
+  const plansById = new Map(plans.map((object) => [idOfKey(object.id), planData(object.data)]));
 
   // Say why a ready task that could otherwise start does not: the plan's or
   // the repository's slots are full, or a plugin dev needs is not loaded.
@@ -1125,7 +1125,7 @@ async function scheduleRepository(
         const task = taskData(object.data);
         return (isActive(task) || started.has(object.id)) && (inPlan === undefined || task.plan === inPlan);
       })
-      .map((object) => bareId(object.id))
+      .map((object) => idOfKey(object.id))
       .sort();
   const missing = missingPlugins(ctx.loaded).map((plugin) => plugin.name);
   for (const object of latest) {
@@ -1151,7 +1151,7 @@ async function scheduleRepository(
             const otherTask = taskData(other.data);
             return (isActive(otherTask) || started.has(other.id)) && poolOf(otherTask) === pool;
           })
-          .map((other) => bareId(other.id))
+          .map((other) => idOfKey(other.id))
           .sort();
         if (
           Object.keys(settings.workers.pools).length > 1 &&
@@ -1211,7 +1211,7 @@ async function scheduleRepository(
 
   // Keep each plan's cached counts, and with them its row's mark, current.
   for (const planObject of plans) {
-    const id = bareId(planObject.id);
+    const id = idOfKey(planObject.id);
     const mine = tasksByPlan.get(id) ?? [];
     const signature = taskSignature(mine);
     const changed = signatures.get(planObject.id) !== signature;

@@ -1,7 +1,7 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { fileURLToPath } from "node:url";
 import { collectFollowups, followupMark, followupTestHooks } from "../../src/followups.ts";
-import { bareId, changeClock, listAll, taskData, type ReviewNotes, type TaskData } from "../../src/model.ts";
+import { idOfKey, changeClock, listAll, taskData, type ReviewNotes, type TaskData } from "../../src/model.ts";
 import { addPlan, addRepository, addTask, cancelTask, confirmPlan } from "../../src/service.ts";
 import { validateDevSettings } from "../../src/settings.ts";
 import { cleanupTempRoots, guardLockHandles, makeGitRepository, storeAt, tempRoot } from "../support.ts";
@@ -50,9 +50,9 @@ async function setup() {
       },
       "test",
     );
-    return bareId(object.id);
+    return idOfKey(object.id);
   };
-  const all = async () => (await listAll(store, "task")).map((object) => ({ id: bareId(object.id), data: taskData(object.data) }));
+  const all = async () => (await listAll(store, "task")).map((object) => ({ id: idOfKey(object.id), data: taskData(object.data) }));
   const followupTasks = async () => (await all()).filter((entry) => entry.data.followupOf !== undefined);
   return { root, store, plan, collect, task, all, followupTasks };
 }
@@ -81,7 +81,7 @@ describe("review follow-ups", () => {
     const [followup] = await s.followupTasks();
     const data = followup?.data;
     expect(data?.phase).toBe("proposed");
-    expect(data?.title).toBe(`Follow-ups from ${bareId(s.plan.id)}'s reviews`);
+    expect(data?.title).toBe(`Follow-ups from ${idOfKey(s.plan.id)}'s reviews`);
     expect(followup?.id).toMatch(/^T-\d{4}-main-followups$/);
     expect(data?.after).toEqual([a, b].map((id) => `demo/${id}`));
     const brief = data?.brief ?? "";

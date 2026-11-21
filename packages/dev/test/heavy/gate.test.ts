@@ -36,7 +36,6 @@ import {
   waitForFile,
   type ManualClock,
 } from "@operad-io/engine/testing";
-
 import { notCodeTestHooks } from "../../src/notcode.ts";
 import type { CheckCommand } from "../../src/settings.ts";
 import { listRerunCounts } from "../../src/reruns.ts";
@@ -70,7 +69,14 @@ import {
   makeRemote,
   type RemoteSetup,
 } from "../git-support.ts";
-import { cleanupTempRoots, guardLockHandles, osTempRoot, storeAt, tempRoot, setTaskPhase } from "../support.ts";
+import {
+  cleanupTempRoots,
+  guardLockHandles,
+  osTempRoot,
+  setTaskPhase,
+  storeAt,
+  tempRoot,
+} from "../support.ts";
 
 afterAll(cleanupTempRoots);
 

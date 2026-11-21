@@ -243,7 +243,6 @@ export interface WatchOptions {
   readonly stallMs: number;
   readonly signal: AbortSignal;
   readonly toolEvent?: ((line: string) => ToolEvent | undefined) | undefined;
-  readonly finished: () => boolean;
   /** Begins stopping the program; the watcher has already recorded the reason. */
   readonly beginStop: (kind: StopKind) => void;
   readonly inbox?: MessageInbox | undefined;
@@ -585,14 +584,12 @@ export async function runAgent(
     ready: readyGate,
   });
 
-  let watchDone = false;
   const watch = watchRun({
     clock,
     wallMs: options.wallMs,
     stallMs: options.stallMs,
     signal: options.signal,
     toolEvent: options.toolEvent,
-    finished: () => watchDone,
     beginStop: () => {
       void stop();
     },
@@ -635,7 +632,6 @@ export async function runAgent(
 
   if (startup.kind !== "ready") {
     const stoppingFor = watch.stoppingFor;
-    watchDone = true;
     watch.end();
     await stop();
     await Promise.race([exited, failed]);
@@ -676,7 +672,6 @@ export async function runAgent(
   ]);
 
   const stoppingFor = watch.stoppingFor;
-  watchDone = true;
   watch.end();
 
   let exit: Exit;
@@ -799,14 +794,12 @@ async function runKeptSocket(
   const reply = (text: string): void => {
     if (!socket.destroyed) socket.write(`${text}\n`);
   };
-  let watchDone = false;
   const watch = watchRun({
     clock,
     wallMs: options.wallMs,
     stallMs: options.stallMs,
     signal: options.signal,
     toolEvent: options.toolEvent,
-    finished: () => watchDone,
     beginStop: () => {
       void stopWorker();
     },
@@ -850,7 +843,6 @@ async function runKeptSocket(
     closed.then(() => "closed"),
   ]);
   if (started !== "line" || !firstSeen) {
-    watchDone = true;
     watch.end();
     clock.clearTimeout(firstTimer);
     await stopWorker();
@@ -865,7 +857,6 @@ async function runKeptSocket(
     await drained;
   }
   const stoppingFor = watch.stoppingFor;
-  watchDone = true;
   watch.end();
   clock.clearTimeout(firstTimer);
   socket.destroy();
@@ -949,14 +940,12 @@ async function runKeptFresh(
   const reply = (text: string): void => {
     if (child.stdin !== null && !child.stdin.destroyed) child.stdin.write(`${text}\n`);
   };
-  let watchDone = false;
   const watch = watchRun({
     clock,
     wallMs: options.wallMs,
     stallMs: options.stallMs,
     signal: options.signal,
     toolEvent: options.toolEvent,
-    finished: () => watchDone,
     beginStop: () => {
       void stopWorker();
     },
@@ -1027,7 +1016,6 @@ async function runKeptFresh(
   ]);
   if (settled === "exit" && resultName === undefined) await outputDrained;
   const stoppingFor = watch.stoppingFor;
-  watchDone = true;
   watch.end();
 
   if (settled === "error") {

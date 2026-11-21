@@ -9,7 +9,7 @@ import {
   proposalData,
   syncBots,
 } from "../src/index.ts";
-import { cleanupRoots, rig, writeConfig } from "./support.ts";
+import { cleanupRoots, rig, writeBotConfig } from "./support.ts";
 
 afterAll(cleanupRoots);
 
@@ -124,7 +124,7 @@ describe("a bot proposes a skill", () => {
     mkdirSync(skill, { recursive: true });
     writeFileSync(join(skill, "SKILL.md"), "---\nname: brain\n---\nold text\n");
     writeFileSync(join(skill, "old.md"), "keep me\n");
-    writeConfig(r.home, { reader: { skills: [skill] } });
+    writeBotConfig(r.home, { reader: { skills: [skill] } });
     await syncBots(r.store, r.home, { bots: { reader: { skills: [skill] } } });
 
     await r.command(
@@ -163,7 +163,7 @@ describe("a bot changes a skill loaded from a listed directory", () => {
     const skill = join(parent, "brain");
     mkdirSync(skill, { recursive: true });
     writeFileSync(join(skill, "SKILL.md"), "---\nname: brain\n---\nold text\n");
-    writeConfig(r.home, { reader: { skills: [parent] } });
+    writeBotConfig(r.home, { reader: { skills: [parent] } });
     await syncBots(r.store, r.home, { bots: { reader: { skills: [parent] } } });
 
     await r.command(
@@ -198,7 +198,7 @@ describe("a bot changes a skill loaded from a listed directory", () => {
     writeFileSync(join(skill, "SKILL.md"), "---\nname: brain\n---\nold text\n");
     const empty = join(r.root, "empty");
     mkdirSync(empty);
-    writeConfig(r.home, { reader: { skills: [join(r.root, "gone"), empty, parent] } });
+    writeBotConfig(r.home, { reader: { skills: [join(r.root, "gone"), empty, parent] } });
 
     await r.command(
       "bot",
@@ -219,7 +219,7 @@ describe("a bot changes a skill loaded from a listed directory", () => {
 
   test("a new skill still goes under the bot's skills when another listed path is missing", async () => {
     const r = await rig({ reader: {} });
-    writeConfig(r.home, { reader: { skills: [join(r.root, "gone")] } });
+    writeBotConfig(r.home, { reader: { skills: [join(r.root, "gone")] } });
     const target = join(r.home, "bot", "reader", "skills", "fresh");
 
     await r.command(
@@ -296,7 +296,7 @@ describe("a direct write to what the bot changes itself is refused", () => {
     const skill = join(r.root, "brain");
     mkdirSync(skill, { recursive: true });
     writeFileSync(join(skill, "SKILL.md"), "---\nname: brain\n---\n");
-    writeConfig(r.home, { reader: { skills: [skill] } });
+    writeBotConfig(r.home, { reader: { skills: [skill] } });
     await syncBots(r.store, r.home, { bots: { reader: { skills: [skill] } } });
     const chat = await r.open("reader");
     await r.say(chat, "hi");

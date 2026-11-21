@@ -16,6 +16,7 @@ import type {
 } from "./types.ts";
 
 export { fakeClock } from "./clock.ts";
+export { writeConfig } from "./config.ts";
 export { manualClock, type ManualClock } from "./clock-manual.ts";
 export {
   alive,

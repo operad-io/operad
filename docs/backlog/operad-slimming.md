@@ -46,7 +46,7 @@
 - B2 只留 `sqlite`：ADR 0035。
 - A4 engine 和客户端的没人用的导出：已做（见 A4）；保留清单里的类型和 `withFileLock` 作为插件合约。
 - 删掉 engine 的 `MOVED_MODULES`：ADR 0034 D4。B1 的其余各项（`dev` 的旧设置、旧 id、旧对象迁移、旧 review 记录）仍未定。
-- 加了检查 `scripts/test/test-helpers.test.ts` 的 `a shared helper is defined only in the engine`：`isRecord`、`messageOf`、`oneLine`、`parseObjectId`、`objectKey`、`definitionName`、`directoryError`、`errorCode`、`isMissing`、`isMissingFile`、`isMissingFileError` 在 engine 之外再定义会让检查失败。
+- 加了检查 `scripts/test/test-helpers.test.ts` 的 `a shared helper is defined only in the engine`：`isRecord`、`messageOf`、`oneLine`、`cut`、`bareId`、`parseObjectId`、`objectKey`、`definitionName`、`directoryError`、`errorCode`、`isMissing`、`isMissingFile`、`isMissingFileError` 在 engine 之外再定义会让检查失败。
 
 ## 待决问题（未定）
 

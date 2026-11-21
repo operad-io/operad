@@ -29,7 +29,6 @@ describe("watchRun", () => {
       wallMs: 1_000,
       stallMs: 0,
       signal: new AbortController().signal,
-      finished: () => false,
       beginStop: observed.stop,
       reply: () => true,
     });
@@ -49,7 +48,6 @@ describe("watchRun", () => {
       stallMs: 500,
       signal: new AbortController().signal,
       toolEvent,
-      finished: () => false,
       beginStop: observed.stop,
       reply: () => true,
     });
@@ -72,7 +70,6 @@ describe("watchRun", () => {
       wallMs: 0,
       stallMs: 0,
       signal: controller.signal,
-      finished: () => false,
       beginStop: observed.stop,
       reply: () => true,
     });
@@ -108,7 +105,6 @@ describe("watchRun", () => {
       wallMs: 2_000,
       stallMs: 0,
       signal: new AbortController().signal,
-      finished: () => false,
       beginStop: observed.stop,
       inbox,
       reply: (text) => {
