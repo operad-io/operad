@@ -12,7 +12,7 @@ import {
   type CliRenderer,
   type TextChunk,
 } from "@opentui/core";
-import type { RowMark } from "@operad-io/engine";
+import { bareId, type RowMark } from "@operad-io/engine";
 import { allowedText } from "../args.ts";
 import { confirmText, entryDetail, keyOf, matchPositions, paletteEntries, settingText, stopAction, type TuiPaletteEntry } from "../actions.ts";
 import { commandEntries } from "../commands.ts";
@@ -33,7 +33,6 @@ import {
   KEY_LIST,
   ROW_INDENT,
   activeSection,
-  bareId,
   cancelledRow,
   childProgress,
   displayChildren,
@@ -335,7 +334,6 @@ function listContent(
       }),
     );
   });
-  if (tab.list.loading) chunks.push(chunk("loading more…\n", palette.weak));
   if (tab.list.error !== undefined) {
     chunks.push(chunk(fit(tab.list.error, width), palette.error));
   }

@@ -104,7 +104,7 @@ describe("objects under settings", () => {
     };
     state = reduce(state, { type: "key", key: "enter" });
     expect(state.objectRequest?.id).toBe("bot:default");
-    expect(creationParents(state, "chat", ["bot"])).toContain("bot:default");
+    expect(creationParents(state, ["bot"])).toContain("bot:default");
   });
 
   test("a settings object that heads a group in the chat tab opens from that heading", () => {

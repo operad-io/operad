@@ -9,7 +9,6 @@ import {
   refusalLine,
 } from "../src/actions.ts";
 import {
-  footerText,
   initialState,
   noticeText,
   reduce,
@@ -17,6 +16,7 @@ import {
   type TuiState,
   type TuiStateEvent,
 } from "../src/state.ts";
+import { footerOf, treeRows } from "./support.ts";
 
 function action(name: string, extra: Partial<ViewAction> = {}): ViewAction {
   const [plugin = "", short = ""] = name.split(":");
@@ -47,11 +47,12 @@ function opened(
 ): TuiState {
   let state = initialState({ width: 120 });
   state = reduce(state, { type: "types", types: [{ type: "item", title: "Item" }] });
-  state = reduce(state, {
-    type: "rows",
-    tabId: "plugin:item",
-    rows: [{ id: "item:one", title: "One", state: "new", waiting: false, running: false }],
-  });
+  state = reduce(
+    state,
+    treeRows("plugin:item", [
+      { id: "item:one", title: "One", state: "new", waiting: false, running: false },
+    ]),
+  );
   state = reduce(state, { type: "key", key: "3" });
   state = reduce(state, { type: "key", key: "enter" });
   state = reduce(state, { type: "object", object: objectView(actions) });
@@ -75,11 +76,11 @@ const typeText = (text: string): TuiStateEvent[] =>
 describe("actions in the reducer", () => {
   test("the footer offers the first action under its bound key and the rest under :", () => {
     const state = opened(ACTIONS, [{ key: "m", action: "tuitest:approve", source: "plugin" }]);
-    expect(footerText(state).startsWith("m tuitest:approve · : more · ")).toBe(true);
+    expect(footerOf(state).startsWith("m tuitest:approve · : more · ")).toBe(true);
     const lone = opened([ACTIONS[3] as ViewAction]);
-    expect(footerText(lone).startsWith("a other:ship · j/k")).toBe(true);
+    expect(footerOf(lone).startsWith("a other:ship · j/k")).toBe(true);
     const none = opened([]);
-    expect(footerText(none).startsWith("a ")).toBe(false);
+    expect(footerOf(none).startsWith("a ")).toBe(false);
   });
 
   test("the palette filters by fuzzy match and shows key, note and confirm", () => {
@@ -261,7 +262,7 @@ describe("actions in the reducer", () => {
 
   test("a bound a is not advertised as the main action's key", () => {
     const state = opened(ACTIONS, [{ key: "a", action: "tuitest:drop", source: "user" }]);
-    expect(footerText(state)).not.toContain("a tuitest:approve");
+    expect(footerOf(state)).not.toContain("a tuitest:approve");
     expect(press(state, "a").input).toMatchObject({ kind: "confirm", action: "tuitest:drop" });
   });
 
@@ -376,7 +377,7 @@ describe("actions in the reducer", () => {
     expect(state.input).toMatchObject({ kind: "note", text: "ok", error: message, sending: false });
     expect(noticeText(state)).toBeUndefined();
     expect(state.acting).toBe(false);
-    expect(footerText(state)).toContain("tuitest:approve");
+    expect(footerOf(state)).toContain("tuitest:approve");
     expect(press(state, "escape").input).toBeUndefined();
   });
 
@@ -412,13 +413,13 @@ describe("an action that creates another type", () => {
 
   test("it is not on its parent's page: not the main action, not in the footer, not in the palette", () => {
     const state = opened([CREATING, action("tuitest:approve")]);
-    expect(footerText(state).startsWith("a tuitest:approve · j/k")).toBe(true);
-    expect(footerText(state)).not.toContain("dev:chat");
+    expect(footerOf(state).startsWith("a tuitest:approve · j/k")).toBe(true);
+    expect(footerOf(state)).not.toContain("dev:chat");
     const named = (from: TuiState) =>
       paletteEntries(press(from, ":")).filter((entry) => entry.group === "actions").map((entry) => entry.name);
     expect(named(state)).toEqual(["tuitest:approve"]);
     const only = opened([CREATING]);
-    expect(footerText(only)).not.toContain("dev:chat");
+    expect(footerOf(only)).not.toContain("dev:chat");
     expect(named(only)).toEqual([]);
   });
 
@@ -431,11 +432,12 @@ describe("an action that creates another type", () => {
         { type: "chat", title: "Chat", plugin: "chat", parents: ["repo"] },
       ],
     });
-    state = reduce(state, {
-      type: "rows",
-      tabId: "plugin:dev",
-      rows: [{ id: "repo:ops", title: "ops", state: "", waiting: false, running: false }],
-    });
+    state = reduce(
+      state,
+      treeRows("plugin:dev", [
+        { id: "repo:ops", title: "ops", state: "", waiting: false, running: false },
+      ]),
+    );
     state = press(state, String(state.tabs.findIndex((tab) => tab.id === "plugin:dev") + 1), "enter");
     state = reduce(state, {
       type: "object",
@@ -464,11 +466,12 @@ describe("an action that creates another type", () => {
         { type: "chat", title: "Chat", plugin: "chat", parents: ["repo", "bot"] },
       ],
     });
-    state = reduce(state, {
-      type: "rows",
-      tabId: "plugin:dev",
-      rows: [{ id: "repo:ops", title: "ops", state: "", waiting: false, running: false }],
-    });
+    state = reduce(
+      state,
+      treeRows("plugin:dev", [
+        { id: "repo:ops", title: "ops", state: "", waiting: false, running: false },
+      ]),
+    );
     const chatTab = state.tabs.findIndex((tab) => tab.id === "plugin:chat");
     state = press(state, String(chatTab + 1), "c");
     expect(state.input).toMatchObject({ kind: "palette", query: "new chat" });

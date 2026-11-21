@@ -10,6 +10,7 @@ import {
 } from "../src/state.ts";
 import { KEY_LIST } from "../src/state.ts";
 import { drawState } from "../src/view/index.ts";
+import { treeRows } from "./support.ts";
 
 const TOC = [
   { label: "overview" },
@@ -50,7 +51,7 @@ function opened(withPages = true): TuiState {
     type: "types",
     types: [{ type: "item", title: "Item" }],
   });
-  state = reduce(state, { type: "page", tabId: "plugin:item", replace: true, page: { rows: [row("one")] } });
+  state = reduce(state, treeRows("plugin:item", [row("one")]));
   state = key(key(state, "3"), "enter");
   state = reduce(state, { type: "object", object: object(), version: 1 });
   const request = state.sectionRequest;

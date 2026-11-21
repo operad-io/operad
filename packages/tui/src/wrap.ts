@@ -29,13 +29,6 @@ export function displayWidth(char: string): number {
   return Bun.stringWidth(char);
 }
 
-/** The columns a whole string takes. */
-export function textWidth(text: string): number {
-  let width = 0;
-  for (const char of graphemes(text)) width += displayWidth(char);
-  return width;
-}
-
 function isSpace(char: string): boolean {
   return /^\s/u.test(char);
 }

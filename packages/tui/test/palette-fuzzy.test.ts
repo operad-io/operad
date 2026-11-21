@@ -7,6 +7,7 @@ import { fuzzyScore, matchPositions, paletteEntries } from "../src/actions.ts";
 import { loadRecent, saveRecent, stateFile } from "../src/recent.ts";
 import { initialState, reduce, type TuiState, type TuiStateEvent } from "../src/state.ts";
 import { drawState } from "../src/view/index.ts";
+import { treeRows } from "./support.ts";
 import { BUILTIN_THEMES } from "../src/theme.ts";
 
 function action(name: string): ViewAction {
@@ -19,11 +20,12 @@ const NAMES = ["dev:concurrency", "dev:rework", "dev:merge", "dev:mergeback", "d
 function opened(): TuiState {
   let state = initialState({ width: 120, height: 40 });
   state = reduce(state, { type: "types", types: [{ type: "item", title: "Item" }] });
-  state = reduce(state, {
-    type: "rows",
-    tabId: "plugin:item",
-    rows: [{ id: "item:one", title: "One", state: "new", waiting: false, running: false }],
-  });
+  state = reduce(
+    state,
+    treeRows("plugin:item", [
+      { id: "item:one", title: "One", state: "new", waiting: false, running: false },
+    ]),
+  );
   state = reduce(state, { type: "key", key: "3" });
   state = reduce(state, { type: "key", key: "enter" });
   const object: ViewObject = {

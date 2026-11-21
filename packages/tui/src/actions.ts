@@ -302,7 +302,6 @@ export type TuiCommand =
 /** The objects a new `type` can be made under: every loaded row, or group, of a type that creating it works on. */
 export function creationParents(
   state: TuiState,
-  type: string,
   parents: readonly string[],
 ): readonly string[] {
   const ids = new Set<string>();
@@ -470,7 +469,7 @@ function tuiCommandEntries(state: TuiState): readonly TuiPaletteEntry[] {
   const creating = (here?.kind === "plugin" ? (here.types ?? []) : [])
     .filter((info) => state.object === undefined || !(info.parents ?? []).includes(state.object.type))
     .flatMap((info) =>
-      creationParents(state, info.type, info.parents ?? []).map((parent) =>
+      creationParents(state, info.parents ?? []).map((parent) =>
         make(`new ${info.type}`, `start a new ${info.type} in ${parent}`, undefined, {
           kind: "create",
           parent,
@@ -1038,11 +1037,6 @@ function withNoteEdit(
   const commands = chatCommands(state.object.actions, state.object.row);
   if (filterCommands(text.slice(1), commands).length === 0) return { ...state, input: base };
   return { ...state, input: { ...base, ...noteMenu(0) } };
-}
-
-/** A note after text was inserted at the cursor. */
-function withNoteText(state: TuiState, input: NoteInput, text: string): TuiState {
-  return withNoteEdit(state, input, text, graphemes(text).length);
 }
 
 /** Pasted text as a note takes it: line breaks kept, other control bytes dropped. */
