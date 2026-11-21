@@ -1359,9 +1359,6 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     const before = state.recent;
     state = reduce(state, event);
     if (state.recent !== before) deps.onRecent?.(state.recent);
-    // A request is asked for once: it leaves the state as it is launched.
-    const request = state.pageRequest;
-    if (request !== undefined) state = reduce(state, { type: "page-launched" });
     const objectRequest = state.objectRequest;
     if (objectRequest !== undefined) {
       state = reduce(state, { type: "object-launched" });

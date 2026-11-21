@@ -19,9 +19,7 @@ import {
   PluginRegistry,
   Runner,
   StateError,
-  TriggerError,
   ViewError,
-  applyInput,
   defaultOperadHome,
   ensureConfig,
   ensureInstalledPackage,
@@ -59,6 +57,7 @@ import {
   readStoredStart,
   runningFromWorkspace,
   readStoredTrigger,
+  renderMarkdown,
   removePackage,
   rotateHttpToken,
   serve,
@@ -117,7 +116,6 @@ import {
   serveStartFlags,
   startWithRetry,
 } from "./http-bind.ts";
-import { renderMarkdown } from "./markdown.ts";
 import { QrTooLongError, encodeQr, renderQr } from "./qr.ts";
 import {
   DEFAULT_STOP_TIMEOUT_SECS,
@@ -256,8 +254,6 @@ export interface TuiCommand {
 }
 
 export type TuiRunner = (command: TuiCommand) => Promise<number>;
-
-const KERNEL_ACTIONS = ["operad:start", "operad:dismiss"] as const;
 
 const HELP = [
   "usage: operad <command> [options]",
@@ -1667,7 +1663,6 @@ function spawnChild(
 async function commandServe(
   context: Context,
   io: CliIo,
-  argv: readonly string[],
   lock: LockHandle,
   supervised: boolean,
   retryBind: boolean,
@@ -3017,7 +3012,7 @@ export async function main(
               ? opened
               : { ...opened, code: snapshotOf(opened.code, restored) };
           try {
-            return await commandServe(context, io, args.slice(1), lock, isSupervised, retryBind);
+            return await commandServe(context, io, lock, isSupervised, retryBind);
           } finally {
             // Clean up the old plugin store when a serve context ends. An idle
             // handle does not block writers; the busy timeout here came from

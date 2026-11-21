@@ -162,11 +162,6 @@ export function sectionMarkdown(content: ViewSectionContent): string {
   return `${content.markdown}${separator}Next cursor: \`${content.next}\`\n`;
 }
 
-/** The history tool's Markdown is the history section's Markdown. */
-export function historyMarkdown(content: ViewSectionContent): string {
-  return sectionMarkdown(content);
-}
-
 function pendingItemMarkdown(item: PendingItem): string[] {
   const lines = [`## ${item.runId} (${item.flow})`];
   lines.push(`- step: ${item.step ?? "-"}`);

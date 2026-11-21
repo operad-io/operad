@@ -32,9 +32,6 @@ import {
 /** The experiment capability Claude Code reads a channel declaration from. */
 export const CHANNEL_CAPABILITY = "claude/channel";
 
-/** The capability this server never declares: it relays no permission prompts. */
-export const CHANNEL_PERMISSION_CAPABILITY = "claude/channel/permission";
-
 /** The notification method a channel event is sent with. */
 export const CHANNEL_METHOD = "notifications/claude/channel";
 

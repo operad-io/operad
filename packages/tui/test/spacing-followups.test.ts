@@ -1,18 +1,17 @@
 import { describe, expect, test } from "bun:test";
 import { initialState, reduce, type TuiState } from "../src/state.ts";
 import { TUI_PALETTE, drawState } from "../src/view/index.ts";
+import { treeRows } from "./support.ts";
 
 function withItems(width: number, title: string): TuiState {
   let state = initialState({ width, height: 24, theme: "dark" });
   state = reduce(state, { type: "types", types: [{ type: "item", title }] });
-  state = reduce(state, {
-    type: "page",
-    tabId: "plugin:item",
-    replace: true,
-    page: {
-      rows: [{ id: "one", title: "First", state: "new", waiting: false, running: false }],
-    },
-  });
+  state = reduce(
+    state,
+    treeRows("plugin:item", [
+      { id: "one", title: "First", state: "new", waiting: false, running: false },
+    ]),
+  );
   return reduce(state, { type: "key", key: "3" } as never);
 }
 
@@ -37,12 +36,7 @@ describe("spacing follow-ups", () => {
     let state = withItems(120, "Item");
     state = reduce(state, { type: "key", key: "enter" } as never);
     state = { ...state, followPending: true };
-    state = reduce(state, {
-      type: "page",
-      tabId: "plugin:item",
-      replace: true,
-      page: { rows: [] },
-    });
+    state = reduce(state, treeRows("plugin:item", []));
     expect(state.object).toBeUndefined();
     expect(state.followPending).toBe(false);
   });
@@ -51,12 +45,12 @@ describe("spacing follow-ups", () => {
     let state = withItems(120, "Item");
     state = reduce(state, { type: "key", key: "j" } as never);
     const before = state.moveSeq;
-    state = reduce(state, {
-      type: "page",
-      tabId: "plugin:item",
-      replace: true,
-      page: { rows: [{ id: "two", title: "Two", state: "new", waiting: false, running: false }] },
-    });
+    state = reduce(
+      state,
+      treeRows("plugin:item", [
+        { id: "two", title: "Two", state: "new", waiting: false, running: false },
+      ]),
+    );
     expect(state.moveSeq).toBe(before);
   });
 });

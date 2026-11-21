@@ -3,6 +3,7 @@ import { createTestRenderer } from "@opentui/core/testing";
 import type { ViewObject, ViewRow } from "@operad-io/engine";
 import { initialState, reduce, type TuiState } from "../src/state.ts";
 import { createTuiView } from "../src/view/index.ts";
+import { treeRows } from "./support.ts";
 
 function row(): ViewRow {
   return {
@@ -35,12 +36,7 @@ function opened(): TuiState {
     type: "types",
     types: [{ type: "item", title: "Item" }],
   });
-  state = reduce(state, {
-    type: "page",
-    tabId: "plugin:item",
-    replace: true,
-    page: { rows: [row()] },
-  });
+  state = reduce(state, treeRows("plugin:item", [row()]));
   state = reduce(state, { type: "key", key: "3" });
   state = reduce(state, { type: "key", key: "enter" });
   state = reduce(state, { type: "object", object: object(), version: 1 });

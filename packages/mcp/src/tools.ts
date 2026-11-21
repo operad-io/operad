@@ -27,7 +27,6 @@ import {
 import { machineLoad, type MachineLoad } from "@operad-io/engine/platform";
 import { InvalidToolArguments, validateArguments } from "./arguments.ts";
 import {
-  historyMarkdown,
   listMarkdown,
   pendingMarkdown,
   readMarkdown,
@@ -591,7 +590,7 @@ export async function runTool(
       const content = await context.views.section(id, HISTORY_SECTION);
       const result = { id, ...content };
       return {
-        content: [text(historyMarkdown(result))],
+        content: [text(sectionMarkdown(result))],
         structuredContent: result,
       };
     }

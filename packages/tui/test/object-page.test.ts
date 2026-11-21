@@ -5,7 +5,6 @@ import { RESERVED_KEYS, isReserved, resolveBindings } from "../src/actions.ts";
 import {
   childProgress,
   displayChildren,
-  footerText,
   initialState,
   reduce,
   sectionWidth,
@@ -21,6 +20,7 @@ import {
   toRgba,
 } from "../src/theme.ts";
 import { drawState } from "../src/view/index.ts";
+import { footerOf, treeRows } from "./support.ts";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -60,12 +60,7 @@ function opened(
     badge: "P3",
     note: "auto merge · $0.88",
   });
-  state = reduce(state, {
-    type: "page",
-    tabId: "plugin:dev",
-    replace: true,
-    page: { rows: [plan] },
-  });
+  state = reduce(state, treeRows("plugin:dev", [plan]));
   state = reduce(state, { type: "key", key: "3" });
   state = reduce(state, { type: "key", key: "enter" });
   const object: ViewObject = {
@@ -470,11 +465,11 @@ describe("the tree and list layouts", () => {
 
     let state = opened([row("T-0001-a"), row("T-0002-b", "todo", { after: ["T-0001-a"] })]);
     expect(state.childLayout).toBe("tree");
-    expect(footerText(state)).toContain("t list");
+    expect(footerOf(state)).toContain("t list");
     state = reduce(state, { type: "key", key: "t" });
     expect(state.childLayout).toBe("list");
     expect(state.layoutRequest).toBe("list");
-    expect(footerText(state)).toContain("t tree");
+    expect(footerOf(state)).toContain("t tree");
     expect(rightText(state)).not.toContain("└─");
     state = reduce(state, { type: "layout-launched" });
     expect(state.layoutRequest).toBeUndefined();
@@ -484,7 +479,7 @@ describe("the tree and list layouts", () => {
 
   test("t does nothing when the page has no child list, and the footer has no toggle", () => {
     const state = opened([]);
-    expect(footerText(state)).not.toContain("t list");
+    expect(footerOf(state)).not.toContain("t list");
     const after = reduce(state, { type: "key", key: "t" });
     expect(after).toBe(state);
   });
