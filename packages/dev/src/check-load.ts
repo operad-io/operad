@@ -21,40 +21,36 @@ export interface CheckLoad {
 
 const LOAD_LINE = /^remote-check: load (?:(?<load1>\d+(?:\.\d+)?) on (?<cores>\d+) cores|unknown) on (?<host>.+?)\s*$/;
 
-/** The readings in one run's part of a check log; undefined when it ran here. */
+/**
+ * The readings in one run's part of a check log; undefined when it ran here.
+ * Each line is its own reading: an unknown end line does not discard a known
+ * start, and an unknown start does not discard a known end.
+ */
 export function loadsFromLog(text: string): CheckLoad | undefined {
-  const known: CheckLoadReading[] = [];
-  let unknownHost: string | undefined;
-  let sawLine = false;
+  const readings: CheckLoadReading[] = [];
   for (const line of text.replace(/\r\n/g, "\n").split("\n")) {
     const found = LOAD_LINE.exec(line);
     if (found === null) continue;
-    sawLine = true;
     const load1 = found.groups?.load1;
     const cores = found.groups?.cores;
     const host = found.groups?.host?.trim();
     if (load1 !== undefined && cores !== undefined) {
-      known.push({
+      readings.push({
         load1: Number(load1),
         cores: Number(cores),
         ...(host === undefined || host === "" ? {} : { host }),
       });
     } else {
-      unknownHost = host === undefined || host === "" ? undefined : host;
+      readings.push({
+        load1: 0,
+        cores: 0,
+        ...(host === undefined || host === "" ? {} : { host }),
+        unknown: true,
+      });
     }
   }
-  if (!sawLine) return undefined;
-  if (unknownHost !== undefined || known.length === 0) {
-    const reading: CheckLoadReading = {
-      load1: 0,
-      cores: 0,
-      ...(unknownHost === undefined ? {} : { host: unknownHost }),
-      unknown: true,
-    };
-    return { start: reading, end: reading };
-  }
-  const first = known[0];
-  const last = known[known.length - 1];
+  const first = readings[0];
+  const last = readings[readings.length - 1];
   return first === undefined || last === undefined ? undefined : { start: first, end: last };
 }
 

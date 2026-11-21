@@ -32,7 +32,6 @@
  * person.
  */
 
-import { statSync } from "node:fs";
 import { machineLoad, type MachineLoad } from "@operad-io/engine/platform";
 import { waitFor } from "./gate.ts";
 import { flakyLoadLimitOf } from "./flaky.ts";
@@ -191,28 +190,20 @@ function peakOf(load: CheckLoad): CheckLoadReading {
   return load.end.load1 >= load.start.load1 ? load.end : load.start;
 }
 
-/** The bytes in a log so far; a log that is not there yet starts at zero. */
-function logSize(path: string | undefined): number {
-  if (path === undefined) return 0;
-  try {
-    return statSync(path).size;
-  } catch {
-    return 0;
-  }
-}
-
 /**
  * A run's load: what remote-check.sh wrote into its part of the log, else the
  * local readings around it. A remote line that says unknown is not replaced.
+ * The part starts where the run's first command said its output began, not at
+ * a file size read before the run, which a buffered logger can leave stale.
  */
 function loadOfRun(
   path: string | undefined,
-  offset: number,
+  checked: CheckRun,
   start: MachineLoad,
   end: MachineLoad,
 ): CheckLoad {
-  if (path !== undefined) {
-    const remote = loadsFromLog(readSince(path, offset));
+  if (path !== undefined && checked.logStart !== undefined) {
+    const remote = loadsFromLog(readSince(path, checked.logStart));
     if (remote !== undefined) return remote;
   }
   return { start, end };
@@ -305,7 +296,6 @@ export async function runCheckSteadily(input: {
   readonly logPath?: string | undefined;
 }): Promise<SteadyCheck> {
   const firstStart = currentLoad();
-  const firstOffset = logSize(input.logPath);
   let peak = firstStart;
   const sample = (): MachineLoad => {
     const now = currentLoad();
@@ -314,7 +304,7 @@ export async function runCheckSteadily(input: {
   };
   const first = await input.run();
   const firstEnd = sample();
-  const firstLoad = loadOfRun(input.logPath, firstOffset, firstStart, firstEnd);
+  const firstLoad = loadOfRun(input.logPath, first, firstStart, firstEnd);
   const loads: CheckLoad[] = [firstLoad];
   const firstCode = timeoutAlone(first, firstLoad, input.flakyLimit);
   if (firstCode !== undefined) return { checked: firstCode, runs: 1, load: peak, loads };
@@ -331,10 +321,9 @@ export async function runCheckSteadily(input: {
     return { checked: first, runs: 1, load: peak, loads, cancelled: true };
   }
   const secondStart = sample();
-  const secondOffset = logSize(input.logPath);
   const second = await input.run();
   const after = sample();
-  const secondLoad = loadOfRun(input.logPath, secondOffset, secondStart, after);
+  const secondLoad = loadOfRun(input.logPath, second, secondStart, after);
   loads.push(secondLoad);
   const secondCode = timeoutAlone(second, secondLoad, input.flakyLimit);
   if (secondCode !== undefined) return { checked: secondCode, runs: 2, load: peak, loads };

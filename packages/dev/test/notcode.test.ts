@@ -1,7 +1,8 @@
-import { appendFileSync, mkdtempSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdtempSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
+import type { StepContext } from "@operad-io/engine";
 import {
   classifyCheck,
   failedTests,
@@ -13,6 +14,7 @@ import {
   type NotCodeKind,
 } from "../src/notcode.ts";
 import type { CheckRun } from "../src/rerun.ts";
+import { runCheckCommands } from "../src/rerun.ts";
 import { loadsFromLog } from "../src/check-load.ts";
 import { classifyStop, isConnectionError, STOP_REASONS } from "../src/stops.ts";
 import { validateDevSettings } from "../src/settings.ts";
@@ -62,12 +64,14 @@ describe("classifyCheck", () => {
 });
 
 function run(extra: Record<string, unknown>, result = "fail"): CheckRun {
+  const logStart = typeof extra.logStart === "number" ? extra.logStart : undefined;
   return {
     outcome: { result, data: extra },
     hostError: undefined,
     rerun: false,
     note: undefined,
     passedOnRerun: [],
+    ...(logStart === undefined ? {} : { logStart }),
   };
 }
 
@@ -185,6 +189,19 @@ describe("the load lines remote-check.sh writes", () => {
     });
   });
 
+  test("one unknown reading does not discard the other", () => {
+    const known = `remote-check: load 23.80 on 16 cores on ${host}`;
+    const unknown = `remote-check: load unknown on ${host}`;
+    expect(loadsFromLog([known, "output", unknown].join("\n"))).toEqual({
+      start: { load1: 23.8, cores: 16, host },
+      end: { load1: 0, cores: 0, host, unknown: true },
+    });
+    expect(loadsFromLog([unknown, "output", known].join("\n"))).toEqual({
+      start: { load1: 0, cores: 0, host, unknown: true },
+      end: { load1: 23.8, cores: 16, host },
+    });
+  });
+
   test("a check with no load line ran here", () => {
     expect(loadsFromLog("remote-check: checking abc on nowhere\nsome output")).toBeUndefined();
   });
@@ -267,7 +284,7 @@ describe("a remote check reads the host's load", () => {
       run: async () => {
         runs += 1;
         remote(path, ["25 on 16 cores", "25 on 16 cores"]);
-        return run({ reason: "timeout" });
+        return { ...run({ reason: "timeout" }), logStart: 0 };
       },
       limit: undefined,
       logPath: path,
@@ -276,6 +293,54 @@ describe("a remote check reads the host's load", () => {
     expect(steady.notCode?.cause).toBe(
       `check timed out twice under load 25 on 16 cores on ${host}`,
     );
+  });
+
+  test("a run's load begins where its first command did, not at a stale size or its last rerun", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "remote-first-start-"));
+    const path = join(dir, "check.log");
+    const command = {
+      run: "bun test",
+      failed: {
+        match: "^\\(fail\\) (.+?) \\[",
+        rerun: "bun test -t {pattern}",
+        max: 3,
+      },
+    };
+    notCodeTestHooks.load = () => ({ load1: 1, cores: 10 });
+    notCodeTestHooks.wait = async () => {
+      throw new Error("a remote check must not wait on the local load");
+    };
+    let calls = 0;
+    const runStep: NonNullable<StepContext["runStep"]> = async (_name, params) => {
+      const lines = (params as { readonly lines: readonly string[] }).lines;
+      if (calls === 0) {
+        // A previous run's buffered line lands late, after this run began.
+        remote(path, ["70 on 10 cores"]);
+      }
+      const logStart = statSync(path).size;
+      const load = calls === 0 ? "90 on 10 cores" : "3 on 10 cores";
+      remote(path, [load, load]);
+      appendFileSync(path, "(fail) a > slow [30001.00ms]\n");
+      calls += 1;
+      return {
+        result: "fail",
+        data: {
+          reason: "exit",
+          exitCode: 1,
+          line: lines[0] ?? "",
+          log: path,
+          logStart,
+        },
+      };
+    };
+    const steady = await runCheckSteadily({
+      run: () => runCheckCommands(runStep, { cwd: dir }, [command], {} as never, 1),
+      limit: undefined,
+      logPath: path,
+    });
+    const first = steady.loads[0];
+    expect(first?.start).toEqual({ load1: 90, cores: 10, host });
+    expect(first?.end).toEqual({ load1: 3, cores: 10, host });
   });
 });
 
