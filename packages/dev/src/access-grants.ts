@@ -7,6 +7,7 @@
  */
 
 import type { ActionTypeDefinition } from "@operad-io/engine";
+import { isRecord } from "@operad-io/engine";
 import { readTargetGrants, revokeTargetGrants, type TargetGrant } from "@operad-io/access-match";
 
 function grantLine(grant: TargetGrant): string {
@@ -38,7 +39,7 @@ export const accessAction: ActionTypeDefinition = {
     return true;
   },
   async run(ctx, args) {
-    const input = typeof args === "object" && args !== null ? (args as Record<string, unknown>) : {};
+    const input = isRecord(args) ? args : {};
     const target = typeof input["target"] === "string" ? input["target"] : undefined;
     const flow = typeof input["flow"] === "string" ? input["flow"] : undefined;
     if (target === undefined) {

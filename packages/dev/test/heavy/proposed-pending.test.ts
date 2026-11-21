@@ -15,16 +15,8 @@ import { saveTaskGuarded } from "../../src/steps.ts";
 import { trackFlakyTests } from "../../src/flaky.ts";
 import { repositoryMark } from "../../src/marks.ts";
 import { bareId, listAll, planData, repositoryData, taskData } from "../../src/model.ts";
-import {
-  addPlan,
-  addRepository,
-  addTask,
-  cancelTask,
-  confirmPlan,
-  confirmTask,
-  setTaskPhase,
-} from "../../src/service.ts";
-import { cleanupTempRoots, guardLockHandles, makeGitRepository, storeAt, tempRoot } from "../support.ts";
+import { addPlan, addRepository, addTask, cancelTask, confirmPlan, confirmTask } from "../../src/service.ts";
+import { cleanupTempRoots, guardLockHandles, makeGitRepository, storeAt, tempRoot, setTaskPhase } from "../support.ts";
 
 afterAll(cleanupTempRoots);
 guardLockHandles();

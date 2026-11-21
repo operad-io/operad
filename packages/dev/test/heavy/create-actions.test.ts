@@ -12,15 +12,9 @@ import {
   startHttpServer,
   storeRootOf,
 } from "@operad-io/engine";
-import { addRepository, cancelPlan, removeRepository, setTaskPhase } from "../../src/service.ts";
+import { addRepository, cancelPlan, removeRepository } from "../../src/service.ts";
 import { bareId, planData, taskData } from "../../src/model.ts";
-import {
-  cleanupTempRoots,
-  guardLockHandles,
-  makeGitRepository,
-  runInProcess,
-  tempRoot,
-} from "../support.ts";
+import { cleanupTempRoots, guardLockHandles, makeGitRepository, runInProcess, tempRoot, setTaskPhase } from "../support.ts";
 
 afterAll(cleanupTempRoots);
 guardLockHandles();

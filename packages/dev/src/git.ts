@@ -136,3 +136,50 @@ export function git(
   }
   return result;
 }
+
+/** The commit `ref` names, or undefined when it does not name one. */
+export function commitOf(cwd: string, ref: string): string | undefined {
+  return revisionOf(cwd, `${ref}^{commit}`);
+}
+
+/** The tree `ref` names, or undefined when it does not name one. */
+export function treeOf(cwd: string, ref: string): string | undefined {
+  return revisionOf(cwd, `${ref}^{tree}`);
+}
+
+/**
+ * What `git rev-parse --verify --quiet` prints for `ref`, or undefined when the
+ * ref does not name an object.
+ */
+export function revisionOf(cwd: string, ref: string): string | undefined {
+  const result = git(cwd, ["rev-parse", "--verify", "--quiet", ref]);
+  return result.ok && result.out.length > 0 ? result.out : undefined;
+}
+
+/** The commit a work tree has checked out, or undefined when it has none. */
+export function headOf(cwd: string): string | undefined {
+  const result = git(cwd, ["rev-parse", "HEAD"]);
+  return result.ok && result.out.length > 0 ? result.out : undefined;
+}
+
+/** True when `ancestor` is reachable from `descendant`. */
+export function isAncestor(
+  cwd: string,
+  ancestor: string,
+  descendant: string,
+): boolean {
+  return git(cwd, ["merge-base", "--is-ancestor", ancestor, descendant]).ok;
+}
+
+/** True when a local branch exists, or the branch on `remote` when one is named. */
+export function branchExists(
+  cwd: string,
+  branch: string,
+  remote?: string,
+): boolean {
+  const ref =
+    remote === undefined
+      ? `refs/heads/${branch}`
+      : `refs/remotes/${remote}/${branch}`;
+  return git(cwd, ["show-ref", "--verify", "--quiet", ref]).ok;
+}

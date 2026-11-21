@@ -16,21 +16,10 @@ import {
 import { runLine } from "@operad-io/engine/platform";
 import { createPoolPlugin } from "@operad-io/pool";
 import { createShellPlugin } from "@operad-io/shell";
-import {
-  addPlan,
-  addRepository,
-  addTask,
-  cancelTask,
-  createDevPlugin,
-  getTask,
-  pauseTask,
-  resumeTask,
-  setTaskPhase,
-  taskData,
-} from "../../src/index.ts";
+import { addPlan, addRepository, addTask, cancelTask, createDevPlugin, getTask, pauseTask, resumeTask, taskData } from "../../src/index.ts";
 import { withCheckPlace } from "../../src/places.ts";
 import { commitIn, gitOrThrow, makeRemote } from "../git-support.ts";
-import { cleanupTempRoots, guardLockHandles, osTempRoot, storeAt, tempRoot } from "../support.ts";
+import { cleanupTempRoots, guardLockHandles, osTempRoot, storeAt, tempRoot, setTaskPhase } from "../support.ts";
 
 setDefaultTimeout(60_000);
 afterAll(cleanupTempRoots);

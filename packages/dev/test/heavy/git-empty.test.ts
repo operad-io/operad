@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { git, headOf } from "../../src/steps.ts";
+import { git, headOf } from "../../src/git.ts";
 import { GitTimeoutError, printsOnSuccess } from "../../src/git.ts";
 import { gitOrThrow, hangingGit, silentGit } from "../git-support.ts";
 import { cleanupTempRoots, makeGitRepository, tempRoot } from "../support.ts";

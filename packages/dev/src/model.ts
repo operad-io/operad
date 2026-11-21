@@ -1,12 +1,16 @@
 /** The objects the dev plugin owns, and the pure rules that change them. */
 
-import type { FlowDefinition, ObjectStore, StoredObject } from "@operad-io/engine";
+import type {
+  FlowDefinition,
+  ObjectStore,
+  PluginFact,
+  StoredObject,
+} from "@operad-io/engine";
 import type { ReviewHistoryEntry, ReviewSettingsUsed } from "./rework.ts";
 import type { WaitKind } from "./waits.ts";
 import { isRecord, oneLine } from "@operad-io/engine";
 
-/**
- * Every object of a type, following the store's pages. The store returns one
+/** Every object of a type, following the store's pages. The store returns one
  * page at a time; an id scan must not stop at its default limit.
  */
 export async function listAll(
@@ -23,6 +27,24 @@ export async function listAll(
     });
     objects.push(...page.objects);
     if (page.next === undefined) return objects;
+    cursor = page.next;
+  }
+}
+
+/** Every fact of one object, following the store's pages. */
+export async function allFactsOf(
+  store: ObjectStore,
+  object: Pick<StoredObject, "type" | "id">,
+): Promise<PluginFact[]> {
+  const facts: PluginFact[] = [];
+  let cursor: string | undefined;
+  for (;;) {
+    const page = await store.facts(
+      { type: object.type, id: object.id },
+      cursor === undefined ? {} : { cursor },
+    );
+    facts.push(...page.facts);
+    if (page.next === undefined) return facts;
     cursor = page.next;
   }
 }
@@ -1035,16 +1057,6 @@ export function briefBody(brief: string): string {
   return splitBrief(brief).body;
 }
 
-/** The Markdown of the rework sections, without the changes section. */
-export function reworkBody(brief: string): string {
-  return splitBrief(brief).reworks;
-}
-
-/** The Markdown of the trailing changes section. */
-export function changesBody(brief: string): string {
-  return splitBrief(brief).changes;
-}
-
 /** Replaces the body and records the edit, unless the body did not change. */
 export function editBrief(brief: string, body: string): string {
   if (briefBody(brief) === body.replace(/\r\n/g, "\n").trimEnd()) return brief;
@@ -1150,21 +1162,8 @@ export function planNote(plan: PlanData): string {
   return `${parts.join(" · ")} // ${plan.concurrency}`;
 }
 
-export function planDataOf(data: Record<string, unknown>): PlanData {
-  return planData(data);
-}
-
-export function taskDataOf(data: Record<string, unknown>): TaskData {
-  return taskData(data);
-}
-
 export function priorityIndex(priority: Priority): number {
   return PRIORITIES.indexOf(priority);
-}
-
-export function higherPriority(priority: Priority): Priority | undefined {
-  const index = priorityIndex(priority);
-  return index <= 0 ? undefined : PRIORITIES[index - 1];
 }
 
 /** A task is open until it merged or was cancelled. */

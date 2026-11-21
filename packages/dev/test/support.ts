@@ -8,8 +8,33 @@ import { join } from "node:path";
 import { Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { GIT_TIMEOUT_MS, GitTimeoutError } from "../src/git.ts";
-import { SqlitePluginStore } from "@operad-io/engine";
-import { openWaitHandleCount as openLockHandleCount } from "@operad-io/engine/platform";
+import {
+  SqlitePluginStore,
+  objectValueAfter,
+  type ObjectStore,
+  type PluginFact,
+  type StoredObject,
+} from "@operad-io/engine";
+import {
+  openWaitHandleCount as openLockHandleCount,
+  isBusy,
+} from "@operad-io/engine/platform";
+import {
+  appendChange,
+  appendRework,
+  listAll,
+  splitBrief,
+  storeKey,
+  taskData,
+  type TaskPhase,
+} from "../src/model.ts";
+import {
+  getPlan,
+  getTask,
+  putTaskKeepingPlanCost,
+  refreshPlanCounts,
+  withRepoLock,
+} from "../src/service.ts";
 
 const roots: string[] = [];
 
@@ -77,6 +102,102 @@ export async function makeGitRepository(
 
 export function storeAt(path: string): SqlitePluginStore {
   return new SqlitePluginStore({ root: join(path, "store") });
+}
+
+/** The Markdown of the rework sections, for a test that reads a brief. */
+export function reworkBody(brief: string): string {
+  return splitBrief(brief).reworks;
+}
+
+/** The Markdown of the trailing changes section, for a test that reads a brief. */
+export function changesBody(brief: string): string {
+  return splitBrief(brief).changes;
+}
+
+/** Moves a task to a phase, as a run's own write would; a test helper. */
+export async function setTaskPhase(
+  store: ObjectStore,
+  id: string,
+  phase: TaskPhase,
+  options: { readonly run?: string | null | undefined } = {},
+): Promise<StoredObject> {
+  const initial = await getTask(store, id);
+  const data = taskData(initial.data);
+  return withRepoLock(store, data.repository, async () => {
+    const current = await getTask(store, id);
+    const latest = taskData(current.data);
+    const run =
+      options.run === undefined
+        ? phase === "running" || phase === "review" || phase === "waiting"
+          ? latest.run
+          : null
+        : options.run;
+    const brief = appendChange(latest.brief, `phase: ${phase}`);
+    const written = await putTaskKeepingPlanCost(
+      store,
+      id,
+      { ...latest, phase, run, brief },
+      `dev:task-${phase}`,
+    );
+    try {
+      await refreshPlanCounts(
+        store,
+        await getPlan(store, storeKey(latest.repository, latest.plan)),
+      );
+    } catch (error) {
+      if (!isBusy(error)) throw error;
+    }
+    return written;
+  });
+}
+
+/** Appends a rework section to a task, as the dev action does; a test helper. */
+export async function addRework(
+  store: ObjectStore,
+  id: string,
+  source: string,
+  text: string,
+): Promise<StoredObject> {
+  const initial = await getTask(store, id);
+  const data = taskData(initial.data);
+  return withRepoLock(store, data.repository, async () => {
+    const current = await getTask(store, id);
+    const latest = taskData(current.data);
+    return putTaskKeepingPlanCost(
+      store,
+      id,
+      { ...latest, brief: appendRework(latest.brief, source, text) },
+      "dev:task-rework",
+    );
+  });
+}
+
+/** Rebuilds the objects a store's facts describe, in append order; a test helper. */
+export function rebuildObjects(
+  facts: readonly PluginFact[],
+): Map<string, Record<string, unknown>> {
+  const objects = new Map<string, Record<string, unknown>>();
+  for (const fact of facts) {
+    const object = fact.object;
+    if (object === undefined) continue;
+    const key = `${object.type}:${object.id}`;
+    const value = objectValueAfter(fact, objects.get(key) ?? {});
+    if (value !== undefined) objects.set(key, { ...value });
+  }
+  return objects;
+}
+
+/** The live object data, keyed the way `rebuildObjects` keys it; a test helper. */
+export async function liveObjects(
+  store: ObjectStore,
+): Promise<Map<string, Record<string, unknown>>> {
+  const objects = new Map<string, Record<string, unknown>>();
+  for (const type of ["repo", "plan", "task"]) {
+    for (const object of await listAll(store, type)) {
+      objects.set(`${type}:${object.id}`, { ...object.data });
+    }
+  }
+  return objects;
 }
 
 /**

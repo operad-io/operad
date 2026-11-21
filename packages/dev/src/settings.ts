@@ -5,7 +5,6 @@
  */
 
 import { messageOf } from "@operad-io/engine";
-import { createHash } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
@@ -34,6 +33,7 @@ import {
 } from "@operad-io/pool";
 import { defaultOperadHome, isRecord } from "@operad-io/engine";
 import { DevError, type AutoMode } from "./model.ts";
+import { repositoryPathKey } from "./repository-key.ts";
 import {
   type DevFlowSpec,
   type DevFlows,
@@ -1581,7 +1581,7 @@ function readSettingsNow(repositoryPath: string): ReadSettings {
 const lastValid = new Map<string, ReadSettings>();
 
 function keptFile(home: string, repositoryPath: string): string {
-  const key = createHash("sha1").update(repositoryPath).digest("hex");
+  const key = repositoryPathKey(repositoryPath);
   return join(home, "dev", "settings", `${key}.json`);
 }
 
@@ -1701,9 +1701,6 @@ export function settingsProblem(repositoryPath: string): string | undefined {
 export function hasValidSettings(repositoryPath: string): boolean {
   return recall(repositoryPath) !== undefined;
 }
-
-/** An alias for callers that name the file rather than the plugin. */
-export const readRepositorySettings = readDevSettings;
 
 /** The absolute path of the brief a worker reads, whether it exists or not. */
 export function workerBriefPath(
