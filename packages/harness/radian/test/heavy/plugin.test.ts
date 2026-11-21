@@ -26,7 +26,12 @@ import {
   EVENT_NOTE_TEMPLATE,
   type RadianHarnessSettings,
 } from "../../src/index.ts";
-import { degradedAskRequest, runAgent as runProcess } from "@operad-io/harness-process";
+import {
+  degradedAskRequest,
+  resultFor,
+  runAgent as runProcess,
+  type AgentRunOutcome,
+} from "@operad-io/harness-process";
 import {
   cleanupTempRoots,
   fakeRadian,
@@ -600,6 +605,70 @@ describe("radian/agent", () => {
     const data = dataOf(result);
     expect(data.reason).toBe("no_result");
     expect(data.exitCode).toBe(0);
+  });
+
+  describe("radian's mapping and the shared one", () => {
+    function outcomeOf(result: PluginStepResult): AgentRunOutcome {
+      const data = dataOf(result);
+      return {
+        exitCode: data.exitCode as number | null,
+        signal: data.signal as string | null,
+        cancelled: false,
+        wall: false,
+        stall: false,
+        lineTooLong: false,
+        missing: false,
+        spawnError: undefined,
+        stderrTail: data.stderr as readonly string[],
+      };
+    }
+
+    function sharedFor(result: PluginStepResult): PluginStepResult {
+      const data = dataOf(result);
+      return resultFor(
+        { harness: "radian", model: null },
+        outcomeOf(result),
+        undefined,
+        String(data.log),
+        Number(data.durationMs),
+        { wallTimeSecs: 300, stallSecs: 600 },
+        "radian",
+      );
+    }
+
+    test("a run killed by a signal: radian says exit today, the shared mapping says signal", async () => {
+      const env = await setup("signal");
+      const result = await runAgent(env, { prompt: "hello", cwd: env.root });
+      const shared = sharedFor(result);
+      const data = dataOf(result);
+
+      // Radian's own copy checks the exit code first, so a kill reads as a verdict.
+      expect(result.result).toBe("failed");
+      expect(data.reason).toBe("exit");
+      expect(data.message).toBe("the harness was killed by SIGKILL");
+
+      // The shared mapping treats a signal nobody here sent as an interruption.
+      expect(shared.result).toBe("interrupted");
+      expect(dataOf(shared).reason).toBe("signal");
+      expect(String(dataOf(shared).message)).toContain("SIGKILL");
+      expect(String(dataOf(shared).message)).toContain("without a Result line");
+    });
+
+    test("a non-zero exit without a Result: radian says exit today, the shared mapping says no_result", async () => {
+      const env = await setup("exit-no-result");
+      const result = await runAgent(env, { prompt: "hello", cwd: env.root });
+      const shared = sharedFor(result);
+      const data = dataOf(result);
+
+      // Radian's own copy checks the exit code before the missing result.
+      expect(result.result).toBe("failed");
+      expect(data.reason).toBe("exit");
+      expect(data.message).toBe("the harness exited 1");
+
+      expect(shared.result).toBe("failed");
+      expect(dataOf(shared).reason).toBe("no_result");
+      expect(String(dataOf(shared).message)).toContain("without a Result line");
+    });
   });
 
   test("no new output line for stallSecs stops the group", async () => {
