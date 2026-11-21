@@ -14,6 +14,10 @@
  * An action that needs a note, and a free answer, are answered by replying to
  * the item's message. After an answer, from Telegram or anywhere else, the
  * buttons go and the message reads "answered: X".
+ *
+ * `/pending` sends every answerable item now, whatever the `pending` setting
+ * lists: its count line goes first, then the items that were not already sent
+ * to that chat, through the same build and send path as a pushed item.
  */
 
 import { CHAT_TYPE, chatData } from "@operad-io/chat";
@@ -26,6 +30,7 @@ import {
   type ViewAction,
 } from "@operad-io/engine";
 import { BotApiError, type BotApi, type InlineButton, type TelegramCallback, type TelegramMessage } from "./api.ts";
+import { PENDING_NOTHING } from "./commands.ts";
 import { telegramChatsOf } from "./replies.ts";
 import { telegramSettings, type TelegramSettings } from "./settings.ts";
 import { readPending, writePending, type PendingState, type SentItem, type SentOption } from "./state.ts";
@@ -42,6 +47,8 @@ export interface PendingResponder {
   handleCallback(callback: TelegramCallback): Promise<boolean>;
   /** A reply to a message; true when the reply answered (or tried to answer) a pending item. */
   handleReply(message: TelegramMessage): Promise<boolean>;
+  /** Sends the item messages `/pending` prepared for this Telegram chat. */
+  show(target: number): Promise<void>;
 }
 
 export interface PendingSenderOptions {
@@ -65,6 +72,13 @@ function itemKey(item: { readonly runId: string; readonly waitId?: string | unde
 /** The part of a state key that names the item, without the Telegram chat. */
 function itemKeyOf(key: string): string {
   return key.slice(0, key.lastIndexOf("/"));
+}
+
+/** An item and the message `/pending` will send for it. */
+interface PlannedItem {
+  readonly item: PendingItem;
+  readonly text: string;
+  readonly options: readonly SentOption[];
 }
 
 /** An option with what the asker says about its choice. */
@@ -105,6 +119,8 @@ export class PendingSender implements PendingResponder {
   /** Everything that reads or writes the state runs one at a time. */
   private tail: Promise<unknown> = Promise.resolve();
   private queued = false;
+  /** The item messages `/pending` prepared for a Telegram chat, waiting for its count line. */
+  private held = new Map<number, { readonly items: readonly PlannedItem[]; readonly release: () => void }>();
 
   constructor(ctx: SourceContext, options: PendingSenderOptions) {
     this.ctx = ctx;
@@ -189,6 +205,82 @@ export class PendingSender implements PendingResponder {
       if (sent.answered !== undefined || waiting.has(itemKeyOf(key))) continue;
       await this.settle(key, sent, await this.answeredWith(sent));
     }
+  }
+
+  /**
+   * Prepares what `/pending` sends after its count line: every answerable item,
+   * whatever `pending` lists, except the ones already sent and still open in
+   * this chat. Returns the count line. A Telegram command holds the pending
+   * pass until {@link show}, so nothing slips in between the count and the items.
+   */
+  async prepare(chatId: string, hold = false): Promise<string> {
+    let release = (): void => {};
+    const gate = hold
+      ? new Promise<void>((resolve) => {
+          release = resolve;
+        })
+      : undefined;
+    const work = this.tail.catch(() => undefined).then(async () => {
+      const target = await this.chatTarget(chatId);
+      if (target === undefined) return { line: PENDING_NOTHING, target, items: [] as readonly PlannedItem[] };
+      const items: PlannedItem[] = [];
+      let already = 0;
+      for (const item of await this.client.pending()) {
+        if (!this.answerable(item)) continue;
+        if (this.state[stateKey(item, target)] !== undefined) {
+          already += 1;
+          continue;
+        }
+        const built = await this.build(item);
+        if (built === undefined) continue;
+        items.push({ item, text: built.text, options: built.options });
+      }
+      const total = items.length + already;
+      const line =
+        total === 0
+          ? PENDING_NOTHING
+          : already === 0
+            ? `${total} waiting`
+            : `${total} waiting; ${already} already sent`;
+      return { line, target, items };
+    });
+    this.tail = gate === undefined ? work.catch(() => undefined) : work.then(() => gate).catch(() => undefined);
+    try {
+      const result = await work;
+      if (gate === undefined || result.target === undefined) release();
+      else this.held.set(result.target, { items: result.items, release });
+      return result.line;
+    } catch (error) {
+      release();
+      throw error;
+    }
+  }
+
+  /** Sends the item messages prepared for this chat, after `/pending`'s count line. */
+  async show(target: number): Promise<void> {
+    const held = this.held.get(target);
+    this.held.delete(target);
+    if (held === undefined || held.items.length === 0) {
+      held?.release();
+      return;
+    }
+    try {
+      for (const entry of held.items) {
+        if (this.stopped) return;
+        // Another pass may have sent it between the count line and this one.
+        if (this.state[stateKey(entry.item, target)] !== undefined) continue;
+        await this.send(entry.item, target, entry.text, entry.options);
+      }
+    } finally {
+      held.release();
+    }
+  }
+
+  /** The Telegram chat a bound chat sends `/pending` to. */
+  private async chatTarget(chatId: string): Promise<number | undefined> {
+    const stored = await this.ctx.store.get(CHAT_TYPE, chatId);
+    if (stored === undefined) return undefined;
+    return telegramChatsOf(chatData(stored.data).channels)[0];
   }
 
   /** An item a person can answer here: it names a question, or an object to act on. */

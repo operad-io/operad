@@ -10,7 +10,7 @@
 import pkg from "../package.json" with { type: "json" };
 import { definePlugin, type SourceHandle } from "@operad-io/engine";
 import { createBotApi, type BotApi } from "./api.ts";
-import { CommandSender } from "./commands.ts";
+import { CommandSender, pendingCommandAction } from "./commands.ts";
 import { TELEGRAM_SETTINGS, TOKEN_SECRET } from "./settings.ts";
 import { PendingSender } from "./pending.ts";
 import { ProgressSender } from "./progress.ts";
@@ -29,11 +29,14 @@ export interface TelegramPluginOptions {
 
 /** Builds the Telegram source plugin. */
 export function createTelegramPlugin(options: TelegramPluginOptions = {}) {
+  /** The pending side of the running source, which `/pending` reads. */
+  let pendingSender: PendingSender | undefined;
   return definePlugin({
     name: "telegram",
     kind: "source",
     version: pkg.version,
     settings: TELEGRAM_SETTINGS,
+    actions: [pendingCommandAction(() => pendingSender)],
     async start(ctx): Promise<SourceHandle> {
       const token = await ctx.secrets.get(TOKEN_SECRET);
       if (token === undefined) {
@@ -44,6 +47,7 @@ export function createTelegramPlugin(options: TelegramPluginOptions = {}) {
       const api = options.api ?? createBotApi({ token });
       const wait = options.wait ?? delay;
       const pending = new PendingSender(ctx, { api });
+      pendingSender = pending;
       const commands = new CommandSender(ctx, { api });
       const typingSender = new TypingSender(ctx, {
         api,
@@ -71,6 +75,7 @@ export function createTelegramPlugin(options: TelegramPluginOptions = {}) {
           await progress.stop();
           await replies.stop();
           await sent.stop();
+          if (pendingSender === pending) pendingSender = undefined;
         },
       };
     },

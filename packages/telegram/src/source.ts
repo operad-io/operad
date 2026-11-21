@@ -21,7 +21,7 @@ import {
 } from "@operad-io/chat";
 import { messageOf, type SourceContext, type SourceHandle } from "@operad-io/engine";
 import type { BotApi, TelegramMessage, TelegramUpdate } from "./api.ts";
-import { stripBotName, type CommandResponder } from "./commands.ts";
+import { stripBotName, PENDING_COMMAND, type CommandResponder } from "./commands.ts";
 import type { PendingResponder } from "./pending.ts";
 import { telegramSettings } from "./settings.ts";
 import { readOffset, writeOffset } from "./state.ts";
@@ -302,6 +302,10 @@ export class TelegramSource {
     if (command !== undefined) {
       const outcome = typeof result.value === "string" && result.value.trim().length > 0 ? result.value : "done";
       await this.commands?.say(message.chat.id, outcome);
+      // `/pending` sends its count as a command's answer, then the items it prepared.
+      if (command.info.action === PENDING_COMMAND && command.info.plugin === TELEGRAM_SOURCE) {
+        await this.pending?.show(message.chat.id);
+      }
     }
     await this.record(key, chatId, summary);
     if (command !== undefined || open === undefined) await this.commands?.refresh(chatId);
