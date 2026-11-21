@@ -18,7 +18,6 @@ import {
   paramsObject,
   defineFlow,
   definePlugin,
-  type AgentResultData,
   type PluginStepResult,
   type StepContext,
 } from "@operad-io/engine";
@@ -27,11 +26,11 @@ import {
   askNote,
   eventNote,
   directoryError,
+  failure,
   findCommand,
   flagValue,
   JsonlLog,
   deliverLine,
-  MAX_LINE_CHARS,
   OPERAD_SERVER,
   operadToolsOf,
   mountedServersOf,
@@ -47,11 +46,12 @@ import {
   type RawCost,
   type RawCounts,
   type UsageSource,
+  type AgentWorkerResult,
   modelLimit,
   personStarted,
+  resultFor,
   runAgent,
   systemClock,
-  type AgentRunOutcome,
   type Clock,
   type ToolEvent,
 } from "@operad-io/harness-process";
@@ -339,38 +339,36 @@ function modelErrorData(
   return result?.modelError == null ? {} : { modelError: result.modelError };
 }
 
-function failureData(
-  who: UsageSource,
-  outcome: AgentRunOutcome,
-  result: ParsedResult | undefined,
-  log: string,
-  durationMs: number,
-  extra: Readonly<Record<string, unknown>>,
-): Record<string, unknown> {
+/**
+ * Radian's Result record as the worker result the shared mapping reads. A
+ * Result names no worker result of its own in this step: a non-zero exit is
+ * the failure, so a present Result maps to `done`. Only its model_error is
+ * kept by the step, because radian prints the whole error object and dev reads
+ * its kind from there.
+ */
+function workerResultOf(result: ParsedResult | undefined): AgentWorkerResult | undefined {
+  if (result === undefined) return undefined;
+  const cost = result.cost;
   return {
-    ...agentData(who, outcome, result, log, durationMs),
-    ...modelErrorData(result),
-    ...extra,
+    type: "result",
+    result: "done",
+    sessionId: result.sessionId,
+    usage: result.counts,
+    cost:
+      cost === null
+        ? null
+        : {
+            micros: cost.micros,
+            ...(cost.incomplete === true ? { incomplete: true as const } : {}),
+            ...(cost.estimated === true ? { quality: "estimated" as const } : {}),
+          },
+    finalMessage: result.finalMessage,
   };
 }
 
-function agentData(
-  who: UsageSource,
-  outcome: AgentRunOutcome,
-  result: ParsedResult | undefined,
-  log: string,
-  durationMs: number,
-): AgentResultData {
-  return {
-    exitCode: outcome.exitCode,
-    signal: outcome.signal,
-    sessionId: result?.sessionId ?? null,
-    finalMessage: result?.finalMessage ?? null,
-    usage: standardUsage(who, result?.counts, result?.cost),
-    log,
-    durationMs,
-    stderr: outcome.stderrTail,
-  };
+/** Adds radian's own model_error, whole, to a step result when it reported one. */
+function withModelError(result: ParsedResult | undefined, step: PluginStepResult): PluginStepResult {
+  return { ...step, data: { ...(step.data ?? {}), ...modelErrorData(result) } };
 }
 
 /** Whether the profile has a rule radian's calls must be judged by. */
@@ -438,101 +436,6 @@ function radianArgs(
     Buffer.byteLength(prompt, "utf8") > PROMPT_ARG_SAFE_BYTES ? prompt : undefined;
   argv.push("-p", stdin === undefined ? prompt : "-");
   return { args: argv, stdin };
-}
-
-function resultFor(
-  who: UsageSource,
-  outcome: AgentRunOutcome,
-  result: ParsedResult | undefined,
-  log: string,
-  durationMs: number,
-  wallTimeSecs: number,
-  stallSecs: number,
-  command: string,
-): PluginStepResult {
-  if (outcome.cancelled) {
-    return {
-      result: "interrupted",
-      data: failureData(who, outcome, result, log, durationMs, {
-        reason: "cancelled",
-        message: "the harness run was cancelled",
-      }),
-    };
-  }
-  if (outcome.missing) {
-    return {
-      result: "failed",
-      data: failureData(who, outcome, result, log, durationMs, {
-        reason: "missing",
-        message: `${command} was not found on PATH`,
-      }),
-    };
-  }
-  if (outcome.spawnError !== undefined) {
-    return {
-      result: "failed",
-      data: failureData(who, outcome, result, log, durationMs, {
-        reason: "spawn",
-        message: outcome.spawnError,
-      }),
-    };
-  }
-  if (outcome.wall) {
-    return {
-      result: "failed",
-      data: failureData(who, outcome, result, log, durationMs, {
-        reason: "wall",
-        message: `the harness ran longer than ${wallTimeSecs}s`,
-      }),
-    };
-  }
-  if (outcome.stall) {
-    return {
-      result: "failed",
-      data: failureData(who, outcome, result, log, durationMs, {
-        reason: "stall",
-        message: `the harness printed no new line for ${stallSecs}s`,
-      }),
-    };
-  }
-  if (outcome.lineTooLong) {
-    return {
-      result: "failed",
-      data: failureData(who, outcome, result, log, durationMs, {
-        reason: "line_too_long",
-        message: `the harness printed a line longer than ${MAX_LINE_CHARS} characters`,
-      }),
-    };
-  }
-  if (outcome.exitCode !== 0) {
-    const message =
-      outcome.signal !== null
-        ? `the harness was killed by ${outcome.signal}`
-        : `the harness exited ${String(outcome.exitCode)}`;
-    return {
-      result: "failed",
-      data: failureData(who, outcome, result, log, durationMs, {
-        reason: "exit",
-        message,
-      }),
-    };
-  }
-  if (result === undefined) {
-    return {
-      result: "failed",
-      data: failureData(who, outcome, result, log, durationMs, {
-        reason: "no_result",
-        message: "the harness exited 0 without a Result record",
-      }),
-    };
-  }
-  return {
-    result: "done",
-    data: {
-      ...agentData(who, outcome, result, log, durationMs),
-      ...modelErrorData(result),
-    } as unknown as Record<string, unknown>,
-  };
 }
 
 /**
@@ -753,6 +656,7 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
             },
           });
           await jsonl.end();
+          const worker = workerResultOf(result);
 
           // A resumed run continues the session it was given. Another id means
           // radian started afresh and the earlier conversation is lost.
@@ -764,27 +668,29 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
             result.sessionId !== resumeSession
           ) {
             const timing = timings.finish();
-            return withTimings({
-              result: "failed",
-              data: failureData(who, outcome, result, ctx.logger.path, timing.totalMs, {
-                reason: "session_missing",
-                message: `radian did not continue the session ${resumeSession}; it answered with ${result.sessionId ?? "no session"}`,
-              }),
-            }, timing);
+            return withTimings(
+              withModelError(
+                result,
+                failure(who, "failed", outcome, worker, ctx.logger.path, timing.totalMs, {
+                  reason: "session_missing",
+                  message: `radian did not continue the session ${resumeSession}; it answered with ${result.sessionId ?? "no session"}`,
+                }),
+              ),
+              timing,
+            );
           }
 
           const timing = timings.finish();
           const stepResult = resultFor(
             who,
             outcome,
-            result,
+            worker,
             ctx.logger.path,
             timing.totalMs,
-            wallTimeSecs,
-            stallSecs,
+            { wallTimeSecs, stallSecs },
             commandName,
           );
-          return withTimings(stepResult, timing);
+          return withTimings(withModelError(result, stepResult), timing);
         },
       },
     ],

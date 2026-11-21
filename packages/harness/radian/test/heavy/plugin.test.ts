@@ -636,38 +636,39 @@ describe("radian/agent", () => {
       );
     }
 
-    test("a run killed by a signal: radian says exit today, the shared mapping says signal", async () => {
+    test("a run killed by a signal is interrupted, as the shared mapping says", async () => {
       const env = await setup("signal");
       const result = await runAgent(env, { prompt: "hello", cwd: env.root });
       const shared = sharedFor(result);
       const data = dataOf(result);
 
-      // Radian's own copy checks the exit code first, so a kill reads as a verdict.
-      expect(result.result).toBe("failed");
-      expect(data.reason).toBe("exit");
-      expect(data.message).toBe("the harness was killed by SIGKILL");
-
-      // The shared mapping treats a signal nobody here sent as an interruption.
-      expect(shared.result).toBe("interrupted");
-      expect(dataOf(shared).reason).toBe("signal");
-      expect(String(dataOf(shared).message)).toContain("SIGKILL");
-      expect(String(dataOf(shared).message)).toContain("without a Result line");
+      // A signal nobody here sent is an interruption, not a verdict of the agent.
+      expect(result.result).toBe("interrupted");
+      expect(data.reason).toBe("signal");
+      expect(String(data.message)).toContain("SIGKILL");
+      expect(String(data.message)).toContain("without a Result line");
+      expect({ result: result.result, reason: data.reason, message: data.message }).toEqual({
+        result: shared.result,
+        reason: dataOf(shared).reason,
+        message: dataOf(shared).message,
+      });
     });
 
-    test("a non-zero exit without a Result: radian says exit today, the shared mapping says no_result", async () => {
+    test("a non-zero exit without a Result is no_result, as the shared mapping says", async () => {
       const env = await setup("exit-no-result");
       const result = await runAgent(env, { prompt: "hello", cwd: env.root });
       const shared = sharedFor(result);
       const data = dataOf(result);
 
-      // Radian's own copy checks the exit code before the missing result.
+      // There was no Result, so the missing result names the failure, not the exit.
       expect(result.result).toBe("failed");
-      expect(data.reason).toBe("exit");
-      expect(data.message).toBe("the harness exited 1");
-
-      expect(shared.result).toBe("failed");
-      expect(dataOf(shared).reason).toBe("no_result");
-      expect(String(dataOf(shared).message)).toContain("without a Result line");
+      expect(data.reason).toBe("no_result");
+      expect(String(data.message)).toContain("without a Result line");
+      expect({ result: result.result, reason: data.reason, message: data.message }).toEqual({
+        result: shared.result,
+        reason: dataOf(shared).reason,
+        message: dataOf(shared).message,
+      });
     });
   });
 

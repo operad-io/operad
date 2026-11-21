@@ -117,3 +117,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0533-M8 | packages/harness/radian/src/index.ts | a background run passed no `background` marker to its hook profile | `radian/agent > a run no person started gives its hook a background profile` |
+
+## T-0631 — radian reads the shared result mapping
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0631-M1 | packages/harness/radian/src/index.ts | kept radian's own `resultFor`, which checks the exit code before the missing result and has no signal branch (the old copy) | `radian/agent > radian's mapping and the shared one > a run killed by a signal is interrupted, as the shared mapping says` (`failed` instead of `interrupted`) and `radian/agent > radian's mapping and the shared one > a non-zero exit without a Result is no_result, as the shared mapping says` (`exit` instead of `no_result`) |
