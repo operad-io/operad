@@ -92,6 +92,8 @@ export interface WorkerModelError {
   readonly resetsAt: number | null;
   /** How long until the reset, in seconds; null when claude gave no reset time. */
   readonly retry_after_secs: number | null;
+  /** When the rate limit was reported, in epoch milliseconds; null without a reset time. */
+  readonly reported_at: number | null;
 }
 
 /** The last line of stdout. */

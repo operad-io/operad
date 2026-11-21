@@ -40,6 +40,8 @@ export interface AgentWorkerResult {
     readonly kind: string;
     readonly status?: number | null;
     readonly retry_after_secs?: number | null;
+    /** When the model gave the error, in epoch milliseconds, when the worker can tell. */
+    readonly reported_at?: number | null;
   };
 }
 
@@ -144,12 +146,53 @@ export function resultValue<Result extends AgentWorkerResult>(value: unknown): R
 
 const UNAVAILABLE = /\b429\b|\b(?:503|529)\b|overloaded|rate[ _-]?limit|too many requests/i;
 const USAGE_LIMIT = /usage[ _-]?limit|quota|exceeded your (?:current )?(?:usage|plan|quota)|insufficient[ _-]credit|out of credits/i;
+/** A provider's own retry-after or reset wait: the number and its unit. */
+const RETRY_AFTER = /\b(?:retry[- ]after|try again (?:in|after)|retry in|available(?: again)? in|resets? in)\s*[:=]?\s*(\d+(?:\.\d+)?)\s*(ms|milliseconds?|s|secs?|seconds?|m|mins?|minutes?|h|hrs?|hours?|d|days?|w|weeks?|mo(?:nths?)?)?(?![a-z])/i;
+
+/**
+ * The seconds a model's message says to wait, from a retry-after or reset
+ * phrase. A bare number after such a phrase is seconds. Undefined when the
+ * message gives no such wait; a date or a time of day is not read, because its
+ * day is unknown.
+ */
+export function retryAfterSecsOf(message: string): number | undefined {
+  const found = RETRY_AFTER.exec(message);
+  if (found === null) return undefined;
+  const unit = found[2];
+  // A word after the number is a unit this parser does not know, not seconds.
+  if (
+    unit === undefined &&
+    /^\s*[a-z]/i.test(message.slice(found.index + found[0].length))
+  ) {
+    return undefined;
+  }
+  const value = Number(found[1]);
+  if (!Number.isFinite(value) || value <= 0) return undefined;
+  const unitName = (unit ?? "s").toLowerCase();
+  const factor =
+    unitName.startsWith("millisecond") || unitName === "ms"
+      ? 1 / 1000
+      : unitName.startsWith("min") || unitName === "m"
+        ? 60
+        : unitName.startsWith("h")
+          ? 60 * 60
+          : unitName.startsWith("mo")
+            ? 30 * 24 * 60 * 60
+            : unitName.startsWith("w")
+              ? 7 * 24 * 60 * 60
+              : unitName.startsWith("d")
+                ? 24 * 60 * 60
+                : 1;
+  const seconds = Math.ceil(value * factor);
+  return seconds > 0 ? seconds : undefined;
+}
 
 /**
  * The `modelError` of a worker failure with reason `model_error`, in the shape
  * `radian` gives. `kind` comes from the message: a usage limit is
  * `usage_limit`, a 429 or an overloaded provider is `unavailable`, anything else
- * is `protocol`. A usage-limit message wins over a 429 in the same text.
+ * is `protocol`. A usage-limit message wins over a 429 in the same text. A wait
+ * the message names is `retry_after_secs`; without one it is null.
  */
 export function modelErrorOf(message: string): Record<string, unknown> {
   const status = /\b(429|503|529)\b/.exec(message);
@@ -159,7 +202,7 @@ export function modelErrorOf(message: string): Record<string, unknown> {
   return {
     kind,
     status: status === null ? null : Number(status[1]),
-    retry_after_secs: null,
+    retry_after_secs: retryAfterSecsOf(message) ?? null,
     message,
   };
 }
@@ -288,24 +331,31 @@ export function resultFor(
   if (result.result === "failed") {
     const message = result.message ?? "the harness failed";
     // A rate limit the worker saw is a usage limit whatever the text says.
+    const byText = modelErrorOf(message);
+    const given = result.modelError;
+    const positive = (value: unknown): number | undefined =>
+      typeof value === "number" && Number.isFinite(value) && value > 0
+        ? value
+        : undefined;
+    const retryAfterSecs =
+      positive(given?.retry_after_secs) ?? positive(byText["retry_after_secs"]);
     const modelError =
-      result.modelError !== undefined
+      given !== undefined
         ? {
-            kind: result.modelError.kind,
-            status:
-              typeof result.modelError.status === "number" &&
-              Number.isFinite(result.modelError.status)
-                ? result.modelError.status
-                : null,
-            retry_after_secs:
-              typeof result.modelError.retry_after_secs === "number" &&
-              Number.isFinite(result.modelError.retry_after_secs) &&
-              result.modelError.retry_after_secs > 0
-                ? result.modelError.retry_after_secs
-                : null,
+            kind: given.kind,
+            status: positive(given.status) ?? positive(byText["status"]) ?? null,
+            retry_after_secs: retryAfterSecs ?? null,
+            ...(retryAfterSecs === undefined
+              ? {}
+              : { reported_at: positive(given.reported_at) ?? Date.now() }),
             message,
           }
-        : modelErrorOf(message);
+        : {
+            ...byText,
+            ...(retryAfterSecs === undefined
+              ? {}
+              : { reported_at: Date.now() }),
+          };
     return fail({
       reason: result.reason ?? "exit",
       message,

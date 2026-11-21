@@ -2017,7 +2017,8 @@ export async function runWork(ctx: StepContext, stepParams?: unknown): Promise<P
         modelError.retryAfterSecs === undefined
           ? ""
           : `; the model can serve again at ${new Date(
-              devNow() + modelError.retryAfterSecs * 1000,
+              (modelError.reportedAt ?? devNow()) +
+                modelError.retryAfterSecs * 1000,
             ).toISOString()}`;
       return finish("failed", {
         reason: "model_unavailable",
@@ -2028,7 +2029,11 @@ export async function runWork(ctx: StepContext, stepParams?: unknown): Promise<P
     if (modelError !== undefined && waits < MAX_WORK_WAITS) {
       const waitSecs =
         modelError.retryAfterSecs ?? context.settings.reviewer.retrySecs;
-      const retryAt = devNow() + waitSecs * 1000;
+      const retryAt =
+        (modelError.retryAfterSecs === undefined
+          ? devNow()
+          : modelError.reportedAt ?? devNow()) +
+        waitSecs * 1000;
       nextAttempt = { ...nextAttempt, workWaits: waits + 1, workRetryAt: retryAt };
       return finish(
         "unavailable",

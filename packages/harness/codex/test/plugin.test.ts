@@ -679,8 +679,9 @@ describe("codex/agent: model errors", () => {
     expect(data.modelError).toEqual({
       kind: "usage_limit",
       status: null,
-      retry_after_secs: null,
-      message: "Your ChatGPT allowance is used up. Try again later.",
+      retry_after_secs: 30,
+      reported_at: expect.any(Number),
+      message: "Your ChatGPT allowance is used up. Try again in 30 seconds.",
     });
   });
 
@@ -707,17 +708,35 @@ describe("codex/agent: model errors", () => {
   });
 
   test("the error info maps to the kinds dev and pool act on", () => {
-    const error = (info: string, status = "failed") =>
+    const error = (info: string, status = "failed", message = "m") =>
       ({
         kind: "stopped",
         stopReason: status,
         usage: null,
         sessionId: "s",
-        error: { code: 0, message: "m", data: { message: "m", codexErrorInfo: info } },
+        error: { code: 0, message, data: { message, codexErrorInfo: info } },
       }) as const;
-    expect(failureOf(error("rateLimitExceeded"), undefined).modelError).toEqual({ kind: "usage_limit" });
-    expect(failureOf(error("serverOverloaded"), undefined).modelError).toEqual({ kind: "unavailable" });
-    expect(failureOf(error("httpConnectionFailed"), undefined).modelError).toEqual({ kind: "protocol" });
+    expect(failureOf(error("rateLimitExceeded"), undefined).modelError).toEqual({
+      kind: "usage_limit",
+      status: null,
+      retry_after_secs: null,
+    });
+    expect(failureOf(error("serverOverloaded"), undefined).modelError).toEqual({
+      kind: "unavailable",
+      status: null,
+      retry_after_secs: null,
+    });
+    expect(failureOf(error("httpConnectionFailed"), undefined).modelError).toEqual({
+      kind: "protocol",
+      status: null,
+      retry_after_secs: null,
+    });
+    expect(
+      failureOf(
+        error("rateLimitExceeded", "failed", "429 too many requests; retry after 15 seconds"),
+        undefined,
+      ).modelError,
+    ).toEqual({ kind: "usage_limit", status: 429, retry_after_secs: 15 });
   });
 });
 

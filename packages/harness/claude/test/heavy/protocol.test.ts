@@ -561,9 +561,11 @@ test("a rejected rate limit carries the time until its reset", async () => {
   const modelError = last(run)["modelError"] as {
     readonly resetsAt?: unknown;
     readonly retry_after_secs?: unknown;
+    readonly reported_at?: unknown;
   };
   expect(modelError.resetsAt).toBe(resetsAt);
   expect(typeof modelError.retry_after_secs).toBe("number");
+  expect(typeof modelError.reported_at).toBe("number");
   const retryAfter = modelError.retry_after_secs as number;
   expect(retryAfter).toBeGreaterThan(3590);
   expect(retryAfter).toBeLessThanOrEqual(3600);

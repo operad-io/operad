@@ -139,6 +139,8 @@ interface FakeReviewerOptions {
   readonly retryInvalid?: boolean;
   /** Append one line per model call, so a test can count calls across processes. */
   readonly callLog?: string;
+  /** When the model reported its wait, for the modes that carry one. */
+  readonly modelErrorReportedAt?: number;
 }
 
 function fakeReviewer(options: FakeReviewerOptions = {}): FakeReviewer {
@@ -244,6 +246,9 @@ function fakeReviewer(options: FakeReviewerOptions = {}): FakeReviewer {
                   kind: "usage_limit",
                   status: null,
                   retry_after_secs: 3600,
+                  ...(options.modelErrorReportedAt === undefined
+                    ? {}
+                    : { reported_at: options.modelErrorReportedAt }),
                 },
                 message: "the usage limit is reached",
               },
@@ -258,6 +263,9 @@ function fakeReviewer(options: FakeReviewerOptions = {}): FakeReviewer {
                   kind: "unavailable",
                   status: 429,
                   retry_after_secs: 60,
+                  ...(options.modelErrorReportedAt === undefined
+                    ? {}
+                    : { reported_at: options.modelErrorReportedAt }),
                 },
                 message: "the model is busy",
               },
@@ -491,6 +499,8 @@ interface FixtureOptions {
   readonly retrySecs?: number;
   /** A file the fake reviewer appends one line to per call. */
   readonly callLog?: string;
+  /** When the model reported its wait in the fake reviewer's model errors. */
+  readonly modelErrorReportedAt?: number;
   /** Add one small committed file after the worktree is created. */
   readonly commit?: boolean;
   readonly clock?: ManualClock;
@@ -584,6 +594,9 @@ async function fixture(options: FixtureOptions = {}): Promise<Fixture> {
   const reviewer = fakeReviewer({
     retryInvalid: options.retryInvalid === true,
     ...(options.callLog === undefined ? {} : { callLog: options.callLog }),
+    ...(options.modelErrorReportedAt === undefined
+      ? {}
+      : { modelErrorReportedAt: options.modelErrorReportedAt }),
   });
   const registry = new PluginRegistry(
     [
@@ -1607,20 +1620,23 @@ describe("dev/review fallback and retry", () => {
   });
 
   test("an unavailable review waits the retry-after it was given, not retrySecs", async () => {
+    const reportedAt = 4_000;
     const state = await fixture({
       reviewerArgs: ["unavailable-retry", "--model", "primary"],
       retrySecs: 120,
+      modelErrorReportedAt: reportedAt,
     });
     await verify(state);
-    let clock = 10_000;
+    const clock = 10_000;
     const restoreHooks = useHooks({ now: () => clock });
     try {
       const first = await review(state, "review-retry-after");
       expect(first.result).toBe("unavailable");
-      expect(first.data?.retryAt).toBe(clock + 60_000);
+      // The report was six seconds before this step read it.
+      expect(first.data?.retryAt).toBe(reportedAt + 60_000);
       const task = await taskOf(state);
-      expect(task.attempt?.review?.retryAt).toBe(clock + 60_000);
-      expect(task.retryAt).toBe(clock + 60_000);
+      expect(task.attempt?.review?.retryAt).toBe(reportedAt + 60_000);
+      expect(task.retryAt).toBe(reportedAt + 60_000);
       expect(state.reviewer.calls).toHaveLength(1);
     } finally {
       restoreHooks();
@@ -2024,7 +2040,7 @@ describe("dev/review hardening", () => {
       retrySecs: 120,
     });
     await verify(state);
-    let clock = 10_000;
+    const clock = 10_000;
     const restoreHooks = useHooks({ now: () => clock });
     try {
       const result = await review(state, "review-usage-limit-person");
@@ -2039,6 +2055,26 @@ describe("dev/review hardening", () => {
       const message = String(result.data?.message);
       expect(message).toContain("the usage limit is reached");
       expect(message).toContain(new Date(clock + 3_600_000).toISOString());
+    } finally {
+      restoreHooks();
+    }
+  }, 30_000);
+
+  test("a usage limit's reset time is counted from when the model reported it", async () => {
+    const reportedAt = 1_000;
+    const state = await fixture({
+      reviewerArgs: ["usage-limit", "--model", "primary"],
+      retrySecs: 120,
+      modelErrorReportedAt: reportedAt,
+    });
+    await verify(state);
+    const restoreHooks = useHooks({ now: () => 10_000 });
+    try {
+      const result = await review(state, "review-usage-limit-reported");
+      expect(result.result).toBe("exhausted");
+      expect(String(result.data?.message)).toContain(
+        new Date(reportedAt + 3_600_000).toISOString(),
+      );
     } finally {
       restoreHooks();
     }

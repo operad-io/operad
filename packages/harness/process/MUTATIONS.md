@@ -252,3 +252,10 @@ and the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0654-M1 | packages/harness/process/src/step.ts | a worker's `modelError.retry_after_secs` was always written as `null` | `resultFor > a model error keeps the retry after the worker reported` |
+
+## T-0656 — a model's message carries its wait and report time
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0656-M1 | packages/harness/process/src/step.ts | `modelErrorOf` threw away the retry-after or reset wait the message named | `modelErrorOf > a retry-after or reset the text names is the wait` |
+| T-0656-M2 | packages/harness/process/src/step.ts | `resultFor` dropped the worker's `reported_at` from a model error that carries a wait | `resultFor > a model error keeps the retry after the worker reported` |

@@ -377,7 +377,8 @@ A review whose harness reports a model error (`unavailable` or `usage_limit`), o
 whose error output says `HTTP 429`, does not lose the attempt. The same review
 round runs once on `reviewer.fallback` when `.operad/dev.json` sets one. Without a
 fallback, or when the fallback is unavailable too, the task waits the model's
-`retry_after_secs` when it gave one, else `reviewer.retrySecs` (default 120
+`retry_after_secs` from the time the model reported it when it gave one, else
+`reviewer.retrySecs` (default 120
 seconds; each further wait doubles, up to 30 minutes), and then runs the review
 again. It does not start a worker and does not count a rework. A round uses its
 fallback at most once, so a retry that finds the primary unavailable again waits
@@ -951,7 +952,8 @@ A worker listed in two pools has one `count`: its places are shared by both pool
 
 A pool whose workers have no `fallback` never hands its work to a worker of
 another pool: when the model is unavailable, the work waits the model's
-`retry_after_secs` when it gave one, else `reviewer.retrySecs`, and after the
+`retry_after_secs` from the time the model reported it when it gave one, else
+`reviewer.retrySecs`, and after the
 allowed waits it goes to a person. A usage limit, or a retry-after longer than
 half an hour, goes to a person at once, with the model's message and the time it
 resets. Choose a task's flow with `task add --flow <name>` (the `command` tool

@@ -13,12 +13,19 @@ export interface ModelErrorInfo {
   readonly message?: string;
   /** How long the model said to wait, in seconds; absent when it did not say. */
   readonly retryAfterSecs?: number;
+  /** When the model reported the wait, in epoch milliseconds; absent when unknown. */
+  readonly reportedAt?: number;
 }
 
-function retryAfterSecs(value: unknown): number | undefined {
+/** A positive epoch time, or undefined when the value is not one. */
+function positiveTime(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value > 0
     ? value
     : undefined;
+}
+
+function retryAfterSecs(value: unknown): number | undefined {
+  return positiveTime(value);
 }
 
 /** A normalized model error, or undefined when the value is not one. */
@@ -32,10 +39,12 @@ export function readModelError(value: unknown): ModelErrorInfo | undefined {
       ? value.message
       : undefined;
   const retry = retryAfterSecs(value.retry_after_secs);
+  const reported = positiveTime(value.reported_at);
   return {
     kind: value.kind,
     ...(message === undefined ? {} : { message }),
     ...(retry === undefined ? {} : { retryAfterSecs: retry }),
+    ...(reported === undefined ? {} : { reportedAt: reported }),
   };
 }
 

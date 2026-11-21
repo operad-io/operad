@@ -174,13 +174,29 @@ function errorText(error: AppServerError): string {
 export interface Failure {
   readonly reason: string;
   readonly message: string;
-  readonly modelError?: { readonly kind: string };
+  readonly modelError?: NonNullable<AgentWorkerResult["modelError"]>;
+}
+
+/** A model error of one kind, carrying the status and wait its message names. */
+function modelErrorFrom(
+  kind: string,
+  message: string,
+): NonNullable<AgentWorkerResult["modelError"]> {
+  const byText = modelErrorOf(message);
+  return {
+    kind,
+    status: typeof byText["status"] === "number" ? byText["status"] : null,
+    retry_after_secs:
+      typeof byText["retry_after_secs"] === "number"
+        ? byText["retry_after_secs"]
+        : null,
+  };
 }
 
 /** The model error of an app-server error kind, or undefined when it is not a model error. */
 function modelFailure(info: string | undefined, message: string): Failure | undefined {
   if (info === "usageLimitExceeded" || info === "rateLimitExceeded" || info === "contextWindowExceeded" || info === "sessionBudgetExceeded") {
-    return { reason: "model_error", message, modelError: { kind: "usage_limit" } };
+    return { reason: "model_error", message, modelError: modelErrorFrom("usage_limit", message) };
   }
   if (
     info === "serverOverloaded" ||
@@ -188,7 +204,7 @@ function modelFailure(info: string | undefined, message: string): Failure | unde
     info === "flexUnavailable" ||
     info === "policyCapacityUnavailable"
   ) {
-    return { reason: "model_error", message, modelError: { kind: "unavailable" } };
+    return { reason: "model_error", message, modelError: modelErrorFrom("unavailable", message) };
   }
   if (info === "unauthorized") {
     return { reason: "not_logged_in", message: "Codex is not logged in; run `codex login` first" };
@@ -225,7 +241,7 @@ export function failureOf(end: AppServerEnd, model: string | undefined): Failure
       return {
         reason: "model_error",
         message,
-        modelError: { kind: String(byText["kind"]) },
+        modelError: modelErrorFrom(String(byText["kind"]), message),
       };
     }
     return { reason: "protocol", message: `Codex failed at ${end.stage}: ${message}` };
@@ -240,7 +256,7 @@ export function failureOf(end: AppServerEnd, model: string | undefined): Failure
     return {
       reason: "model_error",
       message,
-      modelError: { kind: String(byText["kind"]) },
+      modelError: modelErrorFrom(String(byText["kind"]), message),
     };
   }
   return { reason: "stop_reason", message: `Codex stopped the turn: ${end.stopReason}` };
