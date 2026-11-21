@@ -30,6 +30,7 @@ import {
   isSkipped,
   createCallAsker,
   CONCURRENCY_SETTING,
+  createCachedProbe,
   deliverLine,
   directoryError,
   eventNote,
@@ -278,18 +279,19 @@ export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
   const clock = options.clock ?? systemClock;
   const now = options.now ?? Date.now;
   // `codex login status` runs a child process, so its answer is kept for a
-  // short time and asked without blocking serve.
-  const signedInCache = new Map<string, { readonly at: number; readonly value: boolean | undefined }>();
+  // short time and asked without blocking serve. The key is known before the
+  // command is found, so a cached answer does no file work.
+  const signedInProbe = createCachedProbe<boolean | undefined>({
+    now,
+    ttlMs: SIGNED_IN_CACHE_MS,
+  });
 
   async function codexSignedInCached(): Promise<boolean | undefined> {
-    const bun = Bun.which("bun") ?? process.execPath;
-    const codex = options.codex ?? codexCommand(bun);
-    const key = codex?.join("\u0000") ?? "";
-    const kept = signedInCache.get(key);
-    if (kept !== undefined && now() - kept.at < SIGNED_IN_CACHE_MS) return kept.value;
-    const value = await codexSignedIn(codex);
-    signedInCache.set(key, { at: now(), value });
-    return value;
+    const key = options.codex?.join("\u0000") ?? `PATH:${process.env.PATH ?? ""}`;
+    return await signedInProbe(key, async () => {
+      const bun = Bun.which("bun") ?? process.execPath;
+      return await codexSignedIn(options.codex ?? codexCommand(bun));
+    });
   }
 
   const promptFlow = defineFlow({

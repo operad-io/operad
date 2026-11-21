@@ -40,6 +40,20 @@ describe("codex's signedIn answer", () => {
     expect(await plugin.signedIn?.({})).toBeUndefined();
   });
 
+  test("two clients asking at once share one probe", async () => {
+    const root = await tempRoot();
+    const codex = join(root, "codex");
+    const counter = join(root, "count");
+    script(codex, `printf x >> ${JSON.stringify(counter)}\nexit 0`);
+    const plugin = createCodexHarnessPlugin({ codex: [codex] });
+    const answers = await Promise.all([
+      plugin.signedIn?.({}),
+      plugin.signedIn?.({}),
+    ]);
+    expect(answers).toEqual([true, true]);
+    expect(readFileSync(counter, "utf8").length).toBe(1);
+  });
+
   test("asks codex once per short cache period", async () => {
     const root = await tempRoot();
     const codex = join(root, "codex");

@@ -1065,7 +1065,7 @@ export class PluginRegistry {
           : (key, ahead) =>
             limiter.report({ key, ...(ahead === undefined ? {} : { ahead }) }),
       stepLoaded: (name) => this.stepIndex.has(name),
-      harnessModels: (name) => this.loadedModels()[name],
+      harnessModels: (name) => this.loadedModelFor(name),
       harnessModelsReady: (name) => this.loadedModelsReadyFor(name),
       harnessEfforts: (name) => this.loadedEfforts()[name],
       harnessCapabilities: (name) => this.loadedCapabilities()[name],
@@ -1165,6 +1165,17 @@ export class PluginRegistry {
           : item.models;
     }
     return found;
+  }
+
+  /** The models one loaded harness plugin declares, without reading another's. */
+  loadedModelFor(name: string): HarnessModels | undefined {
+    const item = this.byName.get(name);
+    if (item === undefined || item.kind !== "harness" || item.models === undefined) {
+      return undefined;
+    }
+    return typeof item.models === "function"
+      ? item.models(this.settingsFor(name), this.modelContext())
+      : item.models;
   }
 
   /**

@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { chmodSync, existsSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadPluginRegistry, MemoryPluginStore, PluginRegistry } from "@operad-io/engine";
 import { cleanupTempRoots, tempRoot, waitForFile } from "../../process/test/support.ts";
@@ -69,12 +69,18 @@ function askedTimes(env: Env): number {
 function registryFor(
   env: Env,
   settings: Record<string, unknown>,
-  extra: { now?: () => number; listTimeoutMs?: number; log?: (message: string) => void } = {},
+  extra: {
+    now?: () => number;
+    listTimeoutMs?: number;
+    log?: (message: string) => void;
+    readFile?: (path: string) => string;
+  } = {},
 ): PluginRegistry {
   const plugin = createPiHarnessPlugin({
     piSettingsPath: env.settingsPath,
     ...(extra.now === undefined ? {} : { now: extra.now }),
     ...(extra.listTimeoutMs === undefined ? {} : { listTimeoutMs: extra.listTimeoutMs }),
+    ...(extra.readFile === undefined ? {} : { readFile: extra.readFile }),
   });
   return new PluginRegistry([plugin], {
     home: env.root,
@@ -292,6 +298,59 @@ describe("the models pi declares", () => {
     const env = await fakePi("exec sleep 30");
     const registry = registryFor(env, {}, { listTimeoutMs: 200 });
     expect((await registry.loadedModelsReady()).pi?.list).toEqual([]);
+  });
+
+  test("one models read reads each pi file once and leaves an unchanged registry unread", async () => {
+    const env = await fakePi(catalogueBody());
+    writeKept(env, CATALOGUE, Date.now());
+    writeRegistry(env, {
+      zai: { models: [{ id: "glm-5", name: "GLM-5", reasoning: true, input: ["text"] }] },
+    });
+    writeFileSync(env.settingsPath, JSON.stringify({ defaultProvider: "zai", defaultModel: "glm-5" }));
+    const reads = new Map<string, number>();
+    const readFile = (path: string): string => {
+      const name = basename(path);
+      reads.set(name, (reads.get(name) ?? 0) + 1);
+      return readFileSync(path, "utf8");
+    };
+    const registry = registryFor(env, {}, { readFile });
+    const models = registry.loadedModels().pi;
+    expect(models?.default).toBe("zai/glm-5");
+    expect(models?.info?.["zai/glm-5"]?.name).toBe("GLM-5");
+    expect(reads.get("model-list.json")).toBe(1);
+    expect(reads.get("models-store.json")).toBe(1);
+    expect(reads.get("pi-settings.json")).toBe(1);
+
+    const again = registry.loadedModels().pi;
+    expect(again?.info?.["zai/glm-5"]?.name).toBe("GLM-5");
+    expect(reads.get("model-list.json")).toBe(2);
+    expect(reads.get("pi-settings.json")).toBe(2);
+    expect(reads.get("models-store.json")).toBe(1);
+  });
+
+  test("a changed registry file is read again and its new description is seen", async () => {
+    const env = await fakePi(catalogueBody());
+    writeKept(env, CATALOGUE, Date.now());
+    writeRegistry(env, {
+      zai: { models: [{ id: "glm-5", name: "GLM-5", reasoning: true }] },
+    });
+    let reads = 0;
+    const readFile = (path: string): string => {
+      if (basename(path) === "models-store.json") reads += 1;
+      return readFileSync(path, "utf8");
+    };
+    const registry = registryFor(env, {}, { readFile });
+    expect(registry.loadedModels().pi?.info?.["zai/glm-5"]?.name).toBe("GLM-5");
+    expect(reads).toBe(1);
+
+    const path = join(env.root, "models-store.json");
+    writeRegistry(env, {
+      zai: { models: [{ id: "glm-5", name: "GLM-5 later", reasoning: true }] },
+    });
+    const later = new Date(Date.now() + 5_000);
+    utimesSync(path, later, later);
+    expect(registry.loadedModels().pi?.info?.["zai/glm-5"]?.name).toBe("GLM-5 later");
+    expect(reads).toBe(2);
   });
 
   test("the models setting wins and asks nothing", async () => {

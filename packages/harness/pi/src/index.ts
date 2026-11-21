@@ -75,6 +75,7 @@ import {
   piModelList,
   piModelListReady,
   piModelWindows,
+  readPiModelList,
 } from "./model-list.ts";
 import { DEFAULT_PI_COMMAND, findPi, PI_FLOOR } from "./pi-install.ts";
 import {
@@ -138,19 +139,29 @@ export interface PiHarnessOptions {
   readonly keptFirstLineMs?: number | undefined;
   /** Test seam: how many workers one home keeps. */
   readonly maxKept?: number | undefined;
+  /** Test seam: reads a file as text; defaults to `readFileSync(path, "utf8")`. */
+  readonly readFile?: ((path: string) => string) | undefined;
 }
 
-/** pi's own default model, from its settings file; undefined when it names none. */
-function piDefaultModel(settingsPath: string): string | undefined {
+/** pi's settings file as an object; undefined when it cannot be read. */
+function readPiSettings(
+  settingsPath: string,
+  readFile: (path: string) => string,
+): Readonly<Record<string, unknown>> | undefined {
   try {
-    const value: unknown = JSON.parse(readFileSync(settingsPath, "utf8"));
-    if (!isRecord(value)) return undefined;
-    const { defaultProvider, defaultModel } = value;
-    if (typeof defaultProvider !== "string" || typeof defaultModel !== "string") return undefined;
-    return defaultProvider === "" || defaultModel === "" ? undefined : `${defaultProvider}/${defaultModel}`;
+    const value: unknown = JSON.parse(readFile(settingsPath));
+    return isRecord(value) ? value : undefined;
   } catch {
     return undefined;
   }
+}
+
+/** pi's own default model, from its settings; undefined when it names none. */
+function piDefaultModel(settings: Readonly<Record<string, unknown>> | undefined): string | undefined {
+  if (settings === undefined) return undefined;
+  const { defaultProvider, defaultModel } = settings;
+  if (typeof defaultProvider !== "string" || typeof defaultModel !== "string") return undefined;
+  return defaultProvider === "" || defaultModel === "" ? undefined : `${defaultProvider}/${defaultModel}`;
 }
 
 /** One of pi's thinking levels, or undefined for anything else. */
@@ -160,31 +171,25 @@ function thinkingLevelOf(value: unknown): WorkerThinkingLevel | undefined {
     : undefined;
 }
 
-/** pi's own default thinking level, from its settings file; undefined when it names none. */
-function piDefaultThinkingLevel(settingsPath: string): WorkerThinkingLevel | undefined {
-  try {
-    const value: unknown = JSON.parse(readFileSync(settingsPath, "utf8"));
-    return isRecord(value) ? thinkingLevelOf(value.defaultThinkingLevel) : undefined;
-  } catch {
-    return undefined;
-  }
+/** pi's own default thinking level, from its settings; undefined when it names none. */
+function piDefaultThinkingLevel(
+  settings: Readonly<Record<string, unknown>> | undefined,
+): WorkerThinkingLevel | undefined {
+  return settings === undefined ? undefined : thinkingLevelOf(settings.defaultThinkingLevel);
 }
 
 /** What pi is likely to use: the model's provider, else its settings' default provider. */
-function piProvider(model: unknown, settingsPath: string): string | undefined {
+function piProvider(
+  model: unknown,
+  settings: Readonly<Record<string, unknown>> | undefined,
+): string | undefined {
   if (typeof model === "string" && model.includes("/")) {
     const provider = model.slice(0, model.indexOf("/"));
     if (provider.length > 0) return provider;
   }
-  try {
-    const value: unknown = JSON.parse(readFileSync(settingsPath, "utf8"));
-    if (isRecord(value) && typeof value.defaultProvider === "string" && value.defaultProvider.length > 0) {
-      return value.defaultProvider;
-    }
-  } catch {
-    // No settings file, or one this cannot read: no provider is known.
-  }
-  return undefined;
+  return typeof settings?.defaultProvider === "string" && settings.defaultProvider.length > 0
+    ? settings.defaultProvider
+    : undefined;
 }
 
 /** pi's documented built-in thinking level, used when neither operad nor pi names one. */
@@ -295,6 +300,14 @@ function expandHome(path: string): string {
   return isAbsolute(path) ? path : resolve(path);
 }
 
+/** The models a pi chat may pick, with what pi's kept list says about each. */
+export interface PiDeclaredModels {
+  list: readonly string[];
+  default: string | null;
+  windows?: Readonly<Record<string, number>> | undefined;
+  info?: Readonly<Record<string, HarnessModelInfo>> | undefined;
+}
+
 /**
  * Creates the pi harness plugin. Its worker is `worker.ts` under the running
  * Bun; a test replaces the program with a fake that prints fixed lines.
@@ -305,6 +318,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
   const commandArgs = options.args ?? [WORKER_PATH];
   const now = options.now ?? Date.now;
   const listTimeoutMs = options.listTimeoutMs ?? PI_LIST_TIMEOUT_MS;
+  const readFile = options.readFile ?? ((path: string) => readFileSync(path, "utf8"));
   const piSettingsPath =
     options.piSettingsPath ?? join(homedir(), ".pi", "agent", "settings.json");
 
@@ -326,6 +340,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
       timeoutMs: listTimeoutMs,
       log: context.log,
       registryPath: join(dirname(expandHome(modelsPath)), "models-store.json"),
+      readFile,
     };
   }
 
@@ -344,9 +359,10 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
   /** The context windows pi's kept list gives for the models this chat may pick. */
   function windowsOf(
     options: ReturnType<typeof listOptions>,
+    kept: ReturnType<typeof readPiModelList> | null,
     list: readonly string[],
   ): Readonly<Record<string, number>> | undefined {
-    const known = piModelWindows(options);
+    const known = piModelWindows(options, kept);
     const windows: Record<string, number> = {};
     for (const model of list) {
       const window = known[model];
@@ -358,9 +374,10 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
   /** What pi's kept list says about the models this chat may pick. */
   function infoOf(
     options: ReturnType<typeof listOptions>,
+    kept: ReturnType<typeof readPiModelList> | null,
     list: readonly string[],
   ): Readonly<Record<string, HarnessModelInfo>> | undefined {
-    const known = piModelInfo(options);
+    const known = piModelInfo(options, kept);
     const info: Record<string, HarnessModelInfo> = {};
     for (const model of list) {
       const found = known[model];
@@ -369,32 +386,37 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
     return Object.keys(info).length === 0 ? undefined : info;
   }
 
-  /** The models a chat may pick and the default among them, from the kept list. */
-  function piModels(
+  /** The models a chat may pick and the default among them, from one kept read. */
+  function declaredModels(
     settings: Readonly<Record<string, unknown>>,
-    context: HarnessModelContext,
-  ): {
-    list: readonly string[];
-    default: string | null;
-    windows?: Readonly<Record<string, number>> | undefined;
-    info?: Readonly<Record<string, HarnessModelInfo>> | undefined;
-  } {
-    const command = piCommandOf(settings);
-    const configured = stringList(settings.models);
-    const options = listOptions(command, context, modelsPathOf(settings));
-    const list = configured ?? piModelList(options);
+    options: ReturnType<typeof listOptions>,
+    kept: ReturnType<typeof readPiModelList> | null,
+    list: readonly string[],
+  ): PiDeclaredModels {
     const wanted =
       typeof settings.model === "string" && settings.model !== ""
         ? settings.model
-        : piDefaultModel(piSettingsPath);
-    const windows = windowsOf(options, list);
-    const info = infoOf(options, list);
+        : piDefaultModel(readPiSettings(piSettingsPath, readFile));
+    const windows = windowsOf(options, kept, list);
+    const info = infoOf(options, kept, list);
     return {
       list,
       default: wanted !== undefined && list.includes(wanted) ? wanted : null,
       ...(windows === undefined ? {} : { windows }),
       ...(info === undefined ? {} : { info }),
     };
+  }
+
+  /** The models a chat may pick and the default among them, from the kept list. */
+  function piModels(
+    settings: Readonly<Record<string, unknown>>,
+    context: HarnessModelContext,
+  ): PiDeclaredModels {
+    const configured = stringList(settings.models);
+    const options = listOptions(piCommandOf(settings), context, modelsPathOf(settings));
+    const kept = readPiModelList(options) ?? null;
+    const list = configured ?? piModelList(options, kept);
+    return declaredModels(settings, options, kept, list);
   }
 
   /**
@@ -404,28 +426,13 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
   async function piModelsReady(
     settings: Readonly<Record<string, unknown>>,
     context: HarnessModelContext,
-  ): Promise<{
-    list: readonly string[];
-    default: string | null;
-    windows?: Readonly<Record<string, number>> | undefined;
-    info?: Readonly<Record<string, HarnessModelInfo>> | undefined;
-  }> {
-    const command = piCommandOf(settings);
+  ): Promise<PiDeclaredModels> {
     const configured = stringList(settings.models);
-    const options = listOptions(command, context, modelsPathOf(settings));
-    const list = configured ?? (await piModelListReady(options));
-    const wanted =
-      typeof settings.model === "string" && settings.model !== ""
-        ? settings.model
-        : piDefaultModel(piSettingsPath);
-    const windows = windowsOf(options, list);
-    const info = infoOf(options, list);
-    return {
-      list,
-      default: wanted !== undefined && list.includes(wanted) ? wanted : null,
-      ...(windows === undefined ? {} : { windows }),
-      ...(info === undefined ? {} : { info }),
-    };
+    const options = listOptions(piCommandOf(settings), context, modelsPathOf(settings));
+    const first = readPiModelList(options) ?? null;
+    const list = configured ?? (await piModelListReady(options, first));
+    const kept = first ?? readPiModelList(options) ?? null;
+    return declaredModels(settings, options, kept, list);
   }
 
   /**
@@ -436,7 +443,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
   function piEfforts(settings: Readonly<Record<string, unknown>>): HarnessEfforts {
     const wanted =
       thinkingLevelOf(settings.thinkingLevel) ??
-      piDefaultThinkingLevel(piSettingsPath) ??
+      piDefaultThinkingLevel(readPiSettings(piSettingsPath, readFile)) ??
       PI_BUILTIN_THINKING_LEVEL;
     return { list: THINKING_LEVELS, default: wanted, flag: "--thinking" };
   }
@@ -488,7 +495,10 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
       const authPath = expandHome(
         typeof settings.authPath === "string" ? settings.authPath : DEFAULT_AUTH_PATH,
       );
-      return authFileHasCredential(authPath, piProvider(settings.model, piSettingsPath));
+      return authFileHasCredential(
+        authPath,
+        piProvider(settings.model, readPiSettings(piSettingsPath, readFile)),
+      );
     },
     settings: PLUGIN_SETTINGS,
     steps: [
