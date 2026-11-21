@@ -169,3 +169,10 @@ Each package keeps its mutation checks in `MUTATIONS.md`; a row names the broken
 | T-0630-M2 | scripts/changed-packages.ts | dropped `import.meta.resolve(` from the specifier pattern, so a resolved relative path was not a load | `selectPackages > import.meta.resolve of a relative path is a load` |
 | T-0630-M3 | scripts/changed-packages.ts | read comments too (`uncommented = text`), so a quoted package name in a comment became a load | `selectPackages > a quoted package name in a comment is not a load` |
 
+
+## T-0643 — follow-ups to the check coverage
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0643-M1 | scripts/changed-packages.ts | treated every `/` as a division or a comment start, so a `//` inside a regex literal removed the rest of its line, the import included | `selectPackages > a regex literal holding a quote does not hide the imports after it` |
+| T-0643-M2 | scripts/changed-packages.ts | dropped the quoted `@operad-io/<name>` fallback, so the dynamic import of `@operad-io/tui/app` was no longer a load | `selectPackages > a dynamic import through a quoted @operad-io/tui/app is a load` |
