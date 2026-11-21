@@ -210,6 +210,7 @@ interface RunMetrics {
   readonly runningP95: number;
   readonly eventsPerSecond: Readonly<Record<string, number>>;
   readonly requests: Readonly<Record<string, number>>;
+  readonly logReadsPerSecond: number;
   readonly profileTop?: readonly ProfileFrame[] | undefined;
   readonly errors: readonly string[];
 }
@@ -237,6 +238,7 @@ interface AggregateMetrics {
   readonly runningP95: number;
   readonly eventsPerSecond: Readonly<Record<string, number>>;
   readonly requests: Readonly<Record<string, number>>;
+  readonly logReadsPerSecond: number;
   readonly profileTop?: readonly ProfileFrame[] | undefined;
   readonly errors: readonly string[];
 }
@@ -286,6 +288,39 @@ function percentile(values: readonly number[], p: number): number {
 function round(value: number, digits = 3): number {
   const factor = 10 ** digits;
   return Math.round(value * factor) / factor;
+}
+
+function cpuPercents(samples: readonly ProcessSample[]): number[] {
+  const found: number[] = [];
+  for (let at = 1; at < samples.length; at += 1) {
+    const previous = samples[at - 1];
+    const current = samples[at];
+    if (previous === undefined || current === undefined) continue;
+    const seconds = (current.atMs - previous.atMs) / 1000;
+    if (seconds <= 0) continue;
+    found.push(Math.max(0, current.cpuSeconds - previous.cpuSeconds) / seconds * 100);
+  }
+  return found;
+}
+
+export function peakCpuPercent(samples: readonly ProcessSample[]): number {
+  const values = cpuPercents(samples);
+  return values.length === 0 ? 0 : Math.max(...values);
+}
+
+/** Whether a request path reads an object's log section. */
+export function isLogReadRequest(path: string): boolean {
+  const pathname = path.split("?")[0] ?? "";
+  return /^\/v1\/objects\/[^/]+\/sections\/log$/.test(pathname);
+}
+
+export function logReadsPerSecond(requests: Readonly<Record<string, number>>, durationMs: number): number {
+  if (durationMs <= 0) return 0;
+  let reads = 0;
+  for (const [path, count] of Object.entries(requests)) {
+    if (isLogReadRequest(path)) reads += count;
+  }
+  return round(reads / (durationMs / 1000), 2);
 }
 
 /** Parses the time column of `ps`: [[dd-]hh:]mm:ss[.ss]. */
@@ -555,10 +590,10 @@ class Output {
   }
 
   async until(pattern: RegExp, timeoutMs: number, what: string): Promise<void> {
-    const deadline = Date.now() + timeoutMs;
+    const deadline = performance.now() + timeoutMs;
     for (;;) {
       if (pattern.test(this.text)) return;
-      const remaining = deadline - Date.now();
+      const remaining = deadline - performance.now();
       if (remaining <= 0) throw new Error(`timed out waiting for ${what}; saw:\n${this.text}`);
       await new Promise<void>((resolveWait) => {
         let timer: ReturnType<typeof setTimeout> | undefined;
@@ -575,30 +610,37 @@ class Output {
   }
 }
 
+type Fetch = (input: string, init: RequestInit) => Promise<Response>;
+
 interface Api {
   readonly base: string;
   readonly token: string;
+  readonly signal: AbortSignal;
+  readonly fetch: Fetch;
   close(): void;
 }
 
-function api(base: string, token: string): Api {
+export function api(base: string, token: string, fetchImpl: Fetch = fetch): Api {
   const controller = new AbortController();
   return {
     base,
     token,
+    signal: controller.signal,
+    fetch: fetchImpl,
     close: () => controller.abort(),
   };
 }
 
-async function getJson(
+export async function getJson(
   client: Api,
   path: string,
   signal?: AbortSignal,
 ): Promise<{ readonly body: unknown; readonly timing: RequestTiming }> {
   const start = performance.now();
-  const response = await fetch(`${client.base}${path}`, {
+  const requestSignal = signal === undefined ? client.signal : AbortSignal.any([client.signal, signal]);
+  const response = await client.fetch(`${client.base}${path}`, {
     headers: { authorization: `Bearer ${client.token}`, "x-operad-client": "bench" },
-    ...(signal === undefined ? {} : { signal }),
+    signal: requestSignal,
   });
   const body: unknown = await response.json();
   return { body, timing: { ms: performance.now() - start, status: response.status } };
@@ -610,7 +652,7 @@ async function postJson(
   value: unknown,
 ): Promise<{ readonly body: unknown; readonly timing: RequestTiming }> {
   const start = performance.now();
-  const response = await fetch(`${client.base}${path}`, {
+  const response = await client.fetch(`${client.base}${path}`, {
     method: "POST",
     headers: {
       authorization: `Bearer ${client.token}`,
@@ -618,6 +660,7 @@ async function postJson(
       "x-operad-client": "bench",
     },
     body: JSON.stringify(value),
+    signal: client.signal,
   });
   const body: unknown = await response.json();
   return { body, timing: { ms: performance.now() - start, status: response.status } };
@@ -651,9 +694,9 @@ async function followEvents(
   stop: AbortSignal,
   onEvent: (event: SseEvent, receivedAt: number) => void,
 ): Promise<void> {
-  const response = await fetch(`${client.base}/v1/events`, {
+  const response = await client.fetch(`${client.base}/v1/events`, {
     headers: { authorization: `Bearer ${client.token}`, "x-operad-client": "bench" },
-    signal: stop,
+    signal: AbortSignal.any([client.signal, stop]),
   });
   if (response.body === null) throw new Error("the event stream has no body");
   const reader = response.body.getReader();
@@ -670,11 +713,13 @@ async function followEvents(
         const frame = buffer.slice(0, split);
         buffer = buffer.slice(split + 2);
         const event = parseFrame(frame);
+        // Serve timestamps a tail with Date.now(), so its latency is read on the
+        // same wall clock; every deadline in the scenario is monotonic.
         if (event !== undefined) onEvent(event, Date.now());
       }
     }
   } catch (error) {
-    if (stop.aborted) return;
+    if (stop.aborted || client.signal.aborted) return;
     throw error;
   } finally {
     reader.releaseLock();
@@ -715,7 +760,7 @@ function startClients(
   errors: string[],
 ): ScenarioClients {
   const stop = new AbortController();
-  const deadline = Date.now() + durationMs;
+  const deadline = performance.now() + durationMs;
 
   const makeClient = (kind: "tui" | "desktop"): Promise<ClientResult> => {
     let changes = 0;
@@ -742,9 +787,9 @@ function startClients(
     const loop = (intervalMs: number, paths: readonly string[]): void => {
       loops.push((async () => {
         for (;;) {
-          if (localStop.signal.aborted || Date.now() >= deadline) return;
+          if (localStop.signal.aborted || performance.now() >= deadline) return;
           for (const path of paths) {
-            if (localStop.signal.aborted || Date.now() >= deadline) return;
+            if (localStop.signal.aborted || performance.now() >= deadline) return;
             await timedRequest(client, path, requests, timings);
           }
           await sleep(intervalMs);
@@ -783,11 +828,11 @@ async function startProbe(
   counts: Map<string, number>,
 ): Promise<{ readonly done: Promise<void>; readonly stop: () => void }> {
   const stop = new AbortController();
-  const deadline = Date.now() + durationMs;
+  const deadline = performance.now() + durationMs;
   const done = (async () => {
-    while (!stop.signal.aborted && Date.now() < deadline) {
+    while (!stop.signal.aborted && performance.now() < deadline) {
       for (const path of ["/v1/pending", "/v1/running"]) {
-        if (stop.signal.aborted || Date.now() >= deadline) return;
+        if (stop.signal.aborted || performance.now() >= deadline) return;
         await timedRequest(client, path, counts, timings);
       }
       await sleep(1000);
@@ -797,9 +842,9 @@ async function startProbe(
 }
 
 async function waitForReady(client: Api, timeoutMs: number): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
+  const deadline = performance.now() + timeoutMs;
   let last = "";
-  while (Date.now() < deadline) {
+  while (performance.now() < deadline) {
     try {
       const running = await getJson(client, "/v1/running");
       const pending = await getJson(client, "/v1/pending");
@@ -841,8 +886,8 @@ async function releaseRuns(client: Api, home: string): Promise<void> {
   } catch {
     // The list may be gone with the run.
   }
-  const deadline = Date.now() + 15_000;
-  while (Date.now() < deadline) {
+  const deadline = performance.now() + 15_000;
+  while (performance.now() < deadline) {
     try {
       const running = await getJson(client, "/v1/running");
       if (countOf(running.body) === 0) return;
@@ -854,8 +899,8 @@ async function releaseRuns(client: Api, home: string): Promise<void> {
 }
 
 async function readWhenPresent(path: string, timeoutMs: number): Promise<string | undefined> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
+  const deadline = performance.now() + timeoutMs;
+  while (performance.now() < deadline) {
     try {
       return await readFile(path, "utf8");
     } catch {
@@ -865,7 +910,46 @@ async function readWhenPresent(path: string, timeoutMs: number): Promise<string 
   return undefined;
 }
 
-function parseCpuProfile(
+const PROFILE_EPOCH_TOLERANCE_MICROS = 60_000_000;
+
+/**
+ * The profile time window to keep. Bun writes an epoch time base; a profiler
+ * that writes one relative to its own start is mapped across serve's wall span.
+ */
+export function profileWindowMicros(
+  profileStart: number,
+  profileEnd: number,
+  startMicros: number | undefined,
+  endMicros: number | undefined,
+  serveStartMicros: number | undefined,
+  serveEndMicros: number | undefined,
+): { readonly start: number | undefined; readonly end: number | undefined } {
+  if (
+    serveStartMicros !== undefined &&
+    Math.abs(profileStart - serveStartMicros) <= PROFILE_EPOCH_TOLERANCE_MICROS
+  ) {
+    return { start: startMicros, end: endMicros };
+  }
+  if (
+    startMicros !== undefined &&
+    endMicros !== undefined &&
+    serveStartMicros !== undefined &&
+    serveEndMicros !== undefined &&
+    serveEndMicros > serveStartMicros &&
+    profileEnd > profileStart
+  ) {
+    const scale = (profileEnd - profileStart) / (serveEndMicros - serveStartMicros);
+    if (Number.isFinite(scale) && scale > 0) {
+      return {
+        start: profileStart + (startMicros - serveStartMicros) * scale,
+        end: profileStart + (endMicros - serveStartMicros) * scale,
+      };
+    }
+  }
+  return { start: startMicros, end: endMicros };
+}
+
+export function parseCpuProfile(
   text: string,
   repo: string,
   startMicros: number | undefined,
@@ -883,24 +967,14 @@ function parseCpuProfile(
     if (typeof delta === "number" && Number.isFinite(delta)) profileElapsed += delta;
   }
   const profileEnd = typeof value.endTime === "number" ? value.endTime : profileStart + profileElapsed;
-  // The profile's time base is not promised to match Date.now(). Map the
-  // measured wall-clock window onto the profile's own start and end instead.
-  let windowStart = startMicros;
-  let windowEnd = endMicros;
-  if (
-    startMicros !== undefined &&
-    endMicros !== undefined &&
-    serveStartMicros !== undefined &&
-    serveEndMicros !== undefined &&
-    serveEndMicros > serveStartMicros &&
-    profileEnd > profileStart
-  ) {
-    const scale = (profileEnd - profileStart) / (serveEndMicros - serveStartMicros);
-    if (Number.isFinite(scale) && scale > 0) {
-      windowStart = profileStart + (startMicros - serveStartMicros) * scale;
-      windowEnd = profileStart + (endMicros - serveStartMicros) * scale;
-    }
-  }
+  const window = profileWindowMicros(
+    profileStart,
+    profileEnd,
+    startMicros,
+    endMicros,
+    serveStartMicros,
+    serveEndMicros,
+  );
   let base = repo;
   try {
     base = realpathSync(repo);
@@ -937,8 +1011,8 @@ function parseCpuProfile(
     if (typeof id !== "number" || typeof delta !== "number") continue;
     const at = profileStart + elapsed;
     elapsed += delta;
-    if (windowStart !== undefined && at < windowStart) continue;
-    if (windowEnd !== undefined && at > windowEnd) continue;
+    if (window.start !== undefined && at < window.start) continue;
+    if (window.end !== undefined && at > window.end) continue;
     self.set(id, (self.get(id) ?? 0) + delta);
     total += delta;
   }
@@ -1084,15 +1158,7 @@ async function runOnce(options: Options, index: number): Promise<RunMetrics> {
     const tailLatencies = clients.flatMap((result) => result.eventLatencies);
     const pending = timings.get("/v1/pending") ?? [];
     const running = timings.get("/v1/running") ?? [];
-    const cpuPercents: number[] = [];
-    for (let at = 1; at < samples.length; at += 1) {
-      const previous = samples[at - 1];
-      const current = samples[at];
-      if (previous === undefined || current === undefined) continue;
-      const seconds = (current.atMs - previous.atMs) / 1000;
-      if (seconds <= 0) continue;
-      cpuPercents.push(Math.max(0, current.cpuSeconds - previous.cpuSeconds) / seconds * 100);
-    }
+    const cpuValues = cpuPercents(samples);
     const events = new Map<string, number>();
     for (const result of clients) {
       events.set("change", (events.get("change") ?? 0) + result.changes);
@@ -1103,6 +1169,7 @@ async function runOnce(options: Options, index: number): Promise<RunMetrics> {
       [...events].map(([name, count]) => [name, round(count / (options.durationMs / 1000), 2)]),
     );
     const requests = Object.fromEntries([...requestCounts].sort(([left], [right]) => left.localeCompare(right)));
+    const logReads = logReadsPerSecond(requests, options.durationMs);
     const cpuSeconds = cpuBaseline !== undefined && cpuFinal !== undefined ? Math.max(0, cpuFinal - cpuBaseline) : 0;
     const loadAfter = loadavg();
     await releaseRuns(client, home);
@@ -1127,8 +1194,8 @@ async function runOnce(options: Options, index: number): Promise<RunMetrics> {
       loadBefore,
       loadAfter,
       cpuSeconds: round(cpuSeconds, 2),
-      cpuPercentMedian: round(median(cpuPercents), 1),
-      cpuPercentPeak: round(samples.length === 0 ? 0 : Math.max(...cpuPercents), 1),
+      cpuPercentMedian: round(median(cpuValues), 1),
+      cpuPercentPeak: round(peakCpuPercent(samples), 1),
       rssPeakBytes: samples.length === 0 ? 0 : Math.max(...samples.map((sample) => sample.rssBytes)),
       eventLatencyP50: round(percentile(tailLatencies, 50), 1),
       eventLatencyP95: round(percentile(tailLatencies, 95), 1),
@@ -1138,6 +1205,7 @@ async function runOnce(options: Options, index: number): Promise<RunMetrics> {
       runningP95: round(percentile(running, 95), 1),
       eventsPerSecond: perSecond,
       requests,
+      logReadsPerSecond: logReads,
       ...(profileTop === undefined ? {} : { profileTop }),
       errors,
     };
@@ -1167,6 +1235,7 @@ function aggregate(runs: readonly RunMetrics[], label: string): AggregateMetrics
   for (const name of requestNames) {
     requestCounts[name] = Math.round(median(runs.map((run) => run.requests[name] ?? 0)));
   }
+  const logReadRates = runs.map((run) => run.logReadsPerSecond);
   const profiled = runs.filter((run) => run.profileTop !== undefined);
   const profileMap = new Map<string, { frame: ProfileFrame; totalMs: number; totalPercent: number }>();
   for (const run of profiled) {
@@ -1206,6 +1275,7 @@ function aggregate(runs: readonly RunMetrics[], label: string): AggregateMetrics
     runningP95: round(median(runningP95), 1),
     eventsPerSecond: eventRates,
     requests: requestCounts,
+    logReadsPerSecond: round(median(logReadRates), 2),
     ...(profileTop === undefined ? {} : { profileTop }),
     errors: runs.flatMap((run) => run.errors),
   };
@@ -1224,6 +1294,7 @@ function printSummary(value: AggregateMetrics, runs: readonly RunMetrics[]): voi
   console.log(`  pending p50 / p95       ${value.pendingP50.toFixed(1)} ms / ${value.pendingP95.toFixed(1)} ms`);
   console.log(`  running p50 / p95       ${value.runningP50.toFixed(1)} ms / ${value.runningP95.toFixed(1)} ms`);
   console.log(`  events per second       ${JSON.stringify(value.eventsPerSecond)}`);
+  console.log(`  log reads / second      ${value.logReadsPerSecond.toFixed(2)}`);
   console.log(`  requests                ${JSON.stringify(value.requests)}`);
   if (value.profileTop !== undefined && value.profileTop.length > 0) {
     console.log("  top self time");
@@ -1274,7 +1345,7 @@ async function main(): Promise<void> {
       clients: "tui and desktop following events; periodic pending/running probe",
       store: options.storeFrom === undefined ? "synthetic" : `copied from ${options.storeFrom}`,
       metricNote:
-        "CPU and RSS are the serve process only. Event latency is tail event data.at to client read. Log reads are not counted.",
+        "CPU and RSS are the serve process only. Event latency is tail event data.at to client read. Log reads are log section requests.",
       ...(options.serveIntervalMs === undefined ? {} : { serveIntervalMs: options.serveIntervalMs }),
     },
     label: options.label,
