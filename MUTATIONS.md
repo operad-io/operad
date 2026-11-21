@@ -187,3 +187,5 @@ Each package keeps its mutation checks in `MUTATIONS.md`; a row names the broken
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0641-M1 | scripts/stress.sh | the KILL pass used only the load-helper pids instead of the job table, so a test runner that ignores TERM survived | `scripts/stress.sh > SIGKILL of the test runner stops a test file that ignores SIGTERM` |
+| T-0641-M2 | scripts/stress.sh | the stop signalled only a saved list of load-helper pids instead of the live job table, so the watcher and a test runner forked just before the stop were left running | `scripts/stress.sh > SIGKILL to the test runner mid-test leaves no stress.sh or helper` |
+| T-0641-M3 | scripts/stress.sh | the grace waited for a fixed count of sleeps instead of one short sleep, so the stop ran past its bound | `scripts/stress.sh > SIGKILL to the test runner mid-test leaves no stress.sh or helper` |
