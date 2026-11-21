@@ -50,21 +50,11 @@ export const DEFAULT_POLL_MS = 500;
 export interface FollowOptions {
   /** Defaults to true. False opens without a watch or a fallback timer. */
   readonly follow?: boolean | undefined;
-  /** The same as `follow: false`: this command only reads what it opens. */
-  readonly readonly?: boolean | undefined;
-  /** The same as `follow: false`, in camel case. */
-  readonly readOnly?: boolean | undefined;
-  /** The same as `follow: false`: this process opens what it reads once. */
-  readonly oneShot?: boolean | undefined;
 }
 
 /** Whether a subscription starts a watch and a fallback timer. */
 export function followsChanges(options: FollowOptions): boolean {
-  if (options.follow !== undefined) return options.follow;
-  if (options.readonly !== undefined) return !options.readonly;
-  if (options.readOnly !== undefined) return !options.readOnly;
-  if (options.oneShot !== undefined) return !options.oneShot;
-  return true;
+  return options.follow ?? true;
 }
 
 /** The watch, the fallback timer and its period one subscription uses. */

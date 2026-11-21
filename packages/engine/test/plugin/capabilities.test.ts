@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { MemoryPluginStore, PluginError, PluginRegistry, definePlugin } from "../../src/index.ts";
-import { cleanupTempRoots, tempRoot } from "./support.ts";
+import { cleanupTempRoots } from "./support.ts";
 
 afterAll(cleanupTempRoots);
 

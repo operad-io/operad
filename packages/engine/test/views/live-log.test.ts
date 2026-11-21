@@ -278,7 +278,6 @@ async function fixture(
   store.put("item", "two", { title: "Two" }, "seed");
   const registry = new PluginRegistry([plugin], { store });
   const log = openLog({
-    backend: "sqlite",
     path: join(root, "store", "log.sqlite"),
   });
   openedLogs.push(log);
@@ -530,7 +529,6 @@ describe("a live log that grows without a fact", () => {
     const registry = new PluginRegistry([demo, quiet], { store });
     let next = 0;
     const log = openLog({
-      backend: "sqlite",
       path: join(root, "store", "log.sqlite"),
       clock: () => 0,
       runId: () => (next++ === 0 ? "a-quiet" : "z-demo"),

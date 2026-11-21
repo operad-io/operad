@@ -34,7 +34,7 @@ async function rig(script: Script): Promise<Rig> {
   const home = join(root, "home");
   mkdirSync(home, { recursive: true });
   const store = new MemoryPluginStore({ root: join(root, "store") });
-  const log = openLog({ backend: "sqlite", path: join(root, "store", "log.sqlite") });
+  const log = openLog({ path: join(root, "store", "log.sqlite") });
   const registry = new PluginRegistry([createChatPlugin(), fakeHarness("fake", script, [])], {
     home,
     cwd: root,

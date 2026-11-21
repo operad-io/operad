@@ -190,7 +190,6 @@ describe("operad with the dev plugin", () => {
     const repositoryName = repository.split("/").pop() ?? "";
     const otherName = other.split("/").pop() ?? "";
     const store = openPluginStore({
-      backend: "sqlite",
       root: join(root, "store"),
     });
     store.put(
@@ -805,7 +804,6 @@ describe("operad with the dev plugin", () => {
     // Register and seed the two repositories directly: this test is about how
     // the CLI resolves ids, not about adding the objects.
     const store = openPluginStore({
-      backend: "sqlite",
       root: join(root, "store"),
     });
     const registered = await addRepository(store, { path: repository });

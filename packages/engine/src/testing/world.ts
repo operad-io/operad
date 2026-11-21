@@ -97,7 +97,7 @@ async function createWorld(
     for (const [name, value] of Object.entries(options.secrets ?? {})) {
       await new FileSecretStore({ home, plugin: definition.name }).set(name, value);
     }
-    log = openLog({ backend: "sqlite", path: join(storeRoot, SQLITE_FILE_NAME) });
+    log = openLog({ path: join(storeRoot, SQLITE_FILE_NAME) });
     const onLog = (message: string): void => {
       console.error(message);
     };

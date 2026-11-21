@@ -611,7 +611,7 @@ describe("restart", () => {
     const storeRoot = join(root, "store");
     const home = join(root, "home");
     const store = new SqlitePluginStore({ root: storeRoot });
-    const log = openLog({ backend: "sqlite", path: join(storeRoot, SQLITE_FILE_NAME), follow: false });
+    const log = openLog({ path: join(storeRoot, SQLITE_FILE_NAME), follow: false });
     try {
       const chats = await store.list(CHAT_TYPE);
       expect(chats.objects).toHaveLength(1);

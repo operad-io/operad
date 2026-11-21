@@ -254,9 +254,3 @@ export interface LogBackend extends Partial<LogSubscription> {
   startRoutesWithoutRun(): Promise<InputOutcome[]>;
   close(): Promise<void>;
 }
-
-/** A backend implementation, as a storage directory plus its name. */
-export interface LogBackendFactory {
-  readonly name: string;
-  open(directory: string, options?: LogBackendOptions): LogBackend | Promise<LogBackend>;
-}

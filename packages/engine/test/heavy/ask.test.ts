@@ -6,7 +6,6 @@ import {
   MemoryPluginStore,
   PluginRegistry,
   Runner,
-  answerRun,
   historyEntries,
   listPending,
   loadPluginRegistry,
@@ -18,6 +17,7 @@ import {
   type Fact,
   type LogBackend,
 } from "../../src/index.ts";
+import { answerRun } from "../../src/testing/index.ts";
 import type { TimeoutClock } from "../../src/runner/runner.ts";
 import { waitForChange } from "../../src/platform/index.ts";
 import plugin from "../fixtures/plugins/ask.ts";
@@ -144,7 +144,7 @@ async function setup(mode: "memory" | "file"): Promise<Env> {
     join(home, "config.json"),
     JSON.stringify({ plugins: [pluginPath], store: { backend: "sqlite", path: join(storeRoot, "log.sqlite") } }),
   );
-  const log = openLog({ backend: "sqlite", path: join(storeRoot, "log.sqlite") });
+  const log = openLog({ path: join(storeRoot, "log.sqlite") });
   const registry =
     mode === "memory"
       ? new PluginRegistry([plugin], {
@@ -155,7 +155,7 @@ async function setup(mode: "memory" | "file"): Promise<Env> {
       : await loadPluginRegistry({
           home,
           cwd: home,
-          store: openPluginStore({ backend: "sqlite", root: storeRoot }),
+          store: openPluginStore({ root: storeRoot }),
         });
   const flows = new Map<string, string>();
   const params = new Map<string, Record<string, unknown>>();

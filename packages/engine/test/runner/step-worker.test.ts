@@ -131,7 +131,7 @@ describe("step worker in this process", () => {
     );
     expect(await resultOf(port, run)).toMatchObject({ ok: true });
 
-    const configured = openPluginStore({ backend: "sqlite", root: sqlite });
+    const configured = openPluginStore({ root: sqlite });
     expect((await configured.get("thing", "1"))?.data.wrote).toBe(true);
     expect(existsSync(join(sqlite, "plugins.sqlite"))).toBe(true);
   });

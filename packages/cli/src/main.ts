@@ -491,7 +491,6 @@ async function commandInit(home: string, io: CliIo): Promise<number> {
     home,
     cwd: home,
     store: openPluginStore({
-      backend: config.store.backend,
       root: storeRoot,
       follow: false,
     }),

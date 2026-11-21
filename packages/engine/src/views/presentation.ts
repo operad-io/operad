@@ -2434,8 +2434,8 @@ export class Views {
           continue;
         }
         if (fact.kind !== "run_ended") continue;
+        if (!isRecord(fact.payload)) continue;
         const payload = fact.payload;
-        if (typeof payload !== "object" || payload === null || Array.isArray(payload)) continue;
         const status = payload.status;
         if (status !== "done" && status !== "failed" && status !== "cancelled") continue;
         const recorded = payload.reason;

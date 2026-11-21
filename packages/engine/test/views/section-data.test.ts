@@ -38,7 +38,7 @@ describe("structured data beside a section", () => {
     const store = new MemoryPluginStore({ root: join(root, "plugins") });
     store.put("thing", "one", {}, "seed");
     const registry = new PluginRegistry([plugin], { store, storeRoot: store.root });
-    const log = openLog({ backend: "sqlite", path: join(root, "store", "log.sqlite") });
+    const log = openLog({ path: join(root, "store", "log.sqlite") });
     const views = createViews({ registry, store, log });
     try {
       const whole = await views.section("thing:one", "main", undefined, {});

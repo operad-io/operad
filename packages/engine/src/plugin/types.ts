@@ -11,6 +11,7 @@ import type {
   TriggerRule,
   TriggerView,
 } from "../trigger/types.ts";
+import { isRecord } from "../util.ts";
 
 /** The plugin API version a module declares with `operadPlugin`. */
 export const OPERAD_PLUGIN_VERSION = 1 as const;
@@ -707,17 +708,6 @@ export interface AskAnswer {
   readonly answers?: readonly AskQuestionAnswer[] | undefined;
 }
 
-/** The data of a step that ended `waiting` because an ask timed out. */
-export interface AskWaitingData {
-  readonly waitId: string;
-  readonly prompt: string;
-  readonly choices: readonly string[];
-  readonly choiceInfo?: Readonly<Record<string, ChoiceInfo>> | undefined;
-  /** The form the step asked, when it asked one. */
-  readonly questions?: readonly AskQuestion[] | undefined;
-  readonly resume: JsonValue;
-}
-
 /** What the host reports back for one question a step asked. */
 export type AskOutcome =
   | { readonly kind: "answered"; readonly answer: AskAnswer }
@@ -1311,7 +1301,7 @@ export interface ActionOutcome {
 
 /** Whether an action's return value is an `ActionOutcome`. */
 export function isActionOutcome(value: unknown): value is ActionOutcome {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  if (!isRecord(value)) return false;
   const keys = Object.keys(value);
   const record = value as { readonly text?: unknown; readonly opens?: unknown };
   return (

@@ -85,7 +85,7 @@ async function appendInChild(
 
 test("read after a sequence returns only the facts that follow it", async () => {
   const root = await tempRoot();
-  const log = openLog({ backend: "sqlite", path: join(root, "log.sqlite") });
+  const log = openLog({ path: join(root, "log.sqlite") });
   try {
     const run = await log.startRun("incremental", "job:1");
     for (const kind of ["one", "two", "three"]) {
@@ -110,7 +110,6 @@ test("read after a sequence returns only the facts that follow it", async () => 
 test("an unchanged run reads no fact on the second readState", async () => {
   const root = await tempRoot();
   const inner = openLog({
-    backend: "sqlite",
     path: join(root, "log.sqlite"),
   });
   const { log, rows, reads } = countingFacts(inner);
@@ -144,7 +143,6 @@ test("an unchanged run reads no fact on the second readState", async () => {
 test("an ended run's state is not kept", async () => {
   const root = await tempRoot();
   const inner = openLog({
-    backend: "sqlite",
     path: join(root, "log.sqlite"),
   });
   const { log, rows, reads } = countingFacts(inner);
@@ -174,7 +172,6 @@ test("appendInput keeps the state it appended", async () => {
   const root = await tempRoot();
   const storeRoot = join(root, "store");
   const inner = openLog({
-    backend: "sqlite",
     path: join(storeRoot, "log.sqlite"),
   });
   const { log, rows } = countingFacts(inner);
@@ -212,7 +209,6 @@ test("a kept state equals a full replay after every append of a recorded run", a
   const root = await tempRoot();
   const storeRoot = join(root, "store");
   const log = openLog({
-    backend: "sqlite",
     path: join(storeRoot, "log.sqlite"),
   });
   try {
@@ -255,7 +251,7 @@ test("a kept state equals a full replay after every append of a recorded run", a
 test("the kept state follows a run that grows through two processes", async () => {
   const root = await tempRoot();
   const path = join(root, "log.sqlite");
-  const log = openLog({ backend: "sqlite", path });
+  const log = openLog({ path });
   try {
     const run = await log.startRun("incremental", "job:1");
     await log.append(run.runId, 0, [

@@ -43,7 +43,7 @@ async function open() {
   const root = await tempRoot();
   const store = new MemoryPluginStore({ root: join(root, "plugins") });
   const registry = new PluginRegistry([targetless], { store, storeRoot: store.root });
-  const log = openLog({ backend: "sqlite", path: join(root, "store", "log.sqlite") });
+  const log = openLog({ path: join(root, "store", "log.sqlite") });
   const views = createViews({ registry, store, log });
   return { views, log };
 }

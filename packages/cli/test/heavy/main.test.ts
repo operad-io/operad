@@ -5,7 +5,6 @@ import { fileURLToPath } from "node:url";
 import {
   SqlitePluginStore,
   Runner,
-  answerRun,
   type NewFact,
   ensureConfig,
   loadPluginRegistry,
@@ -14,6 +13,7 @@ import {
   serveOnce,
   storeRootOf,
 } from "@operad-io/engine";
+import { answerRun } from "@operad-io/engine/testing";
 import { addRepository } from "../../../dev/src/service.ts";
 import { distributionConfig } from "../../src/defaults.ts";
 import { main, type CliIo } from "../../src/main.ts";

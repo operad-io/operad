@@ -1050,7 +1050,7 @@ export class Kernel {
     if (inputId !== undefined) {
       const existing = await this.startedRun(inputId);
       if (existing !== undefined) {
-        this.ensureStartFiles(existing, inputId, params, object, input, access);
+        this.ensureStartFiles(existing, inputId, params, input, access);
         return { kind: "started", runId: existing.runId };
       }
     }
@@ -1100,7 +1100,7 @@ export class Kernel {
         const active = await this.log.run(error.runId);
         if (active !== undefined) {
           if (inputId !== undefined && active.startInputId === inputId) {
-            this.ensureStartFiles(active, inputId, params, object, input, access);
+            this.ensureStartFiles(active, inputId, params, input, access);
             return { kind: "started", runId: active.runId };
           }
           if (event !== undefined && inputId !== undefined) {
@@ -1137,7 +1137,6 @@ export class Kernel {
     run: RunInfo,
     inputId: string,
     params: JsonValue | undefined,
-    object: string,
     input: InputRecord | undefined,
     access?: JsonValue,
   ): void {

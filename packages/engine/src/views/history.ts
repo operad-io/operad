@@ -2,7 +2,7 @@
 
 import type { JsonValue } from "../log/types.ts";
 import type { Actor } from "../plugin/types.ts";
-import { formatElapsed } from "../util.ts";
+import { formatElapsed, isRecord } from "../util.ts";
 
 /** The facts a history entry needs; run facts and global facts both fit. */
 export interface HistoryFact {
@@ -21,9 +21,7 @@ export interface HistoryEntry {
 }
 
 function record(value: unknown): Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
+  return isRecord(value) ? value : {};
 }
 
 function text(value: unknown): string | undefined {
@@ -39,8 +37,8 @@ function answersLine(value: unknown): string | undefined {
   if (!Array.isArray(value)) return undefined;
   const parts: string[] = [];
   for (const raw of value) {
-    if (typeof raw !== "object" || raw === null || Array.isArray(raw)) continue;
-    const answer = raw as Record<string, unknown>;
+    if (!isRecord(raw)) continue;
+    const answer = raw;
     if (answer.skipped === true) {
       parts.push("(skipped)");
       continue;

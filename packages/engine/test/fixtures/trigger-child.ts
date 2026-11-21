@@ -15,7 +15,7 @@ if (storeRoot === undefined || mode === undefined || keyOrId === undefined) {
   throw new Error("usage: trigger-child <store root> <mode> <key> [action]");
 }
 const action = actionArg ?? "receive";
-const log = openLog({ backend: "sqlite", path: join(storeRoot, "log.sqlite") });
+const log = openLog({ path: join(storeRoot, "log.sqlite") });
 const registry = new PluginRegistry([plugin], {
   home: storeRoot,
   storeRoot,

@@ -50,7 +50,7 @@ async function world() {
   const found = registry.flow("dev");
   if (found === undefined) throw new Error("the dev flow is missing");
   const flow = found.flow;
-  const log: LogBackend = openLog({ backend: "sqlite", path: join(store.root, "log", "log.sqlite"), clock: () => now });
+  const log: LogBackend = openLog({ path: join(store.root, "log", "log.sqlite"), clock: () => now });
   const info = await log.startRun("dev", `task:${task.id}`);
   const runId = info.runId;
   let state: KernelState = initialState();

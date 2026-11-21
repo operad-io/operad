@@ -3,7 +3,6 @@
  * after the log accepts the fact named by <crash>: `queued` (step_queued),
  * `slot` (step_slot), `result` (step_result) or `none`.
  */
-import { join } from "node:path";
 import {
   SqlitePluginStore,
   Runner,

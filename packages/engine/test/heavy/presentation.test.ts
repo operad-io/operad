@@ -2,7 +2,6 @@ import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { basename, join } from "node:path";
 import {
   createViews,
-  defineFlow,
   definePlugin,
   SqlitePluginStore,
   MemoryPluginStore,
@@ -85,7 +84,7 @@ async function fixture(): Promise<Fixture> {
     store,
     onLog: (message) => logs.push(message),
   });
-  const log = openLog({ backend: "sqlite", path: join(root, "store", "log.sqlite") });
+  const log = openLog({ path: join(root, "store", "log.sqlite") });
   return { root, store, registry, log, logs };
 }
 

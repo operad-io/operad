@@ -192,7 +192,7 @@ describe("operad settings", () => {
         http: { enabled: true, port, listen: ["127.0.0.1"] },
       }),
     );
-    const store = openPluginStore({ backend: "sqlite", root: join(root, "store") });
+    const store = openPluginStore({ root: join(root, "store") });
     await store.put("item", "one", { title: "One", state: "new" }, "seed");
     const child = Bun.spawn({
       cmd: [process.execPath, CLI_ENTRY, "serve"],

@@ -26,6 +26,7 @@ import { dirname, join } from "node:path";
 import { withLockFile } from "./file-lock.ts";
 import { killProcessGroup, systemClock, type Clock } from "./process-group.ts";
 import { readProcessTable } from "./step-reap.ts";
+import { isRecord } from "../util.ts";
 
 /** How long a worker is kept after a reply, when nobody asks for another. */
 export const KEPT_WORKER_MS = 10 * 60 * 1000;
@@ -120,8 +121,8 @@ function textOf(value: unknown): string | undefined {
 }
 
 function recordOf(path: string, value: unknown): KeptWorkerRecord | undefined {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
-  const fields = value as Record<string, unknown>;
+  if (!isRecord(value)) return undefined;
+  const fields = value;
   const pid = fields.pid;
   const token = textOf(fields.token);
   const scope = textOf(fields.scope);

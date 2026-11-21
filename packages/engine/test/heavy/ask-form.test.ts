@@ -8,14 +8,12 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import {
   AskTimeoutError,
   historyEntries,
   MemoryPluginStore,
   PluginRegistry,
   Runner,
-  answerRun,
   listPending,
   openLog,
   readState,
@@ -25,6 +23,7 @@ import {
   type JsonValue,
   type LogBackend,
 } from "../../src/index.ts";
+import { answerRun } from "../../src/testing/index.ts";
 import plugin from "../fixtures/plugins/ask.ts";
 import { cleanupTempRoots, tempRoot } from "../plugin/support.ts";
 
@@ -157,7 +156,7 @@ async function setup(): Promise<Env> {
   const flags = join(root, "flags");
   mkdirSync(flags, { recursive: true });
   const storeRoot = join(root, "store");
-  const log = openLog({ backend: "sqlite", path: join(storeRoot, "log.sqlite") });
+  const log = openLog({ path: join(storeRoot, "log.sqlite") });
   const registry = new PluginRegistry([plugin], {
     home,
     storeRoot,

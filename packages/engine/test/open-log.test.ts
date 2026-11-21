@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { SQLITE_FILE_NAME, openLog } from "../src/index.ts";
+import { openLog } from "../src/index.ts";
 
 const TEST_ROOT = resolve(import.meta.dir, "..", "..", "..", ".radian", "test-tmp");
 
@@ -18,7 +18,6 @@ test("a log opened for a one-shot command starts no watch or timer", async () =>
   let watches = 0;
   let repeats = 0;
   const backend = openLog({
-    backend: "sqlite",
     path: join(directory, "log.sqlite"),
     follow: false,
     watch: () => {
@@ -45,7 +44,7 @@ test("a log opened for a one-shot command starts no watch or timer", async () =>
 test("openLog opens the sqlite backend on one file", async () => {
   const directory = tempDirectory("open-log-sqlite");
   const path = join(directory, "store.sqlite");
-  const backend = openLog({ backend: "sqlite", path });
+  const backend = openLog({ path });
   try {
     const run = await backend.startRun("flow", "object");
     await backend.append(run.runId, 0, [{ kind: "one", payload: {}, cause: 1 }]);

@@ -90,7 +90,7 @@ export async function listPending(
             : { choiceInfo: open.choiceInfo }),
           ...(open.questions === undefined ? {} : { questions: open.questions }),
           waitId: open.waitId,
-          actions: await actionsFor(registry, log, run),
+          actions: await actionsFor(registry, run),
           kind: "run",
           ...objectFields(run.object),
         });
@@ -104,7 +104,7 @@ export async function listPending(
       waitObject !== undefined && (await registry.answeredAutomatically(waitObject));
     // A wait that is about to be answered automatically is no person's to answer.
     if (auto && options.withAuto !== true) continue;
-    const actions = await actionsFor(registry, log, run);
+    const actions = await actionsFor(registry, run);
     items.push({
       runId: run.runId,
       flow: run.flow,
@@ -199,7 +199,6 @@ export async function listPending(
 
 async function actionsFor(
   registry: PluginRegistry,
-  _log: LogBackend,
   run: RunInfo,
 ): Promise<readonly PendingActionView[]> {
   const object = parseObjectKey(run.object);
