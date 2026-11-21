@@ -1520,6 +1520,44 @@ test("a secret split across grouped increments is not exposed by joining the del
   }
 });
 
+test("a JSON-escaped secret split across grouped increments is not exposed by joining the deltas", async () => {
+  const secret = 'a"b';
+  const escaped = 'a\\"b';
+  const text = `AAAAA${escaped}BBBB`;
+  const thinking = `CCCCC${escaped}DDDD`;
+  const message = assistant("m1", text);
+  const inner = message["message"] as Record<string, unknown>;
+  inner["content"] = [
+    { type: "thinking", thinking },
+    { type: "text", text },
+  ];
+  const s = setup();
+  s.input["secretValues"] = [secret];
+  const run = await runFake(
+    s,
+    {
+      steps: [
+        { say: systemInit() },
+        ...streamBlock("text", text, 0),
+        ...streamBlock("thinking", thinking, 1),
+        { say: message },
+        { say: result() },
+      ],
+    },
+    // A 50 ms clock puts the escaped spelling's pieces in different groups.
+    { FAKE_CLOCK_STEP: String(STREAM_GROUP_MS / 2) },
+  );
+
+  for (const type of ["text_delta", "thinking_delta"]) {
+    const joined = run.lines
+      .filter((line) => line["type"] === type)
+      .map((line) => String(line["text"]))
+      .join("");
+    expect(joined).not.toContain(escaped);
+    expect(joined).toContain("***");
+  }
+});
+
 test("a block ending in a secret prefix writes that held suffix as its last increment", async () => {
   const secret = "password";
   const text = "the pass";
