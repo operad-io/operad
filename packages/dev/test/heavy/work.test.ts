@@ -162,6 +162,11 @@ function fakeHarness(record: string) {
               typeof retry === "string" && retry.length > 0
                 ? Number(retry)
                 : undefined;
+            const reported = args[3];
+            const reportedAt =
+              typeof reported === "string" && reported.length > 0
+                ? Number(reported)
+                : undefined;
             const message =
               typeof args[2] === "string" ? args[2] : "the model is busy";
             return {
@@ -173,6 +178,9 @@ function fakeHarness(record: string) {
                   kind: mode,
                   ...(retryAfter !== undefined && Number.isFinite(retryAfter)
                     ? { retry_after_secs: retryAfter }
+                    : {}),
+                  ...(reportedAt !== undefined && Number.isFinite(reportedAt)
+                    ? { reported_at: reportedAt }
                     : {}),
                 },
               },
@@ -723,6 +731,26 @@ describe("dev/work", () => {
     }
   });
 
+  test("unavailable: a retry-after is counted from when the model reported it", async () => {
+    const reportedAt = 1_000;
+    const state = await fixture("unavailable", {
+      args: ["unavailable", "30", "the model is busy", String(reportedAt)],
+    });
+    let clock = 10_000;
+    reviewTestHooks.now = () => clock;
+    try {
+      const result = await runWork(state);
+      expect(result.result).toBe("unavailable");
+      // The report was ten seconds before this step read it.
+      expect(result.data?.retryAt).toBe(reportedAt + 30_000);
+      const task = await taskDataOf(state);
+      expect(task.attempt?.workRetryAt).toBe(reportedAt + 30_000);
+      clock += 30_000;
+    } finally {
+      reviewTestHooks.now = undefined;
+    }
+  });
+
   test("unavailable: a retry-after past the bound goes to a person", async () => {
     const state = await fixture("unavailable", {
       args: ["unavailable", "3600", "the provider is overloaded"],
@@ -777,6 +805,29 @@ describe("dev/work", () => {
         },
       );
       expect(retry.result).toBe("ask");
+    } finally {
+      reviewTestHooks.now = undefined;
+    }
+  });
+
+  test("usage_limit: the reset time is counted from when the model reported it", async () => {
+    const reportedAt = 1_000;
+    const state = await fixture("unavailable", {
+      args: [
+        "usage_limit",
+        "3600",
+        "the usage limit is reached",
+        String(reportedAt),
+      ],
+    });
+    let clock = 10_000;
+    reviewTestHooks.now = () => clock;
+    try {
+      const result = await runWork(state);
+      expect(result.result).toBe("failed");
+      expect(String(result.data?.message)).toContain(
+        new Date(reportedAt + 3_600_000).toISOString(),
+      );
     } finally {
       reviewTestHooks.now = undefined;
     }

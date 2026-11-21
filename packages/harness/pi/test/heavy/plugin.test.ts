@@ -618,6 +618,8 @@ describe("pi/agent", () => {
     const error = dataOf(result).modelError as Record<string, unknown>;
     expect(error.kind).toBe("unavailable");
     expect(error.status).toBe(429);
+    expect(error.retry_after_secs).toBe(45);
+    expect(typeof error.reported_at).toBe("number");
   });
 
   test("a model_error failure about a usage limit is usage_limit", async () => {

@@ -848,6 +848,7 @@ class ClaudeSession {
               resetsAt === null
                 ? null
                 : Math.max(0, Math.ceil(resetsAt - Date.now() / 1000)),
+            reported_at: resetsAt === null ? null : Date.now(),
           };
         }
         break;

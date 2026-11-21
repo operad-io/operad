@@ -2692,7 +2692,8 @@ export async function runReview(
     const reset =
       exhausted && last?.modelError?.retryAfterSecs !== undefined
         ? `; the model can serve again at ${new Date(
-            clock() + last.modelError.retryAfterSecs * 1000,
+            (last.modelError.reportedAt ?? clock()) +
+              last.modelError.retryAfterSecs * 1000,
           ).toISOString()}`
         : "";
     const message = [reviewMessage("passed", runs), why + reset]
@@ -2725,7 +2726,9 @@ export async function runReview(
     ).length;
     const retryAfterSecs = last?.modelError?.retryAfterSecs;
     const retryAt =
-      clock() +
+      (retryAfterSecs === undefined
+        ? clock()
+        : last?.modelError?.reportedAt ?? clock()) +
       (retryAfterSecs === undefined
         ? reviewWaitMs(settings.retrySecs, waits)
         : retryAfterSecs * 1000);

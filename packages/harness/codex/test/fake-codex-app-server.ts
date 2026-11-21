@@ -328,7 +328,7 @@ async function runTurn(): Promise<void> {
     case "usage-limit":
       notify("error", {
         error: {
-          message: "Your ChatGPT allowance is used up. Try again later.",
+          message: "Your ChatGPT allowance is used up. Try again in 30 seconds.",
           codexErrorInfo: "usageLimitExceeded",
           additionalDetails: null,
           misalignment: null,
@@ -346,7 +346,7 @@ async function runTurn(): Promise<void> {
           itemsView: "notLoaded",
           status: "failed",
           error: {
-            message: "Your ChatGPT allowance is used up. Try again later.",
+            message: "Your ChatGPT allowance is used up. Try again in 30 seconds.",
             codexErrorInfo: "usageLimitExceeded",
             additionalDetails: null,
             misalignment: null,

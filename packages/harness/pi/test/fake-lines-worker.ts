@@ -162,7 +162,7 @@ switch (mode) {
     process.exit(0);
     break;
   case "model-error-429":
-    line(failed("model_error", "429 {\"error\":{\"type\":\"overloaded_error\"}}"));
+    line(failed("model_error", "429 {\"error\":{\"type\":\"overloaded_error\"}}; retry after 45 seconds"));
     process.exit(1);
     break;
   case "model-error-usage-limit":
