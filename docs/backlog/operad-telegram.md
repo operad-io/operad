@@ -19,3 +19,7 @@ Telegram 在 operad 眼里是两件事：往外送卡和回复（通道），把
 ## 验收
 
 Telegram 插件不改内核：给 Telegram bot 发一句，`default` bot 下出现一个 chat，回复回到 Telegram，iPhone 上看到同一问答；chat 里 bot 问一次权限，Telegram 上出现带按钮的卡，点一下运行继续，iPhone 上这项从待处理消失；`review.awaiting_human` 和 proposed task 的卡能在 Telegram 里答；重复的 `update_id` 只算一次；杀掉 `operad serve` 再起来，没漏消息也没重复回复；`history` 能看到一个运行由哪条 Telegram 消息启动。
+
+## 已批准的用户词
+
+- "already sent"（`/pending` 的计数行里，指已经发到这个对话、还没处理的项，例如 `3 waiting; 1 already sent`）是 owner 2026-11-20 批准的用户词（T-0605）。
