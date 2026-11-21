@@ -9,6 +9,7 @@ import type {
 import { startHttpServer } from "@operad-io/engine";
 import {
   LIVE_DEBOUNCE_MS,
+  LIVE_LISTS_DEBOUNCE_MS,
   LiveBatcher,
   TuiClient,
   TuiError,
@@ -23,6 +24,8 @@ import {
   startShell,
   statusText,
   type Refetch,
+  type TuiActInput,
+  type TuiBinding,
   type TuiEvent,
   type TuiEventSource,
   type TuiShellClient,
@@ -35,7 +38,7 @@ function row(id: string, title = id): ViewRow {
   return { id, title, state: "new", waiting: false, running: false };
 }
 
-function objectOf(id: string, title = id): ViewObject {
+function objectOf(id: string, title = id, actions: ViewObject["actions"] = []): ViewObject {
   return {
     id,
     type: "item",
@@ -45,7 +48,7 @@ function objectOf(id: string, title = id): ViewObject {
       { id: "info", title: "Info" },
       { id: "log", title: "Log", live: true },
     ],
-    actions: [],
+    actions,
   };
 }
 
@@ -53,7 +56,12 @@ function objectOf(id: string, title = id): ViewObject {
 class CountingClient implements TuiShellClient {
   failure: Error | undefined;
   titles = new Map<string, string>([["a", "A"]]);
+  actions: ViewObject["actions"] = [];
+  bindings: readonly TuiBinding[] = [];
+  pendingItems: readonly PendingItem[] = [];
   pendingCalls = 0;
+  runningCalls = 0;
+  actionCalls = 0;
   objectsCalls = 0;
   objectCalls: string[] = [];
   sectionCalls: string[] = [];
@@ -70,11 +78,20 @@ class CountingClient implements TuiShellClient {
   async pending(): Promise<readonly PendingItem[]> {
     this.pendingCalls += 1;
     this.check();
-    return [];
+    return this.pendingItems;
   }
   async running(): Promise<readonly RunningItem[]> {
+    this.runningCalls += 1;
     this.check();
     return [];
+  }
+  async keys(): Promise<readonly TuiBinding[]> {
+    return this.bindings;
+  }
+  async act(_input: TuiActInput): Promise<unknown> {
+    this.actionCalls += 1;
+    this.check();
+    return {};
   }
   async objects(_t?: string, _c?: string, _s?: AbortSignal, _f?: string, level?: { readonly parent?: string | undefined }): Promise<ViewListPage> {
     if (level?.parent !== undefined) return { rows: [] };
@@ -87,7 +104,7 @@ class CountingClient implements TuiShellClient {
     this.check();
     const bare = id.replace(/^item:/, "");
     if (!this.titles.has(bare)) throw new TuiError("gone", { status: 404 });
-    return objectOf(bare, this.titles.get(bare) ?? bare);
+    return objectOf(bare, this.titles.get(bare) ?? bare, this.actions);
   }
   async section(id: string, section: string): Promise<{ readonly markdown: string }> {
     this.sectionCalls.push(`${id}/${section}`);
@@ -236,7 +253,7 @@ describe("which events ask for which fetches", () => {
 });
 
 describe("live updates in the shell", () => {
-  test("an event refetches Pending once per window and only its own row", async () => {
+  test("an event refetches its row at once and Pending on the list window", async () => {
     const s = start();
     await s.view.until((state) => titles(state).length === 1);
     const pendingBefore = s.client.pendingCalls;
@@ -251,9 +268,12 @@ describe("live updates in the shell", () => {
     expect(s.client.pendingCalls).toBe(pendingBefore);
     s.clock.advance(1);
     await s.view.until((state) => titles(state)[0] === "A2");
-    expect(s.client.pendingCalls).toBe(pendingBefore + 1);
+    expect(s.client.pendingCalls).toBe(pendingBefore);
     expect(s.client.objectsCalls).toBe(listsBefore);
     expect(s.client.objectCalls).toEqual(["item:a"]);
+    s.clock.advance(LIVE_LISTS_DEBOUNCE_MS - LIVE_DEBOUNCE_MS);
+    await settled();
+    expect(s.client.pendingCalls).toBe(pendingBefore + 1);
     s.shell.stop();
   });
 
@@ -265,6 +285,67 @@ describe("live updates in the shell", () => {
     await settled();
     s.clock.advance(LIVE_DEBOUNCE_MS);
     await s.view.until((state) => titles(state).length === 2);
+    s.shell.stop();
+  });
+
+  test("ten events inside the list window make one Pending and one Running request", async () => {
+    const s = start();
+    await s.view.until((state) => titles(state).length === 1);
+    const pendingBefore = s.client.pendingCalls;
+    const runningBefore = s.client.runningCalls;
+    s.client.pendingItems = [
+      { runId: "r1", flow: "f", step: null, prompt: "p", choices: [], actions: [] },
+    ];
+    for (let index = 0; index < 10; index += 1) {
+      s.events.push({ kind: "change", id: "a" });
+    }
+    await settled();
+    s.clock.advance(LIVE_DEBOUNCE_MS);
+    await settled();
+    expect(s.client.pendingCalls).toBe(pendingBefore);
+    expect(s.client.runningCalls).toBe(runningBefore);
+    s.clock.advance(LIVE_LISTS_DEBOUNCE_MS - LIVE_DEBOUNCE_MS);
+    await s.view.until(
+      (state) =>
+        state.tabs.find((tab) => tab.id === "pending")?.list.rows.length === 1,
+    );
+    expect(s.client.pendingCalls).toBe(pendingBefore + 1);
+    expect(s.client.runningCalls).toBe(runningBefore + 1);
+    s.shell.stop();
+  });
+
+  test("an action refetches only its object and row, never the lists", async () => {
+    const s = start((client) => {
+      client.actions = [
+        {
+          plugin: "tuitest",
+          action: "approve",
+          on: "item",
+          name: "tuitest:approve",
+          noteRequired: false,
+          confirm: false,
+        },
+      ];
+      client.bindings = [{ key: "x", action: "tuitest:approve", source: "plugin" }];
+    });
+    await s.view.until((state) => titles(state).length === 1);
+    await s.view.until((state) => state.bindings.some((binding) => binding.key === "x"));
+    s.shell.key({ name: "3" });
+    s.shell.key({ name: "return" });
+    await s.view.until((state) => state.object?.sections[0]?.loaded === true);
+    const pendingBefore = s.client.pendingCalls;
+    const runningBefore = s.client.runningCalls;
+    const listsBefore = s.client.objectsCalls;
+    const objectsBefore = s.client.objectCalls.length;
+    s.client.titles.set("a", "A2");
+    s.shell.key({ name: "x" });
+    await s.view.until((state) => state.object?.row.title === "A2");
+    await settled();
+    expect(s.client.actionCalls).toBe(1);
+    expect(s.client.objectCalls.length).toBe(objectsBefore + 1);
+    expect(s.client.pendingCalls).toBe(pendingBefore);
+    expect(s.client.runningCalls).toBe(runningBefore);
+    expect(s.client.objectsCalls).toBe(listsBefore);
     s.shell.stop();
   });
 

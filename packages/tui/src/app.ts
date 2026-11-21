@@ -1233,7 +1233,7 @@ export function startShell(deps: TuiShellDeps): TuiShell {
       });
       if (abort.signal.aborted) return;
       dispatch({ type: "action-done", ...settledNotice(ran) });
-      requestRefresh();
+      refetchObjectAndRow(request.id);
     } catch (error) {
       if (abort.signal.aborted) return;
       if (error instanceof TuiError && error.status !== undefined) {
@@ -1258,7 +1258,7 @@ export function startShell(deps: TuiShellDeps): TuiShell {
       await answer.call(client, { ...request, signal: abort.signal });
       if (abort.signal.aborted) return;
       dispatch({ type: "action-done" });
-      requestRefresh();
+      refetchObjectAndRow(answeredRow(request));
     } catch (error) {
       if (abort.signal.aborted) return;
       if (error instanceof TuiError && error.status !== undefined) {
@@ -1317,6 +1317,31 @@ export function startShell(deps: TuiShellDeps): TuiShell {
         status: error instanceof TuiError ? error.status : undefined,
       });
     }
+  }
+
+  /** The row an answer is about, when a pending list still holds it. */
+  function answeredRow(request: TuiAnswerRequest): string | undefined {
+    for (const tab of state.tabs) {
+      for (const row of tab.list.rows) {
+        if (row.answer?.runId === request.runId && row.answer.waitId === request.waitId) {
+          return row.id;
+        }
+      }
+    }
+    return state.object?.id;
+  }
+
+  /** After an action or answer: only the open object and the row it changed. */
+  function refetchObjectAndRow(id: string | undefined): void {
+    if (finished) return;
+    guard(
+      refetch({
+        all: false,
+        lists: false,
+        rows: id === undefined ? [] : [id],
+        object: state.object !== undefined,
+      }),
+    );
   }
 
   function requestRefresh(): void {
