@@ -4,16 +4,16 @@ import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadPluginRegistry, MemoryPluginStore, PluginRegistry } from "@operad-io/engine";
 import { cleanupTempRoots, tempRoot, waitForFile } from "../../process/test/support.ts";
+import { createPiHarnessPlugin } from "../src/index.ts";
 import {
-  createPiHarnessPlugin,
   parsePiCatalogue,
   parsePiCatalogueModels,
   parsePiCatalogueRows,
   parsePiRegistry,
   PI_LIST_CACHE_MS,
   piModelListPath,
-} from "../src/index.ts";
-import { refreshPiModelList } from "../src/model-list.ts";
+  refreshPiModelList,
+} from "../src/model-list.ts";
 
 afterAll(cleanupTempRoots);
 

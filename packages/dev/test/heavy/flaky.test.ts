@@ -7,19 +7,9 @@ import { commands } from "../../src/commands.ts";
 import { listRerunCounts, recordRerunPasses } from "../../src/reruns.ts";
 import { failureExcerpt, flakyTasksByName, flakyTestHooks, namesTest, trackFlakyTests } from "../../src/flaky.ts";
 import { appendChange, bareId, changeClock, listAll, planData, repositoryData, taskData, type RepositoryData } from "../../src/model.ts";
-import {
-  addPlan,
-  addRepository,
-  addTask,
-  cancelPlan,
-  cancelTask,
-  confirmPlan,
-  setAuto,
-  setPriority,
-  setTaskPhase,
-} from "../../src/service.ts";
+import { addPlan, addRepository, addTask, cancelPlan, cancelTask, confirmPlan, setAuto, setPriority } from "../../src/service.ts";
 import { validateDevSettings, type FailedRerun } from "../../src/settings.ts";
-import { cleanupTempRoots, guardLockHandles, makeGitRepository, storeAt, tempRoot } from "../support.ts";
+import { cleanupTempRoots, guardLockHandles, makeGitRepository, storeAt, tempRoot, setTaskPhase } from "../support.ts";
 
 afterAll(cleanupTempRoots);
 afterEach(() => {

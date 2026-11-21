@@ -11,15 +11,14 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
-import { objectValueAfter, ViewError } from "@operad-io/engine";
+import { ViewError } from "@operad-io/engine";
 import { isBusy } from "@operad-io/engine/platform";
-import type { FlowDefinition, ObjectStore, PluginFact, StoredObject } from "@operad-io/engine";
+import type { FlowDefinition, ObjectStore, StoredObject } from "@operad-io/engine";
 import { git } from "./git.ts";
 import { withdrawIntegration } from "./integration-queue.ts";
 import { withRepositoryLock } from "./lock.ts";
 import {
   appendChange,
-  appendRework,
   bareId,
   dependencyKey,
   dependencyLabel,
@@ -1304,18 +1303,6 @@ export async function updateTask(
   return updated.object;
 }
 
-/** The task after a run changed its phase. Used by later tasks and by tests. */
-export async function setTaskPhase(
-  store: ObjectStore,
-  id: string,
-  phase: TaskPhase,
-  options: { readonly run?: string | null | undefined } = {},
-): Promise<StoredObject> {
-  const written = await changeTaskPhase(store, id, undefined, phase, options);
-  if (written === undefined) throw new DevError("task", `no task "${bareId(id)}"`);
-  return written;
-}
-
 /**
  * Moves a task to `to` only while it is still in phase `from`, checked under
  * the repository lock; undefined when another pass already moved it, so only
@@ -1842,27 +1829,6 @@ export async function releaseWaitingClaim(
   });
 }
 
-/** Appends a rework section and records it. */
-export async function addRework(
-  store: ObjectStore,
-  id: string,
-  source: string,
-  text: string,
-): Promise<StoredObject> {
-  const initial = await getTask(store, id);
-  const data = taskData(initial.data);
-  return withRepoLock(store, data.repository, async () => {
-    const current = await getTask(store, id);
-    const latest = taskData(current.data);
-    return writeTask(
-      store,
-      id,
-      { ...latest, brief: appendRework(latest.brief, source, text) },
-      "dev:task-rework",
-    );
-  });
-}
-
 export async function confirmPlan(
   store: ObjectStore,
   id: string,
@@ -2220,36 +2186,4 @@ export async function setConcurrency(
       `dev:plan-concurrency-${concurrency}`,
     );
   });
-}
-
-/* ---------------------------------------------------------------------------
- * History
- * ------------------------------------------------------------------------- */
-
-/** Rebuilds the objects a store's facts describe, in append order. */
-export function rebuildObjects(
-  facts: readonly PluginFact[],
-): Map<string, Record<string, unknown>> {
-  const objects = new Map<string, Record<string, unknown>>();
-  for (const fact of facts) {
-    const object = fact.object;
-    if (object === undefined) continue;
-    const key = `${object.type}:${object.id}`;
-    const value = objectValueAfter(fact, objects.get(key) ?? {});
-    if (value !== undefined) objects.set(key, { ...value });
-  }
-  return objects;
-}
-
-/** The live object data, keyed the way `rebuildObjects` keys it. */
-export async function liveObjects(
-  store: ObjectStore,
-): Promise<Map<string, Record<string, unknown>>> {
-  const objects = new Map<string, Record<string, unknown>>();
-  for (const type of [REPOSITORY_TYPE, PLAN_TYPE, TASK_TYPE]) {
-    for (const object of await listAll(store, type)) {
-      objects.set(`${type}:${object.id}`, { ...object.data });
-    }
-  }
-  return objects;
 }

@@ -167,17 +167,6 @@ export const CLAUDE_MODELS = {
   info: CLAUDE_MODEL_INFO,
 } as const;
 
-/**
- * The efforts a chat may pick with this agent, and its own flag. The default is
- * the configured `effort` when there is one: claude's built-in default is not
- * known without guessing, so no default is declared otherwise.
- */
-export const CLAUDE_EFFORTS = {
-  list: EFFORT_LEVELS,
-  default: null,
-  flag: "--effort",
-} as const;
-
 function claudeEfforts(settings: Readonly<Record<string, unknown>>): HarnessEfforts {
   const configured = EFFORT_LEVELS.find((level) => level === settings.effort) ?? null;
   return { list: EFFORT_LEVELS, default: configured, flag: "--effort" };

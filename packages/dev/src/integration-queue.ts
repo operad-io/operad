@@ -30,6 +30,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { waitForChange, withLockFile } from "@operad-io/engine/platform";
+import { repositoryPathKey } from "./repository-key.ts";
 
 /**
  * How long a waiter accepts a live holder of the land lock. The holder is
@@ -124,7 +125,7 @@ export function integrationQueueDirectory(
   home: string,
   repository: { readonly name: string; readonly path: string },
 ): string {
-  const hash = new Bun.CryptoHasher("sha1").update(repository.path).digest("hex");
+  const hash = repositoryPathKey(repository.path);
   const name = repository.name.replace(/[^A-Za-z0-9._-]/g, "_");
   return join(home, "dev", "integration-queue", `${name}-${hash.slice(0, 8)}`);
 }

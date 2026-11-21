@@ -18,15 +18,8 @@ import {
 import { commandTestHooks } from "../../src/commands.ts";
 import { withRepositoryLock } from "../../src/lock.ts";
 import { bareId, listAll } from "../../src/model.ts";
-import { addPlan, addRepository, addTask, setTaskPhase } from "../../src/service.ts";
-import {
-  cleanupTempRoots,
-  guardLockHandles,
-  makeGitRepository,
-  runInProcess,
-  tempRoot,
-  type RunResult,
-} from "../support.ts";
+import { addPlan, addRepository, addTask } from "../../src/service.ts";
+import { cleanupTempRoots, guardLockHandles, makeGitRepository, runInProcess, tempRoot, type RunResult, setTaskPhase } from "../support.ts";
 
 afterAll(cleanupTempRoots);
 guardLockHandles();

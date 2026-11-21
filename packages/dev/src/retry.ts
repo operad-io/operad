@@ -10,6 +10,7 @@ import type { PluginStepResult, StepContext } from "@operad-io/engine";
 import { reviewTestHooks, waitFor } from "./gate.ts";
 import type { RetryRecord, TaskData } from "./model.ts";
 import { DEFAULT_DEV_SETTINGS, readDevSettings } from "./settings.ts";
+import { edgeParamsOf } from "./step-edge.ts";
 import { classifyStop } from "./stops.ts";
 import {
   cancelledStep,
@@ -26,17 +27,6 @@ export interface RetryParams {
   readonly from: string;
   /** `failed`, `interrupted`, or `waited` after the wait for what was missing. */
   readonly result: string;
-}
-
-function paramsOf(params: unknown): RetryParams {
-  const record =
-    typeof params === "object" && params !== null && !Array.isArray(params)
-      ? (params as Record<string, unknown>)
-      : {};
-  return {
-    from: typeof record.from === "string" ? record.from : "",
-    result: typeof record.result === "string" ? record.result : "",
-  };
 }
 
 function attemptNumber(task: TaskData): number {
@@ -63,7 +53,7 @@ export async function runRetry(
   const context = await looseTaskContext(ctx);
   const task = context.task;
   if (!claimAllows(ctx, task)) return cancelledStep();
-  const edge = paramsOf(stepParams);
+  const edge = edgeParamsOf(stepParams);
   const used = usedRetry(task);
 
   const write = async (

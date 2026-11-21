@@ -28,13 +28,18 @@ function blockingLogger(): BlockingLogger {
   };
 }
 
+/** Adds one line the way production does: stamp it, then hand it to the log. */
+function push(log: JsonlLog, line: string): Promise<void> | undefined {
+  return log.pushStamped(log.stamp(line));
+}
+
 describe("jsonl log", () => {
   test("a full buffer returns the write the caller must wait for", async () => {
     const gate = blockingLogger();
     const log = new JsonlLog(gate.logger);
 
-    expect(log.push("small line")).toBeUndefined();
-    const pending = log.push("x".repeat(FLUSH_CHARS));
+    expect(push(log, "small line")).toBeUndefined();
+    const pending = push(log, "x".repeat(FLUSH_CHARS));
     expect(pending).toBeInstanceOf(Promise);
 
     let written = false;
@@ -54,7 +59,7 @@ describe("jsonl log", () => {
   test("end writes the tail and waits for it", async () => {
     const gate = blockingLogger();
     const log = new JsonlLog(gate.logger);
-    expect(log.push("last line")).toBeUndefined();
+    expect(push(log, "last line")).toBeUndefined();
 
     let ended = false;
     const ending = log.end().then(() => {
@@ -81,9 +86,9 @@ describe("jsonl log", () => {
       },
     }, undefined, () => now);
 
-    log.push(JSON.stringify({ type: "text_delta", text: "a" }));
+    push(log, JSON.stringify({ type: "text_delta", text: "a" }));
     now = 1_250;
-    log.push(JSON.stringify({ type: "text_delta", text: "b" }));
+    push(log, JSON.stringify({ type: "text_delta", text: "b" }));
     await log.end();
 
     const lines = writes.join("").trim().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>);
@@ -101,7 +106,7 @@ describe("jsonl log", () => {
       },
     });
 
-    for (let index = 0; index < 100; index += 1) await log.push(`line ${index}`);
+    for (let index = 0; index < 100; index += 1) await push(log, `line ${index}`);
     await log.end();
 
     const expected = Array.from({ length: 100 }, (_, index) => `line ${index}\n`).join("");
@@ -119,7 +124,7 @@ describe("jsonl log flush timing", () => {
   test("a line is written when its 250 ms are up, without more lines", async () => {
     const clock = manualClock();
     const { log, writes } = recording(clock);
-    log.push("first");
+    push(log, "first");
     // The timer asks for FLUSH_MS and no more.
     expect(clock.fireUpTo(FLUSH_MS - 1)).toBe(0);
     expect(writes).toEqual([]);
@@ -131,14 +136,14 @@ describe("jsonl log flush timing", () => {
   test("a timer that fires writes the buffer by itself, before end", async () => {
     const clock = manualClock();
     const { log, writes } = recording(clock);
-    log.push("a");
-    log.push("b");
+    push(log, "a");
+    push(log, "b");
     // One timer for the buffer: the second line does not start another.
     expect(clock.fireUpTo(FLUSH_MS)).toBe(1);
     await Promise.resolve();
     await Promise.resolve();
     expect(writes).toEqual(["a\nb\n"]);
-    log.push("c");
+    push(log, "c");
     expect(clock.fireUpTo(FLUSH_MS)).toBe(1);
     await log.end();
     expect(writes).toEqual(["a\nb\n", "c\n"]);
@@ -147,10 +152,10 @@ describe("jsonl log flush timing", () => {
   test("a full buffer and end cancel the timer", async () => {
     const clock = manualClock();
     const { log, writes } = recording(clock);
-    log.push("small");
-    await log.push("x".repeat(FLUSH_CHARS));
+    push(log, "small");
+    await push(log, "x".repeat(FLUSH_CHARS));
     expect(clock.fireUpTo()).toBe(0);
-    log.push("tail");
+    push(log, "tail");
     await log.end();
     expect(clock.fireUpTo()).toBe(0);
     expect(writes).toHaveLength(2);

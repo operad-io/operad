@@ -9,11 +9,11 @@
 import {
   foldObjectFacts,
   formatElapsed,
-  type PluginFact,
   type StoredObject,
   type ViewContext,
 } from "@operad-io/engine";
 import {
+  allFactsOf,
   listAll,
   repositoryData,
   taskData,
@@ -149,17 +149,7 @@ async function readTask(
   // Each attempt's cost, the latest recorded for it: a rework is paid for too.
   const attemptCosts = new Map<number, number>();
   const reasons = new Set<string>();
-  const facts: PluginFact[] = [];
-  let cursor: string | undefined;
-  for (;;) {
-    const page = await ctx.store.facts(
-      { type: object.type, id: object.id },
-      cursor === undefined ? {} : { cursor },
-    );
-    facts.push(...page.facts);
-    if (page.next === undefined) break;
-    cursor = page.next;
-  }
+  const facts = await allFactsOf(ctx.store, object);
   for (const version of foldObjectFacts(facts)) {
     const data = taskData(version.data);
     const attempt = data.attempt;

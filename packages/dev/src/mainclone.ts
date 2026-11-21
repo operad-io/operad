@@ -5,7 +5,7 @@
  * through git is ever used: no reset, rebase or stash.
  */
 
-import { git } from "./steps.ts";
+import { git, isAncestor } from "./git.ts";
 
 /** What a command runner reports. */
 export interface CommandResult {
@@ -115,7 +115,7 @@ export async function updateMainClone(
   if (status.out.length > 0) {
     return { updated: false, note: "uncommitted changes" };
   }
-  const already = git(repository, ["merge-base", "--is-ancestor", sha, "HEAD"]).ok;
+  const already = isAncestor(repository, sha, "HEAD");
   if (already) {
     if (marker?.due !== true) return { updated: true };
     if (lines.length === 0) {

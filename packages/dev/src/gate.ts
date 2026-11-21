@@ -31,7 +31,7 @@ import {
   strictestFixLevel,
   type Grading,
 } from "@operad-io/review-grading";
-import { isRecord, messageOf, type PluginStepResult, type StepContext, type StepRunOptions } from "@operad-io/engine";
+import { isRecord, messageOf, type PluginStepResult, type StepContext } from "@operad-io/engine";
 import { appendRework, DevError, type PendingReviewRun, type ReviewFinding, type ReviewNote, type ReviewNotes, type ReviewRecord, type ReviewResult, type ReviewRunRecord, type ReviewRunReason, type ReviewRunRole, type ReworkRecord, type TaskAttempt, type TaskData, type VerifyRecord, type VerifyResult } from "./model.ts";
 import {
   assertInsideRepository,
@@ -44,12 +44,11 @@ import {
 } from "./settings.ts";
 import { reviewWaitKind } from "./waits.ts";
 import { appendChange } from "./model.ts";
+import { commitOf, git } from "./git.ts";
 import {
   briefText,
   cancelledStep,
   claimAllows,
-  git,
-  headOf,
   isRegistered,
   saveTaskGuarded,
   taskContext,
@@ -58,7 +57,6 @@ import {
 } from "./steps.ts";
 import {
   addedLinesOf,
-  filePatches,
   incrementOf,
   type Increment,
   fixedCount,
@@ -68,6 +66,7 @@ import {
   reviewSettingsOf,
   previousLine,
   previousReview,
+  severityRank,
   type LineMap,
   type PreviousFinding,
   type ReviewHistoryEntry,
@@ -97,20 +96,9 @@ export function branchHead(
   workName: string,
 ): string | undefined {
   const branch = workBranch(workName);
-  const local = git(repositoryPath, [
-    "rev-parse",
-    "--verify",
-    "--quiet",
-    `${branch}^{commit}`,
-  ]);
-  if (local.ok && local.out.length > 0) return local.out;
-  const remote = git(repositoryPath, [
-    "rev-parse",
-    "--verify",
-    "--quiet",
-    `refs/remotes/${settings.remote}/${branch}^{commit}`,
-  ]);
-  return remote.ok && remote.out.length > 0 ? remote.out : undefined;
+  const local = commitOf(repositoryPath, branch);
+  if (local !== undefined) return local;
+  return commitOf(repositoryPath, `refs/remotes/${settings.remote}/${branch}`);
 }
 
 /** The commit the task branched from: the merge base of main and the commit. */
@@ -708,13 +696,6 @@ function prepareDiff(
 /** The line that tells the reviewer a file was left out and why. */
 export function leftOutLine(file: FileDiff): string {
   return `- ${file.path} (+${file.added}/-${file.removed}) — ${file.leftOut ?? "left out"}`;
-}
-
-function severityRank(severity: string): number {
-  if (severity === "critical") return 3;
-  if (severity === "major") return 2;
-  if (severity === "minor") return 1;
-  return 0;
 }
 
 function levelRank(level: FixLevel): number {
@@ -2937,16 +2918,5 @@ export async function runRework(
       brief: next.brief,
     },
   };
-}
-
-/** The recorded verified commit of a task, for a caller that wants to look. */
-export function verifiedCommitOf(task: TaskData): string | undefined {
-  const sha = task.attempt?.verified;
-  return typeof sha === "string" && sha.length > 0 ? sha : undefined;
-}
-
-/** The branch head a task's worktree is on, for tests and views. */
-export function taskHead(path: string): string | undefined {
-  return headOf(path);
 }
 

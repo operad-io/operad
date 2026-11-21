@@ -57,8 +57,6 @@ import {
   type ToolEvent,
 } from "@operad-io/harness-process";
 
-export { EVENT_NOTE_TEMPLATE, eventNote } from "@operad-io/harness-process";
-
 /** How long an agent may run before the step stops it. */
 export const DEFAULT_WALL_TIME_SECS = 300;
 

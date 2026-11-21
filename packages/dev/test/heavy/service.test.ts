@@ -1,39 +1,9 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import {
-  addPlan,
-  addRepository,
-  addRework,
-  addTask,
-  cancelPlan,
-  cancelTask,
-  confirmPlan,
-  confirmTask,
-  devTestHooks,
-  editTaskBrief,
-  findRepository,
-  getPlan,
-  getTask,
-  listRepositories,
-  removeRepository,
-  resolveRepository,
-  setAuto,
-  setPriority,
-  setTaskPhase,
-  updateTask,
-} from "../../src/service.ts";
-import {
-  bareId,
-  briefBody,
-  changesBody,
-  listAll,
-  repositoryData,
-  storeKey,
-  taskData,
-  type RepositoryData,
-} from "../../src/model.ts";
-import { cleanupTempRoots, guardLockHandles, makeGitRepository, storeAt, tempRoot } from "../support.ts";
+import { addPlan, addRepository, addTask, cancelPlan, cancelTask, confirmPlan, confirmTask, devTestHooks, editTaskBrief, findRepository, getPlan, getTask, listRepositories, removeRepository, resolveRepository, setAuto, setPriority, updateTask } from "../../src/service.ts";
+import { bareId, briefBody, listAll, repositoryData, storeKey, taskData, type RepositoryData } from "../../src/model.ts";
+import { cleanupTempRoots, guardLockHandles, makeGitRepository, storeAt, tempRoot, setTaskPhase, addRework, changesBody } from "../support.ts";
 import { gitOrThrow, silentGit } from "../git-support.ts";
 import { DEV_SETTINGS_SCHEMA } from "../../src/settings.ts";
 

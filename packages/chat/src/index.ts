@@ -2,7 +2,7 @@
 
 import { messageOf } from "@operad-io/engine";
 import pkg from "../package.json" with { type: "json" };
-import { defineFlow, definePlugin, formatElapsed, isRecord, modelIds, type ActionArgsSchema, type ActionContext, type ActionTypeDefinition, type HarnessEfforts, type HarnessModels, type ObjectStore, type PluginFact, type UsageTokens } from "@operad-io/engine";
+import { defineFlow, definePlugin, formatElapsed, isRecord, modelIds, type ActionArgsSchema, type ActionContext, type ActionTypeDefinition, type HarnessEfforts, type HarnessModels, type JsonValue, type ObjectStore, type PluginFact, type StoredObject, type UsageTokens } from "@operad-io/engine";
 import { ACCESS_LEVELS, isAccessLevel, updateLiveAccessLevel, type AccessLevel } from "@operad-io/access-match";
 import { stopKeptWorkers } from "@operad-io/engine/platform";
 import {
@@ -59,6 +59,33 @@ export { ACCESS_LEVEL_INFO } from "./model.ts";
 
 /** How many rounds one reply run may take before it stops (each round is one visit). */
 export const REPLY_MAX_VISITS = 20;
+
+/** The chat an action runs on; it fails when the chat is gone. */
+async function storedChat(ctx: ActionContext): Promise<StoredObject> {
+  const stored = await ctx.store.get(CHAT_TYPE, ctx.object.id);
+  if (stored === undefined) throw new Error(`there is no chat ${ctx.object.id}`);
+  return stored;
+}
+
+/** The chat an action runs on, when it is still open; it fails with `reason` otherwise. */
+async function openChat(ctx: ActionContext, reason: string): Promise<StoredObject> {
+  const stored = await storedChat(ctx);
+  if (chatData(stored.data).closed) throw new Error(`chat ${ctx.object.id} is closed; ${reason}`);
+  return stored;
+}
+
+/** Reads the chat again and puts its data changed, when the change still applies. */
+async function changeChat(
+  ctx: ActionContext,
+  cause: string,
+  change: (data: Readonly<Record<string, unknown>>) => Readonly<Record<string, unknown>> | undefined,
+): Promise<void> {
+  const fresh = await ctx.store.get(CHAT_TYPE, ctx.object.id);
+  if (fresh === undefined) return;
+  const data = change(fresh.data);
+  if (data === undefined) return;
+  await ctx.store.put(CHAT_TYPE, ctx.object.id, data, cause);
+}
 
 /** Ends the kept worker of a chat, if the agent keeps one. */
 async function endKeptWorker(home: string, chat: ChatData, id: string): Promise<void> {
@@ -205,11 +232,7 @@ const sendAction: ActionTypeDefinition = {
   why: (object) =>
     chatData(object.data).closed ? `${object.id} is closed; it takes no messages` : undefined,
   async run(ctx, args) {
-    const stored = await ctx.store.get(CHAT_TYPE, ctx.object.id);
-    if (stored === undefined) throw new Error(`there is no chat ${ctx.object.id}`);
-    if (chatData(stored.data).closed) {
-      throw new Error(`chat ${ctx.object.id} is closed; it takes no messages`);
-    }
+    await openChat(ctx, "it takes no messages");
     const input = args as {
       readonly note?: string;
       readonly ref?: string;
@@ -274,11 +297,7 @@ const withdrawAction: ActionTypeDefinition = {
   why: (object) =>
     chatData(object.data).closed ? `${object.id} is closed; it has no queued message` : undefined,
   async run(ctx, args) {
-    const stored = await ctx.store.get(CHAT_TYPE, ctx.object.id);
-    if (stored === undefined) throw new Error(`there is no chat ${ctx.object.id}`);
-    if (chatData(stored.data).closed) {
-      throw new Error(`chat ${ctx.object.id} is closed; it has no queued message`);
-    }
+    await openChat(ctx, "it has no queued message");
     const messageId = (args as { readonly message: string }).message;
     return withQueueLock(ctx.home, ctx.object.id, async () => {
       await queuedMessage(ctx, messageId, "withdrawn");
@@ -317,11 +336,7 @@ const editAction: ActionTypeDefinition = {
   why: (object) =>
     chatData(object.data).closed ? `${object.id} is closed; it has no queued message` : undefined,
   async run(ctx, args) {
-    const stored = await ctx.store.get(CHAT_TYPE, ctx.object.id);
-    if (stored === undefined) throw new Error(`there is no chat ${ctx.object.id}`);
-    if (chatData(stored.data).closed) {
-      throw new Error(`chat ${ctx.object.id} is closed; it has no queued message`);
-    }
+    await openChat(ctx, "it has no queued message");
     const input = args as { readonly message: string; readonly text: string };
     return withQueueLock(ctx.home, ctx.object.id, async () => {
       const message = await queuedMessage(ctx, input.message, "changed");
@@ -382,10 +397,8 @@ const modelAction: ActionTypeDefinition = {
     return undefined;
   },
   async run(ctx, args) {
-    const stored = await ctx.store.get(CHAT_TYPE, ctx.object.id);
-    if (stored === undefined) throw new Error(`there is no chat ${ctx.object.id}`);
+    const stored = await openChat(ctx, "its model cannot change");
     const chat = chatData(stored.data);
-    if (chat.closed) throw new Error(`chat ${ctx.object.id} is closed; its model cannot change`);
     const model = (args as { readonly model: string }).model;
     const offered = modelIds(ctx.models[chat.harness]);
     if (!offered.includes(model)) {
@@ -405,10 +418,7 @@ const modelAction: ActionTypeDefinition = {
       data: changed,
     });
     // Read again: a reply may have moved the session while the fact was written.
-    const fresh = await ctx.store.get(CHAT_TYPE, ctx.object.id);
-    if (fresh !== undefined) {
-      await ctx.store.put(CHAT_TYPE, ctx.object.id, { ...fresh.data, model }, "action:chat/model");
-    }
+    await changeChat(ctx, "action:chat/model", (data) => ({ ...data, model }));
     return `chat ${ctx.object.id} now uses ${model}; the next reply uses it`;
   },
 };
@@ -454,10 +464,8 @@ const effortAction: ActionTypeDefinition = {
     return undefined;
   },
   async run(ctx, args) {
-    const stored = await ctx.store.get(CHAT_TYPE, ctx.object.id);
-    if (stored === undefined) throw new Error(`there is no chat ${ctx.object.id}`);
+    const stored = await openChat(ctx, "its effort cannot change");
     const chat = chatData(stored.data);
-    if (chat.closed) throw new Error(`chat ${ctx.object.id} is closed; its effort cannot change`);
     const effort = (args as { readonly effort: string }).effort;
     const offered = ctx.efforts[chat.harness];
     const list = offered?.list ?? [];
@@ -478,20 +486,12 @@ const effortAction: ActionTypeDefinition = {
       data: changed,
     });
     // Read again: a reply may have moved the session while the fact was written.
-    const fresh = await ctx.store.get(CHAT_TYPE, ctx.object.id);
-    if (fresh !== undefined) {
-      const fallback = offered?.default;
-      await ctx.store.put(
-        CHAT_TYPE,
-        ctx.object.id,
-        {
-          ...fresh.data,
-          effort,
-          ...(fallback === undefined || fallback === null ? {} : { effortDefault: fallback }),
-        },
-        "action:chat/effort",
-      );
-    }
+    const fallback = offered?.default;
+    await changeChat(ctx, "action:chat/effort", (data) => ({
+      ...data,
+      effort,
+      ...(fallback === undefined || fallback === null ? {} : { effortDefault: fallback }),
+    }));
     return `chat ${ctx.object.id} now uses effort ${effort}; the next reply uses it`;
   },
 };
@@ -553,10 +553,8 @@ const accessAction: ActionTypeDefinition = {
   why: (object) =>
     chatData(object.data).closed ? `${object.id} is closed; its access cannot change` : undefined,
   async run(ctx, args) {
-    const stored = await ctx.store.get(CHAT_TYPE, ctx.object.id);
-    if (stored === undefined) throw new Error(`there is no chat ${ctx.object.id}`);
+    const stored = await openChat(ctx, "its access cannot change");
     const chat = chatData(stored.data);
-    if (chat.closed) throw new Error(`chat ${ctx.object.id} is closed; its access cannot change`);
     const level = (args as { readonly level?: unknown }).level;
     if (!isAccessLevel(level)) {
       throw new Error(`the access level must be one of ${ACCESS_LEVELS.join(", ")}`);
@@ -571,15 +569,7 @@ const accessAction: ActionTypeDefinition = {
     };
     await ctx.facts.append({ type: ACCESS_FACT, object: chatRef(ctx.object.id), data: changed });
     // Read again: a reply may have moved the session while the fact was written.
-    const fresh = await ctx.store.get(CHAT_TYPE, ctx.object.id);
-    if (fresh !== undefined) {
-      await ctx.store.put(
-        CHAT_TYPE,
-        ctx.object.id,
-        { ...fresh.data, accessLevel: level },
-        "action:chat/access",
-      );
-    }
+    await changeChat(ctx, "action:chat/access", (data) => ({ ...data, accessLevel: level }));
     // A reply already running reads this file again for each call. The file
     // keeps the base profile, so the new level adds or removes only its own asks.
     const levelPath = accessLevelPath(ctx.home, ctx.object.id);
@@ -604,8 +594,7 @@ const closeAction: ActionTypeDefinition = {
   why: (object) =>
     chatData(object.data).closed ? `${object.id} is closed; nothing to close` : undefined,
   async run(ctx) {
-    const stored = await ctx.store.get(CHAT_TYPE, ctx.object.id);
-    if (stored === undefined) throw new Error(`there is no chat ${ctx.object.id}`);
+    const stored = await storedChat(ctx);
     if (chatData(stored.data).closed) return `chat ${ctx.object.id} is closed; nothing to close`;
     const closed: ClosedData = {
       by: { via: ctx.actor.via, id: ctx.actor.id },
@@ -613,10 +602,9 @@ const closeAction: ActionTypeDefinition = {
     const chat = chatData(stored.data);
     await ctx.facts.append({ type: CLOSED_FACT, object: chatRef(ctx.object.id), data: closed });
     // Read again: a reply may have moved the session while the fact was written.
-    const fresh = await ctx.store.get(CHAT_TYPE, ctx.object.id);
-    if (fresh !== undefined && !chatData(fresh.data).closed) {
-      await ctx.store.put(CHAT_TYPE, ctx.object.id, { ...fresh.data, closed: true }, "action:chat/close");
-    }
+    await changeChat(ctx, "action:chat/close", (data) =>
+      chatData(data).closed ? undefined : { ...data, closed: true },
+    );
     await endKeptWorker(ctx.home, chat, ctx.object.id);
     return `closed ${ctx.object.id}`;
   },
@@ -630,10 +618,8 @@ const stopAction: ActionTypeDefinition = {
   why: (object) =>
     chatData(object.data).closed ? `${object.id} is closed; there is no reply to stop` : undefined,
   async run(ctx) {
-    const stored = await ctx.store.get(CHAT_TYPE, ctx.object.id);
-    if (stored === undefined) throw new Error(`there is no chat ${ctx.object.id}`);
+    const stored = await openChat(ctx, "there is no reply to stop");
     const chat = chatData(stored.data);
-    if (chat.closed) throw new Error(`chat ${ctx.object.id} is closed; there is no reply to stop`);
     const runId = latestRunOf(chatFacts(ctx.store, ctx.object.id));
     if (runId === undefined) return "no reply is running";
     if (ctx.runs === undefined) throw new Error("this client cannot stop a reply");
@@ -706,11 +692,7 @@ const statusAction: ActionTypeDefinition = {
   why: (object) =>
     chatData(object.data).closed ? `${object.id} is closed; there is no status to show` : undefined,
   async run(ctx) {
-    const stored = await ctx.store.get(CHAT_TYPE, ctx.object.id);
-    if (stored === undefined) throw new Error(`there is no chat ${ctx.object.id}`);
-    if (chatData(stored.data).closed) {
-      throw new Error(`chat ${ctx.object.id} is closed; there is no status to show`);
-    }
+    const stored = await openChat(ctx, "there is no status to show");
     const read = readChat(ctx.store, ctx.object.id);
     const facts = read.facts;
     const messages = read.messages;

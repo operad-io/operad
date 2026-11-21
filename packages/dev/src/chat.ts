@@ -14,11 +14,15 @@ import {
   WORKTREE_NOTE,
   WORKTREE_REPLY_EVENT,
   agentConditionals,
+  added,
   type AgentChoices,
   chatData,
   chatRef,
   createChat,
+  hasSkill,
+  isDirectory,
   sendMessage,
+  skillsInside,
   startingEffort,
   startingModel,
   titleFromMessage,
@@ -27,6 +31,7 @@ import { defaultAccess } from "@operad-io/access-match";
 import {
   isRecord,
   modelIds,
+  stringList,
   type ActionArgsSchema,
   type ActionContext,
   type ActionTypeDefinition,
@@ -270,36 +275,6 @@ interface ChatSkillList {
   readonly roots: string[];
 }
 
-function isDirectory(path: string): boolean {
-  try {
-    return statSync(path).isDirectory();
-  } catch {
-    return false;
-  }
-}
-
-function hasSkill(path: string): boolean {
-  try {
-    return statSync(join(path, "SKILL.md")).isFile();
-  } catch {
-    return false;
-  }
-}
-
-function added(list: string[], path: string): void {
-  const normal = resolve(path);
-  if (!list.includes(normal)) list.push(normal);
-}
-
-/** The skills directly inside a directory: each child that holds a SKILL.md. */
-function skillsInside(parent: string): string[] {
-  if (!isDirectory(parent)) return [];
-  return readdirSync(parent, { withFileTypes: true })
-    .map((entry) => join(parent, entry.name))
-    .filter((path) => hasSkill(path))
-    .sort((left, right) => left.localeCompare(right));
-}
-
 /**
  * The skills a repository gives its chats at `base` (the main clone or the
  * chat's worktree), read now. A path may be a skill itself, a directory of
@@ -349,10 +324,6 @@ export function chatAccess(skillPaths: readonly string[], readOnly: boolean): Re
     readOnly,
     ...(protectedPaths.length === 0 ? {} : { readPaths: [...protectedPaths] }),
   };
-}
-
-function stringList(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : [];
 }
 
 /**
@@ -537,7 +508,7 @@ export async function runChatSettings(ctx: StepContext, params: unknown): Promis
     return failed(messageOf(error));
   }
   const cwd = chat.cwd.length > 0 ? chat.cwd : repository.path;
-  const hasWorktree = typeof stored.data.worktree === "object" && stored.data.worktree !== null;
+  const hasWorktree = isRecord(stored.data.worktree);
   let skills: ChatSkillList;
   try {
     skills = repositoryChatSkills(settings, cwd);
@@ -589,7 +560,7 @@ export async function runChatAccess(ctx: ActionContext, args: unknown): Promise<
   const stored = await ctx.store.get(CHAT_TYPE, ctx.object.id);
   if (stored === undefined) throw new Error(`there is no chat ${ctx.object.id}`);
   if (level !== "edits" && level !== "full") return "no worktree is needed";
-  if (typeof stored.data.worktree === "object" && stored.data.worktree !== null) {
+  if (isRecord(stored.data.worktree)) {
     return "the chat already has its worktree";
   }
   const chat = chatData(stored.data);
@@ -637,7 +608,7 @@ async function openChatWorktree(
 ): Promise<PluginStepResult> {
   const stored = await ctx.store.get(CHAT_TYPE, chatId);
   if (stored === undefined) return failed(`there is no chat ${chatId}`);
-  if (typeof stored.data.worktree === "object" && stored.data.worktree !== null) {
+  if (isRecord(stored.data.worktree)) {
     return { result: "done", data: { moved: false } };
   }
   const chat = chatData(stored.data);
@@ -664,7 +635,7 @@ async function openChatWorktree(
   // Read again: the reply step may have moved the session while git ran.
   const fresh = await ctx.store.get(CHAT_TYPE, chatId);
   if (fresh === undefined) return failed(`there is no chat ${chatId}`);
-  if (typeof fresh.data.worktree === "object" && fresh.data.worktree !== null) {
+  if (isRecord(fresh.data.worktree)) {
     return { result: "done", data: { moved: false } };
   }
   let skills: ChatSkillList;
