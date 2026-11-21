@@ -1540,3 +1540,5 @@ the row fields.
 | T-0660-M2 | packages/dev/src/notcode.ts | `loadOfRun` ignored the remote load lines and kept the local readings | `a remote check reads the host's load > a timeout alone uses the host's quiet reading, not this machine's load` |
 | T-0660-M3 | packages/dev/src/notcode.ts | `loadOfRun` fell back to the local reading when the host said unknown | `a remote check reads the host's load > a timeout alone on an unknown host load is the code and says so` |
 | T-0660-M5 | packages/dev/src/flaky.ts | `overLimit` treated an unknown host reading as busy instead of quiet | `a flaky test proposes a task > an unknown host load is judged as quiet, not against this machine` |
+| T-0660-M6 | packages/dev/src/notcode.ts | a remote check still waited on this machine's load instead of skipping the local wait | `a remote check reads the host's load > a second timeout names the host and does not wait on this machine` |
+| T-0660-M9 | packages/dev/src/notcode.ts | `timeoutAlone` treated an unknown host reading as busy instead of quiet | `a remote check reads the host's load > a timeout alone on an unknown host load is the code and says so` |

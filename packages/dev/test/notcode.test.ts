@@ -258,7 +258,7 @@ describe("a remote check reads the host's load", () => {
 
   test("a second timeout names the host and does not wait on this machine", async () => {
     const path = join(mkdtempSync(join(tmpdir(), "remote-busy-")), "check.log");
-    notCodeTestHooks.load = () => ({ load1: 1, cores: 10 });
+    notCodeTestHooks.load = () => ({ load1: 30, cores: 10 });
     notCodeTestHooks.wait = async () => {
       throw new Error("must not wait on the local load");
     };
