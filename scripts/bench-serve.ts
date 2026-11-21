@@ -870,12 +870,37 @@ function parseCpuProfile(
   repo: string,
   startMicros: number | undefined,
   endMicros: number | undefined,
+  serveStartMicros: number | undefined,
+  serveEndMicros: number | undefined,
 ): readonly ProfileFrame[] {
   const value: unknown = JSON.parse(text);
   if (!isRecord(value) || !Array.isArray(value.nodes) || !Array.isArray(value.samples) || !Array.isArray(value.timeDeltas)) {
     return [];
   }
   const profileStart = typeof value.startTime === "number" ? value.startTime : 0;
+  let profileElapsed = 0;
+  for (const delta of value.timeDeltas) {
+    if (typeof delta === "number" && Number.isFinite(delta)) profileElapsed += delta;
+  }
+  const profileEnd = typeof value.endTime === "number" ? value.endTime : profileStart + profileElapsed;
+  // The profile's time base is not promised to match Date.now(). Map the
+  // measured wall-clock window onto the profile's own start and end instead.
+  let windowStart = startMicros;
+  let windowEnd = endMicros;
+  if (
+    startMicros !== undefined &&
+    endMicros !== undefined &&
+    serveStartMicros !== undefined &&
+    serveEndMicros !== undefined &&
+    serveEndMicros > serveStartMicros &&
+    profileEnd > profileStart
+  ) {
+    const scale = (profileEnd - profileStart) / (serveEndMicros - serveStartMicros);
+    if (Number.isFinite(scale) && scale > 0) {
+      windowStart = profileStart + (startMicros - serveStartMicros) * scale;
+      windowEnd = profileStart + (endMicros - serveStartMicros) * scale;
+    }
+  }
   let base = repo;
   try {
     base = realpathSync(repo);
@@ -912,8 +937,8 @@ function parseCpuProfile(
     if (typeof id !== "number" || typeof delta !== "number") continue;
     const at = profileStart + elapsed;
     elapsed += delta;
-    if (startMicros !== undefined && at < startMicros) continue;
-    if (endMicros !== undefined && at > endMicros) continue;
+    if (windowStart !== undefined && at < windowStart) continue;
+    if (windowEnd !== undefined && at > windowEnd) continue;
     self.set(id, (self.get(id) ?? 0) + delta);
     total += delta;
   }
@@ -942,6 +967,8 @@ async function readProfile(
   repo: string,
   startMicros: number | undefined,
   endMicros: number | undefined,
+  serveStartMicros: number | undefined,
+  serveEndMicros: number | undefined,
 ): Promise<readonly ProfileFrame[]> {
   try {
     const files = (await readdir(dir)).filter((name) => name.endsWith(".cpuprofile"));
@@ -949,7 +976,9 @@ async function readProfile(
     const newest = files.map((name) => join(dir, name)).sort().at(-1);
     if (newest === undefined) return [];
     const text = await readWhenPresent(newest, 5_000);
-    return text === undefined ? [] : parseCpuProfile(text, repo, startMicros, endMicros);
+    return text === undefined
+      ? []
+      : parseCpuProfile(text, repo, startMicros, endMicros, serveStartMicros, serveEndMicros);
   } catch {
     return [];
   }
@@ -984,6 +1013,7 @@ async function runOnce(options: Options, index: number): Promise<RunMetrics> {
   const command = profileDir === undefined
     ? [process.execPath, serveEntry, "serve"]
     : [process.execPath, "--cpu-prof", `--cpu-prof-dir=${profileDir}`, "--cpu-prof-name=serve.cpuprofile", serveEntry, "serve"];
+  const serveStartedAtMs = Date.now();
   const child = Bun.spawn({
     cmd: command,
     cwd: home,
@@ -1001,6 +1031,7 @@ async function runOnce(options: Options, index: number): Promise<RunMetrics> {
   let cpuFinal: number | undefined;
   let measuredStartMs: number | undefined;
   let measuredEndMs: number | undefined;
+  let serveEndedAtMs: number | undefined;
   const samples: ProcessSample[] = [];
   const loadBefore = loadavg();
   try {
@@ -1077,6 +1108,7 @@ async function runOnce(options: Options, index: number): Promise<RunMetrics> {
     await releaseRuns(client, home);
     // The profile is written when serve exits.
     await stopServe(child);
+    serveEndedAtMs = Date.now();
     const profileTop = profileDir === undefined
       ? undefined
       : await readProfile(
@@ -1084,6 +1116,8 @@ async function runOnce(options: Options, index: number): Promise<RunMetrics> {
           options.repo,
           measuredStartMs === undefined ? undefined : measuredStartMs * 1000,
           measuredEndMs === undefined ? undefined : measuredEndMs * 1000,
+          serveStartedAtMs * 1000,
+          serveEndedAtMs * 1000,
         );
     const result: RunMetrics = {
       label: options.label,
