@@ -368,14 +368,6 @@ export function chooseSelection(options: {
   }
 }
 
-/** The theme name for this session; see `chooseSelection`. */
-export function chooseTheme(options: {
-  readonly home: string;
-  readonly flag?: string | undefined;
-}): string {
-  return chooseSelection(options).name;
-}
-
 /** The theme in force, kept up to date by `watchThemes`. */
 export interface ThemeHolder {
   current: ThemeSelection;

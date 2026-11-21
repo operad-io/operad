@@ -15,7 +15,7 @@ import {
 import { paletteEntries, settingScopes, settingValue } from "../src/actions.ts";
 import { initialState, reduce } from "../src/state.ts";
 import { drawState, overlayBox } from "../src/view/index.ts";
-import { immediateClock } from "./support.ts";
+import { immediateClock, treeRows } from "./support.ts";
 
 class Quiet implements TuiEventSource {
   private release: () => void = () => undefined;
@@ -318,7 +318,7 @@ describe("the scopes the palette lists", () => {
     let state = initialState({ width: 100 });
     state = reduce(state, { type: "types", types: [{ type, title: type }] });
     const row = { id, title: "x", state: "new", waiting: false, running: false };
-    state = reduce(state, { type: "rows", tabId: `plugin:${type}`, rows: [row] });
+    state = reduce(state, treeRows(`plugin:${type}`, [row]));
     state = reduce(state, { type: "key", key: "3" });
     state = reduce(state, { type: "key", key: "enter" });
     return reduce(state, {

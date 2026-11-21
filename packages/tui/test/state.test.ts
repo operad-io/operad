@@ -1,15 +1,13 @@
 import { describe, expect, test } from "bun:test";
+import { footerOf, headerOf, treeRows } from "./support.ts";
 import type { PendingItem, RunningItem, ViewRow } from "@operad-io/engine";
 import {
   activeTab,
-  footerText,
   formatElapsed,
-  headerText,
   initialState,
   listWindow,
   reduce,
   rowMark,
-  tabLabel,
   twoPane,
   type TuiRow,
   type TuiState,
@@ -68,7 +66,7 @@ describe("the TUI reducer", () => {
       "plugin:item",
       "plugin:task",
     ]);
-    expect(headerText(state)).toBe("operad ─ Pending 0 · Running 0 · Item · Task");
+    expect(headerOf(state)).toBe(" operad   Pending 0 │ Running 0 │ Item │ Task");
 
     state = reduce(state, { type: "key", key: "3" });
     expect(activeTab(state)?.id).toBe("plugin:item");
@@ -83,78 +81,6 @@ describe("the TUI reducer", () => {
     expect(activeTab(state)?.id).toBe("pending");
     state = reduce(state, { type: "key", key: "tab", shift: true });
     expect(activeTab(state)?.id).toBe("plugin:task");
-  });
-
-  test("moving past the end asks for the next page once and appends it once", () => {
-    let state = withTypes(initialState({ width: 120 }));
-    state = reduce(state, { type: "key", key: "3" });
-    state = reduce(state, {
-      type: "page",
-      tabId: "plugin:item",
-      replace: true,
-      page: { rows: [row("one"), row("two")], next: "after-two" },
-    });
-    expect(activeTab(state)?.list.cursor).toBe(0);
-    expect(state.pageRequest).toBeUndefined();
-
-    state = reduce(state, { type: "key", key: "j" });
-    expect(activeTab(state)?.list.cursor).toBe(1);
-    expect(state.pageRequest).toEqual({
-      tabId: "plugin:item",
-      cursor: "after-two",
-      version: 1,
-    });
-    expect(activeTab(state)?.list.loading).toBe(true);
-
-    const asked = state.pageRequest;
-    state = reduce(state, { type: "key", key: "j" });
-    expect(state.pageRequest).toBe(asked);
-    expect(activeTab(state)?.list.loading).toBe(true);
-
-    state = reduce(state, {
-      type: "page",
-      tabId: "plugin:item",
-      page: { rows: [row("three"), row("four")] },
-    });
-    expect(activeTab(state)?.list.rows.map((entry) => entry.id)).toEqual([
-      "one",
-      "two",
-      "three",
-      "four",
-    ]);
-    expect(activeTab(state)?.list.loading).toBe(false);
-    expect(state.pageRequest).toBeUndefined();
-    expect(activeTab(state)?.list.cursor).toBe(1);
-  });
-
-  test("Down on a one-row page asks for the next page and retries after a failure", () => {
-    let state = withTypes(initialState());
-    state = reduce(state, { type: "key", key: "3" });
-    state = reduce(state, {
-      type: "page",
-      tabId: "plugin:item",
-      replace: true,
-      page: { rows: [row("one")], next: "more" },
-    });
-    state = reduce(state, { type: "key", key: "down" });
-    expect(state.pageRequest).toEqual({
-      tabId: "plugin:item",
-      cursor: "more",
-      version: 1,
-    });
-
-    state = reduce(state, {
-      type: "page-error",
-      tabId: "plugin:item",
-      message: "offline",
-    });
-    expect(state.pageRequest).toBeUndefined();
-    state = reduce(state, { type: "key", key: "down" });
-    expect(state.pageRequest).toEqual({
-      tabId: "plugin:item",
-      cursor: "more",
-      version: 1,
-    });
   });
 
   test("resize crosses 84 columns and carries the theme", () => {
@@ -273,19 +199,15 @@ describe("the TUI reducer", () => {
     let state = withTypes(initialState());
     state = reduce(state, { type: "pending", items: [pending] });
     state = reduce(state, { type: "running", items: [running] });
-    state = reduce(state, {
-      type: "page",
-      tabId: "plugin:item",
-      replace: true,
-      page: {
-        rows: [
-          row("waiting", { waiting: true }),
-          row("working", { running: true }),
-          row("plain"),
-          row("broken", { error: "row failed" }),
-        ],
-      },
-    });
+    state = reduce(
+      state,
+      treeRows("plugin:item", [
+        row("waiting", { waiting: true }),
+        row("working", { running: true }),
+        row("plain"),
+        row("broken", { error: "row failed" }),
+      ]),
+    );
 
     const pendingRow = state.tabs.find((tab) => tab.id === "pending")?.list.rows[0];
     expect(pendingRow).toMatchObject({
@@ -295,8 +217,7 @@ describe("the TUI reducer", () => {
       running: false,
     });
     expect(pendingRow === undefined ? undefined : rowMark(pendingRow)).toBe("waiting");
-    const pendingTab = state.tabs.find((tab) => tab.id === "pending");
-    expect(pendingTab === undefined ? "" : tabLabel(pendingTab)).toBe("Pending 1");
+    expect(headerOf(state)).toContain("Pending 1");
 
     const runningRow = state.tabs.find((tab) => tab.id === "running")?.list.rows[0];
     expect(runningRow).toMatchObject({
@@ -327,18 +248,13 @@ describe("the TUI reducer", () => {
       "none",
     ]);
     expect(item[3]?.error).toBe("row failed");
-    expect(headerText(state)).toContain("Pending 1 · Running 1 · Item · Task");
+    expect(headerOf(state)).toContain("Pending 1 │ Running 1 │ Item 4 │ Task");
   });
 
   test("g and G jump, r asks for a refresh, q quits and ? toggles the key list", () => {
     let state = withTypes(initialState());
     state = reduce(state, { type: "key", key: "3" });
-    state = reduce(state, {
-      type: "page",
-      tabId: "plugin:item",
-      replace: true,
-      page: { rows: [row("one"), row("two"), row("three")], next: "more" },
-    });
+    state = reduce(state, treeRows("plugin:item", [row("one"), row("two"), row("three")]));
 
     state = reduce(state, { type: "key", key: "G", shift: true });
     expect(activeTab(state)?.list.cursor).toBe(2);
@@ -352,34 +268,12 @@ describe("the TUI reducer", () => {
 
     state = reduce(state, { type: "key", key: "?" });
     expect(state.keys).toBe(true);
-    expect(footerText(state)).toContain("? closes");
+    expect(footerOf({ ...state, width: 160 })).toContain("? closes the key list");
     state = reduce(state, { type: "key", key: "?" });
     expect(state.keys).toBe(false);
 
     state = reduce(state, { type: "key", key: "q" });
     expect(state.quit).toBe(true);
-  });
-
-  test("a failed next page keeps the rows and reports on the tab", () => {
-    let state = withTypes(initialState());
-    state = reduce(state, { type: "key", key: "3" });
-    state = reduce(state, {
-      type: "page",
-      tabId: "plugin:item",
-      replace: true,
-      page: { rows: [row("one"), row("two")], next: "two" },
-    });
-    state = reduce(state, { type: "key", key: "down" });
-    expect(state.pageRequest).toBeDefined();
-    state = reduce(state, {
-      type: "page-error",
-      tabId: "plugin:item",
-      message: "the server went away",
-    });
-    expect(activeTab(state)?.list.error).toBe("the server went away");
-    expect(activeTab(state)?.list.loading).toBe(false);
-    expect(activeTab(state)?.list.rows).toHaveLength(2);
-    expect(state.pageRequest).toBeUndefined();
   });
 
   test("formatElapsed writes one elapsed format", () => {
@@ -397,7 +291,7 @@ describe("the TUI reducer", () => {
       running: false,
       ...(at === 11 ? { error: "boom" } : {}),
     }));
-    const list = { rows, cursor: 12, loaded: true, loading: false, version: 1 };
+    const list = { rows, cursor: 12, loaded: true, version: 1 };
     const count = (w: { start: number; end: number }): number => w.end - w.start;
     // n objects take 3n - 1 lines: eleven hold four, eight hold three.
     expect(count(listWindow(list, 11))).toBe(4);
@@ -408,8 +302,8 @@ describe("the TUI reducer", () => {
     const window = listWindow(list, 8);
     expect(window.start).toBeLessThanOrEqual(12);
     expect(window.end).toBeGreaterThan(12);
-    // The line after the rows is kept free.
-    expect(count(listWindow({ ...list, loading: true }, 8))).toBe(2);
+    // A list error keeps a line free too.
+    expect(count(listWindow({ ...list, error: "offline" }, 8))).toBe(2);
     expect(listWindow({ ...list, cursor: 0 }, 8).start).toBe(0);
     // The last object at the bottom of the window stays visible.
     expect(listWindow({ ...list, cursor: 29 }, 8)).toEqual({ start: 27, end: 30 });
@@ -448,12 +342,7 @@ describe("rework 1 states", () => {
 
   test("a row whose object is gone leaves its list", () => {
     let state = withTypes(initialState({ width: 80, height: 24, url: "http://x" }));
-    state = reduce(state, {
-      type: "page",
-      tabId: "plugin:item",
-      replace: true,
-      page: { rows: [row("one"), row("two")] },
-    });
+    state = reduce(state, treeRows("plugin:item", [row("one"), row("two")]));
     state = reduce(state, { type: "row-gone", id: "one" });
     const ids = state.tabs.find((t) => t.id === "plugin:item")?.list.rows.map((r) => r.id);
     expect(ids).toEqual(["two"]);

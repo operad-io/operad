@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 import { createTestRenderer } from "@opentui/core/testing";
 import { paletteEntries } from "../src/actions.ts";
 import {
-  footerText,
   initialState,
   KEY_GROUPS,
   KEY_LIST,
@@ -12,6 +11,7 @@ import {
 import { createTuiView, drawState, overlayBox, paletteFor } from "../src/view/index.ts";
 import { toRgba } from "../src/theme.ts";
 import { displayWidth } from "../src/wrap.ts";
+import { footerOf, treeRows } from "./support.ts";
 
 const ACTIONS = [
   { plugin: "dev", action: "merge", on: "task", name: "dev:merge", noteRequired: false, confirm: true },
@@ -23,11 +23,12 @@ const ACTIONS = [
 function paletteState(width: number, height = 50): TuiState {
   let state = initialState({ width, height, theme: "dark" });
   state = reduce(state, { type: "types", types: [{ type: "task", title: "Task" }] });
-  state = reduce(state, {
-    type: "rows",
-    tabId: "plugin:task",
-    rows: [{ id: "task:T-0003-foo", title: "Storage interface", state: "waiting", waiting: true, running: false }],
-  });
+  state = reduce(
+    state,
+    treeRows("plugin:task", [
+      { id: "task:T-0003-foo", title: "Storage interface", state: "waiting", waiting: true, running: false },
+    ]),
+  );
   state = reduce(state, { type: "key", key: "3", text: "3" });
   state = reduce(state, { type: "key", key: "enter" });
   state = reduce(state, {
@@ -208,7 +209,7 @@ describe("the overlays' spacing", () => {
     const drawing = drawState(state);
     const text = drawing.footer.chunks.map((part) => part.text).join("");
     const palette = paletteFor(state.theme, "auto");
-    expect(text.trimStart()).toBe(footerText(state));
+    expect(text.trimStart()).toBe(footerOf(state).trimStart());
     expect(text).toContain(" · ");
     expect(text).not.toContain("  ");
 

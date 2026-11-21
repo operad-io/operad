@@ -9,7 +9,6 @@ import type {
   ViewSectionContent,
 } from "@operad-io/engine";
 import {
-  historyMarkdown,
   listMarkdown,
   pendingMarkdown,
   readMarkdown,
@@ -195,7 +194,6 @@ describe("a section's Markdown", () => {
 
   test("is the section's own text when no page follows", () => {
     expect(sectionMarkdown(content())).toBe("body\n");
-    expect(historyMarkdown(content())).toBe("body\n");
   });
 
   test("names the next cursor after the text, adding only the newlines it needs", () => {
@@ -205,7 +203,7 @@ describe("a section's Markdown", () => {
     expect(sectionMarkdown({ markdown: "body", next: "c2" })).toBe(
       "body\n\nNext cursor: `c2`\n",
     );
-    expect(historyMarkdown({ markdown: "body\n", next: "c2" })).toBe(
+    expect(sectionMarkdown({ markdown: "body\n", next: "c2" })).toBe(
       "body\n\nNext cursor: `c2`\n",
     );
   });

@@ -25,7 +25,7 @@ import {
   type TuiView,
 } from "../src/index.ts";
 import { BUILTIN_THEMES, toRgba } from "../src/theme.ts";
-import { ManualClock } from "./support.ts";
+import { ManualClock, treeRows } from "./support.ts";
 
 const ROW: ViewRow = { id: "a", title: "A", state: "new", waiting: false, running: false };
 
@@ -449,12 +449,7 @@ describe("the tail is drawn after the content", () => {
 function opened(markdown: string, tail: string): TuiState {
   let state = initialState({ width: 120, height: 16, theme: "dark" });
   state = reduce(state, { type: "types", types: [{ type: "item", title: "Item" }] });
-  state = reduce(state, {
-    type: "page",
-    tabId: "plugin:item",
-    replace: true,
-    page: { rows: [ROW] },
-  });
+  state = reduce(state, treeRows("plugin:item", [ROW]));
   state = reduce(state, { type: "key", key: "3", text: "3" });
   state = reduce(state, { type: "key", key: "enter" });
   state = reduce(state, { type: "object", object: objectOf(), version: state.objectVersion });
