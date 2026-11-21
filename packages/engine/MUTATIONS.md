@@ -1281,3 +1281,10 @@ resume window`. Rows are append-only, so the old lines stay as history.
 | T-0609-M2 | packages/engine/src/http/server.ts | the line check used `<` instead of `<=`, so a tail exactly at the limit was replaced instead of sent | `SSE event size > a tail at the line limit goes through as one tail event` |
 | T-0609-M3 | packages/engine/src/http/server.ts | the line check counted UTF-16 code units instead of UTF-8 bytes, so a multi-byte tail over the byte limit was sent | `SSE event size > no line of a random tail exceeds the limit, including multi-byte UTF-8` |
 | T-0609-M4 | packages/engine/src/http/server.ts | `formatEvent` skipped the line check, so an object id too long for one line was written whole | `SSE event size > a change id too long to fit becomes a reset instead of a long line` |
+
+## T-0634 — follow-ups to the SSE event size
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0634-M1 | packages/engine/src/views/presentation.ts | an oversized live part was announced as a tail again, so each push sent a part over one event line | `a live log that grows without a fact > a live part too large for one event line is not pushed as a tail` |
+| T-0634-M2 | packages/engine/src/http/server.ts | an oversized live part became a replayable change entry again, so each push added a new seq and filled the window | `SSE event size > a tail one byte over is dropped, and the growth change asks for the reread` and `SSE event size > no line of a random tail exceeds the limit, including multi-byte UTF-8` |

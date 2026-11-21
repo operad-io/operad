@@ -179,7 +179,7 @@ describe("SSE event size", () => {
     }
   });
 
-  test("a tail one byte over is replaced by the change event that asks for a reread", async () => {
+  test("a tail one byte over is dropped, and the growth change asks for the reread", async () => {
     const source = new Source();
     const stream = open(source);
     try {
@@ -187,12 +187,27 @@ describe("SSE event size", () => {
       const encoded = `data: ${JSON.stringify(event)}`;
       expect(Buffer.byteLength(encoded, "utf8")).toBe(MAX_SSE_EVENT_BYTES + 1);
 
+      // A live part comes beside the object's change event; the hub drops the
+      // oversized part instead of turning it into a second, replayable change.
       source.push(event);
+      const next: ViewEvent = {
+        id: "chat-2",
+        type: "chat",
+        section: "transcript",
+        tail: "small",
+      };
+      source.push(next);
       const block = await stream.reader.next();
       expectLinesWithinLimit(block.raw);
-      expect(block.event).toBeUndefined();
-      expect(block.id).toBeDefined();
-      expect(JSON.parse(block.data)).toEqual({ id: event.id });
+      expect(block.event).toBe("tail");
+      expect(JSON.parse(block.data)).toEqual(next);
+
+      source.push({ id: event.id });
+      const change = await stream.reader.next();
+      expectLinesWithinLimit(change.raw);
+      expect(change.event).toBeUndefined();
+      expect(change.id).toBeDefined();
+      expect(JSON.parse(change.data)).toEqual({ id: event.id });
     } finally {
       await stream.reader.close();
       stream.hub.stop();
@@ -228,14 +243,23 @@ describe("SSE event size", () => {
           Buffer.byteLength(`data: ${JSON.stringify(event)}`, "utf8") <=
           MAX_SSE_EVENT_BYTES;
         source.push(event);
+        // An oversized part is dropped, so a small live part after it is the
+        // first block the stream writes; it proves no long line was written.
+        const marker: ViewEvent = {
+          id: "chat-2",
+          type: "chat",
+          section: "transcript",
+          tail: `marker ${index}`,
+        };
+        if (!fits) source.push(marker);
         const block = await stream.reader.next();
         expectLinesWithinLimit(block.raw);
         if (fits) {
           expect(block.event).toBe("tail");
           expect(JSON.parse(block.data)).toEqual(event);
         } else {
-          expect(block.event).toBeUndefined();
-          expect(JSON.parse(block.data)).toEqual({ id: "chat-1" });
+          expect(block.event).toBe("tail");
+          expect(JSON.parse(block.data)).toEqual(marker);
         }
       }
     } finally {
