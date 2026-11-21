@@ -560,7 +560,7 @@ describe("dev/integrate", () => {
     expect(task.brief).toContain("] check line 1 failed, passed on rerun");
   });
 
-  test("an integration check gets the check host and slots from the home's settings", async () => {
+  test("an integration check gets the test host and slots from the home's settings", async () => {
     const previous = {
       host: process.env.OPERAD_CHECK_HOST,
       slots: process.env.OPERAD_CHECK_SLOTS,
@@ -570,7 +570,7 @@ describe("dev/integrate", () => {
     try {
       const state = await fixture({
         style: "merge",
-        settings: { checkHost: "hai@192.0.2.1", checkSlots: 2 },
+        settings: { testHost: "hai@192.0.2.1", testSlots: 2 },
       });
       const envFile = join(state.root, "integration-env");
       writeDevJson(state.remote.repository, {

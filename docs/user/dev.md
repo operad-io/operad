@@ -105,8 +105,8 @@ harness. With no enabled harness both are `radian/agent`.
 | `dev.check.loadLimit` | number | unset: the number of cores | above `0`, a 1-minute load average | When a check timed out or was killed from outside | Refused: `check.loadLimit: must be a positive number` |
 | `dev.check.flakyLoadLimit` | number | unset: twice the number of cores | above `0`, a 1-minute load average | When a test failed and then passed on rerun | Refused: `check.flakyLoadLimit: must be a positive number` |
 
-The check host is a setting of the home, not of `dev.json`: `dev.checkHost`
-(an ssh destination) and `dev.checkSlots` (how many checks run at once on it)
+The test host is a setting of the home, not of `dev.json`: `dev.testHost`
+(an ssh destination) and `dev.testSlots` (how many checks run at once on it)
 in [config.json](config.md#dev). A gate, integration or rerun command gets them
 as `OPERAD_CHECK_HOST` and `OPERAD_CHECK_SLOTS`; an explicit variable in
 `serve`'s own environment wins. When a repository's check commands use

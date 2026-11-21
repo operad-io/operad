@@ -4343,7 +4343,7 @@ describe("dev/verify tells a result that is not the code from one that is", () =
   });
 });
 
-describe("the check host and slots of the home's settings", () => {
+describe("the test host and slots of the home's settings", () => {
   /** Runs `action` with serve's own check variables removed, then restores them. */
   async function withoutCheckEnv<T>(action: () => Promise<T>): Promise<T> {
     const previous = {
@@ -4376,7 +4376,7 @@ describe("the check host and slots of the home's settings", () => {
   test("a gate command gets the host and slots from the setting", async () => {
     await withoutCheckEnv(async () => {
       const state = await fixture({
-        settings: { checkHost: "hai@192.0.2.1", checkSlots: 2 },
+        settings: { testHost: "hai@192.0.2.1", testSlots: 2 },
         commands: [printEnv("host.txt")],
       });
       expect((await verify(state)).result).toBe("pass");
@@ -4389,7 +4389,7 @@ describe("the check host and slots of the home's settings", () => {
       process.env.OPERAD_CHECK_HOST = "env@host";
       process.env.OPERAD_CHECK_SLOTS = "3";
       const state = await fixture({
-        settings: { checkHost: "setting@host", checkSlots: 2 },
+        settings: { testHost: "setting@host", testSlots: 2 },
         commands: [printEnv("host.txt")],
       });
       expect((await verify(state)).result).toBe("pass");
@@ -4408,7 +4408,7 @@ describe("the check host and slots of the home's settings", () => {
   test("the rerun of a failed test gets the same host and slots", async () => {
     await withoutCheckEnv(async () => {
       const state = await fixture({
-        settings: { checkHost: "hai@192.0.2.1", checkSlots: 2 },
+        settings: { testHost: "hai@192.0.2.1", testSlots: 2 },
         commands: [
           {
             run: `echo "(fail) a test [1ms]"; ${printEnv("first.txt")}; exit 1`,

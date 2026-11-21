@@ -1487,3 +1487,9 @@ the row fields.
 | T-0644-M2 | packages/dev/src/settings.ts | the settings text was read again even when the file's stat had not changed | `the dev scheduler's repeated pass > an unchanged settings file is not read again` |
 | T-0644-M3 | packages/dev/src/settings.ts | the parse cache returned one shared settings object to every caller | `the dev scheduler's repeated pass > a settings read does not hand out the cached object to be changed` |
 | T-0644-M4 | packages/dev/src/model.ts | `listAll` ignored its `where` filter, so a repository's ids counted another repository's objects | `dev per-repository ids > two repositories may both hold T-0001-work under different keys` |
+
+## T-0645 — the check host settings are named test host
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0645-M1 | packages/dev/src/check-host.ts | `hostSetting` read `settings.checkHost` instead of `settings.testHost`, so the test host setting was ignored | `the test host and slots from the home's settings > a setting becomes the command's environment when serve's environment names neither` |

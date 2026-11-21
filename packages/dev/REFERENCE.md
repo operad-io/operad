@@ -753,8 +753,8 @@ refused when the file is read and again before a worktree is created.
 
 `operad settings` lists what a person may tune and `operad settings set <name>
 <value>` changes it (add `--repo <name>` for a repository's files). The home's
-`checks` is `dev.checks`; `checkHost` and `checkSlots` are `dev.checkHost` and
-`dev.checkSlots`, the ssh destination and slot count of
+`checks` is `dev.checks`; `testHost` and `testSlots` are `dev.testHost` and
+`dev.testSlots`, the ssh destination and slot count of
 `scripts/remote-check.sh`. A gate, integration or rerun command gets them as
 `OPERAD_CHECK_HOST` and `OPERAD_CHECK_SLOTS`; an explicit variable in serve's
 own environment wins. When a repository's check commands use

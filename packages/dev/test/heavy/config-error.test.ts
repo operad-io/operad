@@ -304,10 +304,10 @@ describe("a stopped task when a plugin dev needs is missing", () => {
   });
 });
 
-describe("a check command that uses remote-check.sh without a check host", () => {
+describe("a check command that uses remote-check.sh without a test host", () => {
   const REMOTE = "bash scripts/remote-check.sh 'bun test'";
   const hostLines = (errors: readonly string[]): string[] =>
-    errors.filter((line) => line.includes("no check host is set"));
+    errors.filter((line) => line.includes("no test host is set"));
 
   /** Runs `action` with serve's own check variables removed, then restores them. */
   async function withoutCheckEnv<T>(action: () => Promise<T>): Promise<T> {
@@ -344,7 +344,7 @@ describe("a check command that uses remote-check.sh without a check host", () =>
         item.id.startsWith("check-host:"),
       );
       expect(items.length).toBe(1);
-      expect(items[0]?.prompt).toContain("dev.checkHost or OPERAD_CHECK_HOST");
+      expect(items[0]?.prompt).toContain("dev.testHost or OPERAD_CHECK_HOST");
 
       // A command that does not use the script is not a problem.
       writeSettings(alpha.path, VALID);
@@ -366,7 +366,7 @@ describe("a check command that uses remote-check.sh without a check host", () =>
         cwd: fixture.root,
         store: fixture.store,
         storeRoot: fixture.store.root,
-        settings: { dev: { checkHost: "hai@192.0.2.1", checkSlots: 2 } },
+        settings: { dev: { testHost: "hai@192.0.2.1", testSlots: 2 } },
       });
       await loaded.tick();
       expect(hostLines(fixture.errors)).toEqual([]);

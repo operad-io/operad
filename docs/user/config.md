@@ -306,19 +306,19 @@ secret `token` are on [the Telegram page](telegram.md).
 | Key | Type | Default | Allowed values | When it takes effect | Wrong value |
 |---|---|---|---|---|---|
 | `dev.checks` | integer | `2` | `1` or more | When the next check takes a place; checks already waiting or running keep theirs | Refused by the schema; the plugin is refused and the log names `settings.checks` |
-| `dev.checkHost` | string | unset: the check runs here | an ssh destination, such as `hai@192.168.6.177` | When a gate, integration or rerun command starts; the next command uses it | Refused by the schema; the plugin is refused and the log names `settings.checkHost` |
-| `dev.checkSlots` | integer | unset: `scripts/remote-check.sh` uses `1` | `1` or more | When a gate, integration or rerun command starts | Refused by the schema; the plugin is refused and the log names `settings.checkSlots` |
+| `dev.testHost` | string | unset: the check runs here | an ssh destination, such as `hai@192.168.6.177` | When a gate, integration or rerun command starts; the next command uses it | Refused by the schema; the plugin is refused and the log names `settings.testHost` |
+| `dev.testSlots` | integer | unset: `scripts/remote-check.sh` uses `1` | `1` or more | When a gate, integration or rerun command starts | Refused by the schema; the plugin is refused and the log names `settings.testSlots` |
 
 `dev.checks` is the most checks (a task's verify, and the checks before a merge)
 that run at once in this home, across every repository. A repository can lower
 its own share with `gate.places` in [its dev.json](dev.md#the-gate-and-its-checks).
 
-`dev.checkHost` and `dev.checkSlots` are the check host of
+`dev.testHost` and `dev.testSlots` are the test host of
 [`scripts/remote-check.sh`](checks.md): a gate, integration or rerun command a
 task runs gets them as `OPERAD_CHECK_HOST` and `OPERAD_CHECK_SLOTS`. An explicit
 `OPERAD_CHECK_HOST` or `OPERAD_CHECK_SLOTS` in `serve`'s own environment wins
 over the setting, including an empty host, which runs the check here. Both are
-unset by default, so a home without a check host behaves as before. When a
+unset by default, so a home without a test host behaves as before. When a
 repository's check commands use `scripts/remote-check.sh` and neither a setting
 nor a variable names a host, `serve` writes one line to its log at start, the
 repository's pending list gets an item, and its Overview says the commands run
