@@ -1493,3 +1493,10 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0646-M1 | packages/dev/src/steps.ts | `newCheckoutChanges` dropped every new status entry, so a change in the main checkout was not noticed | `dev/work > a new change in the main checkout is reported and left alone` |
+
+## T-0650 — a review of a task that changed the main checkout
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0650-M1 | packages/dev/src/gate.ts | dev added no major finding of its own, so a reviewer that passed an attempt with a main-checkout change let it through | `dev/review and the main checkout > an attempt that changed the main checkout fails with that major finding` |
+| T-0650-M2 | packages/dev/src/gate.ts | the review prompt left out the main-checkout line and the instruction to call it a major finding | `dev/review and the main checkout > an attempt that changed the main checkout fails with that major finding` |

@@ -706,6 +706,70 @@ function atOrAbove(severity: string, level: FixLevel): boolean {
   return severityRank(severity) >= levelRank(level);
 }
 
+/** The line `dev/work` writes into the worker's answer for a main-checkout change. */
+const MAIN_CHECKOUT_CHANGE = "changed the main checkout:";
+
+/**
+ * The paths an attempt's work changed outside its worktree, read from the line
+ * the work step wrote into the worker's answer (T-0646).
+ */
+function mainCheckoutChanges(attempt: TaskAttempt): readonly string[] {
+  const message = attempt.finalMessage;
+  if (typeof message !== "string") return [];
+  const paths: string[] = [];
+  for (const line of message.split("\n")) {
+    const said = line.trim();
+    if (!said.startsWith(`${MAIN_CHECKOUT_CHANGE} `)) continue;
+    for (const path of said.slice(MAIN_CHECKOUT_CHANGE.length + 1).split(", ")) {
+      const named = path.trim();
+      if (named.length > 0 && !paths.includes(named)) paths.push(named);
+    }
+  }
+  return paths;
+}
+
+/**
+ * The major findings dev adds itself for an attempt whose work changed the main
+ * checkout: one per named file that no report already blocks on. They are
+ * added whatever the reviewer reported, so such an attempt carries the major
+ * finding without asking the reviewer for it; the work must make those changes
+ * in its own worktree instead.
+ */
+function mainCheckoutFindings(
+  paths: readonly string[],
+  reported: readonly ReviewFinding[],
+): ReviewFinding[] {
+  const blocked = new Set(
+    reported
+      .filter(
+        (finding) =>
+          finding.preExisting !== true &&
+          finding.pre_existing !== true &&
+          atOrAbove(finding.severity, "major"),
+      )
+      .map((finding) => normalizePath(finding.file)),
+  );
+  return paths
+    .filter((path) => !blocked.has(normalizePath(path)))
+    .map((path) => ({
+      file: path,
+      line: 0,
+      severity: "major",
+      summary: "the work changed this file in the main checkout",
+      trigger: "the work must make this change in its own worktree instead",
+    }));
+}
+
+/** The counted findings of a failed review, as the task's history and brief show them. */
+function describeFindings(findings: readonly ReviewFinding[]): string {
+  return findings
+    .map(
+      (finding) =>
+        `${finding.file}:${finding.line} ${finding.severity}: ${finding.summary}`,
+    )
+    .join("; ");
+}
+
 interface FindingShape {
   readonly file: string;
   readonly line: number;
@@ -868,12 +932,22 @@ function reviewPrompt(
   prepare: readonly string[] = [],
   rework?: ReworkPrompt,
   checks: readonly string[] = [],
+  mainCheckout: readonly string[] = [],
 ): string {
   const pieces: string[] = [
     `Review the changes of task ${task.title}.`,
     "## Brief",
     briefText(task).trim(),
   ];
+  if (mainCheckout.length > 0) {
+    pieces.push(
+      "## The main checkout",
+      [
+        `The work of this attempt left this line in its answer: \`${MAIN_CHECKOUT_CHANGE} ${mainCheckout.join(", ")}\`. It means the work changed files outside its worktree, in the main checkout, and must make those changes in its own worktree instead.`,
+        "This is a major finding: report it as a major finding on each of those files.",
+      ].join("\n"),
+    );
+  }
   const graded = gradingLines(grading);
   if (graded.length > 0) pieces.push("## Grading", graded.join("\n"));
   if (rework !== undefined) {
@@ -1823,6 +1897,9 @@ export async function runReview(
   if (!claimAllows(ctx, context.task)) return cancelledStep();
   const task = context.task;
   const attempt = attemptOf(ctx, task);
+  // The attempt being reviewed changed the main checkout: the work must make
+  // those changes in its own worktree instead, and dev holds the review to it.
+  const mainPaths = mainCheckoutChanges(attempt);
   const reviews =
     typeof attempt.reviews === "number" ? attempt.reviews : 0;
   const round = reviews + 1;
@@ -2211,6 +2288,33 @@ export async function runReview(
   // review to ask a model for. A change made only of left-out files still runs
   // the reviewer: the list is what tells it those files exist.
   if (prepared.files.length === 0) {
+    // A main-checkout change fails even without a diff: no reviewer is asked,
+    // and dev adds the major finding itself.
+    const findings = mainCheckoutFindings(mainPaths, []);
+    if (findings.length > 0) {
+      const counted = findings.filter((finding) =>
+        atOrAbove(finding.severity, context.settings.reviewer.fixLevel),
+      ).length;
+      const message = describeFindings(findings);
+      const record: ReviewRecord = {
+        result: "findings",
+        decision: "findings",
+        run: ctx.runId,
+        sha,
+        round,
+        runs: [],
+        findings,
+        verified: [],
+        reason: "findings",
+        message,
+      };
+      return finish(record, "fail", {
+        reason: "findings",
+        counted,
+        message,
+        leftOut: prepared.leftOut.map(leftOutLine),
+      });
+    }
     const record: ReviewRecord = {
       result: "passed",
       decision: "passed",
@@ -2333,6 +2437,7 @@ export async function runReview(
       context.settings.prepare,
       reworkPrompt,
       verifiedCommands(attempt.verify),
+      mainPaths,
     );
     // A resumed call asks with the prompt it recorded, not one built again.
     const recorded =
@@ -2499,27 +2604,28 @@ export async function runReview(
 
   const last = runs[runs.length - 1];
   if (next === "done" && last !== undefined) {
-    const counted = last.counted ?? 0;
-    const decision = counted === 0 ? "passed" : "findings";
-    const stepResult = decision === "passed" ? "pass" : "fail";
-    const result: ReviewResult = decision;
-    const findings = last.findings ?? [];
+    // A reviewer that passed an attempt with a main-checkout change cannot let
+    // it through: dev adds the major finding itself.
+    const reported = last.findings ?? [];
+    const findings = [
+      ...reported,
+      ...mainCheckoutFindings(mainPaths, reported),
+    ];
     const countedFindings = findings.filter(
       (finding) =>
         finding.preExisting !== true &&
         finding.pre_existing !== true &&
         atOrAbove(finding.severity, settings.fixLevel),
     );
+    const counted = countedFindings.length;
+    const decision = counted === 0 ? "passed" : "findings";
+    const stepResult = decision === "passed" ? "pass" : "fail";
+    const result: ReviewResult = decision;
     const preExistingCount = findings.filter(
       (finding) =>
         finding.preExisting === true || finding.pre_existing === true,
     ).length;
-    const findingsMessage = countedFindings
-      .map(
-        (finding) =>
-          `${finding.file}:${finding.line} ${finding.severity}: ${finding.summary}`,
-      )
-      .join("; ");
+    const findingsMessage = describeFindings(countedFindings);
     const reworkLine =
       rework === undefined
         ? ""
