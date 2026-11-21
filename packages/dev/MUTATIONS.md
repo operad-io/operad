@@ -1464,3 +1464,14 @@ the row fields.
 | T-0636-M3 | packages/dev/src/gate.ts | the gate's `shell/check` lost the home settings' environment | `the check host and slots of the home's settings > a gate command gets the host and slots from the setting` |
 | T-0636-M4 | packages/dev/src/integrate.ts | the integration's key commands lost the home settings' environment | `dev/integrate > an integration check gets the check host and slots from the home's settings` |
 | T-0636-M5 | packages/dev/src/standing.ts | the pending list stopped showing the missing check host | `a check command that uses remote-check.sh without a check host > the log says it once and pending shows it; a local command says nothing` |
+
+## T-0614 — the scheduler's repeated pass
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0614-M1 | packages/dev/src/schedule.ts | a plan's task signature was ignored, so an unchanged finished plan always looked changed | `the dev scheduler's repeated pass > a plan whose task changed is recounted` |
+| T-0614-M2 | packages/dev/src/schedule.ts | the finished-and-reported plan was recounted instead of skipped | `the dev scheduler's repeated pass > a second pass with nothing changed writes no plan, gets no task and lists tasks once` |
+| T-0614-M3 | packages/dev/src/service.ts | `setFlowNote` read the task again instead of comparing the listed one | `the dev scheduler's repeated pass > a second pass with nothing changed writes no plan, gets no task and lists tasks once` |
+| T-0614-M4 | packages/dev/src/settings.ts | the parsed settings were returned even when the file text changed | `the dev scheduler's repeated pass > a changed dev.json is picked up on the next pass` |
+| T-0614-M5 | packages/dev/src/settings.ts | the skill and workerBrief path checks moved inside the parse cache | `the dev scheduler's repeated pass > an unchanged settings text still checks a referenced workerBrief file` |
+| T-0614-M6 | packages/dev/src/schedule.ts | the compiled flows were kept for every settings text, not only the unchanged one | `choosing a flow > an undefined flow does not start, and the rows say why` |

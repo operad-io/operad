@@ -801,9 +801,10 @@ function sameCostTotals(a: PlanCostTotals | undefined, b: PlanCostTotals): boole
 export async function refreshPlanCounts(
   store: ObjectStore,
   plan: StoredObject,
+  tasks?: readonly StoredObject[] | undefined,
 ): Promise<StoredObject> {
   try {
-    return await recountPlan(store, plan);
+    return await recountPlan(store, plan, tasks);
   } catch (error) {
     if (isBusy(error)) return plan;
     throw error;
@@ -822,9 +823,10 @@ async function refreshPlanCountsOf(store: ObjectStore, key: string): Promise<voi
 async function recountPlan(
   store: ObjectStore,
   plan: StoredObject,
+  knownTasks?: readonly StoredObject[] | undefined,
 ): Promise<StoredObject> {
   const data = planData(plan.data);
-  const tasks = await tasksOfPlan(store, plan.id);
+  const tasks = knownTasks ?? (await tasksOfPlan(store, plan.id));
   const taskCount = tasks.length;
   const mergedCount = tasks.filter(
     (object) => taskData(object.data).phase === "merged",
@@ -1444,17 +1446,17 @@ export async function setAreaHold(
   id: string,
   holder: string | undefined,
   ahead = 0,
-): Promise<void> {
+  known?: TaskData | undefined,
+): Promise<boolean> {
   const same = (task: TaskData): boolean =>
     task.areaHeldBy === holder &&
     (holder === undefined || (task.areaAhead ?? 0) === ahead);
-  const initial = await getTask(store, id);
-  const data = taskData(initial.data);
-  if (same(data)) return;
-  await withRepoLock(store, data.repository, async () => {
+  const initial = known ?? taskData((await getTask(store, id)).data);
+  if (same(initial)) return false;
+  return withRepoLock(store, initial.repository, async () => {
     const current = await getTask(store, id);
     const latest = taskData(current.data);
-    if (latest.phase !== "ready" || same(latest)) return;
+    if (latest.phase !== "ready" || same(latest)) return false;
     const { areaHeldBy: _held, areaAhead: _ahead, ...rest } = latest;
     await writeTask(
       store,
@@ -1466,6 +1468,7 @@ export async function setAreaHold(
       },
       "dev:task-area-hold",
     );
+    return true;
   });
 }
 
@@ -1478,15 +1481,18 @@ export async function setDependencyHold(
   id: string,
   held: boolean,
   waitingFor: readonly string[] = [],
-): Promise<void> {
-  const initial = await getTask(store, id);
-  const data = taskData(initial.data);
+  known?: TaskData | undefined,
+): Promise<boolean> {
+  const initial = known ?? taskData((await getTask(store, id)).data);
   const same = (left: readonly string[] | undefined) =>
     (left ?? []).join("\n") === waitingFor.join("\n");
-  if ((data.dependencyHeld === true) === held && (!held || same(data.dependencyHeldFor))) {
-    return;
+  if (
+    (initial.dependencyHeld === true) === held &&
+    (!held || same(initial.dependencyHeldFor))
+  ) {
+    return false;
   }
-  await withRepoLock(store, data.repository, async () => {
+  return withRepoLock(store, initial.repository, async () => {
     const current = await getTask(store, id);
     const latest = taskData(current.data);
     if (
@@ -1494,7 +1500,7 @@ export async function setDependencyHold(
       ((latest.dependencyHeld === true) === held &&
         (!held || same(latest.dependencyHeldFor)))
     ) {
-      return;
+      return false;
     }
     const { dependencyHeld: _waits, dependencyHeldFor: _for, ...rest } = latest;
     await writeTask(
@@ -1508,6 +1514,7 @@ export async function setDependencyHold(
       },
       "dev:task-dependency-hold",
     );
+    return true;
   });
 }
 
@@ -1520,14 +1527,14 @@ export async function setSlotHold(
   store: ObjectStore,
   id: string,
   note: string | undefined,
-): Promise<void> {
-  const initial = await getTask(store, id);
-  const data = taskData(initial.data);
-  if (data.slotHeld === note) return;
-  await withRepoLock(store, data.repository, async () => {
+  known?: TaskData | undefined,
+): Promise<boolean> {
+  const initial = known ?? taskData((await getTask(store, id)).data);
+  if (initial.slotHeld === note) return false;
+  return withRepoLock(store, initial.repository, async () => {
     const current = await getTask(store, id);
     const latest = taskData(current.data);
-    if (latest.phase !== "ready" || latest.slotHeld === note) return;
+    if (latest.phase !== "ready" || latest.slotHeld === note) return false;
     const { slotHeld: _slot, ...rest } = latest;
     await writeTask(
       store,
@@ -1535,6 +1542,7 @@ export async function setSlotHold(
       { ...rest, ...(note === undefined ? {} : { slotHeld: note }) },
       "dev:task-slot-hold",
     );
+    return true;
   });
 }
 
@@ -1546,15 +1554,16 @@ export async function setFlowNote(
   store: ObjectStore,
   id: string,
   note: { readonly shown?: string | undefined; readonly held?: string | undefined },
-): Promise<void> {
-  const initial = await getTask(store, id);
+  known?: TaskData | undefined,
+): Promise<boolean> {
+  const initial = known ?? taskData((await getTask(store, id)).data);
   const same = (data: TaskData) =>
     data.flowShown === note.shown && data.flowHeld === note.held;
-  if (same(taskData(initial.data))) return;
-  await withRepoLock(store, taskData(initial.data).repository, async () => {
+  if (same(initial)) return false;
+  return withRepoLock(store, initial.repository, async () => {
     const current = await getTask(store, id);
     const latest = taskData(current.data);
-    if (same(latest)) return;
+    if (same(latest)) return false;
     const { flowShown: _shown, flowHeld: _held, ...rest } = latest;
     await writeTask(
       store,
@@ -1566,6 +1575,7 @@ export async function setFlowNote(
       },
       "dev:task-flow-note",
     );
+    return true;
   });
 }
 
@@ -1595,17 +1605,18 @@ export async function recordPlanStart(
 export async function clearOldestPlanSlot(
   store: ObjectStore,
   id: string,
-): Promise<void> {
+): Promise<boolean> {
   const initial = await getTask(store, id);
   const data = taskData(initial.data);
-  if (data.oldestPlanSlot !== true) return;
-  await withRepoLock(store, data.repository, async () => {
+  if (data.oldestPlanSlot !== true) return false;
+  return withRepoLock(store, data.repository, async () => {
     const current = await getTask(store, id);
     const latest = taskData(current.data);
-    if (latest.oldestPlanSlot !== true) return;
-    if (latest.phase === "running" || latest.phase === "review") return;
+    if (latest.oldestPlanSlot !== true) return false;
+    if (latest.phase === "running" || latest.phase === "review") return false;
     const { oldestPlanSlot: _slot, ...rest } = latest;
     await writeTask(store, id, rest, "dev:task-slot-release");
+    return true;
   });
 }
 

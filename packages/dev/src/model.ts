@@ -12,11 +12,15 @@ import { isRecord, oneLine } from "@operad-io/engine";
 export async function listAll(
   store: ObjectStore,
   type: string,
+  where?: Readonly<Record<string, unknown>> | undefined,
 ): Promise<StoredObject[]> {
   const objects: StoredObject[] = [];
   let cursor: string | undefined;
   for (;;) {
-    const page = await store.list(type, cursor === undefined ? {} : { cursor });
+    const page = await store.list(type, {
+      ...(where === undefined ? {} : { where }),
+      ...(cursor === undefined ? {} : { cursor }),
+    });
     objects.push(...page.objects);
     if (page.next === undefined) return objects;
     cursor = page.next;
@@ -772,11 +776,7 @@ export async function nextId(
   repository: string,
   slug: string,
 ): Promise<string> {
-  const all = await listAll(store, type);
-  const mine = all.filter(
-    (object) =>
-      isRecord(object.data) && object.data.repository === repository,
-  );
+  const mine = await listAll(store, type, { repository });
   let number = numberById(mine, type) + 1;
   for (;;) {
     const id = formatId(type, number, slug);
