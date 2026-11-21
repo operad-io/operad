@@ -36,6 +36,8 @@ export interface CheckRun {
   readonly failedBy?: ReadonlyMap<string, FailedRerun> | undefined;
   /** Set when the result is the failed test's own rerun, run alone, failing again. */
   readonly aloneRerun?: boolean | undefined;
+  /** Where the run's first command began writing in the log, when the step said. */
+  readonly logStart?: number | undefined;
 }
 
 /** The line drawn between the two runs in the check log. */
@@ -75,10 +77,10 @@ function logOf(outcome: PluginStepResult | undefined): string | undefined {
   return typeof log === "string" ? log : undefined;
 }
 
-/** Where the step's own output began in the shared log; 0 when it does not say. */
-function logStartOf(outcome: PluginStepResult | undefined): number {
+/** Where the step's own output began in the shared log; undefined when it does not say. */
+function logStartOf(outcome: PluginStepResult | undefined): number | undefined {
   const start = dataOf(outcome).logStart;
-  return typeof start === "number" ? start : 0;
+  return typeof start === "number" ? start : undefined;
 }
 
 /** How many bytes the log holds now; a log that cannot be read holds none. */
@@ -119,6 +121,8 @@ export async function runCheckWithRerun(
 ): Promise<CheckRun> {
   const first = await once(runStep, params, options, places);
   const firstData = dataOf(first.outcome);
+  const firstStart = logStartOf(first.outcome);
+  const started = firstStart === undefined ? {} : { logStart: firstStart };
   const failed = first.hostError !== undefined || first.outcome?.result === "fail";
   // Only a plain failure is rerun: not a cancel, not a hang.
   if (
@@ -128,7 +132,7 @@ export async function runCheckWithRerun(
     firstData.reason === "stall" ||
     first.hostError !== undefined
   ) {
-    return { ...first, rerun: false, note: undefined, passedOnRerun: [] };
+    return { ...first, ...started, rerun: false, note: undefined, passedOnRerun: [] };
   }
   const label =
     typeof firstData.lineNumber === "number"
@@ -147,6 +151,7 @@ export async function runCheckWithRerun(
     ) {
       return {
         ...last,
+        ...started,
         rerun: true,
         passedOnRerun: [],
         note: `${label} failed, passed on rerun${attempts > 1 ? ` ${attempts}` : ""}`,
@@ -162,7 +167,7 @@ export async function runCheckWithRerun(
       break;
     }
   }
-  return { ...last, rerun: true, note: undefined, passedOnRerun: [] };
+  return { ...last, ...started, rerun: true, note: undefined, passedOnRerun: [] };
 }
 
 /* ---------------------------------------------------------------------------
@@ -288,6 +293,7 @@ export async function runCheckCommands(
   const passed: string[] = [];
   const failedBy = new Map<string, FailedRerun>();
   let reran = false;
+  let firstStart: number | undefined;
   let last: Pick<CheckRun, "outcome" | "hostError"> = {
     outcome: { result: "pass", data: { lines: 0, tail: [] } },
     hostError: undefined,
@@ -297,6 +303,7 @@ export async function runCheckCommands(
     aloneRerun = false,
   ): CheckRun => ({
     ...result,
+    ...(firstStart === undefined ? {} : { logStart: firstStart }),
     ...(aloneRerun ? { aloneRerun: true } : {}),
     rerun: reran,
     passedOnRerun: passed,
@@ -326,6 +333,7 @@ export async function runCheckCommands(
         index,
       );
       reran = reran || group.rerun;
+      firstStart ??= group.logStart;
       if (group.note !== undefined) notes.push(group.note);
       const lineNumber = dataOf(group.outcome).lineNumber;
       const outcome =
@@ -342,6 +350,7 @@ export async function runCheckCommands(
 
     const lineNumber = index + 1;
     const first = await once(runStep, paramsFor([runOf(command)]), options, places);
+    firstStart ??= logStartOf(first.outcome);
     const firstData = dataOf(first.outcome);
     const numbered = {
       outcome: withLineNumber(first.outcome, lineNumber),
@@ -360,7 +369,7 @@ export async function runCheckCommands(
       return finish(numbered);
     }
     const log = logOf(first.outcome);
-    const names = failedNames(failed, readSince(log, logStartOf(first.outcome)));
+    const names = failedNames(failed, readSince(log, logStartOf(first.outcome) ?? 0));
     if (names.length === 0 || names.length > failed.max) return finish(numbered);
 
     reran = true;

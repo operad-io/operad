@@ -1542,3 +1542,12 @@ the row fields.
 | T-0660-M5 | packages/dev/src/flaky.ts | `overLimit` treated an unknown host reading as busy instead of quiet | `a flaky test proposes a task > an unknown host load is judged as quiet, not against this machine` |
 | T-0660-M6 | packages/dev/src/notcode.ts | a remote check still waited on this machine's load instead of skipping the local wait | `a remote check reads the host's load > a second timeout names the host and does not wait on this machine` |
 | T-0660-M9 | packages/dev/src/notcode.ts | `timeoutAlone` treated an unknown host reading as busy instead of quiet | `a remote check reads the host's load > a timeout alone on an unknown host load is the code and says so` |
+
+## T-0667 — check load follow-ups
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0667-M1 | packages/dev/src/check-load.ts | an unknown line made the whole run unknown and discarded a known reading | `the load lines remote-check.sh writes > one unknown reading does not discard the other` |
+| T-0667-M2 | packages/dev/src/notcode.ts | `loadOfRun` read the log from its start instead of the run's first command offset, so a late line from an earlier run became the start reading | `a remote check reads the host's load > a run's load begins where its first command did, not at a stale size or its last rerun` |
+| T-0667-M3 | packages/dev/src/rerun.ts | a whole-list rerun reported the rerun's own `logStart` instead of where the first command began | `the log offset a check run reports > a whole-list rerun keeps where its first command began` |
+| T-0667-M4 | packages/dev/src/rerun.ts | a command with failed-test reruns reported the alone rerun's `logStart` instead of where the first command began | `a remote check reads the host's load > a run's load begins where its first command did, not at a stale size or its last rerun` |
