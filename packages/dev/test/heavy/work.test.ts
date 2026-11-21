@@ -4,6 +4,7 @@ import { match, withDefaultAccess, type AccessProfile } from "@operad-io/access-
 import { afterAll, describe, expect, test } from "bun:test";
 import { createChatPlugin } from "@operad-io/chat";
 import {
+  appendFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -138,6 +139,13 @@ function fakeHarness(record: string) {
             return { result: "done", data: { sessionId: "fake-session" } };
           }
           if (mode === "throw") throw new Error("the fake harness crashed");
+          if (mode === "throw-main-change") {
+            writeFileSync(
+              join(input.cwd, "..", "..", "main-only.txt"),
+              "changed outside the worktree\n",
+            );
+            throw new Error("the fake harness crashed");
+          }
           if (mode === "fail") {
             return {
               result: "failed",
@@ -173,6 +181,12 @@ function fakeHarness(record: string) {
             writeFileSync(
               join(input.cwd, "..", "..", "main-only.txt"),
               "changed outside the worktree\n",
+            );
+          }
+          if (mode === "main-change-again") {
+            appendFileSync(
+              join(input.cwd, "..", "..", "before.txt"),
+              "edited again outside the worktree\n",
             );
           }
           if (mode === "commit" || mode === "commit-standard" || mode === "commit-incomplete" || mode === "commit-broken" || mode === "commit-unknown-cost") {
@@ -764,6 +778,40 @@ describe("dev/work", () => {
     const task = await taskDataOf(state);
     expect(task.brief).toContain(line);
     expect(task.brief).not.toContain("before.txt");
+    expect(task.attempt?.finalMessage).toBe(line);
+    expect(String(result.data?.message)).toContain(line);
+    expect(readFileSync(join(main, "main-only.txt"), "utf8")).toBe(
+      "changed outside the worktree\n",
+    );
+  });
+
+  test("a further edit to a file the main checkout already had changed is reported", async () => {
+    const state = await fixture("main-change-again");
+    const main = state.remote.repository;
+    writeFileSync(join(main, "before.txt"), "already changed\n");
+
+    const result = await runWork(state);
+    expect(result.result).toBe("nothing");
+    const line = "changed the main checkout: before.txt";
+    const task = await taskDataOf(state);
+    expect(task.brief).toContain(line);
+    expect(task.attempt?.finalMessage).toBe(line);
+    expect(String(result.data?.message)).toContain(line);
+    expect(readFileSync(join(main, "before.txt"), "utf8")).toBe(
+      "already changed\nedited again outside the worktree\n",
+    );
+  });
+
+  test("a change in the main checkout is reported even when the worker crashes", async () => {
+    const state = await fixture("throw-main-change");
+    const main = state.remote.repository;
+
+    const result = await runWork(state);
+    expect(result.result).toBe("failed");
+    expect(result.data?.reason).toBe("harness");
+    const line = "changed the main checkout: main-only.txt";
+    const task = await taskDataOf(state);
+    expect(task.brief).toContain(line);
     expect(task.attempt?.finalMessage).toBe(line);
     expect(String(result.data?.message)).toContain(line);
     expect(readFileSync(join(main, "main-only.txt"), "utf8")).toBe(
