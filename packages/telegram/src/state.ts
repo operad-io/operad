@@ -51,11 +51,13 @@ export interface SentRecord {
   readonly done: boolean;
   /** Sending gave up; the chat's history says so. */
   readonly failed?: true | undefined;
+  /** When the message was recorded, epoch milliseconds; missing on an older record. */
+  readonly at?: number | undefined;
 }
 
 /** What the reply side remembers: since when it counts, and what it sent. */
 export interface SentState {
-  /** Epoch milliseconds the reply side first ran; older messages are not new. */
+  /** Epoch milliseconds before which a message is no longer new; a full sweep moves it forward. */
   readonly since: number;
   readonly sent: Readonly<Record<string, SentRecord>>;
 }
@@ -72,7 +74,30 @@ function recordOf(value: unknown): SentRecord | undefined {
     done: value.done,
     ...(typeof value.telegramId === "number" ? { telegramId: value.telegramId } : {}),
     ...(value.failed === true ? { failed: true as const } : {}),
+    ...(typeof value.at === "number" ? { at: value.at } : {}),
   };
+}
+
+/** How long a done record stays behind `since`; older done records are dropped. */
+export const SENT_STATE_MARGIN_MS = 24 * 60 * 60 * 1_000;
+
+/**
+ * A bounded sent state: a send that is not done stays (so it can finish), and a
+ * done record stays while it is within the margin before `since`. A record from
+ * before `since` belongs to a message the sweep no longer reads, so dropping it
+ * cannot send anything again; a missing `at` is treated as at `since`, keeping
+ * a record written before this field existed.
+ */
+export function pruneSent(state: SentState, margin = SENT_STATE_MARGIN_MS): SentState {
+  const cutoff = state.since - margin;
+  const entries = Object.entries(state.sent);
+  const kept = entries.filter(
+    ([, record]) => record.done !== true || (record.at ?? state.since) >= cutoff,
+  );
+  if (kept.length === entries.length) return state;
+  const sent: Record<string, SentRecord> = {};
+  for (const [key, record] of kept) sent[key] = record;
+  return { since: state.since, sent };
 }
 
 /** The recorded sends; `undefined` when the file is missing or unusable. */
@@ -87,9 +112,12 @@ export function readSent(home: string): SentState | undefined {
   const sent: Record<string, SentRecord> = {};
   for (const [key, value] of Object.entries(parsed.sent)) {
     const record = recordOf(value);
-    if (record !== undefined) sent[key] = record;
+    if (record === undefined) continue;
+    // A record written before `at` existed belongs to a message at or after
+    // `since`; keeping that time lets a later full sweep drop it safely.
+    sent[key] = record.at === undefined ? { ...record, at: parsed.since } : record;
   }
-  return { since: parsed.since, sent };
+  return pruneSent({ since: parsed.since, sent });
 }
 
 /** Records the sends, replacing the file whole. */
@@ -186,6 +214,30 @@ function itemOf(value: unknown): SentItem | undefined {
   };
 }
 
+/** How many pending messages the state file keeps; older answered ones are dropped. */
+export const PENDING_STATE_MAX = 100;
+
+/** A bounded pending state: open items first, then the newest answered ones. */
+export function prunePending(
+  state: PendingState,
+  keep = PENDING_STATE_MAX,
+): PendingState {
+  const entries = Object.entries(state);
+  if (entries.length <= keep) return state;
+  const open = entries.filter(([, item]) => item.answered === undefined).slice(-keep);
+  const answered = entries.filter(([, item]) => item.answered !== undefined);
+  const room = Math.max(0, keep - open.length);
+  const kept = new Set([
+    ...open.map(([key]) => key),
+    ...answered.slice(-room).map(([key]) => key),
+  ]);
+  const bounded: Record<string, SentItem> = {};
+  for (const [key, item] of entries) {
+    if (kept.has(key)) bounded[key] = item;
+  }
+  return bounded;
+}
+
 /** The recorded pending sends; empty when the file is missing or unusable. */
 export function readPending(home: string): PendingState {
   let parsed: unknown;
@@ -200,7 +252,7 @@ export function readPending(home: string): PendingState {
     const item = itemOf(value);
     if (item !== undefined) items[key] = item;
   }
-  return items;
+  return prunePending(items);
 }
 
 /** Records the pending sends, replacing the file whole. */

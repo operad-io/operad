@@ -43,7 +43,8 @@ on it: each update is recorded once as a `telegram` event keyed by its
 `update_id`, and a message is written only when the bound chat holds no message
 whose source ref is that update id. A killed `operad serve` that starts again
 reads the same update without writing a second message or starting a second
-reply.
+reply. A poll that returns is followed at once; only a failed poll waits a
+second before the next try.
 
 Each new assistant reply of a chat bound to Telegram is sent to that Telegram
 chat once, and so is the line that says a reply failed. Markdown is reduced to
@@ -56,7 +57,9 @@ The event does **not** show in `operad history` of the chat or in the chat's His
 section: those list only the chat's runs and the actions people ran on it, and read
 no source event. Showing it there needs a kernel change. What was sent is kept in `<home>/telegram/sent.json`,
 so a restart neither resends a reply nor skips one written while it was down.
-Replies from before the plugin first ran are not sent.
+Replies from before the plugin first ran are not sent. A full sweep moves the
+point before which messages are not new, and the done records more than a day
+behind it are dropped; an unfinished send stays.
 
 While a reply is written, one progress message per reply is edited to the
 transcript's unfinished part: the text so far and the tool calls in progress.
@@ -84,4 +87,6 @@ as the confirmation. After an answer from anywhere the buttons go and the
 message ends "answered: X", X being the action or choice; a tap on an item
 already answered says so and changes nothing. Where an item was answered
 somewhere else and no action shows what it was, the message ends "answered".
-What was sent is kept in `<home>/telegram/pending.json`.
+What was sent is kept in `<home>/telegram/pending.json`. The file keeps the open
+items and the newest 100 answered ones; older answered items are dropped when
+the file is read and when an answer is settled.

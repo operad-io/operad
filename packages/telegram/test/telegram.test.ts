@@ -373,6 +373,47 @@ describe("the telegram source", () => {
     await w.close();
   });
 
+  test("a poll that returned is followed at once, and only a failed poll waits", async () => {
+    const w = await world({ users: [42] });
+    const api = new FakeApi();
+    const updates = [update(100, 42, 555, "first"), update(101, 42, 555, "second")];
+    let calls = 0;
+    api.getUpdates = async () => {
+      calls += 1;
+      const next = updates.shift();
+      if (next === undefined) throw new Error("Telegram is unreachable");
+      return [next];
+    };
+    const waits: number[] = [];
+    let stop = (): void => {};
+    let waited: (() => void) | undefined;
+    const reachedWait = new Promise<void>((resolve) => {
+      waited = resolve;
+    });
+    const telegram = new TelegramSource(w.ctx, {
+      api,
+      wait: async (ms) => {
+        waits.push(ms);
+        waited?.();
+        stop();
+      },
+    });
+    const handle = telegram.start();
+    stop = () => handle.stop();
+    await reachedWait;
+    handle.stop();
+
+    // Both updates came from successful polls, so the third call is the one
+    // that failed and the only one that waited.
+    expect(calls).toBe(3);
+    expect(waits).toEqual([1_000]);
+    const chats = (await w.store.list(CHAT_TYPE)).objects;
+    const chat = chats[0];
+    if (chat === undefined) throw new Error("no chat was opened");
+    expect(allMessages(w.store, chat.id).map((message) => message.source.ref)).toEqual(["100", "101"]);
+    await w.close();
+  });
+
   test("start polls and stop ends the loop", async () => {
     const w = await world({ users: [42] });
     let polls = 0;
