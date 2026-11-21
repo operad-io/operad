@@ -277,7 +277,7 @@ describe("dev views", () => {
       { type: "tool_execution_end", toolCallId: "b", toolName: "Read", isError: false, durationMs: 400 },
     ].map((line) => JSON.stringify(line));
     expect(readableLog(lines)).toEqual([
-      "tool Bash 1m12s `xcodebuild test -only-testing X`",
+      "tool Bash 1m 12s `xcodebuild test -only-testing X`",
       "tool Read <1s `/w/a.ts`",
     ]);
   });
@@ -737,7 +737,7 @@ describe("dev views", () => {
       await store.put("task", task.id, { ...stored, phase, run: "run-1", attempt: { run: "run-1", ...attempt } }, cause);
     };
     const start = 1_000_000;
-    // Attempt 1: worktree 2s, work 22m10s, verify 4m35s, review 18m, two findings.
+    // Attempt 1: worktree 2s, work 22m 10s, verify 4m 35s, review 18m, two findings.
     await put(start, "test:start", { number: 1 });
     await put(start + 2_000, "dev:worktree", { number: 1 });
     await put(start + 2_000 + 1_330_000, "dev:work", {
@@ -778,14 +778,14 @@ describe("dev views", () => {
     expect(rows.slice(0, 5)).toEqual([
       "| # | time | cost | result |",
       "| --- | --- | --- | --- |",
-      "| 1 | 45m | $1.24 | review: 2 findings |",
-      "| 2 | 3m … | – | running work |",
-      "| total | 48m | $1.24 | |",
+      "| 1 | 44m 47s | $1.24 | review: 2 findings |",
+      "| 2 | 3m 2s … | – | running work |",
+      "| total | 47m 49s | $1.24 | |",
     ]);
-    expect(rows[6]).toBe("**#2** worktree 2s · work 3m00s (running)");
+    expect(rows[6]).toBe("**#2** worktree 2s · work 3m (running)");
     expect(rows[10]).toBe("**Waiting for a person** 3s");
     expect(rows[8]).toBe(
-      "**#1** worktree 2s · work 22m10s · verify 4m35s · review 18m00s · 100 in / 35.9k out tokens",
+      "**#1** worktree 2s · work 22m 10s · verify 4m 35s · review 18m · 100 in / 35.9k out tokens",
     );
   });
 
@@ -818,9 +818,9 @@ describe("dev views", () => {
     await put(start + 61_000, "dev:worktree", { number: 2, cost: 0.75 }, "running");
     await put(start + 93_000, "dev:review", { number: 2, cost: 0.75, review: { result: "passed" } }, "waiting");
     const rows = (await metrics({ store, runTimes } as never, await getTask(store, task.id), start + 100_000)).split("\n");
-    expect(rows[2]).toBe("| 1 | 1m | $0.50 | verify failed |");
+    expect(rows[2]).toBe("| 1 | 1m 1s | $0.50 | verify failed |");
     expect(rows[3]).toBe("| 2 | 33s | $0.75 | review passed |");
-    expect(rows[4]).toBe("| total | 2m | $1.25 | |");
+    expect(rows[4]).toBe("| total | 1m 34s | $1.25 | |");
   });
 
   async function twoRunFixture() {

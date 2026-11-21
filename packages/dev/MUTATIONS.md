@@ -1445,3 +1445,9 @@ the row fields.
 | T-0583-M6 | packages/dev/src/settings.ts | `stageOf` kept an older name instead of returning the new one | `the older and new stage names load to the same compiled flow` |
 | T-0583-M7 | packages/dev/src/project-flows.ts | `flowProblem` kept the older words `check, review or human` | `a TS flow with no test, review or human step is refused` |
 | T-0583-M8 | packages/dev/dev.schema.json | the schema dropped the older `work` name instead of accepting it as an older name | `the dev schema accepts both stage names and marks the older ones` |
+
+## T-0635 — one elapsed format
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0635-M6 | packages/dev/src/views.ts | an attempt's time subtracted a second | `metrics times come from the run's own facts > a normal run to its person wait: the wait is its own line, inside no attempt or step` |
