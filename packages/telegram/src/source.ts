@@ -360,7 +360,11 @@ export class TelegramSource {
   }
 
   private async openBoundChat(channel: string, text: string | undefined, userId: number): Promise<string> {
-    const opened = await this.ctx.client.act("bot:chat", this.bot, {
+    // A typed id: another plugin's type may hold an object under the same bare
+    // id (the bot plugin's nightly tidy keeps one per bot), and a bare id is
+    // then ambiguous.
+    const bot = this.bot.startsWith("bot:") ? this.bot : `bot:${this.bot}`;
+    const opened = await this.ctx.client.act("bot:chat", bot, {
       args: { title: (text === undefined ? undefined : titleFromMessage(text)) ?? "Telegram", channels: [channel] },
       actor: { via: TELEGRAM_SOURCE, id: String(userId) },
     });

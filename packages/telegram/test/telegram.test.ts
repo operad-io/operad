@@ -83,6 +83,20 @@ describe("the telegram source", () => {
     await w.close();
   });
 
+  test("a chat opens on the bot even when another type holds an object of the same id", async () => {
+    const w = await world({ users: [42] });
+    // The bot plugin's nightly tidy stores one object per bot under the bot's id.
+    await w.store.put("bot-tidy", "default", {}, "test");
+    const api = new FakeApi();
+    api.updates = [update(100, 42, 555, "hello")];
+    await source(w, api).poll();
+
+    const chats = await w.store.list(CHAT_TYPE);
+    expect(chats.objects).toHaveLength(1);
+    expect(readOffset(w.home)).toBe(101);
+    await w.close();
+  });
+
   test("an accepted message gets the eyes reaction on its Telegram message", async () => {
     const w = await world({ users: [42] });
     const api = new FakeApi();
