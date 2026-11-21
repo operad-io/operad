@@ -52,6 +52,7 @@ import {
   listenAddressKind,
   pairLink,
   openPluginStore,
+  formatElapsed,
   parseObjectKey,
   readConfig,
   readState,
@@ -1667,21 +1668,13 @@ export function runningLine(item: RunningItem): string {
   const parts = [
     item.object ?? item.runId,
     item.stepLabel ?? "-",
-    item.stepElapsedMs === null ? "-" : age(item.stepElapsedMs),
+    item.stepElapsedMs === null ? "-" : formatElapsed(item.stepElapsedMs),
   ];
-  if (item.queuedMs !== undefined && item.queuedMs > 0) parts.push(`queued ${age(item.queuedMs)}`);
+  if (item.queuedMs !== undefined && item.queuedMs > 0) parts.push(`queued ${formatElapsed(item.queuedMs)}`);
   if (item.title !== null) parts.push(item.title);
-  parts.push(`run ${age(item.elapsedMs)}`);
+  parts.push(`run ${formatElapsed(item.elapsedMs)}`);
   if (item.note !== undefined && item.note !== null) parts.push(item.note);
   return parts.join("  ");
-}
-
-function age(ms: number): string {
-  const total = Math.floor(Math.max(0, ms) / 1000);
-  const hours = Math.floor(total / 3600);
-  const minutes = Math.floor((total % 3600) / 60);
-  if (hours > 0) return `${hours}h ${String(minutes).padStart(2, "0")}m`;
-  return minutes > 0 ? `${minutes}m ${String(total % 60).padStart(2, "0")}s` : `${total}s`;
 }
 
 function commandFlows(context: Context, io: CliIo, json: boolean): void {

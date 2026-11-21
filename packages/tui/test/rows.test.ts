@@ -97,7 +97,7 @@ describe("two-line rows", () => {
     const lines = drawnLines(running(200, [run(1)]));
     // The narrower list cuts the title with …; the dim line still holds every field.
     expect(textOf(lines[2]).trimEnd()).toBe("❯ ◐ T-0091 flaky-survey  Survey the f…");
-    expect(textOf(lines[3]).trimEnd()).toBe("    work · 2.5s · 1m 1s · operad");
+    expect(textOf(lines[3]).trimEnd()).toBe("    work · 2s · 1m 1s · operad");
     // Empty parts are left out: no step time, no repository.
     const bare = drawnLines(
       running(120, [run(1, { stepElapsedMs: null, stepStartedAt: null, object: "T-0091-x" })]),
@@ -123,7 +123,7 @@ describe("two-line rows", () => {
   test("a Running row that names no object shows the flow alone on its first line", () => {
     const lines = drawnLines(running(120, [run(1, { object: null, title: null })]));
     expect(textOf(lines[2]).trimEnd()).toBe("❯ ◐ dev");
-    expect(textOf(lines[3]).trimEnd()).toBe("    work · 2.5s · 1m 1s");
+    expect(textOf(lines[3]).trimEnd()).toBe("    work · 2s · 1m 1s");
   });
 
   test("a Pending row: the waiting reason, then the repository", () => {
@@ -199,7 +199,7 @@ describe("two-line rows", () => {
     const taken = drawnLines(
       running(240, [run(1, { stepLabel: "verify", stepElapsedMs: 5_000, queuedMs: 540_000 })]),
     );
-    expect(textOf(taken[3])).toContain("verify · 5.0s · queued 9m");
+    expect(textOf(taken[3])).toContain("verify · 5s · queued 9m");
   });
 
   test("a long dim line is cut with … at the pane edge", () => {

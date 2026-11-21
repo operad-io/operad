@@ -12,11 +12,23 @@ import {
   type ScheduleNotice,
   type ScheduledPrompt,
 } from "../src/index.ts";
+import { lateText } from "../src/schedule.ts";
 import { cleanupRoots, rig } from "./support.ts";
 
 process.env.TZ = "UTC";
 
 afterAll(cleanupRoots);
+
+describe("lateText", () => {
+  test("counts hours and the minute left in words, singular or plural", () => {
+    expect(lateText(59)).toBe("59 seconds");
+    expect(lateText(60)).toBe("1 minute");
+    expect(lateText(120)).toBe("2 minutes");
+    expect(lateText(3660)).toBe("1 hour 1 minute");
+    expect(lateText(3720)).toBe("1 hour 2 minutes");
+    expect(lateText(7200)).toBe("2 hours");
+  });
+});
 
 interface Clock {
   value: number;

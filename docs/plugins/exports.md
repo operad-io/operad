@@ -172,6 +172,7 @@ Types (`StepContext`, `ActionTypeDefinition`, `ObjectRow`, ...) are exported too
 | `isRecord` | `true` for a plain object that is not an array | [Rules](rules.md#code) |
 | `stringList` | The strings of an array value; anything that is not an array gives an empty list | [Rules](rules.md#code) |
 | `oneLine` | `oneLine(text, limit?, trimCut?)`: whitespace collapsed to one line, cut with `…` at `limit` | [Rules](rules.md#code) |
+| `formatElapsed` | `formatElapsed(ms)`: an elapsed duration in one format: at most two units, floored, `<1s` under one second and days from 24 hours, such as `1m 5s` or `1d 2h` | [Views](views.md#the-row) |
 | `requireName` | `requireName(value, field)` throws `<field>: must be a non-empty string` for an empty or blank value | [Rules](rules.md#code) |
 | `repeatEvery` | `repeatEvery(ms, callback)`: calls back every `ms` until the returned function is called; it never keeps the process alive | [Platform](platform.md#directory-watches) |
 | `sleepUntilAborted` | `sleepUntilAborted(ms, signal?)`: waits `ms`, but an abort of the signal ends the wait at once | [Rules](rules.md#tests) |

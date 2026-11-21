@@ -8,6 +8,7 @@
 
 import {
   foldObjectFacts,
+  formatElapsed,
   type PluginFact,
   type StoredObject,
   type ViewContext,
@@ -58,14 +59,6 @@ export function percentile(values: readonly number[], p: number): number {
   const sorted = [...values].sort((a, b) => a - b);
   const rank = Math.max(1, Math.ceil((p / 100) * sorted.length));
   return sorted[Math.min(sorted.length, rank) - 1] ?? 0;
-}
-
-function duration(ms: number): string {
-  const total = Math.max(0, Math.round(ms / 1000));
-  if (total < 60) return `${total}s`;
-  const minutes = Math.round(total / 60);
-  if (minutes < 60) return `${minutes}m`;
-  return `${Math.floor(minutes / 60)}h${String(minutes % 60).padStart(2, "0")}m`;
 }
 
 function pad(value: number): string {
@@ -309,7 +302,7 @@ export async function repositoryMetrics(
   }
   const stepRows = STEP_ROWS.map((step) => {
     const values = timed.map((times) => times[step]);
-    return [step, duration(percentile(values, 50)), duration(percentile(values, 90))];
+    return [step, formatElapsed(percentile(values, 50)), formatElapsed(percentile(values, 90))];
   });
   const reworks = merged.map((task) => task.reworks);
   const rounds = (value: number): string => String(value);

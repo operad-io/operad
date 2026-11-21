@@ -186,7 +186,7 @@ describe("readable run history", () => {
   test("a running step shows how long so far, a person's answer keeps its line", () => {
     const lines = runHistoryLines(facts, { now, full: false });
     expect(lines).toContain("22:30:04  verify  after reverify  running  1h 42m");
-    expect(lines).toContain("22:22:02  confirm  reverify  8m");
+    expect(lines).toContain("22:22:02  confirm  reverify  8m 1s");
     expect(lines).toContain("22:30:02  you chose merge: via plugin, as dev");
   });
 

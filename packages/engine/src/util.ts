@@ -48,3 +48,29 @@ export function repeatEvery(ms: number, callback: () => void): () => void {
     clearInterval(timer);
   };
 }
+
+/**
+ * An elapsed duration: at most two units, floored, `<1s` under one second and
+ * days from 24 hours; the samples are in `test/fixtures/elapsed.json`.
+ */
+export function formatElapsed(ms: number): string {
+  const value = Number.isFinite(ms) ? Math.max(0, ms) : 0;
+  const total = Math.floor(value / 1000);
+  if (total < 1) return "<1s";
+  const days = Math.floor(total / 86_400);
+  if (days > 0) {
+    const hours = Math.floor((total % 86_400) / 3_600);
+    return hours === 0 ? `${days}d` : `${days}d ${hours}h`;
+  }
+  const hours = Math.floor(total / 3_600);
+  if (hours > 0) {
+    const minutes = Math.floor((total % 3_600) / 60);
+    return minutes === 0 ? `${hours}h` : `${hours}h ${minutes}m`;
+  }
+  const minutes = Math.floor(total / 60);
+  if (minutes > 0) {
+    const seconds = total % 60;
+    return seconds === 0 ? `${minutes}m` : `${minutes}m ${seconds}s`;
+  }
+  return `${total}s`;
+}

@@ -5,6 +5,8 @@
  * tables, images, HTML) becomes plain text or one of those.
  */
 
+import { formatElapsed } from "@operad-io/engine";
+
 /** The longest text Telegram takes in one message. */
 export const TELEGRAM_MAX_CHARS = 4096;
 
@@ -169,13 +171,7 @@ export function telegramChunks(markdown: string, limit = CHUNK_TARGET): readonly
 }
 
 /** A duration as the progress line writes it, the same as the TUI's list. */
-export function progressElapsed(ms: number): string {
-  const value = Number.isFinite(ms) ? Math.max(0, ms) : 0;
-  if (value < 1000) return `${Math.floor(value)}ms`;
-  if (value < 60_000) return `${(value / 1000).toFixed(1)}s`;
-  const whole = Math.floor(value / 1000);
-  return `${Math.floor(whole / 60)}m ${whole % 60}s`;
-}
+export const progressElapsed = formatElapsed;
 
 /** The one line a progress message ends with: what the reply does and for how long. */
 export function progressStatusLine(status: { readonly text: string; readonly since: number }, now: number): string {

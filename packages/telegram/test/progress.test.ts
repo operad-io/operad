@@ -282,7 +282,7 @@ describe("the progress message of a reply", () => {
     f.client.status = { text: "Starting", since: 0 };
     await f.progress.syncChat(f.chat);
     await f.api.until(() => f.api.sent.length >= 1);
-    expect(f.api.sent[0]?.text).toBe("Starting · 0ms");
+    expect(f.api.sent[0]?.text).toBe("Starting · &lt;1s");
     await f.stop();
   });
 
@@ -292,13 +292,13 @@ describe("the progress message of a reply", () => {
     f.client.status = { text: "Running Bash", since: 0 };
     await f.progress.syncChat(f.chat);
     await f.api.until(() => f.api.sent.length >= 1);
-    expect(f.api.sent[0]?.text).toBe("partial\n\nRunning Bash · 0ms");
+    expect(f.api.sent[0]?.text).toBe("partial\n\nRunning Bash · &lt;1s");
 
     f.clock.advance(PROGRESS_INTERVAL_MS);
     f.client.status = { text: "Thinking", since: 1_000 };
     await f.progress.syncChat(f.chat);
     await f.api.until(() => f.api.edits.length >= 1);
-    expect(f.api.edits[0]?.text).toBe("partial\n\nThinking · 1.0s");
+    expect(f.api.edits[0]?.text).toBe("partial\n\nThinking · 1s");
     await f.stop();
   });
 

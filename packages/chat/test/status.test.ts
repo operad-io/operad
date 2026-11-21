@@ -62,7 +62,7 @@ describe("chat:status", () => {
     expect(text).toContain("Reply: not writing");
     expect(text).toContain("Waiting: 0 messages");
     expect(text).toContain("Cost: ~$0.30 · 30 in / 11 out tokens");
-    expect(text).toContain("Last reply: ~$0.20 · 20 in / 6 out tokens · first output 1.7s");
+    expect(text).toContain("Last reply: ~$0.20 · 20 in / 6 out tokens · first output 1s");
 
     // A command is not a message: it costs no tokens and starts no reply.
     expect(r.calls).toHaveLength(2);
