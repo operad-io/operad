@@ -2,7 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CHAT_TYPE, allMessages } from "@operad-io/chat";
+import { CHAT_TYPE, allMessages, type ChatCommand } from "@operad-io/chat";
 import {
   ViewError,
   type ClientApi,
@@ -11,7 +11,14 @@ import {
   type ViewAction,
   type ViewEvent,
 } from "@operad-io/engine";
-import { PendingSender, TelegramSource, createTelegramPlugin, readPending } from "../src/index.ts";
+import {
+  PendingSender,
+  TelegramSource,
+  createTelegramPlugin,
+  readPending,
+  type CommandResponder,
+  type PendingResponder,
+} from "../src/index.ts";
 import { FakeApi, createTelegramWorld, replyUpdate, tap, update, type TelegramWorld } from "./support.ts";
 
 const roots: string[] = [];
@@ -103,7 +110,27 @@ function item(fields: Partial<PendingItem> & { runId: string }): PendingItem {
   return { flow: "dev", step: null, prompt: "Merge?", choices: [], actions: [], ...fields };
 }
 
-async function setup(options: { pending?: readonly string[]; bind?: boolean } = {}) {
+/** A wait a test moves itself: every deadline waits until `fire` or its own abort. */
+function holdWaits(): { readonly wait: (ms: number, signal: AbortSignal) => Promise<void>; fire: () => void } {
+  const waiting = new Set<() => void>();
+  return {
+    wait: (_ms, signal) =>
+      new Promise<void>((resolve) => {
+        const finish = (): void => {
+          waiting.delete(finish);
+          signal.removeEventListener("abort", finish);
+          resolve();
+        };
+        waiting.add(finish);
+        signal.addEventListener("abort", finish, { once: true });
+      }),
+    fire: () => {
+      for (const finish of [...waiting]) finish();
+    },
+  };
+}
+
+async function setup(options: { pending?: readonly string[]; bind?: boolean; wait?: (ms: number, signal: AbortSignal) => Promise<void> } = {}) {
   const root = await mkdtemp(join(tmpdir(), "telegram-pending-"));
   roots.push(root);
   const w = await createTelegramWorld({ root, users: [42], ...(options.pending === undefined ? {} : { pending: options.pending }) });
@@ -118,7 +145,7 @@ async function setup(options: { pending?: readonly string[]; bind?: boolean } = 
   }
   const client = new StubClient();
   const ctx: SourceContext = { ...w.ctx, client: client.asClient(w) };
-  const sender = new PendingSender(ctx, { api });
+  const sender = new PendingSender(ctx, { api, ...(options.wait === undefined ? {} : { wait: options.wait }) });
   const source = new TelegramSource(ctx, { api, pending: sender });
   return { w, api, chat, client, ctx, sender, source };
 }
@@ -498,6 +525,38 @@ describe("the pending command", () => {
     await w.close();
   });
 
+  test("a count line that never comes sends its items at the deadline and lets the pass go", async () => {
+    const waits = holdWaits();
+    const { w, api, chat, client, sender } = await setup({ wait: waits.wait });
+    client.items = [item({ runId: "d1", object: "task:t1", actions: [ACT_MERGE], flow: "dev" })];
+
+    expect(await sender.prepare(chat ?? "", true)).toBe("1 waiting");
+    expect(api.sent).toHaveLength(0);
+
+    waits.fire();
+    await api.until(() => api.sent.length === 1);
+    expect(api.sent[0]?.chatId).toBe(555);
+
+    // The pass is no longer held: the next item goes without another deadline.
+    client.items.push(item({ runId: "d2", waitId: "w2", flow: "chat", prompt: "Run?", choices: ["allow"], object: `chat:${chat}` }));
+    await sender.sync();
+    expect(api.sent).toHaveLength(2);
+    await w.close();
+  });
+
+  test("stopping lets a held count line go without sending its items", async () => {
+    const waits = holdWaits();
+    const { w, api, chat, client, sender } = await setup({ wait: waits.wait });
+    const handle = sender.start();
+    await handle.ready;
+    client.items = [item({ runId: "d1", object: "task:t1", actions: [ACT_MERGE], flow: "dev" })];
+
+    expect(await sender.prepare(chat ?? "", true)).toBe("1 waiting");
+    await handle.stop();
+    expect(api.sent).toHaveLength(0);
+    await w.close();
+  });
+
   test("says nothing is waiting and sends no message", async () => {
     const { w, api, chat, client, sender } = await setup();
     client.items = [];
@@ -549,6 +608,50 @@ describe("the pending command", () => {
       { name: "dev:merge", id: "task:t1", note: undefined, actor: { via: "telegram", id: "42" } },
       { name: "dev:reject", id: "task:t2", note: "not ready: tests fail", actor: { via: "telegram", id: "42" } },
     ]);
+    await w.close();
+  });
+
+  test("a /pending whose action fails after reading the items still sends them", async () => {
+    const { w, api, chat, ctx, client, sender } = await setup();
+    client.items = [item({ runId: "d1", object: "task:t1", actions: [ACT_MERGE], flow: "dev" })];
+    const shown: number[] = [];
+    const commands: CommandResponder = {
+      greet: async () => false,
+      command: async (): Promise<ChatCommand> => ({
+        name: "pending",
+        info: { plugin: "telegram", action: "pending", name: "telegram:pending", noteRequired: false, confirm: false },
+      }),
+      offer: async () => false,
+      say: async () => {
+        throw new Error("telegram is down");
+      },
+      handleCallback: async () => false,
+      refresh: async () => undefined,
+    };
+    const pending: PendingResponder = {
+      handleCallback: async () => false,
+      handleReply: async () => false,
+      show: async (target) => {
+        shown.push(target);
+        await sender.show(target);
+      },
+    };
+    const failing: ClientApi = {
+      ...ctx.client,
+      act: async (name, id, options) => {
+        if (name !== "chat:send") return ctx.client.act(name, id, options);
+        // The command runs and holds the pass, then the act itself fails.
+        await sender.prepare(id ?? "", true);
+        throw new Error("the run log is full");
+      },
+    };
+    const source = new TelegramSource({ ...ctx, client: failing }, { api, pending, commands });
+    api.updates = [update(700, 42, 555, "/pending")];
+
+    await source.poll();
+    expect(shown).toEqual([555]);
+    expect(api.sent).toHaveLength(1);
+    expect(api.sent[0]?.keyboard?.flat().map((button) => button.text)).toEqual(["merge"]);
     await w.close();
   });
 

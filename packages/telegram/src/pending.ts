@@ -17,7 +17,9 @@
  *
  * `/pending` sends every answerable item now, whatever the `pending` setting
  * lists: its count line goes first, then the items that were not already sent
- * to that chat, through the same build and send path as a pushed item.
+ * to that chat, through the same build and send path as a pushed item. The
+ * count line holds the pending pass so nothing slips in before the items; if
+ * the line never comes the items are sent after a deadline and the pass goes.
  */
 
 import { CHAT_TYPE, chatData } from "@operad-io/chat";
@@ -32,6 +34,7 @@ import {
 import { BotApiError, type BotApi, type InlineButton, type TelegramCallback, type TelegramMessage } from "./api.ts";
 import { PENDING_NOTHING } from "./commands.ts";
 import { telegramChatsOf } from "./replies.ts";
+import { delay } from "./source.ts";
 import { telegramSettings, type TelegramSettings } from "./settings.ts";
 import { readPending, writePending, type PendingState, type SentItem, type SentOption } from "./state.ts";
 
@@ -40,6 +43,9 @@ const VIA = "telegram";
 
 /** The longest item text sent; Telegram's own limit is 4096 characters. */
 const TEXT_MAX = 3_500;
+
+/** How long `/pending` waits for its count line before it sends the items anyway. */
+export const HOLD_MS = 30_000;
 
 /** What the source asks of the pending side for a tap or a reply. */
 export interface PendingResponder {
@@ -54,6 +60,8 @@ export interface PendingResponder {
 export interface PendingSenderOptions {
   readonly api: BotApi;
   readonly clock?: (() => number) | undefined;
+  /** Waits `ms` unless `signal` aborts first; a test gives one it moves itself. */
+  readonly wait?: ((ms: number, signal: AbortSignal) => Promise<void>) | undefined;
 }
 
 /** The data a button carries: its option's position on the message. */
@@ -79,6 +87,14 @@ interface PlannedItem {
   readonly item: PendingItem;
   readonly text: string;
   readonly options: readonly SentOption[];
+}
+
+/** The items `/pending` prepared for one Telegram chat, and the way to let the pass go. */
+interface HeldItems {
+  readonly items: readonly PlannedItem[];
+  readonly release: () => void;
+  /** Ends the deadline once `show` sends the items. */
+  readonly deadline: AbortController;
 }
 
 /** An option with what the asker says about its choice. */
@@ -111,6 +127,7 @@ export class PendingSender implements PendingResponder {
   private readonly api: BotApi;
   private readonly client: ClientApi;
   private readonly clock: () => number;
+  private readonly wait: (ms: number, signal: AbortSignal) => Promise<void>;
   private readonly settings: TelegramSettings;
   private readonly controller = new AbortController();
   private state: PendingState;
@@ -120,13 +137,14 @@ export class PendingSender implements PendingResponder {
   private tail: Promise<unknown> = Promise.resolve();
   private queued = false;
   /** The item messages `/pending` prepared for a Telegram chat, waiting for its count line. */
-  private held = new Map<number, { readonly items: readonly PlannedItem[]; readonly release: () => void }>();
+  private readonly held = new Map<number, HeldItems>();
 
   constructor(ctx: SourceContext, options: PendingSenderOptions) {
     this.ctx = ctx;
     this.api = options.api;
     this.client = ctx.client;
     this.clock = options.clock ?? ctx.clock;
+    this.wait = options.wait ?? delay;
     this.settings = telegramSettings(ctx.settings);
     this.state = readPending(ctx.home);
     if (ctx.signal.aborted) this.controller.abort();
@@ -150,6 +168,7 @@ export class PendingSender implements PendingResponder {
       stop: async () => {
         this.stopped = true;
         this.controller.abort();
+        this.releaseHeld();
         await iterator.return?.();
         await this.watching.catch(() => undefined);
         await this.tail.catch(() => undefined);
@@ -247,8 +266,8 @@ export class PendingSender implements PendingResponder {
     this.tail = gate === undefined ? work.catch(() => undefined) : work.then(() => gate).catch(() => undefined);
     try {
       const result = await work;
-      if (gate === undefined || result.target === undefined) release();
-      else this.held.set(result.target, { items: result.items, release });
+      if (gate === undefined || result.target === undefined || this.stopped) release();
+      else this.hold(result.target, result.items, release);
       return result.line;
     } catch (error) {
       release();
@@ -256,23 +275,54 @@ export class PendingSender implements PendingResponder {
     }
   }
 
+  /**
+   * Holds the pending pass until `/pending`'s count line went; the deadline lets
+   * it go and sends the items when that line never comes, so no chat stays shut.
+   */
+  private hold(target: number, items: readonly PlannedItem[], release: () => void): void {
+    const deadline = new AbortController();
+    this.held.set(target, { items, release, deadline });
+    void this.wait(HOLD_MS, deadline.signal).then(
+      () => {
+        // A line that came aborted the deadline; only a live hold reaches here.
+        if (this.held.get(target)?.deadline !== deadline) return;
+        void this.show(target).catch(() => undefined);
+      },
+      () => undefined,
+    );
+  }
+
+  /** Lets go of every held count line, as stopping does; their items wait for another pass. */
+  private releaseHeld(): void {
+    for (const [target, held] of this.held) {
+      this.held.delete(target);
+      held.deadline.abort();
+      held.release();
+    }
+  }
+
   /** Sends the item messages prepared for this chat, after `/pending`'s count line. */
   async show(target: number): Promise<void> {
     const held = this.held.get(target);
     this.held.delete(target);
+    held?.deadline.abort();
     if (held === undefined || held.items.length === 0) {
       held?.release();
       return;
     }
     try {
-      for (const entry of held.items) {
-        if (this.stopped) return;
-        // Another pass may have sent it between the count line and this one.
-        if (this.state[stateKey(entry.item, target)] !== undefined) continue;
-        await this.send(entry.item, target, entry.text, entry.options);
-      }
+      await this.sendPlanned(target, held.items);
     } finally {
       held.release();
+    }
+  }
+
+  /** Sends the item messages `/pending` prepared for one chat, skipping ones another pass already sent. */
+  private async sendPlanned(target: number, items: readonly PlannedItem[]): Promise<void> {
+    for (const entry of items) {
+      if (this.stopped) return;
+      if (this.state[stateKey(entry.item, target)] !== undefined) continue;
+      await this.send(entry.item, target, entry.text, entry.options);
     }
   }
 
