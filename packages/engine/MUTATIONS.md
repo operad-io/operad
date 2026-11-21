@@ -1329,3 +1329,11 @@ resume window`. Rows are append-only, so the old lines stay as history.
 | T-0633-M3 | packages/engine/src/plugin/context.ts | the registry got no `onEvent`, so an action through MCP had no emit and sent no event | `operad mcp > act routes an event an action emits through the opened kernel` |
 | T-0633-M4 | packages/engine/src/plugin/context.ts | the registry got no `onRunActive`, so an action through MCP saw every run as not active | `operad mcp > act sees whether a run is active, as the command line does` |
 | T-0633-M5 | packages/engine/src/plugin/context.ts | the kernel opened without the views as its client, so a source could not start | `opening a home > the kernel it opens gives its sources the same views the client uses` |
+
+## T-0613 — incremental run state
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0613-M1 | packages/engine/src/log/sqlite.ts | `read` ignored `after` and always read the run from its first fact | `read after a sequence returns only the facts that follow it` |
+| T-0613-M2 | packages/engine/src/runner/service.ts | `readState` never returned the kept state of a run whose last sequence was unchanged | `an unchanged run reads no fact on the second readState` |
+| T-0613-M3 | packages/engine/src/runner/service.ts | `readState` read the run without passing the kept sequence as `after` | `an unchanged run reads no fact on the second readState` |

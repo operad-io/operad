@@ -228,7 +228,7 @@ function manualLog(inner: LogBackend): {
     recordInput: (runId, source, key, payload) =>
       inner.recordInput(runId, source, key, payload),
     append: (runId, seq, facts) => inner.append(runId, seq, facts),
-    read: (runId) => inner.read(runId),
+    read: (runId, options) => inner.read(runId, options),
     run: (runId) => inner.run(runId),
     runs: (options) => inner.runs(options),
     appendGlobal: (fact, key) => inner.appendGlobal(fact, key),

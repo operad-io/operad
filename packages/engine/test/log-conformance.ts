@@ -812,6 +812,27 @@ export function runLogConformance(factory: LogConformanceFactory): void {
       }
     });
 
+    test("read after starts at the sequence that follows", async () => {
+      const directory = tempDirectory("read-after");
+      const backend = await openStore(factory, directory, { clock: fixedClock() });
+      try {
+        const run = await backend.startRun("flow", "object");
+        await backend.append(run.runId, 0, [
+          { kind: "one", payload: {}, cause: 1 },
+          { kind: "two", payload: {}, cause: 1 },
+          { kind: "three", payload: {}, cause: 1 },
+        ]);
+
+        const after = await collect(backend.read(run.runId, { after: 1 }));
+        expect(after.map((fact) => fact.kind)).toEqual(["two", "three"]);
+        expect(await collect(backend.read(run.runId, { after: 3 }))).toEqual([]);
+        expect(await collect(backend.read(run.runId, { after: 0 }))).toHaveLength(3);
+      } finally {
+        await backend.close();
+        removeDirectory(directory);
+      }
+    });
+
     test("10 000 facts in one batch stay one contiguous batch", async () => {
       const directory = tempDirectory("large-batch");
       const backend = await openStore(factory, directory, { clock: fixedClock() });

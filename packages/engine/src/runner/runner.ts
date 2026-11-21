@@ -1,6 +1,7 @@
 /** Drives one run: inputs to `decide`, facts to the log, effects to plugins. */
 
 import type { FlowDefinition } from "../flow/types.ts";
+import { evolve } from "../kernel/index.ts";
 import type { Input, KernelState, StartInput } from "../kernel/types.ts";
 import { RunEndedError, SeqConflictError } from "../log/errors.ts";
 import type { JsonValue, LogBackend } from "../log/types.ts";
@@ -666,14 +667,16 @@ export class Runner {
     state: KernelState,
     effect: NonNullable<KernelState["effect"]>,
   ): Promise<KernelState> {
-    await this.log.append(this.runId, state.lastSeq, [
+    const appended = await this.log.append(this.runId, state.lastSeq, [
       {
         kind: "step_started",
         payload: { step: effect.step, effectId: effect.id, pid: process.pid },
         cause: state.lastSeq,
       },
     ]);
-    return readState(this.log, this.runId);
+    let next = state;
+    for (const fact of appended.facts) next = evolve(next, fact);
+    return next;
   }
 
   private async recordResult(

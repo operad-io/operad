@@ -3,18 +3,46 @@
 import type { FlowDefinition } from "../flow/types.ts";
 import { decide, evolve, initialState } from "../kernel/index.ts";
 import type { Decision, Input, KernelState } from "../kernel/types.ts";
+import { RunNotFoundError } from "../log/errors.ts";
 import type { LogBackend } from "../log/types.ts";
 import type { ObjectRef } from "../plugin/types.ts";
 
-/** Rebuild a run's state by streaming its log, without holding the facts. */
+interface KeptState {
+  readonly lastSeq: number;
+  readonly state: KernelState;
+}
+
+/** The last state each log has given for a run, and the sequence it covers. */
+const keptStates = new WeakMap<LogBackend, Map<string, KeptState>>();
+
+/**
+ * Rebuild a run's state by streaming the facts the kept state does not cover.
+ * The run's last sequence comes from its info, so an unchanged run reads no
+ * fact at all; a state that a full replay would not give is never kept.
+ */
 export async function readState(
   log: LogBackend,
   runId: string,
 ): Promise<KernelState> {
-  let state = initialState();
-  for await (const fact of log.read(runId)) {
-    state = evolve(state, fact);
+  const info = await log.run(runId);
+  if (info === undefined) throw new RunNotFoundError(runId);
+  const kept = keptStates.get(log);
+  const previous = kept?.get(runId);
+  if (previous !== undefined && previous.lastSeq === info.lastSeq) {
+    return previous.state;
   }
+  let state = previous?.state ?? initialState();
+  let lastSeq = previous?.lastSeq ?? 0;
+  const after = lastSeq;
+  for await (const fact of log.read(runId, { after })) {
+    // A backend that ignores `after` must not evolve the same fact twice.
+    if (fact.seq <= after) continue;
+    state = evolve(state, fact);
+    lastSeq = fact.seq;
+  }
+  const next = { lastSeq, state };
+  if (kept === undefined) keptStates.set(log, new Map([[runId, next]]));
+  else kept.set(runId, next);
   return state;
 }
 
@@ -119,11 +147,10 @@ export async function appendInput(
   now: number,
 ): Promise<{ readonly state: KernelState; readonly decision: Decision }> {
   const decision = decide(flow, state, input, now);
-  const facts = decision.facts;
   let next = state;
-  if (facts.length > 0) {
-    await log.append(runId, state.lastSeq, facts);
-    for (const fact of facts) next = evolve(next, fact);
+  if (decision.facts.length > 0) {
+    const appended = await log.append(runId, state.lastSeq, decision.facts);
+    for (const fact of appended.facts) next = evolve(next, fact);
   }
   return { state: next, decision };
 }

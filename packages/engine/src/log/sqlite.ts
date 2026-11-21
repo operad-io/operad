@@ -55,6 +55,7 @@ import type {
   LogBackendOptions,
   LogChange,
   NewFact,
+  ReadOptions,
   RecordInputResult,
   RecordOutcomeResult,
   RunInfo,
@@ -599,9 +600,9 @@ class SqliteLogBackend implements LogBackend {
     });
   }
 
-  read(runId: string): AsyncIterable<Fact> {
+  read(runId: string, options: ReadOptions = {}): AsyncIterable<Fact> {
     assertRunId(runId);
-    return this.#read(runId);
+    return this.#read(runId, options.after ?? 0);
   }
 
   async run(runId: string): Promise<RunInfo | undefined> {
@@ -951,16 +952,17 @@ class SqliteLogBackend implements LogBackend {
     return snapshot;
   }
 
-  async *#read(runId: string): AsyncGenerator<Fact> {
+  async *#read(runId: string, after: number): AsyncGenerator<Fact> {
     this.#assertOpen();
     if (!this.#runRow(runId)) throw new RunNotFoundError(runId);
 
-    const statement = this.#database.prepare<FactRow, [string]>(
-      "SELECT seq, kind, payload, cause, time FROM facts WHERE run_id = ? ORDER BY seq",
+    const statement = this.#database.prepare<FactRow, [string, number]>(
+      "SELECT seq, kind, payload, cause, time FROM facts " +
+        "WHERE run_id = ? AND seq > ? ORDER BY seq",
     );
-    let expectedSeq = 1;
+    let expectedSeq = after + 1;
     try {
-      for (const row of statement.iterate(runId)) {
+      for (const row of statement.iterate(runId, after)) {
         if (row.seq !== expectedSeq) {
           throw new CorruptLogError(runId, `sequence ${row.seq} follows ${expectedSeq - 1}`);
         }

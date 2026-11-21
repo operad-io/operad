@@ -33,6 +33,12 @@ export interface Fact extends NewFact {
   readonly time: number;
 }
 
+/** Which facts of a run to read. */
+export interface ReadOptions {
+  /** The last sequence already seen; only facts with a greater sequence are read. */
+  readonly after?: number | undefined;
+}
+
 /** A fact that belongs to no run, such as an event the kernel only observed. */
 export interface GlobalFact extends NewFact {
   readonly seq: number;
@@ -193,8 +199,8 @@ export interface LogBackend extends Partial<LogSubscription> {
     expectedSeq: number,
     facts: readonly NewFact[],
   ): Promise<AppendResult>;
-  /** Stream the facts of a run in sequence order. */
-  read(runId: string): AsyncIterable<Fact>;
+  /** Stream the facts of a run in sequence order, optionally after a sequence. */
+  read(runId: string, options?: ReadOptions): AsyncIterable<Fact>;
   /** One run by id, or undefined when the log does not know it. */
   run(runId: string): Promise<RunInfo | undefined>;
   /** List runs, optionally only the active ones or those of one object or start input. */
