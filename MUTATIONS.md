@@ -154,3 +154,9 @@ Each package keeps its mutation checks in `MUTATIONS.md`; a row names the broken
 |---|---|---|---|
 | T-0636-M7 | scripts/remote-check.sh | the fallback to a local check printed no line on stderr | `remote-check.sh > without a host it says on stderr that the check runs here` |
 | T-0636-M8 | docs/user/config.md | the `dev.checkHost` table row was removed | `scripts/test/docs-coverage.test.ts > the user docs > every schema property has a table row on its page` |
+## T-0640 — the backlog citation scan reads every line
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0640-M1 | scripts/test/adr-references.test.ts | a word pre-filter skipped a line before the citation patterns ran, and it named only `.md` and `第`, so the `决定` form was lost | `a backlog decision is cited by its ADR > a citation is reported with the file and the line` (the `决定` sample line was not reported) |
+| T-0640-M2 | scripts/test/adr-references.test.ts | lines longer than 4 KiB were skipped, so a citation after a long run of one character was lost | `a backlog decision is cited by its ADR > a citation is reported with the file and the line` (the long-line sample was not reported) |

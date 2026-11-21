@@ -13,6 +13,14 @@ const root = resolve(import.meta.dir, "..", "..");
 const self = "scripts/test/adr-references.test.ts";
 const backlogFile = /(^|\/)docs\/backlog\//;
 
+/**
+ * Every pattern is tried on every line, and a line can hold tens of kilobytes,
+ * as the SSE fixtures do. Nothing skips a line first: a word list for that
+ * would have to name every word a pattern can match, and a new pattern that
+ * brings another word would silently lose its lines. A new pattern stays
+ * linear instead, starting at a token boundary as the path rule below does,
+ * so a long run of one character costs one pass.
+ */
 const CITATIONS: readonly RegExp[] = [
   /决定\s*\d+/,
   // "decision 13", but not "two decisions 3 days later".
@@ -26,14 +34,10 @@ const CITATIONS: readonly RegExp[] = [
   /第\s*\d+\s*(?:条|项)/,
 ];
 
-/** A cheap check that a line can hold any citation before a pattern backtracks over a long line. */
-const CITATION_MARKER = /\.md|决定|第|decision|item|point|section/i;
-
 /** `file:line: why` for each line that cites a backlog decision by number. */
 export function backlogDecisionCitations(file: string, text: string): string[] {
   const found: string[] = [];
   text.split("\n").forEach((line, index) => {
-    if (!CITATION_MARKER.test(line)) return;
     if (CITATIONS.some((pattern) => pattern.test(line))) {
       found.push(`${file}:${index + 1}: cites a backlog decision by number`);
     }
@@ -76,5 +80,12 @@ describe("a backlog decision is cited by its ADR", () => {
     ]);
     expect(backlogDecisionCitations("a.md", "ADR 0002 D1 to D4 and ADR 0025 D3.")).toEqual([]);
     expect(backlogDecisionCitations("a.md", "two decisions 3 days later")).toEqual([]);
+    // A long line is scanned to its end, and a long run of one character is
+    // not mistaken for a citation.
+    const long = "x".repeat(64 * 1024);
+    expect(backlogDecisionCitations("a.sse", `${long} operad.md item 13`)).toEqual([
+      "a.sse:1: cites a backlog decision by number",
+    ]);
+    expect(backlogDecisionCitations("a.sse", `section ${long}`)).toEqual([]);
   });
 });
