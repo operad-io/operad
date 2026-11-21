@@ -580,3 +580,13 @@ are append-only, so the old lines stay as history.
 |---|---|---|---|
 | T-0635-M7 | packages/chat/src/views.ts | a tool call's duration added a second | `chat entries > the transcript shows done, failed, blocked and denied tool calls, and thinking as an unlabeled quote` |
 | T-0635-M14 | packages/chat/src/index.ts | a reply's first output added a second, so `1s` read `2s` | `chat:status > shows each line: agent, model, effort, reply, waiting, session usage and the last reply` |
+
+## T-0617 — one read per live push and reply round
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0617-M1 | packages/chat/src/views.ts | the live tail refreshed its bot instead of reading the stored one | `what reading a chat costs > one live push scans the facts once and does not refresh the bot` |
+| T-0617-M2 | packages/chat/src/model.ts | `readChat` scanned the chat twice | `what reading a chat costs > one live push scans the facts once and does not refresh the bot` |
+| T-0617-M3 | packages/chat/src/reply.ts | the reply's first read scanned the chat again for its facts | `what reading a chat costs > one reply round scans the chat a bounded number of times` |
+| T-0617-M4 | packages/chat/src/reply.ts | `secretValues` read the names and each value again instead of the one `values()` | `what reading a chat costs > one live push scans the facts once and does not refresh the bot` |
+| T-0617-M5 | packages/chat/src/queue.ts | the queue sync did not leave out the messages the take had just recorded | `a chat's queued messages > the row and the transcript say what is queued, and a run's first message stops being queued` |

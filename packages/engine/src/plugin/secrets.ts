@@ -70,6 +70,14 @@ export class FileSecretStore implements SecretStore {
     return Object.keys(await this.#read()).sort();
   }
 
+  async values(): Promise<readonly string[]> {
+    const values = await this.#read();
+    return Object.keys(values)
+      .sort()
+      .map((name) => values[name])
+      .filter((value): value is string => value !== undefined);
+  }
+
   async #read(): Promise<Record<string, string>> {
     const path = secretsPathFor(this.#home, this.#plugin);
     let text: string;
