@@ -19,7 +19,7 @@ import { maskSecrets, type FoldEntry } from "@operad-io/harness-process";
 import { secretValues } from "./reply.ts";
 import { readChatSkills, skillSummaries, type ObjectReader } from "./skills.ts";
 import { foldLogTail, agentLogPath } from "./tail.ts";
-import { agentLine, allMessages, answeredOfFact, attachmentsOf, CHAT_TYPE, chatData, chatRef, COMMAND_FACT, commandOfFact, ENTRY_FACT, entryOfFact, IMAGE_TYPES, lastReplyContext, latestRunOf, MESSAGE_CHANGE_FACT, MESSAGE_FACT, messageChangeOfFact, messageFactsInForce, modelAndCost, queuedData, queuedMessages, queuedOf, RUN_FACT, stopOfFact, timingsOf, unanswered, ANSWER_FACT, type Attachment, type ChatContext, type Command, type Entry, type Message, type MessageChange, type ToolResult } from "./model.ts";
+import { agentLine, answeredOfFact, attachmentsOf, CHAT_TYPE, chatData, chatRef, COMMAND_FACT, commandOfFact, ENTRY_FACT, entryOfFact, IMAGE_TYPES, lastReplyContext, latestRunOf, MESSAGE_CHANGE_FACT, MESSAGE_FACT, messageChangeOfFact, messageFactsInForce, modelAndCost, queuedData, queuedMessages, queuedOf, readChat, RUN_FACT, stopOfFact, timingsOf, unanswered, ANSWER_FACT, type Attachment, type ChatContext, type ChatRead, type Command, type Entry, type Message, type MessageChange, type ToolResult } from "./model.ts";
 import type { TailRead } from "./tail.ts";
 
 /** How many messages of a chat one page of the transcript holds. */
@@ -60,8 +60,8 @@ function sections(): readonly ViewSection[] {
 }
 
 /** The context the chat's detail page and transcript show: its last finished reply's. */
-async function chatContext(ctx: ViewContext, object: StoredObject): Promise<ChatContext | undefined> {
-  return lastReplyContext(chatData(object.data), allMessages(ctx.store, object.id));
+function chatContext(object: StoredObject, read: ChatRead): ChatContext | undefined {
+  return lastReplyContext(chatData(object.data), read.messages);
 }
 
 function minute(at: number): string {
@@ -111,14 +111,14 @@ export function messageMarkdown(message: Message, speaker: string = DEFAULT_SPEA
  * It is read at every draw, so a changed name shows on the messages already
  * recorded too.
  */
-async function speakerOf(ctx: ViewContext, object: StoredObject): Promise<string> {
+async function speakerOf(ctx: ViewContext, object: StoredObject, refresh = false): Promise<string> {
   const parent = chatData(object.data).parent;
   if (parent !== undefined) {
     const at = parent.indexOf(":");
     if (at > 0 && at < parent.length - 1) {
-      const owner = ctx.refreshedObject === undefined
-        ? await ctx.store.get(parent.slice(0, at), parent.slice(at + 1))
-        : await ctx.refreshedObject(parent.slice(0, at), parent.slice(at + 1));
+      const owner = refresh && ctx.refreshedObject !== undefined
+        ? await ctx.refreshedObject(parent.slice(0, at), parent.slice(at + 1))
+        : await ctx.store.get(parent.slice(0, at), parent.slice(at + 1));
       const speaker = owner?.data.speaker;
       if (typeof speaker === "string" && speaker.length > 0) return speaker;
     }
@@ -1203,11 +1203,11 @@ async function liveOf(
   ctx: ViewContext,
   object: StoredObject,
   facts: readonly PluginFact[],
+  messages: readonly Message[],
   speaker: string,
 ): Promise<Live> {
   const chat = chatData(object.data);
   const runId = latestRunOf(facts);
-  const messages = facts.map(messageFrom).filter((message): message is Message => message !== undefined);
   const pending = statusPending(messages, facts);
   const times = runId !== undefined && ctx.runTimes !== undefined ? await ctx.runTimes(runId) : undefined;
   let tail: string | undefined;
@@ -1371,17 +1371,16 @@ async function load(
   if (sectionId !== TRANSCRIPT) return { markdown: "" };
   const ref = chatRef(object.id);
   const chat = chatData(object.data);
-  const speaker = await speakerOf(ctx, object);
-  const facts = messageFactsInForce(allFacts(ctx, ref));
-  const messages = facts
-    .map(messageFrom)
-    .filter((message): message is Message => message !== undefined);
+  const read = readChat(ctx.store, object.id);
+  const speaker = await speakerOf(ctx, object, true);
+  const facts = messageFactsInForce(read.facts);
+  const messages = read.messages;
   const queued = queuedData(queuedMessages(messages, facts));
   const queueData: Record<string, JsonValue> = {
     queued: queued as unknown as JsonValue,
     queuedCount: queued.length,
   };
-  const live = await liveOf(ctx, object, facts, speaker);
+  const live = await liveOf(ctx, object, facts, messages, speaker);
   const { cut, run: liveRun, items: liveItems, ...liveContent } = live;
   const liveBlock =
     liveRun === undefined
@@ -1391,7 +1390,7 @@ async function load(
   // A message the live tail holds stays unread as finished content until the
   // run ends, so the same facts then arrive together with the reply's items.
   const finished = cut === undefined ? facts : facts.filter((fact) => fact.sequence <= cut);
-  const context = await chatContext(ctx, object);
+  const context = chatContext(object, read);
   const since = markAfter(options.after);
   const finishedChunks = chunksOf(finished);
   if (since !== undefined) {
@@ -1489,10 +1488,11 @@ async function tailPush(
   ctx: ViewContext,
   object: StoredObject,
 ): Promise<{ readonly section: string; readonly tail?: string; readonly status?: SectionStatus; readonly retry?: SectionRetry; readonly data?: Readonly<Record<string, JsonValue>> } | undefined> {
-  const facts = allFacts(ctx, chatRef(object.id));
+  const read = readChat(ctx.store, object.id);
+  const facts = messageFactsInForce(read.facts);
+  const messages = read.messages;
   const speaker = await speakerOf(ctx, object);
-  const live = await liveOf(ctx, object, facts, speaker);
-  const messages = facts.map(messageFrom).filter((message): message is Message => message !== undefined);
+  const live = await liveOf(ctx, object, facts, messages, speaker);
   const liveBlock = live.run === undefined
     ? undefined
     : liveReply(facts, messages, { runId: live.run, items: live.items ?? [] }, ctx.home);
@@ -1542,7 +1542,7 @@ async function file(ctx: ViewContext, object: StoredObject, path: readonly strin
 export const chatViews: ObjectViews = {
   row,
   sections,
-  context: chatContext,
+  context: (ctx, object) => chatContext(object, readChat(ctx.store, object.id)),
   skills: async (ctx, object) =>
     skillSummaries(await readChatSkills(chatData(object.data), objectReader(ctx))),
   file,

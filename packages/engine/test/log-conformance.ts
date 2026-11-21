@@ -306,6 +306,57 @@ export function runLogConformance(factory: LogConformanceFactory): void {
       }
     });
 
+    test("run reads one run by id", async () => {
+      const directory = tempDirectory("run-by-id");
+      const backend = await openStore(factory, directory, { clock: fixedClock() });
+      try {
+        const run = await backend.startRun("flow", "object", "input_one");
+        await backend.append(run.runId, 0, [{ kind: "seed", payload: {}, cause: 1 }]);
+
+        const found = await backend.run(run.runId);
+        expect(found?.runId).toBe(run.runId);
+        expect(found?.flow).toBe("flow");
+        expect(found?.object).toBe("object");
+        expect(found?.startInputId).toBe("input_one");
+        expect(found?.lastSeq).toBe(1);
+        expect(found?.active).toBe(true);
+
+        await backend.endRun(run.runId);
+        const ended = await backend.run(run.runId);
+        expect(ended?.active).toBe(false);
+        expect(typeof ended?.endedAt).toBe("number");
+        expect(await backend.run("no-such-run")).toBeUndefined();
+      } finally {
+        await backend.close();
+        removeDirectory(directory);
+      }
+    });
+
+    test("runs can be filtered by the input that started them", async () => {
+      const directory = tempDirectory("runs-by-start-input");
+      const backend = await openStore(factory, directory, { clock: fixedClock() });
+      try {
+        const first = await backend.startRun("flow", "object:1", "input_one");
+        const second = await backend.startRun("flow", "object:2", "input_two");
+        await backend.startRun("flow", "object:3");
+
+        expect((await backend.runs({ startInputId: "input_one" })).map((run) => run.runId))
+          .toEqual([first.runId]);
+        expect((await backend.runs({ startInputId: "input_two" })).map((run) => run.runId))
+          .toEqual([second.runId]);
+        expect(await backend.runs({ startInputId: "no-such-input" })).toEqual([]);
+        expect(
+          (await backend.runs({ object: "object:1", startInputId: "input_one" }))
+            .map((run) => run.runId),
+        ).toEqual([first.runId]);
+        expect(await backend.runs({ object: "object:2", startInputId: "input_one" }))
+          .toEqual([]);
+      } finally {
+        await backend.close();
+        removeDirectory(directory);
+      }
+    });
+
     test("endRun is idempotent, unknown runs fail, and an ended run takes no facts", async () => {
       const directory = tempDirectory("end-run");
       const backend = await openStore(factory, directory, { clock: fixedClock() });

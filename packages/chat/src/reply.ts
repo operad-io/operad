@@ -27,8 +27,6 @@ import {
   ACCESS_FACT,
   ACCESS_LEVEL_INFO,
   accessLevelPath,
-  allEntries,
-  allMessages,
   ANSWER_FACT,
   answeredOfFact,
   attachmentsOf,
@@ -40,6 +38,7 @@ import {
   chosenEffort,
   type ChatData,
   type ChatNoteHashes,
+  type ChatRead,
   type CostQuality,
   type Entry,
   chatRef,
@@ -50,6 +49,7 @@ import {
   RUN_FACT,
   newMessageId,
   promptFor,
+  readChat,
   replyContextOf,
   takenIds,
   unanswered,
@@ -88,7 +88,7 @@ async function syncChat(
   let costMissing = false;
   let tokens: UsageTokens | undefined;
   let tokensMissing = false;
-  for (const message of allMessages(ctx.store, id)) {
+  for (const message of readChat(ctx.store, id).messages) {
     if (message.role !== "assistant") continue;
     if (message.model !== undefined) next.lastModel = message.model;
     if (message.costMicros === undefined) costMissing = true;
@@ -752,12 +752,7 @@ export function toolOutputPath(home: string, chat: string, runId: string, callId
 /** The chat's own secret values, so nothing recorded or written can carry one. */
 export async function secretValues(ctx: Pick<StepContext, "secrets">): Promise<readonly string[]> {
   try {
-    const values: string[] = [];
-    for (const name of await ctx.secrets.names()) {
-      const secret = await ctx.secrets.get(name);
-      if (secret !== undefined) values.push(secret.reveal());
-    }
-    return values;
+    return await ctx.secrets.values();
   } catch {
     return [];
   }
@@ -867,9 +862,10 @@ async function recordEntries(
   const secrets = await secretValues(ctx);
   const wanted = entriesToRecord(folded, options, secrets);
   if (wanted.length === 0) return;
-  const existing = allEntries(ctx.store, chat);
+  const read = readChat(ctx.store, chat);
+  const existing = read.entries;
   const lastReply = new Map<string, number>();
-  for (const message of allMessages(ctx.store, chat)) {
+  for (const message of read.messages) {
     if (message.role !== "assistant" || message.runId === undefined) continue;
     lastReply.set(message.runId, Math.max(lastReply.get(message.runId) ?? 0, message.sequence));
   }
@@ -978,14 +974,15 @@ async function recordFailure(
   oldest?: string | undefined,
 ): Promise<void> {
   const text = replyFailureLine(message, await secretValues(ctx));
+  const read = readChat(ctx.store, chat);
   let lastUser = 0;
   let lastReply = 0;
-  for (const item of allMessages(ctx.store, chat)) {
+  for (const item of read.messages) {
     if (item.role === "user") lastUser = Math.max(lastUser, item.sequence);
     else lastReply = Math.max(lastReply, item.sequence);
   }
   const after = Math.max(lastUser, lastReply);
-  const failures = allEntries(ctx.store, chat).filter(
+  const failures = read.entries.filter(
     (entry) => entry.kind === "failure" && entry.sequence > after,
   );
   const already = failures.length > 0;
@@ -1001,7 +998,7 @@ async function recordFailure(
     await ctx.facts.append({ type: ENTRY_FACT, object: chatRef(chat), data });
   }
   if (reason !== "empty" || oldest === undefined) return;
-  let streak = emptyFailureStreak(allEntries(ctx.store, chat), lastReply, oldest);
+  let streak = emptyFailureStreak(readChat(ctx.store, chat).entries, lastReply, oldest);
   // A retry leaves the first attempt's one failure line in place. The attempt
   // still counts, so the second empty reply for the same message marks it.
   if (already && !sameAttempt) {
@@ -1083,12 +1080,12 @@ function replyInbox(
     await queueTestHooks.beforeTake?.(id);
     return withQueueLock(ctx.home, chat, async () => {
       if (!open || listener === undefined) return "wait";
-      const facts = chatFacts(ctx.store, chat);
-      if (takenIds(facts).has(id)) return "left";
-      const message = allMessages(ctx.store, chat).find((item) => item.id === id);
+      const read = readChat(ctx.store, chat);
+      if (takenIds(read.facts).has(id)) return "left";
+      const message = read.messages.find((item) => item.id === id);
       if (message === undefined || message.role !== "user") return "left";
       if (listener(skillMessage(message.text, skills, loadsSkills)) === false) return "left";
-      await takeLocked(ctx.store, ctx.facts, chat, runId, [id], "step:chat/reply");
+      await takeLocked(ctx.store, ctx.facts, chat, runId, [id], "step:chat/reply", read);
       return "taken";
     });
   };
@@ -1170,8 +1167,9 @@ export async function keepInterrupted(ctx: StepContext, _params: unknown): Promi
   }
   const stored = await ctx.store.get(CHAT_TYPE, object.id);
   if (stored === undefined) return { result: "done", data: {} };
-  const messages = allMessages(ctx.store, object.id);
-  const facts = chatFacts(ctx.store, object.id);
+  const chatRead = readChat(ctx.store, object.id);
+  const messages = chatRead.messages;
+  const facts = chatRead.facts;
   const pending = unanswered(messages, facts);
   const replied = messages.some((message) => message.role === "assistant" && message.runId === ctx.runId);
   if (replied && pending.length === 0) {
@@ -1188,7 +1186,7 @@ export async function keepInterrupted(ctx: StepContext, _params: unknown): Promi
   const folded = read?.state ?? emptyFold;
   // The log holds every round of the run; a round whose reply is already in
   // the record is a prefix of it and is not recorded again.
-  const prior = allEntries(ctx.store, object.id).filter((entry) => entry.runId === ctx.runId).length;
+  const prior = chatRead.entries.filter((entry) => entry.runId === ctx.runId).length;
   const current = prior === 0 ? folded : { ...folded, entries: folded.entries.slice(prior) };
   await recordEntries(ctx, object.id, current, { stopped: true, interrupted: true });
   // A run that ended on its own is recorded by its last round; one that was
@@ -1282,8 +1280,9 @@ async function replyOnce(
   const stored = await ctx.store.get(CHAT_TYPE, object.id);
   if (stored === undefined) return failed("object", `there is no chat ${object.id}`);
   const chat = chatData(stored.data);
-  let messages = allMessages(ctx.store, object.id);
-  let pending = unanswered(messages, chatFacts(ctx.store, object.id));
+  const read = readChat(ctx.store, object.id);
+  let messages = read.messages;
+  let pending = unanswered(messages, read.facts);
   if (pending.length === 0) {
     // A run that stopped after recording a reply still owes the chat its model and cost.
     await syncChat(ctx, object.id, undefined);
@@ -1372,8 +1371,9 @@ async function replyOnce(
     });
     // A message that came between the first read and this subscription is in
     // the facts now. It is delivered, not also put into the prompt.
-    messages = allMessages(ctx.store, object.id);
-    pending = unanswered(messages, chatFacts(ctx.store, object.id)).filter((message) => !arrived.has(message.id));
+    const fresh = readChat(ctx.store, object.id);
+    messages = fresh.messages;
+    pending = unanswered(messages, fresh.facts).filter((message) => !arrived.has(message.id));
   }
 
   const closeMidRun = async (): Promise<void> => {
@@ -1499,9 +1499,11 @@ async function replyOnce(
   // The messages this round starts with are taken now, under the queue lock,
   // so a withdraw or change either comes before the run takes them or is
   // refused. A message withdrawn after the first read leaves the prompt.
+  let locked: ChatRead | undefined;
   pending = await withQueueLock(ctx.home, object.id, async () => {
-    const facts = chatFacts(ctx.store, object.id);
-    const current = unanswered(allMessages(ctx.store, object.id), facts).filter(
+    const latest = readChat(ctx.store, object.id);
+    locked = latest;
+    const current = unanswered(latest.messages, latest.facts).filter(
       (message) => !arrived.has(message.id),
     );
     await takeLocked(
@@ -1511,6 +1513,7 @@ async function replyOnce(
       ctx.runId,
       current.map((message) => message.id),
       "step:chat/reply",
+      latest,
     );
     return current;
   });
@@ -1522,7 +1525,7 @@ async function replyOnce(
   const images = imagesOf(pending, chat.harness, directory);
 
   // The run is a fact before the agent starts: a view finds the step's log by it.
-  if (latestRunOf(chatFacts(ctx.store, object.id)) !== ctx.runId) {
+  if (locked === undefined || latestRunOf(locked.facts) !== ctx.runId) {
     await ctx.facts.append({ type: RUN_FACT, object: chatRef(object.id), data: { runId: ctx.runId } });
   }
 
@@ -1702,7 +1705,8 @@ async function replyOnce(
     };
   }
 
-  const left = unanswered(allMessages(ctx.store, object.id), chatFacts(ctx.store, object.id));
+  const leftRead = readChat(ctx.store, object.id);
+  const left = unanswered(leftRead.messages, leftRead.facts);
   const answered = pending.length + (midRun?.handed.length ?? 0);
   return { result: left.length > 0 ? "more" : "done", data: { answered, left: left.length } };
 }

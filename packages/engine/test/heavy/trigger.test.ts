@@ -246,6 +246,11 @@ class CrashLog implements LogBackend {
     return this.inner.read(runId);
   }
 
+  async run(runId: string): Promise<RunInfo | undefined> {
+    this.check("run");
+    return this.inner.run(runId);
+  }
+
   async runs(options?: RunsOptions): Promise<RunInfo[]> {
     this.check("runs");
     const result = await this.inner.runs(options);
@@ -908,8 +913,8 @@ describe("run-end recovery", () => {
       if (started.kind !== "started") throw new Error("did not start");
       const found = env.registry.flow("one");
       if (found === undefined) throw new Error("missing flow");
-      // The first `runs` call is the end event looking its run up.
-      const crashLog = new CrashLog(env.log, (method) => method === "runs");
+      // The first `run` call is the end event looking its run up.
+      const crashLog = new CrashLog(env.log, (method) => method === "run");
       const crashKernel = new Kernel({
         log: crashLog,
         registry: env.registry,
@@ -989,8 +994,8 @@ describe("run-end recovery", () => {
       const first = await seedEndedRun(env);
       const state = await readState(env.log, first.runId);
       const crashing = new Kernel({
-        // The first call finds the run; the second is the routing lookup.
-        log: new CrashLog(env.log, (method, call) => method === "runs" && call === 2),
+        // The first runs call is the routing lookup.
+        log: new CrashLog(env.log, (method) => method === "runs"),
         registry: env.registry,
         home: env.root,
         storeRoot: env.storeRoot,

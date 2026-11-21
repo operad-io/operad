@@ -462,6 +462,15 @@ test("a store without the object index gains it on open", async () => {
   expect(hasObject(directory, "index", "runs_object")).toBe(true);
 });
 
+test("a store without the start input index gains it on open", async () => {
+  const directory = tracked("runs-start-input-index");
+  await (await openSqliteLogBackend(dbPath(directory))).close();
+  withDatabase(directory, (database) => database.exec("DROP INDEX runs_start_input"));
+  expect(hasObject(directory, "index", "runs_start_input")).toBe(false);
+  await (await openSqliteLogBackend(dbPath(directory))).close();
+  expect(hasObject(directory, "index", "runs_start_input")).toBe(true);
+});
+
 test("a watch event with an unchanged data version takes no snapshot", async () => {
   const directory = tracked("watch-data-version");
   let fire: (() => void) | undefined;

@@ -26,7 +26,12 @@ import {
   EVENT_NOTE_TEMPLATE,
   type RadianHarnessSettings,
 } from "../../src/index.ts";
-import { degradedAskRequest, runAgent as runProcess } from "@operad-io/harness-process";
+import {
+  degradedAskRequest,
+  resultFor,
+  runAgent as runProcess,
+  type AgentRunOutcome,
+} from "@operad-io/harness-process";
 import {
   cleanupTempRoots,
   fakeRadian,
@@ -600,6 +605,71 @@ describe("radian/agent", () => {
     const data = dataOf(result);
     expect(data.reason).toBe("no_result");
     expect(data.exitCode).toBe(0);
+  });
+
+  describe("radian's mapping and the shared one", () => {
+    function outcomeOf(result: PluginStepResult): AgentRunOutcome {
+      const data = dataOf(result);
+      return {
+        exitCode: data.exitCode as number | null,
+        signal: data.signal as string | null,
+        cancelled: false,
+        wall: false,
+        stall: false,
+        lineTooLong: false,
+        missing: false,
+        spawnError: undefined,
+        stderrTail: data.stderr as readonly string[],
+      };
+    }
+
+    function sharedFor(result: PluginStepResult): PluginStepResult {
+      const data = dataOf(result);
+      return resultFor(
+        { harness: "radian", model: null },
+        outcomeOf(result),
+        undefined,
+        String(data.log),
+        Number(data.durationMs),
+        { wallTimeSecs: 300, stallSecs: 600 },
+        "radian",
+      );
+    }
+
+    test("a run killed by a signal is interrupted, as the shared mapping says", async () => {
+      const env = await setup("signal");
+      const result = await runAgent(env, { prompt: "hello", cwd: env.root });
+      const shared = sharedFor(result);
+      const data = dataOf(result);
+
+      // A signal nobody here sent is an interruption, not a verdict of the agent.
+      expect(result.result).toBe("interrupted");
+      expect(data.reason).toBe("signal");
+      expect(String(data.message)).toContain("SIGKILL");
+      expect(String(data.message)).toContain("without a Result line");
+      expect({ result: result.result, reason: data.reason, message: data.message }).toEqual({
+        result: shared.result,
+        reason: dataOf(shared).reason,
+        message: dataOf(shared).message,
+      });
+    });
+
+    test("a non-zero exit without a Result is no_result, as the shared mapping says", async () => {
+      const env = await setup("exit-no-result");
+      const result = await runAgent(env, { prompt: "hello", cwd: env.root });
+      const shared = sharedFor(result);
+      const data = dataOf(result);
+
+      // There was no Result, so the missing result names the failure, not the exit.
+      expect(result.result).toBe("failed");
+      expect(data.reason).toBe("no_result");
+      expect(String(data.message)).toContain("without a Result line");
+      expect({ result: result.result, reason: data.reason, message: data.message }).toEqual({
+        result: shared.result,
+        reason: dataOf(shared).reason,
+        message: dataOf(shared).message,
+      });
+    });
   });
 
   test("no new output line for stallSecs stops the group", async () => {

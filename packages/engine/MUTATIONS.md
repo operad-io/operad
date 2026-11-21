@@ -1307,3 +1307,15 @@ resume window`. Rows are append-only, so the old lines stay as history.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0620-M1 | packages/engine/src/plugin/registry.ts | `loadedModelFor` built every harness's models to return one | `a harness plugin's models > one harness's models are read without reading another harness's` |
+## T-0612 — run lookup and the start input filter
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0612-M1 | packages/engine/src/log/sqlite.ts | `run` looked the row up and then returned undefined, so a known run could not be read by id | `log backend: sqlite > run reads one run by id` |
+| T-0612-M2 | packages/engine/src/log/sqlite.ts | `runs` ignored `startInputId`, so the filter returned every run | `log backend: sqlite > runs can be filtered by the input that started them` |
+| T-0612-M3 | packages/engine/src/log/sqlite.ts | `schemaNeedsWork` no longer checked the start input index, so an older store kept it missing | `a store without the start input index gains it on open` |
+## T-0617 — every secret value from one read
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0617-M6 | packages/engine/src/plugin/secrets.ts | `FileSecretStore.values` returned no values | `plugin secrets > set/get round-trips and writes 0600 in a 0700 directory` |

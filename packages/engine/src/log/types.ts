@@ -103,6 +103,8 @@ export interface RunsOptions {
   readonly active?: boolean;
   /** Only the runs of this object key, such as `task:42`. */
   readonly object?: string;
+  /** Only the runs whose start input has this id. */
+  readonly startInputId?: string;
 }
 
 export interface LogBackendOptions extends FollowOptions {
@@ -193,7 +195,9 @@ export interface LogBackend extends Partial<LogSubscription> {
   ): Promise<AppendResult>;
   /** Stream the facts of a run in sequence order. */
   read(runId: string): AsyncIterable<Fact>;
-  /** List runs, optionally only the active ones. */
+  /** One run by id, or undefined when the log does not know it. */
+  run(runId: string): Promise<RunInfo | undefined>;
+  /** List runs, optionally only the active ones or those of one object or start input. */
   runs(options?: RunsOptions): Promise<RunInfo[]>;
   /**
    * Append one fact that belongs to no run. Global facts keep their order.

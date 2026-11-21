@@ -115,6 +115,7 @@ function viewContext(r: Awaited<ReturnType<typeof rig>>, settings: Readonly<Reco
       set: () => Promise.resolve(),
       delete: () => Promise.resolve(),
       names: () => Promise.resolve([]),
+      values: () => Promise.resolve([]),
     },
   };
 }

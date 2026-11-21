@@ -229,9 +229,8 @@ async function lastRuns(
       const current = latest.get(id);
       if (current === undefined || input.time >= current.time) latest.set(id, input);
     }
-    const runs = await log.runs();
     for (const [id, input] of latest) {
-      const run = runs.find((candidate) => candidate.startInputId === input.inputId);
+      const run = (await log.runs({ startInputId: input.inputId }))[0];
       if (run === undefined) continue;
       result.set(id, await lastRunOf(log, run.runId, run.active));
     }
