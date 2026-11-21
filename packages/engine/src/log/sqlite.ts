@@ -13,7 +13,7 @@ import { messageOf } from "../plugin/errors.ts";
 import { Database } from "bun:sqlite";
 import { randomUUID } from "node:crypto";
 import { accessSync, constants, existsSync, mkdirSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import {
   ActiveRunError,
   CorruptLogError,
@@ -42,6 +42,7 @@ import {
   type ImmediateWriter,
   type SubscriptionWatch,
 } from "../platform/index.ts";
+import { hasTable, readSchemaVersion } from "../platform/sqlite-schema.ts";
 import type {
   AppendResult,
   Fact,
@@ -52,7 +53,6 @@ import type {
   InputsAfter,
   JsonValue,
   LogBackend,
-  LogBackendFactory,
   LogBackendOptions,
   LogChange,
   NewFact,
@@ -205,10 +205,6 @@ interface RunSnapshot {
   readonly ended: boolean;
 }
 
-interface VersionRow {
-  readonly version: number;
-}
-
 interface TableColumn {
   readonly name: string;
   readonly notnull: number;
@@ -222,16 +218,6 @@ function tableColumns(database: Database, table: string): TableColumn[] {
   } catch {
     return [];
   }
-}
-
-function hasTable(database: Database, table: string): boolean {
-  return (
-    database
-      .query<{ name: string }, [string]>(
-        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
-      )
-      .get(table) !== null
-  );
 }
 
 function hasIndex(database: Database, index: string): boolean {
@@ -294,18 +280,6 @@ function configure(database: Database): void {
   database.run("PRAGMA synchronous = FULL");
   database.run("PRAGMA foreign_keys = ON");
   enableWal(database);
-}
-
-/** The recorded version, or undefined when the schema has not been created yet. */
-function readSchemaVersion(database: Database): number | undefined {
-  try {
-    const row = database
-      .query<VersionRow, []>("SELECT version FROM schema_version WHERE id = 1")
-      .get();
-    return row && Number.isInteger(row.version) ? row.version : undefined;
-  } catch {
-    return undefined;
-  }
 }
 
 /**
@@ -1066,11 +1040,3 @@ export function openSqliteLogBackend(
     options.immediateWriter,
   );
 }
-
-export const sqliteBackend: LogBackendFactory = {
-  name: "sqlite",
-  open: (directory, options) =>
-    openSqliteLogBackend(join(directory, SQLITE_FILE_NAME), options),
-};
-
-export default sqliteBackend;

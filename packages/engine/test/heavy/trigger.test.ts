@@ -88,7 +88,7 @@ async function setup(
 ): Promise<Setup> {
   const root = await tempRoot();
   const storeRoot = join(root, "store");
-  const log = openLog({ backend: "sqlite", path: join(storeRoot, "log.sqlite") });
+  const log = openLog({ path: join(storeRoot, "log.sqlite") });
   const registry = new PluginRegistry([plugin], {
     home: root,
     storeRoot,

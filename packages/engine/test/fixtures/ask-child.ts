@@ -4,7 +4,6 @@
  * `timed-out` (right after ask_timed_out), `answer-read` (just before a read
  * would hand over ask_answered), `grant-used` (right after grant_used) or `none`.
  */
-import { join } from "node:path";
 import {
   SqlitePluginStore,
   Runner,

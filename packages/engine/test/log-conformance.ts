@@ -20,9 +20,14 @@ import {
   type InputOutcome,
   type JsonValue,
   type LogBackend,
-  type LogBackendFactory,
   type LogBackendOptions,
 } from "../src/index.ts";
+
+/** The shape a test backend module's default export has. */
+export interface LogBackendFactory {
+  readonly name: string;
+  open(directory: string, options?: LogBackendOptions): LogBackend | Promise<LogBackend>;
+}
 
 /**
  * What a backend must expose to be checked by the suite. The extra methods are

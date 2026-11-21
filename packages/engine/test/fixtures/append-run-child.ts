@@ -24,7 +24,7 @@ if (payloadJson !== undefined) {
   }
 }
 
-const log = openLog({ backend: "sqlite", path });
+const log = openLog({ path });
 try {
   const run = await log.run(runId);
   if (run === undefined) fail(`no run ${runId}`);

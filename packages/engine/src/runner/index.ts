@@ -1,7 +1,6 @@
 export * from "./errors.ts";
-export { answerRun, recordAnswer } from "./answer.ts";
+export { recordAnswer } from "./answer.ts";
 export type {
-  AnswerOptions,
   RecordAnswerOptions,
   RecordedAnswerPayload,
 } from "./answer.ts";

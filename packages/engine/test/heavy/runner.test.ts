@@ -20,7 +20,6 @@ import {
   openPluginStore,
   readConfig,
   readState,
-  storeRootOf,
   PluginRegistry,
   type Fact,
   type FlowDefinition,
@@ -55,7 +54,7 @@ interface Setup {
 async function setup(flowName: string): Promise<Setup> {
   const root = await tempRoot();
   const storeRoot = join(root, "store");
-  const log = openLog({ backend: "sqlite", path: join(storeRoot, "log.sqlite") });
+  const log = openLog({ path: join(storeRoot, "log.sqlite") });
   const registry = new PluginRegistry([plugin], {
     home: root,
     storeRoot,
@@ -113,7 +112,7 @@ async function fileSetup(
   const registry = await loadPluginRegistry({
     home,
     cwd: home,
-    store: openPluginStore({ backend: "sqlite", root: storeRoot }),
+    store: openPluginStore({ root: storeRoot }),
   });
   const found = registry.flow(flowName);
   if (found === undefined) throw new Error(`missing flow ${flowName}`);

@@ -100,7 +100,6 @@ Types (`StepContext`, `ActionTypeDefinition`, `ObjectRow`, ...) are exported too
 | `validateActionArgs` | Checks a person's values against a schema | [Actions](actions.md#the-args-schema) |
 | `noteProperty` | The `role: "note"` property of a schema | [Actions](actions.md#the-args-schema) |
 | `fileProperties` | The `format: "file"` properties of a schema | [Actions](actions.md#the-args-schema) |
-| `FILE_FORMAT` | `"file"` | [Actions](actions.md#the-args-schema) |
 | `MAX_UPLOAD_BYTES` | 20 MiB: the largest upload | [Actions](actions.md#the-args-schema) |
 | `UPLOAD_TTL_MS` | One hour: how long an unused upload stays | [Actions](actions.md#the-args-schema) |
 | `attachmentDir` | `attachmentDir(home, type, id)`: where an object's attachments are stored | [Actions](actions.md#the-args-schema) |

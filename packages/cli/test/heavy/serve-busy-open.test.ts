@@ -164,7 +164,7 @@ async function setup(): Promise<{ home: string; work: string; pluginStore: strin
   writeFileSync(join(home, "triggers.json"), "[]\n");
   // The plugin store exists before the holder locks it.
   const config = await readConfig(home);
-  const store = openPluginStore({ backend: config.store.backend, root: storeRootOf(config), follow: false });
+  const store = openPluginStore({ root: storeRootOf(config), follow: false });
   if ("close" in store && typeof store.close === "function") store.close();
   return { home, work, pluginStore: join(storeRootOf(config), "plugins.sqlite") };
 }

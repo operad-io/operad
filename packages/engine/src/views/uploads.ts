@@ -17,9 +17,6 @@ export const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 /** How long an upload nobody used stays, in milliseconds. */
 export const UPLOAD_TTL_MS = 60 * 60 * 1000;
 
-/** The file name an action's `format` names: an argument that is a file. */
-export const FILE_FORMAT = "file";
-
 /** The upload is larger than {@link MAX_UPLOAD_BYTES}. */
 export class UploadTooLargeError extends Error {
   readonly limit: number;

@@ -16,7 +16,7 @@ import { runLogConformance, type LogConformanceFactory } from "../log-conformanc
 
 const TEST_ROOT = resolve(import.meta.dir, "..", "..", "..", "..", ".radian", "test-tmp");
 const CHILD = join(import.meta.dir, "..", "fixtures", "log-child.ts");
-const MODULE = new URL("../../src/log/sqlite.ts", import.meta.url).href;
+const MODULE = new URL("../fixtures/sqlite-log-backend.ts", import.meta.url).href;
 
 const dbPath = (directory: string): string => join(directory, SQLITE_FILE_NAME);
 

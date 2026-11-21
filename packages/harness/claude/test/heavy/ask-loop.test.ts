@@ -6,7 +6,6 @@ import {
   MemoryPluginStore,
   PluginRegistry,
   Runner,
-  answerRun,
   listPending,
   openLog,
   readState,
@@ -15,6 +14,7 @@ import {
   type Fact,
   type LogBackend,
 } from "@operad-io/engine";
+import { answerRun } from "@operad-io/engine/testing";
 import { readTargetGrants } from "@operad-io/access-match";
 import { createClaudeHarnessPlugin } from "../../src/index.ts";
 import { alive, cleanupTempRoots, manualClock, tempRoot, waitForGone, waitForPid } from "../../../process/test/support.ts";
@@ -117,7 +117,7 @@ async function setup() {
     cwd: root,
     store: new MemoryPluginStore({ root: join(root, "store") }),
   });
-  const log = openLog({ backend: "sqlite", path: join(root, "log", "log.sqlite") });
+  const log = openLog({ path: join(root, "log", "log.sqlite") });
   const found = registry.flow("claude:prompt");
   if (found === undefined) throw new Error("the prompt flow is not loaded");
   const info = await log.startRun(found.flow.name, OBJECT);

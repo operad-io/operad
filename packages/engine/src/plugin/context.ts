@@ -137,7 +137,6 @@ export async function openHome(options: OpenHomeOptions): Promise<OpenedHome> {
     onLog(message);
   };
   const store = openPluginStore({
-    backend: config.store.backend,
     root: storeRoot,
     clock,
     ...(options.follow === undefined ? {} : { follow: options.follow }),

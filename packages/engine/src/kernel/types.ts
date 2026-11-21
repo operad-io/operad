@@ -268,34 +268,10 @@ export interface RunStartedPayload {
   readonly trigger?: StartTrigger;
 }
 
-export interface TriggerReceivedPayload {
-  readonly source: string;
-  readonly type: string;
-  readonly key: string;
-  readonly summary?: string;
-  readonly link?: string;
-  readonly hops: number;
-}
-
-export interface TriggerSkippedPayload {
-  readonly source: string;
-  readonly type: string;
-  readonly key: string;
-  readonly hops: number;
-  readonly reason: string;
-}
-
 export interface StepEnteredPayload {
   readonly step: string;
   readonly visit: number;
   readonly kind: StepKind;
-}
-
-/** A runner began executing an effect; `pid` is the process that did. */
-export interface StepStartedPayload {
-  readonly step: string;
-  readonly effectId: string;
-  readonly pid: number;
 }
 
 export interface EffectRequestedPayload {
@@ -316,12 +292,6 @@ export interface StepResultPayload {
   readonly step: string;
   readonly result: string;
   readonly data: JsonValue;
-}
-
-export interface EdgeTakenPayload {
-  readonly step: string;
-  readonly result: string;
-  readonly target: string;
 }
 
 export interface WaitingForPersonPayload {
@@ -373,12 +343,6 @@ export interface CrashLoopStoppedPayload {
   readonly step: string;
   readonly effectId: string;
   readonly recoveries: number;
-}
-
-export interface VisitLimitReachedPayload {
-  readonly step: string;
-  readonly visits: number;
-  readonly limit: number;
 }
 
 /** The cause a fact gets when an input produces it directly. */

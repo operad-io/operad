@@ -89,7 +89,7 @@ describe("plugin secrets", () => {
       sources: [secretPluginPath],
       onLog: () => undefined,
     });
-    const log = openLog({ backend: "sqlite", path: join(storeRoot, "log.sqlite") });
+    const log = openLog({ path: join(storeRoot, "log.sqlite") });
     try {
       const info = await log.startRun(flow.name, "job:1");
       await new Runner({ log, flow, runId: info.runId, registry }).run();
@@ -120,7 +120,7 @@ describe("plugin secrets", () => {
 
   test("putting a Secret into the log is refused", async () => {
     const root = await tempRoot();
-    const log = openLog({ backend: "sqlite", path: join(root, "log", "log.sqlite") });
+    const log = openLog({ path: join(root, "log", "log.sqlite") });
     try {
       const info = await log.startRun("flow", "object");
       await expect(

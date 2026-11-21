@@ -221,7 +221,7 @@ describe("a serve restored after a restart could not listen", () => {
     writeFileSync(join(home, changed === "plugin" ? "plugin-x" : changed, "index.ts"), "export const v = 2;\n");
 
     const storeRoot = join(home, "store");
-    const log = openLog({ backend: "sqlite", path: join(storeRoot, "log.sqlite") });
+    const log = openLog({ path: join(storeRoot, "log.sqlite") });
     const registry = new PluginRegistry([], {
       home,
       storeRoot,

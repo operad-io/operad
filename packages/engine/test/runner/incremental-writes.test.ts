@@ -60,7 +60,7 @@ function withMethod(
 
 test("a reported wait takes its next sequence from the run info", async () => {
   const root = await tempRoot();
-  const inner = openLog({ backend: "sqlite", path: join(root, "log.sqlite") });
+  const inner = openLog({ path: join(root, "log.sqlite") });
   try {
     const run = await inner.startRun(flow.name, "job:1");
     await inner.append(run.runId, 0, [
@@ -89,7 +89,7 @@ test("a reported wait takes its next sequence from the run info", async () => {
 
 test("a grant uses the run's latest sequence when its fact scan is stale", async () => {
   const root = await tempRoot();
-  const inner = openLog({ backend: "sqlite", path: join(root, "log.sqlite") });
+  const inner = openLog({ path: join(root, "log.sqlite") });
   try {
     const run = await inner.startRun(flow.name, "job:1");
     await inner.append(run.runId, 0, [
@@ -115,7 +115,7 @@ test("a grant uses the run's latest sequence when its fact scan is stale", async
 
 test("appendInput keeps the facts the log appended", async () => {
   const root = await tempRoot();
-  const inner = openLog({ backend: "sqlite", path: join(root, "log.sqlite") });
+  const inner = openLog({ path: join(root, "log.sqlite") });
   try {
     const log = withMethod(
       inner,
@@ -160,7 +160,6 @@ test("markStarted keeps the facts the log appended", async () => {
   const root = await tempRoot();
   const storeRoot = join(root, "store");
   const inner = openLog({
-    backend: "sqlite",
     path: join(storeRoot, "log.sqlite"),
   });
   try {

@@ -47,7 +47,7 @@ async function openChatAsk(): Promise<Open> {
   const home = join(root, "home");
   mkdirSync(home, { recursive: true });
   const store = new MemoryPluginStore({ root: join(root, "store") });
-  const log = openLog({ backend: "sqlite", path: join(root, "store", "log.sqlite") });
+  const log = openLog({ path: join(root, "store", "log.sqlite") });
   let calls = 0;
   const harness = definePlugin({
     name: "fake",

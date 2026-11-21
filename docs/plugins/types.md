@@ -30,7 +30,6 @@ The types a plugin imports, by the page that explains them. The values these ent
 | `AskRequest` | What a step asks a person with `ctx.ask`. | [asking](asking.md) |
 | `AskRecheck` | What a question says when the host checks it again while it waits. | [asking](asking.md) |
 | `ChoiceInfo` | What one choice of a question says about itself: an optional label, hint, role (`primary` or `destructive`) and note (`optional` or `required`). | [asking](asking.md) |
-| `AskWaitingData` | The data of a step that ended `waiting` because an ask timed out. | [asking](asking.md) |
 | `StepAsker` | Where a step's questions go. `request.graceSecs` already holds the narrower of the call and the step's `askGraceSecs`; the host narrows it by its own setting. | [asking](asking.md) |
 | `ActionInfo` | One action a client may offer, with what it needs from the person. | [define-plugin](define-plugin.md) |
 | `Actor` | Who a person input came from. `via` is a client such as `cli` or `ios`. | [define-plugin](define-plugin.md) |
@@ -66,7 +65,6 @@ The types a plugin imports, by the page that explains them. The values these ent
 | `StartResult` | What starting one run did. | [events](events.md) |
 | `StartRunRequest` | Asks the kernel to start a run of one of the plugin's flows. | [events](events.md) |
 | `StepEvent` | An event a step sends; the kernel adds the source, run scope and hops. | [events](events.md) |
-| `StoredTriggerEvent` | One stored event, kept even when no rule matches. | [events](events.md) |
 | `TickContext` | The context the kernel loop passes to a plugin's `onTick`. | [events](events.md) |
 | `TickStartRequest` | What `ctx.start` accepts on a tick: a flow name, or a full request. | [events](events.md) |
 | `TriggerCandidate` | A candidate the pending view offers to start or dismiss. | [events](events.md) |
@@ -172,7 +170,6 @@ The types a plugin imports, by the page that explains them. The values these ent
 | `PluginFact` | One fact a plugin sees. Facts hold data and paths, never process output. The name stays apart from the storage backend's `Fact`, which is run-scoped. | [storage](storage.md) |
 | `PluginLogger` | Writes text to a file under the store and returns its path. | [storage](storage.md) |
 | `PluginStore` | The store a plugin sees: objects plus its own facts. | [storage](storage.md) |
-| `PluginStoreBackend` | A type of the plugin API; its fields are described on the page. | [storage](storage.md) |
 | `PluginStoreLocation` | How a worker reopens the store its run uses. | [storage](storage.md) |
 | `SecretStore` | A plugin's secrets, scoped to that plugin and stored outside the log. | [storage](storage.md) |
 | `SqlitePluginStoreOptions` | A type of the plugin API; its fields are described on the page. | [storage](storage.md) |

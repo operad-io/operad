@@ -32,6 +32,8 @@ import type {
 } from "./types.ts";
 import { isRecord, requireName } from "../util.ts";
 import { repeatEvery } from "../util.ts";
+import { hasTable, readSchemaVersion } from "../platform/sqlite-schema.ts";
+import { deepFreeze } from "./freeze.ts";
 import {
   applyObjectChange,
   diffObject,
@@ -128,10 +130,6 @@ const SCHEMA_FILE = "plugins.sqlite";
  */
 export const PLUGIN_STORE_SCHEMA_VERSION = 2;
 
-interface VersionRow {
-  readonly version: number;
-}
-
 interface ObjectKeyRow {
   readonly type: string;
   readonly id: string;
@@ -141,27 +139,6 @@ interface HistoryRow {
   readonly sequence: number;
   readonly type: string;
   readonly data: string;
-}
-
-function readSchemaVersion(database: Database): number | undefined {
-  try {
-    const row = database
-      .query<VersionRow, []>("SELECT version FROM schema_version WHERE id = 1")
-      .get();
-    return row !== null && Number.isInteger(row.version) ? row.version : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function hasTable(database: Database, name: string): boolean {
-  return (
-    database
-      .query<{ name: string }, [string]>(
-        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
-      )
-      .get(name) !== null
-  );
 }
 
 /**
@@ -253,14 +230,6 @@ function ensureSchema(database: Database, file: string): void {
         `requires ${PLUGIN_STORE_SCHEMA_VERSION}`,
     );
   }
-}
-
-function deepFreeze<T>(value: T): T {
-  if (typeof value === "object" && value !== null && !Object.isFrozen(value)) {
-    Object.freeze(value);
-    for (const inner of Object.values(value)) deepFreeze(inner);
-  }
-  return value;
 }
 
 function parseData(text: string): ObjectData {

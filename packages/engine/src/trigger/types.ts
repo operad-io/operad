@@ -150,9 +150,3 @@ export interface SourceEvent {
   readonly link?: string;
 }
 
-/** One stored event, kept even when no rule matches. */
-export interface StoredTriggerEvent {
-  readonly inputId: string;
-  readonly event: TriggerEvent;
-  readonly at: number;
-}

@@ -762,7 +762,7 @@ describe("a flow through the runner", () => {
       registry.stepTypes(),
     ) as FlowDefinition;
 
-    const log = openLog({ backend: "sqlite", path: join(root, "log", "log.sqlite") });
+    const log = openLog({ path: join(root, "log", "log.sqlite") });
     try {
       const info = await log.startRun("shell-flow", "job:1");
       const outcome = await new Runner({
@@ -806,7 +806,7 @@ describe("a flow through the runner", () => {
       registry.stepTypes(),
     ) as FlowDefinition;
 
-    const log = openLog({ backend: "sqlite", path: join(root, "log", "log.sqlite") });
+    const log = openLog({ path: join(root, "log", "log.sqlite") });
     try {
       const info = await log.startRun("probe-flow", "job:1");
       const runner = new Runner({
@@ -862,7 +862,7 @@ describe("a flow through the runner", () => {
       registry.stepTypes(),
     ) as FlowDefinition;
 
-    const log = openLog({ backend: "sqlite", path: join(root, "log", "log.sqlite") });
+    const log = openLog({ path: join(root, "log", "log.sqlite") });
     try {
       const info = await log.startRun("cancel-flow", "job:1");
       const controller = new AbortController();

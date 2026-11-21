@@ -486,11 +486,6 @@ export function trackRoot(pid: number | undefined): void {
   void tracker.poll();
 }
 
-/** Looks at the table now for every running step. For a test that must not wait for the timer. */
-export async function pollTrackedSteps(table: ProcessTable = readProcessTable): Promise<void> {
-  await Promise.all([...trackers.values()].map((tracker) => tracker.poll(table)));
-}
-
 export interface ReapOptions {
   /** Which marked processes to stop. */
   readonly select: (found: MarkedProcess) => boolean;

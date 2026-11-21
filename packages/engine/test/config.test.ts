@@ -13,8 +13,8 @@ import {
   type OperadConfig,
   readConfig,
   storeRootOf,
-  writeConfig,
 } from "../src/index.ts";
+import { writeConfig } from "../src/testing/config.ts";
 import { withLockFile } from "../src/platform/index.ts";
 import { cleanupTempRoots, tempRoot } from "./plugin/support.ts";
 

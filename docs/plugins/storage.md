@@ -5,7 +5,7 @@ description: A plugin's storage: the object store, versions and facts, where fil
 # Storage
 
 A plugin keeps its objects in the store `ctx.store`, an `ObjectStore`. The kernel keeps the run log; a plugin never opens it and never opens the store's file.
-A SQLite file `<home>/store/plugins.sqlite` holds the objects (`openPluginStore({ backend: "sqlite", root })` opens it); `MemoryPluginStore({ root, clock? })` keeps them in the process for tests and one-shot use. `SqlitePluginStore` and `MemoryPluginStore` are the two classes; a plugin uses the store it is given.
+A SQLite file `<home>/store/plugins.sqlite` holds the objects (`openPluginStore({ root })` opens it); `MemoryPluginStore({ root, clock? })` keeps them in the process for tests and one-shot use. `SqlitePluginStore` and `MemoryPluginStore` are the two classes; a plugin uses the store it is given.
 A worker that runs a step reopens the same store from `store.location`, so the step sees the same data; an in-memory store has no location, and `kind` is `"file"` or `"memory"`.
 
 ## The object store

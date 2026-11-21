@@ -124,13 +124,13 @@ describe("a reply interrupted by a crash or restart", () => {
     const chat = await createChat(store, { harness: "fake", cwd: root, title: "Chat" }, "test");
     await message(store, chat, "the question");
 
-    const opened = openLog({ backend: "sqlite", path: join(storeRoot, "log.sqlite") });
+    const opened = openLog({ path: join(storeRoot, "log.sqlite") });
     const info = await opened.startRun("chat:reply", `chat:${chat}`);
     await opened.close();
 
     await crash(root, home, storeRoot, info.runId);
 
-    const log = openLog({ backend: "sqlite", path: join(storeRoot, "log.sqlite") });
+    const log = openLog({ path: join(storeRoot, "log.sqlite") });
     const events: TriggerEvent[] = [];
     const calls: Call[] = [];
     const registry = new PluginRegistry(
@@ -238,12 +238,12 @@ describe("a reply interrupted by a crash or restart", () => {
     const chat = await createChat(store, { harness: "fake", cwd: root, title: "Chat" }, "test");
     await message(store, chat, "the question");
 
-    const opened = openLog({ backend: "sqlite", path: join(storeRoot, "log.sqlite") });
+    const opened = openLog({ path: join(storeRoot, "log.sqlite") });
     const info = await opened.startRun("chat:reply", `chat:${chat}`);
     await opened.close();
     await crash(root, home, storeRoot, info.runId, "second-round");
 
-    const log = openLog({ backend: "sqlite", path: join(storeRoot, "log.sqlite") });
+    const log = openLog({ path: join(storeRoot, "log.sqlite") });
     const registry = new PluginRegistry(
       [createChatPlugin(), fakeHarness("fake", () => reply("after the restart", "s-3"), [])],
       { home, cwd: root, store, onLog: () => undefined },
@@ -293,7 +293,7 @@ describe("a reply interrupted by a crash or restart", () => {
     const store = new SqlitePluginStore({ root: storeRoot });
     const chat = await createChat(store, { harness: "fake", cwd: root, title: "Chat" }, "test");
     await message(store, chat, "the question");
-    const log = openLog({ backend: "sqlite", path: join(storeRoot, "log.sqlite") });
+    const log = openLog({ path: join(storeRoot, "log.sqlite") });
     const registry = new PluginRegistry(
       [
         createChatPlugin(),
@@ -329,7 +329,7 @@ describe("a reply interrupted by a crash or restart", () => {
     const store = new SqlitePluginStore({ root: storeRoot });
     const chat = await createChat(store, { harness: "fake", cwd: root, title: "Chat" }, "test");
     await message(store, chat, "the question");
-    const log = openLog({ backend: "sqlite", path: join(storeRoot, "log.sqlite") });
+    const log = openLog({ path: join(storeRoot, "log.sqlite") });
     const registry = new PluginRegistry(
       [createChatPlugin(), fakeHarness("fake", () => reply("the answer", "s-1"), [])],
       { home, cwd: root, store, onLog: () => undefined },

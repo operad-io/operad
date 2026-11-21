@@ -48,12 +48,8 @@ import {
   type KeyBindings,
   type PendingActionView,
   type PendingEntry,
-  type StandingContext,
-  type StandingItem,
   type PluginBaseContext,
   type PluginCheck,
-  type PluginKind,
-  type PluginRequires,
   type PluginStepResult,
   type PluginStore,
   type ResolvedCommand,
@@ -145,17 +141,11 @@ export interface PluginRegistryOptions {
   readonly requireDependencies?: boolean | undefined;
   /** Whether to validate each plugin's settings section. */
   readonly validateSettings?: boolean | undefined;
-  /** The routing rules, given to source plugins. */
-  readonly rules?: readonly TriggerRule[] | undefined;
   /**
    * Called when an action sends an event with `ctx.emit`: the kernel routes it
    * through the rules. Without it an action has no `emit`.
    */
   readonly onEvent?: ((event: TriggerEvent) => MaybePromise<void>) | undefined;
-  /** Called when a source plugin sends an event. */
-  readonly onSourceEvent?:
-    | ((event: TriggerEvent, plugin: string) => MaybePromise<void>)
-    | undefined;
 }
 
 /** A plugin the registry left out, and the line that says why. */
@@ -248,11 +238,7 @@ export class PluginRegistry {
   private readonly onRunActive:
     | ((runId: string) => MaybePromise<boolean | void>)
     | undefined;
-  private readonly rules: readonly TriggerRule[];
   private readonly onEvent: ((event: TriggerEvent) => MaybePromise<void>) | undefined;
-  private readonly onSourceEvent:
-    | ((event: TriggerEvent, plugin: string) => MaybePromise<void>)
-    | undefined;
   private readonly plugins: readonly LoadedPlugin[];
   private readonly byName: ReadonlyMap<string, LoadedPlugin>;
   private readonly viewByType: ReadonlyMap<string, { readonly plugin: LoadedPlugin; readonly views: ObjectViews }>;
@@ -288,8 +274,6 @@ export class PluginRegistry {
     this.onAnswer = options.onAnswer;
     this.onCancelRun = options.onCancelRun;
     this.onRunActive = options.onRunActive;
-    this.rules = options.rules ?? [];
-    this.onSourceEvent = options.onSourceEvent;
     this.onEvent = options.onEvent;
 
     const clock = options.clock ?? (() => Date.now());

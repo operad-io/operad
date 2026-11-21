@@ -7,7 +7,6 @@ import {
   definePlugin,
   PluginRegistry,
   Runner,
-  answerRun,
   historyEntries,
   loadPluginRegistry,
   openLog,
@@ -17,6 +16,7 @@ import {
   type Fact,
   type LogBackend,
 } from "../../src/index.ts";
+import { answerRun } from "../../src/testing/index.ts";
 import { useGrant } from "../../src/runner/grants.ts";
 import plugin from "../fixtures/plugins/resume.ts";
 import { cleanupTempRoots, tempRoot } from "../plugin/support.ts";
@@ -62,7 +62,7 @@ async function setup(mode: "memory" | "file") {
     join(home, "config.json"),
     JSON.stringify({ plugins: [pluginPath], store: { backend: "sqlite", path: join(storeRoot, "log.sqlite") } }),
   );
-  const log = openLog({ backend: "sqlite", path: join(storeRoot, "log.sqlite") });
+  const log = openLog({ path: join(storeRoot, "log.sqlite") });
   const registry =
     mode === "memory"
       ? new PluginRegistry([plugin], {
@@ -73,7 +73,7 @@ async function setup(mode: "memory" | "file") {
       : await loadPluginRegistry({
           home,
           cwd: home,
-          store: openPluginStore({ backend: "sqlite", root: storeRoot }),
+          store: openPluginStore({ root: storeRoot }),
         });
   const flowOf = (name: string) => {
     const found = registry.flow(name);

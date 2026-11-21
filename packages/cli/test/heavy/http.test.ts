@@ -173,7 +173,7 @@ describe("operad serve http", () => {
     );
     // The task lives in the other namespace; inside repo-a the plugin would
     // scope its bare id to a/T-0017-x, which does not exist.
-    const store = openPluginStore({ backend: "sqlite", root: storePath });
+    const store = openPluginStore({ root: storePath });
     await store.put("task", "b/T-0017-x", { title: "B" }, "seed");
 
     const child = Bun.spawn({
