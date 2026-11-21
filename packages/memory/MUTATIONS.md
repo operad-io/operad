@@ -167,3 +167,10 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0603-M1 | packages/memory/src/wiki.ts | `wikiModifiedText` ignored the time zone it was given and always formatted in UTC | `the wiki objects > a note's modified time is formatted in the given zone` |
+
+## T-0604 — memory v1 review follow-ups
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0604-M1 | packages/memory/src/wiki.ts | `noteRow` put a space before `(untrusted)` even when the note had no time, so a zero-time untrusted note's row began with a space | `the wiki objects > a note row shows its local modified time, and only the mark at zero` |
+| T-0604-M2 | packages/memory/src/wiki.ts | `wikiModifiedText` formatted in UTC when no time zone was given, ignoring the process's local zone | `the wiki objects > a note row shows its local modified time, and only the mark at zero` |

@@ -78,23 +78,35 @@ describe("the wiki objects", () => {
     expect(wikiModifiedText(0, "UTC")).toBe("");
   });
 
-  test("a note row shows its local modified time, with no time at zero", async () => {
+  test("a note row shows its local modified time, and only the mark at zero", async () => {
     const instant = Date.UTC(2026, 10, 20, 15, 4, 5);
     const r = rig((wiki) => {
       file(join(wiki, "tea.md"), "# Tea\n");
       file(join(wiki, "untrusted.md"), "---\nuntrusted: true\n---\n\n# Untrusted\n");
       file(join(wiki, "zero.md"), "# Zero\n");
+      file(join(wiki, "zero-untrusted.md"), "---\nuntrusted: true\n---\n\n# Zero untrusted\n");
       const at = new Date(instant);
       utimesSync(join(wiki, "tea.md"), at, at);
       utimesSync(join(wiki, "untrusted.md"), at, at);
       utimesSync(join(wiki, "zero.md"), 0, 0);
+      utimesSync(join(wiki, "zero-untrusted.md"), 0, 0);
     });
-    const page = await r.views.list(WIKI_NOTE_TYPE, { root: true });
-    const note = (id: string): string | undefined =>
-      page.rows.find((row) => row.id === id)?.note;
-    expect(note("tea.md")).toBe(wikiModifiedText(instant));
-    expect(note("untrusted.md")).toBe(`${wikiModifiedText(instant)} (untrusted)`);
-    expect(note("zero.md")).toBeUndefined();
+    // Pin the zone a process without one would use, so the row's own formatting
+    // is checked as literal text rather than through wikiModifiedText.
+    const previous = process.env.TZ;
+    process.env.TZ = "Asia/Tokyo";
+    try {
+      const page = await r.views.list(WIKI_NOTE_TYPE, { root: true });
+      const note = (id: string): string | undefined =>
+        page.rows.find((row) => row.id === id)?.note;
+      expect(note("tea.md")).toBe("2026-11-21 00:04");
+      expect(note("untrusted.md")).toBe("2026-11-21 00:04 (untrusted)");
+      expect(note("zero.md")).toBeUndefined();
+      expect(note("zero-untrusted.md")).toBe("(untrusted)");
+    } finally {
+      if (previous === undefined) delete process.env.TZ;
+      else process.env.TZ = previous;
+    }
   });
 
   test("the root lists the top-level folders and notes", async () => {
