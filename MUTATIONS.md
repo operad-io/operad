@@ -181,3 +181,11 @@ Each package keeps its mutation checks in `MUTATIONS.md`; a row names the broken
 |---|---|---|---|
 | T-0643-M1 | scripts/changed-packages.ts | treated every `/` as a division or a comment start, so a `//` inside a regex literal removed the rest of its line, the import included | `selectPackages > a regex literal holding a quote does not hide the imports after it` |
 | T-0643-M2 | scripts/changed-packages.ts | dropped the quoted `@operad-io/<name>` fallback, so the dynamic import of `@operad-io/tui/app` was no longer a load | `selectPackages > a dynamic import through a quoted @operad-io/tui/app is a load` |
+
+## T-0641 — stress.sh stops the test runner even when a stop races its start
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0641-M1 | scripts/stress.sh | the KILL pass used only the load-helper pids instead of the job table, so a test runner that ignores TERM survived | `scripts/stress.sh > SIGKILL of the test runner stops a test file that ignores SIGTERM` |
+| T-0641-M2 | scripts/stress.sh | the stop signalled only a saved list of load-helper pids instead of the live job table, so the watcher and a test runner forked just before the stop were left running | `scripts/stress.sh > SIGKILL to the test runner mid-test leaves no stress.sh or helper` |
+| T-0641-M3 | scripts/stress.sh | the grace waited for a fixed count of sleeps instead of one short sleep, so the stop ran past its bound | `scripts/stress.sh > SIGKILL to the test runner mid-test leaves no stress.sh or helper` |
