@@ -1,6 +1,17 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": { "rootDir": ".", "outDir": "../../.tsbuild/cli" },
-  "include": ["src", "bin"],
-  "references": [{ "path": "../engine" }, { "path": "../tui" }]
+  "include": ["src", "bin", "test"],
+  "references": [
+    { "path": "../engine" },
+    { "path": "../dev" },
+    { "path": "../shell" },
+    { "path": "../chat" },
+    { "path": "../pool" },
+    { "path": "../bot" },
+    { "path": "../harness/pi" },
+    { "path": "../harness/radian" },
+    { "path": "../source-cron" },
+    { "path": "../mcp" }
+  ]
 }

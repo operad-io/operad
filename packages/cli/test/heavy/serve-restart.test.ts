@@ -246,7 +246,9 @@ describe("a serve restart while a check runs", () => {
       // run was neither stopped and started again nor run twice.
       const starts = readFileSync(started, "utf8").trim().split("\n");
       expect(starts).toHaveLength(1);
-      expect(readFileSync(join(work, "finished"), "utf8").trim()).toBe(starts[0]);
+      const start = starts[0];
+      if (start === undefined) throw new Error("no start was recorded");
+      expect(readFileSync(join(work, "finished"), "utf8").trim()).toBe(start);
     } finally {
       serve.kill("SIGTERM");
       await serve.exited;

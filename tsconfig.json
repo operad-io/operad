@@ -19,6 +19,7 @@
     { "path": "packages/harness/codex" },
     { "path": "packages/tui" },
     { "path": "packages/pool" },
-    { "path": "packages/review-grading" }
+    { "path": "packages/review-grading" },
+    { "path": "scripts" }
   ]
 }

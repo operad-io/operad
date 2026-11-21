@@ -92,7 +92,7 @@ function run(root: string, base: string): { code: number; out: string } {
       OPERAD_TEST_TIMES: join(root, "times"),
     },
     encoding: "utf8",
-    stdin: "ignore",
+    stdio: ["ignore", "pipe", "pipe"],
   });
   return { code: result.status ?? 1, out: `${result.stdout}${result.stderr}` };
 }

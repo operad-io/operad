@@ -2,5 +2,5 @@
   "extends": "../../../tsconfig.base.json",
   "compilerOptions": { "rootDir": ".", "outDir": "../../../.tsbuild/radian" },
   "include": ["package.json", "src", "test"],
-  "references": [{ "path": "../../engine" }, { "path": "../process" }]
+  "references": [{ "path": "../../access-match" }, { "path": "../../engine" }, { "path": "../process" }]
 }
