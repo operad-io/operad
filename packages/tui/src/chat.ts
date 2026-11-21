@@ -202,71 +202,9 @@ function chatSegments(markdown: string, options: ChatMarkdownOptions): ChatSegme
   return segments;
 }
 
-/** How many chat Markdown strings were built, for a test that checks the cache is used. */
-export const chatStats = { computed: 0 };
-
-interface ChatCacheEntry {
-  readonly markdown: string;
-  readonly day: string;
-  readonly timeZone: string | undefined;
-  readonly open: string;
-  readonly fold: boolean;
-  readonly prefix: string;
-  readonly result: string;
-}
-
-const CHAT_CACHE_LIMIT = 32;
-const chatCache: ChatCacheEntry[] = [];
-
-/** The local day a header compares against; the time of day does not change the text. */
-function dayOf(now: number, timeZone: string | undefined): string {
-  const parts = dateParts(new Date(now), timeZone);
-  return parts === undefined
-    ? String(now)
-    : `${parts.year}-${parts.month}-${parts.day}`;
-}
-
-function cachedChat(markdown: string, options: ChatMarkdownOptions): string | undefined {
-  const day = dayOf(options.now ?? Date.now(), options.timeZone);
-  const open = [...(options.open ?? [])].sort().join("\u0000");
-  const fold = options.fold !== false;
-  const prefix = options.prefix ?? "c";
-  return chatCache.find(
-    (entry) =>
-      entry.markdown === markdown &&
-      entry.day === day &&
-      entry.timeZone === options.timeZone &&
-      entry.open === open &&
-      entry.fold === fold &&
-      entry.prefix === prefix,
-  )?.result;
-}
-
-function rememberChat(
-  markdown: string,
-  options: ChatMarkdownOptions,
-  result: string,
-): void {
-  chatCache.unshift({
-    markdown,
-    day: dayOf(options.now ?? Date.now(), options.timeZone),
-    timeZone: options.timeZone,
-    open: [...(options.open ?? [])].sort().join("\u0000"),
-    fold: options.fold !== false,
-    prefix: options.prefix ?? "c",
-    result,
-  });
-  if (chatCache.length > CHAT_CACHE_LIMIT) chatCache.pop();
-}
-
 /** A chat transcript's Markdown as the terminal draws it. */
 export function chatMarkdown(markdown: string, options: ChatMarkdownOptions = {}): string {
-  const cached = cachedChat(markdown, options);
-  if (cached !== undefined) return cached;
-  chatStats.computed += 1;
-  const result = chatSegments(markdown, options).map((segment) => segment.text).join("\n");
-  rememberChat(markdown, options, result);
-  return result;
+  return chatSegments(markdown, options).map((segment) => segment.text).join("\n");
 }
 
 /** Rows a prefix takes when the next line is appended, without trimming its blanks. */

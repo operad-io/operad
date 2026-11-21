@@ -147,19 +147,14 @@ function contentAddressed(name: string): boolean {
   return /^dev\/[^/]+\/[^/]+\/[0-9a-f]{12}$/.test(name);
 }
 
-/** True when the store keeps declarations for a later process to load. */
-function keepsDeclarations(store: ObjectStore): boolean {
-  return "kind" in store && store.kind === "file";
-}
-
 /**
- * Declares a content-addressed flow once per store. A file store loads the
- * declarations a later process wrote, so this process can remember them too;
- * an in-memory store cannot, so its declarations are made every pass.
+ * Declares a content-addressed flow once per store in this process. The set
+ * lives beside the store object, so it serves an in-memory store as well as a
+ * file store; a later process starts its own set.
  */
 function declareFlowOnce(ctx: TickContext, graph: FlowDefinition): void {
   const name = graph.name;
-  if (contentAddressed(name) && keepsDeclarations(ctx.store)) {
+  if (contentAddressed(name)) {
     let declared = declaredFlowNames.get(ctx.store);
     if (declared?.has(name)) return;
     schedulerTestHooks.declare?.(graph);

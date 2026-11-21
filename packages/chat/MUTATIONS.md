@@ -590,3 +590,9 @@ are append-only, so the old lines stay as history.
 | T-0617-M3 | packages/chat/src/reply.ts | the reply's first read scanned the chat again for its facts | `what reading a chat costs > one reply round scans the chat a bounded number of times` |
 | T-0617-M4 | packages/chat/src/reply.ts | `secretValues` read the names and each value again instead of the one `values()` | `what reading a chat costs > one live push scans the facts once and does not refresh the bot` |
 | T-0617-M5 | packages/chat/src/queue.ts | the queue sync did not leave out the messages the take had just recorded | `a chat's queued messages > the row and the transcript say what is queued, and a run's first message stops being queued` |
+
+## T-0644 — a withdrawal is the person's message's
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0644-M1 | packages/chat/src/model.ts | a withdrawal removed a message of any role, including an answer | `a withdrawal removes a person's message but never an answer` |

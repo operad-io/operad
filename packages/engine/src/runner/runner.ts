@@ -26,7 +26,7 @@ import {
 import { AskHost, type AskTimer } from "./ask.ts";
 import { StepLimits } from "./limits.ts";
 import { accessWith, usedGrants } from "./grants.ts";
-import { appendInput, applyInput, parseObjectKey, readState } from "./service.ts";
+import { appendInput, applyInput, keepState, parseObjectKey, readState } from "./service.ts";
 
 /** The wall time a plugin step may take before the run records a failure. */
 export const DEFAULT_STEP_TIMEOUT_MS = 5 * 60 * 1000;
@@ -522,6 +522,7 @@ export class Runner {
           },
           this.signal,
         );
+        // Acquiring a limit appends its own facts, so the state is read again.
         state = await readState(this.log, this.runId);
       }
     } catch (error) {
@@ -543,6 +544,8 @@ export class Runner {
       const nestedBase = recovering
         ? await this.limits().resetNested(this.runId, effect.id)
         : 0;
+      // A recovered step may have just released nested limits; a fresh step's
+      // markStarted already kept its state, so this costs no fact read.
       state = await readState(this.log, this.runId);
       outcome = await this.execute(
         effect.use,
@@ -558,7 +561,8 @@ export class Runner {
         this.asks().asker(this.runId, effect.id, effect.step, effect.grants ?? []),
       );
     }
-    // The limit's own facts moved the run's last sequence on.
+    // The step may have opened a question, used a grant or taken a limit slot,
+    // each of which appended its own facts.
     state = await readState(this.log, this.runId);
     await this.recordResult(state, effect.id, outcome.result, outcome.data);
     // The result frees the place; the next in line gets it now, or from the
@@ -676,6 +680,7 @@ export class Runner {
     ]);
     let next = state;
     for (const fact of appended.facts) next = evolve(next, fact);
+    keepState(this.log, this.runId, next);
     return next;
   }
 

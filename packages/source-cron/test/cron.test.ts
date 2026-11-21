@@ -134,6 +134,40 @@ describe("the cron source", () => {
     expect(emitted[1]?.key).toBe(`${cronKey("* * * * *")}:2026-01-01T00:02:00.000Z`);
   });
 
+  test("an emit that fails is tried again within the same minute", async () => {
+    const home = await sourceHome();
+    const clock = { value: Date.parse("2026-01-01T00:00:10Z") };
+    const emitted: Emitted[] = [];
+    let failures = 1;
+    let ctx: SourceContext | undefined;
+    const base = context(cronRule("* * * * *"), () => clock.value, emitted, home);
+    ctx = {
+      ...base,
+      emit: async (event) => {
+        if (failures > 0) {
+          failures -= 1;
+          throw new Error("the kernel is busy");
+        }
+        emitted.push(event);
+      },
+    };
+    const source = new CronSource(ctx);
+    await source.poll();
+    clock.value = Date.parse("2026-01-01T00:01:10Z");
+    await expect(source.poll()).rejects.toThrow("the kernel is busy");
+    expect(emitted).toHaveLength(0);
+
+    clock.value = Date.parse("2026-01-01T00:01:20Z");
+    await source.poll();
+    expect(emitted).toHaveLength(1);
+    expect(emitted[0]?.key).toBe(`${cronKey("* * * * *")}:2026-01-01T00:01:00.000Z`);
+    expect(emitted[0]?.data).toBeUndefined();
+
+    clock.value = Date.parse("2026-01-01T00:01:30Z");
+    await source.poll();
+    expect(emitted).toHaveLength(1);
+  });
+
   test("a three-hour gap emits only the latest tick", async () => {
     const emitted: Emitted[] = [];
     const clock = { value: Date.parse("2026-01-01T00:00:10Z") };
@@ -205,9 +239,9 @@ describe("missed runs", () => {
     await source.poll();
     await source.poll();
     expect(later).toHaveLength(0);
-    // The missed year stays the recorded last time; it is not reset to the poll.
+    // A catch-up that finds nothing starts over from the poll's own minute.
     expect(Object.values(readCronState(home).rules).map((entry) => entry.last)).toEqual([
-      Date.parse("2025-01-01T03:00:00-05:00"),
+      Date.parse("2026-01-10T04:00:00-05:00"),
     ]);
   });
 

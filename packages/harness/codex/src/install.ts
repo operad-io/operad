@@ -48,6 +48,9 @@ export class CodexInstallError extends Error {
   }
 }
 
+/** The default command found for each PATH, so repeated model reads search once. */
+const defaultCommands = new Map<string, readonly string[]>();
+
 /**
  * The command that starts the user's app-server when the `command` setting is
  * unset: the `codex` of PATH with `app-server`. Codex's script has a
@@ -55,14 +58,28 @@ export class CodexInstallError extends Error {
  * one up (fnm), so a script is run by the `bun` of PATH, or by this bun.
  */
 export function defaultCommand(path: string | undefined = process.env.PATH): readonly string[] {
-  const bun = Bun.which("bun", { PATH: path ?? "" }) ?? process.execPath;
-  const codex = codexCommand(bun, path);
-  if (codex === undefined) {
+  const key = path ?? "";
+  const kept = defaultCommands.get(key);
+  if (kept !== undefined) return kept;
+  const found = Bun.which("codex", { PATH: key });
+  if (found === null) {
     throw new CodexInstallError(
       "no `codex` was found on PATH; install Codex (https://developers.openai.com/codex) or set the command setting",
     );
   }
-  return [...codex, "app-server"];
+  const real = realpathSync(found);
+  let command: readonly string[] = [real, "app-server"];
+  try {
+    const head = codexFileHead(real).split("\n")[0] ?? "";
+    if (head.startsWith("#!") && head.includes("node")) {
+      const bun = Bun.which("bun", { PATH: key }) ?? process.execPath;
+      command = [bun, real, "app-server"];
+    }
+  } catch {
+    // A native binary is not text.
+  }
+  defaultCommands.set(key, command);
+  return command;
 }
 
 /** The argv of the `command` setting, or the default one. */

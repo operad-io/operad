@@ -1,5 +1,5 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
-import { chmodSync, realpathSync, writeFileSync } from "node:fs";
+import { chmodSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { cleanupTempRoots, tempRoot, waitForFile, waitForGone, waitForPid } from "../../process/test/support.ts";
@@ -48,6 +48,13 @@ describe("the command that starts codex app-server", () => {
     const { root } = await pathWith("bun", "codex");
     const command = defaultCommand(root);
     expect(command).toEqual([join(root, "bun"), realpathSync(join(root, "codex")), "app-server"]);
+  });
+
+  test("a default command found for a PATH is not searched for again", async () => {
+    const { root } = await pathWith("bun", "codex");
+    const first = defaultCommand(root);
+    rmSync(join(root, "codex"));
+    expect(defaultCommand(root)).toEqual(first);
   });
 
   test("without a bun on PATH this bun runs the codex script", async () => {

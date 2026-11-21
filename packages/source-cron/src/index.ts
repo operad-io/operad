@@ -122,7 +122,6 @@ export class CronSource {
     try {
       const now = this.ctx.clock();
       const previous = this.lastCheck;
-      this.lastCheck = now;
       const catchUp = previous === undefined || now - previous > WAKE_GAP_MS;
       // The latest planned minute cannot change before the next minute starts,
       // so a poll in a minute already handled finds nothing and scans nothing.
@@ -183,6 +182,9 @@ export class CronSource {
         changed = true;
       }
       if (changed) writeCronState(this.ctx.home, this.snapshot());
+      // A failed emit or state write leaves the minute unhandled, so the next
+      // poll tries it again instead of skipping it as already done.
+      this.lastCheck = now;
     } finally {
       this.busy = false;
     }
@@ -200,11 +202,7 @@ export class CronSource {
       now,
       daysBackTo(now, entry.last, CATCH_UP_DAYS),
     );
-    // Nothing planned after the recorded last time: keep it, so a miss that is
-    // older than the window is not mistaken for a fresh baseline.
-    if (latest === null) {
-      return { kind: "baseline", last: entry.last ?? minuteStart(now) };
-    }
+    if (latest === null) return { kind: "baseline", last: minuteStart(now) };
     if (entry.last !== null && latest <= entry.last) {
       return { kind: "baseline", last: entry.last };
     }

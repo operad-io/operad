@@ -400,7 +400,7 @@ function matcherCall(call: WorktreeCall): { readonly tool: string; readonly inpu
 
 /** Who changed the chat's level to `level`, from the latest access fact that did. */
 function levelActor(ctx: StepContext, chat: string, level: AccessLevel): { readonly via: string; readonly id: string } | undefined {
-  const fact = [...chatFacts(ctx.store, chat)].reverse().find((item) => item.type === ACCESS_FACT && item.data.to === level);
+  const fact = [...readChat(ctx.store, chat).facts].reverse().find((item) => item.type === ACCESS_FACT && item.data.to === level);
   const by = fact !== undefined && isRecord(fact.data.by) ? fact.data.by : undefined;
   if (by === undefined || typeof by.via !== "string" || typeof by.id !== "string") return undefined;
   return { via: by.via, id: by.id };
@@ -1014,7 +1014,7 @@ async function recordFailure(
  */
 async function recordTaken(ctx: StepContext, chat: string, runId: string, ids: readonly string[]): Promise<void> {
   if (ids.length === 0) return;
-  const facts = chatFacts(ctx.store, chat);
+  const facts = readChat(ctx.store, chat).facts;
   const seen = new Set(facts.flatMap((fact) => answeredOfFact(fact)));
   const fresh = ids.filter((id) => !seen.has(id));
   if (fresh.length === 0) return;

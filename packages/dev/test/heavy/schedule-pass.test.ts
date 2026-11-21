@@ -1,4 +1,5 @@
-import { afterAll, afterEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, describe, expect, spyOn, test } from "bun:test";
+import * as fs from "node:fs";
 import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -208,6 +209,38 @@ describe("the dev scheduler's repeated pass", () => {
     expect(planData((await getPlan(fixture.store, plan.id)).data).costTotals?.exactTasks).toBe(99);
   });
 
+  test("an unchanged settings file is not read again", async () => {
+    const fixture = await setup();
+    writeSettings(fixture.repositoryPath, {
+      name: fixture.repository.name,
+      concurrency: 1,
+    });
+    await readDevSettings(fixture.repositoryPath);
+    const spy = spyOn(fs, "readFileSync");
+    try {
+      await readDevSettings(fixture.repositoryPath);
+      const settingsReads = spy.mock.calls.filter(([path]) =>
+        String(path).endsWith("dev.json"),
+      );
+      expect(settingsReads).toHaveLength(0);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  test("a settings read does not hand out the cached object to be changed", async () => {
+    const fixture = await setup();
+    writeSettings(fixture.repositoryPath, {
+      name: fixture.repository.name,
+      concurrency: 1,
+    });
+    const first = await readDevSettings(fixture.repositoryPath);
+    const second = await readDevSettings(fixture.repositoryPath);
+    expect(first).not.toBe(second);
+    (first as unknown as { concurrency: number }).concurrency = 9;
+    expect(second.concurrency).toBe(1);
+  });
+
   test("a changed dev.json is picked up on the next pass", async () => {
     const fixture = await setup();
     writeSettings(fixture.repositoryPath, {
@@ -329,6 +362,28 @@ describe("the dev scheduler's repeated pass", () => {
     expect(
       fixture.lines.filter((line) => line.includes("keeps no recorded flow")),
     ).toHaveLength(1);
+  });
+
+  test("an in-memory store declares a content-addressed flow once too", async () => {
+    const fixture = await setup();
+    Object.defineProperty(fixture.store, "kind", { value: "memory" });
+    writeSettings(fixture.repositoryPath, {
+      name: fixture.repository.name,
+      flows: {
+        custom: { stages: [{ stage: "code" }, { stage: "human" }] },
+      },
+    });
+    const declared: string[] = [];
+    schedulerTestHooks.declare = (flow) => declared.push(flow.name);
+    await tick(fixture);
+    const first = [...declared];
+    declared.length = 0;
+    await tick(fixture);
+    const second = [...declared];
+
+    const custom = first.find((name) => name.startsWith("dev/repository/custom/"));
+    expect(custom).toBeString();
+    expect(second).not.toContain(custom);
   });
 
   test("an unchanged settings text still checks a referenced workerBrief file", async () => {

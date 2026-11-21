@@ -56,3 +56,10 @@ the row fields.
 | T-0618-M3 | packages/source-cron/src/index.ts | a catch-up scanned the whole seven-day window instead of stopping at the recorded last time | `scan cost > a missed minute is still caught up after a gap, scanning back only to the last time` (a lookback of 7 days instead of three hours) |
 | T-0618-M4 | packages/source-cron/src/index.ts | a paused rule scanned seven days instead of stopping at its recorded last time | `scan cost > a paused rule scans no further back than its recorded last time` (7 days instead of five minutes) |
 | T-0618-M5 | packages/source-cron/src/index.ts | a catch-up with nothing planned after the last time reset the recorded time to the poll's minute | `missed runs > a miss older than 7 days runs nothing` (the recorded last time moved from 2025-01-01 to the poll's minute) |
+
+## T-0644 — a failed emit waits for its retry
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0644-M1 | packages/source-cron/src/index.ts | a poll recorded its minute before the emit, so a failed emit was skipped for the rest of that minute | `the cron source > an emit that fails is tried again within the same minute` |
+| T-0644-M2 | packages/source-cron/src/index.ts | a catch-up with nothing planned kept the old recorded time instead of resetting it to the poll's minute | `missed runs > a miss older than 7 days runs nothing` |

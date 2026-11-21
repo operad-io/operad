@@ -125,11 +125,13 @@ function item(fields: Partial<PendingItem> & { runId: string }): PendingItem {
 }
 
 /** A wait a test moves itself: every deadline waits until `fire` or its own abort. */
-function holdWaits(): { readonly wait: (ms: number, signal: AbortSignal) => Promise<void>; fire: () => void } {
+function holdWaits(): { readonly wait: (ms: number, signal: AbortSignal) => Promise<void>; fire: () => void; calls: () => number } {
   const waiting = new Set<() => void>();
+  let calls = 0;
   return {
-    wait: (_ms, signal) =>
-      new Promise<void>((resolve) => {
+    wait: (_ms, signal) => {
+      calls += 1;
+      return new Promise<void>((resolve) => {
         const finish = (): void => {
           waiting.delete(finish);
           signal.removeEventListener("abort", finish);
@@ -137,7 +139,9 @@ function holdWaits(): { readonly wait: (ms: number, signal: AbortSignal) => Prom
         };
         waiting.add(finish);
         signal.addEventListener("abort", finish, { once: true });
-      }),
+      });
+    },
+    calls: () => calls,
     fire: () => {
       for (const finish of [...waiting]) finish();
     },
@@ -370,6 +374,28 @@ describe("pending items go to Telegram", () => {
     client.items = [item({ runId: "d1", object: "task:t1", actions: [ACT_MERGE], flow: "dev" })];
     for (let index = 0; index < 10; index += 1) client.announce();
     await nextTurn();
+    expect(client.pendingReads).toBe(before);
+
+    waits.fire();
+    await api.nextSend();
+    expect(client.pendingReads).toBe(before + 1);
+    await running.stop();
+    await w.close();
+  });
+
+  test("continuous stored changes do not postpone the one pending pass", async () => {
+    const waits = holdWaits();
+    const { w, api, client, ctx } = await setup({ pending: ["dev"], bind: false, wait: waits.wait });
+    const running = new PendingSender(ctx, { api, wait: waits.wait }).start();
+    await running.ready;
+    const before = client.pendingReads;
+    client.items = [item({ runId: "d1", object: "task:t1", actions: [ACT_MERGE], flow: "dev" })];
+    for (let index = 0; index < 5; index += 1) {
+      client.announce();
+      await nextTurn();
+    }
+    // The first change opened the window; the rest joined it.
+    expect(waits.calls()).toBe(1);
     expect(client.pendingReads).toBe(before);
 
     waits.fire();

@@ -148,3 +148,9 @@ recorded. The root [MUTATIONS.md](../../../MUTATIONS.md) explains the format and
 |---|---|---|---|
 | T-0620-M1 | packages/harness/codex/src/install.ts | `codexFileHead` read the whole command file instead of its first 128 bytes | `the command that starts codex app-server > only the first bytes of a command file are read for its shebang` |
 | T-0620-M2 | packages/harness/codex/src/index.ts | `codexSignedInCached` ran its probe directly instead of through the shared cache, so two callers spawned two processes | `codex's signedIn answer > two clients asking at once share one probe` |
+
+## T-0644 — the default command is found once per PATH
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0644-M1 | packages/harness/codex/src/install.ts | `defaultCommand` searched PATH on every call instead of reusing the command found for that PATH | `the command that starts codex app-server > a default command found for a PATH is not searched for again` |

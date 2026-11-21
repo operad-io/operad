@@ -187,7 +187,10 @@ export class PendingSender implements PendingResponder {
   /** A stored change; a burst of them is gathered into one later pending pass. */
   handleEvent(event: TelegramEvent): void {
     if (event.section !== undefined || this.stopped) return;
-    this.debounce?.abort();
+    // The first change opens the window; changes during it join the same pass.
+    // Restarting the window on every change would let a steady stream postpone
+    // the pass forever.
+    if (this.debounce !== undefined) return;
     const timer = new AbortController();
     this.debounce = timer;
     void this.wait(PENDING_DEBOUNCE_MS, timer.signal).then(

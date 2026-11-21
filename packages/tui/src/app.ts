@@ -887,15 +887,9 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     }, delay);
   }
 
-  /** Fetches the targets an event asked for; a lost server asks for everything. */
-  async function refetch(targets: Refetch): Promise<void> {
-    if (finished || state.connection === "unauthorized") return;
-    if (targets.all || state.connection !== "ok") {
-      await refresh();
-      return;
-    }
-    const signal = abort.signal;
-    const fail = (error: unknown): void => {
+  /** What a live read says when it fails: the footer line, or the connection state. */
+  function liveFail(signal: AbortSignal): (error: unknown) => void {
+    return (error: unknown): void => {
       if (signal.aborted || finished) return;
       if (noteConnection(error)) {
         if (state.connection === "unreachable") scheduleRetry();
@@ -904,6 +898,17 @@ export function startShell(deps: TuiShellDeps): TuiShell {
       dispatch({ type: "status", message: messageOf(error) });
       report(error);
     };
+  }
+
+  /** Fetches the targets an event asked for; a lost server asks for everything. */
+  async function refetch(targets: Refetch): Promise<void> {
+    if (finished || state.connection === "unauthorized") return;
+    if (targets.all || state.connection !== "ok") {
+      await refresh();
+      return;
+    }
+    const signal = abort.signal;
+    const fail = liveFail(signal);
     const work: Promise<void>[] = [];
     if (targets.lists) {
       work.push(refreshPendingRunning(signal, fail));
@@ -1259,6 +1264,8 @@ export function startShell(deps: TuiShellDeps): TuiShell {
       if (abort.signal.aborted) return;
       dispatch({ type: "action-done" });
       refetchObjectAndRow(answeredRow(request));
+      // The answered item leaves Pending now rather than at the next list window.
+      guard(refreshPendingRunning(abort.signal, liveFail(abort.signal)));
     } catch (error) {
       if (abort.signal.aborted) return;
       if (error instanceof TuiError && error.status !== undefined) {
@@ -1334,14 +1341,14 @@ export function startShell(deps: TuiShellDeps): TuiShell {
   /** After an action or answer: only the open object and the row it changed. */
   function refetchObjectAndRow(id: string | undefined): void {
     if (finished) return;
-    guard(
-      refetch({
-        all: false,
-        lists: false,
-        rows: id === undefined ? [] : [id],
-        object: state.object !== undefined,
-      }),
-    );
+    const signal = abort.signal;
+    const fail = liveFail(signal);
+    const work: Promise<void>[] = [];
+    if (state.object !== undefined) {
+      work.push(refreshObjectPane(signal, state.object, fail, false));
+    }
+    if (id !== undefined) work.push(refreshRow(id, signal, fail));
+    guard(Promise.all(work).then(() => undefined));
   }
 
   function requestRefresh(): void {

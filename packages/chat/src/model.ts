@@ -1107,12 +1107,22 @@ export function messagePage(
   }
 }
 
-/** The messages among a chat's facts, with changed text and no withdrawn message. */
+/** The messages among a chat's facts, with a person's changed text and withdrawal. */
 function messagesOfFacts(facts: readonly PluginFact[]): readonly Message[] {
-  const messages = facts
-    .map(messageOfFact)
-    .filter((message): message is Message => message !== undefined);
-  return applyMessageChanges(messages, messageChangesOf(facts));
+  const changes = messageChangesOf(facts);
+  const messages: Message[] = [];
+  for (const fact of facts) {
+    const message = messageOfFact(fact);
+    if (message === undefined) continue;
+    if (message.role !== "user") {
+      messages.push(message);
+      continue;
+    }
+    const change = changes.get(message.id);
+    if (change?.withdrawn !== undefined) continue;
+    messages.push(change?.text === undefined ? message : { ...message, text: change.text });
+  }
+  return messages;
 }
 
 /** The entries among a chat's facts. */

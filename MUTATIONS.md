@@ -169,3 +169,9 @@ Each package keeps its mutation checks in `MUTATIONS.md`; a row names the broken
 | T-0630-M2 | scripts/changed-packages.ts | dropped `import.meta.resolve(` from the specifier pattern, so a resolved relative path was not a load | `selectPackages > import.meta.resolve of a relative path is a load` |
 | T-0630-M3 | scripts/changed-packages.ts | read comments too (`uncommented = text`), so a quoted package name in a comment became a load | `selectPackages > a quoted package name in a comment is not a load` |
 
+
+## T-0644 — the event-cost follow-ups
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0644-M1 | scripts/test/adr-references.test.ts | dropped the leading `./` and `../` path prefix from the citation pattern | `a backlog decision is cited by its ADR > a citation is reported with the file and the line` (the dot-led citations were not reported) |
