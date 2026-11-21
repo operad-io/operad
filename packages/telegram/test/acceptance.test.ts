@@ -571,8 +571,9 @@ test("a proposed task and a task waiting for a merge are answered from Telegram 
   const started = await w.kernel.start({ flow: "waits:review", object: `task:${waiting.id}` });
   if (started.kind !== "started") throw new Error("the wait did not start");
 
-  const { ctx, drive, pass } = serveLoop(w, root);
+  const { ctx, drive, pass, runners } = serveLoop(w, root);
   await drive();
+  await Promise.all(runners);
   const api = new LongPollApi();
   const plugin = startPlugin(ctx, api);
   await plugin.ready;
