@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
+import { fileURLToPath } from "node:url";
 import type { StepContext } from "@operad-io/engine";
-import { readAgentStep, type AgentStepSpec } from "../src/index.ts";
+import { readAgentStep, runWorkerStep, systemClock, type AgentStepSpec } from "../src/index.ts";
 import { cleanupTempRoots, tempRoot } from "./support.ts";
 
 /** The context fields readAgentStep reads: no profile, no secret, a logger. */
@@ -73,5 +74,32 @@ describe("the early refusal", () => {
     expect(data["reason"]).toBe("cwd");
     expect(String(data["message"]).length).toBeGreaterThan(0);
     expect(data["imageGenCalls"]).toBe(0);
+  });
+});
+
+describe("runWorkerStep", () => {
+  test("runs the worker and keeps its tool line, its result and its timing", async () => {
+    const home = await tempRoot();
+    const step = await readAgentStep(context(home), { prompt: "hi", cwd: home }, SPEC);
+    expect("refused" in step).toBe(false);
+    if ("refused" in step) return;
+    const worker = fileURLToPath(new URL("./fixtures/one-result.ts", import.meta.url));
+    const result = await runWorkerStep({
+      values: step.values,
+      access: step.access,
+      command: process.execPath,
+      args: [worker],
+      stdin: { prompt: "hi" },
+      keep: undefined,
+      clock: systemClock,
+      now: Date.now,
+      toolEvent: () => undefined,
+    });
+    expect(result.result).toBe("done");
+    const data = result.data as Record<string, unknown>;
+    expect(data["sessionId"]).toBe("session-1");
+    expect(data["finalMessage"]).toBe("ok");
+    expect(data["exitCode"]).toBe(0);
+    expect(data["timings"]).toBeDefined();
   });
 });
