@@ -325,6 +325,6 @@ describe("the TUI view", () => {
     const text = drawState(state).list.chunks.map((c) => c.text).join("");
     expect(text).toContain("T-0048 x  Type filters");
     expect(text).not.toContain("operad/T-0048");
-    expect(text).toContain("w · 1ms · operad");
+    expect(text).toContain("w · <1s · operad");
   });
 });
