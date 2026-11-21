@@ -1,8 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { cleanupTempRoots, tempRoot } from "@operad-io/engine/testing";
 import {
   hasLiveAccess,
   liveAccess,
@@ -14,16 +13,7 @@ import {
   writeLiveAccess,
 } from "../src/index.ts";
 
-const roots: string[] = [];
-afterAll(async () => {
-  for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true });
-});
-
-async function tempRoot(): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), "operad-live-access-"));
-  roots.push(root);
-  return root;
-}
+afterAll(cleanupTempRoots);
 
 describe("a chat's live access level", () => {
   test("is read again from its file, so a lowered level asks the next call", async () => {

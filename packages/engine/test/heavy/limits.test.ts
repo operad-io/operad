@@ -34,7 +34,7 @@ async function fileExists(path: string): Promise<void> {
 }
 
 /** Resolves when `check` holds, looking again after each change to the log. */
-function waitUntil(log: LogBackend, check: () => Promise<boolean>): Promise<void> {
+function waitForLog(log: LogBackend, check: () => Promise<boolean>): Promise<void> {
   return new Promise((resolve, reject) => {
     let busy = false;
     let again = false;
@@ -166,7 +166,7 @@ async function setup(mode: "memory" | "file"): Promise<Env> {
     },
     started: (name) => fileExists(join(dir, `started-${name}`)),
     queued: (runId) =>
-      waitUntil(log, async () => (await kinds(log, runId)).includes("step_queued")),
+      waitForLog(log, async () => (await kinds(log, runId)).includes("step_queued")),
     order() {
       const path = join(dir, "order");
       return existsSync(path)

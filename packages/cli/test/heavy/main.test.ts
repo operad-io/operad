@@ -13,7 +13,7 @@ import {
   serveOnce,
   storeRootOf,
 } from "@operad-io/engine";
-import { answerRun } from "@operad-io/engine/testing";
+import { answerRun, makeHome } from "@operad-io/engine/testing";
 import { addRepository } from "../../../dev/src/service.ts";
 import { distributionConfig } from "../../src/defaults.ts";
 import { main, type CliIo } from "../../src/main.ts";
@@ -81,21 +81,8 @@ function capture(): Output {
   };
 }
 
-async function makeHome(): Promise<{
-  readonly root: string;
-  readonly home: string;
-}> {
-  const root = await tempRoot();
-  const home = join(root, "home");
-  mkdirSync(home, { recursive: true });
-  await Bun.write(
-    join(home, "config.json"),
-    JSON.stringify({
-      plugins: [pluginPath],
-      store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
-    }),
-  );
-  return { root, home };
+function makeMainHome() {
+  return makeHome({ plugins: [pluginPath] });
 }
 
 /** Starts a flow and drives it as far as it goes without a person. */
@@ -152,7 +139,7 @@ async function makeNamedHome(plugins: Record<string, unknown>): Promise<{
 
 describe("operad command", () => {
   test("init creates the home and prints each plugin check", async () => {
-    const { root, home } = await makeHome();
+    const { root, home } = await makeMainHome();
     const fresh = join(root, "fresh");
     const bin = await fakeRadian(root);
     const previousPath = process.env.PATH;
@@ -294,7 +281,7 @@ describe("operad command", () => {
   });
 
   test("flows lists the loaded flows and their plugin", async () => {
-    const { home } = await makeHome();
+    const { home } = await makeMainHome();
     const output = capture();
     expect(await main(["flows"], { home, io: output.io })).toBe(0);
     expect(output.text()).toContain("crash  test");
@@ -327,7 +314,7 @@ describe("operad command", () => {
   });
 
   test("pending, running and history answer in user words", async () => {
-    const { home } = await makeHome();
+    const { home } = await makeMainHome();
     const config = await readConfig(home);
     const storeRoot = storeRootOf(config);
     new SqlitePluginStore({ root: storeRoot }).put(
@@ -385,7 +372,7 @@ describe("operad command", () => {
   });
 
   test("an action that opens an object prints only its line of text", async () => {
-    const { root, home } = await makeHome();
+    const { root, home } = await makeMainHome();
     await Bun.write(
       join(home, "config.json"),
       JSON.stringify({
@@ -405,7 +392,7 @@ describe("operad command", () => {
   });
 
   test("an action records its actor and history shows it", async () => {
-    const { home } = await makeHome();
+    const { home } = await makeMainHome();
     const config = await readConfig(home);
     const storeRoot = storeRootOf(config);
     new SqlitePluginStore({ root: storeRoot }).put(
@@ -461,7 +448,7 @@ describe("operad command", () => {
   });
 
   test("history by object id shows every run of that object", async () => {
-    const { home } = await makeHome();
+    const { home } = await makeMainHome();
     const first = await startRun(home, "ask", "job:7");
     await endRun(home, first, "stop");
     const second = await startRun(home, "ask", "job:7");
@@ -489,7 +476,7 @@ describe("operad command", () => {
   });
 
   test("exit codes: 1 unknown id, 2 usage, 4 lock held", async () => {
-    const { home } = await makeHome();
+    const { home } = await makeMainHome();
 
     const unknown = capture();
     expect(
@@ -523,7 +510,7 @@ describe("operad command", () => {
   });
 
   test("history resolves a plugin object without mixing object types", async () => {
-    const { home } = await makeHome();
+    const { home } = await makeMainHome();
     await startRun(home, "ask", "task:42");
     await startRun(home, "pause", "brief:42");
 
@@ -547,7 +534,7 @@ describe("operad command", () => {
   });
 
   test("history keeps a typed object's type when another type has a run under the same bare id", async () => {
-    const { home } = await makeHome();
+    const { home } = await makeMainHome();
     const config = await readConfig(home);
     new SqlitePluginStore({ root: storeRootOf(config) }).put("task", "42", { title: "Task" }, "seed");
     await startRun(home, "pause", "brief:42");
@@ -560,7 +547,7 @@ describe("operad command", () => {
   });
 
   test("history does not resolve an object type no plugin declares", async () => {
-    const { home } = await makeHome();
+    const { home } = await makeMainHome();
     await startRun(home, "ask", "bogus:42");
     const output = capture();
     expect(await main(["history", "bogus:42"], { home, io: output.io })).toBe(1);
@@ -568,14 +555,14 @@ describe("operad command", () => {
   });
 
   test("serve rejects arguments as a usage error", async () => {
-    const { home } = await makeHome();
+    const { home } = await makeMainHome();
     const output = capture();
     expect(await main(["serve", "unexpected"], { home, io: output.io })).toBe(2);
     expect(output.errors()).toContain("serve takes no arguments");
   });
 
   test("history of 10 000 steps streams instead of buffering", async () => {
-    const { home } = await makeHome();
+    const { home } = await makeMainHome();
     const config = await readConfig(home);
     const log = openConfigLog(config);
     const info = await log.startRun("big", "job:1");

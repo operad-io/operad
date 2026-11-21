@@ -37,6 +37,7 @@ import {
 import { EventHub, eventResponse, HttpStopError } from "../../src/http/server.ts";
 import { networkInterfaces } from "node:os";
 import { cleanupTempRoots, tempRoot } from "../plugin/support.ts";
+import { freePort } from "../../src/testing/index.ts";
 
 afterAll(cleanupTempRoots);
 
@@ -82,18 +83,6 @@ function privateAddress(): string | undefined {
     }
   }
   return undefined;
-}
-
-async function freePort(): Promise<number> {
-  const server = Bun.serve({
-    hostname: "127.0.0.1",
-    port: 0,
-    fetch: () => new Response(""),
-  });
-  const port = server.port;
-  await server.stop(true);
-  if (port === undefined) throw new Error("the free-port probe bound no port");
-  return port;
 }
 
 async function makeHarness(options: HarnessOptions = {}): Promise<Harness> {

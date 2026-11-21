@@ -1,7 +1,7 @@
 /** Scratch directories and git repositories for the dev tests. */
 
 import { afterEach, expect } from "bun:test";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -36,37 +36,20 @@ import {
   withRepoLock,
 } from "../src/service.ts";
 
-const roots: string[] = [];
+export {
+  alive,
+  cleanupTempRoots,
+  osTempRoot,
+  tempRoot,
+  waitForFile,
+  waitForGone,
+  waitForPid,
+  waitUntil,
+} from "@operad-io/engine/testing";
 
 // A test that reads settings must never keep a copy in the real home.
 if (process.env.OPERAD_HOME === undefined) {
   process.env.OPERAD_HOME = join(realpathSync(tmpdir()), `operad-dev-test-home-${process.pid}`);
-}
-
-/** A scratch directory under `.radian/`, removed by `cleanupTempRoots`. */
-export async function tempRoot(): Promise<string> {
-  const base = join(process.cwd(), ".radian", "tmp");
-  await mkdir(base, { recursive: true });
-  const root = await mkdtemp(join(base, "dev-test-"));
-  roots.push(root);
-  return root;
-}
-
-/**
- * A scratch directory under the OS temp dir, not under the repository, so a
- * file a test leaves behind (a FIFO) is never in a tree that tools search.
- * Removed by `cleanupTempRoots`.
- */
-export async function osTempRoot(): Promise<string> {
-  const root = await mkdtemp(join(realpathSync(tmpdir()), "operad-dev-test-"));
-  roots.push(root);
-  return root;
-}
-
-export async function cleanupTempRoots(): Promise<void> {
-  for (const root of roots.splice(0)) {
-    await rm(root, { recursive: true, force: true });
-  }
 }
 
 function git(cwd: string, args: readonly string[]): void {

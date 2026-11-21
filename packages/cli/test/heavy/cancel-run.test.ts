@@ -15,18 +15,12 @@ import {
 } from "@operad-io/engine";
 import { main } from "../../src/main.ts";
 import { cleanupTempRoots, tempRoot } from "../../../engine/test/plugin/support.ts";
+import { freePort } from "@operad-io/engine/testing";
 
 afterAll(cleanupTempRoots);
 
 const CLI_ENTRY = fileURLToPath(new URL("../../bin/operad.ts", import.meta.url));
 const pluginPath = fileURLToPath(new URL("../fixtures/cancel-plugin.ts", import.meta.url));
-
-async function freePort(): Promise<number> {
-  const server = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
-  const port = server.port;
-  server.stop(true);
-  return port;
-}
 
 /** A home whose job waits on a run that is paused for a person. */
 async function makeWaiting(http: boolean): Promise<{

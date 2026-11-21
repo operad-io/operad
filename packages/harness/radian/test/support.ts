@@ -1,32 +1,10 @@
 import { readFileSync, writeFileSync } from "node:fs";
-import {
-  chmod,
-  mkdir,
-  mkdtemp,
-  readdir,
-  rm,
-  writeFile,
-} from "node:fs/promises";
+import { chmod, mkdir, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { waitForChange } from "@operad-io/engine/platform";
+import { tempRoots } from "@operad-io/engine/testing";
 
-const roots: string[] = [];
-let current: string[] = [];
-
-/** A scratch directory under `.radian/`, removed by `cleanupTempRoots`. */
-export async function tempRoot(): Promise<string> {
-  const base = join(process.cwd(), ".radian", "tmp");
-  await mkdir(base, { recursive: true });
-  const root = await mkdtemp(join(base, "radian-test-"));
-  roots.push(root);
-  current.push(root);
-  return root;
-}
-
-/** Every scratch directory this test file created, including cleaned ones. */
-export function tempRoots(): readonly string[] {
-  return [...roots];
-}
+export { tempRoot, tempRoots } from "@operad-io/engine/testing";
 
 interface LiveProcess {
   readonly pid: number;
@@ -80,7 +58,7 @@ function signalProcessGroup(process: LiveProcess): void {
 }
 
 /** Resolves once no live process names one of `paths`, or after `limitMs`. */
-async function waitForGone(
+async function waitForPathsGone(
   paths: readonly string[],
   limitMs = 2000,
 ): Promise<void> {
@@ -97,54 +75,13 @@ async function waitForGone(
  * its fake radian behind.
  */
 export async function stopTestProcesses(): Promise<void> {
-  const paths = current;
-  current = [];
+  const paths = tempRoots();
   if (paths.length === 0) return;
   const matches = liveProcesses().filter((process) =>
     paths.some((path) => process.command.includes(path)),
   );
   for (const process of matches) signalProcessGroup(process);
-  await waitForGone(paths);
-}
-
-export async function cleanupTempRoots(): Promise<void> {
-  await stopTestProcesses();
-  for (const root of roots.splice(0)) {
-    try {
-      await rm(root, { recursive: true, force: true });
-    } catch {
-      // A test that timed out can leave a directory it locked; unlock and retry.
-      await unlock(root);
-      await rm(root, { recursive: true, force: true });
-    }
-  }
-}
-
-async function unlock(path: string): Promise<void> {
-  try {
-    await chmod(path, 0o700);
-    const entries = await readdir(path, { withFileTypes: true });
-    for (const entry of entries) {
-      if (entry.isDirectory()) await unlock(join(path, entry.name));
-    }
-  } catch {
-    // The path may already be gone, or not be a directory.
-  }
-}
-
-/** Resolves when `predicate` holds, without waiting out a fixed sleep. */
-export async function waitUntil(
-  predicate: () => boolean,
-  timeoutMs = 2000,
-  stepMs = 10,
-): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (!predicate()) {
-    if (Date.now() >= deadline) {
-      throw new Error("timed out waiting for a condition");
-    }
-    await new Promise((resolve) => globalThis.setTimeout(resolve, stepMs));
-  }
+  await waitForPathsGone(paths);
 }
 
 /**

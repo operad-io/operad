@@ -19,6 +19,7 @@ import { EVENT_NOTE_TEMPLATE, FLUSH_MS, modelErrorOf } from "@operad-io/harness-
 import { createPiHarnessPlugin, piToolEvent } from "../../src/index.ts";
 import { piModelListPath } from "../../src/model-list.ts";
 import {
+  alive,
   cleanupTempRoots,
   manualClock,
   tempRoot,
@@ -106,15 +107,6 @@ async function gone(pid: number): Promise<boolean> {
     await new Promise((r) => setTimeout(r, 5));
   }
   return true;
-}
-
-function alive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 function recorded(env: TestEnv): Record<string, unknown> {

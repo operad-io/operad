@@ -10,6 +10,7 @@ import {
   type PluginStepResult,
 } from "@operad-io/engine";
 import { readKeptWorkers, stopAllKeptWorkers } from "@operad-io/engine/platform";
+import { alive } from "@operad-io/engine/testing";
 import { createPiHarnessPlugin } from "../../src/index.ts";
 
 const FAKE = fileURLToPath(new URL("../fake-kept-worker.ts", import.meta.url));
@@ -79,15 +80,6 @@ async function gone(pid: number): Promise<boolean> {
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
   return true;
-}
-
-function alive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 function inputs(env: Env): Record<string, unknown>[] {

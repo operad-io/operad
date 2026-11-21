@@ -6,6 +6,10 @@ import { fileURLToPath } from "node:url";
 import { openPluginStore, readHttpToken } from "@operad-io/engine";
 import { main } from "../../src/main.ts";
 import { cleanupTempRoots, tempRoot } from "../../../engine/test/plugin/support.ts";
+import {
+  freePort,
+  makeHome as makeTestHome,
+} from "@operad-io/engine/testing";
 
 afterAll(cleanupTempRoots);
 
@@ -17,39 +21,20 @@ const scopedPluginPath = fileURLToPath(
   new URL("../fixtures/scoped-plugin.ts", import.meta.url),
 );
 
-async function freePort(): Promise<number> {
-  const server = Bun.serve({
-    hostname: "127.0.0.1",
-    port: 0,
-    fetch: () => new Response(""),
-  });
-  const port = server.port;
-  await server.stop(true);
-  if (port === undefined) throw new Error("no free port");
-  return port;
-}
-
 interface Home {
   readonly root: string;
   readonly home: string;
 }
 
-async function makeHome(
+async function makeHttpHome(
   listen: readonly string[] = ["127.0.0.1"],
 ): Promise<Home & { readonly port: number }> {
-  const root = await tempRoot();
-  const home = join(root, "home");
-  mkdirSync(home, { recursive: true });
   const port = await freePort();
-  writeFileSync(
-    join(home, "config.json"),
-    JSON.stringify({
-      plugins: [pluginPath],
-      store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
-      http: { enabled: true, port, listen },
-    }),
-  );
-  return { root, home, port };
+  const made = await makeTestHome({
+    plugins: [pluginPath],
+    extra: { http: { enabled: true, port, listen } },
+  });
+  return { root: made.root, home: made.home, port };
 }
 
 function env(home: string): Record<string, string> {
@@ -101,7 +86,7 @@ async function stopChild(
 
 describe("operad serve http", () => {
   test("starts with http.enabled, logs one address, and checks the token", async () => {
-    const { home, port } = await makeHome();
+    const { home, port } = await makeHttpHome();
     const child = Bun.spawn({
       cmd: [process.execPath, CLI_ENTRY, "serve"],
       cwd: home,
@@ -204,7 +189,7 @@ describe("operad serve http", () => {
   });
 
   test("refuses a wildcard at start and names the entry", async () => {
-    const { home } = await makeHome(["0.0.0.0"]);
+    const { home } = await makeHttpHome(["0.0.0.0"]);
     const child = Bun.spawn({
       cmd: [process.execPath, CLI_ENTRY, "serve"],
       cwd: home,
@@ -229,7 +214,7 @@ describe("operad serve http", () => {
   });
 
   test("no other command opens the port or creates the token", async () => {
-    const { home } = await makeHome();
+    const { home } = await makeHttpHome();
     const io = {
       write: () => undefined,
       error: () => undefined,

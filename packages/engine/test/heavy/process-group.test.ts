@@ -1,8 +1,6 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { basename, dirname, join } from "node:path";
+import { existsSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import {
@@ -10,81 +8,21 @@ import {
   createGroupStop,
   exitFromStatus,
   runLine,
-  waitForChange,
   type Clock,
 } from "../../src/platform/index.ts";
+import {
+  alive,
+  cleanupTempRoots,
+  manualClock,
+  signalable,
+  tempRoot,
+  waitForFile,
+  waitForPid,
+  waitUntil,
+  type ManualClock,
+} from "../../src/testing/index.ts";
 
-const roots: string[] = [];
-
-async function tempRoot(): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), "operad-process-test-"));
-  roots.push(root);
-  return root;
-}
-
-afterAll(async () => {
-  for (const root of roots.splice(0)) {
-    await rm(root, { recursive: true, force: true });
-  }
-});
-
-/**
- * How long a wait for a file sleeps between two looks when no directory event
- * comes. A directory watch can miss a file made while it was starting, so the
- * wait never relies on the event alone (see `waitForChange`).
- */
-const LOOK_MS = 100;
-
-/** Resolves when the file exists. Event first; a look every `LOOK_MS` besides. */
-async function waitForFile(path: string): Promise<void> {
-  while (!existsSync(path)) {
-    await waitForChange(dirname(path), basename(path), LOOK_MS);
-  }
-}
-
-/** True for a pid a test may signal: a finite integer above 1 (never 0, 1 or a group). */
-function signalable(pid: number | undefined): pid is number {
-  return pid !== undefined && Number.isInteger(pid) && pid > 1;
-}
-
-/**
- * Resolves with the pid a shell wrote to `path`, once the file holds one. The
- * file exists, empty, before the shell writes to it, so existence is not enough.
- */
-async function waitForPid(path: string): Promise<number> {
-  for (;;) {
-    try {
-      const pid = Number(readFileSync(path, "utf8").trim());
-      if (signalable(pid)) return pid;
-    } catch {
-      // Not there yet.
-    }
-    await waitForChange(dirname(path), basename(path), LOOK_MS);
-  }
-}
-
-interface ManualClock extends Clock {
-  /** How many grace waits were requested. */
-  readonly sleeps: number;
-}
-
-/** A clock a test drives: a grace wait returns at once. */
-function manualClock(): ManualClock {
-  let sleeps = 0;
-  return {
-    setTimeout() {
-      return {};
-    },
-    clearTimeout() {},
-    sleep() {
-      sleeps += 1;
-      return Promise.resolve();
-    },
-    get sleeps() {
-      return sleeps;
-    },
-  };
-}
+afterAll(cleanupTempRoots);
 
 /**
  * A clock whose waits end when the test says so. A wait that a stop starts
@@ -132,34 +70,6 @@ function afterTerm(signals: readonly (string | number)[]): readonly (string | nu
   const rest = signals.slice(first + 1);
   expect(rest.every((signal) => signal === "SIGKILL")).toBe(true);
   return signals.slice(0, first + 1);
-}
-
-function alive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Waits for an observable condition with a bounded poll. Only the test that
- * exercises a real signal uses it: the line's own shell reporting the TERM is
- * what the order assertion needs, not a fixed sleep.
- */
-async function waitUntil(
-  predicate: () => boolean,
-  timeoutMs = 10_000,
-  stepMs = 20,
-): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (!predicate()) {
-    if (Date.now() >= deadline) {
-      throw new Error("timed out waiting for a condition");
-    }
-    await new Promise((resolve) => globalThis.setTimeout(resolve, stepMs));
-  }
 }
 
 describe("process groups", () => {
@@ -740,7 +650,7 @@ describe("the sentinel's host", () => {
       await child.exited;
       // The line can now finish; the sentinel must not outlive its host.
       writeFileSync(release, "go");
-      await waitUntil(() => sentinelPid === undefined || !alive(sentinelPid));
+      await waitUntil(() => sentinelPid === undefined || !alive(sentinelPid), 10_000);
       expect(alive(sentinelPid)).toBe(false);
     } finally {
       try {

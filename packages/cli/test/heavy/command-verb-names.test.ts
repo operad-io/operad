@@ -9,6 +9,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { cleanupTempRoots, tempRoot } from "../../../engine/test/plugin/support.ts";
+import { operad } from "@operad-io/test-support";
 import { testEnv } from "../env.ts";
 
 afterAll(cleanupTempRoots);
@@ -27,7 +28,7 @@ function pluginSource(name: string, verbs: readonly string[]): string {
   ].join("\n");
 }
 
-async function makeHome(): Promise<{ root: string; home: string }> {
+async function makeCommandHome(): Promise<{ root: string; home: string }> {
   const root = await tempRoot();
   const home = join(root, "home");
   mkdirSync(home, { recursive: true });
@@ -46,26 +47,9 @@ async function makeHome(): Promise<{ root: string; home: string }> {
   return { root, home };
 }
 
-async function operad(home: string, args: readonly string[]) {
-  const child = Bun.spawn({
-    cmd: [process.execPath, CLI_ENTRY, ...args],
-    cwd: home,
-    env: { ...testEnv(), OPERAD_HOME: home },
-    stdin: "ignore",
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  const [code, out, err] = await Promise.all([
-    child.exited,
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-  ]);
-  return { code, out, err };
-}
-
 describe("plugin commands named like kernel verbs or each other", () => {
   test("the CLI starts, the kernel verb runs and the plugin command runs through its plugin", async () => {
-    const { home } = await makeHome();
+    const { home } = await makeCommandHome();
 
     const kernel = await operad(home, ["pending"]);
     expect(kernel.code).toBe(0);
@@ -90,7 +74,7 @@ describe("plugin commands named like kernel verbs or each other", () => {
   });
 
   test("serve loads such a plugin", async () => {
-    const { home } = await makeHome();
+    const { home } = await makeCommandHome();
     const serve = Bun.spawn({
       cmd: [process.execPath, CLI_ENTRY, "serve"],
       cwd: home,

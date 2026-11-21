@@ -1,156 +1,22 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { existsSync, readFileSync, watch } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { withWorkerReports } from "@operad-io/engine/platform";
-import { inboxOf, messageLine, messageText, runAgent, type Clock } from "../../src/index.ts";
+import {
+  alive,
+  cleanupTempRoots,
+  manualClock,
+  signalable,
+  tempRoot,
+  waitForFile,
+  waitForPid,
+  waitUntil,
+  type ManualClock,
+} from "@operad-io/engine/testing";
+import { inboxOf, messageLine, messageText, runAgent } from "../../src/index.ts";
 
-const roots: string[] = [];
-
-async function tempRoot(): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), "operad-harness-process-test-"));
-  roots.push(root);
-  return root;
-}
-
-afterAll(async () => {
-  for (const root of roots.splice(0)) {
-    await rm(root, { recursive: true, force: true });
-  }
-});
-
-/**
- * Resolves when the file exists. A directory watch wakes it at once; a watch
- * can miss an event under load, so a look every 100 ms backs it.
- */
-function waitForFile(path: string): Promise<void> {
-  if (existsSync(path)) return Promise.resolve();
-  return new Promise((resolve) => {
-    const check = (): void => {
-      if (!existsSync(path)) return;
-      watcher.close();
-      clearInterval(timer);
-      resolve();
-    };
-    const watcher = watch(dirname(path), check);
-    watcher.on("error", check);
-    const timer = setInterval(check, 100);
-    check();
-  });
-}
-
-interface ManualClock extends Clock {
-  fireTimers(): number;
-  when(predicate: () => boolean): Promise<void>;
-  readonly pending: number;
-  readonly sleeps: number;
-}
-
-/** A clock a test drives: the run never waits a real second for the drain. */
-function manualClock(): ManualClock {
-  const timers = new Set<{ readonly handler: () => void }>();
-  const waiters: Array<{ readonly predicate: () => boolean; readonly resolve: () => void }> = [];
-  let sleeps = 0;
-
-  const notify = (): void => {
-    for (let index = waiters.length - 1; index >= 0; index -= 1) {
-      const waiter = waiters[index];
-      if (waiter === undefined || !waiter.predicate()) continue;
-      waiters.splice(index, 1);
-      waiter.resolve();
-    }
-  };
-
-  return {
-    setTimeout(handler) {
-      const timer = { handler };
-      timers.add(timer);
-      notify();
-      return timer;
-    },
-    clearTimeout(handle) {
-      timers.delete(handle as { readonly handler: () => void });
-      notify();
-    },
-    sleep() {
-      sleeps += 1;
-      return Promise.resolve();
-    },
-    fireTimers() {
-      const due = [...timers];
-      timers.clear();
-      for (const timer of due) timer.handler();
-      notify();
-      return due.length;
-    },
-    when(predicate) {
-      if (predicate()) return Promise.resolve();
-      return new Promise<void>((resolve) => {
-        waiters.push({ predicate, resolve });
-      });
-    },
-    get pending() {
-      return timers.size;
-    },
-    get sleeps() {
-      return sleeps;
-    },
-  };
-}
-
-function alive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/** True for a pid a test may signal: a finite integer above 1. */
-function signalable(pid: number | undefined): pid is number {
-  return pid !== undefined && Number.isInteger(pid) && pid > 1;
-}
-
-/** Resolves with the pid a shell wrote to `path`; the file starts out empty. */
-function waitForPid(path: string): Promise<number> {
-  const read = (): number | undefined => {
-    try {
-      const pid = Number(readFileSync(path, "utf8").trim());
-      return signalable(pid) ? pid : undefined;
-    } catch {
-      return undefined;
-    }
-  };
-  const first = read();
-  if (first !== undefined) return Promise.resolve(first);
-  // A watch can miss an event under load, so a look every 100 ms backs it.
-  return new Promise((resolve) => {
-    const check = (): void => {
-      const pid = read();
-      if (pid === undefined) return;
-      watcher.close();
-      clearInterval(timer);
-      resolve(pid);
-    };
-    const watcher = watch(dirname(path), check);
-    watcher.on("error", check);
-    const timer = setInterval(check, 100);
-    check();
-  });
-}
-
-/** A bounded poll for a process to go; there is no event for another's death. */
-async function waitUntil(predicate: () => boolean, timeoutMs = 10_000): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (!predicate()) {
-    if (Date.now() >= deadline) throw new Error("timed out waiting for a condition");
-    await new Promise((resolve) => globalThis.setTimeout(resolve, 20));
-  }
-}
-
+afterAll(cleanupTempRoots);
 describe("the harness process", () => {
   test("a harness still running when its host dies is stopped with its sentinel", async () => {
     const root = await tempRoot();
@@ -171,7 +37,7 @@ describe("the harness process", () => {
       // We started this host, so its death is ours to cause.
       process.kill(host.pid, "SIGKILL");
       await host.exited;
-      await waitUntil(() => !alive(sentinelPid ?? 0) && !alive(harnessPid ?? 0));
+      await waitUntil(() => !alive(sentinelPid ?? 0) && !alive(harnessPid ?? 0), 10_000);
       expect(alive(sentinelPid)).toBe(false);
       expect(alive(harnessPid)).toBe(false);
     } finally {

@@ -3,6 +3,7 @@
   "compilerOptions": { "rootDir": ".", "outDir": "../../.tsbuild/telegram" },
   "include": ["package.json", "src", "test"],
   "references": [
+    { "path": "../bot" },
     { "path": "../chat" },
     { "path": "../dev" },
     { "path": "../engine" }

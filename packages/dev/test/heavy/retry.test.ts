@@ -251,7 +251,7 @@ function waitingByTask(w: World): readonly { readonly task: string; readonly rea
 }
 
 /** A clock the test moves by hand; every wait returns at once. */
-function manualClock(start = 1_000_000_000): { advance(ms: number): void } {
+function reviewClock(start = 1_000_000_000): { advance(ms: number): void } {
   let now = start;
   reviewTestHooks.now = () => now;
   reviewTestHooks.wait = async () => true;
@@ -347,7 +347,7 @@ describe("an environment failure of the work step", () => {
   });
 
   test("a step that is not loaded: the retry waits until it is, then the work runs", async () => {
-    const clock = manualClock();
+    const clock = reviewClock();
     const worker = scripted(() => DONE);
     const w = await world(1);
     const without = registryOf(w, [createChatPlugin(), createDevPlugin(), worker.plugin]);
@@ -367,7 +367,7 @@ describe("an environment failure of the work step", () => {
   });
 
   test("the wait runs out: the task waits for a person, and the line names what is not loaded", async () => {
-    const clock = manualClock();
+    const clock = reviewClock();
     const worker = scripted(() => DONE);
     const w = await world(1, { retry: { environmentWaitMinutes: 5 } });
     const without = registryOf(w, [createChatPlugin(), createDevPlugin(), worker.plugin]);
@@ -387,7 +387,7 @@ describe("an environment failure of the work step", () => {
 
 describe("a step that is not loaded, for several tasks", () => {
   test("within the bound every task stays running and nothing waits for a person; once loaded each continues", async () => {
-    const clock = manualClock();
+    const clock = reviewClock();
     const worker = scripted(() => DONE);
     const w = await world(2);
     const without = registryOf(w, [createChatPlugin(), createDevPlugin(), worker.plugin]);
@@ -413,7 +413,7 @@ describe("a step that is not loaded, for several tasks", () => {
 
 describe("settings that cannot be read", () => {
   test("the work step says so, and the retry waits until they can be read", async () => {
-    const clock = manualClock();
+    const clock = reviewClock();
     const w = await world(1);
     const registry = registryOf(w, [createChatPlugin(), createDevPlugin(), createPoolPlugin(), scripted(() => DONE).plugin]);
     const key = w.tasks[0] as string;
@@ -450,7 +450,7 @@ describe("settings that cannot be read", () => {
   });
 
   test("a stopped run whose settings still cannot be read waits for them instead of spending its retry", async () => {
-    manualClock();
+    reviewClock();
     const w = await world(1);
     const registry = registryOf(w, [createChatPlugin(), createDevPlugin(), createPoolPlugin(), scripted(() => DONE).plugin]);
     const key = w.tasks[0] as string;
@@ -466,7 +466,7 @@ describe("settings that cannot be read", () => {
   });
 
   test("the bound runs out and the task waits for a person with the cause", async () => {
-    const clock = manualClock();
+    const clock = reviewClock();
     const w = await world(1);
     const registry = registryOf(w, [createChatPlugin(), createDevPlugin(), createPoolPlugin(), scripted(() => DONE).plugin]);
     const key = w.tasks[0] as string;
@@ -489,7 +489,7 @@ describe("settings that cannot be read", () => {
 
 describe("settings that cannot be read, in the worktree step", () => {
   test("a recovered worktree step waits for the settings, then runs again", async () => {
-    const clock = manualClock();
+    const clock = reviewClock();
     const w = await world(1);
     const registry = registryOf(w, [createChatPlugin(), createDevPlugin(), createPoolPlugin(), scripted(() => DONE).plugin]);
     const key = w.tasks[0] as string;
@@ -530,7 +530,7 @@ describe("settings that cannot be read, in the worktree step", () => {
 
 describe("a spent retry hands the task to a person", () => {
   test("a recovered run that gives up says waiting, not the phase it had", async () => {
-    manualClock();
+    reviewClock();
     const w = await world(1);
     const registry = registryOf(w, [createChatPlugin(), createDevPlugin(), createPoolPlugin(), scripted(() => DONE).plugin]);
     const key = w.tasks[0] as string;

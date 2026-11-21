@@ -1,10 +1,11 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { openConfigLog, readConfig, storeRootOf } from "@operad-io/engine";
+import { makeHome } from "@operad-io/engine/testing";
 import { main, type CliIo } from "../src/main.ts";
-import { cleanupTempRoots, tempRoot } from "../../engine/test/plugin/support.ts";
+import { cleanupTempRoots } from "../../engine/test/plugin/support.ts";
 
 afterAll(cleanupTempRoots);
 
@@ -35,20 +36,11 @@ function capture(): { io: CliIo; text(): string; errors(): string } {
   };
 }
 
-async function makeHome(
+async function makeTriggerHome(
   rules: unknown,
   plugins: readonly string[] = [pluginPath],
 ): Promise<string> {
-  const root = await tempRoot();
-  const home = join(root, "home");
-  mkdirSync(home, { recursive: true });
-  writeFileSync(
-    join(home, "config.json"),
-    JSON.stringify({
-      plugins: [...plugins],
-      store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
-    }),
-  );
+  const { home } = await makeHome({ plugins: [...plugins] });
   if (rules !== undefined) {
     writeFileSync(join(home, "triggers.json"), JSON.stringify(rules));
   }
@@ -89,7 +81,7 @@ async function runIdOfFlow(home: string, flow: string): Promise<string> {
 
 describe("operad trigger rules", () => {
   test("a plugin's default rule alone starts its flow", async () => {
-    const home = await makeHome(undefined, [rulesPluginPath]);
+    const home = await makeTriggerHome(undefined, [rulesPluginPath]);
     const sent = capture();
     expect(
       await main(["trigger", "cron", "t1", "--type", "tick"], {
@@ -102,7 +94,7 @@ describe("operad trigger rules", () => {
   });
 
   test("lists each rule with where it came from", async () => {
-    const home = await makeHome(
+    const home = await makeTriggerHome(
       [
         {
           source: "cron",
@@ -129,7 +121,7 @@ describe("operad trigger rules", () => {
 
 describe("operad trigger", () => {
   test("sends an event, starts a run, and history names the event", async () => {
-    const home = await makeHome([
+    const home = await makeTriggerHome([
       {
         source: "cron",
         type: "tick",
@@ -166,7 +158,7 @@ describe("operad trigger", () => {
   });
 
   test("candidates appear in pending and work through operad:start and dismiss", async () => {
-    const home = await makeHome([
+    const home = await makeTriggerHome([
       {
         source: "cron",
         type: "tick",
@@ -231,7 +223,7 @@ describe("operad trigger", () => {
   });
 
   test("start and dismiss take --repo without counting it as an argument", async () => {
-    const home = await makeHome([
+    const home = await makeTriggerHome([
       {
         source: "cron",
         type: "tick",
@@ -268,7 +260,7 @@ describe("operad trigger", () => {
   });
 
   test("a step running in a worker can emit an event", async () => {
-    const home = await makeHome([
+    const home = await makeTriggerHome([
       {
         source: "manual",
         type: "go",
@@ -309,7 +301,7 @@ describe("operad trigger", () => {
   });
 
   test("the source operad is refused", async () => {
-    const home = await makeHome([]);
+    const home = await makeTriggerHome([]);
     const output = capture();
     expect(
       await main(["trigger", "operad", "x", "--type", "run.done"], {
@@ -321,7 +313,7 @@ describe("operad trigger", () => {
   });
 
   test("invalid rules name the rule index and field", async () => {
-    const home = await makeHome([
+    const home = await makeTriggerHome([
       {
         source: "cron",
         type: "tick",
@@ -341,7 +333,7 @@ describe("operad trigger", () => {
   });
 
   test("history of an observed event says what would have started", async () => {
-    const home = await makeHome([
+    const home = await makeTriggerHome([
       {
         source: "cron",
         type: "tick",
@@ -379,7 +371,7 @@ describe("operad trigger", () => {
   });
 
   test("a dev step may emit dev.ready but not another plugin's event", async () => {
-    const home = await makeHome(
+    const home = await makeTriggerHome(
       [
         {
           source: "manual",

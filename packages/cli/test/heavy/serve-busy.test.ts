@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { openConfigLog, readConfig } from "../../../engine/src/index.ts";
 import { waitForChange } from "../../../engine/src/platform/index.ts";
 import { cleanupTempRoots, tempRoot } from "../../../engine/test/plugin/support.ts";
+import { waitForFile } from "@operad-io/engine/testing";
 import { testEnv } from "../env.ts";
 
 afterAll(cleanupTempRoots);
@@ -111,14 +112,6 @@ class Output {
         this.waiters.push(wake);
       });
     }
-  }
-}
-
-/** Resolves once the file exists. */
-async function waitForFile(path: string, deadline: number): Promise<void> {
-  while (!existsSync(path)) {
-    if (Date.now() > deadline) throw new Error(`timed out waiting for ${path}`);
-    await waitForChange(dirname(path), basename(path), 200);
   }
 }
 

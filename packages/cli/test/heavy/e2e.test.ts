@@ -20,12 +20,13 @@ import {
   writeFileSync,
   type FSWatcher,
 } from "node:fs";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   cleanupTempRoots,
   tempRoot,
 } from "../../../engine/test/plugin/support.ts";
+import { waitForFile } from "@operad-io/engine/testing";
 
 afterAll(cleanupTempRoots);
 
@@ -88,26 +89,6 @@ async function run(
     child.exited,
   ]);
   return { out, err, code };
-}
-
-/**
- * Resolves when the file exists. A directory watch wakes it at once; a watch
- * can miss an event under load, so a look every 100 ms backs it.
- */
-function waitForFile(path: string): Promise<void> {
-  if (existsSync(path)) return Promise.resolve();
-  return new Promise((resolve) => {
-    const check = (): void => {
-      if (!existsSync(path)) return;
-      watcher.close();
-      clearInterval(timer);
-      resolve();
-    };
-    const watcher = watch(dirname(path), check);
-    watcher.on("error", check);
-    const timer = setInterval(check, 100);
-    check();
-  });
 }
 
 /**

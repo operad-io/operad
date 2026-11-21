@@ -1,22 +1,15 @@
 import { afterAll, expect, test } from "bun:test";
 import type { Database } from "bun:sqlite";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { join } from "node:path";
 import { openSqliteLogBackend } from "../../src/log/sqlite.ts";
-import { BUSY_TIMEOUT_MS, waitForChange } from "../../src/platform/index.ts";
+import { BUSY_TIMEOUT_MS } from "../../src/platform/index.ts";
 import { cleanupTempRoots, tempRoot } from "../plugin/support.ts";
+import { waitForFile } from "../../src/testing/index.ts";
 
 afterAll(cleanupTempRoots);
 
 const HOLDER = join(import.meta.dir, "..", "fixtures", "log-commit-holder.ts");
-
-/** Resolves once the file exists. */
-async function waitForFile(path: string, deadline: number): Promise<void> {
-  while (!existsSync(path)) {
-    if (Date.now() > deadline) throw new Error(`timed out waiting for ${path}`);
-    await waitForChange(dirname(path), basename(path), 50);
-  }
-}
 
 /** Waits inside the synchronous write, after the holder has taken the lock again. */
 function waitForFileSync(path: string, deadline: number): void {

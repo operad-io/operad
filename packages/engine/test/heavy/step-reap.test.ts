@@ -19,7 +19,11 @@ import {
   type StepMarker,
 } from "../../src/platform/index.ts";
 import { cleanupTempRoots, tempRoot } from "../plugin/support.ts";
-import { waitForFile } from "../wait-for-file.ts";
+import {
+  alive,
+  waitForFile,
+  waitForGone,
+} from "../../src/testing/index.ts";
 
 afterAll(cleanupTempRoots);
 
@@ -29,20 +33,6 @@ afterEach(() => {
   // Only processes this test file started.
   for (const child of started.splice(0)) child.kill("SIGKILL");
 });
-
-function alive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/** Resolves when the pid is gone; the process is not our child once its parent ended. */
-async function gone(pid: number): Promise<void> {
-  while (alive(pid)) await new Promise((resolve) => setTimeout(resolve, 10));
-}
 
 /** A long-lived process we started with the given extra environment. */
 function bystander(env: Record<string, string>): ChildProcess {
@@ -133,7 +123,7 @@ describe("what a step leaves behind", () => {
     const outcome = await stepWith(DETACH, "run-1", root, home);
     const pid = Number(outcome.data?.pid);
     expect(pid).toBeGreaterThan(0);
-    await gone(pid);
+    await waitForGone(pid);
     const log = readFileSync(
       join(root, "store", "logs", "leaver", "runs", "run-1", "run.log"),
       "utf8",
@@ -148,7 +138,7 @@ describe("what a step leaves behind", () => {
     const other = bystander(markerEnv(marker("run-other", home)));
     const plain = bystander({});
     const outcome = await stepWith(DETACH, "run-2", root, home);
-    await gone(Number(outcome.data?.pid));
+    await waitForGone(Number(outcome.data?.pid));
     expect(other.exitCode).toBeNull();
     expect(plain.exitCode).toBeNull();
     expect(alive(other.pid ?? 0)).toBe(true);
@@ -160,7 +150,7 @@ describe("what a step leaves behind", () => {
     const home = join(root, "home");
     const elsewhere = bystander(markerEnv(marker("run-3", join(root, "other-home"))));
     const outcome = await stepWith(DETACH, "run-3", root, home);
-    await gone(Number(outcome.data?.pid));
+    await waitForGone(Number(outcome.data?.pid));
     expect(alive(elsewhere.pid ?? 0)).toBe(true);
   });
 
@@ -214,7 +204,7 @@ describe("what a step leaves behind", () => {
     await stepWith(`"${process.execPath}" "${join(root, "agent.js")}"`, "run-6", root, home);
     const loops = readFileSync(pids, "utf8").trim().split("\n").map(Number);
     expect(loops).toHaveLength(3);
-    for (const pid of loops) await gone(pid);
+    for (const pid of loops) await waitForGone(pid);
   });
 
   test("a process group id that was reused later is not taken for the step's", () => {
@@ -259,7 +249,7 @@ describe("what a step leaves behind", () => {
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
     await reapStale({ home, activeRunIds: [], log: () => undefined });
-    await gone(shell);
+    await waitForGone(shell);
     expect(Bun.spawnSync(["pgrep", "-P", String(shell)]).stdout.toString().trim()).toBe("");
   });
 
@@ -276,7 +266,7 @@ describe("what a step leaves behind", () => {
       log: (message) => messages.push(message),
     });
     expect(found.map((one) => one.pid)).toEqual([stale.pid ?? 0]);
-    await gone(stale.pid ?? 0);
+    await waitForGone(stale.pid ?? 0);
     expect(alive(live.pid ?? 0)).toBe(true);
     expect(alive(foreign.pid ?? 0)).toBe(true);
     expect(messages).toHaveLength(1);

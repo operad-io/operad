@@ -25,6 +25,9 @@
     "@operad-io/telegram": "workspace:*",
     "@operad-io/memory": "workspace:*"
   },
+  "devDependencies": {
+    "@operad-io/test-support": "workspace:*"
+  },
   "license": "MIT",
   "files": [
     "bin",

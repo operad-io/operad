@@ -16,6 +16,10 @@
     "url": "git+https://github.com/operad-io/operad.git",
     "directory": "packages/chat"
   },
+  "devDependencies": {
+    "@operad-io/harness-claude": "workspace:*",
+    "@operad-io/harness-pi": "workspace:*"
+  },
   "license": "MIT",
   "files": [
     "src",

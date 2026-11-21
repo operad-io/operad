@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { StepTimeout, type TimeoutClock } from "../../src/runner/runner.ts";
 
 /** A clock the test moves by hand. */
-function manualClock(): TimeoutClock & { advance(ms: number): void } {
+function timeoutClock(): TimeoutClock & { advance(ms: number): void } {
   let now = 0;
   let next = 0;
   const timers = new Map<number, { due: number; fire: () => void }>();
@@ -30,7 +30,7 @@ function manualClock(): TimeoutClock & { advance(ms: number): void } {
 
 describe("a step's wall time", () => {
   test("runs out after its time", () => {
-    const clock = manualClock();
+    const clock = timeoutClock();
     let fired = 0;
     new StepTimeout(100, () => (fired += 1), clock);
     clock.advance(99);
@@ -40,7 +40,7 @@ describe("a step's wall time", () => {
   });
 
   test("stops while a question is open and goes on with what was left", () => {
-    const clock = manualClock();
+    const clock = timeoutClock();
     let fired = 0;
     const timeout = new StepTimeout(100, () => (fired += 1), clock);
     clock.advance(60);
@@ -56,7 +56,7 @@ describe("a step's wall time", () => {
   });
 
   test("stays stopped until every open question is over", () => {
-    const clock = manualClock();
+    const clock = timeoutClock();
     let fired = 0;
     const timeout = new StepTimeout(100, () => (fired += 1), clock);
     timeout.pause();
@@ -70,7 +70,7 @@ describe("a step's wall time", () => {
   });
 
   test("a cleared timeout never fires", () => {
-    const clock = manualClock();
+    const clock = timeoutClock();
     let fired = 0;
     const timeout = new StepTimeout(100, () => (fired += 1), clock);
     timeout.clear();

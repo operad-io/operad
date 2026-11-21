@@ -33,20 +33,29 @@ import {
   type AgentRunOutcome,
 } from "@operad-io/harness-process";
 import {
-  cleanupTempRoots,
   fakeRadian,
   fakeRadianNamed,
   processesUnder,
   stopTestProcesses,
-  tempRoot,
   tempRoots,
   waitForJson,
-  waitUntil,
 } from "../support.ts";
 import { FLUSH_MS } from "@operad-io/harness-process";
-import { alive, manualClock, waitForFile, waitForPid, type ManualClock } from "../../../process/test/support.ts";
+import {
+  alive,
+  cleanupTempRoots,
+  manualClock,
+  tempRoot,
+  waitForFile,
+  waitForPid,
+  waitUntil,
+  type ManualClock,
+} from "@operad-io/engine/testing";
 
-afterAll(cleanupTempRoots);
+afterAll(async () => {
+  await stopTestProcesses();
+  await cleanupTempRoots();
+});
 
 const restores: Array<() => void> = [];
 

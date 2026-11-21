@@ -1,5 +1,5 @@
 import { mkdirSync, writeFileSync } from "node:fs";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { TuiClock } from "../src/live.ts";
@@ -21,19 +21,9 @@ import {
   type Views,
 } from "@operad-io/engine";
 
-/**
- * A scratch directory under `.radian/`.
- *
- * The TUI keeps its own roots instead of using the engine test helper: Bun runs
- * test files concurrently in one process, so one file's cleanup would delete a
- * root another file, or another package's suite, is still using. A harness
- * removes its own root in `close()`.
- */
-export async function tempRoot(): Promise<string> {
-  const base = join(process.cwd(), ".radian", "tmp");
-  await mkdir(base, { recursive: true });
-  return mkdtemp(join(base, "tui-test-"));
-}
+import { freePort, tempRoot } from "@operad-io/engine/testing";
+
+export { freePort, tempRoot };
 
 const pluginPath = fileURLToPath(
   new URL("./fixtures/plugin.ts", import.meta.url),
@@ -55,18 +45,6 @@ export interface TuiHarness {
 export interface TuiHarnessOptions {
   readonly loadTimeoutMs?: number | undefined;
   readonly maxEventIds?: number | undefined;
-}
-
-export async function freePort(): Promise<number> {
-  const server = Bun.serve({
-    hostname: "127.0.0.1",
-    port: 0,
-    fetch: () => new Response(""),
-  });
-  const port = server.port;
-  await server.stop(true);
-  if (port === undefined) throw new Error("the free-port probe bound no port");
-  return port;
 }
 
 export async function makeHarness(
