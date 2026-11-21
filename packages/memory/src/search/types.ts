@@ -243,8 +243,3 @@ export class SearchError extends Error {
     this.name = "SearchError";
   }
 }
-
-/** Whether a value is one of the three scopes. */
-export function isSearchScope(value: unknown): value is SearchScope {
-  return value === "wiki" || value === "memory" || value === "chats";
-}
