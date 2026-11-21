@@ -53,24 +53,36 @@ if [ "$cpus" -lt 1 ]; then echo "STRESS_CPUS wants a positive number" >&2; exit 
 
 helpers=()
 # The job table, not a saved pid list, says which children this shell still
-# runs: a stop can arrive after the test runner is forked but before its pid is
-# saved, and a pid the shell no longer holds may belong to another program.
+# runs: a stop can arrive after the test runner is forked but before its pid
+# would be saved, and a pid the shell no longer holds may belong to another
+# program. The process that survived the stress flake was the runner this
+# script starts, a direct child. The detached spawn in the test setup only
+# puts this script outside the outer runner's group; it does not move a child
+# out of this script's job table.
 stop_helpers() {
-  local all=()
+  local all=() watchdog pid ppid
   all=($(jobs -p))
-  if [ ${#all[@]} -gt 0 ]; then
-    kill "${all[@]}" 2>/dev/null
-    # A child that ignores TERM, or got it before it was ready to stop, still
-    # has to go; give the others one short grace, then kill what remains. The
-    # grace is a sleep, not a count of checks: under load each check can take
-    # long enough that a fixed count would run past the stop's bound.
-    sleep 0.2
-    all=($(jobs -p))
-    if [ ${#all[@]} -gt 0 ]; then
-      kill -KILL "${all[@]}" 2>/dev/null
-      wait "${all[@]}" 2>/dev/null
-    fi
-  fi
+  [ ${#all[@]} -gt 0 ] || return 0
+  kill "${all[@]}" 2>/dev/null
+  # A child that ignores TERM, or got it before it was ready to stop, still
+  # has to go. This timer kills what remains after a short grace; when the
+  # children end on TERM first, the wait returns at once and the timer is
+  # cancelled, so a normal stop does not wait out the grace. The timer sleeps
+  # in a child and traps TERM, so cancelling it leaves no sleep behind. It
+  # kills only a pid that is still this script's child, so it never targets a
+  # reused pid.
+  ( trap 'kill "${timer_pid:-}" 2>/dev/null; exit 0' TERM
+    sleep 0.2 & timer_pid=$!
+    wait "$timer_pid" 2>/dev/null
+    parent_alive || exit 0
+    for pid in "${all[@]}"; do
+      ppid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')
+      [ "$ppid" = "$$" ] && kill -KILL "$pid" 2>/dev/null
+    done ) </dev/null >/dev/null 2>&1 &
+  watchdog=$!
+  wait "${all[@]}" 2>/dev/null
+  kill "$watchdog" 2>/dev/null
+  wait "$watchdog" 2>/dev/null
   wait 2>/dev/null
 }
 
@@ -187,8 +199,23 @@ stress_pid_alive() {
   command=$(ps -p "$1" -o command= 2>/dev/null)
   case "$command" in *stress.sh*) return 0 ;; *) return 1 ;; esac
 }
+
+# A watcher sleeps in a child and waits for it, so a TERM to the watcher can
+# stop that sleep too; killing the watcher alone would leave the sleep behind.
+watch_sleep() {
+  local pid
+  sleep "$1" & pid=$!
+  watcher_nap=$pid
+  wait "$pid" 2>/dev/null
+  watcher_nap=
+}
+watch_stop() {
+  [ -z "${watcher_nap:-}" ] || kill "$watcher_nap" 2>/dev/null
+  exit 0
+}
 # Stop with the process that started this script (the TERM trap then runs).
-( while parent_alive && starter_alive; do sleep 2; done
+( trap watch_stop TERM
+  while parent_alive && starter_alive; do watch_sleep 2; done
   kill -TERM "$parent" 2>/dev/null ) </dev/null >/dev/null 2>&1 &
 
 [ "$use_lock" -eq 0 ] || acquire_lock
@@ -218,9 +245,10 @@ args=(test "${files[@]}" --rerun-each "$runs" --timeout 30000)
 bun "${args[@]}" > "$log" 2>&1 < /dev/null &
 bunpid=$!
 # A SIGKILL of this script runs no trap: stop the test runner from a watcher.
-( while parent_alive; do sleep 0.2; done
+( trap watch_stop TERM
+  while parent_alive; do watch_sleep 0.2; done
   kill -TERM "$bunpid" 2>/dev/null
-  sleep 0.2
+  watch_sleep 0.2
   kill -KILL "$bunpid" 2>/dev/null ) </dev/null >/dev/null 2>&1 &
 wait "$bunpid"
 status=$?
