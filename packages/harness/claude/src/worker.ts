@@ -30,6 +30,7 @@ import {
   EXIT_CANCELLED,
   EXIT_FAILED,
   EXIT_INVALID_INPUT,
+  Increments,
   maskSecrets,
   OPERAD_SERVER,
   readGivenSkills,
@@ -37,6 +38,7 @@ import {
   serveKeptWorker,
   serveOne,
   serverCommand,
+  STREAM_GROUP_MS,
   toolOutputLines,
   askQuestions,
   answerFor,
@@ -66,10 +68,7 @@ import {
   type WorkerUsage,
 } from "./protocol.ts";
 
-export { EXIT_CANCELLED, EXIT_FAILED, EXIT_INVALID_INPUT };
-
-/** The shortest time between two increment lines of one stream, in milliseconds. */
-export const STREAM_GROUP_MS = 100;
+export { EXIT_CANCELLED, EXIT_FAILED, EXIT_INVALID_INPUT, STREAM_GROUP_MS };
 
 type StreamKind = "text" | "thinking";
 
@@ -187,26 +186,6 @@ function stringOf(value: unknown): string | undefined {
 
 function numberOf(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-
-/**
- * The length of the longest suffix of `text` that is a proper prefix of a
- * secret. A delta line may not end in such a suffix: the next line would
- * complete the secret, and masking each line alone would leave both parts
- * readable when a live reader joins them.
- */
-function secretPrefixLength(text: string, secrets: readonly string[]): number {
-  let held = 0;
-  for (const secret of secrets) {
-    const longest = Math.min(secret.length - 1, text.length);
-    for (let length = longest; length > held; length -= 1) {
-      if (text.endsWith(secret.slice(0, length))) {
-        held = length;
-        break;
-      }
-    }
-  }
-  return held;
 }
 
 /**
@@ -389,9 +368,7 @@ interface Turn {
   readonly io: WorkerIo;
   readonly cancel: AbortSignal;
   cancelled: boolean;
-  deltaKind: StreamKind | undefined;
-  deltaText: string;
-  deltaAt: number;
+  readonly increments: Increments;
   readonly streamBlocks: Map<number, { readonly kind: StreamKind; text: string }>;
   readonly open: Map<string, { readonly name: string; readonly startedAt: number }>;
   readonly profile: AccessProfile;
@@ -405,7 +382,7 @@ interface Turn {
   readonly resolveDone: () => void;
 }
 
-function newTurn(input: WorkerInput, io: WorkerIo, cancel: AbortSignal): Turn {
+function newTurn(input: WorkerInput, io: WorkerIo, cancel: AbortSignal, increments: Increments): Turn {
   let resolveDone: () => void = () => {};
   const done = new Promise<void>((resolve) => {
     resolveDone = resolve;
@@ -415,9 +392,7 @@ function newTurn(input: WorkerInput, io: WorkerIo, cancel: AbortSignal): Turn {
     io,
     cancel,
     cancelled: cancel.aborted,
-    deltaKind: undefined,
-    deltaText: "",
-    deltaAt: 0,
+    increments,
     streamBlocks: new Map(),
     open: new Map(),
     profile: (() => {
@@ -700,7 +675,12 @@ class ClaudeSession {
       io.line(failure("model_error", message));
       return EXIT_FAILED;
     }
-    const turn = newTurn(input, io, cancel);
+    const turn = newTurn(
+      input,
+      io,
+      cancel,
+      new Increments(io, this.now, this.secrets, { firstImmediately: false }),
+    );
     this.turn = turn;
     const onCancel = (): void => {
       turn.cancelled = true;
@@ -823,7 +803,8 @@ class ClaudeSession {
         this.streamEvent(turn, message.event);
         break;
       case "assistant": {
-        this.flushDelta(turn, true);
+        turn.increments.flush("text", true);
+        turn.increments.flush("thinking", true);
         const texts: string[] = [];
         for (const block of message.message.content) {
           if (block.type === "text") texts.push(block.text);
@@ -900,7 +881,7 @@ class ClaudeSession {
   }
 
   private async resultOf(turn: Turn): Promise<{ readonly line: WorkerResult; readonly code: number }> {
-    this.flushDelta(turn, true);
+    turn.increments.release();
     if (turn.cancelled) {
       return {
         line: {
@@ -1006,45 +987,10 @@ class ClaudeSession {
     };
   }
 
-  private flushDelta(turn: Turn, complete: boolean): void {
-    if (turn.deltaKind === undefined || turn.deltaText.length === 0) {
-      turn.deltaKind = undefined;
-      turn.deltaText = "";
-      return;
-    }
-    const kind = turn.deltaKind;
-    let text: string;
-    if (complete) {
-      text = turn.deltaText;
-      turn.deltaText = "";
-      turn.deltaKind = undefined;
-    } else {
-      const held = secretPrefixLength(turn.deltaText, this.secrets);
-      text = held === 0 ? turn.deltaText : turn.deltaText.slice(0, -held);
-      turn.deltaText = held === 0 ? "" : turn.deltaText.slice(-held);
-      turn.deltaKind = turn.deltaText.length === 0 ? undefined : kind;
-    }
-    if (text.length > 0) {
-      turn.io.line({ type: kind === "text" ? "text_delta" : "thinking_delta", text: maskSecrets(text, this.secrets) });
-    }
-  }
-
   private writeLine(turn: Turn, line: WorkerLine): void {
-    this.flushDelta(turn, false);
+    turn.increments.flush("text", false);
+    turn.increments.flush("thinking", false);
     turn.io.line(line);
-  }
-
-  private addDelta(turn: Turn, kind: StreamKind, text: string): void {
-    if (text.length === 0) return;
-    const at = this.now();
-    if (turn.deltaKind === kind && at - turn.deltaAt < STREAM_GROUP_MS) {
-      turn.deltaText += text;
-      return;
-    }
-    this.flushDelta(turn, turn.deltaKind !== kind);
-    turn.deltaKind = kind;
-    turn.deltaText += text;
-    turn.deltaAt = at;
   }
 
   private streamEvent(turn: Turn, value: unknown): void {
@@ -1059,11 +1005,11 @@ class ClaudeSession {
       if (blockType === "text") {
         const text = stringOf(block["text"]) ?? "";
         turn.streamBlocks.set(index, { kind: "text", text });
-        this.addDelta(turn, "text", text);
+        turn.increments.text(text);
       } else if (blockType === "thinking") {
         const text = stringOf(block["thinking"]) ?? "";
         turn.streamBlocks.set(index, { kind: "thinking", text });
-        this.addDelta(turn, "thinking", text);
+        turn.increments.thinking(text);
       }
     } else if (type === "content_block_delta") {
       const index = numberOf(event["index"]);
@@ -1075,18 +1021,22 @@ class ClaudeSession {
         const text = stringOf(delta["text"]);
         if (text !== undefined) {
           block.text += text;
-          this.addDelta(turn, "text", text);
+          turn.increments.text(text);
         }
       } else if (block.kind === "thinking" && deltaType === "thinking_delta") {
         const text = stringOf(delta["thinking"]);
         if (text !== undefined) {
           block.text += text;
-          this.addDelta(turn, "thinking", text);
+          turn.increments.thinking(text);
         }
       }
     } else if (type === "content_block_stop") {
       const index = numberOf(event["index"]);
-      if (index !== undefined && turn.streamBlocks.delete(index)) this.flushDelta(turn, true);
+      const block = index === undefined ? undefined : turn.streamBlocks.get(index);
+      if (index !== undefined && block !== undefined) {
+        turn.streamBlocks.delete(index);
+        turn.increments.flush(block.kind, true);
+      }
     }
   }
 

@@ -326,3 +326,9 @@ setup it depends on, in the order they were recorded. The root
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0588-M10 | packages/harness/claude/src/index.ts | claude stopped declaring `backgroundModel: "haiku"` | `claude/agent > the plugin declares that it loads skills itself` |
+
+## T-0632 — claude holds back an escaped secret prefix
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0632-M2 | packages/harness/claude/src/worker.ts | before the shared helper, claude held back only a prefix of the raw secret value, so an escaped spelling split across grouped increments reached the output | `a JSON-escaped secret split across grouped increments is not exposed by joining the deltas` |
