@@ -44,9 +44,6 @@ export const POOL_SETTINGS = {
   },
 };
 
-/** The settings keys, for the docs test. */
-export const POOL_SETTING_NAMES: readonly string[] = Object.keys(POOL_SETTINGS.properties);
-
 function capOf(
   settings: Readonly<Record<string, unknown>>,
   harness: string,

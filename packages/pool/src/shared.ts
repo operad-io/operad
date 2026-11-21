@@ -86,7 +86,6 @@ function alive(pid: number): boolean {
 export class FilePlaces implements Places {
   private readonly file: string;
   private readonly lock: string;
-  private counter = 0;
 
   private readonly now: () => number;
   private readonly heartbeatMs: number;
@@ -173,7 +172,6 @@ export class FilePlaces implements Places {
           full.push("home");
           holders.push(holding(claim.home));
         } else {
-          this.counter += 1;
           // Unique across instances: step threads share the pid and may share the millisecond.
           const id = `${process.pid}-${randomUUID()}`;
           this.write({

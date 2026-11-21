@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { modelErrorOf, parseResult, parseStepFlags, resultFor, type AgentWorkerResult } from "../src/index.ts";
+import { modelErrorOf, parseStepFlags, resultFor, resultValue, type AgentWorkerResult } from "../src/index.ts";
 
 // Moved from packages/harness/claude/test/heavy/plugin.test.ts.
 describe("modelErrorOf", () => {
@@ -74,11 +74,11 @@ describe("resultFor", () => {
   });
 });
 
-describe("parseResult", () => {
-  test("reads a result line and nothing else", () => {
-    expect(parseResult('{"type":"result","result":"done"}')?.result).toBe("done");
-    expect(parseResult('{"type":"result","result":"weird"}')).toBeUndefined();
-    expect(parseResult('{"type":"message_end"}')).toBeUndefined();
-    expect(parseResult("not json")).toBeUndefined();
+describe("resultValue", () => {
+  test("reads a result value and nothing else", () => {
+    expect(resultValue({ type: "result", result: "done" })?.result).toBe("done");
+    expect(resultValue({ type: "result", result: "weird" })).toBeUndefined();
+    expect(resultValue({ type: "message_end" })).toBeUndefined();
+    expect(resultValue({ type: "result" })).toBeUndefined();
   });
 });

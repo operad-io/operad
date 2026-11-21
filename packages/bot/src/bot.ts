@@ -9,6 +9,7 @@ import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readSync, readdi
 import { homedir } from "node:os";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import { MCP_REPORT_DIR } from "./mcp-constants.ts";
+import { added, hasSkill, isDirectory, skillsInside } from "@operad-io/chat";
 import { defaultAccess as builtInAccess } from "@operad-io/access-match";
 import { readKeptWorkers, withLockFile } from "@operad-io/engine/platform";
 import { MEMORY_SKILL_DIR, ensureMemoryLayout, memoryEnabled, wikiDirectoryOfHome } from "@operad-io/memory";
@@ -765,36 +766,6 @@ export function accessFor(
   // The field puts MCP tools under the profile: one not listed asks first.
   access.allowMcp = appended([], settings.mcpAllow);
   return access;
-}
-
-function isDirectory(path: string): boolean {
-  try {
-    return statSync(path).isDirectory();
-  } catch {
-    return false;
-  }
-}
-
-function hasSkill(path: string): boolean {
-  try {
-    return statSync(join(path, "SKILL.md")).isFile();
-  } catch {
-    return false;
-  }
-}
-
-function added(list: string[], path: string): void {
-  const normal = resolve(path);
-  if (!list.includes(normal)) list.push(normal);
-}
-
-/** The skills directly inside a directory: each child that holds a SKILL.md. */
-function skillsInside(parent: string): string[] {
-  if (!isDirectory(parent)) return [];
-  return readdirSync(parent, { withFileTypes: true })
-    .map((entry) => join(parent, entry.name))
-    .filter((path) => hasSkill(path))
-    .sort((left, right) => left.localeCompare(right));
 }
 
 /** What one written skill path names now, without refusing one that is merely empty. */

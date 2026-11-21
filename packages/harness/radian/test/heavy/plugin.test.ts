@@ -23,10 +23,10 @@ import {
   createRadianHarnessPlugin,
   radianModel,
   radianRefusal,
-  EVENT_NOTE_TEMPLATE,
   type RadianHarnessSettings,
 } from "../../src/index.ts";
 import {
+  EVENT_NOTE_TEMPLATE,
   degradedAskRequest,
   resultFor,
   runAgent as runProcess,

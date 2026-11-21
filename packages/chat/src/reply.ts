@@ -212,18 +212,22 @@ export interface WorktreeCall {
   readonly tool?: string;
 }
 
+/** One worktree call record, wherever it is written: its kind, value and tool. */
+function callOf(record: unknown): WorktreeCall | undefined {
+  if (!isRecord(record)) return undefined;
+  const kind = record.kind;
+  const value = record.value;
+  const tool = record.tool;
+  if ((kind !== "command" && kind !== "path") || typeof value !== "string" || value.length === 0) return undefined;
+  return { kind, value, ...(typeof tool === "string" ? { tool } : {}) };
+}
+
 /** The call behind a write question: its grant, or the words of a question with no session. */
 function worktreeCall(request: AskRequest): WorktreeCall | undefined {
   const resume = request.resume;
   if (isRecord(resume) && isRecord(resume.grant)) {
-    const grant = resume.grant;
-    if ((grant.kind === "command" || grant.kind === "path") && typeof grant.value === "string" && grant.value.length > 0) {
-      return {
-        kind: grant.kind,
-        value: grant.value,
-        ...(typeof grant.tool === "string" ? { tool: grant.tool } : {}),
-      };
-    }
+    const grant = callOf(resume.grant);
+    if (grant !== undefined) return grant;
   }
   const command = /^Run this command\? ([\s\S]+)$/.exec(request.prompt);
   if (command?.[1] !== undefined && command[1].trim().length > 0) {
@@ -322,12 +326,8 @@ async function rememberAlways(ctx: StepContext, call: WorktreeCall, cwd: string)
 function callFromGrants(access: JsonValue): WorktreeCall | undefined {
   if (!isRecord(access) || !Array.isArray(access["grants"])) return undefined;
   for (const value of access["grants"]) {
-    if (!isRecord(value)) continue;
-    const kind = value["kind"];
-    const call = value["value"];
-    if ((kind !== "command" && kind !== "path") || typeof call !== "string" || call.length === 0) continue;
-    const tool = value["tool"];
-    return { kind, value: call, ...(typeof tool === "string" ? { tool } : {}) };
+    const call = callOf(value);
+    if (call !== undefined) return call;
   }
   return undefined;
 }
@@ -367,12 +367,7 @@ function failed(reason: string, message: string): PluginStepResult {
 
 /** The call a question names in its own resume, when it carries one. */
 function resumeCall(resume: unknown): WorktreeCall | undefined {
-  if (!isRecord(resume) || !isRecord(resume.call)) return undefined;
-  const kind = resume.call.kind;
-  const value = resume.call.value;
-  const tool = resume.call.tool;
-  if ((kind !== "command" && kind !== "path") || typeof value !== "string" || value.length === 0) return undefined;
-  return { kind, value, ...(typeof tool === "string" ? { tool } : {}) };
+  return isRecord(resume) ? callOf(resume.call) : undefined;
 }
 
 /** The call a question is about, from its grant, its resume or its own words. */
