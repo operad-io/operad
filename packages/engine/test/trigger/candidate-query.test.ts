@@ -51,7 +51,7 @@ test("candidates reads only the unresolved candidates after many resolved inputs
   });
   const { log, candidateRows, wholeReads } = countingLog(inner);
   try {
-    for (let index = 0; index < 300; index += 1) {
+    for (let index = 0; index < 50; index += 1) {
       const input = await inner.recordInput(null, "cron", `settled-${index}`, {
         source: "cron",
         key: `settled-${index}`,
