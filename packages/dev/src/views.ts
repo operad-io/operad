@@ -39,6 +39,7 @@ import {
   type TaskData,
 } from "./model.ts";
 import { placeWaitNote } from "./place-wait.ts";
+import { checkHostWarning } from "./check-host.ts";
 import { planMark, repositoryMark, taskBadge, taskMark } from "./marks.ts";
 import { git, workBranch } from "./steps.ts";
 import { repositoryMetrics } from "./throughput.ts";
@@ -154,6 +155,10 @@ export const repoViews: ObjectViews = {
     try {
       const settings = await readDevSettings(repository.path);
       const problem = settingsProblem(repository.path);
+      const hostWarning =
+        problem === undefined
+          ? checkHostWarning(repository.name, settings, ctx.settings)
+          : undefined;
       const file = join(repository.path, DEV_SETTINGS_FILE);
       lines.push(
         `- Default branch: \`${settings.mainBranch}\` on \`${settings.remote}\``,
@@ -167,6 +172,7 @@ export const repoViews: ObjectViews = {
         `- Worker: \`${settings.worker.use}\``,
         `- Reviewer: \`${settings.reviewer.use}\``,
       );
+      if (hostWarning !== undefined) lines.push(`- Check host: not set; ${hostWarning}`);
     } catch (error) {
       lines.push(
         `- ${DEV_SETTINGS_FILE}: ${error instanceof Error ? error.message : String(error)}`,

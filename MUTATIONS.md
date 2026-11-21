@@ -148,3 +148,9 @@ Each package keeps its mutation checks in `MUTATIONS.md`; a row names the broken
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0618-M6 | scripts/test/adr-references.test.ts | the unanchored pattern that finds a citation after a `.md` path was removed | `a backlog decision is cited by its ADR > a citation is reported with the file and the line` (the last cited line was not reported) |
+## T-0636 — a missing check host is loud
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0636-M7 | scripts/remote-check.sh | the fallback to a local check printed no line on stderr | `remote-check.sh > without a host it says on stderr that the check runs here` |
+| T-0636-M8 | docs/user/config.md | the `dev.checkHost` table row was removed | `scripts/test/docs-coverage.test.ts > the user docs > every schema property has a table row on its page` |

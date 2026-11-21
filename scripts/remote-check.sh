@@ -4,9 +4,9 @@
 # words (argv): no shell reads the words as code, here or on the host, so a
 # word may hold any quote, backquote or `$`.
 #
-# With OPERAD_CHECK_HOST unset or empty, it runs `bash -c <command>` in the
-# repository root. With it set (an ssh destination such as user@host), it
-# copies HEAD to that host as a git bundle (`HEAD --not origin/main`; none when
+# With OPERAD_CHECK_HOST unset or empty, it says so on stderr and runs
+# `bash -c <command>` in the repository root. With it set (an ssh destination
+# such as user@host), it copies HEAD to that host as a git bundle (`HEAD --not origin/main`; none when
 # HEAD is already on origin/main) and there, holding one of OPERAD_CHECK_SLOTS
 # slots (~/.operad-check-<i>.lock), fetches origin and the bundle into that
 # slot's tree, checks out HEAD's sha detached, and runs the command. Slot 1's
@@ -53,6 +53,7 @@ fi
 
 host=${OPERAD_CHECK_HOST:-}
 if [ -z "$host" ]; then
+  echo "remote-check: no check host set; running the check here" >&2
   if [ ${#argv[@]} -gt 0 ]; then exec "${argv[@]}"; fi
   exec bash -c "$command"
 fi

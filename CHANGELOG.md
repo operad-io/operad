@@ -9,6 +9,13 @@ the same version.
 
 ### Added
 
+- The `dev.checkHost` and `dev.checkSlots` home settings: a gate, integration or
+  rerun command gets them as `OPERAD_CHECK_HOST` and `OPERAD_CHECK_SLOTS`, so a
+  restart of `serve` no longer loses the check host. An explicit variable in
+  `serve`'s own environment wins. When a repository's check commands use
+  `scripts/remote-check.sh` and no host is set, `serve` logs one line, the
+  repository gets a pending item, and its Overview says the commands run here;
+  `remote-check.sh` says so on stderr when it falls back to local.
 - The `memory` plugin: the shared wiki, whose directory is a setting and which
   is created and made a git repository when it is not one; a `memory` skill every
   bot mounts; and a git commit after each bot reply that wrote to the bot's
