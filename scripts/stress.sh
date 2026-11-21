@@ -55,10 +55,9 @@ helpers=()
 # The job table, not a saved pid list, says which children this shell still
 # runs: a stop can arrive after the test runner is forked but before its pid
 # would be saved, and a pid the shell no longer holds may belong to another
-# program. The process that survived the stress flake was the runner this
-# script starts, a direct child. The detached spawn in the test setup only
-# puts this script outside the outer runner's group; it does not move a child
-# out of this script's job table.
+# program. The detached spawn in the test setup only puts this script outside
+# the outer runner's group; it does not move a child out of this script's job
+# table.
 stop_helpers() {
   local all=() watchdog pid ppid
   all=($(jobs -p))
@@ -83,7 +82,9 @@ stop_helpers() {
   wait "${all[@]}" 2>/dev/null
   kill "$watchdog" 2>/dev/null
   wait "$watchdog" 2>/dev/null
-  wait 2>/dev/null
+  # No bare `wait`: bash 5 can keep a finished job in its table after
+  # `wait <pids>`, and waiting for that job again hangs. The children above
+  # and the watchdog are every process this stop starts.
 }
 
 lock=${STRESS_LOCK:-${HOME:-/tmp}/.operad-stress.lock}
@@ -191,7 +192,16 @@ same_process() {
   [ "$current" = "$2" ]
 }
 parent_alive() { same_process "$parent" "$parent_start"; }
-starter_alive() { same_process "$starter" "$starter_start"; }
+# A starter that is gone can have its pid reused within the same second that
+# `lstart` reports, so `same_process` alone can say it is still alive. A live
+# starter is also this script's parent; once it dies the script is reparented,
+# and its current ppid no longer names the starter. That check does not depend
+# on `lstart`'s one-second resolution.
+starter_alive() {
+  local ppid
+  ppid=$(ps -o ppid= -p "$parent" 2>/dev/null | tr -d ' ')
+  [ "$ppid" = "$starter" ] && same_process "$starter" "$starter_start"
+}
 stress_pid_alive() {
   local stat command
   stat=$(ps -p "$1" -o stat= 2>/dev/null) || return 1
