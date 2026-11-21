@@ -553,6 +553,35 @@ const waitsPlugin = definePlugin({
   ],
 });
 
+test("a wait created after the pending sender's first pass still sends its card", async () => {
+  const root = await mkdtemp(join(tmpdir(), "telegram-acceptance-late-wait-"));
+  roots.push(root);
+  const w = await createTelegramWorld({ root, users: [42], follow: true, pending: ["dev"], plugins: [devPlugin, waitsPlugin] });
+  const repository = await addRepository(w.store, { path: await makeGitRepository(root) });
+  const plan = await addPlan(w.store, { repository, slug: "work", title: "Work" });
+  await addTask(w.store, { plan: plan.id, slug: "first", title: "First" });
+  await confirmPlan(w.store, plan.id);
+  const waiting = await addTask(w.store, { plan: plan.id, slug: "third", title: "Third" });
+  await setTaskPhase(w.store, waiting.id, "waiting");
+  const current = taskData((await getTask(w.store, waiting.id)).data);
+  await w.store.put("task", waiting.id, { ...current, attempt: { number: 1, run: "run-1", verified: "abc123" } }, "test:verified");
+
+  const { ctx, drive, runners } = serveLoop(w, root);
+  const api = new LongPollApi();
+  const plugin = startPlugin(ctx, api);
+  await plugin.ready;
+  await nextTurn();
+
+  const started = await w.kernel.start({ flow: "waits:review", object: `task:${waiting.id}` });
+  if (started.kind !== "started") throw new Error("the wait did not start");
+  await drive();
+
+  await api.until(() => api.sent.some((message) => message.text.includes("ready for you")));
+  await Promise.all(runners);
+  await plugin.stop();
+  await w.close();
+});
+
 test("a proposed task and a task waiting for a merge are answered from Telegram through the real dev plugin", async () => {
   const root = await mkdtemp(join(tmpdir(), "telegram-acceptance-dev-"));
   roots.push(root);
@@ -571,8 +600,9 @@ test("a proposed task and a task waiting for a merge are answered from Telegram 
   const started = await w.kernel.start({ flow: "waits:review", object: `task:${waiting.id}` });
   if (started.kind !== "started") throw new Error("the wait did not start");
 
-  const { ctx, drive, pass } = serveLoop(w, root);
+  const { ctx, drive, pass, runners } = serveLoop(w, root);
   await drive();
+  await Promise.all(runners);
   const api = new LongPollApi();
   const plugin = startPlugin(ctx, api);
   await plugin.ready;

@@ -370,8 +370,8 @@ export class StepLimits {
     payload: Record<string, JsonValue>,
   ): Promise<void> {
     for (let attempt = 0; ; attempt += 1) {
-      let lastSeq = 0;
-      for await (const fact of this.log.read(runId)) lastSeq = fact.seq;
+      const run = await this.log.run(runId);
+      const lastSeq = run?.lastSeq ?? 0;
       try {
         await this.log.append(runId, lastSeq, [
           { kind, payload, cause: lastSeq },

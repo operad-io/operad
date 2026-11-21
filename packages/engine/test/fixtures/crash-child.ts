@@ -45,7 +45,7 @@ const crashing: LogBackend = {
     }
     return log.append(id, seq, facts);
   },
-  read: (id) => log.read(id),
+  read: (id, options) => log.read(id, options),
   run: (runId) => log.run(runId),
   runs: (options) => log.runs(options),
   appendGlobal: (fact, uniqueKey) => log.appendGlobal(fact, uniqueKey),

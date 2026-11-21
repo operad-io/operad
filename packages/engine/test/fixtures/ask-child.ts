@@ -57,15 +57,15 @@ const dying: LogBackend = {
     }
     return result;
   },
-  read: (id) =>
+  read: (id, options) =>
     crash === "answer-read" && id === runId
       ? (async function* () {
-          for await (const fact of log.read(id)) {
+          for await (const fact of log.read(id, options)) {
             if (fact.kind === "ask_answered") die();
             yield fact;
           }
         })()
-      : log.read(id),
+      : log.read(id, options),
   run: (runId) => log.run(runId),
   runs: (options) => log.runs(options),
   appendGlobal: (fact, uniqueKey) => log.appendGlobal(fact, uniqueKey),

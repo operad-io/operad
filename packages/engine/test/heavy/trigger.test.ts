@@ -29,6 +29,7 @@ import {
   type JsonValue,
   type LogBackend,
   type NewFact,
+  type ReadOptions,
   type RecordInputResult,
   type RecordOutcomeResult,
   type RunInfo,
@@ -242,8 +243,8 @@ class CrashLog implements LogBackend {
     return this.inner.append(runId, expectedSeq, facts);
   }
 
-  read(runId: string): AsyncIterable<Fact> {
-    return this.inner.read(runId);
+  read(runId: string, options?: ReadOptions): AsyncIterable<Fact> {
+    return this.inner.read(runId, options);
   }
 
   async run(runId: string): Promise<RunInfo | undefined> {
@@ -913,7 +914,7 @@ describe("run-end recovery", () => {
       if (started.kind !== "started") throw new Error("did not start");
       const found = env.registry.flow("one");
       if (found === undefined) throw new Error("missing flow");
-      // The first `run` call is the end event looking its run up.
+      // The end event's run lookup is the crash point, after the ending facts.
       const crashLog = new CrashLog(env.log, (method) => method === "run");
       const crashKernel = new Kernel({
         log: crashLog,
@@ -926,7 +927,7 @@ describe("run-end recovery", () => {
       const startInput = readStoredStart(env.storeRoot, started.runId);
       await expect(
         new Runner({
-          log: crashLog,
+          log: env.log,
           flow: found.flow,
           runId: started.runId,
           registry: env.registry,

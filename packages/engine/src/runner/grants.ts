@@ -42,10 +42,10 @@ export async function useGrant(
   const grant = grants.find((item) => item.waitId === waitId);
   if (grant === undefined) return false;
   for (let attempt = 0; ; attempt += 1) {
-    let lastSeq = 0;
+    const run = await log.run(runId);
+    const lastSeq = run?.lastSeq ?? 0;
     let used = false;
     for await (const fact of log.read(runId)) {
-      lastSeq = fact.seq;
       if (
         fact.kind === "grant_used" &&
         isRecord(fact.payload) &&

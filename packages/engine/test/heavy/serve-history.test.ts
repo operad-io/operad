@@ -33,9 +33,9 @@ function counting(inner: LogBackend): { log: LogBackend; reads: Reads } {
     recordInput: (runId, source, key, payload) =>
       inner.recordInput(runId, source, key, payload),
     append: (runId, seq, facts) => inner.append(runId, seq, facts),
-    read: (runId) => {
+    read: (runId, options) => {
       count("read");
-      return inner.read(runId);
+      return inner.read(runId, options);
     },
     run: (runId) => inner.run(runId),
     runs: (options) => {
