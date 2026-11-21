@@ -18,6 +18,7 @@ import { rankOf, sortByRank, splitActionName } from "../plugin/registry.ts";
 import { messageOf } from "../plugin/errors.ts";
 import { createPluginLogger } from "../plugin/logger.ts";
 import { LiveLogWatch } from "./live-logs.ts";
+import { fitsEventLine } from "./event-line.ts";
 import { FileSecretStore } from "../plugin/secrets.ts";
 import {
   assertWhere,
@@ -3019,7 +3020,9 @@ export class Views {
   /**
    * Reads the plugin's live part and sends it, unless a newer change won. When
    * the plugin has nothing left to say, one last event with an empty tail tells
-   * a client that renders only from push to drop what it kept.
+   * a client that renders only from push to drop what it kept. A part that
+   * would not fit one event line is not sent: the growth change announced
+   * beside it, within the change window, asks for the section read instead.
    */
   private pushLive(ref: ObjectRef, key: string): void {
     const generation = this.liveGenerations.get(key) ?? 0;
@@ -3030,7 +3033,7 @@ export class Views {
         if (result === undefined) return;
         if (result.event !== undefined && result.section !== undefined) {
           this.liveSections.set(key, result.section);
-          this.announce(result.event);
+          if (fitsEventLine(result.event)) this.announce(result.event);
           return;
         }
         const section = result.section ?? this.liveSections.get(key);

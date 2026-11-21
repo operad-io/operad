@@ -1288,3 +1288,9 @@ resume window`. Rows are append-only, so the old lines stay as history.
 |---|---|---|---|
 | T-0635-M1 | packages/engine/src/util.ts | `formatElapsed` treated a value under one second as `0s` instead of `<1s` | `formatElapsed > matches the shared sample table` |
 | T-0635-M9 | packages/engine/src/views/history.ts | a step attempt's duration added a minute, so `8m 1s` read `9m 1s` | `readable run history > one line per step attempt with time, outcome and duration` |
+## T-0634 — follow-ups to the SSE event size
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0634-M1 | packages/engine/src/views/presentation.ts | an oversized live part was announced as a tail again, so each push sent a part over one event line | `a live log that grows without a fact > a live part too large for one event line is not pushed as a tail` |
+| T-0634-M2 | packages/engine/src/http/server.ts | an oversized live part became a replayable change entry again, so each push added a new seq and filled the window | `SSE event size > a tail one byte over is dropped, and the growth change asks for the reread` and `SSE event size > no line of a random tail exceeds the limit, including multi-byte UTF-8` |
