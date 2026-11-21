@@ -64,8 +64,8 @@ needs one, showing the new test fails on the old code. A refactor or a move that
 changes no behaviour needs none; the existing tests passing is its check.
 Record each in the `MUTATIONS.md` of the package whose code the mutation broke
 (`packages/<name>/MUTATIONS.md`); the root `MUTATIONS.md` indexes the package
-files. A row's id is the arc task id followed by `-M` and a number starting at 1
-for each task: `TK0001-M1`. Rows are only appended, and `.gitattributes`
+files. A row's id is the operad task id followed by `-M` and a number starting
+at 1 for each task: `T-0001-M1`. Rows are only appended, and `.gitattributes`
 merges every `MUTATIONS.md` as a union, so both sides' rows are kept on a merge.
 
 ## Flaky tests
