@@ -23,8 +23,7 @@ export interface CancelRunOptions {
  */
 export async function cancelRun(options: CancelRunOptions): Promise<boolean> {
   const { log, runId } = options;
-  const runs = await log.runs();
-  const run = runs.find((candidate) => candidate.runId === runId);
+  const run = await log.run(runId);
   if (run === undefined) return false;
   const state = await readState(log, runId);
   if (state.status === "ended") return false;

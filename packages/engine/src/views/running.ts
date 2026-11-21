@@ -115,7 +115,9 @@ export async function runTimes(
   /** The log's runs, when the caller already read them for another run. */
   known?: Promise<Awaited<ReturnType<LogBackend["runs"]>>>,
 ): Promise<RunTimes | undefined> {
-  const info = (await (known ?? log.runs())).find((run) => run.runId === runId);
+  const info = known === undefined
+    ? await log.run(runId)
+    : (await known).find((run) => run.runId === runId);
   if (info === undefined) return undefined;
   let state = initialState();
   let startedAt = info.startedAt;

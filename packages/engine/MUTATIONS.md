@@ -1301,3 +1301,11 @@ resume window`. Rows are append-only, so the old lines stay as history.
 | T-0610-M1 | packages/engine/src/log/sqlite.ts | `openCandidateRoutes` stopped excluding a candidate route whose input has a resolve outcome | `log backend: sqlite > openCandidateRoutes keeps the candidate routes with no resolve` |
 | T-0610-M2 | packages/engine/src/log/sqlite.ts | `startRoutesWithoutRun` stopped excluding a start route whose input already has a run | `log backend: sqlite > startRoutesWithoutRun keeps start routes whose input has no run` |
 | T-0610-M3 | packages/engine/src/trigger/kernel.ts | `candidates` read every input and outcome again instead of the open candidate routes | `candidates reads only the unresolved candidates after many resolved inputs` |
+
+## T-0612 — run lookup and the start input filter
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0612-M1 | packages/engine/src/log/sqlite.ts | `run` looked the row up and then returned undefined, so a known run could not be read by id | `log backend: sqlite > run reads one run by id` |
+| T-0612-M2 | packages/engine/src/log/sqlite.ts | `runs` ignored `startInputId`, so the filter returned every run | `log backend: sqlite > runs can be filtered by the input that started them` |
+| T-0612-M3 | packages/engine/src/log/sqlite.ts | `schemaNeedsWork` no longer checked the start input index, so an older store kept it missing | `a store without the start input index gains it on open` |

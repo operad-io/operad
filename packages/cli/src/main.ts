@@ -413,8 +413,7 @@ export async function openContext(
       io.error(`${message}\n`);
     },
     onAnswer: async (runId, choice, note, actor) => {
-      const runs = await log.runs();
-      const run = runs.find((candidate) => candidate.runId === runId);
+      const run = await log.run(runId);
       if (run === undefined) throw new StateError(`no run "${runId}"`);
       await recordAnswer({
         log,
@@ -1337,28 +1336,23 @@ async function findHistoryRuns(
   objectTypes: readonly string[],
   id: string,
 ): Promise<readonly RunInfo[]> {
-  const runs = await log.runs();
-  const exact = runs.find((run) => run.runId === id);
+  const exact = await log.run(id);
   if (exact !== undefined) return [exact];
 
   const parsed = parseObjectKey(id);
   if (parsed !== undefined) {
     // A type no loaded plugin declares is unknown, as it is for a bare id.
     if (!objectTypes.includes(parsed.type)) return [];
-    return runs.filter((run) => run.object === `${parsed.type}:${parsed.id}`);
+    return log.runs({ object: `${parsed.type}:${parsed.id}` });
   }
 
-  const plain = runs.filter((run) => run.object === id);
+  const plain = await log.runs({ object: id });
   if (plain.length > 0) return plain;
 
   const byType = new Map<string, RunInfo[]>();
-  for (const run of runs) {
-    const key = parseObjectKey(run.object);
-    if (key === undefined || key.id !== id) continue;
-    if (!objectTypes.includes(key.type)) continue;
-    const list = byType.get(key.type) ?? [];
-    list.push(run);
-    byType.set(key.type, list);
+  for (const type of objectTypes) {
+    const list = await log.runs({ object: `${type}:${id}` });
+    if (list.length > 0) byType.set(type, list);
   }
   if (byType.size > 1) {
     const names = [...byType.keys()].sort();
@@ -1929,8 +1923,7 @@ async function commandRunInternal(
   const runId = args[0];
   if (runId === undefined) throw new UsageError("run-internal needs a run id");
 
-  const runs = await context.log.runs();
-  const run = runs.find((candidate) => candidate.runId === runId);
+  const run = await context.log.run(runId);
   if (run === undefined) throw new Error(`no run "${runId}"`);
   const found = context.registry.flow(run.flow);
   if (found === undefined) {

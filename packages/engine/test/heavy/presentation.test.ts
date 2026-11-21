@@ -141,6 +141,7 @@ function manualGrowthLog(inner: LogBackend): {
       inner.recordInput(runId, source, sourceKey, payload),
     append: (runId, expectedSeq, facts) => inner.append(runId, expectedSeq, facts),
     read: (runId) => inner.read(runId),
+    run: (runId) => inner.run(runId),
     runs: (options) => inner.runs(options),
     appendGlobal: (fact, uniqueKey) => inner.appendGlobal(fact, uniqueKey),
     readGlobal: () => inner.readGlobal(),

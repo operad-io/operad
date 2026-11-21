@@ -28,7 +28,7 @@ export async function endRunDirectly(
   status: "failed" | "cancelled",
   reason: string | null,
 ): Promise<KernelState | undefined> {
-  const run = (await log.runs()).find((candidate) => candidate.runId === runId);
+  const run = await log.run(runId);
   if (run === undefined) return undefined;
   let state = await readState(log, runId);
   if (state.status !== "ended") {
