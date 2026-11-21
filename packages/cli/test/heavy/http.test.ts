@@ -25,6 +25,7 @@ async function freePort(): Promise<number> {
   });
   const port = server.port;
   await server.stop(true);
+  if (port === undefined) throw new Error("no free port");
   return port;
 }
 
@@ -60,7 +61,7 @@ function env(home: string): Record<string, string> {
 }
 
 async function waitForOutput(
-  child: Bun.Subprocess<"pipe", "pipe", "pipe">,
+  child: Bun.Subprocess<"ignore", "pipe", "pipe">,
   needle: string,
   timeoutMs = 10_000,
 ): Promise<string> {
@@ -86,7 +87,7 @@ async function waitForOutput(
 }
 
 async function stopChild(
-  child: Bun.Subprocess<"pipe", "pipe", "pipe">,
+  child: Bun.Subprocess<"ignore", "pipe", "pipe">,
 ): Promise<void> {
   child.kill("SIGTERM");
   const exited = await Promise.race([

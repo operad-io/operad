@@ -38,3 +38,5 @@ if (touched !== undefined || failure !== undefined) {
 } else {
   process.stdout.write("imported\n");
 }
+
+export {};

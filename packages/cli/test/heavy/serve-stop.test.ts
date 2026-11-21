@@ -1,5 +1,6 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { testEnv } from "../env.ts";
+import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -92,6 +93,23 @@ function spawnReady(cmd: string[]): Bun.Subprocess<"ignore", "pipe", "pipe"> {
   return Bun.spawn({ cmd, stdin: "ignore", stdout: "pipe", stderr: "pipe" });
 }
 
+interface IdleWorker {
+  readonly pid: number;
+}
+
+/** Starts a kept worker in a process group of its own, as a serve leaves it. */
+function spawnIdleWorker(argument: string): IdleWorker {
+  const child = spawn(
+    process.execPath,
+    ["-e", "setInterval(() => undefined, 1000)", argument],
+    { detached: true, stdio: "ignore" },
+  );
+  const pid = child.pid;
+  if (pid === undefined) throw new Error("the idle worker has no pid");
+  child.unref();
+  return { pid };
+}
+
 describe("operad serve stop", () => {
   test("no lock: says so and exits 0", async () => {
     const { home } = await makeHome();
@@ -103,14 +121,7 @@ describe("operad serve stop", () => {
   test("kept workers of the home end even when no serve is running", async () => {
     const { home } = await makeHome();
     const slot = newKeptWorkerSlot(home, "pi");
-    const worker = Bun.spawn({
-      cmd: [process.execPath, "-e", "setInterval(() => undefined, 1000)", keptWorkerArgument(slot.token)],
-      detached: true,
-      stdin: "ignore",
-      stdout: "ignore",
-      stderr: "ignore",
-    });
-    worker.unref();
+    const worker = spawnIdleWorker(keptWorkerArgument(slot.token));
     const pid = worker.pid;
     writeKeptWorker({
       pid,
@@ -148,14 +159,7 @@ describe("operad serve stop", () => {
       }),
     );
     const stoppedAtStart = newKeptWorkerSlot(home, "pi");
-    const first = Bun.spawn({
-      cmd: [process.execPath, "-e", "setInterval(() => undefined, 1000)", keptWorkerArgument(stoppedAtStart.token)],
-      detached: true,
-      stdin: "ignore",
-      stdout: "ignore",
-      stderr: "ignore",
-    });
-    first.unref();
+    const first = spawnIdleWorker(keptWorkerArgument(stoppedAtStart.token));
     const firstPid = first.pid;
     writeKeptWorker({
       pid: firstPid,
@@ -177,20 +181,13 @@ describe("operad serve stop", () => {
       stderr: "pipe",
     });
     const keptAtStop = newKeptWorkerSlot(home, "pi");
-    let worker: Bun.Subprocess<"ignore", "ignore", "ignore"> | undefined;
+    let worker: IdleWorker | undefined;
     try {
       await until(serve, "serving");
       // Serve's start sweep runs after its "serving" line: the first worker
       // going proves that block is over before the second is made.
       expect(await waitGone(firstPid, 5_000)).toBe(true);
-      worker = Bun.spawn({
-        cmd: [process.execPath, "-e", "setInterval(() => undefined, 1000)", keptWorkerArgument(keptAtStop.token)],
-        detached: true,
-        stdin: "ignore",
-        stdout: "ignore",
-        stderr: "ignore",
-      });
-      worker.unref();
+      worker = spawnIdleWorker(keptWorkerArgument(keptAtStop.token));
       const pid = worker.pid;
       writeKeptWorker({
         pid,

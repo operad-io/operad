@@ -3,6 +3,7 @@
   "compilerOptions": { "rootDir": ".", "outDir": "../../.tsbuild/dev" },
   "include": ["package.json", "src", "test", "flows"],
   "references": [
+    { "path": "../access-match" },
     { "path": "../chat" },
     { "path": "../engine" },
     { "path": "../pool" },

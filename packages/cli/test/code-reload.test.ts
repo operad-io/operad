@@ -128,8 +128,10 @@ describe("plugin code in a serve snapshot", () => {
       w.clock.advance(100);
       await settle();
       expect(changes).toHaveLength(1);
-      expect(describeChange(changes[0])).toStartWith("plugin enabled: ");
-      expect(describeChange(changes[0])).toContain("src/index.ts");
+      const change = changes[0];
+      if (change === undefined) throw new Error("the change was not recorded");
+      expect(describeChange(change)).toStartWith("plugin enabled: ");
+      expect(describeChange(change)).toContain("src/index.ts");
     } finally {
       w.watch.stop();
     }

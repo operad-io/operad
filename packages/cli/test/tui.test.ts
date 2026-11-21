@@ -152,19 +152,19 @@ describe("operad tui", () => {
 
   test("--theme goes to the terminal app", async () => {
     const output = capture();
-    let seen: TuiCommand | undefined;
+    const seen: TuiCommand[] = [];
     for (const argv of [["tui", "--theme", "terminal"], ["tui", "--theme=terminal"]]) {
-      seen = undefined;
+      seen.length = 0;
       await main(argv, {
         home: "/tmp/operad-tui-home",
         io: output.io,
         isTTY: true,
         tui: async (command) => {
-          seen = command;
+          seen.push(command);
           return 0;
         },
       });
-      expect(seen?.theme).toBe("terminal");
+      expect(seen[0]?.theme).toBe("terminal");
     }
   });
 });
