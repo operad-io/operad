@@ -1272,3 +1272,12 @@ resume window`. Rows are append-only, so the old lines stay as history.
 |---|---|---|---|
 | T-0608-M1 | packages/engine/test/plugin/client-ids.test.ts | the alias scan ignored a variable or property assigned from the client, so a bare id through another receiver name was not caught | `a plugin's client calls name a typed object id > the scan follows an alias and a ClientApi property to a client call` |
 | T-0608-M2 | packages/engine/test/plugin/client-ids.test.ts | a declared `object` field was trusted whatever its type said, so an untyped `object` field slipped through as a typed id | `a plugin's client calls name a typed object id > the scan allows a written id, a typed template and a declared typed object` |
+
+## T-0609 — an SSE event size every client can rely on
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0609-M1 | packages/engine/src/http/server.ts | an oversized live part was pushed as a `tail` event instead of becoming the object's change event, so its line went over the limit | `SSE event size > a tail one byte over is replaced by the change event that asks for a reread` |
+| T-0609-M2 | packages/engine/src/http/server.ts | the line check used `<` instead of `<=`, so a tail exactly at the limit was replaced instead of sent | `SSE event size > a tail at the line limit goes through as one tail event` |
+| T-0609-M3 | packages/engine/src/http/server.ts | the line check counted UTF-16 code units instead of UTF-8 bytes, so a multi-byte tail over the byte limit was sent | `SSE event size > no line of a random tail exceeds the limit, including multi-byte UTF-8` |
+| T-0609-M4 | packages/engine/src/http/server.ts | `formatEvent` skipped the line check, so an object id too long for one line was written whole | `SSE event size > a change id too long to fit becomes a reset instead of a long line` |

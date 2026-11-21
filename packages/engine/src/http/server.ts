@@ -49,6 +49,12 @@ export const DEFAULT_TOKEN_CHECK_MS = 1_000;
 /** The largest JSON request body `serve` accepts, in bytes. */
 export const MAX_REQUEST_BODY_BYTES = 1024 * 1024;
 
+/**
+ * The most bytes one line of the SSE stream may hold. The iOS app drops a
+ * line over 64 KiB, so the server stays at that limit and every event fits.
+ */
+export const MAX_SSE_EVENT_BYTES = 64 * 1024;
+
 /** How often a running server removes the uploads no action used. */
 export const DEFAULT_UPLOAD_SWEEP_MS = 10 * 60 * 1000;
 
@@ -234,12 +240,14 @@ export class EventHub {
   }
 
   private publish(value: ViewEvent): void {
-    if (value.section !== undefined) {
+    if (value.section !== undefined && fitsTailEvent(value)) {
       // A live part is for the clients connected now; it is not replayed on a
       // reconnect, where the section read gives the whole current tail again.
       this.notify({ kind: "live", event: value });
       return;
     }
+    // A live part that would exceed one SSE line is never cut. It becomes the
+    // object's own change instead, so the client reads the open section again.
     this.resetAnnounced = false;
     this.seq += 1;
     const entry: EventEntry = {
@@ -464,15 +472,32 @@ function urlFor(address: string, port: number): string {
     : `http://${address}:${port}`;
 }
 
+/** One `data:` line, or undefined when it would be over the stream's limit. */
+function dataLine(value: unknown): string | undefined {
+  const line = `data: ${JSON.stringify(value)}`;
+  return Buffer.byteLength(line, "utf8") <= MAX_SSE_EVENT_BYTES
+    ? line
+    : undefined;
+}
+
+const RESET_EVENT = "event: reset\ndata: {}\n\n";
+
+/** A change event whose data line fits; an id too long to send becomes a reset. */
 function formatEvent(entry: EventEntry): string {
-  return `id: ${entry.event}\ndata: ${JSON.stringify({ id: entry.id })}\n\n`;
+  const line = dataLine({ id: entry.id });
+  return line === undefined
+    ? RESET_EVENT
+    : `id: ${entry.event}\n${line}\n\n`;
 }
 
 function formatTailEvent(event: ViewEvent): string {
   return `event: tail\ndata: ${JSON.stringify(event)}\n\n`;
 }
 
-const RESET_EVENT = "event: reset\ndata: {}\n\n";
+/** Whether a live part can be sent without cutting its structured JSON. */
+function fitsTailEvent(event: ViewEvent): boolean {
+  return dataLine(event) !== undefined;
+}
 
 export function eventResponse(
   request: Request,

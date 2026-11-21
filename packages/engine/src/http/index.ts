@@ -20,6 +20,7 @@ export {
   DEFAULT_STOP_TIMEOUT_MS,
   displayNameOf,
   HttpStopError,
+  MAX_SSE_EVENT_BYTES,
   startHttpServer,
   type HttpServerHandle,
   type HttpServerOptions,
