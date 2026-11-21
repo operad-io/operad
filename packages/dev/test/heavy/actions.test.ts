@@ -6,20 +6,11 @@ import { createChatPlugin } from "@operad-io/chat";
 import { appendTargetGrant, readTargetGrants } from "@operad-io/access-match";
 import plugin from "../../src/index.ts";
 import { integrationQueueDirectory } from "../../src/integration-queue.ts";
-import {
-  addPlan,
-  addRepository,
-  addTask,
-  cancelTask,
-  getPlan,
-  getTask,
-  setConcurrency,
-  setTaskPhase,
-} from "../../src/service.ts";
+import { addPlan, addRepository, addTask, cancelTask, getPlan, getTask, setConcurrency } from "../../src/service.ts";
 import { planData, planState, taskData } from "../../src/model.ts";
 import { isWorkQuestionWait } from "../../src/waits.ts";
 import { planViews } from "../../src/views.ts";
-import { cleanupTempRoots, guardLockHandles, makeGitRepository, storeAt, tempRoot } from "../support.ts";
+import { cleanupTempRoots, guardLockHandles, makeGitRepository, storeAt, tempRoot, setTaskPhase } from "../support.ts";
 
 afterAll(cleanupTempRoots);
 guardLockHandles();

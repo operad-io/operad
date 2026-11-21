@@ -9,6 +9,8 @@
 import type { PluginStepResult, StepContext } from "@operad-io/engine";
 import { messageOf } from "@operad-io/engine";
 import type { ReviewFinding, TaskData } from "./model.ts";
+import { severityRank } from "./rework.ts";
+import { edgeParamsOf, type EdgeParams } from "./step-edge.ts";
 import { WAIT_ACTIONS, waitChoiceInfo, type WaitAction } from "./waits.ts";
 import {
   cancelledStep,
@@ -22,12 +24,7 @@ import {
 export const WAITING_EVENT = "dev.waiting";
 
 /** The edge a task took into the wait, as the flow names it in its params. */
-export interface AnnounceParams {
-  readonly from: string;
-  readonly result: string;
-  /** The choices the wait that follows offers; present when this step asks for it. */
-  readonly choices?: readonly string[] | undefined;
-}
+export type AnnounceParams = EdgeParams;
 
 /** Why a task waits: the short reason for the key, and what to add to the line. */
 export interface WaitingReason {
@@ -35,21 +32,6 @@ export interface WaitingReason {
   readonly detail?: string | undefined;
   /** The step that stopped, when the run did not reach an edge. */
   readonly step?: string | undefined;
-}
-
-function paramsOf(params: unknown): AnnounceParams {
-  const record =
-    typeof params === "object" && params !== null && !Array.isArray(params)
-      ? (params as Record<string, unknown>)
-      : {};
-  const from = typeof record.from === "string" ? record.from : "";
-  const result = typeof record.result === "string" ? record.result : "";
-  const choices =
-    Array.isArray(record.choices) &&
-    record.choices.every((choice): choice is string => typeof choice === "string")
-      ? record.choices
-      : undefined;
-  return { from, result, ...(choices === undefined ? {} : { choices }) };
 }
 
 /** The step a repair run says stopped, from the line the worktree step wrote. */
@@ -151,13 +133,6 @@ export function waitingReason(
     default:
       return { reason: "waiting" };
   }
-}
-
-function severityRank(severity: string): number {
-  if (severity === "critical") return 3;
-  if (severity === "major") return 2;
-  if (severity === "minor") return 1;
-  return 0;
 }
 
 /** The most serious finding of the review that is at or above the fix level. */
@@ -271,7 +246,7 @@ export async function runAnnounce(
 ): Promise<PluginStepResult> {
   const context = await taskContext(ctx);
   if (!claimAllows(ctx, context.task)) return cancelledStep();
-  const edge = paramsOf(stepParams);
+  const edge = edgeParamsOf(stepParams);
   const path = context.task.attempt?.worktree;
   const conflicted =
     edge.from === "work" &&

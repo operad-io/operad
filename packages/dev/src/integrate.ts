@@ -5,7 +5,7 @@
  */
 
 import { guardOutward, personStarted } from "@operad-io/access-match";
-import { isRecord, messageOf, type PluginStepResult, type StepContext, type StepRunOptions } from "@operad-io/engine";
+import { isRecord, messageOf, type PluginStepResult, type StepContext } from "@operad-io/engine";
 import { appendChange, appendRework, storeKey, type CleanupFailure, type CleanupRecord, type IntegrationRecord, type TaskAttempt, type TaskData } from "./model.ts";
 import {
   branchHead,
@@ -35,11 +35,16 @@ import { reportFlakyTests } from "./flaky.ts";
 import { recordRerunPasses } from "./reruns.ts";
 import { getPlan, refreshPlanCounts } from "./service.ts";
 import {
+  commitOf,
+  git,
+  headOf,
+  isAncestor,
+  treeOf,
+} from "./git.ts";
+import {
   cancelledStep,
   claimAllows,
   conflictedFiles,
-  git,
-  headOf,
   mergeInProgress,
   saveTaskGuarded,
   taskContext,
@@ -105,20 +110,6 @@ export async function followMain(
 
 function shortSha(sha: string): string {
   return sha.slice(0, 7);
-}
-
-function revParse(cwd: string, ref: string): string | undefined {
-  const result = git(cwd, ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]);
-  return result.ok && result.out.length > 0 ? result.out : undefined;
-}
-
-/** True when `ancestor` is reachable from `descendant`. */
-function contains(
-  cwd: string,
-  ancestor: string,
-  descendant: string,
-): boolean {
-  return git(cwd, ["merge-base", "--is-ancestor", ancestor, descendant]).ok;
 }
 
 interface Candidate {
@@ -266,11 +257,6 @@ function integrationData(
 }
 
 /** Step `dev/integrate`: land the verified commit on main. */
-function treeOf(cwd: string, commit: string): string | undefined {
-  const result = git(cwd, ["rev-parse", "--verify", "--quiet", `${commit}^{tree}`]);
-  return result.ok && result.out.length > 0 ? result.out : undefined;
-}
-
 /** The patch id of a diff, which ignores line numbers and whitespace. */
 function patchIdOf(cwd: string, args: readonly string[]): string | undefined {
   const diff = git(cwd, args, { raw: true });
@@ -287,7 +273,7 @@ function patchIdOf(cwd: string, args: readonly string[]): string | undefined {
 function carrierOnMain(cwd: string, verified: string, main: string): string | undefined {
   // A verified commit that main contains arrived in the first commit of main's
   // own line that has it.
-  if (git(cwd, ["merge-base", "--is-ancestor", verified, main]).ok) {
+  if (isAncestor(cwd, verified, main)) {
     const arrived = git(cwd, [
       "rev-list",
       "--first-parent",
@@ -478,11 +464,11 @@ export async function runIntegrate(
     previous.candidate.length > 0
   ) {
     const fetched = git(repository, ["fetch", "--prune", settings.remote]);
-    const remoteMain = revParse(repository, mainRef);
+    const remoteMain = commitOf(repository, mainRef);
     if (
       fetched.ok &&
       remoteMain !== undefined &&
-      contains(repository, previous.candidate, remoteMain)
+      isAncestor(repository, previous.candidate, remoteMain)
     ) {
       const record: IntegrationRecord = {
         ...previous,
@@ -555,8 +541,8 @@ export async function runIntegrate(
     wait: integrateTestHooks.wait,
     landed: (result) => {
       if (!git(repository, ["fetch", "--prune", settings.remote]).ok) return false;
-      const main = revParse(repository, mainRef);
-      return main !== undefined && contains(repository, result.head, main);
+      const main = commitOf(repository, mainRef);
+      return main !== undefined && isAncestor(repository, result.head, main);
     },
     say: async (line, holder) => {
       await ctx.logger.write(line);
@@ -582,7 +568,7 @@ export async function runIntegrate(
   /** This task's merge commit when main already has it, and the main that has it. */
   const alreadyOnMain = (): { sha: string; main: string } | undefined => {
     if (!git(repository, ["fetch", "--prune", settings.remote]).ok) return undefined;
-    const main = revParse(repository, mainRef);
+    const main = commitOf(repository, mainRef);
     if (main === undefined) return undefined;
     const found = git(repository, [
       "log",
@@ -615,7 +601,7 @@ export async function runIntegrate(
     for (let round = 0; round < MAX_INTEGRATION_ROUNDS; round += 1) {
       const fetched = git(repository, ["fetch", "--prune", settings.remote]);
       if (!fetched.ok) return undefined;
-      const base = revParse(repository, mainRef);
+      const base = commitOf(repository, mainRef);
       if (base === undefined) return undefined;
       if (recreateGateWorktree(repository, gate, base, settings) !== undefined) {
         return undefined;
@@ -787,8 +773,8 @@ export async function runIntegrate(
         ]).ok;
         if (pushed) return true;
         git(repository, ["fetch", "--prune", settings.remote]);
-        const after = revParse(repository, mainRef);
-        landedDespiteError = after !== undefined && contains(repository, batchHead, after);
+        const after = commitOf(repository, mainRef);
+        landedDespiteError = after !== undefined && isAncestor(repository, batchHead, after);
         return landedDespiteError;
       });
       if (landed === "withdrawn") return undefined;
@@ -801,8 +787,8 @@ export async function runIntegrate(
         return land({});
       }
       git(repository, ["fetch", "--prune", settings.remote]);
-      const now = revParse(repository, mainRef);
-      if (now !== undefined && contains(repository, batchHead, now)) {
+      const now = commitOf(repository, mainRef);
+      if (now !== undefined && isAncestor(repository, batchHead, now)) {
         return land({ landed: true });
       }
       if (now !== undefined && now !== base) continue;
@@ -855,7 +841,7 @@ export async function runIntegrate(
     const landed = alreadyOnMain();
     if (landed !== undefined) {
       // The dead leader's note and batch are gone; main still has the base.
-      const landedBase = revParse(repository, `${landed.sha}^1`);
+      const landedBase = commitOf(repository, `${landed.sha}^1`);
       return recordMerged(
         {
           result: "merged",
@@ -902,7 +888,7 @@ export async function runIntegrate(
           `cannot fetch "${settings.remote}": ${fetched.err || fetched.out || "git fetch failed"}`,
         );
       }
-      const base = revParse(repository, mainRef);
+      const base = commitOf(repository, mainRef);
       if (base === undefined) {
         return fail(`"${settings.remote}/${settings.mainBranch}" does not exist after the fetch`);
       }
@@ -1186,11 +1172,11 @@ export async function runIntegrate(
 
       lastError = `cannot push "${settings.mainBranch}" to "${settings.remote}": ${push.err || push.out || "git push failed"}`;
       git(repository, ["fetch", "--prune", settings.remote]);
-      const now = revParse(repository, mainRef);
+      const now = commitOf(repository, mainRef);
       // A push can land on the remote and still report an error (the client lost
       // the answer). The remote's main then contains the candidate: it is
       // merged, and building and pushing a second candidate would be wrong.
-      if (now !== undefined && contains(repository, sha, now)) {
+      if (now !== undefined && isAncestor(repository, sha, now)) {
         const record: IntegrationRecord = {
           ...pending,
           result: "merged",

@@ -1,11 +1,10 @@
 /** How a plan and a task appear in a list and a detail page. */
 
-import { messageOf } from "@operad-io/engine";
+import { isRecord, messageOf } from "@operad-io/engine";
 import {
   foldObjectFacts,
   type ObjectRow,
   type ObjectViews,
-  type PluginFact,
   type StoredObject,
   type ViewContext,
   type ViewSection,
@@ -19,9 +18,9 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import {
+  allFactsOf,
   bareId,
   hasRework,
-  listAll,
   PLAN_FINAL_STATES,
   TASK_FINAL_STATES,
   dependencyKey,
@@ -42,7 +41,8 @@ import {
 import { placeWaitNote } from "./place-wait.ts";
 import { checkHostWarning } from "./check-host.ts";
 import { planMark, repositoryMark, taskBadge, taskMark } from "./marks.ts";
-import { git, workBranch } from "./steps.ts";
+import { branchExists, commitOf, git } from "./git.ts";
+import { workBranch } from "./steps.ts";
 import { repositoryMetrics } from "./throughput.ts";
 import { findRepository, listRepositories } from "./service.ts";
 import { DEV_SETTINGS_FILE, readDevSettings, settingsProblem } from "./settings.ts";
@@ -400,9 +400,7 @@ function inlineCode(text: string): string {
 function parseObject(text: string): Record<string, unknown> | undefined {
   try {
     const value: unknown = JSON.parse(text);
-    return typeof value === "object" && value !== null && !Array.isArray(value)
-      ? (value as Record<string, unknown>)
-      : undefined;
+    return isRecord(value) ? value : undefined;
   } catch {
     return undefined;
   }
@@ -503,13 +501,13 @@ export function readableLog(lines: readonly string[], options: { readonly worktr
       continue;
     }
     if (record !== undefined && (kind === "journal" || kind === undefined) && typeof record.event === "string") {
-      const data = isObject(record.data) ? record.data : {};
+      const data = isRecord(record.data) ? record.data : {};
       if (record.event === "MessageAppended") {
-        const message = isObject(data.message) ? data.message : {};
-        const assistant = isObject(message.assistant) ? message.assistant : undefined;
+        const message = isRecord(data.message) ? data.message : {};
+        const assistant = isRecord(message.assistant) ? message.assistant : undefined;
         const blocks: unknown[] = Array.isArray(assistant?.content) ? assistant.content : [];
         const text = blocks
-          .map((block) => (isObject(block) && isObject(block.text) ? stringField(block.text, ["text"]) : undefined))
+          .map((block) => (isRecord(block) && isRecord(block.text) ? stringField(block.text, ["text"]) : undefined))
           .filter((part): part is string => part !== undefined)
           .join(" ");
         if (text.trim().length > 0) {
@@ -719,17 +717,7 @@ async function answerSection(
   readonly pages?: readonly { readonly label: string; readonly cursor?: string }[];
 }> {
   const byAttempt = new Map<number, string>();
-  const facts: PluginFact[] = [];
-  let page: string | undefined;
-  for (;;) {
-    const read = await ctx.store.facts(
-      { type: object.type, id: object.id },
-      page === undefined ? {} : { cursor: page },
-    );
-    facts.push(...read.facts);
-    if (read.next === undefined) break;
-    page = read.next;
-  }
+  const facts = await allFactsOf(ctx.store, object);
   for (const version of foldObjectFacts(facts)) {
     const attempt = taskData(version.data).attempt;
     if (attempt === undefined) continue;
@@ -846,8 +834,8 @@ function mergedMarkdown(repositoryPath: string, remote: string, sha: string | un
 /** True when the task's branch is still in the repository, here or on its remote. */
 function branchIsThere(repositoryPath: string, remote: string, branch: string): boolean {
   return (
-    git(repositoryPath, ["show-ref", "--verify", "--quiet", `refs/heads/${branch}`]).ok ||
-    git(repositoryPath, ["show-ref", "--verify", "--quiet", `refs/remotes/${remote}/${branch}`]).ok
+    branchExists(repositoryPath, branch) ||
+    branchExists(repositoryPath, branch, remote)
   );
 }
 
@@ -873,17 +861,11 @@ async function diffSection(
   let fallback: string;
   if (merged) {
     if (recorded === undefined) return { markdown: "_Merged._" };
-    const resolved = git(repository.path, [
-      "rev-parse",
-      "--verify",
-      "--quiet",
-      `${recorded}^{commit}`,
-    ]);
-    const sha = resolved.ok && resolved.out.length > 0 ? resolved.out : recorded;
-    const parent = resolved.ok
-      ? git(repository.path, ["rev-parse", "--verify", "--quiet", `${sha}^1`])
-      : undefined;
-    if (parent === undefined || !parent.ok || parent.out.length === 0) {
+    const found = commitOf(repository.path, recorded);
+    const sha = found ?? recorded;
+    const parent =
+      found === undefined ? undefined : commitOf(repository.path, `${sha}^1`);
+    if (parent === undefined) {
       return { markdown: mergedMarkdown(repository.path, settings.remote, sha) };
     }
     range = `${sha}^1..${sha}`;
@@ -1058,17 +1040,7 @@ export async function metrics(
   now: number = Date.now(),
 ): Promise<string> {
   const byAttempt = new Map<number, AttemptMetrics>();
-  const facts: PluginFact[] = [];
-  let cursor: string | undefined;
-  for (;;) {
-    const page = await ctx.store.facts(
-      { type: object.type, id: object.id },
-      cursor === undefined ? {} : { cursor },
-    );
-    facts.push(...page.facts);
-    if (page.next === undefined) break;
-    cursor = page.next;
-  }
+  const facts = await allFactsOf(ctx.store, object);
   for (const version of foldObjectFacts(facts)) {
     const attempt = taskData(version.data).attempt;
     if (attempt === undefined) continue;
@@ -1260,8 +1232,4 @@ function workerTable(entries: readonly AttemptMetrics[]): string | undefined {
     );
   }
   return lines.join("\n");
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

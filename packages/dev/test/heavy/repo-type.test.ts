@@ -4,18 +4,8 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createViews, PluginRegistry } from "@operad-io/engine";
 import { createDevPlugin } from "../../src/index.ts";
-import {
-  addPlan,
-  confirmPlan,
-  refreshPlanCounts,
-  getPlan,
-  addRepository,
-  addTask,
-  cancelPlan,
-  removeRepository,
-  setTaskPhase,
-} from "../../src/service.ts";
-import { cleanupTempRoots, guardLockHandles, makeGitRepository, storeAt, tempRoot } from "../support.ts";
+import { addPlan, confirmPlan, refreshPlanCounts, getPlan, addRepository, addTask, cancelPlan, removeRepository } from "../../src/service.ts";
+import { cleanupTempRoots, guardLockHandles, makeGitRepository, storeAt, tempRoot, setTaskPhase } from "../support.ts";
 
 afterAll(cleanupTempRoots);
 guardLockHandles();

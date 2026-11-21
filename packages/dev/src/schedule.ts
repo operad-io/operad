@@ -4,7 +4,7 @@
  * plan is finished. Scheduling lives here, not in the kernel (ADR 0002 D1).
  */
 
-import { messageOf } from "@operad-io/engine";
+import { isRecord, messageOf } from "@operad-io/engine";
 import { DEFAULT_POOL } from "@operad-io/pool";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -434,10 +434,7 @@ function storedGraphPool(graph: FlowDefinition | undefined): string | undefined 
     if (typeof outer !== "object" || outer === null) continue;
     const { use, params } = outer as { use?: unknown; params?: unknown };
     if (use !== "dev/work") continue;
-    const pool: unknown =
-      typeof params === "object" && params !== null
-        ? (params as { flowPool?: unknown }).flowPool
-        : undefined;
+    const pool: unknown = isRecord(params) ? params.flowPool : undefined;
     return typeof pool === "string" ? pool : DEFAULT_POOL;
   }
   return undefined;

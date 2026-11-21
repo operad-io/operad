@@ -19,7 +19,6 @@ import {
   messageOf,
   readUsage,
   type CostQuality,
-  type JsonValue,
   type PluginStepResult,
   type StepContext,
   type StepEvent,
@@ -42,11 +41,18 @@ import {
 import {
   ACQUIRED_EVENT,
   DEFAULT_POOL,
+  modelUnavailable,
   resolvePool,
   WAITING_EVENT,
   type WorkerDefinition,
 } from "@operad-io/pool";
-import { git, type GitResult } from "./git.ts";
+import {
+  branchExists,
+  git,
+  headOf,
+  isAncestor,
+  type GitResult,
+} from "./git.ts";
 import { runPrepare, taskStepAccess } from "./prepare.ts";
 import { classifyStop, isConnectionError, STOP_REASONS } from "./stops.ts";
 import { findRepository, putTaskKeepingPlanCost, withRepoLock } from "./service.ts";
@@ -67,8 +73,6 @@ import {
   readWorkerBrief,
   type DevSettings,
 } from "./settings.ts";
-
-export { git, type GitResult };
 
 function resolvePath(path: string): string {
   try {
@@ -98,10 +102,9 @@ export function workBranch(taskId: string): string {
 
 /** The step a host error says was not loaded; undefined for any other error. */
 function notLoadedStep(error: unknown): string | undefined {
-  if (typeof error !== "object" || error === null) return undefined;
-  const record = error as { readonly kind?: unknown; readonly use?: unknown };
-  return record.kind === "step_not_loaded" && typeof record.use === "string"
-    ? record.use
+  if (!isRecord(error)) return undefined;
+  return error.kind === "step_not_loaded" && typeof error.use === "string"
+    ? error.use
     : undefined;
 }
 
@@ -243,42 +246,6 @@ function isWorktree(path: string): boolean {
 function currentBranch(path: string): string | undefined {
   const result = git(path, ["symbolic-ref", "--quiet", "--short", "HEAD"]);
   return result.ok && result.out.length > 0 ? result.out : undefined;
-}
-
-export function headOf(path: string): string | undefined {
-  const result = git(path, ["rev-parse", "HEAD"]);
-  return result.ok && result.out.length > 0 ? result.out : undefined;
-}
-
-/** True when `ancestor` is reachable from `descendant`, so it is not new work. */
-function isAncestor(
-  path: string,
-  ancestor: string,
-  descendant: string,
-): boolean {
-  return git(path, ["merge-base", "--is-ancestor", ancestor, descendant]).ok;
-}
-
-function branchExists(repositoryPath: string, branch: string): boolean {
-  return git(repositoryPath, [
-    "show-ref",
-    "--verify",
-    "--quiet",
-    `refs/heads/${branch}`,
-  ]).ok;
-}
-
-function remoteBranchExists(
-  repositoryPath: string,
-  remote: string,
-  branch: string,
-): boolean {
-  return git(repositoryPath, [
-    "show-ref",
-    "--verify",
-    "--quiet",
-    `refs/remotes/${remote}/${branch}`,
-  ]).ok;
 }
 
 function gitDirOf(worktree: string): string | undefined {
@@ -642,7 +609,7 @@ export function prepareWorktree(
   if (branchExists(repository.path, branch)) {
     add = git(repository.path, ["worktree", "add", path, branch]);
     reused = true;
-  } else if (remoteBranchExists(repository.path, settings.remote, branch)) {
+  } else if (branchExists(repository.path, branch, settings.remote)) {
     add = git(repository.path, [
       "worktree",
       "add",
@@ -685,10 +652,8 @@ export async function saveTask(
 /** The claim token the scheduler put in the run's start parameters. */
 export function runToken(ctx: StepContext): string | undefined {
   const params = ctx.params;
-  if (typeof params !== "object" || params === null || Array.isArray(params)) {
-    return undefined;
-  }
-  const token = (params as Record<string, unknown>).token;
+  if (!isRecord(params)) return undefined;
+  const token = params.token;
   return typeof token === "string" && token.length > 0 ? token : undefined;
 }
 
@@ -712,17 +677,6 @@ export function claimAllows(ctx: StepContext, task: TaskData): boolean {
   if (runToken(ctx) !== claim.token) return false;
   if (task.run === null && task.phase !== claim.phase) return false;
   return true;
-}
-
-/** The task as it is now, when the current step may still write it. */
-export async function guardTask(
-  ctx: StepContext,
-  key: string,
-): Promise<TaskData | undefined> {
-  const object = await ctx.store.get("task", key);
-  if (object === undefined) return undefined;
-  const task = taskData(object.data);
-  return claimAllows(ctx, task) ? task : undefined;
 }
 
 /**
@@ -847,19 +801,15 @@ export function cancelledStep(): PluginStepResult {
 
 /** The step a repair run says stopped, when the scheduler asked for one. */
 function runStoppedAt(params: unknown): string | undefined {
-  if (typeof params !== "object" || params === null || Array.isArray(params)) {
-    return undefined;
-  }
-  const value = (params as Record<string, unknown>).runStoppedAt;
+  if (!isRecord(params)) return undefined;
+  const value = params.runStoppedAt;
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
 /** The cancelled dependency a blocked start names, when the flow carries one. */
 function blockedDependency(params: unknown): string | undefined {
-  if (typeof params !== "object" || params === null || Array.isArray(params)) {
-    return undefined;
-  }
-  const value = (params as Record<string, unknown>).blockedBy;
+  if (!isRecord(params)) return undefined;
+  const value = params.blockedBy;
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
@@ -1291,15 +1241,6 @@ function workLine(attempt: TaskAttempt): string {
   ].join("");
 }
 
-/** Step `dev/work`: run the configured harness step and decide what it left. */
-/** True when the harness reported that its model is unavailable or at its usage limit. */
-function modelUnavailable(data: Record<string, unknown>): boolean {
-  const error = data.modelError;
-  if (typeof error !== "object" || error === null) return false;
-  const kind = (error as { readonly kind?: unknown }).kind;
-  return kind === "unavailable" || kind === "usage_limit";
-}
-
 /** The lines of a step's `stderr` data, which may be a string or a list. */
 function stderrLines(value: unknown): readonly string[] {
   if (typeof value === "string") return [value];
@@ -1332,6 +1273,7 @@ function hasUncheckedWork(
   return ahead.ok && Number(ahead.out) > 0;
 }
 
+/** Step `dev/work`: run the configured harness step and decide what it left. */
 export async function runWork(ctx: StepContext, stepParams?: unknown): Promise<PluginStepResult> {
   // The step's own params (a flow stage writes them) and the run's start params
   // (a direct call writes them) both reach this step; the step's own win.
@@ -1629,9 +1571,8 @@ export async function runWork(ctx: StepContext, stepParams?: unknown): Promise<P
         : [];
       const mine = entries.filter(
         (entry): entry is { worker?: unknown; holders?: unknown } =>
-          typeof entry === "object" &&
-          entry !== null &&
-          (asked === undefined || (entry as { worker?: unknown }).worker === asked),
+          isRecord(entry) &&
+          (asked === undefined || entry.worker === asked),
       );
       const names = mine.flatMap((entry) =>
         typeof entry.worker === "string" ? [entry.worker] : [],
@@ -1737,11 +1678,7 @@ export async function runWork(ctx: StepContext, stepParams?: unknown): Promise<P
     ctx.signal.removeEventListener("abort", forwardAbort);
   }
   const outcomeData =
-    outcome !== undefined &&
-    typeof outcome.data === "object" &&
-    outcome.data !== null
-      ? (outcome.data as Record<string, unknown>)
-      : {};
+    outcome !== undefined && isRecord(outcome.data) ? outcome.data : {};
   const reading = harnessReading(outcomeData, (problem) => {
     // A usage the harness got wrong is the harness's bug; say which run.
     void ctx.logger

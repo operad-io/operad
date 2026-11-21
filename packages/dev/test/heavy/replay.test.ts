@@ -1,21 +1,5 @@
 import { afterAll, expect, test } from "bun:test";
-import {
-  addPlan,
-  addRepository,
-  addRework,
-  addTask,
-  cancelPlan,
-  cancelTask,
-  confirmPlan,
-  confirmTask,
-  editTaskBrief,
-  liveObjects,
-  rebuildObjects,
-  setAuto,
-  setPriority,
-  setTaskPhase,
-  updateTask,
-} from "../../src/service.ts";
+import { addPlan, addRepository, addTask, cancelPlan, cancelTask, confirmPlan, confirmTask, editTaskBrief, setAuto, setPriority, updateTask } from "../../src/service.ts";
 import {
   PRIORITIES,
   bareId,
@@ -23,7 +7,7 @@ import {
   type AutoMode,
   type TaskPhase,
 } from "../../src/model.ts";
-import { cleanupTempRoots, guardLockHandles, makeGitRepository, storeAt, tempRoot } from "../support.ts";
+import { cleanupTempRoots, guardLockHandles, makeGitRepository, storeAt, tempRoot, setTaskPhase, addRework, rebuildObjects, liveObjects } from "../support.ts";
 
 afterAll(cleanupTempRoots);
 guardLockHandles();

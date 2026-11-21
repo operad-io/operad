@@ -6,27 +6,12 @@ import poolPlugin from "@operad-io/pool";
 import { createShellPlugin } from "@operad-io/shell";
 import { createChatPlugin } from "@operad-io/chat";
 import plugin from "../../src/index.ts";
-import {
-  addPlan,
-  addRepository,
-  addTask,
-  confirmPlan,
-  getPlan,
-  getTask,
-  refreshPlanCounts,
-  setAuto,
-  setTaskPhase,
-} from "../../src/service.ts";
+import { addPlan, addRepository, addTask, confirmPlan, getPlan, getTask, refreshPlanCounts, setAuto } from "../../src/service.ts";
 import { bareId, planData, taskData } from "../../src/model.ts";
 import { schedulerTestHooks } from "../../src/schedule.ts";
 import { taskViews } from "../../src/views.ts";
 import { commitIn, git, gitOrThrow, makeRemote } from "../git-support.ts";
-import {
-  cleanupTempRoots,
-  guardLockHandles,
-  storeAt,
-  tempRoot,
-} from "../support.ts";
+import { cleanupTempRoots, guardLockHandles, storeAt, tempRoot, setTaskPhase } from "../support.ts";
 
 afterAll(cleanupTempRoots);
 afterEach(() => {

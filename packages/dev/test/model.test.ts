@@ -1,22 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import {
-  appendChange,
-  appendRework,
-  changeClock,
-  briefBody,
-  changesBody,
-  editBrief,
-  hasRework,
-  planState,
-  renderChanges,
-  parseId,
-  replaceBriefBody,
-  reworkBody,
-  splitBrief,
-  validateSlug,
-  type PlanData,
-} from "../src/model.ts";
-import { guardLockHandles } from "./support.ts";
+import { appendChange, appendRework, changeClock, briefBody, editBrief, hasRework, planState, renderChanges, parseId, replaceBriefBody, splitBrief, validateSlug, type PlanData } from "../src/model.ts";
+import { guardLockHandles, reworkBody, changesBody } from "./support.ts";
 
 guardLockHandles();
 

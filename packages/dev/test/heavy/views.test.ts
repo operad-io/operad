@@ -1,13 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import {
-  addPlan,
-  addRepository,
-  addRework,
-  addTask,
-  getPlan,
-  getTask,
-  setTaskPhase,
-} from "../../src/service.ts";
+import { addPlan, addRepository, addTask, getPlan, getTask } from "../../src/service.ts";
 import { MemoryPluginStore, SqlitePluginStore, type StepContext } from "@operad-io/engine";
 import { taskPlaceWait } from "../../src/place-wait.ts";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -25,7 +17,7 @@ import {
 import { planNote } from "../../src/model.ts";
 import { commitIn, gitOrThrow, makeRemote } from "../git-support.ts";
 import { bareId, planData, taskData } from "../../src/model.ts";
-import { cleanupTempRoots, guardLockHandles, makeGitRepository, storeAt, tempRoot } from "../support.ts";
+import { cleanupTempRoots, guardLockHandles, makeGitRepository, storeAt, tempRoot, setTaskPhase, addRework } from "../support.ts";
 
 afterAll(cleanupTempRoots);
 guardLockHandles();

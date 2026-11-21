@@ -6,6 +6,7 @@ import type {
   ObjectStore,
   StoredObject,
 } from "@operad-io/engine";
+import { isRecord } from "@operad-io/engine";
 import {
   appendChange,
   appendRework,
@@ -100,7 +101,7 @@ export function planRefusal(
 /** Whether a set-a-value action gets the value the plan already has. */
 function sameValue(action: PlanActionName, plan: PlanData, args: unknown): string | number | undefined {
   const given =
-    typeof args === "object" && args !== null ? (args as Record<string, unknown>) : {};
+    isRecord(args) ? args : {};
   if (action === "auto" && given.level === plan.auto) return plan.auto;
   if (action === "priority" && given.level === plan.priority) return plan.priority;
   if (action === "concurrency" && given.count === plan.concurrency) return plan.concurrency;
@@ -433,9 +434,7 @@ const repoAddAction: ActionTypeDefinition = {
   },
   async run(ctx, args) {
     const given =
-      typeof args === "object" && args !== null
-        ? (args as Record<string, unknown>)
-        : {};
+      isRecord(args) ? args : {};
     const path = given.path;
     const name = given.name;
     if (typeof path !== "string") {
@@ -645,10 +644,7 @@ export const actions: readonly ActionTypeDefinition[] = [
     why: planWhy("concurrency"),
     settled: planSettled("concurrency"),
     async run(ctx, args) {
-      const count =
-        typeof args === "object" && args !== null
-          ? (args as Record<string, unknown>).count
-          : undefined;
+      const count = isRecord(args) ? args.count : undefined;
       await setConcurrency(ctx.store, ctx.object.id, validatePlanConcurrency(count));
     },
   },
