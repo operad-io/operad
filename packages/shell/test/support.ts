@@ -1,13 +1,14 @@
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { waitForChange, type Clock } from "@operad-io/engine/platform";
 
 const roots: string[] = [];
 
-/** A scratch directory under `.radian/`, removed by `cleanupTempRoots`. */
+/** A scratch directory outside the repository, removed by `cleanupTempRoots`. */
 export async function tempRoot(): Promise<string> {
-  const base = join(process.cwd(), ".radian", "tmp");
+  const base = join(tmpdir(), "operad-shell-tests");
   await mkdir(base, { recursive: true });
   const root = await mkdtemp(join(base, "shell-test-"));
   roots.push(root);

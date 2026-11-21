@@ -154,7 +154,14 @@ describe("shell/command", () => {
   });
 
   test("shell/probe checks an outward line before it runs it", async () => {
-    const { registry } = await fixture();
+    const { root, registry } = await fixture();
+    // A push made from inside this repository would reach its real remote.
+    const top = Bun.spawnSync(["git", "rev-parse", "--show-toplevel"], {
+      cwd: root,
+      stdout: "ignore",
+      stderr: "ignore",
+    });
+    expect(top.exitCode).not.toBe(0);
     const asked: string[] = [];
     const result = await registry.runStep(
       "shell/probe",
