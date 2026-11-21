@@ -29,3 +29,30 @@ The API, shared by the three clients: `list <type>`, `get <id>` (row, the table 
 ### D5: A plugin does not touch colour, layout or navigation
 
 A plugin gives semantics (the `mark` of ADR 0016), not colours or icon names. The main button is the first action and the rest are in `⋯`; an action that needs confirmation is shown in red at confirmation. Navigation is pending, running, and browsing by level (ADR 0015). A plugin writes English only, and the client translates the rest of the words on the interface. There are no batch actions.
+
+### D6: An elapsed duration has one format
+
+Every duration that measures how long something took uses the elapsed format: at most two units, a space between them, no zero padding, floored, the second unit left off when it is zero, `<1s` under one second, and days from 24 hours. The unit letters `d`, `h`, `m` and `s` stay untranslated in every language.
+
+| Input | Text |
+|---|---|
+| 400 ms | `<1s` |
+| 7 s | `7s` |
+| 59 s | `59s` |
+| 61 s | `1m 1s` |
+| 125 s | `2m 5s` |
+| 59 m 59 s | `59m 59s` |
+| 1 h | `1h` |
+| 1 h 47 m 12 s | `1h 47m` |
+| 26 h | `1d 2h` |
+| 3 d | `3d` |
+| 1 h 0 m 59 s | `1h` |
+| 24 h 30 m | `1d` |
+| 999 ms | `<1s` |
+| 1000 ms | `1s` |
+| 59999 ms | `59s` |
+| 60000 ms | `1m` |
+| 86399999 ms | `23h 59m` |
+| 86400000 ms | `1d` |
+
+An age in a list (`3m`, `5h`, `2d`, one unit) and a duration in words are not elapsed durations and keep their own form.
