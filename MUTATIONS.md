@@ -204,6 +204,15 @@ Each package keeps its mutation checks in `MUTATIONS.md`; a row names the broken
 |---|---|---|---|
 | T-0653-M1 | scripts/test/mutations-append-only.test.ts | removed the allowance for an edited header line, so a header change failed as a moved row | `MUTATIONS.md files are append-only > an edited header line passes` |
 
+## T-0663 — serve benchmark follow-ups
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0663-M1 | scripts/bench-serve.ts | the CPU peak guard checked the sample count again, so one sample gave `Math.max()` of no interval and a `-Infinity` peak | `serve benchmark > a run with too few samples has no CPU interval and a zero peak` |
+| T-0663-M2 | scripts/bench-serve.ts | `getJson` left the client's abort signal out of its request, so closing the client could not end an open request | `serve benchmark > closing a client aborts a request that is still open` |
+| T-0663-M3 | scripts/bench-serve.ts | every request path counted as a log read, so pending and transcript requests raised the rate | `serve benchmark > log reads per second counts log section requests only` |
+| T-0663-M4 | scripts/bench-serve.ts | the profile's epoch time base was always mapped through serve's span, so the measured window shifted and dropped its samples | `serve benchmark > a profile on the wall clock keeps the measured window`, `serve benchmark > only samples inside the measured window reach the profile list` |
+
 ## T-0659 — the stress stop does not wait on a finished job
 
 | id | file | mutation | failing test |
