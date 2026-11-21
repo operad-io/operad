@@ -1259,3 +1259,9 @@ resume window`. Rows are append-only, so the old lines stay as history.
 |---|---|---|---|
 | T-0590-M24 | packages/engine/src/plugin/store.ts | the in-memory store's `latestFactSequence` always returned 0 | `the latest fact sequence of an object > the in-memory store follows the object from no facts to two` |
 | T-0590-M25 | packages/engine/src/plugin/sqlite-store.ts | the SQLite store's `latestFactSequence` always returned 0 | `the latest fact sequence of an object > the SQLite store follows the object from no facts to two` |
+
+## T-0607 — a plugin's client calls name an object's type
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0607-M7 | packages/engine/test/plugin/client-ids.test.ts | the scan took a typed id for a bare one and a bare id for a typed one, so no bare client call was reported | `a plugin's client calls name a typed object id > the scan finds a bare id on act, get, section and a list parent` |
