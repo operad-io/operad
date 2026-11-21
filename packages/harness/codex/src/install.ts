@@ -48,9 +48,6 @@ export class CodexInstallError extends Error {
   }
 }
 
-/** The default command found for each PATH, so repeated model reads search once. */
-const defaultCommands = new Map<string, readonly string[]>();
-
 /**
  * The command that starts the user's app-server when the `command` setting is
  * unset: the `codex` of PATH with `app-server`. Codex's script has a
@@ -59,8 +56,8 @@ const defaultCommands = new Map<string, readonly string[]>();
  */
 export function defaultCommand(path: string | undefined = process.env.PATH): readonly string[] {
   const key = path ?? "";
-  const kept = defaultCommands.get(key);
-  if (kept !== undefined) return kept;
+  // Look codex up on every read: under fnm an upgrade moves it into a new node
+  // version directory, so a path remembered for the process would outlive it.
   const found = Bun.which("codex", { PATH: key });
   if (found === null) {
     throw new CodexInstallError(
@@ -78,7 +75,6 @@ export function defaultCommand(path: string | undefined = process.env.PATH): rea
   } catch {
     // A native binary is not text.
   }
-  defaultCommands.set(key, command);
   return command;
 }
 

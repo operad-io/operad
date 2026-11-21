@@ -154,3 +154,9 @@ recorded. The root [MUTATIONS.md](../../../MUTATIONS.md) explains the format and
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0644-M1 | packages/harness/codex/src/install.ts | `defaultCommand` searched PATH on every call instead of reusing the command found for that PATH | `the command that starts codex app-server > a default command found for a PATH is not searched for again` |
+
+## T-0644 rework — a moved codex is found again
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0644-M2 | packages/harness/codex/src/install.ts | `defaultCommand` remembered the resolved codex path for the PATH, so a codex moved to a new path by an upgrade was not found | `the command that starts codex app-server > a codex that moved to a new path is found again` |
