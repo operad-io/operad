@@ -219,3 +219,11 @@ Each package keeps its mutation checks in `MUTATIONS.md`; a row names the broken
 |---|---|---|---|
 | T-0659-M1 | scripts/stress.sh | the stop ended with a bare `wait` after `wait <pids>`, so bash 5's finished job entry stalled the stop on Linux | `scripts/stress.sh > SIGKILL of the test runner stops a test file that ignores SIGTERM` |
 | T-0659-M2 | scripts/stress.sh | `starter_alive` judged the starter only by `lstart`, so a reused pid in the same second kept the parent watcher from stopping the script | `scripts/stress.sh > SIGKILL of the test runner stops a test file that ignores SIGTERM` |
+
+## T-0660 — dev judges the load of the machine the check ran on
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0660-M4 | scripts/remote-check.sh | the end load line was not printed, so dev saw only the start of the check | `remote-check.sh > on the host it prints the host's load at the start and the end` |
+| T-0660-M7 | scripts/remote-check.sh | the start load line was not printed, so a check carried only its end reading | `remote-check.sh > on the host it prints the host's load at the start and the end` |
+| T-0660-M8 | scripts/remote-check.sh | an unreadable host load printed as a zero reading instead of `unknown` | `remote-check.sh > a host that cannot read its load says unknown` |

@@ -28,7 +28,9 @@ function git(cwd: string, ...args: string[]): string {
  * on origin), and a fake host: a home directory holding a clone of origin at
  * Code/operad, reached through fake ssh and scp scripts.
  */
-function setup(): { root: string; local: string; home: string; env: Record<string, string> } {
+function setup(scriptText: string = readFileSync(script, "utf8")): {
+  root: string; local: string; home: string; env: Record<string, string>;
+} {
   const root = mkdtempSync(join(tmpdir(), "remote-check-"));
   roots.push(root);
   const origin = join(root, "origin.git");
@@ -36,7 +38,7 @@ function setup(): { root: string; local: string; home: string; env: Record<strin
   const seed = join(root, "seed");
   git(root, "clone", "-q", origin, seed);
   mkdirSync(join(seed, "scripts"));
-  writeFileSync(join(seed, "scripts", "remote-check.sh"), readFileSync(script));
+  writeFileSync(join(seed, "scripts", "remote-check.sh"), scriptText);
   git(seed, "add", ".");
   git(seed, "commit", "-q", "-m", "base");
   git(seed, "push", "-q", "origin", "HEAD:main");
@@ -137,6 +139,42 @@ describe("remote-check.sh", () => {
     expect(result.out).toContain("change");
     // The copied bundle is removed afterwards.
     expect(spawnSync("ls", [home], { encoding: "utf8" }).stdout).not.toContain(".bundle");
+  });
+
+  test("on the host it prints the host's load at the start and the end", async () => {
+    const { local, env } = setup();
+    const result = await run(local, env, "echo command output");
+    expect(result.code).toBe(0);
+    const lines = result.out
+      .split("\n")
+      .filter((line) => line.startsWith("remote-check: load "));
+    expect(lines).toHaveLength(2);
+    for (const line of lines) {
+      expect(line).toMatch(/^remote-check: load (?:[0-9.]+ on [1-9][0-9]* cores|unknown) on fake$/);
+    }
+    expect(result.out.indexOf(lines[0] ?? "")).toBeLessThan(result.out.indexOf("command output"));
+    expect(result.out.indexOf("command output")).toBeLessThan(result.out.lastIndexOf(lines[1] ?? ""));
+  });
+
+  test("a host that cannot read its load says unknown", async () => {
+    const text = readFileSync(script, "utf8").replaceAll("/proc/loadavg", "$HOME/operad-no-loadavg");
+    expect(text).not.toBe(readFileSync(script, "utf8"));
+    const { root, local, env } = setup(text);
+    const bin = join(root, "unreadable-load");
+    mkdirSync(bin);
+    for (const name of ["sysctl", "uptime"]) {
+      writeFileSync(join(bin, name), "#!/bin/bash\nexit 1\n");
+      chmodSync(join(bin, name), 0o755);
+    }
+    const result = await run(local, { ...env, OPERAD_CHECK_PATH: bin }, "echo command output");
+    expect(result.code).toBe(0);
+    const lines = result.out
+      .split("\n")
+      .filter((line) => line.startsWith("remote-check: load "));
+    expect(lines).toEqual([
+      "remote-check: load unknown on fake",
+      "remote-check: load unknown on fake",
+    ]);
   });
 
   test("a package directory left from an earlier commit is removed, root node_modules is kept", async () => {
@@ -315,7 +353,11 @@ describe("remote-check.sh", () => {
         const [ta, tb] = await Promise.all([a.started(), b.started()]);
         const result = await run(local, { ...e, OPERAD_CHECK_LANE: "integration" }, "pwd -P");
         expect(result.code).toBe(0);
-        const tree = result.out.trim().split("\n").pop() ?? "";
+        const tree = result.out
+          .split("\n")
+          .map((line) => line.trim())
+          .filter((line) => line.length > 0 && !line.startsWith("remote-check: load "))
+          .pop() ?? "";
         expect(realpathSync(tree)).toBe(realpathSync(join(home, "Code", "operad-integration")));
         expect([ta, tb]).not.toContain(realpathSync(tree));
       } finally {

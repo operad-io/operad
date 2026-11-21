@@ -15,7 +15,7 @@ import { isAbsolute, join, relative } from "node:path";
 import type { ObjectStore, StoredObject } from "@operad-io/engine";
 import { isRecord, messageOf, type SecretStore } from "@operad-io/engine";
 import type { MachineLoad } from "@operad-io/engine/platform";
-import type { CheckLoad } from "./notcode.ts";
+import { underLoad, type CheckLoad, type CheckLoadReading } from "./check-load.ts";
 import { idOfKey, changeClock, isOpenTask, keyRepository, listAll, parseId, planData, planState, splitBrief, taskData, type PlanData, type RepositoryData } from "./model.ts";
 import { anchoredPattern, shellQuote } from "./rerun.ts";
 import type { FailedRerun } from "./settings.ts";
@@ -70,7 +70,7 @@ export interface FlakyOccurrence {
    * recorded and never counts toward a task: a rerun on a busy machine says
    * little about the test.
    */
-  readonly load?: MachineLoad | undefined;
+  readonly load?: CheckLoadReading | undefined;
 }
 
 /** The passes that count toward a task: the ones seen on an idle machine. */
@@ -83,23 +83,23 @@ export function flakyLoadLimitOf(configured: number | undefined, load: MachineLo
   return configured ?? load.cores * 2;
 }
 
-/** True when a reading is above the limit. */
-function overLimit(load: MachineLoad, configured: number | undefined): boolean {
-  return load.load1 > flakyLoadLimitOf(configured, load);
+/** True when a reading is above the limit. An unknown reading is not busy. */
+function overLimit(load: CheckLoadReading, configured: number | undefined): boolean {
+  return load.unknown !== true && load.load1 > flakyLoadLimitOf(configured, load);
 }
 
 /** The load readings a check handed over: the start and the end of each run. */
 interface LoadInput {
-  readonly load?: MachineLoad | undefined;
-  readonly startLoad?: MachineLoad | undefined;
-  readonly endLoad?: MachineLoad | undefined;
+  readonly load?: CheckLoadReading | undefined;
+  readonly startLoad?: CheckLoadReading | undefined;
+  readonly endLoad?: CheckLoadReading | undefined;
   readonly loads?: readonly CheckLoad[] | undefined;
   readonly loadLimit?: number | undefined;
 }
 
 /** The first reading above the limit, or undefined when the check ran idle. */
-function busyLoad(input: LoadInput): MachineLoad | undefined {
-  const readings: MachineLoad[] = [];
+function busyLoad(input: LoadInput): CheckLoadReading | undefined {
+  const readings: CheckLoadReading[] = [];
   for (const run of input.loads ?? []) readings.push(run.start, run.end);
   if (input.startLoad !== undefined) readings.push(input.startLoad);
   if (input.endLoad !== undefined) readings.push(input.endLoad);
@@ -108,8 +108,8 @@ function busyLoad(input: LoadInput): MachineLoad | undefined {
 }
 
 /** The history and check-log line for a failure skipped as seen under load. */
-function skippedNotice(name: string, load: MachineLoad): string {
-  return `flaky test "${name}" skipped: seen under load ${load.load1} on ${load.cores} cores`;
+function skippedNotice(name: string, load: CheckLoadReading): string {
+  return `flaky test "${name}" skipped: seen ${underLoad(load)}`;
 }
 
 /** Adds the skip line to the check's own log; a log that cannot be written stays as it is. */
@@ -143,7 +143,14 @@ function occurrenceOf(value: unknown): FlakyOccurrence | undefined {
   if (typeof task !== "string" || typeof at !== "number") return undefined;
   return {
     ...(isRecord(load) && typeof load.load1 === "number" && typeof load.cores === "number"
-      ? { load: { load1: load.load1, cores: load.cores } }
+      ? {
+          load: {
+            load1: load.load1,
+            cores: load.cores,
+            ...(typeof load.host === "string" ? { host: load.host } : {}),
+            ...(load.unknown === true ? { unknown: true } : {}),
+          },
+        }
       : {}),
     task,
     at,
@@ -178,7 +185,16 @@ function writableOf(record: FlakyRecord): Record<string, unknown> {
       task: entry.task,
       at: entry.at,
       excerpt: entry.excerpt,
-      ...(entry.load === undefined ? {} : { load: { load1: entry.load.load1, cores: entry.load.cores } }),
+      ...(entry.load === undefined
+        ? {}
+        : {
+            load: {
+              load1: entry.load.load1,
+              cores: entry.load.cores,
+              ...(entry.load.host === undefined ? {} : { host: entry.load.host }),
+              ...(entry.load.unknown === true ? { unknown: true } : {}),
+            },
+          }),
       ...(entry.file === undefined ? {} : { file: entry.file }),
       ...(entry.stress === undefined ? {} : { stress: entry.stress }),
       ...(entry.rule === undefined ? {} : { rule: entry.rule }),
@@ -469,10 +485,10 @@ export interface FlakyInput {
   /** The check log, which still holds the first run's output. */
   readonly log: string | undefined;
   /** One load reading for the check, when the caller has only that. */
-  readonly load?: MachineLoad | undefined;
+  readonly load?: CheckLoadReading | undefined;
   /** The load at the start and the end of the check, when it is one run. */
-  readonly startLoad?: MachineLoad | undefined;
-  readonly endLoad?: MachineLoad | undefined;
+  readonly startLoad?: CheckLoadReading | undefined;
+  readonly endLoad?: CheckLoadReading | undefined;
   /** The load at the start and the end of each run of the check. */
   readonly loads?: readonly CheckLoad[] | undefined;
   /** `check.flakyLoadLimit`: the load above which a failure is not a flaky test. */
@@ -652,9 +668,9 @@ export interface FlakyReport {
   readonly taskId: string;
   readonly threshold: number;
   readonly flakyPlan?: string | undefined;
-  readonly load?: MachineLoad | undefined;
-  readonly startLoad?: MachineLoad | undefined;
-  readonly endLoad?: MachineLoad | undefined;
+  readonly load?: CheckLoadReading | undefined;
+  readonly startLoad?: CheckLoadReading | undefined;
+  readonly endLoad?: CheckLoadReading | undefined;
   readonly loads?: readonly CheckLoad[] | undefined;
   readonly loadLimit?: number | undefined;
   readonly check: {

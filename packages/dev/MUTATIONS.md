@@ -1531,3 +1531,14 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0645-M1 | packages/dev/src/check-host.ts | `hostSetting` read `settings.checkHost` instead of `settings.testHost`, so the test host setting was ignored | `the test host and slots from the home's settings > a setting becomes the command's environment when serve's environment names neither` |
+
+## T-0660 — dev judges the load of the machine the check ran on
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0660-M1 | packages/dev/src/check-load.ts | `underLoad` left the host out of the line, so a host reading looked local | `a flaky test proposes a task > a failure seen above the load limit on the test host names it` |
+| T-0660-M2 | packages/dev/src/notcode.ts | `loadOfRun` ignored the remote load lines and kept the local readings | `a remote check reads the host's load > a timeout alone uses the host's quiet reading, not this machine's load` |
+| T-0660-M3 | packages/dev/src/notcode.ts | `loadOfRun` fell back to the local reading when the host said unknown | `a remote check reads the host's load > a timeout alone on an unknown host load is the code and says so` |
+| T-0660-M5 | packages/dev/src/flaky.ts | `overLimit` treated an unknown host reading as busy instead of quiet | `a flaky test proposes a task > an unknown host load is judged as quiet, not against this machine` |
+| T-0660-M6 | packages/dev/src/notcode.ts | a remote check still waited on this machine's load instead of skipping the local wait | `a remote check reads the host's load > a second timeout names the host and does not wait on this machine` |
+| T-0660-M9 | packages/dev/src/notcode.ts | `timeoutAlone` treated an unknown host reading as busy instead of quiet | `a remote check reads the host's load > a timeout alone on an unknown host load is the code and says so` |
