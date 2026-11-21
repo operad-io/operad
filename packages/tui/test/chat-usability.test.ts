@@ -10,7 +10,7 @@ import {
 } from "../src/state.ts";
 import { drawState, paletteFor } from "../src/view/index.ts";
 import { KEY_LIST, footerText } from "../src/state.ts";
-import { chatMarkdown } from "../src/chat.ts";
+import { chatMarkdown, chatStats } from "../src/chat.ts";
 import { toRgba } from "../src/theme.ts";
 import { createTuiView, runTui } from "../src/index.ts";
 
@@ -335,6 +335,18 @@ describe("a message drawn before the server's copy", () => {
 
 test("chatMarkdown folds a run without a header and leaves other text as it was", () => {
   expect(chatMarkdown("plain\n\n> a\n\n> b\n\ntool X\n\nplain", { now: NOW, timeZone: "UTC" })).toContain("3 · tool X");
+});
+
+test("chatMarkdown keeps its result for the same inputs, and the same local day", () => {
+  const source = `${HEADER}\n\n> think one\n> think two`;
+  const before = chatStats.computed;
+  const first = chatMarkdown(source, { now: NOW, timeZone: "UTC" });
+  expect(chatStats.computed).toBe(before + 1);
+  expect(chatMarkdown(source, { now: NOW, timeZone: "UTC" })).toBe(first);
+  expect(chatMarkdown(source, { now: NOW + 60_000, timeZone: "UTC" })).toBe(first);
+  expect(chatStats.computed).toBe(before + 1);
+  expect(chatMarkdown(source, { now: NOW + 86_400_000, timeZone: "UTC" })).not.toBe(first);
+  expect(chatStats.computed).toBe(before + 2);
 });
 
 

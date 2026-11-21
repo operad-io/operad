@@ -528,3 +528,11 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0635-M4 | packages/tui/src/state.ts | a running row's step time added a second | `the TUI reducer > each list maps its own flags to a row mark` |
+
+## T-0619 — throttled lists, an action's own refetch, and the chat cache
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0619-M1 | packages/tui/src/live.ts | the lists shared the short window instead of their own longer one | `live updates in the shell > ten events inside the list window make one Pending and one Running request` |
+| T-0619-M2 | packages/tui/src/app.ts | an action's success ran the whole refresh again | `live updates in the shell > an action refetches only its object and row, never the lists` |
+| T-0619-M3 | packages/tui/src/chat.ts | `chatMarkdown` built its text again instead of reading the cache | `chatMarkdown keeps its result for the same inputs, and the same local day` |
