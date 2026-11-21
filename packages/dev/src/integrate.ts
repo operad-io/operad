@@ -256,7 +256,6 @@ function integrationData(
   };
 }
 
-/** Step `dev/integrate`: land the verified commit on main. */
 /** The patch id of a diff, which ignores line numbers and whitespace. */
 function patchIdOf(cwd: string, args: readonly string[]): string | undefined {
   const diff = git(cwd, args, { raw: true });
@@ -296,6 +295,7 @@ function carrierOnMain(cwd: string, verified: string, main: string): string | un
   return undefined;
 }
 
+/** Step `dev/integrate`: land the verified commit on main. */
 export async function runIntegrate(
   ctx: StepContext,
 ): Promise<PluginStepResult> {
