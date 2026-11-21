@@ -11,7 +11,7 @@ import {
   type ViewAction,
   type ViewEvent,
 } from "@operad-io/engine";
-import { PendingSender, TelegramSource, readPending } from "../src/index.ts";
+import { PendingSender, TelegramSource, createTelegramPlugin, readPending } from "../src/index.ts";
 import { FakeApi, createTelegramWorld, replyUpdate, tap, update, type TelegramWorld } from "./support.ts";
 
 const roots: string[] = [];
@@ -476,6 +476,123 @@ describe("pending items go to Telegram", () => {
     await sender.sync();
     expect(api.edits).toHaveLength(1);
     expect(api.edits[0]?.text).toEndWith("answered: allow");
+    await w.close();
+  });
+});
+
+describe("the pending command", () => {
+  test("lists an item from a plugin the pending setting does not list", async () => {
+    const { w, api, chat, client, sender } = await setup();
+    client.items = [
+      item({ runId: "d1", object: "task:t1", actions: [ACT_MERGE], flow: "dev" }),
+    ];
+
+    const line = await sender.prepare(chat ?? "", true);
+    expect(line).toBe("1 waiting");
+    expect(api.sent).toHaveLength(0);
+
+    await sender.show(555);
+    expect(api.sent).toHaveLength(1);
+    expect(api.sent[0]?.chatId).toBe(555);
+    expect(api.sent[0]?.keyboard?.flat().map((button) => button.text)).toEqual(["merge"]);
+    await w.close();
+  });
+
+  test("says nothing is waiting and sends no message", async () => {
+    const { w, api, chat, client, sender } = await setup();
+    client.items = [];
+
+    const line = await sender.prepare(chat ?? "", true);
+    expect(line).toBe("nothing is waiting");
+    await sender.show(555);
+    expect(api.sent).toHaveLength(0);
+    await w.close();
+  });
+
+  test("does not send an item that is already open in the chat again, and the count says so", async () => {
+    const { w, api, chat, client, sender } = await setup();
+    client.items = [
+      item({ runId: "r1", waitId: "w1", flow: "chat", prompt: "Run?", choices: ["allow"], object: `chat:${chat}` }),
+    ];
+    await sender.sync();
+    expect(api.sent).toHaveLength(1);
+
+    const line = await sender.prepare(chat ?? "", true);
+    expect(line).toBe("1 waiting; 1 already sent");
+    await sender.show(555);
+    expect(api.sent).toHaveLength(1);
+    await w.close();
+  });
+
+  test("a tap and a reply on items it sent go through the existing answer paths", async () => {
+    const { w, api, chat, client, sender, source } = await setup();
+    client.items = [
+      item({ runId: "d1", object: "task:t1", actions: [ACT_MERGE], flow: "dev" }),
+      item({ runId: "d2", object: "task:t2", actions: [ACT_REJECT], flow: "dev" }),
+    ];
+    await sender.prepare(chat ?? "", true);
+    await sender.show(555);
+    expect(api.sent).toHaveLength(2);
+    const [mergeMessage, rejectMessage] = [api.sent[0], api.sent[1]];
+    expect(mergeMessage?.keyboard?.flat().map((button) => button.text)).toEqual(["merge"]);
+    expect(rejectMessage?.keyboard).toBeUndefined();
+
+    api.updates = [tap(500, 42, 555, 9_001, "o:0")];
+    await source.poll();
+    expect(client.acts).toEqual([
+      { name: "dev:merge", id: "task:t1", note: undefined, actor: { via: "telegram", id: "42" } },
+    ]);
+
+    api.updates = [replyUpdate(501, 42, 555, "not ready: tests fail", 9_002)];
+    await source.poll();
+    expect(client.acts).toEqual([
+      { name: "dev:merge", id: "task:t1", note: undefined, actor: { via: "telegram", id: "42" } },
+      { name: "dev:reject", id: "task:t2", note: "not ready: tests fail", actor: { via: "telegram", id: "42" } },
+    ]);
+    await w.close();
+  });
+
+  test("a listed user's /pending runs the telegram action, then sends the prepared items", async () => {
+    const root = await mkdtemp(join(tmpdir(), "telegram-pending-command-"));
+    roots.push(root);
+    const api = new FakeApi();
+    api.ignoreOffset = false;
+    const plugin = createTelegramPlugin({ api });
+    const w = await createTelegramWorld({ root, users: [42], follow: true, plugins: [plugin] });
+    const items = [item({ runId: "d1", object: "task:t1", actions: [ACT_MERGE], flow: "dev" })];
+    const client: ClientApi = {
+      list: (type, options) => w.ctx.client.list(type, options),
+      get: (id) => w.ctx.client.get(id),
+      section: (id, sectionId, cursor, options) => w.ctx.client.section(id, sectionId, cursor, options),
+      events: () => w.ctx.client.events(),
+      act: (name, id, options) => w.ctx.client.act(name, id, options),
+      answer: (options) => w.ctx.client.answer(options),
+      pending: async () => items,
+    };
+    const start = plugin.start;
+    if (start === undefined) throw new Error("the plugin does not start");
+    api.updates = [update(600, 42, 555, "hello"), update(601, 42, 555, "/pending")];
+    const handle = await start({ ...w.ctx, client });
+    await api.until(() => api.sent.some((request) => request.text === "1 waiting") && api.sent.some((request) => request.keyboard?.flat().some((button) => button.text === "merge") === true));
+
+    const texts = api.sent.map((request) => request.text);
+    const count = texts.indexOf("1 waiting");
+    const card = texts.findIndex((text, index) => api.sent[index]?.keyboard?.flat().some((button) => button.text === "merge") === true && text.length > 0);
+    expect(count).toBeGreaterThanOrEqual(0);
+    expect(card).toBe(count + 1);
+    expect(api.sent[card]?.keyboard?.flat().map((button) => button.text)).toEqual(["merge"]);
+
+    await handle.stop();
+    await w.close();
+  });
+
+  test("an unlisted user's /pending is dropped without a reply", async () => {
+    const { w, api, client, source } = await setup();
+    client.items = [item({ runId: "d1", object: "task:t1", actions: [ACT_MERGE], flow: "dev" })];
+    api.updates = [update(602, 77, 555, "/pending")];
+    await source.poll();
+    expect(api.sent).toHaveLength(0);
+    expect((await w.store.list(CHAT_TYPE)).objects).toHaveLength(1);
     await w.close();
   });
 });

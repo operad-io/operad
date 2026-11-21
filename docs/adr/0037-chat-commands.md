@@ -26,7 +26,7 @@ The command and its outcome are one `chat.command` fact: who typed it, the line 
 
 ### D4: `/help` lists the chat's commands
 
-`chat:help` is a command action. It lists every command this chat can run now, each under the name it is typed by, with the one-line description from the same action declaration. `/model`, `/effort`, `/close`, `/stop`, `/retry`, `/status` and `/help` are declared as commands.
+`chat:help` is a command action. It lists every command this chat can run now, each under the name it is typed by, with the one-line description from the same action declaration. `/model`, `/effort`, `/close`, `/stop`, `/retry`, `/status`, `/pending` and `/help` are declared as commands. `/pending` is declared by the `telegram` plugin on a chat, not by `chat`: it sends the channel's own item messages with their buttons, and the chat plugin knows no channel (ADR 0026 D1).
 
 ### D5: `/stop` stops the reply being written
 

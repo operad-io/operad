@@ -81,6 +81,10 @@ A user whose id is in `telegram.users`, writing in a private chat with the bot:
   to such an item is an ordinary message to the chat.
 - Answers the items of the plugins in `telegram.pending`. With `["dev"]` the
   `dev` plugin's merge and confirm items are answerable from Telegram.
+- Types `/pending` to see what waits for a person now, from every plugin,
+  whatever `telegram.pending` lists. Each item arrives as the message described
+  under [What is sent](#what-is-sent), and an item already open in that chat is
+  not sent again.
 - Types a command, such as `/model sonnet`, `/effort high`, `/close` or
   `/help`. It runs at once, leaves one entry in the chat's transcript, and never
   reaches the agent. A command that takes one choice answers with buttons when
@@ -137,6 +141,10 @@ listed user's command runs; one from anyone else is dropped without a reply.
   each choice. After an answer from anywhere (Telegram, the app, the command line)
   the buttons go and the message ends `answered: X`, X being the choice. A tap on an
   item that was already answered says so and changes nothing.
+- What `/pending` sends: one short line with how many items wait, then each
+  waiting item as the message above. An item already sent and still open is not
+  sent again, and the count line says how many were already sent; with nothing
+  waiting the line says so.
 
 ## Restarting
 

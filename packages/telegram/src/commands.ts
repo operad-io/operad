@@ -3,22 +3,29 @@
  * choices a command without its one choice offers, and the greeting `/start`
  * gets.
  *
- * The plugin does not handle a command. It registers the menu from the chat's
+ * The plugin handles no command's text. It registers the menu from the chat's
  * action declarations, sends a command's text through `chat:send` as any other
  * message (ADR 0037 D2), and, when a command that takes one choice arrives
  * without it, shows the choices as an inline keyboard. The tap is passed back
  * as `/<name> <choice>`, so the `chat` plugin remains the only place a command
  * runs. After a tap the keyboard goes and the message ends `chosen: X`, as an
- * answered pending item ends `answered: X`.
+ * answered pending item ends `answered: X`. The one action the plugin declares
+ * is `/pending`, which prepares the items the source sends after its count line.
  */
 
 import {
+  CHAT_TYPE,
   chatCommands,
+  chatData,
   findCommand,
   parseCommand,
   type ChatCommand,
 } from "@operad-io/chat";
-import { messageOf, type SourceContext } from "@operad-io/engine";
+import {
+  messageOf,
+  type ActionTypeDefinition,
+  type SourceContext,
+} from "@operad-io/engine";
 import {
   BotApiError,
   type BotApi,
@@ -55,6 +62,45 @@ const DESCRIPTION_MAX = 256;
 /** What `/start` answers with. */
 export const START_GREETING =
   "Hello. Write a message to start a chat; /help lists the commands you can type.";
+
+/** The name `/pending` is typed by. */
+export const PENDING_COMMAND = "pending";
+
+/** What `/pending` says when nothing waits. */
+export const PENDING_NOTHING = "nothing is waiting";
+
+/** What the pending side does for `/pending`. */
+export interface PendingCommandSender {
+  /** The count line, with the item messages ready for the source's chat. */
+  prepare(chatId: string, hold?: boolean): Promise<string>;
+}
+
+/**
+ * The action `/pending` runs. It belongs to `telegram`, not `chat`: only the
+ * channel can send the item messages with their buttons, and the chat plugin
+ * knows no channel (ADR 0026 D1, ADR 0037 D4).
+ */
+export function pendingCommandAction(
+  sender: () => PendingCommandSender | undefined,
+): ActionTypeDefinition {
+  const unavailable = "the telegram plugin is not running; /pending needs operad serve";
+  return {
+    name: PENDING_COMMAND,
+    on: CHAT_TYPE,
+    command: "Show what is waiting for a person now.",
+    when: (state) => sender() !== undefined && !chatData(state).closed,
+    why: (object) => {
+      if (chatData(object.data).closed) return `${object.id} is closed; it takes no commands`;
+      return sender() === undefined ? unavailable : undefined;
+    },
+    async run(ctx) {
+      const current = sender();
+      if (current === undefined) throw new Error(unavailable);
+      // A Telegram command holds the pending pass until the source sent its count.
+      return current.prepare(ctx.object.id, ctx.actor.via === "telegram");
+    },
+  };
+}
 
 /** What the source asks of the command side. */
 export interface CommandResponder {
