@@ -656,6 +656,7 @@ export async function runIntegrate(
           flakyLimit: settings.check.flakyLoadLimit,
           signal: ctx.signal,
           log: (text) => ctx.logger.write(text),
+          logPath: ctx.logger.path,
         });
         if (steady.cancelled === true) return cancelledStep();
         const { checked } = steady;
@@ -1020,6 +1021,7 @@ export async function runIntegrate(
           flakyLimit: settings.check.flakyLoadLimit,
           signal: ctx.signal,
           log: (text) => ctx.logger.write(text),
+          logPath: ctx.logger.path,
         });
         if (steady.cancelled === true) return cancelledStep();
         const { checked } = steady;

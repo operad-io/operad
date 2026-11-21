@@ -61,8 +61,8 @@ async function setup(withPlan: boolean) {
     names: readonly string[] = [TEST],
     secrets: readonly string[] = [],
     load: {
-      readonly startLoad?: { readonly load1: number; readonly cores: number } | undefined;
-      readonly endLoad?: { readonly load1: number; readonly cores: number } | undefined;
+      readonly startLoad?: { readonly load1: number; readonly cores: number; readonly host?: string; readonly unknown?: boolean } | undefined;
+      readonly endLoad?: { readonly load1: number; readonly cores: number; readonly host?: string; readonly unknown?: boolean } | undefined;
       readonly loadLimit?: number | undefined;
     } = {},
   ) => {
@@ -517,6 +517,37 @@ describe("a flaky test proposes a task", () => {
     });
     expect(await s.flaky()).toHaveLength(0);
     expect(s.notices[0]).toContain("seen under load 25 on 10 cores");
+  });
+
+  test("a failure seen above the load limit on the test host names it", async () => {
+    const s = await setup(true);
+    const host = "hai@192.168.6.177";
+    await s.track("T-0001-a", logWith(TEST), 1, [TEST], [], {
+      startLoad: { load1: 23.8, cores: 16, host },
+      endLoad: { load1: 1, cores: 16, host },
+      loadLimit: 20,
+    });
+    expect(await s.flaky()).toHaveLength(0);
+    expect(s.notices[0]).toBe(
+      `flaky test "${TEST}" skipped: seen under load 23.8 on 16 cores on ${host}`,
+    );
+    const record = (await listAll(s.store, "flaky-test"))[0];
+    expect((record?.data as { occurrences?: { load?: unknown }[] }).occurrences?.[0]?.load).toEqual({
+      load1: 23.8,
+      cores: 16,
+      host,
+    });
+  });
+
+  test("an unknown host load is judged as quiet, not against this machine", async () => {
+    const s = await setup(true);
+    const host = "hai@192.168.6.177";
+    await s.track("T-0001-a", logWith(TEST), 1, [TEST], [], {
+      startLoad: { load1: 0, cores: 0, host, unknown: true },
+      endLoad: { load1: 0, cores: 0, host, unknown: true },
+    });
+    expect(s.notices).toEqual([]);
+    expect(await s.flaky()).toHaveLength(1);
   });
 
   test("a failure below the load limit opens the flaky task as before", async () => {

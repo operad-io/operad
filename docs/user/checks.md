@@ -79,8 +79,10 @@ integration never waits for a task check, and a task check never takes that
 slot. The line sees `OPERAD_CHECK_SLOTS` on the host, so a check can use
 `cores / (N + 1)` test workers. The output comes back as it is written and the
 exit code is the line's; a failure before the line runs (bundle, copy,
-connection, fetch, checkout) exits 1 with one line that names the step. The host
-needs a clone of
+connection, fetch, checkout) exits 1 with one line that names the step. At the
+start and the end of the line it also prints the host's load and core count, so
+`dev` judges the machine the check ran on; a host that cannot read its load
+prints `load unknown` instead. The host needs a clone of
 the repository and Bun.
 
 | Variable | Type | Default | What it does |

@@ -139,6 +139,21 @@ describe("remote-check.sh", () => {
     expect(spawnSync("ls", [home], { encoding: "utf8" }).stdout).not.toContain(".bundle");
   });
 
+  test("on the host it prints the host's load at the start and the end", async () => {
+    const { local, env } = setup();
+    const result = await run(local, env, "echo command output");
+    expect(result.code).toBe(0);
+    const lines = result.out
+      .split("\n")
+      .filter((line) => line.startsWith("remote-check: load "));
+    expect(lines).toHaveLength(2);
+    for (const line of lines) {
+      expect(line).toMatch(/^remote-check: load (?:[0-9.]+ on [1-9][0-9]* cores|unknown) on fake$/);
+    }
+    expect(result.out.indexOf(lines[0] ?? "")).toBeLessThan(result.out.indexOf("command output"));
+    expect(result.out.indexOf("command output")).toBeLessThan(result.out.lastIndexOf(lines[1] ?? ""));
+  });
+
   test("a package directory left from an earlier commit is removed, root node_modules is kept", async () => {
     const { local, home, env } = setup();
     const tree = join(home, "Code", "operad");
@@ -315,7 +330,11 @@ describe("remote-check.sh", () => {
         const [ta, tb] = await Promise.all([a.started(), b.started()]);
         const result = await run(local, { ...e, OPERAD_CHECK_LANE: "integration" }, "pwd -P");
         expect(result.code).toBe(0);
-        const tree = result.out.trim().split("\n").pop() ?? "";
+        const tree = result.out
+          .split("\n")
+          .map((line) => line.trim())
+          .filter((line) => line.length > 0 && !line.startsWith("remote-check: load "))
+          .pop() ?? "";
         expect(realpathSync(tree)).toBe(realpathSync(join(home, "Code", "operad-integration")));
         expect([ta, tb]).not.toContain(realpathSync(tree));
       } finally {

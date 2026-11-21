@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
@@ -13,6 +13,7 @@ import {
   type NotCodeKind,
 } from "../src/notcode.ts";
 import type { CheckRun } from "../src/rerun.ts";
+import { loadsFromLog } from "../src/check-load.ts";
 import { classifyStop, isConnectionError, STOP_REASONS } from "../src/stops.ts";
 import { validateDevSettings } from "../src/settings.ts";
 
@@ -153,6 +154,128 @@ describe("runCheckSteadily records the load", () => {
     expect(steady.loads).toEqual([
       { start: { load1: 30, cores: 10 }, end: { load1: 1, cores: 10 } },
     ]);
+  });
+});
+
+describe("the load lines remote-check.sh writes", () => {
+  const host = "hai@192.168.6.177";
+
+  test("the start and the end readings name the host", () => {
+    const log = [
+      `remote-check: checking abc on ${host}`,
+      `remote-check: load 23.80 on 16 cores on ${host}`,
+      "some output",
+      `remote-check: load 2.00 on 16 cores on ${host}`,
+    ].join("\n");
+    expect(loadsFromLog(log)).toEqual({
+      start: { load1: 23.8, cores: 16, host },
+      end: { load1: 2, cores: 16, host },
+    });
+  });
+
+  test("a host that cannot read its load says unknown", () => {
+    const log = [
+      `remote-check: load unknown on ${host}`,
+      "some output",
+      `remote-check: load unknown on ${host}`,
+    ].join("\n");
+    expect(loadsFromLog(log)).toEqual({
+      start: { load1: 0, cores: 0, host, unknown: true },
+      end: { load1: 0, cores: 0, host, unknown: true },
+    });
+  });
+
+  test("a check with no load line ran here", () => {
+    expect(loadsFromLog("remote-check: checking abc on nowhere\nsome output")).toBeUndefined();
+  });
+});
+
+describe("a remote check reads the host's load", () => {
+  const host = "hai@192.168.6.177";
+  const remote = (path: string, load: readonly string[]): void => {
+    appendFileSync(path, load.map((line) => `remote-check: load ${line} on ${host}`).join("\n") + "\n");
+  };
+
+  test("a timeout alone uses the host's quiet reading, not this machine's load", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "remote-load-"));
+    const path = join(dir, "check.log");
+    const failure = join(dir, "failure.log");
+    writeFileSync(failure, "(fail) a > slow [30001.20ms]\n");
+    notCodeTestHooks.load = () => ({ load1: 30, cores: 10 });
+    notCodeTestHooks.wait = async () => false;
+    let runs = 0;
+    const steady = await runCheckSteadily({
+      run: async () => {
+        runs += 1;
+        remote(path, ["3 on 10 cores", "3 on 10 cores"]);
+        return {
+          ...run(
+            { reason: "exit", exitCode: 1, log: failure, logStart: 0, line: "bun test -t a" },
+            "fail",
+          ),
+          rerun: true,
+          aloneRerun: true,
+        };
+      },
+      limit: undefined,
+      logPath: path,
+    });
+    expect(runs).toBe(1);
+    expect(steady.notCode).toBeUndefined();
+    const data = steady.checked.outcome?.data as { message: string };
+    expect(data.message).toContain(`under load 3 on 10 cores on ${host}`);
+    expect(data.message).not.toContain("30 on 10 cores");
+  });
+
+  test("a timeout alone on an unknown host load is the code and says so", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "remote-unknown-"));
+    const path = join(dir, "check.log");
+    const failure = join(dir, "failure.log");
+    writeFileSync(failure, "(fail) a > slow [30001.20ms]\n");
+    notCodeTestHooks.load = () => ({ load1: 30, cores: 10 });
+    notCodeTestHooks.wait = async () => false;
+    const steady = await runCheckSteadily({
+      run: async () => {
+        remote(path, ["unknown", "unknown"]);
+        return {
+          ...run(
+            { reason: "exit", exitCode: 1, log: failure, logStart: 0, line: "bun test -t a" },
+            "fail",
+          ),
+          rerun: true,
+          aloneRerun: true,
+        };
+      },
+      limit: undefined,
+      logPath: path,
+    });
+    expect(steady.runs).toBe(1);
+    expect(steady.notCode).toBeUndefined();
+    const data = steady.checked.outcome?.data as { message: string };
+    expect(data.message).toContain(`under load unknown on ${host}`);
+    expect(data.message).not.toContain("30 on 10 cores");
+  });
+
+  test("a second timeout names the host and does not wait on this machine", async () => {
+    const path = join(mkdtempSync(join(tmpdir(), "remote-busy-")), "check.log");
+    notCodeTestHooks.load = () => ({ load1: 1, cores: 10 });
+    notCodeTestHooks.wait = async () => {
+      throw new Error("must not wait on the local load");
+    };
+    let runs = 0;
+    const steady = await runCheckSteadily({
+      run: async () => {
+        runs += 1;
+        remote(path, ["25 on 16 cores", "25 on 16 cores"]);
+        return run({ reason: "timeout" });
+      },
+      limit: undefined,
+      logPath: path,
+    });
+    expect(runs).toBe(2);
+    expect(steady.notCode?.cause).toBe(
+      `check timed out twice under load 25 on 16 cores on ${host}`,
+    );
   });
 });
 

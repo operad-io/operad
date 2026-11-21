@@ -32,11 +32,13 @@
  * person.
  */
 
+import { statSync } from "node:fs";
 import { machineLoad, type MachineLoad } from "@operad-io/engine/platform";
 import { waitFor } from "./gate.ts";
 import { flakyLoadLimitOf } from "./flaky.ts";
 import { readSince, type CheckRun } from "./rerun.ts";
 import { isRecord } from "@operad-io/engine";
+import { loadsFromLog, underLoad, type CheckLoad, type CheckLoadReading } from "./check-load.ts";
 
 /** The kind of a "not the code" result. */
 export type NotCodeKind = "limit" | "signal" | "test-timeout" | "rerun-passed";
@@ -177,14 +179,43 @@ function worthAnotherRun(found: NotCode | undefined): found is NotCode {
 }
 
 /** The waiting line for a check that came out the same way twice. */
-export function notCodeCause(found: NotCode, load: MachineLoad): string {
-  return `${found.what} twice under load ${Math.round(load.load1)} on ${load.cores} cores`;
+export function notCodeCause(found: NotCode, load: CheckLoadReading): string {
+  const shown = load.unknown === true ? undefined : String(Math.round(load.load1));
+  return `${found.what} twice ${underLoad(load, shown)}`;
 }
 
-/** The load when one run of a command started and when it ended. */
-export interface CheckLoad {
-  readonly start: MachineLoad;
-  readonly end: MachineLoad;
+/** The busiest of a run's two readings, keeping an unknown reading as it is. */
+function peakOf(load: CheckLoad): CheckLoadReading {
+  if (load.start.unknown === true) return load.start;
+  if (load.end.unknown === true) return load.end;
+  return load.end.load1 >= load.start.load1 ? load.end : load.start;
+}
+
+/** The bytes in a log so far; a log that is not there yet starts at zero. */
+function logSize(path: string | undefined): number {
+  if (path === undefined) return 0;
+  try {
+    return statSync(path).size;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * A run's load: what remote-check.sh wrote into its part of the log, else the
+ * local readings around it. A remote line that says unknown is not replaced.
+ */
+function loadOfRun(
+  path: string | undefined,
+  offset: number,
+  start: MachineLoad,
+  end: MachineLoad,
+): CheckLoad {
+  if (path !== undefined) {
+    const remote = loadsFromLog(readSince(path, offset));
+    if (remote !== undefined) return remote;
+  }
+  return { start, end };
 }
 
 /**
@@ -202,15 +233,19 @@ function timeoutAlone(
   const limit = flakyLoadLimitOf(flakyLimit, load.end);
   // Busy means above the limit, as `flaky.ts` reads it. The reading spans the whole
   // check run (full suite and alone rerun), so a quiet reading is a strict test.
-  if (load.start.load1 > limit || load.end.load1 > limit) return undefined;
+  // An unknown reading is judged as quiet, never against the local load.
+  const busy = (reading: CheckLoadReading): boolean =>
+    reading.unknown !== true && reading.load1 > limit;
+  if (busy(load.start) || busy(load.end)) return undefined;
   const outcome = checked.outcome;
   if (outcome === undefined) return undefined;
   const data = isRecord(outcome.data) ? outcome.data : {};
   const names = failedTests(facts.log).map((test) => test.name).join("; ");
   const seconds = testTimeoutOf(facts.line) / 1000;
-  const peak = Math.max(load.start.load1, load.end.load1);
+  const peak = peakOf(load);
+  const shown = peak.unknown === true ? undefined : String(Number(peak.load1.toFixed(1)));
   const log = typeof data.log === "string" ? `; log: ${data.log}` : "";
-  const message = `the failed test "${names}" timed out at ${seconds} s when run alone under load ${Number(peak.toFixed(1))} on ${load.end.cores} cores${log}`;
+  const message = `the failed test "${names}" timed out at ${seconds} s when run alone ${underLoad(peak, shown)}${log}`;
   return { ...checked, outcome: { ...outcome, data: { ...data, message } } };
 }
 
@@ -266,8 +301,11 @@ export async function runCheckSteadily(input: {
   readonly flakyLimit?: number | undefined;
   readonly signal?: AbortSignal | undefined;
   readonly log?: ((text: string) => Promise<unknown> | unknown) | undefined;
+  /** The step's log; the remote load lines are read from each run's part of it. */
+  readonly logPath?: string | undefined;
 }): Promise<SteadyCheck> {
   const firstStart = currentLoad();
+  const firstOffset = logSize(input.logPath);
   let peak = firstStart;
   const sample = (): MachineLoad => {
     const now = currentLoad();
@@ -276,20 +314,29 @@ export async function runCheckSteadily(input: {
   };
   const first = await input.run();
   const firstEnd = sample();
-  const loads: CheckLoad[] = [{ start: firstStart, end: firstEnd }];
-  const firstCode = timeoutAlone(first, { start: firstStart, end: firstEnd }, input.flakyLimit);
+  const firstLoad = loadOfRun(input.logPath, firstOffset, firstStart, firstEnd);
+  const loads: CheckLoad[] = [firstLoad];
+  const firstCode = timeoutAlone(first, firstLoad, input.flakyLimit);
   if (firstCode !== undefined) return { checked: firstCode, runs: 1, load: peak, loads };
   if (!worthAnotherRun(classifyRun(first))) {
     return { checked: first, runs: 1, load: peak, loads };
   }
-  if (!(await waitForQuiet(input.limit, input.signal, input.log ?? (() => {})))) {
+  // A remote check read its own host's load; there is no local reading to wait
+  // on, and an unknown one must not fall back to this machine either.
+  const quiet =
+    firstLoad.start.host !== undefined || firstLoad.start.unknown === true
+      ? true
+      : await waitForQuiet(input.limit, input.signal, input.log ?? (() => {}));
+  if (!quiet) {
     return { checked: first, runs: 1, load: peak, loads, cancelled: true };
   }
   const secondStart = sample();
+  const secondOffset = logSize(input.logPath);
   const second = await input.run();
   const after = sample();
-  loads.push({ start: secondStart, end: after });
-  const secondCode = timeoutAlone(second, { start: secondStart, end: after }, input.flakyLimit);
+  const secondLoad = loadOfRun(input.logPath, secondOffset, secondStart, after);
+  loads.push(secondLoad);
+  const secondCode = timeoutAlone(second, secondLoad, input.flakyLimit);
   if (secondCode !== undefined) return { checked: secondCode, runs: 2, load: peak, loads };
   const found = classifyRun(second);
   if (!worthAnotherRun(found)) {
@@ -300,6 +347,6 @@ export async function runCheckSteadily(input: {
     runs: 2,
     load: peak,
     loads,
-    notCode: { cause: notCodeCause(found, after), kind: found.kind },
+    notCode: { cause: notCodeCause(found, secondLoad.end), kind: found.kind },
   };
 }

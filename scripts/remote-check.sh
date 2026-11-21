@@ -74,9 +74,9 @@ if ! git merge-base --is-ancestor HEAD origin/main; then
 fi
 
 echo "remote-check: checking $sha on $host"
-quoted=$(printf '%q ' "$sha" "$bundle" "$tree" "$path_dirs" "$command" "$slots" "$lane")
+quoted=$(printf '%q ' "$sha" "$bundle" "$tree" "$path_dirs" "$command" "$slots" "$lane" "$host")
 "${ssh_cmd[@]}" "$host" "bash -s -- $quoted" <<'REMOTE'
-sha=$1; bundle=$2; tree=$3; path_dirs=$4; command=$5; slots=$6; lane=$7
+sha=$1; bundle=$2; tree=$3; path_dirs=$4; command=$5; slots=$6; lane=$7; host=$8
 watch=
 child=
 session=${TMPDIR:-/tmp}/operad-check-session-$$
@@ -118,6 +118,34 @@ shutdown() {
   exit 143
 }
 trap shutdown HUP TERM INT
+# The load dev judges a failure by: this host's, at the start and the end of
+# the command. A host that cannot read it says unknown, never the local load.
+load_line() {
+  load1=
+  cores=
+  if [ -r /proc/loadavg ]; then
+    read -r load1 _ < /proc/loadavg || load1=
+  elif command -v sysctl >/dev/null 2>&1; then
+    load1=$(sysctl -n vm.loadavg 2>/dev/null | awk '{print $2}')
+  fi
+  if [ -z "$load1" ] && command -v uptime >/dev/null 2>&1; then
+    load1=$(uptime 2>/dev/null | sed -n 's/.*load averages*: *\([0-9.]*\).*/\1/p')
+  fi
+  if command -v nproc >/dev/null 2>&1; then
+    cores=$(nproc 2>/dev/null)
+  elif command -v getconf >/dev/null 2>&1; then
+    cores=$(getconf _NPROCESSORS_ONLN 2>/dev/null)
+  elif command -v sysctl >/dev/null 2>&1; then
+    cores=$(sysctl -n hw.ncpu 2>/dev/null)
+  fi
+  case "$load1" in ''|*[!0-9.]*) load1= ;; esac
+  case "$cores" in ''|*[!0-9]*) cores= ;; esac
+  if [ -n "$load1" ] && [ -n "$cores" ]; then
+    echo "remote-check: load $load1 on $cores cores on $host"
+  else
+    echo "remote-check: load unknown on $host"
+  fi
+}
 export OPERAD_CHECK_SLOTS=$slots
 if [ -n "$lane" ]; then export OPERAD_CHECK_LANE=$lane; else unset OPERAD_CHECK_LANE; fi
 # Names the slots this check may take: the integration slot, or task slots 1..N.
@@ -170,6 +198,7 @@ git checkout -q --detach --force "$sha" || { echo "remote-check: checkout of $sh
 git clean -q -ffdx -e /node_modules >/dev/null 2>&1 || true
 export PATH="$(eval echo "$path_dirs"):$PATH"
 # The session watcher above ends this command's group if the local check stops.
+load_line
 set -m
 bash -c "$command" &
 child=$!
@@ -178,6 +207,7 @@ printf '%s\n' "$child" >"$session"
 wait "$child"
 status=$?
 trap - HUP TERM INT
+load_line
 exit "$status"
 REMOTE
 code=$?
