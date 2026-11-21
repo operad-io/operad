@@ -292,6 +292,17 @@ if (mode === "no-result") {
   process.exit(0);
 }
 
+if (mode === "exit-no-result") {
+  line({ type: "journal", event: "TurnStarted" });
+  process.exit(1);
+}
+
+if (mode === "signal") {
+  line({ type: "journal", event: "TurnStarted" });
+  process.kill(process.pid, "SIGKILL");
+  await new Promise(() => {});
+}
+
 if (mode === "stall") {
   line({ type: "journal", event: "TurnStarted" });
   if (marker) writeFileSync(marker, String(process.pid));
