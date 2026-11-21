@@ -287,25 +287,30 @@ export class TelegramSource {
       await this.commands.refresh(chatId);
       return;
     }
-    const result = await this.ctx.client.act("chat:send", chatId, {
-      args: { note: text, ref: key },
-      actor: { via: TELEGRAM_SOURCE, id: String(from) },
-    });
-    // An ordinary message is acknowledged at once, before its run is reported.
-    // A command's outcome is its answer, so it gets neither a reaction nor typing.
-    if (command === undefined) {
-      this.typing?.received(chatId, message.chat.id);
-      await this.react(message);
-    }
-    // What a command returned is the answer the person who typed it sees; an
-    // ordinary message's "sent ..." is not sent back.
-    if (command !== undefined) {
-      const outcome = typeof result.value === "string" && result.value.trim().length > 0 ? result.value : "done";
-      await this.commands?.say(message.chat.id, outcome);
-      // `/pending` sends its count as a command's answer, then the items it prepared.
-      if (command.info.action === PENDING_COMMAND && command.info.plugin === TELEGRAM_SOURCE) {
-        await this.pending?.show(message.chat.id);
+    // `/pending` holds the pending pass until its count line; a line that could
+    // not be sent still lets the items it prepared go.
+    const pendingCommand =
+      command !== undefined && command.info.action === PENDING_COMMAND && command.info.plugin === TELEGRAM_SOURCE;
+    try {
+      const result = await this.ctx.client.act("chat:send", chatId, {
+        args: { note: text, ref: key },
+        actor: { via: TELEGRAM_SOURCE, id: String(from) },
+      });
+      // An ordinary message is acknowledged at once, before its run is reported.
+      // A command's outcome is its answer, so it gets neither a reaction nor typing.
+      if (command === undefined) {
+        this.typing?.received(chatId, message.chat.id);
+        await this.react(message);
       }
+      // What a command returned is the answer the person who typed it sees; an
+      // ordinary message's "sent ..." is not sent back.
+      if (command !== undefined) {
+        const outcome = typeof result.value === "string" && result.value.trim().length > 0 ? result.value : "done";
+        await this.commands?.say(message.chat.id, outcome);
+      }
+    } finally {
+      // `/pending` sends its count as a command's answer, then the items it prepared.
+      if (pendingCommand) await this.pending?.show(message.chat.id);
     }
     await this.record(key, chatId, summary);
     if (command !== undefined || open === undefined) await this.commands?.refresh(chatId);

@@ -46,7 +46,7 @@ export function createTelegramPlugin(options: TelegramPluginOptions = {}) {
       }
       const api = options.api ?? createBotApi({ token });
       const wait = options.wait ?? delay;
-      const pending = new PendingSender(ctx, { api });
+      const pending = new PendingSender(ctx, { api, wait });
       pendingSender = pending;
       const commands = new CommandSender(ctx, { api });
       const typingSender = new TypingSender(ctx, {

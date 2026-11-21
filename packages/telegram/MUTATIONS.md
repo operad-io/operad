@@ -150,3 +150,11 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0605-M1 | packages/telegram/src/pending.ts | the count ignored items already sent and still open, so `/pending` prepared them again | `the pending command > does not send an item that is already open in the chat again, and the count says so` |
+
+## T-0606 — a `/pending` count line that never comes does not block the pass
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0606-M1 | packages/telegram/src/pending.ts | a held count line had no deadline, so the pending pass stayed blocked when `show` never came | `the pending command > a count line that never comes sends its items at the deadline and lets the pass go` (timed out) |
+| T-0606-M2 | packages/telegram/src/pending.ts | stopping did not let a held count line go, so stopping waited for the pass forever | `the pending command > stopping lets a held count line go without sending its items` (timed out) |
+| T-0606-M3 | packages/telegram/src/source.ts | `/pending` showed the prepared items only after the act returned, so an act that failed after preparing left them unsent and the pass held | `the pending command > a /pending whose action fails after reading the items still sends them` and `... a listed user's /pending runs the telegram action, then sends the prepared items` (timed out) |
