@@ -31,6 +31,46 @@ export function topLevelNames(source: string): string[] {
   return names;
 }
 
+/** The helpers the engine defines once for every package. */
+const SHARED_HELPERS = new Set([
+  "isRecord",
+  "messageOf",
+  "oneLine",
+  "parseObjectId",
+  "objectKey",
+  "definitionName",
+  "directoryError",
+  "errorCode",
+  "isMissing",
+  "isMissingFile",
+  "isMissingFileError",
+]);
+
+/** Every `src` TypeScript file of a package. */
+function sourceFiles(dir: string): string[] {
+  const found: string[] = [];
+  for (const entry of readdirSync(dir)) {
+    const path = join(dir, entry);
+    if (statSync(path).isDirectory()) {
+      if (entry === "src") {
+        const nested: string[] = [];
+        const walk = (at: string): void => {
+          for (const name of readdirSync(at)) {
+            const child = join(at, name);
+            if (statSync(child).isDirectory()) walk(child);
+            else if (child.endsWith(".ts")) nested.push(child);
+          }
+        };
+        walk(path);
+        found.push(...nested);
+      } else if (entry !== "node_modules") {
+        found.push(...sourceFiles(path));
+      }
+    }
+  }
+  return found;
+}
+
 describe("test helpers", () => {
   test("the testing package exports the helpers this test looks for", () => {
     expect(Object.keys(testing)).toContain("fakeClock");
@@ -52,6 +92,22 @@ describe("test helpers", () => {
         if (file === import.meta.path) continue;
         for (const name of topLevelNames(readFileSync(file, "utf8"))) {
           if (shared.has(name)) clashes.push(`${relative(repo, file).split(sep).join("/")}: ${name}`);
+        }
+      }
+    }
+    expect(clashes).toEqual([]);
+  });
+
+  test("a shared helper is defined only in the engine", () => {
+    const clashes: string[] = [];
+    for (const name of readdirSync(join(repo, "packages"))) {
+      const dir = join(repo, "packages", name);
+      if (!statSync(dir).isDirectory()) continue;
+      for (const file of sourceFiles(dir)) {
+        const relativePath = relative(repo, file).split(sep).join("/");
+        if (relativePath.startsWith("packages/engine/src/")) continue;
+        for (const defined of topLevelNames(readFileSync(file, "utf8"))) {
+          if (SHARED_HELPERS.has(defined)) clashes.push(`${relativePath}: ${defined}`);
         }
       }
     }

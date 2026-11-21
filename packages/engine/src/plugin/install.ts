@@ -11,7 +11,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import { isRecord } from "../util.ts";
+import { isMissingFile, isRecord } from "../util.ts";
 
 /** The directory under the operad home that holds the Bun project. */
 export const PLUGIN_PROJECT_DIRECTORY = "plugins";
@@ -168,12 +168,7 @@ function readManifest(path: string): Record<string, unknown> | undefined {
   try {
     text = readFileSync(path, "utf8");
   } catch (error) {
-    if (
-      typeof error === "object" &&
-      error !== null &&
-      "code" in error &&
-      (error as { code?: unknown }).code === "ENOENT"
-    ) {
+    if (isMissingFile(error)) {
       return undefined;
     }
     throw error;

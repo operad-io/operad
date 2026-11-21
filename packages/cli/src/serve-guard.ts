@@ -4,6 +4,7 @@
  * lock past the busy timeout: it is never a reason to end the serve.
  */
 
+import { messageOf } from "@operad-io/engine";
 import { appendFileSync } from "node:fs";
 import { join } from "node:path";
 import { isBusy } from "@operad-io/engine/platform";
@@ -14,10 +15,6 @@ let stage = "starting";
 export function serveStage(next?: string): string {
   if (next !== undefined) stage = next;
   return stage;
-}
-
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 /**

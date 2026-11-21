@@ -10,6 +10,7 @@
  * time zone, with the catch-up rule of the cron source (ADR 0032 D11).
  */
 
+import { messageOf } from "@operad-io/engine";
 import { CHAT_TYPE, allEntries, allMessages, chatFacts, writingReply } from "@operad-io/chat";
 import {
   cronMatches,
@@ -693,7 +694,7 @@ export class BotScheduleSource {
 
   private track(work: Promise<void>): void {
     const tracked = work
-      .catch((error: unknown) => this.log(error instanceof Error ? error.message : String(error)))
+      .catch((error: unknown) => this.log(messageOf(error)))
       .finally(() => this.work.delete(tracked));
     this.work.add(tracked);
   }
@@ -824,7 +825,7 @@ export class BotScheduleSource {
         ? run.opens.slice(CHAT_TYPE.length + 1)
         : undefined;
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = messageOf(error);
       await this.setLast(bot, entry.name, {
         plannedAt: minute,
         firedAt: now,
@@ -911,7 +912,7 @@ export class BotScheduleSource {
           await this.notify({ chatId, title, summary: result });
         } catch (error) {
           await this.log(
-            `scheduled prompt "${name}" of bot ${bot}: notify: ${error instanceof Error ? error.message : String(error)}`,
+            `scheduled prompt "${name}" of bot ${bot}: notify: ${messageOf(error)}`,
           );
         }
         await replaceEntry(
@@ -977,7 +978,7 @@ export class BotScheduleSource {
     try {
       await this.ctx.client.list(BOT_TYPE);
     } catch (error) {
-      await this.log(`scheduled prompts: ${error instanceof Error ? error.message : String(error)}`);
+      await this.log(`scheduled prompts: ${messageOf(error)}`);
     }
     await this.resumeWatches();
     await this.poll();

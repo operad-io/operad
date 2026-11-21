@@ -20,7 +20,6 @@ export {
   appendInput,
   applyInput,
   endRunDirectly,
-  objectKey,
   parseObjectKey,
   readState,
 } from "./service.ts";

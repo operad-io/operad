@@ -1,5 +1,6 @@
 /** The kernel loop: one per operad home, one child process per run. */
 
+import { messageOf } from "../plugin/errors.ts";
 import { ActiveRunError, SeqConflictError } from "../log/errors.ts";
 import type { InputRecord, JsonValue, LogBackend } from "../log/types.ts";
 import { StartRefusedError } from "../plugin/errors.ts";
@@ -12,12 +13,12 @@ import type { TriggerRule } from "../trigger/types.ts";
 import { acquireLock, lockHeld, runLockPath, serveLockPath } from "../runner/lock.ts";
 import type { LockHandle } from "../runner/lock.ts";
 import { StepLimits } from "../runner/limits.ts";
-import { applyInput, objectKey, parseObjectKey, readState } from "../runner/service.ts";
+import { applyInput, parseObjectKey, readState } from "../runner/service.ts";
 import { isBusy } from "../platform/index.ts";
 import { reapStale } from "../platform/step-reap.ts";
 import { stopAllKeptWorkers } from "../platform/kept-workers.ts";
 import type { AskQuestionAnswer } from "../plugin/types.ts";
-import { isRecord } from "../util.ts";
+import { isRecord, objectKey } from "../util.ts";
 
 export interface SpawnRunOptions {
   /** The previous process died mid-step; recover before doing anything else. */
@@ -388,7 +389,7 @@ export async function serveOnce(
     // A store another process holds past the busy timeout fails this pass,
     // not the serve: the work that needs it is tried again on the next pass.
     if (!isBusy(error)) throw error;
-    options.onLog?.(`serve: ${error instanceof Error ? error.message : String(error)}`);
+    options.onLog?.(`serve: ${messageOf(error)}`);
   }
 
   return { started, spawned };
@@ -468,14 +469,14 @@ export async function serve(options: ServeOptions): Promise<void> {
         log: (message) => options.onLog?.(message),
       });
     } catch (error) {
-      options.onLog?.(`serve start: could not look for left-over processes: ${error instanceof Error ? error.message : String(error)}`);
+      options.onLog?.(`serve start: could not look for left-over processes: ${messageOf(error)}`);
     }
     // A kept worker runs the code of the serve that started it: a serve that
     // starts or takes over the home ends them all before serving new code.
     try {
       await stopAllKeptWorkers({ home: options.home });
     } catch (error) {
-      options.onLog?.(`serve start: could not end kept workers: ${error instanceof Error ? error.message : String(error)}`);
+      options.onLog?.(`serve start: could not end kept workers: ${messageOf(error)}`);
     }
     while (!stopped) {
       inPass = true;

@@ -6,6 +6,7 @@
  * `exports["."]` names is the library. Nothing here installs or bundles pi.
  */
 
+import { messageOf } from "@operad-io/engine";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -165,7 +166,7 @@ export function findPi(command: string = DEFAULT_PI_COMMAND, options: FindPiOpti
   try {
     real = realpathSync(located);
   } catch (error) {
-    throw new PiInstallError(`${located}: ${error instanceof Error ? error.message : String(error)}`);
+    throw new PiInstallError(`${located}: ${messageOf(error)}`);
   }
 
   let dir = dirname(real);

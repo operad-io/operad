@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { normalizeActionArgs, satisfiesRange } from "@operad-io/engine";
+import { isRecord, normalizeActionArgs, satisfiesRange } from "@operad-io/engine";
 
 const packages = join(dirname(dirname(dirname(fileURLToPath(import.meta.url)))));
 
@@ -47,10 +47,6 @@ async function load(dir: string): Promise<Shipped | undefined> {
     settings: plugin.settings,
     projectSettings: plugin.projectSettings,
   };
-}
-
-function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /** The settable rows of a settings schema that have no title, by their path. */

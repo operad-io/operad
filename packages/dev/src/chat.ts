@@ -5,6 +5,7 @@
  * changes reach main only through a task, through integrate.
  */
 
+import { messageOf } from "@operad-io/engine";
 import {
   ACCESS_ACTION_REQUEST,
   CHAT_TYPE,
@@ -469,7 +470,7 @@ const chatAction: ActionTypeDefinition = {
       model = startingModel(harness, ctx.models[harness], input.model);
       effort = startingEffort(harness, ctx.efforts[harness], input.effort);
     } catch (error) {
-      throw new DevRefusal(error instanceof Error ? error.message : String(error));
+      throw new DevRefusal(messageOf(error));
     }
     const effortDefault = ctx.efforts[harness]?.default ?? undefined;
     const settings = await readDevSettings(repository.path);
@@ -477,7 +478,7 @@ const chatAction: ActionTypeDefinition = {
     try {
       skills = repositoryChatSkills(settings, repository.path);
     } catch (error) {
-      throw new DevRefusal(error instanceof Error ? error.message : String(error));
+      throw new DevRefusal(messageOf(error));
     }
     const id = await createChat(
       ctx.store,
@@ -533,7 +534,7 @@ export async function runChatSettings(ctx: StepContext, params: unknown): Promis
   try {
     settings = await readDevSettings(repository.path);
   } catch (error) {
-    return failed(error instanceof Error ? error.message : String(error));
+    return failed(messageOf(error));
   }
   const cwd = chat.cwd.length > 0 ? chat.cwd : repository.path;
   const hasWorktree = typeof stored.data.worktree === "object" && stored.data.worktree !== null;
@@ -541,7 +542,7 @@ export async function runChatSettings(ctx: StepContext, params: unknown): Promis
   try {
     skills = repositoryChatSkills(settings, cwd);
   } catch (error) {
-    return failed(error instanceof Error ? error.message : String(error));
+    return failed(messageOf(error));
   }
   const access = chatAccess(skills.roots, !hasWorktree);
   const worktree = isRecord(stored.data.worktree) ? stored.data.worktree : {};
@@ -670,7 +671,7 @@ async function openChatWorktree(
   try {
     skills = repositoryChatSkills(settings, path);
   } catch (error) {
-    return failed(error instanceof Error ? error.message : String(error));
+    return failed(messageOf(error));
   }
   const clean: Record<string, unknown> = { ...fresh.data };
   // Only chat:access marks this in memory, to call its hidden action; it is never stored.

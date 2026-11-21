@@ -21,7 +21,7 @@ import { runLogDirectory } from "../plugin/logger.ts";
 import { messageOf } from "../plugin/errors.ts";
 import type { PluginRegistry } from "../plugin/registry.ts";
 import type { ObjectRef, PluginStore, StoredObject } from "../plugin/types.ts";
-import { isRecord } from "../util.ts";
+import { isRecord, parseObjectId } from "../util.ts";
 
 /** One file's fingerprint: enough to tell that it changed, never its text. */
 type FileStamp = string;
@@ -51,15 +51,6 @@ export interface LiveLogWatchOptions {
   /** Announces that an object's live content grew. */
   readonly onGrowth: (object: ObjectRef) => void;
   readonly onLog?: ((message: string) => void) | undefined;
-}
-
-/** The object a run's object key names, or undefined when it names none. */
-function splitObject(
-  key: string,
-): { readonly type: string; readonly id: string } | undefined {
-  const at = key.indexOf(":");
-  if (at <= 0 || at === key.length - 1) return undefined;
-  return { type: key.slice(0, at), id: key.slice(at + 1) };
 }
 
 /** Whether `path` is a directory now. */
@@ -180,7 +171,7 @@ export class LiveLogWatch {
     if (this.closed) return;
     const seen = new Set<string>();
     for (const run of active) {
-      const parsed = splitObject(run.object);
+      const parsed = parseObjectId(run.object);
       if (parsed === undefined) continue;
       if (!(await this.hasLiveSection(parsed.type, parsed.id))) continue;
       seen.add(run.runId);

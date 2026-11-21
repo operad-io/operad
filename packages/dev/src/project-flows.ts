@@ -5,6 +5,7 @@
  * one, or whose name dev.json also defines.
  */
 
+import { messageOf } from "@operad-io/engine";
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
@@ -143,7 +144,7 @@ export async function loadProjectFlows(
     } catch (error) {
       refused.set(
         name,
-        `${where}: could not be loaded: ${error instanceof Error ? error.message : String(error)}`,
+        `${where}: could not be loaded: ${messageOf(error)}`,
       );
       continue;
     }

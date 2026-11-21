@@ -1,6 +1,6 @@
 /** How a chat shows in a list and on its page: a row and a transcript. */
 
-import { attachmentDir, attachmentUrl, decodeCursor, DEFAULT_SECTION_CAP_BYTES, encodeCursor, formatElapsed, isRecord } from "@operad-io/engine";
+import { attachmentDir, attachmentUrl, decodeCursor, DEFAULT_SECTION_CAP_BYTES, encodeCursor, formatElapsed, isRecord, parseObjectId } from "@operad-io/engine";
 import type {
   JsonValue,
   ObjectRef,
@@ -10,6 +10,7 @@ import type {
   SectionContent,
   SectionPage,
   SectionRetry,
+  SectionStatus,
   StoredObject,
   ViewContext,
   ViewSection,
@@ -114,11 +115,11 @@ export function messageMarkdown(message: Message, speaker: string = DEFAULT_SPEA
 async function speakerOf(ctx: ViewContext, object: StoredObject, refresh = false): Promise<string> {
   const parent = chatData(object.data).parent;
   if (parent !== undefined) {
-    const at = parent.indexOf(":");
-    if (at > 0 && at < parent.length - 1) {
+    const ref = parseObjectId(parent);
+    if (ref !== undefined) {
       const owner = refresh && ctx.refreshedObject !== undefined
-        ? await ctx.refreshedObject(parent.slice(0, at), parent.slice(at + 1))
-        : await ctx.store.get(parent.slice(0, at), parent.slice(at + 1));
+        ? await ctx.refreshedObject(ref.type, ref.id)
+        : await ctx.store.get(ref.type, ref.id);
       const speaker = owner?.data.speaker;
       if (typeof speaker === "string" && speaker.length > 0) return speaker;
     }
@@ -1055,12 +1056,6 @@ function markAfter(value: string | undefined): number | undefined {
 
 function clock(at: number): string {
   return new Date(at).toISOString().slice(11, 19);
-}
-
-/** What a live transcript says the reply is doing, and since when. */
-interface SectionStatus {
-  readonly text: string;
-  readonly since: number;
 }
 
 /** The changing part of a transcript: its tail, what the reply is doing, and where finished content pauses. */

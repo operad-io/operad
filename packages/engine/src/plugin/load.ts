@@ -7,6 +7,7 @@ import { messageOf, PluginError } from "./errors.ts";
 import { defaultOperadHome } from "./home.ts";
 import { installedPackageFile, runningFromWorkspace } from "./install.ts";
 import { keysPathFor, readKeysFile } from "./keys.ts";
+import { definitionName, isMissingFile } from "../util.ts";
 import { PluginRegistry } from "./registry.ts";
 import type { PluginRegistryOptions } from "./registry.ts";
 
@@ -126,27 +127,6 @@ export interface DefinitelyLoadedPlugin {
   readonly definition: unknown;
 }
 
-function definitionName(value: unknown): string | undefined {
-  if (
-    typeof value === "object" &&
-    value !== null &&
-    "name" in value &&
-    typeof (value as { name?: unknown }).name === "string"
-  ) {
-    return (value as { name: string }).name;
-  }
-  return undefined;
-}
-
-function isMissingFileError(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    (error as { code?: unknown }).code === "ENOENT"
-  );
-}
-
 /**
  * False only when the config file does not exist. Any other access error means
  * the file may exist but cannot be read, so `readConfig` gets to report it
@@ -157,7 +137,7 @@ async function configFileExists(path: string): Promise<boolean> {
     await access(path);
     return true;
   } catch (error) {
-    return !isMissingFileError(error);
+    return !isMissingFile(error);
   }
 }
 

@@ -7,27 +7,18 @@
  * platform file lock and replace the file atomically.
  */
 
+import { messageOf } from "@operad-io/engine";
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { isRecord } from "@operad-io/engine";
+import { isMissingFile, isRecord } from "@operad-io/engine";
 import { withLockFile } from "@operad-io/engine/platform";
-import { personStarted } from "@operad-io/access-match";
+import { personStarted, type AlwaysAllowEntry } from "@operad-io/access-match";
 export { personStarted };
+export type { AlwaysAllowEntry };
 
 /** The file name of the user layer under the operad home. */
 export const ACCESS_USER_FILE = "access-user.json";
-
-/** One call a person allowed always: its kind, exact value and working directory. */
-export interface AlwaysAllowEntry {
-  readonly kind: "command" | "path";
-  /** The exact command text, or the path as the call wrote it. */
-  readonly value: string;
-  /** The working directory the person allowed it in. */
-  readonly cwd: string;
-  /** The tool a path entry names; absent for a command entry. */
-  readonly tool?: string;
-}
 
 /** What one asked call carries into an `alwaysAllow` entry. */
 export interface AskedCall {
@@ -49,14 +40,6 @@ export function alwaysAllowEntry(call: AskedCall, cwd: string): AlwaysAllowEntry
     cwd,
     ...(call.kind === "path" && call.tool !== undefined ? { tool: call.tool } : {}),
   };
-}
-
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-function isMissing(error: unknown): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
 }
 
 function entryOf(value: unknown): AlwaysAllowEntry | undefined {
@@ -101,7 +84,7 @@ export async function readAlwaysAllow(home: string): Promise<AlwaysAllowRead> {
   try {
     text = await readFile(path, "utf8");
   } catch (error) {
-    if (isMissing(error)) return { entries: [] };
+    if (isMissingFile(error)) return { entries: [] };
     return invalid(path, `cannot be read: ${messageOf(error)}`);
   }
   let raw: unknown;

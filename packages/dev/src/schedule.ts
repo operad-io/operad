@@ -4,6 +4,7 @@
  * plan is finished. Scheduling lives here, not in the kernel (ADR 0002 D1).
  */
 
+import { messageOf } from "@operad-io/engine";
 import { DEFAULT_POOL } from "@operad-io/pool";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -196,7 +197,7 @@ async function declareRepositoryFlows(
     } catch (error) {
       refused.set(
         flowName,
-        `${PROJECT_FLOWS_DIR}/${flowName}.flow.ts: ${error instanceof Error ? error.message : String(error)}`,
+        `${PROJECT_FLOWS_DIR}/${flowName}.flow.ts: ${messageOf(error)}`,
       );
       continue;
     }
@@ -253,7 +254,7 @@ function declareStoredFlow(ctx: TickContext, object: StoredObject): boolean {
     reportedStoredFlows.delete(object.id);
     return true;
   } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
+    const reason = messageOf(error);
     if (reportedStoredFlows.get(object.id) !== reason) {
       reportedStoredFlows.set(object.id, reason);
       writeSchedulerLine(
@@ -1278,7 +1279,7 @@ async function runPass(ctx: TickContext): Promise<void> {
     try {
       await scheduleRepository(ctx, repository, snapshot);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = messageOf(error);
       console.error(`dev: repository "${repository.name}": ${message}`);
     }
   }

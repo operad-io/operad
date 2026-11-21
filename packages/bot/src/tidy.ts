@@ -5,6 +5,7 @@
  * when the botanist wakes and what a person sees.
  */
 
+import { messageOf } from "@operad-io/engine";
 import { join, resolve } from "node:path";
 import {
   CHAT_TYPE,
@@ -16,6 +17,7 @@ import {
   writingReply,
 } from "@operad-io/chat";
 import {
+  cut,
   isRecord,
   type ActionTypeDefinition,
   type ClientApi,
@@ -236,10 +238,6 @@ export function latestTidyMinute(settings: BotSettings, now: number): number {
     0,
     0,
   ).getTime();
-}
-
-function cut(text: string, max: number): string {
-  return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
 }
 
 async function listAll(store: ObjectStore, type: string): Promise<readonly StoredObject[]> {
@@ -610,7 +608,7 @@ export class BotTidySource {
 
   private track(work: Promise<void>): void {
     const tracked = work
-      .catch((error: unknown) => this.log(error instanceof Error ? error.message : String(error)))
+      .catch((error: unknown) => this.log(messageOf(error)))
       .finally(() => this.work.delete(tracked));
     this.work.add(tracked);
   }
@@ -654,7 +652,7 @@ export class BotTidySource {
     try {
       settings = readBots(this.ctx.home, this.ctx.settings)[bot];
     } catch (error) {
-      await this.log(`memory tidy: ${error instanceof Error ? error.message : String(error)}`);
+      await this.log(`memory tidy: ${messageOf(error)}`);
       return;
     }
     if (settings === undefined || !memoryEnabled(this.ctx.home)) return;
@@ -663,7 +661,7 @@ export class BotTidySource {
       cwd = workingDirectory(this.ctx.home, bot, settings);
       ensureBotMemory(cwd, this.ctx.home);
     } catch (error) {
-      await this.log(`memory tidy ${bot}: ${error instanceof Error ? error.message : String(error)}`);
+      await this.log(`memory tidy ${bot}: ${messageOf(error)}`);
       return;
     }
     const stored = await this.ctx.store.get(TIDY_TYPE, bot);
@@ -784,7 +782,7 @@ export class BotTidySource {
         });
       } catch (error) {
         await this.log(
-          `memory tidy of bot ${bot}: notify: ${error instanceof Error ? error.message : String(error)}`,
+          `memory tidy of bot ${bot}: notify: ${messageOf(error)}`,
         );
       }
     }
@@ -828,7 +826,7 @@ export class BotTidySource {
         ? run.opens.slice(CHAT_TYPE.length + 1)
         : undefined;
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = messageOf(error);
       await this.failStart(bot, running, `Could not start: ${message}`);
       await this.log(`memory tidy of bot ${bot} could not start: ${message}`);
       return;
@@ -948,7 +946,7 @@ export class BotTidySource {
           });
         } catch (error) {
           await this.log(
-            `memory tidy of bot ${bot}: notify: ${error instanceof Error ? error.message : String(error)}`,
+            `memory tidy of bot ${bot}: notify: ${messageOf(error)}`,
           );
         }
       }

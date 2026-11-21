@@ -14,6 +14,7 @@ import { mapRadianCall } from "./refusal.ts";
 export { radianRefusal } from "./refusal.ts";
 import { firstErrorLine, match, readProfile, secretValuesOf, summarizeCall, withDefaultAccess, type AccessProfile } from "@operad-io/access-match";
 import {
+  isMissingFile,
   isRecord,
   paramsObject,
   defineFlow,
@@ -221,15 +222,6 @@ export function defaultRadianAuthPath(): string {
   return home !== undefined && home.length > 0
     ? join(home, "credentials", "auth.json")
     : join(homedir(), ".radian", "credentials", "auth.json");
-}
-
-function isMissingFile(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    error.code === "ENOENT"
-  );
 }
 
 /** A credential is any object stored under a provider; its fields are never read. */

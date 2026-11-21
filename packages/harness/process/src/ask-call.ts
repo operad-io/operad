@@ -19,6 +19,7 @@
  * line: no hook sees its calls, so it offers no grant (`degradedAskRequest`).
  */
 
+import { messageOf } from "@operad-io/engine";
 import type { AskAnswer, AskQuestion, AskQuestionAnswer, AskRequest, FlowDefinition, OutwardWrite } from "@operad-io/engine";
 import { isRecord } from "@operad-io/engine";
 import { OUTWARD_ALLOW_TARGET, OUTWARD_SEND_ONCE, appendTargetGrant, outwardCommandWrites, outwardQuestion, targetGrantFor } from "@operad-io/access-match";
@@ -453,7 +454,7 @@ export function createCallAsker(options: CallAskerOptions): CallAsker {
         }
       } catch (error) {
         options.onLog?.(
-          `the target grants could not be read: ${error instanceof Error ? error.message : String(error)}; this call asks`,
+          `the target grants could not be read: ${messageOf(error)}; this call asks`,
         );
       }
     }
@@ -471,7 +472,7 @@ export function createCallAsker(options: CallAskerOptions): CallAsker {
           } catch (error) {
             options.onLog?.(
               `allow_always could not be written to the user access file: ${
-                error instanceof Error ? error.message : String(error)
+                messageOf(error)
               }; this call runs once`,
             );
           }
@@ -488,7 +489,7 @@ export function createCallAsker(options: CallAskerOptions): CallAsker {
           );
         } catch (error) {
           options.onLog?.(
-            `the target grant could not be written: ${error instanceof Error ? error.message : String(error)}; this call runs once`,
+            `the target grant could not be written: ${messageOf(error)}; this call runs once`,
           );
         }
         answer(reply, call.id, "allow");

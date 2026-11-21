@@ -6,6 +6,7 @@
  * so a serve restart keeps them and a chat holds only its current files.
  */
 
+import { messageOf } from "@operad-io/engine";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
@@ -71,7 +72,7 @@ export async function readNoteFiles(
       const text = await readFile(path, "utf8");
       notes.push({ file, path, text, hash: noteHash(text) });
     } catch (error) {
-      onProblem?.(`the note ${file.name} could not be read: ${error instanceof Error ? error.message : String(error)}`);
+      onProblem?.(`the note ${file.name} could not be read: ${messageOf(error)}`);
     }
   }
   return notes;

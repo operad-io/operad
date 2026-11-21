@@ -5,7 +5,7 @@ import { decide, evolve, initialState } from "../kernel/index.ts";
 import type { Decision, Input, KernelState } from "../kernel/types.ts";
 import { RunNotFoundError } from "../log/errors.ts";
 import type { LogBackend } from "../log/types.ts";
-import type { ObjectRef } from "../plugin/types.ts";
+import { parseObjectId } from "../util.ts";
 
 interface KeptState {
   readonly lastSeq: number;
@@ -86,12 +86,6 @@ export async function endRunDirectly(
   return state;
 }
 
-export function objectKey(object: ObjectRef | undefined): string {
-  return object === undefined
-    ? "flow"
-    : `${object.type}:${object.id}`;
-}
-
 /**
  * The object a run belongs to, when its key names one. A run started without
  * an object is keyed `flow:<plugin>/<flow>`, so that one active run per flow
@@ -100,10 +94,8 @@ export function objectKey(object: ObjectRef | undefined): string {
 export function parseObjectKey(
   key: string,
 ): { readonly type: string; readonly id: string } | undefined {
-  const colon = key.indexOf(":");
-  if (colon <= 0 || colon === key.length - 1) return undefined;
-  if (key.slice(0, colon) === "flow") return undefined;
-  return { type: key.slice(0, colon), id: key.slice(colon + 1) };
+  const object = parseObjectId(key);
+  return object === undefined || object.type === "flow" ? undefined : object;
 }
 
 export interface ApplyResult {

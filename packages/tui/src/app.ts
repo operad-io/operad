@@ -26,7 +26,7 @@ import {
   type TuiActInput,
   type TuiKeyBinding,
 } from "./client.ts";
-import { defaultOperadHome, messageOf } from "@operad-io/engine";
+import { defaultOperadHome, messageOf, parseObjectId } from "@operad-io/engine";
 import { loadRecent, saveRecent } from "./recent.ts";
 import { discoverServer } from "./discover.ts";
 import { TuiEvents, retryDelay, type TuiEvent } from "./events.ts";
@@ -611,8 +611,7 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     ): string | undefined => {
       const parent = entry.row.parent;
       if (parent === undefined || parent.length === 0) return undefined;
-      const colon = parent.indexOf(":");
-      const parentType = colon > 0 ? parent.slice(0, colon) : undefined;
+      const parentType = parseObjectId(parent, { allowEmptyId: true })?.type;
       if (parentType !== undefined && !ownTypes.has(parentType)) return parent;
       if (parentType === undefined && !own.has(parent)) return parent;
       const owner = byForm.get(parent);
@@ -693,10 +692,9 @@ export function startShell(deps: TuiShellDeps): TuiShell {
     readonly type: string;
     readonly label: string;
   } {
-    const colon = parent.indexOf(":");
     return {
       row: { id: parent, title: parent, state: "", waiting: false, running: false },
-      type: colon > 0 ? parent.slice(0, colon) : "",
+      type: parseObjectId(parent, { allowEmptyId: true })?.type ?? "",
       label: parent,
     };
   }

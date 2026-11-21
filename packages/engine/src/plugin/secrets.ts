@@ -9,7 +9,7 @@ import { chmod, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promi
 import { join } from "node:path";
 import { Secret } from "../log/secret.ts";
 import type { SecretStore } from "./types.ts";
-import { isRecord } from "../util.ts";
+import { isMissingFile, isRecord } from "../util.ts";
 
 const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
@@ -84,12 +84,7 @@ export class FileSecretStore implements SecretStore {
     try {
       text = await readFile(path, "utf8");
     } catch (error) {
-      if (
-        typeof error === "object" &&
-        error !== null &&
-        "code" in error &&
-        error.code === "ENOENT"
-      ) {
+      if (isMissingFile(error)) {
         return {};
       }
       throw new Error(`secrets for plugin "${this.#plugin}": cannot read: ${String(error)}`);
@@ -119,14 +114,7 @@ export class FileSecretStore implements SecretStore {
       try {
         await unlink(path);
       } catch (error) {
-        if (
-          !(
-            typeof error === "object" &&
-            error !== null &&
-            "code" in error &&
-            error.code === "ENOENT"
-          )
-        ) {
+        if (!isMissingFile(error)) {
           throw error;
         }
       }

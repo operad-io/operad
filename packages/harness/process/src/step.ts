@@ -4,8 +4,8 @@
  * the run's outcome into a step result.
  */
 
-import { stat } from "node:fs/promises";
-import type { AgentResultData, PluginStepResult } from "@operad-io/engine";
+import { directoryError } from "@operad-io/engine";
+import type { AgentResultData, CostQuality, PluginStepResult } from "@operad-io/engine";
 import { MAX_LINE_CHARS, type AgentRunOutcome } from "./process.ts";
 import { standardUsage, type RawCounts, type UsageSource } from "./usage.ts";
 import { isRecord } from "@operad-io/engine";
@@ -22,7 +22,7 @@ export interface AgentWorkerResult {
   /** `quality` is `estimated` for an API-price figure; `incomplete` when some message had no price. */
   readonly cost: {
     readonly micros: number;
-    readonly quality?: "estimated" | "exact";
+    readonly quality?: CostQuality;
     readonly incomplete?: true;
   } | null;
   readonly finalMessage: string | null;
@@ -119,14 +119,7 @@ export function parseStepFlags<Level extends string>(
   };
 }
 
-export async function directoryError(cwd: string): Promise<string | undefined> {
-  try {
-    const info = await stat(cwd);
-    return info.isDirectory() ? undefined : `cwd is not a directory: ${cwd}`;
-  } catch {
-    return `cwd does not exist: ${cwd}`;
-  }
-}
+export { directoryError };
 
 /** Reads a worker's `result` value, or undefined when it is another line. */
 export function resultValue<Result extends AgentWorkerResult>(value: unknown): Result | undefined {

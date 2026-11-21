@@ -1,5 +1,6 @@
 /** How a plan and a task appear in a list and a detail page. */
 
+import { messageOf } from "@operad-io/engine";
 import {
   foldObjectFacts,
   type ObjectRow,
@@ -175,7 +176,7 @@ export const repoViews: ObjectViews = {
       if (hostWarning !== undefined) lines.push(`- Check host: not set; ${hostWarning}`);
     } catch (error) {
       lines.push(
-        `- ${DEV_SETTINGS_FILE}: ${error instanceof Error ? error.message : String(error)}`,
+        `- ${DEV_SETTINGS_FILE}: ${messageOf(error)}`,
       );
     }
     if (repository.removed) lines.push("- Removed from the registered repositories.");

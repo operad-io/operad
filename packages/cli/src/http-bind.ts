@@ -5,6 +5,7 @@
  * bounded time before the new code gives up.
  */
 
+import { messageOf } from "@operad-io/engine";
 import { ConfigError, HttpStopError } from "@operad-io/engine";
 import { RELOAD_EXIT, takeSupervisedFlag } from "./code-reload.ts";
 
@@ -22,7 +23,7 @@ export interface BindRetryOptions {
 /** The new code could not listen in time; the old code has to serve. */
 export class BindFailed extends Error {
   constructor(cause: unknown) {
-    super(cause instanceof Error ? cause.message : String(cause));
+    super(messageOf(cause));
     this.name = "BindFailed";
   }
 }

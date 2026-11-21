@@ -7,7 +7,7 @@
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { StoredObject, ViewSkill } from "@operad-io/engine";
+import { parseObjectId, type StoredObject, type ViewSkill } from "@operad-io/engine";
 import {
   MAX_PROMPT_DESCRIPTION_CHARS,
   readGivenSkills,
@@ -59,9 +59,9 @@ export async function chatSkillPaths(
 ): Promise<readonly string[]> {
   const parent = chat.parent;
   if (parent !== undefined) {
-    const at = parent.indexOf(":");
-    if (at > 0 && at < parent.length - 1) {
-      const owner = await get(parent.slice(0, at), parent.slice(at + 1));
+    const ref = parseObjectId(parent);
+    if (ref !== undefined) {
+      const owner = await get(ref.type, ref.id);
       const skills = owner?.data.skills;
       if (Array.isArray(skills)) {
         return skills.filter((path): path is string => typeof path === "string");

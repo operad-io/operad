@@ -19,7 +19,7 @@ import type {
   ProjectSettingsFile,
   SettingsRepository,
 } from "../plugin/types.ts";
-import { isRecord } from "../util.ts";
+import { isMissingFile, isRecord } from "../util.ts";
 
 /** The scope of a setting in `config.json`. */
 export const GLOBAL_SCOPE = "global";
@@ -75,15 +75,6 @@ export interface SettingsOptions {
 export interface AtomicWriteHooks {
   /** Called once the temporary file is complete, before it replaces the target. */
   readonly beforeRename?: (() => Promise<void> | void) | undefined;
-}
-
-function isMissing(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    error.code === "ENOENT"
-  );
 }
 
 /**
@@ -185,7 +176,7 @@ async function readJsonFile(path: string, absent: () => Record<string, unknown>)
   try {
     text = await readFile(path, "utf8");
   } catch (error) {
-    if (isMissing(error)) return { value: absent(), indent: "  ", newline: true };
+    if (isMissingFile(error)) return { value: absent(), indent: "  ", newline: true };
     throw error;
   }
   let parsed: unknown;

@@ -7,6 +7,7 @@
  * problems on the error stream, and the next change tries again.
  */
 
+import { messageOf } from "@operad-io/engine";
 import {
   describeChange,
   diffFingerprints,
@@ -385,7 +386,7 @@ export async function superviseServe(
           // The old code is gone too: say so rather than leave the one line
           // that promised its addresses standing as the last word.
           log(
-            `reload: the old code could not listen either (${error instanceof Error ? error.message : String(error)}); this serve ends\n`,
+            `reload: the old code could not listen either (${messageOf(error)}); this serve ends\n`,
           );
           throw error;
         } finally {

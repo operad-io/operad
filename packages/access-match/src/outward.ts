@@ -5,6 +5,7 @@
  * `REFERENCE.md` and ADR 0025.
  */
 
+import { messageOf, oneLine } from "@operad-io/engine";
 import type { Actor, AskAnswer, AskRequest, FlowDefinition, OutwardTargets, OutwardWrite, OutwardWrites } from "@operad-io/engine";
 import { baseName, levels, scan, findDenied, parseRule, type Part } from "./command.ts";
 import { appendTargetGrant, targetGrantFor, type TargetGrant } from "./target-grants.ts";
@@ -26,10 +27,6 @@ export interface OutwardQuestionOptions {
   readonly onTimeout?: "waiting" | "reject_once" | undefined;
   /** Offer the choice that records a grant for this flow and target. */
   readonly allowTarget?: boolean | undefined;
-}
-
-function oneLine(text: string): string {
-  return text.replace(/\s+/g, " ").trim();
 }
 
 /** The words that name what is about to leave. */
@@ -116,7 +113,7 @@ export async function guardOutward(
       grant = await targetGrantFor(ctx.home, ctx.flow, write.target);
     } catch (error) {
       ctx.onLog?.(
-        `the target grants could not be read: ${error instanceof Error ? error.message : String(error)}; this write asks`,
+        `the target grants could not be read: ${messageOf(error)}; this write asks`,
       );
     }
   }
@@ -135,7 +132,7 @@ export async function guardOutward(
       await appendTargetGrant(ctx.home, ctx.flow, write, by, (ctx.now ?? Date.now)());
     } catch (error) {
       ctx.onLog?.(
-        `the target grant could not be written: ${error instanceof Error ? error.message : String(error)}; this write runs once`,
+        `the target grant could not be written: ${messageOf(error)}; this write runs once`,
       );
     }
     return true;

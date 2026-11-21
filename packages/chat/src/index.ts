@@ -1,5 +1,6 @@
 /** The chat plugin: a long conversation with an agent, and how a message is answered. */
 
+import { messageOf } from "@operad-io/engine";
 import pkg from "../package.json" with { type: "json" };
 import { defineFlow, definePlugin, formatElapsed, isRecord, modelIds, type ActionArgsSchema, type ActionContext, type ActionTypeDefinition, type HarnessEfforts, type HarnessModels, type ObjectStore, type PluginFact, type UsageTokens } from "@operad-io/engine";
 import { ACCESS_LEVELS, isAccessLevel, updateLiveAccessLevel, type AccessLevel } from "@operad-io/access-match";
@@ -586,7 +587,7 @@ const accessAction: ActionTypeDefinition = {
       await updateLiveAccessLevel(levelPath, level, withLevelFileDeny(chat.access, levelPath));
     } catch (error) {
       await ctx.logger.write(
-        `the live access level could not be written: ${error instanceof Error ? error.message : String(error)}`,
+        `the live access level could not be written: ${messageOf(error)}`,
       );
     }
     return `chat ${ctx.object.id} now uses access level ${level}; replies follow it`;

@@ -38,6 +38,7 @@ import {
   loadSourcedTriggerRules,
   loadTriggerRules,
   lockHeld,
+  definitionName,
   messageOf,
   Notifier,
   CodeWatch,
@@ -1694,7 +1695,7 @@ async function commandServe(
     });
   } catch (error) {
     sourcesAllowed = false;
-    const message = error instanceof Error ? error.message : String(error);
+    const message = messageOf(error);
     context.problems.push(message);
     io.error(`operad: ${message}\n`);
   }
@@ -1804,7 +1805,7 @@ async function commandServe(
       // The command can take 30 seconds; the loop must not wait for it.
       onPass: () => {
         notifier.pass().catch((error: unknown) => {
-          io.error(`notify: ${error instanceof Error ? error.message : String(error)}\n`);
+          io.error(`notify: ${messageOf(error)}\n`);
         });
       },
     });
@@ -1867,7 +1868,7 @@ async function commandRunInternal(
     });
   } catch (error) {
     // The run still has to finish; a broken rule file is not a run error.
-    const message = error instanceof Error ? error.message : String(error);
+    const message = messageOf(error);
     context.problems.push(message);
     io.error(`${message}\n`);
   }
@@ -1909,18 +1910,6 @@ async function commandRunInternal(
         }),
   });
   await runner.run();
-}
-
-function definitionName(value: unknown): string | undefined {
-  if (
-    typeof value === "object" &&
-    value !== null &&
-    "name" in value &&
-    typeof (value as { name?: unknown }).name === "string"
-  ) {
-    return (value as { name: string }).name;
-  }
-  return undefined;
 }
 
 function definitionVersion(value: unknown): string | undefined {
@@ -2940,7 +2929,7 @@ export async function main(
             onLog: (message) => context.problems.push(message),
           });
         } catch (error) {
-          context.problems.push(error instanceof Error ? error.message : String(error));
+          context.problems.push(messageOf(error));
         }
         for (const line of context.problems) io.write(`${line.replace(/\n/g, " ")}\n`);
       } finally {
@@ -2977,7 +2966,7 @@ export async function main(
           try {
             timeoutSecs = parseStopTimeout(value);
           } catch (error) {
-            throw new UsageError(error instanceof Error ? error.message : String(error));
+            throw new UsageError(messageOf(error));
           }
           continue;
         }
@@ -3274,7 +3263,7 @@ export async function main(
       return 1;
     }
     io.error(
-      `operad: ${error instanceof Error ? error.message : String(error)}\n`,
+      `operad: ${messageOf(error)}\n`,
     );
     return 1;
   }

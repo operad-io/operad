@@ -4,17 +4,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { messageOf, PluginError } from "./errors.ts";
 import type { KeyBindings } from "./types.ts";
-import { isRecord } from "../util.ts";
-
-function isMissing(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    error.code === "ENOENT"
-  );
-}
-
+import { isMissingFile, isRecord } from "../util.ts";
 /** The path of the key overrides for an operad home. */
 export function keysPathFor(home: string): string {
   return join(home, "keys.json");
@@ -26,7 +16,7 @@ export async function readKeysFile(path: string): Promise<KeyBindings> {
   try {
     text = await readFile(path, "utf8");
   } catch (error) {
-    if (isMissing(error)) return {};
+    if (isMissingFile(error)) return {};
     throw new PluginError(`key bindings "${path}": ${messageOf(error)}`, {
       cause: error,
     });

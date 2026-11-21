@@ -12,7 +12,7 @@ import { MCP_REPORT_DIR } from "./mcp-constants.ts";
 import { defaultAccess as builtInAccess } from "@operad-io/access-match";
 import { readKeptWorkers, withLockFile } from "@operad-io/engine/platform";
 import { MEMORY_SKILL_DIR, ensureMemoryLayout, memoryEnabled, wikiDirectoryOfHome } from "@operad-io/memory";
-import { configPath, isRecord, prepareSettings, type ActionArgsSchema, type JsonValue, type ObjectStore } from "@operad-io/engine";
+import { configPath, isMissingFile, isRecord, prepareSettings, type ActionArgsSchema, type JsonValue, type ObjectStore } from "@operad-io/engine";
 
 /** The object type of a bot. */
 export const BOT_TYPE = "bot";
@@ -404,7 +404,7 @@ async function migrateGrantCwds(
           try {
             text = readFileSync(file, "utf8");
           } catch (error) {
-            if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") return;
+            if (isMissingFile(error)) return;
             throw error;
           }
           try {

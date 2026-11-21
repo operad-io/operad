@@ -4,7 +4,8 @@
  * touches the terminal, so a test drives it as a plain value.
  */
 
-import { formatElapsed } from "@operad-io/engine";
+import { bareId, formatElapsed, objectKey, parseObjectId } from "@operad-io/engine";
+export { bareId };
 import type {
   ChoiceInfo,
   PendingItem,
@@ -920,7 +921,7 @@ function detailOf(parts: readonly string[]): readonly string[] {
 /** The repository an object name carries: `operad` in `ops/T-1-x`. */
 function repositoryOf(object: string | null | undefined): string {
   if (object === null || object === undefined) return "";
-  const bare = object.slice(object.indexOf(":") + 1);
+  const bare = bareId(object);
   const slash = bare.lastIndexOf("/");
   return slash < 0 ? "" : bare.slice(0, slash);
 }
@@ -1294,12 +1295,6 @@ export function listWidthFor(width: number): number {
 /** The columns before a row's text: marker, glyph and their spaces. */
 export const ROW_INDENT = 4;
 
-/** The row id without its type: `item:T-1-x` is `T-1-x`. */
-export function bareId(id: string): string {
-  const at = id.indexOf(":");
-  return at < 0 ? id : id.slice(at + 1);
-}
-
 /** The short id and the slug of an id like `T-0031-tui-object`. */
 function splitId(id: string): { readonly short: string; readonly slug: string } {
   const match = /^([A-Za-z]+-\d+)-(.+)$/.exec(id);
@@ -1519,7 +1514,7 @@ function openObject(state: TuiState): TuiState {
   const typeName = row.type;
   const requestId =
     typeName !== undefined && !row.id.startsWith(`${typeName}:`)
-      ? `${typeName}:${row.id}`
+      ? objectKey(typeName, row.id)
       : row.id;
   const object: TuiObject = {
     id: requestId,
@@ -1527,7 +1522,7 @@ function openObject(state: TuiState): TuiState {
     type:
       previous?.type ??
       typeName ??
-      (row.id.includes(":") ? row.id.slice(0, row.id.indexOf(":")) : row.id),
+      (parseObjectId(row.id, { allowEmptyId: true })?.type ?? row.id),
     link: previous?.link ?? "",
     row,
     // A request for the sections died with the old open, so none is loading.
@@ -1551,9 +1546,9 @@ function openObject(state: TuiState): TuiState {
 
 /** Opens the page of an object an action created, named "<type>:<id>". */
 function openNamed(state: TuiState, id: string): TuiState {
-  const colon = id.indexOf(":");
-  if (colon <= 0 || colon === id.length - 1) return state;
-  const type = id.slice(0, colon);
+  const parsed = parseObjectId(id);
+  if (parsed === undefined) return state;
+  const type = parsed.type;
   const version = state.objectVersion + 1;
   const object: TuiObject = {
     id,
@@ -2107,8 +2102,8 @@ function openChild(state: TuiState): TuiState {
   const shown = children === undefined ? [] : displayChildren(children.rows, state.childLayout);
   const row = shown[children?.cursor ?? 0]?.row;
   if (parent === undefined || row === undefined) return state;
-  const type = row.type ?? (row.id.includes(":") ? row.id.slice(0, row.id.indexOf(":")) : "");
-  const requestId = type === "" || row.id.startsWith(`${type}:`) ? row.id : `${type}:${row.id}`;
+  const type = row.type ?? parseObjectId(row.id, { allowEmptyId: true })?.type ?? "";
+  const requestId = type === "" || row.id.startsWith(`${type}:`) ? row.id : objectKey(type, row.id);
   const version = state.objectVersion + 1;
   const object: TuiObject = {
     id: requestId,
