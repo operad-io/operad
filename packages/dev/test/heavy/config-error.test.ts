@@ -339,7 +339,7 @@ describe("a check command that uses remote-check.sh without a check host", () =>
       const logged = hostLines(fixture.errors);
       expect(logged.length).toBe(1);
       expect(logged[0]).toContain('repository "alpha"');
-      expect(logged[0]).toContain("scripts/remote-check.sh");
+      expect(logged[0]).toContain("remote-check.sh");
       const items = (await fixture.registry.standing()).filter((item) =>
         item.id.startsWith("check-host:"),
       );

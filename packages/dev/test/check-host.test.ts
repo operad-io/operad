@@ -48,7 +48,7 @@ describe("the check host and slots from the home's settings", () => {
 describe("a check command that uses scripts/remote-check.sh without a check host", () => {
   test("says one line naming the script and how to set the host", () => {
     const warning = checkHostWarning("operad", repositorySettings([REMOTE]), {}, {});
-    expect(warning).toContain("scripts/remote-check.sh");
+    expect(warning).toContain("remote-check.sh");
     expect(warning).toContain("no check host is set");
     expect(warning).toContain("they run here");
     expect(warning).toContain("dev.checkHost or OPERAD_CHECK_HOST");

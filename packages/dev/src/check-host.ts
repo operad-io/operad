@@ -1,20 +1,20 @@
 /**
  * The check host and its slots: the home's `dev.checkHost` and `dev.checkSlots`
  * become the environment of every gate, integration and rerun command. A
- * repository whose commands use `scripts/remote-check.sh` is told when neither
+ * repository whose commands use `remote-check.sh` is told when neither
  * the settings nor serve's own environment names a host.
  */
 
 import type { CheckCommand, DevSettings } from "./settings.ts";
 
-/** The variable `scripts/remote-check.sh` reads to find its host. */
+/** The variable `remote-check.sh` reads to find its host. */
 export const CHECK_HOST_VARIABLE = "OPERAD_CHECK_HOST";
 
-/** The variable `scripts/remote-check.sh` reads for how many checks run at once. */
+/** The variable `remote-check.sh` reads for how many checks run at once. */
 export const CHECK_SLOTS_VARIABLE = "OPERAD_CHECK_SLOTS";
 
 /** The script a repository's check commands may use to run on another machine. */
-export const REMOTE_CHECK_SCRIPT = "scripts/remote-check.sh";
+export const REMOTE_CHECK_SCRIPT = "remote-check.sh";
 
 /** An environment to read the explicit variables from; a test passes its own. */
 type Environment = Readonly<Record<string, string | undefined>>;
@@ -81,7 +81,7 @@ function commandUsesRemoteCheck(command: CheckCommand): boolean {
   return typeof command !== "string" && (command.failed?.rerun.includes(REMOTE_CHECK_SCRIPT) ?? false);
 }
 
-/** Whether any check command a repository runs uses `scripts/remote-check.sh`. */
+/** Whether any check command a repository runs uses `remote-check.sh`. */
 export function usesRemoteCheck(settings: DevSettings): boolean {
   if (settings.gate.commands.some(commandUsesRemoteCheck)) return true;
   if (settings.integration.keyCommands.some(commandUsesRemoteCheck)) return true;
@@ -96,7 +96,7 @@ export function usesRemoteCheck(settings: DevSettings): boolean {
 
 /**
  * The one line dev says, and marks where a person looks, when a repository's
- * check commands use `scripts/remote-check.sh` but no host is set. Undefined
+ * check commands use `remote-check.sh` but no host is set. Undefined
  * when a host is set or the commands do not use the script.
  */
 export function checkHostWarning(

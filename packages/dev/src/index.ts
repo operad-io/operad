@@ -176,7 +176,7 @@ export function createDevPlugin() {
           minLength: 1,
           editable: true,
           description:
-            "The ssh destination, such as user@host, that gate, integration and rerun commands run on through scripts/remote-check.sh. Unset runs them here. An OPERAD_CHECK_HOST already in serve's own environment wins over this setting.",
+            "The ssh destination, such as user@host, that gate, integration and rerun commands run on through remote-check.sh. Unset runs them here. An OPERAD_CHECK_HOST already in serve's own environment wins over this setting.",
         },
         checkSlots: {
           type: "integer",
@@ -184,7 +184,7 @@ export function createDevPlugin() {
           minimum: 1,
           editable: true,
           description:
-            "How many checks run at once on the check host. Unset lets scripts/remote-check.sh use its default of 1. An OPERAD_CHECK_SLOTS already in serve's own environment wins over this setting.",
+            "How many checks run at once on the check host. Unset lets remote-check.sh use its default of 1. An OPERAD_CHECK_SLOTS already in serve's own environment wins over this setting.",
         },
       },
       additionalProperties: false,
