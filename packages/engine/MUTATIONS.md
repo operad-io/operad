@@ -1337,3 +1337,7 @@ resume window`. Rows are append-only, so the old lines stay as history.
 | T-0613-M1 | packages/engine/src/log/sqlite.ts | `read` ignored `after` and always read the run from its first fact | `read after a sequence returns only the facts that follow it` |
 | T-0613-M2 | packages/engine/src/runner/service.ts | `readState` never returned the kept state of a run whose last sequence was unchanged | `an unchanged run reads no fact on the second readState` |
 | T-0613-M3 | packages/engine/src/runner/service.ts | `readState` read the run without passing the kept sequence as `after` | `an unchanged run reads no fact on the second readState` |
+| T-0613-M4 | packages/engine/src/runner/limits.ts | `appendFact` read the whole run to find its last sequence instead of taking it from the run info | `a reported wait takes its next sequence from the run info` |
+| T-0613-M5 | packages/engine/src/runner/grants.ts | `useGrant` took its last sequence from the fact scan instead of the run info | `a grant uses the run's latest sequence when its fact scan is stale` |
+| T-0613-M6 | packages/engine/src/runner/service.ts | `appendInput` evolved the decision's input facts instead of the facts the log returned | `appendInput keeps the facts the log appended` |
+| T-0613-M7 | packages/engine/src/runner/runner.ts | `markStarted` returned a fresh read of the run instead of evolving the facts the log returned | `markStarted keeps the facts the log appended` |
