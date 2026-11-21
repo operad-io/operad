@@ -709,6 +709,31 @@ describe("dev/work", () => {
     }
   });
 
+  test("unavailable: a retry-after past the bound goes to a person", async () => {
+    const state = await fixture("unavailable", {
+      args: ["unavailable", "3600", "the provider is overloaded"],
+    });
+    let clock = 10_000;
+    reviewTestHooks.now = () => clock;
+    try {
+      const result = await runWork(state);
+      expect(result.result).toBe("failed");
+      expect(result.data?.reason).toBe("model_unavailable");
+      expect(String(result.data?.message)).toContain(
+        "the provider is overloaded",
+      );
+      expect(String(result.data?.message)).toContain(
+        new Date(clock + 3_600_000).toISOString(),
+      );
+      const task = await taskDataOf(state);
+      expect(task.phase).toBe("waiting");
+      expect(task.attempt?.workWaits ?? 0).toBe(0);
+      expect(task.attempt?.workRetryAt ?? null).toBeNull();
+    } finally {
+      reviewTestHooks.now = undefined;
+    }
+  });
+
   test("usage_limit: a retry-after goes to a person and does not retry", async () => {
     const state = await fixture("unavailable", {
       args: ["usage_limit", "175958", "OpenCode Go usage limit reached (monthly, resets in 2d)"],
