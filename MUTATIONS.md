@@ -181,3 +181,9 @@ Each package keeps its mutation checks in `MUTATIONS.md`; a row names the broken
 |---|---|---|---|
 | T-0643-M1 | scripts/changed-packages.ts | treated every `/` as a division or a comment start, so a `//` inside a regex literal removed the rest of its line, the import included | `selectPackages > a regex literal holding a quote does not hide the imports after it` |
 | T-0643-M2 | scripts/changed-packages.ts | dropped the quoted `@operad-io/<name>` fallback, so the dynamic import of `@operad-io/tui/app` was no longer a load | `selectPackages > a dynamic import through a quoted @operad-io/tui/app is a load` |
+
+## T-0641 — stress.sh stops the test runner even when a stop races its start
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0641-M1 | scripts/stress.sh | the KILL pass used only the load-helper pids instead of the job table, so a test runner that ignores TERM survived | `scripts/stress.sh > SIGKILL of the test runner stops a test file that ignores SIGTERM` |
