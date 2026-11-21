@@ -1411,12 +1411,22 @@ interface ReadSettings {
   readonly text: string;
 }
 
-/** Parses and checks the text of a settings file for the repository at `repositoryPath`. */
-function settingsFromText(
-  repositoryPath: string,
-  path: string,
-  text: string,
-): ReadSettings {
+interface ParsedSettings {
+  readonly settings: DevSettings;
+  /** The name of the worktree-root field the file wrote. */
+  readonly worktreeField: string;
+}
+
+/** The last parsed text of each settings file, by its path. */
+const parsedSettings = new Map<
+  string,
+  { readonly text: string; readonly value: ParsedSettings }
+>();
+
+/** Parses and validates a settings text, reusing the last result while it is unchanged. */
+function parseSettingsText(path: string, text: string): ParsedSettings {
+  const kept = parsedSettings.get(path);
+  if (kept !== undefined && kept.text === text) return kept.value;
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
@@ -1424,16 +1434,31 @@ function settingsFromText(
     throw new DevError("dev.json", `invalid JSON in ${path}: ${String(error)}`);
   }
   const settings = validateDevSettings(parsed);
-  const field =
+  const worktreeField =
     isRecord(parsed) &&
     parsed.worktreeRoot === undefined &&
     parsed.worktrees !== undefined
       ? "worktrees"
       : "worktreeRoot";
+  const value = { settings, worktreeField };
+  parsedSettings.set(path, { text, value });
+  return value;
+}
+
+/**
+ * Checks the paths a settings value references. These run on every read, even
+ * when the parsed value came from the cache: a skill or a stage's workerBrief
+ * can move or disappear while dev.json stays the same.
+ */
+function checkSettingsPaths(
+  repositoryPath: string,
+  parsed: ParsedSettings,
+): void {
+  const { settings, worktreeField } = parsed;
   assertInsideRepository(
     repositoryPath,
     resolve(repositoryPath, settings.worktreeRoot),
-    field,
+    worktreeField,
   );
   settings.skills.forEach((skill, index) => {
     assertInsideRepository(
@@ -1456,7 +1481,17 @@ function settingsFromText(
       assertInsideRepository(repositoryPath, file, field);
     });
   }
-  return { settings, text };
+}
+
+/** Parses and checks the text of a settings file for the repository at `repositoryPath`. */
+function settingsFromText(
+  repositoryPath: string,
+  path: string,
+  text: string,
+): ReadSettings {
+  const parsed = parseSettingsText(path, text);
+  checkSettingsPaths(repositoryPath, parsed);
+  return { settings: parsed.settings, text };
 }
 
 /** Reads the file as it is now; any problem with it is thrown. */
