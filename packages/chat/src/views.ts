@@ -20,7 +20,7 @@ import { maskSecrets, type FoldEntry } from "@operad-io/harness-process";
 import { secretValues } from "./reply.ts";
 import { readChatSkills, skillSummaries, type ObjectReader } from "./skills.ts";
 import { foldLogTail, agentLogPath } from "./tail.ts";
-import { agentLine, answeredOfFact, attachmentsOf, CHAT_TYPE, chatData, chatRef, COMMAND_FACT, commandOfFact, ENTRY_FACT, entryOfFact, IMAGE_TYPES, lastReplyContext, latestRunOf, MESSAGE_CHANGE_FACT, MESSAGE_FACT, messageChangeOfFact, messageFactsInForce, modelAndCost, queuedData, queuedMessages, queuedOf, readChat, RUN_FACT, stopOfFact, timingsOf, unanswered, ANSWER_FACT, type Attachment, type ChatContext, type ChatRead, type Command, type Entry, type Message, type MessageChange, type ToolResult } from "./model.ts";
+import { agentLine, answeredOfFact, attachmentsOf, CHAT_TYPE, chatData, chatRef, COMMAND_FACT, commandOfFact, ENTRY_FACT, entryOfFact, factsOf, IMAGE_TYPES, lastReplyContext, latestRunOf, MESSAGE_CHANGE_FACT, MESSAGE_FACT, messageChangeOfFact, messageFactsInForce, modelAndCost, queuedData, queuedMessages, queuedOf, readChat, RUN_FACT, stopOfFact, timingsOf, unanswered, ANSWER_FACT, type Attachment, type ChatContext, type ChatRead, type Command, type Entry, type Message, type MessageChange, type ToolResult } from "./model.ts";
 import type { TailRead } from "./tail.ts";
 
 /** How many messages of a chat one page of the transcript holds. */
@@ -286,11 +286,6 @@ export interface ReplyBlock {
   readonly answer?: ReplyMessage | undefined;
   /** How long the reply took, when its harness reported the timings. */
   readonly durationMs?: number | undefined;
-}
-
-/** The transcript's structured data beside its Markdown. */
-export interface TranscriptData {
-  readonly replies: readonly ReplyBlock[];
 }
 
 /** The category a tool name falls in. */
@@ -708,20 +703,6 @@ function entryMarkdown(entry: Entry | FoldEntry, speaker: string, harness: strin
   if (said.length === 0) return undefined;
   const body = `**${speaker}:** ${said}`;
   return entry.kind === "stopped" ? `${body}\n\n*stopped*` : body;
-}
-
-function allFacts(ctx: ViewContext, ref: ObjectRef): readonly PluginFact[] {
-  const facts: PluginFact[] = [];
-  let cursor: string | undefined;
-  do {
-    const page = ctx.store.facts(ref, {
-      ...(cursor === undefined ? {} : { cursor }),
-      limit: 500,
-    });
-    facts.push(...page.facts);
-    cursor = page.next;
-  } while (cursor !== undefined);
-  return facts;
 }
 
 interface Chunk {
@@ -1526,7 +1507,7 @@ async function file(ctx: ViewContext, object: StoredObject, path: readonly strin
   }
   const requested = join(attachmentDir(ctx.home, CHAT_TYPE, object.id), ...path);
   const named = new Set<string>();
-  for (const fact of allFacts(ctx, chatRef(object.id))) {
+  for (const fact of factsOf(ctx.store, chatRef(object.id))) {
     if (fact.type === MESSAGE_FACT) {
       for (const attachment of attachmentsOf(fact.data.attachments)) named.add(attachment.path);
     } else if (fact.type === ENTRY_FACT) {
