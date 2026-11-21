@@ -169,6 +169,12 @@ function fakeHarness(record: string) {
               },
             };
           }
+          if (mode === "main-change") {
+            writeFileSync(
+              join(input.cwd, "..", "..", "main-only.txt"),
+              "changed outside the worktree\n",
+            );
+          }
           if (mode === "commit" || mode === "commit-standard" || mode === "commit-incomplete" || mode === "commit-broken" || mode === "commit-unknown-cost") {
             writeFileSync(join(input.cwd, "worker.txt"), "done\n");
             gitOrThrow(input.cwd, ["add", "worker.txt"]);
@@ -745,6 +751,24 @@ describe("dev/work", () => {
     expect(result.data?.reason).toBe("harness");
     expect(result.data?.files).toEqual(["dirty.txt"]);
     expect(String(result.data?.message)).toContain("dirty.txt");
+  });
+
+  test("a new change in the main checkout is reported and left alone", async () => {
+    const state = await fixture("main-change");
+    const main = state.remote.repository;
+    writeFileSync(join(main, "before.txt"), "already changed\n");
+
+    const result = await runWork(state);
+    expect(result.result).toBe("nothing");
+    const line = "changed the main checkout: main-only.txt";
+    const task = await taskDataOf(state);
+    expect(task.brief).toContain(line);
+    expect(task.brief).not.toContain("before.txt");
+    expect(task.attempt?.finalMessage).toBe(line);
+    expect(String(result.data?.message)).toContain(line);
+    expect(readFileSync(join(main, "main-only.txt"), "utf8")).toBe(
+      "changed outside the worktree\n",
+    );
   });
 
   test("an empty worker.args is passed, not the flow's args", async () => {

@@ -280,6 +280,11 @@ asking the worker to resolve it. A failed attempt names the uncommitted files.
 The task records its attempt count, phase, session id and cost while these steps
 run.
 
+Before the worker starts, `dev/work` records the main checkout's `git status`.
+When the step ends, a change there that the worktree does not explain is named
+in the task's Changes, in the step's history and in the worker's answer as
+`changed the main checkout: <files>`. `dev` does not undo it.
+
 ### What a step cleans up
 
 Every process a step starts (the worker's harness, the reviewer's harness, a
