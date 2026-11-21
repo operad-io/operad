@@ -111,6 +111,7 @@
   "@operad-io/engine:PluginOrigin": "the plugin list and switch the host gives HTTP clients: a plugin is listed by the host and never calls it",
   "@operad-io/engine:PluginSwitchOptions": "the plugin list and switch the host gives HTTP clients: a plugin is listed by the host and never calls it",
   "@operad-io/engine:PollCheckEffect": "the kernel's fact, input and state types: a plugin returns results and never builds them",
+  "@operad-io/engine:ReadOptions": "the run log backend's types: only the kernel and the runner open the log",
   "@operad-io/engine:RecentObject": "the presentation view the host builds for clients: a plugin declares views and never calls it",
   "@operad-io/engine:RecordAnswerOptions": "the runner's types: driven by serve, a plugin never calls it",
   "@operad-io/engine:RecordInputResult": "the run log backend's types: only the kernel and the runner open the log",

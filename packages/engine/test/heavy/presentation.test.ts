@@ -140,7 +140,7 @@ function manualGrowthLog(inner: LogBackend): {
     recordInput: (runId, source, sourceKey, payload) =>
       inner.recordInput(runId, source, sourceKey, payload),
     append: (runId, expectedSeq, facts) => inner.append(runId, expectedSeq, facts),
-    read: (runId) => inner.read(runId),
+    read: (runId, options) => inner.read(runId, options),
     run: (runId) => inner.run(runId),
     runs: (options) => inner.runs(options),
     appendGlobal: (fact, uniqueKey) => inner.appendGlobal(fact, uniqueKey),
@@ -182,11 +182,12 @@ function countingLog(
     ...log,
     startRun: (flow, object, input, access) => log.startRun(flow, object, input, access),
     endRun: (runId) => log.endRun(runId),
+    run: (runId) => log.run(runId),
     recordInput: (runId, source, key, payload) => log.recordInput(runId, source, key, payload),
     append: (runId, seq, facts) => log.append(runId, seq, facts),
-    read: (runId) => {
+    read: (runId, options) => {
       read.push(runId);
-      return log.read(runId);
+      return log.read(runId, options);
     },
     appendGlobal: (fact, key) => log.appendGlobal(fact, key),
     readGlobal: () => log.readGlobal(),
