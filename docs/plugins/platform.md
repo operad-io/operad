@@ -1,5 +1,5 @@
 ---
-description: The helpers of @operad-io/engine/platform: process groups, file locks, directory watches, sqlite open settings, step markers and worker reports.
+description: The helpers of @operad-io/engine/platform: process groups, file locks, directory watches, atomic writes, sqlite open settings, step markers and worker reports.
 ---
 
 # The platform module
@@ -10,7 +10,7 @@ description: The helpers of @operad-io/engine/platform: process groups, file loc
 import { runLine, withLockFile, watchDirectory, setBusyTimeout, enableWal } from "@operad-io/engine/platform";
 ```
 
-A test fails when a source file outside `packages/engine/src/platform/` calls `linkSync(`, `process.kill(-` or `fs.watch(`, or imports `watch` from `node:fs`. See [the rules](rules.md#only-the-platform-module-touches-the-operating-system).
+A test fails when a source file outside `packages/engine/src/platform/` calls `linkSync(`, `process.kill(-` or `fs.watch(`, imports `watch` from `node:fs`, or names a temporary file with a template literal ending in `.tmp`. See [the rules](rules.md#only-the-platform-module-touches-the-operating-system).
 Nothing here runs in the kernel's own process.
 
 ## Process groups
@@ -135,6 +135,21 @@ A watch is the fast path, not a promise: on macOS a write that lands in a sqlite
 | `followsChanges(options)` | `false` when `follow: false` is given (a command that answers once and exits has nothing to follow); otherwise `true` |
 | `DEFAULT_POLL_MS` | `500`: how often an open subscription re-reads storage by default |
 | `openWaitHandles`, `openWaitHandleCount()` | Test-only: the watches and timers `waitForChange` holds open; a suite asserts zero at the end, so a wait that forgets to close its handles fails |
+
+## Atomic writes
+
+A file another process may read while it is being replaced is written through a temporary file in the same directory, flushed, then renamed over the target. A crash leaves the old file or the new one, never half of either, and the temporary name carries the pid and a random value so two writers never share it. The target's mode is kept; a caller that names a mode gets it exactly.
+
+| Export | What it does |
+|---|---|
+| `writeFileAtomic(path, text, options?)` | Writes `text` through a temporary file and a rename. `options.mode` sets the mode (default: keep an existing file's); `options.beforeRename(temporary, file)` runs once the temporary file is complete, and a test uses it to stop the write before the rename |
+| `writeFileAtomicSync(path, text, options?)` | The synchronous form; `beforeRename` runs synchronously |
+| `writeJsonAtomic(path, value, options?)` | The same for a JSON value. `options.space` indents it (`2` for a readable file) and `options.newline` adds a trailing newline (default `true`) |
+| `writeJsonAtomicSync(path, value, options?)` | The synchronous form |
+| `AtomicWriteOptions`, `AsyncAtomicWriteOptions` | The options of the two file writers: `mode` and the synchronous or asynchronous `beforeRename` |
+| `JsonWriteOptions`, `AsyncJsonWriteOptions` | Those options plus `space` and `newline` for the JSON writers |
+
+The parent directory is created when it is missing. Do not write a temporary file and rename it by hand; the platform helper is the only copy.
 
 ## sqlite open settings
 

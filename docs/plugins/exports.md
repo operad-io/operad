@@ -176,7 +176,6 @@ Types (`StepContext`, `ActionTypeDefinition`, `ObjectRow`, ...) are exported too
 | `requireName` | `requireName(value, field)` throws `<field>: must be a non-empty string` for an empty or blank value | [Rules](rules.md#code) |
 | `repeatEvery` | `repeatEvery(ms, callback)`: calls back every `ms` until the returned function is called; it never keeps the process alive | [Platform](platform.md#directory-watches) |
 | `sleepUntilAborted` | `sleepUntilAborted(ms, signal?)`: waits `ms`, but an abort of the signal ends the wait at once | [Rules](rules.md#tests) |
-| `writeFileAtomic` | Writes a file through a temporary file in the same directory and a rename, so a crash leaves the old file whole | [Settings](settings.md#editing-a-setting) |
 | `bareId` | `bareId(id)`: the id without its type (`item:T-1` becomes `T-1`); an untyped id is unchanged | [Events](events.md#the-event) |
 | `cut` | `cut(text, max)`: text cut to at most `max` characters, with `…` at the cut | [Rules](rules.md#code) |
 | `definitionName` | The `name` a plugin definition declares, or `undefined` | [definePlugin](define-plugin.md) |

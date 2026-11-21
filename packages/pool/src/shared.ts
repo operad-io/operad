@@ -7,10 +7,10 @@
  * crashed serve) is dropped the next time anyone looks.
  */
 
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
-import { watchDirectory, withLockFile } from "@operad-io/engine/platform";
+import { watchDirectory, withLockFile, writeJsonAtomicSync } from "@operad-io/engine/platform";
 import type { Claim, ClaimResult, Places } from "./places.ts";
 import { isRecord } from "@operad-io/engine";
 
@@ -111,10 +111,7 @@ export class FilePlaces implements Places {
   }
 
   private write(book: Book): void {
-    mkdirSync(this.dir, { recursive: true });
-    const tmp = `${this.file}.${process.pid}.${randomUUID()}.tmp`;
-    writeFileSync(tmp, JSON.stringify(book));
-    renameSync(tmp, this.file);
+    writeJsonAtomicSync(this.file, book, { newline: false });
   }
 
   private quiet<T>(work: () => T): Promise<T> {

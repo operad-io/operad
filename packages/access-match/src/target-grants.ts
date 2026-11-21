@@ -18,10 +18,10 @@
 
 import { messageOf } from "@operad-io/engine";
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { isMissingFile, isRecord, type Actor, type FlowDefinition, type OutwardWrite } from "@operad-io/engine";
-import { withLockFile } from "@operad-io/engine/platform";
+import { withLockFile, writeJsonAtomic } from "@operad-io/engine/platform";
 
 /** The file name of the target grants under the operad home. */
 export const ACCESS_GRANTS_FILE = "access-grants.json";
@@ -165,19 +165,7 @@ export function flowDefinitionDigest(flow: FlowDefinition): string {
 
 async function writeTargetGrants(home: string, file: TargetGrantFile): Promise<void> {
   const path = accessGrantsPath(home);
-  await mkdir(home, { recursive: true });
-  const temporary = join(home, `.${ACCESS_GRANTS_FILE}.${process.pid}.${randomUUID()}.tmp`);
-  try {
-    await writeFile(temporary, `${JSON.stringify(file, null, 2)}\n`, { mode: 0o600 });
-    await rename(temporary, path);
-  } catch (error) {
-    try {
-      await unlink(temporary);
-    } catch {
-      // The temporary file was never made, or is already gone.
-    }
-    throw error;
-  }
+  await writeJsonAtomic(path, file, { space: 2, mode: 0o600 });
 }
 
 /** Reads the file again inside the lock, and gives the current definition identity. */

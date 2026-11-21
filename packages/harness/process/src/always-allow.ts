@@ -8,11 +8,10 @@
  */
 
 import { messageOf } from "@operad-io/engine";
-import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { isMissingFile, isRecord } from "@operad-io/engine";
-import { withLockFile } from "@operad-io/engine/platform";
+import { withLockFile, writeJsonAtomic } from "@operad-io/engine/platform";
 import { personStarted, type AlwaysAllowEntry } from "@operad-io/access-match";
 export { personStarted };
 export type { AlwaysAllowEntry };
@@ -109,19 +108,7 @@ export async function appendAlwaysAllow(home: string, entry: AlwaysAllowEntry): 
   await withLockFile(`${path}.lock`, async () => {
     const found = await readAlwaysAllow(home);
     const entries = [...found.entries.filter((existing) => !sameEntry(existing, entry)), entry];
-    await mkdir(home, { recursive: true });
-    const temporary = join(home, `.${ACCESS_USER_FILE}.${process.pid}.${randomUUID()}.tmp`);
-    try {
-      await writeFile(temporary, `${JSON.stringify(entries, null, 2)}\n`, { mode: 0o600 });
-      await rename(temporary, path);
-    } catch (error) {
-      try {
-        await unlink(temporary);
-      } catch {
-        // The temporary file was never made, or is already gone.
-      }
-      throw error;
-    }
+    await writeJsonAtomic(path, entries, { space: 2, mode: 0o600 });
   }, { label: "access user layer" });
 }
 

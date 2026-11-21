@@ -4,12 +4,15 @@
  * keep under a registered repository's `.operad/` (project).
  */
 
-import { randomUUID } from "node:crypto";
-import { chmod, mkdir, open, readFile, rename, rm, stat } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { ActionArgsError, validateSchemaValue } from "../plugin/action-schema.ts";
 import { configPath } from "../config/config.ts";
-import { withLockFile } from "../platform/index.ts";
+import {
+  withLockFile,
+  writeFileAtomic,
+  type AsyncAtomicWriteOptions,
+} from "../platform/index.ts";
 import type { JsonValue } from "../log/types.ts";
 import type { PluginRegistry } from "../plugin/registry.ts";
 import type {
@@ -72,45 +75,7 @@ export interface SettingsOptions {
 }
 
 /** Hooks a test uses to stop a write between its two steps. */
-export interface AtomicWriteHooks {
-  /** Called once the temporary file is complete, before it replaces the target. */
-  readonly beforeRename?: (() => Promise<void> | void) | undefined;
-}
-
-/**
- * Writes a file by writing a temporary file in the same directory and renaming
- * it over the target, so a crash leaves the old file whole.
- */
-export async function writeFileAtomic(
-  path: string,
-  text: string,
-  hooks: AtomicWriteHooks = {},
-): Promise<void> {
-  await mkdir(dirname(path), { recursive: true });
-  const temp = join(
-    dirname(path),
-    `.${basename(path)}.${process.pid}.${randomUUID()}.tmp`,
-  );
-  const mode = await stat(path).then(
-    (info) => info.mode & 0o777,
-    () => undefined,
-  );
-  try {
-    const handle = await open(temp, "w");
-    try {
-      await handle.writeFile(text);
-      await handle.sync();
-    } finally {
-      await handle.close();
-    }
-    if (mode !== undefined) await chmod(temp, mode);
-    await hooks.beforeRename?.();
-    await rename(temp, path);
-  } catch (error) {
-    await rm(temp, { force: true }).catch(() => undefined);
-    throw error;
-  }
-}
+export type AtomicWriteHooks = AsyncAtomicWriteOptions;
 
 interface Leaf {
   /** The dotted path inside the file's JSON. */

@@ -4,14 +4,15 @@
  * A rule whose schedule changed no longer matches its entry, so it starts fresh.
  */
 
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   isRecord,
   latestCronMinute,
   parseCron,
   type TriggerRule,
 } from "@operad-io/engine";
+import { writeJsonAtomicSync } from "@operad-io/engine/platform";
 
 /** What the source remembers about one rule. */
 export interface CronRuleState {
@@ -93,9 +94,5 @@ export function readCronState(home: string): CronState {
 
 /** Records the rule state, replacing the file whole. */
 export function writeCronState(home: string, state: CronState): void {
-  const path = cronStatePath(home);
-  mkdirSync(dirname(path), { recursive: true });
-  const temporary = `${path}.${process.pid}.tmp`;
-  writeFileSync(temporary, `${JSON.stringify(state)}\n`, "utf8");
-  renameSync(temporary, path);
+  writeJsonAtomicSync(cronStatePath(home), state);
 }

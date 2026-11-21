@@ -7,12 +7,9 @@
 import { messageOf } from "@operad-io/engine";
 import {
   existsSync,
-  mkdirSync,
   readFileSync,
   realpathSync,
   statSync,
-  renameSync,
-  writeFileSync,
 } from "node:fs";
 import {
   basename,
@@ -32,6 +29,7 @@ import {
   type WorkerDefinition,
 } from "@operad-io/pool";
 import { defaultOperadHome, isRecord } from "@operad-io/engine";
+import { writeJsonAtomicSync } from "@operad-io/engine/platform";
 import { DevError, type AutoMode } from "./model.ts";
 import { repositoryPathKey } from "./repository-key.ts";
 import {
@@ -1598,10 +1596,11 @@ function keep(repositoryPath: string, read: ReadSettings): void {
   if (home === undefined) return;
   try {
     const file = keptFile(home, repositoryPath);
-    mkdirSync(dirname(file), { recursive: true });
-    const temporary = `${file}.${process.pid}.tmp`;
-    writeFileSync(temporary, JSON.stringify({ path: repositoryPath, text: read.text }));
-    renameSync(temporary, file);
+    writeJsonAtomicSync(
+      file,
+      { path: repositoryPath, text: read.text },
+      { newline: false },
+    );
   } catch {
     // The copy is a convenience for the next process; the memory copy stays.
   }

@@ -4,6 +4,7 @@
  * `@operad-io/engine/platform` and never writes its own.
  */
 
+export * from "./atomic-write.ts";
 export * from "./file-lock.ts";
 export * from "./process-group.ts";
 export * from "./sqlite-open.ts";

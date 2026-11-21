@@ -3,9 +3,9 @@
  */
 
 import { readFileSync } from "node:fs";
-import { mkdir, rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, posix } from "node:path";
+import { writeJsonAtomic } from "@operad-io/engine/platform";
 export { isReadOnlyCommand } from "./readonly.ts";
 export { COMMAND_SUMMARY_CHARS, SUMMARY_CHARS, COMMAND_NOT_SHOWN, REFUSED_IN_LOG, summarizeCall, firstErrorLine, messageSummary, secretValuesOf, type SummaryOptions } from "./summary.ts";
 export { OUTWARD_ALLOW_TARGET, OUTWARD_REJECT_ONCE, OUTWARD_SEND_ONCE, declaredOutward, guardDeclaredOutward, guardOutward, outwardAllowed, outwardCommandWrites, outwardQuestion, personStarted, type OutwardGuardContext, type OutwardQuestionOptions } from "./outward.ts";
@@ -172,10 +172,11 @@ export async function writeLiveAccess(
   access: Readonly<Record<string, unknown>>,
   level: AccessLevel,
 ): Promise<void> {
-  await mkdir(dirname(path), { recursive: true });
-  const temporary = `${path}.${process.pid}.tmp`;
-  await writeFile(temporary, JSON.stringify({ access, level }, null, 2), { mode: 0o600 });
-  await rename(temporary, path);
+  await writeJsonAtomic(
+    path,
+    { access, level },
+    { space: 2, newline: false, mode: 0o600 },
+  );
 }
 
 /** Changes only the level of a live-level file, keeping the base profile it already holds. */

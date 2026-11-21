@@ -17,12 +17,11 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
-  renameSync,
   rmSync,
-  writeFileSync,
 } from "node:fs";
 import { connect } from "node:net";
 import { dirname, join } from "node:path";
+import { writeJsonAtomicSync } from "./atomic-write.ts";
 import { withLockFile } from "./file-lock.ts";
 import { killProcessGroup, systemClock, type Clock } from "./process-group.ts";
 import { readProcessTable } from "./step-reap.ts";
@@ -104,10 +103,7 @@ export function keptWorkerArgument(token: string): string {
 /** Writes a record whole: a reader sees the old one or the new one, never a half. */
 export function writeKeptWorker(record: KeptWorkerRecord): void {
   ownerDirectory(dirname(record.meta));
-  const temporary = `${record.meta}.${process.pid}.tmp`;
-  writeFileSync(temporary, `${JSON.stringify(record)}\n`, { mode: 0o600 });
-  renameSync(temporary, record.meta);
-  chmodSync(record.meta, 0o600);
+  writeJsonAtomicSync(record.meta, record, { mode: 0o600 });
 }
 
 /** Removes a worker's record and socket; safe when they are already gone. */

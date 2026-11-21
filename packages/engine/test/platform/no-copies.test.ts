@@ -15,6 +15,11 @@ const FORBIDDEN: readonly { readonly pattern: RegExp; readonly use: string }[] =
     pattern: /import\s*\{[^}]*\bwatch\b[^}]*\}\s*from\s*["'](?:node:)?fs["']/,
     use: "watchDirectory or waitForChange (watch.ts)",
   },
+  {
+    // A temporary file name written by hand, such as `${path}.${process.pid}.tmp`.
+    pattern: /`[^`\n]*\.tmp`/,
+    use: "writeFileAtomic or writeJsonAtomic (atomic-write.ts)",
+  },
 ];
 
 function sourceFiles(directory: string): string[] {
@@ -77,10 +82,12 @@ describe("the platform module is the only copy", () => {
     expect(violations(sample("process.kill(-pgid, 0);"))).toHaveLength(1);
     expect(violations(sample("fs.watch(dir, cb);"))).toHaveLength(1);
     expect(violations(sample('import { watch } from "node:fs";'))).toHaveLength(1);
+    expect(violations(sample("const temporary = `${path}.${process.pid}.tmp`;"))).toHaveLength(1);
     expect(violations(sample("process.kill(pid, 0);"))).toEqual([]);
+    expect(violations(sample("const name = `${base}.json`;"))).toEqual([]);
     expect(
       violations(
-        new Map([[join("packages", "engine", "src", "platform", "a.ts"), "linkSync(a, b);"]]),
+        new Map([[join("packages", "engine", "src", "platform", "a.ts"), "const t = `${path}.tmp`;"]]),
       ),
     ).toEqual([]);
   });
