@@ -82,6 +82,8 @@ interface FixtureOptions {
   readonly base?: Readonly<Record<string, string>>;
   /** Files the first task commits next to `code.txt`. */
   readonly taskFiles?: Readonly<Record<string, string>>;
+  /** The dev plugin's home settings section, as `config.json` holds it. */
+  readonly settings?: Readonly<Record<string, unknown>>;
 }
 
 interface Fixture {
@@ -180,7 +182,12 @@ async function fixture(options: FixtureOptions = {}): Promise<Fixture> {
   await confirmPlan(store, plan.id);
   const registry = new PluginRegistry(
     [createChatPlugin(), createDevPlugin(), createShellPlugin()],
-    { home: root, cwd: remote.repository, store },
+    {
+      home: root,
+      cwd: remote.repository,
+      store,
+      ...(options.settings === undefined ? {} : { settings: { dev: options.settings } }),
+    },
   );
   const prepareTask = async (
     taskKey: string,
@@ -551,6 +558,35 @@ describe("dev/integrate", () => {
     expect(result.result).toBe("merged");
     const task = await taskOf(state);
     expect(task.brief).toContain("] check line 1 failed, passed on rerun");
+  });
+
+  test("an integration check gets the check host and slots from the home's settings", async () => {
+    const previous = {
+      host: process.env.OPERAD_CHECK_HOST,
+      slots: process.env.OPERAD_CHECK_SLOTS,
+    };
+    delete process.env.OPERAD_CHECK_HOST;
+    delete process.env.OPERAD_CHECK_SLOTS;
+    try {
+      const state = await fixture({
+        style: "merge",
+        settings: { checkHost: "hai@192.0.2.1", checkSlots: 2 },
+      });
+      const envFile = join(state.root, "integration-env");
+      writeDevJson(state.remote.repository, {
+        style: "merge",
+        keyCommands: [
+          `printf '%s/%s' "\${OPERAD_CHECK_HOST-unset}" "\${OPERAD_CHECK_SLOTS-unset}" > '${envFile}'`,
+        ],
+      });
+      expect((await integrate(state)).result).toBe("merged");
+      expect(readFileSync(envFile, "utf8")).toBe("hai@192.0.2.1/2");
+    } finally {
+      if (previous.host === undefined) delete process.env.OPERAD_CHECK_HOST;
+      else process.env.OPERAD_CHECK_HOST = previous.host;
+      if (previous.slots === undefined) delete process.env.OPERAD_CHECK_SLOTS;
+      else process.env.OPERAD_CHECK_SLOTS = previous.slots;
+    }
   });
 
   test("a failing integration check still proposes the flaky task, in the flaky-tests plan", async () => {

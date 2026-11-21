@@ -114,6 +114,21 @@ describe("remote-check.sh", () => {
     expect(realpathSync(result.out.trim())).toBe(realpathSync(local));
   });
 
+  test("without a host it says on stderr that the check runs here", async () => {
+    const { local } = setup();
+    const result = await run(local, { OPERAD_CHECK_HOST: "" }, "echo ran");
+    expect(result.code).toBe(0);
+    expect(result.out).toContain("ran");
+    expect(result.err).toContain("remote-check: no check host set; running the check here");
+  });
+
+  test("with a host it does not say the check runs here", async () => {
+    const { local, env } = setup();
+    const result = await run(local, env, "true");
+    expect(result.code).toBe(0);
+    expect(result.err).not.toContain("no check host set");
+  });
+
   test("on the host it checks out exactly HEAD and returns the command's exit code", async () => {
     const { local, home, env } = setup();
     const result = await run(local, env, "git rev-parse HEAD; cat change.txt; exit 3");

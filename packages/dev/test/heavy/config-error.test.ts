@@ -303,3 +303,76 @@ describe("a stopped task when a plugin dev needs is missing", () => {
     expect(loaded.takeStartedRuns().length).toBe(1);
   });
 });
+
+describe("a check command that uses remote-check.sh without a check host", () => {
+  const REMOTE = "bash scripts/remote-check.sh 'bun test'";
+  const hostLines = (errors: readonly string[]): string[] =>
+    errors.filter((line) => line.includes("no check host is set"));
+
+  /** Runs `action` with serve's own check variables removed, then restores them. */
+  async function withoutCheckEnv<T>(action: () => Promise<T>): Promise<T> {
+    const previous = {
+      host: process.env.OPERAD_CHECK_HOST,
+      slots: process.env.OPERAD_CHECK_SLOTS,
+    };
+    delete process.env.OPERAD_CHECK_HOST;
+    delete process.env.OPERAD_CHECK_SLOTS;
+    try {
+      return await action();
+    } finally {
+      if (previous.host === undefined) delete process.env.OPERAD_CHECK_HOST;
+      else process.env.OPERAD_CHECK_HOST = previous.host;
+      if (previous.slots === undefined) delete process.env.OPERAD_CHECK_SLOTS;
+      else process.env.OPERAD_CHECK_SLOTS = previous.slots;
+    }
+  }
+
+  test("the log says it once and pending shows it; a local command says nothing", async () => {
+    await withoutCheckEnv(async () => {
+      const fixture = await setup();
+      const alpha = await addRepo(fixture, "alpha");
+
+      writeSettings(alpha.path, { gate: { commands: [REMOTE] } });
+      await fixture.registry.tick();
+      await fixture.registry.tick();
+
+      const logged = hostLines(fixture.errors);
+      expect(logged.length).toBe(1);
+      expect(logged[0]).toContain('repository "alpha"');
+      expect(logged[0]).toContain("scripts/remote-check.sh");
+      const items = (await fixture.registry.standing()).filter((item) =>
+        item.id.startsWith("check-host:"),
+      );
+      expect(items.length).toBe(1);
+      expect(items[0]?.prompt).toContain("dev.checkHost or OPERAD_CHECK_HOST");
+
+      // A command that does not use the script is not a problem.
+      writeSettings(alpha.path, VALID);
+      await fixture.registry.tick();
+      expect(hostLines(fixture.errors).length).toBe(1);
+      expect(
+        (await fixture.registry.standing()).filter((item) => item.id.startsWith("check-host:")),
+      ).toEqual([]);
+    });
+  });
+
+  test("a host in the home's settings stops the line and the pending item", async () => {
+    await withoutCheckEnv(async () => {
+      const fixture = await setup();
+      const alpha = await addRepo(fixture, "alpha");
+      writeSettings(alpha.path, { gate: { commands: [REMOTE] } });
+      const loaded = new PluginRegistry([createChatPlugin(), plugin, poolPlugin], {
+        home: fixture.root,
+        cwd: fixture.root,
+        store: fixture.store,
+        storeRoot: fixture.store.root,
+        settings: { dev: { checkHost: "hai@192.0.2.1", checkSlots: 2 } },
+      });
+      await loaded.tick();
+      expect(hostLines(fixture.errors)).toEqual([]);
+      expect(
+        (await loaded.standing()).filter((item) => item.id.startsWith("check-host:")),
+      ).toEqual([]);
+    });
+  });
+});

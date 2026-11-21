@@ -753,7 +753,14 @@ refused when the file is read and again before a worktree is created.
 
 `operad settings` lists what a person may tune and `operad settings set <name>
 <value>` changes it (add `--repo <name>` for a repository's files). The home's
-`checks` is `dev.checks`. A repository's `.operad/dev.json` is `dev.*`
+`checks` is `dev.checks`; `checkHost` and `checkSlots` are `dev.checkHost` and
+`dev.checkSlots`, the ssh destination and slot count of
+`scripts/remote-check.sh`. A gate, integration or rerun command gets them as
+`OPERAD_CHECK_HOST` and `OPERAD_CHECK_SLOTS`; an explicit variable in serve's
+own environment wins. When a repository's check commands use
+`scripts/remote-check.sh` and no host is set, serve writes one line to its log
+at start, and the repository has a pending item and an Overview line saying the
+commands run here. A repository's `.operad/dev.json` is `dev.*`
 (`autoDefault`, `concurrency`, `gate.commands`, `gate.commandTimeoutSecs`,
 `gate.stallSecs`, `reviewer.use`,
 `reviewer.args`, `reviewer.timeoutSecs`, `reviewer.fixLevel`): its file name is

@@ -399,6 +399,18 @@ describe("shell/check", () => {
     expect(readFileSync(String(data.log), "utf8")).toContain("ok");
   });
 
+  test("env is added to every line's environment", async () => {
+    const { registry } = await fixture();
+    const result = await registry.runStep(
+      "shell/check",
+      { lines: ['printf %s "$X"', 'printf %s "$Y"'], env: { X: "one", Y: "two" } },
+      { runId: "run-1" },
+    );
+
+    expect(result.result).toBe("pass");
+    expect(readFileSync(String(dataOf(result).log), "utf8").replace(/\n/g, "")).toBe("onetwo");
+  });
+
   test("stops at the first failure and names the line", async () => {
     const { registry } = await fixture();
     const result = await registry.runStep(

@@ -18,6 +18,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { checkEnvironment } from "./check-host.ts";
 import { checkPlaces } from "./places.ts";
 import { runPrepare, stepOptions } from "./prepare.ts";
 import { runCheckCommands } from "./rerun.ts";
@@ -310,6 +311,7 @@ export async function runVerify(
           ...(context.settings.gate.stallSecs === undefined
             ? {}
             : { stallSecs: context.settings.gate.stallSecs }),
+          env: checkEnvironment(ctx.settings),
         },
         commands,
         stepOptions(ctx, path),

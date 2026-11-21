@@ -4342,3 +4342,87 @@ describe("dev/verify tells a result that is not the code from one that is", () =
     expect(tasks).toHaveLength(1);
   });
 });
+
+describe("the check host and slots of the home's settings", () => {
+  /** Runs `action` with serve's own check variables removed, then restores them. */
+  async function withoutCheckEnv<T>(action: () => Promise<T>): Promise<T> {
+    const previous = {
+      host: process.env.OPERAD_CHECK_HOST,
+      slots: process.env.OPERAD_CHECK_SLOTS,
+    };
+    delete process.env.OPERAD_CHECK_HOST;
+    delete process.env.OPERAD_CHECK_SLOTS;
+    try {
+      return await action();
+    } finally {
+      if (previous.host === undefined) delete process.env.OPERAD_CHECK_HOST;
+      else process.env.OPERAD_CHECK_HOST = previous.host;
+      if (previous.slots === undefined) delete process.env.OPERAD_CHECK_SLOTS;
+      else process.env.OPERAD_CHECK_SLOTS = previous.slots;
+    }
+  }
+
+  const printEnv = (file: string): string =>
+    `printf '%s/%s' "\${OPERAD_CHECK_HOST-unset}" "\${OPERAD_CHECK_SLOTS-unset}" > '${file}'`;
+
+  async function gateFile(state: Fixture, name: string): Promise<string> {
+    const settings = await readDevSettings(state.remote.repository);
+    return readFileSync(
+      join(gateWorktreePath(state.remote.repository, settings, state.taskId), name),
+      "utf8",
+    );
+  }
+
+  test("a gate command gets the host and slots from the setting", async () => {
+    await withoutCheckEnv(async () => {
+      const state = await fixture({
+        settings: { checkHost: "hai@192.0.2.1", checkSlots: 2 },
+        commands: [printEnv("host.txt")],
+      });
+      expect((await verify(state)).result).toBe("pass");
+      expect(await gateFile(state, "host.txt")).toBe("hai@192.0.2.1/2");
+    });
+  });
+
+  test("serve's own explicit variables win over the settings", async () => {
+    await withoutCheckEnv(async () => {
+      process.env.OPERAD_CHECK_HOST = "env@host";
+      process.env.OPERAD_CHECK_SLOTS = "3";
+      const state = await fixture({
+        settings: { checkHost: "setting@host", checkSlots: 2 },
+        commands: [printEnv("host.txt")],
+      });
+      expect((await verify(state)).result).toBe("pass");
+      expect(await gateFile(state, "host.txt")).toBe("env@host/3");
+    });
+  });
+
+  test("neither a setting nor a variable leaves both unset", async () => {
+    await withoutCheckEnv(async () => {
+      const state = await fixture({ commands: [printEnv("host.txt")] });
+      expect((await verify(state)).result).toBe("pass");
+      expect(await gateFile(state, "host.txt")).toBe("unset/unset");
+    });
+  });
+
+  test("the rerun of a failed test gets the same host and slots", async () => {
+    await withoutCheckEnv(async () => {
+      const state = await fixture({
+        settings: { checkHost: "hai@192.0.2.1", checkSlots: 2 },
+        commands: [
+          {
+            run: `echo "(fail) a test [1ms]"; ${printEnv("first.txt")}; exit 1`,
+            failed: {
+              match: "^\\(fail\\) (.+?) \\[",
+              rerun: `${printEnv("rerun.txt")} # {pattern}`,
+              max: 10,
+            },
+          },
+        ],
+      });
+      expect((await verify(state)).result).toBe("pass");
+      expect(await gateFile(state, "first.txt")).toBe("hai@192.0.2.1/2");
+      expect(await gateFile(state, "rerun.txt")).toBe("hai@192.0.2.1/2");
+    });
+  });
+});

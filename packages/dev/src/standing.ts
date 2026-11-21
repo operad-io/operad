@@ -8,7 +8,8 @@
 import type { StandingContext, StandingItem } from "@operad-io/engine";
 import { bareId, listAll, planData, storeKey, taskData } from "./model.ts";
 import { listRepositories } from "./service.ts";
-import { hasValidSettings, settingsProblem } from "./settings.ts";
+import { hasValidSettings, readDevSettings, settingsProblem } from "./settings.ts";
+import { checkHostWarning } from "./check-host.ts";
 
 /** A plugin dev starts steps of, so it cannot start work without it. */
 export interface RequiredPlugin {
@@ -38,7 +39,21 @@ export async function devStanding(ctx: StandingContext): Promise<readonly Standi
   const items: StandingItem[] = [];
   for (const repository of await listRepositories(ctx.store)) {
     const problem = settingsProblem(repository.path);
-    if (problem === undefined) continue;
+    if (problem === undefined) {
+      try {
+        const warning = checkHostWarning(
+          repository.name,
+          await readDevSettings(repository.path),
+          ctx.settings,
+        );
+        if (warning !== undefined) {
+          items.push({ id: `check-host:${repository.name}`, prompt: warning });
+        }
+      } catch {
+        // A settings file that cannot be read has its own item below.
+      }
+      continue;
+    }
     items.push({
       id: `settings:${repository.name}`,
       prompt: hasValidSettings(repository.path)
