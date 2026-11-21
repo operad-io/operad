@@ -12,6 +12,7 @@ import {
 } from "@operad-io/engine";
 import { waitForChange } from "@operad-io/engine/platform";
 import { cleanupTempRoots, tempRoot } from "../../../engine/test/plugin/support.ts";
+import { makeHome } from "@operad-io/engine/testing";
 
 afterAll(cleanupTempRoots);
 
@@ -25,20 +26,11 @@ interface Home {
   readonly home: string;
 }
 
-async function makeHome(command: string): Promise<Home> {
-  const root = await tempRoot();
-  const home = join(root, "home");
-  mkdirSync(home, { recursive: true });
-  writeFileSync(
-    join(home, "config.json"),
-    JSON.stringify({
-      plugins: [pluginPath],
-      store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
-      http: { enabled: false },
-      notify: { command },
-    }),
-  );
-  return { root, home };
+async function makeNotifyHome(command: string): Promise<Home> {
+  return makeHome({
+    plugins: [pluginPath],
+    extra: { http: { enabled: false }, notify: { command } },
+  });
 }
 
 function seed(root: string, id: string, title: string): void {
@@ -144,7 +136,7 @@ describe("waiting for a line another process writes", () => {
 
 describe("operad serve notify", () => {
   test("runs the command once per wait with the four variables, not again after a restart, and never with the token", async () => {
-    const { root, home } = await makeHome(
+    const { root, home } = await makeNotifyHome(
       `printf '%s|%s|%s|%s\\n' "$OPERAD_ID" "$OPERAD_TITLE" "$OPERAD_REASON" "$OPERAD_LINK" >> notices.txt; env > env.txt`,
     );
     const token = (await ensureHttpToken(home)).token;
@@ -192,7 +184,7 @@ describe("operad serve notify", () => {
   });
 
   test("a failing command is logged with its exit code and stderr, and run once", async () => {
-    const { root, home } = await makeHome(`echo ran >> runs.txt; echo oops >&2; exit 4`);
+    const { root, home } = await makeNotifyHome(`echo ran >> runs.txt; echo oops >&2; exit 4`);
     seed(root, "one", "First item");
     seed(root, "two", "Second item");
     await wait(home, "item:one", "ask:1", "Approve?");

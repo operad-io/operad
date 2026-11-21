@@ -85,7 +85,7 @@ interface Env {
   close(): Promise<void>;
 }
 
-function waitUntil(log: LogBackend, check: () => Promise<boolean>): Promise<void> {
+function waitForLog(log: LogBackend, check: () => Promise<boolean>): Promise<void> {
   return new Promise((resolve, reject) => {
     let busy = false;
     let again = false;
@@ -189,7 +189,7 @@ async function setup(): Promise<Env> {
     },
     async opened(runId) {
       let waitId = "";
-      await waitUntil(log, async () => {
+      await waitForLog(log, async () => {
         const payload = payloadOf(await facts(log, runId), "ask_opened");
         if (typeof payload.waitId === "string") waitId = payload.waitId;
         return waitId.length > 0;

@@ -1,3 +1,4 @@
+import { alive } from "@operad-io/engine/testing";
 import { killProcessGroup } from "@operad-io/engine/platform";
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -11,15 +12,6 @@ const leak = join(import.meta.dir, "leak.fixture.ts");
 
 function scratch(): string {
   return mkdtempSync(join(tmpdir(), "stress-test-"));
-}
-
-function alive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 describe("scripts/stress.sh", () => {

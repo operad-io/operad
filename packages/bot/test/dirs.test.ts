@@ -1,8 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { cleanupTempRoots, tempRoot } from "@operad-io/engine/testing";
 import { pathToFileURL } from "node:url";
 import { match, readProfile, type AccessProfile } from "@operad-io/access-match";
 import { newKeptWorkerSlot, writeKeptWorker, lockTestHooks, withLockFile } from "@operad-io/engine/platform";
@@ -18,16 +17,7 @@ import { cleanupRoots, rig, writeConfig } from "./support.ts";
 
 afterAll(cleanupRoots);
 
-const roots: string[] = [];
-afterAll(async () => {
-  for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true });
-});
-
-async function tempRoot(): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), "bot-dirs-"));
-  roots.push(root);
-  return root;
-}
+afterAll(cleanupTempRoots);
 
 function accessOf(value: unknown): AccessProfile {
   const read = readProfile(value);

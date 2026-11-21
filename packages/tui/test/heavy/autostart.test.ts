@@ -12,23 +12,19 @@ import {
   type FetchLike,
   type ServeSpawner,
 } from "../../src/index.ts";
+import { makeHome } from "@operad-io/engine/testing";
 import { freePort, tempRoot } from "../support.ts";
 
 const CLI_ENTRY = join(import.meta.dir, "..", "..", "..", "cli", "bin", "operad.ts");
 
-async function makeHome(http?: Record<string, unknown>): Promise<{ home: string; cleanup: () => Promise<void> }> {
-  const root = await tempRoot();
-  const home = join(root, "home");
-  mkdirSync(home, { recursive: true });
-  writeFileSync(
-    join(home, "config.json"),
-    JSON.stringify({
-      plugins: [],
-      store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
-      ...(http === undefined ? {} : { http }),
-    }),
-  );
-  return { home, cleanup: () => rm(root, { recursive: true, force: true }) };
+async function makeAutostartHome(http?: Record<string, unknown>): Promise<{ home: string; cleanup: () => Promise<void> }> {
+  const made = await makeHome({
+    ...(http === undefined ? {} : { extra: { http } }),
+  });
+  return {
+    home: made.home,
+    cleanup: () => rm(made.root, { recursive: true, force: true }),
+  };
 }
 
 const operad = (): Response => Response.json({ types: [] });
@@ -96,7 +92,7 @@ describe("ensureServer", () => {
   });
 
   test("a serve that already answers is not started again", async () => {
-    const { home, cleanup } = await makeHome();
+    const { home, cleanup } = await makeAutostartHome();
     try {
       let spawned = 0;
       const lines: string[] = [];
@@ -118,7 +114,7 @@ describe("ensureServer", () => {
   });
 
   test("a home lock with a silent port is an error naming http.enabled and http.port, and starts nothing", async () => {
-    const { home, cleanup } = await makeHome();
+    const { home, cleanup } = await makeAutostartHome();
     try {
       let spawned = 0;
       const error = await ensureServer({
@@ -140,7 +136,7 @@ describe("ensureServer", () => {
   });
 
   test("a child that exits at once is an error naming the log and showing its tail", async () => {
-    const { home, cleanup } = await makeHome();
+    const { home, cleanup } = await makeAutostartHome();
     try {
       const error = await ensureServer({
         home,
@@ -163,7 +159,7 @@ describe("ensureServer", () => {
   });
 
   test("a long log's tail keeps the last ten lines and decodes a multi-byte line across reads", async () => {
-    const { home, cleanup } = await makeHome();
+    const { home, cleanup } = await makeAutostartHome();
     try {
       const lines = Array.from({ length: 20 }, (_, index) => `line ${index}`);
       const long = `${"€".repeat(10_000)} boom`;
@@ -189,7 +185,7 @@ describe("ensureServer", () => {
   });
 
   test("a child that cannot listen because the port is taken says the port is in use", async () => {
-    const { home, cleanup } = await makeHome();
+    const { home, cleanup } = await makeAutostartHome();
     try {
       const error = await ensureServer({
         home,
@@ -214,7 +210,7 @@ describe("ensureServer", () => {
   });
 
   test("a child that lost the home lock to a serve that never answers says that serve runs and does not answer", async () => {
-    const { home, cleanup } = await makeHome();
+    const { home, cleanup } = await makeAutostartHome();
     try {
       let checks = 0;
       let time = 0;
@@ -243,7 +239,7 @@ describe("ensureServer", () => {
   });
 
   test("a child that never answers times out with the log and its tail", async () => {
-    const { home, cleanup } = await makeHome();
+    const { home, cleanup } = await makeAutostartHome();
     try {
       const error = await ensureServer({
         home,
@@ -269,7 +265,7 @@ describe("ensureServer", () => {
   });
 
   test("http.enabled false starts nothing and names the key", async () => {
-    const { home, cleanup } = await makeHome({ enabled: false });
+    const { home, cleanup } = await makeAutostartHome({ enabled: false });
     try {
       let spawned = 0;
       const error = await ensureServer({
@@ -289,7 +285,7 @@ describe("ensureServer", () => {
   });
 
   test("a port that answers but is not operad is an error naming the port", async () => {
-    const { home, cleanup } = await makeHome({ port: 7611 });
+    const { home, cleanup } = await makeAutostartHome({ port: 7611 });
     try {
       let spawned = 0;
       const error = await ensureServer({
@@ -312,7 +308,7 @@ describe("ensureServer", () => {
 
 describe("ensureServer: races and bounds", () => {
   test("two tui starting at once both end connected to the one serve", async () => {
-    const { home, cleanup } = await makeHome();
+    const { home, cleanup } = await makeAutostartHome();
     try {
       let up = false;
       let waits = 0;
@@ -356,7 +352,7 @@ describe("ensureServer: races and bounds", () => {
 
   test("port 0 or an empty listen fails before anything is spawned", async () => {
     for (const http of [{ port: 0 }, { listen: [] }]) {
-      const { home, cleanup } = await makeHome(http);
+      const { home, cleanup } = await makeAutostartHome(http);
       try {
         let spawned = 0;
         const error = await ensureServer({
@@ -379,7 +375,7 @@ describe("ensureServer: races and bounds", () => {
   });
 
   test("probe time counts against the start deadline", async () => {
-    const { home, cleanup } = await makeHome();
+    const { home, cleanup } = await makeAutostartHome();
     try {
       let clock = 0;
       let probes = 0;
@@ -449,7 +445,7 @@ describe("runTui and the flags", () => {
 describe("a real serve", () => {
   test("a fresh home on a free port: tui starts serve, connects, and the child is stopped after", async () => {
     const port = await freePort();
-    const { home, cleanup } = await makeHome({ enabled: true, port, listen: ["127.0.0.1"] });
+    const { home, cleanup } = await makeAutostartHome({ enabled: true, port, listen: ["127.0.0.1"] });
     let pid: number | undefined;
     let exited: Promise<number | null> | undefined;
     try {

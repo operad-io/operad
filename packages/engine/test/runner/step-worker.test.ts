@@ -1,9 +1,8 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isRecord, openPluginStore } from "../../src/index.ts";
-import { waitForChange } from "../../src/platform/index.ts";
 import {
   runStepWorker,
   startStepWorker,
@@ -11,6 +10,7 @@ import {
   type StepWorkerRequest,
 } from "../../src/runner/step-worker.ts";
 import { cleanupTempRoots, tempRoot } from "../plugin/support.ts";
+import { waitForFile } from "../../src/testing/index.ts";
 
 afterAll(cleanupTempRoots);
 
@@ -84,12 +84,6 @@ async function resultOf(port: FakePort, run: Promise<void>): Promise<Record<stri
   const reply = await port.next("result");
   await run;
   return reply;
-}
-
-async function waitForFile(path: string): Promise<void> {
-  while (!existsSync(path)) {
-    await waitForChange(dirname(path), basename(path), 200);
-  }
 }
 
 describe("step worker in this process", () => {

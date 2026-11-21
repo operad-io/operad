@@ -1,9 +1,8 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { makeHome } from "@operad-io/engine/testing";
 import { main, type CliIo } from "../src/main.ts";
-import { cleanupTempRoots, tempRoot } from "../../engine/test/plugin/support.ts";
+import { cleanupTempRoots } from "../../engine/test/plugin/support.ts";
 
 afterAll(cleanupTempRoots);
 
@@ -31,23 +30,13 @@ function capture(): { io: CliIo; text(): string; errors(): string } {
   };
 }
 
-async function makeHome(): Promise<string> {
-  const root = await tempRoot();
-  const home = join(root, "home");
-  mkdirSync(home, { recursive: true });
-  writeFileSync(
-    join(home, "config.json"),
-    JSON.stringify({
-      plugins: [flowPluginPath, cronPluginPath],
-      store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
-    }),
-  );
-  return home;
+async function makeScheduledHome(): Promise<string> {
+  return (await makeHome({ plugins: [flowPluginPath, cronPluginPath] })).home;
 }
 
 describe("operad scheduled", () => {
   test("adds a flow, lists it, and refuses an unknown flow", async () => {
-    const home = await makeHome();
+    const home = await makeScheduledHome();
     const added = capture();
     expect(
       await main(
@@ -93,7 +82,7 @@ describe("operad scheduled", () => {
   });
 
   test("an empty --params clears a flow's parameters", async () => {
-    const home = await makeHome();
+    const home = await makeScheduledHome();
     await main(
       [
         "scheduled",

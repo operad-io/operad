@@ -12,7 +12,6 @@ import {
   readdirSync,
   rmSync,
   symlinkSync,
-  watch,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -32,6 +31,11 @@ import {
 } from "@operad-io/engine";
 import { createShellPlugin } from "@operad-io/shell";
 import { withDefaultAccess, type AccessProfile } from "@operad-io/access-match";
+import {
+  manualClock,
+  waitForFile,
+  type ManualClock,
+} from "@operad-io/engine/testing";
 
 import { notCodeTestHooks } from "../../src/notcode.ts";
 import type { CheckCommand } from "../../src/settings.ts";
@@ -80,65 +84,6 @@ guardLockHandles();
 const REVIEW_CRASH_CHILD = fileURLToPath(
   new URL("../fixtures/review-crash-child.ts", import.meta.url),
 );
-
-interface ManualClock {
-  setTimeout(handler: () => void, ms: number): unknown;
-  clearTimeout(handle: unknown): void;
-  sleep(ms: number): Promise<void>;
-  fireTimeouts(): number;
-  /** Fires only the timeouts set for `ms`; the others stay armed. */
-  fireTimeoutsOf(ms: number): number;
-}
-
-/** A clock a test drives: a timeout runs only when the test fires it. */
-function manualClock(): ManualClock {
-  const timers = new Set<{ readonly handler: () => void; readonly ms: number }>();
-  return {
-    setTimeout(handler, ms) {
-      const timer = { handler, ms };
-      timers.add(timer);
-      return timer;
-    },
-    clearTimeout(handle) {
-      timers.delete(handle as { readonly handler: () => void; readonly ms: number });
-    },
-    sleep() {
-      return Promise.resolve();
-    },
-    fireTimeouts() {
-      const due = [...timers];
-      timers.clear();
-      for (const timer of due) timer.handler();
-      return due.length;
-    },
-    fireTimeoutsOf(ms) {
-      const due = [...timers].filter((timer) => timer.ms === ms);
-      for (const timer of due) timers.delete(timer);
-      for (const timer of due) timer.handler();
-      return due.length;
-    },
-  };
-}
-
-/**
- * Resolves when the file exists. A directory watch wakes it at once; a watch
- * can miss an event under load, so a look every 100 ms backs it.
- */
-function waitForFile(path: string): Promise<void> {
-  if (existsSync(path)) return Promise.resolve();
-  return new Promise((resolve) => {
-    const check = (): void => {
-      if (!existsSync(path)) return;
-      watcher.close();
-      clearInterval(timer);
-      resolve();
-    };
-    const watcher = watch(dirname(path), check);
-    watcher.on("error", check);
-    const timer = setInterval(check, 100);
-    check();
-  });
-}
 
 interface ReviewCall {
   readonly prompt: string;

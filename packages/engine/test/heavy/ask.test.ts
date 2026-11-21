@@ -40,7 +40,7 @@ async function fileExists(path: string): Promise<void> {
 }
 
 /** Resolves when `check` holds, looking again after each change to the log. */
-function waitUntil(log: LogBackend, check: () => Promise<boolean>): Promise<void> {
+function waitForLog(log: LogBackend, check: () => Promise<boolean>): Promise<void> {
   return new Promise((resolve, reject) => {
     let busy = false;
     let again = false;
@@ -190,7 +190,7 @@ async function setup(mode: "memory" | "file"): Promise<Env> {
     },
     async opened(runId) {
       let waitId = "";
-      await waitUntil(log, async () => {
+      await waitForLog(log, async () => {
         const opened = (await facts(log, runId)).find((fact) => fact.kind === "ask_opened");
         const payload = opened?.payload;
         if (typeof payload === "object" && payload !== null && !Array.isArray(payload)) {

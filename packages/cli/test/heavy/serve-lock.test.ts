@@ -4,6 +4,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tempRoot } from "../../../engine/test/plugin/support.ts";
+import { freePort } from "@operad-io/engine/testing";
 
 const CLI_ENTRY = fileURLToPath(new URL("../../bin/operad.ts", import.meta.url));
 
@@ -16,14 +17,6 @@ function runServe(home: string): Bun.Subprocess<"ignore", "pipe", "pipe"> {
     stdout: "pipe",
     stderr: "pipe",
   });
-}
-
-async function freePort(): Promise<number> {
-  const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response("") });
-  const port = server.port;
-  await server.stop(true);
-  if (port === undefined) throw new Error("no free port");
-  return port;
 }
 
 /** Reads the child's stdout until it has printed `text`. */

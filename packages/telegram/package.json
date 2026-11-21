@@ -23,6 +23,7 @@
     "LICENSE"
   ],
   "devDependencies": {
+    "@operad-io/bot": "workspace:*",
     "@operad-io/dev": "workspace:*"
   }
 }

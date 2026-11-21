@@ -274,6 +274,24 @@
   "@operad-io/engine:olderCodeNotice": "serve's notice that it runs older code than the files on disk: host code, a plugin never calls it",
   "@operad-io/engine:servesOlderCode": "serve's notice that it runs older code than the files on disk: host code, a plugin never calls it",
   "@operad-io/engine/testing:AnswerOptions": "the testing helpers run an answer in the test's own process; a plugin never calls them",
-  "@operad-io/engine/testing:answerRun": "the testing helpers run an answer in the test's own process; a plugin never calls them"
+  "@operad-io/engine/testing:answerRun": "the testing helpers run an answer in the test's own process; a plugin never calls them",
+  "@operad-io/engine/testing:alive": "test-only helpers make scratch directories and homes and wait for files or processes; a plugin never calls them from its source",
+  "@operad-io/engine/testing:cleanupTempRoots": "test-only helpers make scratch directories and homes and wait for files or processes; a plugin never calls them from its source",
+  "@operad-io/engine/testing:freePort": "test-only helpers make scratch directories and homes and wait for files or processes; a plugin never calls them from its source",
+  "@operad-io/engine/testing:makeDirectory": "test-only helpers make scratch directories and homes and wait for files or processes; a plugin never calls them from its source",
+  "@operad-io/engine/testing:makeHome": "test-only helpers make scratch directories and homes and wait for files or processes; a plugin never calls them from its source",
+  "@operad-io/engine/testing:manualClock": "test-only helpers make scratch directories and homes and wait for files or processes; a plugin never calls them from its source",
+  "@operad-io/engine/testing:osTempRoot": "test-only helpers make scratch directories and homes and wait for files or processes; a plugin never calls them from its source",
+  "@operad-io/engine/testing:pidValue": "test-only helpers make scratch directories and homes and wait for files or processes; a plugin never calls them from its source",
+  "@operad-io/engine/testing:signalable": "test-only helpers make scratch directories and homes and wait for files or processes; a plugin never calls them from its source",
+  "@operad-io/engine/testing:tempRoot": "test-only helpers make scratch directories and homes and wait for files or processes; a plugin never calls them from its source",
+  "@operad-io/engine/testing:tempRoots": "test-only helpers make scratch directories and homes and wait for files or processes; a plugin never calls them from its source",
+  "@operad-io/engine/testing:waitForFile": "test-only helpers make scratch directories and homes and wait for files or processes; a plugin never calls them from its source",
+  "@operad-io/engine/testing:waitForGone": "test-only helpers make scratch directories and homes and wait for files or processes; a plugin never calls them from its source",
+  "@operad-io/engine/testing:waitForPid": "test-only helpers make scratch directories and homes and wait for files or processes; a plugin never calls them from its source",
+  "@operad-io/engine/testing:waitUntil": "test-only helpers make scratch directories and homes and wait for files or processes; a plugin never calls them from its source",
+  "@operad-io/engine/testing:ManualClock": "test-only helpers make scratch directories and homes and wait for files or processes; a plugin never calls them from its source",
+  "@operad-io/engine/testing:MakeHomeOptions": "test-only helpers make scratch directories and homes and wait for files or processes; a plugin never calls them from its source",
+  "@operad-io/engine/testing:TestHome": "test-only helpers make scratch directories and homes and wait for files or processes; a plugin never calls them from its source"
  }
 }

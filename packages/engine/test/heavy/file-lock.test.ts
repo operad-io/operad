@@ -9,28 +9,15 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import {
   LockTimeoutError,
   lockTestHooks,
   openWaitHandleCount,
   withLockFile,
 } from "../../src/platform/index.ts";
+import { cleanupTempRoots, tempRoot } from "../../src/testing/index.ts";
 
-const roots: string[] = [];
-
-async function tempRoot(): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), "operad-lock-test-"));
-  roots.push(root);
-  return root;
-}
-
-afterAll(async () => {
-  for (const root of roots.splice(0)) {
-    await rm(root, { recursive: true, force: true });
-  }
-});
+afterAll(cleanupTempRoots);
 
 afterEach(() => {
   expect(openWaitHandleCount()).toBe(0);

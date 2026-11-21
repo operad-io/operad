@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, rmSync, watch, writeFileSync } from "node:fs";
+import { existsSync, rmSync, writeFileSync } from "node:fs";
 import { spawn as nodeSpawn } from "node:child_process";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   MemoryPluginStore,
@@ -23,7 +23,11 @@ import {
   sleepUntilAborted,
   storeRootOf,
 } from "../../src/index.ts";
-import { answerRun } from "../../src/testing/index.ts";
+import {
+  answerRun,
+  makeHome as makeTestHome,
+  waitForFile,
+} from "../../src/testing/index.ts";
 import {
   keptWorkerArgument,
   markerEnv,
@@ -54,39 +58,10 @@ interface Home {
   readonly config: Awaited<ReturnType<typeof readConfig>>;
 }
 
-async function makeHome(): Promise<Home> {
-  const root = await tempRoot();
-  const home = join(root, "home");
-  mkdirSync(home, { recursive: true });
-  await Bun.write(
-    join(home, "config.json"),
-    JSON.stringify({
-      plugins: [pluginPath],
-      store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
-    }),
-  );
-  const config = await readConfig(home);
-  return { root, home, storeRoot: storeRootOf(config), config };
-}
-
-/**
- * Resolves when the file exists. A directory watch wakes it at once; a watch
- * can miss an event under load, so a look every 100 ms backs it.
- */
-function waitForFile(path: string): Promise<void> {
-  if (existsSync(path)) return Promise.resolve();
-  return new Promise((resolve) => {
-    const check = (): void => {
-      if (!existsSync(path)) return;
-      watcher.close();
-      clearInterval(timer);
-      resolve();
-    };
-    const watcher = watch(dirname(path), check);
-    watcher.on("error", check);
-    const timer = setInterval(check, 100);
-    check();
-  });
+async function makeServeHome(): Promise<Home> {
+  const made = await makeTestHome({ plugins: [pluginPath] });
+  const config = await readConfig(made.home);
+  return { ...made, storeRoot: storeRootOf(config), config };
 }
 
 function spawn(home: Home, runId: string, recover: boolean) {
@@ -108,7 +83,7 @@ function spawn(home: Home, runId: string, recover: boolean) {
 
 describe("serve loop", () => {
   test("a run whose flow is not loaded fails, names it, and is not spawned", async () => {
-    const home = await makeHome();
+    const home = await makeServeHome();
     const log = openConfigLog(home.config);
     const registry = await loadPluginRegistry({
       home: home.home,
@@ -150,7 +125,7 @@ describe("serve loop", () => {
   });
 
   test("serve start stops marked processes of runs that are not active, and says so once", async () => {
-    const home = await makeHome();
+    const home = await makeServeHome();
     const log = openConfigLog(home.config);
     const registry = await loadPluginRegistry({
       home: home.home,
@@ -203,7 +178,7 @@ describe("serve loop", () => {
   });
 
   test("serve start ends every kept worker of the home, even without a run marker", async () => {
-    const home = await makeHome();
+    const home = await makeServeHome();
     const log = openConfigLog(home.config);
     const registry = await loadPluginRegistry({
       home: home.home,
@@ -254,7 +229,7 @@ describe("serve loop", () => {
   });
 
   test("a recorded answer runs the next step in serve's process", async () => {
-    const home = await makeHome();
+    const home = await makeServeHome();
     const log = openConfigLog(home.config);
     const registry = await loadPluginRegistry({
       home: home.home,
@@ -332,7 +307,7 @@ describe("serve loop", () => {
   });
 
   test("recovers an unsafe run into a person wait, and an action ends it", async () => {
-    const home = await makeHome();
+    const home = await makeServeHome();
     const log = openConfigLog(home.config);
     const registry = await loadPluginRegistry({
       home: home.home,
@@ -398,7 +373,7 @@ describe("serve loop", () => {
   });
 
   test("starts a run a plugin asks for on tick", async () => {
-    const home = await makeHome();
+    const home = await makeServeHome();
     const log = openConfigLog(home.config);
     const registry = await loadPluginRegistry({
       home: home.home,
@@ -428,7 +403,7 @@ describe("serve loop", () => {
   });
 
   test("a tick trigger sent twice starts one run and keeps the event", async () => {
-    const home = await makeHome();
+    const home = await makeServeHome();
     const log = openConfigLog(home.config);
     const flow = defineFlow({
       name: "tick-flow",
@@ -483,7 +458,7 @@ describe("serve loop", () => {
   });
 
   test("recovery starts a run-end chain without a kernel argument", async () => {
-    const home = await makeHome();
+    const home = await makeServeHome();
     await Bun.write(
       join(home.home, "triggers.json"),
       JSON.stringify([
@@ -525,7 +500,7 @@ describe("serve loop", () => {
   });
 
   test("does not wake a wait before it is due", async () => {
-    const home = await makeHome();
+    const home = await makeServeHome();
     const log = openConfigLog(home.config);
     const registry = await loadPluginRegistry({
       home: home.home,
@@ -573,7 +548,7 @@ describe("serve loop", () => {
   });
 
   test("an interrupted loop leaves a mid-step child running", async () => {
-    const home = await makeHome();
+    const home = await makeServeHome();
     const log = openConfigLog(home.config);
     const registry = await loadPluginRegistry({
       home: home.home,
@@ -611,7 +586,7 @@ describe("serve loop", () => {
   });
 
   test("re-runs a safe step after the run process is killed", async () => {
-    const home = await makeHome();
+    const home = await makeServeHome();
     const log = openConfigLog(home.config);
     const registry = await loadPluginRegistry({
       home: home.home,
@@ -659,7 +634,7 @@ describe("serve loop", () => {
   });
 
   test("a sleeping loop ends as soon as the signal aborts", async () => {
-    const home = await makeHome();
+    const home = await makeServeHome();
     const log = openConfigLog(home.config);
     const registry = await loadPluginRegistry({
       home: home.home,

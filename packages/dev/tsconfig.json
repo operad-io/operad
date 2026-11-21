@@ -7,6 +7,7 @@
     { "path": "../chat" },
     { "path": "../engine" },
     { "path": "../pool" },
-    { "path": "../review-grading" }
+    { "path": "../review-grading" },
+    { "path": "../test-support" }
   ]
 }

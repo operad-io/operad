@@ -13,7 +13,8 @@
     "@operad-io/review-grading": "workspace:*"
   },
   "devDependencies": {
-    "@operad-io/shell": "workspace:*"
+    "@operad-io/shell": "workspace:*",
+    "@operad-io/test-support": "workspace:*"
   },
   "description": "operad: the dev plugin, plans and tasks on a repository",
   "repository": {

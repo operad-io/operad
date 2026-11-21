@@ -13,6 +13,7 @@
     { "path": "../harness/pi" },
     { "path": "../harness/radian" },
     { "path": "../source-cron" },
-    { "path": "../mcp" }
+    { "path": "../mcp" },
+    { "path": "../test-support" }
   ]
 }

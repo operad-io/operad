@@ -1,0 +1,11 @@
+{
+  "name": "@operad-io/test-support",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "description": "operad: test helpers that the published packages do not carry",
+  "license": "MIT"
+}

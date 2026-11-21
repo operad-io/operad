@@ -19,7 +19,7 @@ import { createShellPlugin } from "@operad-io/shell";
 import { addPlan, addRepository, addTask, cancelTask, createDevPlugin, getTask, pauseTask, resumeTask, taskData } from "../../src/index.ts";
 import { withCheckPlace } from "../../src/places.ts";
 import { commitIn, gitOrThrow, makeRemote } from "../git-support.ts";
-import { cleanupTempRoots, guardLockHandles, osTempRoot, storeAt, tempRoot, setTaskPhase } from "../support.ts";
+import { alive, cleanupTempRoots, guardLockHandles, osTempRoot, storeAt, tempRoot, setTaskPhase, waitForGone } from "../support.ts";
 
 setDefaultTimeout(60_000);
 afterAll(cleanupTempRoots);
@@ -35,15 +35,6 @@ async function fileAppears(path: string): Promise<string> {
   }
 }
 
-function alive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 /** The shell's pid and its child's, written by the waiting command. */
 async function pidsIn(path: string): Promise<number[]> {
   return (await fileAppears(path)).split(/\s+/).map(Number);
@@ -51,12 +42,7 @@ async function pidsIn(path: string): Promise<number[]> {
 
 /** Resolves when every pid is gone. */
 async function allGone(pids: readonly number[]): Promise<void> {
-  for (const pid of pids) await gone(pid);
-}
-
-/** Resolves when `pid` is gone. */
-async function gone(pid: number): Promise<void> {
-  while (alive(pid)) await new Promise((done) => setTimeout(done, 20));
+  for (const pid of pids) await waitForGone(pid, 30_000);
 }
 
 type Stop = "pause" | "cancel";

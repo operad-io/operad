@@ -6,56 +6,31 @@
  */
 
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { cleanupTempRoots, tempRoot } from "../../../engine/test/plugin/support.ts";
-import { testEnv } from "../env.ts";
+import { cleanupTempRoots } from "../../../engine/test/plugin/support.ts";
+import { makeHome as makeTestHome } from "@operad-io/engine/testing";
+import { operad } from "@operad-io/test-support";
 
 afterAll(cleanupTempRoots);
 
-const CLI_ENTRY = fileURLToPath(new URL("../../bin/operad.ts", import.meta.url));
 const FAKE_MCP = fileURLToPath(new URL("../../../bot/test/fake-mcp.ts", import.meta.url));
 
 /** A home with the bot plugin enabled, with the module names `plugin enable bot` writes. */
-async function makeHome(): Promise<{ root: string; home: string }> {
-  const root = await tempRoot();
-  const home = join(root, "home");
-  mkdirSync(home, { recursive: true });
-  writeFileSync(
-    join(home, "config.json"),
-    JSON.stringify({
-      plugins: {
-        chat: { module: "@operad-io/chat", enabled: true },
-        bot: { module: "@operad-io/bot", enabled: true },
-      },
-      store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
-      http: { enabled: false },
-    }),
-  );
-  return { root, home };
-}
-
-async function operad(home: string, args: readonly string[]) {
-  const child = Bun.spawn({
-    cmd: [process.execPath, CLI_ENTRY, ...args],
-    cwd: home,
-    env: { ...testEnv(), OPERAD_HOME: home },
-    stdin: "ignore",
-    stdout: "pipe",
-    stderr: "pipe",
+function makeBotHome() {
+  return makeTestHome({
+    plugins: {
+      chat: { module: "@operad-io/chat", enabled: true },
+      bot: { module: "@operad-io/bot", enabled: true },
+    },
+    extra: { http: { enabled: false } },
   });
-  const [code, out, err] = await Promise.all([
-    child.exited,
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-  ]);
-  return { code, out, err };
 }
 
 describe("a home with the bot plugin", () => {
   test("the bot's mcp command runs as `operad bot mcp`, and a kernel command still runs", async () => {
-    const { root, home } = await makeHome();
+    const { root, home } = await makeBotHome();
     const tools = join(root, "tools.json");
     writeFileSync(tools, JSON.stringify([{ name: "echo", description: "Say hello back." }]));
 
