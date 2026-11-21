@@ -80,29 +80,84 @@ const SPECIFIER = /(?:\bfrom|\bimport\s*\(|\bimport\.meta\.resolve\s*\(|\bimport
 /** A quoted `@operad-io/<name>` anywhere outside a comment: plugin modules may be named in a test's data. */
 const QUOTED_OPERAD = /["'](@operad-io\/[^"'\s]+)["']/g;
 
+/** Keywords after which a `/` starts a regex literal, not a division. */
+const REGEX_KEYWORDS = new Set([
+  "await",
+  "case",
+  "delete",
+  "do",
+  "else",
+  "in",
+  "instanceof",
+  "new",
+  "of",
+  "return",
+  "throw",
+  "typeof",
+  "void",
+  "yield",
+]);
+
+/** Whether a `/` after `last` starts a regex literal: it follows an operator or keyword, not a value. */
+function startsRegex(last: string): boolean {
+  if (last === "" || REGEX_KEYWORDS.has(last)) return true;
+  return last !== "value" && last !== ")" && last !== "]" && last !== "}";
+}
+
 /**
  * `text` with its comments removed, so a quoted package name in a comment is
- * not taken for a dependency. Strings are kept, escapes included.
+ * not taken for a dependency. Strings and regex literals are kept, escapes
+ * included, so a quote inside a regex does not open a string.
  */
 function withoutComments(text: string): string {
   let out = "";
   let i = 0;
+  // The last token seen: "value" for an identifier, number, string or regex, else the punctuation or keyword itself.
+  let last = "";
   while (i < text.length) {
-    if (text.startsWith("//", i)) {
-      const end = text.indexOf("\n", i + 2);
-      if (end === -1) break;
-      out += "\n";
-      i = end + 1;
-      continue;
-    }
-    if (text.startsWith("/*", i)) {
-      const end = text.indexOf("*/", i + 2);
-      if (end === -1) break;
-      out += "\n";
-      i = end + 2;
-      continue;
-    }
     const char = text[i] ?? "";
+    if (char === "/") {
+      const next = text[i + 1] ?? "";
+      if (next === "/") {
+        const end = text.indexOf("\n", i + 2);
+        if (end === -1) break;
+        out += "\n";
+        i = end + 1;
+        continue;
+      }
+      if (next === "*") {
+        const end = text.indexOf("*/", i + 2);
+        if (end === -1) break;
+        out += "\n";
+        i = end + 2;
+        continue;
+      }
+      if (startsRegex(last)) {
+        out += char;
+        i += 1;
+        let inClass = false;
+        while (i < text.length) {
+          const current = text[i] ?? "";
+          out += current;
+          i += 1;
+          if (current === "\\" && i < text.length) {
+            out += text[i] ?? "";
+            i += 1;
+            continue;
+          }
+          if (current === "\n") break;
+          if (current === "[") inClass = true;
+          else if (current === "]") inClass = false;
+          else if (current === "/" && !inClass) break;
+        }
+        last = "value";
+        continue;
+      }
+      out += char;
+      i += 1;
+      last = "/";
+      continue;
+    }
     if (char === '"' || char === "'" || char === "`") {
       out += char;
       i += 1;
@@ -117,10 +172,32 @@ function withoutComments(text: string): string {
         }
         if (current === char) break;
       }
+      last = "value";
+      continue;
+    }
+    if (char === " " || char === "\t" || char === "\n" || char === "\r") {
+      out += char;
+      i += 1;
+      continue;
+    }
+    if (/[A-Za-z_$]/.test(char)) {
+      const start = i;
+      while (i < text.length && /[\w$]/.test(text[i] ?? "")) i += 1;
+      const word = text.slice(start, i);
+      out += word;
+      last = REGEX_KEYWORDS.has(word) ? word : "value";
+      continue;
+    }
+    if (/[0-9]/.test(char)) {
+      const start = i;
+      while (i < text.length && /[\w.]/.test(text[i] ?? "")) i += 1;
+      out += text.slice(start, i);
+      last = "value";
       continue;
     }
     out += char;
     i += 1;
+    last = char;
   }
   return out;
 }

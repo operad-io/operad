@@ -90,6 +90,29 @@ describe("selectPackages", () => {
     expect(packages(root, ["packages/core/src/index.ts"])).toEqual(["app", "core", "leaf", "lib", "probe"]);
   });
 
+  test("a regex literal holding a quote does not hide the imports after it", () => {
+    const root = workspace();
+    write(
+      root,
+      "packages/leaf/src/index.ts",
+      `const quote = /[//"]/; import { core } from "@operad-io/core";\nexport const leaf = core;\n`,
+    );
+    expect(packages(root, ["packages/core/src/index.ts"])).toEqual(["app", "core", "leaf", "lib", "probe"]);
+  });
+
+  test("a dynamic import through a quoted @operad-io/tui/app is a load", () => {
+    const root = workspace();
+    write(root, "packages/tui/package.json", JSON.stringify({ name: "@operad-io/tui" }));
+    write(root, "packages/tui/src/index.ts", "export const tui = 1;\n");
+    write(root, "packages/client/package.json", JSON.stringify({ name: "@operad-io/client" }));
+    write(
+      root,
+      "packages/client/src/main.ts",
+      'const entry: string = "@operad-io/tui/app";\nconst loaded = await import(entry);\nexport { loaded };\n',
+    );
+    expect(packages(root, ["packages/tui/src/index.ts"])).toEqual(["client", "tui"]);
+  });
+
   test("no change picks nothing", () => {
     expect(packages(workspace(), [])).toEqual([]);
   });

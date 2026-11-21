@@ -175,3 +175,9 @@ Each package keeps its mutation checks in `MUTATIONS.md`; a row names the broken
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0644-M1 | scripts/test/adr-references.test.ts | dropped the leading `./` and `../` path prefix from the citation pattern | `a backlog decision is cited by its ADR > a citation is reported with the file and the line` (the dot-led citations were not reported) |
+## T-0643 — follow-ups to the check coverage
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0643-M1 | scripts/changed-packages.ts | treated every `/` as a division or a comment start, so a `//` inside a regex literal removed the rest of its line, the import included | `selectPackages > a regex literal holding a quote does not hide the imports after it` |
+| T-0643-M2 | scripts/changed-packages.ts | dropped the quoted `@operad-io/<name>` fallback, so the dynamic import of `@operad-io/tui/app` was no longer a load | `selectPackages > a dynamic import through a quoted @operad-io/tui/app is a load` |
