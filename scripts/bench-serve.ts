@@ -245,7 +245,7 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolveSleep) => setTimeout(resolveSleep, ms));
 }
 
-async function freePort(): Promise<number> {
+async function choosePort(): Promise<number> {
   return await new Promise<number>((resolvePort, reject) => {
     const server = createServer();
     server.once("error", reject);
@@ -853,7 +853,7 @@ async function releaseRuns(client: Api, home: string): Promise<void> {
   }
 }
 
-async function waitForFile(path: string, timeoutMs: number): Promise<string | undefined> {
+async function readWhenPresent(path: string, timeoutMs: number): Promise<string | undefined> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
@@ -948,7 +948,7 @@ async function readProfile(
     if (files.length === 0) return [];
     const newest = files.map((name) => join(dir, name)).sort().at(-1);
     if (newest === undefined) return [];
-    const text = await waitForFile(newest, 5_000);
+    const text = await readWhenPresent(newest, 5_000);
     return text === undefined ? [] : parseCpuProfile(text, repo, startMicros, endMicros);
   } catch {
     return [];
@@ -969,7 +969,7 @@ async function stopServe(child: Bun.Subprocess<"ignore", "pipe", "pipe">): Promi
 }
 
 async function runOnce(options: Options, index: number): Promise<RunMetrics> {
-  const port = await freePort();
+  const port = await choosePort();
   const root = await mkdtemp(join(tmpdir(), "operad-serve-bench-"));
   const { home } = await makeSyntheticHome(options, root, port);
   const profileDir = options.profileDir === undefined ? undefined : join(options.profileDir, `run-${index + 1}`);
@@ -1008,7 +1008,7 @@ async function runOnce(options: Options, index: number): Promise<RunMetrics> {
     const match = /http (http:\/\/\S+)/.exec(output.text);
     const base = match?.[1];
     if (base === undefined) throw new Error("serve printed no http URL");
-    const tokenText = await waitForFile(join(home, "secrets/http.json"), 5_000);
+    const tokenText = await readWhenPresent(join(home, "secrets/http.json"), 5_000);
     if (tokenText === undefined) throw new Error("serve wrote no http token");
     const tokenValue: unknown = JSON.parse(tokenText);
     const token = isRecord(tokenValue) && typeof tokenValue.token === "string" ? tokenValue.token : undefined;
