@@ -222,8 +222,8 @@ and the row fields.
 
 | id | file | mutation | failing test |
 |---|---|---|---|
-| T-0632-M1 | packages/harness/process/src/lines.ts | `splitSecretPrefix` checked only the raw secret value, not its JSON-escaped spelling | `a JSON-escaped secret split across grouped increments is not exposed by joining the deltas` |
-| T-0632-M3 | packages/harness/process/src/lines.ts | `Increments` ignored `firstImmediately`, so claude wrote its first increment at once instead of grouping it | `increments are grouped to one line per 100 ms for text and for thinking` |
+| T-0632-M1 | packages/harness/process/src/lines.ts | `splitSecretPrefix` checked only the raw secret value, not its JSON-escaped spelling | `lines > splitSecretPrefix holds back an escaped secret split across grouped increments` (in `packages/harness/process/test/lines.test.ts`) |
+| T-0632-M3 | packages/harness/process/src/lines.ts | `Increments` ignored `firstImmediately`, so claude wrote its first increment at once instead of grouping it | `lines > Increments groups its first text and thinking when firstImmediately is false` (in `packages/harness/process/test/lines.test.ts`) |
 ## T-0620 — a cached, shared probe
 
 | id | file | mutation | failing test |
