@@ -319,13 +319,17 @@ review step then fails rather than guessing a grading.
 
 When the worker adds no commit, the task waits with `work did nothing` if the branch has nothing beyond main or its latest commit already passed verify. If the branch already holds commits not on main and its latest commit has not passed verify (an earlier run stopped before verify ended), the task does not wait: history says `the branch already has unchecked work; checking it` and the task goes on to verify.
 
-Before a worker starts, the work step records the main checkout's `git status`.
-When the step ends, a change there that the worktree does not explain is named
-in the task's Changes, the step's history and the worker's answer as
-`changed the main checkout: <files>`. `dev` does not undo it. A review of that
-attempt gets a major finding from `dev` itself, on each named file, in its
-report and in the review prompt; the task goes to rework, where the worker
-makes those changes in its own worktree instead.
+Before a worker starts, the work step records the main checkout's `git status`
+and the content of the files it already calls changed. When the step ends, a
+change there that the worktree does not explain is named in the task's Changes,
+the step's history and the worker's answer as
+`changed the main checkout: <files>`: a new status entry, or a further edit to a
+file that was already changed there. `dev` does not undo it. The comparison is
+the step's own window, and `dev` cannot tell which process wrote a file, so a
+change another session makes in the main checkout while the worker runs is named
+too. A review of that attempt gets a major finding from `dev` itself, on each
+named file, in its report and in the review prompt; the task goes to rework,
+where the worker makes those changes in its own worktree instead.
 
 ## Moving a repository's folder
 

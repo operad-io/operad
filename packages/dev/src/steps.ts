@@ -11,6 +11,7 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
@@ -280,6 +281,8 @@ export function conflictedFiles(worktree: string): readonly string[] {
 interface CheckoutEntry {
   readonly code: string;
   readonly path: string;
+  /** What the path held when it was read, when it is a readable file. */
+  readonly content?: string | undefined;
 }
 
 // The status entries of a checkout, read from `--porcelain -z`: names are not
@@ -305,6 +308,32 @@ function checkoutEntryKey(entry: CheckoutEntry): string {
   return `${entry.code}\0${entry.path}`;
 }
 
+/**
+ * What a status path holds, so a further edit to a file that was already
+ * changed before the step is a change too: its status letters and path stay the
+ * same when it is edited again. A deleted file, a collapsed untracked directory
+ * and any other unreadable path have none, and their status letters are all
+ * they compare by. Only a checkout that is already dirty is read, so a clean
+ * main checkout costs nothing.
+ */
+function checkoutContent(checkout: string, path: string): string | undefined {
+  const file = join(checkout, path);
+  try {
+    if (!statSync(file).isFile()) return undefined;
+    return Bun.hash(readFileSync(file)).toString(16);
+  } catch {
+    return undefined;
+  }
+}
+
+/** The status entries of a checkout, with what each readable file holds. */
+function checkoutSnapshot(checkout: string): readonly CheckoutEntry[] {
+  return checkoutEntries(checkout).map((entry) => {
+    const content = checkoutContent(checkout, entry.path);
+    return content === undefined ? entry : { ...entry, content };
+  });
+}
+
 // True when a status path is the task's worktree or lies inside it.
 function insideWorktree(checkout: string, worktree: string, path: string): boolean {
   const root = relative(checkout, worktree).replace(/\\/g, "/");
@@ -314,22 +343,27 @@ function insideWorktree(checkout: string, worktree: string, path: string): boole
   return candidate === root || candidate.startsWith(`${root}/`);
 }
 
-// The paths whose status in the main checkout is new since `before`, leaving
-// out the task's own worktree, whose presence there the worktree explains.
+// The paths whose status in the main checkout is new since `before`, or whose
+// file was edited again since then, leaving out the task's own worktree, whose
+// presence there the worktree explains.
 function newCheckoutChanges(
   checkout: string,
   worktree: string,
   before: readonly CheckoutEntry[],
 ): readonly string[] {
-  const seen = new Set(before.map(checkoutEntryKey));
-  return [
-    ...new Set(
-      checkoutEntries(checkout)
-        .filter((entry) => !seen.has(checkoutEntryKey(entry)))
-        .map((entry) => entry.path)
-        .filter((path) => !insideWorktree(checkout, worktree, path)),
-    ),
-  ].sort();
+  const seen = new Map(before.map((entry) => [checkoutEntryKey(entry), entry]));
+  const changed: string[] = [];
+  for (const entry of checkoutEntries(checkout)) {
+    const was = seen.get(checkoutEntryKey(entry));
+    // The same status letters and path: only a further edit to the file itself
+    // is a change. A path that was unreadable then has no content to compare.
+    if (was !== undefined) {
+      if (was.content === undefined) continue;
+      if (checkoutContent(checkout, entry.path) === was.content) continue;
+    }
+    if (!insideWorktree(checkout, worktree, entry.path)) changed.push(entry.path);
+  }
+  return [...new Set(changed)].sort();
 }
 
 // The files `git status` calls changed, untracked included. Read from
@@ -1703,7 +1737,8 @@ export async function runWork(ctx: StepContext, stepParams?: unknown): Promise<P
     stageParamsOf(stage),
   );
   if (askAnswer !== undefined) poolCall.askAnswer = askAnswer;
-  const mainCheckoutBefore = checkoutEntries(context.repository.path);
+  const mainCheckoutBefore = checkoutSnapshot(context.repository.path);
+  let mainChanges: readonly string[] = [];
   try {
     outcome = await withWorkerReports(
       { placed: workerPlaced, started: workerStarted },
@@ -1718,6 +1753,13 @@ export async function runWork(ctx: StepContext, stepParams?: unknown): Promise<P
     hostError = messageOf(error);
     notLoaded = notLoadedStep(error);
   } finally {
+    // Reading the main checkout is part of ending the step, so a worker call
+    // that throws still reports what the step left there.
+    mainChanges = newCheckoutChanges(
+      context.repository.path,
+      path,
+      mainCheckoutBefore,
+    );
     if (startTimer !== undefined) startClock.clearTimeout(startTimer);
     sayClosed = true;
     await sayChain;
@@ -1728,11 +1770,6 @@ export async function runWork(ctx: StepContext, stepParams?: unknown): Promise<P
     for (const timer of [...timers, ...runTimers]) clock.clearTimeout(timer);
     ctx.signal.removeEventListener("abort", forwardAbort);
   }
-  const mainChanges = newCheckoutChanges(
-    context.repository.path,
-    path,
-    mainCheckoutBefore,
-  );
   const outcomeData =
     outcome !== undefined && isRecord(outcome.data) ? outcome.data : {};
   const reading = harnessReading(outcomeData, (problem) => {

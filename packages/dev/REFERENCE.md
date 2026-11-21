@@ -280,14 +280,18 @@ asking the worker to resolve it. A failed attempt names the uncommitted files.
 The task records its attempt count, phase, session id and cost while these steps
 run.
 
-Before the worker starts, `dev/work` records the main checkout's `git status`.
-When the step ends, a change there that the worktree does not explain is named
-in the task's Changes, in the step's history and in the worker's answer as
-`changed the main checkout: <files>`. `dev` does not undo it. A review of that
-attempt gets, whatever the reviewer reported, a major finding per named file
-and a `## The main checkout` section that tells the reviewer to report it; the
-task goes to rework, where the work makes those changes in its own worktree
-instead.
+Before the worker starts, `dev/work` records the main checkout's `git status`
+and the content of the files it already calls changed. When the step ends, a
+change there that the worktree does not explain is named in the task's Changes,
+in the step's history and in the worker's answer as
+`changed the main checkout: <files>`: a new status entry, or a further edit to a
+file that was already changed there. The comparison is the step's own window,
+so a change another session makes in the main checkout while the worker runs is
+named too: `dev` cannot tell which process wrote a file. `dev` does not undo it.
+A review of that attempt gets, whatever the reviewer reported, a major finding
+per named file and a `## The main checkout` section that tells the reviewer to
+report it; the task goes to rework, where the work makes those changes in its
+own worktree instead.
 
 ### What a step cleans up
 
