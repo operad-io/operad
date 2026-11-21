@@ -7,6 +7,9 @@
 
 import { realpathSync } from "node:fs";
 import { realpath } from "node:fs/promises";
+import { compareVersions } from "@operad-io/harness-process";
+
+export { compareVersions };
 
 /** The oldest Claude Code the worker is written for. */
 export const CLAUDE_FLOOR = "2.1.319";
@@ -67,18 +70,6 @@ export async function findClaudeAsync(
   path: string | undefined = process.env.PATH,
 ): Promise<string> {
   return await realpath(whichClaude(command, path));
-}
-
-/** Negative, zero or positive as version `a` is below, equal to or above `b`. */
-export function compareVersions(a: string, b: string): number {
-  const parts = (version: string): number[] => version.split(".").map((part) => Number(part));
-  const left = parts(a);
-  const right = parts(b);
-  for (let at = 0; at < 3; at += 1) {
-    const diff = (left[at] ?? 0) - (right[at] ?? 0);
-    if (diff !== 0) return diff;
-  }
-  return 0;
 }
 
 /** What `operad plugin check` learns about the install. */

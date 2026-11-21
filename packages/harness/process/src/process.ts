@@ -202,6 +202,158 @@ export interface AgentRunOutcome {
   readonly stderrTail: readonly string[];
 }
 
+/** An outcome with nothing wrong, plus what the caller knows. */
+function emptyOutcome(overrides: Partial<AgentRunOutcome>): AgentRunOutcome {
+  return {
+    exitCode: null,
+    signal: null,
+    cancelled: false,
+    wall: false,
+    stall: false,
+    lineTooLong: false,
+    missing: false,
+    spawnError: undefined,
+    stderrTail: [],
+    ...overrides,
+  };
+}
+
+/** Why one run is being stopped; `cancel` is the host's signal. */
+export type StopKind = "cancel" | "wall" | "stall" | "line";
+
+/** What one run watches: the wall time, a stalled stream, the host's signal and mid-run messages. */
+export interface WatchedRun {
+  /** Counts a tool call in a line and restarts the stall timer; call for every line. */
+  line(line: string): void;
+  /** Starts the wall and stall timers; before the run's program is spoken to. */
+  start(): void;
+  /** Takes the host's mid-run messages and tells it the run has begun. */
+  listenInbox(): void;
+  /** Stops the run for this reason, once. */
+  interrupt(kind: StopKind): void;
+  /** Clears the timers, the inbox listener and the abort listener. */
+  end(): void;
+  /** The reason the run is being stopped, while it is. */
+  readonly stoppingFor: StopKind | undefined;
+}
+
+export interface WatchOptions {
+  readonly clock: Clock;
+  readonly wallMs: number;
+  readonly stallMs: number;
+  readonly signal: AbortSignal;
+  readonly toolEvent?: ((line: string) => ToolEvent | undefined) | undefined;
+  readonly finished: () => boolean;
+  /** Begins stopping the program; the watcher has already recorded the reason. */
+  readonly beginStop: (kind: StopKind) => void;
+  readonly inbox?: MessageInbox | undefined;
+  readonly reply: (text: string) => boolean | void;
+}
+
+/**
+ * One run's wall timer, stall timer, abort listener and inbox listener. A line
+ * restarts the stall only while no tool call is open: a tool may run as long as
+ * it needs, and only the wall limit watches it.
+ */
+export function watchRun(options: WatchOptions): WatchedRun {
+  const { clock } = options;
+  let finished = false;
+  let stoppingFor: StopKind | undefined;
+  let toolCalls = 0;
+  let wallTimer: unknown;
+  let stallTimer: unknown;
+  let stopListening: (() => void) | undefined;
+
+  const interrupt = (kind: StopKind): void => {
+    if (finished || stoppingFor !== undefined) return;
+    stoppingFor = kind;
+    options.beginStop(kind);
+  };
+  const resetStall = (): void => {
+    if (options.stallMs <= 0) return;
+    if (stallTimer !== undefined) {
+      clock.clearTimeout(stallTimer);
+      stallTimer = undefined;
+    }
+    if (toolCalls > 0) return;
+    stallTimer = clock.setTimeout(() => {
+      if (!finished) interrupt("stall");
+    }, options.stallMs);
+  };
+  const onAbort = (): void => interrupt("cancel");
+  options.signal.addEventListener("abort", onAbort, { once: true });
+
+  return {
+    get stoppingFor() {
+      return stoppingFor;
+    },
+    line(line: string): void {
+      const activity = options.toolEvent?.(line);
+      if (activity === "tool-start") toolCalls += 1;
+      else if (activity === "tool-end") toolCalls = Math.max(0, toolCalls - 1);
+      resetStall();
+    },
+    start(): void {
+      if (options.wallMs > 0) {
+        wallTimer = clock.setTimeout(() => {
+          if (!finished) interrupt("wall");
+        }, options.wallMs);
+      }
+      resetStall();
+    },
+    listenInbox(): void {
+      stopListening =
+        options.inbox === undefined
+          ? undefined
+          : options.inbox.listen((text) => {
+              if (finished) return false;
+              return options.reply(messageLine(text)) ?? true;
+            });
+      if (options.wallMs > 0) options.inbox?.begin?.(options.wallMs);
+    },
+    interrupt,
+    end(): void {
+      finished = true;
+      if (wallTimer !== undefined) clock.clearTimeout(wallTimer);
+      if (stallTimer !== undefined) clock.clearTimeout(stallTimer);
+      stopListening?.();
+      options.signal.removeEventListener("abort", onAbort);
+    },
+  };
+}
+
+/**
+ * Ends the workers this home keeps beyond the cap, the one idle longest first.
+ * `over` decides whether the count is too high: a reply that just finished
+ * trims above the cap, and a reply about to start a worker trims at it.
+ */
+export async function trimKept(
+  keep: KeptRunOptions,
+  clock: Clock,
+  over: (count: number, max: number) => boolean,
+): Promise<void> {
+  const max = keep.max ?? MAX_KEPT_WORKERS;
+  const kept = [...readKeptWorkersInHome(keep.home)].sort(
+    (left, right) => left.lastUsedAt - right.lastUsedAt,
+  );
+  while (over(kept.length, max) && kept.length > 0) {
+    const idle = kept.find((record) => record.busy !== true) ?? kept[0];
+    if (idle === undefined) break;
+    await stopKeptWorker(idle, { clock });
+    kept.splice(kept.indexOf(idle), 1);
+  }
+}
+
+/** The outcome fields a stop reason sets. */
+function stoppedOutcome(stoppingFor: StopKind | undefined): Partial<AgentRunOutcome> {
+  return {
+    ...(stoppingFor === "cancel" ? { cancelled: true } : {}),
+    ...(stoppingFor === "wall" ? { wall: true } : {}),
+    ...(stoppingFor === "stall" ? { stall: true } : {}),
+    ...(stoppingFor === "line" ? { lineTooLong: true } : {}),
+  };
+}
+
 /**
  * Splits a stream into complete lines, holding the unterminated tail up to
  * `MAX_LINE_CHARS`. Each line is handed over before the next is read: a busy
@@ -316,30 +468,17 @@ export async function runAgent(
   options: AgentRunOptions,
 ): Promise<AgentRunOutcome> {
   if (options.keep !== undefined) return runKeptAgent(options, options.keep);
-  const empty = (overrides: Partial<AgentRunOutcome>): AgentRunOutcome => ({
-    exitCode: null,
-    signal: null,
-    cancelled: false,
-    wall: false,
-    stall: false,
-    lineTooLong: false,
-    missing: false,
-    spawnError: undefined,
-    stderrTail: [],
-    ...overrides,
-  });
-
   if (options.signal.aborted) {
-    return empty({ cancelled: true });
+    return emptyOutcome({ cancelled: true });
   }
 
   const executablePath = await findCommand(options.command);
   if (executablePath === undefined) {
-    return empty({ missing: true });
+    return emptyOutcome({ missing: true });
   }
 
   const clock = options.clock ?? systemClock;
-  let resetStallForLine: () => void = () => {};
+  let watchedLine: (line: string) => void = () => {};
   let onLineOverflow: () => void = () => {};
   const reply = (text: string): boolean => {
     const pipe = child.stdin;
@@ -347,13 +486,9 @@ export async function runAgent(
     pipe.write(`${text}\n`);
     return true;
   };
-  let toolCalls = 0;
-  let onToolActivity: (activity: ToolEvent) => void = () => {};
   const stdoutLines = new Lines(
     (line) => {
-      const activity = options.toolEvent?.(line);
-      if (activity !== undefined) onToolActivity(activity);
-      resetStallForLine();
+      watchedLine(line);
       return options.onLine(line, reply);
     },
     () => onLineOverflow(),
@@ -364,7 +499,7 @@ export async function runAgent(
   try {
     errorDirectory = await mkdtemp(join(tmpdir(), "operad-harness-"));
   } catch (error) {
-    return empty({ spawnError: messageOf(error) });
+    return emptyOutcome({ spawnError: messageOf(error) });
   }
   const errorPath = join(errorDirectory, "stderr");
 
@@ -390,7 +525,7 @@ export async function runAgent(
     );
   } catch (error) {
     await rm(errorDirectory, { recursive: true, force: true });
-    return empty({ spawnError: messageOf(error) });
+    return emptyOutcome({ spawnError: messageOf(error) });
   }
 
   trackRoot(child.pid);
@@ -450,50 +585,23 @@ export async function runAgent(
     ready: readyGate,
   });
 
-  let finished = false;
-  let stoppingFor: "cancel" | "wall" | "stall" | "line" | undefined;
-  const beginStop = (kind: "cancel" | "wall" | "stall" | "line"): void => {
-    if (finished || stoppingFor !== undefined) return;
-    stoppingFor = kind;
-    void stop();
-  };
-  onLineOverflow = () => beginStop("line");
-
-  let wallTimer: unknown;
-  if (options.wallMs > 0) {
-    wallTimer = clock.setTimeout(() => {
-      if (!finished) beginStop("wall");
-    }, options.wallMs);
-  }
-
-  let stallTimer: unknown;
-  const resetStall = (): void => {
-    if (options.stallMs <= 0) return;
-    if (stallTimer !== undefined) {
-      clock.clearTimeout(stallTimer);
-      stallTimer = undefined;
-    }
-    // A tool call may run as long as it needs: only the wall limit watches it.
-    if (toolCalls > 0) return;
-    stallTimer = clock.setTimeout(() => {
-      if (!finished) beginStop("stall");
-    }, options.stallMs);
-  };
-  onToolActivity = (activity) => {
-    if (activity === "tool-start") toolCalls += 1;
-    else toolCalls = Math.max(0, toolCalls - 1);
-    resetStall();
-  };
-  resetStall();
-  resetStallForLine = resetStall;
-
-  const onAbort = (): void => beginStop("cancel");
-  options.signal.addEventListener("abort", onAbort, { once: true });
-
-  const clearTimers = (): void => {
-    if (wallTimer !== undefined) clock.clearTimeout(wallTimer);
-    if (stallTimer !== undefined) clock.clearTimeout(stallTimer);
-  };
+  let watchDone = false;
+  const watch = watchRun({
+    clock,
+    wallMs: options.wallMs,
+    stallMs: options.stallMs,
+    signal: options.signal,
+    toolEvent: options.toolEvent,
+    finished: () => watchDone,
+    beginStop: () => {
+      void stop();
+    },
+    inbox: options.inbox,
+    reply,
+  });
+  watchedLine = (line) => watch.line(line);
+  onLineOverflow = () => watch.interrupt("line");
+  watch.start();
 
   const startup = await Promise.race<Startup>([
     nextControl().then(
@@ -526,9 +634,9 @@ export async function runAgent(
   };
 
   if (startup.kind !== "ready") {
-    finished = true;
-    clearTimers();
-    options.signal.removeEventListener("abort", onAbort);
+    const stoppingFor = watch.stoppingFor;
+    watchDone = true;
+    watch.end();
     await stop();
     await Promise.race([exited, failed]);
     const { tail, exit } = await finish();
@@ -540,30 +648,22 @@ export async function runAgent(
           : startup.kind === "closed"
             ? "the harness shell stopped before the command started"
             : undefined;
-    return {
+    return emptyOutcome({
       exitCode: exit.code,
       signal: exit.signal,
       cancelled: stoppingFor === "cancel",
       wall: stoppingFor === "wall",
       stall: stoppingFor === "stall",
       lineTooLong: stoppingFor === "line",
-      missing: false,
       spawnError,
       stderrTail: tail,
-    };
+    });
   }
 
   readySeen = true;
   openGate();
   reportWorkerStarted();
-  const stopListening =
-    options.inbox === undefined
-      ? undefined
-      : options.inbox.listen((text) => {
-          if (finished) return false;
-          return reply(messageLine(text));
-        });
-  if (options.wallMs > 0) options.inbox?.begin?.(options.wallMs);
+  watch.listenInbox();
 
   const ended = await Promise.race<Ended>([
     nextControl().then((line): Ended => {
@@ -575,10 +675,9 @@ export async function runAgent(
     exited.then((exit): Ended => ({ kind: "exit", exit })),
   ]);
 
-  finished = true;
-  stopListening?.();
-  clearTimers();
-  options.signal.removeEventListener("abort", onAbort);
+  const stoppingFor = watch.stoppingFor;
+  watchDone = true;
+  watch.end();
 
   let exit: Exit;
   if (ended.kind === "closed") exit = await exited;
@@ -597,17 +696,15 @@ export async function runAgent(
   await Promise.race([exited, failed]);
   const { tail } = await finish();
 
-  return {
+  return emptyOutcome({
     exitCode: exit.code,
     signal: exit.signal,
     cancelled: stoppingFor === "cancel",
     wall: stoppingFor === "wall",
     stall: stoppingFor === "stall",
     lineTooLong: stoppingFor === "line",
-    missing: false,
-    spawnError: undefined,
     stderrTail: tail,
-  };
+  });
 }
 
 /** The result line of a worker as far as keeping cares: its name, or undefined. */
@@ -622,21 +719,6 @@ function keptResultName(line: string): "done" | "failed" | "cancelled" | undefin
   if (Reflect.get(value, "type") !== "result") return undefined;
   const name: unknown = Reflect.get(value, "result");
   return name === "done" || name === "failed" || name === "cancelled" ? name : undefined;
-}
-
-function emptyKeptOutcome(overrides: Partial<AgentRunOutcome>): AgentRunOutcome {
-  return {
-    exitCode: null,
-    signal: null,
-    cancelled: false,
-    wall: false,
-    stall: false,
-    lineTooLong: false,
-    missing: false,
-    spawnError: undefined,
-    stderrTail: [],
-    ...overrides,
-  };
 }
 
 /**
@@ -706,17 +788,6 @@ async function runKeptSocket(
   const closed = new Promise<void>((resolve) => {
     closedResolve = resolve;
   });
-  let finished = false;
-  let stoppingFor: "cancel" | "wall" | "stall" | "line" | undefined;
-  let toolCalls = 0;
-  let wallTimer: unknown;
-  let stallTimer: unknown;
-
-  const clearTimers = (): void => {
-    if (wallTimer !== undefined) clock.clearTimeout(wallTimer);
-    if (stallTimer !== undefined) clock.clearTimeout(stallTimer);
-    clock.clearTimeout(firstTimer);
-  };
   const stopWorker = async (): Promise<void> => {
     if (socket.destroyed) {
       await stopKeptWorker(record, { clock });
@@ -725,23 +796,23 @@ async function runKeptSocket(
     socket.destroy();
     await stopKeptWorker(record, { clock });
   };
-  const beginStop = (kind: "cancel" | "wall" | "stall" | "line"): void => {
-    if (finished || stoppingFor !== undefined) return;
-    stoppingFor = kind;
-    void stopWorker();
-  };
-  const resetStall = (): void => {
-    if (options.stallMs <= 0) return;
-    if (stallTimer !== undefined) clock.clearTimeout(stallTimer);
-    if (toolCalls > 0) return;
-    stallTimer = clock.setTimeout(() => beginStop("stall"), options.stallMs);
-  };
-  const onAbort = (): void => beginStop("cancel");
-  options.signal.addEventListener("abort", onAbort, { once: true });
-
   const reply = (text: string): void => {
     if (!socket.destroyed) socket.write(`${text}\n`);
   };
+  let watchDone = false;
+  const watch = watchRun({
+    clock,
+    wallMs: options.wallMs,
+    stallMs: options.stallMs,
+    signal: options.signal,
+    toolEvent: options.toolEvent,
+    finished: () => watchDone,
+    beginStop: () => {
+      void stopWorker();
+    },
+    inbox: options.inbox,
+    reply,
+  });
   const lines = new Lines(
     async (line) => {
       if (!firstSeen) {
@@ -749,10 +820,7 @@ async function runKeptSocket(
         clock.clearTimeout(firstTimer);
         firstResolve();
       }
-      const activity = options.toolEvent?.(line);
-      if (activity === "tool-start") toolCalls += 1;
-      else if (activity === "tool-end") toolCalls = Math.max(0, toolCalls - 1);
-      resetStall();
+      watch.line(line);
       await options.onLine(line, reply);
       const name = keptResultName(line);
       if (name !== undefined && resultName === undefined) {
@@ -760,7 +828,7 @@ async function runKeptSocket(
         resultResolve();
       }
     },
-    () => beginStop("line"),
+    () => watch.interrupt("line"),
   );
   socket.once("close", () => {
     closedResolve();
@@ -772,31 +840,19 @@ async function runKeptSocket(
   });
   const drained = consume(socket, lines);
 
-  const stopListening =
-    options.inbox === undefined
-      ? undefined
-      : options.inbox.listen((text) => {
-          if (finished) return false;
-          reply(messageLine(text));
-          return true;
-        });
-  if (options.wallMs > 0) options.inbox?.begin?.(options.wallMs);
+  watch.listenInbox();
   socket.write(`${options.stdin ?? ""}\n`);
   options.onStart?.();
-  if (options.wallMs > 0) {
-    wallTimer = clock.setTimeout(() => beginStop("wall"), options.wallMs);
-  }
-  resetStall();
+  watch.start();
 
   const started = await Promise.race<"line" | "closed">([
     first.then(() => (firstSeen ? "line" : "closed")),
     closed.then(() => "closed"),
   ]);
   if (started !== "line" || !firstSeen) {
-    finished = true;
-    clearTimers();
-    stopListening?.();
-    options.signal.removeEventListener("abort", onAbort);
+    watchDone = true;
+    watch.end();
+    clock.clearTimeout(firstTimer);
     await stopWorker();
     socket.destroy();
     await drained;
@@ -804,36 +860,25 @@ async function runKeptSocket(
   }
 
   await Promise.race([result, closed]);
-  if (resultName === undefined && stoppingFor === undefined) {
+  if (resultName === undefined && watch.stoppingFor === undefined) {
     // A close often arrives just before the last line has been handed over.
     await drained;
   }
-  finished = true;
-  stopListening?.();
-  clearTimers();
-  options.signal.removeEventListener("abort", onAbort);
+  const stoppingFor = watch.stoppingFor;
+  watchDone = true;
+  watch.end();
+  clock.clearTimeout(firstTimer);
   socket.destroy();
   await drained;
 
   if (resultName === "done") {
-    return emptyKeptOutcome({ exitCode: 0 });
+    return emptyOutcome({ exitCode: 0 });
   }
   await stopKeptWorker(record, { clock });
   if (resultName !== undefined) {
-    return emptyKeptOutcome({
-      exitCode: resultName === "failed" ? 1 : 143,
-      ...(stoppingFor === "cancel" ? { cancelled: true } : {}),
-      ...(stoppingFor === "wall" ? { wall: true } : {}),
-      ...(stoppingFor === "stall" ? { stall: true } : {}),
-      ...(stoppingFor === "line" ? { lineTooLong: true } : {}),
-    });
+    return emptyOutcome({ exitCode: resultName === "failed" ? 1 : 143, ...stoppedOutcome(stoppingFor) });
   }
-  return emptyKeptOutcome({
-    ...(stoppingFor === "cancel" ? { cancelled: true } : {}),
-    ...(stoppingFor === "wall" ? { wall: true } : {}),
-    ...(stoppingFor === "stall" ? { stall: true } : {}),
-    ...(stoppingFor === "line" ? { lineTooLong: true } : {}),
-  });
+  return emptyOutcome(stoppedOutcome(stoppingFor));
 }
 
 /** Starts a new worker that will stay after a done reply. */
@@ -843,7 +888,7 @@ async function runKeptFresh(
   clock: Clock,
 ): Promise<AgentRunOutcome> {
   const executablePath = await findCommand(options.command);
-  if (executablePath === undefined) return emptyKeptOutcome({ missing: true });
+  if (executablePath === undefined) return emptyOutcome({ missing: true });
   const slot = newKeptWorkerSlot(keep.home, keep.name);
   const env: NodeJS.ProcessEnv = { ...process.env };
   // A kept worker is not a left-over of the run that started it: no run marker.
@@ -859,7 +904,7 @@ async function runKeptFresh(
       stdio: ["pipe", "pipe", "pipe"],
     });
   } catch (error) {
-    return emptyKeptOutcome({ spawnError: messageOf(error) });
+    return emptyOutcome({ spawnError: messageOf(error) });
   }
   child.unref();
 
@@ -880,15 +925,6 @@ async function runKeptFresh(
     spawnResolve = resolve;
   });
 
-  let finished = false;
-  let stoppingFor: "cancel" | "wall" | "stall" | "line" | undefined;
-  let toolCalls = 0;
-  let wallTimer: unknown;
-  let stallTimer: unknown;
-  const clearTimers = (): void => {
-    if (wallTimer !== undefined) clock.clearTimeout(wallTimer);
-    if (stallTimer !== undefined) clock.clearTimeout(stallTimer);
-  };
   const stopWorker = async (): Promise<void> => {
     const pid = child.pid;
     if (pid === undefined) return;
@@ -910,31 +946,28 @@ async function runKeptFresh(
       { clock },
     );
   };
-  const beginStop = (kind: "cancel" | "wall" | "stall" | "line"): void => {
-    if (finished || stoppingFor !== undefined) return;
-    stoppingFor = kind;
-    void stopWorker();
-  };
-  const resetStall = (): void => {
-    if (options.stallMs <= 0) return;
-    if (stallTimer !== undefined) clock.clearTimeout(stallTimer);
-    if (toolCalls > 0) return;
-    stallTimer = clock.setTimeout(() => beginStop("stall"), options.stallMs);
-  };
-  const onAbort = (): void => beginStop("cancel");
-  options.signal.addEventListener("abort", onAbort, { once: true });
-
   const reply = (text: string): void => {
     if (child.stdin !== null && !child.stdin.destroyed) child.stdin.write(`${text}\n`);
   };
+  let watchDone = false;
+  const watch = watchRun({
+    clock,
+    wallMs: options.wallMs,
+    stallMs: options.stallMs,
+    signal: options.signal,
+    toolEvent: options.toolEvent,
+    finished: () => watchDone,
+    beginStop: () => {
+      void stopWorker();
+    },
+    inbox: options.inbox,
+    reply,
+  });
   let outputDrained: Promise<void> = Promise.resolve();
   if (stdout !== null) {
     const lines = new Lines(
       async (line) => {
-        const activity = options.toolEvent?.(line);
-        if (activity === "tool-start") toolCalls += 1;
-        else if (activity === "tool-end") toolCalls = Math.max(0, toolCalls - 1);
-        resetStall();
+        watch.line(line);
         await options.onLine(line, reply);
         const name = keptResultName(line);
         if (name !== undefined && resultName === undefined) {
@@ -942,7 +975,7 @@ async function runKeptFresh(
           resultResolve();
         }
       },
-      () => beginStop("line"),
+      () => watch.interrupt("line"),
     );
     outputDrained = consume(stdout, lines).then(() => lines.end());
   }
@@ -960,16 +993,8 @@ async function runKeptFresh(
 
   child.once("error", (error) => spawnResolve(messageOf(error)));
   child.once("exit", (code, signal) => exitedResolve({ code, signal }));
-  const stopListening =
-    options.inbox === undefined
-      ? undefined
-      : options.inbox.listen((text) => {
-          if (finished) return false;
-          reply(messageLine(text));
-          return true;
-        });
   if (child.stdin !== null) child.stdin.on("error", () => undefined);
-  if (options.wallMs > 0) options.inbox?.begin?.(options.wallMs);
+  watch.listenInbox();
   // The first input tells the worker where its socket and record are, so it can
   // stay after this reply. A reused worker ignores this field.
   let firstInput = options.stdin ?? "";
@@ -993,10 +1018,7 @@ async function runKeptFresh(
   }
   reply(firstInput);
   options.onStart?.();
-  if (options.wallMs > 0) {
-    wallTimer = clock.setTimeout(() => beginStop("wall"), options.wallMs);
-  }
-  resetStall();
+  watch.start();
 
   const settled = await Promise.race<"result" | "exit" | "error">([
     result.then(() => "result" as const),
@@ -1004,15 +1026,14 @@ async function runKeptFresh(
     spawnFailed.then(() => "error" as const),
   ]);
   if (settled === "exit" && resultName === undefined) await outputDrained;
-  finished = true;
-  stopListening?.();
-  clearTimers();
-  options.signal.removeEventListener("abort", onAbort);
+  const stoppingFor = watch.stoppingFor;
+  watchDone = true;
+  watch.end();
 
   if (settled === "error") {
     const spawnError = await spawnFailed;
     await stopWorker();
-    return emptyKeptOutcome({ spawnError });
+    return emptyOutcome({ spawnError });
   }
 
   if (settled === "result" && resultName === "done") {
@@ -1020,19 +1041,11 @@ async function runKeptFresh(
     await keptRecordAppears(slot.meta);
     // Two replies can finish at once in one home: the cap holds after the
     // record is there too, not only before a worker is started.
-    const max = keep.max ?? MAX_KEPT_WORKERS;
-    const kept = [...readKeptWorkersInHome(keep.home)]
-      .sort((left, right) => left.lastUsedAt - right.lastUsedAt);
-    while (kept.length > max && kept.length > 0) {
-      const idle = kept.find((record) => record.busy !== true) ?? kept[0];
-      if (idle === undefined) break;
-      await stopKeptWorker(idle, { clock });
-      kept.splice(kept.indexOf(idle), 1);
-    }
+    await trimKept(keep, clock, (count, max) => count > max);
     child.stdin?.destroy();
     child.stdout?.destroy();
     child.stderr?.destroy();
-    return emptyKeptOutcome({ exitCode: 0 });
+    return emptyOutcome({ exitCode: 0 });
   }
 
   const exit = settled === "exit" ? await exited : await Promise.race<Exit | undefined>([exited, Promise.resolve(undefined)]);
@@ -1041,30 +1054,24 @@ async function runKeptFresh(
     child.stdout?.destroy();
     child.stderr?.destroy();
     await stopWorker();
-    return emptyKeptOutcome({
+    return emptyOutcome({
       exitCode: resultName === "failed" ? 1 : 143,
-      ...(stoppingFor === "cancel" ? { cancelled: true } : {}),
-      ...(stoppingFor === "wall" ? { wall: true } : {}),
-      ...(stoppingFor === "stall" ? { stall: true } : {}),
-      ...(stoppingFor === "line" ? { lineTooLong: true } : {}),
+      ...stoppedOutcome(stoppingFor),
     });
   }
   await stopWorker();
   await drainStderr;
-  return emptyKeptOutcome({
+  return emptyOutcome({
     exitCode: exit?.code ?? null,
     signal: exit?.signal ?? null,
-    ...(stoppingFor === "cancel" ? { cancelled: true } : {}),
-    ...(stoppingFor === "wall" ? { wall: true } : {}),
-    ...(stoppingFor === "stall" ? { stall: true } : {}),
-    ...(stoppingFor === "line" ? { lineTooLong: true } : {}),
+    ...stoppedOutcome(stoppingFor),
     stderrTail: stderrTail.lines(20),
   });
 }
 
 /** Chooses, ends and starts kept workers for one reply. */
 async function runKeptAgent(options: AgentRunOptions, keep: KeptRunOptions): Promise<AgentRunOutcome> {
-  if (options.signal.aborted) return emptyKeptOutcome({ cancelled: true });
+  if (options.signal.aborted) return emptyOutcome({ cancelled: true });
   const clock = options.clock ?? systemClock;
   const records = readKeptWorkers(keep.home, keep.name);
   const sameScope = records.filter((record) => record.scope === keep.scope);
@@ -1082,14 +1089,6 @@ async function runKeptAgent(options: AgentRunOptions, keep: KeptRunOptions): Pro
   }
 
   // A new worker is the fourth only after the one idle longest has ended.
-  const max = keep.max ?? MAX_KEPT_WORKERS;
-  const remaining = [...readKeptWorkersInHome(keep.home)]
-    .sort((left, right) => left.lastUsedAt - right.lastUsedAt);
-  while (remaining.length >= max && remaining.length > 0) {
-    const idle = remaining.find((record) => record.busy !== true) ?? remaining[0];
-    if (idle === undefined) break;
-    await stopKeptWorker(idle, { clock });
-    remaining.splice(remaining.indexOf(idle), 1);
-  }
+  await trimKept(keep, clock, (count, max) => count >= max);
   return runKeptFresh(options, keep, clock);
 }

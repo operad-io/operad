@@ -1356,3 +1356,9 @@ resume window`. Rows are append-only, so the old lines stay as history.
 |---|---|---|---|
 | T-0625-M1 | packages/engine/src/config/config.ts | `setPluginEnabled` wrote config.json with a plain `writeFile` instead of the atomic write | `enabling a plugin writes config.json whole > a writer killed before the rename leaves the old config whole` |
 | T-0625-M2 | packages/engine/src/platform/atomic-write.ts | the temporary name dropped the pid and the random value, so two writers shared `${file}.tmp` | `enabling a plugin writes config.json whole > two writers at once both leave valid JSON` |
+
+## T-0627 — a version text for the shared comparison
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0627-M5 | packages/engine/src/plugin/semver.ts | `compareVersionText` stopped after the core and made every prerelease equal to its release | `compareVersionText > puts a prerelease below its release` |

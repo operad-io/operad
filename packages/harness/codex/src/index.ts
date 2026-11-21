@@ -9,21 +9,15 @@
 
 import { messageOf } from "@operad-io/engine";
 import pkg from "../package.json" with { type: "json" };
-import { liveAccess, readProfile, secretValuesOf, summarizeCall, withDefaultAccess, type AccessProfile } from "@operad-io/access-match";
+import { liveAccess, readProfile, summarizeCall, type AccessProfile } from "@operad-io/access-match";
 import {
   isRecord,
-  paramsObject,
-  defineFlow,
   definePlugin,
   type OutwardWrite,
   type PluginStepResult,
   type StepContext,
 } from "@operad-io/engine";
 import {
-  ALLOW_ALWAYS,
-  accessWithAlwaysAllow,
-  alwaysAllowFromGrant,
-  appendAlwaysAllow,
   answerFor,
   askNote,
   askQuestions,
@@ -32,38 +26,37 @@ import {
   createCallAsker,
   CONCURRENCY_SETTING,
   createCachedProbe,
+  DEFAULT_STALL_SECS,
+  DEFAULT_WALL_TIME_SECS,
   deliverLine,
-  directoryError,
   eventNote,
   flagValue,
   imageInputsOf,
   inboxOf,
   JsonlLog,
+  MAX_WALL_TIME_SECS,
   mountedServersOf,
   modelErrorOf,
   modelLimit,
   OPERAD_SERVER,
   operadToolsOf,
-  optionalText,
   parseStepFlags,
-  personStarted,
+  promptFlowOf,
   promptWithSkills,
-  readAlwaysAllow,
-  recordTargetGrantFromAnswer,
+  readAgentStep,
   resultFor,
   runAgent,
-  secs,
   serverCommand,
-  standardUsage,
-  StepTimings,
+  STALL_SETTING,
+  STEP_TIMEOUT_SECS,
   stringListParam,
   systemClock,
   text,
+  WALL_TIME_SETTING,
   withTimings,
   type AgentWorkerResult,
   type CallAnswer,
   type Clock,
-  type UsageSource,
 } from "@operad-io/harness-process";
 import { decideAccess, type JudgedCall } from "./access.ts";
 import {
@@ -76,21 +69,12 @@ import {
 import { CODEX_FLOOR, codexCommand, codexModels, codexSignedIn, commandOf, inspectCodex, refreshCodexModels } from "./install.ts";
 import { CodexLog, toolNameOf } from "./log.ts";
 
-/** How long an agent may run before the step stops it. */
-export const DEFAULT_WALL_TIME_SECS = 3600;
-
-/**
- * How long an agent may go without a new output line while no tool call is
- * open. An image generation is a tool call that may be silent for minutes; it
- * is not counted here, only against the wall time.
- */
-export const DEFAULT_STALL_SECS = 600;
-
-/** One run of the step may take this long; it is above every allowed wall time. */
-export const STEP_TIMEOUT_SECS = 8 * 3600;
-
-/** The longest wall time a run may ask for: the step timeout minus a margin. */
-export const MAX_WALL_TIME_SECS = STEP_TIMEOUT_SECS - 300;
+export {
+  DEFAULT_STALL_SECS,
+  DEFAULT_WALL_TIME_SECS,
+  MAX_WALL_TIME_SECS,
+  STEP_TIMEOUT_SECS,
+};
 
 /** How long the answer of `codex login status` is kept before it is asked again. */
 export const SIGNED_IN_CACHE_MS = 30_000;
@@ -151,21 +135,8 @@ export const PLUGIN_SETTINGS = {
       description:
         "The program and arguments that start codex app-server, such as [\"codex\", \"app-server\"]. Unset finds the codex of PATH and starts its app-server.",
     },
-    wallTimeSecs: {
-      type: "number" as const,
-      title: "Run time limit",
-      minimum: 1,
-      maximum: MAX_WALL_TIME_SECS,
-      default: DEFAULT_WALL_TIME_SECS,
-      description: "The longest one agent run may take.",
-    },
-    stallSecs: {
-      type: "number" as const,
-      title: "Stall limit",
-      minimum: 1,
-      default: DEFAULT_STALL_SECS,
-      description: "How long an agent may be silent while no tool call is open.",
-    },
+    wallTimeSecs: WALL_TIME_SETTING,
+    stallSecs: STALL_SETTING,
     concurrency: CONCURRENCY_SETTING,
   },
   additionalProperties: false as const,
@@ -295,40 +266,7 @@ export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
     });
   }
 
-  const promptFlow = defineFlow({
-    name: "codex:prompt",
-    entry: "agent",
-    steps: [
-      {
-        id: "agent",
-        kind: "plugin",
-        params: { use: "codex/agent", params: {} },
-        replay: "unsafe",
-        next: { done: "done", failed: "failed", interrupted: "cancelled", waiting: "person" },
-      },
-      {
-        // A question about a call ran out of grace. The answer sends the run
-        // back to the agent, which continues the session with it.
-        id: "person",
-        kind: "wait_person",
-        params: {
-          prompt: "The agent asked about a call.",
-          choices: ["allow_once", "reject_once"],
-          lateChoices: ["allow_always"],
-        },
-        replay: "safe",
-        next: {
-          allow_once: "agent",
-          allow_always: "agent",
-          reject_once: "agent",
-          interrupted: "cancelled",
-        },
-      },
-      { id: "done", kind: "end", params: { status: "done" }, replay: "safe" },
-      { id: "failed", kind: "end", params: { status: "failed" }, replay: "safe" },
-      { id: "cancelled", kind: "end", params: { status: "cancelled" }, replay: "safe" },
-    ],
-  });
+  const promptFlow = promptFlowOf("codex:prompt", "codex/agent");
 
   return definePlugin({
     name: HARNESS,
@@ -377,133 +315,69 @@ export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
         }),
         async run(ctx: StepContext, params: unknown): Promise<PluginStepResult> {
           const at = "codex/agent";
-          const timings = new StepTimings(now);
-          const input = paramsObject(params, at);
-          const flow = isRecord(ctx.params) ? ctx.params : {};
+          let promptText = "";
+          let skills: readonly string[] = [];
+          let command: readonly string[] = [];
+          let program = "";
+          let mcpServers: AppServerMcpServer[] = [];
+          let inputEntries: Record<string, unknown>[] = [];
 
-          const prompt = text(input.prompt ?? flow.prompt, `${at}: params.prompt`);
-          const skills = stringListParam(
-            input.skills === undefined ? flow.skills : input.skills,
-            `${at}: params.skills`,
-          );
-          const note = eventNote(ctx.trigger);
-          const rawAskAnswer = input.askAnswer ?? flow.askAnswer;
-          const promptText = [promptWithSkills(prompt, skills), note, askNote(rawAskAnswer)]
-            .filter((part): part is string => part !== undefined)
-            .join("\n\n");
-          const cwd = text(input.cwd ?? flow.cwd, `${at}: params.cwd`);
-          const rawArgs = input.args === undefined ? flow.args : input.args;
-          const flags = parseStepFlags(stringListParam(rawArgs, `${at}: params.args`), STEP_FLAGS);
-          const settingModel = typeof ctx.settings.model === "string" ? ctx.settings.model : undefined;
-          const knownModel =
-            typeof flags === "string" ? (flagValue(rawArgs, "--model") ?? settingModel) : (flags.model ?? settingModel);
-          // The cost of a subscription login is unknown, never 0.
-          const early: UsageSource = { harness: HARNESS, model: knownModel ?? null };
-          const refuse = async (reason: string, message: string): Promise<PluginStepResult> => {
-            const log = await ctx.logger.write(message);
-            const timing = timings.finish();
-            return withTimings({
-              result: "failed",
-              data: {
-                reason,
-                message,
-                exitCode: null,
-                signal: null,
-                sessionId: null,
-                finalMessage: null,
-                usage: standardUsage(early, undefined, null),
-                log,
-                durationMs: timing.totalMs,
-                stderr: [message],
-                imageGenCalls: 0,
-              },
-            }, timing);
-          };
-          if (typeof flags === "string") return refuse("invalid_args", `${at}: ${flags}`);
-
-          const resumeSession = optionalText(input.resumeSession ?? flow.resumeSession, `${at}: params.resumeSession`);
-          const wallTimeSecs = secs(
-            input.wallTimeSecs ?? ctx.settings.wallTimeSecs ?? DEFAULT_WALL_TIME_SECS,
-            `${at}: params.wallTimeSecs`,
-          );
-          if (wallTimeSecs > MAX_WALL_TIME_SECS) {
-            throw new Error(`${at}: params.wallTimeSecs: must be at most ${MAX_WALL_TIME_SECS}`);
-          }
-          const stallSecs = secs(
-            input.stallSecs ?? ctx.settings.stallSecs ?? DEFAULT_STALL_SECS,
-            `${at}: params.stallSecs`,
-          );
-          const model = flags.model ?? optionalText(ctx.settings.model, `${at}: settings.model`);
-          const effort = flags.level ?? optionalText(ctx.settings.effort, `${at}: settings.effort`);
-
-          const cwdProblem = await directoryError(cwd);
-          if (cwdProblem !== undefined) return refuse("cwd", cwdProblem);
-
-          let command: readonly string[];
-          try {
-            command = commandOf(ctx.settings.command);
-          } catch (error) {
-            return refuse("missing", messageOf(error));
-          }
-          const program = command[0] ?? "";
-
-          const operadTools = operadToolsOf(input.operadTools ?? flow.operadTools);
-          const mounted = mountedServersOf(input.mcpServers ?? flow.mcpServers);
-          const mcpServers: AppServerMcpServer[] = [];
-          if (operadTools !== undefined) {
-            const server = serverCommand(operadTools);
-            mcpServers.push({
-              name: OPERAD_SERVER,
-              command: server.command,
-              args: [...server.args],
-              env: { OPERAD_HOME: operadTools.home },
-            });
-          }
-          for (const [name, server] of Object.entries(mounted ?? {})) {
-            mcpServers.push({ name, command: server.command, args: [...server.args] });
-          }
-          const images = imageInputsOf(input.images ?? flow.images);
-          const inputEntries: Record<string, unknown>[] = [
-            { type: "text", text: promptText, text_elements: [] },
-          ];
-          for (const image of images) {
-            // Codex reads the file itself; the harness sends the path.
-            inputEntries.push({ type: "localImage", path: image.path });
-          }
-
-          // A generated step that names no profile still starts from the default.
-          const startAccess = withDefaultAccess(ctx.access as AccessProfile | undefined);
-          const storeSecrets = await secretValuesOf(ctx.secrets);
-          const allowAlways = personStarted(ctx.trigger);
-          // A run no person's message started asks about every outward write.
-          const access = allowAlways ? startAccess : { ...startAccess, background: true };
-          if (allowAlways && isRecord(rawAskAnswer) && rawAskAnswer["choice"] === ALLOW_ALWAYS) {
-            const entry = alwaysAllowFromGrant(access, cwd);
-            if (entry !== undefined) {
-              try {
-                await appendAlwaysAllow(ctx.home, entry);
-              } catch (error) {
-                await ctx.logger.write(
-                  `allow_always could not be written to the user access file: ${String(error)}; this call runs once`,
-                );
-              }
-            }
-          }
-          if (ctx.flow !== undefined) {
-            try {
-              await recordTargetGrantFromAnswer(ctx.home, ctx.flow, access, rawAskAnswer, now);
-            } catch (error) {
-              await ctx.logger.write(
-                `the target grant could not be written: ${String(error)}; this call runs once`,
+          const step = await readAgentStep(ctx, params, {
+            at,
+            harness: HARNESS,
+            flags: STEP_FLAGS,
+            defaultWallTimeSecs: DEFAULT_WALL_TIME_SECS,
+            defaultStallSecs: DEFAULT_STALL_SECS,
+            maxWallTimeSecs: MAX_WALL_TIME_SECS,
+            levelSetting: "effort",
+            now,
+            refusalExtra: { imageGenCalls: 0 },
+            early(input, flow) {
+              skills = stringListParam(
+                input.skills === undefined ? flow.skills : input.skills,
+                `${at}: params.skills`,
               );
-            }
-          }
-          let runAccess = accessWithAlwaysAllow(access, [], false);
-          if (allowAlways) {
-            const user = await readAlwaysAllow(ctx.home);
-            if (user.problem !== undefined) await ctx.logger.write(user.problem);
-            runAccess = accessWithAlwaysAllow(access, user.entries, true);
-          }
+            },
+            afterDirectory(read) {
+              promptText = [promptWithSkills(read.prompt, skills), read.note, read.answerNote]
+                .filter((part): part is string => part !== undefined)
+                .join("\n\n");
+
+              try {
+                command = commandOf(ctx.settings.command);
+              } catch (error) {
+                return read.refuse("missing", messageOf(error));
+              }
+              program = command[0] ?? "";
+
+              const operadTools = operadToolsOf(read.input.operadTools ?? read.flow.operadTools);
+              const mounted = mountedServersOf(read.input.mcpServers ?? read.flow.mcpServers);
+              mcpServers = [];
+              if (operadTools !== undefined) {
+                const server = serverCommand(operadTools);
+                mcpServers.push({
+                  name: OPERAD_SERVER,
+                  command: server.command,
+                  args: [...server.args],
+                  env: { OPERAD_HOME: operadTools.home },
+                });
+              }
+              for (const [name, server] of Object.entries(mounted ?? {})) {
+                mcpServers.push({ name, command: server.command, args: [...server.args] });
+              }
+              const images = imageInputsOf(read.input.images ?? read.flow.images);
+              inputEntries = [{ type: "text", text: promptText, text_elements: [] }];
+              for (const image of images) {
+                // Codex reads the file itself; the harness sends the path.
+                inputEntries.push({ type: "localImage", path: image.path });
+              }
+            },
+          });
+          if ("refused" in step) return step.refused;
+
+          const { values, access } = step;
+          const { timings, cwd, resumeSession, wallTimeSecs, stallSecs, model, level: effort } = values;
+          const { runAccess, allowAlways, secrets: storeSecrets } = access;
           const read = readProfile(runAccess ?? {});
           const startProfile: AccessProfile = read.ok ? read.profile : {};
 

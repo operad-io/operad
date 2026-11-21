@@ -3,9 +3,26 @@
  * `test/protocol.test.ts` checks the program against them.
  */
 
-import { readProfile } from "@operad-io/access-match";
-import { parseImageInputs, type ImageInput, type SharedLine, type WorkerKeep } from "@operad-io/harness-process";
+import {
+  readAccess,
+  readBoolean,
+  readImages,
+  readKeep,
+  readOperadTools,
+  readOptionalString,
+  readPositiveInteger,
+  readRequiredStrings,
+  readSecrets,
+  readStringList,
+  type ImageInput,
+  type SharedLine,
+  type WorkerKeep,
+  type WorkerResultName,
+  type WorkerUsage,
+} from "@operad-io/harness-process";
 import { isRecord } from "@operad-io/engine";
+
+export type { AskAck, GrantAck, WorkerResultName, WorkerUsage } from "@operad-io/harness-process";
 
 /** The longest one bash call may run when the settings do not say, in seconds. */
 export const DEFAULT_BASH_TIMEOUT_SECS = 1800;
@@ -47,15 +64,6 @@ export interface WorkerInput {
   readonly keep?: WorkerKeep | undefined;
 }
 
-export interface WorkerUsage {
-  input?: number;
-  output?: number;
-  cache_read?: number;
-  cache_write?: number;
-}
-
-export type WorkerResultName = "done" | "failed" | "cancelled";
-
 export type FailureReason = "invalid_input" | "session_missing" | "model_missing" | "model_error";
 
 /** The last line of stdout. */
@@ -87,25 +95,6 @@ export type WorkerLine =
   | { readonly type: "agent_settled"; readonly aborted: boolean }
   | WorkerResult;
 
-/**
- * A stdin line after the input: the host's answer to an `ask_call` line.
- * `allow` lets this one call run; `deny` refuses it; `stop` means the wait
- * ended and the program is about to be ended: it holds the call.
- */
-export interface AskAck {
-  readonly type: "ask_ack";
-  readonly id: number;
-  readonly decision: "allow" | "deny" | "stop";
-  readonly reason?: string;
-}
-
-/** A stdin line after the input: the host's answer to a `grant_use` line. */
-export interface GrantAck {
-  readonly type: "grant_ack";
-  readonly id: number;
-  readonly used: boolean;
-}
-
 export type ParsedInput =
   | { readonly ok: true; readonly input: WorkerInput }
   | { readonly ok: false; readonly message: string };
@@ -116,31 +105,16 @@ const REQUIRED_STRINGS = ["prompt", "cwd", "authPath", "modelsPath", "agentDir",
 export function parseInput(value: unknown): ParsedInput {
   if (!isRecord(value)) return { ok: false, message: "the input must be a JSON object" };
 
-  const strings: Record<string, string> = {};
-  for (const field of REQUIRED_STRINGS) {
-    const field_ = value[field];
-    if (field_ === undefined) return { ok: false, message: `${field} is required` };
-    if (typeof field_ !== "string" || field_.length === 0) {
-      return { ok: false, message: `${field} must be a non-empty string` };
-    }
-    strings[field] = field_;
-  }
+  const required = readRequiredStrings(value, REQUIRED_STRINGS);
+  if (!required.ok) return required;
 
-  const optional = (field: "resumeSession" | "model" | "piCommand"): string | undefined | Error => {
-    const field_ = value[field];
-    if (field_ === undefined) return undefined;
-    if (typeof field_ !== "string" || field_.length === 0) {
-      return new Error(`${field} must be a non-empty string`);
-    }
-    return field_;
-  };
-  const resumeSession = optional("resumeSession");
-  if (resumeSession instanceof Error) return { ok: false, message: resumeSession.message };
-  const piCommand = optional("piCommand");
-  if (piCommand instanceof Error) return { ok: false, message: piCommand.message };
-  const model = optional("model");
-  if (model instanceof Error) return { ok: false, message: model.message };
-  if (model !== undefined && !/^[^/]+\/.+$/.test(model)) {
+  const resumeSession = readOptionalString(value, "resumeSession");
+  if (!resumeSession.ok) return resumeSession;
+  const piCommand = readOptionalString(value, "piCommand");
+  if (!piCommand.ok) return piCommand;
+  const model = readOptionalString(value, "model");
+  if (!model.ok) return model;
+  if (model.value !== undefined && !/^[^/]+\/.+$/.test(model.value)) {
     return { ok: false, message: "model must look like provider/id" };
   }
 
@@ -154,98 +128,55 @@ export function parseInput(value: unknown): ParsedInput {
     thinkingLevel = known;
   }
 
-  const bashTimeoutSecs = value["bashTimeoutSecs"];
-  if (
-    bashTimeoutSecs !== undefined &&
-    (typeof bashTimeoutSecs !== "number" || !Number.isInteger(bashTimeoutSecs) || bashTimeoutSecs < 1)
-  ) {
-    return { ok: false, message: "bashTimeoutSecs must be a positive integer" };
-  }
+  const bashTimeoutSecs = readPositiveInteger(value, "bashTimeoutSecs");
+  if (!bashTimeoutSecs.ok) return bashTimeoutSecs;
 
-  const operadTools = value["operadTools"];
-  if (operadTools !== undefined && (!isRecord(operadTools) || typeof operadTools["home"] !== "string" || operadTools["home"].length === 0)) {
-    return { ok: false, message: "operadTools must be an object with a home" };
-  }
+  const operadTools = readOperadTools(value);
+  if (!operadTools.ok) return operadTools;
 
-  const secretValues = value["secretValues"];
-  if (secretValues !== undefined && (!Array.isArray(secretValues) || !secretValues.every((v): v is string => typeof v === "string"))) {
-    return { ok: false, message: "secretValues must be an array of strings" };
-  }
+  const secretValues = readSecrets(value);
+  if (!secretValues.ok) return secretValues;
 
-  const images = parseImageInputs(value["images"]);
-  if (typeof images === "string") return { ok: false, message: images };
+  const images = readImages(value);
+  if (!images.ok) return images;
 
-  const skills = value["skills"];
-  if (skills !== undefined && (!Array.isArray(skills) || !skills.every((v): v is string => typeof v === "string"))) {
-    return { ok: false, message: "skills must be an array of strings" };
-  }
+  const skills = readStringList(value, "skills");
+  if (!skills.ok) return skills;
 
-  const useOwnSettings = value["useOwnSettings"];
-  if (useOwnSettings !== undefined && typeof useOwnSettings !== "boolean") {
-    return { ok: false, message: "useOwnSettings must be a boolean" };
-  }
+  const useOwnSettings = readBoolean(value, "useOwnSettings");
+  if (!useOwnSettings.ok) return useOwnSettings;
 
-  const retry = value["retry"];
-  if (retry !== undefined && typeof retry !== "boolean") {
-    return { ok: false, message: "retry must be a boolean" };
-  }
+  const retry = readBoolean(value, "retry");
+  if (!retry.ok) return retry;
 
-  const access = value["access"];
-  if (access !== undefined && !isRecord(access)) {
-    return { ok: false, message: "access must be an object" };
-  }
-  if (access !== undefined) {
-    const profile = readProfile(access);
-    if (!profile.ok) return { ok: false, message: `access.${profile.message}` };
-  }
+  const access = readAccess(value);
+  if (!access.ok) return access;
 
-  const keepValue = value["keep"];
-  let keep: WorkerKeep | undefined;
-  if (keepValue !== undefined) {
-    if (!isRecord(keepValue)) return { ok: false, message: "keep must be an object" };
-    // The keep fields are all required strings; the timeout is a positive number.
-    const fields: Record<string, string> = {};
-    for (const field of ["socket", "meta", "token", "scope", "key"] as const) {
-      const found = keepValue[field];
-      if (typeof found !== "string" || found.length === 0) return { ok: false, message: `keep.${field} must be a non-empty string` };
-      fields[field] = found;
-    }
-    const timeoutMs = keepValue["timeoutMs"];
-    if (typeof timeoutMs !== "number" || !Number.isFinite(timeoutMs) || timeoutMs <= 0) {
-      return { ok: false, message: "keep.timeoutMs must be a positive number" };
-    }
-    keep = {
-      socket: fields.socket ?? "",
-      meta: fields.meta ?? "",
-      token: fields.token ?? "",
-      scope: fields.scope ?? "",
-      key: fields.key ?? "",
-      timeoutMs,
-    };
-  }
+  const keep = readKeep(value);
+  if (!keep.ok) return keep;
 
   return {
     ok: true,
     input: {
-      prompt: strings["prompt"] ?? "",
-      cwd: strings["cwd"] ?? "",
-      authPath: strings["authPath"] ?? "",
-      modelsPath: strings["modelsPath"] ?? "",
-      agentDir: strings["agentDir"] ?? "",
-      sessionDir: strings["sessionDir"] ?? "",
-      resumeSession,
-      piCommand,
-      model,
+      prompt: required.value["prompt"] ?? "",
+      cwd: required.value["cwd"] ?? "",
+      authPath: required.value["authPath"] ?? "",
+      modelsPath: required.value["modelsPath"] ?? "",
+      agentDir: required.value["agentDir"] ?? "",
+      sessionDir: required.value["sessionDir"] ?? "",
+      resumeSession: resumeSession.value,
+      piCommand: piCommand.value,
+      model: model.value,
       thinkingLevel,
-      access,
-      bashTimeoutSecs,
-      operadTools: operadTools === undefined ? undefined : { home: String(operadTools["home"]) },
-      secretValues,
-      images: images.length === 0 ? undefined : images,
-      skills: skills === undefined || skills.length === 0 ? undefined : skills,
-      useOwnSettings,
-      retry,
-      keep,
+      access: access.value,
+      bashTimeoutSecs: bashTimeoutSecs.value,
+      operadTools: operadTools.value,
+      secretValues: secretValues.value,
+      images: images.value.length === 0 ? undefined : images.value,
+      skills: skills.value === undefined || skills.value.length === 0 ? undefined : skills.value,
+      useOwnSettings: useOwnSettings.value,
+      retry: retry.value,
+      keep: keep.value,
     },
   };
 }

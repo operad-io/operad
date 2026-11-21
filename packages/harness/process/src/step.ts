@@ -57,6 +57,15 @@ export function secs(value: unknown, at: string): number {
   return value;
 }
 
+/** A positive number in a setting, or undefined when it is unset; names the field when it is not. */
+export function optionalPositive(value: unknown, at: string, integer: boolean): number | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0 || (integer && !Number.isInteger(value))) {
+    throw new Error(`${at}: must be a positive ${integer ? "integer" : "number"}`);
+  }
+  return value;
+}
+
 export function stringListParam(value: unknown, at: string): readonly string[] {
   if (value === undefined) return [];
   if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) {

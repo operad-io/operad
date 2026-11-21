@@ -8,16 +8,13 @@
  */
 
 import pkg from "../package.json" with { type: "json" };
-import { hasLiveAccess, secretValuesOf, withDefaultAccess, type AccessProfile } from "@operad-io/access-match";
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   isRecord,
-  paramsObject,
-  defineFlow,
   definePlugin,
   type HarnessEfforts,
   type HarnessModelContext,
@@ -26,47 +23,32 @@ import {
   type StepContext,
 } from "@operad-io/engine";
 import {
-  ALLOW_ALWAYS,
-  accessWithAlwaysAllow,
-  alwaysAllowFromGrant,
-  appendAlwaysAllow,
-  answerGrant,
-  askToolEvent,
-  canAsk,
-  createCallAsker,
+  assertWorkerAvailable,
   CONCURRENCY_SETTING,
-  eventNote,
-  askNote,
+  DEFAULT_STALL_SECS,
+  DEFAULT_WALL_TIME_SECS,
   flagValue,
-  keepKeyOf,
-  hasGrants,
-  inboxOf,
   imageInputsOf,
-  operadToolsOf,
-  JsonlLog,
-  deliverLine,
+  keepKeyOf,
+  MAX_WALL_TIME_SECS,
   modelLimit,
-  standardUsage,
-  StepTimings,
-  withTimings,
-  type UsageSource,
-  directoryError,
+  operadToolsOf,
+  optionalPositive,
   optionalText,
-  resultValue,
   parseStepFlags,
-  personStarted,
-  readAlwaysAllow,
-  recordTargetGrantFromAnswer,
-  resultFor,
-  secs,
+  promptFlowOf,
+  readAgentStep,
+  runWorkerStep,
+  STALL_SETTING,
+  STEP_TIMEOUT_SECS,
   stringListParam,
-  text,
-  type StepFlagSpec,
-  runAgent,
   systemClock,
+  text,
+  toolExecutionEvent,
+  WALL_TIME_SETTING,
   type Clock,
   type KeptRunOptions,
-  type ToolEvent,
+  type StepFlagSpec,
 } from "@operad-io/harness-process";
 import { authFileHasCredential } from "./auth-file.ts";
 import {
@@ -81,44 +63,23 @@ import { DEFAULT_PI_COMMAND, findPi, PI_FLOOR } from "./pi-install.ts";
 import {
   DEFAULT_BASH_TIMEOUT_SECS,
   THINKING_LEVELS,
-  type WorkerResult,
   type WorkerThinkingLevel,
 } from "./protocol.ts";
 
-/** How long an agent may run before the step stops it. */
-export const DEFAULT_WALL_TIME_SECS = 3600;
+export {
+  DEFAULT_STALL_SECS,
+  DEFAULT_WALL_TIME_SECS,
+  MAX_WALL_TIME_SECS,
+  STEP_TIMEOUT_SECS,
+};
 
-/** How long an agent may go without a new output line. */
-export const DEFAULT_STALL_SECS = 600;
-
-/** One run of the step may take this long; it is above every allowed wall time. */
-export const STEP_TIMEOUT_SECS = 8 * 3600;
-
-/** The longest wall time a run may ask for: the step timeout minus a margin. */
-export const MAX_WALL_TIME_SECS = STEP_TIMEOUT_SECS - 300;
+/** The tool call one pi line starts or settles, or undefined for another line. */
+export { toolExecutionEvent as piToolEvent } from "@operad-io/harness-process";
 
 export const DEFAULT_AUTH_PATH = "~/.pi/agent/auth.json";
 export const DEFAULT_MODELS_PATH = "~/.pi/agent/models.json";
 
 const WORKER_PATH = fileURLToPath(new URL("./worker.ts", import.meta.url));
-
-/**
- * Reads one worker line and reports the tool call it starts or settles. The
- * worker writes pi's `tool_execution_start` and `tool_execution_end` under
- * `type`.
- */
-export function piToolEvent(line: string): ToolEvent | undefined {
-  let value: unknown;
-  try {
-    value = JSON.parse(line);
-  } catch {
-    return undefined;
-  }
-  if (!isRecord(value)) return undefined;
-  if (value.type === "tool_execution_start") return "tool-start";
-  if (value.type === "tool_execution_end") return "tool-end";
-  return undefined;
-}
 
 /** What a test injects: the clock and the program the step starts. */
 export interface PiHarnessOptions {
@@ -240,21 +201,8 @@ const PLUGIN_SETTINGS = {
       default: DEFAULT_MODELS_PATH,
       description: "pi's custom models file.",
     },
-    wallTimeSecs: {
-      type: "number" as const,
-      title: "Run time limit",
-      minimum: 1,
-      maximum: MAX_WALL_TIME_SECS,
-      default: DEFAULT_WALL_TIME_SECS,
-      description: "The longest one agent run may take.",
-    },
-    stallSecs: {
-      type: "number" as const,
-      title: "Stall limit",
-      minimum: 1,
-      default: DEFAULT_STALL_SECS,
-      description: "How long an agent may be silent while no tool call is open.",
-    },
+    wallTimeSecs: WALL_TIME_SETTING,
+    stallSecs: STALL_SETTING,
     bashTimeoutSecs: {
       type: "integer" as const,
       title: "Bash timeout",
@@ -267,14 +215,6 @@ const PLUGIN_SETTINGS = {
   },
   additionalProperties: false as const,
 };
-
-function optionalPositiveInteger(value: unknown, at: string): number | undefined {
-  if (value === undefined) return undefined;
-  if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
-    throw new Error(`${at}: must be a positive integer`);
-  }
-  return value;
-}
 
 /** The spelling of this harness's step `args`; the parsing is harness-process's. */
 const STEP_FLAGS: StepFlagSpec<WorkerThinkingLevel> = {
@@ -438,40 +378,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
     return { list: THINKING_LEVELS, default: wanted, flag: "--thinking" };
   }
 
-  const promptFlow = defineFlow({
-    name: "pi:prompt",
-    entry: "agent",
-    steps: [
-      {
-        id: "agent",
-        kind: "plugin",
-        params: { use: "pi/agent", params: {} },
-        replay: "unsafe",
-        next: { done: "done", failed: "failed", interrupted: "cancelled", waiting: "person" },
-      },
-      {
-        // A question about a call ran out of grace. The answer sends the run
-        // back to the agent, which continues the session with it.
-        id: "person",
-        kind: "wait_person",
-        params: {
-          prompt: "The agent asked about a call.",
-          choices: ["allow_once", "reject_once"],
-          lateChoices: ["allow_always"],
-        },
-        replay: "safe",
-        next: {
-          allow_once: "agent",
-          allow_always: "agent",
-          reject_once: "agent",
-          interrupted: "cancelled",
-        },
-      },
-      { id: "done", kind: "end", params: { status: "done" }, replay: "safe" },
-      { id: "failed", kind: "end", params: { status: "failed" }, replay: "safe" },
-      { id: "cancelled", kind: "end", params: { status: "cancelled" }, replay: "safe" },
-    ],
-  });
+  const promptFlow = promptFlowOf("pi:prompt", "pi/agent");
 
   return definePlugin({
     name: "pi",
@@ -511,179 +418,94 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
         }),
         async run(ctx: StepContext, params: unknown): Promise<PluginStepResult> {
           const at = "pi/agent";
-          const timings = new StepTimings(now);
-          const input = paramsObject(params, at);
-          const flow = isRecord(ctx.params) ? ctx.params : {};
+          let authPath = "";
+          let modelsPath = "";
+          let bashTimeoutSecs: number | undefined;
+          let piCommand: string | undefined;
+          let operadTools: ReturnType<typeof operadToolsOf>;
+          let skills: readonly string[] = [];
+          let ownSettings: unknown;
+          let retry: unknown;
+          let images: ReturnType<typeof imageInputsOf> = [];
 
-          const prompt = text(input.prompt ?? flow.prompt, `${at}: params.prompt`);
-          const note = eventNote(ctx.trigger);
-          const rawAskAnswer = input.askAnswer ?? flow.askAnswer;
-          const answerNote = askNote(rawAskAnswer);
-          const promptWithNote = [prompt, note, answerNote]
-            .filter((part): part is string => part !== undefined)
-            .join("\n\n");
-          const cwd = text(input.cwd ?? flow.cwd, `${at}: params.cwd`);
-          const flags = parseStepFlags(
-            stringListParam(input.args === undefined ? flow.args : input.args, `${at}: params.args`),
-            STEP_FLAGS,
-          );
-          // The model the step will use, known before anything can fail.
-          const knownModel =
-            typeof flags === "string"
-              ? flagValue(input.args === undefined ? flow.args : input.args, "--model") ??
-                (typeof ctx.settings.model === "string" ? ctx.settings.model : undefined)
-              : (flags.model ??
-                (typeof ctx.settings.model === "string" ? ctx.settings.model : undefined));
-          const early: UsageSource = { harness: "pi", model: knownModel ?? null };
-          if (typeof flags === "string") {
-            const message = `${at}: ${flags}`;
-            const log = await ctx.logger.write(message);
-            const timing = timings.finish();
-            return withTimings({
-              result: "failed",
-              data: {
-                reason: "invalid_args",
-                message,
-                exitCode: null,
-                signal: null,
-                sessionId: null,
-                finalMessage: null,
-                usage: standardUsage(early, undefined, null),
-                log,
-                durationMs: timing.totalMs,
-                stderr: [message],
-              },
-            }, timing);
-          }
-          const resumeSession = optionalText(
-            input.resumeSession ?? flow.resumeSession,
-            `${at}: params.resumeSession`,
-          );
-          const wallTimeSecs = secs(
-            input.wallTimeSecs ?? ctx.settings.wallTimeSecs ?? DEFAULT_WALL_TIME_SECS,
-            `${at}: params.wallTimeSecs`,
-          );
-          if (wallTimeSecs > MAX_WALL_TIME_SECS) {
-            throw new Error(`${at}: params.wallTimeSecs: must be at most ${MAX_WALL_TIME_SECS}`);
-          }
-          const stallSecs = secs(
-            input.stallSecs ?? ctx.settings.stallSecs ?? DEFAULT_STALL_SECS,
-            `${at}: params.stallSecs`,
-          );
-          const bashTimeoutSecs = optionalPositiveInteger(
-            ctx.settings.bashTimeoutSecs,
-            `${at}: settings.bashTimeoutSecs`,
-          );
-          const model =
-            flags.model ?? optionalText(ctx.settings.model, `${at}: settings.model`);
-          const thinkingLevel =
-            flags.level ??
-            optionalText(input.effort, `${at}: params.effort`) ??
-            optionalText(ctx.settings.thinkingLevel, `${at}: settings.thinkingLevel`);
-          const authPath = expandHome(
-            text(ctx.settings.authPath ?? DEFAULT_AUTH_PATH, `${at}: settings.authPath`),
-          );
-          const modelsPath = expandHome(
-            text(ctx.settings.modelsPath ?? DEFAULT_MODELS_PATH, `${at}: settings.modelsPath`),
-          );
+          const step = await readAgentStep(ctx, params, {
+            at,
+            harness: "pi",
+            flags: STEP_FLAGS,
+            defaultWallTimeSecs: DEFAULT_WALL_TIME_SECS,
+            defaultStallSecs: DEFAULT_STALL_SECS,
+            maxWallTimeSecs: MAX_WALL_TIME_SECS,
+            levelSetting: "thinkingLevel",
+            now,
+            async beforeDirectory(read) {
+              bashTimeoutSecs = optionalPositive(
+                ctx.settings.bashTimeoutSecs,
+                `${at}: settings.bashTimeoutSecs`,
+                true,
+              );
+              authPath = expandHome(
+                text(ctx.settings.authPath ?? DEFAULT_AUTH_PATH, `${at}: settings.authPath`),
+              );
+              modelsPath = expandHome(
+                text(ctx.settings.modelsPath ?? DEFAULT_MODELS_PATH, `${at}: settings.modelsPath`),
+              );
 
-          const piCommand = optionalText(ctx.settings.command, `${at}: settings.command`);
-          // A configured model pi does not list is reported once, here.
-          const configured = stringList(ctx.settings.models);
-          if (configured !== undefined && model !== undefined && configured.includes(model)) {
-            const listed = piModelList(
-              listOptions(
-                piCommand ?? DEFAULT_PI_COMMAND,
-                {
-                  home: ctx.home,
-                  log: (message) => {
-                    void ctx.logger.write(message);
-                  },
-                },
-                typeof ctx.settings.modelsPath === "string"
-                  ? ctx.settings.modelsPath
-                  : DEFAULT_MODELS_PATH,
-              ),
-            );
-            if (listed.length > 0 && !listed.includes(model)) {
-              await ctx.logger.write(`pi/agent: the model "${model}" is in settings.models but pi does not list it`);
-            }
-          }
+              piCommand = optionalText(ctx.settings.command, `${at}: settings.command`);
+              // A configured model pi does not list is reported once, here.
+              const configured = stringList(ctx.settings.models);
+              if (configured !== undefined && read.model !== undefined && configured.includes(read.model)) {
+                const listed = piModelList(
+                  listOptions(
+                    piCommand ?? DEFAULT_PI_COMMAND,
+                    {
+                      home: ctx.home,
+                      log: (message) => {
+                        void ctx.logger.write(message);
+                      },
+                    },
+                    typeof ctx.settings.modelsPath === "string"
+                      ? ctx.settings.modelsPath
+                      : DEFAULT_MODELS_PATH,
+                  ),
+                );
+                if (listed.length > 0 && !listed.includes(read.model)) {
+                  await ctx.logger.write(
+                    `pi/agent: the model "${read.model}" is in settings.models but pi does not list it`,
+                  );
+                }
+              }
+            },
+            async afterDirectory(read) {
+              const agentDir = join(ctx.home, "harness", "pi");
+              const sessionDir = join(agentDir, "sessions");
+              await mkdir(sessionDir, { recursive: true });
 
-          const cwdProblem = await directoryError(cwd);
-          if (cwdProblem !== undefined) {
-            const log = await ctx.logger.write(cwdProblem);
-            const timing = timings.finish();
-            return withTimings({
-              result: "failed",
-              data: {
-                reason: "cwd",
-                message: cwdProblem,
-                exitCode: null,
-                signal: null,
-                sessionId: null,
-                finalMessage: null,
-                usage: standardUsage(early, undefined, null),
-                log,
-                durationMs: timing.totalMs,
-                stderr: [cwdProblem],
-              },
-            }, timing);
-          }
+              operadTools = operadToolsOf(read.input.operadTools ?? read.flow.operadTools);
+              skills = stringListParam(
+                read.input.skills === undefined ? read.flow.skills : read.input.skills,
+                `${at}: params.skills`,
+              );
+              ownSettings = read.input.useOwnSettings ?? read.flow.useOwnSettings;
+              if (ownSettings !== undefined && typeof ownSettings !== "boolean") {
+                throw new Error(`${at}: params.useOwnSettings: must be a boolean`);
+              }
+              retry = read.input.retry ?? read.flow.retry;
+              if (retry !== undefined && typeof retry !== "boolean") {
+                throw new Error(`${at}: params.retry: must be a boolean`);
+              }
+              images = imageInputsOf(read.input.images ?? read.flow.images);
+            },
+          });
+          if ("refused" in step) return step.refused;
 
+          const { values, access } = step;
+          const { resumeSession, wallTimeSecs, stallSecs, model, level: thinkingLevel } = values;
           const agentDir = join(ctx.home, "harness", "pi");
           const sessionDir = join(agentDir, "sessions");
-          await mkdir(sessionDir, { recursive: true });
 
-          const operadTools = operadToolsOf(input.operadTools ?? flow.operadTools);
-          const skills = stringListParam(
-            input.skills === undefined ? flow.skills : input.skills,
-            `${at}: params.skills`,
-          );
-          const ownSettings = input.useOwnSettings ?? flow.useOwnSettings;
-          if (ownSettings !== undefined && typeof ownSettings !== "boolean") {
-            throw new Error(`${at}: params.useOwnSettings: must be a boolean`);
-          }
-          const retry = input.retry ?? flow.retry;
-          if (retry !== undefined && typeof retry !== "boolean") {
-            throw new Error(`${at}: params.retry: must be a boolean`);
-          }
-          // A generated step that names no profile still starts from the default.
-          const startAccess = withDefaultAccess(ctx.access as AccessProfile | undefined);
-          const storeSecrets = await secretValuesOf(ctx.secrets);
-          const allowAlways = personStarted(ctx.trigger);
-          // A run no person's message started asks about every outward write.
-          const access = allowAlways ? startAccess : { ...startAccess, background: true };
-          if (allowAlways && isRecord(rawAskAnswer) && rawAskAnswer["choice"] === ALLOW_ALWAYS) {
-            const entry = alwaysAllowFromGrant(access, cwd);
-            if (entry !== undefined) {
-              try {
-                await appendAlwaysAllow(ctx.home, entry);
-              } catch (error) {
-                await ctx.logger.write(
-                  `allow_always could not be written to the user access file: ${String(error)}; this call runs once`,
-                );
-              }
-            }
-          }
-          if (ctx.flow !== undefined) {
-            try {
-              await recordTargetGrantFromAnswer(ctx.home, ctx.flow, access, rawAskAnswer, now);
-            } catch (error) {
-              await ctx.logger.write(
-                `the target grant could not be written: ${String(error)}; this call runs once`,
-              );
-            }
-          }
-          let runAccess = accessWithAlwaysAllow(access, [], false);
-          if (allowAlways) {
-            const user = await readAlwaysAllow(ctx.home);
-            if (user.problem !== undefined) await ctx.logger.write(user.problem);
-            runAccess = accessWithAlwaysAllow(access, user.entries, true);
-          }
           const stdin: Record<string, unknown> = {
-            prompt: promptWithNote,
-            cwd,
+            prompt: values.promptWithNote,
+            cwd: values.cwd,
             authPath,
             modelsPath,
             agentDir,
@@ -694,26 +516,23 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
             ...(thinkingLevel === undefined ? {} : { thinkingLevel }),
             ...(bashTimeoutSecs === undefined ? {} : { bashTimeoutSecs }),
             ...(operadTools === undefined ? {} : { operadTools }),
-            ...(imageInputsOf(input.images ?? flow.images).length === 0
-              ? {}
-              : { images: imageInputsOf(input.images ?? flow.images) }),
+            ...(images.length === 0 ? {} : { images }),
             ...(skills.length === 0 ? {} : { skills }),
             ...(ownSettings === true ? { useOwnSettings: true } : {}),
             ...(retry === true ? { retry: true } : {}),
-            ...(runAccess === undefined ? {} : { access: runAccess }),
-            ...(storeSecrets.length === 0 ? {} : { secretValues: storeSecrets }),
+            ...(access.runAccess === undefined ? {} : { access: access.runAccess }),
+            ...(access.secrets.length === 0 ? {} : { secretValues: access.secrets }),
           };
 
-          const keepRequested = input.keepWorker === true;
           const keep: KeptRunOptions | undefined =
-            keepRequested && ctx.object !== undefined
+            values.input.keepWorker === true && ctx.object !== undefined
               ? {
                   home: ctx.home,
                   name: "pi",
                   scope: `${ctx.object.type}:${ctx.object.id}`,
                   key: keepKeyOf({
                     ...stdin,
-                    mcpServers: input.mcpServers ?? flow.mcpServers,
+                    mcpServers: values.input.mcpServers ?? values.flow.mcpServers,
                   }),
                   ...(options.keepMs === undefined ? {} : { timeoutMs: options.keepMs }),
                   ...(options.keptFirstLineMs === undefined ? {} : { firstLineMs: options.keptFirstLineMs }),
@@ -721,68 +540,17 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
                 }
               : undefined;
 
-          const inbox = inboxOf(params);
-          const jsonl = new JsonlLog(ctx.logger, clock, now);
-          let result: WorkerResult | undefined;
-          // Ends the program when a question about a call runs out of grace.
-          const stopper = new AbortController();
-          const asker = createCallAsker({
-            ask: (request) => ctx.ask(request),
-            onStop: () => stopper.abort(),
-            secrets: storeSecrets,
-            ...(allowAlways ? { alwaysAllow: { home: ctx.home, cwd } } : {}),
-            ...(ctx.flow === undefined ? {} : { targetGrants: { home: ctx.home, flow: ctx.flow } }),
-            onLog: (message) => {
-              void ctx.logger.write(message);
-            },
-          });
-
-          const outcome = await runAgent({
+          return await runWorkerStep({
+            values,
+            access,
             command,
             args: commandArgs,
-            cwd,
-            stdin: JSON.stringify(stdin),
-            // The program may ask to use a one-time permission; it needs a reply.
-            // A live level can lower to one that asks, so keep the reply channel open.
-            interactive: hasGrants(access) || canAsk(access) || hasLiveAccess(access) || inbox !== undefined,
-            inbox,
-            ...(keep === undefined ? {} : { keep }),
-            wallMs: wallTimeSecs * 1000,
-            stallMs: stallSecs * 1000,
-            signal: AbortSignal.any([ctx.signal, stopper.signal]),
+            stdin,
+            keep,
             clock,
-            toolEvent: (line) => piToolEvent(line) ?? askToolEvent(line),
-            async onLine(line, reply) {
-              const received = jsonl.stamp(line);
-              timings.record(received.value, received.at);
-              await answerGrant(received.text, (waitId) => ctx.useGrant(waitId), reply);
-              await asker.handle(received.text, reply);
-              const writing = jsonl.pushStamped(received);
-              deliverLine(ctx.receiver, received.text, storeSecrets);
-              const parsed = resultValue<WorkerResult>(received.value);
-              if (parsed !== undefined) result = parsed;
-              return writing;
-            },
+            now,
+            toolEvent: toolExecutionEvent,
           });
-          await jsonl.end();
-
-          // The grace passed with a question open: the program was ended on
-          // purpose. The kernel turns this into the result `waiting`, and the
-          // answer comes back with the session and a one-time grant.
-          const unanswered = asker.stopped();
-          if (unanswered !== undefined && !ctx.signal.aborted) throw unanswered.error;
-
-          const timing = timings.finish();
-          const stepResult = resultFor(
-            { harness: "pi", model: model ?? null },
-            outcome,
-            result,
-            ctx.logger.path,
-            timing.totalMs,
-            { wallTimeSecs, stallSecs },
-            command,
-          );
-          return withTimings(stepResult, timing);
         },
       },
     ],
@@ -791,12 +559,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
       const piCommand = optionalText(ctx.settings.command, "pi: settings.command");
       // The user's own pi: found and version-checked, not loaded.
       const pi = findPi(piCommand ?? DEFAULT_PI_COMMAND);
-      if (options.command === undefined && !existsSync(process.execPath)) {
-        throw new Error("bun was not found");
-      }
-      if (options.args === undefined && !existsSync(WORKER_PATH)) {
-        throw new Error(`the worker program is missing: ${WORKER_PATH}`);
-      }
+      assertWorkerAvailable({ command: options.command, args: options.args, workerPath: WORKER_PATH });
       return `pi ${pi.version} at ${pi.dir} (floor ${PI_FLOOR}); the worker program is available`;
     },
   });
