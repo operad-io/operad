@@ -247,7 +247,8 @@ describe("operad presentation commands", () => {
         io: action.io,
       }),
     ).toBe(0);
-    expect(store.get("item", "one")?.data.auto).toBe("run");
+    const stored = await store.get("item", "one");
+    expect(stored?.data.auto).toBe("run");
   });
 
   test("list shows a Promise row as an error row", async () => {

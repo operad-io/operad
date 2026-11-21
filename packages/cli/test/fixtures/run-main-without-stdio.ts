@@ -52,3 +52,5 @@ try {
 }
 
 process.stdout.write(`${JSON.stringify({ code, out, err, touched, failure })}\n`);
+
+export {};

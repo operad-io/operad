@@ -154,7 +154,7 @@ interface Row {
     list: (string | { id: string })[];
     default: string | null;
     windows?: Record<string, number>;
-    info?: Record<string, { id: string; name?: string; provider?: string; capabilities?: string[] }>;
+    info?: Record<string, { id: string; name?: string; provider?: string; window?: number; capabilities?: string[] }>;
   };
 }
 

@@ -6,6 +6,7 @@ import {
   SqlitePluginStore,
   Runner,
   answerRun,
+  type NewFact,
   ensureConfig,
   loadPluginRegistry,
   openConfigLog,
@@ -578,7 +579,7 @@ describe("operad command", () => {
     const config = await readConfig(home);
     const log = openConfigLog(config);
     const info = await log.startRun("big", "job:1");
-    const facts = [
+    const facts: NewFact[] = [
       {
         kind: "run_started",
         payload: { flow: "big" },
