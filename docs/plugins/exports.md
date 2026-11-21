@@ -31,8 +31,9 @@ Types (`StepContext`, `ActionTypeDefinition`, `ObjectRow`, ...) are exported too
 | `splitActionName` | Splits `<plugin>:<action>` or `<plugin>/<action>` | [Actions](actions.md) |
 | `PluginRegistry` | The registry a host builds from plugin definitions. A plugin's test may build one (`new PluginRegistry([definition], { store })`) to call `runAction`, `viewsFor` or `runCommand` | [Testing](testing.md#testing-the-pieces) |
 | `loadPlugin` | `loadPlugin(module, home)`: imports a plugin module and returns its default export; a path gets a fresh module instance | [Settings](settings.md#the-entry-in-configjson) |
-| `objectKey` | `objectKey(ref)`: `<type>:<id>`, or `flow` for a run without an object | [Events](events.md#the-event) |
+| `objectKey` | `objectKey(ref)`: `<type>:<id>`, or `flow` for a run without an object; `objectKey(type, id)` builds the same key from its parts | [Events](events.md#the-event) |
 | `parseObjectKey` | The `{ type, id }` of a key, or `undefined` for a key that names no object (`flow:<plugin>/<flow>`) | [Events](events.md#the-event) |
+| `parseObjectId` | The `{ type, id }` of any typed object id, or `undefined`; `{ allowEmptyId: true }` accepts `type:` with an empty id | [Events](events.md#the-event) |
 
 ## Errors
 
@@ -177,3 +178,9 @@ Types (`StepContext`, `ActionTypeDefinition`, `ObjectRow`, ...) are exported too
 | `repeatEvery` | `repeatEvery(ms, callback)`: calls back every `ms` until the returned function is called; it never keeps the process alive | [Platform](platform.md#directory-watches) |
 | `sleepUntilAborted` | `sleepUntilAborted(ms, signal?)`: waits `ms`, but an abort of the signal ends the wait at once | [Rules](rules.md#tests) |
 | `writeFileAtomic` | Writes a file through a temporary file in the same directory and a rename, so a crash leaves the old file whole | [Settings](settings.md#editing-a-setting) |
+| `bareId` | `bareId(id)`: the id without its type (`item:T-1` becomes `T-1`); an untyped id is unchanged | [Events](events.md#the-event) |
+| `cut` | `cut(text, max)`: text cut to at most `max` characters, with `…` at the cut | [Rules](rules.md#code) |
+| `definitionName` | The `name` a plugin definition declares, or `undefined` | [definePlugin](define-plugin.md) |
+| `directoryError` | `directoryError(cwd)`: why a directory cannot be a working directory, or `undefined` | [Settings](settings.md#editing-a-setting) |
+| `errorCode` | The `code` of a filesystem error, or `undefined` | [Rules](rules.md#code) |
+| `isMissingFile` | `true` when a filesystem error says the file does not exist (`ENOENT`) | [Rules](rules.md#code) |

@@ -9,6 +9,7 @@
  * built yet, and this is the one place it goes.
  */
 
+import { messageOf } from "@operad-io/engine";
 import pkg from "../package.json" with { type: "json" };
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
@@ -220,7 +221,7 @@ export async function openChat(input: OpenChat): Promise<string> {
     model = startingModel(harness, input.models?.[harness], input.model, bot.model ?? undefined);
     effort = startingEffort(harness, input.efforts?.[harness], input.effort, bot.effort ?? undefined);
   } catch (error) {
-    throw new BotError(error instanceof Error ? error.message : String(error));
+    throw new BotError(messageOf(error));
   }
   const effortDefault = input.efforts?.[harness]?.default ?? undefined;
   mkdirSync(bot.cwd, { recursive: true });
@@ -433,7 +434,7 @@ const createAction: ActionTypeDefinition = {
       if (input.model !== undefined) startingModel(agent, ctx.models?.[agent], input.model);
       if (input.effort !== undefined) startingEffort(agent, ctx.efforts?.[agent], input.effort);
     } catch (error) {
-      throw new BotError(error instanceof Error ? error.message : String(error));
+      throw new BotError(messageOf(error));
     }
     const created = await createBot(
       ctx.home,
@@ -581,7 +582,7 @@ export async function runSettings(ctx: StepContext, params: unknown): Promise<Pl
       },
     };
   } catch (error) {
-    return { result: "failed", data: { message: error instanceof Error ? error.message : String(error) } };
+    return { result: "failed", data: { message: messageOf(error) } };
   }
 }
 

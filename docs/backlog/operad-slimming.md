@@ -18,7 +18,7 @@
    - `harness-radian/src/index.ts` 重复了其中 10 个。
    - 两个 `src/worker.ts` 约 190 行相同。
    - 去处：已有的 `harness-process`。每个 harness 只留协议（`protocol.ts`）、安装（`*-install.ts`）和它自己的设置。
-2. **小工具函数重复**（约 200 行）：`isRecord` 定义了 40 次，`messageOf` 7 次（engine 已经导出），`oneLine` 6 次，`stringList`、`paramsObject`、`requireName`、`repeatEvery` 各 4 次。engine 导出一份，其余删掉。
+2. **小工具函数重复**（约 200 行）：已做。`isRecord`、`messageOf`、`oneLine`、`cut`、`parseObjectId`、`bareId`、`objectKey`、`definitionName`、`directoryError`、`errorCode`、`isMissingFile` 现在只在 engine 定义；两处 `objectKey` 合并成一个，typed id 的四种拆法和各包手写的拆分都改用 `parseObjectId`（空 id 用选项保留，`flow` 仍由 `parseObjectKey` 拒绝）。`AgentWorkerResult` 的 `CostQuality`、`AlwaysAllowEntry`、`SectionStatus` 和 tui 的三个 wire 类型改为引用已有类型。剩余同名函数属于 A1 的 harness 合并（`stringList` 等）。
 3. **spike 和 acceptance 目录**：`harness-claude`、`harness-pi` 下的 `spike/`、`acceptance/` 约 500 行，加 `SPIKE.md`。结论已经在 backlog 里；删掉，或把还有用的挪到 `docs/research/`。
 4. **没人用的导出**：按名字粗查，约 26 个在源码和测试里都没有引用（engine 11、dev 11、tui 4），另有 14 个只有测试引用。例子：`dev` 的 `rejectTask`、`raisePriority`、`lowerPriorityOf`、`taskGatePath`、`verifiedCommitOf`；engine 的 `pollTrackedSteps` 和几个 `*Payload` 类型；tui 的 `filterFor`、`childLines`。删之前逐个确认：类型可能是合约的一部分，给第三方插件用。
 
@@ -45,6 +45,7 @@
 
 - B2 只留 `sqlite`：ADR 0035。
 - 删掉 engine 的 `MOVED_MODULES`：ADR 0034 D4。B1 的其余各项（`dev` 的旧设置、旧 id、旧对象迁移、旧 review 记录）仍未定。
+- 加了检查 `scripts/test/test-helpers.test.ts` 的 `a shared helper is defined only in the engine`：`isRecord`、`messageOf`、`oneLine`、`parseObjectId`、`objectKey`、`definitionName`、`directoryError`、`errorCode`、`isMissing`、`isMissingFile`、`isMissingFileError` 在 engine 之外再定义会让检查失败。
 
 ## 待决问题（未定）
 
@@ -52,7 +53,6 @@
 3. A4 里的类型导出哪些算合约（第三方插件可以用），哪些可以删。
 4. C3：`MUTATIONS.md` 要不要归档（比如按月或按已合并的 task 挪到 `docs/` 下的存档），根目录的索引是否还需要。
 5. C1：自带主题留几套。
-6. 要不要加一条检查防止再长回来：同名的工具函数（`isRecord`、`messageOf`）在 engine 之外不再定义。
 
 ## 验收
 

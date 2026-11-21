@@ -114,7 +114,7 @@ export interface IndexedChatMessage {
 const MESSAGE_FACT = "chat.message";
 const MESSAGE_CHANGE_FACT = "chat.message_change";
 
-function messageOf(fact: { readonly data: Record<string, unknown> }): IndexedChatMessage | undefined {
+function messageOfFact(fact: { readonly data: Record<string, unknown> }): IndexedChatMessage | undefined {
   const data = fact.data;
   if (typeof data["id"] !== "string" || typeof data["text"] !== "string") return undefined;
   if (data["role"] !== "user" && data["role"] !== "assistant") return undefined;
@@ -138,7 +138,7 @@ export function chatMessages(store: ObjectStore, chat: string): readonly Indexed
     );
     for (const fact of page.facts) {
       if (fact.type === MESSAGE_FACT) {
-        const message = messageOf(fact);
+        const message = messageOfFact(fact);
         if (message === undefined) continue;
         if (!messages.has(message.id)) order.push(message.id);
         messages.set(message.id, message);

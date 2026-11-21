@@ -19,6 +19,7 @@ import {
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import {
   configPath,
+  isMissingFile,
   isRecord,
   messageOf,
   prepareSettings,
@@ -601,7 +602,7 @@ export async function readBotsFile(home: string): Promise<Record<string, unknown
   try {
     parsed = JSON.parse(readFileSync(configPath(home), "utf8"));
   } catch (error) {
-    if (isRecord(error) && error.code === "ENOENT") return {};
+    if (isMissingFile(error)) return {};
     throw new BotError(`${configPath(home)}: cannot read the bot settings: ${messageOf(error)}`);
   }
   const plugins = isRecord(parsed) ? parsed.plugins : undefined;
@@ -624,7 +625,7 @@ async function changeBotsFile(
       if (!isRecord(raw)) throw new BotError(`${file}: must be a JSON object`);
       parsed = { ...raw };
     } catch (error) {
-      if (!(isRecord(error) && error.code === "ENOENT")) {
+      if (!isMissingFile(error)) {
         if (error instanceof BotError) throw error;
         throw new BotError(`${file}: cannot read the bot settings: ${messageOf(error)}`);
       }

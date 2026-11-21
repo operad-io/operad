@@ -6,6 +6,7 @@
  * to stdout, the last a Result. `README.md` holds the tables.
  */
 
+import { messageOf } from "@operad-io/engine";
 import {
   query,
   type CanUseTool,
@@ -698,7 +699,7 @@ class ClaudeSession {
         yield { ...userMessage(text), priority: "next" as const };
       })();
       this.session?.streamInput(next).catch((error: unknown) => {
-        io.log(`a message to claude was not delivered: ${error instanceof Error ? error.message : String(error)}`);
+        io.log(`a message to claude was not delivered: ${messageOf(error)}`);
       });
     });
 
@@ -718,7 +719,7 @@ class ClaudeSession {
       } catch (error) {
         turn.cancel.removeEventListener("abort", onCancel);
         this.removeSkillPlugin();
-        io.line(failure("model_error", error instanceof Error ? error.message : String(error)));
+        io.line(failure("model_error", messageOf(error)));
         return EXIT_FAILED;
       }
       this.account = this.session.initializationResult().then(
@@ -868,7 +869,7 @@ class ClaudeSession {
     } catch (error) {
       const turn = this.turn;
       if (turn !== undefined && !turn.cancelled) {
-        turn.thrown = error instanceof Error ? error.message : String(error);
+        turn.thrown = messageOf(error);
         if (this.stderrTail.length > 0) turn.thrown = `${turn.thrown}\n${this.stderrTail.join("\n")}`;
       }
     } finally {
@@ -1350,7 +1351,7 @@ export async function runWorker(
     try {
       executable = findClaude(input.command);
     } catch (error) {
-      io.line(failure("model_error", error instanceof Error ? error.message : String(error)));
+      io.line(failure("model_error", messageOf(error)));
       return EXIT_FAILED;
     }
   }

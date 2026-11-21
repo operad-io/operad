@@ -1,12 +1,13 @@
 /** Reading and checking `$OPERAD_HOME/triggers.json`. */
 
+import { messageOf } from "../plugin/errors.ts";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { JsonValue } from "../log/types.ts";
 import type { PluginRegistry } from "../plugin/registry.ts";
 import { CronError, parseCron } from "./cron.ts";
 import type { TriggerMode, TriggerRule } from "./types.ts";
-import { isRecord } from "../util.ts";
+import { isMissingFile, isRecord } from "../util.ts";
 
 /** `triggers.json` is not usable; the message names the rule and field. */
 export class TriggerError extends Error {
@@ -138,7 +139,7 @@ function readStart(value: unknown, at: string): TriggerRule["start"] {
   try {
     return { flow, params: snapshotJsonValue(value.params, "start.params") };
   } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
+    const detail = messageOf(error);
     throw new TriggerError(`${at}: ${detail}`, { cause: error });
   }
 }
@@ -274,12 +275,7 @@ async function readUserRules(
   try {
     text = await readFile(file, "utf8");
   } catch (error) {
-    if (
-      typeof error === "object" &&
-      error !== null &&
-      "code" in error &&
-      error.code === "ENOENT"
-    ) {
+    if (isMissingFile(error)) {
       return [];
     }
     throw new TriggerError(`${file}: ${String(error)}`, { cause: error });

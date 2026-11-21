@@ -7,7 +7,7 @@
 
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { AskTimeoutError, attachmentDir, isRecord, messageOf, modelIds, safeFileName, type AskOutcome, type AskRecheck, type AskRequest, type ChoiceInfo, type JsonValue, type PluginStepResult, type RunObject, type StepAsker, type StepContext, type UsageTokens } from "@operad-io/engine";
+import { AskTimeoutError, attachmentDir, isRecord, messageOf, modelIds, safeFileName, type AskOutcome, type AskRecheck, type AskRequest, type ChoiceInfo, type CostQuality, type JsonValue, type PluginStepResult, type RunObject, type StepAsker, type StepContext, type UsageTokens } from "@operad-io/engine";
 import { match, MCP_TOOL, withAccessLevel, writeLiveAccess, type AccessLevel } from "@operad-io/access-match";
 import {
   appendAlwaysAllow,
@@ -39,7 +39,6 @@ import {
   type ChatData,
   type ChatNoteHashes,
   type ChatRead,
-  type CostQuality,
   type Entry,
   chatRef,
   currentSession,
@@ -314,7 +313,7 @@ async function rememberAlways(ctx: StepContext, call: WorktreeCall, cwd: string)
     await appendAlwaysAllow(ctx.home, alwaysAllowEntry(call, cwd));
   } catch (error) {
     await ctx.logger.write(
-      `Always allow could not be written to the user access file: ${error instanceof Error ? error.message : String(error)}; this call runs once`,
+      `Always allow could not be written to the user access file: ${messageOf(error)}; this call runs once`,
     );
   }
 }
@@ -1102,7 +1101,7 @@ function replyInbox(
             outcome = await deliver(id);
           } catch (error) {
             await ctx.logger.write(
-              `a message could not be handed to the agent: ${error instanceof Error ? error.message : String(error)}`,
+              `a message could not be handed to the agent: ${messageOf(error)}`,
             );
             outcome = "left";
           }
@@ -1259,7 +1258,7 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
           await state.keepNotes();
         } catch (error) {
           await ctx.logger.write(
-            `the note hashes could not be recorded: ${error instanceof Error ? error.message : String(error)}\n`,
+            `the note hashes could not be recorded: ${messageOf(error)}\n`,
           );
         }
       }
@@ -1455,7 +1454,7 @@ async function replyOnce(
     await writeLiveAccess(levelPath, baseAccess, level);
   } catch (error) {
     await ctx.logger.write(
-      `the live access level could not be written: ${error instanceof Error ? error.message : String(error)}`,
+      `the live access level could not be written: ${messageOf(error)}`,
     );
   }
   // A late Allow once is for this run alone; a late Always allow also wrote the user layer.

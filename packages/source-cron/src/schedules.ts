@@ -1,11 +1,13 @@
 /** Managing the scheduled flows in `triggers.json`, from a client. */
 
+import { messageOf } from "@operad-io/engine";
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import {
   cronMatches,
   type CronField,
+  isMissingFile,
   isRecord,
   minuteStart,
   openConfigLog,
@@ -109,12 +111,7 @@ function readRules(home: string): readonly TriggerRule[] {
   try {
     text = readFileSync(file, "utf8");
   } catch (error) {
-    if (
-      typeof error === "object" &&
-      error !== null &&
-      "code" in error &&
-      error.code === "ENOENT"
-    ) {
+    if (isMissingFile(error)) {
       return [];
     }
     throw new ScheduleError(`cannot read ${file}: ${String(error)}`);
@@ -158,7 +155,7 @@ function checkedSchedule(expression: string): string {
   try {
     parseCron(trimmed);
   } catch (error) {
-    throw new ScheduleError(error instanceof Error ? error.message : String(error));
+    throw new ScheduleError(messageOf(error));
   }
   return trimmed;
 }

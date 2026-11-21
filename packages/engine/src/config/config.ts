@@ -12,7 +12,7 @@ import {
   type LogBackendOptions,
 } from "../log/index.ts";
 import { SQLITE_FILE_NAME } from "../log/sqlite.ts";
-import { isRecord } from "../util.ts";
+import { isMissingFile, isRecord } from "../util.ts";
 
 /** The storage backend the log uses. */
 export type StoreBackend = LogBackendName;
@@ -398,12 +398,7 @@ export async function readConfig(
   try {
     text = await readFile(file, "utf8");
   } catch (error) {
-    if (
-      typeof error === "object" &&
-      error !== null &&
-      "code" in error &&
-      error.code === "ENOENT"
-    ) {
+    if (isMissingFile(error)) {
       return defaultConfig(home);
     }
     throw new ConfigError(`${file}: ${String(error)}`, { cause: error });
@@ -577,12 +572,7 @@ export async function setPluginEnabled(
     if (!isRecord(parsed)) throw new ConfigError(`${file}: must be a JSON object`);
     raw = parsed;
   } catch (error) {
-    if (!(
-      typeof error === "object" &&
-      error !== null &&
-      "code" in error &&
-      error.code === "ENOENT"
-    )) {
+    if (!isMissingFile(error)) {
       if (error instanceof ConfigError) throw error;
       throw new ConfigError(`${file}: invalid JSON: ${String(error)}`, {
         cause: error,
@@ -637,12 +627,7 @@ export async function addPluginEntry(
       if (!isRecord(parsed)) throw new ConfigError(`${file}: must be a JSON object`);
       raw = parsed;
     } catch (error) {
-      if (!(
-        typeof error === "object" &&
-        error !== null &&
-        "code" in error &&
-        error.code === "ENOENT"
-      )) {
+      if (!isMissingFile(error)) {
         if (error instanceof ConfigError) throw error;
         throw new ConfigError(`${file}: invalid JSON: ${String(error)}`, {
           cause: error,

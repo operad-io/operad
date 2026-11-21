@@ -10,6 +10,7 @@
  */
 
 import { dlopen, FFIType } from "bun:ffi";
+import { errorCode, isMissingFile } from "../util.ts";
 import { randomBytes } from "node:crypto";
 import {
   closeSync,
@@ -148,12 +149,6 @@ interface LockRecord {
 interface LockFile {
   readonly raw: string | undefined;
   readonly record: LockRecord | undefined;
-}
-
-function errorCode(error: unknown): unknown {
-  return typeof error === "object" && error !== null && "code" in error
-    ? error.code
-    : undefined;
 }
 
 function newNonce(): string {
@@ -341,7 +336,7 @@ function release(
   try {
     renameSync(lockPath, released);
   } catch (error) {
-    if (errorCode(error) === "ENOENT") return;
+    if (isMissingFile(error)) return;
     throw error;
   }
 

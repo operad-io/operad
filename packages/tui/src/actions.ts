@@ -5,7 +5,7 @@
  */
 
 
-import type { ViewAction, ViewRow } from "@operad-io/engine";
+import { bareId, type ViewAction, type ViewRow } from "@operad-io/engine";
 import { argFields, narrowField, parseArg, type ArgField } from "./args.ts";
 import type { TuiSetting, TuiTypeInfo } from "./client.ts";
 import { chatCommands, commandEntries, commandText, filterCommands } from "./commands.ts";
@@ -117,11 +117,6 @@ export function keyOf(
     live.find((binding) => binding.source === "user")?.key ??
     live[0]?.key
   );
-}
-
-function bareId(id: string): string {
-  const at = id.indexOf(":");
-  return at < 0 ? id : id.slice(at + 1);
 }
 
 /**
@@ -328,7 +323,7 @@ export function creationParents(
 export function settingScopes(state: TuiState): readonly string[] {
   const object = state.object;
   if (object === undefined) return ["global"];
-  const bare = object.id.slice(object.id.indexOf(":") + 1);
+  const bare = bareId(object.id);
   // A repository's own page is named by the repository; other objects carry it before the last slash.
   if (object.type === "repo") return ["global", bare];
   const slash = bare.lastIndexOf("/");

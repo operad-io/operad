@@ -342,6 +342,22 @@ describe("pending items go to Telegram", () => {
     await w.close();
   });
 
+  test("an item whose object is typed with an empty id still finds its answer", async () => {
+    const { w, api, client, sender, ctx } = await setup({ pending: ["dev"], bind: false });
+    client.items = [item({ runId: "d1", object: "task:", actions: [ACT_MERGE] })];
+    await sender.sync();
+    await ctx.facts.append({
+      type: "action_invoked",
+      object: { type: "task", id: "" },
+      data: { action: "dev/merge", actor: { via: "cli", id: "me" } },
+    });
+    client.items = [];
+    await sender.sync();
+    expect(api.edits).toHaveLength(1);
+    expect(api.edits[0]?.text).toEndWith("answered: merge");
+    await w.close();
+  });
+
   test("a restart sends no item again", async () => {
     const { w, api, client, sender, ctx } = await setup({ pending: ["dev"], bind: false });
     client.items = [item({ runId: "d1", object: "task:t1", actions: [ACT_MERGE] })];

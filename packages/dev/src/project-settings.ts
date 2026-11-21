@@ -7,6 +7,7 @@
  * merges.
  */
 
+import { messageOf } from "@operad-io/engine";
 import type { ProjectSettingsDeclaration } from "@operad-io/engine";
 import { flowClash, listRepositoryFlows } from "./project-flows.ts";
 import { defaultDevSettings, readDevSettings, settingsProblem, settingsValueProblem, useNewStageNames } from "./settings.ts";
@@ -41,7 +42,7 @@ export const DEV_PROJECT_SETTINGS: ProjectSettingsDeclaration = {
           // The file was never valid, so there are no dev.json flows to list;
           // the read-only list stays and says why, beside the TypeScript flows.
           const reason =
-            problem ?? (error instanceof Error ? error.message : String(error));
+            problem ?? (messageOf(error));
           const list = await listRepositoryFlows(
             repository.path,
             repository.name,

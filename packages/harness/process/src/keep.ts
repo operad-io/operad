@@ -9,6 +9,7 @@
  * adapter this module calls.
  */
 
+import { messageOf } from "@operad-io/engine";
 import { createHash } from "node:crypto";
 import { chmodSync, rmSync } from "node:fs";
 import { createServer, type Socket } from "node:net";
@@ -425,7 +426,7 @@ export async function serveOne<TInput>(
     }
   } catch (error) {
     channel.io.log(error instanceof Error ? (error.stack ?? error.message) : String(error));
-    channel.io.line(adapter.error(error instanceof Error ? error.message : String(error)));
+    channel.io.line(adapter.error(messageOf(error)));
     code = EXIT_FAILED;
   }
   channel.close();
@@ -467,7 +468,7 @@ export async function serveKeptWorker<TInput>(
     }
   } catch (error) {
     channel.io.log(error instanceof Error ? (error.stack ?? error.message) : String(error));
-    channel.io.line(adapter.error(error instanceof Error ? error.message : String(error)));
+    channel.io.line(adapter.error(messageOf(error)));
     code = EXIT_FAILED;
   }
   channel.close();
@@ -592,7 +593,7 @@ async function serveKept<TInput>(
         );
       } catch (error) {
         channel.io.log(error instanceof Error ? (error.stack ?? error.message) : String(error));
-        channel.io.line(adapter.error(error instanceof Error ? error.message : String(error)));
+        channel.io.line(adapter.error(messageOf(error)));
       }
       channel.close();
       if (!socket.destroyed) socket.end();

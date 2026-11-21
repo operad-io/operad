@@ -25,6 +25,7 @@
 import { CHAT_TYPE, chatData } from "@operad-io/chat";
 import {
   messageOf,
+  parseObjectId,
   type Actor,
   type ClientApi,
   type PendingItem,
@@ -499,9 +500,8 @@ export class PendingSender implements PendingResponder {
   /** What an item answered somewhere else was answered with: the latest action run on its object since it was sent. */
   private async answeredWith(sent: SentItem): Promise<string | undefined> {
     if (sent.object === undefined) return undefined;
-    const split = sent.object.indexOf(":");
-    if (split <= 0) return undefined;
-    const ref = { type: sent.object.slice(0, split), id: sent.object.slice(split + 1) };
+    const ref = parseObjectId(sent.object, { allowEmptyId: true });
+    if (ref === undefined) return undefined;
     let latest: string | undefined;
     try {
       let cursor: string | undefined;

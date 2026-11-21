@@ -5,12 +5,15 @@
  */
 
 import type {
+  KeyBinding,
   PendingItem,
   RunningItem,
+  SettingInfo,
   ViewActionRun,
   ViewListPage,
   ViewObject,
   ViewSectionContent,
+  ViewTypeInfo,
 } from "@operad-io/engine";
 import { isRecord, messageOf } from "@operad-io/engine";
 
@@ -29,46 +32,20 @@ export interface TuiLevel {
   readonly parent?: string | undefined;
 }
 
-/** One object type a client can list. */
-export interface TuiTypeInfo {
-  readonly type: string;
-  readonly title: string;
-  /** The plugin the type belongs to. */
-  readonly plugin?: string;
-  /** The type's filters in display order; absent when it declares none. */
-  readonly filters?: readonly { readonly name: string; readonly states?: readonly string[] }[] | undefined;
-  /** The filter a list opens on; present with `filters`. */
-  readonly defaultFilter?: string | undefined;
-  /** The object types an action that creates this type works on; absent when none does. */
-  readonly parents?: readonly string[] | undefined;
-  /**
-   * The plugin's objects belong under the settings view instead of a tab of
-   * their own; a client gives that plugin no top-bar tab.
-   */
+/** One object type a client can list; an older server may name no plugin. */
+export type TuiTypeInfo = Omit<ViewTypeInfo, "plugin" | "settings"> & {
+  readonly plugin?: string | undefined;
   readonly settings?: boolean | undefined;
-}
+};
 
-/** One entry of `GET /v1/keys`. */
-export interface TuiKeyBinding {
-  readonly key: string;
-  readonly action: string;
-  readonly source: "plugin" | "user";
-}
+/** One entry of `GET /v1/keys`: the server sends only what a terminal needs. */
+export type TuiKeyBinding = Pick<KeyBinding, "key" | "action" | "source">;
 
-/** One entry of `GET /v1/settings`. */
-export interface TuiSetting {
-  /** `<plugin>.<path>`; a project file adds its name. */
-  readonly name: string;
-  /** `global`, or the name of the repository the setting belongs to. */
-  readonly scope: string;
+/** One entry of `GET /v1/settings`; a server value is JSON, a test may give any value. */
+export type TuiSetting = Omit<SettingInfo, "value" | "default"> & {
   readonly value?: unknown;
   readonly default?: unknown;
-  readonly description?: string | undefined;
-  readonly type?: string | undefined;
-  readonly enum?: readonly (string | number | boolean)[] | undefined;
-  readonly editable: boolean;
-  readonly confirm: boolean;
-}
+};
 
 /** What `POST /v1/settings` carries. */
 export interface TuiSetInput {

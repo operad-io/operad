@@ -5,7 +5,7 @@
 
 import { readProfile } from "@operad-io/access-match";
 import { parseImageInputs, type ImageInput, type SharedLine, type WorkerKeep } from "@operad-io/harness-process";
-import { isRecord } from "@operad-io/engine";
+import { isRecord, type CostQuality } from "@operad-io/engine";
 import { mountedServersOf } from "@operad-io/harness-process";
 
 export const EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"] as const;
@@ -73,9 +73,7 @@ export type WorkerResultName = "done" | "failed" | "cancelled";
 
 export type FailureReason = "invalid_input" | "session_missing" | "model_error";
 
-/** `estimated` for a subscription login (an API-price figure), `exact` for an API key. */
-export type CostQuality = "estimated" | "exact";
-
+export type { CostQuality };
 /** Set when the run stopped at a rate limit. */
 export interface WorkerModelError {
   readonly kind: "usage_limit";

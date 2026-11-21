@@ -7,7 +7,7 @@
 import pkg from "../package.json" with { type: "json" };
 import { createHash } from "node:crypto";
 import { stat } from "node:fs/promises";
-import { definePlugin, paramsObject, type PluginLogger, type PluginStepResult, type StepContext } from "@operad-io/engine";
+import { definePlugin, directoryError, paramsObject, type PluginLogger, type PluginStepResult, type StepContext } from "@operad-io/engine";
 import { guardOutward, outwardCommandWrites, personStarted } from "@operad-io/access-match";
 import {
   runLine,
@@ -73,16 +73,6 @@ function envParam(
     entries.push([key, value]);
   }
   return Object.fromEntries(entries);
-}
-
-/** The reason a directory cannot be a working directory, if it cannot. */
-async function directoryError(cwd: string): Promise<string | undefined> {
-  try {
-    const info = await stat(cwd);
-    return info.isDirectory() ? undefined : `cwd is not a directory: ${cwd}`;
-  } catch {
-    return `cwd does not exist: ${cwd}`;
-  }
 }
 
 /** Asks about each outward write in a shell line; undefined when every one is allowed. */

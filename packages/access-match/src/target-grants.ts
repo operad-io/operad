@@ -16,10 +16,11 @@
  * packages.
  */
 
+import { messageOf } from "@operad-io/engine";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { isRecord, type Actor, type FlowDefinition, type OutwardWrite } from "@operad-io/engine";
+import { isMissingFile, isRecord, type Actor, type FlowDefinition, type OutwardWrite } from "@operad-io/engine";
 import { withLockFile } from "@operad-io/engine/platform";
 
 /** The file name of the target grants under the operad home. */
@@ -67,14 +68,6 @@ function emptyFile(): TargetGrantFile {
   return { flows: [], grants: [] };
 }
 
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-function isMissing(error: unknown): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
-}
-
 function nonEmpty(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;
 }
@@ -120,7 +113,7 @@ export async function readTargetGrants(home: string): Promise<TargetGrantRead> {
   try {
     text = await readFile(path, "utf8");
   } catch (error) {
-    if (isMissing(error)) return { file: emptyFile() };
+    if (isMissingFile(error)) return { file: emptyFile() };
     return invalid(path, `cannot be read: ${messageOf(error)}`);
   }
   let raw: unknown;

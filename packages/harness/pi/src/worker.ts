@@ -5,6 +5,7 @@
  * object per line to stdout, the last a Result. `README.md` holds the tables.
  */
 
+import { messageOf } from "@operad-io/engine";
 import { existsSync, mkdirSync } from "node:fs";
 import {
   findGrant,
@@ -210,7 +211,7 @@ export async function runWorker(
     io.log(`pi ${install.version} loaded from ${install.dir}`);
     pi = await loadPi(install);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = messageOf(error);
     io.line(failure("model_error", message));
     return EXIT_FAILED;
   }
@@ -633,7 +634,7 @@ export async function runWorker(
   io.onMessage?.((text) => {
     io.log("a message from the host is given to pi");
     session.prompt(text, { streamingBehavior: "steer", expandPromptTemplates: false }).catch((error: unknown) => {
-      io.log(`a message to pi was not delivered: ${error instanceof Error ? error.message : String(error)}`);
+      io.log(`a message to pi was not delivered: ${messageOf(error)}`);
     });
   });
 
@@ -667,7 +668,7 @@ export async function runWorker(
         if (!cancelled) {
           return finish(
             {
-              ...failure("model_error", error instanceof Error ? error.message : String(error)),
+              ...failure("model_error", messageOf(error)),
               sessionId: session.sessionFile ?? null,
               usage: tally.usage,
               cost: tally.cost,

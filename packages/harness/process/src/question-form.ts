@@ -10,7 +10,7 @@
  * the question by its id and carries labels, text, or `skipped`.
  */
 
-import type { AskQuestion, AskQuestionAnswer, AskQuestionChoice, AskRequest } from "@operad-io/engine";
+import { cut, type AskQuestion, type AskQuestionAnswer, type AskQuestionChoice, type AskRequest } from "@operad-io/engine";
 
 /** The kernel's longest question text, mirrored here so a long one is cut. */
 const MAX_QUESTION_TEXT = 500;
@@ -46,12 +46,6 @@ export interface HarnessQuestion {
 /** A leading `Other`-style label is the free text a harness adds itself. */
 function isOther(label: string): boolean {
   return label.trim().toLowerCase() === "other";
-}
-
-/** Long text is cut to the kernel's bound instead of making the form invalid. */
-function cut(text: string, max: number): string {
-  if (text.length <= max) return text;
-  return `${text.slice(0, max - 1)}…`;
 }
 
 /**

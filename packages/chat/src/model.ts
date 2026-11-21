@@ -6,6 +6,7 @@ import { basename, extname, join } from "node:path";
 import type {
   ActionArgSchema,
   AgentTimings,
+  CostQuality,
   HarnessModels,
   JsonValue,
   ObjectRef,
@@ -206,9 +207,6 @@ export interface ChatData {
   /** The scheduled prompt that opened this chat; absent for every other chat. */
   readonly scheduled?: ScheduledChat | undefined;
 }
-
-/** How far to trust a cost: the harness's own words. */
-export type CostQuality = "exact" | "estimated" | "incomplete";
 
 /** What a plugin gives to create a chat. */
 export interface NewChat {

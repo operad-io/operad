@@ -4,6 +4,7 @@
  * read, and this module applies the same rules when a step loads the file.
  */
 
+import { messageOf } from "@operad-io/engine";
 import { createHash } from "node:crypto";
 import {
   existsSync,
@@ -1682,7 +1683,7 @@ export function settingsValueProblem(
     );
     return undefined;
   } catch (error) {
-    return error instanceof Error ? error.message : String(error);
+    return messageOf(error);
   }
 }
 
@@ -1692,7 +1693,7 @@ export function settingsProblem(repositoryPath: string): string | undefined {
     keep(repositoryPath, readSettingsNow(repositoryPath));
     return undefined;
   } catch (error) {
-    return error instanceof Error ? error.message : String(error);
+    return messageOf(error);
   }
 }
 

@@ -15,7 +15,9 @@ import { dirname } from "node:path";
 import {
   CHANNEL_NOTIFY_KINDS,
   DEFAULT_MCP_CHANNEL,
+  isMissingFile,
   messageOf,
+  parseObjectId,
   type ChannelNotifyKind,
   ViewError,
   type LogBackend,
@@ -127,10 +129,7 @@ interface SeenRow {
 
 /** Reads a run's object key, such as `task:42`. */
 function objectOf(key: string | undefined): ObjectRef | undefined {
-  if (key === undefined) return undefined;
-  const at = key.indexOf(":");
-  if (at <= 0 || at === key.length - 1) return undefined;
-  return { type: key.slice(0, at), id: key.slice(at + 1) };
+  return key === undefined ? undefined : parseObjectId(key);
 }
 
 function rowKey(type: string, id: string): string {
@@ -355,7 +354,7 @@ class ClaudeChannel implements ChannelHandle {
     try {
       text = await readFile(this.sentFile, "utf8");
     } catch (error) {
-      if ((error as { code?: unknown }).code === "ENOENT") return;
+      if (isMissingFile(error)) return;
       this.onLog(`channel: the sent rows could not be read: ${messageOf(error)}`);
       return;
     }

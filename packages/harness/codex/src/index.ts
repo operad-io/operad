@@ -7,6 +7,7 @@
  * owns the process, the wall time and the stall limit.
  */
 
+import { messageOf } from "@operad-io/engine";
 import pkg from "../package.json" with { type: "json" };
 import { liveAccess, readProfile, secretValuesOf, summarizeCall, withDefaultAccess, type AccessProfile } from "@operad-io/access-match";
 import {
@@ -442,7 +443,7 @@ export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
           try {
             command = commandOf(ctx.settings.command);
           } catch (error) {
-            return refuse("missing", error instanceof Error ? error.message : String(error));
+            return refuse("missing", messageOf(error));
           }
           const program = command[0] ?? "";
 
@@ -829,7 +830,7 @@ export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
       try {
         command = commandOf(ctx.settings.command);
       } catch (error) {
-        throw new Error(error instanceof Error ? error.message : String(error));
+        throw new Error(messageOf(error));
       }
       const bun = Bun.which("bun") ?? process.execPath;
       const codex = options.codex ?? codexCommand(bun);

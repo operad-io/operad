@@ -5,6 +5,7 @@
  * itself stays where it was written.
  */
 
+import { messageOf } from "@operad-io/engine";
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { withLockFile } from "@operad-io/engine/platform";
@@ -263,7 +264,7 @@ export async function runMemoryCommit(ctx: StepContext, params: unknown): Promis
   } catch (error) {
     outcome = {
       result: "failed",
-      data: { message: error instanceof Error ? error.message : String(error) },
+      data: { message: messageOf(error) },
     };
   }
   if (target.tidy) {

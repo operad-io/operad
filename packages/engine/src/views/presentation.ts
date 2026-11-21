@@ -70,7 +70,7 @@ import {
   type SettingInfo,
   type SettingsOptions,
 } from "./settings.ts";
-import { isRecord } from "../util.ts";
+import { bareId, isRecord, objectKey, parseObjectId } from "../util.ts";
 import { configPath } from "../config/config.ts";
 import { prepareSettings } from "../plugin/settings.ts";
 import type { JsonValue } from "../log/types.ts";
@@ -474,16 +474,6 @@ function contextOf(value: unknown):
   };
 }
 
-function objectKey(type: string, id: string): string {
-  return `${type}:${id}`;
-}
-
-function splitId(id: string): { readonly type: string; readonly id: string } | undefined {
-  const at = id.indexOf(":");
-  if (at <= 0 || at === id.length - 1) return undefined;
-  return { type: id.slice(0, at), id: id.slice(at + 1) };
-}
-
 function capBytes(markdown: string, limit: number): string {
   const bytes = Buffer.from(markdown, "utf8");
   if (bytes.length <= limit) return markdown;
@@ -763,7 +753,7 @@ export class Views {
           this.log.subscribe((change) => {
             const parsed = change.object === undefined
               ? undefined
-              : splitId(change.object);
+              : parseObjectId(change.object);
             if (parsed === undefined) return;
             if (parsed.type === "flow") return;
             this.publish(parsed, true);
@@ -2014,7 +2004,7 @@ export class Views {
   /** `opens` when it names an object that exists; otherwise the log says why. */
   private async existingOpens(action: string, opens: string | undefined): Promise<string | undefined> {
     if (opens === undefined) return undefined;
-    const typed = splitId(opens);
+    const typed = parseObjectId(opens);
     if (typed === undefined) {
       this.onLog(`action "${action}": opens "${opens}" is not <type>:<id>; not passed on`);
       return undefined;
@@ -2221,7 +2211,7 @@ export class Views {
 
   private async resolve(id: string): Promise<ResolvedObject> {
     await this.prepared();
-    const typed = splitId(id);
+    const typed = parseObjectId(id);
     // A qualified id names its namespace; a different `--repo` is a mistake.
     const qualified = (typed?.id ?? id).split("/");
     if (this.scope !== undefined && qualified.length > 1 && qualified[0] !== this.scope) {
@@ -2352,7 +2342,7 @@ export class Views {
 
     if (this.log !== undefined) {
       const found = (await this.log.runs({ object: id }))[0];
-      const parsed = found === undefined ? undefined : splitId(found.object);
+      const parsed = found === undefined ? undefined : parseObjectId(found.object);
       if (parsed !== undefined) {
         const object = await this.store.get(parsed.type, parsed.id);
         return { type: parsed.type, id: parsed.id, object };
@@ -2714,7 +2704,7 @@ export class Views {
     if (this.log === undefined) return flags;
     const runs = await this.log.runs({ active: true });
     for (const run of runs) {
-      const parsed = splitId(run.object);
+      const parsed = parseObjectId(run.object);
       if (parsed === undefined) continue;
       let state;
       try {
@@ -2849,8 +2839,7 @@ export class Views {
 
   /** The ids nearest to a name that matched nothing, nearest first. */
   async closest(id: string, limit: number): Promise<readonly RecentObject[]> {
-    const wanted = (id.includes(":") ? id.slice(id.indexOf(":") + 1) : id)
-      .toLowerCase();
+    const wanted = bareId(id).toLowerCase();
     const scored: { readonly score: number; readonly entry: RecentObject }[] = [];
     for (const entry of this.registry.objectTypes()) {
       const owner = this.registry.viewsFor(entry.type);

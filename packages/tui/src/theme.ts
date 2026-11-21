@@ -5,6 +5,7 @@
  * `default-bg` (the terminal's default foreground / background).
  */
 
+import { messageOf } from "@operad-io/engine";
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { RGBA } from "@opentui/core";
@@ -253,7 +254,7 @@ function parseThemeFile(file: string): {
   try {
     value = JSON.parse(readFileSync(file, "utf8"));
   } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
+    const reason = messageOf(error);
     throw new Error(`${file} is not valid JSON: ${reason}`);
   }
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -360,7 +361,7 @@ export function chooseSelection(options: {
   try {
     return resolveSelection(options.home, name);
   } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
+    const reason = messageOf(error);
     if (!reason.startsWith("unknown theme")) throw error;
     const where = options.flag === undefined ? ` in ${file}` : " given with --theme";
     throw new Error(`${reason}${where}`);
@@ -464,7 +465,7 @@ export function watchThemes(options: {
       const flag = typeof options.flag === "function" ? options.flag() : options.flag;
       next = chooseSelection({ home: options.home, flag });
     } catch (error) {
-      const problem = error instanceof Error ? error.message : String(error);
+      const problem = messageOf(error);
       const changed = problem !== lastProblem;
       lastProblem = problem;
       if (always || changed) options.onChange(problem);
@@ -495,7 +496,7 @@ function readTuiConfig(file: string): TuiConfig {
   try {
     value = JSON.parse(readFileSync(file, "utf8"));
   } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
+    const reason = messageOf(error);
     throw new Error(`${file} is not valid JSON: ${reason}`);
   }
   if (typeof value !== "object" || value === null || Array.isArray(value)) {

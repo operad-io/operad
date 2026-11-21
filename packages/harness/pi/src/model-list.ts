@@ -9,7 +9,7 @@ import { randomUUID } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
 import { mkdir, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import type { HarnessModelCapability, HarnessModelInfo } from "@operad-io/engine";
+import { isRecord, type HarnessModelCapability, type HarnessModelInfo } from "@operad-io/engine";
 
 /** How long `pi --list-models` may take before pi counts as not answering. */
 export const PI_LIST_TIMEOUT_MS = 10_000;
@@ -137,10 +137,6 @@ interface KeptRead {
   readonly list: readonly string[];
   readonly windows?: Readonly<Record<string, number>> | undefined;
   readonly info?: Readonly<Record<string, HarnessModelInfo>> | undefined;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 const MODEL_CAPABILITY_ORDER = ["vision", "reasoning", "tools", "web"] as const;

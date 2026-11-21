@@ -1,5 +1,8 @@
 /** Small functions that several packages need; each has one definition, here. */
 
+import { stat } from "node:fs/promises";
+import type { ObjectRef } from "./plugin/types.ts";
+
 /** Whether the value is a plain object: not null, not an array. */
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -38,6 +41,69 @@ export function oneLine(
   if (flat.length <= limit) return flat;
   const cut = flat.slice(0, limit - 1);
   return `${trimCut ? cut.trimEnd() : cut}…`;
+}
+
+/** Text cut to at most `max` characters, with an ellipsis at the cut. */
+export function cut(text: string, max: number): string {
+  return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
+}
+
+/**
+ * The type and id a typed object id names, or undefined when it is not one.
+ * `flow:<plugin>/<flow>` is not special here; a caller that owns it refuses it.
+ */
+export function parseObjectId(
+  key: string,
+  options: { readonly allowEmptyId?: boolean | undefined } = {},
+): { readonly type: string; readonly id: string } | undefined {
+  const at = key.indexOf(":");
+  if (at <= 0) return undefined;
+  if (at === key.length - 1 && options.allowEmptyId !== true) return undefined;
+  return { type: key.slice(0, at), id: key.slice(at + 1) };
+}
+
+/** The id without its type: `item:T-1` becomes `T-1`; an untyped id is unchanged. */
+export function bareId(id: string): string {
+  const at = id.indexOf(":");
+  return at < 0 ? id : id.slice(at + 1);
+}
+
+/** The key of an object: `type:id`, or `flow` when a run names no object. */
+export function objectKey(object: ObjectRef | undefined): string;
+/** The key of an object from its type and id: `type:id`. */
+export function objectKey(type: string, id: string): string;
+export function objectKey(object: ObjectRef | string | undefined, id?: string): string {
+  if (typeof object === "string") return `${object}:${id ?? ""}`;
+  return object === undefined ? "flow" : `${object.type}:${object.id}`;
+}
+
+/** The `name` a plugin definition declares, when it declares one. */
+export function definitionName(value: unknown): string | undefined {
+  if (typeof value !== "object" || value === null || !("name" in value)) return undefined;
+  const name = (value as { name?: unknown }).name;
+  return typeof name === "string" ? name : undefined;
+}
+
+/** The reason a directory cannot be a working directory, if it cannot. */
+export async function directoryError(cwd: string): Promise<string | undefined> {
+  try {
+    const info = await stat(cwd);
+    return info.isDirectory() ? undefined : `cwd is not a directory: ${cwd}`;
+  } catch {
+    return `cwd does not exist: ${cwd}`;
+  }
+}
+
+/** The `code` a filesystem error carries, or undefined. */
+export function errorCode(error: unknown): string | undefined {
+  if (typeof error !== "object" || error === null || !("code" in error)) return undefined;
+  const code = (error as { code?: unknown }).code;
+  return typeof code === "string" ? code : undefined;
+}
+
+/** True when the error says the file does not exist. */
+export function isMissingFile(error: unknown): boolean {
+  return errorCode(error) === "ENOENT";
 }
 
 /** Calls back every `ms` until the returned function is called; it never keeps the process alive. */

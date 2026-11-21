@@ -9,6 +9,7 @@
  * another connection is committing instead of giving up at the busy timeout.
  */
 
+import { messageOf } from "../plugin/errors.ts";
 import { Database } from "bun:sqlite";
 import { randomUUID } from "node:crypto";
 import { accessSync, constants, existsSync, mkdirSync } from "node:fs";
@@ -273,7 +274,7 @@ interface DataVersionRow {
 }
 
 function openFailure(path: string, error: unknown): LogBackendError {
-  const detail = error instanceof Error ? error.message : String(error);
+  const detail = messageOf(error);
   return new LogBackendError(`cannot open the sqlite log at ${path}: ${detail}`);
 }
 

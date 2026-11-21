@@ -44,7 +44,7 @@ import {
   type StepTypeDefinition,
   type TickContext,
 } from "./types.ts";
-import { isRecord } from "../util.ts";
+import { isRecord, parseObjectId } from "../util.ts";
 
 export interface NormalizedPlugin {
   readonly name: string;
@@ -141,11 +141,7 @@ export function narrowerOf(...values: readonly unknown[]): number | undefined {
 }
 
 export function parseObjectKeyMaybe(key: string): { readonly type: string; readonly id: string } {
-  const colon = key.indexOf(":");
-  if (colon <= 0 || colon === key.length - 1) {
-    return { type: "object", id: key };
-  }
-  return { type: key.slice(0, colon), id: key.slice(colon + 1) };
+  return parseObjectId(key) ?? { type: "object", id: key };
 }
 
 function isPluginKind(value: unknown): value is PluginKind {

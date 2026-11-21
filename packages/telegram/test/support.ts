@@ -15,6 +15,7 @@ import {
   Views,
   createPluginLogger,
   definePlugin,
+  isRecord,
   loadTriggerRules,
   openLog,
   prepareSettings,
@@ -230,10 +231,6 @@ function fakeHarness(
           ],
         }),
   });
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /** What the fake agent does with one round of a chat's reply. */

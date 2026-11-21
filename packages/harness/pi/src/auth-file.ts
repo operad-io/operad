@@ -5,7 +5,7 @@
  * survive, which is all `signedIn` needs.
  */
 
-import { isRecord } from "@operad-io/engine";
+import { isMissingFile, isRecord } from "@operad-io/engine";
 import { open } from "node:fs/promises";
 
 const QUOTE = 0x22;
@@ -305,15 +305,6 @@ export function redactJsonValues(chunks: Iterable<Uint8Array>): string | undefin
 function hasCredential(auth: Record<string, unknown>, provider: string | undefined): boolean {
   const stored = (id: string): boolean => Object.hasOwn(auth, id) && isRecord(auth[id]);
   return provider === undefined ? Object.keys(auth).some(stored) : stored(provider);
-}
-
-function isMissingFile(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    error.code === "ENOENT"
-  );
 }
 
 /**
