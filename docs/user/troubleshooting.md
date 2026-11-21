@@ -109,9 +109,9 @@ for what waits, and `operad history <id>` for what a run did.
 | Message | What it means | What to do |
 |---|---|---|
 | `run-tests: OPERAD_TEST_PARALLEL must be a whole number of 1 or more, not '<value>'` | The variable is wrong. | Set a whole number of 1 or more, or unset it. |
-| `remote-check: no clone at ~/<tree>` | The check host has no clone at `OPERAD_CHECK_TREE`. | Clone the repository there, or set `OPERAD_CHECK_TREE`. |
-| `remote-check: no check host set; running the check here` | `OPERAD_CHECK_HOST` is unset or empty, and the home has no `dev.checkHost`. | Set `dev.checkHost` in `~/.operad/config.json` (or `OPERAD_CHECK_HOST`) when checks should run on the host; otherwise they run here. |
-| `dev: check commands use scripts/remote-check.sh but no check host is set, so they run here (...)` | A repository's gate or integration commands use `scripts/remote-check.sh`, but neither the home's `dev.checkHost` nor `OPERAD_CHECK_HOST` names a host. | Set `dev.checkHost` with `operad settings set dev.checkHost <user@host>`, or set the variable before `serve` starts; the repository's pending list and Overview say the same. |
+| `remote-check: no clone at ~/<tree>` | The test host has no clone at `OPERAD_CHECK_TREE`. | Clone the repository there, or set `OPERAD_CHECK_TREE`. |
+| `remote-check: no test host set; running the check here` | `OPERAD_CHECK_HOST` is unset or empty, and the home has no `dev.testHost`. | Set `dev.testHost` in `~/.operad/config.json` (or `OPERAD_CHECK_HOST`) when checks should run on the host; otherwise they run here. |
+| `dev: check commands use scripts/remote-check.sh but no test host is set, so they run here (...)` | A repository's gate or integration commands use `scripts/remote-check.sh`, but neither the home's `dev.testHost` nor `OPERAD_CHECK_HOST` names a host. | Set `dev.testHost` with `operad settings set dev.testHost <user@host>`, or set the variable before `serve` starts; the repository's pending list and Overview say the same. |
 | `remote-check: fetch of the bundle failed` | The host could not read the copied bundle. | Check the ssh destination and the host's disk; retry. |
 | A check that fails before its line runs exits 1 | The bundle, copy, connection, fetch or checkout failed. | The one line names the step; fix the host or the network, then retry. |
 | A stress run fails | A test failed under repetition or load. | The log names each failing test; fix the test or the code, then rerun. Do not raise a timeout or add a retry inside the test. |

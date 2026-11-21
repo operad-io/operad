@@ -313,6 +313,7 @@ export async function runVerify(
     flakyLimit: context.settings.check.flakyLoadLimit,
     signal: ctx.signal,
     log: (text) => ctx.logger.write(text),
+    logPath: ctx.logger.path,
   });
   if (steady.cancelled === true) return cancelledStep();
   const { checked } = steady;

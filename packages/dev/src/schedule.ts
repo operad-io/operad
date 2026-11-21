@@ -684,12 +684,12 @@ function reportSettingsProblem(repository: RepositoryData): void {
   console.error(`dev: repository "${repository.name}": ${problem}`);
 }
 
-/** What the scheduler last said about each repository's check host. */
+/** What the scheduler last said about each repository's test host. */
 const reportedCheckHosts = new Map<string, string>();
 
 /**
  * Says once per change that a repository's check commands use
- * `remote-check.sh` while no check host is set. The commands run here,
+ * `remote-check.sh` while no test host is set. The commands run here,
  * so a person must know before the checks do; a host that is set later clears
  * the line, and losing it again says it once more.
  */

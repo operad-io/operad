@@ -443,18 +443,22 @@ the machine's 1-minute load average (the one `running` reports) is below
 by itself. A pass or an assertion failure on that run stands and goes the usual
 way. A second result of the same kind ends with the task waiting for a person,
 and the waiting line says why, for example `check timed out twice under load 18
-on 10 cores`. An integration check that ends this way waits for a person the
+on 10 cores`. A check that ran on the test host uses that host's readings from
+`remote-check.sh`, and the line names the host (`... on 10 cores on user@host`);
+a host that cannot read its load says `unknown` and is judged as quiet, never
+against this machine. An integration check that ends this way waits for a person the
 same way and does not send the task back to work; in a batch, the other tasks
 integrate alone. A real assertion failure goes to the worker as before.
 
 A test that fails and then passes on rerun is still a bug until shown
 otherwise, but only for a run on an idle machine. The check reads the load when
-its command starts and when it ends; if either reading is above
-`check.flakyLoadLimit` (default: twice the number of cores), the failure was
-seen under load. It is recorded with the load (`operad reruns` still counts it)
-and counts toward no task; the check log and the task's history say that it was
-skipped, with the load and the core count. Below the limit, dev proposes the
-task as `check.flakyTask` says.
+its command starts and when it ends, on the test host when the command ran
+there; if either reading is above `check.flakyLoadLimit` (default: twice the
+number of cores), the failure was seen under load. It is recorded with the load
+(`operad reruns` still counts it) and counts toward no task; the check log and
+the task's history say that it was skipped, with the load, the core count and
+the host it came from. An unknown host reading is judged as quiet, never as
+this machine. Below the limit, dev proposes the task as `check.flakyTask` says.
 
 ## Review fallback and retry
 
@@ -773,8 +777,8 @@ refused when the file is read and again before a worktree is created.
 
 `operad settings` lists what a person may tune and `operad settings set <name>
 <value>` changes it (add `--repo <name>` for a repository's files). The home's
-`checks` is `dev.checks`; `checkHost` and `checkSlots` are `dev.checkHost` and
-`dev.checkSlots`, the ssh destination and slot count of
+`checks` is `dev.checks`; `testHost` and `testSlots` are `dev.testHost` and
+`dev.testSlots`, the ssh destination and slot count of
 `scripts/remote-check.sh`. A gate, integration or rerun command gets them as
 `OPERAD_CHECK_HOST` and `OPERAD_CHECK_SLOTS`; an explicit variable in serve's
 own environment wins. When a repository's check commands use

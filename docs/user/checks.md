@@ -53,7 +53,7 @@ packages it chose before the tests (`all`, `none`, or the names).
 with. This repository's task check runs `check-changed.sh`, and its integration
 runs `verify.sh`.
 
-`remote-check.sh` runs a command here, or on the check host when
+`remote-check.sh` runs a command here, or on the test host when
 `OPERAD_CHECK_HOST` is set, at the same commit. It takes the command as one
 argument (a shell command line), or after `--` as separate words that are passed
 on as they are: no shell reads them as code on the way, so a word may hold
@@ -62,7 +62,7 @@ quotes, backquotes or `$`. The rerun of a failed test (`failed.rerun` in
 
 `remote-check.sh` runs one command (a shell line) as a check. With
 `OPERAD_CHECK_HOST` unset or empty it prints
-`remote-check: no check host set; running the check here` on stderr and runs
+`remote-check: no test host set; running the check here` on stderr and runs
 the line here, in the repository root. With it set to an ssh destination
 (`user@host`) it copies `HEAD` to that
 host as a git bundle, and there, holding one of `OPERAD_CHECK_SLOTS` slots
@@ -79,8 +79,10 @@ integration never waits for a task check, and a task check never takes that
 slot. The line sees `OPERAD_CHECK_SLOTS` on the host, so a check can use
 `cores / (N + 1)` test workers. The output comes back as it is written and the
 exit code is the line's; a failure before the line runs (bundle, copy,
-connection, fetch, checkout) exits 1 with one line that names the step. The host
-needs a clone of
+connection, fetch, checkout) exits 1 with one line that names the step. At the
+start and the end of the line it also prints the host's load and core count, so
+`dev` judges the machine the check ran on; a host that cannot read its load
+prints `load unknown` instead. The host needs a clone of
 the repository and Bun.
 
 | Variable | Type | Default | What it does |
@@ -96,7 +98,7 @@ the repository and Bun.
 Each variable is read when the script starts.
 
 A `dev` task's gate, integration and rerun commands also get the host and
-slots from the home's `dev.checkHost` and `dev.checkSlots` settings, so a
+slots from the home's `dev.testHost` and `dev.testSlots` settings, so a
 restart of `serve` does not lose them. An explicit `OPERAD_CHECK_HOST` or
 `OPERAD_CHECK_SLOTS` in `serve`'s own environment wins over the setting. When a
 repository's check commands use `scripts/remote-check.sh` and no host is set,

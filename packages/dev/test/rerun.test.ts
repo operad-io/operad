@@ -83,3 +83,27 @@ describe("a failed test that fails again when run alone", () => {
     }
   });
 });
+
+describe("the log offset a check run reports", () => {
+  test("a whole-list rerun keeps where its first command began", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "rerun-first-start-"));
+    const path = join(dir, "check.log");
+    let calls = 0;
+    const runStep: NonNullable<StepContext["runStep"]> = async (_name, params) => {
+      const lines = (params as { readonly lines: readonly string[] }).lines;
+      calls += 1;
+      return calls === 1
+        ? {
+            result: "fail",
+            data: { reason: "exit", exitCode: 1, line: lines[0] ?? "", log: path, logStart: 10 },
+          }
+        : {
+            result: "pass",
+            data: { lines: 1, tail: [], log: path, logStart: 20 },
+          };
+    };
+    const checked = await runCheckCommands(runStep, { cwd: dir }, ["bun test"], {} as never, 1);
+    expect(calls).toBe(2);
+    expect(checked.logStart).toBe(10);
+  });
+});

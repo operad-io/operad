@@ -1,5 +1,5 @@
 /**
- * The check host and its slots: the home's `dev.checkHost` and `dev.checkSlots`
+ * The test host and its slots: the home's `dev.testHost` and `dev.testSlots`
  * become the environment of every gate, integration and rerun command. A
  * repository whose commands use `remote-check.sh` is told when neither
  * the settings nor serve's own environment names a host.
@@ -21,20 +21,20 @@ type Environment = Readonly<Record<string, string | undefined>>;
 
 /** The host a setting names, or undefined when the setting is absent. */
 function hostSetting(settings: Readonly<Record<string, unknown>>): string | undefined {
-  const value = settings.checkHost;
+  const value = settings.testHost;
   if (value === undefined) return undefined;
   if (typeof value !== "string" || value.trim().length === 0) {
-    throw new Error("dev settings: checkHost must be a non-empty string");
+    throw new Error("dev settings: testHost must be a non-empty string");
   }
   return value;
 }
 
 /** How many checks the setting allows on the host, or undefined. */
 function slotsSetting(settings: Readonly<Record<string, unknown>>): number | undefined {
-  const value = settings.checkSlots;
+  const value = settings.testSlots;
   if (value === undefined) return undefined;
   if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
-    throw new Error("dev settings: checkSlots must be a whole number of 1 or more");
+    throw new Error("dev settings: testSlots must be a whole number of 1 or more");
   }
   return value;
 }
@@ -107,5 +107,5 @@ export function checkHostWarning(
 ): string | undefined {
   if (checkHostOf(homeSettings, env) !== undefined) return undefined;
   if (!usesRemoteCheck(repositorySettings)) return undefined;
-  return `check commands use ${REMOTE_CHECK_SCRIPT} but no check host is set, so they run here (repository "${repository}"; set dev.checkHost or ${CHECK_HOST_VARIABLE})`;
+  return `check commands use ${REMOTE_CHECK_SCRIPT} but no test host is set, so they run here (repository "${repository}"; set dev.testHost or ${CHECK_HOST_VARIABLE})`;
 }

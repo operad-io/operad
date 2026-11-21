@@ -105,8 +105,8 @@ harness. With no enabled harness both are `radian/agent`.
 | `dev.check.loadLimit` | number | unset: the number of cores | above `0`, a 1-minute load average | When a check timed out or was killed from outside | Refused: `check.loadLimit: must be a positive number` |
 | `dev.check.flakyLoadLimit` | number | unset: twice the number of cores | above `0`, a 1-minute load average | When a test failed and then passed on rerun | Refused: `check.flakyLoadLimit: must be a positive number` |
 
-The check host is a setting of the home, not of `dev.json`: `dev.checkHost`
-(an ssh destination) and `dev.checkSlots` (how many checks run at once on it)
+The test host is a setting of the home, not of `dev.json`: `dev.testHost`
+(an ssh destination) and `dev.testSlots` (how many checks run at once on it)
 in [config.json](config.md#dev). A gate, integration or rerun command gets them
 as `OPERAD_CHECK_HOST` and `OPERAD_CHECK_SLOTS`; an explicit variable in
 `serve`'s own environment wins. When a repository's check commands use
@@ -153,8 +153,10 @@ timed out again, and the load during that run was below `check.flakyLoadLimit`
 (by default twice the number of cores), the machine is not to blame. The change
 goes back to the worker as a failure whose note names the test, says it "timed
 out at 30 s when run alone under load 3 on 10 cores", and gives the log path. A
-timeout seen only under a load above the limit, or a test that passes when run
-alone, is handled as before.
+check on the test host uses that host's load and names it, for example "under
+load 3 on 16 cores on hai@host"; an unknown host reading is judged as a quiet
+machine. A timeout seen only under a load above the limit, or a test that passes
+when run alone, is handled as before.
 
 ### Work, review, integration and cleanup
 

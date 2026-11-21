@@ -212,3 +212,18 @@ Each package keeps its mutation checks in `MUTATIONS.md`; a row names the broken
 | T-0663-M2 | scripts/bench-serve.ts | `getJson` left the client's abort signal out of its request, so closing the client could not end an open request | `serve benchmark > closing a client aborts a request that is still open` |
 | T-0663-M3 | scripts/bench-serve.ts | every request path counted as a log read, so pending and transcript requests raised the rate | `serve benchmark > log reads per second counts log section requests only` |
 | T-0663-M4 | scripts/bench-serve.ts | the profile's epoch time base was always mapped through serve's span, so the measured window shifted and dropped its samples | `serve benchmark > a profile on the wall clock keeps the measured window`, `serve benchmark > only samples inside the measured window reach the profile list` |
+
+## T-0659 — the stress stop does not wait on a finished job
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0659-M1 | scripts/stress.sh | the stop ended with a bare `wait` after `wait <pids>`, so bash 5's finished job entry stalled the stop on Linux | `scripts/stress.sh > SIGKILL of the test runner stops a test file that ignores SIGTERM` |
+| T-0659-M2 | scripts/stress.sh | `starter_alive` judged the starter only by `lstart`, so a reused pid in the same second kept the parent watcher from stopping the script | `scripts/stress.sh > SIGKILL of the test runner stops a test file that ignores SIGTERM` |
+
+## T-0660 — dev judges the load of the machine the check ran on
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0660-M4 | scripts/remote-check.sh | the end load line was not printed, so dev saw only the start of the check | `remote-check.sh > on the host it prints the host's load at the start and the end` |
+| T-0660-M7 | scripts/remote-check.sh | the start load line was not printed, so a check carried only its end reading | `remote-check.sh > on the host it prints the host's load at the start and the end` |
+| T-0660-M8 | scripts/remote-check.sh | an unreadable host load printed as a zero reading instead of `unknown` | `remote-check.sh > a host that cannot read its load says unknown` |
