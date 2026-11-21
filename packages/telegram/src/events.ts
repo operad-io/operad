@@ -10,8 +10,17 @@
  */
 
 import { CHAT_TYPE, TRANSCRIPT } from "@operad-io/chat";
-import { messageOf, type SourceContext, type ViewEvent } from "@operad-io/engine";
+import { messageOf, type SourceContext } from "@operad-io/engine";
 import { delay } from "./source.ts";
+
+/** The part of a client event this plugin reads, without importing the host's view type. */
+export interface TelegramEvent {
+  readonly id: string;
+  readonly type?: string | undefined;
+  readonly section?: string | undefined;
+  readonly tail?: string | undefined;
+  readonly status?: { readonly text: string; readonly since: number } | undefined;
+}
 
 /** How long to wait before following the client's events again after a failure. */
 export const EVENT_RETRY_MS = 1_000;
@@ -19,13 +28,13 @@ export const EVENT_RETRY_MS = 1_000;
 /** What the one event loop tells each part of the plugin. */
 export interface EventSinks {
   /** A live `transcript` tail, or a stored change of a chat with a progress message. */
-  readonly progress?: ((event: ViewEvent) => void) | undefined;
+  readonly progress?: ((event: TelegramEvent) => void) | undefined;
   /** A stored change of a chat bound to Telegram. */
-  readonly replies?: ((event: ViewEvent) => void) | undefined;
+  readonly replies?: ((event: TelegramEvent) => void) | undefined;
   /** A stored change of a chat bound to Telegram. */
-  readonly typing?: ((event: ViewEvent) => void) | undefined;
+  readonly typing?: ((event: TelegramEvent) => void) | undefined;
   /** Any stored change; pending items can be about any object. */
-  readonly pending?: ((event: ViewEvent) => void) | undefined;
+  readonly pending?: ((event: TelegramEvent) => void) | undefined;
   /** A stored change, for the command menu. */
   readonly commands?: (() => void) | undefined;
   /** A chat whose stored state changed, for the source's dedupe memory. */
@@ -41,7 +50,7 @@ export class TelegramEvents {
   private readonly ctx: SourceContext;
   private readonly wait: (ms: number, signal: AbortSignal) => Promise<void>;
   private readonly controller = new AbortController();
-  private iterator: AsyncIterator<ViewEvent> | undefined;
+  private iterator: AsyncIterator<TelegramEvent> | undefined;
   private stopped = false;
   private watching: Promise<void> = Promise.resolve();
 
@@ -95,7 +104,7 @@ export class TelegramEvents {
     }
   }
 
-  private dispatch(event: ViewEvent, sinks: EventSinks): void {
+  private dispatch(event: TelegramEvent, sinks: EventSinks): void {
     if (event.id.length === 0) return;
     if (event.section !== undefined) {
       // A live tail is not a stored change; only the progress side reads it.

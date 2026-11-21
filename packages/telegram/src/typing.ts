@@ -13,9 +13,9 @@
  */
 
 import { CHAT_TYPE, allEntries, allMessages, chatData, unanswered } from "@operad-io/chat";
-import { messageOf, type ClientApi, type SourceContext, type ViewEvent } from "@operad-io/engine";
+import { messageOf, type ClientApi, type SourceContext } from "@operad-io/engine";
 import type { BotApi } from "./api.ts";
-import { TelegramEvents } from "./events.ts";
+import { TelegramEvents, type TelegramEvent } from "./events.ts";
 import { telegramChatsOf } from "./replies.ts";
 import { delay } from "./source.ts";
 
@@ -104,7 +104,7 @@ export class TypingSender {
   }
 
   /** One stored change of a chat, as the plugin's one event loop hands it over. */
-  handleEvent(event: ViewEvent): void {
+  handleEvent(event: TelegramEvent): void {
     if (event.section !== undefined) return;
     void this.syncChat(event.id).catch((error: unknown) => this.log(`could not show typing: ${messageOf(error)}`));
   }

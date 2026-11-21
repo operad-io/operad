@@ -30,11 +30,10 @@ import {
   type PendingItem,
   type SourceContext,
   type ViewAction,
-  type ViewEvent,
 } from "@operad-io/engine";
 import { BotApiError, type BotApi, type InlineButton, type TelegramCallback, type TelegramMessage } from "./api.ts";
 import { PENDING_NOTHING } from "./commands.ts";
-import { TelegramEvents } from "./events.ts";
+import { TelegramEvents, type TelegramEvent } from "./events.ts";
 import { telegramChatsOf } from "./replies.ts";
 import { delay } from "./source.ts";
 import { telegramSettings, type TelegramSettings } from "./settings.ts";
@@ -186,7 +185,7 @@ export class PendingSender implements PendingResponder {
   }
 
   /** A stored change; a burst of them is gathered into one later pending pass. */
-  handleEvent(event: ViewEvent): void {
+  handleEvent(event: TelegramEvent): void {
     if (event.section !== undefined || this.stopped) return;
     this.debounce?.abort();
     const timer = new AbortController();

@@ -16,9 +16,9 @@
  */
 
 import { CHAT_TYPE, allEntries, allMessages, chatData } from "@operad-io/chat";
-import { messageOf, type SourceContext, type ViewEvent } from "@operad-io/engine";
+import { messageOf, type SourceContext } from "@operad-io/engine";
 import { BotApiError, type BotApi } from "./api.ts";
-import { TelegramEvents } from "./events.ts";
+import { TelegramEvents, type TelegramEvent } from "./events.ts";
 import { telegramChunks, type TelegramChunk } from "./format.ts";
 import { TELEGRAM_SOURCE } from "./source.ts";
 import { readSent, writeSent, pruneSent, SENT_STATE_MARGIN_MS, type SentRecord, type SentState } from "./state.ts";
@@ -127,7 +127,7 @@ export class ReplySender {
   }
 
   /** One stored change of a chat, as the plugin's one event loop hands it over. */
-  handleEvent(event: ViewEvent): void {
+  handleEvent(event: TelegramEvent): void {
     if (event.section !== undefined) return;
     void this.sweepChat(event.id).catch((error: unknown) => this.log(`could not send replies: ${messageOf(error)}`));
   }

@@ -16,9 +16,9 @@
  */
 
 import { CHAT_TYPE, TRANSCRIPT, allEntries, allMessages, chatData } from "@operad-io/chat";
-import { messageOf, type SourceContext, type ViewEvent } from "@operad-io/engine";
+import { messageOf, type SourceContext } from "@operad-io/engine";
 import { BotApiError, type BotApi } from "./api.ts";
-import { TelegramEvents } from "./events.ts";
+import { TelegramEvents, type TelegramEvent } from "./events.ts";
 import { progressStatusLine, telegramProgress, type TelegramChunk } from "./format.ts";
 import { telegramChatsOf } from "./replies.ts";
 import { delay } from "./source.ts";
@@ -53,7 +53,7 @@ interface ChatProgress {
   /** A manual check reads the section even before a message exists. */
   probe: boolean;
   /** The newest live tail waiting for this chat, already carrying its whole text. */
-  live: ViewEvent | undefined;
+  live: TelegramEvent | undefined;
   timer: AbortController | undefined;
 }
 
@@ -79,7 +79,7 @@ export class ProgressSender {
   private readonly working = new Map<string, Promise<void>>();
   private readonly marks = new Map<string, string>();
   /** Live tails that arrived before their chat was known to be bound. */
-  private readonly pendingLive = new Map<string, ViewEvent>();
+  private readonly pendingLive = new Map<string, TelegramEvent>();
   /** Chats a manual check must bind even without a live event. */
   private readonly probes = new Set<string>();
   private state: ProgressState;
@@ -126,7 +126,7 @@ export class ProgressSender {
   }
 
   /** One event from the plugin's one loop: a live tail, or a stored chat change. */
-  handleEvent(event: ViewEvent): void {
+  handleEvent(event: TelegramEvent): void {
     if (event.id.length === 0) return;
     const chat = this.chats.get(event.id);
     if (event.section !== undefined) {
@@ -193,7 +193,7 @@ export class ProgressSender {
     return created;
   }
 
-  private wake(chatId: string, event: ViewEvent | undefined, manual: boolean): Promise<void> {
+  private wake(chatId: string, event: TelegramEvent | undefined, manual: boolean): Promise<void> {
     if (this.stopped) return Promise.resolve();
     const existing = this.chats.get(chatId);
     if (existing !== undefined) {
@@ -236,7 +236,7 @@ export class ProgressSender {
     await this.loop(chatId, chat);
   }
 
-  private request(chatId: string, chat: ChatProgress, event: ViewEvent | undefined, manual: boolean): void {
+  private request(chatId: string, chat: ChatProgress, event: TelegramEvent | undefined, manual: boolean): void {
     if (this.stopped) return;
     chat.live = event?.section === undefined ? undefined : event;
     if (manual) chat.probe = true;
@@ -272,7 +272,7 @@ export class ProgressSender {
     }
   }
 
-  private async step(chatId: string, chat: ChatProgress, live: ViewEvent | undefined): Promise<void> {
+  private async step(chatId: string, chat: ChatProgress, live: TelegramEvent | undefined): Promise<void> {
     if (this.stopped) return;
     const now = this.clock();
     // The throttle comes before every read: a tail inside the window is not even
