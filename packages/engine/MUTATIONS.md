@@ -1281,3 +1281,11 @@ resume window`. Rows are append-only, so the old lines stay as history.
 | T-0609-M2 | packages/engine/src/http/server.ts | the line check used `<` instead of `<=`, so a tail exactly at the limit was replaced instead of sent | `SSE event size > a tail at the line limit goes through as one tail event` |
 | T-0609-M3 | packages/engine/src/http/server.ts | the line check counted UTF-16 code units instead of UTF-8 bytes, so a multi-byte tail over the byte limit was sent | `SSE event size > no line of a random tail exceeds the limit, including multi-byte UTF-8` |
 | T-0609-M4 | packages/engine/src/http/server.ts | `formatEvent` skipped the line check, so an object id too long for one line was written whole | `SSE event size > a change id too long to fit becomes a reset instead of a long line` |
+
+## T-0610 — the pending list reads only its open routes
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0610-M1 | packages/engine/src/log/sqlite.ts | `openCandidateRoutes` stopped excluding a candidate route whose input has a resolve outcome | `log backend: sqlite > openCandidateRoutes keeps the candidate routes with no resolve` |
+| T-0610-M2 | packages/engine/src/log/sqlite.ts | `startRoutesWithoutRun` stopped excluding a start route whose input already has a run | `log backend: sqlite > startRoutesWithoutRun keeps start routes whose input has no run` |
+| T-0610-M3 | packages/engine/src/trigger/kernel.ts | `candidates` read every input and outcome again instead of the open candidate routes | `candidates reads only the unresolved candidates after many resolved inputs` |

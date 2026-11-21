@@ -73,6 +73,8 @@ function counting(inner: LogBackend): { log: LogBackend; reads: Reads } {
       reads.outcomesReturned += result.length;
       return result;
     },
+    openCandidateRoutes: () => inner.openCandidateRoutes(),
+    startRoutesWithoutRun: () => inner.startRoutesWithoutRun(),
     close: () => inner.close(),
   };
   return { log, reads };

@@ -229,6 +229,19 @@ export interface LogBackend extends Partial<LogSubscription> {
   ): Promise<RecordOutcomeResult>;
   /** Stream every recorded outcome in the order it was written. */
   readOutcomes(): AsyncIterable<InputOutcome>;
+  /**
+   * The route outcomes that are still open candidates: the route value is
+   * `candidate` and no resolve outcome was written for its input. In sequence
+   * order, so the caller sees the same order as `readOutcomes`.
+   */
+  openCandidateRoutes(): Promise<InputOutcome[]>;
+  /**
+   * The route outcomes that start (the route value is `started`, or it is
+   * `candidate` and its resolve value is `started`) and that no run names as
+   * its start input. In sequence order, so the caller sees the same order as
+   * `readOutcomes`.
+   */
+  startRoutesWithoutRun(): Promise<InputOutcome[]>;
   close(): Promise<void>;
 }
 

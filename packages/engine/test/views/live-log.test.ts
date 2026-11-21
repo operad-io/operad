@@ -239,6 +239,8 @@ function manualLog(inner: LogBackend): {
     recordOutcome: (inputId, kind, payload) =>
       inner.recordOutcome(inputId, kind, payload),
     readOutcomes: () => inner.readOutcomes(),
+    openCandidateRoutes: () => inner.openCandidateRoutes(),
+    startRoutesWithoutRun: () => inner.startRoutesWithoutRun(),
     close: () => inner.close(),
   };
   return {
