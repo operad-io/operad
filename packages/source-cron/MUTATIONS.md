@@ -46,3 +46,13 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0553-M1 | packages/source-cron/src/schedules.ts | an empty `--params` was parsed as JSON instead of adding none or clearing the flow's parameters | `scheduled flows > an empty --params adds none and clears the ones an edit finds` |
+
+## T-0618 — a cron poll scans only when it can find something
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0618-M1 | packages/source-cron/src/index.ts | a poll no longer skipped a minute it had already handled, so every check scanned again | `scan cost > a poll inside an already handled minute does no scan` (a scan count of 2 instead of 1) |
+| T-0618-M2 | packages/source-cron/src/index.ts | `dueMinute` used the two-year default again instead of stopping at the recorded last time | `scan cost > the backward scan stops at the recorded last time` (the lookback was undefined instead of one minute) |
+| T-0618-M3 | packages/source-cron/src/index.ts | a catch-up scanned the whole seven-day window instead of stopping at the recorded last time | `scan cost > a missed minute is still caught up after a gap, scanning back only to the last time` (a lookback of 7 days instead of three hours) |
+| T-0618-M4 | packages/source-cron/src/index.ts | a paused rule scanned seven days instead of stopping at its recorded last time | `scan cost > a paused rule scans no further back than its recorded last time` (7 days instead of five minutes) |
+| T-0618-M5 | packages/source-cron/src/index.ts | a catch-up with nothing planned after the last time reset the recorded time to the poll's minute | `missed runs > a miss older than 7 days runs nothing` (the recorded last time moved from 2025-01-01 to the poll's minute) |

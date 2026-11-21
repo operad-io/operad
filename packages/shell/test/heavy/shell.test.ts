@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { chmod, mkdir } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   SqlitePluginStore,
@@ -58,6 +59,9 @@ function dataOf(result: PluginStepResult): Record<string, unknown> {
 }
 
 describe("shell/command", () => {
+  // The outward line runs outside a repository, so git refuses it at once: a
+  // push from inside this checkout waits on the remote and can outlast the test.
+  const outward = { line: "git push --dry-run origin main", cwd: tmpdir() };
   test("runs a line and keeps its output in a file", async () => {
     const { registry } = await fixture();
     const result = await registry.runStep(
@@ -78,7 +82,7 @@ describe("shell/command", () => {
     const asked: string[] = [];
     const result = await registry.runStep(
       "shell/command",
-      { line: "git push --dry-run origin main" },
+      outward,
       {
         runId: "run-outward",
         access: { ...defaultAccess(), background: true } as never,
@@ -105,7 +109,7 @@ describe("shell/command", () => {
         {
           id: "send",
           kind: "plugin",
-          params: { use: "shell/command", params: { line: "git push --dry-run origin main" } },
+          params: { use: "shell/command", params: outward },
           replay: "safe",
           next: { pass: "done", fail: "done", interrupted: "done" },
         },
@@ -115,7 +119,7 @@ describe("shell/command", () => {
     let asked = 0;
     await registry.runStep(
       "shell/command",
-      { line: "git push --dry-run origin main" },
+      outward,
       {
         runId: "run-target-grant-1",
         flow,
@@ -135,7 +139,7 @@ describe("shell/command", () => {
 
     await registry.runStep(
       "shell/command",
-      { line: "git push --dry-run origin main" },
+      outward,
       {
         runId: "run-target-grant-2",
         flow,
@@ -165,7 +169,7 @@ describe("shell/command", () => {
     const asked: string[] = [];
     const result = await registry.runStep(
       "shell/probe",
-      { line: "git push --dry-run origin main" },
+      outward,
       {
         runId: "run-probe-outward",
         access: { ...defaultAccess(), background: true } as never,

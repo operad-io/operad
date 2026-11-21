@@ -67,11 +67,12 @@ describe("a backlog decision is cited by its ADR", () => {
   });
 
   test("a citation is reported with the file and the line", () => {
-    expect(backlogDecisionCitations("a.ts", "one\n// operad.md decision 13\ntwo\n决定 4\nthree\n// operad-bot.md 第 4 条\nfour\n// item 13 of operad.md\n")).toEqual([
+    expect(backlogDecisionCitations("a.ts", "one\n// operad.md decision 13\ntwo\n决定 4\nthree\n// operad-bot.md 第 4 条\nfour\n// item 13 of operad.md\nfive\n// see packages/operad.md section 3\nsix\n")).toEqual([
       "a.ts:2: cites a backlog decision by number",
       "a.ts:4: cites a backlog decision by number",
       "a.ts:6: cites a backlog decision by number",
       "a.ts:8: cites a backlog decision by number",
+      "a.ts:10: cites a backlog decision by number",
     ]);
     expect(backlogDecisionCitations("a.md", "ADR 0002 D1 to D4 and ADR 0025 D3.")).toEqual([]);
     expect(backlogDecisionCitations("a.md", "two decisions 3 days later")).toEqual([]);
