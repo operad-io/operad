@@ -150,6 +150,8 @@ Types (`StepContext`, `ActionTypeDefinition`, `ObjectRow`, ...) are exported too
 | `readConfig` | `readConfig(home)`: the home's `config.json`, checked and with defaults filled; a file a plugin cannot use should be read as its own section, never this way | [Settings](settings.md#the-entry-in-configjson) |
 | `isRangeSyntax` | Whether a version range is one of `^`, `~`, `>=` or exact | [`requires`](define-plugin.md#requires) |
 | `satisfiesRange` | Whether a version satisfies a range | [`requires`](define-plugin.md#requires) |
+| `readVersionText` | `readVersionText(text)`: a full `x.y.z` version with its prerelease parts, or `undefined`; a leading `v` and a build suffix are allowed | [`requires`](define-plugin.md#requires) |
+| `compareVersionText` | `compareVersionText(a, b)`: negative, zero or positive as one version is below, equal to or above another; a prerelease is below its release | [`requires`](define-plugin.md#requires) |
 
 ## Events and schedules
 

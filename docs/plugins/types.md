@@ -204,3 +204,4 @@ The types a plugin imports, by the page that explains them. The values these ent
 | `TypeFilters` | A type's filters in display order and the name of its default. | [views](views.md) |
 | `ViewContext` | The context a `load` call receives. | [views](views.md) |
 | `ViewSection` | One section a detail page offers. `live` means its content still grows. | [views](views.md) |
+| `VersionText` | A full version as text: `major`, `minor`, `patch` and `prerelease`. | [define-plugin](define-plugin.md#requires) |
