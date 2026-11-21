@@ -38,10 +38,7 @@ export type { MemoryPluginStoreOptions } from "./store.ts";
 export { PLUGIN_STORE_SCHEMA_VERSION, SqlitePluginStore } from "./sqlite-store.ts";
 export type { SqlitePluginStoreOptions } from "./sqlite-store.ts";
 export { openPluginStore } from "./open-store.ts";
-export type {
-  OpenPluginStoreOptions,
-  PluginStoreBackend,
-} from "./open-store.ts";
+export type { OpenPluginStoreOptions } from "./open-store.ts";
 export {
   ActionArgsError,
   fileProperties,

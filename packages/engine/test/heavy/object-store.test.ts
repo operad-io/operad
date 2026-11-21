@@ -13,7 +13,6 @@ import {
   SqlitePluginStore,
   WhereError,
   type PluginStore,
-  type PluginStoreBackend,
 } from "../../src/index.ts";
 import { type ImmediateWriter, writeImmediate } from "../../src/platform/index.ts";
 import { waitForFile } from "../wait-for-file.ts";
@@ -28,11 +27,12 @@ const APPEND_CHILD = join(
   "append-facts-child.ts",
 );
 
-const BACKENDS: readonly PluginStoreBackend[] = ["sqlite"];
+const BACKENDS = ["sqlite"] as const;
+type Backend = (typeof BACKENDS)[number];
 
-async function open(backend: PluginStoreBackend): Promise<PluginStore> {
+async function open(backend: Backend): Promise<PluginStore> {
   const root = await tempRoot();
-  return openPluginStore({ backend, root: join(root, backend) });
+  return openPluginStore({ root: join(root, backend) });
 }
 
 function ids(

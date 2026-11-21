@@ -26,7 +26,7 @@ import {
 import { AskHost, type AskTimer } from "./ask.ts";
 import { StepLimits } from "./limits.ts";
 import { accessWith, usedGrants } from "./grants.ts";
-import { appendInput, applyInput, keepState, parseObjectKey, readState } from "./service.ts";
+import { appendInput, applyInput, keepState, readState } from "./service.ts";
 
 /** The wall time a plugin step may take before the run records a failure. */
 export const DEFAULT_STEP_TIMEOUT_MS = 5 * 60 * 1000;
@@ -783,14 +783,6 @@ export class Runner {
       limiter,
       asker,
     );
-  }
-
-  private startInputFor(access: JsonValue | undefined): Input {
-    return {
-      kind: "start",
-      ...(this.params === undefined ? {} : { params: this.params }),
-      ...(access === undefined ? {} : { access }),
-    };
   }
 
   /** The profile given to the runner, or the one the log recorded at start. */

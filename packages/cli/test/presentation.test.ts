@@ -226,7 +226,6 @@ describe("operad presentation commands", () => {
       }),
     );
     const store = openPluginStore({
-      backend: "sqlite",
       root: join(root, "store"),
     });
     store.put("item", "one", { title: "One", state: "new", plan: "P1" }, "seed");

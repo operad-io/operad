@@ -69,7 +69,6 @@ test("candidates reads only the unresolved candidates after many resolved inputs
   const root = await tempRoot();
   const storeRoot = join(root, "store");
   const inner = openLog({
-    backend: "sqlite",
     path: join(storeRoot, "log.sqlite"),
     clock: () => 1_700_000_000_000,
   });
@@ -135,7 +134,6 @@ test("refusedStarts reads only the start routes without a run", async () => {
   const root = await tempRoot();
   const storeRoot = join(root, "store");
   const inner = openLog({
-    backend: "sqlite",
     path: join(storeRoot, "log.sqlite"),
     clock: () => 1_700_000_000_000,
   });

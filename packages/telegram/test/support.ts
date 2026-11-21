@@ -282,7 +282,7 @@ export async function createTelegramWorld(options: WorldOptions): Promise<Telegr
   };
 
   const store = new SqlitePluginStore({ root: storeRoot, clock });
-  const log = openLog({ backend: "sqlite", path: join(storeRoot, SQLITE_FILE_NAME), follow: false });
+  const log = openLog({ path: join(storeRoot, SQLITE_FILE_NAME), follow: false });
   let kernel: Kernel | undefined;
   const registry = new PluginRegistry([createChatPlugin(), createBotPlugin(), fakeHarness(
       options.agent,

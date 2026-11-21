@@ -91,7 +91,6 @@ async function setup(): Promise<Setup> {
   );
   const config = await readConfig(home);
   const store = openPluginStore({
-    backend: "sqlite",
     root: join(root, "store"),
   });
   const log = openConfigLog(config);

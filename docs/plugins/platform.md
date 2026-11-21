@@ -66,7 +66,7 @@ Every process a step starts through the platform carries an environment marker n
 | `reapMarked(options)` | The sweep behind the two: stops the marked processes `select` picks, up to `REAP_ROUNDS` times, and writes one line per process |
 | `reapStale({ home, activeRunIds, log, ... })` | At `serve` start: stops the processes of this home whose run is not active, and says so once |
 | `describeProcess(found)` | `pid: command` with the command cut to `COMMAND_WIDTH` characters |
-| `StepTracker`, `pollTrackedSteps(table?)` | Follows the descendants of a running step (a poll every `TRACK_MS`, and on macOS a kqueue watch read every `WATCH_MS`); `pollTrackedSteps` looks at the table now, for a test that must not wait for a timer |
+| `StepTracker` | Follows the descendants of a running step (a poll every `TRACK_MS`, and on macOS a kqueue watch read every `WATCH_MS`) |
 | `listMarkedProcesses`, `readProcessTable`, `parseEnvColumn(text)`, `parseStart(text)` | How the sweep reads the user's processes from `ps`; they work the same on macOS and Linux |
 | `REAP_ROUNDS`, `TRACK_MS`, `WATCH_MS`, `COMMAND_WIDTH` | `3`, `200`, `2` and `120` |
 | `machineLoad()` | `{ load1, cores }`: the one-minute load average (rounded to hundredths; `0` where the platform has none) and the core count, for a reader deciding whether a failure was load |
@@ -132,7 +132,7 @@ A watch is the fast path, not a promise: on macOS a write that lands in a sqlite
 | `watchDirectory(directory, onChange)` | Calls `onChange(filename \| null)` when anything in `directory` changes. Returns a stop function; a missing directory does nothing and still returns one |
 | `waitForChange(directory, entry, ms)` | Resolves when `entry` (or an unnamed entry) changes in `directory`, or after `ms`, whichever is first. The directory is watched, not the file, because a rename replaces the file |
 | `resolveSubscriptionWatch(options)` | The `{ pollMs, repeat, watch }` one subscription uses; `repeat` and `watch` can be replaced by a test |
-| `followsChanges(options)` | `false` when `follow: false`, `readonly: true`, `readOnly: true` or `oneShot: true` is given (a command that answers once and exits has nothing to follow); otherwise `true` |
+| `followsChanges(options)` | `false` when `follow: false` is given (a command that answers once and exits has nothing to follow); otherwise `true` |
 | `DEFAULT_POLL_MS` | `500`: how often an open subscription re-reads storage by default |
 | `openWaitHandles`, `openWaitHandleCount()` | Test-only: the watches and timers `waitForChange` holds open; a suite asserts zero at the end, so a wait that forgets to close its handles fails |
 

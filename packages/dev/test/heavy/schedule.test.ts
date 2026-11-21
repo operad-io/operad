@@ -849,7 +849,7 @@ describe("dev scheduling", () => {
 
   test("a cancelled task never starts work", async () => {
     const fixture = await setup();
-    const log = openLog({ backend: "sqlite", path: join(fixture.root, "log", "log.sqlite") });
+    const log = openLog({ path: join(fixture.root, "log", "log.sqlite") });
     try {
       const plan = await makePlan(fixture, { slug: "plan", auto: "run" });
       const task = await makeTask(fixture, plan.key, "task");
@@ -1014,7 +1014,7 @@ describe("dev scheduling", () => {
 
   test("a cancelled dependency is a pending item a person can answer", async () => {
     const fixture = await setup({ concurrency: 2 });
-    const log = openLog({ backend: "sqlite", path: join(fixture.root, "log", "log.sqlite") });
+    const log = openLog({ path: join(fixture.root, "log", "log.sqlite") });
     try {
       const plan = await makePlan(fixture, {
         slug: "plan",
@@ -1096,7 +1096,7 @@ describe("dev scheduling", () => {
     const plan = await makePlan(fixture, { slug: "plan", auto: "off" });
     const task = await makeTask(fixture, plan.key, "task");
     await confirm(fixture, plan.key);
-    const log = openLog({ backend: "sqlite", path: join(fixture.root, "log", "log.sqlite") });
+    const log = openLog({ path: join(fixture.root, "log", "log.sqlite") });
     try {
       // The state T-0001 was left in: the run stopped in `work` with a result
       // that had no edge, and the task still said waiting with that run id.

@@ -21,6 +21,7 @@ import type { LogBackend } from "../log/types.ts";
 import { messageOf } from "../plugin/errors.ts";
 import { runLine } from "../platform/process-group.ts";
 import { parseObjectKey, readState } from "../runner/service.ts";
+import { isRecord } from "../util.ts";
 
 /** The fact kind a recorded notification has. */
 export const NOTIFIED_FACT = "notified";
@@ -137,12 +138,7 @@ export class Notifier {
     for await (const fact of this.options.log.readGlobal()) {
       if (fact.kind !== NOTIFIED_FACT) continue;
       const payload = fact.payload;
-      if (
-        typeof payload === "object" &&
-        payload !== null &&
-        !Array.isArray(payload) &&
-        typeof payload.key === "string"
-      ) {
+      if (isRecord(payload) && typeof payload.key === "string") {
         keys.add(payload.key);
       }
     }

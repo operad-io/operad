@@ -89,7 +89,7 @@ async function setup(): Promise<{
 }> {
   const root = await tempRoot();
   const storeRoot = join(root, "store");
-  const log = openLog({ backend: "sqlite", path: join(storeRoot, "log.sqlite") });
+  const log = openLog({ path: join(storeRoot, "log.sqlite") });
   const { definition, seen, flows } = plugin();
   const registry = new PluginRegistry([definition], {
     home: root,
@@ -204,7 +204,7 @@ describe("run access profile", () => {
   test("a run a plugin starts on tick records the profile in the log", async () => {
     const root = await tempRoot();
     const storeRoot = join(root, "store");
-    const log = openLog({ backend: "sqlite", path: join(storeRoot, "log.sqlite") });
+    const log = openLog({ path: join(storeRoot, "log.sqlite") });
     const { definition } = plugin();
     const registry = new PluginRegistry(
       [

@@ -10,7 +10,7 @@
  */
 
 import { dlopen, FFIType } from "bun:ffi";
-import { errorCode, isMissingFile } from "../util.ts";
+import { errorCode, isMissingFile, isRecord } from "../util.ts";
 import { randomBytes } from "node:crypto";
 import {
   closeSync,
@@ -168,8 +168,8 @@ function readLockFile(path: string): LockFile {
   } catch {
     return { raw, record: undefined };
   }
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return { raw, record: undefined };
-  const fields = parsed as Record<string, unknown>;
+  if (!isRecord(parsed)) return { raw, record: undefined };
+  const fields = parsed;
   const pid = fields.pid;
   const nonce = fields.nonce;
   if (typeof pid !== "number" || !Number.isInteger(pid) || pid <= 0) {
@@ -275,7 +275,6 @@ async function acquire(
   lockPath: string,
   clock: () => number,
   wait: (ms: number) => Promise<void>,
-  log: (message: string) => void,
   timeoutMs: number,
 ): Promise<LockRecord> {
   const started = clock();
@@ -378,7 +377,6 @@ export async function withLockFile<T>(
     lockPath,
     clock,
     wait,
-    log,
     options.timeoutMs ?? LOCK_TIMEOUT_MS,
   );
   try {

@@ -241,7 +241,6 @@ describe("answering a dev wait through /v1/answer", () => {
     const home = join(fixture.root, "home");
     mkdirSync(home, { recursive: true });
     const log = openLog({
-      backend: "sqlite",
       path: join(fixture.root, "log", "log.sqlite"),
     });
     const views = createViews({

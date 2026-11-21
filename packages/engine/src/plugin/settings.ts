@@ -7,6 +7,7 @@ import type { JsonValue } from "../log/types.ts";
 import { ActionArgsError, validateSchemaValue } from "./action-schema.ts";
 import type { ActionArgSchema, ActionArgsSchema } from "./types.ts";
 import { isRecord } from "../util.ts";
+import { deepFreeze } from "./freeze.ts";
 
 function cloneJson(value: unknown): unknown {
   if (Array.isArray(value)) return value.map((item) => cloneJson(item));
@@ -34,15 +35,6 @@ function applyDefaults(schema: ActionArgSchema, value: unknown): unknown {
     result[name] = applyDefaults(property, result[name]);
   }
   return result;
-}
-
-function deepFreeze<T>(value: T): T {
-  if (typeof value !== "object" || value === null) return value;
-  Object.freeze(value);
-  for (const item of Object.values(value as Record<string, unknown>)) {
-    deepFreeze(item);
-  }
-  return value;
 }
 
 /**

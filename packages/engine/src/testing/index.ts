@@ -16,6 +16,7 @@ import type {
 } from "./types.ts";
 
 export { fakeClock } from "./clock.ts";
+export { answerRun, type AnswerOptions } from "./answer.ts";
 export { cleanup, memoryStore, testWorld };
 export type {
   EmitOptions,

@@ -7,7 +7,6 @@ import {
   MemoryPluginStore,
   PluginRegistry,
   Runner,
-  answerRun,
   defineFlow,
   definePlugin,
   historyEntries,
@@ -24,6 +23,7 @@ import {
   sleepUntilAborted,
   storeRootOf,
 } from "../../src/index.ts";
+import { answerRun } from "../../src/testing/index.ts";
 import {
   keptWorkerArgument,
   markerEnv,

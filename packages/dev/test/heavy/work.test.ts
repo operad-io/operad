@@ -14,7 +14,6 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
-  answerRun,
   definePlugin,
   isRecord,
   listPending,
@@ -25,6 +24,7 @@ import {
   type Fact,
   type PluginStepResult,
 } from "@operad-io/engine";
+import { answerRun } from "@operad-io/engine/testing";
 import {
   addPlan,
   addRepository,
@@ -425,7 +425,6 @@ class QuestionTimer {
 
 async function startDevFlow(state: Fixture, name = "dev") {
   const log = openLog({
-    backend: "sqlite",
     path: join(state.root, "log", "log.sqlite"),
   });
   const found = state.registry.flow(name);

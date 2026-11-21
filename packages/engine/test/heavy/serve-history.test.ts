@@ -94,7 +94,6 @@ for (const backend of ["sqlite"] as const) {
       const root = await tempRoot();
       const storeRoot = join(root, "store");
       const inner = openLog({
-        backend,
         path: join(storeRoot, "log.sqlite"),
       });
       const { log, reads } = counting(inner);
@@ -189,7 +188,6 @@ for (const backend of ["sqlite"] as const) {
       const root = await tempRoot();
       const storeRoot = join(root, "store");
       const inner = openLog({
-        backend,
         path: join(storeRoot, "log.sqlite"),
       });
       let failures = 1;
@@ -243,7 +241,6 @@ for (const backend of ["sqlite"] as const) {
     test("inputs after a position, one input by id, and outcomes after a sequence", async () => {
       const root = await tempRoot();
       const log = openLog({
-        backend,
         path: join(root, "store", "log.sqlite"),
       });
       try {
@@ -265,7 +262,6 @@ for (const backend of ["sqlite"] as const) {
         // Lines of different byte lengths, and an input another handle wrote.
         await log.recordInput(null, "manual", "wide-é-ü", { text: "é".repeat(50) });
         const other = openLog({
-          backend,
           path: join(root, "store", "log.sqlite"),
         });
         try {

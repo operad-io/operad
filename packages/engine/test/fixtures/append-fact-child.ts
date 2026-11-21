@@ -17,7 +17,7 @@ if (directory === undefined || directory.length === 0) {
   fail("missing store directory");
 }
 
-const log = openLog({ backend: "sqlite", path: join(directory, "log.sqlite") });
+const log = openLog({ path: join(directory, "log.sqlite") });
 try {
   const info = await log.startRun("demo-flow", "item:one");
   await log.append(info.runId, 0, [

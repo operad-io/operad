@@ -18,6 +18,7 @@ import type {
 import { inputCause } from "./types.ts";
 import { storedChoiceInfo, type ChoiceInfoMap } from "../plugin/choice-info.ts";
 import { answersJson, normalizeAnswers, storedAnswers, storedQuestions } from "../plugin/question-form.ts";
+import { isRecord } from "../util.ts";
 
 /** The default number of times a run may enter the same step. */
 export const DEFAULT_MAX_VISITS = 10;
@@ -40,7 +41,7 @@ function edgesOf(step: Step): Readonly<Record<string, string>> {
 /** The result names the step may produce. */
 /** The `message` a step's data carries, as a field to spread into a payload. */
 function messageField(data: JsonValue | undefined): { readonly message?: string } {
-  if (typeof data !== "object" || data === null || Array.isArray(data)) return {};
+  if (!isRecord(data)) return {};
   const message = (data as { readonly message?: unknown }).message;
   return typeof message === "string" && message.length > 0 ? { message } : {};
 }
@@ -92,10 +93,6 @@ type EnterVia = {
   readonly answered?: AnsweredAsk;
 };
 
-function isPlainRecord(value: unknown): value is Record<string, JsonValue> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 /**
  * The params the step runs again with after its question was answered: the
  * params it had, the session it left, and the answer. Anything the step did
@@ -106,11 +103,11 @@ function resumedParams(base: JsonValue, answered: AnsweredAsk): JsonValue {
   const session =
     typeof resume === "string"
       ? resume
-      : isPlainRecord(resume) && typeof resume.session === "string"
+      : isRecord(resume) && typeof resume.session === "string"
         ? resume.session
         : undefined;
   return {
-    ...(isPlainRecord(base) ? base : {}),
+    ...(isRecord(base) ? base : {}),
     ...(session === undefined ? {} : { resumeSession: session }),
     askAnswer: {
       prompt: answered.prompt,
@@ -134,7 +131,7 @@ function formEdge(
   choice: string | undefined,
 ): string | undefined {
   const edges = edgesOf(step);
-  const named = isPlainRecord(resume) && typeof resume.choice === "string" ? resume.choice : undefined;
+  const named = isRecord(resume) && typeof resume.choice === "string" ? resume.choice : undefined;
   if (named !== undefined && edges[named] !== undefined) return named;
   if (choice !== undefined && edges[choice] !== undefined) return choice;
   if (step.kind === "wait_person") {
@@ -148,10 +145,10 @@ function formEdge(
 /** The one-time permission the call the step asked about gets, if it named one. */
 function grantsFrom(answered: AnsweredAsk): readonly Grant[] | undefined {
   const resume = answered.resume;
-  if (!isPlainRecord(resume)) return undefined;
+  if (!isRecord(resume)) return undefined;
   const grant = resume.grant;
   if (
-    !isPlainRecord(grant) ||
+    !isRecord(grant) ||
     (grant.kind !== "command" && grant.kind !== "path") ||
     typeof grant.value !== "string" ||
     grant.value.length === 0
@@ -183,10 +180,10 @@ function grantsFrom(answered: AnsweredAsk): readonly Grant[] | undefined {
 /** The question in the data of a `waiting` result, when it is well formed. */
 function askedIn(result: string, data: unknown): AskedVia | undefined {
   if (result !== "waiting") return undefined;
-  if (typeof data !== "object" || data === null || Array.isArray(data)) {
+  if (!isRecord(data)) {
     return undefined;
   }
-  const record = data as Record<string, unknown>;
+  const record = data;
   if (typeof record.waitId !== "string" || record.waitId.length === 0) {
     return undefined;
   }
@@ -206,10 +203,10 @@ function askedIn(result: string, data: unknown): AskedVia | undefined {
 
 /** The step a result names, when its data came from a step that stopped. */
 function stepNameOf(data: unknown): string | undefined {
-  if (typeof data !== "object" || data === null || Array.isArray(data)) {
+  if (!isRecord(data)) {
     return undefined;
   }
-  const step = (data as Record<string, unknown>).step;
+  const step = data.step;
   return typeof step === "string" && step.length > 0 ? step : undefined;
 }
 

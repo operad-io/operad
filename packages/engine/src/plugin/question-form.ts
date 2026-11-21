@@ -49,11 +49,6 @@ export function formChoices(questions: readonly AskQuestion[]): string[] {
   return (question.choices ?? []).map((choice) => choice.label);
 }
 
-/** The text a form shows where only one line fits: each question on its own line. */
-export function formPrompt(questions: readonly AskQuestion[]): string {
-  return questions.map((question) => question.text).join("\n\n");
-}
-
 function nonEmpty(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }

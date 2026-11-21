@@ -8,14 +8,13 @@ import { withLockFile, type LockFileOptions } from "../platform/index.ts";
 import {
   openLog,
   type LogBackend,
-  type LogBackendName,
   type LogBackendOptions,
 } from "../log/index.ts";
 import { SQLITE_FILE_NAME } from "../log/sqlite.ts";
 import { isMissingFile, isRecord } from "../util.ts";
 
 /** The storage backend the log uses. */
-export type StoreBackend = LogBackendName;
+export type StoreBackend = "sqlite";
 
 /** Where the log lives: the sqlite file. */
 export interface StoreConfig {
@@ -473,18 +472,6 @@ export function configJson(config: OperadConfig): Record<string, unknown> {
   };
 }
 
-/** Writes a config file, replacing it atomically enough for one command. */
-export async function writeConfig(
-  home: string,
-  config: OperadConfig,
-): Promise<void> {
-  await mkdir(home, { recursive: true });
-  await writeFile(
-    configPath(home),
-    `${JSON.stringify(configJson(config), null, 2)}\n`,
-  );
-}
-
 /**
  * A config that does not mention `plugins` is a config someone wrote for the
  * store only; `init` installs the given plugins into it and leaves the rest.
@@ -660,7 +647,6 @@ export function openConfigLog(
 ): LogBackend {
   return openLog({
     ...options,
-    backend: config.store.backend,
     path: config.store.path,
   });
 }

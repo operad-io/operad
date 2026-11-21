@@ -29,7 +29,7 @@ async function setup() {
   writeFileSync(unloaded, "export const b = 1;\n");
 
   const storeRoot = join(home, "store");
-  const log = openLog({ backend: "sqlite", path: join(storeRoot, "log.sqlite") });
+  const log = openLog({ path: join(storeRoot, "log.sqlite") });
   const registry = new PluginRegistry([], {
     home,
     storeRoot,

@@ -10,10 +10,8 @@ import {
   historyEntries,
   listRunning,
   loadPluginRegistry,
-  openConfigLog,
   openLog,
   openPluginStore,
-  readConfig,
   serveOnce,
   type Fact,
   type LogBackend,
@@ -118,7 +116,6 @@ async function setup(mode: "memory" | "file"): Promise<Env> {
   // Every fact gets a later time than the one before it, so queue order is exact.
   let tick = 0;
   const log = openLog({
-    backend: "sqlite",
     path: join(storeRoot, "log.sqlite"),
     clock: () => {
       tick = Math.max(Date.now(), tick + 1);
@@ -135,7 +132,7 @@ async function setup(mode: "memory" | "file"): Promise<Env> {
       : await loadPluginRegistry({
           home,
           cwd: home,
-          store: openPluginStore({ backend: "sqlite", root: storeRoot }),
+          store: openPluginStore({ root: storeRoot }),
         });
   const flows = new Map<string, string>();
   const env: Env = {

@@ -6,6 +6,7 @@ import { evolve, initialState } from "../kernel/state.ts";
 import type { KernelState } from "../kernel/types.ts";
 import { queuedSteps } from "../runner/limits.ts";
 import { parseObjectKey } from "../runner/service.ts";
+import { isRecord } from "../util.ts";
 import type { Views } from "./presentation.ts";
 
 export interface RunningItem {
@@ -60,10 +61,7 @@ async function readRun(
       queues.clear();
     }
     const payload = fact.payload;
-    const effectId =
-      typeof payload === "object" && payload !== null && !Array.isArray(payload)
-        ? payload.effectId
-        : undefined;
+    const effectId = isRecord(payload) ? payload.effectId : undefined;
     if (typeof effectId !== "string") continue;
     if (fact.kind === "step_queued") {
       if (!queues.has(effectId)) queues.set(effectId, fact.time);

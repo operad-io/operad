@@ -31,7 +31,7 @@ if (home === undefined || storeRoot === undefined || runId === undefined) {
 }
 
 const store = new SqlitePluginStore({ root: storeRoot });
-const log = openLog({ backend: "sqlite", path: join(storeRoot, "log.sqlite") });
+const log = openLog({ path: join(storeRoot, "log.sqlite") });
 let chatId = "";
 let round = 0;
 

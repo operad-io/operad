@@ -163,7 +163,7 @@ describe("a source plugin's start gets the client API", () => {
     const storeRoot = join(root, "store");
     const store = new MemoryPluginStore({ root: storeRoot });
     const channel: Channel = { client: undefined, seen: [], answered: () => Promise.resolve() };
-    const log = openLog({ backend: "sqlite", path: join(storeRoot, "log.sqlite") });
+    const log = openLog({ path: join(storeRoot, "log.sqlite") });
     const registry = new PluginRegistry([gate, channelPlugin(channel)], {
       home: root,
       storeRoot,
@@ -268,7 +268,7 @@ describe("a source plugin's start gets the client API", () => {
     const storeRoot = join(root, "store");
     const store = new MemoryPluginStore({ root: storeRoot });
     const registry = new PluginRegistry([gate], { home: root, storeRoot, store });
-    const log = openLog({ backend: "sqlite", path: join(storeRoot, "log.sqlite") });
+    const log = openLog({ path: join(storeRoot, "log.sqlite") });
     const views = createViews({ registry, store, log });
     try {
       store.put("item", "1", {}, "test");
@@ -292,7 +292,7 @@ describe("a source plugin's start gets the client API", () => {
     const storeRoot = join(root, "store");
     const store = new MemoryPluginStore({ root: storeRoot });
     const registry = new PluginRegistry([gate], { home: root, storeRoot, store });
-    const log = openLog({ backend: "sqlite", path: join(storeRoot, "log.sqlite") });
+    const log = openLog({ path: join(storeRoot, "log.sqlite") });
     const views = createViews({ registry, store, log });
     try {
       const answerWithout = views.answer({ runId: "r", waitId: "w", choice: "x" } as never);
@@ -323,7 +323,7 @@ describe("a source plugin's start gets the client API", () => {
     const storeRoot = join(root, "store");
     const store = new MemoryPluginStore({ root: storeRoot });
     const registry = new PluginRegistry([gate], { home: root, storeRoot, store });
-    const log = openLog({ backend: "sqlite", path: join(storeRoot, "log.sqlite") });
+    const log = openLog({ path: join(storeRoot, "log.sqlite") });
     const views = createViews({ registry, store, log });
     const kernel = new Kernel({
       log,

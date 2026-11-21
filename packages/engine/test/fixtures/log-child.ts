@@ -4,7 +4,8 @@
  * suite spawns it so SIGKILL and cross-process races test real processes.
  */
 import { randomUUID } from "node:crypto";
-import type { LogBackend, LogBackendFactory } from "../../src/index.ts";
+import type { LogBackend } from "../../src/index.ts";
+import type { LogBackendFactory } from "../log-conformance.ts";
 
 function fail(message: string): never {
   process.stderr.write(`${message}\n`);
