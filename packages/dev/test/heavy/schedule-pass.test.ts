@@ -13,6 +13,8 @@ import poolPlugin from "@operad-io/pool";
 import { createChatPlugin } from "@operad-io/chat";
 import { createShellPlugin } from "@operad-io/shell";
 import plugin from "../../src/index.ts";
+import devFlow from "../../flows/dev.flow.ts";
+import { compileDevFlow } from "../../src/flow-compiler.ts";
 import {
   addPlan,
   addRepository,
@@ -41,6 +43,7 @@ afterAll(cleanupTempRoots);
 afterEach(() => {
   changeClock.now = () => Date.now();
   schedulerTestHooks.write = undefined;
+  schedulerTestHooks.declare = undefined;
 });
 guardLockHandles();
 
@@ -130,6 +133,31 @@ async function putTask(
 async function tick(fixture: Fixture): Promise<void> {
   await fixture.registry.tick();
   fixture.registry.takeStartedRuns();
+}
+
+/** A graph as an older dev recorded it: its announcements have no edge for `waiting`. */
+function olderGraph(name: string): ReturnType<typeof compileDevFlow> {
+  const graph = compileDevFlow(name, [
+    { stage: "code" },
+    { stage: "test" },
+    { stage: "review" },
+    { stage: "human" },
+  ]);
+  return {
+    ...graph,
+    steps: graph.steps.map((step) => {
+      const params = step.params as { readonly use?: unknown } | undefined;
+      if (params?.use !== "dev/announce" || step.next === undefined || step.next === null) {
+        return step;
+      }
+      return {
+        ...step,
+        next: Object.fromEntries(
+          Object.entries(step.next).filter(([result]) => result !== "waiting"),
+        ),
+      };
+    }),
+  };
 }
 
 describe("the dev scheduler's repeated pass", () => {
@@ -248,6 +276,59 @@ describe("the dev scheduler's repeated pass", () => {
       exactTasks: 1,
     });
     expect(fixture.store.calls.put.filter((type) => type === "plan").length).toBeGreaterThan(0);
+  });
+
+  test("a content-addressed flow is declared once, while dev and a refused graph are tried each pass", async () => {
+    const fixture = await setup();
+    writeSettings(fixture.repositoryPath, {
+      name: fixture.repository.name,
+      flows: {
+        custom: { stages: [{ stage: "code" }, { stage: "human" }] },
+      },
+    });
+    const plan = await addPlan(fixture.store, {
+      repository: fixture.repository,
+      slug: "plan",
+      title: "plan",
+    });
+    const builtIn = await addTask(fixture.store, {
+      plan: plan.id,
+      slug: "built-in",
+      title: "built-in",
+    });
+    await putTask(fixture, builtIn.id, { flowName: "dev", flowGraph: devFlow });
+    const refused = await addTask(fixture.store, {
+      plan: plan.id,
+      slug: "refused",
+      title: "refused",
+    });
+    const refusedName = "dev/repository/default/0123456789ab";
+    await putTask(fixture, refused.id, {
+      flowName: refusedName,
+      flowGraph: olderGraph(refusedName),
+    });
+
+    const declared: string[] = [];
+    schedulerTestHooks.declare = (flow) => declared.push(flow.name);
+    await tick(fixture);
+    const first = [...declared];
+    declared.length = 0;
+    await tick(fixture);
+    const second = [...declared];
+
+    const custom = first.find((name) => name.startsWith("dev/repository/custom/"));
+    expect(custom).toBeString();
+    // The content-addressed flow was declared on the first pass only.
+    expect(second).not.toContain(custom);
+    // The built-in flow's name has no hash, so it is declared again.
+    expect(first).toContain("dev");
+    expect(second).toContain("dev");
+    // A graph today's steps refuse is not remembered as declared.
+    expect(first).toContain(refusedName);
+    expect(second).toContain(refusedName);
+    expect(
+      fixture.lines.filter((line) => line.includes("keeps no recorded flow")),
+    ).toHaveLength(1);
   });
 
   test("an unchanged settings text still checks a referenced workerBrief file", async () => {

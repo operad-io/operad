@@ -69,6 +69,8 @@ import {
 /** Where a scheduler change goes: the kernel loop's output. */
 export const schedulerTestHooks: {
   write?: ((line: string) => void) | undefined;
+  /** Called before a generated flow is handed to the kernel; a test counts them. */
+  declare?: ((flow: FlowDefinition) => void) | undefined;
 } = {};
 
 export function writeSchedulerLine(line: string): void {
@@ -160,6 +162,7 @@ function declareFlowOnce(ctx: TickContext, graph: FlowDefinition): void {
   if (contentAddressed(name) && keepsDeclarations(ctx.store)) {
     let declared = declaredFlowNames.get(ctx.store);
     if (declared?.has(name)) return;
+    schedulerTestHooks.declare?.(graph);
     ctx.declareFlow(graph);
     if (declared === undefined) {
       declared = new Set();
@@ -168,6 +171,7 @@ function declareFlowOnce(ctx: TickContext, graph: FlowDefinition): void {
     declared.add(name);
     return;
   }
+  schedulerTestHooks.declare?.(graph);
   ctx.declareFlow(graph);
 }
 
