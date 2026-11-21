@@ -38,7 +38,10 @@ class EventClient implements ClientApi {
   }
 
   announce(id: string): void {
-    const event = { id };
+    this.announceEvent({ id });
+  }
+
+  announceEvent(event: ViewEvent): void {
     if (this.wake !== undefined) {
       const wake = this.wake;
       this.wake = undefined;
@@ -315,6 +318,28 @@ describe("the typing indicator", () => {
     await f.sender.syncChat(f.chat);
     await f.api.until(() => f.api.chatActions.length >= 2);
     expect(f.api.chatActions).toHaveLength(2);
+    await f.stop();
+  });
+
+  test("an unrelated stored change and a live tail read nothing", async () => {
+    const f = await setup();
+    await nextTurn();
+    let reads = 0;
+    const original = f.w.store.get.bind(f.w.store);
+    f.w.store.get = ((type: string, id: string) => {
+      reads += 1;
+      return original(type, id);
+    }) as typeof f.w.store.get;
+
+    f.client.announceEvent({ id: "task:t1", type: "task" });
+    await nextTurn();
+    expect(reads).toBe(0);
+
+    f.client.announceEvent({ id: f.chat, type: "chat", section: "transcript", tail: "writing" });
+    await nextTurn();
+    expect(reads).toBe(0);
+
+    f.w.store.get = original as typeof f.w.store.get;
     await f.stop();
   });
 
