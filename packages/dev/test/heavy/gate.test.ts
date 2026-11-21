@@ -741,6 +741,32 @@ async function head(state: Fixture): Promise<string> {
   return gitOrThrow(state.worktree, ["rev-parse", "HEAD"]);
 }
 
+/**
+ * Marks the task's current attempt as one whose work left a change in the main
+ * checkout, the way `dev/work` records it (T-0646): the line in the worker's
+ * answer and in the task's Changes.
+ */
+async function changedMainCheckout(
+  state: Fixture,
+  files: readonly string[] = ["main-only.txt"],
+): Promise<string> {
+  const object = await state.store.get("task", state.taskKey);
+  if (object === undefined) throw new Error("task disappeared");
+  const task = taskData(object.data);
+  const line = `changed the main checkout: ${files.join(", ")}`;
+  await state.store.put(
+    "task",
+    state.taskKey,
+    {
+      ...task,
+      brief: `${task.brief ?? ""}\n\n## Changes\n- ${line}`,
+      attempt: { ...task.attempt, finalMessage: line },
+    },
+    "test:main-checkout",
+  );
+  return line;
+}
+
 function deferredPlace(): { promise: Promise<void>; release: () => void } {
   let release: () => void = () => {};
   const promise = new Promise<void>((done) => {
@@ -1511,6 +1537,68 @@ describe("dev/review", () => {
     expect(fact?.data.bytes).toBeGreaterThan(1_000_000);
     const largest = fact?.data.largest as readonly { readonly path: string }[];
     expect(largest[0]?.path).toBe("big.txt");
+  });
+});
+
+describe("dev/review and the main checkout", () => {
+  test("an attempt that changed the main checkout fails with that major finding", async () => {
+    const state = await fixture({ reviewerArgs: ["none"] });
+    await verify(state);
+    writeFileSync(
+      join(state.remote.repository, "main-only.txt"),
+      "changed outside the worktree\n",
+    );
+    const line = await changedMainCheckout(state);
+
+    const result = await review(state);
+    expect(result.result).toBe("fail");
+    expect(result.data?.decision).toBe("findings");
+    expect(result.data?.counted).toBe(1);
+    expect(result.data?.findings).toEqual([
+      {
+        file: "main-only.txt",
+        line: 0,
+        severity: "major",
+        summary: "the work changed this file in the main checkout",
+        trigger: "the work must make this change in its own worktree instead",
+      },
+    ]);
+    // The reviewer was told the line and what to call it.
+    const prompt = state.reviewer.calls[0]?.prompt ?? "";
+    expect(prompt).toContain(line);
+    expect(prompt).toContain("This is a major finding");
+
+    // The task goes to rework with the finding, and the main checkout stays.
+    const back = await rework(state);
+    expect(back.result).toBe("again");
+    const task = await taskOf(state);
+    expect(task.brief).toContain("the work changed this file in the main checkout");
+    expect(task.brief).toContain("make this change in its own worktree");
+    expect(readFileSync(join(state.remote.repository, "main-only.txt"), "utf8")).toBe(
+      "changed outside the worktree\n",
+    );
+  });
+
+  test("an attempt without a main-checkout change is reviewed as before", async () => {
+    const state = await fixture({ reviewerArgs: ["none"] });
+    await verify(state);
+    const result = await review(state);
+    expect(result.result).toBe("pass");
+    expect(result.data?.findings).toEqual([]);
+    expect(state.reviewer.calls[0]?.prompt ?? "").not.toContain(
+      "## The main checkout",
+    );
+  });
+
+  test("an empty diff with a main-checkout change still fails", async () => {
+    const state = await fixture({ commit: false, reviewerArgs: ["none"] });
+    await verify(state);
+    await changedMainCheckout(state);
+    const result = await review(state);
+    expect(result.result).toBe("fail");
+    expect(result.data?.reason).toBe("findings");
+    expect(result.data?.counted).toBe(1);
+    expect(state.reviewer.calls).toHaveLength(0);
   });
 });
 
