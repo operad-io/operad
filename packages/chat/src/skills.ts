@@ -5,8 +5,8 @@
  * load skills itself gets the skill's body in the message instead.
  */
 
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { parseObjectId, type StoredObject, type ViewSkill } from "@operad-io/engine";
 import {
   MAX_PROMPT_DESCRIPTION_CHARS,
@@ -27,6 +27,39 @@ export interface ChatSkill {
 
 /** Reads an object as a view does, through its type's `prepare` when it has one. */
 export type ObjectReader = (type: string, id: string) => Promise<StoredObject | undefined>;
+
+/** Whether a path is a directory; a path that cannot be read is not one. */
+export function isDirectory(path: string): boolean {
+  try {
+    return statSync(path).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/** Whether a directory holds a skill's `SKILL.md`. */
+export function hasSkill(path: string): boolean {
+  try {
+    return statSync(join(path, "SKILL.md")).isFile();
+  } catch {
+    return false;
+  }
+}
+
+/** Adds a path to a list once, under its resolved path. */
+export function added(list: string[], path: string): void {
+  const normal = resolve(path);
+  if (!list.includes(normal)) list.push(normal);
+}
+
+/** The skills directly inside a directory: each child that holds a SKILL.md. */
+export function skillsInside(parent: string): string[] {
+  if (!isDirectory(parent)) return [];
+  return readdirSync(parent, { withFileTypes: true })
+    .map((entry) => join(parent, entry.name))
+    .filter((path) => hasSkill(path))
+    .sort((left, right) => left.localeCompare(right));
+}
 
 /** The description on one line, cut at the same cap the harness prompt uses. */
 function shortDescription(description: string): string | undefined {

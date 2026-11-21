@@ -14,11 +14,15 @@ import {
   WORKTREE_NOTE,
   WORKTREE_REPLY_EVENT,
   agentConditionals,
+  added,
   type AgentChoices,
   chatData,
   chatRef,
   createChat,
+  hasSkill,
+  isDirectory,
   sendMessage,
+  skillsInside,
   startingEffort,
   startingModel,
   titleFromMessage,
@@ -268,36 +272,6 @@ interface ChatSkillList {
   readonly directories: string[];
   /** The directories a listed path names, denied for writing. */
   readonly roots: string[];
-}
-
-function isDirectory(path: string): boolean {
-  try {
-    return statSync(path).isDirectory();
-  } catch {
-    return false;
-  }
-}
-
-function hasSkill(path: string): boolean {
-  try {
-    return statSync(join(path, "SKILL.md")).isFile();
-  } catch {
-    return false;
-  }
-}
-
-function added(list: string[], path: string): void {
-  const normal = resolve(path);
-  if (!list.includes(normal)) list.push(normal);
-}
-
-/** The skills directly inside a directory: each child that holds a SKILL.md. */
-function skillsInside(parent: string): string[] {
-  if (!isDirectory(parent)) return [];
-  return readdirSync(parent, { withFileTypes: true })
-    .map((entry) => join(parent, entry.name))
-    .filter((path) => hasSkill(path))
-    .sort((left, right) => left.localeCompare(right));
 }
 
 /**
