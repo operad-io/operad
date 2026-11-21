@@ -39,6 +39,46 @@ describe("parseStepFlags", () => {
 });
 
 describe("resultFor", () => {
+  test("a model error keeps the retry after the worker reported", () => {
+    const outcome = {
+      exitCode: 1,
+      signal: null,
+      cancelled: false,
+      wall: false,
+      stall: false,
+      lineTooLong: false,
+      missing: false,
+      spawnError: undefined,
+      stderrTail: [],
+    };
+    const worker: AgentWorkerResult = {
+      type: "result",
+      result: "failed",
+      sessionId: "s",
+      usage: {},
+      cost: null,
+      finalMessage: null,
+      reason: "model_error",
+      message: "the model is busy",
+      modelError: { kind: "unavailable", status: 429, retry_after_secs: 42 },
+    };
+    const step = resultFor(
+      { harness: "fake", model: null },
+      outcome,
+      worker,
+      "/tmp/log",
+      1,
+      { wallTimeSecs: 1, stallSecs: 1 },
+      "fake",
+    );
+    expect(step.data?.modelError).toEqual({
+      kind: "unavailable",
+      status: 429,
+      retry_after_secs: 42,
+      message: "the model is busy",
+    });
+  });
+
   test("a done result keeps the reason the worker gave for answering with nothing", () => {
     const outcome = {
       exitCode: 0,

@@ -7,6 +7,7 @@ import type {
   StoredObject,
 } from "@operad-io/engine";
 import type { ReviewHistoryEntry, ReviewSettingsUsed } from "./rework.ts";
+import type { ModelErrorInfo } from "./model-error.ts";
 import type { WaitKind } from "./waits.ts";
 import { isRecord, oneLine } from "@operad-io/engine";
 
@@ -264,6 +265,8 @@ export interface ReviewRunRecord {
   readonly outcome: ReviewRunOutcome;
   readonly run?: string | null;
   readonly message?: string | null;
+  /** What the model error said, when this run ended on one. */
+  readonly modelError?: ModelErrorInfo | null;
   /** The findings a report run returned, with pre-existing marks. */
   readonly findings?: readonly ReviewFinding[] | null;
   readonly verified?: readonly string[] | null;

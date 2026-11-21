@@ -42,11 +42,12 @@ import {
 import {
   ACQUIRED_EVENT,
   DEFAULT_POOL,
-  modelUnavailable,
   resolvePool,
   WAITING_EVENT,
   type WorkerDefinition,
 } from "@operad-io/pool";
+import { now as devNow } from "./clock.ts";
+import { modelErrorIn, modelWaitsForPerson } from "./model-error.ts";
 import {
   branchExists,
   git,
@@ -2003,8 +2004,31 @@ export async function runWork(ctx: StepContext, stepParams?: unknown): Promise<P
 
   if (outcome !== undefined && outcome.result !== "done") {
     const waits = typeof attempt.workWaits === "number" ? attempt.workWaits : 0;
-    if (modelUnavailable(outcomeData) && waits < MAX_WORK_WAITS) {
-      const retryAt = Date.now() + context.settings.reviewer.retrySecs * 1000;
+    const modelError = modelErrorIn(outcomeData);
+    if (modelError !== undefined && modelWaitsForPerson(modelError)) {
+      // A usage limit, or a wait past the bound, is not an outage dev can wait
+      // out: the work fails to a person who can change the worker or wait.
+      const reported =
+        modelError.message ??
+        (typeof outcomeData.message === "string"
+          ? outcomeData.message
+          : "the worker's model cannot serve");
+      const reset =
+        modelError.retryAfterSecs === undefined
+          ? ""
+          : `; the model can serve again at ${new Date(
+              devNow() + modelError.retryAfterSecs * 1000,
+            ).toISOString()}`;
+      return finish("failed", {
+        reason: "model_unavailable",
+        message: `${reported}${reset}`,
+        ...(dirty.length === 0 ? {} : { files: dirty }),
+      });
+    }
+    if (modelError !== undefined && waits < MAX_WORK_WAITS) {
+      const waitSecs =
+        modelError.retryAfterSecs ?? context.settings.reviewer.retrySecs;
+      const retryAt = devNow() + waitSecs * 1000;
       nextAttempt = { ...nextAttempt, workWaits: waits + 1, workRetryAt: retryAt };
       return finish(
         "unavailable",

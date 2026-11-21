@@ -36,7 +36,11 @@ export interface AgentWorkerResult {
   readonly reason?: string;
   readonly message?: string;
   /** Set when the worker saw a rate limit: it is a usage limit whatever the text says. */
-  readonly modelError?: { readonly kind: string };
+  readonly modelError?: {
+    readonly kind: string;
+    readonly status?: number | null;
+    readonly retry_after_secs?: number | null;
+  };
 }
 
 export function text(value: unknown, at: string): string {
@@ -286,7 +290,21 @@ export function resultFor(
     // A rate limit the worker saw is a usage limit whatever the text says.
     const modelError =
       result.modelError !== undefined
-        ? { kind: result.modelError.kind, status: null, retry_after_secs: null, message }
+        ? {
+            kind: result.modelError.kind,
+            status:
+              typeof result.modelError.status === "number" &&
+              Number.isFinite(result.modelError.status)
+                ? result.modelError.status
+                : null,
+            retry_after_secs:
+              typeof result.modelError.retry_after_secs === "number" &&
+              Number.isFinite(result.modelError.retry_after_secs) &&
+              result.modelError.retry_after_secs > 0
+                ? result.modelError.retry_after_secs
+                : null,
+            message,
+          }
         : modelErrorOf(message);
     return fail({
       reason: result.reason ?? "exit",

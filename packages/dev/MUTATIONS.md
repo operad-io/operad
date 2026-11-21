@@ -1507,3 +1507,12 @@ the row fields.
 |---|---|---|---|
 | T-0651-M1 | packages/dev/src/steps.ts | `newCheckoutChanges` compared only the status letters and path, so a further edit to a file the main checkout already called changed was not noticed | `dev/work > a further edit to a file the main checkout already had changed is reported` |
 | T-0651-M2 | packages/dev/src/gate.ts | the empty-diff path added no major finding of its own, so an attempt with no diff and a main-checkout change passed unread | `dev/review and the main checkout > an empty diff with a main-checkout change still fails` |
+
+## T-0654 — a model's retry-after decides the wait
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0654-M1 | packages/dev/src/model-error.ts | `modelWaitsForPerson` never said a usage limit or a long retry-after goes to a person | `dev/work > usage_limit: a retry-after goes to a person and does not retry` and `dev/review fallback and retry > a usage limit with no fallback waits for a person instead of retrying` |
+| T-0654-M2 | packages/dev/src/steps.ts | the work wait took `reviewer.retrySecs` even when the model gave a retry-after | `dev/work > unavailable: a short retry-after is the wait, not retrySecs` |
+| T-0654-M3 | packages/dev/src/gate.ts | the review wait took `reviewer.retrySecs` even when the model gave a retry-after | `dev/review fallback and retry > an unavailable review waits the retry-after it was given, not retrySecs` |
+| T-0654-M4 | packages/dev/src/model-error.ts | `modelWaitsForPerson` ignored a retry-after longer than the bound, so a long outage was retried instead of going to a person | `dev/work > unavailable: a retry-after past the bound goes to a person` |
