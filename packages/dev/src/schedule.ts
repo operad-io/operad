@@ -50,6 +50,7 @@ import {
 import { loadProjectFlows, PROJECT_FLOWS_DIR } from "./project-flows.ts";
 import { collectFollowups } from "./followups.ts";
 import { missingPlugins } from "./standing.ts";
+import { checkHostWarning } from "./check-host.ts";
 import {
   compileDevFlow,
   DEFAULT_FLOW_NAME,
@@ -609,6 +610,30 @@ function reportSettingsProblem(repository: RepositoryData): void {
   console.error(`dev: repository "${repository.name}": ${problem}`);
 }
 
+/** What the scheduler last said about each repository's check host. */
+const reportedCheckHosts = new Map<string, string>();
+
+/**
+ * Says once per change that a repository's check commands use
+ * `remote-check.sh` while no check host is set. The commands run here,
+ * so a person must know before the checks do; a host that is set later clears
+ * the line, and losing it again says it once more.
+ */
+function reportCheckHostProblem(
+  ctx: TickContext,
+  repository: RepositoryData,
+  settings: DevSettings,
+): void {
+  const warning = checkHostWarning(repository.name, settings, ctx.settings);
+  if (warning === undefined) {
+    reportedCheckHosts.delete(repository.path);
+    return;
+  }
+  if (reportedCheckHosts.get(repository.path) === warning) return;
+  reportedCheckHosts.set(repository.path, warning);
+  console.error(`dev: ${warning}`);
+}
+
 async function scheduleRepository(
   ctx: TickContext,
   repository: RepositoryData,
@@ -628,6 +653,7 @@ async function scheduleRepository(
     // here may touch the repository's running steps.
     return;
   }
+  reportCheckHostProblem(ctx, repository, settings);
   // Work needs the plugins dev runs its steps through; without them a task
   // stays ready instead of failing.
   const canStartWork = missingPlugins(ctx.loaded).length === 0;

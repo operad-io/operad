@@ -61,8 +61,10 @@ quotes, backquotes or `$`. The rerun of a failed test (`failed.rerun` in
 `.operad/dev.json`) uses the `--` form, so it runs where the check ran.
 
 `remote-check.sh` runs one command (a shell line) as a check. With
-`OPERAD_CHECK_HOST` unset or empty it runs the line here, in the repository
-root. With it set to an ssh destination (`user@host`) it copies `HEAD` to that
+`OPERAD_CHECK_HOST` unset or empty it prints
+`remote-check: no check host set; running the check here` on stderr and runs
+the line here, in the repository root. With it set to an ssh destination
+(`user@host`) it copies `HEAD` to that
 host as a git bundle, and there, holding one of `OPERAD_CHECK_SLOTS` slots
 (the lock `~/.operad-check-<i>.lock`; it waits only when all are taken), fetches
 `origin` and the bundle, checks out `HEAD`'s commit detached, removes untracked
@@ -92,6 +94,14 @@ the repository and Bun.
 | `OPERAD_CHECK_SCP` | command | `scp -q -o BatchMode=yes` | The scp command. |
 
 Each variable is read when the script starts.
+
+A `dev` task's gate, integration and rerun commands also get the host and
+slots from the home's `dev.checkHost` and `dev.checkSlots` settings, so a
+restart of `serve` does not lose them. An explicit `OPERAD_CHECK_HOST` or
+`OPERAD_CHECK_SLOTS` in `serve`'s own environment wins over the setting. When a
+repository's check commands use `scripts/remote-check.sh` and no host is set,
+`serve` says so in its log at start and dev lists it in the repository's
+pending items and Overview. See [config.json](config.md#dev).
 
 ## When a check fails
 

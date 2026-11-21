@@ -40,6 +40,12 @@ message named in the row.
 | `OPERAD_TEST_HEARTBEAT_SECS` | integer | `60` | a whole number of seconds, or `0` to turn it off | When `run-tests.sh` starts: how often it checks whether a step's report or output grew, and prints a heartbeat line when it did. A silent step prints nothing. |
 | `OPERAD_TEST_TIMES` | path | `~/.operad-test-times` | A file path | Where each full test run appends one line of timings (`run-tests.sh` and `test-times.ts`). |
 
+A `dev` task's gate, integration and rerun commands get `OPERAD_CHECK_HOST`
+and `OPERAD_CHECK_SLOTS` from the home's `dev.checkHost` and `dev.checkSlots`
+settings when `serve`'s own environment does not already have them. An explicit
+variable wins, including an empty `OPERAD_CHECK_HOST`, which runs the check
+here. Both settings are unset by default. See [config.json](config.md#dev).
+
 ## What operad sets
 
 These are set for a command operad starts. Do not set them yourself; a value you

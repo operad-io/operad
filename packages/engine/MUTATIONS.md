@@ -1294,3 +1294,10 @@ resume window`. Rows are append-only, so the old lines stay as history.
 |---|---|---|---|
 | T-0634-M1 | packages/engine/src/views/presentation.ts | an oversized live part was announced as a tail again, so each push sent a part over one event line | `a live log that grows without a fact > a live part too large for one event line is not pushed as a tail` |
 | T-0634-M2 | packages/engine/src/http/server.ts | an oversized live part became a replayable change entry again, so each push added a new seq and filled the window | `SSE event size > a tail one byte over is dropped, and the growth change asks for the reread` and `SSE event size > no line of a random tail exceeds the limit, including multi-byte UTF-8` |
+## T-0610 — the pending list reads only its open routes
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0610-M1 | packages/engine/src/log/sqlite.ts | `openCandidateRoutes` stopped excluding a candidate route whose input has a resolve outcome | `log backend: sqlite > openCandidateRoutes keeps the candidate routes with no resolve` |
+| T-0610-M2 | packages/engine/src/log/sqlite.ts | `startRoutesWithoutRun` stopped excluding a start route whose input already has a run | `log backend: sqlite > startRoutesWithoutRun keeps start routes whose input has no run` |
+| T-0610-M3 | packages/engine/src/trigger/kernel.ts | `candidates` read every input and outcome again instead of the open candidate routes | `candidates reads only the unresolved candidates after many resolved inputs` |

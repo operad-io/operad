@@ -781,6 +781,40 @@ class SqliteLogBackend implements LogBackend {
       .get(inputId, kind) ?? undefined;
   }
 
+  async openCandidateRoutes(): Promise<InputOutcome[]> {
+    this.#assertOpen();
+    return this.#database
+      .query<OutcomeRow, []>(
+        "SELECT o.input_id, o.kind, o.payload, o.seq, o.time FROM outcomes o " +
+          "WHERE o.kind = 'route' " +
+          "AND json_extract(o.payload, '$.value') = 'candidate' " +
+          "AND NOT EXISTS (SELECT 1 FROM outcomes r " +
+          "WHERE r.input_id = o.input_id AND r.kind = 'resolve') " +
+          "ORDER BY o.seq",
+      )
+      .all()
+      .map(outcomeOfRow);
+  }
+
+  async startRoutesWithoutRun(): Promise<InputOutcome[]> {
+    this.#assertOpen();
+    return this.#database
+      .query<OutcomeRow, []>(
+        "SELECT o.input_id, o.kind, o.payload, o.seq, o.time FROM outcomes o " +
+          "WHERE o.kind = 'route' " +
+          "AND (json_extract(o.payload, '$.value') = 'started' " +
+          "  OR (json_extract(o.payload, '$.value') = 'candidate' " +
+          "    AND EXISTS (SELECT 1 FROM outcomes r " +
+          "      WHERE r.input_id = o.input_id AND r.kind = 'resolve' " +
+          "      AND json_extract(r.payload, '$.value') = 'started'))) " +
+          "AND NOT EXISTS (SELECT 1 FROM runs n " +
+          "WHERE n.start_input_id = o.input_id) " +
+          "ORDER BY o.seq",
+      )
+      .all()
+      .map(outcomeOfRow);
+  }
+
   async *#readGlobal(): AsyncGenerator<GlobalFact> {
     this.#assertOpen();
     const statement = this.#database.prepare<GlobalFactRow, []>(
