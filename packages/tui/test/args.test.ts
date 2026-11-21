@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { ViewAction, ViewObject } from "@operad-io/engine";
 import { entryHint, paletteEntries } from "../src/actions.ts";
 import { initialState, reduce, type TuiState, type TuiStateEvent } from "../src/state.ts";
+import { treeRows } from "./support.ts";
 
 const LEVEL = { type: "string", enum: ["off", "run", "merge"], description: "how far it goes alone" } as const;
 const HARNESS = { type: "string", enum: ["claude", "pi"] } as const;
@@ -41,11 +42,7 @@ function opened(state: string = "run", badge?: string, actions: readonly ViewAct
   };
   let s = initialState({ width: 120 });
   s = reduce(s, { type: "types", types: [{ type: "item", title: "Item" }] });
-  s = reduce(s, {
-    type: "rows",
-    tabId: "plugin:item",
-    rows: [object.row],
-  });
+  s = reduce(s, treeRows("plugin:item", [object.row]));
   s = reduce(s, { type: "key", key: "3" });
   s = reduce(s, { type: "key", key: "enter" });
   return reduce(s, { type: "object", object });

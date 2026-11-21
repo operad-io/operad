@@ -9,7 +9,8 @@ import {
   type TuiStateEvent,
 } from "../src/state.ts";
 import { drawState, paletteFor } from "../src/view/index.ts";
-import { KEY_LIST, footerText } from "../src/state.ts";
+import { KEY_LIST } from "../src/state.ts";
+import { footerOf, treeRows } from "./support.ts";
 import { chatMarkdown } from "../src/chat.ts";
 import { chatMarkdownCached, chatStats } from "../src/state.ts";
 import { toRgba } from "../src/theme.ts";
@@ -52,7 +53,7 @@ function objectState(options: ChatOptions = {}): TuiState {
   };
   let state = initialState({ width: 120, height: 30, theme: "dark" });
   state = reduce(state, { type: "types", types: [{ type, title: type, plugin: type }] });
-  state = reduce(state, { type: "rows", tabId: `plugin:${type}`, rows: [row] });
+  state = reduce(state, treeRows(`plugin:${type}`, [row]));
   state = reduce(state, { type: "key", key: "3" });
   state = reduce(state, { type: "key", key: "enter" });
   state = reduce(state, { type: "object", object });
@@ -245,12 +246,10 @@ describe("a chat transcript folds its thinking and tool lines", () => {
     let state = objectState({
       markdown: "> first thought\n\ntool First 1s\n\n> second thought\n\ntool Second 2s",
     });
-    state = reduce(state, {
-      type: "rows",
-      tabId: "plugin:chat",
-      rows: [ROW, { ...ROW, id: "chat:two", title: "Two" }],
-      replace: true,
-    });
+    state = reduce(
+      state,
+      treeRows("plugin:chat", [ROW, { ...ROW, id: "chat:two", title: "Two" }]),
+    );
     state = press(state, "down");
     expect(state.object?.source).toBe("chat:one");
     state = press(state, "enter");
@@ -274,7 +273,7 @@ describe("a chat transcript folds its thinking and tool lines", () => {
 describe("stopping a reply", () => {
   test("the footer offers the stop key and the key runs the stop action", () => {
     const state = objectState({ running: true });
-    expect(footerText(state)).toContain("a stop");
+    expect(footerOf(state)).toContain("a stop");
     expect(press(state, "a").actionRequest).toEqual({ action: "chat:stop", id: "chat:one" });
     const keys = KEY_LIST.map(([key]) => key);
     expect(keys).toContain("/");
@@ -287,7 +286,7 @@ describe("stopping a reply", () => {
       type: "keys",
       bindings: [{ key: "s", action: "chat:stop", source: "plugin" }],
     });
-    expect(footerText(state)).toContain("s stop");
+    expect(footerOf(state)).toContain("s stop");
     expect(press(state, "s").actionRequest).toEqual({ action: "chat:stop", id: "chat:one" });
     const help = drawState({ ...state, keys: true }, "dark", NOW, "UTC").overlay?.chunks.map((part) => part.text).join("") ?? "";
     expect(help).toContain("a / s");

@@ -7,12 +7,6 @@ import {
   type PluginOffer,
 } from "@operad-io/engine";
 
-/**
- * The plugins `operad init` installs when it finds no agent on `PATH`, in load
- * order. The harness in the middle is replaced by the ones it finds.
- */
-export const DEFAULT_PLUGINS: readonly string[] = ["shell", "radian", "chat", "pool", "dev"];
-
 /** The harness plugins `operad init` turns on when their agent command is on `PATH`, in this order. */
 export const INIT_HARNESS_PLUGINS: readonly string[] = ["radian", "claude", "pi"];
 

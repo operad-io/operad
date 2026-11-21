@@ -3,22 +3,25 @@ import { createTestRenderer } from "@opentui/core/testing";
 import { initialState, reduce, type TuiInput, type TuiState } from "../src/state.ts";
 import { createTuiView, overlayBox, paletteFor } from "../src/view/index.ts";
 import { toRgba } from "../src/theme.ts";
+import { treeRows } from "./support.ts";
 
 /** Rows whose text is one letter, so a cell of the list is easy to tell from a cell of an overlay. */
 function listState(width: number, height: number, theme: "light" | "dark" = "dark"): TuiState {
   let state = initialState({ width, height, theme });
   state = reduce(state, { type: "types", types: [{ type: "item", title: "Item" }] });
-  state = reduce(state, {
-    type: "rows",
-    tabId: "plugin:item",
-    rows: Array.from({ length: Math.max(1, height - 6) }, (_, at) => ({
-      id: `item:T-${String(at).padStart(4, "0")}-worker-pool-${"x".repeat(60)}`,
-      title: "Z".repeat(120),
-      state: "open",
-      waiting: false,
-      running: false,
-    })),
-  });
+  state = reduce(
+    state,
+    treeRows(
+      "plugin:item",
+      Array.from({ length: Math.max(1, height - 6) }, (_, at) => ({
+        id: `item:T-${String(at).padStart(4, "0")}-worker-pool-${"x".repeat(60)}`,
+        title: "Z".repeat(120),
+        state: "open",
+        waiting: false,
+        running: false,
+      })),
+    ),
+  );
   state = reduce(state, { type: "key", key: "3" });
   state = reduce(state, { type: "key", key: "enter" });
   state = reduce(state, {

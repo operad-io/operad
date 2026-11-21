@@ -7,6 +7,7 @@ import {
 } from "../src/state.ts";
 import { ROW_MARKS } from "@operad-io/engine";
 import { MARK_GLYPHS, TUI_PALETTE, createTuiView, drawState } from "../src/view/index.ts";
+import { treeRows } from "./support.ts";
 
 function frameState(): TuiState {
   let state = initialState({ width: 120, height: 24, theme: "dark" });
@@ -28,29 +29,13 @@ function frameState(): TuiState {
       },
     ],
   });
-  state = reduce(state, {
-    type: "page",
-    tabId: "plugin:item",
-    replace: true,
-    page: {
-      rows: [
-        {
-          id: "one",
-          title: "First",
-          state: "new",
-          waiting: true,
-          running: false,
-        },
-        {
-          id: "two",
-          title: "Second",
-          state: "open",
-          running: true,
-          waiting: false,
-        },
-      ],
-    },
-  });
+  state = reduce(
+    state,
+    treeRows("plugin:item", [
+      { id: "one", title: "First", state: "new", waiting: true, running: false },
+      { id: "two", title: "Second", state: "open", running: true, waiting: false },
+    ]),
+  );
   return state;
 }
 
@@ -287,7 +272,7 @@ describe("the TUI view", () => {
     ];
     let state = initialState({ width, height: 80, theme: "dark" });
     state = reduce(state, { type: "types", types: [{ type: "item", title: "Item" }] });
-    state = reduce(state, { type: "page", tabId: "plugin:item", replace: true, page: { rows } });
+    state = reduce(state, treeRows("plugin:item", rows));
     state = reduce(state, { type: "key", key: "3" });
     const setup = await createTestRenderer({ width, height: 80 });
     try {

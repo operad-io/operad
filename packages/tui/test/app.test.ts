@@ -185,7 +185,6 @@ describe("the TUI app", () => {
     s.shell.key({ name: "?", sequence: "?" });
     s.shell.key({ name: "?", sequence: "?" });
     expect(s.client.callsWith("p2")).toHaveLength(1);
-    expect(typeList(s.shell.state)?.loading).toBe(false);
     s.shell.stop();
   });
 

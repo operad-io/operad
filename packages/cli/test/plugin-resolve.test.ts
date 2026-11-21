@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { DEFAULT_LEAD_ACTIONS, INSTALL_ON_ENABLE, DEFAULT_PLUGINS, OPTIONAL_PLUGINS, defaultPluginModule, distributionConfig } from "../src/defaults.ts";
+import { DEFAULT_LEAD_ACTIONS, INSTALL_ON_ENABLE, OPTIONAL_PLUGINS, defaultPluginModule, defaultPluginsFor, distributionConfig } from "../src/defaults.ts";
 
 const cliDir = dirname(dirname(fileURLToPath(import.meta.url)));
 const manifest = JSON.parse(readFileSync(`${cliDir}/package.json`, "utf8")) as {
@@ -11,7 +11,7 @@ const manifest = JSON.parse(readFileSync(`${cliDir}/package.json`, "utf8")) as {
 
 // The plugins `operad init` installs and the ones `operad plugin enable` offers,
 // as the CLI declares them.
-const offered = [...DEFAULT_PLUGINS, ...OPTIONAL_PLUGINS];
+const offered = [...defaultPluginsFor([]), ...OPTIONAL_PLUGINS];
 
 describe("plugins the CLI offers", () => {
   for (const name of offered) {
@@ -32,7 +32,7 @@ describe("plugins the CLI offers", () => {
 describe("the distribution's defaults", () => {
   test("a fresh home's config lists the default plugins and the lead actions explicitly", () => {
     const config = distributionConfig("/h");
-    expect(config.plugins.map((entry) => entry.name)).toEqual(DEFAULT_PLUGINS as string[]);
+    expect(config.plugins.map((entry) => entry.name)).toEqual([...defaultPluginsFor([])]);
     expect(config.mcp.actions).toEqual([...DEFAULT_LEAD_ACTIONS]);
     expect(config.mcp.confirmActions).toEqual(["chat:close"]);
     expect(config.mcp.actions).toContain("chat:close");
