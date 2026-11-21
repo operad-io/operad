@@ -1,6 +1,6 @@
 # Mutation records
 
-Each package keeps its mutation checks in `MUTATIONS.md`; a row names the broken file, what was broken and the failing test, with an id like `TK0001-M1`.
+Each package keeps its mutation checks in `MUTATIONS.md`; a row names the broken file, what was broken and the failing test, with an id like `T-0001-M1`.
 
 - [access-match](packages/access-match/MUTATIONS.md)
 - [bot](packages/bot/MUTATIONS.md)
@@ -197,3 +197,9 @@ Each package keeps its mutation checks in `MUTATIONS.md`; a row names the broken
 | T-0647-M1 | scripts/stress.sh | the parent watcher had no TERM trap, so killing it left its sleep running | `scripts/stress.sh > SIGTERM stops a watcher's sleep with the watcher` |
 | T-0647-M2 | scripts/stress.sh | the stop slept 0.2s unconditionally instead of cancelling a timer once the children ended | `scripts/stress.sh > a normal stop does not wait out the grace when the children end at once` |
 | T-0647-M3 | scripts/stress.sh | the grace timer did not KILL a child that outlived TERM | `scripts/stress.sh > SIGKILL of the test runner stops a test file that ignores SIGTERM` |
+
+## T-0653 — the mutation id format
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0653-M1 | scripts/test/mutations-append-only.test.ts | removed the allowance for an edited header line, so a header change failed as a moved row | `MUTATIONS.md files are append-only > an edited header line passes` |

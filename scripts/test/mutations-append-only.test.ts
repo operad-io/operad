@@ -46,12 +46,26 @@ export interface MovedLine {
   readonly text: string;
 }
 
-/** The first base line that `current` no longer has in the same place. */
+/** A row line, whose first cell is a mutation id ending in `-M<n>`. */
+function isRow(line: string): boolean {
+  const firstCell = line.startsWith("|") ? line.split("|")[1]?.trim() : undefined;
+  return firstCell !== undefined && /-M\d+$/.test(firstCell);
+}
+
+/**
+ * The first base row that `current` no longer has in the same place, or the
+ * first line where a header change shifted a row. A line that is not a row may
+ * be edited in place; a row may only be appended.
+ */
 export function firstMovedLine(base: string, current: string): MovedLine | undefined {
   const before = lines(base);
   const after = lines(current);
   for (let index = 0; index < before.length; index += 1) {
-    if (after[index] !== before[index]) return { line: index + 1, text: before[index] ?? "" };
+    const was = before[index] ?? "";
+    const now = after[index];
+    if (now === was) continue;
+    if (now !== undefined && !isRow(was) && !isRow(now)) continue;
+    return { line: index + 1, text: was };
   }
   return undefined;
 }
@@ -154,6 +168,12 @@ describe("MUTATIONS.md files are append-only", () => {
   test("the check base is unset when OPERAD_CHECK_BASE is unset and origin/main is absent", () => {
     const { root: path } = repository();
     expect(checkBase(path, {})).toBeUndefined();
+  });
+
+  test("an edited header line passes", () => {
+    const { root: path, base } = repository();
+    write(join(path, "MUTATIONS.md"), BASE.replace("# Mutation records", "# Mutation ids"));
+    expect(mutationProblems(path, base)).toEqual([]);
   });
 
   test("a deleted row fails and names the file and the first missing line", () => {
