@@ -14,6 +14,7 @@ import {
   type PluginStepResult,
   type RunLookup,
 } from "@operad-io/engine";
+import { loginBotFor } from "../src/login.ts";
 import { cleanupRoots, rig } from "./support.ts";
 
 afterAll(cleanupRoots);
@@ -149,5 +150,21 @@ describe("a bot without a model login", () => {
     const r = await rig({ default: {} }, ["claude", "pi"], undefined, [loginHarness()]);
     const items = await r.registry.standing();
     expect(items.map((item) => item.id)).toEqual(["login:default"]);
+  });
+});
+
+describe("loginBotFor", () => {
+  const able = (name: string) => name === "claude" || name === "pi";
+
+  test("default comes first, then the others by name; a named agent is the one that logs in", () => {
+    const bots = { zed: { harness: "pi" }, amy: { harness: "pi" }, default: { harness: "pi" } };
+    expect(loginBotFor("pi", bots, ["claude", "pi"], able)).toBe("default");
+    expect(loginBotFor("pi", { zed: bots.zed, amy: bots.amy }, ["claude", "pi"], able)).toBe("amy");
+    expect(loginBotFor("claude", bots, ["claude", "pi"], able)).toBeUndefined();
+  });
+
+  test("a bot naming no agent uses the one agent that can log in, and none when there are several", () => {
+    expect(loginBotFor("pi", { default: {} }, ["pi", "codex"], able)).toBe("default");
+    expect(loginBotFor("pi", { default: {} }, ["claude", "pi"], able)).toBeUndefined();
   });
 });

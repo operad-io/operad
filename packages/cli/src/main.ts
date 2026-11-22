@@ -98,6 +98,7 @@ import {
   type ViewObject,
   type ViewRow,
 } from "@operad-io/engine";
+import { loginBotFor } from "@operad-io/bot";
 import { stopAllKeptWorkers } from "@operad-io/engine/platform";
 import { ChannelTypeError, runMcpServer } from "@operad-io/mcp";
 import {
@@ -861,27 +862,19 @@ function systemDoctorEnv(home: string, io: CliIo): DoctorEnv & { close(): Promis
       const bots: Record<string, unknown> = isRecord(written) ? { ...written } : {};
       bots.default ??= {};
       // The bot whose agent operad can log in: `default` first, then the others.
-      const loginBotOf = (name: string): string | undefined => {
-        if (!registry.names().includes("bot") || !registry.stepLoaded(`${name}/login`)) return undefined;
-        const able = loaded.filter((item) => registry.stepLoaded(`${item}/login`));
-        return Object.keys(bots)
-          .sort((a, b) => (a === "default" ? -1 : b === "default" ? 1 : a.localeCompare(b)))
-          .find((bot) => {
-            const entry = bots[bot];
-            const named = isRecord(entry) ? entry.harness : undefined;
-            return typeof named === "string" && named.length > 0
-              ? named === name
-              : able.length === 1 && able[0] === name;
-          });
-      };
+      const loginBotOf = (name: string): string | undefined =>
+        registry.names().includes("bot")
+          ? loginBotFor(name, bots, loaded, (item) => registry.stepLoaded(`${item}/login`))
+          : undefined;
       for (const name of loaded) {
         const check = checks.find((item) => item.plugin === name);
         const version = check?.message.match(/\d+\.\d+\.\d+[\w.-]*/)?.[0];
+        const loginBot = loginBotOf(name);
         agents.push({
           name,
           ...(version === undefined ? {} : { version }),
           signedIn: await registry.signedInFor(name),
-          ...(loginBotOf(name) === undefined ? {} : { loginBot: loginBotOf(name) }),
+          ...(loginBot === undefined ? {} : { loginBot }),
           ...(check !== undefined && !check.ok ? { problem: check.message } : {}),
         });
       }
