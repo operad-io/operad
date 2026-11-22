@@ -48,6 +48,12 @@ not write it into a note.
 - `memory/instructions.md`: a person's long-standing instructions to you, in
   their words.
 
+Work that spans several runs (a follow-up, a scheduled prompt, a long
+task) keeps one progress file under your `memory/`, such as
+`memory/topics/progress-<name>.md`, with one line in the index. Update that file
+at the end of each run (what is done, what is next) and read it at the start of
+the next, instead of starting again.
+
 Write without asking. Keep edits small, supersede an old note instead of
 deleting it, and say in the new note what it replaces.
 

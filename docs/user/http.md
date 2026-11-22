@@ -424,6 +424,23 @@ form needs no parsing of the bot section's Markdown. Each entry is:
 is an ISO time, or `null` when the entry is paused or has no next run within two
 years. `lastResult` and `lastChatId` are `null` before the entry first fires.
 
+A bot row's `data.followUps` is an array of the bot's follow-ups not yet due,
+soonest first, across all its chats. A client shows a chat's own by matching
+`chatId`. Each entry is:
+
+```json
+{
+  "id": "F-1a2b3c4d",
+  "chatId": "C-0042",
+  "due": "2026-01-02T08:00:00.000Z",
+  "text": "Check whether the build passed."
+}
+```
+
+`due` is an ISO time. A person cancels one with the action
+`bot:follow-up-cancel` on the bot, argument `id`. The array is empty when the bot
+has none.
+
 A chat a scheduled prompt opened carries `data.scheduled`, which names its bot
 and the entry that opened it, so a client reads that instead of guessing from
 the title:

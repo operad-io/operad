@@ -394,3 +394,29 @@ other reply, and every failure, notifies as above.
 The prompt of each firing also carries the last three results of the same entry
 (each cut to 120 characters, quiet ones included) and asks the agent not to
 repeat what the person has already seen.
+
+### Follow-ups
+
+A **Follow-up** (Chinese 跟进) is a one-time deadline an agent sets for itself in
+a chat: "look at this again in two hours". It has a due time, one sentence of
+what to do, and the chat it was set in. A scheduled prompt is yours and
+recurs; a follow-up is the agent's own and happens once.
+
+The agent sets one with the `bot follow-up` command (`operad bot follow-up
+<chat> --at <time> --do <sentence>`), which the chat's first-session line tells
+it about. The time is absolute (`2026-12-01 09:00`, local time, or an ISO time)
+or relative (`+30m`, `+2h`, `+3d`). It takes effect at once and does not ask
+you first. Limits: at most 5 follow-ups not yet due in one chat, and a due time
+at most 30 days ahead; a refusal names the limit that stopped it.
+
+When it is due, the sentence is sent into the same chat, so the reply continues
+that chat's session. The message does not come from a person, so the reply is a
+background run: below `full` access, an outward write still asks (see
+[Access](access.md)). If `serve` was down at the due time, the follow-up is sent
+once after it starts, with a line saying when it was set for and how late it is.
+A follow-up whose chat was closed is dropped.
+
+The bot's page lists the follow-ups not yet due, and the bot's row carries them
+in `data.followUps` (see [HTTP](http.md#row-data)). `bot:follow-up-cancel <bot>
+--id <id>` cancels one; the agent lists and cancels its own chat's with
+`operad bot follow-ups <chat> [--cancel <id>]`. A cancel is not a proposal.

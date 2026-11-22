@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { createChatPlugin } from "@operad-io/chat";
 import {
   MemoryPluginStore,
+  openPluginStore,
   PluginRegistry,
   definePlugin,
   type JsonValue,
@@ -103,13 +104,18 @@ export async function rig(
   harnesses = ["claude", "pi"],
   onEvent?: (event: TriggerEvent) => void,
   extraPlugins: readonly unknown[] = [],
+  /** `sqlite` keeps the store on disk; `root` reuses a directory an earlier rig (maybe in another process) made. */
+  disk: { readonly sqlite?: boolean; readonly root?: string } = {},
 ) {
-  const root = await mkdtemp(join(tmpdir(), "bot-test-"));
-  roots.push(root);
+  const root = disk.root ?? (await mkdtemp(join(tmpdir(), "bot-test-")));
+  if (disk.root === undefined) roots.push(root);
   const home = join(root, "home");
   writeBotConfig(home, bots);
   const calls: Call[] = [];
-  const store = new MemoryPluginStore({ root: join(root, "store") });
+  const store =
+    disk.sqlite === true
+      ? openPluginStore({ root: join(root, "store") })
+      : new MemoryPluginStore({ root: join(root, "store") });
   const registry = new PluginRegistry(
     [createChatPlugin(), createBotPlugin(), standInDev(), ...harnesses.map((name) => fakeHarness(name, calls)), ...extraPlugins],
     {

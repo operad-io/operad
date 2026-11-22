@@ -96,6 +96,8 @@
 
 顺序：先 7 和 8（定时 prompt 安静结束、带上最近结果），再 3 到 6 的跟进（9 随它），最后桌面和 iOS 显示、取消没到点的跟进。
 
+**已做（T-0726，ADR 0030 D16）：** 1 到 6 和 9。bot 行的 `data.followUps` 和 `bot:follow-up-cancel` 动作已有；桌面和 iOS 显示、取消这一步还没做。
+
 ## 顺序
 
 `operad-conversation`（ask 闭环 → `chat` 基础插件加 `dev:chat` → `bot` 插件的 bot 对象加 `bot:chat` → app 的输入框）→ `operad-sandbox` 第一版的其余部分 → Telegram 通道 → `memory` 三个 flow → `digest`（先 `hn` 和 `rss`，再 `reddit`，`x` 看费用）。

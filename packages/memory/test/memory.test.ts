@@ -77,6 +77,7 @@ describe("the memory settings", () => {
   test("the memory skill is shipped with the package", () => {
     expect(existsSync(join(MEMORY_SKILL_DIR, "SKILL.md"))).toBe(true);
     expect(readFileSync(join(MEMORY_SKILL_DIR, "SKILL.md"), "utf8")).toContain("name: memory");
+    expect(readFileSync(join(MEMORY_SKILL_DIR, "SKILL.md"), "utf8")).toContain("one progress file under your `memory/`");
   });
 });
 

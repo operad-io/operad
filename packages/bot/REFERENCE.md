@@ -306,3 +306,12 @@ line giving the reason. An automatic run returns to idle and calls `notify` when
 the run changed something or the run failed. A card left running without a
 chat, such as after a crash between starting the chat and recording it, becomes
 a failed card on the next start.
+
+## Follow-ups
+
+`bot follow-up <chat> --at <time> --do <sentence>` sets a follow-up (ADR 0030
+D16) and `bot follow-ups <chat> [--cancel <id>]` lists or cancels the chat's.
+An entry (`id`, `chat`, `at`, `text`, `setAt`) is stored on its bot object
+(`followUps`); `bot:follow-up-cancel` (`id`) removes one. The bot's source sends
+a due one into its chat with the event source `bot`, after removing it, and adds
+a lateness line when it is a minute or more late.

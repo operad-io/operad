@@ -11,7 +11,7 @@
  */
 
 import { messageOf } from "@operad-io/engine";
-import { CHAT_TYPE } from "@operad-io/chat";
+import { CHAT_TYPE, chatData, sendMessage } from "@operad-io/chat";
 import { ChatWatches } from "./chat-watch.ts";
 import {
   cronMatches,
@@ -35,6 +35,7 @@ import {
 } from "@operad-io/engine";
 import { runLine } from "@operad-io/engine/platform";
 import { BOT_TYPE, BotError } from "./bot.ts";
+import { followUps, removeFollowUp, type FollowUp } from "./follow-up.ts";
 import { SETUP_DEV_INSTRUCTION } from "./setup-dev.ts";
 import { SETUP_INSTRUCTION } from "./setup.ts";
 
@@ -288,9 +289,14 @@ export function isQuietReply(message: string): boolean {
 export const SCHEDULE_INSTRUCTION =
   "To schedule something for me, propose it: call the operad `command` tool with plugin `bot`, verb `schedule`, action `add` (or `edit` or `remove`). Give the schedule both as a five-field cron expression and in words. Nothing takes effect until I approve it in Pending.";
 
+/** The line telling the agent how to set a follow-up for itself in this chat (ADR 0030 D16). */
+export function followUpInstruction(chat: string): string {
+  return `To look at something again later in this chat (chat ${chat}), set a follow-up: call the operad \`command\` tool with plugin \`bot\`, verb \`follow-up\`, args [\`${chat}\`, \`--at\`, <a time such as "2026-12-01 09:00" or "+2h">, \`--do\`, <one sentence of what to do>]. It takes effect at once; at most 5 not yet due per chat and at most 30 days ahead. Verb \`follow-ups\` with args [\`${chat}\`] lists them, and with \`--cancel\`, <id> cancels one. When it is due you are sent that sentence here.`;
+}
+
 /** The text and place a bot chat starts with. */
-export function scheduledChatContext(): { readonly text: string; readonly where: string } {
-  const line = `${SCHEDULE_INSTRUCTION} ${SETUP_DEV_INSTRUCTION} ${SETUP_INSTRUCTION}`;
+export function scheduledChatContext(chat: string): { readonly text: string; readonly where: string } {
+  const line = `${SCHEDULE_INSTRUCTION} ${followUpInstruction(chat)} ${SETUP_DEV_INSTRUCTION} ${SETUP_INSTRUCTION}`;
   return { text: line, where: line };
 }
 
@@ -736,6 +742,9 @@ interface ScheduledSource {
   readonly logger: PluginBaseContext["logger"];
   readonly client: SourceContext["client"];
   readonly runs?: RunControl | undefined;
+  /** What a follow-up needs to put its message in the chat; without them none is sent. */
+  readonly facts?: SourceContext["facts"] | undefined;
+  readonly emit?: SourceContext["emit"] | undefined;
 }
 
 /** The bot's own source for scheduled prompts. */
@@ -778,9 +787,40 @@ export class BotScheduleSource {
         for (const entry of scheduledPrompts(object.data)) {
           await this.one(bot, entry, now, catchUp);
         }
+        for (const followUp of followUps(object.data)) {
+          if (followUp.at <= now) await this.followUp(bot, followUp, now);
+        }
       }
     } finally {
       this.busy = false;
+    }
+  }
+
+  /**
+   * Sends a due follow-up into its chat (ADR 0030 D16). The entry is removed
+   * first, so a crash loses it rather than sends it twice. A late one, such as
+   * after `serve` was down, says when it was set for and how late it is.
+   */
+  private async followUp(bot: string, entry: FollowUp, now: number): Promise<void> {
+    const { facts, emit } = this.ctx;
+    if (facts === undefined || emit === undefined) return;
+    if (!(await removeFollowUp(this.ctx.store, bot, entry.id, "source:bot/follow-up"))) return;
+    const chat = await this.ctx.store.get(CHAT_TYPE, entry.chat);
+    if (chat === undefined || chatData(chat.data).closed) {
+      await this.chatWatches.log(`follow-up ${entry.id} of bot ${bot}: chat ${entry.chat} is closed or gone; dropped`);
+      return;
+    }
+    const lateMs = now - entry.at;
+    const parts = [`Follow-up you set for yourself: ${entry.text}`];
+    if (lateMs >= WAKE_GAP_MS) parts.push(latenessLine(entry.at, Math.floor(lateMs / 1_000)));
+    try {
+      await sendMessage(
+        { facts, emit: (event) => emit({ source: event.source, type: event.type, key: event.key, object: event.object ?? `${CHAT_TYPE}:${entry.chat}` }), store: this.ctx.store, home: this.ctx.home, actor: { via: SCHEDULE_SOURCE, id: "follow-up" }, source: SCHEDULE_SOURCE },
+        entry.chat,
+        parts.join("\n\n"),
+      );
+    } catch (error) {
+      await this.chatWatches.log(`follow-up ${entry.id} of bot ${bot}: ${messageOf(error)}`);
     }
   }
 
