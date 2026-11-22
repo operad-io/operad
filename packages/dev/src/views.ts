@@ -432,9 +432,37 @@ export function readableLog(lines: readonly string[], options: { readonly worktr
   const out: string[] = [];
   // Whether the agent has said something since the last turn ended.
   let said = false;
+  // Text deltas not yet shown. A harness that logs the whole text after them
+  // (`text_end`, or a `message_end` with its text) shows it there; one that
+  // logs only deltas (codex) has them joined into text where the agent turns
+  // to a tool, a result or the end of the log.
+  let deltas = "";
+  const flushDeltas = (): void => {
+    if (deltas.trim().length > 0) {
+      out.push(`**agent:** ${agentText(deltas)}`);
+      said = true;
+    }
+    deltas = "";
+  };
   for (const line of lines) {
     const record = parseObject(line.trim());
     const kind = record === undefined ? undefined : stringField(record, ["type"]);
+    if (record !== undefined && kind === "text_delta") {
+      deltas += stringField(record, ["text"]) ?? "";
+      continue;
+    }
+    if (kind === "text_end" || (kind === "message_end" && record !== undefined && stringField(record, ["text"]) !== undefined)) {
+      deltas = "";
+    } else if (
+      kind === "tool_execution_start" ||
+      kind === "tool_execution_end" ||
+      kind === "message_end" ||
+      kind === "blocked" ||
+      kind === "result" ||
+      kind === "Result"
+    ) {
+      flushDeltas();
+    }
     if (record !== undefined && kind === "tool_execution_start") {
       const id = stringField(record, ["toolCallId"]);
       const name = stringField(record, ["toolName"]) ?? "tool";
@@ -546,6 +574,7 @@ export function readableLog(lines: readonly string[], options: { readonly worktr
     const readable = readableLogLine(line);
     if (readable !== undefined) out.push(readable);
   }
+  flushDeltas();
   return out;
 }
 
@@ -609,7 +638,13 @@ async function workerLogPath(
   if (found === undefined) return undefined;
   const settings = await readDevSettings(repositoryData(found.data).path);
   const ran = settings.workers.workers.find((worker) => worker.name === attempt.worker);
-  const [plugin, step] = (ran?.use ?? settings.worker.use).split("/");
+  // While the work runs the attempt has no worker yet; the step recorded the
+  // one the pool placed, which may be in a pool other than the default.
+  const use =
+    typeof attempt.workerUse === "string" && attempt.workerUse.length > 0 && attempt.worker == null
+      ? attempt.workerUse
+      : (ran?.use ?? settings.worker.use);
+  const [plugin, step] = use.split("/");
   if (plugin === undefined || step === undefined) return undefined;
   return join(
     ctx.store.root,
