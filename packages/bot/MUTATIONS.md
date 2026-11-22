@@ -310,3 +310,9 @@ changes for bots, in the order they were recorded. The root
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0635-M8 | packages/bot/src/schedule.ts | `lateText` wrote the minutes after an hour in the plural always | `lateText > counts hours and the minute left in words, singular or plural` |
+
+## T-0670 — scheduled prompts at full access
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0670-M7 | packages/bot/src/index.ts | a scheduled entry's new chat started at `ask` instead of `full` | `scheduled prompts > an entry fires on time, opens a new chat under the bot with its prompt, and the reply's notification carries a summary` |

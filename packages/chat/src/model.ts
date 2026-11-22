@@ -88,7 +88,7 @@ export const ACCESS_LEVEL_INFO: Readonly<Record<AccessLevel, { readonly title: s
   },
   full: {
     title: "Full access",
-    description: "Skip every question the level adds; the profile's deny and ask rules still hold.",
+    description: "Skip every question; a deny still refuses and a read-only working directory still asks.",
   },
 };
 

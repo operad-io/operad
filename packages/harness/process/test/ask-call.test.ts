@@ -72,6 +72,12 @@ describe("canAsk", () => {
   test("is true for an access level below full, and false for full", () => {
     for (const level of ["plan", "ask", "edits"]) expect(canAsk({ level })).toBe(true);
     expect(canAsk({ level: "full" })).toBe(false);
+    // At full the profile asks and the outward question no longer apply.
+    expect(canAsk({ level: "full", askCommands: ["git push"], askPaths: ["~/.zshrc"], allowMcp: [] })).toBe(false);
+    expect(canAsk({ level: "full", background: true })).toBe(false);
+    // readOnly and readPaths still ask at full.
+    expect(canAsk({ level: "full", readOnly: true })).toBe(true);
+    expect(canAsk({ level: "full", readPaths: ["/work/attachments"] })).toBe(true);
   });
 
   test("is true for a profile that puts MCP tools under it, even with none listed", () => {

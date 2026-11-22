@@ -119,7 +119,7 @@ test("a profile can add to the default but never remove its deny or ask rules", 
   expect(tightened.readOnly).toBe(true);
 });
 
-test("every level, full included, keeps the default's deny and ask rules", () => {
+test("the default's deny rules hold at every level, and its asks hold below full", () => {
   for (const level of ["plan", "ask", "edits", "full"] as const) {
     const profile = withAccessLevel({}, level);
     const ssh = match(profile, { tool: "read", input: { path: "~/.ssh/id_ed25519" }, cwd: CWD }, { home: HOME });
@@ -129,7 +129,8 @@ test("every level, full included, keeps the default's deny and ask rules", () =>
     expect(sudo.allow).toBe(false);
     expect(sudo.ask).toBeUndefined();
     const push = match(profile, { tool: "bash", input: { command: "git push origin main" }, cwd: CWD }, { home: HOME });
-    expect(push).toMatchObject({ allow: false, ask: true });
+    if (level === "full") expect(push).toEqual({ allow: true });
+    else expect(push).toMatchObject({ allow: false, ask: true });
   }
 });
 
@@ -147,11 +148,11 @@ test("a chat at full runs a command the matcher cannot follow, where edits still
     expect(match(full, call, { home: HOME })).toEqual({ allow: true });
     expect(match(edits, call, { home: HOME })).toMatchObject({ allow: false, ask: true });
   }
-  // The profile's own ask rules still ask, and a plain deny still refuses.
-  expect(match(full, { tool: "bash", input: { command: "git push origin main" }, cwd: CWD }, { home: HOME })).toMatchObject({
-    allow: false,
-    ask: true,
+  // The default's own ask rules do not ask at full, and a plain deny still refuses.
+  expect(match(full, { tool: "bash", input: { command: "git push origin main" }, cwd: CWD }, { home: HOME })).toEqual({
+    allow: true,
   });
+  expect(match(full, { tool: "write", input: { path: "~/.zshrc" }, cwd: CWD }, { home: HOME })).toEqual({ allow: true });
   for (const call of [
     { tool: "bash", input: { command: "sudo ls" }, cwd: CWD },
     { tool: "bash", input: { command: "cat ~/.ssh/id_ed25519" }, cwd: CWD },
