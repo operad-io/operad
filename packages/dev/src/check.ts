@@ -1,6 +1,7 @@
 /**
- * The dev plugin's `init` check: every registered repository has a remote that
- * answers and publishes its main branch. The check only reads: it asks the
+ * The dev plugin's `init` check: every registered repository that has a remote
+ * has one that answers and publishes its main branch; one without a remote has
+ * its main branch locally. The check only reads: it asks the
  * remote for its heads through the remote's name, so git's URL rewriting and
  * credentials apply as they would for a real command, and writes nothing.
  */
@@ -26,40 +27,52 @@ function listsBranch(output: string, branch: string): boolean {
     .some((line) => line.split("\t")[1]?.trim() === ref);
 }
 
-/** Checks one repository and returns the remote it used. */
+/** Checks one repository and returns the remote it used, or undefined when it has none. */
 async function checkRepository(
   repository: { readonly name: string; readonly path: string },
-): Promise<string> {
+): Promise<string | undefined> {
   const settings = await readDevSettings(repository.path);
+  const remoteName = settings.remote;
+  if (remoteName === undefined) {
+    // No remote: the local main branch is the base, and it must exist.
+    const local = git(repository.path, [
+      "show-ref",
+      "--verify",
+      "--quiet",
+      `refs/heads/${settings.mainBranch}`,
+    ]);
+    if (!local.ok) throw new Error(`no branch "${settings.mainBranch}"`);
+    return undefined;
+  }
   // The init check must never wait for a credential prompt; the shared runner
   // retries an empty success under load.
   const env = { ...process.env, GIT_TERMINAL_PROMPT: "0" };
   const remote = git(repository.path, [
     "remote",
     "get-url",
-    settings.remote,
+    remoteName,
   ], { env });
   if (!remote.ok || remote.out.length === 0) {
-    throw new Error(`remote "${settings.remote}" does not exist`);
+    throw new Error(`remote "${remoteName}" does not exist`);
   }
 
   const listed = git(repository.path, [
     "ls-remote",
     "--heads",
-    settings.remote,
+    remoteName,
     settings.mainBranch,
   ], { env });
   if (!listed.ok) {
     throw new Error(
-      `cannot reach remote "${settings.remote}": ${detail(listed.err)}`,
+      `cannot reach remote "${remoteName}": ${detail(listed.err)}`,
     );
   }
   if (!listsBranch(listed.out, settings.mainBranch)) {
     throw new Error(
-      `remote "${settings.remote}" has no branch "${settings.mainBranch}"`,
+      `remote "${remoteName}" has no branch "${settings.mainBranch}"`,
     );
   }
-  return settings.remote;
+  return remoteName;
 }
 
 /** Runs the repository loop and reports one line, or throws with every failure. */

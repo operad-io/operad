@@ -36,11 +36,15 @@ import { reportFlakyTests } from "./flaky.ts";
 import { recordRerunPasses } from "./reruns.ts";
 import { getPlan, refreshPlanCounts } from "./service.ts";
 import {
+  baseName,
+  baseRef,
   commitOf,
+  fetchRemote,
   git,
   headOf,
   isAncestor,
   treeOf,
+  type GitResult,
 } from "./git.ts";
 import {
   cancelledStep,
@@ -88,6 +92,34 @@ export const integrateTestHooks: {
   /** How a task waits for its turn before it looks again. */
   wait?: ((ms: number) => Promise<void>) | undefined;
 } = {};
+
+// The branch a work tree is on, or undefined when it is on none.
+function currentBranchOf(path: string): string | undefined {
+  const current = git(path, ["symbolic-ref", "--short", "-q", "HEAD"]);
+  return current.ok && current.out.length > 0 ? current.out : undefined;
+}
+
+// Lands the commit the gate worktree holds on main. With a remote it is a push
+// from the gate worktree. With none the local main branch moves: through the
+// clone when it has main checked out (its files move with the branch, and a
+// change that does not fast-forward is refused), else by updating the ref only
+// from `base`, so a main that moved meanwhile is not overwritten.
+function landOnMain(
+  repository: string,
+  gate: string,
+  settings: DevSettings,
+  base: string,
+): GitResult {
+  if (settings.remote !== undefined) {
+    return git(gate, ["push", settings.remote, `HEAD:refs/heads/${settings.mainBranch}`]);
+  }
+  const sha = headOf(gate);
+  if (sha === undefined) return { ok: false, out: "", err: "the gate has no commit" };
+  if (currentBranchOf(repository) === settings.mainBranch) {
+    return git(repository, ["merge", "--ff-only", sha]);
+  }
+  return git(repository, ["update-ref", baseRef(settings), sha, base]);
+}
 
 export async function followMain(
   repository: { readonly name: string; readonly path: string },
@@ -329,7 +361,7 @@ export async function runIntegrate(
     context.taskId,
   );
   const head = branchHead(repository, settings, context.workName);
-  const mainRef = `refs/remotes/${settings.remote}/${settings.mainBranch}`;
+  const mainRef = baseRef(settings);
   const recordedStart = task.attempt?.startBranch;
   const inPlace =
     task.attempt?.inPlace === true &&
@@ -339,6 +371,14 @@ export async function runIntegrate(
       : undefined;
   const keyCommands = settings.integration.keyCommands;
   const runStep = ctx.runStep;
+  // With no remote the merge moves the local main branch, and the clone that
+  // has it checked out moves with it before the clone's own update runs: the
+  // prepare lines are due, and the record says so before the move.
+  const cloneFollowsLocalMain =
+    settings.remote === undefined &&
+    settings.prepare.length > 0 &&
+    (currentBranchOf(repository) === settings.mainBranch ||
+      inPlace?.start === settings.mainBranch);
 
   const fail = async (
     message: string,
@@ -368,6 +408,8 @@ export async function runIntegrate(
 
   /** Asks before a push in a background run; a person-started run and an allowlisted target do not ask. */
   const pushAllowed = async (sha: string | undefined, what: string): Promise<boolean> =>
+    // With no remote the merge only moves the local main branch: nothing leaves the machine.
+    settings.remote === undefined ||
     guardOutward(
       {
         access: ctx.access,
@@ -382,8 +424,8 @@ export async function runIntegrate(
       },
       {
         kind: "repository",
-        target: `${settings.remote}/${settings.mainBranch}`,
-        content: `push ${sha ?? "HEAD"} to ${settings.remote}/${settings.mainBranch} (${what})`,
+        target: baseName(settings),
+        content: `push ${sha ?? "HEAD"} to ${baseName(settings)} (${what})`,
       },
     );
 
@@ -479,7 +521,7 @@ export async function runIntegrate(
     typeof previous.candidate === "string" &&
     previous.candidate.length > 0
   ) {
-    const fetched = git(repository, ["fetch", "--prune", settings.remote]);
+    const fetched = fetchRemote(repository, settings);
     const remoteMain = commitOf(repository, mainRef);
     if (
       fetched.ok &&
@@ -557,7 +599,7 @@ export async function runIntegrate(
     signal: ctx.signal,
     wait: integrateTestHooks.wait,
     landed: (result) => {
-      if (!git(repository, ["fetch", "--prune", settings.remote]).ok) return false;
+      if (!fetchRemote(repository, settings).ok) return false;
       const main = commitOf(repository, mainRef);
       return main !== undefined && isAncestor(repository, result.head, main);
     },
@@ -584,7 +626,7 @@ export async function runIntegrate(
 
   /** This task's merge commit when main already has it, and the main that has it. */
   const alreadyOnMain = (): { sha: string; main: string } | undefined => {
-    if (!git(repository, ["fetch", "--prune", settings.remote]).ok) return undefined;
+    if (!fetchRemote(repository, settings).ok) return undefined;
     const main = commitOf(repository, mainRef);
     if (main === undefined) return undefined;
     const found = git(repository, [
@@ -616,7 +658,7 @@ export async function runIntegrate(
       })),
     ];
     for (let round = 0; round < MAX_INTEGRATION_ROUNDS; round += 1) {
-      const fetched = git(repository, ["fetch", "--prune", settings.remote]);
+      const fetched = fetchRemote(repository, settings);
       if (!fetched.ok) return undefined;
       const base = commitOf(repository, mainRef);
       if (base === undefined) return undefined;
@@ -752,6 +794,7 @@ export async function runIntegrate(
         head: head ?? null,
         headMoved,
         pushed: false,
+        ...(cloneFollowsLocalMain ? { prepareDue: true } : {}),
         batchHead,
         batch: members.filter((member) => member.task !== context.taskId).map((member) => member.task),
         ...(checkNote === undefined ? {} : { checkNote }),
@@ -784,27 +827,23 @@ export async function runIntegrate(
       const landed = await queue.landWhenStillQueued(followers, result, async () => {
         await integrateTestHooks.beforePush?.(batchHead);
         if (!(await pushAllowed(batchHead, "the batch merge"))) return false;
-        const pushed = git(gate, [
-          "push",
-          settings.remote,
-          `HEAD:refs/heads/${settings.mainBranch}`,
-        ]).ok;
+        const pushed = landOnMain(repository, gate, settings, base).ok;
         if (pushed) return true;
-        git(repository, ["fetch", "--prune", settings.remote]);
+        fetchRemote(repository, settings);
         const after = commitOf(repository, mainRef);
         landedDespiteError = after !== undefined && isAncestor(repository, batchHead, after);
         return landedDespiteError;
       });
       if (landed === "withdrawn") return undefined;
       if (landed === "failed") {
-        return fail(`the person did not allow the push to "${settings.remote}/${settings.mainBranch}"`);
+        return fail(`the person did not allow the push to "${baseName(settings)}"`);
       }
       if (landed === "pushed") {
         if (landedDespiteError) return land({ landed: true });
         integrateTestHooks.afterPush?.(batchHead);
         return land({});
       }
-      git(repository, ["fetch", "--prune", settings.remote]);
+      fetchRemote(repository, settings);
       const now = commitOf(repository, mainRef);
       if (now !== undefined && isAncestor(repository, batchHead, now)) {
         return land({ landed: true });
@@ -900,7 +939,7 @@ export async function runIntegrate(
 
     let lastError = "";
     for (let round = 0; round < MAX_INTEGRATION_ROUNDS; round += 1) {
-      const fetched = git(repository, ["fetch", "--prune", settings.remote]);
+      const fetched = fetchRemote(repository, settings);
       if (!fetched.ok) {
         return fail(
           `cannot fetch "${settings.remote}": ${fetched.err || fetched.out || "git fetch failed"}`,
@@ -908,7 +947,11 @@ export async function runIntegrate(
       }
       const base = commitOf(repository, mainRef);
       if (base === undefined) {
-        return fail(`"${settings.remote}/${settings.mainBranch}" does not exist after the fetch`);
+        return fail(
+          settings.remote === undefined
+            ? `the branch "${settings.mainBranch}" does not exist`
+            : `"${baseName(settings)}" does not exist after the fetch`,
+        );
       }
 
       const prepared = recreateGateWorktree(repository, gate, base, settings);
@@ -1162,6 +1205,7 @@ export async function runIntegrate(
         head: head ?? null,
         headMoved,
         pushed: false,
+        ...(cloneFollowsLocalMain ? { prepareDue: true } : {}),
         ...(checkNote === undefined ? {} : { checkNote }),
       };
       if ((await writeIntegration(ctx, context, task, attempt, pending, {
@@ -1172,13 +1216,9 @@ export async function runIntegrate(
       integrateTestHooks.at?.("pending-saved");
 
       if (!(await pushAllowed(sha, "the task merge"))) {
-        return fail(`the person did not allow the push to "${settings.remote}/${settings.mainBranch}"`);
+        return fail(`the person did not allow the push to "${baseName(settings)}"`);
       }
-      const push = git(gate, [
-        "push",
-        settings.remote,
-        `HEAD:refs/heads/${settings.mainBranch}`,
-      ]);
+      const push = landOnMain(repository, gate, settings, base);
       if (push.ok) {
         integrateTestHooks.afterPush?.(sha);
         const record: IntegrationRecord = {
@@ -1189,8 +1229,11 @@ export async function runIntegrate(
         return recordMerged(record, sha);
       }
 
-      lastError = `cannot push "${settings.mainBranch}" to "${settings.remote}": ${push.err || push.out || "git push failed"}`;
-      git(repository, ["fetch", "--prune", settings.remote]);
+      lastError =
+        settings.remote === undefined
+          ? `cannot move "${settings.mainBranch}": ${push.err || push.out || "git failed"}`
+          : `cannot push "${settings.mainBranch}" to "${settings.remote}": ${push.err || push.out || "git push failed"}`;
+      fetchRemote(repository, settings);
       const now = commitOf(repository, mainRef);
       // A push can land on the remote and still report an error (the client lost
       // the answer). The remote's main then contains the candidate: it is
@@ -1238,7 +1281,7 @@ export async function runCleanup(
   const env: Record<string, string> = {
     OPERAD_TASK: context.taskId,
     OPERAD_WORKTREE: worktree,
-    OPERAD_REMOTE: settings.remote,
+    OPERAD_REMOTE: settings.remote ?? "",
   };
   const failures: CleanupFailure[] = [];
   const runStep = ctx.runStep;

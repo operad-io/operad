@@ -468,7 +468,7 @@ function ensureExcludes(repositoryPath: string): void {
   appendFileSync(excludePath, `${prefix}${missing.join("\n")}\n`, "utf8");
 }
 
-function writeSettings(repositoryPath: string, name: string): void {
+function writeSettings(repositoryPath: string, name: string, hasRemote: boolean): void {
   const directory = join(repositoryPath, ".operad");
   mkdirSync(directory, { recursive: true });
   const settings = join(directory, "dev.json");
@@ -479,7 +479,7 @@ function writeSettings(repositoryPath: string, name: string): void {
       {
         $schema: DEV_SETTINGS_SCHEMA,
         name,
-        remote: DEFAULT_DEV_SETTINGS.remote,
+        ...(hasRemote ? { remote: DEFAULT_DEV_SETTINGS.remote } : {}),
         mainBranch: DEFAULT_DEV_SETTINGS.mainBranch,
         worktreeRoot: DEFAULT_DEV_SETTINGS.worktreeRoot,
         concurrency: DEFAULT_DEV_SETTINGS.concurrency,
@@ -514,7 +514,7 @@ function repositoryHasRemote(
   };
 }
 
-/** Registers a git work tree that has a remote. */
+/** Registers a git work tree; it may have no remote. */
 export async function addRepository(
   store: ObjectStore,
   options: AddRepositoryOptions,
@@ -541,13 +541,8 @@ export async function addRepository(
   if (bare.ok && bare.out === "true") {
     throw new DevError("path", `"${path}" is a bare repository`);
   }
-  const remote = repositoryHasRemote(path);
-  if (!remote.present) {
-    throw new DevError(
-      "path",
-      `"${path}" has no remote${remote.err.length > 0 ? `: ${remote.err}` : ""}`,
-    );
-  }
+  // A repository with no remote is allowed: its merges stay local.
+  const hasRemote = repositoryHasRemote(path).present;
 
   const name = validateRepositoryName(options.name ?? basename(path));
   const existing = await findRepository(store, name, { includeRemoved: true });
@@ -583,7 +578,7 @@ export async function addRepository(
         }
       : { ...previous, name, path, removed: false };
   await store.put(REPOSITORY_TYPE, name, data, "dev:repo-add");
-  writeSettings(path, name);
+  writeSettings(path, name, hasRemote);
   ensureExcludes(path);
   return data;
 }

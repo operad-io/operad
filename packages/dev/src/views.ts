@@ -41,7 +41,7 @@ import {
 import { placeWaitNote } from "./place-wait.ts";
 import { checkHostWarning } from "./check-host.ts";
 import { planMark, repositoryMark, taskBadge, taskMark } from "./marks.ts";
-import { branchExists, commitOf, git } from "./git.ts";
+import { baseName, branchExists, commitOf, git } from "./git.ts";
 import { workBranch } from "./steps.ts";
 import { repositoryMetrics } from "./throughput.ts";
 import { findRepository, listRepositories } from "./service.ts";
@@ -162,7 +162,7 @@ export const repoViews: ObjectViews = {
           : undefined;
       const file = join(repository.path, DEV_SETTINGS_FILE);
       lines.push(
-        `- Default branch: \`${settings.mainBranch}\` on \`${settings.remote}\``,
+        `- Default branch: \`${settings.mainBranch}\`${settings.remote === undefined ? " (no remote)" : ` on \`${settings.remote}\``}`,
         `- ${DEV_SETTINGS_FILE}: ${
           problem !== undefined
             ? `invalid, the last valid settings stay in force (${problem})`
@@ -812,7 +812,8 @@ function mergedCommitOf(task: TaskData): string | undefined {
 }
 
 /** A GitHub-style remote's web page for a commit, when the remote names one. */
-function commitWebUrl(repositoryPath: string, remote: string, sha: string): string | undefined {
+function commitWebUrl(repositoryPath: string, remote: string | undefined, sha: string): string | undefined {
+  if (remote === undefined) return undefined;
   const configured = git(repositoryPath, ["remote", "get-url", remote]);
   if (!configured.ok || configured.out.length === 0) return undefined;
   const text = configured.out.trim();
@@ -857,7 +858,7 @@ function commitWebUrl(repositoryPath: string, remote: string, sha: string): stri
 }
 
 /** What a merged task says when its own change cannot be shown. */
-function mergedMarkdown(repositoryPath: string, remote: string, sha: string | undefined): string {
+function mergedMarkdown(repositoryPath: string, remote: string | undefined, sha: string | undefined): string {
   if (sha === undefined) return "_Merged._";
   const short = sha.slice(0, 7);
   const url = commitWebUrl(repositoryPath, remote, sha);
@@ -865,10 +866,10 @@ function mergedMarkdown(repositoryPath: string, remote: string, sha: string | un
 }
 
 /** True when the task's branch is still in the repository, here or on its remote. */
-function branchIsThere(repositoryPath: string, remote: string, branch: string): boolean {
+function branchIsThere(repositoryPath: string, remote: string | undefined, branch: string): boolean {
   return (
     branchExists(repositoryPath, branch) ||
-    branchExists(repositoryPath, branch, remote)
+    (remote !== undefined && branchExists(repositoryPath, branch, remote))
   );
 }
 
@@ -887,7 +888,7 @@ async function diffSection(
   const repository = repositoryData(found.data);
   const settings = await readDevSettings(repository.path);
   const branch = task.attempt?.branch ?? workBranch(task.worktree ?? idOfKey(object.id));
-  const main = `${settings.remote}/${settings.mainBranch}`;
+  const main = baseName(settings);
   const merged = task.phase === "merged";
   const recorded = merged ? mergedCommitOf(task) : undefined;
   let range: string;

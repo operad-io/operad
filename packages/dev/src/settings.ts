@@ -31,6 +31,7 @@ import {
 import { defaultOperadHome, isRecord } from "@operad-io/engine";
 import { writeJsonAtomicSync } from "@operad-io/engine/platform";
 import { DevError, type AutoMode } from "./model.ts";
+import { git } from "./git.ts";
 import { repositoryPathKey } from "./repository-key.ts";
 import {
   type DevFlowSpec,
@@ -295,7 +296,12 @@ export type WorkIn = "branch" | "worktree";
 /** The whole `.operad/dev.json` document, with every default filled. */
 export interface DevSettings {
   readonly name?: string | undefined;
-  readonly remote: string;
+  /**
+   * The git remote task branches are fetched from and pushed to. Undefined
+   * means the repository has none: the local main branch is the base, nothing
+   * is fetched or pushed, and a merge only moves the local main branch.
+   */
+  readonly remote?: string | undefined;
   readonly mainBranch: string;
   readonly worktreeRoot: string;
   /**
@@ -359,7 +365,7 @@ export const DEFAULT_AFTER_MERGE: readonly string[] = [
   "if [ -e \"$OPERAD_WORKTREE-gate\" ]; then git worktree remove --force \"$OPERAD_WORKTREE-gate\"; fi",
   "git worktree prune",
   "if git show-ref --verify --quiet \"refs/heads/work/$OPERAD_TASK\" && [ \"$(git symbolic-ref --short -q HEAD)\" != \"work/$OPERAD_TASK\" ]; then git branch -D \"work/$OPERAD_TASK\"; fi",
-  "if git ls-remote --exit-code --heads \"$OPERAD_REMOTE\" \"work/$OPERAD_TASK\" >/dev/null; then git push \"$OPERAD_REMOTE\" --delete \"work/$OPERAD_TASK\"; else [ $? -eq 2 ]; fi",
+  "if [ -z \"$OPERAD_REMOTE\" ]; then :; elif git ls-remote --exit-code --heads \"$OPERAD_REMOTE\" \"work/$OPERAD_TASK\" >/dev/null; then git push \"$OPERAD_REMOTE\" --delete \"work/$OPERAD_TASK\"; else [ $? -eq 2 ]; fi",
 ];
 
 /**
@@ -1603,7 +1609,27 @@ function settingsFromText(
 ): ReadSettings {
   const parsed = parseSettingsText(path, text);
   checkSettingsPaths(repositoryPath, parsed);
-  return { settings: parsed.settings, text };
+  const raw: unknown = JSON.parse(text);
+  const named = isRecord(raw) && raw.remote !== undefined;
+  return {
+    settings: named ? parsed.settings : withoutAbsentRemote(repositoryPath, parsed.settings),
+    text,
+  };
+}
+
+/**
+ * The settings of a file that names no remote: the default remote when the
+ * repository has it, else none. A repository with no remote is a normal one.
+ * The exit status of `git config --get` is the answer; it is not read from
+ * output that can be empty under load.
+ */
+function withoutAbsentRemote(repositoryPath: string, settings: DevSettings): DevSettings {
+  const name = settings.remote;
+  if (name === undefined) return settings;
+  if (git(repositoryPath, ["config", "--local", "--get", `remote.${name}.url`]).ok) {
+    return settings;
+  }
+  return { ...settings, remote: undefined };
 }
 
 /** Reads the file as it is now; any problem with it is thrown. */
@@ -1615,7 +1641,7 @@ function readSettingsNow(repositoryPath: string): ReadSettings {
       resolve(repositoryPath, DEFAULT_DEV_SETTINGS.worktreeRoot),
       "worktreeRoot",
     );
-    return { settings: defaultDevSettings(), text: "" };
+    return { settings: withoutAbsentRemote(repositoryPath, defaultDevSettings()), text: "" };
   }
   let text: string;
   try {
@@ -1692,7 +1718,7 @@ function readDefaults(repositoryPath: string): ReadSettings {
     resolve(repositoryPath, DEFAULT_DEV_SETTINGS.worktreeRoot),
     "worktreeRoot",
   );
-  return { settings: defaultDevSettings(), text: "" };
+  return { settings: withoutAbsentRemote(repositoryPath, defaultDevSettings()), text: "" };
 }
 
 /**

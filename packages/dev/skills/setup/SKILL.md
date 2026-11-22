@@ -13,7 +13,7 @@ Reference, if you need a key's details: https://operad.io/docs/dev/ (the full ke
 and https://operad.io/llms.txt.
 
 1. Look at the repository. Run `git remote -v` and find the main branch name in {target}.
-   The repository needs a git remote; if it has none, say so and stop. Check which agents
+   A repository with no git remote is fine: leave `remote` out of the file. Check which agents
    are on PATH: `claude`, `pi`, `radian`. When none is, operad's own pi is the agent.
 
 2. Find this repo's checks. Read CI config (.github/workflows, .gitlab-ci.yml, ...), the
@@ -32,7 +32,7 @@ and https://operad.io/llms.txt.
 
    {
      "name": "<repo name>",
-     "remote": "<remote>",
+     "remote": "<remote, left out when the repository has none>",
      "mainBranch": "<main branch>",
      "workers": { "<agent>": { "use": "<agent>/agent", "args": [] } },
      "prepare": [ ... ],

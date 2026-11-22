@@ -23,7 +23,7 @@ plan -> tasks (draft) -> confirm -> ready -> code -> test -> review -> you merge
 5. **Review.** The reviewer reads the change and writes a report. Findings that reach `reviewer.fixLevel` (default `major`) fail the review. An attempt whose work left the line `changed the main checkout: <files>` gets a major finding from dev itself, on each named file, whether or not the reviewer reports one.
 6. **Rework.** A failed test or a failed review sends the task back to the worker, up to `maxAutoRework` times (default `2`). After that the task waits for you.
 7. **Waiting for you.** A task that passed test and review waits in `operad pending` as `ready to merge`, with the actions `dev:merge`, `dev:reject`, `dev:rework`, `dev:reverify` and `dev:cancel`. A task also waits when something needs a person: review findings, a failed gate, the rework limit, a worker that added no commit. A worker's own question, such as a permission ask from its harness, is a pending item too; `allow_once` or `reject_once` answers it, and the same worker continues.
-8. **Merge and clean up.** `dev:merge` puts the verified commit on main (`integration.style`), runs `integration.keyCommands`, and pushes to the remote. Then cleanup removes the task's worktrees and branches. Tasks of one repository integrate one at a time. If the remote refuses the push, nothing is written and the task waits with a note.
+8. **Merge and clean up.** `dev:merge` puts the verified commit on main (`integration.style`), runs `integration.keyCommands`, and pushes to the remote (a repository with no remote moves its local main branch instead). Then cleanup removes the task's worktrees and branches. Tasks of one repository integrate one at a time. If the remote refuses the push, nothing is written and the task waits with a note.
 
 Every step is recorded: `operad history <task>` shows what ran, what a test or review found, and what you chose. A run whose process died starts again from its last recorded step. A plan can go further without you: `operad dev:auto <plan> --level merge` merges reviewed work after the test passes, `--level run` starts the plan's tasks without you and still stops each one for you at the merge, and `--level off` waits for you at every start and merge. `autoDefault` sets the level for new plans.
 
@@ -62,7 +62,7 @@ harness. With no enabled harness both are `radian/agent`.
 |---|---|---|---|---|---|
 | `dev.$schema` | string | absent | `https://operad.io/schemas/dev.schema.json` or another schema URL | Only editors read it | Ignored |
 | `dev.name` | string | unset | non-empty text | When the file is read; it is kept with the settings but does not rename a registered repository | Refused: `name: must be a non-empty string` |
-| `dev.remote` | string | `"origin"` | a git remote name | When a task branch is fetched, pushed or cleaned up | Refused: `remote: must be a non-empty string` |
+| `dev.remote` | string | `"origin"` when the repository has that remote, else none | a git remote name; leave it out for a repository with no remote, which then uses its local main branch as the base and fetches and pushes nothing | When a task branch is fetched, pushed or cleaned up | Refused: `remote: must be a non-empty string` |
 | `dev.mainBranch` | string | `"main"` | a branch name | When a task branch starts and merges main | Refused: `mainBranch: must be a non-empty string` |
 | `dev.worktreeRoot` | string | `".operad-worktrees"` | a relative path inside the repository | When a worktree is created or read | Refused: `worktreeRoot: must be relative to the repository` or `worktreeRoot: must stay inside the repository` |
 | `dev.worktrees` | string | unset | the old name of `worktreeRoot`; read when `worktreeRoot` is absent | When the file is read | Refused with the same two messages, naming `worktrees` |
@@ -361,7 +361,7 @@ that machine, so `dev` also declares the action `dev:repo-add`. It takes the
 repository's `path` on the machine that runs `serve`, and optionally a `name`,
 and it asks for confirmation. The action and the command call the same code:
 the action adds what the command adds, writes the same `.operad/dev.json`, and
-refuses with the command's words (not a git work tree, no remote, already
+refuses with the command's words (not a git work tree, already
 registered). Its answer is the command's line, `added <name> (<path>)`, and the
 new repository then appears with `GET /v1/objects?type=repo`.
 

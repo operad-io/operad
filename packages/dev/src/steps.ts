@@ -51,10 +51,14 @@ import { writingChat } from "./clone-chat.ts";
 import { now as devNow } from "./clock.ts";
 import { modelErrorIn, modelWaitsForPerson } from "./model-error.ts";
 import {
+  baseName,
+  baseRef,
   branchExists,
+  fetchRemote,
   git,
   headOf,
   isAncestor,
+  type BaseSettings,
   type GitResult,
 } from "./git.ts";
 import { runPrepare, taskStepAccess } from "./prepare.ts";
@@ -417,7 +421,8 @@ const NO_CHECKOUT_BEFORE: CheckoutBefore = { entries: [], position: undefined };
 // recorded base instead, which is the main the worktree started from. A branch
 // switch counts only when the clone was left on another branch than it began on.
 interface MainReach {
-  readonly remote: string;
+  /** Undefined when the repository has no remote: there is nothing to fetch. */
+  readonly remote: string | undefined;
   readonly mainRef: string;
   readonly base: string | null;
 }
@@ -433,7 +438,7 @@ function movedHead(
   const short = (sha: string): string => sha.slice(0, 7);
   if (before.head !== after.head) {
     // Reads the remote's current main; a failed fetch leaves the ref as it was.
-    git(checkout, ["fetch", "--quiet", reach.remote]);
+    if (reach.remote !== undefined) git(checkout, ["fetch", "--quiet", reach.remote]);
     const known = git(checkout, ["rev-parse", "--verify", "--quiet", `${reach.mainRef}^{commit}`]);
     const floor = known.ok && known.out.length > 0 ? reach.mainRef : reach.base;
     const gained = git(checkout, [
@@ -772,15 +777,19 @@ export function prepareWorktree(
   taskId: string,
   mergeMain = true,
 ): Prepared {
-  const fetch = git(repository.path, ["fetch", "--prune", settings.remote]);
+  const fetch = fetchRemote(repository.path, settings);
   if (!fetch.ok) {
     return failed(
       `cannot fetch "${settings.remote}": ${fetch.err || fetch.out || "git fetch failed"}`,
     );
   }
-  const mainRef = `${settings.remote}/${settings.mainBranch}`;
-  if (!git(repository.path, ["show-ref", "--verify", "--quiet", `refs/remotes/${mainRef}`]).ok) {
-    return failed(`"${mainRef}" does not exist after the fetch`);
+  const mainRef = baseName(settings);
+  if (!git(repository.path, ["show-ref", "--verify", "--quiet", baseRef(settings)]).ok) {
+    return failed(
+      settings.remote === undefined
+        ? `the branch "${mainRef}" does not exist`
+        : `"${mainRef}" does not exist after the fetch`,
+    );
   }
 
   const path = worktreePath(repository.path, settings, taskId);
@@ -824,7 +833,7 @@ export function prepareWorktree(
   if (branchExists(repository.path, branch)) {
     add = git(repository.path, ["worktree", "add", path, branch]);
     reused = true;
-  } else if (branchExists(repository.path, branch, settings.remote)) {
+  } else if (settings.remote !== undefined && branchExists(repository.path, branch, settings.remote)) {
     add = git(repository.path, [
       "worktree",
       "add",
@@ -915,15 +924,19 @@ export async function prepareBranch(
   taskId: string,
   options: BranchOptions,
 ): Promise<Prepared> {
-  const fetch = git(repository.path, ["fetch", "--prune", settings.remote]);
+  const fetch = fetchRemote(repository.path, settings);
   if (!fetch.ok) {
     return failed(
       `cannot fetch "${settings.remote}": ${fetch.err || fetch.out || "git fetch failed"}`,
     );
   }
-  const mainRef = `${settings.remote}/${settings.mainBranch}`;
-  if (!git(repository.path, ["show-ref", "--verify", "--quiet", `refs/remotes/${mainRef}`]).ok) {
-    return failed(`"${mainRef}" does not exist after the fetch`);
+  const mainRef = baseName(settings);
+  if (!git(repository.path, ["show-ref", "--verify", "--quiet", baseRef(settings)]).ok) {
+    return failed(
+      settings.remote === undefined
+        ? `the branch "${mainRef}" does not exist`
+        : `"${mainRef}" does not exist after the fetch`,
+    );
   }
   const path = repository.path;
   const branch = workBranch(taskId);
@@ -971,7 +984,7 @@ export async function prepareBranch(
   if (branchExists(path, branch)) {
     switched = git(path, ["switch", "--quiet", branch]);
     reused = true;
-  } else if (branchExists(path, branch, settings.remote)) {
+  } else if (settings.remote !== undefined && branchExists(path, branch, settings.remote)) {
     switched = git(path, [
       "switch",
       "--quiet",
@@ -1689,10 +1702,10 @@ function hasUncheckedWork(
   path: string,
   head: string,
   attempt: TaskAttempt,
-  context: { readonly settings: { readonly remote: string; readonly mainBranch: string } },
+  context: { readonly settings: BaseSettings },
 ): boolean {
   if (attempt.verified === head && attempt.verify?.result === "pass") return false;
-  const mainRef = `${context.settings.remote}/${context.settings.mainBranch}`;
+  const mainRef = baseName(context.settings);
   const ahead = git(path, ["rev-list", "--count", "--no-merges", `${mainRef}..${head}`]);
   return ahead.ok && Number(ahead.out) > 0;
 }
@@ -1782,7 +1795,7 @@ export async function runWork(ctx: StepContext, stepParams?: unknown): Promise<P
 
   if (beforeAttemptOf(stage) === "merge-main") {
     const remote = context.settings.remote;
-    const mainRef = `${remote}/${context.settings.mainBranch}`;
+    const mainRef = baseName(context.settings);
     const failBefore = async (message: string): Promise<PluginStepResult> => {
       const nextAttempt: TaskAttempt = {
         ...attempt,
@@ -1814,7 +1827,7 @@ export async function runWork(ctx: StepContext, stepParams?: unknown): Promise<P
         }),
       };
     };
-    const fetch = git(context.repository.path, ["fetch", "--prune", remote]);
+    const fetch = fetchRemote(context.repository.path, context.settings);
     if (!fetch.ok) {
       return failBefore(
         `cannot fetch "${remote}": ${fetch.err || fetch.out || "git fetch failed"}`,
@@ -2133,7 +2146,7 @@ export async function runWork(ctx: StepContext, stepParams?: unknown): Promise<P
       ? []
       : newCheckoutChanges(context.repository.path, path, mainCheckoutBefore, {
           remote: context.settings.remote,
-          mainRef: `${context.settings.remote}/${context.settings.mainBranch}`,
+          mainRef: baseName(context.settings),
           base,
         });
     if (startTimer !== undefined) startClock.clearTimeout(startTimer);
@@ -2482,12 +2495,12 @@ export async function runWork(ctx: StepContext, stepParams?: unknown): Promise<P
     }
   }
 
-  const push = git(path, [
-    "push",
-    context.settings.remote,
-    `HEAD:refs/heads/${branch}`,
-  ]);
-  if (!push.ok) {
+  // With no remote the branch stays local; verify reads it from here.
+  const push =
+    context.settings.remote === undefined
+      ? undefined
+      : git(path, ["push", context.settings.remote, `HEAD:refs/heads/${branch}`]);
+  if (push !== undefined && !push.ok) {
     return finish("failed", {
       reason: "push",
       head,
@@ -2496,7 +2509,7 @@ export async function runWork(ctx: StepContext, stepParams?: unknown): Promise<P
   }
   return finish("done", {
     head,
-    pushed: true,
+    pushed: push !== undefined,
     ...(note === undefined ? {} : { message: note }),
   });
 }
