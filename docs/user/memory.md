@@ -9,7 +9,7 @@ The `memory` plugin gives a bot two places to keep what it knows:
 - the **wiki**, one shared knowledge base every bot reads and some bots write;
 - the bot's **memory**, a directory of its own inside its working directory.
 
-Enable it like any other plugin:
+A new home enables it; a home made before needs `operad plugin enable memory`:
 
 ```sh
 operad plugin enable memory

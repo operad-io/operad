@@ -47,6 +47,16 @@ function pluginsOf(home: string): Record<string, { module: string; enabled: bool
 }
 
 describe("plugin enable", () => {
+  test("the plugins a new home leaves off can be turned on", async () => {
+    const home = await makeHomeWithoutPlugins();
+    for (const name of ["shell", "pool", "dev"]) {
+      const enabled = capture();
+      expect(await main(["plugin", "enable", name], { home, io: enabled.io })).toBe(0);
+      expect(enabled.text()).toContain(`${name}: enabled`);
+    }
+    expect(Object.keys(pluginsOf(home))).toEqual(["shell", "pool", "dev"]);
+  });
+
   test("memory is added from the shipped package and listed as enabled", async () => {
     const home = await makeHomeWithoutPlugins();
 

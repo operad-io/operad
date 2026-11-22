@@ -4,7 +4,7 @@ description: Start operad: create the home, start serve, open the client.
 
 # Quickstart
 
-`operad init` creates the home and checks the plugins. `operad serve` runs the loop for the home; `operad tui` opens the [terminal client](tui.md) and starts `serve` when none answers. `operad pending` lists what waits for a person and `operad list <type>` lists objects.
+`operad init` creates the home and checks the plugins. A new home starts as the personal assistant, with `chat`, `bot`, `memory` and the agents it finds; `shell`, `dev` and `pool` are off, and [the Quickstart](../../README.md#quickstart) turns them on for a repository. `operad serve` runs the loop for the home; `operad tui` opens the [terminal client](tui.md) and starts `serve` when none answers. `operad pending` lists what waits for a person and `operad list <type>` lists objects.
 
 To have your coding agent write `.operad/dev.json` for a repository, use [the setup prompt](setup-prompt.md). The settings are in [config.json](config.md), the commands in [the command line](cli.md), and what to do when something does not work in [troubleshooting](troubleshooting.md).
 

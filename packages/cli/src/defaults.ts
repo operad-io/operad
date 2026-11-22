@@ -11,11 +11,11 @@ import {
 export const INIT_HARNESS_PLUGINS: readonly string[] = ["radian", "claude", "pi"];
 
 /**
- * Plugins shipped with operad that `plugin enable <name>` can add. Most are not
- * in the default config; `pool` is, and stays here so a home made before init
- * installed it can still enable it.
+ * Plugins shipped with operad that `plugin enable <name>` can add, including
+ * those a new home leaves off (`shell`, `dev`, `pool`) and those a home made
+ * before the current defaults may still need (`bot`, `memory`, the harnesses).
  */
-export const OPTIONAL_PLUGINS: readonly string[] = ["pi", "claude", "codex", "pool", "bot", "telegram", "memory"];
+export const OPTIONAL_PLUGINS: readonly string[] = ["shell", "pi", "claude", "codex", "pool", "bot", "telegram", "memory", "dev"];
 
 /** The plugins whose package is installed into the home rather than shipped with the CLI. */
 export const INSTALL_ON_ENABLE: readonly string[] = ["claude"];
@@ -28,23 +28,16 @@ export function defaultPluginModule(name: string): string {
   return HARNESS_PLUGINS.includes(name) ? `@operad-io/harness-${name}` : `@operad-io/${name}`;
 }
 
-/** The actions `operad init` lets a lead run: the dev plugin's rework family and the chat plugin's close. */
-export const DEFAULT_LEAD_ACTIONS: readonly string[] = [
-  "dev:rework",
-  "dev:reverify",
-  "dev:reject",
-  "dev:priority",
-  "dev:concurrency",
-  "chat:close",
-];
+/** The actions `operad init` lets a lead run: only actions of the plugins a new home enables. */
+export const DEFAULT_LEAD_ACTIONS: readonly string[] = ["chat:close"];
 
 /** The allowed actions that also need the confirmation. */
 export const DEFAULT_CONFIRM_ACTIONS: readonly string[] = ["chat:close"];
 
-/** The plugins of a new home: the fixed ones plus the harnesses found on `PATH`. */
+/** The plugins of a new home: the assistant's fixed ones plus the harnesses found on `PATH`. */
 export function defaultPluginsFor(harnesses: readonly string[]): readonly string[] {
   const agents = harnesses.length === 0 ? ["radian"] : harnesses;
-  return ["shell", ...agents, "chat", "pool", "dev"];
+  return ["chat", "bot", "memory", ...agents];
 }
 
 /** The config a new home starts with, with the harness plugins passed in place of the fallback. */

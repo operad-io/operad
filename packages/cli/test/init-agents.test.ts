@@ -116,7 +116,7 @@ describe("`operad init` finds the agent on PATH", () => {
     const root = await tempRoot();
     const { code, output, plugins } = await initWith(root, ["claude"]);
     expect(code).toBe(0);
-    expect(plugins).toEqual(["shell", "claude", "chat", "pool", "dev"]);
+    expect(plugins).toEqual(["chat", "bot", "memory", "claude"]);
     expect(output.text()).toContain("claude: claude 2.1.319");
     expect(output.text()).not.toContain("radian:");
     expect(output.text()).not.toContain("pi:");
@@ -135,7 +135,7 @@ describe("`operad init` finds the agent on PATH", () => {
     const root = await tempRoot();
     const { code, output, plugins } = await initWith(root, ["pi"]);
     expect(code).toBe(0);
-    expect(plugins).toEqual(["shell", "pi", "chat", "pool", "dev"]);
+    expect(plugins).toEqual(["chat", "bot", "memory", "pi"]);
     expect(output.text()).toContain("pi: pi 1.5.0");
     expect(output.text()).not.toContain("radian:");
     expect(output.text()).not.toContain("claude:");
@@ -145,7 +145,7 @@ describe("`operad init` finds the agent on PATH", () => {
     const root = await tempRoot();
     const { code, output, plugins } = await initWith(root, ["radian"]);
     expect(code).toBe(0);
-    expect(plugins).toEqual(["shell", "radian", "chat", "pool", "dev"]);
+    expect(plugins).toEqual(["chat", "bot", "memory", "radian"]);
     expect(output.text()).toContain("radian: radian is available");
     expect(output.text()).not.toContain("claude:");
     expect(output.text()).not.toContain("pi:");
@@ -155,11 +155,58 @@ describe("`operad init` finds the agent on PATH", () => {
     const root = await tempRoot();
     const { code, output, plugins } = await initWith(root, []);
     expect(code).toBe(1);
-    expect(plugins).toEqual(["shell", "radian", "chat", "pool", "dev"]);
+    expect(plugins).toEqual(["chat", "bot", "memory", "radian"]);
     expect(output.text()).toContain("no agent found on PATH");
     expect(output.text()).toContain("claude (https://code.claude.com)");
     expect(output.text()).toContain("pi (bun add -g @earendil-works/pi-coding-agent)");
     expect(output.text()).toContain("radian");
     expect(output.text()).toContain("radian: radian was not found on PATH");
+  });
+
+  test("a home with a config.json keeps its plugins and switches on upgrade", async () => {
+    const root = await tempRoot();
+    const home = join(root, "home");
+    const bin = join(root, "bin");
+    mkdirSync(home, { recursive: true });
+    mkdirSync(bin, { recursive: true });
+    fakeRadian(bin);
+    const before = `${JSON.stringify(
+      {
+        plugins: {
+          shell: { module: "@operad-io/shell", enabled: true },
+          radian: { module: "@operad-io/harness-radian", enabled: true },
+          chat: { module: "@operad-io/chat", enabled: true },
+          pool: { module: "@operad-io/pool", enabled: true },
+          dev: { module: "@operad-io/dev", enabled: true },
+          memory: { module: "@operad-io/memory", enabled: false },
+        },
+        store: { backend: "sqlite", path: join(root, "store", "log.sqlite") },
+        mcp: { actions: ["dev:rework", "chat:close"], confirmActions: ["chat:close"] },
+      },
+      null,
+      2,
+    )}\n`;
+    writeFileSync(join(home, "config.json"), before);
+
+    const previous = process.env.PATH;
+    process.env.PATH = bin;
+    try {
+      const output = capture();
+      expect(await main(["init"], { home, io: output.io })).toBe(0);
+      expect(output.text()).toContain(`using ${join(home, "config.json")}`);
+    } finally {
+      if (previous === undefined) delete process.env.PATH;
+      else process.env.PATH = previous;
+    }
+
+    expect(readFileSync(join(home, "config.json"), "utf8")).toBe(before);
+    const config = JSON.parse(before) as {
+      plugins: Record<string, { enabled: boolean }>;
+      mcp: { actions: string[] };
+    };
+    expect(Object.keys(config.plugins)).toEqual(["shell", "radian", "chat", "pool", "dev", "memory"]);
+    expect(config.plugins.shell?.enabled).toBe(true);
+    expect(config.plugins.memory?.enabled).toBe(false);
+    expect(config.mcp.actions).toEqual(["dev:rework", "chat:close"]);
   });
 });

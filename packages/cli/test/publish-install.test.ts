@@ -248,11 +248,16 @@ describe("publishing and installing the packages", () => {
     if (init.code !== 0) throw new Error(`init exited ${init.code}:\n${init.out}${init.err}`);
     expect({ code: init.code, err: init.err }).toEqual({ code: 0, err: "" });
     expect(init.out).toContain("created");
-    expect(init.out).toContain("shell: ready");
+    expect(init.out).toContain("radian: radian is available");
     const config = JSON.parse(readFileSync(join(home, "config.json"), "utf8")) as {
       plugins: Record<string, { enabled: boolean }>;
     };
-    expect(config.plugins.shell?.enabled).toBe(true);
+    expect(config.plugins.chat?.enabled).toBe(true);
+    expect(config.plugins.bot?.enabled).toBe(true);
+    expect(config.plugins.memory?.enabled).toBe(true);
+    expect(config.plugins.shell).toBeUndefined();
+    expect(config.plugins.dev).toBeUndefined();
+    expect(config.plugins.pool).toBeUndefined();
     expect(config.plugins.claude?.enabled).toBe(true);
 
     const check = run([binary, "plugin", "check", "claude"], scratchRoot, env);

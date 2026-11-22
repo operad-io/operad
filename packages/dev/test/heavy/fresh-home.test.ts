@@ -70,14 +70,30 @@ describe("a fresh home follows the Quickstart", () => {
       plugins: Record<string, unknown>;
       http: Record<string, unknown>;
     };
-    // Step 1: dev runs its workers through pool, so init installs pool, before dev.
     const names = Object.keys(config.plugins);
-    expect(names).toContain("pool");
-    expect(names.indexOf("pool")).toBeLessThan(names.indexOf("dev"));
-    config.plugins.fake = { module: workerPath, enabled: true };
+    expect(names).toContain("chat");
+    expect(names).toContain("bot");
+    expect(names).toContain("memory");
+    expect(names).not.toContain("shell");
+    expect(names).not.toContain("dev");
+    expect(names).not.toContain("pool");
+    // Step 1: dev runs its workers through pool, so the Quickstart turns on the
+    // plugins a repository's work needs after the assistant-only home.
+    for (const plugin of ["shell", "pool", "dev"]) {
+      const enabled = await runOperad(home, repository, ["plugin", "enable", plugin]);
+      expect(enabled.code).toBe(0);
+    }
+    const configured = JSON.parse(readFileSync(configPath, "utf8")) as {
+      plugins: Record<string, unknown>;
+      http: Record<string, unknown>;
+    };
+    const enabledNames = Object.keys(configured.plugins);
+    expect(enabledNames).toContain("pool");
+    expect(enabledNames.indexOf("pool")).toBeLessThan(enabledNames.indexOf("dev"));
+    configured.plugins.fake = { module: workerPath, enabled: true };
     // The default port may be in use on the machine that runs the test.
-    config.http = { ...config.http, enabled: false };
-    writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
+    configured.http = { ...configured.http, enabled: false };
+    writeFileSync(configPath, `${JSON.stringify(configured, null, 2)}\n`);
 
     const add = await runOperad(home, repository, ["dev", "repo", "add", "."]);
     expect(add.code).toBe(0);

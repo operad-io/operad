@@ -93,7 +93,7 @@ owner 2026-11-21：用户也可能只装桌面应用就开始用。下面的现�
 顺序即依赖。每个任务先改它涉及的 ADR（单独的 docs 提交），再改代码。
 
 0. **修：pi 没写模型时用用户 pi 的默认模型**（bug，见上；已完成 T-0674）。新测试：`pi.model` 未设、pi 的设置里有默认模型时，worker 收到的是那个模型。
-1. **新 home 默认走助理**。`defaultPluginsFor` 改成 `chat`、`bot`、`memory` 加找到的 agent；`dev`、`shell`、`pool` 不开；默认 `mcp.actions` 去掉没开的插件的动作；已有 home 不变。改 ADR 0012 D2、0034。README 和 quickstart 的第一段跟着改（定位不变）。
+1. **新 home 默认走助理**（已完成 T-0675）。`defaultPluginsFor` 改成 `chat`、`bot`、`memory` 加找到的 agent；`dev`、`shell`、`pool` 不开；默认 `mcp.actions` 去掉没开的插件的动作；已有 home 不变。改 ADR 0012 D2、0034。README 和 quickstart 的第一段跟着改（定位不变）。
 2. **`operad` 不带参数进默认 bot 的对话**。没有 home 就建，没有 serve 就起，打开 tui 并落在默认 bot 的新 chat 上。
 3. **没有 agent 时由 operad 装 pi**。`@operad-io/harness-pi` 依赖 `@earendil-works/pi-coding-agent`（钉版本），按 ADR 0012 D4 在开启时装进 home；`PATH` 上有 `pi` 就用用户的；有 `claude` 或 `radian` 也不装；`operad init` 在没有 agent 时不再失败。改 ADR 0022 D6、0023 D9。安装进度能从 serve 读到，断网时说明原因并可重试。
 4. **第一次登录是一个待处理项**。问题的形状里加地址、设备码、密文输入（改 ADR 0008、0014），TUI 先画出来；用 `ModelRuntime.login`；登录后选出默认模型。先做一个探针核实 Bun 子进程里的 OAuth 回调。

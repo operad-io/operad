@@ -101,20 +101,22 @@ nothing in this manual prints a secret.
   "notify": { "command": "sh ~/.operad/notify.sh", "on": ["waiting"] },
   "mcp": {
     "channel": { "notify": ["waiting", "ended", "loop"], "loopAfter": 3 },
-    "actions": ["dev:rework", "dev:reverify", "dev:reject", "dev:priority", "dev:concurrency", "chat:close"],
+    "actions": ["chat:close"],
     "confirmActions": ["chat:close"]
   },
   "ask": { "graceSecs": 600 }
 }
 ```
 
-`operad init` writes a `config.json` when the home has none: `shell`, `chat`,
-`pool` and `dev`, plus a harness plugin for each of `radian`, `claude` and `pi`
-whose command is on `PATH`, in that order. When none is found it writes
+`operad init` writes a `config.json` when the home has none: `chat`, `bot`
+and `memory`, plus a harness plugin for each of `radian`, `claude` and `pi`
+whose command is on `PATH`, in that order. When no agent is found it writes
 `radian`, and `operad init` fails with a message naming the three agents and how
-to install one. It writes the store at `store/log.sqlite`, `http` on at
-`127.0.0.1:8765`, notifications off, the `mcp.actions` and `mcp.confirmActions`
-lists above and the ask grace of 600 seconds. All of it is written into the
+to install one. `shell`, `dev` and `pool` are off in a new home; a home that
+does work on a repository turns them on. It writes the store at
+`store/log.sqlite`, `http` on at `127.0.0.1:8765`, notifications off, the
+`mcp.actions` list above with `chat:close`, the `mcp.confirmActions` list with
+`["chat:close"]` and the ask grace of 600 seconds. All of it is written into the
 file; nothing in it is a hidden default. A home with no `config.json` at all
 has no plugins and allows no lead action.
 
@@ -147,7 +149,7 @@ plugin and the field.
 
 | Key | Type | Default | Allowed values | When it takes effect | Wrong value |
 |---|---|---|---|---|---|
-| `plugins` | object, or an array of module names | `shell`, `chat`, `pool` and `dev`, plus the harness for each of `radian`, `claude` and `pi` found on `PATH` (`radian` when none is found) | plugin name to a module name, a path, or an options object | At every command start, and when a running `serve` reloads after a change | Refused: `plugins: must be an object of plugin options or an array of module names` |
+| `plugins` | object, or an array of module names | `chat`, `bot` and `memory`, plus the harness for each of `radian`, `claude` and `pi` found on `PATH` (`radian` when none is found); `shell`, `dev` and `pool` are off | plugin name to a module name, a path, or an options object | At every command start, and when a running `serve` reloads after a change | Refused: `plugins: must be an object of plugin options or an array of module names` |
 | `store` | object | sqlite at `<home>/store/log.sqlite` | the keys below | At every command start | Refused: `store: must be an object` |
 | `http` | object | on, port `8765`, `127.0.0.1` | the keys on [the HTTP page](http.md#the-http-section) | When `operad serve` starts; a reload when the new config loads | Refused: `http: must be an object`, or the field's own message |
 | `notify` | object | command `null`, `on` `["waiting"]` | the keys on [notifications](notifications.md) | When `operad serve` starts; a reload when the new config loads | Refused: `notify: must be an object`, or the field's own message |
@@ -178,12 +180,14 @@ still loads, and `serve` and `operad plugin check` print the line that says why.
 `operad plugin list`, `operad plugin enable`, `operad plugin disable` and
 `operad plugin check` are on [the CLI page](cli.md).
 
-`operad init` installs `shell`, `chat`, `pool` and `dev` (dev runs its workers
-through pool), and enables `radian`, `claude` and `pi` when their commands are on
-`PATH` as it creates the home. A new home that enables `claude` also gets
-`@operad-io/harness-claude` and its Agent SDK in `~/.operad/plugins`. `codex`,
-`bot`, `telegram` and `memory` are shipped but not installed; enable one with
-`operad plugin enable <name>`.
+`operad init` enables `chat`, `bot` and `memory`, and enables `radian`,
+`claude` and `pi` when their commands are on `PATH` as it creates the home. A
+new home that enables `claude` also gets `@operad-io/harness-claude` and its
+Agent SDK in `~/.operad/plugins`. `shell`, `dev` and `pool` are shipped but off
+in a new home; a repository's work needs all three, so turn them on with
+`operad plugin enable shell`, `operad plugin enable pool` and
+`operad plugin enable dev`. `codex` and `telegram` are shipped but not enabled;
+enable one with `operad plugin enable <name>`.
 
 ### `store`
 
@@ -202,7 +206,7 @@ the new process read another history; it does not move the old file.
 | `mcp.channel` | object | `{ "notify": ["waiting", "ended", "loop"], "loopAfter": 3 }` | the keys below | When `operad mcp` starts | Refused: `mcp.channel: must be an object` |
 | `mcp.channel.notify` | array of strings | `["waiting", "ended", "loop"]` | `waiting`, `ended`, `loop`, `changes` | When `operad mcp` starts | Refused: `mcp.channel.notify: unknown entry <value>; use "waiting", "ended", "loop", "changes"` |
 | `mcp.channel.loopAfter` | integer | `3` | `2` or more | When `operad mcp` starts | Refused: `mcp.channel.loopAfter: must be an integer of 2 or more` |
-| `mcp.actions` | array of strings | `[]` (`operad init` writes the five `dev` lead actions and `chat:close` into a new file) | `<plugin>:<action>` names | When `operad mcp` starts | Refused: `mcp.actions: must be an array of "<plugin>:<action>" names` |
+| `mcp.actions` | array of strings | `[]` (`operad init` writes `["chat:close"]` into a new file) | `<plugin>:<action>` names | When `operad mcp` starts | Refused: `mcp.actions: must be an array of "<plugin>:<action>" names` |
 | `mcp.confirmActions` | array of strings | `[]` (`operad init` writes `["chat:close"]` into a new file) | `<plugin>:<action>` names that are also in `mcp.actions` and ask to confirm | When `operad mcp` starts | Refused: `mcp.confirmActions: must be an array of "<plugin>:<action>" names` |
 
 `mcp.actions` is the list the MCP server may run for a lead. Every other action
