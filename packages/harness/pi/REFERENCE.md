@@ -235,7 +235,7 @@ one background refresh, and no process waits for that refresh at load.
 | worker `result` is `cancelled`, or the run was cancelled | `interrupted` | `cancelled` |
 | no `result` line, the worker was killed by a signal | `interrupted` | `signal` |
 | no `result` line, the worker exited | `failed` | `no_result`; `message` ends with the worker's last five stderr lines |
-| wall time, stall, a line over 8 MiB, no program, no directory | `failed` | `wall`, `stall`, `line_too_long`, `missing` or `spawn`, `cwd` |
+| wall time, stall, a line that runs past 256 MiB without ending, no program, no directory | `failed` | `wall`, `stall`, `line_too_long`, `missing` or `spawn`, `cwd` |
 
 A stall is silence while no tool call is open: pi's `tool_execution_start` opens
 one and `tool_execution_end` closes it. The wall time always applies.

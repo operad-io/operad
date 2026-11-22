@@ -180,3 +180,10 @@ recorded. The root [MUTATIONS.md](../../../MUTATIONS.md) explains the format and
 |---|---|---|---|
 | T-0669-M1 | packages/harness/codex/src/index.ts | the inbox listener was registered before the turn id and `steer` kept a message in the client, as the old code did, so a failed `turn/start` dropped it | `codex/agent: a message from the host > a message kept for a turn that never starts stays with the inbox` |
 | T-0669-M2 | packages/harness/codex/src/app-server.ts | `steer` reported a message taken while the turn id was unknown | `a message before the turn id is left with the caller` |
+
+## T-0709 — a codex session with images resumes
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0709-M4 | packages/harness/codex/src/app-server.ts | `thread/resume` no longer asked to leave the earlier turns out | `codex/agent: resume > a resumed run asks for the thread without its turns, so no image data comes back` |
+| T-0709-M5 | packages/harness/codex/src/index.ts | a dropped line was not written to the step's log | `codex/agent: resume > an event line past the limit, an image in a result, is logged as skipped and the run goes on` |

@@ -859,6 +859,25 @@ describe("codex/agent: resume", () => {
     expect(dataOf(result).imageGenCalls).toBe(1);
   });
 
+  test("a resumed run asks for the thread without its turns, so no image data comes back", async () => {
+    const env = await setup("done", { vars: { FAKE_CODEX_BIG_IMAGE: "1" } });
+    const result = await runAgent(env, { prompt: "go on", cwd: env.root, resumeSession: "old-session" });
+    expect(result.result).toBe("done");
+    expect(paramsOf(env, "thread/resume")[0]?.excludeTurns).toBe(true);
+  });
+
+  test("an event line past the limit, an image in a result, is logged as skipped and the run goes on", async () => {
+    const env = await setup("done", { vars: { FAKE_CODEX_BIG_IMAGE: "1" } });
+    const result = await runAgent(env, { prompt: "go on", cwd: env.root, resumeSession: "old-session" });
+    expect(result.result).toBe("done");
+    expect(dataOf(result).sessionId).toBe("old-session");
+    const lines = await logLines(result);
+    const skipped = lines.filter((line) => line.type === "line_skipped");
+    expect(skipped.length).toBeGreaterThan(0);
+    expect(Number(skipped[0]?.chars)).toBeGreaterThan(8 * 1024 * 1024);
+    expect(JSON.stringify(lines).length).toBeLessThan(200_000);
+  });
+
   test("a thread that cannot be resumed fails with session_missing", async () => {
     const env = await setup("no-load");
     const result = await runAgent(env, { prompt: "go on", cwd: env.root, resumeSession: "old-session" });
