@@ -38,6 +38,10 @@ The types a plugin imports, by the page that explains them. The values these ent
 | `KeyBinding` | Where a key binding came from. | [define-plugin](define-plugin.md) |
 | `LoadPluginRegistryOptions` | Options for loading the registry from the operad home. | [define-plugin](define-plugin.md) |
 | `PluginBaseContext` | Fields every plugin hook receives. | [define-plugin](define-plugin.md) |
+| `MissingItem` | One thing a plugin's check found not set up: a `name` and a one-sentence `description`. | [define-plugin](define-plugin.md) |
+| `PluginCheckReturn` | What a `check` may return: a note, nothing, or `{ note?, missing }`. | [define-plugin](define-plugin.md) |
+| `SetupGuide` | A plugin's setup guide text with what its check finds missing now. | [define-plugin](define-plugin.md) |
+| `SetupReader` | `ctx.setup` on a command or action: `list()` the plugins that have a guide, `get(name)` one guide. | [define-plugin](define-plugin.md) |
 | `PluginCheck` | The result of one plugin's optional `check`. | [define-plugin](define-plugin.md) |
 | `PluginDefinition` | A plugin definition ready for the registry. | [define-plugin](define-plugin.md) |
 | `PluginKind` | The plugin kinds the kernel recognises. These names are internal: user text never names a kind. | [define-plugin](define-plugin.md) |
