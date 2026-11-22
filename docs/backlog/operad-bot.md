@@ -75,6 +75,25 @@
 
 1. **定时 flow**：到点启动一个已加载的 flow，带固定参数。底层就是 `triggers.json` 里带 `schedule` 的 cron 规则（ADR 0032 D5），客户端给它一个列表和表单；结果在它的历史里。
 
+## 跟进（owner，2026-11-22；未做）
+
+来源：《Building always-on agents》（`claude.com/resources/articles/building-always-on-agents`，2026-11-13）把定时器分成两类：schedule 是用户定的周期任务，follow-up 是 agent 给自己定的一次性期限。operad 只有前一类（ADR 0030 D10、D11，ADR 0032 D5），bot 做不了"两小时后再看一眼"或"周五提醒我"。
+
+已定（owner，2026-11-22）：
+
+1. **用户词是"跟进"**。英文暂写 Follow-up，owner 只说了中文，英文待确认。
+2. **bot 在 chat 里定的跟进直接生效，不走提议**。这和定时 prompt 不同（ADR 0030 D11 仍是提议）。理由（research consultant 的理解，owner 未逐条确认）：跟进是一次性的，到点只是回到同一个 chat 再说一句；对外写仍受 ADR 0025 D10 约束。
+
+提议（research consultant，owner 未定）：
+
+3. **跟进到点回到定它的那个 chat，续原会话**，不像定时 prompt 那样开新 chat（ADR 0030 D10）。文章的规则：续旧事的事件恢复原会话，其余开新会话。
+4. **到点的这次回复是后台运行**（ADR 0025 D10），事件来源是 `bot`；补跑按 ADR 0032 D11，晚了就在提示里加一行说明原定时间和晚了多久。
+5. **一条跟进有：到点时间、一句要做什么、所属 chat**。bot 页和 chat 里能看到没到点的跟进，人可以取消。一个 chat 同时能挂多少条、最远能定多久要有上限，数值未定。
+6. **bot plugin 自己当来源**，和定时 prompt、夜间整理一样（ADR 0030 D10、D13），不进内核。
+7. **定时 prompt 可以安静结束**：回复表示"没有要报告的"时，这次不跑通知命令，只记最近一次结果。现在每次触发都通知（ADR 0030 D10）；夜间整理已经是"只有改了东西或失败才发"（ADR 0030 D13）。文章：一次运行的结局是发消息、什么都不发、挂起问人三种，先安静。
+8. **记下已经告诉过用户什么**：定时 prompt 每次开新 chat，不知道上一次发过什么。把上文「记忆和知识库：提议」第 7 条（`digest:run` 记下发过什么）推广到所有定时 prompt：下一次的提示带上这个条目最近几次的结果摘要。
+9. **跨多次运行的事各写一个进度文件**：`memory` skill 加一句，进度文件放在 bot 的 `memory/` 下，索引里留一行。只改 skill 文本。
+
 ## 顺序
 
 `operad-conversation`（ask 闭环 → `chat` 基础插件加 `dev:chat` → `bot` 插件的 bot 对象加 `bot:chat` → app 的输入框）→ `operad-sandbox` 第一版的其余部分 → Telegram 通道 → `memory` 三个 flow → `digest`（先 `hn` 和 `rss`，再 `reddit`，`x` 看费用）。
