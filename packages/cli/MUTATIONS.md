@@ -340,3 +340,11 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0635-M2 | packages/cli/src/main.ts | the run age subtracted a minute, so every run time was a minute short | `operad running line > object, step, step time, title, then the run age` |
+
+## T-0675 — a new home starts with the assistant
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0675-M1 | packages/cli/src/defaults.ts | `defaultPluginsFor` returned the old `shell`, harnesses, `chat`, `pool` and `dev` list instead of the assistant's `chat`, `bot`, `memory` and the harnesses | `the distribution's defaults > a fresh home's config lists the assistant's plugins and the lead actions explicitly` |
+| T-0675-M2 | packages/cli/src/defaults.ts | `dev:rework` was added back to `DEFAULT_LEAD_ACTIONS`, so a new home allowed an action of a plugin it leaves off | `the distribution's defaults > a fresh home's config lists the assistant's plugins and the lead actions explicitly` |
+| T-0675-M3 | packages/cli/src/defaults.ts | `shell` and `dev` were left out of `OPTIONAL_PLUGINS`, so a home could not turn on plugins a new home leaves off | `plugin enable > the plugins a new home leaves off can be turned on` |

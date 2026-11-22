@@ -49,12 +49,15 @@ operad --help
 
 You also need `git`, a repository with a remote, and one of `claude`, `pi` or `radian` on your `PATH`.
 
-A new home turns on each of `radian`, `claude` and `pi` whose command is on your `PATH`. When none is found it turns on `radian`, and `operad init` fails with a message naming the three agents and how to install one.
+A new home starts as the personal assistant: it turns on `chat`, `bot` and `memory`, and each of `radian`, `claude` and `pi` whose command is on your `PATH`. `shell`, `dev` and `pool` are off until you turn them on. When no agent is found it turns on `radian`, and `operad init` fails with a message naming the three agents and how to install one.
 
 ## Quickstart
 
 ```sh
 operad init                 # create the home and check the plugins
+operad plugin enable shell  # what a repository's work needs, off in a new home
+operad plugin enable pool
+operad plugin enable dev
 operad dev repo add .       # register this repository
 operad dev plan add --slug hello --title "Add a greeting" < request.md
 operad dev task add --plan P-0001-hello --slug greet --title "Print the greeting" < task.md

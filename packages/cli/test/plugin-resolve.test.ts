@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { DEFAULT_LEAD_ACTIONS, INSTALL_ON_ENABLE, OPTIONAL_PLUGINS, defaultPluginModule, defaultPluginsFor, distributionConfig } from "../src/defaults.ts";
+import { INSTALL_ON_ENABLE, OPTIONAL_PLUGINS, defaultPluginModule, defaultPluginsFor, distributionConfig } from "../src/defaults.ts";
 
 const cliDir = dirname(dirname(fileURLToPath(import.meta.url)));
 const manifest = JSON.parse(readFileSync(`${cliDir}/package.json`, "utf8")) as {
@@ -30,11 +30,14 @@ describe("plugins the CLI offers", () => {
 });
 
 describe("the distribution's defaults", () => {
-  test("a fresh home's config lists the default plugins and the lead actions explicitly", () => {
+  test("a fresh home's config lists the assistant's plugins and the lead actions explicitly", () => {
     const config = distributionConfig("/h");
-    expect(config.plugins.map((entry) => entry.name)).toEqual([...defaultPluginsFor([])]);
-    expect(config.mcp.actions).toEqual([...DEFAULT_LEAD_ACTIONS]);
+    expect(config.plugins.map((entry) => entry.name)).toEqual(["chat", "bot", "memory", "radian"]);
+    expect(config.mcp.actions).toEqual(["chat:close"]);
     expect(config.mcp.confirmActions).toEqual(["chat:close"]);
-    expect(config.mcp.actions).toContain("chat:close");
+  });
+
+  test("a fresh home adds the harnesses it finds after the assistant's plugins", () => {
+    expect(defaultPluginsFor(["claude", "pi"])).toEqual(["chat", "bot", "memory", "claude", "pi"]);
   });
 });

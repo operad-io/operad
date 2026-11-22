@@ -773,7 +773,7 @@ An alias or function from the user's own shell setup, such as `ls` defined as
 
 ### Why the pool plugin exists
 
-Agent runs cost an account, not a repository: one Claude or Codex login serves every repository on the machine. Two repositories that each allow three Claude runs at once leave nothing that limits the total, and the per-model `concurrency` of a harness (see [Limiting runs of one model](#limiting-runs-of-one-model)) limits a model, not how many runs of one harness the machine has. The `pool` plugin gives each repository and flow a set of named workers and gives the home one cap for each harness. It does not count runs that call a harness step directly, and it is not installed by `operad init`.
+Agent runs cost an account, not a repository: one Claude or Codex login serves every repository on the machine. Two repositories that each allow three Claude runs at once leave nothing that limits the total, and the per-model `concurrency` of a harness (see [Limiting runs of one model](#limiting-runs-of-one-model)) limits a model, not how many runs of one harness the machine has. The `pool` plugin gives each repository and flow a set of named workers and gives the home one cap for each harness. It does not count runs that call a harness step directly, and it is off in a new home; turn it on with `operad plugin enable pool`.
 
 ### How the pool plugin works
 
@@ -795,8 +795,7 @@ that picks a worker with room, runs that worker's harness step and hands the
 result back. A flow that uses it (the `dev` flow does) describes its workers;
 the home says how many runs one harness may have in all.
 
-`operad init` installs the plugin; a home made before that needs
-`operad plugin enable pool`.
+`operad init` leaves it off; turn it on with `operad plugin enable pool`.
 
 ### Home: `settings.harnesses`
 
@@ -896,8 +895,9 @@ the place is dropped the next time a `pool/agent` step looks.
 ## `dev.json`: workers and pools
 
 The `dev` plugin's work step runs every task through `pool/agent`, so `dev`
-needs the `pool` plugin enabled. `operad init` enables it; a home made before
-that needs `operad plugin enable pool`. The repository
+needs the `pool` plugin enabled. A new home leaves both off; turn them on with
+`operad plugin enable shell`, `operad plugin enable pool` and
+`operad plugin enable dev`. The repository
 chooses its workers in `<repository>/.operad/dev.json`; `dev` reads that file in
 the registered repository's main clone, never the copy in a task's worktree,
 which carries whatever the task's branch had when it started.

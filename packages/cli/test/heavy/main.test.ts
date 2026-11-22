@@ -148,22 +148,23 @@ describe("operad command", () => {
       const first = capture();
       expect(await main(["init"], { home: fresh, io: first.io })).toBe(0);
       expect(first.text()).toContain("created");
-      expect(first.text()).toContain("shell: ready");
       expect(first.text()).toContain("radian: radian is available");
-      expect(first.text()).toContain("dev: no repositories registered");
+      expect(first.text()).not.toContain("shell:");
+      expect(first.text()).not.toContain("dev:");
       expect(
         JSON.parse(readFileSync(join(fresh, "config.json"), "utf8")),
       ).toMatchObject({
         plugins: {
-          shell: { module: "@operad-io/shell", enabled: true },
+          chat: { module: "@operad-io/chat", enabled: true },
+          bot: { module: "@operad-io/bot", enabled: true },
+          memory: { module: "@operad-io/memory", enabled: true },
           "radian": {
             module: "@operad-io/harness-radian",
             enabled: true,
           },
-          dev: { module: "@operad-io/dev", enabled: true },
         },
         mcp: {
-          actions: ["dev:rework", "dev:reverify", "dev:reject", "dev:priority", "dev:concurrency", "chat:close"],
+          actions: ["chat:close"],
           confirmActions: ["chat:close"],
         },
       });
@@ -256,8 +257,10 @@ describe("operad command", () => {
     expect(config.store.backend).toBe("sqlite");
 
     const list = capture();
-    expect(await main(["repo", "list"], { home, io: list.io })).toBe(0);
-    expect(list.text()).toContain("no repositories");
+    expect(await main(["plugin", "list"], { home, io: list.io })).toBe(0);
+    expect(list.text()).toContain("radian");
+    expect(list.text()).toContain("chat");
+    expect(list.text()).toContain("memory");
   });
 
   test("repo add refuses a directory with no remote and writes nothing", async () => {
@@ -616,19 +619,19 @@ describe("operad command", () => {
     expect(disabled.text()).toContain("notes: disabled");
   });
 
-  test("plugin enable bot works on a fresh init home and keeps its plugins and mcp lists", async () => {
+  test("plugin enable on a fresh init home keeps its plugins and mcp lists", async () => {
     const root = await tempRoot();
     const fresh = join(root, "home");
     {
       await ensureConfig(fresh, distributionConfig(fresh));
       const out = capture();
-      expect(await main(["plugin", "enable", "bot"], { home: fresh, io: out.io })).toBe(0);
+      expect(await main(["plugin", "enable", "pool"], { home: fresh, io: out.io })).toBe(0);
       const written = JSON.parse(readFileSync(join(fresh, "config.json"), "utf8")) as {
         plugins: Record<string, unknown>;
         mcp: { actions: string[] };
       };
-      expect(Object.keys(written.plugins)).toEqual(["shell", "radian", "chat", "pool", "dev", "bot"]);
-      expect(written.mcp.actions).toContain("dev:rework");
+      expect(Object.keys(written.plugins)).toEqual(["chat", "bot", "memory", "radian", "pool"]);
+      expect(written.mcp.actions).toEqual(["chat:close"]);
       expect(written.mcp.actions.some((name) => name.startsWith("bot:"))).toBe(false);
     }
   });
