@@ -286,6 +286,34 @@ describe("dev views", () => {
     expect(readableLog(lines)).toEqual(["**agent:** half a sentence", "turn ended: stop"]);
   });
 
+  test("a codex log's text deltas are joined into the agent's text where a tool call follows (T-0707)", () => {
+    // Recorded shape of a codex worker: deltas only, no text_end or message_end until the run ends.
+    const lines = [
+      { type: "session", sessionId: "s", receivedAt: 1 },
+      { type: "text_delta", text: "I will ", receivedAt: 2 },
+      { type: "text_delta", text: "edit `a.py`.", receivedAt: 3 },
+      { type: "tool_execution_start", toolCallId: "e", toolName: "bash", at: 4, input: "sed -n 1,5p a.py" },
+      { type: "tool_execution_end", toolCallId: "e", toolName: "bash", isError: false, durationMs: 330, receivedAt: 5 },
+      { type: "tool_output", toolCallId: "e", text: "TOOL OUTPUT IS NOT SHOWN", receivedAt: 6 },
+      { type: "text_delta", text: "Done", receivedAt: 7 },
+      { type: "text_delta", text: " editing.", receivedAt: 8 },
+    ].map((line) => JSON.stringify(line));
+    expect(readableLog(lines)).toEqual([
+      "**agent:** I will edit `a.py`.",
+      "tool bash <1s `sed -n 1,5p a.py`",
+      "**agent:** Done editing.",
+    ]);
+  });
+
+  test("deltas that a message_end repeats in full are shown once (T-0707)", () => {
+    const lines = [
+      { type: "text_delta", text: "All " },
+      { type: "text_delta", text: "done." },
+      { type: "message_end", role: "assistant", text: "All done.", stopReason: "stop", usage: { input: 1, output: 2 }, cost: null },
+    ].map((line) => JSON.stringify(line));
+    expect(readableLog(lines)).toEqual(["**agent:** All done.", "turn ended: stop · 1 in / 2 out tokens"]);
+  });
+
   test("a call without an end line is marked running, with its start time", () => {
     const start = { type: "tool_execution_start", toolCallId: "a", toolName: "Bash", at: Date.UTC(2026, 10, 7, 14, 3, 22), input: "sleep 9999" };
     expect(readableLog([JSON.stringify(start)])).toEqual(["tool Bash running since 14:03:22Z `sleep 9999`"]);

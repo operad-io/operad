@@ -1638,11 +1638,14 @@ export async function runWork(ctx: StepContext, stepParams?: unknown): Promise<P
   // holds it, in the row and in the step log. A rework waits for the worker it
   // asked for; any other attempt waits for the workers of the pool.
   let waitingFor: string | undefined;
+  // The worker the pool placed and its harness step, kept on the attempt while
+  // the work runs so the log view finds the right log before the outcome.
+  let placedWorker: { readonly workerRunning: string; readonly workerUse: string } | undefined;
   const setWorkerWait = async (text: string | null): Promise<void> => {
     await saveTaskGuarded(
       ctx,
       context.taskKey,
-      { ...task, attempt: { ...attempt, workerWait: text } },
+      { ...task, attempt: { ...attempt, ...placedWorker, workerWait: text } },
       "dev:work-wait",
     );
     stepTestHooks.afterWorkerWait?.(text);
@@ -1708,6 +1711,29 @@ export async function runWork(ctx: StepContext, stepParams?: unknown): Promise<P
     }).catch(() => undefined);
   };
   const workerPlaced = (name: string): void => {
+    let use = stageParamsOf(stage).use;
+    if (use === undefined) {
+      try {
+        const resolved = resolvePool(context.settings.workers, stagePool);
+        use = [...resolved.workers, ...resolved.fallbacks].find((item) => item.name === name)?.use;
+      } catch {
+        use = undefined;
+      }
+    }
+    if (use !== undefined) {
+      placedWorker = { workerRunning: name, workerUse: use };
+      sayChain = sayChain
+        .then(async () => {
+          if (sayClosed) return;
+          await saveTaskGuarded(
+            ctx,
+            context.taskKey,
+            { ...task, attempt: { ...attempt, ...placedWorker, workerWait: null } },
+            "dev:work-placed",
+          );
+        })
+        .catch(() => undefined);
+    }
     if (started) return;
     startTimer = startClock.setTimeout(() => {
       if (started) return;

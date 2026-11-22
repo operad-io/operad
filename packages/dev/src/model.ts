@@ -442,6 +442,9 @@ export type TaskAttempt = {
   readonly integrating?: string | null;
   /** While the work step waits for its named worker: what it waits for and who holds it. */
   readonly workerWait?: string | null;
+  /** While the work runs: the worker the pool placed and its harness step, for the log. */
+  readonly workerRunning?: string | null;
+  readonly workerUse?: string | null;
   /** While a step waits for a check place: the place group, since when, and how many wait ahead. */
   readonly placeWait?: { readonly key: string; readonly since: number; readonly ahead: number } | null;
   /** While the integrate step waits for its turn: who is integrating. */

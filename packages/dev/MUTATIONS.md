@@ -1570,3 +1570,12 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0696-M9 | packages/dev/src/check.ts | dev's check reported no missing repository | `dev init check > dev ships Setup Dev as its guide, and a registered repository leaves nothing missing` |
+
+## T-0707 — a running codex worker's log shows in the Log section
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0707-M1 | packages/dev/src/views.ts | the log path ignored the placed worker's harness step and used the default worker's | `the log of a running work step whose stage has its own pool > shows the log of the pool's codex worker while it runs, not the default worker's` |
+| T-0707-M2 | packages/dev/src/steps.ts | the work step did not record the worker the pool placed | `the log of a running work step whose stage has its own pool > shows the log of the pool's codex worker while it runs, not the default worker's` |
+| T-0707-M3 | packages/dev/src/views.ts | text deltas left at the end of the log were not shown | `dev views > a codex log's text deltas are joined into the agent's text where a tool call follows (T-0707)` |
+| T-0707-M4 | packages/dev/src/views.ts | a `message_end` with its text did not drop the deltas it repeats | `dev views > deltas that a message_end repeats in full are shown once (T-0707)` |
