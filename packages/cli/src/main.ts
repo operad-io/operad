@@ -3562,12 +3562,24 @@ export async function main(
         await commandKernelAction(context, io, action, actionRepo.args.slice(1));
         return 0;
       }
+      const attempted = splitActionName(command ?? "")?.plugin ?? command ?? "";
+      // A shipped optional plugin a home has not turned on is not in the
+      // config at all, so its name comes from the distribution's list.
+      const enabledInConfig = context.config.plugins.some(
+        (entry) => entry.name === attempted && entry.enabled,
+      );
+      const off =
+        !context.registry.names().includes(attempted) &&
+        context.registry.resolveCommand(actionRepo.args) === undefined &&
+        (context.disabled.includes(attempted) ||
+          (OPTIONAL_PLUGINS.includes(attempted) && !enabledInConfig));
+      if (off) {
+        throw new StateError(
+          `plugin "${attempted}" is disabled; turn it on with \`operad plugin enable ${attempted}\``,
+        );
+      }
       if (await commandAction(context, io, actionRepo.args, tty)) return 0;
       if (await commandPlugin(context, io, args)) return 0;
-      const attempted = splitActionName(command ?? "")?.plugin ?? command ?? "";
-      if (context.disabled.includes(attempted)) {
-        throw new StateError(`plugin "${attempted}" is disabled`);
-      }
       const candidates: CommandCandidate[] = [
         ...context.registry
           .actions()
