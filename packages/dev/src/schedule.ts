@@ -18,6 +18,7 @@ import {
 } from "@operad-io/engine";
 import {
   idOfKey,
+  isOpenTask,
   changeClock,
   dependencyKey,
   dependencyLabel,
@@ -79,8 +80,17 @@ export function writeSchedulerLine(line: string): void {
   write(line);
 }
 
+/**
+ * A task holds a slot while it runs or is reviewed. A branch-mode task also
+ * holds the main clone until it is merged or cancelled, whatever it waits for:
+ * a person, the merge, a pause, or its next start (ADR 0039 D3).
+ */
 function isActive(task: TaskData): boolean {
-  return task.phase === "running" || task.phase === "review";
+  return (
+    task.phase === "running" ||
+    task.phase === "review" ||
+    (task.attempt?.inPlace === true && isOpenTask(task))
+  );
 }
 
 function planOf(task: TaskData): string {
@@ -917,11 +927,16 @@ async function scheduleRepository(
     if (task.phase !== "ready") return false;
     if (!dependencyState(task, tasksById).ready) return false;
     if (!canStartWork) return false;
-    if (task.area !== undefined && areaActive.has(task.area)) return false;
-    if (planConcurrency(plan) - (planActive.get(planId) ?? 0) <= 0) return false;
-    if (repositoryActive >= repositoryConcurrency(settings)) return false;
+    // A ready task that already holds the clone (it was paused, or its claim
+    // was released) does not count against itself.
+    const own = isActive(task) ? 1 : 0;
+    if (task.area !== undefined && areaActive.has(task.area) && areaActive.get(task.area) !== idOfKey(object.id)) {
+      return false;
+    }
+    if (planConcurrency(plan) - ((planActive.get(planId) ?? 0) - own) <= 0) return false;
+    if (repositoryActive - own >= repositoryConcurrency(settings)) return false;
     const pool = poolOf(task);
-    return (poolActive.get(pool) ?? 0) < repositoryConcurrency(settings, pool);
+    return (poolActive.get(pool) ?? 0) - own < repositoryConcurrency(settings, pool);
   };
 
   /**
@@ -1136,8 +1151,10 @@ async function scheduleRepository(
       note = "waiting for the plan to resume";
     } else if (queuedIds.has(object.id)) {
       const plan = plansById.get(task.plan);
-      const holders = activeIds(task.plan);
-      const all = activeIds(undefined);
+      // A ready task that holds the clone itself is not held by itself.
+      const self = idOfKey(object.id);
+      const holders = activeIds(task.plan).filter((held) => held !== self);
+      const all = activeIds(undefined).filter((held) => held !== self);
       if (missing.length > 0) {
         note = `waiting for plugin ${missing.join(", ")}`;
       } else if (task.area !== undefined && areaActive.has(task.area)) {
@@ -1152,6 +1169,7 @@ async function scheduleRepository(
             return (isActive(otherTask) || started.has(other.id)) && poolOf(otherTask) === pool;
           })
           .map((other) => idOfKey(other.id))
+          .filter((held) => held !== self)
           .sort();
         if (
           Object.keys(settings.workers.pools).length > 1 &&

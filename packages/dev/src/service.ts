@@ -16,6 +16,7 @@ import { isBusy } from "@operad-io/engine/platform";
 import type { FlowDefinition, ObjectStore, StoredObject } from "@operad-io/engine";
 import { git } from "./git.ts";
 import { withdrawIntegration } from "./integration-queue.ts";
+import { switchBackToStart } from "./mainclone.ts";
 import { withRepositoryLock } from "./lock.ts";
 import {
   appendChange,
@@ -1907,10 +1908,71 @@ async function cancelRuns(
   }
 }
 
+/** A task whose attempt put the main clone on the task's own branch (ADR 0039 D3). */
+function holdsClone(task: TaskData): boolean {
+  return task.attempt?.inPlace === true && isOpenTask(task);
+}
+
+/**
+ * The id of an open task that holds a repository's main clone on its own
+ * branch, or undefined when none does (ADR 0039 D3).
+ */
+export async function cloneHolder(
+  store: ObjectStore,
+  repositoryName: string,
+): Promise<string | undefined> {
+  for (const object of await allTasks(store)) {
+    const task = taskData(object.data);
+    if (task.repository === repositoryName && holdsClone(task)) return idOfKey(object.id);
+  }
+  return undefined;
+}
+
+/**
+ * Switches the main clone back to the branch an ended branch-mode task started
+ * on and keeps the task's branch (ADR 0039 D5). A clone that is not clean, or
+ * that has moved, stays as it is and the returned note says so.
+ */
+function releaseClone(
+  repositoryPath: string,
+  key: string,
+  task: TaskData,
+): string | undefined {
+  const attempt = task.attempt;
+  if (attempt?.inPlace !== true) return undefined;
+  const start = attempt.startBranch;
+  if (typeof start !== "string" || start.length === 0) return undefined;
+  const branch =
+    typeof attempt.branch === "string" && attempt.branch.length > 0
+      ? attempt.branch
+      : `work/${idOfKey(key)}`;
+  const back = switchBackToStart(repositoryPath, start, branch);
+  return back.ok ? undefined : `${idOfKey(key)} kept its branch "${branch}": ${back.note}`;
+}
+
+/**
+ * A branch-mode task's run works in the main clone itself, so it is stopped
+ * before the clone is switched. Returns the runs it stopped.
+ */
+async function stopCloneRuns(
+  control: DevRunControl | undefined,
+  tasks: readonly StoredObject[],
+): Promise<ReadonlySet<string>> {
+  const runs: RunToCancel[] = [];
+  for (const object of tasks) {
+    const data = taskData(object.data);
+    if (holdsClone(data) && data.run !== null) runs.push({ run: data.run, flow: data.flowGraph });
+  }
+  await cancelRuns(control, runs);
+  return new Set(runs.map((entry) => entry.run));
+}
+
 interface CancelledTasks {
   readonly runs: readonly RunToCancel[];
   /** The tasks a batch had already pushed; they stay merged, not cancelled. */
   readonly merged: readonly string[];
+  /** What the end of a branch-mode task left in the main clone when it could not switch back. */
+  readonly notes: readonly string[];
 }
 
 async function cancelTasks(
@@ -1918,9 +1980,11 @@ async function cancelTasks(
   tasks: readonly StoredObject[],
   home: string | undefined,
   repositoryPath: string,
+  stopped: ReadonlySet<string> = new Set(),
 ): Promise<CancelledTasks> {
   const runs: RunToCancel[] = [];
   const merged: string[] = [];
+  const notes: string[] = [];
   for (const object of tasks) {
     const data = taskData(object.data);
     if (!isOpenTask(data)) continue;
@@ -1935,7 +1999,11 @@ async function cancelTasks(
         continue;
       }
     }
-    if (data.run !== null) runs.push({ run: data.run, flow: data.flowGraph });
+    if (data.run !== null && !stopped.has(data.run)) {
+      runs.push({ run: data.run, flow: data.flowGraph });
+    }
+    const note = releaseClone(repositoryPath, object.id, data);
+    if (note !== undefined) notes.push(note);
     await writeTask(
       store,
       object.id,
@@ -1944,12 +2012,12 @@ async function cancelTasks(
         phase: "cancelled",
         run: null,
         claim: null,
-        brief: appendChange(data.brief, "cancelled"),
+        brief: appendChange(data.brief, "cancelled", note),
       },
       "dev:task-cancel",
     );
   }
-  return { runs, merged };
+  return { runs, merged, notes };
 }
 
 export interface CancelOptions {
@@ -1966,6 +2034,8 @@ export interface CancelledTask {
   readonly runs: readonly RunToCancel[];
   /** Set when a batch pushed the task first: it stays merged and is not cancelled. */
   readonly alreadyMerged?: string | undefined;
+  /** Set when a branch-mode task's end could not switch the main clone back. */
+  readonly note?: string | undefined;
 }
 
 export async function cancelPlan(
@@ -1976,23 +2046,25 @@ export async function cancelPlan(
   readonly plan: StoredObject;
   readonly runs: readonly RunToCancel[];
   readonly merged: readonly string[];
+  readonly notes: readonly string[];
 }> {
   const initial = await getPlan(store, id);
   const initialData = planData(initial.data);
   const { home } = options;
+  const stopped = await stopCloneRuns(options.runs, await tasksOfPlan(store, id));
   const cancelled = await withRepoLock(
     store,
     initialData.repository,
     async (fresh) => {
       const plan = await getPlan(store, id);
       const data = planData(plan.data);
-      if (refusePlan("cancel", data, id)) return { plan, runs: [], merged: [] };
+      if (refusePlan("cancel", data, id)) return { plan, runs: [], merged: [], notes: [] };
       const tasks = await tasksOfPlan(store, id);
-      const { runs, merged } = await cancelTasks(store, tasks, home, fresh.path);
+      const { runs, merged, notes } = await cancelTasks(store, tasks, home, fresh.path, stopped);
       const next: PlanData = { ...data, status: "cancelled" };
       const written = await writePlan(store, id, next, "dev:plan-cancel");
       await refreshPlanCounts(store, written);
-      return { plan: written, runs, merged };
+      return { plan: written, runs, merged, notes };
     },
   );
   await cancelRuns(options.runs, cancelled.runs);
@@ -2007,6 +2079,7 @@ export async function cancelTask(
   const initial = await getTask(store, id);
   const initialData = taskData(initial.data);
   const { home } = options;
+  const stopped = await stopCloneRuns(options.runs, [initial]);
   const cancelled = await withRepoLock(
     store,
     initialData.repository,
@@ -2014,7 +2087,7 @@ export async function cancelTask(
       const task = await getTask(store, id);
       const data = taskData(task.data);
       if (refuseTask("cancel", data, id)) {
-        return { task, runs: [], merged: data.phase === "merged" };
+        return { task, runs: [], merged: data.phase === "merged", note: undefined };
       }
       if (home !== undefined) {
         const withdrawal = await withdrawIntegration(
@@ -2023,11 +2096,14 @@ export async function cancelTask(
           idOfKey(id),
         );
         if (withdrawal.kind === "merged") {
-          return { task, runs: [], merged: true };
+          return { task, runs: [], merged: true, note: undefined };
         }
       }
       const runs: readonly RunToCancel[] =
-        data.run === null ? [] : [{ run: data.run, flow: data.flowGraph }];
+        data.run === null || stopped.has(data.run)
+          ? []
+          : [{ run: data.run, flow: data.flowGraph }];
+      const note = releaseClone(fresh.path, id, data);
       const written = await writeTask(
         store,
         id,
@@ -2036,12 +2112,12 @@ export async function cancelTask(
           phase: "cancelled",
           run: null,
           claim: null,
-          brief: appendChange(data.brief, "cancelled"),
+          brief: appendChange(data.brief, "cancelled", note),
         },
         "dev:task-cancel",
       );
       await refreshPlanCountsOf(store, storeKey(data.repository, data.plan));
-      return { task: written, runs, merged: false };
+      return { task: written, runs, merged: false, note };
     },
   );
   await cancelRuns(options.runs, cancelled.runs);
@@ -2051,6 +2127,7 @@ export async function cancelTask(
     ...(cancelled.merged
       ? { alreadyMerged: `${idOfKey(id)} was merged; nothing can be cancelled` }
       : {}),
+    ...(cancelled.note === undefined ? {} : { note: cancelled.note }),
   };
 }
 

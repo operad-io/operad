@@ -501,9 +501,13 @@ export const actions: readonly ActionTypeDefinition[] = [
         runs: ctx.runs,
         home: ctx.home,
       });
-      return cancelled.merged.length === 0
-        ? undefined
-        : `${cancelled.merged.map(idOfKey).join(", ")} merged before the cancel and stays merged`;
+      const lines = [
+        ...(cancelled.merged.length === 0
+          ? []
+          : [`${cancelled.merged.map(idOfKey).join(", ")} merged before the cancel and stays merged`]),
+        ...cancelled.notes,
+      ];
+      return lines.length === 0 ? undefined : lines.join("; ");
     },
   },
   {
@@ -523,7 +527,7 @@ export const actions: readonly ActionTypeDefinition[] = [
         runs: ctx.runs,
         home: ctx.home,
       });
-      return cancelled.alreadyMerged;
+      return cancelled.alreadyMerged ?? cancelled.note;
     },
   },
   {
