@@ -111,8 +111,8 @@ nothing in this manual prints a secret.
 `operad init` writes a `config.json` when the home has none: `chat`, `bot`
 and `memory`, plus a harness plugin for each of `radian`, `claude` and `pi`
 whose command is on `PATH`, in that order. When no agent is found it writes
-`radian`, and `operad init` fails with a message naming the three agents and how
-to install one. `shell`, `dev` and `pool` are off in a new home; a home that
+`pi` and installs operad's own pinned pi in the home (this needs the network
+once; `operad init` run again retries it). `shell`, `dev` and `pool` are off in a new home; a home that
 does work on a repository turns them on. It writes the store at
 `store/log.sqlite`, `http` on at `127.0.0.1:8765`, notifications off, the
 `mcp.actions` list above with `chat:close`, the `mcp.confirmActions` list with
@@ -149,7 +149,7 @@ plugin and the field.
 
 | Key | Type | Default | Allowed values | When it takes effect | Wrong value |
 |---|---|---|---|---|---|
-| `plugins` | object, or an array of module names | `chat`, `bot` and `memory`, plus the harness for each of `radian`, `claude` and `pi` found on `PATH` (`radian` when none is found); `shell`, `dev` and `pool` are off | plugin name to a module name, a path, or an options object | At every command start, and when a running `serve` reloads after a change | Refused: `plugins: must be an object of plugin options or an array of module names` |
+| `plugins` | object, or an array of module names | `chat`, `bot` and `memory`, plus the harness for each of `radian`, `claude` and `pi` found on `PATH` (`pi`, with operad's own pi installed, when none is found); `shell`, `dev` and `pool` are off | plugin name to a module name, a path, or an options object | At every command start, and when a running `serve` reloads after a change | Refused: `plugins: must be an object of plugin options or an array of module names` |
 | `store` | object | sqlite at `<home>/store/log.sqlite` | the keys below | At every command start | Refused: `store: must be an object` |
 | `http` | object | on, port `8765`, `127.0.0.1` | the keys on [the HTTP page](http.md#the-http-section) | When `operad serve` starts; a reload when the new config loads | Refused: `http: must be an object`, or the field's own message |
 | `notify` | object | command `null`, `on` `["waiting"]` | the keys on [notifications](notifications.md) | When `operad serve` starts; a reload when the new config loads | Refused: `notify: must be an object`, or the field's own message |

@@ -61,6 +61,7 @@ A chat has these actions:
 | `chat:edit` | `message`, `text` | Changes the text of a queued message before any run takes it; its attachments stay. A message a run has taken is refused. Prints `changed message <id>`. |
 | `chat:model` | `model` | Changes the model the next reply uses. The model must be one the chat's agent lists; prints `chat <id> now uses <model>; the next reply uses it`. |
 | `chat:effort` | `effort` | Changes the effort the next reply uses, from the agent's list; prints `chat <id> now uses effort <effort>; the next reply uses it`. |
+| `chat:access` | `level` (`plan`, `ask`, `edits` or `full`) | Changes the access level of the chat; every tool call from then on uses it, including a reply being written. Prints `chat <id> now uses access level <level>; replies follow it`. See [Access level](#access-level). |
 | `chat:stop` | none | Stops the reply being written. What was written stays in the transcript, marked stopped. Messages that arrived meanwhile stay unanswered and no new reply starts by itself; prints that and points to `/retry`. With no reply running it says so and changes nothing. The client's button word is **Stop**. |
 | `chat:retry` | none | Answers the last message again after a reply failed, was stopped or was interrupted. It appears only while it would answer: the chat is open, a message waits for a reply and no reply is being written. The failed or stopped attempt stays in the record and the agent's session continues. Otherwise typing it says why and starts nothing. |
 | `chat:status` | none | Shows the agent, the model and effort in force, whether a reply is being written and since when, how many messages wait, the session's cost and token usage, and the last reply's usage and time to first output. It reads only, costs no tokens and works while a reply is being written. An agent that reports no cost leaves it `unknown`. |
@@ -76,7 +77,7 @@ each of them. A message a run has taken never changes, and both actions refuse
 it with a line naming the message.
 
 A line that starts with `/` and names one of the chat's actions runs that action
-instead of going to the agent: `/model sonnet`, `/effort high`, `/stop`, `/retry`,
+instead of going to the agent: `/model sonnet`, `/effort high`, `/access edits`, `/stop`, `/retry`,
 `/status`, `/close`, `/help`. `chat:withdraw` and `chat:edit` are actions of the
 queued message, not chat commands.
 The rest of the line is the action's arguments, in the order its fields are
@@ -266,6 +267,10 @@ MCP servers.
 | `bot.bots.<name>.access.askCommands` | array of strings | `[]` | Command patterns | Appended to the default ask list; a match asks before it runs. |
 | `bot.bots.<name>.access.askPaths` | array of strings | `[]` | Paths | Appended to the default ask list. |
 | `bot.bots.<name>.access.readOnly` | boolean | `false` | `true`, `false` | Every reply: `true` refuses every write and every command that is not known to only read. |
+| `bot.bots.<name>.accessLevel` | string | `ask` | `plan`, `ask`, `edits`, `full` | The level a new chat on the bot starts at. Next reply of a chat that chose no level, and every new chat. Unlike `access`, it can loosen the profile: `full` asks nothing but the deny rules. A chat a scheduled prompt opens starts at `full`; a chat that chose a level with `/access` keeps it. See [Access level](#access-level). |
+| `bot.bots.<name>.writeWiki` | boolean | `true` for `default`, `false` for every other bot | `true`, `false` | At the next reply: `true` lets the bot write the shared wiki; read access is always there. See [Memory and the wiki](memory.md). |
+| `bot.bots.<name>.tidyTime` | string | `03:30` | `HH:MM` from `00:00` to `23:59`, in the machine's local time zone | The next nightly memory check of the bot. |
+| `bot.bots.<name>.runWithoutAsking` | boolean | `false` | `true`, `false` | The next nightly check: `true` runs the bot's memory tidy with no pending item; `false` waits for Run or Skip. |
 | `chat.speaker` | string | `"Operad Bot"` | Any non-empty string | Every reply of a chat that does not use a bot's `speaker`; editable with `operad settings set chat.speaker <value>`. |
 
 The default access profile denies credentials and secrets (`~/.ssh`, `~/.gnupg`,
@@ -379,8 +384,8 @@ runs as the bot, with its skills, MCP servers and access profile, and starts at
 `full`: only the profile's deny rules, `readOnly` and a write under `readPaths`
 can stop a call; an ask rule and an outward write do not ask. A person may
 change the level with `/access` afterwards. Its first message has no person's
-source, so the reply is still a background run; below `full` that flag still
-asks before an outward write. You can keep talking in the new chat.
+source, so that reply is a background run: at a level below `full`, which `/access`
+can set, an outward write in it asks. You can keep talking in the new chat.
 
 After `serve` has been down or the machine has slept, the latest missed run in
 the last seven days fires once; older ones are skipped. A catch-up run adds one

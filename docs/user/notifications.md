@@ -19,14 +19,14 @@ operad does not ship a delivery service. It runs your command and passes the det
 
 ## How it works
 
-1. `operad serve` reads `notify` from `config.json` when it starts, and again when a new config loads. With `notify.command` set to `null`, or `waiting` missing from `notify.on`, nothing runs.
+1. `operad serve` reads `notify` from `config.json` when it starts, and again when a new config loads. With `notify.command` set to `null`, nothing runs. With `waiting` missing from `notify.on`, no wait runs the command; step 8 is not tied to `notify.on`.
 2. On every pass of its loop (every second by default) `serve` looks at the active runs. For each run whose state is waiting for a person it forms an identity from the run and the wait, which names the step and the visit to it.
 3. If that wait has no recorded notice, `serve` runs the command with `sh -c` in the operad home. It sets `OPERAD_ID`, `OPERAD_TITLE`, `OPERAD_REASON` and `OPERAD_LINK`. A wait that the object's own plugin answers automatically is skipped, and a later pass reconsiders it if the answer does not come.
 4. The command may run for 30 seconds. `serve` does not hold its loop for it.
 5. After the command ends, `serve` records the notice. A failure or a timeout is logged with the exit code and the last lines of output, recorded too, and not retried. The wait does not notify again, including after a restart of `serve`.
 6. If `serve` is stopped while the command is still running, the command is cancelled and nothing is recorded, so the next `serve` runs it again. If `serve` is killed after the command ends but before the record is written, that wait notifies once more.
 7. When you answer and the same run later waits again, that is a new wait and a new notice.
-8. A scheduled prompt of a bot also runs the command once when its reply ends. `OPERAD_ID`, `OPERAD_TITLE` and `OPERAD_LINK` name the new chat, and `OPERAD_REASON` is a short summary of the reply (or its failure line). This happens even when `notify.on` does not name `waiting`: the command is the existing way to tell you that a scheduled run finished.
+8. A scheduled prompt of a bot also runs the command once when its reply ends. `OPERAD_ID`, `OPERAD_TITLE` and `OPERAD_LINK` name the new chat, and `OPERAD_REASON` is a short summary of the reply (or its failure line). `notify.on` does not matter here, only `notify.command`: the command is the way to tell you that a scheduled run finished. A reply that ends quietly (`NOTHING_TO_REPORT`) does not run it; see [Scheduled prompts](chats-and-bots.md#scheduled-prompts).
 
 ## Settings and variables
 

@@ -125,7 +125,7 @@ listed user's command runs; one from anyone else is dropped without a reply.
   before the plugin first ran are not sent.
 - The typing indicator. While a reply of a chat bound to Telegram is being
   written, that Telegram chat shows the bot as typing; it stops when the reply or
-  a failure line is recorded, or the reply ends, fails or is cancelled.
+  a failure line is recorded, or the reply ends, fails or is stopped.
 - What a command returned, and the greeting `/start` answers with.
 - The progress of a reply, as one message that is edited. Once the agent has
   written its first text or started a tool call, that message shows what it has

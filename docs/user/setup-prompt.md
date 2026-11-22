@@ -6,7 +6,7 @@ description: Setup Dev: have your bot read a repository and propose the settings
 
 Setup Dev (配置开发流程) turns operad's dev on for one repository. A new home starts as the personal assistant and leaves `dev`, `shell` and `pool` off; Setup Dev has your bot read the repository's CI and scripts and propose what to turn on. Nothing changes until you approve it.
 
-Start it in either of two ways:
+Start it in one of three ways:
 
 - Say it in a bot chat: "set up dev for ~/code/myrepo". The bot's agent knows how to propose it.
 - Type `/setup dev ~/code/myrepo` in a bot chat. Every plugin that ships a setup guide has its own Setup <name> this way; `dev` is the first.

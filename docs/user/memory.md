@@ -81,13 +81,13 @@ part of the transcript and do not change the message you sent.
 
 ## The nightly tidy
 
-Once a night, at the bot's `tidyTime` (`03:30` by default), the bot checks
+Once a night, at the bot's `bot.bots.<name>.tidyTime` (`03:30` by default), the bot checks
 whether its memory changed since the last tidy and whether `index.md` is over
 its limit. The check costs no model call. A night with nothing to do ends there.
 
 When there is work, the bot has one pending item with how many notes and chats
 need checking and whether the index is over its limit. Run (运行) starts it;
-Skip (跳过) closes it until the next check finds work. With `runWithoutAsking`
+Skip (跳过) closes it until the next check finds work. With `bot.bots.<name>.runWithoutAsking`
 on, the tidy runs without the item. A tidy waits while any chat of the bot is
 writing a reply.
 
@@ -169,7 +169,7 @@ mark a search result carries. A row has no state mark.
 
 A note's page has a **Note** section with its Markdown content, and a
 **Backlinks** section when other notes link to it. Backlinks follow the same
-link rules as `memory read`: each one opens the linking note's object. The
+rules as the Backlinks of a read (see [Search](#search)): each one opens the linking note's object. The
 Backlinks section is left out when there are none. Content longer than one page
 is paged with the section cursor, like any other long section.
 

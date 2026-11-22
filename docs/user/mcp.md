@@ -340,8 +340,9 @@ Input:
 ```
 
 Result: the object
-`{ "id", "type", "link", "row", "sections", "actions", "ownerActions" }`.
-`row` is the list row. `sections` is the section directory. `actions` are the
+`{ "id", "type", "link", "row", "sections", "actions", "ownerActions" }`, plus
+`skills` for an object that has them (a chat). `row` is the list row. `skills`
+are the ones a chat can type as `/name`, each `{ name, description? }`. `sections` is the section directory. `actions` are the
 available actions the lead may run now, each with its `name`, `on`, `args` JSON
 Schema, `note` field name, `noteRequired`, `confirm` and, when a chat can run it after `/`, its `command` description. `ownerActions` holds
 only the names of the available actions the lead may not run, including a
@@ -428,6 +429,12 @@ view's message. When every choice is also an action on the item's object (a
 `dev` wait), the choice runs through that action, so its confirmation and the
 `mcp.actions` allow list still apply, and the result is the action record. A
 confirmed action needs `"confirmed": true`.
+
+The tool takes one `choice`; it has no `answers` field, which is the form of
+[`POST /v1/answer`](http.md). A form of one question with choices lists that
+question's labels as the item's `choices`, so `answer` can answer it with one of
+them. A form with more than one question, or one the person answers in their own
+words, is answered in the app or over HTTP.
 
 ### `running`
 

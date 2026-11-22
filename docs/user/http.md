@@ -274,10 +274,13 @@ lock, so an entry another client changed meanwhile is kept; a client that wrote
 the whole map would overwrite it, so prefer the deeper name. The value is checked
 against the schema of that entry, and the parent setting's `editable` and
 `confirm` rules apply. A path the schema has no entry for is `404`. A `null`
-value at a deeper name removes the entry or field. The flows of a repository are settings too. `dev.flows` (scope: the repository)
+value at a deeper name removes the entry or field.
+
+The flows of a repository are settings too. `dev.flows` (scope: the repository)
 is editable, whole or by name (`dev.flows.<name>`, `null` removes one), and `dev`
 checks the whole `dev.json` as it would be written before it writes it: the
-schema, the two hard rules of a flow and a name a TypeScript flow also has. A
+schema, the two hard rules of a flow, and that no flow name is also the name of a
+TypeScript flow in the repository's `.operad/flows` (the reason reads `flow "<name>" is defined in dev.json and in .operad/flows/<name>.flow.ts; keep one`). A
 change `dev` refuses is `422` with `dev`'s own reason, word for word, and
 nothing is written; a client does not repeat the rules. `dev.flowList` is a
 read-only setting whose value lists every flow of the repository, TypeScript
@@ -551,8 +554,8 @@ Every error body is:
 | `400` | Bad arguments, an unknown filter, a malformed cursor, or an ambiguous id. |
 | `401` | A missing or wrong bearer token. |
 | `404` | No such object, section or action, or no endpoint. |
-| `409` | The action is not available now, it needs confirmation, or its plugin is not loaded. |
 | `405` | The endpoint exists but not for that method; the body says `this endpoint takes GET` or `this endpoint takes POST`. |
+| `409` | The action is not available now, it needs confirmation, or its plugin is not loaded. |
 | `413` | The request body is larger than 1 MiB, or an upload is larger than 20 MB. |
 | `422` | The action's plugin refused it, or a setting's value the schema refuses; `message` is the plugin's own reason or the schema's. |
 | `504` | A section did not load in time. |
