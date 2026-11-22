@@ -82,7 +82,7 @@ client needs pairing again.
 - Scheduled prompts and flows: a bot holds scheduled prompts (Scheduled,
   定时任务), proposed from chat with `operad bot schedule` and approved in
   pending, and `operad scheduled list|add|edit|pause|resume|remove` manages cron
-  flows in `triggers.json`. A tick missed while `serve` was down is caught up.
+  flows in `triggers.json`. After `serve` was down, a rule runs its most recent missed tick once.
   A scheduled prompt's chat starts at Full access.
 - The Codex harness talks to Codex's own app-server, without a bridge, and
   carries the access profile, skills and cancel.
