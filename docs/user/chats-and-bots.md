@@ -44,7 +44,8 @@ operad show C-0001 --section transcript
 `dev:chat` offers `claude` and `pi` as agents (the first one loaded when
 `--agent` is left out): they can stop a tool call before it starts, which a
 read-only chat needs. `radian` is refused there as an agent and stays for bot
-chats. A repository chat starts at `plan`; a bot chat starts at `ask`. The
+chats. A repository chat starts at `plan`; a bot chat starts at `ask`, except a
+chat a scheduled prompt opens, which starts at `full`. The
 access level is changed in the chat with `/access <level>` (see [Access
 level](#access-level)). `bot:chat` offers every loaded agent; its default is
 the bot's `harness`,
@@ -178,7 +179,8 @@ Every chat has an access level: `plan`, `ask`, `edits` or `full`. `/access
 is recorded on the chat and every tool call from then on uses it, including a
 reply already being written, across restarts and clients. A question open when
 the level changes is checked again under the new level. A repository chat starts
-at `plan` (read-only) and a bot chat at `ask`. The row shows the level when it
+at `plan` (read-only) and a bot chat at `ask`, except a chat a scheduled prompt
+opens, which starts at `full`. The row shows the level when it
 is not the chat's starting level. A repository chat that still works in the main
 clone and is raised to `edits` or `full` first opens `work/chat-<id>` and moves
 there; if the worktree cannot be opened the level stays as it was and the
