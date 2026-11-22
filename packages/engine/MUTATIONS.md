@@ -1429,4 +1429,4 @@ resume window`. Rows are append-only, so the old lines stay as history.
 
 | id | file | mutation | failing test |
 |---|---|---|---|
-| T-0714-M2 | packages/engine/src/views/types.ts | the types listing dropped the plugin's list title | `the types listing > a plugin's list title is served as pluginTitle on each of its types, and absent otherwise` |
+| T-0714-M2 | packages/engine/src/views/types.ts | the types listing did not copy the plugin's `listTitle` into `pluginTitle` (the spread gave `{}`) | `the types listing > a plugin's list title is served as pluginTitle on each of its types, and absent otherwise` |
