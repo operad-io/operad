@@ -785,6 +785,15 @@ describe("a bot's accessLevel setting", () => {
     expect(await level(r, id)).toBe("ask");
   });
 
+  test("naming the level a chat already follows is a choice too", async () => {
+    const r = await rig({ big: {} });
+    const id = await r.open("big");
+    await r.act("chat", id, "chat/access", { level: "ask" });
+    writeBotConfig(r.home, { big: { accessLevel: "full" } });
+    await replyAt(r, id);
+    expect(await level(r, id)).toBe("ask");
+  });
+
   test("a chat with no choice moves when the setting changes", async () => {
     const r = await rig({ big: {} });
     const id = await r.open("big");

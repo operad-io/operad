@@ -560,7 +560,12 @@ const accessAction: ActionTypeDefinition = {
       throw new Error(`the access level must be one of ${ACCESS_LEVELS.join(", ")}`);
     }
     const from = chat.accessLevel ?? chat.accessDefault ?? "ask";
-    if (from === level) return `chat ${ctx.object.id} already uses access level ${level}`;
+    if (from === level && chat.accessChosen === true) return `chat ${ctx.object.id} already uses access level ${level}`;
+    if (from === level) {
+      // Naming the level it already follows is a choice: the chat keeps it when the setting moves.
+      await changeChat(ctx, "action:chat/access", (data) => ({ ...data, accessLevel: level, accessChosen: true }));
+      return `chat ${ctx.object.id} already uses access level ${level}`;
+    }
     await prepareAccess(ctx, chat, ctx.object.id, level);
     const changed: AccessChangedData = {
       by: { via: ctx.actor.via, id: ctx.actor.id },
