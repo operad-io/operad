@@ -72,7 +72,7 @@ operad pending              # what waits for you
 operad dev:merge T-0001-greet --yes
 ```
 
-Not sure what goes in `.operad/dev.json`? [Paste this prompt](docs/user/setup-prompt.md) into your coding agent and it will write and check the file for you.
+Not sure what goes in `.operad/dev.json`? Ask your bot to [Setup Dev](docs/user/setup-prompt.md): it reads the repository, proposes the file, and writes nothing until you approve.
 
 ## How it works
 

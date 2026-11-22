@@ -353,3 +353,11 @@ changes for bots, in the order they were recorded. The root
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0678-M6 | packages/bot/src/login.ts | the login step returned the model but never wrote it into the bot's settings | `a bot without a model login > the flow calls the agent's login step and writes the model into the bot's settings` |
+
+## T-0679 — Setup Dev
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0679-M1 | packages/bot/src/setup-dev.ts | approving a Setup Dev proposal never wrote `.operad/dev.json` | `Setup Dev > approve turns dev, shell and pool on, writes dev.json and leaves the request; reject leaves nothing` |
+| T-0679-M2 | packages/bot/src/setup-dev.ts | approving left no request for `dev` to register the repository from | `Setup Dev > approve turns dev, shell and pool on, writes dev.json and leaves the request; reject leaves nothing` |
+| T-0679-M3 | packages/bot/src/schedule.ts | a bot chat started without the line about Setup Dev | `Setup Dev > a bot chat starts with the line that says how Setup Dev is proposed` |

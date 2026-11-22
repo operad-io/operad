@@ -1561,3 +1561,5 @@ the row fields.
 | T-0673-M3 | packages/dev/src/gate.ts | the review skipped the whole-diff size check | `dev/review > renames and deletions > kept edits over the limit still fail with today's message` |
 | T-0673-M4 | packages/dev/src/gate.ts | a rename with edits was summarised as one line instead of carrying its diff | `dev/review > renames and deletions > a rename with an edit over the limit keeps its diff` |
 | T-0673-M5 | packages/dev/src/gate.ts | a rework round listed no deleted files, because the increment has no hunk for a whole deletion | `dev/review > renames and deletions > a rework round lists the files it deletes whole` |
+| T-0679-M4 | packages/dev/src/register-requests.ts | a registered repository's request file was left in place | `a request to register a repository (Setup Dev) > is registered on a tick and its file is removed` |
+| T-0679-M5 | packages/dev/src/register-requests.ts | a request that could not be registered was deleted instead of kept with its reason | `a request to register a repository (Setup Dev) > one that cannot be registered stays with its reason, and is a pending item until fixed` |
