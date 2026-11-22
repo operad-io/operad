@@ -757,10 +757,17 @@ describe("a reload with two listen addresses", () => {
         expect(await answers(urlOf("127.0.0.1", port))).toBe(true);
         expect(await answers(urlOf(second, port))).toBe(true);
       } finally {
-        rmSync(marker, { force: true });
         await blocker.stop(true);
-        await stopServe(s);
-        expect(await serve.exited).toBe(0);
+        // The marker goes only after serve has ended: serve watches the engine
+        // package, so removing it first is a change that can start another
+        // reload while the stop is in flight, and the supervisor then starts a
+        // serve that nothing stops.
+        try {
+          await stopServe(s);
+          expect(await serve.exited).toBe(0);
+        } finally {
+          rmSync(marker, { force: true });
+        }
       }
     }, 60_000);
   }
