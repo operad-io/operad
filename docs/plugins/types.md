@@ -12,7 +12,7 @@ The types a plugin imports, by the page that explains them. The values these ent
 | `ActionArgType` | The value types an action argument may have. | [actions](actions.md) |
 | `ActionArgsSchema` | The arguments of an action: a JSON Schema object. | [actions](actions.md) |
 | `ActionContext` | The context an action receives. `runId` is set when it answers a person wait. | [actions](actions.md) |
-| `ActionEnv` | What an action's checks may read: the object store, never write. | [actions](actions.md) |
+| `ActionEnv` | What an action's checks may read: the object store, never write, and the run control when the host can tell whether a run has ended. | [actions](actions.md) |
 | `ActionEvent` | An event an action sends: the person's client is the source. | [actions](actions.md) |
 | `ActionOutcome` | What an action returns when it created an object: the line of text a person reads, and `opens`, the object as `type:id`. Returning only text still works. The kernel, the client API and HTTP pass... | [actions](actions.md) |
 | `ActionRun` | An action that ran, with the value its plugin returned. | [actions](actions.md) |

@@ -322,3 +322,11 @@ changes for bots, in the order they were recorded. The root
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0681-M1 | packages/bot/src/tidy.ts | `botChatReplying` kept counting a latest run the host said had ended as writing | `Run and Skip > a Run waits while the latest reply run is active, and starts once it has ended` |
+
+## T-0682 — a watch tells a live run from one that ended
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0682-M3 | packages/bot/src/chat-watch.ts | the watch's writing check ignored the host's run control, so a crashed run never let the watch read | `a chat watch > reads a chat once the host says its latest run has ended` |
+| T-0682-M4 | packages/bot/src/schedule.ts | the scheduled source gave its watch no run control | `scheduled prompts > a watch reads a reply after the host says its run ended` |
+| T-0682-M5 | packages/bot/src/tidy.ts | the tidy source gave its watch no run control | `Run and Skip > a tidy run that fails leaves a failed card` |

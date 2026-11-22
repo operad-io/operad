@@ -1387,3 +1387,9 @@ resume window`. Rows are append-only, so the old lines stay as history.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0681-M2 | packages/engine/src/plugin/registry.ts | a source's context carried no run control, so the tidy could not tell a dead run from a live one | `plugin registry > a source receives the run control, so it can tell a live run from one that ended` |
+
+## T-0682 — an action's checks get the run control
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0682-M6 | packages/engine/src/plugin/registry.ts | `actionEnv` carried no run control, so `when` and `why` could not tell an ended run from a live one | `plugin registry > an action's checks receive the run control, so an offer can tell a live run from one that ended` |

@@ -36,8 +36,8 @@ A failure entry keeps its reason and the oldest message the attempt was for. Inc
 are not stored. Output longer than 4 KB goes to a file under the chat's own
 directory (under `attachments/chat/<id>/tool-output/`), and secret values are
 masked before a fact or a file is written. A rerun skips a tool call whose id was
-already recorded, does not add the same unfinished text again, and does not add a
-second failure line for the same unanswered messages.
+already recorded and does not add the same unfinished text again. A rerun of one
+run adds no second failure line; each failed run records its own line.
 
 Each reply run also records a `chat.run` fact with its run id, so the transcript
 can find the log of the step that runs the agent. While that run lasts, the

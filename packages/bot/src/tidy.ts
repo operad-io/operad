@@ -14,7 +14,7 @@ import {
   chatData,
   chatFacts,
   costText,
-  writingReply,
+  writingReplyNow,
 } from "@operad-io/chat";
 import {
   cut,
@@ -349,11 +349,8 @@ export async function botChatReplying(
   for (const object of await listAll(store, CHAT_TYPE)) {
     const chat = chatData(object.data);
     if (chat.parent !== `${BOT_TYPE}:${bot}`) continue;
-    const writing = writingReply(chatFacts(store, object.id), allMessages(store, object.id), allEntries(store, object.id));
-    if (writing === undefined) continue;
-    const active = runs === undefined ? undefined : await runs.active(writing.runId);
-    if (active === false) continue;
-    return true;
+    const writing = await writingReplyNow(chatFacts(store, object.id), allMessages(store, object.id), allEntries(store, object.id), runs);
+    if (writing !== undefined) return true;
   }
   return false;
 }
@@ -607,7 +604,7 @@ export class BotTidySource {
   ) {
     this.ctx = ctx;
     this.notify = options.notify ?? ((notice) => notifyScheduledReply(ctx.home, notice));
-    this.chatWatches = new ChatWatches(ctx.logger, ctx.store);
+    this.chatWatches = new ChatWatches(ctx.logger, ctx.store, ctx.runs);
   }
 
   /** Waits for the checks that are running now; a test calls this after a reply. */

@@ -1,8 +1,8 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { personStarted } from "@operad-io/access-match";
-import { CHAT_TYPE, allMessages } from "@operad-io/chat";
-import { createViews, type ClientApi, type TriggerEvent } from "@operad-io/engine";
+import { CHAT_TYPE, allMessages, chatRef, RUN_FACT } from "@operad-io/chat";
+import { createViews, type ClientApi, type RunControl, type TriggerEvent } from "@operad-io/engine";
 import {
   BotScheduleSource,
   PROPOSAL_TYPE,
@@ -39,6 +39,7 @@ function sourceFor(
   client: ClientApi,
   clock: Clock,
   notices: ScheduleNotice[],
+  runs?: RunControl | undefined,
 ): BotScheduleSource {
   return new BotScheduleSource(
     {
@@ -48,6 +49,7 @@ function sourceFor(
       clock: () => clock.value,
       logger: { path: join(r.root, "log"), write: async () => "" },
       client,
+      ...(runs === undefined ? {} : { runs }),
     },
     {
       notify: async (notice) => {
@@ -125,6 +127,53 @@ describe("scheduled prompts", () => {
       expect(page.markdown).toContain("Scheduled:");
       expect(page.markdown).toContain("Morning");
       expect(page.markdown).toContain(`chat ${id}: ok`);
+    } finally {
+      views.close();
+    }
+  });
+
+  test("a watch reads a reply after the host says its run ended", async () => {
+    const r = await rig();
+    const views = createViews({ registry: r.registry, store: r.store, home: r.home, onLog: () => undefined });
+    const notices: ScheduleNotice[] = [];
+    const clock = { value: Date.parse("2026-01-01T00:00:30Z") };
+    const source = sourceFor(r, views as unknown as ClientApi, clock, notices, {
+      active: (runId) => (runId === "run-crashed" ? false : undefined),
+      cancel: () => false,
+    });
+    try {
+      await add(r, { name: "Crashed", schedule: "* * * * *", prompt: "Go." });
+      await source.begin();
+      clock.value = Date.parse("2026-01-01T00:01:10Z");
+      await source.poll();
+      const id = (await chats(r))[0];
+      if (id === undefined) throw new Error("no chat");
+      const first = allMessages(r.store, id)[0];
+      if (first === undefined) throw new Error("no message");
+      await r.store.append({
+        type: RUN_FACT,
+        object: chatRef(id),
+        cause: "test",
+        data: { runId: "run-crashed" },
+      });
+      await r.say(id, "and more");
+      await r.store.append({
+        type: "chat.message",
+        object: chatRef(id),
+        cause: "test",
+        data: {
+          id: "a-crashed",
+          role: "assistant",
+          from: { via: "claude", id: "claude" },
+          text: "the answer before the crash",
+          attachments: [],
+          source: { kind: "claude", ref: null },
+          replyTo: [first.id],
+          runId: "run-crashed",
+        },
+      });
+      await source.settled();
+      expect(notices.map((notice) => notice.summary)).toEqual(["the answer before the crash"]);
     } finally {
       views.close();
     }

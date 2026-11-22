@@ -596,3 +596,10 @@ are append-only, so the old lines stay as history.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0644-M1 | packages/chat/src/model.ts | a withdrawal removed a message of any role, including an answer | `a withdrawal removes a person's message but never an answer` |
+
+## T-0682 — a failed reply run leaves its failure, and retry tells a live run from one that ended
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0682-M1 | packages/chat/src/reply.ts | `recordFailure` skipped a run's own failure whenever any earlier failure existed, so a retried run that failed again left no entry | `a failed reply > a retried run that fails again records its own failure and is not called writing` |
+| T-0682-M2 | packages/chat/src/index.ts | `retryCheck` asked the facts alone, so a run the host said had ended still refused with `writing` | `chat:retry is offered only when it would start a reply > a run the host says has ended does not keep a failed attempt from being retried` |

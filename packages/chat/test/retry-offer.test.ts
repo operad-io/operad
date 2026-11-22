@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { Views, type StepContext } from "@operad-io/engine";
-import { CHAT_TYPE } from "../src/index.ts";
+import { CHAT_TYPE, chatRef, RUN_FACT } from "../src/index.ts";
 import { cleanupRoots, reply, rig } from "./support.ts";
 
 afterAll(cleanupRoots);
@@ -75,6 +75,25 @@ describe("chat:retry is offered only when it would start a reply", () => {
     await r.say(chat, "one");
     expect((await r.round(chat)).result).toBe("failed");
 
+    expect(await offered(r, chat)).toContain("chat:retry");
+    const typed = await command(r, chat, "/retry");
+    expect(typed.value).toBe("retrying the last message");
+    expect(r.events.map((event) => event.key)).toEqual(["retry:run-1"]);
+  });
+
+  test("a run the host says has ended does not keep a failed attempt from being retried", async () => {
+    const r = await rig(() => FAILED);
+    const chat = await r.chat();
+    await r.say(chat, "one");
+    expect((await r.round(chat)).result).toBe("failed");
+
+    // A later attempt crashed before recording a failure; the host says its run is gone.
+    await r.store.append({
+      type: RUN_FACT,
+      object: chatRef(chat),
+      cause: "test",
+      data: { runId: "run-crashed" },
+    });
     expect(await offered(r, chat)).toContain("chat:retry");
     const typed = await command(r, chat, "/retry");
     expect(typed.value).toBe("retrying the last message");

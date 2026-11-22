@@ -951,14 +951,13 @@ function emptyFailureStreak(entries: readonly Entry[], after: number, oldest: st
 
 /**
  * Records a failure as one entry after the last person's message or reply. A
- * rerun of the same attempt finds the attempt's failure and does not add
- * another, even when the provider words it differently; a new message after it
- * starts a new attempt, whose failure is recorded too.
+ * rerun of the same run finds its failure and does not add another, even when
+ * the provider words it differently; every other failed run records its own,
+ * so a retried attempt that fails again does not leave the chat looking like
+ * it is still writing.
  *
  * An empty failure twice in a row for the same oldest message marks that
- * message taken, so a message the agent never answers is not sent forever. A
- * retry of the same attempt is not a second reply, but an attempt a rerun only
- * left its first failure line for still counts.
+ * message taken, so a message the agent never answers is not sent forever.
  */
 async function recordFailure(
   ctx: StepContext,
@@ -969,19 +968,15 @@ async function recordFailure(
 ): Promise<void> {
   const text = replyFailureLine(message, await secretValues(ctx));
   const read = readChat(ctx.store, chat);
-  let lastUser = 0;
   let lastReply = 0;
   for (const item of read.messages) {
-    if (item.role === "user") lastUser = Math.max(lastUser, item.sequence);
-    else lastReply = Math.max(lastReply, item.sequence);
+    if (item.role === "user") continue;
+    lastReply = Math.max(lastReply, item.sequence);
   }
-  const after = Math.max(lastUser, lastReply);
-  const failures = read.entries.filter(
-    (entry) => entry.kind === "failure" && entry.sequence > after,
+  const recorded = read.entries.some(
+    (entry) => entry.kind === "failure" && entry.runId === ctx.runId,
   );
-  const already = failures.length > 0;
-  const sameAttempt = failures.some((entry) => entry.runId === ctx.runId);
-  if (!already) {
+  if (!recorded) {
     const data: EntryData = {
       runId: ctx.runId,
       kind: "failure",
@@ -992,13 +987,7 @@ async function recordFailure(
     await ctx.facts.append({ type: ENTRY_FACT, object: chatRef(chat), data });
   }
   if (reason !== "empty" || oldest === undefined) return;
-  let streak = emptyFailureStreak(readChat(ctx.store, chat).entries, lastReply, oldest);
-  // A retry leaves the first attempt's one failure line in place. The attempt
-  // still counts, so the second empty reply for the same message marks it.
-  if (already && !sameAttempt) {
-    const last = failures.at(-1);
-    streak = last?.reason === "empty" && last.messageId === oldest ? streak + 1 : 1;
-  }
+  const streak = emptyFailureStreak(readChat(ctx.store, chat).entries, lastReply, oldest);
   if (streak >= 2) await recordTaken(ctx, chat, ctx.runId, [oldest]);
 }
 

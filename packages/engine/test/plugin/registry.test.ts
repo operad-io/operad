@@ -86,6 +86,40 @@ describe("plugin registry", () => {
     }
   });
 
+  test("an action's checks receive the run control, so an offer can tell a live run from one that ended", async () => {
+    const root = await tempRoot();
+    const store = new MemoryPluginStore({ root: join(root, "store") });
+    let live: boolean | void = false;
+    const checker = definePlugin({
+      name: "checker",
+      kind: "domain",
+      version: "0.0.1",
+      objects: [{ name: "thing" }],
+      actions: [
+        {
+          name: "probe",
+          on: "thing",
+          when: async (_state, env) => {
+            live = await env.runs?.active("live");
+            return true;
+          },
+          run: () => "ok",
+        },
+      ],
+    });
+    const registry = new PluginRegistry([checker], {
+      store,
+      onLog: () => undefined,
+      onCancelRun: () => false,
+      onRunActive: (runId) => runId === "live",
+    });
+    await registry.runActionChecked("probe", {}, {
+      object: { type: "thing", id: "t1", data: {} },
+      actor: { via: "cli", id: "me" },
+    });
+    expect(live).toBe(true);
+  });
+
   test("loads a plugin from the operad home config", async () => {
     const root = await tempRoot();
     const home = join(root, "home");

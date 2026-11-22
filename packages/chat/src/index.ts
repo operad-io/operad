@@ -2,7 +2,7 @@
 
 import { messageOf } from "@operad-io/engine";
 import pkg from "../package.json" with { type: "json" };
-import { defineFlow, definePlugin, formatElapsed, isRecord, modelIds, type ActionArgsSchema, type ActionContext, type ActionTypeDefinition, type HarnessEfforts, type HarnessModels, type JsonValue, type ObjectStore, type PluginFact, type StoredObject, type UsageTokens } from "@operad-io/engine";
+import { defineFlow, definePlugin, formatElapsed, isRecord, modelIds, type ActionArgsSchema, type ActionContext, type ActionTypeDefinition, type HarnessEfforts, type HarnessModels, type JsonValue, type ObjectStore, type PluginFact, type RunControl, type StoredObject, type UsageTokens } from "@operad-io/engine";
 import { ACCESS_LEVELS, isAccessLevel, updateLiveAccessLevel, type AccessLevel } from "@operad-io/access-match";
 import { stopKeptWorkers } from "@operad-io/engine/platform";
 import {
@@ -36,7 +36,7 @@ import {
   stoppedRunAfter,
   takenIds,
   unanswered,
-  writingReply,
+  writingReplyNow,
   type AccessChangedData,
   type ChatData,
   type ClosedData,
@@ -697,17 +697,13 @@ const statusAction: ActionTypeDefinition = {
     const facts = read.facts;
     const messages = read.messages;
     const entries = read.entries;
-    const writing = writingReply(facts, messages, entries);
-    // A run a crash left without a failure or stopped entry is not writing.
-    // A host that cannot tell leaves the fact-only answer as it was.
-    const latest = latestRunOf(facts);
-    const alive = latest === undefined ? undefined : await ctx.runs?.active?.(latest);
+    const writing = await writingReplyNow(facts, messages, entries, ctx.runs);
     const chat = chatData(stored.data);
     return statusText(
       chat,
       messages,
       facts,
-      alive === false ? undefined : writing,
+      writing,
       effectiveEffort(chat, ctx.efforts[chat.harness]),
     );
   },
@@ -731,7 +727,12 @@ interface RetryCheck {
  * stopping finishes, so that fact counts before the stopped half reply is in
  * the record.
  */
-function retryCheck(store: ObjectStore, id: string, chat: ChatData): RetryCheck {
+async function retryCheck(
+  store: ObjectStore,
+  id: string,
+  chat: ChatData,
+  runs?: Pick<RunControl, "active"> | undefined,
+): Promise<RetryCheck> {
   if (chat.closed) return { refused: "closed" };
   const read = readChat(store, id);
   const messages = read.messages;
@@ -746,7 +747,7 @@ function retryCheck(store: ObjectStore, id: string, chat: ChatData): RetryCheck 
   }
   if (last.kind === "normal") return { refused: "finished" };
   if (last.kind !== "failed" && last.kind !== "stopped") return { refused: "no-attempt" };
-  if (writingReply(facts, messages, entries) !== undefined) return { refused: "writing" };
+  if ((await writingReplyNow(facts, messages, entries, runs)) !== undefined) return { refused: "writing" };
   return last.runId === undefined ? {} : { runId: last.runId };
 }
 
@@ -769,10 +770,11 @@ const retryAction: ActionTypeDefinition = {
   on: CHAT_TYPE,
   command: "Answer the last message again after a reply failed, was stopped or was interrupted.",
   // The offer answers the same question the run does: would this start a reply?
-  when: (state, env) =>
-    env.object !== undefined && retryCheck(env.store, env.object.id, chatData(state)).refused === undefined,
-  why: (object, env) => {
-    const refused = retryCheck(env.store, object.id, chatData(object.data)).refused;
+  when: async (state, env) =>
+    env.object !== undefined &&
+    (await retryCheck(env.store, env.object.id, chatData(state), env.runs)).refused === undefined,
+  why: async (object, env) => {
+    const refused = (await retryCheck(env.store, object.id, chatData(object.data), env.runs)).refused;
     return refused === undefined ? undefined : retryRefusalLine(refused, object.id);
   },
   async run(ctx) {
@@ -780,7 +782,7 @@ const retryAction: ActionTypeDefinition = {
     if (stored === undefined) throw new Error(`there is no chat ${ctx.object.id}`);
     // The offer said a reply would start; a reply may have begun since, so the
     // run asks the same question again.
-    const check = retryCheck(ctx.store, ctx.object.id, chatData(stored.data));
+    const check = await retryCheck(ctx.store, ctx.object.id, chatData(stored.data), ctx.runs);
     if (check.refused !== undefined) throw new Error(retryRefusalLine(check.refused, ctx.object.id));
     if (ctx.emit === undefined) {
       throw new Error("the reply cannot be started here; operad serve is not running");
