@@ -382,3 +382,9 @@ changes for bots, in the order they were recorded. The root
 | T-0701-M5 | packages/bot/src/index.ts | the settings step gave a scheduled chat the bot's level, so it left `full` | `a bot's accessLevel setting > a scheduled chat stays full whatever the setting` |
 | T-0701-M6 | packages/bot/src/bot.ts | the schema took any string as `accessLevel` | `a bot's accessLevel setting > a value that is not a level is refused by the schema` |
 | T-0700-M1 | packages/bot/src/login.ts | `loginBotFor` sorted the bots by name only, dropping the default-first order | `loginBotFor > default comes first, then the others by name; a named agent is the one that logs in` |
+| T-0725-M1 | packages/bot/src/schedule.ts | a reply that only contained the marker counted as quiet | `scheduled prompts > a reply that is exactly the marker records its result and runs no notify command; any other reply notifies` |
+| T-0725-M2 | packages/bot/src/schedule.ts | a quiet reply still ran the notify command | `scheduled prompts > a reply that is exactly the marker records its result and runs no notify command; any other reply notifies` |
+| T-0725-M3 | packages/bot/src/schedule.ts | the next prompt left out the earlier results | `scheduled prompts > the next firing carries the last few results of the same entry, each cut short` |
+| T-0725-M4 | packages/bot/src/schedule.ts | a carried result was not cut to its limit | `scheduled prompts > the next firing carries the last few results of the same entry, each cut short` |
+| T-0725-M5 | packages/bot/src/schedule.ts | an entry kept more than three results | `scheduled prompts > the next firing carries the last few results of the same entry, each cut short` |
+| T-0725-M6 | packages/bot/src/schedule.ts | a failure was judged by the quiet rule, so it could end quietly | `scheduled prompts > a failed reply notifies even when the entry could end quietly` |

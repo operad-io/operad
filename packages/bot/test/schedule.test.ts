@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { personStarted } from "@operad-io/access-match";
-import { CHAT_TYPE, allMessages, chatRef, RUN_FACT } from "@operad-io/chat";
+import { CHAT_TYPE, ENTRY_FACT, allMessages, chatRef, RUN_FACT } from "@operad-io/chat";
 import { createViews, type ClientApi, type RunControl, type TriggerEvent } from "@operad-io/engine";
 import {
   BotScheduleSource,
@@ -12,7 +12,13 @@ import {
   type ScheduleNotice,
   type ScheduledPrompt,
 } from "../src/index.ts";
-import { lateText } from "../src/schedule.ts";
+import {
+  lateText,
+  SCHEDULE_PREAMBLE,
+  SCHEDULE_QUIET_MARKER,
+  SCHEDULE_RECENT_COUNT,
+  SCHEDULE_RECENT_MAX,
+} from "../src/schedule.ts";
 import { cleanupRoots, rig } from "./support.ts";
 
 process.env.TZ = "UTC";
@@ -105,7 +111,7 @@ describe("scheduled prompts", () => {
       const chatRow = (await views.get(`chat:${id}`)).row;
       expect(chatRow.data).toMatchObject({ scheduled: { bot: "default", entry: "Morning" } });
       const messages = allMessages(r.store, id);
-      expect(messages.map((message) => message.text)).toEqual(["Collect the news."]);
+      expect(messages.map((message) => message.text)).toEqual([`Collect the news.\n\n${SCHEDULE_PREAMBLE}`]);
 
       const event = events.find((item) => item.source === "bot" && item.type === "message");
       expect(event?.object).toBe(`chat:${id}`);
@@ -346,6 +352,138 @@ describe("scheduled prompts", () => {
       clock.value = Date.parse("2026-01-01T00:02:10Z");
       await source.poll();
       expect(await chats(r)).toHaveLength(0);
+    } finally {
+      views.close();
+    }
+  });
+
+  /** Fires the entry at `at`, answers its chat with `text`, and returns the chat id and the prompt sent. */
+  async function fireAndAnswer(
+    r: Awaited<ReturnType<typeof rig>>,
+    source: BotScheduleSource,
+    clock: { value: number },
+    at: string,
+    text: string,
+    n: number,
+  ): Promise<{ readonly id: string; readonly prompt: string }> {
+    const before = await chats(r);
+    clock.value = Date.parse(at);
+    await source.poll();
+    const id = (await chats(r)).find((item) => !before.includes(item));
+    if (id === undefined) throw new Error("no new chat");
+    const first = allMessages(r.store, id)[0];
+    if (first === undefined) throw new Error("no message");
+    await r.store.append({
+      type: RUN_FACT,
+      object: chatRef(id),
+      cause: "test",
+      data: { runId: `run-q${n}` },
+    });
+    await r.store.append({
+      type: "chat.message",
+      object: chatRef(id),
+      cause: "test",
+      data: {
+        id: `a-q${n}`,
+        role: "assistant",
+        from: { via: "claude", id: "claude" },
+        text,
+        attachments: [],
+        source: { kind: "claude", ref: null },
+        replyTo: [first.id],
+        runId: `run-q${n}`,
+      },
+    });
+    await source.settled();
+    return { id, prompt: first.text };
+  }
+
+  test("a reply that is exactly the marker records its result and runs no notify command; any other reply notifies", async () => {
+    const r = await rig();
+    const views = createViews({ registry: r.registry, store: r.store, home: r.home, onLog: () => undefined });
+    const notices: ScheduleNotice[] = [];
+    const clock = { value: Date.parse("2026-01-01T00:00:30Z") };
+    const source = sourceFor(r, views as unknown as ClientApi, clock, notices);
+    try {
+      await add(r, { name: "Watch", schedule: "* * * * *", prompt: "Look." });
+      await source.begin();
+      const quiet = await fireAndAnswer(r, source, clock, "2026-01-01T00:01:10Z", ` ${SCHEDULE_QUIET_MARKER}\n`, 1);
+      expect(notices).toEqual([]);
+      let entry = scheduledPrompts((await r.store.get("bot", "default"))?.data ?? {})[0];
+      expect(entry?.last).toMatchObject({ chatId: quiet.id, result: "Nothing to report.", notified: true });
+
+      // The marker inside a longer reply is not a quiet ending.
+      const loud = await fireAndAnswer(r, source, clock, "2026-01-01T00:02:10Z", `${SCHEDULE_QUIET_MARKER} but one thing`, 2);
+      expect(notices.map((notice) => notice.chatId)).toEqual([loud.id]);
+      entry = scheduledPrompts((await r.store.get("bot", "default"))?.data ?? {})[0];
+      expect(entry?.last).toMatchObject({ chatId: loud.id, notified: true });
+    } finally {
+      views.close();
+    }
+  });
+
+  test("a failed reply notifies even when the entry could end quietly", async () => {
+    const r = await rig();
+    const views = createViews({ registry: r.registry, store: r.store, home: r.home, onLog: () => undefined });
+    const notices: ScheduleNotice[] = [];
+    const clock = { value: Date.parse("2026-01-01T00:00:30Z") };
+    const source = sourceFor(r, views as unknown as ClientApi, clock, notices);
+    try {
+      await add(r, { name: "Watch", schedule: "* * * * *", prompt: "Look." });
+      await source.begin();
+      clock.value = Date.parse("2026-01-01T00:01:10Z");
+      await source.poll();
+      const id = (await chats(r))[0];
+      if (id === undefined) throw new Error("no chat");
+      await r.store.append({
+        type: RUN_FACT,
+        object: chatRef(id),
+        cause: "test",
+        data: { runId: "run-f" },
+      });
+      await r.store.append({
+        type: ENTRY_FACT,
+        object: chatRef(id),
+        cause: "test",
+        data: { runId: "run-f", kind: "failure", text: "agent crashed" },
+      });
+      await source.settled();
+      expect(notices.map((notice) => notice.summary)).toEqual(["agent crashed"]);
+    } finally {
+      views.close();
+    }
+  });
+
+  test("the next firing carries the last few results of the same entry, each cut short", async () => {
+    const r = await rig();
+    const views = createViews({ registry: r.registry, store: r.store, home: r.home, onLog: () => undefined });
+    const clock = { value: Date.parse("2026-01-01T00:00:30Z") };
+    const source = sourceFor(r, views as unknown as ClientApi, clock, []);
+    try {
+      await add(r, { name: "Watch", schedule: "* * * * *", prompt: "Look." });
+      await add(r, { name: "Other", schedule: "0 5 * * *", prompt: "Elsewhere." });
+      await source.begin();
+      const first = await fireAndAnswer(r, source, clock, "2026-01-01T00:01:10Z", "result one", 1);
+      expect(first.prompt).not.toContain("Earlier results");
+      await fireAndAnswer(r, source, clock, "2026-01-01T00:02:10Z", SCHEDULE_QUIET_MARKER, 2);
+      await fireAndAnswer(r, source, clock, "2026-01-01T00:03:10Z", "result three", 3);
+      const long = "x".repeat(SCHEDULE_RECENT_MAX + 50);
+      await fireAndAnswer(r, source, clock, "2026-01-01T00:04:10Z", long, 4);
+      const fifth = await fireAndAnswer(r, source, clock, "2026-01-01T00:05:10Z", "five", 5);
+      const lines = fifth.prompt.split("\n").filter((line) => line.startsWith("- "));
+      expect(lines).toHaveLength(SCHEDULE_RECENT_COUNT);
+      expect(lines[0]).toContain("2026-01-01 00:02: Nothing to report.");
+      expect(lines[1]).toContain("result three");
+      expect(lines[2]).toContain(`${"x".repeat(SCHEDULE_RECENT_MAX - 1)}…`);
+      expect(lines[2]).not.toContain("x".repeat(SCHEDULE_RECENT_MAX));
+      expect(fifth.prompt).not.toContain("result one");
+      expect(fifth.prompt).toContain(SCHEDULE_PREAMBLE);
+      // Another entry's results stay out of this prompt.
+      const bot = await r.store.get("bot", "default");
+      const other = scheduledPrompts(bot?.data ?? {}).find((item) => item.name === "Other");
+      expect(other?.recent).toBeUndefined();
+      const watch = scheduledPrompts(bot?.data ?? {}).find((item) => item.name === "Watch");
+      expect(watch?.recent).toHaveLength(SCHEDULE_RECENT_COUNT);
     } finally {
       views.close();
     }

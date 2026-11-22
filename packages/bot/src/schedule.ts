@@ -65,6 +65,26 @@ export interface ScheduledLast {
   readonly notified?: boolean | undefined;
 }
 
+/** One finished firing kept for the next prompt. */
+export interface ScheduledRecent {
+  /** The planned minute of the firing, in epoch milliseconds. */
+  readonly plannedAt: number;
+  readonly result: string;
+}
+
+/** How many finished results an entry keeps and its next prompt carries. */
+export const SCHEDULE_RECENT_COUNT = 3;
+/** The longest a kept result is in the next prompt. */
+export const SCHEDULE_RECENT_MAX = 120;
+
+/** The reply that means a firing has nothing to report. */
+export const SCHEDULE_QUIET_MARKER = "NOTHING_TO_REPORT";
+/** What a quiet firing records as its result. */
+export const SCHEDULE_QUIET_RESULT = "Nothing to report.";
+
+/** The line every scheduled prompt ends with: how to end quietly. */
+export const SCHEDULE_PREAMBLE = `If there is nothing new to report, reply with exactly ${SCHEDULE_QUIET_MARKER} and nothing else; the person is then not notified. Otherwise reply as usual.`;
+
 /** One scheduled prompt of a bot. */
 export interface ScheduledPrompt {
   readonly name: string;
@@ -75,6 +95,8 @@ export interface ScheduledPrompt {
   readonly effort?: string | undefined;
   readonly paused: boolean;
   readonly last?: ScheduledLast | undefined;
+  /** The last few finished results, oldest first. */
+  readonly recent?: readonly ScheduledRecent[] | undefined;
 }
 
 /** The longest summary an entry keeps and a notification carries. */
@@ -108,6 +130,15 @@ export function scheduledPromptOf(value: unknown): ScheduledPrompt | undefined {
   const prompt = text(value.prompt);
   if (name === undefined || schedule === undefined || prompt === undefined) return undefined;
   const last = lastOf(value.last);
+  const recent: ScheduledRecent[] = [];
+  if (Array.isArray(value.recent)) {
+    for (const item of value.recent) {
+      if (!isRecord(item)) continue;
+      if (typeof item.plannedAt !== "number" || !Number.isFinite(item.plannedAt)) continue;
+      if (text(item.result) === undefined) continue;
+      recent.push({ plannedAt: item.plannedAt, result: item.result as string });
+    }
+  }
   return {
     name,
     schedule,
@@ -116,6 +147,7 @@ export function scheduledPromptOf(value: unknown): ScheduledPrompt | undefined {
     ...(text(value.effort) === undefined ? {} : { effort: value.effort as string }),
     paused: value.paused === true,
     ...(last === undefined ? {} : { last }),
+    ...(recent.length === 0 ? {} : { recent: recent.slice(-SCHEDULE_RECENT_COUNT) }),
   };
 }
 
@@ -168,6 +200,9 @@ function stored(entry: ScheduledPrompt): Record<string, JsonValue> {
     ...(entry.effort === undefined ? {} : { effort: entry.effort }),
     paused: entry.paused,
     ...(entry.last === undefined ? {} : { last: entry.last as unknown as JsonValue }),
+    ...(entry.recent === undefined || entry.recent.length === 0
+      ? {}
+      : { recent: entry.recent as unknown as JsonValue }),
   };
 }
 
@@ -213,6 +248,40 @@ export function lateText(seconds: number): string {
 /** The one line a catch-up adds to the prompt. It is not added to an on-time run. */
 export function latenessLine(scheduledAt: number, lateSecs: number): string {
   return `Scheduled for ${localStamp(scheduledAt)}; this run is ${lateText(lateSecs)} late.`;
+}
+
+/** The result of a finished firing, cut to what the next prompt carries. */
+function recentText(result: string): string {
+  return result.length <= SCHEDULE_RECENT_MAX
+    ? result
+    : `${result.slice(0, SCHEDULE_RECENT_MAX - 1)}…`;
+}
+
+/**
+ * The prompt a firing sends: the entry's prompt, the earlier results of the
+ * same entry so it does not repeat them, the quiet-ending line, and for a
+ * catch-up the lateness line.
+ */
+export function scheduledPromptText(
+  entry: ScheduledPrompt,
+  late: { readonly scheduledAt: number; readonly lateSecs: number } | undefined,
+): string {
+  const parts = [entry.prompt];
+  const recent = (entry.recent ?? []).slice(-SCHEDULE_RECENT_COUNT);
+  if (recent.length > 0) {
+    const lines = recent.map((item) => `- ${localStamp(item.plannedAt)}: ${recentText(item.result)}`);
+    parts.push(
+      `Earlier results of this scheduled prompt, oldest first; the person has already seen them, so do not repeat them:\n${lines.join("\n")}`,
+    );
+  }
+  parts.push(SCHEDULE_PREAMBLE);
+  if (late !== undefined) parts.push(latenessLine(late.scheduledAt, late.lateSecs));
+  return parts.join("\n\n");
+}
+
+/** True when a reply is exactly the quiet marker. */
+export function isQuietReply(message: string): boolean {
+  return message.trim() === SCHEDULE_QUIET_MARKER;
 }
 
 /** What a bot chat's first session starts with: a schedule it writes is a proposal. */
@@ -794,9 +863,10 @@ export class BotScheduleSource {
       firedAt: now,
       schedule: entry.schedule,
     });
-    const prompt = late
-      ? `${entry.prompt}\n\n${latenessLine(minute, lateSecs)}`
-      : entry.prompt;
+    const prompt = scheduledPromptText(
+      entry,
+      late ? { scheduledAt: minute, lateSecs } : undefined,
+    );
     const title = `${entry.name} (${localDate(minute)})`.slice(0, 120);
     let chatId: string | undefined;
     try {
@@ -868,27 +938,38 @@ export class BotScheduleSource {
         if (chat === undefined) return undefined;
         const reply = [...read.messages].reverse().find((message) => message.role === "assistant");
         const failure = [...read.entries].reverse().find((item) => item.kind === "failure");
-        const result =
-          reply === undefined
+        const quiet = reply !== undefined && isQuietReply(reply.text);
+        const result = quiet
+          ? SCHEDULE_QUIET_RESULT
+          : reply === undefined
             ? failure === undefined
               ? undefined
               : replySummary(failure.text ?? "The reply failed.")
             : replySummary(reply.text);
         if (result === undefined) return undefined;
         const title = typeof chat.data.title === "string" ? chat.data.title : chatId;
-        return { result, title };
+        return { result, title, quiet };
       },
-      async ({ result, title }) => {
+      async ({ result, title, quiet }) => {
         await replaceEntry(
           this.ctx.store,
           bot,
           name,
           (entry) =>
             entry.last?.chatId === chatId
-              ? { ...entry, last: { ...entry.last, result, notified: false } }
+              ? {
+                  ...entry,
+                  last: { ...entry.last, result, notified: quiet },
+                  recent: [
+                    ...(entry.recent ?? []).filter((item) => item.plannedAt !== plannedAt),
+                    { plannedAt, result },
+                  ].slice(-SCHEDULE_RECENT_COUNT),
+                }
               : undefined,
           "step:bot/scheduled",
         );
+        // A quiet ending records its result and runs no notify command.
+        if (quiet) return;
         try {
           await this.notify({ chatId, title, summary: result });
         } catch (error) {
