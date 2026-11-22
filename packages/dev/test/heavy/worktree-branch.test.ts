@@ -18,7 +18,7 @@ import {
   taskData,
   type RepositoryData,
 } from "../../src/index.ts";
-import { advanceMain, git, gitOrThrow, makeRemote, type RemoteSetup } from "../git-support.ts";
+import { advanceMain, git, gitOrThrow, makeRemote, silentGit, type RemoteSetup } from "../git-support.ts";
 import { cleanupTempRoots, guardLockHandles, storeAt, tempRoot } from "../support.ts";
 
 afterAll(cleanupTempRoots);
@@ -310,6 +310,31 @@ describe("dev/worktree with workIn branch", () => {
   });
 });
 
+describe("dev/reverify with workIn branch", () => {
+  test("merges the moved main into the task's branch in the clone and keeps the start (T-0718)", async () => {
+    const state = await fixture("commit");
+    gitOrThrow(state.clone, ["switch", "-q", "-c", "feature"]);
+    await step(state, "worktree", "run-1");
+    await step(state, "work", "run-1");
+    await advanceMain(state.remote, "main-news.txt", "news\n");
+
+    const result = await state.registry.runStep("dev/reverify", {}, {
+      runId: "run-2",
+      object: { type: "task", id: state.taskKey, data: {} },
+    });
+    expect(result.result).toBe("ready");
+    expect(branchOf(state.clone)).toBe(state.branch);
+    expect(existsSync(join(state.clone, "main-news.txt"))).toBe(true);
+    expect(existsSync(join(state.clone, ".operad-worktrees", state.taskId))).toBe(false);
+    expect(gitOrThrow(state.clone, ["status", "--porcelain"])).toBe("");
+    const task = await taskOf(state);
+    expect(task.attempt?.worktree).toBe(state.clone);
+    expect(task.attempt?.inPlace).toBe(true);
+    expect(task.attempt?.startBranch).toBe("feature");
+    expect(result.data?.merged).toBeDefined();
+  });
+});
+
 describe("dev/work with workIn branch", () => {
   test("runs in the main clone on the task branch; dev commits what the worker left", async () => {
     const state = await fixture("leave");
@@ -326,6 +351,21 @@ describe("dev/work with workIn branch", () => {
     // Working in the clone is not reported as a change to the main checkout.
     expect(String(task.attempt?.finalMessage ?? "")).not.toContain("changed the main checkout");
     expect(JSON.stringify(result.data)).not.toContain("changed the main checkout");
+  });
+
+  test("the main checkout is not read before and after the worker (T-0718)", async () => {
+    const state = await fixture("leave");
+    await step(state, "worktree", "run-1");
+    // The work step's own status reads: what the worker left, and what is
+    // left after dev's commit. A snapshot of the main checkout before the
+    // worker, or its comparison after, would each add one.
+    const stub = silentGit(state.root, "status --porcelain", 0);
+    try {
+      expect((await step(state, "work", "run-1")).result).toBe("done");
+      expect(stub.calls()).toBe(2);
+    } finally {
+      stub.restore();
+    }
   });
 
   test("a worker that commits itself is accepted as before", async () => {
