@@ -214,7 +214,24 @@ async function fixture(options: FixtureOptions = {}): Promise<Fixture> {
   return { ...first, others };
 }
 
-function integrate(state: Fixture, runId = "integrate-run") {
+// A test writes dev.json after the worktree step ran; the attempt recorded the
+// file as it was then (ADR 0039 D6), so record the file as it is now.
+async function recordDevJson(state: Fixture): Promise<void> {
+  const object = await state.store.get("task", state.taskKey);
+  if (object === undefined) throw new Error("task disappeared");
+  const task = taskData(object.data);
+  if (typeof task.attempt?.settingsText !== "string") return;
+  const text = readFileSync(join(state.remote.repository, ".operad", "dev.json"), "utf8");
+  await state.store.put(
+    "task",
+    state.taskKey,
+    { ...task, attempt: { ...task.attempt, settingsText: text } },
+    "test",
+  );
+}
+
+async function integrate(state: Fixture, runId = "integrate-run") {
+  await recordDevJson(state);
   return state.registry.runStep("dev/integrate", {}, {
     runId,
     object: { type: "task", id: state.taskKey, data: {} },
@@ -1303,6 +1320,7 @@ describe("dev/integrate main clone", () => {
   test("a kill after the fast-forward and before prepare ends runs prepare once on the rerun", async () => {
     const state = await fixture();
     writeDevJson(state.remote.repository, { prepare: ["one", "two"] });
+    await recordDevJson(state);
     await killedAt(state, "prepare", "dev/integrate", "integrate-run");
     const calls: string[] = [];
     integrateTestHooks.runCommand = async (_cwd, line) => {
@@ -1328,6 +1346,7 @@ describe("dev/integrate main clone", () => {
   test("a rerun that finds the clone dirty keeps the prepare the killed run left due (T-0440)", async () => {
     const state = await fixture();
     writeDevJson(state.remote.repository, { prepare: ["one", "two"] });
+    await recordDevJson(state);
     await killedAt(state, "prepare", "dev/integrate", "integrate-run");
     writeFileSync(join(state.remote.repository, "scratch.txt"), "mine\n");
     const calls: string[] = [];
@@ -1354,6 +1373,7 @@ describe("dev/integrate main clone", () => {
   test("a rerun whose fetch fails keeps the prepare the killed run left due (T-0440)", async () => {
     const state = await fixture();
     writeDevJson(state.remote.repository, { prepare: ["one", "two"] });
+    await recordDevJson(state);
     await killedAt(state, "prepare", "dev/integrate", "integrate-run");
     // The first fetch of the rerun fails, the ones after it work.
     const wrapper = join(state.root, "upload-wrapper.sh");

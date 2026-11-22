@@ -173,6 +173,15 @@
       "type": "integer",
       "minimum": 1
     },
+    "workIn": {
+      "title": "Work in",
+      "description": "Where a task's changes are made. branch (A branch in this folder): dev makes the task's branch in the main clone and the task works there, one task at a time; it cannot be combined with a concurrency above 1 or workers that add up to more than 1. worktree (A separate worktree): each task has its own worktree.",
+      "oneOf": [
+        { "const": "branch", "title": "A branch in this folder" },
+        { "const": "worktree", "title": "A separate worktree" }
+      ],
+      "default": "worktree"
+    },
     "sandbox": {
       "description": "Deprecated and ignored; kept so settings written by an earlier version still validate.",
       "type": "string",

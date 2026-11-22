@@ -102,6 +102,17 @@ export const DEV_PROJECT_SETTINGS: ProjectSettingsDeclaration = {
             description:
               "The most of this repository's tasks that run at the same time, on top of the worker counts. Unset means the workers' own counts decide.",
           },
+          workIn: {
+            title: "Work in",
+            oneOf: [
+              { const: "branch", title: "A branch in this folder" },
+              { const: "worktree", title: "A separate worktree" },
+            ],
+            default: "worktree",
+            editable: true,
+            description:
+              "Where a task's changes are made. branch (A branch in this folder): dev makes the task's branch in the main clone and the task works there, one task at a time; it cannot be combined with a concurrency above 1 or workers that add up to more than 1. worktree (A separate worktree): each task has its own worktree.",
+          },
           autoDefault: {
             type: "string",
             title: "Auto for new plans",

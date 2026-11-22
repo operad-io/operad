@@ -1579,3 +1579,15 @@ the row fields.
 | T-0707-M2 | packages/dev/src/steps.ts | the work step did not record the worker the pool placed | `the log of a running work step whose stage has its own pool > shows the log of the pool's codex worker while it runs, not the default worker's` |
 | T-0707-M3 | packages/dev/src/views.ts | text deltas left at the end of the log were not shown | `dev views > a codex log's text deltas are joined into the agent's text where a tool call follows (T-0707)` |
 | T-0707-M4 | packages/dev/src/views.ts | a `message_end` with its text did not drop the deltas it repeats | `dev views > deltas that a message_end repeats in full are shown once (T-0707)` |
+
+## T-0716 — the workIn setting
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0716-M1 | packages/dev/src/settings.ts | the branch checks were skipped at load | `dev.json workIn > branch with concurrency above 1 is refused, naming what to change` |
+| T-0716-M2 | packages/dev/src/settings.ts | `repositoryTaskCap` did not return 1 for branch | `dev.json workIn > repositoryTaskCap is 1 for branch whatever the pools say` |
+| T-0716-M3 | packages/dev/src/settings.ts | a branch repository with `concurrency` 2 was accepted | `dev.json workIn > branch with concurrency above 1 is refused, naming what to change` |
+| T-0716-M4 | packages/dev/src/settings.ts | a pool whose workers add up to 2 was accepted for branch | `dev.json workIn > branch with workers that add up to more than 1 in a pool is refused` |
+| T-0716-M5 | packages/dev/src/steps.ts | `taskContext` read the file again instead of the attempt's recorded text | `dev/worktree > a later step of the attempt reads the recorded dev.json, not the file (T-0716)` |
+| T-0716-M6 | packages/dev/src/steps.ts | the worktree step did not record the text on the attempt | `dev/worktree > dev.json is recorded when an attempt starts and a replay keeps it (T-0716)` |
+| T-0716-M7 | packages/dev/src/steps.ts | a replay of the worktree step read the file instead of keeping the attempt's record | `dev/worktree > dev.json is recorded when an attempt starts and a replay keeps it (T-0716)` |

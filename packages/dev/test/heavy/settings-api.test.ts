@@ -55,6 +55,7 @@ describe("dev settings through operad settings", () => {
       confirm: false,
     });
     expect(byName.get("dev.autoDefault")?.title).toBe("Auto for new plans");
+    expect(byName.get("dev.workIn")).toMatchObject({ title: "Work in", editable: true, default: "worktree" });
     expect(byName.get("dev.flowList")?.title).toBe("Flows");
     expect(byName.get("dev.reviewer.use")?.title).toBe("Reviewer");
     expect(byName.get("dev.review.default.levels.critical")?.title).toBe("Critical level");

@@ -289,6 +289,9 @@ export interface ReviewerSettings {
   readonly maxDiffBytes: number;
 }
 
+/** Where a repository's tasks work; see ADR 0039 D1. */
+export type WorkIn = "branch" | "worktree";
+
 /** The whole `.operad/dev.json` document, with every default filled. */
 export interface DevSettings {
   readonly name?: string | undefined;
@@ -300,6 +303,11 @@ export interface DevSettings {
    * it, the default pool's counts alone decide (see `runningTaskCap`).
    */
   readonly concurrency: number;
+  /**
+   * Where a task's changes are made: a branch in the main clone (`branch`, one
+   * task at a time) or the task's own worktree (`worktree`, the default).
+   */
+  readonly workIn: WorkIn;
   /** Whether the file wrote `concurrency` itself. */
   readonly concurrencySet: boolean;
   /**
@@ -370,6 +378,7 @@ export const DEFAULT_DEV_SETTINGS: DevSettings = {
   mainBranch: "main",
   worktreeRoot: ".operad-worktrees",
   concurrency: 1,
+  workIn: "worktree",
   concurrencySet: false,
   worker: {
     use: DEFAULT_WORKER_USE,
@@ -431,6 +440,7 @@ const KNOWN_FIELDS = new Set([
   "worktrees",
   "sandbox",
   "concurrency",
+  "workIn",
   "worker",
   "workers",
   "pools",
@@ -518,6 +528,13 @@ export function assertInsideRepository(
   if (target !== repository && !target.startsWith(`${repository}${sep}`)) {
     throw new DevError(field, "must stay inside the repository");
   }
+}
+
+function workInOf(value: unknown, field: string): WorkIn {
+  if (value !== "branch" && value !== "worktree") {
+    throw new DevError(field, 'must be "branch" or "worktree"');
+  }
+  return value;
 }
 
 function autoMode(value: unknown, field: string): AutoMode {
@@ -1122,6 +1139,7 @@ export function runningTaskCap(settings: DevSettings, pool: string = DEFAULT_POO
  * cap added up, and the file's `concurrency` when written caps them together.
  */
 export function repositoryTaskCap(settings: DevSettings): number {
+  if (settings.workIn === "branch") return 1;
   const total = Object.keys(settings.workers.pools).reduce(
     (sum, name) => sum + poolCap(settings, name),
     0,
@@ -1316,6 +1334,35 @@ export function useNewStageNames(value: unknown): void {
 }
 
 /**
+ * A repository that works in a branch of the main clone runs one task at a
+ * time (ADR 0039 D2): refuse more, and say which setting to change.
+ */
+function refuseBranchWithMany(
+  concurrency: number,
+  concurrencyWritten: boolean,
+  workers: ParsedWorkers,
+): void {
+  if (concurrencyWritten && concurrency > 1) {
+    throw new DevError(
+      "workIn",
+      `"branch" runs one task at a time, but concurrency is ${String(concurrency)}: set concurrency to 1, or set workIn to "worktree"`,
+    );
+  }
+  for (const [pool, names] of Object.entries(workers.pools)) {
+    let total = 0;
+    for (const name of names) {
+      total += workers.workers.find((item) => item.name === name)?.count ?? 0;
+    }
+    if (total > 1) {
+      throw new DevError(
+        "workIn",
+        `"branch" runs one task at a time, but the workers of pool "${pool}" add up to ${String(total)}: lower their counts to 1 in all, or set workIn to "worktree"`,
+      );
+    }
+  }
+}
+
+/**
  * Validates one parsed dev.json value and fills the defaults.
  */
 export function validateDevSettings(
@@ -1336,6 +1383,13 @@ export function validateDevSettings(
       ? defaults.concurrency
       : positiveInteger(value.concurrency, "concurrency");
   const { worker, workers } = workerSettingsOf(value, concurrency, defaults);
+  const workIn =
+    value.workIn === undefined
+      ? DEFAULT_DEV_SETTINGS.workIn
+      : workInOf(value.workIn, "workIn");
+  if (workIn === "branch") {
+    refuseBranchWithMany(concurrency, value.concurrency !== undefined, workers);
+  }
   return {
     ...(value.name === undefined
       ? {}
@@ -1350,6 +1404,7 @@ export function validateDevSettings(
         : nonEmptyString(value.mainBranch, "mainBranch"),
     worktreeRoot: worktreeRoot.root,
     concurrency,
+    workIn,
     concurrencySet: value.concurrency !== undefined,
     worker,
     workers,
@@ -1647,15 +1702,33 @@ function readDefaults(repositoryPath: string): ReadSettings {
  * repository that never had valid settings gets the error.
  */
 export function readDevSettingsNow(repositoryPath: string): DevSettings {
+  return readDevSettingsText(repositoryPath).settings;
+}
+
+/**
+ * Like `readDevSettingsNow`, with the file's text as well (empty when the file
+ * does not exist). A step records the text when an attempt starts (ADR 0039 D6).
+ */
+export function readDevSettingsText(repositoryPath: string): {
+  readonly settings: DevSettings;
+  readonly text: string;
+} {
   try {
     const read = readSettingsNow(repositoryPath);
     keep(repositoryPath, read);
-    return read.settings;
+    return read;
   } catch (error) {
     const kept = recall(repositoryPath);
-    if (kept !== undefined) return kept.settings;
+    if (kept !== undefined) return kept;
     throw error;
   }
+}
+
+/** The settings a recorded text gives, read the way the file is read. */
+export function devSettingsFromText(repositoryPath: string, text: string): DevSettings {
+  return text === ""
+    ? readDefaults(repositoryPath).settings
+    : settingsFromText(repositoryPath, join(repositoryPath, DEV_SETTINGS_FILE), text).settings;
 }
 
 /** Reads a repository's settings; an action's schema uses the synchronous form. */

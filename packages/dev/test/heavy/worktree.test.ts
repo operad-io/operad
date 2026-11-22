@@ -10,7 +10,7 @@ import {
 } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
-import { PluginRegistry } from "@operad-io/engine";
+import { PluginRegistry, type StepContext } from "@operad-io/engine";
 import { createShellPlugin } from "@operad-io/shell";
 import {
   addPlan,
@@ -32,6 +32,7 @@ import {
   makeRemote,
   type RemoteSetup,
 } from "../git-support.ts";
+import { taskContext } from "../../src/steps.ts";
 import {
   cleanupTempRoots,
   guardLockHandles,
@@ -406,6 +407,45 @@ describe("dev/worktree", () => {
     const again = await runWorktree(state, "run-1");
     expect(again.result).toBe("ready");
     expect((await taskDataOf(state)).attempts).toBe(1);
+  });
+
+  test("dev.json is recorded when an attempt starts and a replay keeps it (T-0716)", async () => {
+    const state = await fixture();
+    const file = join(state.remote.repository, ".operad", "dev.json");
+    mkdirSync(join(state.remote.repository, ".operad"), { recursive: true });
+    const first = JSON.stringify({ maxAutoRework: 3 });
+    writeFileSync(file, first);
+    await runWorktree(state, "run-1");
+    expect((await taskDataOf(state)).attempt?.settingsText).toBe(first);
+
+    writeFileSync(file, JSON.stringify({ maxAutoRework: 4 }));
+    await runWorktree(state, "run-1");
+    expect((await taskDataOf(state)).attempt?.settingsText).toBe(first);
+
+    await runWorktree(state, "run-2");
+    expect((await taskDataOf(state)).attempt?.settingsText).toBe(
+      JSON.stringify({ maxAutoRework: 4 }),
+    );
+  });
+
+  test("a later step of the attempt reads the recorded dev.json, not the file (T-0716)", async () => {
+    const state = await fixture();
+    const file = join(state.remote.repository, ".operad", "dev.json");
+    mkdirSync(join(state.remote.repository, ".operad"), { recursive: true });
+    writeFileSync(file, JSON.stringify({ maxAutoRework: 3 }));
+    let captured: StepContext | undefined;
+    stepTestHooks.beforeGuardedWrite = (ctx) => {
+      captured = ctx;
+    };
+    try {
+      await runWorktree(state, "run-1");
+    } finally {
+      stepTestHooks.beforeGuardedWrite = undefined;
+    }
+    if (captured === undefined) throw new Error("no step context captured");
+    writeFileSync(file, JSON.stringify({ maxAutoRework: 9 }));
+    expect((await taskContext(captured)).settings.maxAutoRework).toBe(3);
+    expect((await taskContext(captured, true)).settings.maxAutoRework).toBe(9);
   });
 
   test("a conflicting merge leaves the worktree mid-merge", async () => {
