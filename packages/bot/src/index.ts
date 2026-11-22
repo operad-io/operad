@@ -57,6 +57,7 @@ import {
   scheduledPrompts,
   startScheduled,
 } from "./schedule.ts";
+import { followUpActions, followUpData, followUpMarkdown, followUps, runFollowUpCommand, runFollowUpsCommand } from "./follow-up.ts";
 import {
   TIDY_TYPE,
   startTidy,
@@ -164,6 +165,10 @@ export async function syncBots(
     // A client's scheduled prompts belong to the bot object, not to config.json.
     if (Array.isArray(current?.data.scheduled)) {
       data.scheduled = current.data.scheduled as JsonValue[];
+    }
+    // So are its follow-ups (ADR 0030 D16).
+    if (Array.isArray(current?.data.followUps)) {
+      data.followUps = current.data.followUps as JsonValue[];
     }
     if (current === undefined || JSON.stringify(current.data) !== JSON.stringify(data)) {
       await store.put(BOT_TYPE, name, data, "bot");
@@ -675,7 +680,7 @@ export async function runSettings(ctx: StepContext, params: unknown): Promise<Pl
         notes: memoryNotes(join(bot.cwd, "memory")) as unknown as JsonValue,
         // The memory plugin records what this reply wrote, once the round ends.
         ...(ctx.stepLoaded !== undefined && ctx.stepLoaded(MEMORY_COMMIT_STEP) ? { after: MEMORY_COMMIT_STEP } : {}),
-        context: scheduledChatContext(),
+        context: scheduledChatContext(stored.id),
       },
     };
   } catch (error) {
@@ -703,6 +708,7 @@ function botMarkdown(object: StoredObject): string {
     );
   }
   lines.push(scheduledMarkdown(scheduledPrompts(data), Date.now()).join("\n"));
+  lines.push(followUpMarkdown(followUps(data)).join("\n"));
   return lines.join("\n\n");
 }
 
@@ -714,6 +720,7 @@ export const botViews: ObjectViews = {
     state: object.data.removed === true ? "removed" : "open",
     data: {
       scheduled: scheduledData(scheduledPrompts(object.data), Date.now()) as unknown as JsonValue,
+      followUps: followUpData(followUps(object.data)) as unknown as JsonValue,
     },
   }),
   sections: () => [{ id: "bot", title: "Bot" }],
@@ -777,7 +784,7 @@ export function createBotPlugin() {
         mode: "auto" as const,
       },
     ],
-    actions: [chatAction, setupDevAction, setupAction, chatSetupAction, createAction, loginAction, ...proposalActions, ...scheduleActions, ...tidyActions],
+    actions: [chatAction, setupDevAction, setupAction, chatSetupAction, createAction, loginAction, ...proposalActions, ...scheduleActions, ...followUpActions, ...tidyActions],
     commands: [
       {
         name: "skill",
@@ -808,6 +815,16 @@ export function createBotPlugin() {
         name: "schedule",
         args: "<bot> add|edit|remove <name> [--words <text>] [--schedule <cron>] [--prompt <text>] [--model <model>] [--effort <effort>]",
         run: runScheduleCommand,
+      },
+      {
+        name: "follow-up",
+        args: "<chat> --at <time> --do <one sentence>",
+        run: runFollowUpCommand,
+      },
+      {
+        name: "follow-ups",
+        args: "<chat> [--cancel <id>]",
+        run: runFollowUpsCommand,
       },
     ],
     // A proposal waits for no run; each one is a pending item of its bot.
@@ -843,6 +860,7 @@ export * from "./proposals.ts";
 export * from "./setup-dev.ts";
 export * from "./setup.ts";
 export * from "./schedule.ts";
+export * from "./follow-up.ts";
 export * from "./tidy.ts";
 export * from "./mcp.ts";
 export * from "./mcp-proposals.ts";

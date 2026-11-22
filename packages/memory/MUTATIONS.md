@@ -180,3 +180,4 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0683-M1 | packages/memory/src/tidy.ts | `tidyCommitSummary` read only the tidy commit's own stat instead of the run from its baseline, so a chat's ordinary memory commit was missing | `a tidy run's summary > covers the chat's own memory commit before an empty tidy commit`, `Run and Skip > a result card reads the chat's own memory commit before an empty tidy commit` |
+| T-0726-M1 | packages/memory/skills/memory/SKILL.md | the progress-file sentence was reworded away | `the memory skill is shipped with the package` |

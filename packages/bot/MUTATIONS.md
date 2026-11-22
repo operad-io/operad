@@ -388,3 +388,10 @@ changes for bots, in the order they were recorded. The root
 | T-0725-M4 | packages/bot/src/schedule.ts | a carried result was not cut to its limit | `scheduled prompts > the next firing carries the last few results of the same entry, each cut short` |
 | T-0725-M5 | packages/bot/src/schedule.ts | an entry kept more than three results | `scheduled prompts > the next firing carries the last few results of the same entry, each cut short` |
 | T-0725-M6 | packages/bot/src/schedule.ts | a failure was judged by the quiet rule, so it could end quietly | `scheduled prompts > a failed reply notifies even when the entry could end quietly` |
+| T-0726-M1 | packages/bot/src/follow-up.ts | the per-chat limit allowed a sixth follow-up not yet due | `setting a follow-up > at most 5 not yet due per chat, at most 30 days ahead, and no time already past; each refusal says which` |
+| T-0726-M2 | packages/bot/src/follow-up.ts | the 30-day limit was 400 days | `setting a follow-up > at most 5 not yet due per chat, at most 30 days ahead, and no time already past; each refusal says which` |
+| T-0726-M3 | packages/bot/src/schedule.ts | a late follow-up added no line saying when it was set for and how late | `a due follow-up > one that is long overdue says when it was set for and how late it is` |
+| T-0726-M4 | packages/bot/src/schedule.ts | a due follow-up was not removed before its message, so every check sent it again | `a due follow-up > is sent into the same chat as a background message from the bot source, once, and not before it is due` |
+| T-0726-M5 | packages/bot/src/index.ts | syncing the bot's settings dropped the stored follow-ups | `setting a follow-up > the command takes effect at once, with no proposal, and the page and row show it` |
+| T-0726-M6 | packages/bot/src/follow-up.ts | the agent could cancel a follow-up of another chat | `listing and canceling > the agent lists and cancels its chat's follow-ups, a person cancels any with the action` |
+| T-0726-M7 | packages/bot/src/schedule.ts | a due follow-up of a closed chat was still sent | `a due follow-up > a closed chat drops it without a message` |
