@@ -104,6 +104,28 @@ describe("a pending form with an address, a code and a secret", () => {
     });
   });
 
+  test("a long choice list scrolls to the cursor instead of drawing past the box", () => {
+    const choices = Array.from({ length: 40 }, (_, at) => `provider-${at}`);
+    const item: PendingItem = {
+      runId: "run-1",
+      flow: "bot:login",
+      step: "login",
+      prompt: "Choose a provider to sign in with.",
+      choices,
+      waitId: "wait:1",
+      actions: [],
+    };
+    let state = reduce(initialState({ width: 120, height: 20, theme: "dark" }), {
+      type: "pending",
+      items: [item],
+    });
+    state = press(state, "a");
+    for (let at = 0; at < 35; at += 1) state = press(state, "down");
+    const drawn = overlayText(state);
+    expect(drawn).toContain("provider-35");
+    expect(drawn).not.toContain("provider-0\n");
+  });
+
   test("a form of two questions is left to a client that draws all of it", () => {
     const state = pending([
       { id: "a", text: "First?", freeText: true },
