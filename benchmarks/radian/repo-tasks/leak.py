@@ -520,7 +520,7 @@ def scan_run(run_dir, source=None, journals=None, home: str | None = None) -> di
     run_dir = Path(run_dir)
     run = json.loads((run_dir / "run.json").read_text(encoding="utf-8"))
     if source is None:
-        source = lib.source_repo()
+        source = lib.require_source_repo()
     if journals is None:
         journals = run_journals(run_dir, run)
     return scan(journals, source, run["base"], own_commits(run_dir), run.get("tree"), home)
@@ -547,7 +547,11 @@ def main(argv: list[str] | None = None) -> int:
     if not (run_dir / "run.json").is_file():
         print(f"leak.py: no run.json in {run_dir}", file=sys.stderr)
         return 2
-    result = scan_run(run_dir, args.source, args.journal)
+    try:
+        result = scan_run(run_dir, args.source, args.journal)
+    except lib.SetupError as error:
+        print(error, file=sys.stderr)
+        return 2
     write_leak(run_dir, result)
     strongest = max(result["evidence"], key=lambda item: item["level"], default=None)
     line = f"{describe(result['level'])}\tcalls={result['calls']}\toutside={len(result['outside'])}"

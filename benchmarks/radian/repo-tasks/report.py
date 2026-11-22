@@ -138,7 +138,7 @@ def excluded(run: dict) -> bool:
 def collect(runs_dir: Path, source=None) -> list[dict]:
     """Every run under `<runs>/<arm>/<task>/<k>/run.json`."""
     if source is None:
-        source = lib.source_repo()
+        source = lib.require_source_repo()
     runs = []
     for path in sorted(runs_dir.glob("*/*/*/run.json")):
         data = _json(path)
@@ -426,6 +426,9 @@ def _main(argv: list[str] | None = None) -> int:
         return subprocess.call([sys.executable, str(HERE / "tests" / "test_repo_tasks.py")])
     try:
         report = build(Path(args.runs), args.baseline, args.source)
+    except lib.SetupError as error:
+        print(error, file=sys.stderr)
+        return 2
     except ReportError as error:
         print(f"report.py: {error}", file=sys.stderr)
         return 2

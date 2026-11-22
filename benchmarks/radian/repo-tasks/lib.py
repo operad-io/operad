@@ -239,6 +239,14 @@ def source_repo() -> Path | None:
     return None
 
 
+def require_source_repo() -> Path:
+    """The radian checkout, or the one error line the commands print."""
+    source = source_repo()
+    if source is None:
+        raise SetupError("no radian checkout; set REPO_TASKS_SOURCE")
+    return source
+
+
 def runs_root() -> Path:
     """`REPO_TASKS_RUNS`, else `${XDG_CACHE_HOME:-$HOME/.cache}/radian-repo-tasks/runs`."""
     value = os.environ.get("REPO_TASKS_RUNS")
@@ -353,11 +361,7 @@ def _main(argv: list[str]) -> int:
             print("\n".join(arm_names()))
             return 0
         if command == "source" and len(argv) == 1:
-            source = source_repo()
-            if source is None:
-                print("no radian checkout; set REPO_TASKS_SOURCE", file=sys.stderr)
-                return 2
-            print(source)
+            print(require_source_repo())
             return 0
         if command == "runs-root" and len(argv) == 1:
             print(runs_root())

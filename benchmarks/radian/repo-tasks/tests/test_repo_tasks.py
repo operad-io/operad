@@ -332,6 +332,84 @@ class TaskSetTest(ScratchCase):
         self.assertEqual(result.stdout, "")
         self.assertEqual(result.stderr.strip(), "no radian checkout; set REPO_TASKS_SOURCE")
 
+    def test_report_and_leak_name_the_missing_radian_checkout(self):
+        env = self.env()
+        env.pop("REPO_TASKS_SOURCE", None)
+        line = "no radian checkout; set REPO_TASKS_SOURCE"
+        reported = subprocess.run(
+            [sys.executable, str(ROOT / "report.py"), "--runs", str(self.root / "runs")],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        self.assertEqual(reported.returncode, 2)
+        self.assertEqual(reported.stderr.strip(), line)
+        run = self.root / "run"
+        write(run / "run.json", json.dumps({"base": "0" * 40}))
+        leaked = subprocess.run(
+            [sys.executable, str(ROOT / "leak.py"), str(run)],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        self.assertEqual(leaked.returncode, 2)
+        self.assertEqual(leaked.stderr.strip(), line)
+
+
+class MissingCheckoutTest(ScratchCase):
+    def invoke(self, script: Path, *args, checkout_env=None):
+        env = self.env()
+        env.pop("REPO_TASKS_SOURCE", None)
+        env.pop("RADIAN_CHECKOUT", None)
+        if checkout_env is not None:
+            env.update(checkout_env)
+        return subprocess.run(
+            ["bash", str(script), *args],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+
+    def test_run_sh_names_the_missing_radian_checkout(self):
+        missing = self.root / "missing-radian"
+        line = "no radian checkout; set REPO_TASKS_SOURCE"
+        result = self.invoke(ROOT / "run.sh", "full", "T1", "1")
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(result.stderr.strip(), line)
+        result = self.invoke(
+            ROOT / "run.sh", "full", "T1", "1",
+            checkout_env={"REPO_TASKS_SOURCE": missing},
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(
+            result.stderr.strip(),
+            f"run.sh: no radian checkout at {missing}; set REPO_TASKS_SOURCE",
+        )
+
+    def test_the_two_RADIAN_CHECKOUT_scripts_name_the_missing_checkout(self):
+        missing = self.root / "missing-radian"
+        for script in (
+            BENCHMARKS / "edit-check-timing.sh",
+            BENCHMARKS / "terminal-bench" / "build-static.sh",
+        ):
+            with self.subTest(script=script.name):
+                name = script.name
+                result = self.invoke(script)
+                self.assertEqual(result.returncode, 1)
+                self.assertEqual(
+                    result.stderr.strip(),
+                    f"{name}: no radian checkout; set RADIAN_CHECKOUT",
+                )
+                result = self.invoke(script, checkout_env={"RADIAN_CHECKOUT": missing})
+                self.assertEqual(result.returncode, 1)
+                self.assertEqual(
+                    result.stderr.strip(),
+                    f"{name}: no radian checkout at {missing}; set RADIAN_CHECKOUT",
+                )
+
 
 class RunScriptTest(ScratchCase):
     def prepare(self, stub=STUB_RADIAN):
@@ -543,7 +621,7 @@ class RunScriptTest(ScratchCase):
         self.assertTrue(data["timed_out"])
         self.assertEqual(data["status"], "timeout")
         # The report keeps the run.
-        built = report.build(self.root / "runs")
+        built = report.build(self.root / "runs", source=repo)
         self.assertEqual(built["runs"][0]["result"], "timeout")
         self.assertIn("timeout=1", report.format_report(built))
 
@@ -736,7 +814,7 @@ class ReportTest(ScratchCase):
 
     def test_every_number_comes_from_journal_metrics(self):
         out = self.make_run("full", "T1", 1)
-        built = report.build(self.root / "runs")
+        built = report.build(self.root / "runs", source=self.root)
         expected = journal_metrics.build_report([out / "session" / "s.jsonl"])["totals"]
         row = built["runs"][0]["metrics"]
         for key in (
@@ -755,13 +833,13 @@ class ReportTest(ScratchCase):
     def test_a_session_directory_with_two_journals_is_summed(self):
         out = self.make_run("full", "T1", 1, input_tokens=100)
         write(out / "session" / "second.jsonl", session_journal(50))
-        built = report.build(self.root / "runs")
+        built = report.build(self.root / "runs", source=self.root)
         self.assertEqual(built["runs"][0]["metrics"]["input_total"], 150)
         self.assertEqual(built["totals"]["full"]["input_total"], 150)
 
     def test_a_timeout_run_is_kept_and_reported(self):
         self.make_run("full", "T1", 1, timed_out=True)
-        built = report.build(self.root / "runs")
+        built = report.build(self.root / "runs", source=self.root)
         self.assertEqual(built["runs"][0]["result"], "timeout")
         self.assertIn("TASK T1", report.format_report(built))
         self.assertIn("timeout=1", report.format_report(built))
@@ -769,14 +847,14 @@ class ReportTest(ScratchCase):
     def test_a_baseline_with_no_runs_is_a_clear_error(self):
         self.make_run("full", "T1", 1)
         with self.assertRaises(report.ReportError) as error:
-            report.build(self.root / "runs", "nope")
+            report.build(self.root / "runs", "nope", source=self.root)
         self.assertIn("unknown baseline arm `nope`", str(error.exception))
         self.assertIn("full", str(error.exception))
 
     def test_ratios_divide_each_arm_by_the_baseline(self):
         self.make_run("full", "T1", 1, input_tokens=200)
         self.make_run("pi-like", "T1", 1, input_tokens=100)
-        built = report.build(self.root / "runs", "full")
+        built = report.build(self.root / "runs", "full", source=self.root)
         self.assertEqual(built["ratios"]["T1"]["pi-like"]["input_total"], "0.500")
         self.assertEqual(built["ratios"]["TOTAL"]["pi-like"]["input_total"], "0.500")
         text = report.format_report(built)
@@ -785,7 +863,7 @@ class ReportTest(ScratchCase):
 
     def test_a_per_tool_call_column_joins_its_byte_column(self):
         self.make_run("full", "T1", 1, extra_journal=tool_journal())
-        built = report.build(self.root / "runs")
+        built = report.build(self.root / "runs", source=self.root)
         self.assertEqual(built["totals"]["full"]["tool_calls"], {"read": 1})
         self.assertEqual(built["totals"]["full"]["tool_bytes"], {"read": 6})
         columns = report._columns(built["tasks_totals"])
