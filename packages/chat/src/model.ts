@@ -12,6 +12,7 @@ import type {
   ObjectRef,
   ObjectStore,
   PluginFact,
+  RunControl,
   UsageTokens,
 } from "@operad-io/engine";
 import { isRecord, modelIds, safeFileName, storedType, stringList } from "@operad-io/engine";
@@ -1203,6 +1204,23 @@ export function writingReply(
   // for this run with messages still unanswered is the next round, not an end.
   if (!replied || unanswered(messages, facts).length > 0) return { runId, since };
   return undefined;
+}
+
+/**
+ * The reply being written now: as {@link writingReply}, unless the host says the
+ * latest run has ended. A host that cannot tell leaves the fact-only answer as
+ * it was.
+ */
+export async function writingReplyNow(
+  facts: readonly PluginFact[],
+  messages: readonly Message[],
+  entries: readonly Entry[],
+  runs?: Pick<RunControl, "active"> | undefined,
+): Promise<WritingReply | undefined> {
+  const writing = writingReply(facts, messages, entries);
+  if (writing === undefined || runs === undefined) return writing;
+  const active = await runs.active(writing.runId);
+  return active === false ? undefined : writing;
 }
 
 /** The time from a reply's start to its first output, when its timings hold both parts. */

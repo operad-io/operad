@@ -1246,6 +1246,7 @@ export class PluginRegistry {
       harnesses: this.loadedHarnesses(),
       models: this.loadedModels(),
       efforts: this.loadedEfforts(),
+      ...(this.onCancelRun === undefined ? {} : { runs: this.runControl() }),
     };
   }
 

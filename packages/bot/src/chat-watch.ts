@@ -4,8 +4,8 @@
  * scheduled prompts and the nightly tidy end a reply this way.
  */
 
-import { messageOf, type ObjectStore } from "@operad-io/engine";
-import { CHAT_TYPE, readChat, writingReply, type ChatRead } from "@operad-io/chat";
+import { messageOf, type ObjectStore, type RunControl } from "@operad-io/engine";
+import { CHAT_TYPE, readChat, writingReplyNow, type ChatRead } from "@operad-io/chat";
 
 /** One chat's watch: how to stop it. */
 interface ChatWatch {
@@ -20,6 +20,7 @@ export class ChatWatches {
   constructor(
     private readonly logger: { write(text: string): Promise<string> },
     private readonly store: ObjectStore,
+    private readonly runs?: RunControl | undefined,
   ) {}
 
   async log(message: string): Promise<void> {
@@ -56,15 +57,20 @@ export class ChatWatches {
   ): void {
     if (this.watches.has(key)) return;
     let running = false;
+    let again = false;
     let stopped = false;
     let unsubscribe: (() => void) | undefined;
     const check = async (): Promise<void> => {
-      if (running || stopped) return;
+      if (running) {
+        again = true;
+        return;
+      }
+      if (stopped) return;
       running = true;
       try {
         const read = readChat(this.store, chatId);
         // A reply that goes round again is not finished at its first message.
-        if (writingReply(read.facts, read.messages, read.entries) !== undefined) return;
+        if ((await writingReplyNow(read.facts, read.messages, read.entries, this.runs)) !== undefined) return;
         const value = await ready(read);
         if (value === undefined) return;
         stopped = true;
@@ -73,6 +79,10 @@ export class ChatWatches {
         await done(value);
       } finally {
         running = false;
+        if (again && !stopped) {
+          again = false;
+          this.track(check());
+        }
       }
     };
     const blocking: ChatWatch = {

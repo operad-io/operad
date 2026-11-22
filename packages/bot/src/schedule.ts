@@ -28,6 +28,7 @@ import {
   type JsonValue,
   type ObjectStore,
   type PluginBaseContext,
+  type RunControl,
   type SourceContext,
   type SourceHandle,
   type StoredObject,
@@ -662,6 +663,7 @@ interface ScheduledSource {
   readonly clock: () => number;
   readonly logger: PluginBaseContext["logger"];
   readonly client: SourceContext["client"];
+  readonly runs?: RunControl | undefined;
 }
 
 /** The bot's own source for scheduled prompts. */
@@ -680,7 +682,7 @@ export class BotScheduleSource {
   ) {
     this.ctx = ctx;
     this.notify = options.notify ?? ((notice) => notifyScheduledReply(ctx.home, notice));
-    this.chatWatches = new ChatWatches(ctx.logger, ctx.store);
+    this.chatWatches = new ChatWatches(ctx.logger, ctx.store, ctx.runs);
   }
 
   /** Waits for the checks that are running now; a test calls this after a reply. */

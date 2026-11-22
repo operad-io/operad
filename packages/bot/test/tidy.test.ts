@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { CHAT_TYPE, allMessages } from "@operad-io/chat";
+import { CHAT_TYPE, allMessages, chatRef, RUN_FACT } from "@operad-io/chat";
 import { createViews, type ClientApi, type JsonValue, type ObjectStore, type RunControl } from "@operad-io/engine";
 import { EMPTY_LINK_REPORT, TIDY_ORIGIN, createMemoryPlugin, ensureRepository, lastTidyCommit, memoryGit, tidyCommitForChat } from "@operad-io/memory";
 import {
@@ -540,7 +540,12 @@ describe("Run and Skip", () => {
   });
 
   test("a tidy run that fails leaves a failed card", async () => {
-    const s = await setup();
+    const s = await setup(undefined, undefined, undefined, {
+      runs: {
+        active: (runId) => (runId === "run-crashed" ? false : undefined),
+        cancel: () => false,
+      },
+    });
     try {
       note(s.memory, "tea.md", "likes tea\n");
       s.clock.value = Date.parse("2026-01-01T03:31:00Z");
@@ -549,6 +554,13 @@ describe("Run and Skip", () => {
       await s.source.poll();
       const id = (await chats(s.r))[0];
       if (id === undefined) throw new Error("no tidy chat");
+      // A latest run the host says ended, whose failure entry was never recorded.
+      await s.r.store.append({
+        type: RUN_FACT,
+        object: chatRef(id),
+        cause: "test",
+        data: { runId: "run-crashed" },
+      });
       await failChat(s.r, id);
       await s.source.settled();
 

@@ -1113,6 +1113,11 @@ export interface ActionEnv {
   readonly models?: Readonly<Record<string, HarnessModels>> | undefined;
   /** The efforts each loaded harness plugin declares, by plugin name. */
   readonly efforts?: Readonly<Record<string, HarnessEfforts>> | undefined;
+  /**
+   * Whether a run still exists and has not ended, so an offer can tell a live
+   * run from one the host says has ended; absent when the host cannot tell.
+   */
+  readonly runs?: RunControl | undefined;
 }
 
 /** What a harness knows a model can do; only the ones it truly knows are listed. */

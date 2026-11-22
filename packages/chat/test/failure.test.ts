@@ -6,11 +6,13 @@ import {
   allEntries,
   allMessages,
   answeredOfFact,
+  CHAT_TYPE,
   chatFacts,
   chatViews,
   createChat,
   REPLY_FAILURE_MAX,
   unanswered,
+  writingReply,
   type Entry,
 } from "../src/index.ts";
 import { cleanupRoots, reply, rig } from "./support.ts";
@@ -34,6 +36,18 @@ async function transcript(r: Rig, chat: string): Promise<string> {
 
 function failuresOf(r: Rig, chat: string): readonly Entry[] {
   return allEntries(r.store, chat).filter((entry) => entry.kind === "failure");
+}
+
+/** Runs one reply step as `runId`, including a rerun of a run that already failed. */
+async function roundAs(r: Rig, chat: string, runId: string) {
+  const object = await r.store.get(CHAT_TYPE, chat);
+  if (object === undefined) throw new Error("no chat");
+  return r.registry.runStep("chat/reply", {}, {
+    runId,
+    object: { type: CHAT_TYPE, id: chat, data: object.data },
+    params: null,
+    signal: new AbortController().signal,
+  });
 }
 
 const modelError = { result: "failed" as const, data: { reason: "model_error", message: "429: usage limit reached" } };
@@ -112,7 +126,7 @@ describe("a failed reply", () => {
     expect(await transcript(r, chat)).toContain("The reply failed: 429: usage limit reached");
   });
 
-  test("does not gain a second line when the step runs again", async () => {
+  test("does not gain a second line when the same run runs again", async () => {
     let attempt = 0;
     const r = await rig(() => {
       attempt += 1;
@@ -122,13 +136,43 @@ describe("a failed reply", () => {
     });
     const chat = await r.chat();
     await r.say(chat, "hello");
+    expect((await roundAs(r, chat, "run-same")).result).toBe("failed");
+    expect((await roundAs(r, chat, "run-same")).result).toBe("failed");
+
+    expect(failuresOf(r, chat)).toHaveLength(1);
+    expect(failuresOf(r, chat)[0]).toMatchObject({
+      runId: "run-same",
+      text: "The reply failed: 429: usage limit reached",
+    });
+    const markdown = await transcript(r, chat);
+    expect(markdown.split("The reply failed: 429: usage limit reached")).toHaveLength(2);
+  });
+
+  test("a retried run that fails again records its own failure and is not called writing", async () => {
+    let attempt = 0;
+    const r = await rig(() => {
+      attempt += 1;
+      return attempt === 1
+        ? modelError
+        : { result: "failed" as const, data: { reason: "exit", message: "the harness exited 2" } };
+    });
+    const chat = await r.chat();
+    await r.say(chat, "hello");
     expect((await r.round(chat)).result).toBe("failed");
     expect((await r.round(chat)).result).toBe("failed");
 
-    expect(failuresOf(r, chat)).toHaveLength(1);
-    expect(failuresOf(r, chat)[0]?.text).toBe("The reply failed: 429: usage limit reached");
+    const failures = failuresOf(r, chat);
+    expect(failures.map((entry) => entry.runId)).toEqual(["run-1", "run-2"]);
+    expect(failures.map((entry) => entry.text)).toEqual([
+      "The reply failed: 429: usage limit reached",
+      "The reply failed: the agent exited 2",
+    ]);
+    expect(
+      await writingReply(chatFacts(r.store, chat), allMessages(r.store, chat), allEntries(r.store, chat)),
+    ).toBeUndefined();
     const markdown = await transcript(r, chat);
-    expect(markdown.split("The reply failed: 429: usage limit reached")).toHaveLength(2);
+    expect(markdown).toContain("The reply failed: 429: usage limit reached");
+    expect(markdown).toContain("The reply failed: the agent exited 2");
   });
 
   test("covers every way the reply fails, not only a model error", async () => {
@@ -196,7 +240,7 @@ describe("a failed reply", () => {
     expect((await r.round(chat)).result).toBe("failed");
     expect((await r.round(chat)).result).toBe("failed");
     expect(chatFacts(r.store, chat).flatMap(answeredOfFact)).toEqual([only]);
-    expect(failuresOf(r, chat)).toHaveLength(1);
+    expect(failuresOf(r, chat)).toHaveLength(2);
 
     await r.say(chat, "hi");
     expect((await r.round(chat)).result).toBe("done");
