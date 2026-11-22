@@ -864,16 +864,20 @@ function commitWip(worktree: string): boolean {
   return git(worktree, ["commit", "-q", "--no-verify", "-m", WIP_MESSAGE]).ok;
 }
 
-/** Commits everything left in the worktree (honouring .gitignore) with the given message. */
-function commitLeft(worktree: string, message: string): boolean {
-  if (conflictedFiles(worktree).length > 0) return false;
+/**
+ * Commits everything left in the worktree (honouring .gitignore) with the given
+ * message. Returns what went wrong when it could not, so the step can report it.
+ */
+function commitLeft(worktree: string, message: string): string | undefined {
+  const conflicted = conflictedFiles(worktree);
+  if (conflicted.length > 0) return `unresolved conflicts in ${conflicted.join(", ")}`;
   const added = git(worktree, ["add", "-A", "--", "."]);
-  if (!added.ok) return false;
-  const committed = git(worktree, ["commit", "-q", "--no-verify", "-m", message]).ok;
+  if (!added.ok) return `git add failed: ${(added.err || added.out).trim()}`;
+  const committed = git(worktree, ["commit", "-q", "--no-verify", "-m", message]);
   // The note is the worker's report, not part of the change: take it out of the
   // branch again, leaving the file for the step to read.
   untrackNote(worktree);
-  return committed;
+  return committed.ok ? undefined : `git commit failed: ${(committed.err || committed.out).trim()}`;
 }
 
 /**
@@ -2030,6 +2034,7 @@ export async function runWork(ctx: StepContext, stepParams?: unknown): Promise<P
     dirty = changedFiles(path);
   }
 
+  let commitError: string | undefined;
   // A worker whose sandbox cannot write .git leaves its work uncommitted; the
   // stage asks dev to commit it, before verify so the check sees the commit.
   if (
@@ -2038,7 +2043,7 @@ export async function runWork(ctx: StepContext, stepParams?: unknown): Promise<P
     outcome?.result === "done" &&
     dirty.length > 0
   ) {
-    commitLeft(path, `${context.taskId}: ${task.title}`);
+    commitError = commitLeft(path, `${context.taskId}: ${task.title}`);
     dirty = changedFiles(path);
   }
 
@@ -2133,7 +2138,9 @@ export async function runWork(ctx: StepContext, stepParams?: unknown): Promise<P
     return finish("failed", {
       reason: "changes",
       files: dirty,
-      message: `uncommitted changes: ${dirty.join(", ")}`,
+      message:
+        `uncommitted changes: ${dirty.join(", ")}` +
+        (commitError === undefined ? "" : `; the commit the stage asked for failed: ${commitError}`),
     });
   }
 

@@ -1592,3 +1592,4 @@ the row fields.
 | T-0716-M6 | packages/dev/src/steps.ts | the worktree step did not record the text on the attempt | `dev/worktree > dev.json is recorded when an attempt starts and a replay keeps it (T-0716)` |
 | T-0716-M7 | packages/dev/src/steps.ts | a replay of the worktree step read the file instead of keeping the attempt's record | `dev/worktree > dev.json is recorded when an attempt starts and a replay keeps it (T-0716)` |
 | T-0724-M1 | packages/dev/src/steps.ts | the work step read `flowCommit` from the run's params instead of the stage's own params | `dev/work > commit true from the step's own params commits every attempt, including a later one (T-0724)` |
+| T-0737-M1 | packages/dev/src/steps.ts | the failed commit's reason was dropped from the "uncommitted changes" message | `dev/work > a commit the stage asked for that fails is reported with git's reason (T-0737)` |

@@ -1073,6 +1073,14 @@ describe("dev/work", () => {
     const state = await fixture("dirty-each");
     const path = join(state.remote.repository, ".operad-worktrees", state.taskId);
     for (const [run, file] of [["work-run", "each-0.txt"], ["rework-run", "each-1.txt"]] as const) {
+      // The second pass is a rework: the worktree step revisits the branch, merging main, as a reject does.
+      if (run === "rework-run") {
+        await advanceMain(state.remote, "main.txt", "moved\n", "main moves");
+        expect((await state.registry.runStep("dev/worktree", {}, {
+          runId: "rework-visit",
+          object: { type: "task", id: state.taskKey, data: {} },
+        })).result).toBe("ready");
+      }
       // A flow gives the stage's params as the step's own; the run's params carry none of them.
       const result = await state.registry.runStep("dev/work", { flowCommit: true }, {
         runId: run,
@@ -1083,6 +1091,18 @@ describe("dev/work", () => {
       expect(gitOrThrow(path, ["status", "--porcelain"]).trim()).toBe("");
       expect(gitOrThrow(path, ["show", "--stat", "--format=", "HEAD"])).toContain(file);
     }
+  });
+
+  test("a commit the stage asked for that fails is reported with git's reason (T-0737)", async () => {
+    const state = await fixture("dirty");
+    const path = join(state.remote.repository, ".operad-worktrees", state.taskId);
+    const gitDir = gitOrThrow(path, ["rev-parse", "--absolute-git-dir"]).trim();
+    writeFileSync(join(gitDir, "index.lock"), "");
+    const result = await runWork(state, "work-run", () => undefined, { flowCommit: true });
+    expect(result.result).toBe("failed");
+    const message = String(result.data?.message);
+    expect(message).toContain("uncommitted changes");
+    expect(message).toContain("git add failed");
   });
 
   test("a work stage with commit true and nothing left is not an error (T-0380)", async () => {
