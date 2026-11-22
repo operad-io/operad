@@ -101,6 +101,24 @@ const STDERR_LIMIT = 64 * 1024;
  */
 export const MAX_LINE_CHARS = 8 * 1024 * 1024;
 
+/**
+ * The most one over-long line may run to while it is skipped. A line past
+ * `MAX_LINE_CHARS` is dropped, not held, and the run goes on with the next
+ * line (a harness that carries an image on one line must not fail the step); a
+ * line that never ends is a malformed stream and past this the group is stopped.
+ */
+export const MAX_SKIPPED_LINE_CHARS = 256 * 1024 * 1024;
+
+// The log line that stands for a stdout line dropped for its length, so a
+// reader of the log sees that output was left out and how much.
+export function skippedLineRecord(chars: number): string {
+  return JSON.stringify({
+    type: "line_skipped",
+    chars,
+    message: `a line of ${chars} characters was dropped unread (the limit is ${MAX_LINE_CHARS})`,
+  });
+}
+
 /** Finds an executable on PATH, or returns undefined. */
 export async function findCommand(command: string): Promise<string | undefined> {
   if (command.includes("/")) {
@@ -173,6 +191,11 @@ export interface AgentRunOptions {
     line: string,
     reply: (text: string) => void,
   ) => void | Promise<void>;
+  /**
+   * Called with the length of a stdout line past `MAX_LINE_CHARS`, which was
+   * dropped unread. The run goes on with the next line.
+   */
+  readonly onSkipped?: ((chars: number) => void) | undefined;
   /**
    * Called once the command has started and before any of its output is read:
    * a harness with no session handshake writes its ready line here.
@@ -356,44 +379,75 @@ function stoppedOutcome(stoppingFor: StopKind | undefined): Partial<AgentRunOutc
 /**
  * Splits a stream into complete lines, holding the unterminated tail up to
  * `MAX_LINE_CHARS`. Each line is handed over before the next is read: a busy
- * handler holds the stream, so the pipe cannot fill memory. The tail is dropped
- * and `onOverflow` is called when a line grows past the limit, so no input can
- * exhaust memory.
+ * handler holds the stream, so the pipe cannot fill memory. A line that grows
+ * past the limit is dropped as it arrives and `onSkipped` gets its length once
+ * it ends; the next line is read as usual. A line that passes
+ * `MAX_SKIPPED_LINE_CHARS` without ending calls `onOverflow`.
  */
 class Lines {
   private buffer = "";
+  /** The length of the over-long line being dropped; undefined when none is. */
+  private skipped: number | undefined = undefined;
   private readonly onLine: (line: string) => void | Promise<void>;
+  private readonly onSkipped: (chars: number) => void;
   private readonly onOverflow: () => void;
 
   constructor(
     onLine: (line: string) => void | Promise<void>,
+    onSkipped: (chars: number) => void,
     onOverflow: () => void,
   ) {
     this.onLine = onLine;
+    this.onSkipped = onSkipped;
     this.onOverflow = onOverflow;
   }
 
   async push(text: string): Promise<void> {
-    if (text.length === 0) return;
-    this.buffer += text;
-    let newline = this.buffer.indexOf("\n");
-    while (newline >= 0) {
-      const line = this.buffer.slice(0, newline);
-      this.buffer = this.buffer.slice(newline + 1);
-      await this.onLine(line);
-      newline = this.buffer.indexOf("\n");
-    }
-    if (this.buffer.length > MAX_LINE_CHARS) {
-      this.buffer = "";
-      this.onOverflow();
+    let rest = text;
+    while (rest.length > 0) {
+      if (this.skipped !== undefined) {
+        const end = rest.indexOf("\n");
+        if (end < 0) {
+          this.skipped += rest.length;
+          if (this.skipped > MAX_SKIPPED_LINE_CHARS) {
+            this.skipped = undefined;
+            this.onOverflow();
+          }
+          return;
+        }
+        this.onSkipped(this.skipped + end);
+        this.skipped = undefined;
+        rest = rest.slice(end + 1);
+        continue;
+      }
+      this.buffer += rest;
+      rest = "";
+      let newline = this.buffer.indexOf("\n");
+      while (newline >= 0) {
+        const line = this.buffer.slice(0, newline);
+        this.buffer = this.buffer.slice(newline + 1);
+        if (line.length > MAX_LINE_CHARS) this.onSkipped(line.length);
+        else await this.onLine(line);
+        newline = this.buffer.indexOf("\n");
+      }
+      if (this.buffer.length > MAX_LINE_CHARS) {
+        this.skipped = this.buffer.length;
+        this.buffer = "";
+      }
     }
   }
 
   async end(): Promise<void> {
+    if (this.skipped !== undefined) {
+      const chars = this.skipped;
+      this.skipped = undefined;
+      this.onSkipped(chars);
+    }
     if (this.buffer.length === 0) return;
     const rest = this.buffer;
     this.buffer = "";
-    await this.onLine(rest);
+    if (rest.length > MAX_LINE_CHARS) this.onSkipped(rest.length);
+    else await this.onLine(rest);
   }
 }
 
@@ -479,6 +533,7 @@ export async function runAgent(
   const clock = options.clock ?? systemClock;
   let watchedLine: (line: string) => void = () => {};
   let onLineOverflow: () => void = () => {};
+  let skippedLine: (chars: number) => void = () => {};
   const reply = (text: string): boolean => {
     const pipe = child.stdin;
     if (options.interactive !== true || pipe === null || pipe.destroyed) return false;
@@ -490,6 +545,7 @@ export async function runAgent(
       watchedLine(line);
       return options.onLine(line, reply);
     },
+    (chars) => skippedLine(chars),
     () => onLineOverflow(),
   );
   const stderrTail = new Tail(undefined);
@@ -598,6 +654,11 @@ export async function runAgent(
   });
   watchedLine = (line) => watch.line(line);
   onLineOverflow = () => watch.interrupt("line");
+  skippedLine = (chars) => {
+    // A dropped line is still output: the stall timer restarts.
+    watch.line("");
+    options.onSkipped?.(chars);
+  };
   watch.start();
 
   const startup = await Promise.race<Startup>([
@@ -821,6 +882,10 @@ async function runKeptSocket(
         resultResolve();
       }
     },
+    (chars) => {
+      watch.line("");
+      options.onSkipped?.(chars);
+    },
     () => watch.interrupt("line"),
   );
   socket.once("close", () => {
@@ -963,6 +1028,10 @@ async function runKeptFresh(
           resultName = name;
           resultResolve();
         }
+      },
+      (chars) => {
+        watch.line("");
+        options.onSkipped?.(chars);
       },
       () => watch.interrupt("line"),
     );

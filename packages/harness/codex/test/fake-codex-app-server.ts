@@ -17,6 +17,10 @@
  * asked); `FAKE_CODEX_MODELS_MARKER` and `FAKE_CODEX_MODELS_RELEASE` (the
  * model-list probe's pid, and the file a non-empty answer waits for).
  *
+ * `FAKE_CODEX_BIG_IMAGE` (`1`: `thread/resume` carries the thread's earlier
+ * turns, one with a 9 MiB base64 image, unless the client asks to leave them
+ * out, and the turn's image generation carries the same image in its result).
+ *
  * Modes: `done`, `images` (two image generations), `permission`,
  * `permission-gate` (waits for the release before it asks), `permission-network`,
  * `permission-edit`, `permission-legacy`,
@@ -145,6 +149,8 @@ function fileItem(path: string, status: string): Record<string, unknown> {
   };
 }
 
+const BIG_IMAGE = process.env.FAKE_CODEX_BIG_IMAGE === "1" ? "iVBORw0KGgo".repeat(Math.ceil((9 * 1024 * 1024) / 11)) : "";
+
 function imageItem(id: string, status: string, savedPath?: string): Record<string, unknown> {
   return {
     type: "imageGeneration",
@@ -155,6 +161,7 @@ function imageItem(id: string, status: string, savedPath?: string): Record<strin
     generationId: null,
     fileId: id,
     ...(savedPath === undefined ? {} : { savedPath }),
+    ...(savedPath !== undefined && BIG_IMAGE.length > 0 ? { result: BIG_IMAGE } : {}),
   };
 }
 
@@ -519,7 +526,17 @@ function handle(message: Record<string, unknown>): void {
       notify("item/started", { threadId: String(params.threadId), turnId: "old-turn", startedAtMs: Date.now(), item: imageItem("old1", "inProgress") });
       notify("item/completed", { threadId: String(params.threadId), turnId: "old-turn", completedAtMs: Date.now(), item: imageItem("old1", "completed", "/tmp/old.png") });
       notify("item/agentMessage/delta", { threadId: String(params.threadId), turnId: "old-turn", itemId: "old-m", delta: "an earlier message" });
-      respond(id, { thread: { id: String(params.threadId), sessionId: String(params.threadId), cwd: params.cwd ?? "/w" }, model: params.model ?? "fake-model" });
+      respond(id, {
+        thread: {
+          id: String(params.threadId),
+          sessionId: String(params.threadId),
+          cwd: params.cwd ?? "/w",
+          ...(process.env.FAKE_CODEX_BIG_IMAGE === "1" && params.excludeTurns !== true
+            ? { turns: [{ id: "old-turn", items: [{ type: "imageView", id: "v1", path: "/tmp/old.png", data: BIG_IMAGE }] }] }
+            : {}),
+        },
+        model: params.model ?? "fake-model",
+      });
       return;
     case "turn/start": {
       if (mode === "bad-effort" && typeof params.effort === "string") {
