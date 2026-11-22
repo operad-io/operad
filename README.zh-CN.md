@@ -64,7 +64,7 @@ operad pending              # 有什么在等你
 operad dev:merge T-0001-greet --yes
 ```
 
-不确定 `.operad/dev.json` 怎么写？把[这段 prompt](docs/user/setup-prompt.md)（英文）贴给你的 coding agent，它会替你写好并检查。agent 会用你写的语言回复。
+不确定 `.operad/dev.json` 怎么写？让你的 bot 去[配置开发流程](docs/user/setup-prompt.md)（Setup Dev）：它读仓库、提出这个文件，你批准之前什么都不会写。agent 会用你写的语言回复。
 
 ## 工作方式
 

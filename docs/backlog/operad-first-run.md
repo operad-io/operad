@@ -96,7 +96,7 @@ owner 2026-11-21：用户也可能只装桌面应用就开始用。下面的现�
 2. **`operad` 不带参数进默认 bot 的对话**（已完成 T-0676）。没有 home 就建，没有 serve 就起，打开 tui 并落在默认 bot 的新 chat 上。
 3. **没有 agent 时由 operad 装 pi**（已完成 T-0677）。`@operad-io/harness-pi` 依赖 `@earendil-works/pi-coding-agent`（钉版本），按 ADR 0012 D4 在开启时装进 home；`PATH` 上有 `pi` 就用用户的；有 `claude` 或 `radian` 也不装；`operad init` 在没有 agent 时不再失败。改 ADR 0022 D6、0023 D9。安装进度能从 serve 读到，断网时说明原因并可重试。
 4. **第一次登录是一个待处理项**（已完成 T-0678）。问题的形状里加地址、设备码、密文输入（改 ADR 0008、0014），TUI 先画出来；用 `ModelRuntime.login`；登录后选出默认模型。先做一个探针核实 Bun 子进程里的 OAuth 回调。
-5. **`Setup Dev`（配置开发流程）**。入口把准备好的 prompt 交给 bot；bot 读仓库时走一次性的 ask；结果是一个待处理项（开启 dev、`dev.json`、注册仓库），批准后落盘。`docs/user/setup-prompt.md` 改成这个流程的来源。
+5. **`Setup Dev`（配置开发流程）**（已完成 T-0679）。入口把准备好的 prompt 交给 bot；bot 读仓库时走一次性的 ask；结果是一个待处理项（开启 dev、`dev.json`、注册仓库），批准后落盘。`docs/user/setup-prompt.md` 改成这个流程的来源。
 6. **operad-desktop**（在那个仓库开任务，依赖 1 到 5）：引导的 agent 一步不再拦人并显示安装进度；引导里完成登录（地址、设备码、密文输入）；引导结束进默认 bot 的对话；dev 关着时 Dev 分组收成 `Setup Dev` 入口；引导完成的标记跟着 home；自带的 operad 和 `PATH` 上的比较版本，用新的并提醒。
 7. **iOS**：登录的待处理项的显示（地址、设备码、密文输入）。
 

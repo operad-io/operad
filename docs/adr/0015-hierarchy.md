@@ -22,7 +22,7 @@ Between the row and the sections, an object page lists its next layer: the objec
 
 ### D5: The hierarchy of `dev` is repository → plan → task
 
-`dev` has a `repo` object type (the repositories registered by `operad dev repo add`), a plan's `parent` is its repository, and a task's `parent` is its plan.
+`dev` has a `repo` object type (the repositories registered by `operad dev repo add` or by an approved Setup Dev, ADR 0030 D15), a plan's `parent` is its repository, and a task's `parent` is its plan.
 
 ### D6: A client still does not know plugins
 

@@ -6,7 +6,7 @@ description: Start operad: create the home, start serve, open the client.
 
 `operad init` creates the home and checks the plugins. A new home starts as the personal assistant, with `chat`, `bot`, `memory` and the agents it finds; `shell`, `dev` and `pool` are off, and [the Quickstart](../../README.md#quickstart) turns them on for a repository. `operad serve` runs the loop for the home; `operad tui` opens the [terminal client](tui.md) and starts `serve` when none answers. `operad` with no command does the first steps at once: it creates the home when it has none, starts `serve`, and opens the default bot's new chat. `operad pending` lists what waits for a person and `operad list <type>` lists objects.
 
-To have your coding agent write `.operad/dev.json` for a repository, use [the setup prompt](setup-prompt.md). The settings are in [config.json](config.md), the commands in [the command line](cli.md), and what to do when something does not work in [troubleshooting](troubleshooting.md).
+To have your bot propose `.operad/dev.json` for a repository and turn `dev` on, use [Setup Dev](setup-prompt.md). The settings are in [config.json](config.md), the commands in [the command line](cli.md), and what to do when something does not work in [troubleshooting](troubleshooting.md).
 
 ## A repository that is not JavaScript
 
