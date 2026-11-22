@@ -86,7 +86,10 @@ export function waitingReason(
         return { reason: "run stopped during work", step: "work" };
       }
       if (conflicted) return { reason: "conflict" };
-      if (edge.result === "nothing") return { reason: "work did nothing" };
+      if (edge.result === "nothing") {
+        // The only note a "nothing" visit carries is the main-checkout line.
+        return { reason: "work did nothing", detail: nonEmpty(attempt?.workNote) };
+      }
       if (attempt?.workTimedOut === true) {
         return { reason: "work timed out", detail: nonEmpty(attempt.workNote) };
       }
@@ -178,7 +181,9 @@ export function waitingPrompt(
     return "The checks and the review passed; the task is ready to merge.";
   }
   if (found.reason === "work did nothing") {
-    return "The worker changed nothing.";
+    return found.detail === undefined
+      ? "The worker changed nothing."
+      : `The worker changed nothing in its worktree, but it ${found.detail}.`;
   }
   if (found.reason === "work timed out") {
     return `The worker timed out.${found.detail === undefined ? "" : ` ${found.detail}.`}`;

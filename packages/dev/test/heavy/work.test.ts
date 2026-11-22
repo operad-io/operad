@@ -204,6 +204,42 @@ function fakeHarness(record: string) {
               "changed outside the worktree\n",
             );
           }
+          if (mode === "main-commit") {
+            // A commit on the main clone's branch, leaving its tree clean.
+            const main = join(input.cwd, "..", "..");
+            writeFileSync(join(main, "main-committed.txt"), "committed outside\n");
+            gitOrThrow(main, ["add", "main-committed.txt"]);
+            gitOrThrow(main, [
+              "-c",
+              "user.name=worker",
+              "-c",
+              "user.email=worker@example.com",
+              "commit",
+              "-qm",
+              "outside the worktree",
+            ]);
+          }
+          if (mode === "main-pushed" || mode === "main-fast-forward") {
+            const main = join(input.cwd, "..", "..");
+            const who = ["-c", "user.name=person", "-c", "user.email=person@example.com"];
+            if (mode === "main-pushed") {
+              // A person commits in the main clone and pushes it.
+              writeFileSync(join(main, "pushed.txt"), "pushed\n");
+              gitOrThrow(main, ["add", "pushed.txt"]);
+              gitOrThrow(main, [...who, "commit", "-qm", "pushed outside"]);
+              gitOrThrow(main, ["push", "-q", "origin", "HEAD:refs/heads/main"]);
+            } else {
+              // Another task merged on the remote; dev fast-forwards the clone.
+              const url = gitOrThrow(main, ["remote", "get-url", "origin"]).trim();
+              const other = join(mkdtempSync(join(tmpdir(), "t0739-")), "other");
+              gitOrThrow(main, ["clone", "-q", url, other]);
+              writeFileSync(join(other, "merged.txt"), "merged\n");
+              gitOrThrow(other, ["add", "merged.txt"]);
+              gitOrThrow(other, [...who, "commit", "-qm", "another task"]);
+              gitOrThrow(other, ["push", "-q", "origin", "HEAD:refs/heads/main"]);
+              gitOrThrow(main, ["pull", "-q", "--ff-only", "origin", "main"]);
+            }
+          }
           if (mode === "main-change-again") {
             appendFileSync(
               join(input.cwd, "..", "..", "before.txt"),
@@ -931,6 +967,40 @@ describe("dev/work", () => {
     expect(readFileSync(join(main, "main-only.txt"), "utf8")).toBe(
       "changed outside the worktree\n",
     );
+  });
+
+  test("a commit on the main clone's branch with a clean tree is reported (T-0739)", async () => {
+    const state = await fixture("main-commit");
+    const main = state.remote.repository;
+    const before = gitOrThrow(main, ["rev-parse", "HEAD"]).trim();
+
+    const result = await runWork(state);
+    expect(result.result).toBe("nothing");
+    const after = gitOrThrow(main, ["rev-parse", "HEAD"]).trim();
+    expect(after).not.toBe(before);
+    const line = `changed the main checkout: ${gitOrThrow(main, ["symbolic-ref", "--short", "HEAD"]).trim()} (moved ${before.slice(0, 7)}..${after.slice(0, 7)})`;
+    const task = await taskDataOf(state);
+    expect(task.brief).toContain(line);
+    expect(task.attempt?.finalMessage).toBe(line);
+    expect(String(result.data?.message)).toContain(line);
+  });
+
+  test("a commit pushed to the remote's main during work is not a finding (T-0739)", async () => {
+    const state = await fixture("main-pushed");
+    const result = await runWork(state);
+    expect(result.result).toBe("nothing");
+    const task = await taskDataOf(state);
+    expect(String(task.attempt?.finalMessage ?? "")).not.toContain("changed the main checkout");
+    expect(String(result.data?.message ?? "")).not.toContain("changed the main checkout");
+  });
+
+  test("dev's own fast-forward of the main clone during work is not a finding (T-0739)", async () => {
+    const state = await fixture("main-fast-forward");
+    const result = await runWork(state);
+    expect(result.result).toBe("nothing");
+    const task = await taskDataOf(state);
+    expect(String(task.attempt?.finalMessage ?? "")).not.toContain("changed the main checkout");
+    expect(String(result.data?.message ?? "")).not.toContain("changed the main checkout");
   });
 
   test("a further edit to a file the main checkout already had changed is reported", async () => {

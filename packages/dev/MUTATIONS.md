@@ -1630,3 +1630,12 @@ the row fields.
 | T-0721-M2 | packages/dev/src/steps.ts | a task started while a chat reply that can write in the clone was being written | `a task does not start while a chat reply that can write is live > a edits reply being written refuses the start and names the chat` |
 | T-0721-M3 | packages/dev/src/clone-chat.ts | a read-only (plan) reply counted as a writer and stopped a task | `a task does not start while a chat reply that can write is live > a read-only reply (plan) does not stop the start` |
 | T-0721-M4 | packages/dev/src/steps.ts | a start refused before the clone moved was recorded as holding the clone | `a task does not start while a chat reply that can write is live > a refused start holds nothing: the chat stays writable and the next start is checked again` |
+
+## T-0739 — a commit on the main clone during an attempt
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0739-M1 | packages/dev/src/steps.ts | a moved HEAD of the main clone was not compared, only its status | `dev/work > a commit on the main clone's branch with a clean tree is reported (T-0739)` |
+| T-0739-M2 | packages/dev/src/gate.ts | a moved-HEAD entry was reported as a changed file | `dev/review and the main checkout > a moved main clone is a major finding about the commit, not a file (T-0739)` |
+| T-0739-M3 | packages/dev/src/announce.ts | the "work did nothing" reason dropped the main-checkout note | `a visit that changed nothing carries the main-checkout note (T-0739)` |
+| T-0739-M4 | packages/dev/src/steps.ts | a moved HEAD was reported for every gained commit, not only those not on the remote's main | `dev/work > a commit pushed to the remote's main during work is not a finding (T-0739)` and `dev/work > dev's own fast-forward of the main clone during work is not a finding (T-0739)` |
