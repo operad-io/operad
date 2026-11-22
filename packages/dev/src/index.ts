@@ -18,6 +18,7 @@ import { runRetry, runRetryDue } from "./retry.ts";
 import { runCleanup, runIntegrate } from "./integrate.ts";
 import { runScheduler, taskWaitAnsweredAutomatically } from "./schedule.ts";
 import { devStanding } from "./standing.ts";
+import { registerRequested } from "./register-requests.ts";
 import { migrateLegacyRepositories, resolveDevKey } from "./service.ts";
 import { runReverify, runWork, runWorktree } from "./steps.ts";
 import { STEP_TIMEOUT_SECS } from "./timeouts.ts";
@@ -212,7 +213,10 @@ export function createDevPlugin() {
     ],
     actions: [...actions, accessAction, ...chatActions, ...creationActions],
     commands,
-    onTick: runScheduler,
+    onTick: async (ctx) => {
+      await registerRequested(ctx);
+      await runScheduler(ctx);
+    },
     standing: devStanding,
     views: {
       repo: repoViews,
@@ -245,6 +249,7 @@ export * from "./flow-compiler.ts";
 export * from "./project-flows.ts";
 export * from "./schedule.ts";
 export * from "./service.ts";
+export * from "./register-requests.ts";
 export * from "./places.ts";
 export * from "./project-settings.ts";
 export * from "./retry.ts";

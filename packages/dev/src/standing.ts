@@ -8,6 +8,7 @@
 import type { StandingContext, StandingItem } from "@operad-io/engine";
 import { idOfKey, listAll, planData, storeKey, taskData } from "./model.ts";
 import { listRepositories } from "./service.ts";
+import { registerStanding } from "./register-requests.ts";
 import { hasValidSettings, readDevSettings, settingsProblem } from "./settings.ts";
 import { checkHostWarning } from "./check-host.ts";
 
@@ -98,5 +99,6 @@ export async function devStanding(ctx: StandingContext): Promise<readonly Standi
     });
   }
   for (const plugin of missingPlugins(ctx.loaded)) items.push(pluginItem(plugin));
+  items.push(...registerStanding(ctx.home));
   return items;
 }

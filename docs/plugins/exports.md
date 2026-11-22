@@ -148,6 +148,7 @@ Types (`StepContext`, `ActionTypeDefinition`, `ObjectRow`, ...) are exported too
 | `defaultOperadHome` | `$OPERAD_HOME`, or `~/.operad` | [Settings](settings.md#the-entry-in-configjson) |
 | `configPath` | `<home>/config.json` | [Settings](settings.md#the-entry-in-configjson) |
 | `readConfig` | `readConfig(home)`: the home's `config.json`, checked and with defaults filled; a file a plugin cannot use should be read as its own section, never this way | [Settings](settings.md#the-entry-in-configjson) |
+| `setPluginEnabled` | `setPluginEnabled(home, name, enabled, offer?)`: turns one plugin on or off in `config.json`, adding it from `offer.optional` when the file does not list it; it takes effect at the next load. A proposal a person approves uses it (Setup Dev turns `dev` on this way) | [Settings](settings.md#the-entry-in-configjson) |
 | `isRangeSyntax` | Whether a version range is one of `^`, `~`, `>=` or exact | [`requires`](define-plugin.md#requires) |
 | `satisfiesRange` | Whether a version satisfies a range | [`requires`](define-plugin.md#requires) |
 | `readVersionText` | `readVersionText(text)`: a full `x.y.z` version with its prerelease parts, or `undefined`; a leading `v` and a build suffix are allowed | [`requires`](define-plugin.md#requires) |

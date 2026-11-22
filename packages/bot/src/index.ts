@@ -12,7 +12,7 @@
 import { messageOf } from "@operad-io/engine";
 import pkg from "../package.json" with { type: "json" };
 import { mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { basename, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CHAT_TYPE, MESSAGE_EVENT, agentConditionals, type AgentChoices, type ScheduledChat, chatData, createChat, sendMessage, startingEffort, startingModel, titleFromMessage } from "@operad-io/chat";
 import { definePlugin, isRecord, modelIds, type ActionArgSchema, type ActionArgsSchema, type ActionTypeDefinition, type HarnessModelInfo, type HarnessModels, type JsonValue, type ObjectRow, type ObjectStore, type ObjectViews, type PluginStepResult, type SectionContent, type StepContext, type StoredObject } from "@operad-io/engine";
@@ -36,6 +36,7 @@ import {
 import { MEMORY_COMMIT_STEP, memoryNotes } from "@operad-io/memory";
 import { createBot, knownMcpServers, knownSkills } from "./create.ts";
 import { LOGIN_EVENT, LOGIN_SOURCE, loginAction, loginFlow, loginItems, runLogin as runLoginStep } from "./login.ts";
+import { setupDevPrompt } from "./setup-dev.ts";
 import { ingestReports, runMcpCommand } from "./mcp-proposals.ts";
 import {
   PROPOSAL_TYPE,
@@ -44,6 +45,7 @@ import {
   proposalViews,
   runSettingCommand,
   runScheduleCommand,
+  runSetupDev,
   runSkillCommand,
 } from "./proposals.ts";
 import {
@@ -538,6 +540,52 @@ const chatAction: ActionTypeDefinition = {
   },
 };
 
+// Setup Dev (ADR 0030 D15): opens a chat on the bot whose first message is the
+// prepared prompt for one repository. The chat is an ordinary one; what the
+// agent proposes is a pending item.
+const setupDevAction: ActionTypeDefinition = {
+  name: "setup-dev",
+  on: BOT_TYPE,
+  creates: "chat",
+  args: {
+    type: "object",
+    description: "Opens a chat that has the bot's agent set up dev for a repository and propose the result.",
+    properties: {
+      repo: {
+        type: "string",
+        minLength: 1,
+        description: "The directory of the repository: the root of a git work tree that has a remote.",
+      },
+    },
+    required: ["repo"],
+  },
+  when: (state, env) => state.removed !== true && typeof state.problem !== "string" && (env.harnesses ?? []).length > 0,
+  async why(object, env) {
+    if (object.data.removed === true) return `bot ${object.id} is no longer in the settings`;
+    if (typeof object.data.problem === "string") return `bot ${object.id}: ${object.data.problem}`;
+    if ((env.harnesses ?? []).length === 0) return `bot ${object.id}: no agent is loaded; load one to chat with it`;
+    return undefined;
+  },
+  async run(ctx, args) {
+    const repo = (args as { readonly repo: string }).repo.trim();
+    if (repo.length === 0) throw new BotError("setup-dev needs the repository's directory");
+    const where = isAbsolute(repo) ? repo : resolve(ctx.cwd, repo);
+    const id = await openChat({
+      store: ctx.store,
+      home: ctx.home,
+      settings: ctx.settings,
+      harnesses: ctx.harnesses,
+      models: ctx.models,
+      efforts: ctx.efforts,
+      bot: ctx.object.id,
+      title: `Setup Dev (${basename(where)})`,
+      cause: "action:bot/setup-dev",
+    });
+    const sent = await sendMessage(ctx, id, setupDevPrompt(ctx.object.id, where));
+    return { text: `opened chat ${id}; ${sent}`, opens: `chat:${id}` };
+  },
+};
+
 /**
  * Step `bot/settings`: the working directory, access profile and skills of a
  * chat's bot as they are now. The `chat` reply calls it every time, so
@@ -685,7 +733,7 @@ export function createBotPlugin() {
         mode: "auto" as const,
       },
     ],
-    actions: [chatAction, createAction, loginAction, ...proposalActions, ...scheduleActions, ...tidyActions],
+    actions: [chatAction, setupDevAction, createAction, loginAction, ...proposalActions, ...scheduleActions, ...tidyActions],
     commands: [
       {
         name: "skill",
@@ -701,6 +749,11 @@ export function createBotPlugin() {
         name: "setting",
         args: "<bot>",
         run: runSettingCommand,
+      },
+      {
+        name: "setup-dev",
+        args: "<bot> <repository directory> [< dev.json]",
+        run: runSetupDev,
       },
       {
         name: "schedule",
@@ -738,6 +791,7 @@ export * from "./bot.ts";
 export * from "./create.ts";
 export * from "./login.ts";
 export * from "./proposals.ts";
+export * from "./setup-dev.ts";
 export * from "./schedule.ts";
 export * from "./tidy.ts";
 export * from "./mcp.ts";

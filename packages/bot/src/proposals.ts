@@ -43,6 +43,7 @@ import {
   type BotSettings,
   type McpServerSettings,
 } from "./bot.ts";
+import { applyDev, devChangeOf, devReview, runSetupDevCommand, type DevChange } from "./setup-dev.ts";
 import { commandLine, compareTools, differenceLines, secretName, storedTools } from "./mcp.ts";
 import {
   applyScheduleChange,
@@ -87,7 +88,7 @@ export interface SettingsChange {
 export interface ProposalData {
   readonly [key: string]: unknown;
   readonly bot: string;
-  readonly kind: "skill" | "settings" | "mcp" | "schedule";
+  readonly kind: "skill" | "settings" | "mcp" | "schedule" | "dev";
   readonly title: string;
   readonly state: ProposalState;
   readonly createdAt: number;
@@ -99,6 +100,7 @@ export interface ProposalData {
   readonly settings?: SettingsChange | undefined;
   readonly mcp?: McpChange | undefined;
   readonly schedule?: ScheduleChange | undefined;
+  readonly dev?: DevChange | undefined;
 }
 
 /** A local MCP server a proposal registers, upgrades or lets through after a change of its tools. */
@@ -119,7 +121,8 @@ function dataOf(object: StoredObject): ProposalData {
     (data.kind !== "skill" &&
       data.kind !== "settings" &&
       data.kind !== "mcp" &&
-      data.kind !== "schedule") ||
+      data.kind !== "schedule" &&
+      data.kind !== "dev") ||
     typeof data.title !== "string" ||
     (data.state !== "pending" && data.state !== "applied" && data.state !== "rejected") ||
     typeof data.createdAt !== "number"
@@ -539,6 +542,10 @@ function scheduleReview(bot: string, change: ScheduleChange): string {
 /** The review a person reads for a proposal. */
 export function proposalReview(object: StoredObject): string {
   const data = dataOf(object);
+  if (data.kind === "dev") {
+    const change = devChangeOf(data.dev);
+    return change === undefined ? "No repository is recorded for this proposal." : devReview(data.bot, change);
+  }
   if (data.kind === "schedule") {
     const change = scheduleChangeOf(data.schedule);
     return change === undefined
@@ -916,7 +923,11 @@ export async function applyProposal(
     return `proposal ${id} is already ${data.state}; nothing to apply`;
   }
   const skill = skillData(data.skill);
-  if (data.kind === "schedule") {
+  if (data.kind === "dev") {
+    const change = devChangeOf(data.dev);
+    if (change === undefined) throw new BotError(`proposal ${id} has no repository to set up`);
+    await applyDev(home, change);
+  } else if (data.kind === "schedule") {
     const change = scheduleChangeOf(data.schedule);
     if (change === undefined) throw new BotError(`proposal ${id} has no scheduled prompt to apply`);
     await applyScheduleChange(store, data.bot, change);
@@ -1042,6 +1053,23 @@ export async function runSettingCommand(ctx: CommandContext, argv: readonly stri
     throw new BotError(`the settings change is not JSON: ${messageOf(error)}`);
   }
   return proposeSettings(ctx.store, ctx.home, bot, patch);
+}
+
+/** The `bot setup-dev` command: the steps for the agent, or with `dev.json` on stdin the proposal (ADR 0030 D15). */
+export async function runSetupDev(ctx: CommandContext, argv: readonly string[]): Promise<string> {
+  return runSetupDevCommand(ctx, argv, async (bot, change) => {
+    const data: ProposalData = {
+      bot,
+      kind: "dev",
+      title: `Setup Dev for ${basename(change.repo)}`,
+      state: "pending",
+      createdAt: Date.now(),
+      dev: change,
+    };
+    const id = `p-${randomUUID()}`;
+    await ctx.store.put(PROPOSAL_TYPE, id, data as unknown as Record<string, JsonValue>, "command:bot/setup-dev");
+    return `proposed Setup Dev for ${change.repo}; review it in pending`;
+  });
 }
 
 /** The usage line shared by the parser's refusals. */

@@ -9,7 +9,7 @@ operad is an open orchestration layer for coding agents. It runs an agent (radia
 ## Pages
 
 - [quickstart](quickstart.md): create the home, start `serve`, open the client.
-- [setup-prompt](setup-prompt.md): a prompt that has your agent write `.operad/dev.json`.
+- [setup-prompt](setup-prompt.md): Setup Dev, which has your bot propose `.operad/dev.json` and turn `dev` on.
 - [config](config.md): the home and every section of `config.json`.
 - [dev](dev.md): `dev.json` and the `dev` plugin's commands, the reviewer, workers and pools.
 - [access](access.md): access profiles, `access-user.json` and always allow.

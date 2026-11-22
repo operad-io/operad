@@ -9,6 +9,11 @@ the same version.
 
 ### Added
 
+- Setup Dev (配置开发流程): a bot reads a repository and proposes the
+  `.operad/dev.json` that turns `dev`, `shell` and `pool` on for it. Start it
+  with the `bot:setup-dev` action or by asking in a bot chat; approving the
+  pending item turns the plugins on, writes the file and registers the
+  repository.
 - The `dev.testHost` and `dev.testSlots` home settings: a gate, integration or
   rerun command gets them as `OPERAD_CHECK_HOST` and `OPERAD_CHECK_SLOTS`, so a
   restart of `serve` no longer loses the test host. An explicit variable in
