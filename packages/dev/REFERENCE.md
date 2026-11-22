@@ -655,6 +655,9 @@ The diff is built with rename detection, and `maxDiffBytes` and
   A renamed file with edits carries only the edits.
 - A deleted file is one line, `<path>: deleted, <n> lines`, with the command that
   reads it (`git show <base>:<path>`); its removed lines are not in the prompt.
+  The prompt says deleted files are listed by name and can be read at the base
+  commit, and a rework round lists them too because the increment holds no
+  deletion hunk.
 
 ## Settings
 
