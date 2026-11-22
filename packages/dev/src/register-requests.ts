@@ -28,7 +28,14 @@ function readRequests(home: string): Request[] {
   const directory = registerRequestsDirectory(home);
   if (!existsSync(directory)) return [];
   const found: Request[] = [];
-  for (const name of readdirSync(directory).sort()) {
+  let names: string[];
+  try {
+    names = readdirSync(directory).sort();
+  } catch {
+    // An unreadable directory holds no requests; it must not stop the tick.
+    return found;
+  }
+  for (const name of names) {
     if (!name.endsWith(".json")) continue;
     const file = join(directory, name);
     try {

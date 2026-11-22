@@ -667,7 +667,9 @@ interface PluginInstallOptions {
 async function installPluginPackage(options: PluginInstallOptions): Promise<void> {
   const name = options.entry.name;
   if (name === undefined || !options.entry.enabled) return;
-  if (options.entry.module !== defaultPluginModule(name)) return;
+  // A config entry written without `module` is normalised to the plugin's
+  // name, which is as much the default as the package name.
+  if (options.entry.module !== defaultPluginModule(name) && options.entry.module !== name) return;
   const report =
     options.onProgress === undefined
       ? undefined

@@ -57,4 +57,14 @@ describe("a request to register a repository (Setup Dev)", () => {
     expect(readdirSync(registerRequestsDirectory(r.home))).toEqual([]);
     expect(await listRepositories(r.store)).toHaveLength(1);
   });
+
+  test("an unreadable request directory is empty and does not throw", async () => {
+    const r = await rig();
+    const file = join(r.root, "other-home", "dev-register");
+    mkdirSync(join(r.root, "other-home"), { recursive: true });
+    writeFileSync(file, "not a directory");
+    const ctx = { ...r.ctx, home: join(r.root, "other-home") };
+    await registerRequested(ctx);
+    expect(registerStanding(ctx.home)).toEqual([]);
+  });
 });
