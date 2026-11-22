@@ -2,7 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { CHAT_TYPE, allMessages } from "@operad-io/chat";
-import { createViews, type ClientApi, type JsonValue, type ObjectStore } from "@operad-io/engine";
+import { createViews, type ClientApi, type JsonValue, type ObjectStore, type RunControl } from "@operad-io/engine";
 import { EMPTY_LINK_REPORT, TIDY_ORIGIN, createMemoryPlugin, ensureRepository, lastTidyCommit, memoryGit, tidyCommitForChat } from "@operad-io/memory";
 import {
   BotTidySource,
@@ -27,6 +27,7 @@ interface SetupOptions {
   readonly client?: ClientApi | undefined;
   readonly work?: ((store: ObjectStore, bot: string, cwd: string) => Promise<TidyWork>) | undefined;
   readonly prepare?: ((memory: string) => void) | undefined;
+  readonly runs?: RunControl | undefined;
 }
 
 async function setup(
@@ -53,6 +54,7 @@ async function setup(
       harnesses: ["pi"],
       harnessCapabilities: capabilities,
       ...(options.work === undefined ? {} : { work: options.work }),
+      ...(options.runs === undefined ? {} : { runs: options.runs }),
     },
     {
       notify: async (notice) => {
@@ -434,6 +436,42 @@ describe("Run and Skip", () => {
         },
       });
       await s.source.poll();
+      expect(await chats(s.r)).toHaveLength(2);
+    } finally {
+      s.views.close();
+    }
+  });
+
+  test("a Run waits while the latest reply run is active, and starts once it has ended", async () => {
+    let activeRun: string | undefined = "run-live";
+    const s = await setup(undefined, undefined, undefined, {
+      runs: {
+        cancel: () => false,
+        active: (runId) => runId === activeRun,
+      },
+    });
+    try {
+      note(s.memory, "tea.md", "likes tea\n");
+      s.clock.value = Date.parse("2026-01-01T03:31:00Z");
+      await s.source.poll();
+      const stale = await s.r.open("default");
+      await s.r.say(stale, "the reply that ended");
+      await s.r.store.append({
+        type: "chat.run",
+        object: { type: CHAT_TYPE, id: stale },
+        cause: "test",
+        data: { runId: "run-live" },
+      });
+
+      await s.r.act(TIDY_TYPE, "default", "bot/run");
+      await s.source.poll();
+      expect((await tidy(s.r))?.state).toBe("requested");
+      expect(await chats(s.r)).toEqual([stale]);
+
+      activeRun = undefined;
+      await s.source.poll();
+      expect((await tidy(s.r))?.state).toBe("running");
+      expect(await chats(s.r)).toContain(stale);
       expect(await chats(s.r)).toHaveLength(2);
     } finally {
       s.views.close();

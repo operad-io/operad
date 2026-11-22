@@ -9,6 +9,7 @@ import {
   MemoryPluginStore,
   OBJECT_CHANGE_FACT,
   PluginRegistry,
+  type SourceContext,
 } from "../../src/index.ts";
 import notes from "../fixtures/plugins/notes.ts";
 import { cleanupTempRoots, def, tempRoot } from "./support.ts";
@@ -52,6 +53,37 @@ describe("plugin registry", () => {
     expect(started).toEqual(["both"]);
     expect(handles.map((handle) => handle.plugin)).toEqual(["both"]);
     for (const handle of handles) await handle.handle.stop();
+  });
+
+  test("a source receives the run control, so it can tell a live run from one that ended", async () => {
+    let control: SourceContext["runs"];
+    const looker = definePlugin({
+      name: "looker",
+      kind: "domain",
+      version: "0.0.1",
+      start(ctx) {
+        control = ctx.runs;
+        return { stop: () => undefined };
+      },
+    });
+    const registry = new PluginRegistry([looker], {
+      onLog: () => undefined,
+      onCancelRun: () => false,
+      onRunActive: (runId) => runId === "live",
+    });
+    const handles = await registry.startSources({
+      rules: [],
+      clock: () => 0,
+      client: {} as never,
+      emit: async () => undefined,
+    });
+    try {
+      expect(control).toBeDefined();
+      expect(await control?.active("live")).toBe(true);
+      expect(await control?.active("ended")).toBe(false);
+    } finally {
+      for (const handle of handles) await handle.handle.stop();
+    }
   });
 
   test("loads a plugin from the operad home config", async () => {

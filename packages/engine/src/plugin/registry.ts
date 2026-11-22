@@ -1847,6 +1847,7 @@ export class PluginRegistry {
         secrets: this.secretsFor(plugin.name),
         emit,
         client: options.client,
+        ...(this.onCancelRun === undefined ? {} : { runs: this.runControl() }),
       };
       try {
         const handle = await plugin.start(ctx);
