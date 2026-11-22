@@ -431,14 +431,14 @@ function costPart(outcome: TidyOutcome): string {
     : `cost ${costText(outcome.costMicros, undefined)}`;
 }
 
-/** The line a pending card and an automatic notice show. */
+/** The one line a tidy sends through the notify command. */
 export function tidyOutcomeLine(bot: string, outcome: TidyOutcome): string {
   const changed = outcome.changed
     ? outcome.summary
-    : outcome.summary === "No file statistics."
+    : outcome.summary === "No file statistics." || /^no memory change\.?$/i.test(outcome.summary)
       ? "no memory change"
       : outcome.summary;
-  const voided = outcome.voided ? "; the rewrite dropped too many entries, so only additions were kept" : "";
+  const voided = outcome.voided ? "; only additions were kept" : "";
   return `${bot}: ${changed}; ${costPart(outcome)}${voided}`;
 }
 
@@ -457,7 +457,8 @@ export function tidyCardPrompt(data: TidyData): string {
   }
   const outcome = data.outcome ?? data.lastOutcome;
   if (data.state === "failed") {
-    return `Memory tidy for bot ${data.bot} failed.${outcome === undefined ? "" : ` ${tidyOutcomeLine(data.bot, outcome)}`}`;
+    const reason = outcome === undefined ? "no reason was recorded" : outcome.summary;
+    return `Memory tidy for bot ${data.bot} failed: ${reason.replace(/\.$/, "")}.`;
   }
   if (outcome === undefined) return `Memory tidy for bot ${data.bot}: nothing to show.`;
   return `Memory tidy for bot ${data.bot} finished. ${tidyOutcomeLine(data.bot, outcome)}.${outcome.reply.length === 0 ? "" : ` Reply: ${outcome.reply}`}`;
@@ -484,8 +485,7 @@ export const tidyActions: readonly ActionTypeDefinition[] = [
   {
     name: "skip",
     on: TIDY_TYPE,
-    when: (state) =>
-      state.state === "pending" || state.state === "result" || state.state === "failed",
+    when: (state) => state.state === "pending" || state.state === "failed",
     async run(ctx) {
       const data = tidyDataOf(ctx.object.data);
       if (data === undefined) throw new BotError("this tidy card has no usable state");
@@ -514,7 +514,7 @@ export async function tidyItems(
   for (const object of await listAll(store, TIDY_TYPE)) {
     const data = tidyDataOf(object.data);
     if (data === undefined) continue;
-    if (data.state !== "pending" && data.state !== "result" && data.state !== "failed") continue;
+    if (data.state !== "pending" && data.state !== "failed") continue;
     const bot = await store.get(BOT_TYPE, data.bot);
     if (bot === undefined || bot.data.removed === true) continue;
     items.push({
@@ -536,7 +536,7 @@ function tidyRow(object: StoredObject): ObjectRow {
     title: `Memory tidy for ${data.bot}`,
     state: data.state,
     parent: `${BOT_TYPE}:${data.bot}`,
-    ...(data.state === "pending" || data.state === "result" || data.state === "failed"
+    ...(data.state === "pending" || data.state === "failed"
       ? { waiting: true as const }
       : {}),
     ...(data.counts.notes === 0 && data.counts.chats === 0
@@ -926,6 +926,24 @@ export class BotTidySource {
       }
       return;
     }
+    if (failureText !== undefined) {
+      await this.put(
+        bot,
+        {
+          ...(data ?? {
+            bot,
+            state: "failed",
+            plannedAt: now,
+            counts: { notes: 0, chats: 0, indexOver: false },
+          }),
+          state: "failed",
+          chatId: undefined,
+          outcome,
+        },
+        "source:bot/tidy",
+      );
+      return;
+    }
     await this.put(
       bot,
       {
@@ -935,12 +953,23 @@ export class BotTidySource {
           plannedAt: now,
           counts: { notes: 0, chats: 0, indexOver: false },
         }),
-        state: outcome.changed || failureText === undefined ? "result" : "failed",
+        state: "result",
         chatId: undefined,
         outcome,
       },
       "source:bot/tidy",
     );
+    try {
+      await this.notify({
+        chatId,
+        title: typeof stored.data.title === "string" ? stored.data.title : "Memory tidy",
+        summary: tidyOutcomeLine(bot, { ...outcome, summary: outcomeSummary(outcome) }),
+      });
+    } catch (error) {
+      await this.chatWatches.log(
+        `memory tidy of bot ${bot}: notify: ${messageOf(error)}`,
+      );
+    }
   }
 
   private async resume(): Promise<void> {
