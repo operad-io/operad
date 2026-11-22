@@ -1,6 +1,6 @@
 # Where dev depends on a task having its own worktree
 
-Date 2026-11-22. Research only (T-0713); no code changed. Read first: `docs/backlog/operad-dev-steps.md` (owner decisions 1 to 4, open questions 2 to 7), ADR 0020 D3, D4, D9 and ADR 0028 D1 to D3. Line numbers are of `main` at a6cbcab0.
+Date 2026-11-22. Research only (T-0713); no code changed. Read first: `docs/backlog/operad-dev-steps.md` (the owner's decisions and its open questions), ADR 0020 D3, D4, D9 and ADR 0028 D1 to D3. Line numbers are of `main` at a6cbcab0.
 
 "Branch mode" below is `workIn: "branch"`: the task's branch `work/<id>` is checked out in the main clone, concurrency 1. "Worktree mode" is today.
 
@@ -133,7 +133,7 @@ Docs-only ADR tasks come first and each is merged with the code task named after
 3. **Branch mode: the worktree step.** `prepareBranch` (clean-clone check, switch to `work/<id>`, merge main into a reused branch, record the starting branch), replay in the three clone states, `runWork` start check, work `cwd`, the progress note excluded, `flowCommit` as the default for branch mode. L. (Depends on 1.)
 4. **Branch mode: switch main-checkout check off.** Skip the snapshot, skip the prompt section when the attempt is in place. S. (With 3.)
 5. **Branch mode: integrate and main clone.** Switch back to the starting branch before `updateMainClone`; the "clone moved by the person" notes; cleanup hook order; tests with a killed integrate. M to L. (Depends on 3.)
-6. **Branch mode: slots, reject, cancel, pause.** Waiting and paused tasks hold the clone; reject and cancel switch back when clean; the settings-save guard and the `dev.json` read at attempt start (section 11). M. (Depends on 3 and decisions 2 to 4.)
+6. **Branch mode: slots, reject, cancel, pause.** Waiting and paused tasks hold the clone; reject and cancel switch back when clean; the settings-save guard and the `dev.json` read at attempt start (section 11). M. (Depends on 3 and on the owner's answers about a dirty start, the kept branch and the chat during a task.)
 7. **No-remote repositories** (independent of `workIn`; the backlog's `operad-desktop.md` item 4 decided it). Local main as the base, no fetch, no push, no remote branch hook, `check.ts` accepts it, `remote` absent value in the schema. L (about 25 sites, and the integrate replay at `integrate.ts:455-500` that decides by the remote). Can run in parallel with 3 and 5 but touches the same lines; do it first or last, not in between.
 8. **Chat and task exclusion in the main clone.** `chat_settings` reads "a task holds the clone" and makes the reply read-only; worktree step refuses while a live write reply exists. M. (Depends on 2 and 3; question 4.)
 9. **Docs and Setup Dev.** `docs/user/dev.md`, `docs/user/chats-and-bots.md`, the first-run guide proposals per step. M; outside the survey.
@@ -147,7 +147,7 @@ Delete `docs/backlog/operad-dev-steps.md` only when 2 to 8 have landed.
 4. **Chat while a task holds the clone.** Suggest: the reply is read-only (a plan-like reply) while a task is `running`, `review`, waiting or paused with the branch checked out, and says why. `dev/chat_settings` already runs per reply and can compute this (`chat.ts:486-540`). Queueing a reply is not offered by the chat package; adding it is larger. A reply that was already writing when the task starts is the one gap.
 5. **Review in the in-place default flow.** The code does not make review cheaper in place: it reviews a commit in the gate worktree, as before, and costs only the reviewer's model. The question is therefore the owner's product choice, not an engineering one. What the code does constrain: if the owner wants "no gate worktree at all" (checks in the clone), verify, review and integrate all change (sections 3, 4, 6), which is the largest option. Suggest keeping the gate worktree in both modes. Then "no review in step 2" is just a flow without a `review` stage; the hard rule ("at least one test, review or human stage", ADR 0020 D4) is still satisfied by `test`.
 6. **Start of a new repository.** Not a code question; two constraints: `Setup Dev` (`check.ts:30-62`) requires a reachable remote and a main branch on it, so step 1 for a repository with no remote needs task 7 first. The scheduler and `dev:chat` need nothing else.
-7. **Does the in-place chat open a branch.** Suggest no. `work/chat-<id>` is tied to the worktree (`chatWorktreeName`, `chat.ts:267`) and nothing else needs it; a chat is the person's own working session in their folder. The clean-tree rule of question 2 is what protects a task that starts after it. A task still opens its own branch (decision 3).
+7. **Does the in-place chat open a branch.** Suggest no. `work/chat-<id>` is tied to the worktree (`chatWorktreeName`, `chat.ts:267`) and nothing else needs it; a chat is the person's own working session in their folder. The clean-tree rule of question 2 is what protects a task that starts after it. A task still opens its own branch, as the owner decided.
 
 Not in the backlog's list but found:
 
