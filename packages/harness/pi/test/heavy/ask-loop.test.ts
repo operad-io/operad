@@ -111,7 +111,12 @@ async function setup() {
   setEnv("FAKE_PI_MODE", "ask");
   setEnv("FAKE_PI_RECORD", record);
   setEnv("FAKE_PI_MARKER", marker);
-  const plugin = createPiHarnessPlugin({ clock: manualClock(), command: process.execPath, args: [FAKE] });
+  const plugin = createPiHarnessPlugin({
+    clock: manualClock(),
+    command: process.execPath,
+    args: [FAKE],
+    piSettingsPath: join(root, "pi-settings.json"),
+  });
   const registry = new PluginRegistry([plugin], {
     home: root,
     cwd: root,

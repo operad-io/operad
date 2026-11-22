@@ -270,3 +270,9 @@ the row fields.
 |---|---|---|---|
 | T-0620-M1 | packages/harness/pi/src/index.ts | `piModels` computed windows and info without the kept list it had just read, so each read the file again | `the models pi declares > one models read reads each pi file once and leaves an unchanged registry unread` |
 | T-0620-M2 | packages/harness/pi/src/model-list.ts | the registry parse was reused even after the file's mtime or size changed | `the models pi declares > a changed registry file is read again and its new description is seen` |
+
+## T-0674 — the user's pi default model
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0674-M1 | packages/harness/pi/src/index.ts | the user's pi default model was not resolved and sent, so a run with no `model` setting gave the child no model | `pi/agent > pi's default model from its settings reaches the worker when neither the step nor the settings names one` |
