@@ -47,6 +47,7 @@ import {
   WAITING_EVENT,
   type WorkerDefinition,
 } from "@operad-io/pool";
+import { writingChat } from "./clone-chat.ts";
 import { now as devNow } from "./clock.ts";
 import { modelErrorIn, modelWaitsForPerson } from "./model-error.ts";
 import {
@@ -1184,11 +1185,21 @@ export async function runWorktree(
   const inPlace = settings.workIn === "branch";
   const mergeMain = beforeAttemptOf(ctx.params) !== "none";
   const where = workPath(context.repository, settings, context.workName);
+  // A task that holds the clone already was refused any chat writer when it
+  // started; a new start waits for a reply that can write there to end.
+  const writer =
+    inPlace && startBranchOf(context.task.attempt) === undefined
+      ? await writingChat(ctx.store, context.repository.name, ctx.runs)
+      : undefined;
   const prepared = await withPrepare(
     ctx,
     settings,
     where,
-    inPlace
+    writer !== undefined
+      ? failed(
+          `chat ${writer} is writing a reply in the main clone and can change files there; wait for it to end or stop it, then run the task again`,
+        )
+      : inPlace
       ? await prepareBranch(context.repository, settings, context.workName, {
           recorded: replay ? startBranchOf(attempt) : undefined,
           carried: startBranchOf(context.task.attempt),
@@ -1229,7 +1240,8 @@ export async function runWorktree(
     settingsText,
     worktree: where,
     branch: workBranch(context.workName),
-    ...(inPlace
+    // A start that was refused before the clone moved holds nothing.
+    ...(inPlace && (startBranch !== undefined || prepared.kind !== "failed")
       ? { inPlace: true, ...(startBranch === undefined ? {} : { startBranch }) }
       : {}),
     base,
