@@ -857,13 +857,32 @@ function systemDoctorEnv(home: string, io: CliIo): DoctorEnv & { close(): Promis
       const { registry } = await context();
       const checks = await registry.checks();
       const agents: DoctorAgent[] = [];
-      for (const name of registry.loadedHarnesses()) {
+      const loaded = registry.loadedHarnesses();
+      const written = registry.settingsFor("bot").bots;
+      const bots: Record<string, unknown> = isRecord(written) ? { ...written } : {};
+      bots.default ??= {};
+      // The bot whose agent operad can log in: `default` first, then the others.
+      const loginBotOf = (name: string): string | undefined => {
+        if (!registry.names().includes("bot") || !registry.stepLoaded(`${name}/login`)) return undefined;
+        const able = loaded.filter((item) => registry.stepLoaded(`${item}/login`));
+        return Object.keys(bots)
+          .sort((a, b) => (a === "default" ? -1 : b === "default" ? 1 : a.localeCompare(b)))
+          .find((bot) => {
+            const entry = bots[bot];
+            const named = isRecord(entry) ? entry.harness : undefined;
+            return typeof named === "string" && named.length > 0
+              ? named === name
+              : able.length === 1 && able[0] === name;
+          });
+      };
+      for (const name of loaded) {
         const check = checks.find((item) => item.plugin === name);
         const version = check?.message.match(/\d+\.\d+\.\d+[\w.-]*/)?.[0];
         agents.push({
           name,
           ...(version === undefined ? {} : { version }),
           signedIn: await registry.signedInFor(name),
+          ...(loginBotOf(name) === undefined ? {} : { loginBot: loginBotOf(name) }),
           ...(check !== undefined && !check.ok ? { problem: check.message } : {}),
         });
       }

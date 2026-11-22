@@ -1196,6 +1196,11 @@ export class PluginRegistry {
     return { result: outcome.result, data };
   }
 
+  /** True when a loaded plugin declares the step `<plugin>/<step>`. */
+  stepLoaded(use: string): boolean {
+    return this.stepIndex.has(use);
+  }
+
   /** The names of the harness plugins loaded now. */
   loadedHarnesses(): readonly string[] {
     return this.plugins.filter((item) => item.kind === "harness").map((item) => item.name);
