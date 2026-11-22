@@ -473,7 +473,7 @@ A `<plugin>/agent` step, in order:
 The four differ in these ways:
 
 - `claude`: runs your own `claude` through the Claude Agent SDK, with the login `claude` already has. A step is one foreground turn.
-- `pi`: finds the pi library you installed from the `pi` on `PATH` and loads it in a child process. It needs a pi of version 1.5.0 or newer.
+- `pi`: uses the pi library you installed, found from the `pi` on `PATH`, or the pinned copy operad installs in the home when there is none, and loads it in a child process. It needs a pi of version 1.5.0 or newer.
 - `radian`: runs `radian exec` in the directory. radian cannot let through a one-time permission, so a profile that carries one is refused for it. It is the fallback default when the home enables no harness.
 - `codex`: starts your `codex app-server` and speaks Codex's own JSON-RPC, with your Codex login. It is off until `operad plugin enable codex`. Codex's own sandbox stays on and limits writes to the worktree, and Codex is set to ask operad about what leaves it; the access profile answers those command and file-change requests. A subscription login gives no cost, so `costMicros` is `null`.
 
@@ -558,15 +558,19 @@ bound there.
 ### The `pi` settings
 
 `pi` runs the pi coding agent instead of radian. A new home enables it when
-`pi` is on `PATH`; enable it later with `operad plugin enable pi`.
+`pi` is on `PATH`; with no agent command on `PATH`, a new home enables it and
+installs operad's own pi. Enable it later with `operad plugin enable pi`.
 
-**Install pi.** operad does not bring its own pi: it uses the one you installed,
-with bun (`bun add -g @earendil-works/pi-coding-agent`) or npm
-(`npm i -g @earendil-works/pi-coding-agent`), so that `pi` is on `PATH`. The
-oldest pi it accepts is `1.5.0`; `operad plugin check` names both versions when
-yours is older and fails when there is no `pi`. To use another pi, set `command`
-in the `pi` section of `config.json` to its path. A `pi` that is a shell wrapper
-script is refused with its path; point `command` at the package's bin instead
+**Install pi.** operad uses the pi you installed when `pi` is on `PATH`, with
+bun (`bun add -g @earendil-works/pi-coding-agent`) or npm
+(`npm i -g @earendil-works/pi-coding-agent`). When there is none, operad
+installs `@earendil-works/pi-coding-agent` `1.6.0` into the home's plugin
+project on first use; that needs the network once, and a failed download says so
+and is retried by running the enable or `operad init` again. The oldest pi it
+accepts is `1.5.0`; `operad plugin check` names both versions when yours is
+older and fails when there is no `pi`. To use another pi, set `command` in the
+`pi` section of `config.json` to its path. A `pi` that is a shell wrapper script
+is refused with its path; point `command` at the package's bin instead
 (`.../@earendil-works/pi-coding-agent/dist/bundle/cli.js`).
 
 **Log in to pi.** Run `pi` and type `/login`, then pick the provider. operad uses
@@ -586,7 +590,7 @@ apart from your own pi sessions, so `pi --continue` does not see them.
 | `pi.model` | string `provider/id` | pi's own default | The model; the step's `--model` wins. |
 | `pi.models` | list of `provider/id` | every model `pi --list-models` prints | The models a chat may pick. |
 | `pi.thinkingLevel` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` | pi's own default | The reasoning level; the step's `--thinking` wins. |
-| `pi.command` | string | `pi` | A command name on `PATH` or a path; it must lead into an installed `@earendil-works/pi-coding-agent` of `1.5.0` or newer. |
+| `pi.command` | string | `pi` | A command name on `PATH` or a path; it must lead into an installed `@earendil-works/pi-coding-agent` of `1.5.0` or newer. The default `pi` uses the copy on `PATH`, else the one operad installed in the home. |
 | `pi.authPath` | string | `~/.pi/agent/auth.json` | pi's credentials file. |
 | `pi.modelsPath` | string | `~/.pi/agent/models.json` | pi's custom models file. |
 | `pi.wallTimeSecs` | number, 1 to 28500 | `3600` | The longest one run may take. |

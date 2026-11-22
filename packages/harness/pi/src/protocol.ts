@@ -41,6 +41,8 @@ export interface WorkerInput {
   readonly agentDir: string;
   /** The pi command (a name on PATH or a path); unset means `pi`. */
   readonly piCommand?: string | undefined;
+  /** The operad home: its plugin project may hold the pi operad installed (ADR 0023 D9). */
+  readonly piHome?: string | undefined;
   readonly sessionDir: string;
   readonly resumeSession?: string | undefined;
   readonly model?: string | undefined;
@@ -112,6 +114,8 @@ export function parseInput(value: unknown): ParsedInput {
   if (!resumeSession.ok) return resumeSession;
   const piCommand = readOptionalString(value, "piCommand");
   if (!piCommand.ok) return piCommand;
+  const piHome = readOptionalString(value, "piHome");
+  if (!piHome.ok) return piHome;
   const model = readOptionalString(value, "model");
   if (!model.ok) return model;
   if (model.value !== undefined && !/^[^/]+\/.+$/.test(model.value)) {
@@ -166,6 +170,7 @@ export function parseInput(value: unknown): ParsedInput {
       sessionDir: required.value["sessionDir"] ?? "",
       resumeSession: resumeSession.value,
       piCommand: piCommand.value,
+      piHome: piHome.value,
       model: model.value,
       thinkingLevel,
       access: access.value,

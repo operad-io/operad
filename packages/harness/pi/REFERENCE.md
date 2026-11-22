@@ -26,17 +26,22 @@ commands or expanded as one of the owner's prompt templates.
 
 ## Installing pi
 
-operad does not bundle pi. Install it yourself, with bun
-(`bun add -g @earendil-works/pi-coding-agent`) or npm
-(`npm i -g @earendil-works/pi-coding-agent`), so that a `pi` command is on
-`PATH`. The worker resolves the real path of that command, walks up to the
-directory whose `package.json` is `@earendil-works/pi-coding-agent`, and imports
-the file its `exports["."]` names. It logs `pi <version> loaded from <dir>` on
-stderr. The oldest version it accepts (the floor) is `1.5.0`; a prerelease of
-`1.5.0` is below it. `operad plugin check` reads the same `package.json` and
-fails, naming both versions, when pi is older than the floor, and fails when
-there is no `pi`. The `@earendil-works/pi-coding-agent` in this package's
-`devDependencies` serves the tests only.
+operad uses the pi you installed when a `pi` command is on `PATH`. Install it
+yourself with bun (`bun add -g @earendil-works/pi-coding-agent`) or npm
+(`npm i -g @earendil-works/pi-coding-agent`). When there is no `pi`, operad
+installs the pinned version (`1.6.0`) into the home's plugin project
+(`~/.operad/plugins`) and uses that copy. The worker resolves the real path of
+the `pi` command, walks up to the directory whose `package.json` is
+`@earendil-works/pi-coding-agent`, and imports the file its `exports["."]`
+names; for the home copy it reads
+`<home>/plugins/node_modules/@earendil-works/pi-coding-agent` and uses that
+package's `pi` command for `--list-models`. It logs
+`pi <version> loaded from <dir>` on stderr. The oldest version it accepts (the
+floor) is `1.5.0`; a prerelease of `1.5.0` is below it. `operad plugin check`
+reads the same `package.json` and fails, naming both versions, when pi is older
+than the floor, and fails when there is no pi at all. The
+`@earendil-works/pi-coding-agent` in this package's `devDependencies` serves the
+tests; the exact version in `peerDependencies` is the one operad installs.
 
 `pi` must lead into the package through symbolic links, as the bun and npm
 installs make it. A shell wrapper script is refused with its path; set the

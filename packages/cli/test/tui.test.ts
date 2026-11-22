@@ -3,11 +3,28 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadTui, main, type CliIo, type TuiCommand, type TuiRunner } from "../src/main.ts";
+import type { InstallRunner } from "@operad-io/engine";
 
 const roots: string[] = [];
 afterAll(() => {
   for (const root of roots) rmSync(root, { recursive: true, force: true });
 });
+
+/** A pi install that writes the package a local tarball would have put there. */
+function fakePiInstall(): InstallRunner {
+  return (cwd) => {
+    const name = "@earendil-works/pi-coding-agent";
+    const dir = join(cwd, "node_modules", name);
+    mkdirSync(join(dir, "dist"), { recursive: true });
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({ name, version: "1.6.0", exports: { ".": "./dist/index.js" }, bin: { pi: "dist/cli.js" } }),
+    );
+    writeFileSync(join(dir, "dist", "index.js"), "export {};\n");
+    writeFileSync(join(dir, "dist", "cli.js"), "#!/bin/sh\nexit 1\n");
+    return { exitCode: 0, stdout: "", stderr: "" };
+  };
+}
 
 function capture(): {
   readonly io: CliIo;
@@ -186,6 +203,7 @@ describe("operad with no command", () => {
           home,
           io: output.io,
           isTTY: true,
+          pluginInstall: fakePiInstall(),
           tui: async (command) => {
             seen.push(command);
             return 0;
@@ -202,6 +220,8 @@ describe("operad with no command", () => {
     };
     expect(config.plugins.chat?.enabled).toBe(true);
     expect(config.plugins.bot?.enabled).toBe(true);
+    expect(config.plugins.pi?.enabled).toBe(true);
+    expect(output.text()).toContain("no agent found on PATH: installing operad's own pi");
     expect(seen).toHaveLength(1);
     expect(seen[0]?.home).toBe(home);
     expect(seen[0]?.startChat).toBe("bot:default");

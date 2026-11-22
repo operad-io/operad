@@ -14,7 +14,7 @@ The SDK carries a version number (`operadPlugin: 1`). `operad plugin check <path
 
 ### D2: Plugins can be enabled and disabled
 
-`plugins.<name>.enabled` in `config.json` (boolean, default `true`). `operad init` writes `chat`, `bot` and `memory` into a new home, and a harness plugin for each agent command it finds on `PATH`: `radian`, `claude` and `pi`, in that order. A new home leaves `shell`, `dev` and `pool` off; a person turns them on when a repository's work needs them. When it finds no agent command, it writes `radian` and fails with a message naming the three agents and how to install one. `codex` is not part of this choice: it needs Codex's own app-server and stays off until `operad plugin enable codex`. A home that already has a `config.json` is not rewritten, so an upgrade keeps the plugins and switches that home already had.
+`plugins.<name>.enabled` in `config.json` (boolean, default `true`). `operad init` writes `chat`, `bot` and `memory` into a new home, and a harness plugin for each agent command it finds on `PATH`: `radian`, `claude` and `pi`, in that order. A new home leaves `shell`, `dev` and `pool` off; a person turns them on when a repository's work needs them. When it finds no agent command, it enables `pi` and installs operad's own pi into the home, so a first run never needs an agent installed beforehand (ADR 0022 D6, ADR 0023 D9). `codex` is not part of this choice: it needs Codex's own app-server and stays off until `operad plugin enable codex`. A home that already has a `config.json` is not rewritten, so an upgrade keeps the plugins and switches that home already had.
 
 A repository whose `.operad/dev.json` names neither `worker` nor `workers`, and leaves `reviewer.use` out, uses the first enabled harness plugin in `config.json` in the fixed order `radian`, `claude`, `pi`, `codex`. With no enabled harness it uses `radian/agent`.
 
@@ -34,6 +34,8 @@ A repository whose `.operad/dev.json` names neither `worker` nor `workers`, and 
 ### D4: A plugin with third-party npm dependencies is not in the base install; enabling it installs it into the operad home
 
 `@operad-io/cli` depends only on packages that have no third-party dependencies; a plugin such as `claude` is not its dependency. When a user enables such a plugin, operad installs the plugin package and its dependencies into one place under the operad home (a Bun project), skipping `optionalDependencies`, and the plugin loads from there. When it is not installed, `operad plugin check` and any command that uses it say how to install it. Development inside the repository uses the workspace as before and does not go through this.
+
+A plugin whose third-party dependency is an optional peer, such as `pi`'s pi library, stays in the base install because that peer is absent from it; enabling the plugin installs the peer into the home when the machine has no copy of its own (ADR 0023 D9). The install reports each line it prints while it runs: `operad init` and `operad plugin enable` print them, and `GET /v1/plugins` carries the latest line on the plugin being installed, including a plugin the file does not name yet, so a client can show that the install is moving. A failed install names the reason and leaves the home ready for another try, so a network failure says so and running the enable or `operad init` again retries the same install.
 
 ### D5: A plugin from npm is added by package name, turned off
 

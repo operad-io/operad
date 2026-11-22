@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { delimiter, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { makeRemote } from "../git-support.ts";
 import { cleanupTempRoots, osTempRoot } from "../support.ts";
@@ -61,9 +61,24 @@ describe("a fresh home follows the Quickstart", () => {
     const workerPath = join(root, "fake-worker.ts");
     writeFileSync(workerPath, workerSource());
 
-    const init = await runOperad(home, repository, ["init"]);
-    // init exits 1 when a plugin check fails, such as a harness missing from this machine's PATH;
-    // the config is written either way, and the checks are not what this test is about.
+    // A radian on PATH keeps a new home from installing pi from the network;
+    // the Quickstart test uses its own fake harness and does not need an agent.
+    const bin = join(root, "bin");
+    mkdirSync(bin, { recursive: true });
+    writeFileSync(join(bin, "radian"), "#!/bin/sh\nexit 0\n");
+    chmodSync(join(bin, "radian"), 0o755);
+    const previousPath = process.env.PATH;
+    process.env.PATH = `${bin}${delimiter}${previousPath ?? ""}`;
+    const init = await (async () => {
+      try {
+        return await runOperad(home, repository, ["init"]);
+      } finally {
+        if (previousPath === undefined) delete process.env.PATH;
+        else process.env.PATH = previousPath;
+      }
+    })();
+    // A failing check does not stop the config from being written; the checks
+    // are not what this test is about.
     expect(init.out).toContain("created");
     const configPath = join(home, "config.json");
     const config = JSON.parse(readFileSync(configPath, "utf8")) as {

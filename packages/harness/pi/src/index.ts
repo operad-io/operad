@@ -59,7 +59,7 @@ import {
   piModelWindows,
   readPiModelList,
 } from "./model-list.ts";
-import { DEFAULT_PI_COMMAND, findPi, PI_FLOOR } from "./pi-install.ts";
+import { DEFAULT_PI_COMMAND, findPi, PI_FLOOR, PI_VERSION } from "./pi-install.ts";
 import {
   DEFAULT_BASH_TIMEOUT_SECS,
   THINKING_LEVELS,
@@ -72,6 +72,8 @@ export {
   MAX_WALL_TIME_SECS,
   STEP_TIMEOUT_SECS,
 };
+
+export { PI_PACKAGE, PI_VERSION } from "./pi-install.ts";
 
 /** The tool call one pi line starts or settles, or undefined for another line. */
 export { toolExecutionEvent as piToolEvent } from "@operad-io/harness-process";
@@ -289,6 +291,20 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
       : DEFAULT_PI_COMMAND;
   }
 
+  /**
+   * The command an install is reached by: the setting as it is; when it is the
+   * default `pi`, the pi operad installed in the home is used if PATH has none.
+   */
+  function piCommandFor(settings: Readonly<Record<string, unknown>>, home: string): string {
+    const command = piCommandOf(settings);
+    if (command !== DEFAULT_PI_COMMAND) return command;
+    try {
+      return findPi(command, { home }).command;
+    } catch {
+      return command;
+    }
+  }
+
   /** The context windows pi's kept list gives for the models this chat may pick. */
   function windowsOf(
     options: ReturnType<typeof listOptions>,
@@ -356,7 +372,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
     ready = false,
   ): PiDeclaredModels | Promise<PiDeclaredModels> {
     const configured = stringList(settings.models);
-    const options = listOptions(piCommandOf(settings), context, modelsPathOf(settings));
+    const options = listOptions(piCommandFor(settings, context.home), context, modelsPathOf(settings));
     const first = readPiModelList(options) ?? null;
     if (configured !== undefined) return declaredModels(settings, options, first, configured);
     if (!ready) return declaredModels(settings, options, first, piModelList(options, first));
@@ -456,7 +472,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
               if (configured !== undefined && read.model !== undefined && configured.includes(read.model)) {
                 const listed = piModelList(
                   listOptions(
-                    piCommand ?? DEFAULT_PI_COMMAND,
+                    piCommandFor(ctx.settings, ctx.home),
                     {
                       home: ctx.home,
                       log: (message) => {
@@ -515,6 +531,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
             modelsPath,
             agentDir,
             sessionDir,
+            piHome: ctx.home,
             ...(piCommand === undefined ? {} : { piCommand }),
             ...(resumeSession === undefined ? {} : { resumeSession }),
             ...(model === undefined ? {} : { model }),
@@ -562,8 +579,9 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
     flows: [promptFlow],
     async check(ctx) {
       const piCommand = optionalText(ctx.settings.command, "pi: settings.command");
-      // The user's own pi: found and version-checked, not loaded.
-      const pi = findPi(piCommand ?? DEFAULT_PI_COMMAND);
+      // The user's own pi, or the one operad installed in the home: found and
+      // version-checked, not loaded.
+      const pi = findPi(piCommand ?? DEFAULT_PI_COMMAND, { home: ctx.home });
       assertWorkerAvailable({ command: options.command, args: options.args, workerPath: WORKER_PATH });
       return `pi ${pi.version} at ${pi.dir} (floor ${PI_FLOOR}); the worker program is available`;
     },

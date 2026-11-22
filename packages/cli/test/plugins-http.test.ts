@@ -150,6 +150,7 @@ interface Row {
   enabled: boolean;
   origin: string;
   signedIn?: boolean;
+  progress?: string;
   models?: {
     list: (string | { id: string })[];
     default: string | null;
@@ -270,6 +271,64 @@ describe("plugins over HTTP", () => {
       undefined,
       { models: { module: modelHarnessPath, enabled: true } },
     );
+  });
+
+  test("GET /v1/plugins carries the line an install is on before the file names it", async () => {
+    let started: () => void = () => undefined;
+    const began = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const run: InstallRunner = async (cwd, _args, onProgress) => {
+      onProgress?.("Resolving dependencies");
+      started();
+      await gate;
+      const name = "@earendil-works/pi-coding-agent";
+      const dir = join(cwd, "node_modules", name);
+      mkdirSync(join(dir, "dist"), { recursive: true });
+      writeFileSync(
+        join(dir, "package.json"),
+        JSON.stringify({ name, version: "1.6.0", exports: { ".": "./dist/index.js" }, bin: { pi: "dist/cli.js" } }),
+      );
+      writeFileSync(join(dir, "dist", "index.js"), "export {};\n");
+      writeFileSync(join(dir, "dist", "cli.js"), "#!/bin/sh\nexit 1\n");
+      onProgress?.("Resolved, downloaded and extracted [7]");
+      return { exitCode: 0, stdout: "", stderr: "" };
+    };
+    const empty = join(await tempRoot(), "empty");
+    mkdirSync(empty, { recursive: true });
+    const previous = process.env.PATH;
+    process.env.PATH = empty;
+    try {
+      await withRig(
+        async (rig) => {
+          const enabling = call(rig, "POST", { name: "pi", enabled: true });
+          await began;
+          const listing = await call(rig, "GET");
+          expect(listing.status).toBe(200);
+          const plugins = ((await listing.json()) as { plugins: Row[] }).plugins;
+          const pi = plugins.find((row) => row.name === "pi");
+          expect(pi?.progress).toBe("Resolving dependencies");
+          release();
+          const enabled = await enabling;
+          expect(enabled.status).toBe(200);
+          expect(((await enabled.json()) as { plugin: Row }).plugin).toMatchObject({
+            name: "pi",
+            enabled: true,
+          });
+          const after = ((await (await call(rig, "GET")).json()) as { plugins: Row[] }).plugins;
+          expect(after.find((row) => row.name === "pi")?.progress).toBeUndefined();
+        },
+        run,
+        { pi: { module: "@operad-io/harness-pi", enabled: false } },
+      );
+    } finally {
+      if (previous === undefined) delete process.env.PATH;
+      else process.env.PATH = previous;
+    }
   });
 
   test("a switch answers a harness's signedIn while it is enabled, and leaves it out when disabled", async () => {

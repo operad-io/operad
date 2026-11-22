@@ -50,9 +50,9 @@ operad
 With no command, `operad` creates the home when it has none, starts `serve`,
 and opens the default bot's new chat. `operad --help` lists every command.
 
-You also need `git`, a repository with a remote, and one of `claude`, `pi` or `radian` on your `PATH`.
+You also need `git` and a repository with a remote. You do not need to install an agent first: with none of `claude`, `pi` or `radian` on your `PATH`, operad installs its own pi on first use, which needs the network once.
 
-A new home starts as the personal assistant: it turns on `chat`, `bot` and `memory`, and each of `radian`, `claude` and `pi` whose command is on your `PATH`. `shell`, `dev` and `pool` are off until you turn them on. When no agent is found it turns on `radian`, and `operad init` fails with a message naming the three agents and how to install one.
+A new home starts as the personal assistant: it turns on `chat`, `bot` and `memory`, and each of `radian`, `claude` and `pi` whose command is on your `PATH`. `shell`, `dev` and `pool` are off until you turn them on. When no agent is found it turns on `pi` and installs operad's own copy, so a first run needs no agent installed beforehand.
 
 ## Quickstart
 

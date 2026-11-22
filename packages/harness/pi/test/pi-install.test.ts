@@ -1,15 +1,17 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { chmodSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { PluginRegistry, MemoryPluginStore } from "@operad-io/engine";
 import { createPiHarnessPlugin } from "../src/index.ts";
 import {
   PI_FLOOR,
   PI_PACKAGE,
+  PI_VERSION,
   PiInstallError,
   compareVersions,
   entryOf,
   findPi,
+  homePiPackageDir,
   loadPi,
 } from "../src/pi-install.ts";
 import { cleanupTempRoots, tempRoot } from "../../process/test/support.ts";
@@ -77,6 +79,38 @@ async function fresh(): Promise<string> {
   return tempRoot();
 }
 
+/** The pi operad installs in the home's Bun project, with its `pi` command. */
+function installHomePi(root: string, version = PI_VERSION): { readonly home: string; readonly dir: string } {
+  const home = join(root, "home");
+  const dir = homePiPackageDir(home);
+  mkdirSync(join(dir, "dist", "bundle"), { recursive: true });
+  writeFileSync(
+    join(dir, "package.json"),
+    JSON.stringify({
+      name: PI_PACKAGE,
+      version,
+      exports: { ".": { import: "./dist/index.js" } },
+      bin: { pi: "dist/bundle/cli.js" },
+    }),
+  );
+  writeFileSync(join(dir, "dist", "index.js"), 'export const marker = "home-pi";\n');
+  writeFileSync(join(dir, "dist", "bundle", "cli.js"), "#!/usr/bin/env node\n");
+  chmodSync(join(dir, "dist", "bundle", "cli.js"), 0o755);
+  const bin = join(dir, "..", "..", ".bin");
+  mkdirSync(bin, { recursive: true });
+  symlinkSync(join(dir, "dist", "bundle", "cli.js"), join(bin, "pi"));
+  return { home, dir };
+}
+
+test("the pinned pi version is the package's optional peer", () => {
+  const manifest = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as {
+    peerDependencies?: Record<string, string>;
+    peerDependenciesMeta?: Record<string, { optional?: boolean }>;
+  };
+  expect(manifest.peerDependencies?.[PI_PACKAGE]).toBe(PI_VERSION);
+  expect(manifest.peerDependenciesMeta?.[PI_PACKAGE]?.optional).toBe(true);
+});
+
 describe("findPi", () => {
   test("finds a bun global install and an npm global install", async () => {
     const root = await fresh();
@@ -127,6 +161,47 @@ describe("findPi", () => {
     mkdirSync(empty);
     expect(() => findPi("pi", { path: empty })).toThrow(new RegExp(`${PI_FLOOR.replace(/\./g, "\\.")}`));
     expect(() => findPi("pi", { path: empty })).toThrow(/pi command/);
+  });
+
+  test("with no pi on PATH, the pi operad installed in the home is used", async () => {
+    const root = await fresh();
+    const home = installHomePi(root);
+    const found = findPi("pi", { path: "", home: home.home });
+    expect(found.dir).toBe(home.dir);
+    expect(found.version).toBe(PI_VERSION);
+    expect(found.command.endsWith(join("node_modules", ".bin", "pi"))).toBe(true);
+    expect(((await loadPi(found)) as unknown as { marker: string }).marker).toBe("home-pi");
+  });
+
+  test("a pi on PATH wins over the home's pi", async () => {
+    const root = await fresh();
+    const user = installPi(root, "npm", { version: "1.5.0" });
+    const home = installHomePi(root);
+    const found = findPi("pi", { path: user.bin, home: home.home });
+    expect(found.dir).toBe(user.dir);
+    expect(found.version).toBe("1.5.0");
+  });
+
+  test("a command set by name or path does not fall back to the home's pi", async () => {
+    const root = await fresh();
+    const home = installHomePi(root);
+    expect(() => findPi("/nowhere/pi", { path: "", home: home.home })).toThrow(PiInstallError);
+    expect(() => findPi("other-pi", { path: "", home: home.home })).toThrow(PiInstallError);
+  });
+
+  test("a home with no pi names both the PATH and the install command", async () => {
+    const root = await fresh();
+    const empty = join(root, "empty");
+    mkdirSync(empty);
+    expect(() => findPi("pi", { path: empty, home: join(root, "home") })).toThrow(/home has no pi installed/);
+    expect(() => findPi("pi", { path: empty, home: join(root, "home") })).toThrow(/operad plugin enable pi/);
+  });
+
+  test("the home's pi below the floor is refused, naming both versions", async () => {
+    const root = await fresh();
+    const home = installHomePi(root, "1.4.9");
+    expect(() => findPi("pi", { path: "", home: home.home })).toThrow(/1\.4\.9/);
+    expect(() => findPi("pi", { path: "", home: home.home })).toThrow(/1\.5\.0/);
   });
 
   test("a package.json with another name all the way up is refused", async () => {
@@ -238,5 +313,27 @@ describe("pi check", () => {
     expect(result?.ok).toBe(false);
     expect(JSON.stringify(result)).toContain("pi command");
     expect(dirname(empty)).toBe(root);
+  });
+
+  test("passes with the pi operad installed in the home when PATH has none", async () => {
+    const root = await fresh();
+    const home = installHomePi(root);
+    const empty = join(root, "empty");
+    mkdirSync(empty);
+    const registry = new PluginRegistry([createPiHarnessPlugin()], {
+      home: home.home,
+      cwd: home.home,
+      store: new MemoryPluginStore({ root: join(home.home, "store") }),
+    });
+    const previous = process.env.PATH;
+    process.env.PATH = empty;
+    try {
+      const checks = await registry.checks();
+      const result = checks.find((item) => item.plugin === "pi");
+      expect(result?.ok).toBe(true);
+      expect(JSON.stringify(result)).toContain(PI_VERSION);
+    } finally {
+      process.env.PATH = previous;
+    }
   });
 });

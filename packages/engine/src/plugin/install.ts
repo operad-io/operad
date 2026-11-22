@@ -145,21 +145,73 @@ export interface InstallRun {
   readonly stderr: string;
 }
 
-/** Runs one command; a test replaces the real Bun process. */
-export type InstallRunner = (cwd: string, args: readonly string[]) => InstallRun;
+/** Receives one line a package command printed while it ran. */
+export type InstallProgress = (line: string) => void;
 
-function runWithBun(cwd: string, args: readonly string[]): InstallRun {
-  const ran = Bun.spawnSync({
+/** Runs one command; a test replaces the real Bun process. */
+export type InstallRunner = (
+  cwd: string,
+  args: readonly string[],
+  onProgress?: InstallProgress,
+) => InstallRun | Promise<InstallRun>;
+
+/** The most characters of one progress line kept for a client. */
+const PROGRESS_LINE_MAX = 200;
+
+function reportLine(text: string, onProgress: InstallProgress | undefined): void {
+  if (onProgress === undefined) return;
+  const line = text.replace(/\x1b\[[0-9;]*m/g, "").trim();
+  if (line.length > 0) onProgress(line.slice(0, PROGRESS_LINE_MAX));
+}
+
+/** Reads a child's stream into `out`, reporting whole lines as they arrive. */
+async function readReported(
+  stream: ReadableStream<Uint8Array> | undefined,
+  out: string[],
+  onProgress: InstallProgress | undefined,
+): Promise<void> {
+  if (stream === undefined) return;
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let pending = "";
+  for (;;) {
+    const chunk = await reader.read();
+    if (chunk.done) break;
+    const text = decoder.decode(chunk.value, { stream: true });
+    out.push(text);
+    pending += text;
+    const parts = pending.split(/[\r\n]+/);
+    pending = parts.pop() ?? "";
+    for (const part of parts) reportLine(part, onProgress);
+  }
+  const last = decoder.decode();
+  out.push(last);
+  pending += last;
+  for (const part of pending.split(/[\r\n]+/)) reportLine(part, onProgress);
+}
+
+async function runWithBun(
+  cwd: string,
+  args: readonly string[],
+  onProgress?: InstallProgress,
+): Promise<InstallRun> {
+  const child = Bun.spawn({
     cmd: [process.execPath, ...args],
     cwd,
     stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",
   });
+  const stdout: string[] = [];
+  const stderr: string[] = [];
+  await Promise.all([
+    readReported(child.stdout, stdout, onProgress),
+    readReported(child.stderr, stderr, onProgress),
+  ]);
   return {
-    exitCode: ran.exitCode,
-    stdout: ran.stdout.toString(),
-    stderr: ran.stderr.toString(),
+    exitCode: await child.exited,
+    stdout: stdout.join(""),
+    stderr: stderr.join(""),
   };
 }
 
@@ -191,6 +243,29 @@ function outputTail(run: InstallRun): string {
   return lines.length > 2000 ? lines.slice(-2000) : lines;
 }
 
+/** True when the output says the package could not be downloaded. */
+function looksLikeNetworkFailure(text: string): boolean {
+  return /ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ECONNRESET|ETIMEDOUT|getaddrinfo|fetch failed|network is unreachable|could not resolve/i.test(
+    text,
+  );
+}
+
+/** The refusal of a failed install, with how to retry a download that did not happen. */
+function failedInstall(
+  specifier: string,
+  args: readonly string[],
+  directory: string,
+  run: InstallRun,
+): Error {
+  const text = `${run.stdout}\n${run.stderr}`;
+  const retry = looksLikeNetworkFailure(text)
+    ? "; the package could not be downloaded, so check the network and run the command again"
+    : "; run the command again to retry";
+  return new Error(
+    `${specifier}: \`bun ${args.join(" ")}\` in ${directory} failed with exit code ${String(run.exitCode)}; ${outputTail(run)}${retry}`,
+  );
+}
+
 /** Options for installing one package into the home project. */
 export interface EnsureInstalledOptions {
   readonly home: string;
@@ -202,6 +277,8 @@ export interface EnsureInstalledOptions {
   readonly from?: string | undefined;
   /** Skip optional dependencies; the claude SDK's platform binaries are optional. */
   readonly omitOptional?: boolean | undefined;
+  /** Receives each line the install prints while it runs. */
+  readonly onProgress?: InstallProgress | undefined;
   /** A test replaces the command; defaults to Bun. */
   readonly run?: InstallRunner | undefined;
 }
@@ -249,11 +326,9 @@ export async function ensureInstalledPackage(options: EnsureInstalledOptions): P
   writeFileSync(path, `${JSON.stringify(manifest, null, 2)}\n`);
 
   const args = ["install", ...(options.omitOptional === true ? ["--omit=optional"] : []), "--no-summary"];
-  const run = (options.run ?? runWithBun)(directory, args);
+  const run = await (options.run ?? runWithBun)(directory, args, options.onProgress);
   if (run.exitCode !== 0) {
-    throw new Error(
-      `${specifier}: \`bun ${args.join(" ")}\` in ${directory} failed with exit code ${String(run.exitCode)}; ${outputTail(run)}`,
-    );
+    throw failedInstall(specifier, args, directory, run);
   }
   const installed = installedPackageFile(home, specifier);
   if (installed === undefined) {
@@ -317,6 +392,8 @@ export interface AddPackageOptions {
   readonly specifier: string;
   /** An exact version; absent asks Bun for the latest. */
   readonly version?: string | undefined;
+  /** Receives each line the install prints while it runs. */
+  readonly onProgress?: InstallProgress | undefined;
   /** A test replaces the command; defaults to Bun. */
   readonly run?: InstallRunner | undefined;
 }
@@ -367,11 +444,9 @@ export async function addPackage(options: AddPackageOptions): Promise<AddedPacka
   const target =
     options.version === undefined ? options.specifier : `${options.specifier}@${options.version}`;
   const args = ["add", target, "--exact", "--ignore-scripts", "--no-summary"];
-  const run = (options.run ?? runWithBun)(directory, args);
+  const run = await (options.run ?? runWithBun)(directory, args, options.onProgress);
   if (run.exitCode !== 0) {
-    throw new Error(
-      `${options.specifier}: \`bun ${args.join(" ")}\` in ${directory} failed with exit code ${String(run.exitCode)}; ${outputTail(run)}`,
-    );
+    throw failedInstall(options.specifier, args, directory, run);
   }
   const after = readManifest(path);
   if (after === undefined) {
@@ -434,10 +509,8 @@ export async function removePackage(options: RemovePackageOptions): Promise<void
     if (!isRecord(dependencies) || !Object.hasOwn(dependencies, options.name)) return;
     args = ["remove", options.name, "--ignore-scripts", "--no-summary"];
   }
-  const run = (options.run ?? runWithBun)(directory, args);
+  const run = await (options.run ?? runWithBun)(directory, args);
   if (run.exitCode !== 0) {
-    throw new Error(
-      `${options.name}: \`bun ${args.join(" ")}\` in ${directory} failed with exit code ${String(run.exitCode)}; ${outputTail(run)}`,
-    );
+    throw failedInstall(options.name, args, directory, run);
   }
 }
