@@ -60,6 +60,7 @@ import {
   readPiModelList,
 } from "./model-list.ts";
 import { DEFAULT_PI_COMMAND, findPi, PI_FLOOR, PI_VERSION } from "./pi-install.ts";
+import { runLoginStep, type LoginRunOptions } from "./login.ts";
 import {
   DEFAULT_BASH_TIMEOUT_SECS,
   THINKING_LEVELS,
@@ -90,6 +91,12 @@ export interface PiHarnessOptions {
   readonly command?: string | undefined;
   /** The arguments before the worker input; defaults to `worker.ts`. */
   readonly args?: readonly string[] | undefined;
+  /** Test seam: the executable of a login; defaults to the running Bun. */
+  readonly loginCommand?: string | undefined;
+  /** Test seam: the arguments before a login's input; defaults to `login-worker.ts`. */
+  readonly loginArgs?: readonly string[] | undefined;
+  /** Test seam: how long a login may take; defaults to `LOGIN_TIMEOUT_MS`. */
+  readonly loginTimeoutMs?: number | undefined;
   /** The time now in milliseconds; defaults to `Date.now`. It ages the cached catalogue. */
   readonly now?: (() => number) | undefined;
   /** How long `pi --list-models` may take; defaults to `PI_LIST_TIMEOUT_MS`. */
@@ -252,6 +259,12 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
   const command = options.command ?? process.execPath;
   const commandArgs = options.args ?? [WORKER_PATH];
   const now = options.now ?? Date.now;
+  const loginOptions: LoginRunOptions = {
+    command: options.loginCommand ?? process.execPath,
+    ...(options.loginArgs === undefined ? {} : { args: options.loginArgs }),
+    ...(options.loginTimeoutMs === undefined ? {} : { timeoutMs: options.loginTimeoutMs }),
+    now,
+  };
   const listTimeoutMs = options.listTimeoutMs ?? PI_LIST_TIMEOUT_MS;
   const readFile = options.readFile ?? ((path: string) => readFileSync(path, "utf8"));
   const piSettingsPath =
@@ -415,6 +428,14 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
     },
     settings: PLUGIN_SETTINGS,
     steps: [
+      {
+        name: "login",
+        // A login asks a person and writes pi's own credential; it returns the
+        // model they chose (ADR 0023 D11).
+        results: ["done", "failed"],
+        timeoutSecs: 660,
+        run: (ctx: StepContext) => runLoginStep(ctx, loginOptions),
+      },
       {
         name: "agent",
         // A question's answer comes back as `resumeSession` and `askAnswer`.

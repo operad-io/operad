@@ -35,6 +35,7 @@ import {
 } from "./bot.ts";
 import { MEMORY_COMMIT_STEP, memoryNotes } from "@operad-io/memory";
 import { createBot, knownMcpServers, knownSkills } from "./create.ts";
+import { LOGIN_EVENT, LOGIN_SOURCE, loginAction, loginFlow, loginItems, runLogin as runLoginStep } from "./login.ts";
 import { ingestReports, runMcpCommand } from "./mcp-proposals.ts";
 import {
   PROPOSAL_TYPE,
@@ -660,7 +661,11 @@ export function createBotPlugin() {
       },
       { name: TIDY_TYPE, index: ["bot", "state"] },
     ],
-    steps: [{ name: "settings", results: ["done", "failed"], run: runSettings }],
+    steps: [
+      { name: "settings", results: ["done", "failed"], run: runSettings },
+      { name: "login", results: ["done", "failed"], callsNamedByData: true, timeoutSecs: 700, run: runLoginStep },
+    ],
+    flows: [loginFlow],
     // A scheduled prompt opens a chat and sends its first message from the
     // bot source; that message is not a person's, so the reply is a background run.
     rules: [
@@ -671,8 +676,16 @@ export function createBotPlugin() {
         object: "$event.object",
         mode: "auto" as const,
       },
+      // The person's own login on a bot; it asks through the agent's login step.
+      {
+        source: LOGIN_SOURCE,
+        type: LOGIN_EVENT,
+        start: { flow: "bot:login" },
+        object: "$event.object",
+        mode: "auto" as const,
+      },
     ],
-    actions: [chatAction, createAction, ...proposalActions, ...scheduleActions, ...tidyActions],
+    actions: [chatAction, createAction, loginAction, ...proposalActions, ...scheduleActions, ...tidyActions],
     commands: [
       {
         name: "skill",
@@ -698,7 +711,8 @@ export function createBotPlugin() {
     // A proposal waits for no run; each one is a pending item of its bot.
     standing: async (ctx) => {
       await ingestReports(ctx.store, ctx.home);
-      return [...(await proposalItems(ctx.store)), ...(await tidyItems(ctx.store))];
+      await syncBots(ctx.store, ctx.home, ctx.settings);
+      return [...(await proposalItems(ctx.store)), ...(await tidyItems(ctx.store)), ...(await loginItems(ctx))];
     },
     // The bot is its own source for its scheduled prompts and its nightly
     // memory tidy. It declares `start` while staying a domain plugin, so
@@ -722,6 +736,7 @@ export default createBotPlugin();
 
 export * from "./bot.ts";
 export * from "./create.ts";
+export * from "./login.ts";
 export * from "./proposals.ts";
 export * from "./schedule.ts";
 export * from "./tidy.ts";

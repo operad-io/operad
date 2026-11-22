@@ -56,3 +56,15 @@ Every duration that measures how long something took uses the elapsed format: at
 | 86400000 ms | `1d` |
 
 An age in a list (`3m`, `5h`, `2d`, one unit) and a duration in words are not elapsed durations and keep their own form.
+
+### D7: A question's address, code and secret input
+
+A question's `url`, `code` and `secret` (ADR 0008 D8) reach a client beside
+its text, choices and free text, in the pending item, the object page and the
+HTTP read. A client shows the address as something a person can open and the
+code as text a person can copy; a client that cannot open an address shows it
+as text. A secret answer is typed into a masked field that never echoes the
+value, and the client neither shows it again nor keeps it. A one-question form
+of choices is still answered with a `choice`; any other answer goes as
+`answers`, unchanged from D4.
+

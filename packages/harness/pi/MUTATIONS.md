@@ -289,3 +289,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0687-M1 | packages/harness/pi/test/heavy/plugin.test.ts | the stall test took the marker with `Number(readFileSync(...))` instead of `waitForPid`, so a read between the file's creation and its write took pid 0, which `kill -0` always finds; a fake worker that created the marker empty and filled it 500 ms later made the race deterministic | `pi/agent > silence without an open tool call is a stall` (the run ended as a stall, then the wait for the group to stop saw pid 0 present for 10 s) |
+
+## T-0678 — the login question and the pi login step
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0678-M5 | packages/harness/pi/src/login-protocol.ts | `codexAuthUrl` accepted any https address, so another host could reach the login question | `a login address > another host or path is not the ChatGPT login, whatever its scheme` |
