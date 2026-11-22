@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { BUSY_TIMEOUT_MS } from "../../src/platform/index.ts";
 import { SqlitePluginStore } from "../../src/plugin/sqlite-store.ts";
 
+const LSOF = Bun.which("lsof");
 const HOLD_CHILD = join(import.meta.dir, "..", "fixtures", "sqlite-hold.ts");
 const PUT_CHILD = join(import.meta.dir, "..", "fixtures", "plugin-store-put.ts");
 const directories: string[] = [];
@@ -52,6 +53,31 @@ function lines(stream: ReadableStream<Uint8Array>): () => Promise<unknown> {
     }
   };
 }
+
+/** The files this process has open, when the system can list them. */
+function openFiles(): string[] {
+  if (LSOF === null) return [];
+  const result = Bun.spawnSync({
+    cmd: [LSOF, "-p", String(process.pid), "-Fn"],
+    stdout: "pipe",
+    stderr: "ignore",
+  });
+  return result.stdout
+    .toString()
+    .split("\n")
+    .filter((line) => line.startsWith("n"))
+    .map((line) => line.slice(1));
+}
+
+test.skipIf(LSOF === null)("closing a store closes its connection at once, not at a later collection", () => {
+  const file = tempFile();
+  const store = new SqlitePluginStore({ root: join(file, ".."), file });
+  expect(openFiles().some((path) => path.includes("/plugins.sqlite"))).toBe(true);
+  store.close();
+  // Bun keeps the file handles of a closed database open while a statement made
+  // from it is not finalized, so a statement left behind shows as an open file.
+  expect(openFiles().filter((path) => path.includes("/plugins.sqlite"))).toEqual([]);
+});
 
 test("a store created in delete mode is WAL after it is opened", () => {
   const file = tempFile();

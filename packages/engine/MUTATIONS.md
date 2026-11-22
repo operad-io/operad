@@ -1369,3 +1369,9 @@ resume window`. Rows are append-only, so the old lines stay as history.
 |---|---|---|---|
 | T-0655-M1 | packages/engine/src/config/config.ts | `addPluginEntry` wrote config.json with a plain `writeFile` instead of the atomic write | `writing config.json whole > adding a plugin entry writes the file atomically` |
 | T-0655-M2 | packages/engine/src/config/config.ts | `addDefaultPlugins` wrote config.json with a plain `writeFile` instead of the atomic write | `writing config.json whole > filling a missing plugins section writes the file atomically` |
+
+## T-0649 — a store close that waits for a later collection
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0649-M1 | packages/engine/src/plugin/sqlite-store.ts | the migration's prepared statements were left to a later collection instead of being finalized | `closing a store closes its connection at once, not at a later collection` |
