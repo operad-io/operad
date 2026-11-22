@@ -26,6 +26,7 @@ import {
   type ObjectRow,
   type ObjectStore,
   type ObjectViews,
+  type RunControl,
   type SectionContent,
   type StoredObject,
 } from "@operad-io/engine";
@@ -335,14 +336,24 @@ export async function tidyWork(
   };
 }
 
-/** Whether any chat of this bot is writing a reply now. */
-export async function botChatReplying(store: ObjectStore, bot: string): Promise<boolean> {
+/**
+ * Whether any chat of this bot is writing a reply now. A latest run that the
+ * host says has ended is not writing, even when a crash left no failure or
+ * stopped entry for it; a host that cannot tell keeps the fact-only answer.
+ */
+export async function botChatReplying(
+  store: ObjectStore,
+  bot: string,
+  runs?: RunControl,
+): Promise<boolean> {
   for (const object of await listAll(store, CHAT_TYPE)) {
     const chat = chatData(object.data);
     if (chat.parent !== `${BOT_TYPE}:${bot}`) continue;
-    if (writingReply(chatFacts(store, object.id), allMessages(store, object.id), allEntries(store, object.id)) !== undefined) {
-      return true;
-    }
+    const writing = writingReply(chatFacts(store, object.id), allMessages(store, object.id), allEntries(store, object.id));
+    if (writing === undefined) continue;
+    const active = runs === undefined ? undefined : await runs.active(writing.runId);
+    if (active === false) continue;
+    return true;
   }
   return false;
 }
@@ -551,6 +562,8 @@ export const tidyViews: ObjectViews = {
 
 export interface TidySourceContext {
   readonly store: ObjectStore;
+  /** Tells whether the latest run of a chat is still running; absent when the host cannot tell. */
+  readonly runs?: RunControl | undefined;
   readonly home: string;
   readonly settings: Readonly<Record<string, JsonValue>>;
   readonly clock: () => number;
@@ -668,7 +681,7 @@ export class BotTidySource {
     if (data.state === "running") return;
     if (data.state === "requested") {
       // Wait for the chats to finish before the check spawns git or reads notes.
-      if (await botChatReplying(this.ctx.store, bot)) return;
+      if (await botChatReplying(this.ctx.store, bot, this.ctx.runs)) return;
       const work = await this.workFor(bot, cwd);
       if (work.notes.length === 0 && !work.indexOver) {
         await this.put(
@@ -686,7 +699,7 @@ export class BotTidySource {
     if (settings.runWithoutAsking === true) {
       // A reply is being written: try again on the next tick, without moving the
       // planned time past a night that has not run, and without checking its work.
-      if (await botChatReplying(this.ctx.store, bot)) return;
+      if (await botChatReplying(this.ctx.store, bot, this.ctx.runs)) return;
       const work = await this.workFor(bot, cwd);
       if (work.notes.length === 0 && !work.indexOver) {
         const keep = data.state === "result" || data.state === "failed" ? data.state : "idle";

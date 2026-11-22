@@ -1381,3 +1381,9 @@ resume window`. Rows are append-only, so the old lines stay as history.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0649-M1 | packages/engine/src/plugin/sqlite-store.ts | the migration's prepared statements were left to a later collection instead of being finalized | `closing a store closes its connection at once, not at a later collection` |
+
+## T-0681 — a source gets the run control
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0681-M2 | packages/engine/src/plugin/registry.ts | a source's context carried no run control, so the tidy could not tell a dead run from a live one | `plugin registry > a source receives the run control, so it can tell a live run from one that ended` |
