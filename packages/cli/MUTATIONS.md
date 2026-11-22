@@ -354,3 +354,4 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0676-M1 | packages/cli/src/main.ts | a bare `operad` passed no starting chat to the terminal client, so it opened the lists instead of the default bot's new chat | `operad with no command > creates the home and opens the default bot's new chat` |
+| T-0676-M3 | packages/cli/src/main.ts | `operad init` did not print `created` before the claude install, so an install that failed left the line out | `publishing and installing the packages > init retries a claude install that failed after config.json was written` |

@@ -457,7 +457,14 @@ function printValue(io: CliIo, value: unknown): void {
  * claude package when that configuration enables it. `operad init` and a bare
  * `operad` both start here; only `init` prints the checks.
  */
-async function ensureHomeConfig(home: string): Promise<{
+async function ensureHomeConfig(
+  home: string,
+  onConfig?: ((made: {
+    readonly created: boolean;
+    readonly path: string;
+    readonly harnesses: readonly string[];
+  }) => void) | undefined,
+): Promise<{
   readonly created: boolean;
   readonly path: string;
   readonly config: OperadConfig;
@@ -470,6 +477,7 @@ async function ensureHomeConfig(home: string): Promise<{
     (name) => Bun.which(name, { PATH: path }) !== null,
   );
   const ensured = await ensureConfig(home, distributionConfig(home, harnesses));
+  onConfig?.({ created: ensured.created, path: ensured.path, harnesses });
   // claude is not a CLI dependency: a home that enables it gets its package
   // and SDK now, as `operad plugin enable claude` would install them (ADR 0012
   // D4). Reading the config first makes a second init retry an install that
@@ -493,15 +501,16 @@ async function ensureHomeConfig(home: string): Promise<{
 }
 
 async function commandInit(home: string, io: CliIo): Promise<number> {
-  const ensured = await ensureHomeConfig(home);
-  io.write(
-    `${ensured.created ? "created" : "using"} ${ensured.path}\n`,
-  );
-  if (ensured.created && ensured.harnesses.length === 0) {
+  const ensured = await ensureHomeConfig(home, (made) => {
     io.write(
-      "no agent found on PATH: install claude (https://code.claude.com), pi (bun add -g @earendil-works/pi-coding-agent) or radian, then run operad init again\n",
+      `${made.created ? "created" : "using"} ${made.path}\n`,
     );
-  }
+    if (made.created && made.harnesses.length === 0) {
+      io.write(
+        "no agent found on PATH: install claude (https://code.claude.com), pi (bun add -g @earendil-works/pi-coding-agent) or radian, then run operad init again\n",
+      );
+    }
+  });
   const config = ensured.config;
   const storeRoot = storeRootOf(config);
   const registry = await loadPluginRegistry({

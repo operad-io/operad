@@ -94,7 +94,7 @@ export interface TuiRunOptions {
   readonly onLog?: ((message: string) => void) | undefined;
   /** Never start `operad serve`, even when none answers. */
   readonly noStart?: boolean | undefined;
-  /** Open this parent's new chat when the screen starts: `bot:default` for a bare `operad`. */
+  /** Open this parent's new chat when the screen starts; a bare `operad` passes it. */
   readonly startChat?: string | undefined;
   /** The `operad` entry file a started serve runs; without it none is started. */
   readonly serveEntry?: string | undefined;
