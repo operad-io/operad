@@ -1144,6 +1144,26 @@ describe("http server", () => {
     }
   });
 
+  test("POST /v1/commands gives a command an empty input when the body has none, never the serve stdin", async () => {
+    const h = await makeHarness();
+    try {
+      const post = async (body: unknown): Promise<unknown> =>
+        (
+          await json(
+            await api(h, "/v1/commands", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify(body),
+            }),
+          )
+        ).value;
+      expect(await post({ plugin: "webtest", verb: "input" })).toEqual({ input: "" });
+      expect(await post({ plugin: "webtest", verb: "input", input: "text" })).toEqual({ input: "text" });
+    } finally {
+      await h.close();
+    }
+  });
+
   test("POST /v1/settings with a deeper name changes one entry and keeps a concurrent change", async () => {
     const h = await makeHarness();
     try {

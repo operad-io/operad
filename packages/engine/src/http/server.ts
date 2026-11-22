@@ -796,8 +796,10 @@ function createHandler(
       }
       const commandArgs = args === undefined ? [] : (args as readonly string[]);
       try {
+        // A served command never reads the serve process's own stdin: an
+        // omitted input is an empty one.
         const run = await options.registry.runCommand([plugin, verb, ...commandArgs], {
-          ...(input === undefined ? {} : { input }),
+          input: input ?? "",
         });
         if (run === undefined) {
           return errorResponse(

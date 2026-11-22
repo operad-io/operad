@@ -1408,3 +1408,9 @@ resume window`. Rows are append-only, so the old lines stay as history.
 | T-0678-M2 | packages/engine/src/plugin/registry.ts | a secret question was allowed to wait past its grace, where its text cannot reach the step | `a question with an address, a code and a secret answer > a secret question that would wait past its grace is refused before anyone is asked` |
 | T-0678-M3 | packages/engine/src/runner/ask.ts | an answer that carried no text for a secret question was accepted | `a question with an address, a code and a secret answer > an answer that drops the secret text is refused while the step runs` |
 | T-0678-M4 | packages/engine/src/plugin/question-form.ts | a question's address was not checked, so a `javascript:` address passed | `a question's address, code and secret > an address must be an absolute http or https one` |
+
+## T-0697-first-run-followups-2 — a served command never reads the serve stdin
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0697-first-run-followups-2-M1 | packages/engine/src/http/server.ts | passed `input` through unchanged, so an omitted input reached the command as undefined and it could read the serve process's stdin | `http server > POST /v1/commands gives a command an empty input when the body has none, never the serve stdin` |
