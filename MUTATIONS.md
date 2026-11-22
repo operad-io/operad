@@ -233,3 +233,9 @@ Each package keeps its mutation checks in `MUTATIONS.md`; a row names the broken
 The T-0659-M1 failure shows only under stress on Linux: T-0659's answer recorded
 200 runs on the test host, 185 passing and 15 failing before the fix, and 200
 passing after it.
+
+## T-0686 — a check waiting for a slot is not silent
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0686-M1 | scripts/remote-check.sh | the wait line was no longer printed, so a check waiting for a slot said nothing | `remote-check.sh > slots and the integration lane > a check waiting for a slot says which one, at once and again while it waits` (timed out waiting) |
