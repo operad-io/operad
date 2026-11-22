@@ -110,3 +110,4 @@ owner 2026-11-21：用户也可能只装桌面应用就开始用。下面的现�
 ## 发布前的核对（不挡任务合并）
 
 - **ChatGPT 订阅登录的条款**（owner，2026-11-22）：pi 的 openai-codex 登录用的是 Codex CLI 的公开客户端身份，operad 作为第三方产品在自己的界面里用这个身份引导登录有条款风险（`docs/research/2026-11-21-pibot.md` 的"不该照搬"）。T-0678 照常用 pi 的登录；对外发布含这个登录入口的版本之前，核对一次 OpenAI 的条款，确认是否要注册 operad 自己的客户端。
+- 调研已做（T-0702，2026-11-22）：`docs/research/2026-11-22-siwc-own-registration.md`。要点：OpenAI 的 Sign in with ChatGPT 允许开源客户端动态注册自己的 client（`dynamic_agent_client`），但签发的令牌只能调 `https://api.openai.com/v1/responses`，不是 pi 的 `openai-codex` 用的 `chatgpt.com/backend-api`，所以要给 pi 加一个新 provider，不是换 client id；没有设备码流程；`Request a client ID` 页写明目前只对“少数商业伙伴”开放，发布前要先确认 operad 能不能注册。
