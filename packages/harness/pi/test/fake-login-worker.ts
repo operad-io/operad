@@ -64,7 +64,7 @@ async function next(): Promise<Record<string, unknown>> {
   return found;
 }
 
-async function answer(id: number): Promise<string> {
+async function readAnswer(id: number): Promise<string> {
   for (;;) {
     const command = await next();
     if (command["type"] === "answer" && command["id"] === id) return String(command["value"] ?? "");
@@ -100,7 +100,7 @@ if (provider === "openai-codex" && auth === "oauth") {
       placeholder: "http://localhost:1455/auth/callback",
     },
   });
-  const value = await answer(1);
+  const value = await readAnswer(1);
   if (value.length === 0) {
     write({ type: "failed", message: "the login was cancelled" });
     process.exit(1);
@@ -115,7 +115,7 @@ if (auth === "api_key") {
     id: 2,
     prompt: { type: "secret", message: `Enter ${provider} API key` },
   });
-  const value = await answer(2);
+  const value = await readAnswer(2);
   if (value.length === 0) {
     write({ type: "failed", message: "the login was cancelled" });
     process.exit(1);
