@@ -6,6 +6,7 @@
 
 import { withWorkerReports } from "@operad-io/engine/platform";
 import {
+  appendFileSync,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -97,6 +98,20 @@ export function worktreePath(
   // step runs; the worktree must still stay inside the repository.
   assertInsideRepository(repositoryPath, path, "worktreeRoot");
   return path;
+}
+
+/**
+ * Where a task's work is done: its own worktree, or the main clone itself when
+ * the repository works in a branch of its folder (ADR 0039 D1).
+ */
+export function workPath(
+  repository: RepositoryData,
+  settings: DevSettings,
+  taskId: string,
+): string {
+  return settings.workIn === "branch"
+    ? repository.path
+    : worktreePath(repository.path, settings, taskId);
 }
 
 /** The branch a task's worktree is on. */
@@ -240,6 +255,12 @@ function attemptFor(ctx: StepContext, task: TaskData): AttemptState {
     attempts: number,
     replay: false,
   };
+}
+
+/** The branch an attempt recorded the main clone as being on before the task's. */
+function startBranchOf(attempt: TaskAttempt | undefined): string | undefined {
+  const value = attempt?.startBranch;
+  return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
 function listWorktrees(repositoryPath: string): readonly string[] {
@@ -410,6 +431,10 @@ export interface Prepared {
   /** Set when the prepare commands failed. */
   readonly reason?: string | undefined;
   readonly log?: string | undefined;
+  /** In branch mode: the branch the main clone was on before the task's. */
+  readonly startBranch?: string | undefined;
+  /** In branch mode: the task was cancelled while the step was preparing. */
+  readonly cancelled?: boolean | undefined;
 }
 
 /** Runs the prepare commands in a ready worktree; a failure turns it into a failed visit. */
@@ -744,6 +769,143 @@ export function prepareWorktree(
   return { kind: "ready", base: headOf(path) };
 }
 
+/** Adds a line to the repository's own ignore list, so git status never shows it. */
+function excludeFromStatus(repositoryPath: string, entry: string): void {
+  const path = git(repositoryPath, ["rev-parse", "--git-path", "info/exclude"]);
+  if (!path.ok) return;
+  const excludePath = resolve(repositoryPath, path.out);
+  try {
+    mkdirSync(dirname(excludePath), { recursive: true });
+    const current = existsSync(excludePath) ? readFileSync(excludePath, "utf8") : "";
+    const lines = current.replace(/\r\n/g, "\n").split("\n");
+    if (lines.some((line) => line.trim() === entry)) return;
+    const prefix = current.length === 0 || current.endsWith("\n") ? "" : "\n";
+    appendFileSync(excludePath, `${prefix}${entry}\n`, "utf8");
+  } catch {
+    // Without the entry the note shows as an untracked file; the step goes on.
+  }
+}
+
+export interface BranchOptions {
+  /** The start branch this attempt already recorded (a replay of the step). */
+  readonly recorded?: string | undefined;
+  /** The start branch an earlier attempt recorded; used only while the clone is on the task's branch. */
+  readonly carried?: string | undefined;
+  readonly mergeMain: boolean;
+  /**
+   * Called once, with the branch the clone is on, before the clone is switched,
+   * so a crash after the switch still knows where to switch back to. False
+   * says the task was cancelled.
+   */
+  readonly beforeSwitch?: ((start: string) => Promise<boolean>) | undefined;
+}
+
+/** A message names at most this many files of a dirty clone. */
+const NAMED_FILES = 20;
+
+function namedFiles(files: readonly string[]): string {
+  const shown = files.slice(0, NAMED_FILES).join(", ");
+  return files.length > NAMED_FILES
+    ? `${shown} and ${String(files.length - NAMED_FILES)} more`
+    : shown;
+}
+
+/**
+ * The branch mode of `prepareWorktree` (ADR 0039 D1, D4): the task works on
+ * `work/<id>` in the main clone itself. The clone is in one of three states
+ * when the step runs, told apart by the branch it is on:
+ *
+ * - on `work/<id>`: the step goes on from an earlier visit (a rework, or a
+ *   crash after the switch). Edits in the tree are the worker's own, so main
+ *   is not merged into a dirty tree.
+ * - on the branch the task started on, or on any branch the first time: the
+ *   clone must be clean, then it is switched.
+ * - on another branch than the recorded start: the person moved it; the step
+ *   stops and says so instead of switching under them.
+ */
+export async function prepareBranch(
+  repository: RepositoryData,
+  settings: DevSettings,
+  taskId: string,
+  options: BranchOptions,
+): Promise<Prepared> {
+  const fetch = git(repository.path, ["fetch", "--prune", settings.remote]);
+  if (!fetch.ok) {
+    return failed(
+      `cannot fetch "${settings.remote}": ${fetch.err || fetch.out || "git fetch failed"}`,
+    );
+  }
+  const mainRef = `${settings.remote}/${settings.mainBranch}`;
+  if (!git(repository.path, ["show-ref", "--verify", "--quiet", `refs/remotes/${mainRef}`]).ok) {
+    return failed(`"${mainRef}" does not exist after the fetch`);
+  }
+  const path = repository.path;
+  const branch = workBranch(taskId);
+  const current = currentBranch(path);
+  excludeFromStatus(path, PROGRESS_FILE);
+
+  if (current === branch) {
+    const startBranch = options.recorded ?? options.carried ?? settings.mainBranch;
+    if (mergeInProgress(path)) {
+      return { kind: "conflict", base: headOf(path), files: conflictedFiles(path), startBranch };
+    }
+    if (!options.mergeMain || changedFiles(path).length > 0) {
+      return { kind: "ready", base: headOf(path), startBranch };
+    }
+    return { ...mergeLatest(path, mainRef), startBranch };
+  }
+
+  if (current === undefined) {
+    return failed(
+      "the main clone is not on a branch; switch it to a branch, then run the task again",
+    );
+  }
+  if (options.recorded !== undefined && current !== options.recorded) {
+    return failed(
+      `the main clone is on "${current}", but the task started on "${options.recorded}"; switch it back to "${options.recorded}", then run the task again`,
+    );
+  }
+  const dirty = changedFiles(path);
+  if (dirty.length > 0) {
+    return failed(
+      `the main clone has uncommitted changes: ${namedFiles(dirty)}; commit or set them aside, then run the task again`,
+      dirty,
+    );
+  }
+  const startBranch = options.recorded ?? current;
+  if (options.beforeSwitch !== undefined && options.recorded === undefined) {
+    if (!(await options.beforeSwitch(startBranch))) {
+      return { kind: "failed", cancelled: true };
+    }
+  }
+
+  stepTestHooks.branchStep?.("before-switch");
+  let reused = false;
+  let switched: GitResult;
+  if (branchExists(path, branch)) {
+    switched = git(path, ["switch", "--quiet", branch]);
+    reused = true;
+  } else if (branchExists(path, branch, settings.remote)) {
+    switched = git(path, [
+      "switch",
+      "--quiet",
+      "--no-track",
+      "-c",
+      branch,
+      `${settings.remote}/${branch}`,
+    ]);
+    reused = true;
+  } else {
+    switched = git(path, ["switch", "--quiet", "--no-track", "-c", branch, mainRef]);
+  }
+  if (!switched.ok) {
+    return failed(`cannot switch the main clone to "${branch}": ${switched.err || switched.out}`);
+  }
+  stepTestHooks.branchStep?.("after-switch");
+  if (reused && options.mergeMain) return { ...mergeLatest(path, mainRef), startBranch };
+  return { kind: "ready", base: headOf(path), startBranch };
+}
+
 export async function saveTask(
   ctx: StepContext,
   key: string,
@@ -796,6 +958,14 @@ export const stepTestHooks: {
   workClock?: WorkClock | undefined;
   /** Replaces the timer that says a worker with a place has not started. */
   workerStartClock?: WorkClock | undefined;
+  /**
+   * Called at each point of the branch mode's worktree step where a crash
+   * leaves the main clone in a different state. A test kills its own process
+   * there.
+   */
+  branchStep?:
+    | ((point: "before-switch" | "after-switch" | "before-save") => void)
+    | undefined;
   /** Called once the task has recorded what the work step waits for (null: nothing). */
   afterWorkerWait?: ((text: string | null) => void) | undefined;
 } = {};
@@ -997,28 +1167,57 @@ export async function runWorktree(
     recordedText === undefined
       ? context.settings
       : devSettingsFromText(context.repository.path, recordedText);
+  const inPlace = settings.workIn === "branch";
+  const mergeMain = beforeAttemptOf(ctx.params) !== "none";
+  const where = workPath(context.repository, settings, context.workName);
   const prepared = await withPrepare(
     ctx,
     settings,
-    worktreePath(context.repository.path, settings, context.workName),
-    prepareWorktree(
-      context.repository,
-      settings,
-      context.workName,
-      beforeAttemptOf(ctx.params) !== "none",
-    ),
+    where,
+    inPlace
+      ? await prepareBranch(context.repository, settings, context.workName, {
+          recorded: replay ? startBranchOf(attempt) : undefined,
+          carried: startBranchOf(context.task.attempt),
+          mergeMain,
+          // Record where the clone started before it is switched, so a crash
+          // between the two still knows which branch to switch back to.
+          beforeSwitch: (start) =>
+            saveTaskGuarded(
+              ctx,
+              context.taskKey,
+              {
+                ...context.task,
+                phase: "running",
+                waitKind: undefined,
+                run: ctx.runId,
+                startRequested: false,
+                attempts,
+                attempt: {
+                  ...attempt,
+                  run: ctx.runId,
+                  settingsText,
+                  inPlace: true,
+                  startBranch: start,
+                },
+              },
+              "dev:worktree-start",
+            ),
+        })
+      : prepareWorktree(context.repository, settings, context.workName, mergeMain),
   );
+  if (prepared.cancelled === true) return cancelledStep();
+  if (inPlace) stepTestHooks.branchStep?.("before-save");
   const base = prepared.base ?? attempt.base ?? null;
+  const startBranch = prepared.startBranch ?? startBranchOf(replay ? attempt : undefined);
   const nextAttempt: TaskAttempt = {
     ...attempt,
     run: ctx.runId,
     settingsText,
-    worktree: worktreePath(
-      context.repository.path,
-      settings,
-      context.workName,
-    ),
+    worktree: where,
     branch: workBranch(context.workName),
+    ...(inPlace
+      ? { inPlace: true, ...(startBranch === undefined ? {} : { startBranch }) }
+      : {}),
     base,
     result: prepared.kind,
     // The answer of an earlier attempt belongs to that attempt.
@@ -1097,18 +1296,24 @@ export async function runReverify(
     run: ctx.runId,
   };
   const attempts = Math.max(context.task.attempts, attempt.number);
-  const prepared = await withPrepare(
-    ctx,
-    context.settings,
-    worktreePath(context.repository.path, context.settings, context.workName),
-    prepareWorktree(context.repository, context.settings, context.workName),
-  );
-  const base = prepared.base ?? attempt.base ?? null;
-  const worktree = worktreePath(
-    context.repository.path,
+  const worktree = workPath(
+    context.repository,
     context.settings,
     context.workName,
   );
+  const inPlace = context.settings.workIn === "branch";
+  const prepared = await withPrepare(
+    ctx,
+    context.settings,
+    worktree,
+    inPlace
+      ? await prepareBranch(context.repository, context.settings, context.workName, {
+          recorded: startBranchOf(attempt),
+          mergeMain: true,
+        })
+      : prepareWorktree(context.repository, context.settings, context.workName),
+  );
+  const base = prepared.base ?? attempt.base ?? null;
   const message =
     prepared.kind === "conflict"
       ? "reverify: main conflicts, sending to work"
@@ -1122,6 +1327,12 @@ export async function runReverify(
     run: ctx.runId,
     worktree,
     branch: workBranch(context.workName),
+    ...(inPlace
+      ? {
+          inPlace: true,
+          ...(prepared.startBranch === undefined ? {} : { startBranch: prepared.startBranch }),
+        }
+      : {}),
     base,
     result: prepared.kind,
     // A conflict is worked on again; a clean merge goes straight to the gate.
@@ -1425,7 +1636,7 @@ export async function runWork(ctx: StepContext, stepParams?: unknown): Promise<P
   const task = context.task;
   const path =
     task.attempt?.worktree ??
-    worktreePath(context.repository.path, context.settings, context.workName);
+    workPath(context.repository, context.settings, context.workName);
   const branch = task.attempt?.branch ?? workBranch(context.workName);
   const attempt: TaskAttempt = task.attempt ?? {
     number: Math.max(task.attempts, 0) + 1,
@@ -1434,7 +1645,11 @@ export async function runWork(ctx: StepContext, stepParams?: unknown): Promise<P
   const attempts = Math.max(task.attempts, attempt.number);
   const base = attempt.base ?? headOf(path) ?? null;
 
-  if (!existsSync(path) || !isWorktree(path)) {
+  // The attempt's own record says where it works; the settings may have
+  // changed since (a task switched from one mode to the other keeps its way).
+  const inPlace = task.attempt?.inPlace === true;
+  const wrongBranch = inPlace ? currentBranch(path) !== branch : false;
+  if (!existsSync(path) || !isWorktree(path) || wrongBranch) {
     const nextAttempt: TaskAttempt = {
       ...attempt,
       run: ctx.runId,
@@ -1461,7 +1676,9 @@ export async function runWork(ctx: StepContext, stepParams?: unknown): Promise<P
       result: "failed",
       data: resultData(nextAttempt, harnessReading({}), {
         reason: "no_worktree",
-        message: `no worktree at ${path}; run the worktree step first`,
+        message: inPlace
+          ? `the main clone is on "${currentBranch(path) ?? "no branch"}", not "${branch}"; run the worktree step first`
+          : `no worktree at ${path}; run the worktree step first`,
       }),
     };
   }
@@ -1795,7 +2012,9 @@ export async function runWork(ctx: StepContext, stepParams?: unknown): Promise<P
     stageParamsOf(stage),
   );
   if (askAnswer !== undefined) poolCall.askAnswer = askAnswer;
-  const mainCheckoutBefore = checkoutSnapshot(context.repository.path);
+  // Working in the main clone changes it by design, so there is nothing to
+  // report about it (ADR 0039 D1).
+  const mainCheckoutBefore = inPlace ? [] : checkoutSnapshot(context.repository.path);
   let mainChanges: readonly string[] = [];
   try {
     outcome = await withWorkerReports(
@@ -1813,11 +2032,9 @@ export async function runWork(ctx: StepContext, stepParams?: unknown): Promise<P
   } finally {
     // Reading the main checkout is part of ending the step, so a worker call
     // that throws still reports what the step left there.
-    mainChanges = newCheckoutChanges(
-      context.repository.path,
-      path,
-      mainCheckoutBefore,
-    );
+    mainChanges = inPlace
+      ? []
+      : newCheckoutChanges(context.repository.path, path, mainCheckoutBefore);
     if (startTimer !== undefined) startClock.clearTimeout(startTimer);
     sayClosed = true;
     await sayChain;
@@ -2038,7 +2255,9 @@ export async function runWork(ctx: StepContext, stepParams?: unknown): Promise<P
   // A worker whose sandbox cannot write .git leaves its work uncommitted; the
   // stage asks dev to commit it, before verify so the check sees the commit.
   if (
-    stageParams.flowCommit === true &&
+    // In the main clone dev commits what the worker left unless the stage says
+    // the worker commits itself: the checks run on a commit (ADR 0020 D3).
+    (stageParams.flowCommit === true || (inPlace && stageParams.flowCommit !== false)) &&
     hostError === undefined &&
     outcome?.result === "done" &&
     dirty.length > 0

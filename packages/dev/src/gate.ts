@@ -721,6 +721,8 @@ const MAIN_CHECKOUT_CHANGE = "changed the main checkout:";
  * the work step wrote into the worker's answer (T-0646).
  */
 function mainCheckoutChanges(attempt: TaskAttempt): readonly string[] {
+  // An attempt that works in the main clone changes it by design.
+  if (attempt.inPlace === true) return [];
   const message = attempt.finalMessage;
   if (typeof message !== "string") return [];
   const paths: string[] = [];

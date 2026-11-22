@@ -1596,3 +1596,21 @@ the row fields.
 | T-0717-M1 | packages/dev/src/chat.ts | `runChatAccess` opened a worktree for `edits` in a `workIn` `branch` repository | `a repository chat with workIn branch > at edits and full it works in the main clone: no worktree question, no work/chat branch, writes allowed there` |
 | T-0717-M2 | packages/dev/src/chat.ts | `dev/chat_settings` gave a `branch` chat the read-only profile | `a repository chat with workIn branch > the first reply's context no longer says read-only` |
 | T-0717-M3 | packages/dev/src/chat.ts | the starting text of a `branch` chat still said read-only | `a repository chat with workIn branch > the first reply's context no longer says read-only` |
+
+## T-0718 — the worktree step of a branch repository
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0718-M1 | packages/dev/src/steps.ts | a main clone with uncommitted changes was switched anyway | `dev/worktree with workIn branch > a clone with uncommitted changes refuses to start and names the files` |
+| T-0718-M2 | packages/dev/src/steps.ts | the start branch was not recorded before the switch | `dev/worktree with workIn branch > a crash before the switch: the same run records the start, then switches` |
+| T-0718-M3 | packages/dev/src/steps.ts | main was merged into a dirty tree on the task's branch | `dev/worktree with workIn branch > a crash before the step saved its result, with edits already in the tree, keeps the edits` |
+| T-0718-M4 | packages/dev/src/steps.ts | a clone moved to another branch than the recorded start was switched anyway | `dev/worktree with workIn branch > the person moving the clone to another branch between visits is not overridden` |
+| T-0718-M5 | packages/dev/src/steps.ts | dev did not commit what the worker left in a branch repository | `dev/work with workIn branch > runs in the main clone on the task branch; dev commits what the worker left` |
+| T-0718-M6 | packages/dev/src/gate.ts | a main-checkout line was held against an attempt that works in the main clone | `dev/review and the main checkout > an attempt that works in the main clone is not held to a main-checkout line (T-0718)` |
+| T-0718-M7 | packages/dev/src/steps.ts | the progress note was not excluded from the clone's status | `dev/worktree with workIn branch > the progress note never shows in the clone's status` |
+| T-0718-M8 | packages/dev/src/steps.ts | the work step ran with the clone on another branch than the task's | `dev/work with workIn branch > the work step refuses when the clone is not on the task's branch` |
+| T-0718-M9 | packages/dev/src/steps.ts | a later visit forgot the start branch an earlier attempt recorded | `dev/worktree with workIn branch > a second visit with the clone on the task's branch merges main again and keeps the start` |
+| T-0718-M10 | packages/dev/src/steps.ts | `workPath` gave a worktree path in branch mode | `dev/worktree with workIn branch > switches the main clone to work/<id> from main and records where it started` |
+| T-0718-M11 | packages/dev/src/flow-compiler.ts | `commit: false` was not passed to the work step | `a work stage that says commit false reaches the work step, so a branch repository does not commit for it (T-0718)` |
+| T-0718-M12 | packages/dev/src/steps.ts | dev committed in a branch repository although the stage said the worker commits | `dev/work with workIn branch > a stage that says the worker commits itself gets no commit from dev` |
+| T-0718-M13 | packages/dev/src/steps.ts | a clone on no branch was switched | `dev/worktree with workIn branch > a clone that is not on a branch refuses to start` |

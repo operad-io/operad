@@ -305,7 +305,7 @@ function workParams(stage: WorkStage): Readonly<Record<string, unknown>> {
     ...(stage.pool === undefined ? {} : { flowPool: stage.pool }),
     ...(stage.brief === undefined ? {} : { flowBrief: stage.brief }),
     ...(stage.workerBrief === undefined ? {} : { flowWorkerBrief: stage.workerBrief }),
-    ...(stage.commit === true ? { flowCommit: true } : {}),
+    ...(stage.commit === undefined ? {} : { flowCommit: stage.commit }),
     ...(stage.beforeAttempt === undefined ? {} : { beforeAttempt: stage.beforeAttempt }),
   };
 }
