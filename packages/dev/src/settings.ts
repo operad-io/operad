@@ -358,7 +358,7 @@ export const DEFAULT_AFTER_MERGE: readonly string[] = [
   "if [ -e \"$OPERAD_WORKTREE\" ]; then git worktree remove --force \"$OPERAD_WORKTREE\"; fi",
   "if [ -e \"$OPERAD_WORKTREE-gate\" ]; then git worktree remove --force \"$OPERAD_WORKTREE-gate\"; fi",
   "git worktree prune",
-  "if git show-ref --verify --quiet \"refs/heads/work/$OPERAD_TASK\"; then git branch -D \"work/$OPERAD_TASK\"; fi",
+  "if git show-ref --verify --quiet \"refs/heads/work/$OPERAD_TASK\" && [ \"$(git symbolic-ref --short -q HEAD)\" != \"work/$OPERAD_TASK\" ]; then git branch -D \"work/$OPERAD_TASK\"; fi",
   "if git ls-remote --exit-code --heads \"$OPERAD_REMOTE\" \"work/$OPERAD_TASK\" >/dev/null; then git push \"$OPERAD_REMOTE\" --delete \"work/$OPERAD_TASK\"; else [ $? -eq 2 ]; fi",
 ];
 
