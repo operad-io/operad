@@ -31,7 +31,7 @@ When a stage fails, the run returns to the nearest `code` stage before it and re
 
 `dev` checks them when it loads a flow and refuses a flow that breaks one, saying why:
 
-- The last step is integrate; a change reaches main only through it. In `branch` mode integrate first switches the main clone back to the branch it started on and then fast-forwards that branch to the merged commit, so a failed check leaves no commit on the starting branch.
+- The last step is integrate; a change reaches main only through it. The merge is built and pushed from the gate worktree in both modes. In `branch` mode, once the merge landed, integrate switches the main clone from the task branch back to the branch it started on, then fast-forwards the clone as in `worktree` mode (when the starting branch is main; on another branch the clone is left there and the task says so). Cleanup then deletes the task branch, which it cannot while the clone is on it. The task is merged either way: a clone the person moved to another branch, or one with uncommitted changes, is not touched, stays where it is, and the task's brief says where and why (a clone with uncommitted changes stays on the task branch, which cleanup then keeps). The checks run before the merge, so a failed check leaves no commit on the starting branch.
 - A flow has at least one `test`, `review` or `human` stage.
 
 Everything else is the project's decision. A flow that wants no model review has no `review` stage.
