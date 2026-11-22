@@ -19,7 +19,7 @@ dev 今天的基本形态是多 agent 加 git worktree：每个任务一个 work
    4. 提高并发：今天的工作方式。
 3. **"在哪里工作"这个设置的两个值是：主 clone 里的新分支，或 worktree**（owner 2026-11-22）。就地的任务不直接改当前分支：dev 在主 clone 里为任务开一个新分支，任务在那个分支上工作；worktree 照今天的做法。对话在第 1 步是否也开分支，没有定（待决 7）。
 4. **用词**（owner 2026-11-22，待决 1 已定）：设置 `workIn`，写在 `.operad/dev.json`，标题 Work in / 工作位置；值 `branch`（A branch in this folder / 本目录的新分支）和 `worktree`（A separate worktree / 独立的 worktree）。四步不单独起名。
-5. **Setup Dev 让用户选**（owner 2026-11-22，待决 6 已定）：项目起始的提示词（dev 的 Setup Dev guide，`packages/dev/skills/setup/SKILL.md`，以及 `docs/user/setup-prompt.md`）要写清 `branch` 和 `worktree` 的区别（在哪里改、并发、能不能边让 agent 改边自己用这个目录、合并方式），由 bot 问用户选哪一个，写进它提议的 `.operad/dev.json`。
+5. **Setup Dev 让用户选**（owner 2026-11-22，待决 6 已定）：项目起始的提示词（dev 的 Setup Dev guide，`packages/dev/skills/setup/SKILL.md`，以及 `docs/user/setup-prompt.md`）要写清 `branch` 和 `worktree` 的区别（在哪里改、并发、能不能边让 agent 改边自己用这个目录、合并方式），由 bot 问用户选哪一个，写进它提议的 `.operad/dev.json`。问法要让用户看得懂，和提示词里"用我写给你的语言回复"一样：bot 用用户的语言、用平常话讲两种做法对用户有什么不同（例如"agent 在你这个文件夹里开一个新分支改，一次一件事；你在它改的时候最好不要同时改这个文件夹" 对 "每件事在单独的文件夹里做，可以同时做几件，你的文件夹不受影响"），不要求用户懂 clone、worktree、并发这些词；`branch`、`worktree` 只出现在它写的 dev.json 里。
 
 ## 提议的形状（草稿）
 
