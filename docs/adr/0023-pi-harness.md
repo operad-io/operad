@@ -82,8 +82,7 @@ operad starts no subscription (OAuth) login, ChatGPT's included: no authorize
 URL, device code or pasted redirect of one reaches a question, and the child
 refuses a login command that is not an API-key one. pi's `openai-codex` login
 uses the Codex CLI's own client id, and operad presenting it as its own step is
-the risk the owner decided against (2026-11-22,
-`docs/research/2026-11-22-siwc-own-registration.md`). A person who wants their
+the risk the owner decided against. A person who wants their
 ChatGPT plan, or another subscription (ADR 0024 D3 gives the reason for
 Anthropic), runs pi's own login, `pi auth login openai-codex`. The first
 question of the login says so in one line, with the command a person can run:
