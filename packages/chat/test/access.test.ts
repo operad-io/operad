@@ -276,6 +276,18 @@ describe("a chat whose agent cannot carry the level", () => {
   });
 });
 
+describe("changing the level of a chat whose agent cannot carry it", () => {
+  test("is refused when asked, naming the levels the agent carries, and the chat is unchanged", async () => {
+    const r = await rig(() => reply("ok"), undefined, undefined, "radian", [], { accessLevels: ["edits", "full"] });
+    const chat = await r.chat({ accessLevel: "full", accessDefault: "full" });
+    await expect(act(r, chat, { level: "plan" })).rejects.toThrow(
+      'the agent "radian" cannot carry the access level "plan"; it carries edits, full',
+    );
+    expect(chatData((await r.store.get(CHAT_TYPE, chat))?.data ?? {}).accessLevel).toBe("full");
+    expect(String((await act(r, chat, { level: "edits" })).value)).toContain("now uses access level edits");
+  });
+});
+
 describe("a form a chat's agent asks", () => {
   test("it is never turned into the worktree question, and its answers reach the harness", async () => {
     const asked: AskRequest[] = [];

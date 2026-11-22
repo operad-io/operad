@@ -1324,6 +1324,7 @@ export class PluginRegistry {
       harnesses: this.loadedHarnesses(),
       models: this.loadedModels(),
       efforts: this.loadedEfforts(),
+      capabilities: this.loadedCapabilities(),
       stepLoaded: (use) => this.stepIndex.has(use),
       ...(this.onCancelRun === undefined ? {} : { runs: this.runControl() }),
     };
@@ -1462,6 +1463,7 @@ export class PluginRegistry {
       stepLoaded: (use) => this.stepIndex.has(use),
       models: this.loadedModels(),
       efforts: this.loadedEfforts(),
+      capabilities: this.loadedCapabilities(),
       actions: object === undefined ? [] : await this.actionInfosFor(object),
       ...(object === undefined
         ? {}

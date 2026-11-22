@@ -559,6 +559,13 @@ const accessAction: ActionTypeDefinition = {
     if (!isAccessLevel(level)) {
       throw new Error(`the access level must be one of ${ACCESS_LEVELS.join(", ")}`);
     }
+    // An agent that cannot carry the level is refused now, not at the next reply.
+    const carried = ctx.capabilities?.[chat.harness]?.accessLevels;
+    if (ctx.capabilities?.[chat.harness] !== undefined && !(carried ?? []).includes(level)) {
+      throw new Error(
+        `the agent "${chat.harness}" cannot carry the access level "${level}"; it carries ${(carried ?? []).length === 0 ? "none" : (carried ?? []).join(", ")}`,
+      );
+    }
     const from = chat.accessLevel ?? chat.accessDefault ?? "ask";
     if (from === level && chat.accessChosen === true) return `chat ${ctx.object.id} already uses access level ${level}`;
     if (from === level) {

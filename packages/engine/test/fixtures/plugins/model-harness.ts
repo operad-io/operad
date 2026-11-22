@@ -5,6 +5,7 @@ export default definePlugin({
   name: "models",
   kind: "harness",
   version: "1.0.0",
+  capabilities: { accessLevels: ["ask", "full"] },
   models: {
     list: [
       {

@@ -410,3 +410,10 @@ Survived: replacing the `resolveCommand(...) === undefined` guard alone with `tr
 | T-0698-M2 | packages/cli/src/doctor.ts | a setup problem whose prompt names a command in backticks lost its `next` | `operad doctor > dev on with pool off: the setup problem ends with the command to type` |
 | T-0698-M3 | packages/cli/src/doctor.ts | the broken config.json problem's `next` went back to `operad doctor (after fixing config.json)` | `operad doctor > a broken config.json is one problem and the rest is not loaded` |
 | T-0699-M1 | packages/cli/src/doctor.ts | an agent with a `loginBot` was given its own sign-in command again (`loginBot` ignored) | `operad doctor > an agent operad can log in gets operad bot:login, and --json carries the same next` |
+
+## T-0743 — an agent that cannot carry a chat's level
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0743-M1 | packages/cli/src/defaults.ts | `operad init` listed radian before claude and pi, so a new home preferred radian | `` `operad init` finds the agent on PATH > with radian, claude and pi on PATH, radian is not the first agent `` |
+| T-0743-M5 | packages/cli/src/main.ts | the plugin list left out the access levels a harness carries | `plugins over HTTP > GET /v1/plugins carries a harness's models with what it knows about each` |

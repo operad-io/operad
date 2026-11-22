@@ -28,8 +28,12 @@ export const PI_CODING_AGENT_PACKAGE = "@earendil-works/pi-coding-agent";
 /** The exact pi version operad installs; it moves with an operad release. */
 export const PI_CODING_AGENT_VERSION = "1.6.0";
 
-/** The agent commands `operad init` looks for, in this order. */
-export const INIT_HARNESS_PLUGINS: readonly string[] = ["radian", "claude", "pi"];
+/**
+ * The agent commands `operad init` looks for, in this order. The first one is
+ * a new chat's default agent, so agents that carry every access level come
+ * before radian, which cannot carry `plan` or `ask` (ADR 0028 D2).
+ */
+export const INIT_HARNESS_PLUGINS: readonly string[] = ["claude", "pi", "radian"];
 
 /** Harness plugins are named after their agent; their npm packages are `harness-<agent>`. */
 const HARNESS_PLUGINS: readonly string[] = ["claude", "codex", "pi", "radian"];

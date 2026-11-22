@@ -806,6 +806,37 @@ describe("a bot's accessLevel setting", () => {
     expect(await level(r, id)).toBe("edits");
   });
 
+  test("a new chat takes the first agent that carries the level, and refuses one that cannot", async () => {
+    const r = await rig({ big: {}, picky: { harness: "radian" }, loose: { harness: "radian", accessLevel: "full" } });
+    const capabilities = {
+      radian: { accessLevels: ["edits", "full"] },
+      claude: { accessLevels: ["plan", "ask", "edits", "full"] },
+    };
+    const open = (bot: string, harnesses: readonly string[], extra: { harness?: string } = {}) =>
+      openChat({
+        store: r.store,
+        home: r.home,
+        settings: { bot: { bots: {} } } as never,
+        harnesses,
+        capabilities,
+        bot,
+        cause: "test",
+        ...extra,
+      });
+    // radian is loaded first and cannot carry ask: the chat gets claude.
+    const id = await open("big", ["radian", "claude"]);
+    expect(chatData((await r.store.get(CHAT_TYPE, id))?.data ?? {}).harness).toBe("claude");
+    // Only radian loaded, level ask: refused at creation, naming what it carries.
+    await expect(open("big", ["radian"])).rejects.toThrow(
+      'the agent "radian" cannot carry the access level "ask"; it carries edits, full',
+    );
+    await expect(open("big", ["radian", "claude"], { harness: "radian" })).rejects.toThrow(/cannot carry/);
+    await expect(open("picky", ["radian", "claude"])).rejects.toThrow(/cannot carry/);
+    // radian at a level it carries is fine, and an agent that carries the level is unchanged.
+    const ok = await open("loose", ["radian", "claude"]);
+    expect(chatData((await r.store.get(CHAT_TYPE, ok))?.data ?? {}).harness).toBe("radian");
+  });
+
   test("a scheduled chat stays full whatever the setting", async () => {
     const r = await rig({ big: { accessLevel: "plan" } });
     const id = await openChat({

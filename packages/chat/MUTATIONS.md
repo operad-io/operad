@@ -606,3 +606,9 @@ are append-only, so the old lines stay as history.
 | T-0701-M3 | packages/chat/src/index.ts | `/access` naming the level the chat already follows did not record a choice | `a bot's accessLevel setting > naming the level a chat already follows is a choice too` |
 | T-0701-M4 | packages/chat/src/reply.ts | a chat that chose no level did not follow the bot's changed setting at its next reply | `a bot's accessLevel setting > a chat with no choice moves when the setting changes` |
 | T-0717-M4 | packages/chat/src/reply.ts | the reply ignored `worktreeOffer: false` and turned a write question of a chat working in its main clone into the worktree question | `the worktree question > a chat that works in its main clone is asked the plain question, with no worktree offer` |
+
+## T-0743 — an agent that cannot carry a chat's level
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0743-M4 | packages/chat/src/index.ts | `access` accepted a level the chat's agent cannot carry | `a chat whose agent cannot carry the level` / `changing the level of a chat whose agent cannot carry it > is refused when asked, naming the levels the agent carries, and the chat is unchanged` |
