@@ -94,7 +94,7 @@ the result `done` with `data.model`, a model id the harness lists, and
 agent steps run and asks through `ctx.ask` (ADR 0008). A harness whose login is
 the user's own, such as claude, radian or codex, declares none.
 
-A plugin that owns an object whose agent is a harness, the bot plugin today,
+A plugin that owns an object whose agent is a harness, the bot plugin,
 calls the step by the agent's name through `ctx.runStep`. The call is by data,
 so the caller lists no step and a harness it does not load costs nothing. The
 step owns only the provider login and the settings that name the chosen model
