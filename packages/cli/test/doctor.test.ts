@@ -76,6 +76,31 @@ describe("operad doctor", () => {
     );
   });
 
+  test("an agent operad can log in gets operad bot:login, and --json carries the same next", async () => {
+    const env = healthy({
+      agents: async () => [{ name: "pi", signedIn: false, loginBot: "default" }],
+    });
+    const report = await runDoctor(env);
+    expect(formatDoctor(report)).toContain(
+      "problem  agent pi is not signed in -> operad bot:login default",
+    );
+    const out = capture();
+    expect(await main(["doctor", "--json"], { io: out.io, home: "/nowhere", doctor: env })).toBe(1);
+    const json = JSON.parse(out.text()) as { checks: { id: string; next?: string }[] };
+    expect(json.checks.find((check) => check.id === "agent:pi")?.next).toBe(
+      "operad bot:login default",
+    );
+  });
+
+  test("an agent operad cannot log in keeps its own command", async () => {
+    const report = await runDoctor(
+      healthy({ agents: async () => [{ name: "radian", signedIn: false }] }),
+    );
+    expect(formatDoctor(report)).toContain(
+      "problem  agent radian is not signed in -> radian login",
+    );
+  });
+
   test("serve not answering names operad serve", async () => {
     const report = await runDoctor(healthy({ serve: async () => ({ answering: false }) }));
     expect(report.ok).toBe(false);
