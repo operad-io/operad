@@ -1480,8 +1480,103 @@ describe("dev/review", () => {
       const prompt = state.reviewer.calls[0]?.prompt ?? "";
       expect(prompt).toContain("gone.txt: deleted, 5000 lines");
       expect(prompt).toContain("git show");
+      expect(prompt).toContain("listed by name with its line count");
+      expect(prompt).toContain("from the base commit");
       expect(prompt).not.toContain("source line 2500");
       expect(prompt.length).toBeLessThan(10_000);
+    });
+
+    test("a big deleted file and a small edit stay under the limit and list the deleted file", async () => {
+      const state = await fixture({
+        baseFiles: { "gone.txt": numbered(5000), "code.txt": "before\n" },
+        maxFileDiffBytes: 200_000,
+        maxDiffBytes: 20_000,
+        commit: false,
+      });
+      gitOrThrow(state.worktree, ["rm", "-q", "gone.txt"]);
+      writeFileSync(join(state.worktree, "code.txt"), "after\n");
+      commitAll(state.worktree, "delete one file and edit another");
+      await verify(state);
+      const result = await review(state);
+      expect(result.result).toBe("pass");
+      const prompt = state.reviewer.calls[0]?.prompt ?? "";
+      expect(prompt).toContain("gone.txt: deleted, 5000 lines");
+      expect(prompt).toContain("A file this change deletes whole is listed by name");
+      expect(prompt).toContain("Read it from the base commit");
+      expect(prompt).toContain("+after");
+      expect(prompt).not.toContain("source line 2500");
+      expect(prompt.length).toBeLessThan(20_000);
+    });
+
+    test("kept edits over the limit still fail with today's message", async () => {
+      const state = await fixture({
+        baseFiles: { "gone.txt": numbered(5000), "code.txt": "before\n" },
+        maxFileDiffBytes: 200_000,
+        maxDiffBytes: 20_000,
+        commit: false,
+      });
+      gitOrThrow(state.worktree, ["rm", "-q", "gone.txt"]);
+      writeFileSync(join(state.worktree, "code.txt"), `${"x".repeat(30_000)}\n`);
+      commitAll(state.worktree, "delete one file and make a big edit");
+      await verify(state);
+      const result = await review(state);
+      expect(result.result).toBe("failed");
+      expect(result.data?.reason).toBe("diff_size");
+      const bytes = Number(result.data?.bytes);
+      expect(bytes).toBeGreaterThan(20_000);
+      expect(String(result.data?.message)).toBe(
+        `the diff is ${bytes} bytes, over the 20000-byte review limit`,
+      );
+      expect(state.reviewer.calls).toHaveLength(0);
+    });
+
+    test("a rename with an edit over the limit keeps its diff", async () => {
+      const before = numbered(5000);
+      const after = before.split("\n");
+      for (let index = 0; index < 10; index += 1) {
+        after[index * 400] = `changed ${index} ${"x".repeat(4000)}`;
+      }
+      const state = await fixture({
+        baseFiles: { "old.txt": before },
+        maxFileDiffBytes: 200_000,
+        maxDiffBytes: 20_000,
+        commit: false,
+      });
+      gitOrThrow(state.worktree, ["mv", "old.txt", "new.txt"]);
+      writeFileSync(join(state.worktree, "new.txt"), after.join("\n"));
+      commitAll(state.worktree, "rename and edit");
+      await verify(state);
+      const result = await review(state);
+      expect(result.result).toBe("failed");
+      expect(result.data?.reason).toBe("diff_size");
+      expect(String(result.data?.message)).toContain(
+        "over the 20000-byte review limit",
+      );
+      expect(state.reviewer.calls).toHaveLength(0);
+    });
+
+    test("a rework round lists the files it deletes whole", async () => {
+      const state = await fixture({
+        baseFiles: { "gone.txt": numbered(100), "code.txt": "before\n" },
+        maxFileDiffBytes: 200_000,
+        maxDiffBytes: 20_000,
+        commit: false,
+      });
+      writeFileSync(join(state.worktree, "code.txt"), "first\n");
+      commitAll(state.worktree, "first edit");
+      await verify(state, "verify-1");
+      await review(state, "review-1");
+      await nextAttempt(state);
+      gitOrThrow(state.worktree, ["rm", "-q", "gone.txt"]);
+      writeFileSync(join(state.worktree, "code.txt"), "second\n");
+      commitAll(state.worktree, "delete a file");
+      await verify(state, "verify-2");
+      const result = await review(state, "review-2");
+      expect(result.result).toBe("pass");
+      const prompt = state.reviewer.calls[1]?.prompt ?? "";
+      expect(prompt).toContain("## Deleted files");
+      expect(prompt).toContain("- gone.txt (100 lines)");
+      expect(prompt).toContain("from the base commit");
     });
   });
 

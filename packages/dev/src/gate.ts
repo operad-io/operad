@@ -427,6 +427,8 @@ interface FileDiff {
   /** Why the file is left out of the prompt, or undefined when it is in it. */
   readonly leftOut: string | undefined;
   readonly binary: boolean;
+  /** True when the task deletes the whole file. */
+  readonly deleted: boolean;
 }
 
 interface Attributes {
@@ -602,6 +604,7 @@ function diffsOf(
       bytes: Buffer.byteLength(patch, "utf8"),
       leftOut: undefined,
       binary,
+      deleted: change?.status === "deleted",
     });
   }
   return files;
@@ -984,6 +987,25 @@ function reviewPrompt(
       `The diff from the merge base ${base} to the verified commit ${sha}:`,
       prepared.included.map((file) => file.patch).join(""),
     );
+  }
+  const deleted = prepared.files.filter((file) => file.deleted);
+  if (deleted.length > 0) {
+    if (rework === undefined) {
+      pieces.push(
+        "## Deleted files",
+        `A file this change deletes whole is listed by name with its line count, not by its removed lines. Read it from the base commit with \`git show ${base}:<path>\`.`,
+      );
+    } else {
+      // The increment holds hunks, and a whole deletion has none: list the
+      // deleted files so a rework round still learns what went.
+      pieces.push(
+        "## Deleted files",
+        [
+          `These files are deleted whole. Each is listed by name with its line count, not by its removed lines; read one from the base commit with \`git show ${base}:<path>\`:`,
+          ...deleted.map((file) => `- ${file.path} (${file.removed} lines)`),
+        ].join("\n"),
+      );
+    }
   }
   if (prepared.leftOut.length > 0) {
     pieces.push(

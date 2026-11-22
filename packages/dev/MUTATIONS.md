@@ -1551,3 +1551,13 @@ the row fields.
 | T-0667-M2 | packages/dev/src/notcode.ts | `loadOfRun` read the log from its start instead of the run's first command offset, so a late line from an earlier run became the start reading | `a remote check reads the host's load > a run's load begins where its first command did, not at a stale size or its last rerun` |
 | T-0667-M3 | packages/dev/src/rerun.ts | a whole-list rerun reported the rerun's own `logStart` instead of where the first command began | `the log offset a check run reports > a whole-list rerun keeps where its first command began` |
 | T-0667-M4 | packages/dev/src/rerun.ts | a command with failed-test reruns reported the alone rerun's `logStart` instead of where the first command began | `a remote check reads the host's load > a run's load begins where its first command did, not at a stale size or its last rerun` |
+
+## T-0673 — the review names deleted files instead of their lines
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0673-M1 | packages/dev/src/gate.ts | the first-review prompt left out the sentence that deleted files are listed by name and read at the base commit | `dev/review > renames and deletions > a big deleted file and a small edit stay under the limit and list the deleted file` |
+| T-0673-M2 | packages/dev/src/gate.ts | a file deleted whole carried its removed lines instead of one summary line | `dev/review > renames and deletions > a big deleted file and a small edit stay under the limit and list the deleted file` |
+| T-0673-M3 | packages/dev/src/gate.ts | the review skipped the whole-diff size check | `dev/review > renames and deletions > kept edits over the limit still fail with today's message` |
+| T-0673-M4 | packages/dev/src/gate.ts | a rename with edits was summarised as one line instead of carrying its diff | `dev/review > renames and deletions > a rename with an edit over the limit keeps its diff` |
+| T-0673-M5 | packages/dev/src/gate.ts | a rework round listed no deleted files, because the increment has no hunk for a whole deletion | `dev/review > renames and deletions > a rework round lists the files it deletes whole` |
