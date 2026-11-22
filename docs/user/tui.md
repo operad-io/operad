@@ -8,6 +8,10 @@ description: The terminal client: themes, live updates, states and leaving.
 `~/.operad` it needs nothing else: no config edit, no `operad serve` in another
 terminal, no token. It never opens the store and never loads a plugin.
 
+`operad` with no command is the short way in: it creates the home when it has
+none, starts `serve` when none answers, and opens the default bot's new chat
+with the cursor in its input. The first message creates the chat.
+
 ## Why it exists
 
 Work that waits for you, and runs that are going, are held by `operad serve`.

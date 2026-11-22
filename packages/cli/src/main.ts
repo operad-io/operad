@@ -246,6 +246,8 @@ export interface TuiCommand {
   readonly theme?: string | undefined;
   /** The entry file a started `operad serve` runs: this process's own. */
   readonly serveEntry?: string | undefined;
+  /** The parent whose new chat opens first: `bot:default` for a bare `operad`. */
+  readonly startChat?: string | undefined;
   /** Prints a line before the full screen opens. */
   readonly write?: ((line: string) => void) | undefined;
   readonly onError?: ((message: string) => void) | undefined;
@@ -450,28 +452,37 @@ function printValue(io: CliIo, value: unknown): void {
   io.write(`${JSON.stringify(value, null, 2)}\n`);
 }
 
-async function commandInit(home: string, io: CliIo): Promise<number> {
+/**
+ * Makes sure the home has the distribution's configuration, and installs the
+ * claude package when that configuration enables it. `operad init` and a bare
+ * `operad` both start here; only `init` prints the checks.
+ */
+async function ensureHomeConfig(
+  home: string,
+  onConfig?: ((made: {
+    readonly created: boolean;
+    readonly path: string;
+    readonly harnesses: readonly string[];
+  }) => void) | undefined,
+): Promise<{
+  readonly created: boolean;
+  readonly path: string;
+  readonly config: OperadConfig;
+  readonly harnesses: readonly string[];
+}> {
   // A new home turns on the agents this machine has. With none, it keeps the
-  // old default of radian and the check below says what to install.
+  // old default of radian and init's check says what to install.
   const path = process.env.PATH ?? "";
   const harnesses = INIT_HARNESS_PLUGINS.filter(
     (name) => Bun.which(name, { PATH: path }) !== null,
   );
   const ensured = await ensureConfig(home, distributionConfig(home, harnesses));
-  io.write(
-    `${ensured.created ? "created" : "using"} ${ensured.path}\n`,
-  );
-  if (ensured.created && harnesses.length === 0) {
-    io.write(
-      "no agent found on PATH: install claude (https://code.claude.com), pi (bun add -g @earendil-works/pi-coding-agent) or radian, then run operad init again\n",
-    );
-  }
-  const config = await readConfig(home);
+  onConfig?.({ created: ensured.created, path: ensured.path, harnesses });
   // claude is not a CLI dependency: a home that enables it gets its package
   // and SDK now, as `operad plugin enable claude` would install them (ADR 0012
   // D4). Reading the config first makes a second init retry an install that
   // failed after the config was written.
-  const claude = config.plugins.find((entry) => entry.name === "claude" && entry.enabled);
+  const claude = ensured.config.plugins.find((entry) => entry.name === "claude" && entry.enabled);
   if (claude !== undefined && (claude.module ?? defaultPluginModule("claude")) === defaultPluginModule("claude")) {
     await ensureInstalledPackage({
       home,
@@ -481,6 +492,26 @@ async function commandInit(home: string, io: CliIo): Promise<number> {
       omitOptional: true,
     });
   }
+  return {
+    created: ensured.created,
+    path: ensured.path,
+    config: ensured.config,
+    harnesses,
+  };
+}
+
+async function commandInit(home: string, io: CliIo): Promise<number> {
+  const ensured = await ensureHomeConfig(home, (made) => {
+    io.write(
+      `${made.created ? "created" : "using"} ${made.path}\n`,
+    );
+    if (made.created && made.harnesses.length === 0) {
+      io.write(
+        "no agent found on PATH: install claude (https://code.claude.com), pi (bun add -g @earendil-works/pi-coding-agent) or radian, then run operad init again\n",
+      );
+    }
+  });
+  const config = ensured.config;
   const storeRoot = storeRootOf(config);
   const registry = await loadPluginRegistry({
     installOnEnable: INSTALL_ON_ENABLE,
@@ -2738,6 +2769,7 @@ async function commandTui(
   argv: readonly string[],
   tty: boolean,
   injected: TuiRunner | undefined,
+  startChat?: string,
 ): Promise<number> {
   let url: string | undefined;
   let token: string | undefined;
@@ -2779,6 +2811,7 @@ async function commandTui(
     ...(token === undefined ? {} : { token }),
     ...(noStart ? { noStart } : {}),
     ...(theme === undefined ? {} : { theme }),
+    ...(startChat === undefined ? {} : { startChat }),
     serveEntry: CLI_ENTRY,
     write: (line) => io.write(`${line}\n`),
     onError: (message) => {
@@ -2819,9 +2852,18 @@ export async function main(
       io.write(`operad ${ENGINE_VERSION}\n`);
       return 0;
     }
-    if (command === undefined || command === "help" || command === "--help") {
+    if (command === undefined) {
+      const ensured = await ensureHomeConfig(home);
+      const startChat = ensured.config.plugins.some(
+        (entry) => entry.name === "bot" && entry.enabled,
+      )
+        ? "bot:default"
+        : undefined;
+      return await commandTui(home, io, [], tty, options.tui, startChat);
+    }
+    if (command === "help" || command === "--help") {
       io.write(HELP);
-      return command === undefined ? 2 : 0;
+      return 0;
     }
 
     if (command === "init") {

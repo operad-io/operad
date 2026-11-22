@@ -94,6 +94,8 @@ export interface TuiRunOptions {
   readonly onLog?: ((message: string) => void) | undefined;
   /** Never start `operad serve`, even when none answers. */
   readonly noStart?: boolean | undefined;
+  /** Open this parent's new chat when the screen starts; a bare `operad` passes it. */
+  readonly startChat?: string | undefined;
   /** The `operad` entry file a started serve runs; without it none is started. */
   readonly serveEntry?: string | undefined;
   /** Prints a line before the full screen opens. */
@@ -205,6 +207,8 @@ export interface TuiShellDeps {
   readonly followDelayMs?: number | undefined;
   /** The palette entries used in earlier runs, the latest first. */
   readonly recent?: readonly string[] | undefined;
+  /** Open this parent's new chat once the first lists arrive. */
+  readonly startChat?: string | undefined;
   /** The theme list of the `theme` command; without it the list is empty. */
   readonly themes?: TuiThemes | undefined;
   /** Called with the list of recent entries each time it changes. */
@@ -292,6 +296,7 @@ export function startShell(deps: TuiShellDeps): TuiShell {
   });
   let shownPreview: string | undefined;
   let pasteOpen = false;
+  let startChatPending = deps.startChat !== undefined;
   let finished = false;
   let refreshAbort: AbortController | undefined;
   // The requests of the open object: its read and its section pages. They end
@@ -870,6 +875,11 @@ export function startShell(deps: TuiShellDeps): TuiShell {
       retryAttempt = 0;
     }
     if (!failed) dispatch({ type: "status", generation });
+    if (startChatPending && typesResult.ok) {
+      const parent = deps.startChat;
+      startChatPending = false;
+      if (parent !== undefined) dispatch({ type: "start-chat", parent });
+    }
     if (state.connection === "unreachable") scheduleRetry();
   }
 
@@ -1635,6 +1645,7 @@ export async function runTui(options: TuiRunOptions = {}): Promise<number> {
       url: location.url,
       themes,
       recent: loadRecent(themeHome),
+      ...(options.startChat === undefined ? {} : { startChat: options.startChat }),
       onRecent: (recent) => saveRecent(themeHome, recent),
       events: (signal) =>
         new TuiEvents({ url: location.url, token: location.token, signal }),

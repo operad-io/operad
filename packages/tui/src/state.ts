@@ -39,6 +39,7 @@ import {
   pasteInto,
   runKey,
   startAction,
+  startNote,
   typed,
   isReserved,
   resolveBindings,
@@ -416,9 +417,10 @@ export interface TuiState {
   readonly objectRequest?: TuiObjectRequest | undefined;
   /**
    * `c` on a tab: the parent page is opening so the action that creates `type`
-   * can start on it; the page's answer starts it.
+   * can start on it; the page's answer starts it. `noteFirst` starts at the
+   * first message, leaving the action's arguments at their defaults.
    */
-  readonly creating?: { readonly parent: string; readonly type: string } | undefined;
+  readonly creating?: { readonly parent: string; readonly type: string; readonly noteFirst?: boolean | undefined } | undefined;
   /** Set when a section must be fetched. */
   readonly sectionRequest?: TuiSectionRequest | undefined;
   /** Grows each time a list cursor moves; the shell opens what it lands on. */
@@ -691,6 +693,8 @@ export type TuiStateEvent =
   | { readonly type: "object-launched" }
   /** The caller launched the section request; it is asked for once. */
   | { readonly type: "section-launched" }
+  /** A bare client opens the new chat of this parent without choosing the parent. */
+  | { readonly type: "start-chat"; readonly parent: string }
   /** A refresh began; answers to the one before it are dropped. */
   | { readonly type: "refresh-start" }
   /** Show a failure in the footer, or clear it with no message. */
@@ -1560,8 +1564,11 @@ function applyObject(
   if (creating !== undefined && previous.id === creating.parent) {
     updated = { ...updated, creating: undefined };
     const make = view.actions.find((action) => action.creates === creating.type);
-    return make === undefined
-      ? withNotice(updated, `${creating.parent} has no way to create a ${creating.type}`)
+    if (make === undefined) {
+      return withNotice(updated, `${creating.parent} has no way to create a ${creating.type}`);
+    }
+    return creating.noteFirst === true
+      ? startNote(updated, make.name)
       : startAction(updated, make.name);
   }
   return updated;
@@ -2908,6 +2915,12 @@ export function reduce(state: TuiState, event: TuiStateEvent): TuiState {
       return state.sectionRequest === undefined
         ? state
         : { ...state, sectionRequest: undefined };
+    case "start-chat": {
+      const opened = openNamed({ ...state, followPending: false }, event.parent);
+      return opened === state
+        ? state
+        : { ...opened, creating: { parent: event.parent, type: "chat", noteFirst: true } };
+    }
     case "status":
       if (stale(state, event.generation)) return state;
       return {
