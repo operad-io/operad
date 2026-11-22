@@ -14,7 +14,7 @@ import type {
   StoredObject,
 } from "@operad-io/engine";
 import { BOT_TYPE, BotError } from "./bot.ts";
-import { localStamp } from "./schedule.ts";
+import { localStamp, markdownText } from "./schedule.ts";
 
 /** At most this many not-yet-due follow-ups in one chat. */
 export const FOLLOW_UP_PER_CHAT = 5;
@@ -86,7 +86,7 @@ export function followUpMarkdown(entries: readonly FollowUp[]): string[] {
   if (entries.length === 0) return ["Follow-up: none."];
   const lines = ["Follow-up:"];
   for (const entry of [...entries].sort((a, b) => a.at - b.at)) {
-    lines.push(`- ${entry.id}: ${localStamp(entry.at)}, chat ${entry.chat}: ${entry.text}`);
+    lines.push(`- ${entry.id}: ${localStamp(entry.at)}, chat ${entry.chat}: ${markdownText(entry.text)}`);
   }
   return lines;
 }

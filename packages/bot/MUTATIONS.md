@@ -405,3 +405,13 @@ changes for bots, in the order they were recorded. The root
 | T-0743-M2 | packages/bot/src/index.ts | a new chat was opened with an agent that cannot carry its level, with no refusal | `a bot's accessLevel setting > a new chat takes the first agent that carries the level, and refuses one that cannot` |
 | T-0743-M3 | packages/bot/src/index.ts | the default agent was the first loaded one whatever the level it carries | `a bot's accessLevel setting > a new chat takes the first agent that carries the level, and refuses one that cannot` |
 | T-0744-M1 | packages/bot/src/tidy.ts | the background model was read from the first loaded agent whatever the level it carries | `Run without asking > the background model comes from the first agent that carries the starting level` |
+
+## T-0745 — Markdown on the bot page
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0745-M6 | packages/bot/src/schedule.ts | a cron was written into the page's text as it is, so `*` became emphasis | `scheduled prompts > the bot page shows a cron as code and a person's names as text, not Markdown` |
+| T-0745-M7 | packages/bot/src/schedule.ts | an entry's name was written into the page's text unescaped | `scheduled prompts > the bot page shows a cron as code and a person's names as text, not Markdown` |
+| T-0745-M8 | packages/bot/src/index.ts | the working directory was written into the bot page unquoted | `the bot page's text > a value a person or the agent wrote is shown as text or code, not as Markdown` |
+| T-0745-M9 | packages/bot/src/index.ts | the speaker was written into the bot page unescaped | `the bot page's text > a value a person or the agent wrote is shown as text or code, not as Markdown` |
+| T-0745-M10 | packages/bot/src/follow-up.ts | a follow-up's text was written into the page unescaped | `the bot page's text > a follow-up's text is escaped` |

@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { personStarted } from "@operad-io/access-match";
-import { CHAT_TYPE, ENTRY_FACT, allMessages, chatRef, RUN_FACT } from "@operad-io/chat";
+import { CHAT_TYPE, ENTRY_FACT, allMessages, promptFor, chatRef, RUN_FACT } from "@operad-io/chat";
 import { createViews, type ClientApi, type RunControl, type TriggerEvent } from "@operad-io/engine";
 import {
   BotScheduleSource,
@@ -15,6 +15,8 @@ import {
 import {
   lateText,
   SCHEDULE_PREAMBLE,
+  markdownCode,
+  scheduledMarkdown,
   SCHEDULE_QUIET_MARKER,
   SCHEDULE_RECENT_COUNT,
   SCHEDULE_RECENT_MAX,
@@ -111,7 +113,8 @@ describe("scheduled prompts", () => {
       const chatRow = (await views.get(`chat:${id}`)).row;
       expect(chatRow.data).toMatchObject({ scheduled: { bot: "default", entry: "Morning" } });
       const messages = allMessages(r.store, id);
-      expect(messages.map((message) => message.text)).toEqual([`Collect the news.\n\n${SCHEDULE_PREAMBLE}`]);
+      expect(messages.map((message) => message.text)).toEqual(["Collect the news."]);
+      expect(messages[0]?.instruction).toBe(SCHEDULE_PREAMBLE);
 
       const event = events.find((item) => item.source === "bot" && item.type === "message");
       expect(event?.object).toBe(`chat:${id}`);
@@ -136,6 +139,16 @@ describe("scheduled prompts", () => {
     } finally {
       views.close();
     }
+  });
+
+  test("the bot page shows a cron as code and a person's names as text, not Markdown", () => {
+    const lines = scheduledMarkdown(
+      [{ name: "Morning *briefing*", schedule: "33 18 * * *", prompt: "Go.", paused: false }],
+      Date.parse("2026-01-01T00:00:00Z"),
+    );
+    expect(lines[1]).toContain("(`33 18 * * *`, next ");
+    expect(lines[1]).toContain("Morning \\*briefing\\*");
+    expect(markdownCode("a`b")).toBe("``a`b``");
   });
 
   test("a watch reads a reply after the host says its run ended", async () => {
@@ -395,7 +408,7 @@ describe("scheduled prompts", () => {
       },
     });
     await source.settled();
-    return { id, prompt: first.text };
+    return { id, prompt: promptFor([first]) };
   }
 
   test("a reply that is exactly the marker records its result and runs no notify command; any other reply notifies", async () => {
@@ -549,8 +562,9 @@ describe("scheduled prompts", () => {
       expect(opened).toHaveLength(1);
       const id = opened[0];
       if (id === undefined) throw new Error("no chat");
-      const text = allMessages(r.store, id)[0]?.text ?? "";
-      expect(text).toContain("Digest.");
+      const first = allMessages(r.store, id)[0];
+      expect(first?.text).toBe("Digest.");
+      const text = first === undefined ? "" : promptFor([first]);
       expect(text).toContain("Scheduled for 2026-01-01 08:00");
       expect(text).toContain("5 minutes late");
     } finally {
@@ -621,7 +635,7 @@ describe("scheduled prompts", () => {
       if (entry === undefined) throw new Error("no entry");
       expect(nextRun(entry, Date.parse("2026-01-01T07:00:10Z"))).toBe(Date.parse("2026-01-01T08:00:00Z"));
       const page = await views.section("bot:default", "bot", undefined, { full: true });
-      expect(page.markdown).toContain("Morning (0 8 * * *");
+      expect(page.markdown).toContain("Morning (`0 8 * * *`");
       expect(page.markdown).toContain("next ");
     } finally {
       views.close();

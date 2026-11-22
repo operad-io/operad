@@ -53,6 +53,9 @@ import {
   scheduleActions,
   scheduledChatContext,
   scheduledData,
+  scheduledInstructionFor,
+  markdownCode,
+  markdownText,
   scheduledMarkdown,
   scheduledPrompts,
   startScheduled,
@@ -567,6 +570,9 @@ const chatAction: ActionTypeDefinition = {
             ctx.actor.via === SCHEDULE_SOURCE ? { ...ctx, source: SCHEDULE_SOURCE } : ctx,
             id,
             input.message,
+            undefined,
+            [],
+            scheduled === undefined ? undefined : scheduledInstructionFor(ctx.object.data, scheduled.entry),
           );
     return { text: `opened chat ${id}${sent === undefined ? "" : `; ${sent}`}`, opens: `chat:${id}` };
   },
@@ -720,19 +726,19 @@ export async function runSettings(ctx: StepContext, params: unknown): Promise<Pl
 function botMarkdown(object: StoredObject): string {
   const data = object.data;
   const lines = [`**${object.id}**`];
-  if (typeof data.problem === "string") lines.push(`Cannot be used: ${data.problem}`);
-  if (typeof data.cwd === "string") lines.push(`Working directory: ${data.cwd}`);
-  if (typeof data.harness === "string") lines.push(`Default agent: ${data.harness}`);
-  if (typeof data.speaker === "string") lines.push(`Speaker: ${data.speaker}`);
+  if (typeof data.problem === "string") lines.push(`Cannot be used: ${markdownText(data.problem)}`);
+  if (typeof data.cwd === "string") lines.push(`Working directory: ${markdownCode(data.cwd)}`);
+  if (typeof data.harness === "string") lines.push(`Default agent: ${markdownText(data.harness)}`);
+  if (typeof data.speaker === "string") lines.push(`Speaker: ${markdownText(data.speaker)}`);
   const skills = Array.isArray(data.skills)
     ? data.skills.filter((path): path is string => typeof path === "string")
     : [];
-  lines.push(skills.length === 0 ? "No skills." : `Skills: ${skills.map(skillName).join(", ")}`);
+  lines.push(skills.length === 0 ? "No skills." : `Skills: ${skills.map((path) => markdownText(skillName(path))).join(", ")}`);
   lines.push(data.writeWiki === true ? "Wiki: read and write." : "Wiki: read only.");
   const servers = Array.isArray(data.mcpServers) ? data.mcpServers : [];
   if (servers.length > 0) {
     lines.push(
-      `MCP servers: ${servers.join(", ")}`,
+      `MCP servers: ${servers.map((name) => markdownText(String(name))).join(", ")}`,
       `They are mounted in chats on ${MCP_HARNESSES.join(" and ")}. A chat on pi does not mount them: pi takes no MCP servers yet, so it cannot use ${servers.join(", ")}.`,
     );
   }

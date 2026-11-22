@@ -479,6 +479,12 @@ function levelAsker(
   };
 }
 
+/** Whether the chat's working directory is no longer `cwd`, the one this reply started in. */
+async function movedFrom(ctx: StepContext, chatId: string, cwd: string): Promise<boolean> {
+  const stored = await ctx.store.get(CHAT_TYPE, chatId);
+  return stored !== undefined && chatData(stored.data).cwd !== cwd;
+}
+
 /**
  * The asker a read-only chat's harness gets: a question about writing a file
  * becomes the worktree question, which may let this call run once, remember it
@@ -490,6 +496,7 @@ function levelAsker(
  */
 function readOnlyAsker(
   ctx: StepContext,
+  chatId: string,
   cwd: string,
   chosen: { run: boolean; readonly stop: AbortController },
   inner: StepAsker,
@@ -498,6 +505,14 @@ function readOnlyAsker(
   return {
     async ask(request): Promise<AskOutcome> {
       if (chosen.run) throw new WorktreeChosen();
+      // The chat moved to its worktree while this reply ran, so what this
+      // reply asks is judged by the main clone's profile and its directory.
+      // The reply ends and is answered again in the worktree.
+      if (await movedFrom(ctx, chatId, cwd)) {
+        chosen.run = true;
+        chosen.stop.abort();
+        throw new WorktreeChosen();
+      }
       const write = isWriteQuestion(request);
       const call = write ? worktreeCall(request) : undefined;
       // An entry from an earlier Always allow lifts the question in any chat a person started.
@@ -517,7 +532,15 @@ function readOnlyAsker(
             ...(request.graceSecs === undefined ? {} : { graceSecs: request.graceSecs }),
           }
         : request;
-      const outcome = await inner.ask(shaped);
+      // A question open when the chat moves to its worktree ends with the reply.
+      const outcome = await Promise.race([
+        inner.ask(shaped),
+        new Promise<never>((_resolve, reject) => {
+          const end = (): void => reject(new WorktreeChosen());
+          if (chosen.stop.signal.aborted) end();
+          else chosen.stop.signal.addEventListener("abort", end, { once: true });
+        }),
+      ]);
       if (outcome.kind === "timeout") return outcome;
       const answer = outcome.answer;
       if (shaped === request) return outcome;
@@ -1376,7 +1399,12 @@ async function replyOnce(
     pending = unanswered(messages, fresh.facts).filter((message) => !arrived.has(message.id));
   }
 
+  let stopWatching: (() => void) | undefined;
   const closeMidRun = async (): Promise<void> => {
+    if (stopWatching !== undefined) {
+      stopWatching();
+      stopWatching = undefined;
+    }
     if (stopMidRun !== undefined) {
       stopMidRun();
       stopMidRun = undefined;
@@ -1399,7 +1427,21 @@ async function replyOnce(
   // The live file holds the base profile; a level change rewrites only its level.
   let recheckBase: Readonly<Record<string, JsonValue>> = live.access;
   const withLevel = levelAsker(ctx, object.id, live.cwd, () => recheckBase, level, contextAsker(ctx));
-  const asker = worktreeChat ? readOnlyAsker(ctx, live.cwd, worktreeChosen, withLevel) : withLevel;
+  const asker = worktreeChat ? readOnlyAsker(ctx, object.id, live.cwd, worktreeChosen, withLevel) : withLevel;
+  if (worktreeChat) {
+    // A level change opens the worktree before it is recorded. This reply runs
+    // in the main clone with the profile it started with, so when the chat has
+    // moved it ends and is answered again there, rather than going on in the
+    // main clone or asking again as read-only.
+    stopWatching = ctx.store.subscribe(chatRef(object.id), {}, (fact) => {
+      if (fact.type !== ACCESS_FACT || worktreeChosen.run) return;
+      void movedFrom(ctx, object.id, live.cwd).then((moved) => {
+        if (!moved || worktreeChosen.run) return;
+        worktreeChosen.run = true;
+        worktreeChosen.stop.abort();
+      });
+    });
+  }
   // A worktree yes aborts `stop`, so the harness ends even if it swallows the
   // stop error; the reply still ends `done` below.
   const signal = worktreeChat ? AbortSignal.any([ctx.signal, worktreeChosen.stop.signal]) : ctx.signal;

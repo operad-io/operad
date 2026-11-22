@@ -9,12 +9,14 @@ import { messageOf } from "@operad-io/engine";
 import {
   ACCESS_ACTION_REQUEST,
   CHAT_TYPE,
+  ACCESS_FACT,
   ENTRY_FACT,
   WORKTREE_EVENT,
   WORKTREE_NOTE,
   WORKTREE_REPLY_EVENT,
   agentConditionals,
   added,
+  type AccessChangedData,
   type AgentChoices,
   chatData,
   chatRef,
@@ -627,6 +629,7 @@ async function openChatWorktree(
   chatId: string,
   runId: string,
   cause: string,
+  raiseLevel = false,
 ): Promise<PluginStepResult> {
   const stored = await ctx.store.get(CHAT_TYPE, chatId);
   if (stored === undefined) return failed(`there is no chat ${chatId}`);
@@ -669,11 +672,18 @@ async function openChatWorktree(
   const clean: Record<string, unknown> = { ...fresh.data };
   // Only chat:access marks this in memory, to call its hidden action; it is never stored.
   delete clean[ACCESS_ACTION_REQUEST];
+  // A chat that asked for the worktree is read-only only by its level `plan`;
+  // the worktree is where it writes, so the level moves to `edits` with it. A
+  // level the person set above `plan` stays as it is.
+  const freshChat = chatData(fresh.data);
+  const level = freshChat.accessLevel ?? (isRecord(fresh.data.access) && fresh.data.access.readOnly === true ? "plan" : "ask");
+  const raised = raiseLevel && level === "plan";
   await ctx.store.put(
     CHAT_TYPE,
     chatId,
     {
       ...clean,
+      ...(raised ? { accessLevel: "edits" } : {}),
       cwd: path,
       access: chatAccess(skills.roots, false),
       skills: [...skills.directories],
@@ -688,6 +698,10 @@ async function openChatWorktree(
     object: chatRef(chatId),
     data: { runId, kind: "worktree", text: WORKTREE_NOTE },
   });
+  if (raised) {
+    const changed: AccessChangedData = { by: { via: "dev", id: "worktree" }, from: "plan", to: "edits" };
+    await ctx.facts.append({ type: ACCESS_FACT, object: chatRef(chatId), data: changed });
+  }
   return { result: "done", data: { moved: true, path, branch } };
 }
 
@@ -699,12 +713,13 @@ async function openChatWorktree(
 export async function runChatWorktree(ctx: StepContext): Promise<PluginStepResult> {
   const object = ctx.object;
   if (object === undefined || object.type !== CHAT_TYPE) return failed("this runs on a chat");
-  const result = await openChatWorktree(ctx, object.id, ctx.runId, "step:dev/chat_worktree");
-  const data = isRecord(result.data) ? result.data : {};
+  const result = await openChatWorktree(ctx, object.id, ctx.runId, "step:dev/chat_worktree", true);
   // A live yes ended the reply that asked; answer the same message again now
-  // that the chat is writable. A yes that came after the reply ended only
-  // opens the worktree, so it starts no reply.
-  if (data.moved === true && ctx.trigger?.type === WORKTREE_EVENT && !lateWorktree(ctx)) {
+  // that the chat is writable. A reply that ended because the chat moved to
+  // its worktree meanwhile (its level was raised) is answered again the same
+  // way. A yes that came after the reply ended only opens the worktree, so it
+  // starts no reply.
+  if (result.result === "done" && ctx.trigger?.type === WORKTREE_EVENT && !lateWorktree(ctx)) {
     await ctx.emit({
       type: CHAT_REPLY_EVENT,
       key: `worktree:${object.id}`,

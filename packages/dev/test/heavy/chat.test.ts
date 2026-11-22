@@ -3,8 +3,11 @@ import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { PluginRegistry, Views, definePlugin, type CommandContext, type HarnessModelInfo, type StepEvent, type StoredObject, type TriggerEvent, type TriggerView } from "@operad-io/engine";
 import {
+  ACCESS_FACT,
   allEntries,
   allMessages,
+  chatRef,
+  factsOf,
   CHAT_TYPE,
   createChat,
   createChatPlugin,
@@ -365,6 +368,44 @@ describe("dev/chat_worktree", () => {
     expect(allEntries(r.store, id)).toEqual([
       expect.objectContaining({ runId: "run-worktree", kind: "worktree", text: WORKTREE_NOTE }),
     ]);
+  });
+
+  test("the worktree takes the chat off plan: its level moves to edits and the chat says so, so the agent can write there", async () => {
+    const r = await rig();
+    const id = await openChat(r);
+    expect((await must(r.store, CHAT_TYPE, id)).data.accessLevel).toBe("plan");
+    await r.registry.runStep("dev/chat_worktree", {}, { runId: "run-1", object: { type: CHAT_TYPE, id, data: {} } });
+    expect((await must(r.store, CHAT_TYPE, id)).data.accessLevel).toBe("edits");
+    const facts = factsOf(r.store, chatRef(id)).filter((fact) => fact.type === ACCESS_FACT);
+    expect(facts).toHaveLength(1);
+    expect(facts[0]?.data).toMatchObject({ from: "plan", to: "edits" });
+  });
+
+  test("a level the person set above plan stays when the worktree opens", async () => {
+    const r = await rig();
+    const id = await openChat(r);
+    const stored = await must(r.store, CHAT_TYPE, id);
+    await r.store.put(CHAT_TYPE, id, { ...stored.data, accessLevel: "full" }, "test");
+    await r.registry.runStep("dev/chat_worktree", {}, { runId: "run-1", object: { type: CHAT_TYPE, id, data: {} } });
+    expect((await must(r.store, CHAT_TYPE, id)).data.accessLevel).toBe("full");
+  });
+
+  test("a reply that ended because the chat moved meanwhile is answered again, though the worktree was already open", async () => {
+    const r = await rig();
+    const id = await openChat(r);
+    await r.registry.runStep("dev/chat_worktree", {}, { runId: "run-1", object: { type: CHAT_TYPE, id, data: {} } });
+    const events: StepEvent[] = [];
+    const trigger: TriggerView = { source: "operad", key: `reply-run:open`, type: WORKTREE_EVENT, hops: 1 };
+    const result = await r.registry.runStep("dev/chat_worktree", {}, {
+      runId: "run-2",
+      object: { type: CHAT_TYPE, id, data: {} },
+      trigger,
+      emit: (_plugin, event) => {
+        events.push(event);
+      },
+    });
+    expect(result).toMatchObject({ result: "done", data: { moved: false } });
+    expect(events).toEqual([{ type: CHAT_REPLY_EVENT, key: `worktree:${id}`, object: `chat:${id}` }]);
   });
 
   test("a late yes opens the worktree once and starts no reply", async () => {
