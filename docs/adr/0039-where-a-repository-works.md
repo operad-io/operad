@@ -37,4 +37,4 @@ When a `branch` task is rejected or cancelled, `dev` switches the main clone bac
 
 ### D6: `dev.json` is read once at the start of an attempt
 
-`dev` reads `.operad/dev.json` once when an attempt starts and records what it read; the attempt uses the record and does not read the file again. In `branch` mode the main clone is on the task branch while the attempt runs, so a second read would give the task branch's version of the file; the record keeps the attempt on one configuration.
+`dev` reads `.operad/dev.json` once when an attempt starts and records what it read; the attempt uses the record and does not read the file again. In `branch` mode the main clone is on the task branch while the attempt runs, so a later read would give the task branch's version of the file; the record keeps the attempt on one configuration.
