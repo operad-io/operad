@@ -383,11 +383,16 @@ function closestCommand(
 ): CommandCandidate | undefined {
   const lower = wanted.toLowerCase();
   if (lower.length === 0) return undefined;
+  // A word further from every command than this is not a mistyping of any.
+  const limit = lower.length <= 3 ? 1 : lower.length <= 5 ? 2 : 3;
   let best: { readonly score: number; readonly candidate: CommandCandidate } | undefined;
   for (const candidate of [...COMMAND_CANDIDATES, ...extra]) {
     const text = candidate.name.toLowerCase();
-    const near = text.includes(lower) || lower.includes(text);
+    // A short word matches inside many names; only a longer one counts.
+    const near =
+      (lower.length >= 3 && text.includes(lower)) || (text.length >= 3 && lower.includes(text));
     const score = near ? 0 : editDistance(lower, text);
+    if (score > limit) continue;
     if (
       best === undefined ||
       score < best.score ||
@@ -408,6 +413,12 @@ function closestCommandLines(
   if (near === undefined) return "";
   const summary = near.summary === undefined ? "" : `  ${near.summary}`;
   return `\nclosest:\n  ${near.name}${summary}`;
+}
+
+/** Whether a word names a command operad itself has, not one a plugin declares. */
+function isBuiltinCommand(word: string | undefined): boolean {
+  if (word === undefined) return false;
+  return COMMAND_CANDIDATES.some((candidate) => candidate.name.split(" ")[0] === word);
 }
 
 /** The one-line usage of the command a mistake came from, when it has one. */
@@ -3741,7 +3752,7 @@ export async function main(
     }
   } catch (error) {
     if (error instanceof UsageError) {
-      const usage = error.usage ?? commandUsage(args);
+      const usage = error.usage ?? (isBuiltinCommand(args[0]) ? commandUsage(args) : undefined);
       const usageLine = usage === undefined ? "" : `${usage}\n`;
       io.error(`operad: ${error.message}\n${usageLine}${HELP_POINTER}\n`);
       return 2;

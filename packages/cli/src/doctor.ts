@@ -96,7 +96,7 @@ export async function runDoctor(env: DoctorEnv): Promise<DoctorReport> {
         bad(
           "home",
           `config.json is not valid: ${reasonOf(error)}`,
-          "operad doctor (after fixing config.json)",
+          "operad doctor",
         ),
       );
     }
@@ -170,11 +170,12 @@ export async function runDoctor(env: DoctorEnv): Promise<DoctorReport> {
         );
       }
       for (const item of await env.setup()) {
-        // A standing item that already names a command ends with it.
+        // A standing item that already names a command: that is the next step.
+        const named = /`([^`]+)`/.exec(item.prompt)?.[1];
         checks.push(
-          item.prompt.includes("`")
-            ? { id: `setup:${item.id}`, ok: false, message: item.prompt }
-            : bad(`setup:${item.id}`, item.prompt, "operad pending"),
+          named === undefined
+            ? bad(`setup:${item.id}`, item.prompt, "operad pending")
+            : { id: `setup:${item.id}`, ok: false, message: item.prompt, next: named },
         );
       }
     } catch (error) {
