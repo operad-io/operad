@@ -2793,10 +2793,12 @@ export function pluginAdminFor(
     if (!row.enabled) return row;
     const signedIn = await context.registry.signedInFor(row.name);
     const models = context.registry.loadedModels()[row.name];
+    const capabilities = context.registry.loadedCapabilities()[row.name];
     return {
       ...row,
       ...(signedIn === undefined ? {} : { signedIn }),
       ...(models === undefined ? {} : { models }),
+      ...(capabilities === undefined ? {} : { accessLevels: capabilities.accessLevels ?? [] }),
     };
   };
   /** The rows, plus a plugin still being installed before the file names it. */

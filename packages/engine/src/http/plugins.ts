@@ -26,6 +26,8 @@ export interface PluginInfo {
    * client that reads only `list` keeps working.
    */
   readonly models?: HarnessModels | undefined;
+  /** A loaded harness plugin's access levels it can carry, by id; empty when it carries none. */
+  readonly accessLevels?: readonly string[] | undefined;
   /**
    * The latest line the package install printed, while this plugin is being
    * installed. A plugin being installed is listed before `config.json` names

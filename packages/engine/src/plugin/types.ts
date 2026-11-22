@@ -1164,6 +1164,8 @@ export interface ActionEnv {
   readonly models?: Readonly<Record<string, HarnessModels>> | undefined;
   /** The efforts each loaded harness plugin declares, by plugin name. */
   readonly efforts?: Readonly<Record<string, HarnessEfforts>> | undefined;
+  /** What each loaded harness plugin declares it can do, by plugin name. */
+  readonly capabilities?: Readonly<Record<string, HarnessCapabilities>> | undefined;
   /** Whether a plugin that declares this step is loaded now. */
   readonly stepLoaded?: ((use: string) => boolean) | undefined;
   /**
@@ -1386,6 +1388,8 @@ export interface ActionEvent {
 export interface ActionContext extends PluginBaseContext {
   /** The names of the loaded plugins of kind `harness`. */
   readonly harnesses: readonly string[];
+  /** What each loaded harness plugin declares it can do, by plugin name. */
+  readonly capabilities?: Readonly<Record<string, HarnessCapabilities>> | undefined;
   /** The kernel's runs, when the host supplies them; a plugin can avoid starting a second one. */
   readonly runLookup?: RunLookup | undefined;
   /** Whether a plugin that declares this step is loaded now. */

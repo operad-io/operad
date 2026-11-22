@@ -397,3 +397,10 @@ changes for bots, in the order they were recorded. The root
 | T-0726-M7 | packages/bot/src/schedule.ts | a due follow-up of a closed chat was still sent | `a due follow-up > a closed chat drops it without a message` |
 | T-0738-M1 | packages/bot/src/follow-up.ts | the per-bot lock was dropped, so concurrent writers overwrote each other | `setting a follow-up > follow-ups set at the same moment are all kept` |
 | T-0738-M2 | packages/bot/src/schedule.ts | a failure after a marker reply was not compared by sequence, so the reply still ended quietly | `scheduled prompts > a failure after a reply that is the marker notifies; the reply is not quiet` |
+
+## T-0743 — an agent that cannot carry a chat's level
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0743-M2 | packages/bot/src/index.ts | a new chat was opened with an agent that cannot carry its level, with no refusal | `a bot's accessLevel setting > a new chat takes the first agent that carries the level, and refuses one that cannot` |
+| T-0743-M3 | packages/bot/src/index.ts | the default agent was the first loaded one whatever the level it carries | `a bot's accessLevel setting > a new chat takes the first agent that carries the level, and refuses one that cannot` |

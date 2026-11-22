@@ -203,6 +203,13 @@ describe("`operad init` finds the agent on PATH", () => {
     expect(output.text()).not.toContain("claude:");
   });
 
+  test("with radian, claude and pi on PATH, radian is not the first agent", async () => {
+    const root = await tempRoot();
+    const { code, plugins } = await initWith(root, ["radian", "claude", "pi"]);
+    expect(code).toBe(0);
+    expect(plugins).toEqual(["chat", "bot", "memory", "claude", "pi", "radian"]);
+  });
+
   test("only radian is enabled", async () => {
     const root = await tempRoot();
     const { code, output, plugins } = await initWith(root, ["radian"]);
