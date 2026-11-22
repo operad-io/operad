@@ -88,6 +88,45 @@ export function mainCloneChange(outcome: MainCloneOutcome): string | undefined {
 }
 
 /**
+ * In branch mode the clone is on the task's branch when the merge lands. Put it
+ * back on the branch it started on so the fast-forward can follow. A clone the
+ * person moved, or left with uncommitted changes, stays as it is and the note
+ * says where it is.
+ */
+export function switchBackToStart(
+  repository: string,
+  start: string,
+  taskBranch: string,
+): { readonly ok: true } | { readonly ok: false; readonly note: string } {
+  const current = git(repository, ["symbolic-ref", "--short", "-q", "HEAD"]);
+  if (current.ok && current.out === start) return { ok: true };
+  if (!current.ok || current.out !== taskBranch) {
+    return {
+      ok: false,
+      note: `the main clone is on ${current.ok ? `"${current.out}"` : "no branch"}, not on the task's branch "${taskBranch}" or "${start}"; it was left as it is`,
+    };
+  }
+  const status = git(repository, ["status", "--porcelain", "--untracked-files=normal"]);
+  if (!status.ok) {
+    return { ok: false, note: `cannot read its status: ${status.err}; the main clone stays on "${taskBranch}"` };
+  }
+  if (status.out.length > 0) {
+    return {
+      ok: false,
+      note: `uncommitted changes; the main clone stays on "${taskBranch}", not "${start}"`,
+    };
+  }
+  const moved = git(repository, ["switch", "-q", start]);
+  if (!moved.ok) {
+    return {
+      ok: false,
+      note: `cannot switch back to "${start}": ${lastLine(moved.err || moved.out) || "git switch failed"}; the main clone stays on "${taskBranch}"`,
+    };
+  }
+  return { ok: true };
+}
+
+/**
  * Fast-forwards the main clone to `sha` when it is on `branch` and clean, then
  * runs the prepare lines there when the clone moved. A marker left by an
  * interrupted merge makes a replay run prepare even when the clone already

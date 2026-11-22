@@ -24,6 +24,7 @@ import {
 } from "./integration-queue.ts";
 import {
   mainCloneChange,
+  switchBackToStart,
   updateMainClone,
   type CommandRunner,
   type MainCloneOutcome,
@@ -97,7 +98,14 @@ export async function followMain(
     run: async () => ({ ok: true, out: "" }),
   },
   marker?: PrepareMarker | undefined,
+  /** Branch mode: the clone is on the task's branch and goes back to `start` first. */
+  inPlace?: { readonly start: string; readonly taskBranch: string } | undefined,
 ): Promise<MainCloneOutcome> {
+  if (inPlace !== undefined) {
+    const back = switchBackToStart(repository.path, inPlace.start, inPlace.taskBranch);
+    integrateTestHooks.at?.("switched-back");
+    if (!back.ok) return { updated: false, note: back.note };
+  }
   return updateMainClone(
     repository.path,
     branch,
@@ -322,6 +330,13 @@ export async function runIntegrate(
   );
   const head = branchHead(repository, settings, context.workName);
   const mainRef = `refs/remotes/${settings.remote}/${settings.mainBranch}`;
+  const recordedStart = task.attempt?.startBranch;
+  const inPlace =
+    task.attempt?.inPlace === true &&
+    typeof recordedStart === "string" &&
+    recordedStart.length > 0
+      ? { start: recordedStart, taskBranch: `work/${context.workName}` }
+      : undefined;
   const keyCommands = settings.integration.keyCommands;
   const runStep = ctx.runStep;
 
@@ -411,6 +426,7 @@ export async function runIntegrate(
       cloneSha,
       { lines: settings.prepare, run: mainCloneRunner(ctx, settings) },
       marker,
+      inPlace,
     );
     integrateTestHooks.at?.("clone-followed");
     const cloneChange = mainCloneChange(clone);
@@ -493,6 +509,7 @@ export async function runIntegrate(
         typeof previous.batchHead === "string" ? previous.batchHead : previous.candidate,
         { lines: settings.prepare, run: mainCloneRunner(ctx, settings) },
         marker,
+        inPlace,
       );
       const cloneChange = mainCloneChange(clone);
       const withClone: IntegrationRecord = {
