@@ -42,12 +42,6 @@ function toPrompt(prompt: AuthPrompt): LoginPrompt {
           ...(option.description === undefined ? {} : { description: option.description }),
         })),
       };
-    case "manual_code":
-      return {
-        type: "manual_code",
-        message: prompt.message,
-        ...(prompt.placeholder === undefined ? {} : { placeholder: prompt.placeholder }),
-      };
     case "secret":
     case "text":
       return {
@@ -75,26 +69,6 @@ function toNotice(event: AuthEvent): LoginNotice {
               })),
             }),
       };
-    case "auth_url":
-      return {
-        type: "auth_url",
-        url: event.url,
-        ...(event.instructions === undefined ? {} : { instructions: event.instructions }),
-      };
-    case "device_code":
-      return {
-        type: "device_code",
-        userCode: event.userCode,
-        verificationUri: event.verificationUri,
-        ...(event.openBrowserOnConfirm === undefined
-          ? {}
-          : { openBrowserOnConfirm: event.openBrowserOnConfirm }),
-        ...(event.copyCodeOnConfirm === undefined
-          ? {}
-          : { copyCodeOnConfirm: event.copyCodeOnConfirm }),
-        ...(event.intervalSeconds === undefined ? {} : { intervalSeconds: event.intervalSeconds }),
-        ...(event.expiresInSeconds === undefined ? {} : { expiresInSeconds: event.expiresInSeconds }),
-      };
     case "progress":
       return { type: "progress", message: event.message };
     default:
@@ -105,22 +79,12 @@ function toNotice(event: AuthEvent): LoginNotice {
 function providersOf(runtime: ModelRuntime): readonly LoginProvider[] {
   const providers: LoginProvider[] = [];
   for (const provider of runtime.getProviders() as readonly Provider[]) {
-    const oauth = provider.auth.oauth;
     const apiKey = provider.auth.apiKey;
-    const apiKeyLogin = apiKey?.login !== undefined;
-    if (oauth === undefined && !apiKeyLogin) continue;
+    if (apiKey?.login === undefined) continue;
     providers.push({
       id: provider.id,
       name: provider.name,
-      ...(oauth === undefined
-        ? {}
-        : {
-            oauth: {
-              name: oauth.name,
-              ...(oauth.loginLabel === undefined ? {} : { label: oauth.loginLabel }),
-            },
-          }),
-      ...(apiKeyLogin && apiKey !== undefined ? { apiKey: { name: apiKey.name } } : {}),
+      apiKey: { name: apiKey.name },
     });
   }
   return providers;
@@ -169,8 +133,9 @@ async function main(): Promise<void> {
   };
 
   const first = await nextCommand();
-  if (first.type !== "login") {
-    write({ type: "failed", message: "the login child expected a login command" });
+  if (first.type !== "login" || first.auth !== "api_key") {
+    // No subscription (OAuth) login starts here (ADR 0023 D11).
+    write({ type: "failed", message: "the login child expected an API-key login command" });
     terminal.close();
     return;
   }

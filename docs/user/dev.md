@@ -573,8 +573,12 @@ older and fails when there is no `pi`. To use another pi, set `command` in the
 is refused with its path; point `command` at the package's bin instead
 (`.../@earendil-works/pi-coding-agent/dist/bundle/cli.js`).
 
-**Log in to pi.** Run `pi` and type `/login`, then pick the provider. operad uses
-your own pi login, the credentials file `~/.pi/agent/auth.json` (`authPath` names
+**Log in to pi.** For your ChatGPT plan, run pi's own login,
+`pi auth login openai-codex`; operad does not run that login. When `pi` is not on
+your `PATH`, run the same command with the full path of the pi operad installed
+(the login question prints it). operad picks the login up once it is done, with no
+restart of `serve`. For an API key, answer operad's login question, or run `pi` and
+type `/login`. operad uses your own pi login, the credentials file `~/.pi/agent/auth.json` (`authPath` names
 another file). operad never reads the file; it hands the path to pi. pi and operad
 may refresh the same login at once; pi locks the file for that.
 

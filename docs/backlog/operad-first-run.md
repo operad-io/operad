@@ -79,7 +79,7 @@ owner 2026-11-21：用户也可能只装桌面应用就开始用。下面的现�
 - **pi 1.6.0 下 pi harness 能回复**：`pi.model` 写明 `openai-codex/gpt-5.6-terra` 时，一条消息正常收到回复。
 - **没写模型时 pi 的 chat 失败，这正是新 home 的状态**：`pi.model` 没设时，回复以 "No API key found for the selected model" 失败；pi 1.5.2 和 1.6.0 都一样，而 `pi -p` 用自己的默认模型（`~/.pi/agent/settings.json` 的 `defaultProvider`、`defaultModel`）是正常的。ADR 0023 D4 说默认用用户 pi 的默认模型，worker 实际没有做到；根因没有查完（`index.ts` 的 `piDefaultModel` 只用在模型列表里，worker 在 `input.model` 为空时让 pi 自己选）。这是一个 bug，任务 1 之前要修。
 - memory 开着并跑过 serve 之后，`default` 这个名字有歧义（`bot-tidy:default` 和 `bot:default`），命令行要写 `bot:default`。
-- **`ModelRuntime.login` 在 Bun 子进程里的 OAuth 回调可用**（T-0678 探针，pi 1.6.0，离线模拟 token 交换）：`openai-codex` 的浏览器回调在 `127.0.0.1:1455` 收到 200 并完成登录、写入 `auth.json`；浏览器不回来时粘贴跳转地址可以完成；state 不对被拒；取消立即结束；1455 被占用时自动退回粘贴地址。探针保留在 `packages/harness/pi/test/heavy/oauth.test.ts`。
+- **`ModelRuntime.login` 在 Bun 子进程里的 OAuth 回调可用**（T-0678 探针，pi 1.6.0，离线模拟 token 交换）：`openai-codex` 的浏览器回调在 `127.0.0.1:1455` 收到 200 并完成登录、写入 `auth.json`；浏览器不回来时粘贴跳转地址可以完成；state 不对被拒；取消立即结束；1455 被占用时自动退回粘贴地址。（T-0703 起 operad 不再自己走这条 OAuth 登录，探针已删除。）
 
 ## 没有核实的
 
@@ -109,5 +109,5 @@ owner 2026-11-21：用户也可能只装桌面应用就开始用。下面的现�
 
 ## 发布前的核对（不挡任务合并）
 
-- **ChatGPT 订阅登录的条款**（owner，2026-11-22）：pi 的 openai-codex 登录用的是 Codex CLI 的公开客户端身份，operad 作为第三方产品在自己的界面里用这个身份引导登录有条款风险（`docs/research/2026-11-21-pibot.md` 的"不该照搬"）。T-0678 照常用 pi 的登录；对外发布含这个登录入口的版本之前，核对一次 OpenAI 的条款，确认是否要注册 operad 自己的客户端。
+- **ChatGPT 订阅登录的条款**：已由 T-0703 解决（owner，2026-11-22）。operad 不再自己引导 openai-codex 登录；想用 ChatGPT 订阅的人运行 pi 自己的 `pi auth login openai-codex`（`pi` 不在 `PATH` 上时，登录问题里给出 operad 自带 pi 的完整命令），operad 只检查 pi 是否已登录。operad 登录只提供 API key。理由和备选（注册 operad 自己的客户端）见 `docs/research/2026-11-22-siwc-own-registration.md`，决定写在 ADR 0023 D11。
 - 调研已做（T-0702，2026-11-22）：`docs/research/2026-11-22-siwc-own-registration.md`。要点：OpenAI 的 Sign in with ChatGPT 允许开源客户端动态注册自己的 client（`dynamic_agent_client`），但签发的令牌只能调 `https://api.openai.com/v1/responses`，不是 pi 的 `openai-codex` 用的 `chatgpt.com/backend-api`，所以要给 pi 加一个新 provider，不是换 client id；没有设备码流程；`Request a client ID` 页写明目前只对“少数商业伙伴”开放，发布前要先确认 operad 能不能注册。

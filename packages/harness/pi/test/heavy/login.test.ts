@@ -157,78 +157,31 @@ async function setup() {
 }
 
 describe("pi/login", () => {
-  test("the provider route, the pasted redirect URL and the model are three questions, and the secret never reaches a fact", async () => {
+  test("the first question offers API-key routes only and tells where a ChatGPT plan logs in", async () => {
     const env = await setup();
     try {
-      const run = env.runner(new FakeTimer()).run();
+      const timer = new FakeTimer();
+      const run = env.runner(timer).run();
       await env.opened(1);
 
-      let pending = await listPending(env.log, env.registry);
+      const pending = await listPending(env.log, env.registry);
       expect(pending).toHaveLength(1);
-      expect(pending[0]?.choices).toContain("openai-codex");
-      expect(pending[0]?.choices).toContain("openai");
-      // Only ChatGPT's subscription is offered for openai-codex, and Anthropic
-      // has only its API key (ADR 0023 D11).
-      expect(pending[0]?.choiceInfo?.["openai-codex"]?.role).toBe("primary");
-      expect(pending[0]?.choiceInfo?.["openai-codex"]?.label).toBe("OpenAI (ChatGPT Plus/Pro)");
+      // pi lists openai-codex with an OAuth login only; operad offers none, so
+      // the route is not a choice (ADR 0023 D11). Every API-key route stays.
+      expect(pending[0]?.choices).toEqual(["openai", "anthropic"]);
+      expect(pending[0]?.choiceInfo?.["openai"]?.label).toBe("OpenAI API key");
       expect(pending[0]?.choiceInfo?.["anthropic"]?.label).toBe("Anthropic API key");
-      const firstWait = pending[0]?.waitId;
-      if (firstWait === undefined) throw new Error("no wait");
+      expect(JSON.stringify(pending[0]?.choiceInfo)).not.toContain("primary");
+      const prompt = pending[0]?.prompt ?? "";
+      expect(prompt).toContain("pi auth login openai-codex");
+      expect(prompt).toContain("operad picks it up once it is done");
 
-      await recordAnswer({
-        log: env.log,
-        runId: env.runId,
-        waitId: firstWait,
-        choice: "openai-codex",
-        actor: ACTOR,
-      });
-      await env.opened(2);
-
-      pending = await listPending(env.log, env.registry);
-      const redirect = pending[0]?.questions?.[0];
-      expect(redirect).toMatchObject({
-        id: "redirect",
-        freeText: true,
-        secret: true,
-      });
-      expect(redirect?.url?.startsWith("https://auth.openai.com/oauth/authorize")).toBe(true);
-      expect(pending[0]?.choices).toEqual([]);
-      const secondWait = pending[0]?.waitId;
-      if (secondWait === undefined) throw new Error("no redirect wait");
-
-      const secret = "http://localhost:1455/auth/callback?code=secret-code&state=0123456789abcdef";
-      await recordAnswer({
-        log: env.log,
-        runId: env.runId,
-        waitId: secondWait,
-        choice: undefined,
-        answers: [{ id: "redirect", text: secret }],
-        actor: ACTOR,
-      });
-      await env.opened(3);
-
-      pending = await listPending(env.log, env.registry);
-      expect(pending[0]?.choices).toEqual(["openai-codex/a", "openai-codex/b"]);
-      expect(pending[0]?.choiceInfo?.["openai-codex/b"]?.role).toBe("primary");
-      const thirdWait = pending[0]?.waitId;
-      if (thirdWait === undefined) throw new Error("no model wait");
-
-      await recordAnswer({
-        log: env.log,
-        runId: env.runId,
-        waitId: thirdWait,
-        choice: "openai-codex/b",
-        actor: ACTOR,
-      });
+      await timer.until(1);
+      timer.fire();
       expect(await run).toBe("ended");
-
       const list = await facts(env.log, env.runId);
-      const result = list.find((fact) => fact.kind === "step_result");
-      expect(result?.payload).toMatchObject({
-        result: "done",
-        data: { provider: "openai-codex", model: "openai-codex/b" },
-      });
-      expect(JSON.stringify(list.filter((fact) => fact.kind !== "step_result"))).not.toContain("secret-code");
+      expect(JSON.stringify(list)).not.toContain("auth_url");
+      expect(JSON.stringify(list)).not.toContain("auth.openai.com");
     } finally {
       await env.log.close();
     }
@@ -283,61 +236,6 @@ describe("pi/login", () => {
       const result = (await facts(env.log, env.runId)).find((fact) => fact.kind === "step_result");
       expect(result?.payload).toMatchObject({ result: "done", data: { provider: "openai", model: "openai/m" } });
       expect(JSON.stringify(await facts(env.log, env.runId))).not.toContain("sk-not-a-real-key");
-    } finally {
-      await env.log.close();
-    }
-  }, 30_000);
-
-  test("an address that is not the ChatGPT login address ends the login before it is shown", async () => {
-    const previous = process.env.FAKE_LOGIN_URL;
-    process.env.FAKE_LOGIN_URL = "evil";
-    const env = await setup();
-    try {
-      const run = env.runner(new FakeTimer()).run();
-      await env.opened(1);
-      const first = (await listPending(env.log, env.registry))[0];
-      if (first?.waitId === undefined) throw new Error("no wait");
-      await recordAnswer({
-        log: env.log,
-        runId: env.runId,
-        waitId: first.waitId,
-        choice: "openai-codex",
-        actor: ACTOR,
-      });
-      expect(await run).toBe("ended");
-      const list = await facts(env.log, env.runId);
-      const result = list.find((fact) => fact.kind === "step_result");
-      expect(JSON.stringify(result?.payload)).toContain("not the login address");
-      expect(JSON.stringify(list)).not.toContain("evil.example");
-    } finally {
-      if (previous === undefined) delete process.env.FAKE_LOGIN_URL;
-      else process.env.FAKE_LOGIN_URL = previous;
-      await env.log.close();
-    }
-  }, 30_000);
-
-  test("a redirect question the person leaves alone ends the login as cancelled", async () => {
-    const env = await setup();
-    try {
-      const timer = new FakeTimer();
-      const run = env.runner(timer).run();
-      await env.opened(1);
-      const first = (await listPending(env.log, env.registry))[0];
-      if (first?.waitId === undefined) throw new Error("no wait");
-      const before = timer.count;
-      await recordAnswer({
-        log: env.log,
-        runId: env.runId,
-        waitId: first.waitId,
-        choice: "openai-codex",
-        actor: ACTOR,
-      });
-      await env.opened(2);
-      await timer.until(before + 1);
-      timer.fire();
-      expect(await run).toBe("ended");
-      const result = (await facts(env.log, env.runId)).find((fact) => fact.kind === "step_result");
-      expect(JSON.stringify(result?.payload)).toContain("cancelled");
     } finally {
       await env.log.close();
     }

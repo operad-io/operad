@@ -9,8 +9,6 @@
 export interface LoginProvider {
   readonly id: string;
   readonly name: string;
-  /** The OAuth (subscription) route, with pi's own labels. */
-  readonly oauth?: { readonly name: string; readonly label?: string | undefined } | undefined;
   /** The API-key route, with pi's own name for it. */
   readonly apiKey?: { readonly name: string } | undefined;
 }
@@ -28,7 +26,7 @@ export type LoginPrompt =
         readonly description?: string;
       }[];
     }
-  | { readonly type: "manual_code"; readonly message: string; readonly placeholder?: string };
+  ;
 
 /** A notice pi's login flow shows while it works, without its abort signal. */
 export type LoginNotice =
@@ -37,21 +35,11 @@ export type LoginNotice =
       readonly message: string;
       readonly links?: readonly { readonly url: string; readonly label?: string }[];
     }
-  | { readonly type: "auth_url"; readonly url: string; readonly instructions?: string }
-  | {
-      readonly type: "device_code";
-      readonly userCode: string;
-      readonly verificationUri: string;
-      readonly openBrowserOnConfirm?: boolean;
-      readonly copyCodeOnConfirm?: boolean;
-      readonly intervalSeconds?: number;
-      readonly expiresInSeconds?: number;
-    }
   | { readonly type: "progress"; readonly message: string };
 
 /** What the hub writes to the child. */
 export type LoginCommand =
-  | { readonly type: "login"; readonly provider: string; readonly auth: "oauth" | "api_key" }
+  | { readonly type: "login"; readonly provider: string; readonly auth: "api_key" }
   | { readonly type: "answer"; readonly id: number; readonly value: string }
   | { readonly type: "cancel" };
 
@@ -60,7 +48,7 @@ export type LoginLine =
   | { readonly type: "providers"; readonly providers: readonly LoginProvider[] }
   | { readonly type: "prompt"; readonly id: number; readonly prompt: LoginPrompt }
   | { readonly type: "notice"; readonly event: LoginNotice }
-  | { readonly type: "done"; readonly provider: string; readonly auth: "oauth" | "api_key" }
+  | { readonly type: "done"; readonly provider: string; readonly auth: "api_key" }
   | { readonly type: "failed"; readonly message: string };
 
 /** What the child is started with, as one argument. */
@@ -74,35 +62,4 @@ export interface LoginStart {
   readonly command: string;
   /** The cwd a relative pi command is resolved from. */
   readonly cwd: string;
-}
-
-/** The most an authorization address may be; the same bound the kernel checks. */
-export const MAX_LOGIN_URL = 2048;
-
-/**
- * The address a client may show for a login, or undefined when it is not one:
- * an absolute `https` address, or the loopback `http` address of the OAuth
- * callback. The plugin checks this before an address reaches a question
- * (ADR 0008 D8); the kernel's own check is only the scheme.
- */
-export function loginUrl(value: unknown): string | undefined {
-  if (typeof value !== "string" || value.length === 0 || value.length > MAX_LOGIN_URL) return undefined;
-  if (!URL.canParse(value)) return undefined;
-  const url = new URL(value);
-  if (url.protocol === "https:") return url.href;
-  if (url.protocol === "http:" && (url.hostname === "127.0.0.1" || url.hostname === "localhost")) {
-    return url.href;
-  }
-  return undefined;
-}
-
-/** The authorization URL of the ChatGPT login, or undefined when it is not one. */
-export function codexAuthUrl(value: unknown): string | undefined {
-  const url = loginUrl(value);
-  if (url === undefined) return undefined;
-  const parsed = new URL(url);
-  if (parsed.protocol !== "https:" || parsed.hostname !== "auth.openai.com") return undefined;
-  if (parsed.pathname !== "/oauth/authorize") return undefined;
-  if (parsed.searchParams.get("redirect_uri") !== "http://localhost:1455/auth/callback") return undefined;
-  return url;
 }

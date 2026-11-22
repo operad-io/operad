@@ -30,7 +30,7 @@ An extension of the owner runs in the worker process with the worker's operating
 
 ### D4: Credentials are the user's own pi login
 
-`ModelRuntime.create({ authPath: ~/.pi/agent/auth.json, modelsPath: ~/.pi/agent/models.json })`. The user's pi uses OAuth subscriptions, not API keys, which `ctx.secrets` cannot give; pi locks `auth.json` itself, so the TUI and operad refreshing a token at the same time is within its design. The declaration has two settings, `model` and `thinkingLevel`, defaulting to the user's pi default model; the thinking level is sent only when the declaration or the step sets one, and otherwise pi uses its own default.
+`ModelRuntime.create({ authPath: ~/.pi/agent/auth.json, modelsPath: ~/.pi/agent/models.json })`. The user's pi may use OAuth subscriptions, which `ctx.secrets` cannot give (a person logs in to one with pi itself, D11); pi locks `auth.json` itself, so the TUI and operad refreshing a token at the same time is within its design. The declaration has two settings, `model` and `thinkingLevel`, defaulting to the user's pi default model; the thinking level is sent only when the declaration or the step sets one, and otherwise pi uses its own default.
 
 A run's model is the step's `--model` argument, else the declaration's `model`, else the `defaultProvider` and `defaultModel` of the user's pi settings file (`~/.pi/agent/settings.json`). operad resolves that default in the hub and names the model to the child on every run. With the own-settings switch off the child's settings manager is in memory (D3) and carries no default model of its own, so a child told no model selects none and the first request fails with "No API key found for the selected model" even when `auth.json` holds the credential. Reading those defaults is not resource discovery: only pi's default model and default thinking level are read from that file. When pi's settings name no complete pair, no model is sent and pi chooses its own.
 
@@ -68,23 +68,29 @@ Access is decided per reply, never remembered by the worker: each prompt carries
 
 Only the owner may connect. The kept directory is `0700`, the record and socket are `0600`, and a record is offered only for the same home, the same chat scope and the same key; another user cannot open the socket, another chat has another scope, and another configuration has another key. The record names the worker's pid and a random token that is also on its command line; a stop verifies that token before it signals a pid, so a reused pid belonging to another program is never touched. Task workers, reviews and the other agents do not keep a worker.
 
-### D11: A login runs in a child process and offers only ChatGPT's subscription
+### D11: A login runs in a child process and offers only API keys
 
 `pi/login` (ADR 0022 D13) starts `bun login-worker.ts` with the rule of D2: the
 library is imported only in that child, never in the hub. The child creates the
-`ModelRuntime` of D4, reports the providers that can log in, and waits for the
-step's commands; the step puts every prompt, notice and question of the login
-to the person with `ctx.ask` (ADR 0008) and writes the answer back on the
+`ModelRuntime` of D4, reports the providers that can log in with an API key, and
+waits for the step's commands; the step puts every prompt and question of the
+login to the person with `ctx.ask` (ADR 0008) and writes the answer back on the
 child's stdin. The login has 300 seconds from its start and can be cancelled; a
 timeout or a cancel stops the child, and no credential is written then.
 
-The only subscription route is `openai-codex`, pi's ChatGPT login: its browser
-callback on `127.0.0.1:1455` and, when the browser cannot reach it, a pasted
-final redirect URL whose state the child checks. The step checks the
-authorization URL before it is shown: `https` on `auth.openai.com` and the
-login's own redirect on the loopback callback. Every other provider, Anthropic
-included, gets only its API-key login; a person who wants another subscription
-logs in with pi itself (ADR 0024 D3 gives the reason for Anthropic).
+operad starts no subscription (OAuth) login, ChatGPT's included: no authorize
+URL, device code or pasted redirect of one reaches a question, and the child
+refuses a login command that is not an API-key one. pi's `openai-codex` login
+uses the Codex CLI's own client id, and operad presenting it as its own step is
+the risk the owner decided against. A person who wants their
+ChatGPT plan, or another subscription (ADR 0024 D3 gives the reason for
+Anthropic), runs pi's own login, `pi auth login openai-codex`. The first
+question of the login says so in one line, with the command a person can run:
+`pi ...` when `pi` is on `PATH` (or the `command` setting), else the full path
+of the pi operad installed in the home (D9). operad only checks whether pi is
+signed in, as it does for `claude` and `codex`: `signedIn` reads `authPath` on
+every call, so the next check sees a login made elsewhere with no restart of
+`serve`.
 
 The providers and the models are pi's own catalog, read through the child and
 `ctx.harnessModels`; operad names no provider or model of its own. The model
