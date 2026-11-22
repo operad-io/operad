@@ -103,6 +103,7 @@
   "@operad-io/engine:PersonAnsweredPayload": "the kernel's fact, input and state types: a plugin returns results and never builds them",
   "@operad-io/engine:PluginAdmin": "the plugin list and switch the host gives HTTP clients: a plugin is listed by the host and never calls it",
   "@operad-io/engine:PluginConfigEntry": "the home's config types: read and written by the host, a plugin receives its own section as ctx.settings",
+  "@operad-io/engine:PluginSetup": "what the host answers HTTP clients about one plugin's setup: a plugin never calls it",
   "@operad-io/engine:PluginInfo": "the plugin list and switch the host gives HTTP clients: a plugin is listed by the host and never calls it",
   "@operad-io/engine:PluginOrigin": "the plugin list and switch the host gives HTTP clients: a plugin is listed by the host and never calls it",
   "@operad-io/engine:PluginSwitchOptions": "the plugin list and switch the host gives HTTP clients: a plugin is listed by the host and never calls it",

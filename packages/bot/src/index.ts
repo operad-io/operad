@@ -36,7 +36,7 @@ import {
 import { MEMORY_COMMIT_STEP, memoryNotes } from "@operad-io/memory";
 import { createBot, knownMcpServers, knownSkills } from "./create.ts";
 import { LOGIN_EVENT, LOGIN_SOURCE, loginAction, loginFlow, loginItems, runLogin as runLoginStep } from "./login.ts";
-import { setupDevPrompt } from "./setup-dev.ts";
+import { chatSetupAction, runSetup, setupDevPrompt, setupPrompt, setupTitle } from "./setup.ts";
 import { ingestReports, runMcpCommand } from "./mcp-proposals.ts";
 import {
   PROPOSAL_TYPE,
@@ -581,7 +581,49 @@ const setupDevAction: ActionTypeDefinition = {
       title: `Setup Dev (${basename(where)})`,
       cause: "action:bot/setup-dev",
     });
-    const sent = await sendMessage(ctx, id, setupDevPrompt(ctx.object.id, where));
+    const sent = await sendMessage(ctx, id, await setupDevPrompt(ctx.setup, ctx.object.id, where));
+    return { text: `opened chat ${id}; ${sent}`, opens: `chat:${id}` };
+  },
+};
+
+// Setup <plugin> (ADR 0010 D7): opens a chat on the bot whose first message is
+// the plugin's guide, with what its check finds missing.
+const setupAction: ActionTypeDefinition = {
+  name: "setup",
+  on: BOT_TYPE,
+  creates: "chat",
+  args: {
+    type: "object",
+    description: "Opens a chat that has the bot's agent set up a plugin by its guide.",
+    properties: {
+      plugin: { type: "string", minLength: 1, description: "The plugin to set up, such as dev." },
+      target: {
+        type: "string",
+        description: "What the guide works on, when it needs one: for dev the repository's directory.",
+      },
+    },
+    required: ["plugin"],
+  },
+  when: setupDevAction.when,
+  why: setupDevAction.why,
+  async run(ctx, args) {
+    const given = args as { readonly plugin: string; readonly target?: string };
+    const plugin = given.plugin.trim();
+    const target = given.target?.trim() ?? "";
+    const where = target.length === 0 ? "" : isAbsolute(target) ? target : resolve(ctx.cwd, target);
+    const prompt = await setupPrompt(ctx.setup, ctx.object.id, plugin, where);
+    const id = await openChat({
+      store: ctx.store,
+      home: ctx.home,
+      settings: ctx.settings,
+      harnesses: ctx.harnesses,
+      models: ctx.models,
+      efforts: ctx.efforts,
+      bot: ctx.object.id,
+      title: `${setupTitle(plugin)}${where.length === 0 ? "" : ` (${basename(where)})`}`,
+      cause: "action:bot/setup",
+    });
+    const sent = await sendMessage(ctx, id, prompt);
     return { text: `opened chat ${id}; ${sent}`, opens: `chat:${id}` };
   },
 };
@@ -733,7 +775,7 @@ export function createBotPlugin() {
         mode: "auto" as const,
       },
     ],
-    actions: [chatAction, setupDevAction, createAction, loginAction, ...proposalActions, ...scheduleActions, ...tidyActions],
+    actions: [chatAction, setupDevAction, setupAction, chatSetupAction, createAction, loginAction, ...proposalActions, ...scheduleActions, ...tidyActions],
     commands: [
       {
         name: "skill",
@@ -754,6 +796,11 @@ export function createBotPlugin() {
         name: "setup-dev",
         args: "<bot> <repository directory> [< dev.json]",
         run: runSetupDev,
+      },
+      {
+        name: "setup",
+        args: "<bot> <plugin> [target]",
+        run: runSetup,
       },
       {
         name: "schedule",
@@ -792,6 +839,7 @@ export * from "./create.ts";
 export * from "./login.ts";
 export * from "./proposals.ts";
 export * from "./setup-dev.ts";
+export * from "./setup.ts";
 export * from "./schedule.ts";
 export * from "./tidy.ts";
 export * from "./mcp.ts";

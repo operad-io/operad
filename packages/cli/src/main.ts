@@ -573,6 +573,7 @@ export async function openContext(
     config,
     follow,
     installOnEnable: INSTALL_ON_ENABLE,
+    optional: pluginOffer(home).optional,
     ...(scope === undefined ? {} : { scope }),
     ...(viewsCwd === undefined ? {} : { viewsCwd }),
     cancelSource: "cli",
@@ -2820,8 +2821,18 @@ export function pluginAdminFor(
     }
     return rows;
   };
+  const withGuides = async (): Promise<PluginInfo[]> => {
+    const rows = await rowsPublic();
+    const guides = await context.registry.setupReader().list();
+    return rows.map((row) => (guides.some((item) => item.plugin === row.name) ? { ...row, guide: true } : row));
+  };
   return {
-    list: rowsPublic,
+    list: withGuides,
+    setup: async (name) => {
+      const found = await context.registry.setupReader().get(name);
+      if (found === undefined) return undefined;
+      return { plugin: found.plugin, enabled: found.enabled, missing: found.missing };
+    },
     install: async (specifier, options) => {
       if (!options.confirmed) {
         throw new ViewError(

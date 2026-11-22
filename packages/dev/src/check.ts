@@ -5,7 +5,10 @@
  * credentials apply as they would for a real command, and writes nothing.
  */
 
-import { messageOf, type PluginBaseContext } from "@operad-io/engine";
+import { messageOf, type MissingItem, type PluginBaseContext } from "@operad-io/engine";
+
+/** The check's answer when something is missing (ADR 0010 D7). */
+type SetupMissing = { readonly note: string; readonly missing: readonly MissingItem[] };
 import { git } from "./git.ts";
 import { listRepositories } from "./service.ts";
 import { readDevSettings } from "./settings.ts";
@@ -60,9 +63,14 @@ async function checkRepository(
 }
 
 /** Runs the repository loop and reports one line, or throws with every failure. */
-export async function checkDev(ctx: PluginBaseContext): Promise<string> {
+export async function checkDev(ctx: PluginBaseContext): Promise<string | SetupMissing> {
   const repositories = await listRepositories(ctx.store);
-  if (repositories.length === 0) return "no repositories registered";
+  if (repositories.length === 0) {
+    return {
+      note: "no repositories registered",
+      missing: [{ name: "repository", description: "no repository is registered with dev" }],
+    };
+  }
 
   const failures: string[] = [];
   for (const repository of repositories) {

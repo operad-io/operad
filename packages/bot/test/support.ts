@@ -84,6 +84,20 @@ export function writePlugins(home: string, plugins: Record<string, unknown>): vo
   writeFileSync(join(home, "config.json"), JSON.stringify({ plugins }, null, 2));
 }
 
+/** A `dev` that ships the real Setup Dev guide and reports one missing item. */
+export function standInDev() {
+  return definePlugin({
+    name: "dev",
+    kind: "domain",
+    version: "0.0.0",
+    guide: join(import.meta.dir, "../../dev/skills/setup/SKILL.md"),
+    check: () => ({
+      note: "no repositories registered",
+      missing: [{ name: "repository", description: "no repository is registered with dev" }],
+    }),
+  });
+}
+
 export async function rig(
   bots: Record<string, unknown> = {},
   harnesses = ["claude", "pi"],
@@ -97,7 +111,7 @@ export async function rig(
   const calls: Call[] = [];
   const store = new MemoryPluginStore({ root: join(root, "store") });
   const registry = new PluginRegistry(
-    [createChatPlugin(), createBotPlugin(), ...harnesses.map((name) => fakeHarness(name, calls)), ...extraPlugins],
+    [createChatPlugin(), createBotPlugin(), standInDev(), ...harnesses.map((name) => fakeHarness(name, calls)), ...extraPlugins],
     {
       home,
       cwd: root,

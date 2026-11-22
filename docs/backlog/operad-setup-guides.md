@@ -1,6 +1,6 @@
 # operad-setup-guides：每个插件带一份设置向导，由 bot 一步一步带着做
 
-- 状态：方向 owner 已同意（2026-11-22）；三点 owner 已定（见「决定」，2026-11-22）；没有切任务；等 T-0679 合并后再开工
+- 状态：方向 owner 已同意（2026-11-22）；三点 owner 已定（见「决定」，2026-11-22）；第一步（从 Setup Dev 提炼机制）由 T-0696 做，写进 ADR 0010 D7、0012 D2、0030 D15；Telegram 是下一个任务
 - 涉及 ADR：0010（插件声明）、0011（D2 技能）、0012（D2 开关）、0008（问题的形状）、0030（bot 的提议）、0033（telegram）、0010（D2 密钥）
 - 涉及：`operad-first-run.md`（`Setup Dev` 是第一个实例，T-0678 做密文输入）；`operad-telegram.md`；`operad-bot.md`
 - 来源：owner 2026-11-22 的讨论
@@ -42,11 +42,17 @@ owner 的要求：要有一些用 prompt 驱动的向导，一步一步带用户
 
 - Telegram 对不在名单里的发送者：`packages/telegram/src/source.ts` 只记下这条更新的 key 和正文第一行的摘要（`summaryOf`），不开 chat、不回复，也不留发送者的 id 和名字。向导要问"这是你吗"，得让插件新记下发送者的 id 和显示名（lead 2026-11-22 核实）。
 
-## 没有核实的
+## 核实的结果（T-0696，2026-11-22）
 
-- 插件没开启时，它的向导要能被 bot 看到，否则"帮我设置 Telegram"无从开始。今天技能随已开启的插件挂上；没开启的插件的声明能不能读到向导和检查，没有查。可能要改 ADR 0010 或 0012。
-- T-0679 做出来的 `Setup Dev` 是什么形状（一份 prompt 加待处理项），能提炼出多少，要等它合并后看。
-- 验证这一种步骤的结果怎么交给 bot：是插件的一个动作，还是检查的一部分。
+- **bot 看得到没开启的插件的向导和检查吗？** 向导看得到，检查不运行。`config.json` 里关掉的条目仍写着模块路径，内核能 `import` 它读出 `guide`；`dev` 这类随发行版带的、`config.json` 里没有条目的插件，用 `pluginOffer` 的模块表。检查要插件加载后的上下文（设置、密钥、store），没开启时不加载，所以不运行：没开启的插件只报一个缺项 `enable`。不需要改 ADR 0002 D1-D4；ADR 0010 D7 和 0012 D2 写了这一点。不在 `config.json` 里、也不是随发行版带的插件，要先 `operad plugin add`。
+- **`Setup Dev` 是什么形状、能提炼多少？** 是 bot 包里的一份 prompt（`setupDevPrompt`）加一个 `setup-dev` 命令（没有 stdin 答步骤，有 `dev.json` 就提议）、一个开聊天的 `setup-dev` 动作，和 bot 聊天开头的一行提示。能提炼的：prompt 文本移到 dev 包的 `skills/setup/SKILL.md`，由 `guide` 声明；命令、动作、聊天命令和提示行变成通用的 `bot setup <bot> <插件> [目标]`、`bot:setup`、`/setup <插件> [目标]`。不能提炼的：提议、审阅和批准（`bot-proposal` 的 `dev` 种类）仍是 dev 专用，因为"改设置，人批准后落盘"这一类步骤今天只有 Setup Dev 一个实例，Telegram 任务要加第二个时再抽（这是下一步）。
+- **验证这一种步骤的结果怎么交给 bot？** 作为检查的一部分，不另做动作。检查本来就由插件代码做，bot 在一步做完后再取一次缺项（`bot setup` 重新运行检查），缺项没了就是验证通过；缺项里的说明可以带失败原因（如"token 被 Telegram 拒绝"）。需要"试一次"的副作用（给用户回一条测试消息）是 Telegram 任务里该插件自己的动作，不在内核里。
+
+## 入口（T-0696 已做的部分）
+
+- 对话里：每个 bot 聊天开头一行提示；命令 `/setup <插件> [目标]`（聊天命令，把向导发进同一个聊天）。
+- 设置里每个插件一个按钮：`GET /v1/plugins` 的行带 `guide: true`，按钮的动作是 bot 上的 `setup`（`plugin`、`target`），标题 `Setup <名字>`。客户端没做。
+- 插件页显示缺什么：`GET /v1/plugins/<名字>/setup` 返回 `{ plugin, enabled, missing }`。客户端没做。
 
 ## 验收
 

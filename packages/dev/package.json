@@ -26,6 +26,7 @@
   "files": [
     "src",
     "flows",
+    "skills",
     "dev.schema.json",
     "README.md",
     "LICENSE"

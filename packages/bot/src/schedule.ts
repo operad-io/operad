@@ -36,6 +36,7 @@ import {
 import { runLine } from "@operad-io/engine/platform";
 import { BOT_TYPE, BotError } from "./bot.ts";
 import { SETUP_DEV_INSTRUCTION } from "./setup-dev.ts";
+import { SETUP_INSTRUCTION } from "./setup.ts";
 
 /** The source's name for a scheduled message; a message from it is a background run. */
 export const SCHEDULE_SOURCE = "bot";
@@ -220,7 +221,7 @@ export const SCHEDULE_INSTRUCTION =
 
 /** The text and place a bot chat starts with. */
 export function scheduledChatContext(): { readonly text: string; readonly where: string } {
-  const line = `${SCHEDULE_INSTRUCTION} ${SETUP_DEV_INSTRUCTION}`;
+  const line = `${SCHEDULE_INSTRUCTION} ${SETUP_DEV_INSTRUCTION} ${SETUP_INSTRUCTION}`;
   return { text: line, where: line };
 }
 

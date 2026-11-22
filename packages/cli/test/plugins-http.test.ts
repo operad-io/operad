@@ -25,6 +25,7 @@ const notesPath = fileURLToPath(
 const signedInPath = fileURLToPath(
   new URL("../../engine/test/fixtures/plugins/signed-in-harness.ts", import.meta.url),
 );
+const guidedPath = fileURLToPath(new URL("../../engine/test/fixtures/plugins/guided.ts", import.meta.url));
 const modelHarnessPath = fileURLToPath(
   new URL("../../engine/test/fixtures/plugins/model-harness.ts", import.meta.url),
 );
@@ -601,5 +602,59 @@ export default definePlugin({ name: "declared", kind: "domain", version: "2.0.0"
       expect((await call(rig, "GET")).status).toBe(200);
       expect(rig.loaded.filter((module) => module === broken)).toHaveLength(1);
     });
+  });
+
+  test("a plugin with a guide is marked on its row, and its setup says what is missing", async () => {
+    await withRig(
+      async (rig) => {
+        const rows = ((await (await call(rig, "GET")).json()) as { plugins: (Row & { guide?: boolean })[] }).plugins;
+        expect(rows.find((row) => row.name === "guided")?.guide).toBe(true);
+        expect(rows.find((row) => row.name === "demo")?.guide).toBeUndefined();
+        const asked = await fetch(`${rig.base}/v1/plugins/guided/setup`, {
+          headers: { authorization: `Bearer ${rig.token}` },
+        });
+        expect(asked.status).toBe(200);
+        expect(await asked.json()).toEqual({
+          setup: {
+            plugin: "guided",
+            enabled: true,
+            missing: [
+              { name: "token", description: "no token is stored" },
+              { name: "user", description: "no user is listed" },
+            ],
+          },
+        });
+      },
+      undefined,
+      { guided: { module: guidedPath, enabled: true } },
+    );
+  });
+
+  test("an off plugin's setup is readable and says it is off; one without a guide is not found", async () => {
+    await withRig(
+      async (rig) => {
+        const rows = ((await (await call(rig, "GET")).json()) as { plugins: (Row & { guide?: boolean })[] }).plugins;
+        expect(rows.find((row) => row.name === "guided")?.guide).toBe(true);
+        const off = await fetch(`${rig.base}/v1/plugins/guided/setup`, {
+          headers: { authorization: `Bearer ${rig.token}` },
+        });
+        const text = await off.text();
+        expect(JSON.parse(text)).toEqual({
+          setup: { plugin: "guided", enabled: false, missing: [{ name: "enable", description: 'the plugin "guided" is off' }] },
+        });
+        expect(text).not.toContain("Ask the person");
+        const none = await fetch(`${rig.base}/v1/plugins/demo/setup`, {
+          headers: { authorization: `Bearer ${rig.token}` },
+        });
+        expect(none.status).toBe(404);
+        const post = await fetch(`${rig.base}/v1/plugins/guided/setup`, {
+          method: "POST",
+          headers: { authorization: `Bearer ${rig.token}` },
+        });
+        expect(post.status).toBe(405);
+      },
+      undefined,
+      { guided: { module: guidedPath, enabled: false } },
+    );
   });
 });

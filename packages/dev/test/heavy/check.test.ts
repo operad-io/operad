@@ -261,7 +261,23 @@ describe("dev init check", () => {
 
     const checks = await registry.checks();
     expect(checks).toEqual([
-      { plugin: "dev", ok: true, message: "no repositories registered" },
+      {
+        plugin: "dev",
+        ok: true,
+        message: "no repositories registered",
+        missing: [{ name: "repository", description: "no repository is registered with dev" }],
+      },
     ]);
+  });
+
+  test("dev ships Setup Dev as its guide, and a registered repository leaves nothing missing", async () => {
+    const { root, repositoryPath } = await setup();
+    const store = storeAt(root);
+    const registry = registryAt(root, store, repositoryPath);
+    const before = await registry.setupReader().get("dev");
+    expect(before?.missing.map((item) => item.name)).toEqual(["repository"]);
+    expect(before?.text).toContain("Set up operad's dev for the repository at {target}");
+    await addRepository(store, { path: repositoryPath });
+    expect((await registry.setupReader().get("dev"))?.missing).toEqual([]);
   });
 });

@@ -1,6 +1,6 @@
 /** The plugin list and switch a client of `serve` reaches; the home's plugin loading is the kernel's. */
 
-import type { Actor, HarnessModels } from "../plugin/types.ts";
+import type { Actor, HarnessModels, MissingItem } from "../plugin/types.ts";
 
 /**
  * Where a plugin comes from: `builtin` is a package operad ships, `home` is
@@ -32,6 +32,15 @@ export interface PluginInfo {
    * it, with `version: null` and `enabled: false`.
    */
   readonly progress?: string | undefined;
+  /** True when the plugin ships a setup guide (ADR 0010 D7): a client offers "Setup <name>". */
+  readonly guide?: true | undefined;
+}
+
+/** What is missing from one plugin's setup; never the guide's text (ADR 0010 D7). */
+export interface PluginSetup {
+  readonly plugin: string;
+  readonly enabled: boolean;
+  readonly missing: readonly MissingItem[];
 }
 
 export interface PluginSwitchOptions {
@@ -52,4 +61,6 @@ export interface PluginAdmin {
   install(specifier: string, options: PluginSwitchOptions): Promise<PluginInfo>;
   /** Writes `plugins.<name>.enabled` in `config.json`; it takes effect at the next load. */
   set(name: string, enabled: boolean, options: PluginSwitchOptions): Promise<PluginInfo>;
+  /** What one plugin's setup is missing; undefined when the plugin has no guide. */
+  setup?(name: string): Promise<PluginSetup | undefined>;
 }

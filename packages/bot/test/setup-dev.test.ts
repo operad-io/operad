@@ -2,8 +2,8 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { join } from "node:path";
-import { createViews } from "@operad-io/engine";
-import { PROPOSAL_TYPE, proposalData, readPiped, setupDevPrompt } from "../src/index.ts";
+import { createViews, guideBody } from "@operad-io/engine";
+import { PROPOSAL_TYPE, proposalData, readPiped, renderGuide } from "../src/index.ts";
 import { cleanupRoots, rig } from "./support.ts";
 
 afterAll(cleanupRoots);
@@ -152,6 +152,9 @@ describe("the Setup Dev page", () => {
 
   test("shows the prompt the bot is given", () => {
     const page = readFileSync(join(import.meta.dir, "../../../docs/user/setup-prompt.md"), "utf8");
-    expect(page).toContain(setupDevPrompt("default", "<repository directory>"));
+    const guide = readFileSync(join(import.meta.dir, "../../dev/skills/setup/SKILL.md"), "utf8");
+    expect(page).toContain(
+      renderGuide(guideBody(guide), "default", "<repository directory>"),
+    );
   });
 });

@@ -140,3 +140,10 @@ export function formatElapsed(ms: number): string {
   }
   return `${total}s`;
 }
+
+/** The `guide` path a plugin definition declares, when it declares one. */
+export function definitionGuide(value: unknown): string | undefined {
+  if (typeof value !== "object" || value === null || !("guide" in value)) return undefined;
+  const guide = (value as { guide?: unknown }).guide;
+  return typeof guide === "string" ? guide : undefined;
+}

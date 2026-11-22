@@ -1,5 +1,6 @@
 /** The dev plugin: repositories, plans, tasks and their commands and views. */
 
+import { fileURLToPath } from "node:url";
 import pkg from "../package.json" with { type: "json" };
 import { definePlugin } from "@operad-io/engine";
 import { WORKTREE_EVENT } from "@operad-io/chat";
@@ -230,8 +231,13 @@ export function createDevPlugin() {
     check(ctx) {
       return checkDev(ctx);
     },
+    // Setup Dev (ADR 0030 D15): the guide a bot follows for what check reports missing.
+    guide: DEV_SETUP_GUIDE,
   });
 }
+
+/** The `SKILL.md` Setup Dev gives a bot (ADR 0010 D7). */
+export const DEV_SETUP_GUIDE = fileURLToPath(new URL("../skills/setup/SKILL.md", import.meta.url));
 
 export default createDevPlugin();
 

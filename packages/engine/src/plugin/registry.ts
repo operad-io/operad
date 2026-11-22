@@ -6,6 +6,7 @@ import { FlowError, validateFlow } from "../flow/validate.ts";
 import type { JsonValue } from "../log/types.ts";
 import { validateActionArgs } from "./action-schema.ts";
 import { readDeclaredFlows, writeDeclaredFlow } from "./declared-flows.ts";
+import { readFile } from "node:fs/promises";
 import { AccessError, AskTimeoutError, messageOf, PluginError, StepNotLoadedError } from "./errors.ts";
 import { defaultOperadHome } from "./home.ts";
 import { createPluginLogger } from "./logger.ts";
@@ -49,7 +50,10 @@ import {
   type PendingActionView,
   type PendingEntry,
   type PluginBaseContext,
+  type MissingItem,
   type PluginCheck,
+  type SetupGuide,
+  type SetupReader,
   type PluginStepResult,
   type PluginStore,
   type ResolvedCommand,
@@ -79,6 +83,34 @@ import { normalizeQuestions, questionsJson, questionsProblem } from "./question-
 import { isRecord } from "../util.ts";
 
 export { splitActionName };
+
+/** The items of a check's result; a malformed item makes the check throw. */
+function missingItemsOf(result: { readonly missing: readonly MissingItem[] }): readonly MissingItem[] {
+  if (!Array.isArray(result.missing)) throw new PluginError("check: missing must be a list");
+  const seen = new Set<string>();
+  const items: MissingItem[] = [];
+  for (const item of result.missing as readonly unknown[]) {
+    if (
+      !isRecord(item) ||
+      typeof item.name !== "string" ||
+      item.name.trim().length === 0 ||
+      typeof item.description !== "string" ||
+      item.description.trim().length === 0
+    ) {
+      throw new PluginError("check: each missing item needs a name and a description");
+    }
+    if (seen.has(item.name)) throw new PluginError(`check: the missing item "${item.name}" is listed twice`);
+    seen.add(item.name);
+    items.push({ name: item.name, description: item.description });
+  }
+  return items;
+}
+
+/** A `SKILL.md`'s text without its front matter. */
+export function guideBody(text: string): string {
+  const match = /^---\r?\n[\s\S]*?\r?\n---\r?\n?/.exec(text);
+  return (match === null ? text : text.slice(match[0].length)).trim();
+}
 
 /** An action's rank for an object's data; a failing `rank` counts as 0. */
 export function rankOf(action: ActionTypeDefinition, data: ObjectData): number {
@@ -137,6 +169,13 @@ export interface PluginRegistryOptions {
   readonly settings?: Readonly<Record<string, unknown>> | undefined;
   /** Plugins the config switched off; a dependent is refused with the reason. */
   readonly disabled?: readonly string[] | undefined;
+  /** The plugins that are off, switched off or not in the file yet; defaults to `disabled`. */
+  readonly off?: readonly string[] | undefined;
+  /**
+   * The path of a switched-off plugin's guide, read from its module; undefined
+   * when it has none. Absent: an off plugin's guide is not readable.
+   */
+  readonly disabledGuide?: ((plugin: string) => Promise<string | undefined>) | undefined;
   /** Whether to resolve `requires` against the loaded plugins. */
   readonly requireDependencies?: boolean | undefined;
   /** Whether to validate each plugin's settings section. */
@@ -265,6 +304,8 @@ export class PluginRegistry {
     Readonly<Record<string, JsonValue>>
   >;
   private readonly disabledNames: ReadonlySet<string>;
+  private readonly offNames: ReadonlySet<string>;
+  private readonly disabledGuide: ((plugin: string) => Promise<string | undefined>) | undefined;
 
   constructor(
     definitions: readonly unknown[],
@@ -299,6 +340,8 @@ export class PluginRegistry {
     }
     this.sourceByPlugin = sourceMap;
     this.disabledNames = new Set(options.disabled ?? []);
+    this.disabledGuide = options.disabledGuide;
+    this.offNames = new Set(options.off ?? options.disabled ?? []);
 
     const settingsByPlugin = new Map<
       string,
@@ -1403,6 +1446,7 @@ export class PluginRegistry {
       signal: options.signal ?? new AbortController().signal,
       settings: this.settingsFor(found.plugin.name),
       secrets: this.secretsFor(found.plugin.name),
+      setup: this.setupReader(),
       runId,
       // A targetless action has no object; it runs from its arguments alone.
       object: object ?? { type: "", id: "", data: {} },
@@ -1472,38 +1516,102 @@ export class PluginRegistry {
     };
   }
 
-  /** Runs each plugin's optional `check`; a throw is a failed check, not an error. */
+  /** Runs one loaded plugin's `check`; a throw is a failed check, not an error. */
+  private async runCheck(plugin: LoadedPlugin): Promise<PluginCheck | undefined> {
+    if (plugin.check === undefined) return undefined;
+    const ctx: PluginBaseContext = {
+      plugin: plugin.name,
+      home: this.home,
+      cwd: this.cwd,
+      store: this.store,
+      facts: this.factsFor(`check:${plugin.name}`),
+      logger: createPluginLogger(this.store.root, plugin.name, "check"),
+      signal: new AbortController().signal,
+      settings: this.settingsFor(plugin.name),
+      secrets: this.secretsFor(plugin.name),
+    };
+    try {
+      const result = await plugin.check(ctx);
+      if (typeof result === "string") {
+        return { plugin: plugin.name, ok: true, message: result };
+      }
+      if (result === undefined) {
+        return { plugin: plugin.name, ok: true, message: "ok" };
+      }
+      const missing = missingItemsOf(result);
+      const note = typeof result.note === "string" ? result.note : undefined;
+      return {
+        plugin: plugin.name,
+        ok: true,
+        message: note ?? (missing.length === 0 ? "ok" : missing.map((item) => item.description).join("; ")),
+        missing,
+      };
+    } catch (error) {
+      return { plugin: plugin.name, ok: false, message: messageOf(error) };
+    }
+  }
+
+  /** Runs each plugin's optional `check`. */
   async checks(): Promise<readonly PluginCheck[]> {
     const checks: PluginCheck[] = [];
     for (const plugin of this.plugins) {
-      if (plugin.check === undefined) continue;
-      const ctx: PluginBaseContext = {
-        plugin: plugin.name,
-        home: this.home,
-        cwd: this.cwd,
-        store: this.store,
-        facts: this.factsFor(`check:${plugin.name}`),
-        logger: createPluginLogger(this.store.root, plugin.name, "check"),
-        signal: new AbortController().signal,
-        settings: this.settingsFor(plugin.name),
-        secrets: this.secretsFor(plugin.name),
-      };
-      try {
-        const note = await plugin.check(ctx);
-        checks.push({
-          plugin: plugin.name,
-          ok: true,
-          message: typeof note === "string" ? note : "ok",
-        });
-      } catch (error) {
-        checks.push({
-          plugin: plugin.name,
-          ok: false,
-          message: messageOf(error),
-        });
-      }
+      const check = await this.runCheck(plugin);
+      if (check !== undefined) checks.push(check);
     }
     return checks;
+  }
+
+  /**
+   * The setup guides (ADR 0010 D7): a loaded plugin's guide with what its check
+   * reports missing, an off plugin's guide with the one item `enable`.
+   */
+  setupReader(): SetupReader {
+    const read = async (path: string): Promise<string | undefined> => {
+      try {
+        return guideBody(await readFile(path, "utf8"));
+      } catch {
+        return undefined;
+      }
+    };
+    return {
+      list: async () => {
+        const found: { plugin: string; enabled: boolean }[] = [];
+        for (const plugin of this.plugins) {
+          if (plugin.guide !== undefined) found.push({ plugin: plugin.name, enabled: true });
+        }
+        for (const name of this.offNames) {
+          if ((await this.disabledGuide?.(name)) !== undefined) found.push({ plugin: name, enabled: false });
+        }
+        return found;
+      },
+      get: async (name): Promise<SetupGuide | undefined> => {
+        const plugin = this.plugins.find((item) => item.name === name);
+        if (plugin !== undefined) {
+          if (plugin.guide === undefined) return undefined;
+          const text = await read(plugin.guide);
+          if (text === undefined) return undefined;
+          const check = await this.runCheck(plugin);
+          const missing: readonly MissingItem[] =
+            check === undefined
+              ? []
+              : check.ok
+                ? (check.missing ?? [])
+                : [{ name: "check", description: `the check failed: ${check.message}` }];
+          return { plugin: name, enabled: true, text, missing };
+        }
+        if (!this.offNames.has(name)) return undefined;
+        const path = await this.disabledGuide?.(name);
+        if (path === undefined) return undefined;
+        const text = await read(path);
+        if (text === undefined) return undefined;
+        return {
+          plugin: name,
+          enabled: false,
+          text,
+          missing: [{ name: "enable", description: `the plugin "${name}" is off` }],
+        };
+      },
+    };
   }
 
   /**
@@ -1609,6 +1717,7 @@ export class PluginRegistry {
       signal: options.signal ?? new AbortController().signal,
       settings: this.settingsFor(plugin.name),
       secrets: this.secretsFor(plugin.name),
+      setup: this.setupReader(),
       flows: this.flows().map((entry) => entry.flow.name),
       ...(options.input === undefined ? {} : { input: options.input }),
       ...(this.onCancelRun === undefined ? {} : { runs: this.runControl() }),

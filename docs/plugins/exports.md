@@ -182,6 +182,8 @@ Types (`StepContext`, `ActionTypeDefinition`, `ObjectRow`, ...) are exported too
 | `bareId` | `bareId(id)`: the id without its type (`item:T-1` becomes `T-1`); an untyped id is unchanged | [Events](events.md#the-event) |
 | `cut` | `cut(text, max)`: text cut to at most `max` characters, with `…` at the cut | [Rules](rules.md#code) |
 | `definitionName` | The `name` a plugin definition declares, or `undefined` | [definePlugin](define-plugin.md) |
+| `definitionGuide` | The `guide` path a plugin definition declares, or `undefined` | [definePlugin](define-plugin.md) |
+| `guideBody` | `guideBody(text)`: a `SKILL.md`'s text without its front matter | [definePlugin](define-plugin.md) |
 | `directoryError` | `directoryError(cwd)`: why a directory cannot be a working directory, or `undefined` | [Settings](settings.md#editing-a-setting) |
 | `errorCode` | The `code` of a filesystem error, or `undefined` | [Rules](rules.md#code) |
 | `isMissingFile` | `true` when a filesystem error says the file does not exist (`ENOENT`) | [Rules](rules.md#code) |

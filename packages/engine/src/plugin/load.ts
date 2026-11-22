@@ -7,7 +7,7 @@ import { messageOf, PluginError } from "./errors.ts";
 import { defaultOperadHome } from "./home.ts";
 import { installedPackageFile, runningFromWorkspace } from "./install.ts";
 import { keysPathFor, readKeysFile } from "./keys.ts";
-import { definitionName, isMissingFile } from "../util.ts";
+import { definitionGuide, definitionName, isMissingFile } from "../util.ts";
 import { PluginRegistry } from "./registry.ts";
 import type { PluginRegistryOptions } from "./registry.ts";
 
@@ -23,6 +23,11 @@ export interface LoadPluginRegistryOptions extends PluginRegistryOptions {
    * Empty by default: the engine names no plugin.
    */
   readonly installOnEnable?: readonly string[] | undefined;
+  /**
+   * The shipped plugins a person may turn on that `config.json` need not name,
+   * by name and module. Their setup guides are readable while they are off.
+   */
+  readonly optional?: Readonly<Record<string, string>> | undefined;
 }
 
 let loadCount = 0;
@@ -201,6 +206,40 @@ export async function loadConfiguredPlugins(
   return { entries: config.plugins, loaded, disabled, errors };
 }
 
+/** The plugins that are off: switched off in the file, or offered and not in it. */
+function offNames(entries: readonly PluginConfigEntry[], optional: Readonly<Record<string, string>>): string[] {
+  const names = entries.filter((item) => !item.enabled && item.name !== undefined).map((item) => item.name ?? "");
+  for (const name of Object.keys(optional)) {
+    if (!entries.some((item) => item.name === name) && !names.includes(name)) names.push(name);
+  }
+  return names;
+}
+
+/**
+ * Reads the guide path of a switched-off plugin from its module, once per
+ * name: a module that cannot be loaded has no guide to offer.
+ */
+function offGuideReader(
+  entries: readonly PluginConfigEntry[],
+  optional: Readonly<Record<string, string>>,
+  home: string,
+): (name: string) => Promise<string | undefined> {
+  const seen = new Map<string, Promise<string | undefined>>();
+  return (name) => {
+    const known = seen.get(name);
+    if (known !== undefined) return known;
+    const module =
+      entries.find((item) => !item.enabled && item.name === name)?.module ??
+      (entries.some((item) => item.name === name) ? undefined : optional[name]);
+    const read =
+      module === undefined
+        ? Promise.resolve(undefined)
+        : loadPlugin(module, home).then(definitionGuide, () => undefined);
+    seen.set(name, read);
+    return read;
+  };
+}
+
 /**
  * Loads the plugins listed in `$OPERAD_HOME/config.json` (default
  * `~/.operad/config.json`) and validates them together.
@@ -232,6 +271,8 @@ export async function loadPluginRegistry(
     sources,
     settings: options.settings ?? settings,
     disabled: options.disabled ?? config.disabled,
+    off: offNames(config.entries, options.optional ?? {}),
+    disabledGuide: options.disabledGuide ?? offGuideReader(config.entries, options.optional ?? {}, home),
   });
   // A harness reads its model list in the background; the load asks for none,
   // so a client that asks just after it gets the list the home already keeps.

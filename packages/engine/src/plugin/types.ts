@@ -557,6 +557,8 @@ export interface PluginBaseContext {
   readonly secrets: SecretStore;
   /** Set when the kernel can cancel a run for this plugin. */
   readonly runs?: RunControl | undefined;
+  /** The setup guides; set on commands and actions. */
+  readonly setup?: SetupReader | undefined;
 }
 
 /** The answer a plugin action gives to the person wait it is answering. */
@@ -577,11 +579,45 @@ export interface RunControl {
   active(runId: string): MaybePromise<boolean | void>;
 }
 
+/** One thing a plugin's check found not set up (ADR 0010 D7). */
+export interface MissingItem {
+  /** A short word, unique within the plugin. */
+  readonly name: string;
+  /** One sentence saying what is not set up. */
+  readonly description: string;
+}
+
+/** What a plugin's `check` may return: a note, nothing, or the missing items. */
+export type PluginCheckReturn =
+  | string
+  | void
+  | { readonly note?: string | undefined; readonly missing: readonly MissingItem[] };
+
 /** The result of one plugin's optional `check`. */
 export interface PluginCheck {
   readonly plugin: string;
   readonly ok: boolean;
   readonly message: string;
+  /** What the check found not set up; present only when the check returned the object form. */
+  readonly missing?: readonly MissingItem[] | undefined;
+}
+
+/** A plugin's setup guide with what its check finds missing now (ADR 0010 D7). */
+export interface SetupGuide {
+  readonly plugin: string;
+  /** Whether the plugin is loaded; an off plugin reports the one item `enable`. */
+  readonly enabled: boolean;
+  /** The guide's text without its front matter. */
+  readonly text: string;
+  readonly missing: readonly MissingItem[];
+}
+
+/** Reads the setup guides of plugins, loaded or off. */
+export interface SetupReader {
+  /** The names and state of the plugins that have a guide. */
+  list(): Promise<readonly { readonly plugin: string; readonly enabled: boolean }[]>;
+  /** One plugin's guide; undefined when it has none or is unknown. */
+  get(plugin: string): Promise<SetupGuide | undefined>;
 }
 
 /** The longest grace, in seconds, a timer can hold (2^31-1 ms, rounded down). */
@@ -1658,8 +1694,10 @@ export interface PluginShape {
   readonly requires?: PluginRequires | undefined;
   /** Starts a source; `operad serve` stops it on exit. */
   readonly start?: ((ctx: SourceContext) => MaybePromise<SourceHandle> | SourceHandle) | undefined;
-  /** Runs when `operad init` checks the plugin; a string is the check's note. */
-  readonly check?: ((ctx: PluginBaseContext) => MaybePromise<string | void>) | undefined;
+  /** Runs when `operad init` checks the plugin; a string is the check's note, an object lists what is missing. */
+  readonly check?: ((ctx: PluginBaseContext) => MaybePromise<PluginCheckReturn>) | undefined;
+  /** The absolute path of the plugin's setup guide, a `SKILL.md` (ADR 0010 D7). */
+  readonly guide?: string | undefined;
 }
 
 /** One settings file under a repository's `.operad/`, with its schema. */

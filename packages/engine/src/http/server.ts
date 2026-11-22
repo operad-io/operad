@@ -705,6 +705,17 @@ function createHandler(
       return json(await listRunning(options.log, options.clock, options.views));
     }
 
+    const setupOf = /^\/v1\/plugins\/([^/]+)\/setup$/.exec(path);
+    if (setupOf !== null) {
+      const admin = options.plugins;
+      if (admin?.setup === undefined) return errorResponse(404, "not-found", "no such endpoint");
+      if (method !== "GET") return errorResponse(405, "method", "this endpoint takes GET");
+      const name = decodeURIComponent(setupOf[1] ?? "");
+      const found = await admin.setup(name);
+      if (found === undefined) return errorResponse(404, "not-found", `plugin "${name}" has no setup guide`);
+      return json({ setup: found });
+    }
+
     if (path === "/v1/plugins") {
       const admin = options.plugins;
       if (admin === undefined) return errorResponse(404, "not-found", "no such endpoint");
