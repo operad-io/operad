@@ -52,6 +52,7 @@ import {
   personStarted,
   resultFor,
   runAgent,
+  skippedLineRecord,
   systemClock,
   type Clock,
   type ToolEvent,
@@ -613,6 +614,9 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
             clock: defaults.clock,
             toolEvent: radianToolEvent,
             onStart: writeSession,
+            onSkipped: (chars) => {
+              void jsonl.pushStamped(jsonl.stamp(skippedLineRecord(chars)));
+            },
             onLine(line) {
               const logged = radianLogLine(line, defaults.now, openTools, cwd, logProfile, logSecrets);
               const received = jsonl.stamp(logged);

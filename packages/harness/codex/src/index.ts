@@ -46,6 +46,7 @@ import {
   readAgentStep,
   resultFor,
   runAgent,
+  skippedLineRecord,
   serverCommand,
   STALL_SETTING,
   STEP_TIMEOUT_SECS,
@@ -597,6 +598,7 @@ export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
             signal: stopper.signal,
             clock,
             toolEvent: (line) => log.toolEvent(line),
+            onSkipped: (chars) => writeLine(skippedLineRecord(chars)),
             onLine(line, reply) {
               server.handleLine(line, reply);
               return writing;

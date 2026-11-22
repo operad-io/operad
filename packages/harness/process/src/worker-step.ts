@@ -12,7 +12,7 @@ import { answerGrant } from "./grants.ts";
 import { inboxOf } from "./inbox.ts";
 import { JsonlLog } from "./jsonl-log.ts";
 import { deliverLine } from "./lines.ts";
-import { runAgent, type KeptRunOptions, type ToolEvent } from "./process.ts";
+import { runAgent, skippedLineRecord,type KeptRunOptions, type ToolEvent } from "./process.ts";
 import { resultFor, resultValue, type AgentWorkerResult } from "./step.ts";
 import { withTimings } from "./timings.ts";
 import type { Clock } from "@operad-io/engine/platform";
@@ -86,6 +86,9 @@ export async function runWorkerStep(spec: WorkerStepSpec): Promise<PluginStepRes
     signal: AbortSignal.any([ctx.signal, stopper.signal]),
     clock: spec.clock,
     toolEvent: (line) => spec.toolEvent(line) ?? askToolEvent(line),
+    onSkipped: (chars) => {
+      void jsonl.pushStamped(jsonl.stamp(skippedLineRecord(chars)));
+    },
     async onLine(line, reply) {
       const received = jsonl.stamp(line);
       timings.record(received.value, received.at);

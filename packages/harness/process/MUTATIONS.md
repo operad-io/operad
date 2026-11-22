@@ -270,3 +270,11 @@ and the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0670-M6 | packages/harness/process/src/ask-call.ts | `canAsk` still reported an ask at `full` | `canAsk > is true for an access level below full, and false for full` |
+
+## T-0709 — an over-long line is skipped, not a failure
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0709-M1 | packages/harness/process/src/process.ts | a complete line past the limit was handed to `onLine` instead of dropped | `an over-long output line > is dropped, reported with its length, and the lines around it are read` |
+| T-0709-M2 | packages/harness/process/src/process.ts | the length reported for a dropped line left out the part read in earlier chunks | `an over-long output line > is dropped, reported with its length, and the lines around it are read` |
+| T-0709-M3 | packages/harness/process/src/process.ts | a line that never ends was never stopped (no cap while skipping) | `an over-long output line > that never ends stops the run as a line too long` (timed out) |

@@ -533,7 +533,7 @@ export class AppServerClient {
         const resume = this.options.resumeSession;
         if (resume !== undefined) {
           this.session = resume;
-          this.send(this.request("thread/resume", { threadId: resume, ...this.threadParams() }, "session"));
+          this.send(this.request("thread/resume", { threadId: resume, excludeTurns: true, ...this.threadParams() }, "session"));
         } else {
           this.send(this.request("thread/start", this.threadParams(), "session"));
         }

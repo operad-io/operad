@@ -6,7 +6,7 @@
 
 import { directoryError } from "@operad-io/engine";
 import type { AgentResultData, CostQuality, PluginStepResult } from "@operad-io/engine";
-import { MAX_LINE_CHARS, type AgentRunOutcome } from "./process.ts";
+import { MAX_SKIPPED_LINE_CHARS, type AgentRunOutcome } from "./process.ts";
 import { standardUsage, type RawCounts, type UsageSource } from "./usage.ts";
 import { isRecord } from "@operad-io/engine";
 
@@ -301,7 +301,7 @@ export function resultFor(
   if (outcome.lineTooLong) {
     return fail({
       reason: "line_too_long",
-      message: `the harness printed a line longer than ${MAX_LINE_CHARS} characters`,
+      message: `the harness printed a line longer than ${MAX_SKIPPED_LINE_CHARS} characters without ending`,
     });
   }
 
