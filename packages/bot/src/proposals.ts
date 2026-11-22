@@ -43,7 +43,7 @@ import {
   type BotSettings,
   type McpServerSettings,
 } from "./bot.ts";
-import { applyDev, devChangeOf, devReview, runSetupDevCommand, type DevChange } from "./setup-dev.ts";
+import { applyDev, devChangeOf, devReview, runSetupDevCommand, type DevChange, type PipedInput } from "./setup-dev.ts";
 import { commandLine, compareTools, differenceLines, secretName, storedTools } from "./mcp.ts";
 import {
   applyScheduleChange,
@@ -1056,7 +1056,7 @@ export async function runSettingCommand(ctx: CommandContext, argv: readonly stri
 }
 
 /** The `bot setup-dev` command: the steps for the agent, or with `dev.json` on stdin the proposal (ADR 0030 D15). */
-export async function runSetupDev(ctx: CommandContext, argv: readonly string[]): Promise<string> {
+export async function runSetupDev(ctx: CommandContext, argv: readonly string[], piped?: PipedInput): Promise<string> {
   return runSetupDevCommand(ctx, argv, async (bot, change) => {
     const data: ProposalData = {
       bot,
@@ -1069,7 +1069,7 @@ export async function runSetupDev(ctx: CommandContext, argv: readonly string[]):
     const id = `p-${randomUUID()}`;
     await ctx.store.put(PROPOSAL_TYPE, id, data as unknown as Record<string, JsonValue>, "command:bot/setup-dev");
     return `proposed Setup Dev for ${change.repo}; review it in pending`;
-  });
+  }, piped);
 }
 
 /** The usage line shared by the parser's refusals. */

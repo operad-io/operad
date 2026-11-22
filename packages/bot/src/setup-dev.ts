@@ -242,17 +242,66 @@ export function devChangeOf(value: unknown): DevChange | undefined {
   };
 }
 
+/** The stream a command reads, and what a test may stand in for. */
+export interface PipedInput {
+  /** Defaults to the process's standard input. */
+  readonly stream?: (AsyncIterable<Uint8Array | string> & { readonly destroy?: () => void }) | undefined;
+  /** Settles when a stream that has delivered nothing is given up on; defaults to a timer. */
+  readonly giveUp?: Promise<void> | undefined;
+}
+
+const FIRST_BYTES_MS = 2000;
+
+/**
+ * The text piped to a command that was given none. A terminal, and a pipe that
+ * delivers nothing before the deadline, are no input; once data starts the
+ * read goes on to the end.
+ */
+export async function readPiped(input: string | undefined, options: PipedInput = {}): Promise<string> {
+  if (input !== undefined) return input;
+  const stream = options.stream ?? process.stdin;
+  if (options.stream === undefined && process.stdin.isTTY === true) return "";
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const giveUp =
+    options.giveUp ??
+    new Promise<void>((done) => {
+      timer = setTimeout(done, FIRST_BYTES_MS);
+    });
+  const iterator = stream[Symbol.asyncIterator]();
+  try {
+    const first = await Promise.race([iterator.next(), giveUp.then(() => undefined)]);
+    if (first === undefined) {
+      try {
+        stream.destroy?.();
+      } catch {
+        // The stream already ended.
+      }
+      return "";
+    }
+    const chunks: Buffer[] = [];
+    let step = first;
+    while (!step.done) {
+      chunks.push(typeof step.value === "string" ? Buffer.from(step.value, "utf8") : Buffer.from(step.value));
+      step = await iterator.next();
+    }
+    return Buffer.concat(chunks).toString("utf8");
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
 /** `bot setup-dev <bot> <directory>`: with `dev.json` on stdin it proposes, without it answers the steps. */
 export async function runSetupDevCommand(
   ctx: CommandContext,
   argv: readonly string[],
   propose: (bot: string, change: DevChange) => Promise<string>,
+  piped: PipedInput = {},
 ): Promise<string> {
   const bot = argv[0];
   const repo = argv[1];
   if (bot === undefined || repo === undefined || argv.length > 2) throw new BotError(USAGE);
   if (readBots(ctx.home)[bot] === undefined) throw new BotError(`there is no bot "${bot}"`);
-  const text = (ctx.input ?? "").trim();
+  const text = (await readPiped(ctx.input, piped)).trim();
   const resolved = isAbsolute(repo) ? repo : resolve(ctx.cwd, repo);
   if (text.length === 0) return setupDevPrompt(bot, resolved);
   return proposeDev(ctx.store, ctx.home, bot, repo, text, ctx.cwd, (change) => propose(bot, change));
