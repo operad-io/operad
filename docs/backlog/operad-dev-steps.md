@@ -18,6 +18,7 @@ dev 今天的基本形态是多 agent 加 git worktree：每个任务一个 work
    3. 再进一步：任务各有 worktree，一次一个。
    4. 提高并发：今天的工作方式。
 3. **"在哪里工作"这个设置的两个值是：主 clone 里的新分支，或 worktree**（owner 2026-11-22）。就地的任务不直接改当前分支：dev 在主 clone 里为任务开一个新分支，任务在那个分支上工作；worktree 照今天的做法。对话在第 1 步是否也开分支，没有定（待决 7）。
+4. **用词**（owner 2026-11-22，待决 1 已定）：设置 `workIn`，写在 `.operad/dev.json`，标题 Work in / 工作位置；值 `branch`（A branch in this folder / 本目录的新分支）和 `worktree`（A separate worktree / 独立的 worktree）。四步不单独起名。
 
 ## 提议的形状（草稿）
 
@@ -73,7 +74,7 @@ dev 今天的基本形态是多 agent 加 git worktree：每个任务一个 work
 
 ## 等 owner 决定
 
-1. **用词**：这个设置和它的两个值叫什么；四步要不要各有名字。新的用户词。
+1. ~~用词~~：已定，见「owner 已定」第 4 条。
 2. **就地的任务开始时工作区不干净**：拒绝并说明，还是问人，还是照常开始。建议拒绝并说明，这样 reject 能回到一个明确的起点。
 3. **就地的任务被 reject 或 cancel 时任务分支怎么办**：删掉，还是留着可以找回。建议留着，和 worktree 的任务一致。
 4. **就地的任务在跑时对话怎么办**。
