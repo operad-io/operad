@@ -5,6 +5,7 @@
  */
 
 import { afterAll, describe, expect, test } from "bun:test";
+import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -20,6 +21,7 @@ import {
   type LogBackend,
 } from "@operad-io/engine";
 import { createPiHarnessPlugin } from "../../src/index.ts";
+import { PI_PACKAGE, PI_VERSION, homePiPackageDir } from "../../src/pi-install.ts";
 import { cleanupTempRoots, tempRoot } from "../../../process/test/support.ts";
 
 afterAll(cleanupTempRoots);
@@ -183,6 +185,39 @@ describe("pi/login", () => {
       expect(JSON.stringify(list)).not.toContain("auth_url");
       expect(JSON.stringify(list)).not.toContain("auth.openai.com");
     } finally {
+      await env.log.close();
+    }
+  }, 30_000);
+
+  test("the first question names the bundled pi when pi is not on PATH", async () => {
+    const env = await setup();
+    const dir = homePiPackageDir(env.root);
+    mkdirSync(join(dir, "dist"), { recursive: true });
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({ name: PI_PACKAGE, version: PI_VERSION, exports: { ".": "./dist/index.js" } }),
+    );
+    writeFileSync(join(dir, "dist", "index.js"), "export {};\n");
+    const bin = join(env.root, "plugins", "node_modules", ".bin");
+    mkdirSync(bin, { recursive: true });
+    writeFileSync(join(bin, "pi"), "#!/bin/sh\n");
+    chmodSync(join(bin, "pi"), 0o755);
+    const empty = join(env.root, "empty");
+    mkdirSync(empty);
+    const savedPath = process.env["PATH"];
+    process.env["PATH"] = empty;
+    try {
+      const timer = new FakeTimer();
+      const run = env.runner(timer).run();
+      await env.opened(1);
+      const prompt = (await listPending(env.log, env.registry))[0]?.prompt ?? "";
+      expect(prompt).toContain(`${join(bin, "pi")} auth login openai-codex`);
+      await timer.until(1);
+      timer.fire();
+      expect(await run).toBe("ended");
+    } finally {
+      if (savedPath === undefined) delete process.env["PATH"];
+      else process.env["PATH"] = savedPath;
       await env.log.close();
     }
   }, 30_000);
