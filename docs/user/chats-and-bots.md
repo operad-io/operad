@@ -384,3 +384,13 @@ When the reply ends, the entry's last result is a short summary of it, and the
 `notify` command runs with that summary as `OPERAD_REASON` (see
 [Notifications](notifications.md)). A failed reply records and notifies its
 failure line instead.
+
+Every scheduled prompt ends with a line telling the agent how to end quietly: a
+reply that is exactly `NOTHING_TO_REPORT` (surrounding blank space ignored)
+means there is nothing new. The `notify` command is not run for that firing; the
+entry's last result reads "Nothing to report." and the chat stays open. Any
+other reply, and every failure, notifies as above.
+
+The prompt of each firing also carries the last three results of the same entry
+(each cut to 120 characters, quiet ones included) and asks the agent not to
+repeat what the person has already seen.
