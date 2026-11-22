@@ -664,11 +664,13 @@ class SqliteLogBackend implements LogBackend {
       "SELECT input_id, run_id, source, source_key, payload, time " +
         "FROM inputs ORDER BY time, input_id",
     );
+    let rows: InputRow[];
     try {
-      for (const row of statement.iterate()) yield inputOfRow(row);
+      rows = statement.all();
     } finally {
       statement.finalize();
     }
+    for (const row of rows) yield inputOfRow(row);
   }
 
   async readInputsAfter(position: number): Promise<InputsAfter> {
@@ -754,13 +756,13 @@ class SqliteLogBackend implements LogBackend {
     const statement = this.#database.prepare<OutcomeRow, []>(
       "SELECT input_id, kind, payload, seq, time FROM outcomes ORDER BY seq",
     );
+    let rows: OutcomeRow[];
     try {
-      for (const row of statement.iterate()) {
-        yield outcomeOfRow(row);
-      }
+      rows = statement.all();
     } finally {
       statement.finalize();
     }
+    for (const row of rows) yield outcomeOfRow(row);
   }
 
   #outcomeRow(inputId: string, kind: string): OutcomeRow | undefined {
@@ -811,13 +813,13 @@ class SqliteLogBackend implements LogBackend {
     const statement = this.#database.prepare<GlobalFactRow, []>(
       "SELECT seq, kind, payload, cause, time, unique_key FROM global_facts ORDER BY seq",
     );
+    let rows: GlobalFactRow[];
     try {
-      for (const row of statement.iterate()) {
-        yield globalFactOfRow(row);
-      }
+      rows = statement.all();
     } finally {
       statement.finalize();
     }
+    for (const row of rows) yield globalFactOfRow(row);
   }
 
   /** Tells a listener in this process when a run changes. */
@@ -935,24 +937,30 @@ class SqliteLogBackend implements LogBackend {
       "SELECT seq, kind, payload, cause, time FROM facts " +
         "WHERE run_id = ? AND seq > ? ORDER BY seq",
     );
-    let expectedSeq = after + 1;
+    // Read every row before the first yield. A statement left between two
+    // facts holds a read transaction, and the next write on this connection
+    // then fails with SQLITE_BUSY_SNAPSHOT once another process commits. An
+    // async read is suspended between facts, so nothing may stay open there.
+    let rows: FactRow[];
     try {
-      for (const row of statement.iterate(runId, after)) {
-        if (row.seq !== expectedSeq) {
-          throw new CorruptLogError(runId, `sequence ${row.seq} follows ${expectedSeq - 1}`);
-        }
-        expectedSeq += 1;
-        yield {
-          runId,
-          seq: row.seq,
-          kind: row.kind,
-          payload: JSON.parse(row.payload) as JsonValue,
-          cause: JSON.parse(row.cause) as FactCause,
-          time: row.time,
-        };
-      }
+      rows = statement.all(runId, after);
     } finally {
       statement.finalize();
+    }
+    let expectedSeq = after + 1;
+    for (const row of rows) {
+      if (row.seq !== expectedSeq) {
+        throw new CorruptLogError(runId, `sequence ${row.seq} follows ${expectedSeq - 1}`);
+      }
+      expectedSeq += 1;
+      yield {
+        runId,
+        seq: row.seq,
+        kind: row.kind,
+        payload: JSON.parse(row.payload) as JsonValue,
+        cause: JSON.parse(row.cause) as FactCause,
+        time: row.time,
+      };
     }
   }
 

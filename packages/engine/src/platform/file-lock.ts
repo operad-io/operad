@@ -204,15 +204,22 @@ let myStartedAt: number | null | undefined;
 /** The start time of this process, when the platform will say; best effort. */
 function myStart(): number | null {
   if (myStartedAt !== undefined) return myStartedAt;
-  const pid = process.pid;
+  myStartedAt = startOf(process.pid);
+  return myStartedAt;
+}
+
+/**
+ * The start time `ps` or `/proc` reports for a pid, in the same unit as
+ * `myStart` on this platform, or null when the platform will not say. It is
+ * asked afresh for another pid: a record's pid may belong to a new process by
+ * the time a waiter looks at it.
+ */
+function startOf(pid: number): number | null {
   try {
     const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
     const fields = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
     const ticks = Number(fields[19]);
-    if (Number.isFinite(ticks)) {
-      myStartedAt = ticks;
-      return ticks;
-    }
+    if (Number.isFinite(ticks)) return ticks;
   } catch {
     // Not Linux.
   }
@@ -223,11 +230,22 @@ function myStart(): number | null {
       stderr: "pipe",
     });
     const at = Date.parse(result.stdout.toString().trim());
-    myStartedAt = Number.isFinite(at) ? at : null;
+    return Number.isFinite(at) ? at : null;
   } catch {
-    myStartedAt = null;
+    return null;
   }
-  return myStartedAt;
+}
+
+/**
+ * True when the record's holder is gone: its pid is dead, or the pid now
+ * belongs to a process that started at another time. Without the start time a
+ * reused pid would look like a live holder until the waiter's deadline.
+ */
+function holderGone(record: LockRecord): boolean {
+  if (!isAlive(record.pid)) return true;
+  if (record.startedAt === null) return false;
+  const start = startOf(record.pid);
+  return start !== null && start !== record.startedAt;
 }
 
 function safeUnlink(path: string): void {
@@ -310,7 +328,7 @@ async function acquire(
     const dead =
       holder.record === undefined
         ? isStaleUnreadable(lockPath, clock)
-        : !isAlive(holder.record.pid);
+        : holderGone(holder.record);
     if (dead) {
       takeOver(lockPath, holder);
       continue;

@@ -74,3 +74,50 @@ test("a log write waits past the busy timeout while another process commits", as
     await holder.exited;
   }
 }, 60_000);
+
+test("a write on a log succeeds while a read of the same log is still open", async () => {
+  const root = await tempRoot();
+  const path = join(root, "log.sqlite");
+  const log = await openSqliteLogBackend(path);
+  const other = await openSqliteLogBackend(path);
+  try {
+    const run = await log.startRun("flow", "object");
+    await log.append(run.runId, 0, [
+      { kind: "a", payload: {}, cause: "test" },
+    ]);
+
+    // An async generator is suspended between two facts. The read must take
+    // its whole snapshot before the first yield, not hold a transaction on the
+    // connection a write then needs.
+    const facts = log.read(run.runId)[Symbol.asyncIterator]();
+    const first = await facts.next();
+    expect(first.done).toBe(false);
+
+    // Another connection commits after the read's snapshot.
+    await other.append(run.runId, 1, [
+      { kind: "b", payload: {}, cause: "test" },
+    ]);
+
+    // The open read must not turn this write into SQLITE_BUSY_SNAPSHOT.
+    await log.append(run.runId, 2, [
+      { kind: "c", payload: {}, cause: "test" },
+    ]);
+
+    // The read keeps its own snapshot, then ends.
+    const kinds: string[] = [];
+    for (;;) {
+      const next = await facts.next();
+      if (next.done) break;
+      kinds.push(next.value.kind);
+    }
+    expect(kinds).toEqual([]);
+
+    const fresh: string[] = [];
+    for await (const fact of log.read(run.runId)) fresh.push(fact.kind);
+    expect(fresh).toEqual(["a", "b", "c"]);
+  } finally {
+    await log.close();
+    await other.close();
+  }
+});
+
