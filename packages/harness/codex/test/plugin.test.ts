@@ -742,11 +742,12 @@ describe("codex/agent: model errors", () => {
 
 describe("codex/agent: cancel", () => {
   test("a cancel sends turn/interrupt and the step is interrupted when the server answers", async () => {
-    const env = await setup("cancel");
+    const env = await setup("cancel", { vars: { FAKE_CODEX_HOLD_TURN_START: "1" } });
     const controller = new AbortController();
     const running = runAgent(env, { prompt: "x", cwd: env.root }, { signal: controller.signal });
     const pid = await waitForPid(env.marker);
     controller.abort();
+    writeFileSync(env.release, "");
     const result = await running;
     expect(result.result).toBe("interrupted");
     expect(dataOf(result).reason).toBe("cancelled");
@@ -831,7 +832,7 @@ test("the codex plugin declares that it takes messages mid-run", () => {
 
 describe("codex/agent: a message from the host", () => {
   test("a message sent mid-run steers the turn", async () => {
-    const env = await setup("steer");
+    const env = await setup("steer", { vars: { FAKE_CODEX_HOLD_TURN_START: "1" } });
     let listener: (text: string) => boolean | void = () => undefined;
     const inbox = {
       listen(handler: (text: string) => boolean | void) {
@@ -847,6 +848,7 @@ describe("codex/agent: a message from the host", () => {
     const running = runAgent(env, { prompt: "x", cwd: env.root, inbox });
     await waitForFile(env.marker);
     expect(listener("please stop")).toBe(true);
+    writeFileSync(env.release, "");
     const result = await running;
     expect(result.result).toBe("done");
     expect(dataOf(result).finalMessage).toBe("heard: please stop");

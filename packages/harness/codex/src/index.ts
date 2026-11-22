@@ -548,21 +548,16 @@ export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
             if (opened !== null) writeLine(JSON.stringify({ type: "session", sessionId: opened }));
           });
 
-          // A message from the host steers the turn. A message that arrives
-          // before the turn is asked for waits for `started`.
+          // A message from the host steers the turn. The client keeps one that
+          // arrives before the turn id is known and sends it when the id does.
           const inbox = inboxOf(params);
           let stopInbox: (() => void) | undefined;
           if (inbox !== undefined) {
-            const queued: string[] = [];
             stopInbox = inbox.listen((message) => {
               if (server.finished) return false;
-              if (!server.steer(message)) queued.push(message);
-              return true;
+              return server.steer(message);
             });
             inbox.begin?.(wallTimeSecs * 1000);
-            void server.started.then(() => {
-              for (const message of queued.splice(0)) server.steer(message);
-            });
           }
 
           const state: { end: AppServerEnd | undefined } = { end: undefined };

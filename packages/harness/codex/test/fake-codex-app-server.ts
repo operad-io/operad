@@ -5,10 +5,12 @@
  * Environment: `FAKE_CODEX_MODE`; `FAKE_CODEX_RECORD` (every message the
  * client sends is appended there as one JSON line); `FAKE_CODEX_MARKER` (the
  * pid is written there once the turn started); `FAKE_CODEX_RELEASE` (a path
- * the `silent-image` and `steer` modes wait for); `FAKE_CODEX_VERSION` (what
- * `--version` prints); `FAKE_CODEX_LOGIN` (`out`: `login status` exits 1);
- * `FAKE_CODEX_COMMAND` and `FAKE_CODEX_PATH` (the call a permission mode asks
- * about); `FAKE_CODEX_MODELS` (`empty`: no choices; `silent`: no answer to
+ * the `silent-image` mode waits for); `FAKE_CODEX_HOLD_TURN_START` (`1`:
+ * write the marker, then wait for the release before answering `turn/start`);
+ * `FAKE_CODEX_VERSION` (what `--version` prints); `FAKE_CODEX_LOGIN` (`out`:
+ * `login status` exits 1); `FAKE_CODEX_COMMAND` and `FAKE_CODEX_PATH` (the
+ * call a permission mode asks about); `FAKE_CODEX_MODELS` (`empty`: no choices;
+ * `silent`: no answer to
  * `model/list`; `error`: an error answer; `exit`: the process exits when
  * asked); `FAKE_CODEX_MODELS_MARKER` and `FAKE_CODEX_MODELS_RELEASE` (the
  * model-list probe's pid, and the file a non-empty answer waits for).
@@ -54,6 +56,7 @@ const mode = process.env.FAKE_CODEX_MODE ?? "done";
 const recordPath = process.env.FAKE_CODEX_RECORD;
 const markerPath = process.env.FAKE_CODEX_MARKER;
 const releasePath = process.env.FAKE_CODEX_RELEASE;
+const holdTurnStart = process.env.FAKE_CODEX_HOLD_TURN_START === "1";
 const SESSION = "fake-thread-1";
 const TURN = "fake-turn-1";
 
@@ -515,16 +518,28 @@ function handle(message: Record<string, unknown>): void {
       notify("item/agentMessage/delta", { threadId: String(params.threadId), turnId: "old-turn", itemId: "old-m", delta: "an earlier message" });
       respond(id, { thread: { id: String(params.threadId), sessionId: String(params.threadId), cwd: params.cwd ?? "/w" }, model: params.model ?? "fake-model" });
       return;
-    case "turn/start":
+    case "turn/start": {
       if (mode === "bad-effort" && typeof params.effort === "string") {
         fail(id, `reasoning effort ${params.effort} is not supported`);
         return;
       }
-      respond(id, {
-        turn: { id: TURN, rootTurnId: TURN, items: [], itemsView: "notLoaded", status: "inProgress", error: null, startedAt: null, completedAt: null, durationMs: null },
-      });
-      void runTurn();
+      const start = (): void => {
+        respond(id, {
+          turn: { id: TURN, rootTurnId: TURN, items: [], itemsView: "notLoaded", status: "inProgress", error: null, startedAt: null, completedAt: null, durationMs: null },
+        });
+        void runTurn();
+      };
+      if (holdTurnStart) {
+        if (markerPath !== undefined) writeFileSync(markerPath, String(process.pid));
+        void (async () => {
+          await waitForRelease(releasePath);
+          start();
+        })();
+        return;
+      }
+      start();
       return;
+    }
     case "turn/steer":
       respond(id, {});
       steered?.(String((Array.isArray(params.input) ? (params.input[0] as { text?: unknown } | undefined)?.text : undefined) ?? ""));

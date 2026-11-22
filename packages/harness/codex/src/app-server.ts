@@ -244,7 +244,7 @@ export class AppServerClient {
   readonly first: string;
   /** Settles once, when the turn ended or a stage failed. */
   readonly ended: Promise<AppServerEnd>;
-  /** Resolves once the turn has been asked for, so a queued host message can steer it. */
+  /** Resolves once the turn has been asked for. */
   readonly started: Promise<void>;
 
   private readonly options: AppServerClientOptions;
@@ -258,6 +258,8 @@ export class AppServerClient {
   /** What each request in flight waits for, by id. A `steer` and a `cancel` are fire-and-forget. */
   private readonly pending = new Map<number, Stage>();
   private readonly items = new Map<string, Readonly<Record<string, unknown>>>();
+  /** Messages the host sent before the turn id was known, in order. */
+  private readonly steering: string[] = [];
   private cancelling = false;
   private promptSent = false;
   private usage: AppServerUsage | null = null;
@@ -293,11 +295,6 @@ export class AppServerClient {
   /** True from the moment the turn is asked for: updates belong to this run. */
   get active(): boolean {
     return this.phase === "turn" && this.promptSent;
-  }
-
-  /** True while the turn is in flight, so a cancel or steer reaches it. */
-  get prompting(): boolean {
-    return this.active && this.session !== null && this.turn !== null;
   }
 
   /** Whether the run ended (the turn completed, or a stage failed). */
@@ -338,9 +335,24 @@ export class AppServerClient {
     };
   }
 
-  /** Sends `turn/steer` for the running turn. False when no turn is in flight. */
+  /**
+   * Takes a message for the running turn. A message that arrives before the
+   * turn id is known waits for it, so a host message is never dropped in that
+   * window. False when the run is over or is being cancelled, so there is no
+   * turn to steer.
+   */
   steer(text: string): boolean {
-    if (!this.prompting || this.session === null || this.turn === null || this.cancelling) return false;
+    if (this.phase === "done" || this.cancelling) return false;
+    if (this.turn === null || this.session === null) {
+      this.steering.push(text);
+      return true;
+    }
+    this.sendSteer(text);
+    return true;
+  }
+
+  private sendSteer(text: string): void {
+    if (this.session === null || this.turn === null) return;
     this.send(
       this.request(
         "turn/steer",
@@ -352,19 +364,25 @@ export class AppServerClient {
         "steer",
       ),
     );
-    return true;
   }
 
   /**
-   * Sends `turn/interrupt` for the running turn. The app-server answers the
-   * turn with the status `interrupted`, which `ended` reports. False when no
-   * turn is in flight, so there is nothing to interrupt.
+   * Asks the running turn to stop. The app-server answers the turn with the
+   * status `interrupted`, which `ended` reports. A cancel that arrives after
+   * `turn/start` was sent but before its answer is kept and sent as
+   * `turn/interrupt` once the turn id arrives. False when no turn is running,
+   * so there is nothing to interrupt.
    */
   cancel(): boolean {
-    if (!this.prompting || this.session === null || this.turn === null || this.cancelling) return false;
+    if (this.cancelling || this.phase !== "turn" || !this.promptSent || this.session === null) return false;
     this.cancelling = true;
-    this.send(this.request("turn/interrupt", { threadId: this.session, turnId: this.turn }, "cancel"));
+    if (this.turn !== null) this.sendInterrupt();
     return true;
+  }
+
+  private sendInterrupt(): void {
+    if (this.session === null || this.turn === null) return;
+    this.send(this.request("turn/interrupt", { threadId: this.session, turnId: this.turn }, "cancel"));
   }
 
   /** Takes one line of the app-server's stdout. */
@@ -554,6 +572,14 @@ export class AppServerClient {
           return;
         }
         this.turn = turnId;
+        // A cancel or a message that arrived while the turn id was on its way
+        // now has a turn to act on.
+        if (this.cancelling) {
+          this.steering.length = 0;
+          this.sendInterrupt();
+          return;
+        }
+        for (const text of this.steering.splice(0)) this.sendSteer(text);
         return;
       }
     }

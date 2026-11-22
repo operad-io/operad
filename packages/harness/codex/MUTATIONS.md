@@ -166,3 +166,10 @@ recorded. The root [MUTATIONS.md](../../../MUTATIONS.md) explains the format and
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0656-M1 | packages/harness/codex/src/index.ts | `modelErrorFrom` dropped the status and retry-after the error message named | `codex/agent: model errors > the error info maps to the kinds dev and pool act on` |
+
+## T-0648 — a cancel or steer that arrives before the turn id
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0648-M1 | packages/harness/codex/src/app-server.ts | `cancel` required the turn id already, so a cancel between `turn/start` and its answer ended the process without `turn/interrupt` | `codex/agent: cancel > a cancel sends turn/interrupt and the step is interrupted when the server answers` |
+| T-0648-M2 | packages/harness/codex/src/app-server.ts | `steer` refused a message that arrived before the turn id instead of keeping it | `codex/agent: a message from the host > a message sent mid-run steers the turn` |
