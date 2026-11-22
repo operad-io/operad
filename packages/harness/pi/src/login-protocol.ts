@@ -25,8 +25,7 @@ export type LoginPrompt =
         readonly label: string;
         readonly description?: string;
       }[];
-    }
-  ;
+    };
 
 /** A notice pi's login flow shows while it works, without its abort signal. */
 export type LoginNotice =
