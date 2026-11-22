@@ -383,11 +383,16 @@ function closestCommand(
 ): CommandCandidate | undefined {
   const lower = wanted.toLowerCase();
   if (lower.length === 0) return undefined;
+  // A word further from every command than this is not a mistyping of any.
+  const limit = lower.length <= 3 ? 1 : lower.length <= 5 ? 2 : 3;
   let best: { readonly score: number; readonly candidate: CommandCandidate } | undefined;
   for (const candidate of [...COMMAND_CANDIDATES, ...extra]) {
     const text = candidate.name.toLowerCase();
-    const near = text.includes(lower) || lower.includes(text);
+    // A short word matches inside many names; only a longer one counts.
+    const near =
+      (lower.length >= 3 && text.includes(lower)) || (text.length >= 3 && lower.includes(text));
     const score = near ? 0 : editDistance(lower, text);
+    if (score > limit) continue;
     if (
       best === undefined ||
       score < best.score ||

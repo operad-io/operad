@@ -55,7 +55,7 @@ describe("operad doctor", () => {
       healthy({ setup: async () => [{ id: "dev:plugin:pool", prompt }] }),
     );
     expect(report.ok).toBe(false);
-    expect(report.checks.at(-1)).toEqual({ id: "setup:dev:plugin:pool", ok: false, message: prompt });
+    expect(report.checks.at(-1)).toEqual({ id: "setup:dev:plugin:pool", ok: false, message: prompt, next: "operad plugin enable pool" });
     expect(formatDoctor(report)).toContain(`problem  ${prompt}`);
   });
 
@@ -119,6 +119,7 @@ describe("operad doctor", () => {
     expect(loaded).toBe(false);
     expect(report.ok).toBe(false);
     expect(report.checks[0]?.message).toBe("config.json is not valid: invalid JSON");
+    expect(report.checks[0]?.next).toBe("operad doctor");
   });
 
   test("--json carries the same facts and the exit code follows them", async () => {

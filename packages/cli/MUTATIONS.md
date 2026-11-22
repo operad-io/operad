@@ -403,3 +403,9 @@ Survived: replacing the `resolveCommand(...) === undefined` guard alone with `tr
 |---|---|---|---|
 | T-0693-M1 | packages/cli/src/doctor.ts | a serve that does not answer was reported as answering (`serve.answering \|\| true`) | `operad doctor > serve not answering names operad serve` |
 | T-0693-M2 | packages/cli/src/doctor.ts | a config.json that cannot be read still let the plugins load (`loadable = true` in the catch) | `operad doctor > a broken config.json is one problem and the rest is not loaded` |
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0698-M1 | packages/cli/src/main.ts | the edit-distance limit was removed from `closestCommand` (`score > 99`) | `a command line mistake > a word nothing is near gets no closest line` |
+| T-0698-M2 | packages/cli/src/doctor.ts | a setup problem whose prompt names a command in backticks lost its `next` | `operad doctor > dev on with pool off: the setup problem ends with the command to type` |
+| T-0698-M3 | packages/cli/src/doctor.ts | the broken config.json problem's `next` went back to `operad doctor (after fixing config.json)` | `operad doctor > a broken config.json is one problem and the rest is not loaded` |

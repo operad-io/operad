@@ -432,6 +432,27 @@ describe("plugins over HTTP", () => {
     });
   });
 
+  test("POST enabling dev also enables the pool and shell it needs", async () => {
+    await withRig(
+      async (rig) => {
+        const response = await call(rig, "POST", { name: "dev", enabled: true });
+        expect(response.status).toBe(200);
+        const config = JSON.parse(rig.configText()) as {
+          plugins: Record<string, { enabled: boolean }>;
+        };
+        expect(config.plugins.dev?.enabled).toBe(true);
+        expect(config.plugins.pool?.enabled).toBe(true);
+        expect(config.plugins.shell?.enabled).toBe(true);
+      },
+      undefined,
+      {
+        chat: { module: "@operad-io/chat", enabled: true },
+        pool: { module: "@operad-io/pool", enabled: false },
+        dev: { module: "@operad-io/dev", enabled: false },
+      },
+    );
+  });
+
   test("a body that is not name and enabled is a 400", async () => {
     await withRig(async (rig) => {
       expect((await call(rig, "POST", { name: "demo" })).status).toBe(400);

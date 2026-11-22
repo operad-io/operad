@@ -98,6 +98,26 @@ describe("a command line mistake", () => {
     expect(lines(output.errors()).length).toBeLessThanOrEqual(5);
   });
 
+  test("a word nothing is near gets no closest line", async () => {
+    const { home } = await makeHome({ plugins: [notesPath] });
+    for (const word of ["zzqqxx", "x"]) {
+      const output = capture();
+      expect(await main([word], { home, io: output.io })).toBe(2);
+      expect(output.errors()).toContain(`unknown command "${word}"`);
+      expect(output.errors()).not.toContain("closest:");
+    }
+  });
+
+  test("a plugin command with a missing argument gets no built-in usage line", async () => {
+    const devPath = fileURLToPath(new URL("../../dev/src/index.ts", import.meta.url));
+    const chatPath = fileURLToPath(new URL("../../chat/src/index.ts", import.meta.url));
+    const { home } = await makeHome({ plugins: [chatPath, devPath] });
+    const output = capture();
+    expect(await main(["dev:confirm"], { home, io: output.io })).toBe(2);
+    expect(output.errors()).not.toContain("usage: operad list");
+    expect(output.errors()).toContain("dev:confirm");
+  });
+
   test("a shipped plugin the home has not turned on says it is off", async () => {
     const { home } = await makeHome({ plugins: [notesPath] });
     for (const argv of [["dev", "plan", "add"], ["dev:confirm", "P-1"]]) {
@@ -126,6 +146,7 @@ describe("a command line mistake", () => {
       expect(await main(argv, { home, io: output.io })).not.toBe(0);
       expect(output.errors()).not.toContain("is disabled");
       expect(output.errors()).not.toContain("unknown command");
+      expect(output.errors()).toContain("dev");
     }
   });
 });
