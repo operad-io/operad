@@ -899,9 +899,8 @@ the place is dropped the next time a `pool/agent` step looks.
 ## `dev.json`: workers and pools
 
 The `dev` plugin's work step runs every task through `pool/agent`, so `dev`
-needs the `pool` plugin enabled. A new home leaves both off; turn them on with
-`operad plugin enable shell`, `operad plugin enable pool` and
-`operad plugin enable dev`. The repository
+needs the `pool` plugin enabled. A new home leaves both off, and `operad plugin enable dev`
+turns on `pool` and `shell` with `dev` and says which it turned on. The repository
 chooses its workers in `<repository>/.operad/dev.json`; `dev` reads that file in
 the registered repository's main clone, never the copy in a task's worktree,
 which carries whatever the task's branch had when it started.

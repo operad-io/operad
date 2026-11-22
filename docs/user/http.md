@@ -298,7 +298,7 @@ A loaded harness plugin also answers `signedIn`, so the Agents page can show an 
 
 The same list carries each loaded harness's `models`, with a description of each model beside its id: `name`, `provider`, the context `window` when known and the `capabilities` it truly knows. A client groups the models by `provider`, searches them and draws badges for `vision`, `reasoning`, `tools` and `web`. The client may label the search `Search models` and the badges `Vision`, `Reasoning`, `Tools` and `Web`; the server sends the data, not that text.
 
-`POST /v1/plugins` does what `operad plugin enable <name>` and `operad plugin disable <name>` do, on the same file: it sets `plugins.<name>.enabled` and keeps every other key. Enabling a shipped plugin the file does not list adds it, and enabling `claude` installs its package into the home first, as the command does. Enabling `pi` installs operad's own pinned pi into the home when `PATH` has no `pi`, and uses the one on `PATH` otherwise. The refusals are the command line's, with its words:
+`POST /v1/plugins` does what `operad plugin enable <name>` and `operad plugin disable <name>` do, on the same file: it sets `plugins.<name>.enabled` and keeps every other key. Enabling `dev` also enables `pool` and `shell`, as the command does. Enabling a shipped plugin the file does not list adds it, and enabling `claude` installs its package into the home first, as the command does. Enabling `pi` installs operad's own pinned pi into the home when `PATH` has no `pi`, and uses the one on `PATH` otherwise. The refusals are the command line's, with its words:
 
 | Status | When |
 |---|---|

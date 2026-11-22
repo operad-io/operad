@@ -24,6 +24,7 @@
 3. **开启一个插件时处理它依赖的插件。**
    - 现状：`operad plugin enable dev` 只打印 `dev: enabled`。pool 没开时，要到 `operad pending` 才看到 `plugin pool is not loaded and dev runs its workers through it ... until then no new work starts`。README 让人手敲三条 enable。
    - 建议：开启时当场说还缺哪些插件；是否顺带开启要定（见待决 2）。
+   - 完成（T-0692）：`operad plugin enable dev` 顺带开启 pool 和 shell，每开一个打印一行；已开的不打印；关闭仍按单个插件。HTTP 开关走同一段代码。
 
 4. **成功的命令末尾给下一步。**
    - `operad init`：最后没有下一步；agent 的几行是内部细节，例如 `claude: claude 2.1.330 at /Users/…/2.1.330 (floor 2.1.319); agent sdk 0.3.319; login claude.ai (max); the worker program is available`。建议默认只说"可用、已登录"，细节放到一个详细开关后面，最后一行写下一步。

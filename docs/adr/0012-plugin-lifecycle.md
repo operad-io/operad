@@ -21,6 +21,7 @@ A repository whose `.operad/dev.json` names neither `worker` nor `workers`, and 
 - A disabled plugin is not loaded: its commands, actions, views and default rules do not appear. Objects and history already stored are left alone and are visible again after re-enabling.
 - A plugin that depends on it (`requires`) is not loaded either, and the reason is said.
 - A plugin whose steps are still running in some run cannot be disabled; the command names those runs.
+- Enabling a shipped plugin also enables the shipped plugins it needs, when they are off or not yet in `config.json`: `dev` needs `pool` and `shell`. The needed plugins are enabled first and each one turned on is named (`operad plugin enable dev` prints `pool: enabled`, `shell: enabled`, `dev: enabled`); one already on prints nothing. The `serve` HTTP switch does the same through the same code. This is a one-time convenience, not a link: disabling a plugin turns off only that plugin, and a plugin enabled this way stays off once it is disabled, even while `dev` is on (the `pool` standing item in `operad pending` then says what is missing).
 - The command line has `operad plugin list` (name, version, enabled or not), `operad plugin enable <name>` and `operad plugin disable <name>`. They take effect at the next `operad` command or at the next `serve` reload.
 
 ### D3: The boundary of hot reload

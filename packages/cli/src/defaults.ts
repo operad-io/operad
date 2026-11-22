@@ -14,6 +14,11 @@ import {
  */
 export const OPTIONAL_PLUGINS: readonly string[] = ["shell", "pi", "claude", "codex", "pool", "bot", "telegram", "memory", "dev"];
 
+/** The shipped plugins a plugin needs; enabling it enables these first (ADR 0012 D2). */
+export const PLUGIN_NEEDS: Readonly<Record<string, readonly string[]>> = {
+  dev: ["pool", "shell"],
+};
+
 /** The plugins whose package is installed into the home rather than shipped with the CLI. */
 export const INSTALL_ON_ENABLE: readonly string[] = ["claude"];
 
