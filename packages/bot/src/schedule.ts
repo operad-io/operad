@@ -259,15 +259,18 @@ function recentText(result: string): string {
 }
 
 /**
- * The prompt a firing sends: the entry's prompt, the earlier results of the
- * same entry so it does not repeat them, the quiet-ending line, and for a
- * catch-up the lateness line.
+ * What a firing tells the agent beyond the person's own prompt: the earlier
+ * results of the same entry so it does not repeat them, the quiet-ending line,
+ * and for a catch-up the lateness line. The chat does not show it.
  */
-export function scheduledPromptText(
-  entry: ScheduledPrompt,
-  late: { readonly scheduledAt: number; readonly lateSecs: number } | undefined,
-): string {
-  const parts = [entry.prompt];
+export function scheduledInstruction(entry: ScheduledPrompt): string {
+  // `last` is recorded when the firing starts, so it says what was planned and when it ran.
+  const last = entry.last;
+  const late =
+    last?.firedAt !== undefined && last.plannedAt < minuteStart(last.firedAt)
+      ? { scheduledAt: last.plannedAt, lateSecs: Math.floor((last.firedAt - last.plannedAt) / 1_000) }
+      : undefined;
+  const parts: string[] = [];
   const recent = (entry.recent ?? []).slice(-SCHEDULE_RECENT_COUNT);
   if (recent.length > 0) {
     const lines = recent.map((item) => `- ${localStamp(item.plannedAt)}: ${recentText(item.result)}`);
@@ -278,6 +281,12 @@ export function scheduledPromptText(
   parts.push(SCHEDULE_PREAMBLE);
   if (late !== undefined) parts.push(latenessLine(late.scheduledAt, late.lateSecs));
   return parts.join("\n\n");
+}
+
+/** The instruction of the firing of the named entry now recorded on a bot; undefined when it has none. */
+export function scheduledInstructionFor(data: Readonly<Record<string, unknown>>, name: string): string | undefined {
+  const entry = scheduledPrompts(data).find((item) => item.name === name);
+  return entry === undefined ? undefined : scheduledInstruction(entry);
 }
 
 /** True when a reply is exactly the quiet marker. */
@@ -723,6 +732,19 @@ export const scheduleActions: readonly ActionTypeDefinition[] = [
   },
 ];
 
+/** A value shown literally in Markdown: a code span that survives a backtick inside it. */
+export function markdownCode(value: string): string {
+  const longest = Math.max(0, ...[...value.matchAll(/`+/g)].map((run) => run[0].length));
+  const fence = "`".repeat(longest + 1);
+  const pad = value.startsWith("`") || value.endsWith("`") ? " " : "";
+  return `${fence}${pad}${value}${pad}${fence}`;
+}
+
+/** A user's text shown as text in Markdown: the characters that format are escaped. */
+export function markdownText(value: string): string {
+  return value.replace(/([\\`*_{}\[\]<>#|~!])/g, "\\$1").replace(/\r?\n/g, " ");
+}
+
 /** The lines a bot page shows for its scheduled prompts. */
 export function scheduledMarkdown(entries: readonly ScheduledPrompt[], now: number): string[] {
   if (entries.length === 0) return ["Scheduled: none."];
@@ -734,8 +756,8 @@ export function scheduledMarkdown(entries: readonly ScheduledPrompt[], now: numb
     const ended =
       last?.result === undefined
         ? ""
-        : `; last ${last.chatId === undefined ? "" : `chat ${last.chatId}: `}${last.result}`;
-    lines.push(`- ${entry.name} (${entry.schedule}${state})${ended}`);
+        : `; last ${last.chatId === undefined ? "" : `chat ${last.chatId}: `}${markdownText(last.result)}`;
+    lines.push(`- ${markdownText(entry.name)} (${markdownCode(entry.schedule)}${state})${ended}`);
   }
   return lines;
 }
@@ -891,8 +913,7 @@ export class BotScheduleSource {
       minute = latest !== null && latest > last.plannedAt ? latest : null;
     }
     if (minute === null) return;
-    const late = minute < minuteStart(now) || skipped.length > 0;
-    await this.fire(bot, entry, minute, now, late, skipped);
+    await this.fire(bot, entry, minute, now, skipped);
   }
 
   private async fire(
@@ -900,26 +921,21 @@ export class BotScheduleSource {
     entry: ScheduledPrompt,
     minute: number,
     now: number,
-    late: boolean,
     skipped: readonly number[],
   ): Promise<void> {
-    const lateSecs = Math.floor((now - minute) / 1_000);
     await this.setLast(bot, entry.name, {
       plannedAt: minute,
       firedAt: now,
       schedule: entry.schedule,
     });
-    const prompt = scheduledPromptText(
-      entry,
-      late ? { scheduledAt: minute, lateSecs } : undefined,
-    );
     const title = `${entry.name} (${localDate(minute)})`.slice(0, 120);
     let chatId: string | undefined;
     try {
       const run = await this.ctx.client.act("bot:chat", `${BOT_TYPE}:${bot}`, {
         args: {
           title,
-          message: prompt,
+          // The person's own prompt; the bot:chat action adds what only the agent needs.
+          message: entry.prompt,
           ...(entry.model === undefined ? {} : { model: entry.model }),
           ...(entry.effort === undefined ? {} : { effort: entry.effort }),
         },

@@ -4,7 +4,9 @@ import { join } from "node:path";
 import { createViews, type AskRequest, type JsonValue, type StepContext, type ViewContext } from "@operad-io/engine";
 import { readAlwaysAllow } from "@operad-io/harness-process";
 import {
+  ACCESS_FACT,
   allMessages,
+  chatRef,
   chatViews,
   isWorktreeQuestion,
   READ_ONLY_REFUSAL,
@@ -521,6 +523,67 @@ describe("a read-only chat", () => {
     };
     await r.round(chat, {}, asker, (event) => emitted.push(`${event.type} ${event.object}`));
     expect(emitted).toEqual([`${WORKTREE_EVENT} chat:${chat}`]);
+  });
+
+  test("a chat that moves to its worktree while a question is open ends the reply, and the question is not asked again as read-only", async () => {
+    const r = await rig(async (ctx: StepContext) => {
+      await ctx.ask(writeAsk);
+      return reply("should not be used");
+    });
+    const chat = await r.chat({ access: { readOnly: true } });
+    await r.say(chat, "change it");
+    const emitted: string[] = [];
+    const asked: string[] = [];
+    const asker = {
+      async ask(request: AskRequest) {
+        asked.push(request.prompt);
+        // The person raises the level; the worktree opens first, then the change is recorded.
+        const stored = await r.store.get("chat", chat);
+        if (stored === undefined) throw new Error("no chat");
+        await r.store.put("chat", chat, { ...stored.data, cwd: "/repo/.operad-worktrees/chat-1", access: { readOnly: false } }, "test");
+        await r.store.append({
+          type: ACCESS_FACT,
+          object: chatRef(chat),
+          cause: "test",
+          data: { by: { via: "test", id: "me" }, from: "plan", to: "edits" },
+        });
+        return new Promise<never>(() => undefined);
+      },
+      async useGrant() {
+        return false;
+      },
+    };
+    const result = await r.round(chat, {}, asker, (event) => emitted.push(event.type));
+    expect(result.result).toBe("done");
+    expect(asked).toHaveLength(1);
+    expect(emitted).toEqual([WORKTREE_EVENT]);
+  });
+
+  test("a question asked after the chat moved to its worktree is not put to the person as read-only", async () => {
+    const r = await rig(async (ctx: StepContext) => {
+      const stored = await r.store.get("chat", chat);
+      if (stored === undefined) throw new Error("no chat");
+      await r.store.put("chat", chat, { ...stored.data, cwd: "/repo/.operad-worktrees/chat-1" }, "test");
+      await ctx.ask(writeAsk);
+      return reply("should not be used");
+    });
+    const chat = await r.chat({ access: { readOnly: true } });
+    await r.say(chat, "change it");
+    const emitted: string[] = [];
+    const asked: string[] = [];
+    const asker = {
+      async ask(request: AskRequest) {
+        asked.push(request.prompt);
+        return { kind: "answered" as const, answer: { choice: "allow_once" } };
+      },
+      async useGrant() {
+        return false;
+      },
+    };
+    const result = await r.round(chat, {}, asker, (event) => emitted.push(event.type));
+    expect(result.result).toBe("done");
+    expect(asked).toEqual([]);
+    expect(emitted).toEqual([WORKTREE_EVENT]);
   });
 
   test("a yes ends the asking reply, leaves the message unanswered and sends the worktree event once", async () => {

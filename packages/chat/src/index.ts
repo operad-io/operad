@@ -177,6 +177,7 @@ export async function sendMessage(
   note: string,
   ref?: string,
   files: readonly string[] = [],
+  instruction?: string,
 ): Promise<string> {
   const via = ctx.actor.via;
   // The message records who sent it as it is; the event uses the source its
@@ -191,6 +192,7 @@ export async function sendMessage(
     text: note,
     attachments: files.map((path) => attachmentOf(path)),
     source: { kind: via, ref: ref ?? null },
+    ...(instruction === undefined || instruction.length === 0 ? {} : { instruction }),
   };
   // The message is a fact first; the event is what starts the answer.
   const record = async (): Promise<void> => {

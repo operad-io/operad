@@ -156,7 +156,7 @@ refused because the chat is read-only, and that it should answer in the chat or
 use read-only commands. The worktree offer has `dev` open `work/chat-<id>`, and
 the chat works there from then on, once; the main clone otherwise stays
 read-only. The reply that asked ends, and the same message is answered again in
-the worktree, so the agent continues there with write access. A yes that comes
+the worktree, so the agent continues there with write access: a chat at `plan` moves to `edits` with it. A yes that comes
 after the reply has ended opens the worktree but starts no second reply. The
 transcript says `This chat now works in a worktree.` once. The worktree's changes
 reach main only through a task that points at it, through the normal gate and

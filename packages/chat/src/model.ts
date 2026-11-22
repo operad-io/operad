@@ -422,6 +422,8 @@ export interface MessageData {
   readonly source: { readonly kind: string; readonly ref: string | null };
   /** An assistant message: the ids of the messages it answers. */
   readonly replyTo?: readonly string[] | undefined;
+  /** A user message: text only the agent is given after the text; no view shows it. */
+  readonly instruction?: string | undefined;
   /** The run whose answer this message or entry belongs to. */
   readonly runId?: string | undefined;
   /** An assistant message: the harness session after it. */
@@ -1033,6 +1035,9 @@ function messageOfFact(fact: PluginFact): Message | undefined {
       ref: typeof source.ref === "string" ? source.ref : null,
     },
     ...(Array.isArray(data.replyTo) ? { replyTo: stringList(data.replyTo) } : {}),
+    ...(data.role === "user" && typeof data.instruction === "string" && data.instruction.length > 0
+      ? { instruction: data.instruction }
+      : {}),
     ...(typeof data.runId === "string" && data.runId.length > 0 ? { runId: data.runId } : {}),
     ...(typeof data.session === "string" ? { session: data.session } : {}),
     ...(typeof data.model === "string" && data.model.length > 0 ? { model: data.model } : {}),
@@ -1366,7 +1371,7 @@ export const PROMPT_MESSAGE_SEPARATOR = "\n\n---\n\n";
  */
 export function promptFor(pending: readonly Message[], images: ReadonlySet<string> = new Set()): string {
   const parts = pending.map((message) =>
-    [message.text, attachmentLines(message, images)].filter((part) => part.length > 0).join("\n\n"),
+    [message.text, attachmentLines(message, images), typeof message.instruction === "string" ? message.instruction : ""].filter((part) => part.length > 0).join("\n\n"),
   );
   return parts.join(PROMPT_MESSAGE_SEPARATOR);
 }

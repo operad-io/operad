@@ -612,3 +612,11 @@ are append-only, so the old lines stay as history.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0743-M4 | packages/chat/src/index.ts | `access` accepted a level the chat's agent cannot carry | `a chat whose agent cannot carry the level` / `changing the level of a chat whose agent cannot carry it > is refused when asked, naming the levels the agent carries, and the chat is unchanged` |
+
+## T-0745 — a chat that moved to its worktree, and a message's instruction
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0745-M3 | packages/chat/src/reply.ts | a write question asked after the chat moved to its worktree was still put to the person as the read-only question | `a read-only chat > a question asked after the chat moved to its worktree is not put to the person as read-only` |
+| T-0745-M4 | packages/chat/src/reply.ts | a reply did not end when a level change moved its chat to the worktree while a question was open | `a read-only chat > a chat that moves to its worktree while a question is open ends the reply, and the question is not asked again as read-only` |
+| T-0745-M5 | packages/chat/src/model.ts | the prompt left out a message's instruction, so the agent never got the quiet-ending line | `scheduled prompts > the next firing carries the last few results of the same entry, each cut short` (packages/bot) |
