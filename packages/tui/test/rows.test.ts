@@ -180,7 +180,7 @@ describe("two-line rows", () => {
 
   test("a running row draws its mark's character, and running without one", () => {
     const lines = drawnLines(running(120, [run(1, { mark: "integrating" }), run(2)]));
-    expect(textOf(lines[2])).toStartWith("❯ ⑂ ");
+    expect(textOf(lines[2])).toStartWith("❯ ↔ ");
     expect(textOf(lines[5])).toContain("◐ T-0092");
   });
 
@@ -292,7 +292,7 @@ describe("two-line rows", () => {
     const texts = lines.map((line) => textOf(line).trimEnd());
     // Item, blank, item, blank: group (2 lines), blank, plan (2), blank, plan (2), blank, group...
     expect(texts.slice(2, 14)).toEqual([
-      "  ▤ ops",
+      "  ■ ops",
       "    active · tasks: 2",
       "",
       "❯   ○ P-0001 a",
@@ -301,7 +301,7 @@ describe("two-line rows", () => {
       "    ○ P-0002 b",
       "      active",
       "",
-      "  ▤ web",
+      "  ■ web",
       "    active · tasks: 2",
       "",
     ]);

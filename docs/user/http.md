@@ -342,19 +342,19 @@ the error row, naming them:
 | `todo` | not started | `○` |
 | `blocked` | waits for another object or a held area | `◌` |
 | `retry_wait` | waits for a retry time | `◷` |
-| `paused` | paused | `‖` |
+| `paused` | paused | `=` |
 | `proposed` | suggested, not yet accepted | `+` |
 | `starting` | being set up | `◔` |
 | `running` | work in progress | `◐` |
-| `reconciling` | being brought in line with a change elsewhere | `↻` |
-| `checking` | being verified or reviewed | `⌕` |
+| `reconciling` | being brought in line with a change elsewhere | `↕` |
+| `checking` | being verified or reviewed | `?` |
 | `rework_pending` | asked whether to redo it | `↩` |
 | `waiting` | waits for a person | `●` |
-| `integrating` | being merged | `⑂` |
+| `integrating` | being merged | `↔` |
 | `ready_to_merge` | checked, waits for the merge | `◉` |
 | `done` | finished | `✓` |
 | `failed` | gave up | `✗` |
-| `cancelled` | cancelled | `⊘` |
+| `cancelled` | cancelled | `×` |
 | `broken` | cannot be used | `!` |
 
 The kernel's `waiting` and `running` flags stay as they are. A client picks what
