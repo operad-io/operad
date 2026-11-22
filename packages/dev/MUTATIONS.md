@@ -1593,3 +1593,6 @@ the row fields.
 | T-0716-M7 | packages/dev/src/steps.ts | a replay of the worktree step read the file instead of keeping the attempt's record | `dev/worktree > dev.json is recorded when an attempt starts and a replay keeps it (T-0716)` |
 | T-0724-M1 | packages/dev/src/steps.ts | the work step read `flowCommit` from the run's params instead of the stage's own params | `dev/work > commit true from the step's own params commits every attempt, including a later one (T-0724)` |
 | T-0737-M1 | packages/dev/src/steps.ts | the failed commit's reason was dropped from the "uncommitted changes" message | `dev/work > a commit the stage asked for that fails is reported with git's reason (T-0737)` |
+| T-0717-M1 | packages/dev/src/chat.ts | `runChatAccess` opened a worktree for `edits` in a `workIn` `branch` repository | `a repository chat with workIn branch > at edits and full it works in the main clone: no worktree question, no work/chat branch, writes allowed there` |
+| T-0717-M2 | packages/dev/src/chat.ts | `dev/chat_settings` gave a `branch` chat the read-only profile | `a repository chat with workIn branch > the first reply's context no longer says read-only` |
+| T-0717-M3 | packages/dev/src/chat.ts | the starting text of a `branch` chat still said read-only | `a repository chat with workIn branch > the first reply's context no longer says read-only` |
