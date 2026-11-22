@@ -556,3 +556,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0678-M7 | packages/tui/src/view/index.ts | a secret answer was drawn as typed instead of masked | `a pending form with an address, a code and a secret > shows the address and the code, masks the answer, and sends it as answers` |
+
+## T-0710 — the repository folder glyph
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0710-M1 | packages/tui/src/view/index.ts | the folder icon went back to `▤` (U+25A4), which common terminal fonts lack | `two-line rows > repository groups draw as a folder row with a note line, and their plans are indented` |

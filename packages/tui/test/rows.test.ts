@@ -78,9 +78,9 @@ describe("two-line rows", () => {
   test("a plugin list row: mark, id and slug only, then the dim state, badge and note", () => {
     const lines = drawnLines(typeList(120, 3));
     // lines[0] is the blank line above the title, lines[1] the title.
-    expect(textOf(lines[2]).trimEnd()).toBe("❯ ◐ T-0000 flaky-survey");
+    expect(textOf(lines[2]).trimEnd()).toBe("❯ ⊙ T-0000 flaky-survey");
     expect(textOf(lines[4])).toBe("");
-    expect(textOf(lines[5]).trimEnd()).toBe("  ◐ T-0001 flaky-survey");
+    expect(textOf(lines[5]).trimEnd()).toBe("  ⊙ T-0001 flaky-survey");
     expect(textOf(lines[6]).trimEnd()).toBe("    running #2 · work 16m");
     expect(textOf(lines[2])).not.toContain("ops");
   });
@@ -96,7 +96,7 @@ describe("two-line rows", () => {
   test("the Running row: step, step time, run time, repository", () => {
     const lines = drawnLines(running(200, [run(1)]));
     // The narrower list cuts the title with …; the dim line still holds every field.
-    expect(textOf(lines[2]).trimEnd()).toBe("❯ ◐ T-0091 flaky-survey  Survey the f…");
+    expect(textOf(lines[2]).trimEnd()).toBe("❯ ⊙ T-0091 flaky-survey  Survey the f…");
     expect(textOf(lines[3]).trimEnd()).toBe("    work · 2s · 1m 1s · operad");
     // Empty parts are left out: no step time, no repository.
     const bare = drawnLines(
@@ -122,7 +122,7 @@ describe("two-line rows", () => {
 
   test("a Running row that names no object shows the flow alone on its first line", () => {
     const lines = drawnLines(running(120, [run(1, { object: null, title: null })]));
-    expect(textOf(lines[2]).trimEnd()).toBe("❯ ◐ dev");
+    expect(textOf(lines[2]).trimEnd()).toBe("❯ ⊙ dev");
     expect(textOf(lines[3]).trimEnd()).toBe("    work · 2s · 1m 1s");
   });
 
@@ -174,14 +174,14 @@ describe("two-line rows", () => {
     // Two lines per object: nothing wraps into a third.
     expect(lines.filter((line) => textOf(line).trim() !== "")).toHaveLength(3);
     const narrow = drawnLines(typeList(width, 2));
-    expect(textOf(narrow[2]).trimEnd()).toBe("❯ ◐ T-0000 flaky-survey");
+    expect(textOf(narrow[2]).trimEnd()).toBe("❯ ⊙ T-0000 flaky-survey");
     expect(textOf(narrow[3]).trimEnd()).toBe("    running #2");
   });
 
   test("a running row draws its mark's character, and running without one", () => {
     const lines = drawnLines(running(120, [run(1, { mark: "integrating" }), run(2)]));
-    expect(textOf(lines[2])).toStartWith("❯ ⑂ ");
-    expect(textOf(lines[5])).toContain("◐ T-0092");
+    expect(textOf(lines[2])).toStartWith("❯ ↔ ");
+    expect(textOf(lines[5])).toContain("⊙ T-0092");
   });
 
   test("a run queued for a check place says so, and how long it waited once it runs", () => {
@@ -292,7 +292,7 @@ describe("two-line rows", () => {
     const texts = lines.map((line) => textOf(line).trimEnd());
     // Item, blank, item, blank: group (2 lines), blank, plan (2), blank, plan (2), blank, group...
     expect(texts.slice(2, 14)).toEqual([
-      "  ▤ ops",
+      "  ■ ops",
       "    active · tasks: 2",
       "",
       "❯   ○ P-0001 a",
@@ -301,7 +301,7 @@ describe("two-line rows", () => {
       "    ○ P-0002 b",
       "      active",
       "",
-      "  ▤ web",
+      "  ■ web",
       "    active · tasks: 2",
       "",
     ]);
