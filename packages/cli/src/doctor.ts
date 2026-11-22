@@ -19,6 +19,8 @@ export interface DoctorAgent {
   readonly version?: string | undefined;
   /** `undefined` when the agent cannot say. */
   readonly signedIn?: boolean | undefined;
+  /** The bot whose agent this is, when operad's own login covers the agent. */
+  readonly loginBot?: string | undefined;
   /** Why the agent cannot be used, when it cannot. */
   readonly problem?: string | undefined;
 }
@@ -55,12 +57,15 @@ export interface DoctorReport {
   readonly checks: readonly DoctorCheck[];
 }
 
-/** The command that signs in to an agent, by plugin name. */
+/**
+ * The agent's own command that signs in, for an agent operad's login does not
+ * cover. Each was checked against that agent's `--help`.
+ */
 const SIGN_IN: Readonly<Record<string, string>> = {
   claude: "claude auth login",
   codex: "codex login",
-  pi: "pi",
-  radian: "radian",
+  pi: "pi auth login <provider>",
+  radian: "radian login",
 };
 
 function good(id: string, message: string): DoctorCheck {
@@ -128,7 +133,9 @@ export async function runDoctor(env: DoctorEnv): Promise<DoctorReport> {
             bad(
               id,
               `agent ${agent.name}${version} is not signed in`,
-              SIGN_IN[agent.name] ?? `sign in to ${agent.name}, then operad doctor`,
+              agent.loginBot === undefined
+                ? (SIGN_IN[agent.name] ?? `sign in to ${agent.name}, then operad doctor`)
+                : `operad bot:login ${agent.loginBot}`,
             ),
           );
         } else {
