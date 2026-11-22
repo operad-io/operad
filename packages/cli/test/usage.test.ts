@@ -116,4 +116,16 @@ describe("a command line mistake", () => {
     expect(output.errors()).toContain('unknown command "devv"');
     expect(output.errors()).not.toContain("plugin enable");
   });
+
+  test("a plugin that is on still reaches its commands", async () => {
+    const devPath = fileURLToPath(new URL("../../dev/src/index.ts", import.meta.url));
+    const chatPath = fileURLToPath(new URL("../../chat/src/index.ts", import.meta.url));
+    const { home } = await makeHome({ plugins: [chatPath, devPath] });
+    for (const argv of [["dev", "plan", "add"], ["dev:confirm"]]) {
+      const output = capture();
+      expect(await main(argv, { home, io: output.io })).not.toBe(0);
+      expect(output.errors()).not.toContain("is disabled");
+      expect(output.errors()).not.toContain("unknown command");
+    }
+  });
 });
