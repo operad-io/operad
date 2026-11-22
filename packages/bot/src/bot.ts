@@ -89,6 +89,14 @@ export const BOT_SETTINGS: ActionArgsSchema = {
             description:
               "How a chat of this bot labels the model's messages in its transcript. Without it the chat plugin's speaker is used.",
           },
+          accessLevel: {
+            type: "string",
+            title: "Access level",
+            enum: ["plan", "ask", "edits", "full"],
+            default: "ask",
+            description:
+              "The level a chat on this bot starts at, when opened from the desktop, the CLI, the MCP server or Telegram; a chat a scheduled prompt opens starts at full. Unlike `access`, which can only tighten the profile, this can loosen it: `full` asks nothing but the deny rules. A chat that chose a level with /access keeps it; a chat that did not follows this setting. See docs/user/access.md.",
+          },
           writeWiki: {
             type: "boolean",
             title: "Write the wiki",
@@ -204,6 +212,7 @@ export interface BotSettings {
   readonly writeWiki?: boolean | undefined;
   readonly tidyTime?: string | undefined;
   readonly runWithoutAsking?: boolean | undefined;
+  readonly accessLevel?: "plan" | "ask" | "edits" | "full" | undefined;
   readonly backgroundModel?: string | undefined;
   readonly access?: Readonly<Record<string, JsonValue>>;
 }
@@ -221,6 +230,8 @@ export interface ResolvedBot {
   readonly speaker: string | null;
   /** Whether this bot may write the shared wiki. */
   readonly writeWiki: boolean;
+  /** The level a new chat starts at; `ask` unless the bot sets it. */
+  readonly accessLevel: "plan" | "ask" | "edits" | "full";
   readonly access: Readonly<Record<string, JsonValue>>;
   /** The local MCP servers the bot lists, by name. */
   readonly mcpServers: Readonly<Record<string, McpServerSettings>>;
@@ -884,6 +895,7 @@ export function resolveBot(
     skills,
     speaker: settings.speaker ?? null,
     writeWiki: settings.writeWiki ?? name === DEFAULT_BOT,
+    accessLevel: settings.accessLevel ?? "ask",
     access: accessFor(home, settings, repositories, skillPaths, skillPaths, cwd, name === DEFAULT_BOT),
     mcpServers: settings.mcpServers ?? {},
   };

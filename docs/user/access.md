@@ -77,8 +77,9 @@ directory asks about a write or a command not known to only read, and a write
 under `readPaths` asks. `askCommands`, `askPaths` and an unlisted MCP tool do not
 ask at `full`; they still apply at `plan`, `ask` and `edits`. An outward-write
 question does not apply at `full`, and still asks in a background run below it.
-A chat starts at `plan` on a repository and `ask` on a bot, except a chat a
-scheduled prompt opens, which starts at `full`; `/access <level>` changes it; see
+A chat starts at `plan` on a repository and at the bot's `accessLevel` setting
+on a bot (`ask` unless set; `full` asks nothing but the deny rules), except a
+chat a scheduled prompt opens, which starts at `full`; `/access <level>` changes it; see
 [Chats and bots](chats-and-bots.md#access-level).
 
 `readPaths` lets a read reach a directory under an ancestor in `denyPaths`. It

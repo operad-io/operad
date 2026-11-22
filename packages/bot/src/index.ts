@@ -230,7 +230,7 @@ export async function openChat(input: OpenChat): Promise<string> {
   // A scheduled prompt runs at full access (ADR 0030 D10); a chat a person
   // opens starts at ask (ADR 0026 D15). A person may still change the level
   // with `/access` afterwards.
-  const startingLevel = input.scheduled === undefined ? "ask" : "full";
+  const startingLevel = input.scheduled === undefined ? bot.accessLevel : "full";
   mkdirSync(bot.cwd, { recursive: true });
   ensureBotMemory(bot.cwd, input.home);
   return createChat(
@@ -668,6 +668,8 @@ export async function runSettings(ctx: StepContext, params: unknown): Promise<Pl
         skills: [...bot.skills],
         mcpServers,
         useOwnSettings: bot.useOwnSettings,
+        // A chat that never chose a level follows the bot's setting; a scheduled chat keeps `full`.
+        ...(chatData(stored.data).scheduled === undefined ? { accessDefault: bot.accessLevel } : {}),
         // The memory index and the person's instructions ride on the message,
         // whole when this session has not seen them, under ADR 0026 D18.
         notes: memoryNotes(join(bot.cwd, "memory")) as unknown as JsonValue,

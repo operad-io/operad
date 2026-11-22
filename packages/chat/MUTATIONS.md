@@ -603,3 +603,5 @@ are append-only, so the old lines stay as history.
 |---|---|---|---|
 | T-0682-M1 | packages/chat/src/reply.ts | `recordFailure` skipped a run's own failure whenever any earlier failure existed, so a retried run that failed again left no entry | `a failed reply > a retried run that fails again records its own failure and is not called writing` |
 | T-0682-M2 | packages/chat/src/index.ts | `retryCheck` asked the facts alone, so a run the host said had ended still refused with `writing` | `chat:retry is offered only when it would start a reply > a run the host says has ended does not keep a failed attempt from being retried` |
+| T-0701-M3 | packages/chat/src/index.ts | `/access` naming the level the chat already follows did not record a choice | `a bot's accessLevel setting > naming the level a chat already follows is a choice too` |
+| T-0701-M4 | packages/chat/src/reply.ts | a chat that chose no level did not follow the bot's changed setting at its next reply | `a bot's accessLevel setting > a chat with no choice moves when the setting changes` |

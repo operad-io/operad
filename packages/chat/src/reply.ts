@@ -8,7 +8,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { AskTimeoutError, attachmentDir, isRecord, messageOf, modelIds, safeFileName, type AskOutcome, type AskRecheck, type AskRequest, type ChoiceInfo, type CostQuality, type JsonValue, type PluginStepResult, type RunObject, type StepAsker, type StepContext, type UsageTokens } from "@operad-io/engine";
-import { match, MCP_TOOL, withAccessLevel, writeLiveAccess, type AccessLevel } from "@operad-io/access-match";
+import { isAccessLevel, match, MCP_TOOL, withAccessLevel, writeLiveAccess, type AccessLevel } from "@operad-io/access-match";
 import {
   appendAlwaysAllow,
   alwaysAllowEntry,
@@ -612,6 +612,8 @@ interface Live {
   readonly context?: SessionContext | undefined;
   /** Files put on the message as notes; a bot gives its memory index and instructions. */
   readonly notes?: readonly NoteFile[] | undefined;
+  /** The level a chat that chose none starts at now; a bot gives its setting. */
+  readonly accessDefault?: AccessLevel | undefined;
   /** A plugin step to call after the round ends, when the chat's refresh step names one. */
   readonly after?: string | undefined;
 }
@@ -678,7 +680,9 @@ async function liveSettings(
   const context = sessionContextOf(data.context);
   const notes = noteFilesOf(data.notes);
   const after = typeof data.after === "string" && data.after.length > 0 ? data.after : undefined;
+  const accessDefault = isAccessLevel(data.accessDefault) ? data.accessDefault : undefined;
   return {
+    ...(accessDefault === undefined ? {} : { accessDefault }),
     cwd: data.cwd,
     access: data.access as Record<string, JsonValue>,
     skills: data.skills.filter((item): item is string => typeof item === "string"),
@@ -1262,7 +1266,7 @@ async function replyOnce(
   }
   const stored = await ctx.store.get(CHAT_TYPE, object.id);
   if (stored === undefined) return failed("object", `there is no chat ${object.id}`);
-  const chat = chatData(stored.data);
+  let chat = chatData(stored.data);
   const read = readChat(ctx.store, object.id);
   let messages = read.messages;
   let pending = unanswered(messages, read.facts);
@@ -1308,6 +1312,16 @@ async function replyOnce(
   }
   const live = settled;
   state.after = live.after;
+  // A chat that never chose a level follows the level its plugin starts chats
+  // at now, so changing that setting moves it; a chosen level stays.
+  if (live.accessDefault !== undefined && !chat.accessChosen && (chat.accessDefault !== live.accessDefault || chat.accessLevel !== live.accessDefault)) {
+    const fresh = await ctx.store.get(CHAT_TYPE, object.id);
+    if (fresh !== undefined && !chatData(fresh.data).accessChosen) {
+      const next = { ...fresh.data, accessLevel: live.accessDefault, accessDefault: live.accessDefault };
+      await ctx.store.put(CHAT_TYPE, object.id, next, "step:chat/reply");
+      chat = chatData(next);
+    }
+  }
   // The notes this message may carry: a bot's memory index and instructions. A
   // file that cannot be read is logged and left out; it never fails the answer.
   const noteContents =

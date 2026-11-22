@@ -560,7 +560,12 @@ const accessAction: ActionTypeDefinition = {
       throw new Error(`the access level must be one of ${ACCESS_LEVELS.join(", ")}`);
     }
     const from = chat.accessLevel ?? chat.accessDefault ?? "ask";
-    if (from === level) return `chat ${ctx.object.id} already uses access level ${level}`;
+    if (from === level && chat.accessChosen === true) return `chat ${ctx.object.id} already uses access level ${level}`;
+    if (from === level) {
+      // Naming the level it already follows is a choice: the chat keeps it when the setting moves.
+      await changeChat(ctx, "action:chat/access", (data) => ({ ...data, accessLevel: level, accessChosen: true }));
+      return `chat ${ctx.object.id} already uses access level ${level}`;
+    }
     await prepareAccess(ctx, chat, ctx.object.id, level);
     const changed: AccessChangedData = {
       by: { via: ctx.actor.via, id: ctx.actor.id },
@@ -569,7 +574,7 @@ const accessAction: ActionTypeDefinition = {
     };
     await ctx.facts.append({ type: ACCESS_FACT, object: chatRef(ctx.object.id), data: changed });
     // Read again: a reply may have moved the session while the fact was written.
-    await changeChat(ctx, "action:chat/access", (data) => ({ ...data, accessLevel: level }));
+    await changeChat(ctx, "action:chat/access", (data) => ({ ...data, accessLevel: level, accessChosen: true }));
     // A reply already running reads this file again for each call. The file
     // keeps the base profile, so the new level adds or removes only its own asks.
     const levelPath = accessLevelPath(ctx.home, ctx.object.id);

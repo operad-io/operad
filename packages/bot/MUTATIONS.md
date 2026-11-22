@@ -377,3 +377,7 @@ changes for bots, in the order they were recorded. The root
 | T-0696-M6 | packages/bot/src/setup.ts | a plugin with nothing missing still got the whole guide | `Setup <plugin> (ADR 0010 D7) > a plugin with nothing missing and no target gets one sentence and no steps` |
 | T-0696-M7 | packages/bot/src/setup.ts | the target was not put into the guide | `Setup <plugin> (ADR 0010 D7) > the command answers what the check finds missing, then the guide's steps for the target` |
 | T-0696-M8 | packages/bot/src/setup.ts | `/setup` was offered in a chat that is not a bot chat | `Setup <plugin> (ADR 0010 D7) > /setup is offered in an open bot chat only` |
+| T-0701-M1 | packages/bot/src/index.ts | a new bot chat ignored the bot's `accessLevel` and started at `ask` | `a bot's accessLevel setting > full starts a new chat at full, and a write outside the bot's directory runs without a question` |
+| T-0701-M2 | packages/bot/src/bot.ts | a bot without the setting resolved to `full` instead of `ask` | `a bot's accessLevel setting > unset stays ask, and the same write asks` |
+| T-0701-M5 | packages/bot/src/index.ts | the settings step gave a scheduled chat the bot's level, so it left `full` | `a bot's accessLevel setting > a scheduled chat stays full whatever the setting` |
+| T-0701-M6 | packages/bot/src/bot.ts | the schema took any string as `accessLevel` | `a bot's accessLevel setting > a value that is not a level is refused by the schema` |
