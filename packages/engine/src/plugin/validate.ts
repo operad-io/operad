@@ -3,6 +3,7 @@
  * normalization of the fields a plugin declares, and the rules that span all
  * plugins of a set.
  */
+import { isAbsolute } from "node:path";
 import { ALL_FILTER } from "./filters.ts";
 import type { FlowDefinition, StepType } from "../flow/types.ts";
 import type { JsonValue } from "../log/types.ts";
@@ -32,6 +33,7 @@ import {
   type ObjectTypeDefinition,
   type ObjectViews,
   type PluginBaseContext,
+  type PluginCheckReturn,
   type PluginKind,
   type PluginRequires,
   type ProjectSettingsDeclaration,
@@ -66,8 +68,9 @@ export interface NormalizedPlugin {
     | ((ctx: SourceContext) => MaybePromise<SourceHandle> | SourceHandle)
     | undefined;
   readonly check:
-    | ((ctx: PluginBaseContext) => MaybePromise<string | void>)
+    | ((ctx: PluginBaseContext) => MaybePromise<PluginCheckReturn>)
     | undefined;
+  readonly guide: string | undefined;
   readonly settingsSchema: ActionArgsSchema | undefined;
   /** The plugin's objects belong under a client's settings view. */
   readonly objectsUnderSettings: boolean;
@@ -775,15 +778,22 @@ export function normalizePlugin(raw: unknown, index: number): NormalizedPlugin {
   }
 
   let check:
-    | ((ctx: PluginBaseContext) => MaybePromise<string | void>)
+    | ((ctx: PluginBaseContext) => MaybePromise<PluginCheckReturn>)
     | undefined;
+  let guide: string | undefined;
+  if (raw.guide !== undefined) {
+    if (typeof raw.guide !== "string" || !isAbsolute(raw.guide)) {
+      throw new PluginError(`${at}: guide: must be the absolute path of a SKILL.md`);
+    }
+    guide = raw.guide;
+  }
   if (raw.check !== undefined) {
     if (typeof raw.check !== "function") {
       throw new PluginError(`${at}: check: must be a function`);
     }
     check = raw.check as (
       ctx: PluginBaseContext,
-    ) => MaybePromise<string | void>;
+    ) => MaybePromise<PluginCheckReturn>;
   }
 
   let start: NormalizedPlugin["start"];
@@ -835,6 +845,7 @@ export function normalizePlugin(raw: unknown, index: number): NormalizedPlugin {
     standing,
     start,
     check,
+    guide,
     settingsSchema,
     objectsUnderSettings: raw.objectsUnderSettings === true,
     projectSettings,

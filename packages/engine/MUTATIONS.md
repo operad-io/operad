@@ -1414,3 +1414,13 @@ resume window`. Rows are append-only, so the old lines stay as history.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0697-first-run-followups-2-M1 | packages/engine/src/http/server.ts | passed `input` through unchanged, so an omitted input reached the command as undefined and it could read the serve process's stdin | `http server > POST /v1/commands gives a command an empty input when the body has none, never the serve stdin` |
+
+## T-0696 — a plugin ships a setup guide and a check that reports what is missing
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0696-M1 | packages/engine/src/plugin/registry.ts | a missing item named twice was accepted | `a check that reports what is missing (ADR 0010 D7) > a malformed or repeated item is a failed check` |
+| T-0696-M2 | packages/engine/src/plugin/registry.ts | an off plugin reported no missing item instead of `enable` | `the setup reader > an off plugin's guide is read from its module and reports the one item enable` |
+| T-0696-M3 | packages/engine/src/plugin/registry.ts | the guide's front matter was kept in its text | `guideBody > drops the front matter and keeps text that has none` |
+| T-0696-M4 | packages/engine/src/http/server.ts | the setup answer carried the guide's text | `plugins over HTTP > an off plugin's setup is readable and says it is off; one without a guide is not found` |
+| T-0696-M5 | packages/engine/src/plugin/load.ts | an offered plugin that `config.json` does not name was not counted as off | `the setup reader > an offered plugin that config.json does not name yet has its guide readable; a named one that is on does not` |

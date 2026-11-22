@@ -23,7 +23,7 @@ export {
 } from "./load.ts";
 export type { LoadPluginRegistryOptions } from "./load.ts";
 export { createPluginLogger } from "./logger.ts";
-export { PluginRegistry, splitActionName } from "./registry.ts";
+export { guideBody, PluginRegistry, splitActionName } from "./registry.ts";
 export type {
   ActionInfo,
   KeyBinding,

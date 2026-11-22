@@ -60,6 +60,8 @@ export interface OpenHomeOptions {
   /** Where view ids resolve; defaults to `cwd`. */
   readonly viewsCwd?: string | undefined;
   readonly installOnEnable?: readonly string[] | undefined;
+  /** Shipped plugins that may be off and unnamed in the file; their guides are readable. */
+  readonly optional?: Readonly<Record<string, string>> | undefined;
   readonly rules?: readonly TriggerRule[] | undefined;
   /** Reads the rules after the plugins load, when `rules` is absent. */
   readonly loadRules?:
@@ -204,6 +206,7 @@ export async function openHome(options: OpenHomeOptions): Promise<OpenedHome> {
   try {
     registry = await loadPluginRegistry({
       installOnEnable: options.installOnEnable,
+      optional: options.optional,
       home,
       cwd,
       store,

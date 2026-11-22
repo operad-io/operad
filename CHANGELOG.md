@@ -9,6 +9,12 @@ the same version.
 
 ### Added
 
+- Setup guides: a plugin can ship a guide (`guide`, a `SKILL.md`) and a `check`
+  that returns what is missing, item by item. A bot follows only the steps for
+  what is missing: `/setup <plugin> [target]` in a bot chat, the `bot:setup`
+  action, and `operad bot setup <bot> <plugin> [target]`. `GET /v1/plugins`
+  marks a plugin that has a guide, and `GET /v1/plugins/<name>/setup` says what
+  is missing. Setup Dev is the first guide.
 - Setup Dev (配置开发流程): a bot reads a repository and proposes the
   `.operad/dev.json` that turns `dev`, `shell` and `pool` on for it. Start it
   with the `bot:setup-dev` action or by asking in a bot chat; approving the

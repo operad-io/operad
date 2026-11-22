@@ -369,3 +369,11 @@ changes for bots, in the order they were recorded. The root
 | T-0679-M11 | packages/bot/src/setup-dev.ts | the review left out the plugins approve would turn on | `Setup Dev > a proposal turns nothing on and writes nothing; its review shows what approve does` |
 | T-0695-M1 | packages/bot/src/setup-dev.ts | `setup-dev` ignored the piped stdin when no input was given | `Setup Dev on the command line > a piped dev.json proposes, and pending prints an id the item's actions take` |
 | T-0695-M3 | packages/bot/src/index.ts | the `setup-dev` action took `repo` again instead of `path` | `Setup Dev > the action opens a chat whose first message is the prepared prompt` and `Setup Dev on the command line > the action takes its directory as --path and opens the chat` |
+
+## T-0696 — a plugin ships a setup guide and a check that reports what is missing
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0696-M6 | packages/bot/src/setup.ts | a plugin with nothing missing still got the whole guide | `Setup <plugin> (ADR 0010 D7) > a plugin with nothing missing and no target gets one sentence and no steps` |
+| T-0696-M7 | packages/bot/src/setup.ts | the target was not put into the guide | `Setup <plugin> (ADR 0010 D7) > the command answers what the check finds missing, then the guide's steps for the target` |
+| T-0696-M8 | packages/bot/src/setup.ts | `/setup` was offered in a chat that is not a bot chat | `Setup <plugin> (ADR 0010 D7) > /setup is offered in an open bot chat only` |

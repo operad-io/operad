@@ -1564,3 +1564,9 @@ the row fields.
 | T-0679-M4 | packages/dev/src/register-requests.ts | a registered repository's request file was left in place | `a request to register a repository (Setup Dev) > is registered on a tick and its file is removed` |
 | T-0679-M5 | packages/dev/src/register-requests.ts | a request that could not be registered was deleted instead of kept with its reason | `a request to register a repository (Setup Dev) > one that cannot be registered stays with its reason, and is a pending item until fixed` |
 | T-0694-M1 | packages/dev/src/register-requests.ts | an unreadable request directory threw out of the tick instead of reading as empty | `a request to register a repository (Setup Dev) > an unreadable request directory is empty and does not throw` |
+
+## T-0696 — a plugin ships a setup guide and a check that reports what is missing
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0696-M9 | packages/dev/src/check.ts | dev's check reported no missing repository | `dev init check > dev ships Setup Dev as its guide, and a registered repository leaves nothing missing` |
