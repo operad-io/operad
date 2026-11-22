@@ -45,6 +45,7 @@ function setup(extra: Record<string, unknown> = {}): Env {
     command: process.execPath,
     args: [FAKE],
     keepMs: 60_000,
+    piSettingsPath: join(root, "pi-settings.json"),
     ...extra,
   });
   const registry = new PluginRegistry([plugin], {

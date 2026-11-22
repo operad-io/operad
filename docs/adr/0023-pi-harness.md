@@ -30,7 +30,9 @@ An extension of the owner runs in the worker process with the worker's operating
 
 ### D4: Credentials are the user's own pi login
 
-`ModelRuntime.create({ authPath: ~/.pi/agent/auth.json, modelsPath: ~/.pi/agent/models.json })`. The user's pi uses OAuth subscriptions, not API keys, which `ctx.secrets` cannot give; pi locks `auth.json` itself, so the TUI and operad refreshing a token at the same time is within its design. The declaration has two settings, `model` and `thinkingLevel`, defaulting to the user's pi default model.
+`ModelRuntime.create({ authPath: ~/.pi/agent/auth.json, modelsPath: ~/.pi/agent/models.json })`. The user's pi uses OAuth subscriptions, not API keys, which `ctx.secrets` cannot give; pi locks `auth.json` itself, so the TUI and operad refreshing a token at the same time is within its design. The declaration has two settings, `model` and `thinkingLevel`, defaulting to the user's pi default model and default thinking level.
+
+A run's model is the step's `--model` argument, else the declaration's `model`, else the `defaultProvider` and `defaultModel` of the user's pi settings file (`~/.pi/agent/settings.json`). operad resolves that default in the hub and names the model to the child on every run. With the own-settings switch off the child's settings manager is in memory (D3) and carries no default model of its own, so a child told no model selects none and the first request fails with "No API key found for the selected model" even when `auth.json` holds the credential. Reading those defaults is not resource discovery: only pi's default model and default thinking level are read from that file. When pi's settings name no complete pair, no model is sent and pi chooses its own.
 
 ### D5: Where the facts come from
 

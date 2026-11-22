@@ -499,7 +499,12 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
           if ("refused" in step) return step.refused;
 
           const { values, access } = step;
-          const { resumeSession, wallTimeSecs, stallSecs, model, level: thinkingLevel } = values;
+          const { resumeSession, wallTimeSecs, stallSecs, level: thinkingLevel } = values;
+          // With the own-settings switch off the child's settings are in memory
+          // and hold no default model (D3), so pi's own default is resolved here
+          // and named to it (D4). A child told no model selects none.
+          const model = values.model ?? piDefaultModel(readPiSettings(piSettingsPath, readFile));
+          const runValues = model === undefined ? values : { ...values, model };
           const agentDir = join(ctx.home, "harness", "pi");
           const sessionDir = join(agentDir, "sessions");
 
@@ -541,7 +546,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
               : undefined;
 
           return await runWorkerStep({
-            values,
+            values: runValues,
             access,
             command,
             args: commandArgs,

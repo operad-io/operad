@@ -192,7 +192,7 @@ param (`wallTimeSecs`, `stallSecs`) overrides the setting of the same name.
 
 | setting | type | default | meaning |
 |---|---|---|---|
-| `model` | string `provider/id` | unset | the model; unset uses pi's own default model |
+| `model` | string `provider/id` | unset | the model; unset uses the user's pi default model, the `defaultProvider` and `defaultModel` of pi's settings file |
 | `models` | list of `provider/id` | unset | the models a chat may pick; unset offers every model `pi --list-models` prints. The kept list also keeps each model's context window from its `context` column, and pi's registry store beside `modelsPath` adds its display name, provider, vision (input includes `image`) and reasoning |
 | `thinkingLevel` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max` | unset | the reasoning level; unset uses pi's default |
 | `command` | string | `pi` | the pi command: a name on PATH or a path; it must lead into an installed `@earendil-works/pi-coding-agent` at the floor version or newer |

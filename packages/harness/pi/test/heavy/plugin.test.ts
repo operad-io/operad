@@ -76,6 +76,7 @@ async function setup(
     clock,
     command: process.execPath,
     args: [FAKE],
+    piSettingsPath: join(root, "pi-settings.json"),
     ...(options.now === undefined ? {} : { now: options.now }),
   });
   const registry = new PluginRegistry([plugin], {
@@ -419,14 +420,34 @@ describe("pi/agent", () => {
     });
   }
 
-  test("unset model and thinking level are not sent, so pi uses its default", async () => {
+  test("pi's default model from its settings reaches the worker when neither the step nor the settings names one", async () => {
     const env = await setup("done");
+    writeFileSync(
+      join(env.root, "pi-settings.json"),
+      JSON.stringify({ defaultProvider: "zai", defaultModel: "glm-5" }),
+    );
     await runAgent(env, { prompt: "hello", cwd: env.root });
     const input = recorded(env);
-    expect("model" in input).toBe(false);
+    expect(input.model).toBe("zai/glm-5");
     expect("thinkingLevel" in input).toBe(false);
     expect(String(input.authPath).endsWith("/.pi/agent/auth.json")).toBe(true);
     expect(String(input.authPath).startsWith("~")).toBe(false);
+  });
+
+  test("a model the step or the settings names wins over pi's default", async () => {
+    const env = await setup("done", { model: "fake/setting" });
+    writeFileSync(
+      join(env.root, "pi-settings.json"),
+      JSON.stringify({ defaultProvider: "zai", defaultModel: "glm-5" }),
+    );
+    await runAgent(env, { prompt: "hello", cwd: env.root });
+    expect(recorded(env).model).toBe("fake/setting");
+  });
+
+  test("with no model anywhere, no model is sent and pi chooses", async () => {
+    const env = await setup("done");
+    await runAgent(env, { prompt: "hello", cwd: env.root });
+    expect("model" in recorded(env)).toBe(false);
   });
 
   test("resumeSession is passed through to the worker's stdin", async () => {
@@ -763,7 +784,11 @@ describe("pi/agent", () => {
 
   test("a worker program that is not there fails with a clear reason", async () => {
     const env = await setup("done");
-    const plugin = createPiHarnessPlugin({ command: join(env.root, "no-such-bun"), args: [] });
+    const plugin = createPiHarnessPlugin({
+      command: join(env.root, "no-such-bun"),
+      args: [],
+      piSettingsPath: join(env.root, "pi-settings.json"),
+    });
     const registry = new PluginRegistry([plugin], {
       home: env.root,
       cwd: env.root,
