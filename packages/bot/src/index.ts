@@ -14,8 +14,8 @@ import pkg from "../package.json" with { type: "json" };
 import { mkdirSync } from "node:fs";
 import { basename, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { CHAT_TYPE, MESSAGE_EVENT, agentConditionals, type AgentChoices, type ScheduledChat, chatData, createChat, sendMessage, startingEffort, startingModel, titleFromMessage } from "@operad-io/chat";
-import { definePlugin, isRecord, modelIds, type ActionArgSchema, type ActionArgsSchema, type ActionTypeDefinition, type HarnessModelInfo, type HarnessModels, type JsonValue, type ObjectRow, type ObjectStore, type ObjectViews, type PluginStepResult, type SectionContent, type StepContext, type StoredObject } from "@operad-io/engine";
+import { CHAT_TYPE, MESSAGE_EVENT, levelRefusal, agentConditionals, type AgentChoices, type ScheduledChat, chatData, createChat, sendMessage, startingEffort, startingModel, titleFromMessage } from "@operad-io/chat";
+import { definePlugin, isRecord, modelIds, type ActionArgSchema, type ActionArgsSchema, type ActionTypeDefinition, type HarnessCapabilities, type HarnessModelInfo, type HarnessModels, type JsonValue, type ObjectRow, type ObjectStore, type ObjectViews, type PluginStepResult, type SectionContent, type StepContext, type StoredObject } from "@operad-io/engine";
 import {
   BOT_SETTINGS,
   DEFAULT_BOT,
@@ -81,6 +81,7 @@ function rowOf(bot: ResolvedBot): Record<string, JsonValue> {
     skills: [...bot.skills],
     speaker: bot.speaker,
     writeWiki: bot.writeWiki,
+    accessLevel: bot.accessLevel,
     access: bot.access,
     mcpServers: Object.keys(bot.mcpServers),
   };
@@ -192,6 +193,8 @@ export interface OpenChat {
   readonly home: string;
   readonly settings: Readonly<Record<string, JsonValue>>;
   readonly harnesses: readonly string[];
+  /** What each loaded agent can do; the level a chat starts at must be one its agent carries. */
+  readonly capabilities?: Readonly<Record<string, HarnessCapabilities>> | undefined;
   readonly bot: string;
   readonly models?: Readonly<Record<string, HarnessModels>> | undefined;
   readonly efforts?: Readonly<Record<string, { readonly list: readonly string[]; readonly default: string | null }>> | undefined;
@@ -206,6 +209,19 @@ export interface OpenChat {
   readonly cause: string;
 }
 
+/**
+ * The agent a chat gets when nothing names one: the first loaded agent that can
+ * carry the level, else the first loaded one (a refusal then names the levels).
+ */
+export function defaultAgent(
+  harnesses: readonly string[],
+  capabilities: Readonly<Record<string, HarnessCapabilities>> | undefined,
+  level: string,
+): string | undefined {
+  if (capabilities === undefined) return harnesses[0];
+  return harnesses.find((name) => (capabilities[name]?.accessLevels ?? []).includes(level)) ?? harnesses[0];
+}
+
 /** Opens a chat on a bot and returns its id. Refuses with a plain message. */
 export async function openChat(input: OpenChat): Promise<string> {
   const written = readBots(input.home, input.settings);
@@ -213,7 +229,12 @@ export async function openChat(input: OpenChat): Promise<string> {
   const settings = written[input.bot];
   if (settings === undefined) throw new BotError(`there is no bot "${input.bot}"`);
   const bot = resolveBot(input.home, input.bot, settings, await repositoryPaths(input.store));
-  const harness = input.harness ?? bot.harness ?? input.harnesses[0];
+  // A scheduled prompt runs at full access (ADR 0030 D10); a chat a person
+  // opens starts at the bot's level (ADR 0026 D15). A person may still change
+  // the level with `/access` afterwards.
+  const startingLevel = input.scheduled === undefined ? bot.accessLevel : "full";
+  const harness =
+    input.harness ?? bot.harness ?? defaultAgent(input.harnesses, input.capabilities, startingLevel);
   if (harness === undefined) {
     throw new BotError("no agent is loaded; load one to chat with the bot");
   }
@@ -232,10 +253,9 @@ export async function openChat(input: OpenChat): Promise<string> {
     throw new BotError(messageOf(error));
   }
   const effortDefault = input.efforts?.[harness]?.default ?? undefined;
-  // A scheduled prompt runs at full access (ADR 0030 D10); a chat a person
-  // opens starts at ask (ADR 0026 D15). A person may still change the level
-  // with `/access` afterwards.
-  const startingLevel = input.scheduled === undefined ? bot.accessLevel : "full";
+  // An agent that cannot carry the level is refused here, not at the first reply.
+  const refusal = levelRefusal(harness, startingLevel, input.capabilities);
+  if (refusal !== undefined) throw new BotError(refusal);
   mkdirSync(bot.cwd, { recursive: true });
   ensureBotMemory(bot.cwd, input.home);
   return createChat(
@@ -268,8 +288,10 @@ function chatArgs(
   efforts: readonly string[] = [],
   agents: readonly AgentChoices[] = [],
   info?: Readonly<Record<string, HarnessModelInfo>> | undefined,
+  capabilities?: Readonly<Record<string, HarnessCapabilities>> | undefined,
+  level = "ask",
 ): ActionArgsSchema {
-  const first = harnesses[0];
+  const first = defaultAgent(harnesses, capabilities, level);
   const fallback = typeof botHarness === "string" && harnesses.includes(botHarness) ? botHarness : first;
   return {
     type: "object",
@@ -341,10 +363,11 @@ function createArgs(
   efforts: readonly string[],
   agents: readonly AgentChoices[],
   info?: Readonly<Record<string, HarnessModelInfo>> | undefined,
+  capabilities?: Readonly<Record<string, HarnessCapabilities>> | undefined,
 ): ActionArgsSchema {
   const skills = home === undefined ? [] : knownSkills(home);
   const servers = home === undefined ? [] : knownMcpServers(home);
-  const first = harnesses[0];
+  const first = defaultAgent(harnesses, capabilities, "ask");
   return {
     type: "object",
     description: "Creates a bot with exactly the skills and MCP servers chosen for it.",
@@ -417,6 +440,7 @@ const createAction: ActionTypeDefinition = {
         preferredEffort: null,
       })),
       Object.keys(info).length === 0 ? undefined : info,
+      env.capabilities,
     );
   },
   when: (state, env) => state.removed !== true && (env.harnesses ?? []).length > 0,
@@ -495,6 +519,8 @@ const chatAction: ActionTypeDefinition = {
         preferredEffort: typeof object.data.effort === "string" ? object.data.effort : null,
       })),
       Object.keys(info).length === 0 ? undefined : info,
+      env.capabilities,
+      typeof object.data.accessLevel === "string" ? object.data.accessLevel : "ask",
     );
   },
   when: (state, env) => state.removed !== true && typeof state.problem !== "string" && (env.harnesses ?? []).length > 0,
@@ -522,6 +548,7 @@ const chatAction: ActionTypeDefinition = {
       home: ctx.home,
       settings: ctx.settings,
       harnesses: ctx.harnesses,
+      capabilities: ctx.capabilities,
       models: ctx.models,
       efforts: ctx.efforts,
       bot: ctx.object.id,
@@ -580,6 +607,7 @@ const setupDevAction: ActionTypeDefinition = {
       home: ctx.home,
       settings: ctx.settings,
       harnesses: ctx.harnesses,
+      capabilities: ctx.capabilities,
       models: ctx.models,
       efforts: ctx.efforts,
       bot: ctx.object.id,
@@ -622,6 +650,7 @@ const setupAction: ActionTypeDefinition = {
       home: ctx.home,
       settings: ctx.settings,
       harnesses: ctx.harnesses,
+      capabilities: ctx.capabilities,
       models: ctx.models,
       efforts: ctx.efforts,
       bot: ctx.object.id,

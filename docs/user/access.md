@@ -76,7 +76,7 @@ under `readPaths` remain at `full`: a deny refuses, a read-only working
 directory asks about a write or a command not known to only read, and a write
 under `readPaths` asks. `askCommands`, `askPaths` and an unlisted MCP tool do not
 ask at `full`; they still apply at `plan`, `ask` and `edits`. An outward-write
-question does not apply at `full`, and still asks in a background run below it.
+question does not apply at `full`; in a background run at `plan`, `ask` or `edits` it still asks.
 A chat starts at `plan` on a repository and at the bot's `accessLevel` setting
 on a bot (`ask` unless set; `full` asks nothing but the deny rules), except a
 chat a scheduled prompt opens, which starts at `full`; `/access <level>` changes it; see
@@ -211,7 +211,7 @@ on the next write.
 | `flows` | array of flow identities | `[]` | the flow definitions last seen | Whenever a background outward write is judged: a digest that differs from the last one makes a new id | An entry without a flow, digest or id makes the whole file count as empty |
 | `flows.flow` | string | required | the flow's name | It names the flow the identity belongs to | An empty value makes the whole file count as empty |
 | `flows.digest` | string | required | the digest of the definition last seen | It tells an edit from the same definition | An empty value makes the whole file count as empty |
-| `flows.id` | string | required | a generated identity, never reused | A grant matches only a grant with this identity | An empty value makes the whole file count as empty |
+| `flows.id` | string | required | a generated identity, never reused | A grant's `definition` matches only a flow definition with this identity | An empty value makes the whole file count as empty |
 | `grants` | array of target grants | `[]` | the targets a person allowed | A background outward write to a matching target does not ask | An entry with a missing or wrong field makes the whole file count as empty |
 | `grants.flow` | string | required | the flow's name | The grant lifts only that flow's question | An empty value makes the whole file count as empty |
 | `grants.definition` | string | required | the definition identity the person answered for | A changed definition no longer matches | An empty value makes the whole file count as empty |

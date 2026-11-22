@@ -172,6 +172,7 @@ does not take messages mid-run or it has an attachment, waits for the next round
 and shows below the finished reply. An older chat whose lines were recorded
 without a time keeps the order it was recorded in. A reply that fails leaves one
 line saying it failed and why.
+
 Tool output is cut in the transcript; the full file is available to the agent
 from the chat's directory. A reply that is still being written shows its
 unfinished text and thinking as a tail that updates; the finished entries are
@@ -182,8 +183,9 @@ Sending is `chat:send` with `note` and the uploaded attachments. The app sends
 the message, records it and starts the reply; a chat that is closed refuses the
 message and says so. **Stop** (`chat:stop`) stops a reply being written and keeps
 what was written so far; **Retry** (`chat:retry`) answers the last message again
-after a failed, stopped or interrupted reply, and is offered only while it
-would. Closing a chat asks for confirmation
+after a failed, stopped or interrupted reply. It is offered only while it would
+answer: the chat is open, a message waits for a reply and no reply is being
+written. Closing a chat asks for confirmation
 (`chat:close`) and keeps the transcript readable, but the chat takes no more
 messages and offers no other actions.
 

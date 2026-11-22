@@ -110,7 +110,7 @@ The test host is a setting of the home, not of `dev.json`: `dev.testHost`
 in [config.json](config.md#dev). A gate, integration or rerun command gets them
 as `OPERAD_CHECK_HOST` and `OPERAD_CHECK_SLOTS`; an explicit variable in
 `serve`'s own environment wins. When a repository's check commands use
-`scripts/remote-check.sh` and neither names a host, `serve` writes one line to
+`scripts/remote-check.sh` and neither `dev.testHost` nor `OPERAD_CHECK_HOST` in `serve`'s environment names a host, `serve` writes one line to
 its log at start, the repository gets a pending item, and its Overview says the
 commands run here. See [Checks](checks.md).
 
@@ -180,7 +180,7 @@ when run alone, is handled as before.
 | `dev.reviewer.stallSecs` | number | unset: the harness's own limit | above `0` seconds | When a review starts | Refused: `reviewer.stallSecs: must be a positive number of seconds` |
 | `dev.reviewer.fixLevel` | string | `"major"` | `critical`, `major`, `minor` | When a review is graded | Refused: `reviewer.fixLevel: must be "critical", "major" or "minor"`; a value in `review.json` wins |
 | `dev.reviewer.followups` | boolean | `true` | `true` or `false` | When a review passed with findings that did not fail it | Refused: `reviewer.followups: must be true or false` |
-| `dev.reviewer.retrySecs` | number | `120` | above `0` seconds | When a review waits to run again after a model was unavailable | Refused: `reviewer.retrySecs: must be a positive number of seconds` |
+| `dev.reviewer.retrySecs` | number | `120` | above `0` seconds | When a review or a worker's run waits to run again after its model was unavailable; the setting is named for the reviewer but the work step uses it too | Refused: `reviewer.retrySecs: must be a positive number of seconds` |
 | `dev.reviewer.maxFileDiffBytes` | integer | `200000` | `1` or more | When the review prompt is built | Refused: `reviewer.maxFileDiffBytes: must be a positive integer`; a larger file is left out and listed |
 | `dev.reviewer.maxDiffBytes` | integer | `1000000` | `1` or more | When the review prompt is built | Refused: `reviewer.maxDiffBytes: must be a positive integer`; a file deleted whole is listed by name and line count, and a larger change fails the review before a reviewer starts |
 | `dev.integration` | object | `{ "style": "merge", "keyCommands": [], "batch": 1 }` | the keys below | When the integrate step starts | Refused: `integration: must be an object` or `integration.<key>: is not an integration setting` |
@@ -568,8 +568,10 @@ bun (`bun add -g @earendil-works/pi-coding-agent`) or npm
 installs `@earendil-works/pi-coding-agent` `1.6.0` into the home's plugin
 project on first use; that needs the network once, and a failed download says so
 and is retried by running the enable or `operad init` again. The oldest pi it
-accepts is `1.5.0`; `operad plugin check` names both versions when yours is
-older and fails when there is no `pi`. To use another pi, set `command` in the
+accepts is `1.5.0`. `operad plugin check` fails when it finds neither a `pi` on
+`PATH` nor the one operad installed in the home, so a home with no `pi` fails
+the check until you run `operad plugin enable pi` or `operad init`. When your
+pi is older, the check names both versions. To use another pi, set `command` in the
 `pi` section of `config.json` to its path. A `pi` that is a shell wrapper script
 is refused with its path; point `command` at the package's bin instead
 (`.../@earendil-works/pi-coding-agent/dist/bundle/cli.js`).
@@ -795,17 +797,9 @@ Agent runs cost an account, not a repository: one Claude or Codex login serves e
 6. When no worker has room, the step waits and sends `pool.waiting` once for each reason: the flow's counts are full, or a harness's home cap is full.
 7. It runs the worker's harness step with the params and the worker's `args`, `wallTimeSecs` and `stallSecs`.
 8. It returns the harness result unchanged, with `worker` and `harness` added to `data`.
-9. When the model is unavailable or its usage limit is reached, or the harness cannot start, and the worker has a `fallback`, it runs that worker once. A timeout never falls back.
+9. When the model is unavailable or its usage limit is reached, or the harness process cannot be started (it ended `failed` with reason `missing` or `spawn`), and the worker has a `fallback`, it runs that worker once. A timeout never falls back, and neither does a step that throws.
 
 The reference for each part follows.
-
-Agent runs cost an account, not a repository: one Claude or Codex login serves
-every repository on the machine. The `pool` plugin has one step, `pool/agent`,
-that picks a worker with room, runs that worker's harness step and hands the
-result back. A flow that uses it (the `dev` flow does) describes its workers;
-the home says how many runs one harness may have in all.
-
-`operad init` leaves it off; turn it on with `operad plugin enable pool`.
 
 ### Home: `settings.harnesses`
 
@@ -964,7 +958,8 @@ A worker listed in two pools has one `count`: its places are shared by both pool
 A pool whose workers have no `fallback` never hands its work to a worker of
 another pool: when the model is unavailable, the work waits the model's
 `retry_after_secs` from the time the model reported it when it gave one, else
-`reviewer.retrySecs`, and after the
+`dev.reviewer.retrySecs` (the one wait setting, shared with the review; see
+[When the reviewer is unavailable](#when-the-reviewer-is-unavailable)), and after the
 allowed waits it goes to a person. A usage limit, or a retry-after longer than
 half an hour, goes to a person at once, with the model's message and the time it
 resets. Choose a task's flow with `task add --flow <name>` (the `command` tool

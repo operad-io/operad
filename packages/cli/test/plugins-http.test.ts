@@ -151,6 +151,7 @@ interface Row {
   enabled: boolean;
   origin: string;
   signedIn?: boolean;
+  accessLevels?: string[];
   progress?: string;
   models?: {
     list: (string | { id: string })[];
@@ -267,7 +268,9 @@ describe("plugins over HTTP", () => {
             "fake-small": { id: "fake-small", provider: "fake" },
           },
         });
+        expect(rows.find((row) => row.name === "models")?.accessLevels).toEqual(["ask", "full"]);
         expect(rows.find((row) => row.name === "demo")?.models).toBeUndefined();
+        expect(rows.find((row) => row.name === "demo")?.accessLevels).toBeUndefined();
       },
       undefined,
       { models: { module: modelHarnessPath, enabled: true } },
