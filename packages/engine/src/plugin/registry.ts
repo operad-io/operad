@@ -1260,6 +1260,7 @@ export class PluginRegistry {
       harnesses: this.loadedHarnesses(),
       models: this.loadedModels(),
       efforts: this.loadedEfforts(),
+      stepLoaded: (use) => this.stepIndex.has(use),
       ...(this.onCancelRun === undefined ? {} : { runs: this.runControl() }),
     };
   }
@@ -1393,6 +1394,7 @@ export class PluginRegistry {
       answer,
       harnesses: this.loadedHarnesses(),
       ...(this.runLookup === undefined ? {} : { runLookup: this.runLookup }),
+      stepLoaded: (use) => this.stepIndex.has(use),
       models: this.loadedModels(),
       efforts: this.loadedEfforts(),
       actions: object === undefined ? [] : await this.actionInfosFor(object),

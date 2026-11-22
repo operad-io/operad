@@ -145,7 +145,13 @@ export const loginAction: ActionTypeDefinition = {
   // A bot with no model has nothing to do before signing in; after a login,
   // chatting is what a person most likely wants.
   rank: (state) => (state.model === null || state.model === undefined ? -1 : 0),
-  when: (state, env) => state.removed !== true && (env.harnesses ?? []).length > 0,
+  when: (state, env) =>
+    state.removed !== true &&
+    loginHarness(
+      state.harness,
+      env.harnesses ?? [],
+      env.stepLoaded === undefined ? undefined : (harness) => env.stepLoaded?.(`${harness}/login`) === true,
+    ) !== undefined,
   async why(object, env) {
     if (object.data.removed === true) return `bot ${object.id} is no longer in the settings`;
     if ((env.harnesses ?? []).length === 0) return `bot ${object.id}: no agent is loaded to sign in with`;
@@ -160,8 +166,13 @@ export const loginAction: ActionTypeDefinition = {
       return "a login is already waiting";
     }
     const harness =
-      loginHarness(ctx.object.data.harness, ctx.harnesses, undefined) ??
-      (ctx.harnesses.length === 1 ? ctx.harnesses[0] : undefined);
+      loginHarness(
+        ctx.object.data.harness,
+        ctx.harnesses,
+        ctx.stepLoaded === undefined
+          ? undefined
+          : (name) => ctx.stepLoaded?.(`${name}/login`) === true,
+      ) ?? (ctx.harnesses.length === 1 ? ctx.harnesses[0] : undefined);
     if (harness === undefined) {
       throw new BotError("this bot names no agent to sign in with");
     }
