@@ -51,6 +51,7 @@ import {
   type DevSettings,
 } from "./settings.ts";
 import { git } from "./git.ts";
+import { cloneHolder } from "./service.ts";
 import { isRegistered, prepareWorktree, workBranch, worktreePath } from "./steps.ts";
 
 /**
@@ -225,6 +226,8 @@ export function repositoryChatContext(input: {
   readonly readOnly: boolean;
   /** The chat works in the main clone on the current branch, at its access level (workIn branch). */
   readonly inPlace?: boolean;
+  /** The task that holds the main clone on its own branch; the reply is read-only meanwhile. */
+  readonly heldBy?: string | undefined;
   readonly branch?: string | undefined;
   readonly skills: readonly string[];
   readonly denyCommands: readonly string[];
@@ -232,7 +235,9 @@ export function repositoryChatContext(input: {
   const root = realPathOrUndefined(input.cwd) ?? resolve(input.cwd);
   const where = [
     `You are answering in an operad chat about the repository ${input.repository}, in ${input.cwd}.`,
-    input.inPlace === true
+    input.heldBy !== undefined
+      ? `This chat is read-only in the main clone for now: the task ${input.heldBy} holds the clone on its own branch and is the only one that changes files there. Read and answer, but do not change files or run commands that change anything; when the person wants a change, tell them to wait until ${input.heldBy} is merged, cancelled or rejected, and then ask again.`
+      : input.inPlace === true
       ? "This chat works in the main clone, on the branch that is checked out, at its access level. Changes made here are changes to the repository itself; no worktree is opened."
       : input.readOnly
       ? "This chat is read-only in the main clone. Commands that only read run at once; a call that changes a file asks the person first."
@@ -520,7 +525,10 @@ export async function runChatSettings(ctx: StepContext, params: unknown): Promis
     return failed(messageOf(error));
   }
   const inPlace = !hasWorktree && settings.workIn === "branch";
-  const access = chatAccess(skills.roots, !hasWorktree && !inPlace);
+  // A task that holds the clone on its own branch is the only writer there: the
+  // reply reads and says why (ADR 0028 D3, ADR 0039 D3).
+  const holder = inPlace ? await cloneHolder(ctx.store, name) : undefined;
+  const access = chatAccess(skills.roots, (!hasWorktree && !inPlace) || holder !== undefined);
   const worktree = isRecord(stored.data.worktree) ? stored.data.worktree : {};
   const branch =
     hasWorktree
@@ -536,6 +544,7 @@ export async function runChatSettings(ctx: StepContext, params: unknown): Promis
     cwd,
     readOnly: !hasWorktree && !inPlace,
     inPlace,
+    ...(holder === undefined ? {} : { heldBy: holder }),
     ...(branch === undefined ? {} : { branch }),
     skills: skills.directories,
     denyCommands,

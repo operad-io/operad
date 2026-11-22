@@ -25,7 +25,9 @@ A repository with `workIn` `branch` has `concurrency` 1. Setting `concurrency` t
 
 ### D3: In `branch` mode a task that has not ended holds the main clone
 
-A task whose attempt works in the main clone holds the repository's slot from the start of that attempt until it is merged or cancelled. A task that is waiting for a person, ready to merge, paused, or ready again for its next start still holds it, so a second task does not start meanwhile (the scheduler counts such a task as active, and a ready task that holds the clone does not count against its own start). In `worktree` mode such a task does not hold a slot, as before. A rejection is not an end: it sends the task back to the worker on the same branch, so the task keeps the clone.
+A task whose attempt works in the main clone holds the repository's slot from the start of that attempt until it is merged or cancelled. A task that is waiting for a person, ready to merge, paused, or ready again for its next start still holds it, so a second task does not start meanwhile (the scheduler counts such a task as active, and a ready task that holds the clone does not count against its own start). In `worktree` mode such a task does not hold a slot, as before.
+
+The exclusion goes both ways. A task does not start while a reply of a repository chat is being written that can write in the main clone (the chat has no worktree and its access level is `edits` or `full`); the start is refused with a note naming the chat, and a refused start holds nothing. A start that finds no such reply holds the clone from then on, and the replies that begin after it are read-only. A rejection is not an end: it sends the task back to the worker on the same branch, so the task keeps the clone.
 
 ### D4: A task does not start in a main clone with uncommitted changes
 
