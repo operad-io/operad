@@ -561,4 +561,4 @@ the row fields.
 
 | id | file | mutation | failing test |
 |---|---|---|---|
-| T-0710-M1 | packages/tui/src/view/index.ts | the folder icon went back to the glyph (U+25A4) that common terminal fonts lack | `repository groups draw as a folder row with a note line, and their plans are indented` |
+| T-0710-M1 | packages/tui/src/view/index.ts | the folder icon went back to `▤` (U+25A4), which common terminal fonts lack | `two-line rows > repository groups draw as a folder row with a note line, and their plans are indented` |
