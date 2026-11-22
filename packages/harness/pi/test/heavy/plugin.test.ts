@@ -434,6 +434,18 @@ describe("pi/agent", () => {
     expect(String(input.authPath).startsWith("~")).toBe(false);
   });
 
+  for (const [name, settings] of [
+    ["only defaultProvider", { defaultProvider: "zai" }],
+    ["only defaultModel", { defaultModel: "glm-5" }],
+  ] as const) {
+    test(`${name} in pi's settings sends no model`, async () => {
+      const env = await setup("done");
+      writeFileSync(join(env.root, "pi-settings.json"), JSON.stringify(settings));
+      await runAgent(env, { prompt: "hello", cwd: env.root });
+      expect("model" in recorded(env)).toBe(false);
+    });
+  }
+
   test("a model the step or the settings names wins over pi's default", async () => {
     const env = await setup("done", { model: "fake/setting" });
     writeFileSync(

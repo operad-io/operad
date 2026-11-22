@@ -123,6 +123,7 @@ async function initWith(
   options: {
     readonly emptyFirstProbe?: string | undefined;
     readonly piTarball?: string | undefined;
+    readonly config?: string | undefined;
     readonly installRun?: InstallRunner | undefined;
   } = {},
 ): Promise<{
@@ -139,6 +140,10 @@ async function initWith(
     else if (name === "radian") fakeRadian(bin);
   }
   if (options.piTarball !== undefined) namePiTarball(home, options.piTarball);
+  if (options.config !== undefined) {
+    mkdirSync(home, { recursive: true });
+    writeFileSync(join(home, "config.json"), options.config);
+  }
   const previous = process.env.PATH;
   const previousCache = process.env.BUN_INSTALL_CACHE_DIR;
   const previousRegistry = process.env.BUN_CONFIG_REGISTRY;
@@ -216,6 +221,16 @@ describe("`operad init` finds the agent on PATH", () => {
     expect(output.text()).toContain("no agent found on PATH: installing operad's own pi");
     expect(output.text()).toContain("pi: pi 1.6.0");
     expect(output.errors()).toBe("");
+  });
+
+  test("a pi entry written without a module still gets the install", async () => {
+    const root = await tempRoot();
+    const { code, output } = await initWith(root, [], {
+      piTarball: packPiFixture(root),
+      config: JSON.stringify({ plugins: { pi: { enabled: true } } }),
+    });
+    expect(code).toBe(0);
+    expect(output.text()).toContain("pi: Saved lockfile");
   });
 
   test("a failed pi install says the download failed, and init again installs it", async () => {
