@@ -2221,6 +2221,18 @@ describe("dev/review hardening", () => {
     };
     settings.reviewer.use = "radian/agent";
     writeFileSync(path, JSON.stringify(settings));
+    const written = await taskOf(state);
+    await state.store.put(
+      "task",
+      state.taskKey,
+      {
+        ...written,
+        ...(written.attempt === undefined
+          ? {}
+          : { attempt: { ...written.attempt, settingsText: JSON.stringify(settings) } }),
+      },
+      "test",
+    );
     const registry = new PluginRegistry(
       [
         createChatPlugin(), createDevPlugin(),
