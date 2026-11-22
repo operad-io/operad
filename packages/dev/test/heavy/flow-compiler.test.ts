@@ -354,6 +354,11 @@ test("a work stage's workerBrief and commit reach the compiled work step (T-0380
   });
 });
 
+test("a work stage that says commit false reaches the work step, so a branch repository does not commit for it (T-0718)", () => {
+  const flow = compileDevFlow("own-commit", [{ stage: "work", commit: false }, { stage: "human" }]);
+  expect(stepOf(flow.steps, "work").params).toEqual({ use: "dev/work", params: { flowCommit: false } });
+});
+
 test("stage parameters reach the compiled steps", () => {
   const flow = compileDevFlow("params", [
     { stage: "work", use: "claude/agent", args: ["--model", "x"], brief: "short" },

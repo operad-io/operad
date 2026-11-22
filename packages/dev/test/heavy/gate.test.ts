@@ -1652,6 +1652,23 @@ describe("dev/review and the main checkout", () => {
     );
   });
 
+  test("an attempt that works in the main clone is not held to a main-checkout line (T-0718)", async () => {
+    const state = await fixture({ reviewerArgs: ["none"] });
+    await verify(state);
+    await changedMainCheckout(state);
+    const task = await taskOf(state);
+    await state.store.put(
+      "task",
+      state.taskKey,
+      { ...task, attempt: { ...task.attempt, inPlace: true } },
+      "test:in-place",
+    );
+    const result = await review(state);
+    expect(result.result).toBe("pass");
+    expect(result.data?.findings).toEqual([]);
+    expect(state.reviewer.calls[0]?.prompt ?? "").not.toContain("## The main checkout");
+  });
+
   test("an attempt without a main-checkout change is reviewed as before", async () => {
     const state = await fixture({ reviewerArgs: ["none"] });
     await verify(state);
