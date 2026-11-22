@@ -86,8 +86,7 @@ dev 今天的基本形态是多 agent 加 git worktree：每个任务一个 work
 
 ## 没有核实的
 
-- 没有读 dev 的代码；上面的"今天"来自 ADR 0020、0028 和 `docs/user/dev.md`、`docs/user/chats-and-bots.md`。
-- gate worktree、评审报告的位置、`changed the main checkout` 的检查在代码里各依赖 worktree 多深，没有查；第 2 步的工作量取决于它。
+- 代码已读（T-0713）：见 `docs/research/2026-11-22-dev-worktree-dependence.md`（逐处 file:line、`workIn: "branch"` 在每处要什么、任务顺序和大小、待决 2 至 7 各自代码的倾向）。要点：gate worktree 和评审报告不依赖任务的 worktree，可以原样保留；`changed the main checkout` 的检查在就地时自己失效；集成前要先切回起始分支，否则主 clone 不会被快进；等人决定的任务今天不占并发名额，就地时要改；`.operad/dev.json` 就地时读到的是任务分支的版本；没有 remote 的仓库今天在第一次 fetch 就失败（约 25 处）。
 - ADR 0028 D2 把 radian 排除在仓库对话之外，理由是它不能在调用开始前拦住；主 clone 可写之后这个理由还成不成立，没有想清楚。
 - pool 插件在第 1 步是否还需要开。
 
