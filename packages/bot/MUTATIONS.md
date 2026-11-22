@@ -412,3 +412,6 @@ changes for bots, in the order they were recorded. The root
 |---|---|---|---|
 | T-0745-M6 | packages/bot/src/schedule.ts | a cron was written into the page's text as it is, so `*` became emphasis | `scheduled prompts > the bot page shows a cron as code and a person's names as text, not Markdown` |
 | T-0745-M7 | packages/bot/src/schedule.ts | an entry's name was written into the page's text unescaped | `scheduled prompts > the bot page shows a cron as code and a person's names as text, not Markdown` |
+| T-0745-M8 | packages/bot/src/index.ts | the working directory was written into the bot page unquoted | `the bot page's text > a value a person or the agent wrote is shown as text or code, not as Markdown` |
+| T-0745-M9 | packages/bot/src/index.ts | the speaker was written into the bot page unescaped | `the bot page's text > a value a person or the agent wrote is shown as text or code, not as Markdown` |
+| T-0745-M10 | packages/bot/src/follow-up.ts | a follow-up's text was written into the page unescaped | `the bot page's text > a follow-up's text is escaped` |
