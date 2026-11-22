@@ -49,6 +49,8 @@
 
 ## 决定（owner 2026-11-22，按 lead 的建议）
 
+（决定 1 `operad doctor` 完成：T-0693。）
+
 1. **加 `operad doctor`**（新用户词，已批准）。只读不改：列出插件、agent、登录、serve、测试机是否正常；有问题的每一项给下一步要敲的命令。不用 `status`：`operad status` 已是 chat 的动作。
 2. **开启 dev 时顺带开启它依赖的 pool 和 shell**，并当场说一句开了哪些；以后可以单独关。
 3. **`--help` 分三组**：日常（不带参数的 `operad`、`pending`、`list`、`show`、`history`、`running`）；设置（`init`、`settings`、`plugin`、`secret`、`pair`）；高级（`trigger`、`trigger rules`、`operad:start`、`operad:dismiss`、`flows`、`plugin check`、`http token rotate`、`mcp`、`serve stop`）。
