@@ -25,13 +25,13 @@ The older names `work` and `check` still load as `code` and `test`; a stage writ
 
 ### D3: `dev` completes the route
 
-When a stage fails, the run returns to the nearest `code` stage before it and redoes it; with no `code` stage before it, the run waits for a person. Retries, timeouts, cancellation and the wait for an unavailable model behave as they do for the built-in flow. `dev` adds the worktree preparation at the start and integrate at the end. The plan's `auto` setting decides whether a `human` stage ends in waiting for a person or in an automatic merge.
+When a stage fails, the run returns to the nearest `code` stage before it and redoes it; with no `code` stage before it, the run waits for a person. Retries, timeouts, cancellation and the wait for an unavailable model behave as they do for the built-in flow. `dev` adds the preparation of the task's working place at the start and integrate at the end. With `workIn` `worktree` (ADR 0039) the preparation makes a worktree on the task branch; with `branch` it switches the main clone to the task branch, after recording the branch it was on. With `branch`, `dev` commits what the worker left on the task branch after the worker ends, unless the stage says `commit: false` (D9); the checks and the review run on that commit in the gate worktree, never in the main clone's working tree, in both modes. These rules for `branch` take effect as the work that builds `workIn` lands. The plan's `auto` setting decides whether a `human` stage ends in waiting for a person or in an automatic merge.
 
 ### D4: Two hard rules
 
 `dev` checks them when it loads a flow and refuses a flow that breaks one, saying why:
 
-- The last step is integrate; a change reaches main only through it.
+- The last step is integrate; a change reaches main only through it. In `branch` mode integrate first switches the main clone back to the branch it started on and then fast-forwards that branch to the merged commit, so a failed check leaves no commit on the starting branch.
 - A flow has at least one `test`, `review` or `human` stage.
 
 Everything else is the project's decision. A flow that wants no model review has no `review` stage.
@@ -58,7 +58,7 @@ These serve flows whose work differs from writing code, such as producing images
 
 - `pool`: the pool of the repository's `dev.json` the stage takes its worker from; unset is `default` (ADR 0021). A task's `--flow` therefore chooses its pool; `task add` accepts it and it can change until the first attempt starts (D5). The stage takes a place in that pool.
 - `workerBrief`: a file path whose text replaces the repository's `workerBrief` for this stage; it does not add to it. `brief` stays an additional paragraph.
-- `commit`: when true, `dev` commits the uncommitted changes in the worktree after the worker ends, with a message carrying the task id. It serves workers whose sandbox cannot write `.git`. Unset is false: the worker commits itself.
+- `commit`: when true, `dev` commits the uncommitted changes in the worktree after the worker ends, with a message carrying the task id. It serves workers whose sandbox cannot write `.git`. Unset is false for a repository that works in a worktree: the worker commits itself. In `branch` mode (ADR 0039) unset is true; `commit: false` says the worker commits itself.
 
 ### D10: A client may change `dev.json` flows through settings; `dev` checks them on save
 
