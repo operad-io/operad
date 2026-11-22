@@ -165,6 +165,36 @@ describe("the lock file", () => {
     expect(staleFiles(repositoryPath)).toEqual([]);
   });
 
+  test("a lock whose pid now belongs to another process is taken over", async () => {
+    const { repositoryPath } = await setup();
+    // This process is alive, but the record names a start time that is not its
+    // own: the recorded holder is gone and the system reused its pid.
+    const lock = leaveLock(repositoryPath, process.pid);
+    writeFileSync(
+      lock,
+      JSON.stringify({ pid: process.pid, startedAt: 0, nonce: "dead-nonce" }),
+      "utf8",
+    );
+    let tick = 0;
+    let ran = false;
+    await withRepositoryLock(
+      repositoryPath,
+      () => {
+        ran = true;
+      },
+      {
+        clock: () => (tick === 0 ? 0 : 10_001),
+        wait: async () => {
+          tick += 1;
+        },
+      },
+    );
+    expect(ran).toBe(true);
+    expect(tick).toBe(0);
+    expect(existsSync(lock)).toBe(false);
+    expect(staleFiles(repositoryPath)).toEqual([]);
+  });
+
   test("exactly one of five spawned waiters holds the lock at a time", async () => {
     const { root, repositoryPath } = await setup();
     leaveLock(repositoryPath, await deadPid());

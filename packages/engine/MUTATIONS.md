@@ -1369,3 +1369,10 @@ resume window`. Rows are append-only, so the old lines stay as history.
 |---|---|---|---|
 | T-0655-M1 | packages/engine/src/config/config.ts | `addPluginEntry` wrote config.json with a plain `writeFile` instead of the atomic write | `writing config.json whole > adding a plugin entry writes the file atomically` |
 | T-0655-M2 | packages/engine/src/config/config.ts | `addDefaultPlugins` wrote config.json with a plain `writeFile` instead of the atomic write | `writing config.json whole > filling a missing plugins section writes the file atomically` |
+
+## T-0652 — a read does not block a write of the same log
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0652-M1 | packages/engine/src/log/sqlite.ts | `#read` yielded each fact while the statement was still open, so the read transaction held between facts made the next write fail with `SQLITE_BUSY_SNAPSHOT` | `a write on a log succeeds while a read of the same log is still open` |
+| T-0652-M2 | packages/engine/src/platform/file-lock.ts | a waiter treated any live pid as the holder, ignoring the start time in the record, so a reused pid kept a dead lock | `the lock file > a lock whose pid now belongs to another process is taken over` |
