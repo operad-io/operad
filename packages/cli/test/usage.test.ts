@@ -97,4 +97,23 @@ describe("a command line mistake", () => {
     expect(output.errors()).toContain("add");
     expect(lines(output.errors()).length).toBeLessThanOrEqual(5);
   });
+
+  test("a shipped plugin the home has not turned on says it is off", async () => {
+    const { home } = await makeHome({ plugins: [notesPath] });
+    for (const argv of [["dev", "plan", "add"], ["dev:confirm", "P-1"]]) {
+      const output = capture();
+      expect(await main(argv, { home, io: output.io })).not.toBe(0);
+      expect(output.errors()).toContain('plugin "dev" is disabled');
+      expect(output.errors()).toContain("operad plugin enable dev");
+      expect(output.errors()).not.toContain("unknown command");
+    }
+  });
+
+  test("a name no plugin has stays an unknown command", async () => {
+    const { home } = await makeHome({ plugins: [notesPath] });
+    const output = capture();
+    expect(await main(["devv", "plan"], { home, io: output.io })).toBe(2);
+    expect(output.errors()).toContain('unknown command "devv"');
+    expect(output.errors()).not.toContain("plugin enable");
+  });
 });

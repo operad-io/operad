@@ -373,3 +373,10 @@ the row fields.
 | T-0690-M3 | packages/cli/src/main.ts | a usage error no longer ended with the line pointing at `operad --help` | `a command line mistake > an unknown command names the closest command, then points at --help` (and the other usage tests) |
 | T-0690-M4 | packages/cli/src/main.ts | `resolveActionRequest` did not pass the action's one-line usage to `UsageError`, so a missing object id printed no usage line | `operad presentation commands > a missing object id prints the action's one-line usage` |
 | T-0690-M5 | packages/cli/src/main.ts | the unknown-command candidates left out `registry.commandNames()`, so a mistyped plugin command named no closest command | `a command line mistake > a mistyped plugin command names the command it declares` |
+
+## T-0691 — a command of a plugin that is off says so
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0691-M1 | packages/cli/src/main.ts | the check ignored `OPTIONAL_PLUGINS`, so a shipped plugin missing from the config was an unknown command | `a command line mistake > a shipped plugin the home has not turned on says it is off` |
+| T-0691-M2 | packages/cli/src/main.ts | the check treated every name as off | `a command line mistake > a name no plugin has stays an unknown command` |

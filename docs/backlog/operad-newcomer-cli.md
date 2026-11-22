@@ -19,6 +19,7 @@
 2. **插件没开时说它没开。**
    - 现状：dev 关着时 `operad dev plan add` 得到 `operad: unknown command "dev"`。新 home 默认 dev 是关的，照着旧教程敲的人都会遇到。
    - 建议：命令属于一个已安装但没开启的插件时，说这个插件没开启，并指向 `Setup Dev` 或 `operad plugin enable dev`。
+   - 完成（T-0691）：命令或 `<插件>:<动作>` 属于没开启的出厂插件时，说 `plugin "dev" is disabled; turn it on with `operad plugin enable dev``；不用加载插件，名字来自出厂可选插件表。`Setup Dev` 的提示等它合并后再加。
 
 3. **开启一个插件时处理它依赖的插件。**
    - 现状：`operad plugin enable dev` 只打印 `dev: enabled`。pool 没开时，要到 `operad pending` 才看到 `plugin pool is not loaded and dev runs its workers through it ... until then no new work starts`。README 让人手敲三条 enable。
