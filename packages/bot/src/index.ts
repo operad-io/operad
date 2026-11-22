@@ -663,7 +663,7 @@ export function createBotPlugin() {
     ],
     steps: [
       { name: "settings", results: ["done", "failed"], run: runSettings },
-      { name: "login", results: ["done", "failed"], callsNamedByData: true, timeoutSecs: 360, run: runLoginStep },
+      { name: "login", results: ["done", "failed"], callsNamedByData: true, timeoutSecs: 700, run: runLoginStep },
     ],
     flows: [loginFlow],
     // A scheduled prompt opens a chat and sends its first message from the
