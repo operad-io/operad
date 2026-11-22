@@ -330,3 +330,9 @@ changes for bots, in the order they were recorded. The root
 | T-0682-M3 | packages/bot/src/chat-watch.ts | the watch's writing check ignored the host's run control, so a crashed run never let the watch read | `a chat watch > reads a chat once the host says its latest run has ended` |
 | T-0682-M4 | packages/bot/src/schedule.ts | the scheduled source gave its watch no run control | `scheduled prompts > a watch reads a reply after the host says its run ended` |
 | T-0682-M5 | packages/bot/src/tidy.ts | the tidy source gave its watch no run control | `Run and Skip > a tidy run that fails leaves a failed card` |
+
+## T-0683 — a tidy result covers the whole run
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0683-M2 | packages/bot/src/tidy.ts | `finish` asked for the summary without the memory directory and bot, so an empty previous tidy commit was skipped and the run was read from before it | `Run and Skip > a result card reads the chat's own memory commit before an empty tidy commit` |

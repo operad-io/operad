@@ -85,6 +85,33 @@ describe("the memory tidy's check", () => {
   });
 });
 
+describe("a tidy run's summary", () => {
+  test("covers the chat's own memory commit before an empty tidy commit", async () => {
+    const h = await home();
+    const memory = join(h, "bot", "default", "memory");
+    mkdirSync(memory, { recursive: true });
+    ensureMemoryLayout(memory);
+    writeFileSync(join(memory, "index.md"), "# Memory index\n\n- [one](topics/one.md): first\n");
+    commit(memory, "tidy: bot default, chat C-0");
+
+    mkdirSync(join(memory, "topics"), { recursive: true });
+    writeFileSync(
+      join(memory, "index.md"),
+      "# Memory index\n\n- [one](topics/one.md): first\n- [two](topics/two.md): second\n",
+    );
+    writeFileSync(join(memory, "topics", "two.md"), "second\n");
+    commit(memory, "memory: bot default, chat C-1");
+    commit(memory, "tidy: bot default, chat C-2");
+
+    const repository = ensureRepository(memory);
+    const hash = tidyCommitForChat(repository, memory, "C-2");
+    if (hash === undefined) throw new Error("no tidy commit");
+    const summary = tidyCommitSummary(repository, hash, { directory: memory, bot: "default" });
+    expect(summary.changed).toBe(true);
+    expect(summary.summary).toBe("2 files changed, 2 insertions(+)");
+  });
+});
+
 describe("the void-rewrite guard", () => {
   test("a rewrite that drops at least a quarter of the old index entries is void, and append only keeps them", async () => {
     const h = await home();
@@ -174,7 +201,9 @@ describe("the void-rewrite guard", () => {
     expect(log.out).toContain("tidy: bot default, chat C-1");
     expect(log.out).toContain("append only:");
     const hash = memoryGit(memory, ["rev-parse", "HEAD"]).out;
-    expect(tidyCommitSummary(ensureRepository(memory), hash).voided).toBe(true);
+    const summary = tidyCommitSummary(ensureRepository(memory), hash, { directory: memory, bot: "default" });
+    expect(summary.changed).toBe(true);
+    expect(summary.voided).toBe(true);
     const fact = store.facts().find((item) => item.type === "memory.tidy");
     expect(fact).toBeDefined();
     expect(isRecord(fact?.data) && fact.data["ok"]).toBe(true);

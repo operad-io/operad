@@ -94,7 +94,7 @@ export interface TidyOutcome {
   readonly costMicros: number | null;
   readonly changed: boolean;
   readonly voided: boolean;
-  /** The commit's diff-stat line, or why the run failed. */
+  /** The run's diff-stat line from the last tidy commit, or why the run failed. */
   readonly summary: string;
   /** The agent's own one-line reply, when it gave one. */
   readonly reply: string;
@@ -873,7 +873,10 @@ export class BotTidySource {
     ensureMemoryLayout(memoryDir);
     const repository = ensureRepository(memoryDir);
     const commit = tidyCommitForChat(repository, memoryDir, chatId);
-    const summary = commit === undefined ? undefined : tidyCommitSummary(repository, commit);
+    const summary =
+      commit === undefined
+        ? undefined
+        : tidyCommitSummary(repository, commit, { directory: memoryDir, bot });
     const costMicros =
       typeof stored.data.costMicros === "number" && Number.isFinite(stored.data.costMicros)
         ? stored.data.costMicros
