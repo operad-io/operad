@@ -29,7 +29,7 @@ environment variables on [the environment page](environment.md).
 |---|---|
 | `0` | The command did what it was asked, or had nothing to do. |
 | `1` | An error: a bad id, a config or plugin that does not load, a refused check, an editor that failed. |
-| `2` | A usage error: an unknown command or option, a missing argument, a bad value. `operad help` is printed after the message. |
+| `2` | A usage error: an unknown command or option, a missing argument, a bad value. The message names the closest command when one is near, prints that command's one-line usage when an argument is missing, and ends with a line pointing at `operad --help`. |
 | `3` | The state does not allow it: a plugin is disabled, a run is active, a task phase does not allow the change, a `serve` did not stop in time. |
 | `4` | Another process holds the home lock, or a second `serve` for the same home. |
 | `141` | The reader closed the pipe (128 + SIGPIPE). Later output is dropped. |

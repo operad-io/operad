@@ -14,6 +14,7 @@
 1. **出错时不打印整份用法。**
    - 现状：任何错误（`operad pendng`、`operad list`、`operad plugin`、`operad version`）都在错误后面跟上约 35 行用法，那一句错误被顶出屏幕。
    - 建议：只打印错误，加一行指向 `operad --help`。命令敲错时给最接近的命令；`operad show nope` 已经会打印 `closest:`，同一套办法用到命令名上。
+   - 完成（T-0690）：错误后不再打印整份用法；敲错命令给出 `closest:`，缺参数时给出该命令的一行用法，最后一行指向 `operad --help`。
 
 2. **插件没开时说它没开。**
    - 现状：dev 关着时 `operad dev plan add` 得到 `operad: unknown command "dev"`。新 home 默认 dev 是关的，照着旧教程敲的人都会遇到。

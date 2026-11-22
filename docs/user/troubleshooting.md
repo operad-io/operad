@@ -12,7 +12,7 @@ for what waits, and `operad history <id>` for what a run did.
 
 | Message | What it means | What to do |
 |---|---|---|
-| `operad: unknown command "<command>"` | No command or plugin verb has that name. | `operad help` lists the commands; a plugin verb is `<plugin> <verb>` or the short form when only one plugin declares it. |
+| `operad: unknown command "<command>"` | No command or plugin verb has that name. | The message names the closest command when one is near; `operad --help` lists every command, and a plugin verb is `<plugin> <verb>` or the short form when only one plugin declares it. |
 | `operad: <option> needs a value` | A flag that takes a value is last on the line. | Put the value after it, or use `--flag=value`. |
 | `operad: action "<name>" needs a note; pass --note <text>` | The action needs a note and stdin is not a terminal. | Pass `--note <text>`; in a terminal it asks for one. |
 | `operad: action "<name>" needs confirmation; pass --yes` | The action asks to confirm and stdin is not a terminal. | Pass `--yes` after reading what the action does. |

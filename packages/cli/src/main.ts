@@ -224,9 +224,13 @@ const STDIO: CliIo = {
 
 /** A command line mistake; exit code 2. */
 export class UsageError extends Error {
-  constructor(message: string) {
+  /** The one-line usage of the command that was misused, when it is known. */
+  readonly usage: string | undefined;
+
+  constructor(message: string, usage?: string | undefined) {
     super(message);
     this.name = "UsageError";
+    this.usage = usage;
   }
 }
 
@@ -308,6 +312,184 @@ const HELP = [
   "  <plugin> <verb>      a verb a loaded plugin declares",
   "",
 ].join("\n");
+
+/** One command a mistyped word can be measured against. */
+interface CommandCandidate {
+  readonly name: string;
+  readonly summary?: string | undefined;
+}
+
+const COMMAND_CANDIDATES: readonly CommandCandidate[] = [
+  { name: "init", summary: "create the operad home and check the plugins" },
+  { name: "serve", summary: "run the serve process for this home" },
+  { name: "serve stop", summary: "stop this home's serve" },
+  { name: "pending", summary: "things waiting for a person" },
+  { name: "list", summary: "objects of one type" },
+  { name: "show", summary: "one object, its sections and its actions" },
+  { name: "history", summary: "steps of a run, or of an object's runs" },
+  { name: "running", summary: "runs in progress" },
+  { name: "flows", summary: "loaded flows and where they come from" },
+  { name: "plugin", summary: "list, add, enable, disable or check plugins" },
+  { name: "secret", summary: "set, list or delete a plugin's secrets" },
+  { name: "settings", summary: "every setting with its value and default" },
+  { name: "http token rotate", summary: "replace the token the operad app uses" },
+  { name: "pair", summary: "show the address and token as a QR code" },
+  { name: "tui", summary: "open the terminal client" },
+  { name: "mcp", summary: "run the MCP server on stdio" },
+  { name: "trigger", summary: "send one event through the rules" },
+  { name: "operad:start", summary: "start a pending event" },
+  { name: "operad:dismiss", summary: "dismiss a pending event" },
+  { name: "start", summary: "start a pending event" },
+  { name: "dismiss", summary: "dismiss a pending event" },
+  { name: "help", summary: "print the whole command table" },
+  { name: "--version", summary: "print the operad version" },
+  { name: "--help", summary: "print the whole command table" },
+];
+
+function editDistance(left: string, right: string): number {
+  const rows: number[][] = [];
+  for (let row = 0; row <= left.length; row += 1) {
+    rows.push(
+      Array.from({ length: right.length + 1 }, (_, column) =>
+        row === 0 ? column : column === 0 ? row : 0,
+      ),
+    );
+  }
+  for (let row = 1; row <= left.length; row += 1) {
+    const above = rows[row - 1] ?? [];
+    const current = rows[row] ?? [];
+    for (let column = 1; column <= right.length; column += 1) {
+      const same = left[row - 1] === right[column - 1] ? 0 : 1;
+      current[column] = Math.min(
+        (above[column] ?? 0) + 1,
+        (current[column - 1] ?? 0) + 1,
+        (above[column - 1] ?? 0) + same,
+      );
+    }
+  }
+  return rows[left.length]?.[right.length] ?? 0;
+}
+
+/** The command nearest to a word that matched nothing, nearest first. */
+function closestCommand(
+  wanted: string,
+  extra: readonly CommandCandidate[] = [],
+): CommandCandidate | undefined {
+  const lower = wanted.toLowerCase();
+  if (lower.length === 0) return undefined;
+  let best: { readonly score: number; readonly candidate: CommandCandidate } | undefined;
+  for (const candidate of [...COMMAND_CANDIDATES, ...extra]) {
+    const text = candidate.name.toLowerCase();
+    const near = text.includes(lower) || lower.includes(text);
+    const score = near ? 0 : editDistance(lower, text);
+    if (
+      best === undefined ||
+      score < best.score ||
+      (score === best.score && candidate.name.localeCompare(best.candidate.name) < 0)
+    ) {
+      best = { score, candidate };
+    }
+  }
+  return best?.candidate;
+}
+
+/** The lines after an unknown command's message: the closest command, if any. */
+function closestCommandLines(
+  wanted: string,
+  extra: readonly CommandCandidate[] = [],
+): string {
+  const near = closestCommand(wanted, extra);
+  if (near === undefined) return "";
+  const summary = near.summary === undefined ? "" : `  ${near.summary}`;
+  return `\nclosest:\n  ${near.name}${summary}`;
+}
+
+/** The one-line usage of the command a mistake came from, when it has one. */
+function commandUsage(args: readonly string[]): string | undefined {
+  const command = args[0];
+  const sub = args[1];
+  switch (command) {
+    case "init":
+      return "usage: operad init";
+    case "serve":
+      return sub === "stop"
+        ? "usage: operad serve stop [--timeout <secs>]"
+        : "usage: operad serve";
+    case "pending":
+      return "usage: operad pending [--json]";
+    case "list":
+      return "usage: operad list <type> [options]";
+    case "show":
+      return "usage: operad show [<id>] [options]";
+    case "history":
+      return "usage: operad history <id> [--json]";
+    case "running":
+      return "usage: operad running [--json]";
+    case "flows":
+      return "usage: operad flows [--json]";
+    case "plugin": {
+      switch (sub) {
+        case "list":
+          return "usage: operad plugin list";
+        case "add":
+          return "usage: operad plugin add <npm package>";
+        case "enable":
+          return "usage: operad plugin enable <name>";
+        case "disable":
+          return "usage: operad plugin disable <name>";
+        case "check":
+          return "usage: operad plugin check <path>";
+        default:
+          return "usage: operad plugin <list|add|enable|disable|check>";
+      }
+    }
+    case "secret": {
+      switch (sub) {
+        case "set":
+          return "usage: operad secret set <plugin> <name>";
+        case "list":
+          return "usage: operad secret list <plugin>";
+        case "delete":
+          return "usage: operad secret delete <plugin> <name>";
+        default:
+          return "usage: operad secret <set|list|delete>";
+      }
+    }
+    case "settings":
+      return sub === "set"
+        ? "usage: operad settings set <name> <value> [--repo <name>] [--yes]"
+        : "usage: operad settings [--repo <name>] [--json]";
+    case "http":
+      return "usage: operad http token rotate";
+    case "pair":
+      return "usage: operad pair [--url <url>] [--show-token]";
+    case "tui":
+      return "usage: operad tui [--url <url>] [--token <token>] [--no-start] [--theme <name>]";
+    case "mcp":
+      return "usage: operad mcp [--claude-channel] [--types t,...]";
+    case "trigger":
+      return sub === "rules"
+        ? "usage: operad trigger rules"
+        : "usage: operad trigger <source> <key> [--type t] [--object o] [--summary text] [--data file]";
+    case "operad:start":
+    case "start":
+      return `usage: operad ${command} <id>`;
+    case "operad:dismiss":
+    case "dismiss":
+      return `usage: operad ${command} <id>`;
+    case "help":
+      return "usage: operad help";
+    case "--help":
+      return "usage: operad --help";
+    case "--version":
+      return "usage: operad --version";
+    default:
+      return undefined;
+  }
+}
+
+/** What every usage mistake ends with, so the whole table stays out of the error. */
+const HELP_POINTER = "run `operad --help` for all commands";
 
 const COLOUR = {
   reset: "\x1b[0m",
@@ -838,7 +1020,7 @@ function firstSection(object: ViewObject): string | undefined {
   return object.sections[0]?.id;
 }
 
-function actionArgFlags(action: ViewAction | ActionInfo): string[] {
+function actionArgFlags(action: Pick<ActionInfo, "args">): string[] {
   const args: string[] = [];
   for (const [name, property] of Object.entries(action.args?.properties ?? {})) {
     if (property.enum !== undefined) {
@@ -1195,6 +1377,7 @@ function actionCandidates(
 function resolveActionRequest(
   context: Context,
   positionals: readonly string[],
+  usage?: string | undefined,
 ): { readonly name: string; readonly id: string } | undefined {
   const first = positionals[0];
   if (first === undefined) return undefined;
@@ -1202,10 +1385,10 @@ function resolveActionRequest(
   if (splitActionName(first) !== undefined) {
     const id = positionals[1];
     if (id === undefined) {
-      throw new UsageError(`action "${first}" needs an object id`);
+      throw new UsageError(`action "${first}" needs an object id`, usage);
     }
     if (positionals.length > 2) {
-      throw new UsageError(`action "${first}" takes one object id`);
+      throw new UsageError(`action "${first}" takes one object id`, usage);
     }
     return { name: first, id };
   }
@@ -1219,10 +1402,10 @@ function resolveActionRequest(
   ) {
     const id = positionals[2];
     if (id === undefined) {
-      throw new UsageError(`action "${first}:${second}" needs an object id`);
+      throw new UsageError(`action "${first}:${second}" needs an object id`, usage);
     }
     if (positionals.length > 3) {
-      throw new UsageError(`action "${first}:${second}" takes one object id`);
+      throw new UsageError(`action "${first}:${second}" takes one object id`, usage);
     }
     return { name: `${first}:${second}`, id };
   }
@@ -1230,17 +1413,18 @@ function resolveActionRequest(
   const candidates = actionCandidates(context, first);
   if (candidates.length === 0) return undefined;
   if (second === undefined) {
-    throw new UsageError(`action "${first}" needs an object id`);
+    throw new UsageError(`action "${first}" needs an object id`, usage);
   }
   if (candidates.length > 1) {
     throw new UsageError(
       `action "${first}" is offered by ${candidates
         .map((candidate) => `"${candidate.name}"`)
         .join(", ")}; use "<plugin>:<action>"`,
+      usage,
     );
   }
   if (positionals.length > 2) {
-    throw new UsageError(`action "${first}" takes one object id`);
+    throw new UsageError(`action "${first}" takes one object id`, usage);
   }
   return { name: candidates[0]?.name ?? first, id: second };
 }
@@ -1275,11 +1459,15 @@ async function promptConfirm(io: CliIo, name: string): Promise<boolean> {
   return /^y(es)?$/i.test((answer ?? "").trim());
 }
 
-function actionUsage(action: ActionInfo): string {
+function actionUsageLine(action: Pick<ActionInfo, "name" | "args" | "confirm">): string {
   const flags = actionArgFlags(action);
   if (action.confirm) flags.push("--yes");
   const suffix = flags.length === 0 ? "" : ` ${flags.map((flag) => `[${flag}]`).join(" ")}`;
-  return `usage: operad ${action.name} <id>${suffix}\n`;
+  return `usage: operad ${action.name} <id>${suffix}`;
+}
+
+function actionUsage(action: ActionInfo): string {
+  return `${actionUsageLine(action)}\n`;
 }
 
 async function commandAction(
@@ -1302,7 +1490,11 @@ async function commandAction(
 
   const info = actionInfoForArgv(context, argv);
   const args = parseActionArguments(argv, info?.args);
-  const request = resolveActionRequest(context, args.positionals);
+  const request = resolveActionRequest(
+    context,
+    args.positionals,
+    info === undefined ? undefined : actionUsageLine(info),
+  );
   if (request === undefined) return false;
 
   const object = await context.views.get(request.id);
@@ -1320,6 +1512,7 @@ async function commandAction(
   }
 
   const actionArgs = actionArgsFromFlags(available, args.values);
+  const usage = actionUsageLine(available);
   const note = noteField(available.args);
   if (
     note !== undefined &&
@@ -1331,11 +1524,12 @@ async function commandAction(
     if (!tty) {
       throw new UsageError(
         `action "${request.name}" needs a note; pass --${note} <text>`,
+        usage,
       );
     }
     const text = await promptNote(io);
     if (text.trim().length === 0) {
-      throw new UsageError(`action "${request.name}" needs a note`);
+      throw new UsageError(`action "${request.name}" needs a note`, usage);
     }
     actionArgs[note] = text;
   }
@@ -1344,6 +1538,7 @@ async function commandAction(
     if (!tty) {
       throw new UsageError(
         `action "${request.name}" needs confirmation; pass --yes`,
+        usage,
       );
     }
     if (!(await promptConfirm(io, request.name))) {
@@ -3373,14 +3568,27 @@ export async function main(
       if (context.disabled.includes(attempted)) {
         throw new StateError(`plugin "${attempted}" is disabled`);
       }
+      const candidates: CommandCandidate[] = [
+        ...context.registry
+          .actions()
+          .map((info) => ({
+            name: info.name,
+            ...(info.command === undefined ? {} : { summary: info.command }),
+          })),
+        ...context.registry.commandNames().map((name) => ({ name })),
+      ];
+      throw new UsageError(
+        `unknown command "${command ?? ""}"${closestCommandLines(command ?? "", candidates)}`,
+      );
     } finally {
       context.views.close();
       await context.log.close();
     }
-    throw new UsageError(`unknown command "${command ?? ""}"`);
   } catch (error) {
     if (error instanceof UsageError) {
-      io.error(`operad: ${error.message}\n\n${HELP}`);
+      const usage = error.usage ?? commandUsage(args);
+      const usageLine = usage === undefined ? "" : `${usage}\n`;
+      io.error(`operad: ${error.message}\n${usageLine}${HELP_POINTER}\n`);
       return 2;
     }
     if (error instanceof ViewError) {
