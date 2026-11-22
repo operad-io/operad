@@ -569,7 +569,7 @@ const accessAction: ActionTypeDefinition = {
     };
     await ctx.facts.append({ type: ACCESS_FACT, object: chatRef(ctx.object.id), data: changed });
     // Read again: a reply may have moved the session while the fact was written.
-    await changeChat(ctx, "action:chat/access", (data) => ({ ...data, accessLevel: level }));
+    await changeChat(ctx, "action:chat/access", (data) => ({ ...data, accessLevel: level, accessChosen: true }));
     // A reply already running reads this file again for each call. The file
     // keeps the base profile, so the new level adds or removes only its own asks.
     const levelPath = accessLevelPath(ctx.home, ctx.object.id);

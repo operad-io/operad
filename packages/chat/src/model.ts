@@ -162,6 +162,11 @@ export interface ChatData {
   readonly accessLevel?: AccessLevel | undefined;
   /** The level this chat started at, so the row can tell a choice from the default. */
   readonly accessDefault?: AccessLevel | undefined;
+  /**
+   * Whether a person chose the level with `chat:access`. A chat that did not
+   * choose follows its plugin's starting level when that changes.
+   */
+  readonly accessChosen?: boolean | undefined;
   readonly skills: readonly string[];
   readonly title: string;
   /** Whether the chat was closed; a closed chat takes no messages. */
@@ -764,6 +769,8 @@ export function chatData(data: Readonly<Record<string, unknown>>): ChatData {
     ? data.accessDefault
     : fallbackAccessLevel(data);
   const accessLevel = isAccessLevel(data.accessLevel) ? data.accessLevel : accessDefault;
+  // A chat stored before the flag existed chose a level when it differs from its starting one.
+  const accessChosen = data.accessChosen === true || accessLevel !== accessDefault;
   return {
     ...data,
     harness: typeof data.harness === "string" ? data.harness : "",
@@ -771,6 +778,7 @@ export function chatData(data: Readonly<Record<string, unknown>>): ChatData {
     access: isRecord(data.access) ? (data.access as Record<string, JsonValue>) : {},
     accessLevel,
     accessDefault,
+    accessChosen,
     skills: stringList(data.skills),
     title: typeof data.title === "string" ? data.title : "",
     closed: data.closed === true,

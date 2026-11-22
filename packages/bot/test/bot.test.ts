@@ -9,6 +9,7 @@ import {
   DEFAULT_BOT,
   BotError,
   defaultAccess,
+  openChat,
   readBots,
   resolveBot,
   syncBots,
@@ -740,5 +741,80 @@ describe("a reply reads the bot again", () => {
     expect(r.calls[0]?.params.operadTools).toEqual({ home: r.home });
     expect(r.calls[0]?.params.cwd).toBe(join(r.home, "bot", "default"));
     expect(defaultAccess(r.home).denyCommands).toContain("operad");
+  });
+});
+
+describe("a bot's accessLevel setting", () => {
+  async function level(r: Awaited<ReturnType<typeof rig>>, id: string): Promise<string | undefined> {
+    return chatData((await r.store.get(CHAT_TYPE, id))?.data ?? {}).accessLevel;
+  }
+  async function replyAt(r: Awaited<ReturnType<typeof rig>>, id: string): Promise<AccessProfile> {
+    await r.say(id, "go");
+    await r.reply(id);
+    return accessOf(r.calls[r.calls.length - 1]?.access);
+  }
+
+  test("full starts a new chat at full, and a write outside the bot's directory runs without a question", async () => {
+    const r = await rig({ big: { accessLevel: "full" } });
+    const id = await r.open("big");
+    const chat = chatData((await r.store.get(CHAT_TYPE, id))?.data ?? {});
+    expect([chat.accessLevel, chat.accessDefault]).toEqual(["full", "full"]);
+    const profile = await replyAt(r, id);
+    const outside = join(r.root, "elsewhere", "note.md");
+    expect(match(profile, { tool: "write", input: { path: outside }, cwd: chat.cwd }, { home: r.home })).toEqual({ allow: true });
+  });
+
+  test("unset stays ask, and the same write asks", async () => {
+    const r = await rig({ plain: {} });
+    const id = await r.open("plain");
+    expect(await level(r, id)).toBe("ask");
+    const profile = await replyAt(r, id);
+    const outside = join(r.root, "elsewhere", "note.md");
+    const cwd = String(r.calls[0]?.cwd);
+    expect(match(profile, { tool: "write", input: { path: outside }, cwd }, { home: r.home })).toMatchObject({ allow: false, ask: true });
+  });
+
+  test("a chat that ran /access ask stays ask under a full setting", async () => {
+    const r = await rig({ big: { accessLevel: "full" } });
+    const id = await r.open("big");
+    await r.act("chat", id, "chat/access", { level: "ask" });
+    await replyAt(r, id);
+    expect(await level(r, id)).toBe("ask");
+    writeBotConfig(r.home, { big: { accessLevel: "plan" } });
+    await replyAt(r, id);
+    expect(await level(r, id)).toBe("ask");
+  });
+
+  test("a chat with no choice moves when the setting changes", async () => {
+    const r = await rig({ big: {} });
+    const id = await r.open("big");
+    expect(await level(r, id)).toBe("ask");
+    writeBotConfig(r.home, { big: { accessLevel: "full" } });
+    await replyAt(r, id);
+    expect(await level(r, id)).toBe("full");
+    writeBotConfig(r.home, { big: { accessLevel: "edits" } });
+    await replyAt(r, id);
+    expect(await level(r, id)).toBe("edits");
+  });
+
+  test("a scheduled chat stays full whatever the setting", async () => {
+    const r = await rig({ big: { accessLevel: "plan" } });
+    const id = await openChat({
+      store: r.store,
+      home: r.home,
+      settings: { bot: { bots: {} } } as never,
+      harnesses: ["claude"],
+      bot: "big",
+      scheduled: { bot: "big", entry: "Morning" },
+      cause: "test",
+    });
+    expect(await level(r, id)).toBe("full");
+    await replyAt(r, id);
+    expect(await level(r, id)).toBe("full");
+  });
+
+  test("a value that is not a level is refused by the schema", () => {
+    const r = { home: "/nonexistent" };
+    expect(() => readBots(r.home, { bots: { big: { accessLevel: "root" } } })).toThrow();
   });
 });
