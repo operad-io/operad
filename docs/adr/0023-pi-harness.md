@@ -72,7 +72,7 @@ Only the owner may connect. The kept directory is `0700`, the record and socket 
 
 `pi/login` (ADR 0022 D13) starts `bun login-worker.ts` with the rule of D2: the
 library is imported only in that child, never in the hub. The child creates the
-`ModelRuntime` of D4, reports the providers that can sign in, and waits for the
+`ModelRuntime` of D4, reports the providers that can log in, and waits for the
 step's commands; the step puts every prompt, notice and question of the login
 to the person with `ctx.ask` (ADR 0008) and writes the answer back on the
 child's stdin. The login has 300 seconds from its start and can be cancelled; a

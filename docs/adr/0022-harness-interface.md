@@ -87,7 +87,7 @@ A source that needs it reads the declaration through
 
 ### D13: A harness may offer a login step
 
-A harness may declare a step named `login` (`<harness>/login`) that signs a
+A harness may declare a step named `login` (`<harness>/login`) that logs a
 person in with the harness's own providers and returns the model they chose:
 the result `done` with `data.model`, a model id the harness lists, and
 `data.provider`, or `failed` with `data.message`. It runs where the harness's
