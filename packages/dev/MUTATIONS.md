@@ -1591,3 +1591,4 @@ the row fields.
 | T-0716-M5 | packages/dev/src/steps.ts | `taskContext` read the file again instead of the attempt's recorded text | `dev/worktree > a later step of the attempt reads the recorded dev.json, not the file (T-0716)` |
 | T-0716-M6 | packages/dev/src/steps.ts | the worktree step did not record the text on the attempt | `dev/worktree > dev.json is recorded when an attempt starts and a replay keeps it (T-0716)` |
 | T-0716-M7 | packages/dev/src/steps.ts | a replay of the worktree step read the file instead of keeping the attempt's record | `dev/worktree > dev.json is recorded when an attempt starts and a replay keeps it (T-0716)` |
+| T-0724-M1 | packages/dev/src/steps.ts | the work step read `flowCommit` from the run's params instead of the stage's own params | `dev/work > commit true from the step's own params commits every attempt, including a later one (T-0724)` |

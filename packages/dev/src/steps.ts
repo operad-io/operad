@@ -1462,7 +1462,7 @@ export async function runWork(ctx: StepContext, stepParams?: unknown): Promise<P
     };
   }
 
-  if (beforeAttemptOf(ctx.params) === "merge-main") {
+  if (beforeAttemptOf(stage) === "merge-main") {
     const remote = context.settings.remote;
     const mainRef = `${remote}/${context.settings.mainBranch}`;
     const failBefore = async (message: string): Promise<PluginStepResult> => {
@@ -1523,7 +1523,7 @@ export async function runWork(ctx: StepContext, stepParams?: unknown): Promise<P
     }
   }
 
-  const stageParams = (ctx.params ?? {}) as {
+  const stageParams = stage as {
     readonly flowWorkerBrief?: unknown;
     readonly flowCommit?: unknown;
   };
@@ -1539,7 +1539,7 @@ export async function runWork(ctx: StepContext, stepParams?: unknown): Promise<P
     progressOf(attempt.previousProgress),
   );
   const stageBrief = (() => {
-    const given = ((ctx.params ?? {}) as { readonly flowBrief?: unknown }).flowBrief;
+    const given = (stage as { readonly flowBrief?: unknown }).flowBrief;
     return typeof given === "string" && given.trim().length > 0 ? given.trim() : undefined;
   })();
   const finalPrompt =

@@ -11,6 +11,7 @@ import {
   readFileSync,
   rmSync,
   writeFileSync,
+  readdirSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -221,6 +222,10 @@ function fakeHarness(record: string) {
               "-qm",
               "worker work",
             ]);
+          }
+          if (mode === "dirty-each") {
+            const count = readdirSync(input.cwd).filter((name) => name.startsWith("each-")).length;
+            writeFileSync(join(input.cwd, `each-${count}.txt`), "not committed\n");
           }
           if (mode === "dirty") {
             writeFileSync(join(input.cwd, "dirty.txt"), "not committed\n");
@@ -1062,6 +1067,22 @@ describe("dev/work", () => {
     const subject = gitOrThrow(path, ["log", "-1", "--format=%s"]).trim();
     expect(subject.startsWith(`${state.taskId}: `)).toBe(true);
     expect(gitOrThrow(path, ["show", "--stat", "--format=", "HEAD"])).toContain("dirty.txt");
+  });
+
+  test("commit true from the step's own params commits every attempt, including a later one (T-0724)", async () => {
+    const state = await fixture("dirty-each");
+    const path = join(state.remote.repository, ".operad-worktrees", state.taskId);
+    for (const [run, file] of [["work-run", "each-0.txt"], ["rework-run", "each-1.txt"]] as const) {
+      // A flow gives the stage's params as the step's own; the run's params carry none of them.
+      const result = await state.registry.runStep("dev/work", { flowCommit: true }, {
+        runId: run,
+        object: { type: "task", id: state.taskKey, data: {} },
+        params: {},
+      });
+      expect(result.result).toBe("done");
+      expect(gitOrThrow(path, ["status", "--porcelain"]).trim()).toBe("");
+      expect(gitOrThrow(path, ["show", "--stat", "--format=", "HEAD"])).toContain(file);
+    }
   });
 
   test("a work stage with commit true and nothing left is not an error (T-0380)", async () => {
