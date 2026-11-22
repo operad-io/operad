@@ -74,6 +74,7 @@ export interface NormalizedPlugin {
   readonly settingsSchema: ActionArgsSchema | undefined;
   /** The plugin's objects belong under a client's settings view. */
   readonly objectsUnderSettings: boolean;
+  readonly listTitle: string | undefined;
   readonly projectSettings: ProjectSettingsDeclaration | undefined;
   readonly enforces: readonly string[];
   readonly models:
@@ -820,6 +821,10 @@ export function normalizePlugin(raw: unknown, index: number): NormalizedPlugin {
     throw new PluginError(`${at}: objectsUnderSettings: must be a boolean`);
   }
 
+  if (raw.listTitle !== undefined && (typeof raw.listTitle !== "string" || raw.listTitle === "")) {
+    throw new PluginError(`${at}: listTitle: must be a non-empty string`);
+  }
+
   const projectSettings = normalizeProjectSettings(
     raw.projectSettings,
     `${at}: projectSettings`,
@@ -848,6 +853,7 @@ export function normalizePlugin(raw: unknown, index: number): NormalizedPlugin {
     guide,
     settingsSchema,
     objectsUnderSettings: raw.objectsUnderSettings === true,
+    listTitle: raw.listTitle,
     projectSettings,
     enforces: normalizeEnforces(raw.enforces, `${at}: enforces`) ?? [],
     models: normalizeModels(raw.models, kind, at),

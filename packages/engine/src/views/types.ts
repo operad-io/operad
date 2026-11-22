@@ -13,6 +13,8 @@ export interface ViewTypeInfo {
   readonly title: string;
   /** The plugin the type belongs to; a client groups types by it. */
   readonly plugin: string;
+  /** The title the plugin gives its list; absent when it declares none (a client shows the plugin name). */
+  readonly pluginTitle?: string | undefined;
   /**
    * True when the plugin's objects belong under a client's settings view
    * instead of a tab of their own. Present only when it holds.
@@ -63,6 +65,9 @@ export function listTypes(registry: PluginRegistry): readonly ViewTypeInfo[] {
       type: entry.type,
       title: displayNameOf(entry.type),
       plugin: entry.plugin,
+      ...(registry.listTitleOf(entry.plugin) === undefined
+        ? {}
+        : { pluginTitle: registry.listTitleOf(entry.plugin) }),
       ...(registry.objectsUnderSettings(entry.plugin) ? { settings: true } : {}),
       ...(filters === undefined
         ? {}

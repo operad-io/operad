@@ -50,6 +50,13 @@ describe("the types listing", () => {
     ]);
   });
 
+  test("a plugin's list title is served as pluginTitle on each of its types, and absent otherwise", () => {
+    const store = new MemoryPluginStore({ root: "unused" });
+    const registry = new PluginRegistry([{ ...tree, listTitle: "Things" }], { store });
+    expect(listTypes(registry).map((entry) => entry.pluginTitle)).toEqual(["Things", "Things"]);
+    expect(listTypes(registryOf().registry).map((entry) => entry.pluginTitle)).toEqual([undefined, undefined]);
+  });
+
   test("GET /v1/types carries the settings flag, its filters and its parents", async () => {
     const root = await tempRoot();
     const home = join(root, "home");

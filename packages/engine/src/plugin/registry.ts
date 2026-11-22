@@ -586,6 +586,11 @@ export class PluginRegistry {
     return this.byName.get(plugin)?.objectsUnderSettings === true;
   }
 
+  /** The title a plugin gives its list, if it declares one. */
+  listTitleOf(plugin: string): string | undefined {
+    return this.byName.get(plugin)?.listTitle;
+  }
+
   /** The trigger rules plugins ship, in load order, with their plugin. */
   triggerRules(): readonly {
     readonly plugin: string;

@@ -32,6 +32,7 @@ export function createDevPlugin() {
     name: "dev",
     kind: "domain",
     version: pkg.version,
+    listTitle: "Projects",
     objects: [
       {
         name: "repo",

@@ -1651,6 +1651,11 @@ export interface PluginShape {
    * types `settings: true`.
    */
   readonly objectsUnderSettings?: boolean | undefined;
+  /**
+   * The title a client gives this plugin's list (its tab); absent: the
+   * plugin's name. Served as `pluginTitle` on each of its types.
+   */
+  readonly listTitle?: string | undefined;
   /** Settings files this plugin keeps under a registered repository's `.operad/`. */
   readonly projectSettings?: ProjectSettingsDeclaration | undefined;
   /**
