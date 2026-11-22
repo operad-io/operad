@@ -33,11 +33,11 @@ A permission request (ACP `request_permission`, the SDK's `canUseTool`) is answe
 
 `radian` calls only `radian exec` and `radian acp`. operad does not call, start or depend on `radian hub` or `radian arc`, and `dev` neither reads nor writes `.radian/arc/` in a repository. Orchestration (plans, tasks, gates, merge, push) lives only in operad.
 
-### D6: The harness itself is the user's, not operad's
+### D6: The harness itself is the user's, except the pi operad installs for a first run
 
-operad does not install a harness. radian is a command on `PATH`; pi is found from the `pi` on `PATH` and its library imported from there; Claude is started from the `claude` on `PATH`, and operad carries only the Agent SDK client code, with the eight platform binary packages replaced by empty packages through `overrides`. The reason: login state, auto-update and quota belong to the user's own installation, and operad should neither download a binary of hundreds of megabytes for the user nor log in for them.
+operad does not install a harness the user runs. radian is a command on `PATH`; Claude is started from the `claude` on `PATH`, and operad carries only the Agent SDK client code, with the eight platform binary packages replaced by empty packages through `overrides`; codex is the user's own `codex app-server`. The exception is pi: when no agent command is on `PATH`, operad installs a pinned `@earendil-works/pi-coding-agent` into the operad home and starts the `pi` harness from there, so a person reaches a model on a first run without installing an agent first (ADR 0023 D9). A `pi` on `PATH` is used instead, and nothing is installed then. The reason: login state, auto-update and quota belong to the user's own installation, and operad should neither download a binary of hundreds of megabytes for the user nor make a login of its own. The pi it installs is a library that uses the user's pi login (ADR 0023 D4), and radian and claude are not installed this way.
 
-The version coupling follows. The client library operad carries is not pinned: `package.json` holds a range, the lock file records the version last tested, and `bun update` moves it forward. The harness itself has a version floor. `operad plugin check` reports both versions and refuses only when the harness itself is too old or not logged in.
+The version coupling follows. The client library operad carries is not pinned: `package.json` holds a range, the lock file records the version last tested, and `bun update` moves it forward. The harness itself has a version floor. The pi library operad installs is pinned exactly and moves with an operad release, because it is the copy a new home starts on. `operad plugin check` reports both versions and refuses only when the harness itself is too old or not logged in.
 
 ### D7: A harness is named after the agent it connects
 
