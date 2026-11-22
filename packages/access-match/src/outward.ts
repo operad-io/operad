@@ -106,6 +106,8 @@ export async function guardOutward(
   ctx: OutwardGuardContext,
   write: OutwardWrite,
 ): Promise<boolean> {
+  // A chat at full asks nothing outward; its deny rules are checked elsewhere.
+  if (typeof ctx.access === "object" && ctx.access !== null && Reflect.get(ctx.access, "level") === "full") return true;
   if (ctx.personStarted || outwardAllowed(ctx.access, write)) return true;
   let grant: TargetGrant | undefined;
   if (ctx.home !== undefined && ctx.flow !== undefined) {

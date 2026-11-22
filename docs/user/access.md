@@ -68,13 +68,17 @@ deny still wins.
 `level` is a chat's access level. `plan` is read-only; `ask` asks about every
 write and every command not known to only read; `edits` lets a write inside the
 working directory pass while a write outside it and a command not known to only
-read ask; `full` adds no question. At `full`, a command the matcher cannot
-follow (inline code, a shell expansion, a path after a directory change it
-cannot follow) runs unless a deny plainly matches, where `plan`, `ask` and
-`edits` still ask about it. The profile's own deny lists, `readOnly`,
-`askCommands` and `askPaths` still hold at every level, so at `full` an ask rule
-still asks when it plainly matches. A chat starts at `plan` on a repository and
-`ask` on a bot, and `/access <level>` changes it; see
+read ask; `full` asks nothing. At `full`, a command the matcher cannot follow
+(inline code, a shell expansion, a path after a directory change it cannot
+follow) runs unless a deny plainly matches, where `plan`, `ask` and `edits`
+still ask about it. Only `denyPaths`, `denyCommands`, `readOnly` and a write
+under `readPaths` remain at `full`: a deny refuses, a read-only working
+directory asks about a write or a command not known to only read, and a write
+under `readPaths` asks. `askCommands`, `askPaths` and an unlisted MCP tool do not
+ask at `full`; they still apply at `plan`, `ask` and `edits`. An outward-write
+question does not apply at `full`, and still asks in a background run below it.
+A chat starts at `plan` on a repository and `ask` on a bot, and
+`/access <level>` changes it; see
 [Chats and bots](chats-and-bots.md#access-level).
 
 `readPaths` lets a read reach a directory under an ancestor in `denyPaths`. It
@@ -85,12 +89,14 @@ does not allow a write: a write there asks.
 The default profile lives in `@operad-io/access-match` and is what every chat and
 every ordinary generated step starts from. A bot, a repository or a flow can add
 to its lists and turn `readOnly` on, never remove one. The access level is
-composed after those additions, so `full` keeps these rules too.
+composed after those additions, so `full` keeps these deny rules too; a chat
+below `full` keeps the ask rules as well.
 
 A dev task worker is the exception: it starts from the default's deny rules
 only, without its ask rules, because it works in the worktree of its own task
 and its change reaches main only through checks, review and a merge. Chats and
-other generated steps keep the default in full, asks included.
+other generated steps keep the default at levels below `full`, asks included;
+at `full` only its deny rules and `readOnly` apply.
 
 | List | Entries |
 |---|---|
@@ -250,11 +256,12 @@ In a background run the existing `alwaysAllow` entries are not used, and
 deliberate: a scheduled or incoming run is held to the profile afresh rather
 than inheriting a permission a person gave in an earlier conversation.
 
-An **outward write** also asks first: a message, mail or
+An **outward write** also asks first below `full`: a message, mail or
 post; a `git push`; or a write call to an outside service. The question names
 the target (the chat, address, repository and branch, or service) and carries
 the whole content; its choices are `Send once`, `Always for this flow and
 target` and `Reject`. A write to one of the owner's own channels, or to a target
 in `outwardAllow`, does not ask. A plugin step or action declares such a write;
 the shell steps use `outwardCommands`. The chat's exact-call `alwaysAllow` does
-not lift this question; only a target grant from the section above does.
+not lift this question; only a target grant from the section above does. A chat
+at `full` asks nothing outward: see [Access level](chats-and-bots.md#access-level).

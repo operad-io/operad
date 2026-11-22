@@ -650,6 +650,12 @@ test("a write under readPaths asks, where no deny covers it; a write elsewhere i
   expect(write("/home/u/.operad/attachments/chat/C-0001/m/a.txt")).toMatchObject({ allow: false, ask: true });
   expect(write("/work/project/a.txt")).toEqual({ allow: true });
   expect(bash(profile, "echo x > /home/u/.operad/attachments/chat/C-0001/m/a.txt")).toMatchObject({ allow: false, ask: true });
+  // A write there still asks at full, where the profile's own askPaths do not.
+  const full = { ...profile, level: "full" as const };
+  expect(match(full, { tool: "write", input: { path: "/home/u/.operad/attachments/chat/C-0001/m/a.txt" }, cwd: CWD }, { home: HOME })).toMatchObject({
+    allow: false,
+    ask: true,
+  });
 });
 
 // -- always allowed ----------------------------------------------------------
@@ -793,17 +799,68 @@ test("edits lets a write inside the working directory pass, asks outside it, and
   expect(bash(profile, "make build")).toMatchObject({ allow: false, ask: true, rule: "level" });
 });
 
-test("full adds no ask, while the profile's denies and own asks still hold", () => {
-  const profile = level(LEVEL_BASE, "full");
+test("full adds no ask, and the profile's asks and outward questions do not apply", () => {
+  const profile = { ...level(LEVEL_BASE, "full"), background: true };
   expect(write(profile, "src/a.ts")).toEqual({ allow: true });
   expect(write(profile, "/tmp/scratch")).toEqual({ allow: true });
   expect(bash(profile, "make build")).toEqual({ allow: true });
-  expect(bash(profile, "brew install jq")).toMatchObject({ allow: false, ask: true, rule: "brew install" });
-  expect(write(profile, "~/.zshrc")).toMatchObject({ allow: false, ask: true, rule: "~/.zshrc" });
+  expect(bash(profile, "brew install jq")).toEqual({ allow: true });
+  expect(write(profile, "~/.zshrc")).toEqual({ allow: true });
+  expect(bash(profile, "git push origin main")).toEqual({ allow: true });
   expect(read(profile, "~/.ssh/id_rsa")).toMatchObject({ allow: false });
   const denied = read({ level: "full", denyPaths: ["/etc"] }, "/etc/passwd");
   expect(denied.allow).toBe(false);
   expect(denied.ask).toBeUndefined();
+});
+
+test("at full only a deny and readOnly stop a call; ask rules and outward questions apply below it", () => {
+  const base: AccessProfile = {
+    denyCommands: ["sudo"],
+    denyPaths: ["/etc/secret"],
+    askCommands: ["brew install"],
+    askPaths: ["~/.zshrc"],
+    outwardCommands: ["deploy"],
+    background: true,
+  };
+  for (const value of ["plan", "ask", "edits"] as const) {
+    const profile = level(base, value);
+    const deniedCommand = bash(profile, "sudo ls");
+    expect(deniedCommand.allow).toBe(false);
+    expect(deniedCommand.ask).toBeUndefined();
+    expect(bash(profile, "brew install jq")).toMatchObject({ allow: false, ask: true, rule: "brew install" });
+    expect(write(profile, "~/.zshrc")).toMatchObject({ allow: false, ask: true, rule: "~/.zshrc" });
+    expect(bash(profile, "deploy production")).toMatchObject({
+      allow: false,
+      ask: true,
+      outward: { kind: "command", target: "deploy production" },
+    });
+    const deniedPath = read(profile, "/etc/secret/key");
+    expect(deniedPath.allow).toBe(false);
+    expect(deniedPath.ask).toBeUndefined();
+  }
+  const full = level(base, "full");
+  for (const command of ["sudo ls", "cat /etc/secret/key"]) {
+    const verdict = bash(full, command);
+    expect(verdict.allow).toBe(false);
+    expect(verdict.ask).toBeUndefined();
+  }
+  expect(bash(full, "brew install jq")).toEqual({ allow: true });
+  expect(write(full, "~/.zshrc")).toEqual({ allow: true });
+  expect(bash(full, "deploy production")).toEqual({ allow: true });
+});
+
+test("full runs an MCP tool the profile would ask about below it", () => {
+  const full = level({ allowMcp: [] }, "full");
+  const call = { tool: "mcp", input: { server: "notes", tool: "wipe" }, cwd: CWD };
+  expect(match(full, call, { home: HOME })).toEqual({ allow: true });
+  for (const value of ["ask", "edits"] as const) {
+    expect(match(level({ allowMcp: [] }, value), call, { home: HOME })).toMatchObject({ allow: false, ask: true });
+  }
+  // A background run adds no outward question at full either.
+  const background = { ...level({}, "full"), background: true };
+  expect(match(background, { tool: "mcp", input: { server: "calendar", tool: "create" }, cwd: CWD }, { home: HOME })).toEqual({
+    allow: true,
+  });
 });
 
 test("a read-only profile is not loosened by edits or full", () => {

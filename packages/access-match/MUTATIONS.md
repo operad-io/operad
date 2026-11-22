@@ -197,3 +197,13 @@ and the row fields.
 |---|---|---|---|
 | T-0558-M1 | packages/access-match/src/index.ts | `liveAccess` returned the startup profile instead of reading the live-level file | `a chat's live access level > is read again from its file, so a lowered level asks the next call` |
 | T-0558-M10 | packages/access-match/src/index.ts | `liveAccess` took any readable level file, even one that no longer held the chat directory deny | `a chat's live access level > a level file that drops the chat directory deny is ignored` |
+
+## T-0670 — full access asks nothing
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0670-M1 | packages/access-match/src/index.ts | `askCommands` still asked at `full` | `at full only a deny and readOnly stop a call; ask rules and outward questions apply below it` |
+| T-0670-M2 | packages/access-match/src/index.ts | `askPaths` still asked at `full` | `at full only a deny and readOnly stop a call; ask rules and outward questions apply below it` |
+| T-0670-M3 | packages/access-match/src/index.ts | a background outward command still asked at `full` | `at full only a deny and readOnly stop a call; ask rules and outward questions apply below it` |
+| T-0670-M4 | packages/access-match/src/index.ts | an unlisted MCP tool still asked at `full` | `full runs an MCP tool the profile would ask about below it` |
+| T-0670-M5 | packages/access-match/src/outward.ts | `guardOutward` still asked at `full` | `a background chat at full asks nothing outward; below full it still asks` |

@@ -90,7 +90,8 @@ export function isAccessLevel(value: unknown): value is AccessLevel {
 /**
  * A chat's profile with its level composed into it. The profile is first
  * tightened with the built-in default, so every level, `full` included, keeps
- * its deny and ask rules. The level itself only adds asks.
+ * its deny rules. Below `full` it also keeps the default's ask rules; at `full`
+ * the profile's asks and outward questions do not apply.
  */
 export function withAccessLevel<T extends AccessProfile>(
   profile: T,
@@ -213,8 +214,9 @@ export interface AlwaysAllowEntry {
 
 export interface AccessProfile {
   /**
-   * A chat's access level. It adds asks to the profile and removes none; see
-   * the level rules in `REFERENCE.md`.
+   * A chat's access level. Below `full` it adds asks to the profile; at `full`
+   * only a deny, `readOnly` and a write under `readPaths` remain. See the level
+   * rules in `REFERENCE.md`.
    */
   readonly level?: AccessLevel | undefined;
   /**
@@ -271,9 +273,10 @@ export interface AccessProfile {
   /** Shell commands that write outside operad; a git push names its remote and branch. */
   readonly outwardCommands?: readonly string[] | undefined;
   /**
-   * Set by a harness on a run no person's message started. It makes an outward
-   * shell command or MCP tool ask even when no other rule does, and it makes
-   * the matcher ignore `alwaysAllow` (ADR 0025 D3 and D10).
+   * Set by a harness on a run no person's message started. Below `full` it
+   * makes an outward shell command or MCP tool ask even when no other rule
+   * does, and it makes the matcher ignore `alwaysAllow` (ADR 0025 D3 and D10).
+   * At `full` it adds no outward question.
    */
   readonly background?: boolean | undefined;
   /** Permissions not yet used; the caller uses one up before it lets a call through. */
@@ -811,12 +814,13 @@ function redirectTarget(word: string, next: string | undefined): string | undefi
 /**
  * The ask verdict of a command, when no deny applied. A command that hides what
  * it runs (inline code) cannot be matched, so it asks while `askCommands` is
- * set (ADR 0025 D3), except at `full`, where only the profile's own plain ask
- * rules still ask (ADR 0025 D8). A task worker keeps the rule of D9.
+ * set (ADR 0025 D3). At `full` the profile's ask rules and the inline fallback
+ * do not apply (ADR 0025 D8); only the readOnly and readPaths entries passed in
+ * `asked` still ask. A task worker keeps the rule of D9.
  */
 function askBash(profile: AccessProfile, command: string, asked: AskedPaths | undefined, cwd: string, home: string): Verdict {
-  const texts = profile.askCommands ?? [];
   const full = profile.level === "full";
+  const texts = full ? [] : profile.askCommands ?? [];
   let found: { readonly target: string; readonly rule: string } | undefined;
   if (texts.length === 0 && asked === undefined) return ALLOW;
   const rules = texts.map((text) => parseRule(text)).filter((rule): rule is Rule => rule !== undefined);
@@ -914,9 +918,14 @@ export function match(given: AccessProfile, call: ToolCall, options: MatchOption
   // A directory that may be read is one whose writes ask.
   const readPaths = (given.readPaths ?? []).filter((written) => written.length > 0);
   const readOnly = given.readOnly === true || given.level === "plan";
-  const asking = [...(readOnly ? [call.cwd] : []), ...readPaths];
-  const profile: AccessProfile =
-    asking.length > 0 ? { ...given, askPaths: [...(given.askPaths ?? []), ...asking] } : given;
+  const full = given.level === "full";
+  // These asks come from `readOnly` and `readPaths`, not from the profile's own
+  // ask list, so they still ask at `full`.
+  const structuralAsks = [...(readOnly ? [call.cwd] : []), ...readPaths];
+  const profile: AccessProfile = {
+    ...given,
+    askPaths: full ? structuralAsks : [...(given.askPaths ?? []), ...structuralAsks],
+  };
   const entries = (profile.denyPaths ?? [])
     .filter((written) => written.length > 0)
     .map((written) => ({ written, path: normalise(written, call.cwd, home) }));
@@ -936,9 +945,10 @@ export function match(given: AccessProfile, call: ToolCall, options: MatchOption
     if (!verdict.allow && verdict.ask !== true) return verdict;
     // A background run ignores the user layer; see ADR 0025 D3 and D10.
     if (given.background !== true && alwaysAllowed(profile, call)) return ALLOW;
-    // An outward write not on the allowlist asks even without a matching rule.
+    // An outward write not on the allowlist asks even without a matching rule,
+    // below `full`; at `full` an outward question does not apply.
     const outward =
-      given.background === true
+      given.background === true && !full
         ? outwardCommandWrites(profile, command).find((write) => !outwardAllowed(profile, write))
         : undefined;
     const withOutward = (found: Verdict): Verdict =>
@@ -979,9 +989,9 @@ export function match(given: AccessProfile, call: ToolCall, options: MatchOption
     if (given.background !== true && alwaysAllowed(profile, call)) return ALLOW;
     const server: unknown = call.input["server"];
     const tool: unknown = call.input["tool"];
-    // In a background run an MCP tool is outward even when `allowMcp` is
-    // absent: the default profile has no list, so it cannot be a pass.
-    if (given.background === true && profile.allowMcp === undefined) {
+    // In a background run below `full` an MCP tool is outward even when
+    // `allowMcp` is absent: the default profile has no list, so it cannot be a pass.
+    if (!full && given.background === true && profile.allowMcp === undefined) {
       if (typeof server !== "string" || typeof tool !== "string") {
         return { allow: false, reason: "an MCP call that names no server and tool cannot be checked" };
       }
@@ -1002,7 +1012,9 @@ export function match(given: AccessProfile, call: ToolCall, options: MatchOption
       };
     }
     const found = matchMcp(profile, call);
-    if (given.background === true && found.ask === true) {
+    // At `full` an unlisted MCP tool is not an ask.
+    if (full && found.ask === true) return ALLOW;
+    if (!full && given.background === true && found.ask === true) {
       const write: OutwardWrite = {
         kind: "service",
         target: found.value,

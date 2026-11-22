@@ -205,11 +205,16 @@ export function askToolEvent(line: string): "tool-start" | "tool-end" | undefine
 /** Whether the run's access profile has a rule that may make a call ask. */
 export function canAsk(access: unknown): boolean {
   if (!isRecord(access)) return false;
+  const full = access.level === "full";
+  // A read-only working directory and a write under readPaths ask at every level.
+  if (access.readOnly === true) return true;
+  if (Array.isArray(access.readPaths) && access.readPaths.length > 0) return true;
+  // At full the profile's asks and the outward question do not apply.
+  if (full) return false;
   // A background run asks about an outward write even when no rule names it.
   if (access.background === true) return true;
-  if (access.readOnly === true) return true;
   // The levels below full ask about a write or a command not known to only read.
-  if (typeof access.level === "string" && access.level !== "full") return true;
+  if (typeof access.level === "string") return true;
   // MCP tools not on the allowed list ask, so a profile that lists them (even none) can ask.
   if (Array.isArray(access.allowMcp)) return true;
   return [access.askCommands, access.askPaths].some((rules) => Array.isArray(rules) && rules.length > 0);

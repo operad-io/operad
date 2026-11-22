@@ -238,10 +238,13 @@ write the same place without a `serve` reload. An entry is `name`, `schedule`
 The source checks once a second, fires the latest planned minute at or before
 now, and catches up the latest missed minute in the last seven days after
 `serve` starts or the machine wakes. A firing calls `bot:chat` with the actor
-`{ via: "bot", id: <entry name> }`: the new chat's first message therefore has
-the event source `bot`, which the bot's own rule sends to `chat:reply` as a
-background run, and the chat's data records `scheduled: { bot, entry }`. A
-catch-up firing appends `latenessLine` to the prompt.
+`{ via: "bot", id: <entry name> }`: the new chat starts at the access level
+`full`, so only the profile's deny rules, `readOnly` and a write under
+`readPaths` can stop a call; a person may change the level with `/access`
+afterwards. The new chat's first message has the event source `bot`, which the
+bot's own rule sends to `chat:reply` as a background run, and the chat's data
+records `scheduled: { bot, entry }`. At `full` the background flag adds no
+outward question. A catch-up firing appends `latenessLine` to the prompt.
 
 The source watches the new chat's facts. On the first assistant message, or on
 a failure entry, it records `replySummary` as the entry's `result`, runs the

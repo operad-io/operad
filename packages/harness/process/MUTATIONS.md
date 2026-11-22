@@ -264,3 +264,9 @@ and the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0655-M3 | packages/harness/process/src/worker-entry.ts | `runWorkerMain` left a closed stdout unhandled, so the worker wrote an EPIPE to stderr after its host closed the pipe | `a worker entry survives a host that closes stdout` |
+
+## T-0670 — full access asks nothing
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0670-M6 | packages/harness/process/src/ask-call.ts | `canAsk` still reported an ask at `full` | `canAsk > is true for an access level below full, and false for full` |

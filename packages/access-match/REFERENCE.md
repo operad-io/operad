@@ -32,10 +32,10 @@ the `home` option). `test/match.test.ts` follows the tables below.
 | `denyCommands` | string[], optional | a `bash` command part that matches one of these is refused |
 | `askPaths` | string[], optional | paths a write asks about (`~/.zshrc`, `~/.*profile`); `*` stays within one path segment and a path under a match counts. Judged for `write` and `edit`, and for a `bash` redirect (`>`, `>>`) to such a path, which asks with the whole command. Deny wins over it |
 | `readOnly` | boolean, optional | the call's working directory is read-only: a write under it (`write`, `edit`, a `bash` redirect) asks, as if the directory were in `askPaths`. Deny wins over it |
-| `level` | `plan`, `ask`, `edits` or `full`, optional | a chat's access level. It adds asks to the profile and never removes a deny or a rule: `plan` is `readOnly`; `ask` asks about every write and every command not known to only read; `edits` lets a write inside the working directory pass and asks about a write outside it and a command not known to only read; `full` adds no ask. At `full`, a command the matcher cannot follow (inline code, a shell expansion, a path after a directory change it cannot follow) runs unless a plain deny matches, where the lower levels ask. The profile's own `askCommands`, `askPaths` and `readOnly` still hold |
+| `level` | `plan`, `ask`, `edits` or `full`, optional | a chat's access level. Below `full` it adds asks to the profile and never removes a deny: `plan` is `readOnly`; `ask` asks about every write and every command not known to only read; `edits` lets a write inside the working directory pass and asks about a write outside it and a command not known to only read. `full` adds no ask and the profile's own `askCommands`, `askPaths`, unlisted MCP tools and outward-write questions do not ask; only a deny, `readOnly` and a write under `readPaths` remain. At `full`, a command the matcher cannot follow (inline code, a shell expansion, a path after a directory change it cannot follow) runs unless a plain deny matches, where the lower levels ask |
 | `readPaths` | array of paths, optional | directories the agent may read although `denyPaths` covers an ancestor: a read tool (`read`, `grep`, `find`, `ls`) or a `bash` command that only reads may touch a path under one. A write there asks (the entries count as `askPaths`); every other denied path stays denied |
 | `allowMcp` | string[], optional | MCP tools that run without asking, as `<server>.<tool>` or `<server>.*`. The field's presence (even empty) puts MCP tools under the profile: a call with `tool: "mcp"` and `input: { server, tool }` that is not listed counts as a write and asks (`kind: "command"`, value `mcp <server>.<tool>`), per the MCP-tool rule in `docs/backlog/operad-sandbox.md`, not in an ADR yet. When the field is absent, MCP tools are not under the profile and are allowed |
-| `askCommands` | string[], optional | rules in the shape of `denyCommands`; a `bash` command part that matches one of these asks a person (ADR 0025 D1). Writes to shell profiles are `askPaths` |
+| `askCommands` | string[], optional | rules in the shape of `denyCommands`; a `bash` command part that matches one of these asks a person below `full` (ADR 0025 D1 and D8). Writes to shell profiles are `askPaths` |
 | `defaultAsks` | boolean, optional | `false` starts the profile from the built-in default's deny rules only: its `askCommands` and `askPaths` are not added. The profile's own asks still hold. Every step a dev task runs sets it so scripted edits run without a question (ADR 0025 D9); a flow profile still only adds |
 
 | `alwaysAllow` | `{ kind: "command" \| "path", value, cwd, tool? }[]`, optional | calls a person answered `allow_always` for. A command entry is the exact command text and cwd; a path entry is the tool, the path and cwd. Such a call is allowed when it would otherwise ask. A deny still wins, and a harness leaves the entries out of a run no person's message started (ADR 0025 D3, D4 and D7; the background-run rule is still in `docs/backlog/operad-sandbox.md`) |
@@ -43,9 +43,9 @@ the `home` option). `test/match.test.ts` follows the tables below.
 | `grants` | `{ waitId, kind: "command" \| "path", value, tool? }[]`, optional | one-time permissions not yet used; see `findGrant` |
 | `outwardCommands` | string[], optional | command rules in the shape of `askCommands`; a matching `bash` part is an outward write in a background run (`git push` names `origin/main`, a `curl` write its URL, mail its recipients, otherwise the whole command). The built-in default names `git push`, `gh pr create`, `gh issue comment`, `curl`, `wget`, `mail`, `mailx` and `sendmail` |
 | `outwardAllow` | string[], optional | targets a background run may write to without asking: a channel and conversation (`telegram:123`), an address, a repository and branch (`origin/main`), or a service. `owner` stands for the owner's own channels; the built-in default contains it |
-| `background` | boolean, optional | set by a harness on a run no person's message started. An outward command or unknown MCP tool then asks even without another rule, and `alwaysAllow` is ignored (ADR 0025 D3 and D10) |
+| `background` | boolean, optional | set by a harness on a run no person's message started. Below `full`, an outward command or unknown MCP tool then asks even without another rule, and `alwaysAllow` is ignored; at `full` it adds no outward question (ADR 0025 D3 and D10) |
 
-`outwardAllowed(profile, write)` says whether one outward write is on the allowlist or to an owner channel. `outwardQuestion(write)` is the pending question that names its target and carries its content; its choices are `send_once` and `reject_once`, plus `allow_target` when the caller can bind a grant (`Always for this flow and target`). `guardOutward(ctx, write)` asks it only in a background run and only when the target is not allowed; with `home` and `flow` it first checks the target grants of `access-grants.json` and records one for the `allow_target` answer. `declaredOutward(declaration, input)` reads a step or action's `reachesOutside`/`outward` declaration, and `guardDeclaredOutward` guards every write it names. `personStarted(trigger)` tells a person's chat message from every other event.
+`outwardAllowed(profile, write)` says whether one outward write is on the allowlist or to an owner channel. `outwardQuestion(write)` is the pending question that names its target and carries its content; its choices are `send_once` and `reject_once`, plus `allow_target` when the caller can bind a grant (`Always for this flow and target`). `guardOutward(ctx, write)` asks it only in a background run below `full` and only when the target is not allowed; with `home` and `flow` it first checks the target grants of `access-grants.json` and records one for the `allow_target` answer. `declaredOutward(declaration, input)` reads a step or action's `reachesOutside`/`outward` declaration, and `guardDeclaredOutward` guards every write it names. `personStarted(trigger)` tells a person's chat message from every other event.
 
 ## Target grants
 
@@ -162,8 +162,8 @@ The reason is `part "<part>" is refused by denyCommands rule "<rule>"`.
 "<rule>"`, and the verdict's `value` is the whole command of the call: that is
 what a person is asked about and what a one-time permission (`findGrant`) covers.
 Inline code (below) asks while `askCommands` is set, with the rule `inline code`:
-what it runs cannot be matched (ADR 0025 D3). At `full` only the plain rule
-matches still ask; the inline fallback does not (ADR 0025 D8).
+what it runs cannot be matched (ADR 0025 D3). At `full` neither the plain rule
+matches nor the inline fallback ask (ADR 0025 D8).
 
 ## Inline code
 
@@ -190,19 +190,24 @@ deny matches; a profile with `defaultAsks: false` (a dev task) has the same rule
 `withAccessLevel(profile, level)` composes a chat's level into its profile. It
 first tightens the profile with `defaultAccess()`, then sets `level` and, for
 `plan`, `readOnly: true`. `match` then adds the level's asks after every deny
-and after the profile's own asks:
+and after the profile's own asks. At `full` it leaves the profile's ask lists
+and the outward question out, keeping a deny, `readOnly` and a write under
+`readPaths`:
 
 | level | write inside the working directory | write outside it | command not known to only read |
 |---|---|---|---|
 | `plan` | asks | as `readOnly` says today | asks |
 | `ask` | asks | asks | asks |
 | `edits` | no level ask | asks | asks |
-| `full` | no level ask | no level ask | no level ask; a command the matcher cannot follow runs unless a plain deny matches |
+| `full` | no ask | no ask | no ask; a command the matcher cannot follow runs unless a plain deny matches |
 
 A deny wins at every level, and an `alwaysAllow` entry lifts a level's ask for
-its exact call and working directory. The level never loosens a `readOnly`
-profile: a repository chat in its main clone stays read-only at `edits` and
-`full` until its worktree exists, and `plan` at `full` is still read-only.
+its exact call and working directory. `full` ignores the profile's own
+`askCommands` and `askPaths`, an unlisted MCP tool and the outward-write
+question; a `readOnly` profile and a write under `readPaths` still ask. The
+level never loosens a `readOnly` profile: a repository chat in its main clone
+stays read-only at `edits` and `full` until its worktree exists, and `plan` at
+`full` is still read-only.
 
 ## Read-only commands
 
@@ -258,7 +263,7 @@ The profile is a guard rail, not a boundary (ADR 0025 D6).
 
 ## Shell expansion in bash paths
 
-The matcher is a guardrail: where it cannot tell, it asks, and a deny always wins over an ask. At level `full` it lets an unresolved expansion or directory run instead, unless a plain deny matches (ADR 0025 D8).
+The matcher is a guardrail: where it cannot tell, it asks, and a deny always wins over an ask. At level `full` it lets an unresolved expansion or directory run instead, and the profile's ask and outward rules do not apply, unless a plain deny matches (ADR 0025 D8).
 
 **Expansion.** `~`, `$HOME` and `${HOME}` become the matcher's home before a path word, a redirect target or a `cd` target is matched. Any other expansion in a path or `cd` target (`$OTHER`, `${…}`, `$(…)`, backticks, `<(…)`, `$((…))`, `$1`, `$@`, `~user`, a `$'…'` word with escapes) asks. Only words that look like paths (they hold a `/`, or start with `~` or `.`) are judged, so `cat $OTHER` is not.
 
