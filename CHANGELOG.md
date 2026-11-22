@@ -7,16 +7,33 @@ the same version.
 
 ## [Unreleased]
 
-### Changed
+## [0.2.0] - 2026-11-22
 
-- The ChatGPT plan login is now pi's own command, `pi auth login openai-codex`:
-  operad no longer runs that login itself. The bot login offers API keys only
-  and tells where to run the command (the full path of operad's own pi when `pi`
-  is not on `PATH`); operad picks the login up once it is done, with no restart
-  of `serve`.
+The release adds a first-run path (`operad` alone opens a chat, `operad doctor`
+checks the home), memory for bots, access levels for chats, scheduled prompts
+and flows, a Codex connection that no longer needs a bridge, and many fixes to
+chats and to the `dev` plugin. The default HTTP port changed, so a paired
+client needs pairing again.
 
 ### Added
 
+- First run: `operad` with no arguments creates the home when there is none,
+  starts `serve` when none answers, and opens the terminal client on the default
+  bot's new chat. `operad init` enables `radian`, `claude` and `pi` for the
+  agent commands it finds on `PATH`, installs `@operad-io/harness-claude` and
+  its SDK when `claude` is found, and with no agent found enables `pi` and
+  installs operad's own pinned pi in the home.
+- `operad doctor` checks the home and changes nothing: the config, each enabled
+  plugin, each agent with its version and whether it is signed in, whether
+  `serve` answers and the test host. A problem line ends with the command to
+  type next, and the command exits `1` when any line is a problem. A bot whose
+  agent is not signed in offers `operad bot:login <bot>` for the agents operad
+  can log in to, and a pending item says so too.
+- The ChatGPT plan login is pi's own command, `pi auth login openai-codex`:
+  operad does not run that login itself. The bot login offers API keys only and
+  tells where to run the command (the full path of operad's own pi when `pi` is
+  not on `PATH`); operad picks the login up once it is done, with no restart of
+  `serve`.
 - Setup guides: a plugin can ship a guide (`guide`, a `SKILL.md`) and a `check`
   that returns what is missing, item by item. A bot follows only the steps for
   what is missing: `/setup <plugin> [target]` in a bot chat, the `bot:setup`
@@ -27,32 +44,106 @@ the same version.
   `.operad/dev.json` that turns `dev`, `shell` and `pool` on for it. Start it
   with the `bot:setup-dev` action or by asking in a bot chat; approving the
   pending item turns the plugins on, writes the file and registers the
-  repository.
-- The `dev.testHost` and `dev.testSlots` home settings: a gate, integration or
-  rerun command gets them as `OPERAD_CHECK_HOST` and `OPERAD_CHECK_SLOTS`, so a
-  restart of `serve` no longer loses the test host. An explicit variable in
-  `serve`'s own environment wins. When a repository's check commands use
-  `scripts/remote-check.sh` and no host is set, `serve` logs one line, the
-  repository gets a pending item, and its Overview says the commands run here;
-  `remote-check.sh` says so on stderr when it falls back to local.
+  repository. `operad plugin enable dev` also enables the plugins `dev` needs.
 - The `memory` plugin: the shared wiki, whose directory is a setting and which
   is created and made a git repository when it is not one; a `memory` skill every
   bot mounts; and a git commit after each bot reply that wrote to the bot's
   memory or the wiki. The default bot writes the wiki and every other bot reads
   it; each bot's `writeWiki` setting changes that.
+- Each bot has a memory of its own inside its working directory, with an
+  `index.md` that every reply carries, and a nightly tidy at the bot's
+  `tidyTime` that waits for a Run (运行) or Skip (跳过) unless `runWithoutAsking`
+  is on. `operad memory search` searches the wiki, the bot's memory and its
+  chats with a full-text index, and `operad memory read` reads a document, a line
+  range, and the Backlinks of a note. The app shows the wiki's folders and notes.
+- Access levels for chats: **Plan only**, **Ask each time**, **Accept edits**
+  and **Full access**, set with `/access <level>` or `operad chat:access`, applying
+  to a reply already being written. A bot's `accessLevel` setting sets
+  the starting level. A repository chat that is raised to Accept edits or Full
+  access moves into its own worktree. A command known to only read no longer
+  asks, and **Always for this flow and target** lets a background flow keep
+  writing to a target you allowed (`operad dev:allow` lists and removes the
+  grants).
+- Chat commands: a slash command (`/model`, `/effort`, `/access`, `/close`,
+  `/help` and the commands of a chat's skills) runs at once, leaves one entry in
+  the transcript and never reaches the agent. A command with one choice answers
+  with buttons when sent without it. They work in the terminal client, the app
+  and Telegram, and Telegram shows them in the command menu.
+- Chat usability: a message sent during a reply is delivered into it, and a
+  queued message can be withdrawn (`chat:withdraw`); a reply that was interrupted,
+  failed or hit a retryable error offers stop and retry; the running reply is
+  pushed live; a question can take a choice with a label and a hint, or a form;
+  a plan can be reviewed before it runs; the reply shows its status, the model's
+  context use and the model's details; and Telegram marks a received message
+  with a reaction and shows progress while the bot replies.
+- Skills reach every agent: skills in the standard `.agents` directories are
+  handed to each agent by operad, a repository chat reads the repository's
+  `dev.skills`, and a bot can be created with only chosen skills and MCP servers.
+- Scheduled prompts and flows: a bot holds scheduled prompts (Scheduled,
+  定时任务), proposed from chat with `operad bot schedule` and approved in
+  pending, and `operad scheduled list|add|edit|pause|resume|remove` manages cron
+  flows in `triggers.json`. A tick missed while `serve` was down is caught up.
+  A scheduled prompt's chat starts at Full access.
+- The Codex harness talks to Codex's own app-server, without a bridge, and
+  carries the access profile, skills and cancel.
+- A bot's chats can use your own agent settings for `claude`, `pi` and
+  `radian`, and a bot's pi or claude worker is kept between replies.
+- `operad plugin add <package>` installs an npm plugin with its install scripts
+  off, and plugins can be listed, enabled and installed over HTTP. Repositories
+  can be added from a client, and a flow's stages can be read and changed with
+  `operad settings`.
+- Testing on another machine: the `dev.testHost` and `dev.testSlots` home
+  settings. A gate, integration or rerun command gets them as `OPERAD_CHECK_HOST`
+  and `OPERAD_CHECK_SLOTS`, so a restart of `serve` no longer loses the test
+  host. An explicit variable in `serve`'s own environment wins. When a
+  repository's check commands use `scripts/remote-check.sh` and no host is set,
+  `serve` logs one line, the repository gets a pending item, and its Overview
+  says the commands run here; `remote-check.sh` says so on stderr when it falls
+  back to local. A check that waits for a slot says so while it waits.
+- `dev` flows are written with the stages `code`, `test`, `review` and `human`
+  (the older `work` and `check` still load); a task's merged diff can be read,
+  and a plan or a task can be created and started from a client.
+- A page on Tailscale (`docs/user/tailscale.md`): on reaching `serve` from the
+  phone app over the HTTPS name that `tailscale serve` gives.
+
+### Changed
+
+- The default HTTP port is `8765` (it was `7480`). A client paired at the old
+  port needs `operad pair` again, or `http.port` set to `7480`.
+- A repository's `.operad/dev.json` that writes no `worker` or `workers`, and
+  no `reviewer.use`, now uses the first harness enabled in the home, in the
+  order `radian`, `claude`, `pi`, `codex`, instead of always `radian/agent`. A
+  new `.operad/dev.json` written by `operad dev repo add` leaves the worker out.
+  `codex` is still off until `operad plugin enable codex`; `init` does not look
+  for Codex.
+- A task worker is never stopped by the default access profile or by a call the
+  matcher cannot follow. A task whose work changed the main checkout gets a
+  major finding from `dev` itself.
+- `serve` no longer exits when the store is busy for a moment.
+- A bare id that several object types own is refused as ambiguous by
+  `operad show` and `operad history`; use the full id, such as `plan:repo/P-0001`.
+- Errors for a user are short: they say what to do next and not what failed
+  inside operad. A plugin that is off says so when you run its command.
+- Setting names come with titles that the app and the terminal client show.
 
 ### Fixed
 
-- `operad init` now enables `radian`, `claude` and `pi` for the agent commands
-  it finds on `PATH` when it creates a home. With none found it keeps `radian`
-  and fails with a message naming the three agents and how to install one. A
-  new home with `claude` installs `@operad-io/harness-claude` and its SDK.
-- A repository whose `.operad/dev.json` writes no `worker` or `workers`, and no
-  `reviewer.use`, now uses the first harness enabled in the home, in the order
-  `radian`, `claude`, `pi`, `codex`, instead of always `radian/agent`. A new
-  `.operad/dev.json` written by `operad dev repo add` leaves the worker out.
-- `codex` is still off until `operad plugin enable codex`; `init` does not look
-  for Codex.
+- `operad init` with no agent on `PATH` now fails with a message naming the
+  three agents and how to install one instead of leaving a home that cannot
+  chat.
+- Setup and Dev: `operad init` now installs `pool`, and a repository registered
+  from a client or with `operad dev repo add` again after its folder moved no
+  longer fails.
+- A chat reply that failed is shown with the reason and can be sent again; a
+  slash message sent while a reply is running is no longer lost; the end of a
+  chat's tail no longer drops lines; attachments that are symlinks are refused.
+- A reviewer no longer misses a file the task deleted.
+- A task an older `dev` recorded no longer stops scheduling.
+- `serve` kept old code after a change; it now runs the new code.
+
+### Removed
+
+- The `radian` benchmarks no longer ship with operad; they stay in `radian`.
 
 ## [0.1.1] - 2026-11-14
 
@@ -181,6 +272,7 @@ The first public release. Install it with `bun add -g @operad-io/cli`; it needs
   `operad http token rotate` replaces it. The app itself is not in this
   repository.
 
-[Unreleased]: https://github.com/operad-io/operad/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/operad-io/operad/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/operad-io/operad/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/operad-io/operad/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/operad-io/operad/releases/tag/v0.1.0
