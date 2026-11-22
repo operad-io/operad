@@ -415,12 +415,6 @@ function closestCommandLines(
   return `\nclosest:\n  ${near.name}${summary}`;
 }
 
-/** Whether a word names a command operad itself has, not one a plugin declares. */
-function isBuiltinCommand(word: string | undefined): boolean {
-  if (word === undefined) return false;
-  return COMMAND_CANDIDATES.some((candidate) => candidate.name.split(" ")[0] === word);
-}
-
 /** The one-line usage of the command a mistake came from, when it has one. */
 function commandUsage(args: readonly string[]): string | undefined {
   const command = args[0];
@@ -3752,7 +3746,7 @@ export async function main(
     }
   } catch (error) {
     if (error instanceof UsageError) {
-      const usage = error.usage ?? (isBuiltinCommand(args[0]) ? commandUsage(args) : undefined);
+      const usage = error.usage ?? commandUsage(args);
       const usageLine = usage === undefined ? "" : `${usage}\n`;
       io.error(`operad: ${error.message}\n${usageLine}${HELP_POINTER}\n`);
       return 2;
