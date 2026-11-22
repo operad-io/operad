@@ -192,12 +192,13 @@ with no worktree.
 | `plan` | Reading, and commands known to only read; a write asks. |
 | `ask` | Reading; every write and every command not known to only read asks. |
 | `edits` | Reading and writing files in the working directory; a command not known to only read asks. |
-| `full` | Everything the profile does not deny; the level adds no question. A command the matcher cannot follow (inline code, a shell expansion, a path after a directory change it cannot follow) runs too, unless a deny plainly matches. |
+| `full` | Everything except a call a deny refuses, a write or command a read-only working directory asks about, and a write under `readPaths`; the level adds no question, and ask commands, ask paths, unlisted MCP tools and outward-write questions do not ask. A command the matcher cannot follow (inline code, a shell expansion, a path after a directory change it cannot follow) runs too, unless a deny plainly matches. |
 
-The profile's deny lists and its own ask rules still hold at every level,
-`full` included. At `full`, an `askCommands` or `askPaths` rule still asks when
-it plainly matches, and a background run still asks before an outward write. The
-approved words in the interface are **Access** for the menu, and **Plan only**,
+The profile's deny lists still hold at every level, and `readOnly` and a write
+under `readPaths` still ask. Below `full`, its own `askCommands` and `askPaths`
+rules still ask. At `full` they do not, and a background run does not ask before
+an outward write: only a deny, `readOnly` or a write under `readPaths` can stop
+a call. The approved words in the interface are **Access** for the menu, and **Plan only**,
 **Ask each time**, **Accept edits** and **Full access**
 for the levels. `claude` and `pi` carry every level; a chat whose agent cannot
 carry a level refuses the reply with a message naming the level instead of
@@ -362,9 +363,12 @@ operad bot:schedule-remove default --name Morning
 
 When an entry fires, the bot opens a new chat under itself, titled with the
 entry's name and the date, and sends the prompt as the first message. The chat
-runs as the bot, with its skills, MCP servers and access profile. It is a
-background run: an outward write asks, and the access rules for a run no person
-started apply. You can keep talking in the new chat.
+runs as the bot, with its skills, MCP servers and access profile, and starts at
+`full`: only the profile's deny rules, `readOnly` and a write under `readPaths`
+can stop a call; an ask rule and an outward write do not ask. A person may
+change the level with `/access` afterwards. Its first message has no person's
+source, so the reply is still a background run; below `full` that flag still
+asks before an outward write. You can keep talking in the new chat.
 
 After `serve` has been down or the machine has slept, the latest missed run in
 the last seven days fires once; older ones are skipped. A catch-up run adds one

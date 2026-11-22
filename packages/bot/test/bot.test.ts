@@ -561,7 +561,7 @@ describe("bot:chat", () => {
 });
 
 describe("a bot chat's access level", () => {
-  test("full runs a heredoc and a substitution; edits asks; deny and ask rules still hold", async () => {
+  test("full runs a heredoc, a substitution and an ask command; edits asks; deny rules still hold", async () => {
     const r = await rig({ reader: {} });
     await syncBots(r.store, r.home, {});
     const id = await r.open("reader");
@@ -581,9 +581,8 @@ describe("a bot chat's access level", () => {
     );
     expect(denied.allow).toBe(false);
     expect(denied.ask).toBeUndefined();
-    expect(match(full, { tool: "bash", input: { command: "git push origin main" }, cwd }, { home: r.home })).toMatchObject({
-      allow: false,
-      ask: true,
+    expect(match(full, { tool: "bash", input: { command: "git push origin main" }, cwd }, { home: r.home })).toEqual({
+      allow: true,
     });
 
     await r.act("chat", id, "chat/access", { level: "edits" });

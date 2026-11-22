@@ -217,7 +217,7 @@ describe("a chat's access level", () => {
       });
       expect(verdict).toEqual({ allow: true });
       expect(asked.length).toBe(call.allowed ? 0 : 1);
-      // The default's deny and ask rules hold at every level, full included.
+      // The default's deny rules hold at every level, full included.
       expect(hasRules(profile)).toBe(true);
     });
   }

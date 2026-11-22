@@ -100,6 +100,25 @@ test("a background MCP call asks with the default profile, which has no allowMcp
 
 const MESSAGE: OutwardWrite = { kind: "channel", target: "telegram:999", content: "the digest" };
 
+test("a background chat at full asks nothing outward; below full it still asks", async () => {
+  for (const level of ["plan", "ask", "edits"] as const) {
+    const seen: AskRequest[] = [];
+    const allowed = await guardOutward(
+      { access: { ...PROFILE, level }, ask: asker(seen), personStarted: false },
+      MESSAGE,
+    );
+    expect(allowed).toBe(true);
+    expect(seen).toHaveLength(1);
+  }
+  const seen: AskRequest[] = [];
+  const allowed = await guardOutward(
+    { access: { ...PROFILE, level: "full" }, ask: asker(seen), personStarted: false },
+    MESSAGE,
+  );
+  expect(allowed).toBe(true);
+  expect(seen).toHaveLength(0);
+});
+
 test("a background message to another chat asks, names the chat, and carries the text", async () => {
   const seen: AskRequest[] = [];
   const allowed = await guardOutward(

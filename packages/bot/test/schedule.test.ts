@@ -97,6 +97,8 @@ describe("scheduled prompts", () => {
       const chat = await r.store.get(CHAT_TYPE, id);
       expect(chat?.data.parent).toBe("bot:default");
       expect(chat?.data.title).toBe("Morning (2026-01-01)");
+      expect(chat?.data.accessLevel).toBe("full");
+      expect(chat?.data.accessDefault).toBe("full");
       expect(chat?.data.scheduled).toEqual({ bot: "default", entry: "Morning" });
       const chatRow = (await views.get(`chat:${id}`)).row;
       expect(chatRow.data).toMatchObject({ scheduled: { bot: "default", entry: "Morning" } });
