@@ -579,7 +579,10 @@ function backgroundModel(
   if (typeof settings.backgroundModel === "string" && settings.backgroundModel.length > 0) {
     return settings.backgroundModel;
   }
-  const harness = settings.harness ?? ctx.harnesses?.[0];
+  // The chat starts at "ask": the first agent that carries it, else the first loaded one.
+  const harness = settings.harness ??
+    ctx.harnesses?.find((name) => (ctx.harnessCapabilities?.(name)?.accessLevels ?? []).includes("ask")) ??
+    ctx.harnesses?.[0];
   return harness === undefined ? undefined : ctx.harnessCapabilities?.(harness)?.backgroundModel;
 }
 

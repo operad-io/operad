@@ -14,7 +14,7 @@ import pkg from "../package.json" with { type: "json" };
 import { mkdirSync } from "node:fs";
 import { basename, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { CHAT_TYPE, MESSAGE_EVENT, agentConditionals, type AgentChoices, type ScheduledChat, chatData, createChat, sendMessage, startingEffort, startingModel, titleFromMessage } from "@operad-io/chat";
+import { CHAT_TYPE, MESSAGE_EVENT, levelRefusal, agentConditionals, type AgentChoices, type ScheduledChat, chatData, createChat, sendMessage, startingEffort, startingModel, titleFromMessage } from "@operad-io/chat";
 import { definePlugin, isRecord, modelIds, type ActionArgSchema, type ActionArgsSchema, type ActionTypeDefinition, type HarnessCapabilities, type HarnessModelInfo, type HarnessModels, type JsonValue, type ObjectRow, type ObjectStore, type ObjectViews, type PluginStepResult, type SectionContent, type StepContext, type StoredObject } from "@operad-io/engine";
 import {
   BOT_SETTINGS,
@@ -220,19 +220,6 @@ export function defaultAgent(
 ): string | undefined {
   if (capabilities === undefined) return harnesses[0];
   return harnesses.find((name) => (capabilities[name]?.accessLevels ?? []).includes(level)) ?? harnesses[0];
-}
-
-/** Why an agent cannot carry a level, in a plain sentence; undefined when it can or its abilities are not known. */
-export function levelRefusal(
-  agent: string,
-  level: string,
-  capabilities: Readonly<Record<string, HarnessCapabilities>> | undefined,
-): string | undefined {
-  const declared = capabilities?.[agent];
-  if (declared === undefined) return undefined;
-  const carried = declared.accessLevels ?? [];
-  if (carried.includes(level)) return undefined;
-  return `the agent "${agent}" cannot carry the access level "${level}"; it carries ${carried.length === 0 ? "none" : carried.join(", ")}`;
 }
 
 /** Opens a chat on a bot and returns its id. Refuses with a plain message. */

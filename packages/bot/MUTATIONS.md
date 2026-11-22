@@ -404,3 +404,4 @@ changes for bots, in the order they were recorded. The root
 |---|---|---|---|
 | T-0743-M2 | packages/bot/src/index.ts | a new chat was opened with an agent that cannot carry its level, with no refusal | `a bot's accessLevel setting > a new chat takes the first agent that carries the level, and refuses one that cannot` |
 | T-0743-M3 | packages/bot/src/index.ts | the default agent was the first loaded one whatever the level it carries | `a bot's accessLevel setting > a new chat takes the first agent that carries the level, and refuses one that cannot` |
+| T-0744-M1 | packages/bot/src/tidy.ts | the background model was read from the first loaded agent whatever the level it carries | `Run without asking > the background model comes from the first agent that carries the starting level` |

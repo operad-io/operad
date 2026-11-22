@@ -2,7 +2,7 @@
 
 import { messageOf } from "@operad-io/engine";
 import pkg from "../package.json" with { type: "json" };
-import { defineFlow, definePlugin, formatElapsed, isRecord, modelIds, type ActionArgsSchema, type ActionContext, type ActionTypeDefinition, type HarnessEfforts, type HarnessModels, type JsonValue, type ObjectStore, type PluginFact, type RunControl, type StoredObject, type UsageTokens } from "@operad-io/engine";
+import { defineFlow, definePlugin, formatElapsed, isRecord, modelIds, type ActionArgsSchema, type ActionContext, type ActionTypeDefinition, type HarnessCapabilities, type HarnessEfforts,type HarnessModels, type JsonValue, type ObjectStore, type PluginFact, type RunControl, type StoredObject, type UsageTokens } from "@operad-io/engine";
 import { ACCESS_LEVELS, isAccessLevel, updateLiveAccessLevel, type AccessLevel } from "@operad-io/access-match";
 import { stopKeptWorkers } from "@operad-io/engine/platform";
 import {
@@ -544,6 +544,19 @@ async function prepareAccess(
   }
 }
 
+/** Why an agent cannot carry a level, in a plain sentence; undefined when it can or its abilities are not known. */
+export function levelRefusal(
+  agent: string,
+  level: string,
+  capabilities: Readonly<Record<string, HarnessCapabilities>> | undefined,
+): string | undefined {
+  const declared = capabilities?.[agent];
+  if (declared === undefined) return undefined;
+  const carried = declared.accessLevels ?? [];
+  if (carried.includes(level)) return undefined;
+  return `the agent "${agent}" cannot carry the access level "${level}"; it carries ${carried.length === 0 ? "none" : carried.join(", ")}`;
+}
+
 const accessAction: ActionTypeDefinition = {
   name: "access",
   on: CHAT_TYPE,
@@ -560,12 +573,8 @@ const accessAction: ActionTypeDefinition = {
       throw new Error(`the access level must be one of ${ACCESS_LEVELS.join(", ")}`);
     }
     // An agent that cannot carry the level is refused now, not at the next reply.
-    const carried = ctx.capabilities?.[chat.harness]?.accessLevels;
-    if (ctx.capabilities?.[chat.harness] !== undefined && !(carried ?? []).includes(level)) {
-      throw new Error(
-        `the agent "${chat.harness}" cannot carry the access level "${level}"; it carries ${(carried ?? []).length === 0 ? "none" : (carried ?? []).join(", ")}`,
-      );
-    }
+    const refusal = levelRefusal(chat.harness, level, ctx.capabilities);
+    if (refusal !== undefined) throw new Error(refusal);
     const from = chat.accessLevel ?? chat.accessDefault ?? "ask";
     if (from === level && chat.accessChosen === true) return `chat ${ctx.object.id} already uses access level ${level}`;
     if (from === level) {

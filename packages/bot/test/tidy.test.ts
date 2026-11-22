@@ -29,15 +29,16 @@ interface SetupOptions {
   readonly work?: ((store: ObjectStore, bot: string, cwd: string) => Promise<TidyWork>) | undefined;
   readonly prepare?: ((memory: string) => void) | undefined;
   readonly runs?: RunControl | undefined;
+  readonly harnesses?: readonly string[] | undefined;
 }
 
 async function setup(
   bots: Readonly<Record<string, JsonValue>> = { default: { tidyTime: "03:30" } },
   clockAt = "2026-01-01T02:00:00Z",
-  capabilities: (harness: string) => { readonly backgroundModel?: string } = () => ({}),
+  capabilities: (harness: string) => { readonly backgroundModel?: string; readonly accessLevels?: readonly string[] } = () => ({}),
   options: SetupOptions = {},
 ) {
-  const r = await rig({ default: {} }, ["pi"], undefined, [createMemoryPlugin()]);
+  const r = await rig({ default: {} }, [...(options.harnesses ?? ["pi"])], undefined, [createMemoryPlugin()]);
   writePlugins(r.home, { memory: {}, bot: { settings: { bots } } });
   const views = createViews({ registry: r.registry, store: r.store, home: r.home, onLog: () => undefined });
   const clock: Clock = { value: Date.parse(clockAt) };
@@ -52,7 +53,7 @@ async function setup(
       clock: () => clock.value,
       logger: { write: async () => "" },
       client: options.client ?? (views as unknown as ClientApi),
-      harnesses: ["pi"],
+      harnesses: options.harnesses ?? ["pi"],
       harnessCapabilities: capabilities,
       ...(options.work === undefined ? {} : { work: options.work }),
       ...(options.runs === undefined ? {} : { runs: options.runs }),
@@ -763,6 +764,33 @@ describe("Run without asking", () => {
       expect((await overridden.r.store.get(CHAT_TYPE, first))?.data.model).toBe("pi-b");
     } finally {
       overridden.views.close();
+    }
+  });
+
+  test("the background model comes from the first agent that carries the starting level", async () => {
+    const asked: Record<string, unknown>[] = [];
+    const client = {
+      act: async (_action: string, _target: string, input: { readonly args: Record<string, unknown> }) => {
+        asked.push(input.args);
+        return {};
+      },
+    } as unknown as ClientApi;
+    const s = await setup(
+      { default: { tidyTime: "03:30", runWithoutAsking: true } },
+      "2026-01-01T02:00:00Z",
+      (harness) =>
+        harness === "pi"
+          ? { backgroundModel: "pi-a", accessLevels: ["edits"] }
+          : { backgroundModel: "other-a", accessLevels: ["ask", "edits"] },
+      { harnesses: ["pi", "other"], client },
+    );
+    try {
+      note(s.memory, "tea.md", "likes tea\n");
+      s.clock.value = Date.parse("2026-01-01T03:31:00Z");
+      await s.source.poll();
+      expect(asked[0]?.model).toBe("other-a");
+    } finally {
+      s.views.close();
     }
   });
 
