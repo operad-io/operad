@@ -59,12 +59,12 @@ describe("a bot without a model login", () => {
     const items = await r.registry.standing();
     expect(items).toHaveLength(1);
     expect(items[0]?.id).toBe("login:default");
-    expect(items[0]?.prompt).toBe('bot "default" has no model login');
+    expect(items[0]?.prompt).toBe('bot "default" is not logged in to a model');
     expect(items[0]?.object).toEqual({ type: "bot", id: "default" });
     expect(items[0]?.actions).toContainEqual({ plugin: "bot", action: "login" });
 
     const said = await r.act("bot", "default", "login");
-    expect(String(said)).toContain("starting the login");
+    expect(String(said)).toContain("logging in");
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({
       source: "bot",

@@ -5,7 +5,7 @@
  * anything the person's value would echo stay out.
  */
 
-/** How a provider can sign in, as pi's own provider list declares it. */
+/** How a provider can log in, as pi's own provider list declares it. */
 export interface LoginProvider {
   readonly id: string;
   readonly name: string;

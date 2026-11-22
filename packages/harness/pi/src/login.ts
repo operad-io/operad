@@ -251,7 +251,7 @@ async function chooseProvider(
   now: () => number,
 ): Promise<LoginRoute | undefined> {
   const routes = routesOf(providers);
-  if (routes.length === 0) throw new LoginFailure("no provider of pi can sign in");
+  if (routes.length === 0) throw new LoginFailure("no provider of pi can log in");
   const byId = new Map(providers.map((provider) => [provider.id, provider]));
   const choices = routes.map((route) => route.provider);
   const choiceInfo: Record<string, ChoiceInfo> = {};
@@ -266,7 +266,7 @@ async function chooseProvider(
     };
   }
   const answer = await ctx.ask({
-    prompt: "Choose a provider to sign in with.",
+    prompt: "Choose a provider to log in with.",
     choices,
     choiceInfo,
     graceSecs: remainingSecs(deadline, now),
@@ -377,7 +377,7 @@ async function waitForDevice(
   const expires = device.expiresInSeconds === undefined ? undefined : Math.max(1, device.expiresInSeconds);
   const grace = Math.max(1, Math.min(remainingSecs(deadline, now), expires ?? Number.POSITIVE_INFINITY));
   const answer = await ctx.ask({
-    prompt: "Finish signing in.",
+    prompt: "Finish logging in.",
     questions: [
       {
         id: "device",

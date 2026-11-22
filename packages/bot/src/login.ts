@@ -1,5 +1,5 @@
 /**
- * The login of a bot's agent (ADR 0030 D14). A bot whose agent can sign in and
+ * The login of a bot's agent (ADR 0030 D14). A bot whose agent can log in and
  * is not signed in gets one standing pending item; the `login` action starts a
  * short flow whose one step calls the harness's own login step and writes the
  * model the person chose into the bot's existing `model` setting.
@@ -32,7 +32,7 @@ export const LOGIN_SOURCE = "bot";
 /**
  * The harness whose login a bot uses: the agent it names when that agent
  * offers a login step, else the one loaded harness that offers one. Undefined
- * when the bot names none and none or several harnesses can sign in.
+ * when the bot names none and none or several harnesses can log in.
  */
 export function loginHarness(
   named: unknown,
@@ -68,7 +68,7 @@ export async function runLogin(ctx: StepContext, _params: unknown): Promise<Plug
   const harness = loginHarness(object.data.harness, ctx.harnesses, stepCanLogin(ctx.stepLoaded));
   if (harness === undefined) {
     return failed(
-      "no agent of this bot has a login here; set the bot's agent, or sign in with the agent yourself",
+      "no agent of this bot has a login here; set the bot's agent, or log in with the agent yourself",
     );
   }
   if (ctx.runStep === undefined) {
@@ -142,7 +142,7 @@ export const loginFlow = defineFlow({
 export const loginAction: ActionTypeDefinition = {
   name: "login",
   on: BOT_TYPE,
-  // A bot with no model has nothing to do before signing in; after a login,
+  // A bot with no model has nothing to do before logging in; after a login,
   // chatting is what a person most likely wants.
   rank: (state) => (state.model === null || state.model === undefined ? -1 : 0),
   when: (state, env) =>
@@ -154,7 +154,7 @@ export const loginAction: ActionTypeDefinition = {
     ) !== undefined,
   async why(object, env) {
     if (object.data.removed === true) return `bot ${object.id} is no longer in the settings`;
-    if ((env.harnesses ?? []).length === 0) return `bot ${object.id}: no agent is loaded to sign in with`;
+    if ((env.harnesses ?? []).length === 0) return `bot ${object.id}: no agent is loaded to log in with`;
     return undefined;
   },
   async run(ctx) {
@@ -174,7 +174,7 @@ export const loginAction: ActionTypeDefinition = {
           : (name) => ctx.stepLoaded?.(`${name}/login`) === true,
       ) ?? (ctx.harnesses.length === 1 ? ctx.harnesses[0] : undefined);
     if (harness === undefined) {
-      throw new BotError("this bot names no agent to sign in with");
+      throw new BotError("this bot names no agent to log in with");
     }
     await ctx.emit({
       source: LOGIN_SOURCE,
@@ -183,11 +183,11 @@ export const loginAction: ActionTypeDefinition = {
       object: `${BOT_TYPE}:${ctx.object.id}`,
       summary: `login ${harness}`,
     });
-    return `starting the ${harness} login`;
+    return "logging in";
   },
 };
 
-/** The bots whose agent can sign in and is not signed in. */
+/** The bots whose agent can log in and is not signed in. */
 export async function loginItems(ctx: StandingContext): Promise<readonly StandingItem[]> {
   const loaded = ctx.harnesses ?? ctx.loaded;
   const canLogin = stepCanLogin(ctx.stepLoaded);
@@ -200,7 +200,7 @@ export async function loginItems(ctx: StandingContext): Promise<readonly Standin
     if ((await ctx.signedIn?.(harness)) !== false) continue;
     items.push({
       id: `login:${name}`,
-      prompt: `bot "${name}" has no model login`,
+      prompt: `bot "${name}" is not logged in to a model`,
       object: { type: BOT_TYPE, id: name },
     });
   }
